@@ -26,7 +26,8 @@ describe("SandboxesPage", () => {
               workdir: "/workspace",
               agentIds: ["coder"],
               toolNames: ["list_files", "read_file"],
-              capabilities: { files: true, ports: true, processes: true },
+              views: [{ id: "desktop", label: "Browser", protocol: "novnc" }],
+              capabilities: { files: true, ports: true, processes: true, views: true },
             },
           ],
         });
@@ -104,6 +105,8 @@ describe("SandboxesPage", () => {
     expect(container.textContent).toContain("readme.txt");
     expect(container.textContent).toContain("5173/tcp");
     expect(container.textContent).toContain("pnpm dev");
+    expect(container.textContent).toContain("Browser (novnc)");
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/connection"))).toBe(false);
 
     const readme = findButton("readme.txt");
     act(() => readme.click());

@@ -30,7 +30,6 @@ const HumanInputPanel = forwardRef<HTMLDivElement, HumanInputPanelProps>(functio
           <HumanInputQuestions filter={filter} />
         </>
       ),
-      "data-anvia-human-input-panel": "",
     } as PrimitiveProps<"div">,
     ref,
   );

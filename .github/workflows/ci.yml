@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - staging
 
 permissions:
   contents: read
@@ -34,14 +35,26 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Validate release train
+        run: pnpm release-train:validate
+
+      - name: Test release infrastructure
+        run: pnpm test:release-scripts
+
       - name: Build core package
         run: pnpm --filter @anvia/core build
 
       - name: Build remaining packages
         run: pnpm --filter './packages/**' --filter '!@anvia/core' build
 
+      - name: Verify packed internal versions
+        run: pnpm release-train:verify-packs
+
       - name: Typecheck packages
         run: pnpm --filter './packages/**' typecheck
+
+      - name: Typecheck cookbook and internal tests
+        run: pnpm --filter cookbook --filter './tests/**' typecheck
 
       - name: Test packages
         run: pnpm --filter './packages/**' test

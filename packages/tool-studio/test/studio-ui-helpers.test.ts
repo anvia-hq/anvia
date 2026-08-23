@@ -1,6 +1,6 @@
-import { Message, uiMessagesToCoreMessages } from "@anvia/core";
 import { describe, expect, it } from "vitest";
-import { userUIMessageWithAttachments } from "../src/ui/app/app-helpers";
+import { Message } from "../../core/test/helpers/imports";
+import { userMessageWithAttachments } from "../src/ui/app/app-helpers";
 import {
   fallbackActivePage,
   isActivePageEnabled,
@@ -87,11 +87,14 @@ describe("Studio UI helpers", () => {
 
     expect(nextSequence([...transcript])).toBe(9);
     expect(findMatchingToolIndex([...transcript], "lookup", "call_1")).toBe(2);
-    expect(toHistory([...transcript])).toEqual([Message.user("Hello"), Message.assistant("Hi")]);
+    expect(toHistory([...transcript])).toEqual([
+      Message.user([{ type: "text", text: "Hello" }]),
+      Message.assistant("Hi"),
+    ]);
   });
 
   it("creates UI messages for multimodal prompts that round-trip to core messages", () => {
-    const message = userUIMessageWithAttachments("Describe", [
+    const message = userMessageWithAttachments("Describe", [
       {
         id: "attachment_1",
         name: "image.png",
@@ -102,19 +105,15 @@ describe("Studio UI helpers", () => {
       },
     ]);
 
-    expect(message.role).toBe("user");
-    expect(uiMessagesToCoreMessages([message])).toEqual([
+    expect(message).toEqual(
       Message.user([
         { type: "text", text: "Describe" },
         {
           type: "image",
-          source: {
-            type: "base64",
-            data: "iVBORw0KGgo=",
-            mediaType: "image/png",
-          },
+          image: { type: "data", data: "iVBORw0KGgo=" },
+          mediaType: "image/png",
         },
       ]),
-    ]);
+    );
   });
 });

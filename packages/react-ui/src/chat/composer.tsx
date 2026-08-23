@@ -1,4 +1,9 @@
-import type { CreateUIAttachment, UIAttachment } from "@anvia/react";
+import type {
+  ClientDataMap,
+  ClientMetadata,
+  CreateUIAttachment,
+  UIAttachment,
+} from "@anvia/client";
 import type { Editor, Extensions, JSONContent } from "@tiptap/core";
 import { mergeAttributes } from "@tiptap/core";
 import Document from "@tiptap/extension-document";
@@ -29,7 +34,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { Attachment } from "../attachment/index";
+import { AttachmentPrimitive } from "../attachment/index";
 import {
   type ChatController,
   type ComposerAttachmentInput as ComposerAttachmentInputValue,
@@ -49,6 +54,7 @@ import {
 } from "../contexts";
 import { shiftComposerEntityRanges } from "../entities";
 import { composeRefs, type PrimitiveProps, renderPrimitive } from "../primitives";
+import { isComposerEntityData } from "../strict-json";
 
 type ComposerRootProps = PrimitiveProps<"form"> & {
   attachments?: UIAttachment[];
@@ -67,17 +73,17 @@ type ComposerRootProps = PrimitiveProps<"form"> & {
   triggers?: ComposerTriggerDefinition[];
 };
 
-export type ComposerSubmitMessageArgs<TEvent = unknown> = {
+export type ComposerSubmitMessageArgs<TData extends ClientDataMap = ClientDataMap> = {
   input: string;
   attachments: UIAttachment[];
   entities: ComposerEntity[];
-  chat: ChatController<TEvent>;
+  chat: ChatController<ClientMetadata, TData>;
   quote?: ComposerQuote | undefined;
   clear(): void;
 };
 
-export type ComposerSubmitMessage<TEvent = unknown> = (
-  args: ComposerSubmitMessageArgs<TEvent>,
+export type ComposerSubmitMessage<TData extends ClientDataMap = ClientDataMap> = (
+  args: ComposerSubmitMessageArgs<TData>,
 ) => Promise<void> | void;
 
 const ComposerRoot = forwardRef<HTMLFormElement, ComposerRootProps>(function ComposerRoot(
@@ -138,8 +144,9 @@ const ComposerRoot = forwardRef<HTMLFormElement, ComposerRootProps>(function Com
   const quoteControlled = quoteProp !== undefined;
   const hasMessageContent =
     input.trim().length > 0 || attachments.length > 0 || entities.length > 0 || quote !== undefined;
-  const canSubmit = hasMessageContent && chat.status !== "streaming";
-  const canStop = chat.status === "streaming";
+  const active = chat.status === "submitted" || chat.status === "streaming";
+  const canSubmit = hasMessageContent && !active;
+  const canStop = active;
 
   const setInput = useCallback(
     (nextInput: string) => {
@@ -227,10 +234,12 @@ const ComposerRoot = forwardRef<HTMLFormElement, ComposerRootProps>(function Com
         attachments.length === 0 &&
         entities.length === 0 &&
         quote === undefined) ||
+      chat.status === "submitted" ||
       chat.status === "streaming"
     ) {
       return;
     }
+    assertComposerEntitiesData(entities);
     if (submitMessage !== undefined) {
       await submitMessage({
         input: prompt,
@@ -260,7 +269,8 @@ const ComposerRoot = forwardRef<HTMLFormElement, ComposerRootProps>(function Com
     const metadata = composerSubmitMetadata(submittedQuote, submittedEntities);
     let payload: Parameters<typeof chat.sendMessage>[0];
     if (submittedAttachments.length === 0) {
-      payload = metadata === undefined ? prompt : { text: submittedText, metadata };
+      payload =
+        metadata === undefined ? { text: submittedText } : { text: submittedText, metadata };
     } else {
       const attachmentPayload: {
         text: string;
@@ -354,7 +364,6 @@ const ComposerRoot = forwardRef<HTMLFormElement, ComposerRootProps>(function Com
         {
           ...props,
           onSubmit: handleSubmit,
-          "data-anvia-composer": "",
           "data-state": chat.status,
         } as PrimitiveProps<"form">,
         ref,
@@ -382,8 +391,6 @@ const ComposerQuotePreview = forwardRef<HTMLQuoteElement, ComposerQuoteProps>(
       {
         ...props,
         children: renderedChildren,
-        "data-anvia-composer-quote": "",
-        "data-message-id": quote.messageId,
       } as PrimitiveProps<"blockquote">,
       ref,
     );
@@ -414,7 +421,6 @@ const ComposerClearQuote = forwardRef<HTMLButtonElement, PrimitiveProps<"button"
         disabled,
         onClick: handleClick,
         type: props.type ?? "button",
-        "data-anvia-clear-quote": "",
         "data-state": disabled ? "disabled" : "enabled",
       } as PrimitiveProps<"button">,
       ref,
@@ -464,12 +470,11 @@ const ComposerInput = forwardRef<HTMLDivElement, ComposerInputProps>(function Co
     {
       extensions,
       content: plainTextToComposerContent(composer.input),
-      editable: composer.status !== "streaming",
+      editable: composer.status !== "submitted" && composer.status !== "streaming",
       editorProps: {
         attributes: {
           "aria-label": props["aria-label"] ?? "Message",
           "aria-multiline": "true",
-          "data-anvia-composer-editor": "",
           role: "textbox",
         },
         handleKeyDown: (_view, event) => submitComposerFromEditorKeyDown(event, composerRef),
@@ -491,7 +496,11 @@ const ComposerInput = forwardRef<HTMLDivElement, ComposerInputProps>(function Co
     [extensions],
   );
   const ariaDisabled = props["aria-disabled"] === true || props["aria-disabled"] === "true";
-  const composerDisabled = disabled === true || ariaDisabled || composer.status === "streaming";
+  const composerDisabled =
+    disabled === true ||
+    ariaDisabled ||
+    composer.status === "submitted" ||
+    composer.status === "streaming";
   const inputStyle = useMemo<CSSProperties | undefined>(() => {
     if (!autoResize) {
       return style;
@@ -562,9 +571,8 @@ const ComposerInput = forwardRef<HTMLDivElement, ComposerInputProps>(function Co
       ...props,
       children: <EditorContent editor={editor} />,
       "aria-disabled": composerDisabled ? true : props["aria-disabled"],
-      "data-anvia-composer-input": "",
+      "data-role": "editor",
       "data-state": composerDisabled ? "disabled" : "enabled",
-      "data-auto-resize": autoResize ? "" : undefined,
       onKeyDown: handleKeyDown,
       style: inputStyle,
     } as PrimitiveProps<"div">,
@@ -646,13 +654,12 @@ const ComposerTextareaInput = forwardRef<HTMLTextAreaElement, ComposerTextareaIn
       {
         ...props,
         "aria-label": props["aria-label"] ?? "Message",
-        disabled: props.disabled ?? composer.status === "streaming",
+        disabled:
+          props.disabled ?? (composer.status === "submitted" || composer.status === "streaming"),
         onChange: handleChange,
         onKeyDown: handleKeyDown,
         rows: autoResize ? minRows : rows,
         value: composer.input,
-        "data-anvia-composer-input": "",
-        "data-anvia-composer-textarea-input": "",
       } as PrimitiveProps<"textarea">,
       composedInputRef,
     );
@@ -733,12 +740,15 @@ const ComposerEntityExtension = Mention.extend<
             : { "data-text": String(attributes.text) },
       },
       data: {
-        default: null,
+        default: undefined,
         parseHTML: (element) => dataFromAttribute(element.getAttribute("data-entity-data")),
-        renderHTML: (attributes) =>
-          attributes.data === undefined || attributes.data === null
-            ? {}
-            : { "data-entity-data": JSON.stringify(attributes.data) },
+        renderHTML: (attributes) => {
+          if (attributes.data === undefined) return {};
+          if (!isComposerEntityData(attributes.data)) {
+            throw new TypeError("Composer entity data must be a JSON value.");
+          }
+          return { "data-entity-data": JSON.stringify(attributes.data) };
+        },
       },
     };
   },
@@ -756,16 +766,12 @@ function composerInputExtensions({
     HardBreak,
     Placeholder.configure(placeholder === undefined ? {} : { placeholder }),
     ComposerEntityExtension.configure({
-      HTMLAttributes: {
-        "data-anvia-composer-entity": "",
-      },
+      HTMLAttributes: {},
       deleteTriggerWithBackspace: true,
       renderText: ({ node }) => composerEntityText(node.attrs as ComposerEntityAttrs),
       renderHTML: ({ node, options }) => [
         "span",
-        mergeAttributes(options.HTMLAttributes, {
-          "data-anvia-composer-entity": "",
-        }),
+        mergeAttributes(options.HTMLAttributes, {}),
         composerEntityText(node.attrs as ComposerEntityAttrs),
       ],
       suggestions: triggers.map((trigger) => composerSuggestion(trigger, composerRef)),
@@ -966,6 +972,9 @@ function triggerItemToEntityAttrs(
   trigger: ComposerTriggerDefinition,
   item: ComposerTriggerItemValue,
 ): ComposerEntityAttrs {
+  if (item.data !== undefined && !isComposerEntityData(item.data)) {
+    throw new TypeError("Composer trigger item data must be a JSON value.");
+  }
   return {
     id: item.id,
     label: item.label,
@@ -1101,7 +1110,7 @@ function composerEntityFromAttrs(
   const previous = previousEntities.find(
     (entity) => entity.id === id && entity.triggerId === triggerId && entity.trigger === trigger,
   );
-  const data = attrs?.data ?? previous?.data;
+  const data = attrs?.data === undefined ? previous?.data : attrs.data;
   const entity: ComposerEntity = {
     id,
     triggerId,
@@ -1130,14 +1139,15 @@ function stringAttr(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
-function dataFromAttribute(value: string | null): ComposerEntityData | null {
+function dataFromAttribute(value: string | null): ComposerEntityData | undefined {
   if (value === null) {
-    return null;
+    return undefined;
   }
   try {
-    return JSON.parse(value) as ComposerEntityData;
+    const parsed: unknown = JSON.parse(value);
+    return isComposerEntityData(parsed) ? parsed : undefined;
   } catch {
-    return null;
+    return undefined;
   }
 }
 
@@ -1224,10 +1234,10 @@ function normalizeQuote(quote: ComposerQuote | undefined): ComposerQuote | undef
   };
 }
 
-type ComposerSubmitMetadata = {
+type ComposerSubmitMetadata = ClientMetadata & {
   quote?: ComposerQuote;
-  composer?: {
-    entities: ComposerEntity[];
+  composer?: ClientMetadata & {
+    entities: readonly ClientMetadata[];
   };
 };
 
@@ -1240,7 +1250,32 @@ function composerSubmitMetadata(
   }
   const metadata: ComposerSubmitMetadata = {};
   if (quote !== undefined) metadata.quote = quote;
-  if (entities.length > 0) metadata.composer = { entities };
+  if (entities.length > 0) {
+    metadata.composer = { entities: entities.map(composerEntityMetadata) };
+  }
+  return metadata;
+}
+
+function assertComposerEntitiesData(entities: readonly ComposerEntity[]): void {
+  for (const entity of entities) {
+    if (entity.data !== undefined && !isComposerEntityData(entity.data)) {
+      throw new TypeError("Composer entity data must be a JSON value.");
+    }
+  }
+}
+
+function composerEntityMetadata(entity: ComposerEntity): ClientMetadata {
+  const metadata: ClientMetadata = {
+    id: entity.id,
+    triggerId: entity.triggerId,
+    trigger: entity.trigger,
+    label: entity.label,
+    text: entity.text,
+    range: { from: entity.range.from, to: entity.range.to },
+  };
+  if (entity.data !== undefined) {
+    metadata.data = entity.data;
+  }
   return metadata;
 }
 
@@ -1256,7 +1291,6 @@ const ComposerSubmit = forwardRef<HTMLButtonElement, PrimitiveProps<"button">>(
         children: props.children ?? "Send",
         disabled,
         type: props.type ?? "submit",
-        "data-anvia-submit": "",
         "data-state": disabled ? "disabled" : "enabled",
       } as PrimitiveProps<"button">,
       ref,
@@ -1290,7 +1324,6 @@ const ComposerStop = forwardRef<HTMLButtonElement, PrimitiveProps<"button">>(fun
       disabled,
       onClick: handleClick,
       type: props.type ?? "button",
-      "data-anvia-stop": "",
       "data-state": disabled ? "disabled" : "enabled",
     } as PrimitiveProps<"button">,
     ref,
@@ -1341,11 +1374,14 @@ const ComposerTriggerMenu = forwardRef<HTMLDivElement, ComposerTriggerMenuProps>
         children: renderedChildren,
         role: props.role ?? "listbox",
         style: menuStyle,
-        "data-anvia-composer-trigger-menu": "",
-        "data-empty": empty ? "" : undefined,
-        "data-loading": activeTrigger?.loading ? "" : undefined,
-        "data-trigger": activeTrigger?.trigger.char,
-        "data-trigger-id": activeTrigger?.trigger.id,
+        "data-state":
+          activeTrigger === undefined
+            ? "closed"
+            : activeTrigger.loading
+              ? "loading"
+              : empty
+                ? "empty"
+                : "open",
       } as PrimitiveProps<"div">,
       ref,
     );
@@ -1404,12 +1440,7 @@ const ComposerTriggerItem = forwardRef<HTMLButtonElement, ComposerTriggerItemPro
         role: props.role ?? "option",
         type: props.type ?? "button",
         "aria-selected": selected,
-        "data-anvia-composer-trigger-item": "",
-        "data-disabled": disabled ? "" : undefined,
-        "data-item-id": item.id,
-        "data-selected": selected ? "" : undefined,
-        "data-trigger": activeTrigger.trigger.char,
-        "data-trigger-id": activeTrigger.trigger.id,
+        "data-state": disabled ? "disabled" : selected ? "selected" : "idle",
       } as PrimitiveProps<"button">,
       ref,
     );
@@ -1447,11 +1478,11 @@ const ComposerAttachments = forwardRef<HTMLDivElement, ComposerAttachmentsProps>
           >
             {typeof children === "function"
               ? children(attachment)
-              : (children ?? <Attachment.Root />)}
+              : (children ?? <AttachmentPrimitive.Root />)}
           </InternalAttachmentProvider>
         )),
-        "data-anvia-composer-attachments": "",
-        "data-empty": empty ? "" : undefined,
+        "data-role": "attachments",
+        "data-state": empty ? "empty" : "populated",
       } as PrimitiveProps<"div">,
       ref,
     );
@@ -1468,7 +1499,8 @@ type ComposerAttachmentInputProps = PrimitiveProps<"input">;
 const ComposerAttachmentInput = forwardRef<HTMLInputElement, ComposerAttachmentInputProps>(
   function ComposerAttachmentInput({ onChange, ...props }, ref) {
     const composer = useComposer();
-    const disabled = props.disabled ?? composer.status === "streaming";
+    const disabled =
+      props.disabled ?? (composer.status === "submitted" || composer.status === "streaming");
 
     const handleChange = useCallback(
       async (event: ChangeEvent<HTMLInputElement>) => {
@@ -1494,7 +1526,6 @@ const ComposerAttachmentInput = forwardRef<HTMLInputElement, ComposerAttachmentI
           void handleChange(event);
         },
         type: "file",
-        "data-anvia-attachment-input": "",
         "data-state": disabled ? "disabled" : "enabled",
       } as PrimitiveProps<"input">,
       ref,
@@ -1506,7 +1537,8 @@ const ComposerAddAttachment = forwardRef<HTMLButtonElement, ComposerAddAttachmen
   function ComposerAddAttachment({ accept, multiple = false, onClick, ...props }, ref) {
     const composer = useComposer();
     const inputRef = useRef<HTMLInputElement | null>(null);
-    const disabled = props.disabled ?? composer.status === "streaming";
+    const disabled =
+      props.disabled ?? (composer.status === "submitted" || composer.status === "streaming");
 
     const handleClick = useCallback(
       (event: MouseEvent<HTMLButtonElement>) => {
@@ -1529,7 +1561,6 @@ const ComposerAddAttachment = forwardRef<HTMLButtonElement, ComposerAddAttachmen
             disabled,
             onClick: handleClick,
             type: props.type ?? "button",
-            "data-anvia-add-attachment": "",
             "data-state": disabled ? "disabled" : "enabled",
           } as PrimitiveProps<"button">,
           ref,
@@ -1558,7 +1589,8 @@ const ComposerAttachmentDropzone = forwardRef<HTMLDivElement, ComposerAttachment
   ) {
     const composer = useComposer();
     const [dragging, setDragging] = useState(false);
-    const disabled = disabledProp || composer.status === "streaming";
+    const disabled =
+      disabledProp || composer.status === "submitted" || composer.status === "streaming";
 
     const handleDragOver = useCallback(
       (event: DragEvent<HTMLDivElement>) => {
@@ -1603,9 +1635,7 @@ const ComposerAttachmentDropzone = forwardRef<HTMLDivElement, ComposerAttachment
         onDragLeave: handleDragLeave,
         onDragOver: handleDragOver,
         onDrop: handleDrop,
-        "data-anvia-attachment-dropzone": "",
-        "data-dragging": dragging ? "" : undefined,
-        "data-state": disabled ? "disabled" : "enabled",
+        "data-state": disabled ? "disabled" : dragging ? "dragging" : "enabled",
       } as PrimitiveProps<"div">,
       ref,
     );
@@ -1658,7 +1688,7 @@ function createAttachmentId(): string {
   return `attachment_${nextAttachmentId.toString(36)}`;
 }
 
-export const Composer = {
+export const ComposerPrimitive = {
   Root: ComposerRoot,
   Quote: ComposerQuotePreview,
   ClearQuote: ComposerClearQuote,

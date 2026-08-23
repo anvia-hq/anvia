@@ -2,14 +2,14 @@ import { render } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  Attachment,
+  AttachmentPrimitive as Attachment,
   ChatProvider,
-  Completion,
+  CompletionPrimitive as Completion,
   CompletionProvider,
-  Composer,
-  HumanInput,
-  Message,
-  Thread,
+  ComposerPrimitive as Composer,
+  HumanInputPrimitive as HumanInput,
+  MessagePrimitive as Message,
+  ThreadPrimitive as Thread,
 } from "../src";
 import { stringifyValue } from "../src/format";
 import { composeRefs } from "../src/primitives";
@@ -44,7 +44,7 @@ describe("shared internals", () => {
           <Thread.ScrollToBottom />
         </ChatProvider>,
       ),
-    ).toThrow("Thread primitives must be used inside Thread.Root.");
+    ).toThrow("Thread primitives must be used inside ThreadPrimitive.Root.");
 
     expect(() =>
       render(
@@ -52,7 +52,7 @@ describe("shared internals", () => {
           <Composer.Input />
         </ChatProvider>,
       ),
-    ).toThrow("Composer primitives must be used inside Composer.Root.");
+    ).toThrow("Composer primitives must be used inside ComposerPrimitive.Root.");
 
     expect(() =>
       render(
@@ -60,14 +60,14 @@ describe("shared internals", () => {
           <Completion.Input />
         </CompletionProvider>,
       ),
-    ).toThrow("Completion input primitives must be used inside Completion.Form.");
+    ).toThrow("Completion input primitives must be used inside CompletionPrimitive.Form.");
 
     expect(() => render(<Completion.Root />)).toThrow(
       "Anvia completion primitives must be used inside CompletionProvider.",
     );
 
     expect(() => render(<Message.Text />)).toThrow(
-      "Message part primitives must be used inside Message.Parts or Message.Part.",
+      "Message part primitives must be used inside MessagePrimitive.Parts or MessagePrimitive.Part.",
     );
 
     expect(() =>
@@ -76,7 +76,7 @@ describe("shared internals", () => {
           <HumanInput.Approve />
         </ChatProvider>,
       ),
-    ).toThrow("Approval primitives must be used inside HumanInput.Approval.");
+    ).toThrow("Approval primitives must be used inside HumanInputPrimitive.Approval.");
 
     expect(() =>
       render(
@@ -84,7 +84,7 @@ describe("shared internals", () => {
           <HumanInput.Question />
         </ChatProvider>,
       ),
-    ).toThrow("Question primitives must be used inside HumanInput.Question.");
+    ).toThrow("Question primitives must be used inside HumanInputPrimitive.Question.");
 
     expect(() =>
       render(
@@ -92,10 +92,10 @@ describe("shared internals", () => {
           <HumanInput.QuestionChoice />
         </ChatProvider>,
       ),
-    ).toThrow("Question choice primitives must be used inside HumanInput.QuestionPrompt.");
+    ).toThrow("Question choice primitives must be used inside HumanInputPrimitive.QuestionPrompt.");
 
     expect(() => render(<Attachment.Name />)).toThrow(
-      "Attachment primitives must be used inside Attachment.Root.",
+      "Attachment primitives must be used inside AttachmentPrimitive.Root.",
     );
   });
 });

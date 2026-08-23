@@ -76,6 +76,38 @@ describe("PlaygroundPage run action", () => {
     expect(sessionButton).toBeDefined();
     expect(sessionButton).not.toContain("<svg");
   });
+
+  it("replaces the sessions sidebar with the clean browser workspace", () => {
+    const html = render({
+      browserWorkspace: {
+        sandboxRef: "sandbox_ref",
+        view: { id: "desktop", label: "Browser", protocol: "novnc" },
+      },
+      browserWorkspaceOpen: true,
+    });
+
+    expect(html).toContain('aria-label="Browser workspace"');
+    expect(html).toContain('aria-label="Live browser desktop"');
+    expect(html).not.toContain('aria-label="Sessions"');
+    expect(html).not.toContain("<iframe");
+    expect(html).not.toContain("noVNC");
+    expect(html).not.toContain("Password");
+    expect(html).not.toContain("max-lg:hidden");
+  });
+
+  it("keeps a closed browser workspace available to restore", () => {
+    const html = render({
+      browserWorkspace: {
+        sandboxRef: "sandbox_ref",
+        view: { id: "desktop", label: "Browser", protocol: "novnc" },
+      },
+      browserWorkspaceOpen: false,
+    });
+
+    expect(html).toContain('aria-label="Open browser workspace"');
+    expect(html).toContain('aria-label="Sessions"');
+    expect(html).not.toContain('aria-label="Browser workspace"');
+  });
 });
 
 function render(overrides: Partial<Parameters<typeof PlaygroundPage>[0]> = {}): string {
@@ -85,6 +117,8 @@ function render(overrides: Partial<Parameters<typeof PlaygroundPage>[0]> = {}): 
       allSessions={[]}
       answeringQuestions={new Set()}
       attachments={[]}
+      browserWorkspace={undefined}
+      browserWorkspaceOpen={false}
       decidingApprovals={new Set()}
       hasMessages={false}
       isStreaming={false}
@@ -105,8 +139,11 @@ function render(overrides: Partial<Parameters<typeof PlaygroundPage>[0]> = {}): 
       transcriptResetKey={0}
       onAddPromptAttachments={vi.fn()}
       onApprovalDecision={vi.fn()}
+      onCloseBrowserWorkspace={vi.fn()}
       onDeleteSession={vi.fn()}
+      onError={vi.fn()}
       onLoadSession={vi.fn()}
+      onOpenBrowserWorkspace={vi.fn()}
       onOpenTrace={vi.fn()}
       onPromptChange={vi.fn()}
       onPromptKeyDown={vi.fn()}

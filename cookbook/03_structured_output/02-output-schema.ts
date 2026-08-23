@@ -1,0 +1,31 @@
+import { Agent } from "@anvia/core/agent";
+import { OpenAIClient } from "@anvia/openai";
+import { z } from "zod";
+
+// outputSchema asks the model to answer with data matching this schema.
+const summarySchema = z
+  .object({
+    title: z.string(),
+    bullets: z.array(z.string()).min(2).max(4),
+  })
+  .meta({ title: "summary_response" });
+
+const client = new OpenAIClient({
+  baseUrl: process.env.OPENAI_BASEURL,
+  apiKey: process.env.OPENAI_API_KEY ?? "",
+});
+const agentModel = client.completionModel({ modelId: "gpt-5.5", api: "responses" });
+
+const agent = new Agent({
+  id: "agent",
+  model: agentModel,
+  instructions: "Return only data that matches the requested schema.",
+  outputSchema: summarySchema,
+});
+
+const response = await agent.generate({
+  prompt: "Summarize why tool calling is useful for agent frameworks.",
+});
+
+if (response.type !== "response") throw new Error("Unexpected tool approval request.");
+console.log(response.output);

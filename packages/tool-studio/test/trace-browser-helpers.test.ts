@@ -95,7 +95,11 @@ describe("trace browser helper behavior", () => {
 
   it("creates compact trace and observation metadata groups", () => {
     const subject = trace({
-      trace: { traceId: "external_trace", observationId: "root_observation" },
+      trace: {
+        observer: "external",
+        traceId: "external_trace",
+        observationId: "root_observation",
+      },
       durationMs: 100,
       endedAt: "2026-06-20T12:00:01.000Z",
       metadata: { messages: [{}, {}], custom: true },
@@ -124,9 +128,7 @@ describe("trace browser helper behavior", () => {
           durationMs: 250,
           metadata: {
             provider: "test",
-            model: "alpha",
-            requestedModel: "alpha-large",
-            defaultModel: "alpha",
+            modelId: "alpha",
             historyCount: 3,
             documentCount: 1,
             toolCount: 2,
@@ -140,7 +142,7 @@ describe("trace browser helper behavior", () => {
       status: "success",
       kind: "generation",
       parentObservationId: "parent",
-      modelInfo: { provider: "test", model: "alpha", requestedModel: "alpha-large" },
+      modelInfo: { provider: "test", modelId: "alpha" },
       modelCall: { request: { messageCount: 3, documentCount: 1, toolCount: 2 } },
       response: { usage: usage(4, 5) },
       tools: { count: 2, names: ["lookup"] },

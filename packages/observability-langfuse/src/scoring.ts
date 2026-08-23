@@ -23,7 +23,7 @@ export type ScoreQueueOptions = {
   timeoutMs: number;
   batchSize: number;
   flushIntervalMs: number;
-  maxRetries: number;
+  maxAttempts: number;
   fetchImpl?: typeof fetch;
   sleep?: (ms: number) => Promise<void>;
   setTimer?: (handler: () => void, ms: number) => unknown;
@@ -59,7 +59,7 @@ export class ScoreQueue {
   private readonly timeoutMs: number;
   private readonly batchSize: number;
   private readonly flushIntervalMs: number;
-  private readonly maxRetries: number;
+  private readonly maxAttempts: number;
   private readonly fetchImpl: typeof fetch;
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly setTimer: (handler: () => void, ms: number) => unknown;
@@ -72,7 +72,7 @@ export class ScoreQueue {
     this.timeoutMs = options.timeoutMs;
     this.batchSize = options.batchSize;
     this.flushIntervalMs = options.flushIntervalMs;
-    this.maxRetries = options.maxRetries;
+    this.maxAttempts = options.maxAttempts;
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.sleep = options.sleep ?? defaultSleep;
     this.setTimer = options.setTimer ?? defaultSetTimer;
@@ -123,11 +123,7 @@ export class ScoreQueue {
   async shutdown(): Promise<void> {
     this.closed = true;
     this.clearScheduledTimer();
-    try {
-      await this.flush();
-    } catch {
-      // Shutdown is best-effort so a score delivery failure cannot block SDK teardown.
-    }
+    await this.flush();
   }
 
   private scheduleTimer(): void {
@@ -154,7 +150,7 @@ export class ScoreQueue {
   private async sendBatch(scores: LangfuseScoreArgs[]): Promise<void> {
     const body = scores.map((score) => buildScoreBody(score));
     let lastError: unknown;
-    for (let attempt = 0; attempt < this.maxRetries; attempt += 1) {
+    for (let attempt = 0; attempt < this.maxAttempts; attempt += 1) {
       try {
         const response = await this.fetchImpl(`${this.baseUrl}/api/public/scores`, {
           method: "POST",
@@ -183,12 +179,12 @@ export class ScoreQueue {
         }
         lastError = error;
       }
-      if (attempt < this.maxRetries - 1) {
+      if (attempt < this.maxAttempts - 1) {
         await this.sleep(computeBackoff(attempt));
       }
     }
     throw new RetryableLangfuseScoreError(
-      `Langfuse score batch failed after ${this.maxRetries} attempts`,
+      `Langfuse score batch failed after ${this.maxAttempts} attempts`,
       scores,
       lastError,
     );

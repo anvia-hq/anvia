@@ -5,7 +5,7 @@ export { defineMetric } from "./metric";
 export * from "./metrics";
 export * from "./outcome";
 export { defaultEvalTraceSelector, projectEvalOutcome, resolveEvalTraceRef } from "./reporting";
-export { runEvalSuite } from "./runner";
+export { EvalReporterDispatchError, runEvalSuite } from "./runner";
 export { selectPromptOutput } from "./selectors";
 export * from "./suite";
 export type {
@@ -28,6 +28,7 @@ export type {
   EvalOutcomeStatus,
   EvalReportArgs,
   EvalReporter,
+  EvalReporterErrorPolicy,
   EvalRunContext,
   EvalRunEndArgs,
   EvalRunOptions,

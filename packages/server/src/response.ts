@@ -1,14 +1,12 @@
-import type { UIStreamEvent } from "@anvia/core/ui";
 import { createJsonlStream } from "./jsonl";
 import { createResumableStream, resumeStreamEvents } from "./resumable";
 import { createSseStream } from "./sse";
 import type {
-  CreateEventStreamOptions,
-  CreateEventStreamResumeOptions,
+  CreateEventStreamResponseOptions,
   EventStreamFormat,
   JsonlStreamOptions,
   ResumableStreamEnvelope,
-  ResumableStreamStore,
+  ResumeEventStreamResponseOptions,
   SseStreamOptions,
 } from "./types";
 
@@ -23,58 +21,37 @@ type EventStreamResponseOptions<TEvent> = {
   sse?: SseStreamOptions<ResponseStreamEvent<TEvent>>;
 };
 
-export function createEventStream<TEvent>(
-  events: AsyncIterable<TEvent>,
-  options?: CreateEventStreamOptions<TEvent>,
-): Response;
-export function createEventStream<TEvent>(
-  options: CreateEventStreamResumeOptions<TEvent>,
-): Response;
-export function createEventStream<TEvent>(
-  eventsOrOptions: AsyncIterable<TEvent> | CreateEventStreamResumeOptions<TEvent>,
-  options: CreateEventStreamOptions<TEvent> = {},
+export function createEventStreamResponse<TEvent>(
+  options: CreateEventStreamResponseOptions<TEvent> & { events: AsyncIterable<TEvent> },
 ): Response {
-  if (isResumeOptions(eventsOrOptions)) {
-    const resume = eventsOrOptions.resume;
-    return createEventStreamResponse(
-      resumeStreamEvents({
-        id: resume.streamId,
-        after: resume.after,
-        store: resume.store,
-      }),
-      copyResponseOptions(eventsOrOptions),
-    );
-  }
-
   const eventsForResponse: AsyncIterable<ResponseStreamEvent<TEvent>> =
     options.resumable === undefined
-      ? (eventsOrOptions as AsyncIterable<ResponseStreamEvent<TEvent>>)
-      : createResumableStream(eventsOrOptions, options.resumable);
+      ? (options.events as AsyncIterable<ResponseStreamEvent<TEvent>>)
+      : createResumableStream({ events: options.events, ...options.resumable });
 
-  return createEventStreamResponse(eventsForResponse, copyResponseOptions(options));
+  return encodeEventStreamResponse({
+    events: eventsForResponse,
+    ...copyResponseOptions(options),
+  });
 }
 
-export function createUIStreamResponse(
-  events: AsyncIterable<UIStreamEvent>,
-  options?: CreateEventStreamOptions<UIStreamEvent>,
-): Response;
-export function createUIStreamResponse(
-  options: CreateEventStreamResumeOptions<UIStreamEvent>,
-): Response;
-export function createUIStreamResponse(
-  eventsOrOptions: AsyncIterable<UIStreamEvent> | CreateEventStreamResumeOptions<UIStreamEvent>,
-  options: CreateEventStreamOptions<UIStreamEvent> = {},
+export function resumeEventStreamResponse<TEvent>(
+  options: ResumeEventStreamResponseOptions<TEvent>,
 ): Response {
-  if (isResumeOptions(eventsOrOptions)) {
-    return createEventStream(eventsOrOptions);
-  }
-
-  return createEventStream(eventsOrOptions, options);
+  return encodeEventStreamResponse({
+    events: resumeStreamEvents({
+      id: options.streamId,
+      after: options.after,
+      store: options.store,
+    }),
+    ...copyResponseOptions(options),
+  });
 }
 
-function createEventStreamResponse<TEvent>(
-  events: AsyncIterable<ResponseStreamEvent<TEvent>>,
-  options: EventStreamResponseOptions<TEvent>,
+export function encodeEventStreamResponse<TEvent>(
+  options: EventStreamResponseOptions<TEvent> & {
+    events: AsyncIterable<ResponseStreamEvent<TEvent>>;
+  },
 ): Response {
   const format = options.format ?? "jsonl";
   const headers = new Headers(options.headers);
@@ -91,8 +68,8 @@ function createEventStreamResponse<TEvent>(
 
   const body =
     format === "sse"
-      ? createSseStream(events, options.sse)
-      : createJsonlStream(events, options.jsonl);
+      ? createSseStream({ events: options.events, ...options.sse })
+      : createJsonlStream({ events: options.events, ...options.jsonl });
 
   if (!headers.has("content-type")) {
     headers.set(
@@ -132,39 +109,4 @@ function copyResponseOptions<TEvent>(options: {
     next.sse = options.sse as SseStreamOptions<ResponseStreamEvent<TEvent>>;
   }
   return next;
-}
-
-function isResumeOptions<TEvent>(
-  value: AsyncIterable<TEvent> | CreateEventStreamResumeOptions<TEvent>,
-): value is CreateEventStreamResumeOptions<TEvent> {
-  if (typeof value !== "object" || value === null || Symbol.asyncIterator in value) {
-    return false;
-  }
-  if (!("resume" in value) || typeof value.resume !== "object" || value.resume === null) {
-    return false;
-  }
-
-  const resume = value.resume as {
-    streamId?: unknown;
-    after?: unknown;
-    store?: unknown;
-  };
-  return (
-    typeof resume.streamId === "string" &&
-    typeof resume.after === "number" &&
-    Number.isFinite(resume.after) &&
-    resume.after >= 0 &&
-    isResumableStreamStore(resume.store)
-  );
-}
-
-function isResumableStreamStore(value: unknown): value is ResumableStreamStore {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "subscribe" in value &&
-    typeof value.subscribe === "function" &&
-    "status" in value &&
-    typeof value.status === "function"
-  );
 }

@@ -1,4 +1,9 @@
-import type { CompletionResponse, Message, ToolResultContent, Usage } from "../completion/types";
+import type {
+  CompletionResponse,
+  Message,
+  ToolResultContentPart,
+  Usage,
+} from "../completion/types";
 
 export type HookAction = { type: "continue" } | { type: "terminate"; reason: string };
 export type ToolApprovalRequestOptions = {
@@ -24,9 +29,6 @@ export type ToolCallControl = {
   requestApproval(options?: ToolApprovalRequestOptions): ToolCallHookAction;
 };
 
-export type HookResult = HookAction | undefined;
-export type ToolCallHookResult = ToolCallHookAction | undefined;
-
 type HookCallback<Args> = (
   args: Args,
 ) => HookAction | Promise<HookAction | undefined> | Promise<void> | void;
@@ -48,7 +50,9 @@ export type RunStartHookArgs = {
 };
 
 export type RunEndHookArgs = {
-  output: string;
+  status: "completed";
+  output: unknown;
+  text: string;
   usage: Usage;
   messages: Message[];
   run: RunControl;
@@ -88,7 +92,8 @@ export type CompletionErrorHookArgs = {
 
 export type ToolHookArgs = {
   toolName: string;
-  toolCallId?: string;
+  toolCallId: string;
+  callId?: string;
   internalCallId: string;
   args: string;
 };
@@ -99,7 +104,7 @@ export type ToolCallHookArgs = ToolHookArgs & {
 
 export type ToolResultHookArgs = ToolHookArgs & {
   result: string;
-  structuredResult?: ToolResultContent[] | undefined;
+  structuredResult?: readonly ToolResultContentPart[] | undefined;
   run: RunControl;
 };
 
@@ -108,7 +113,7 @@ export type ToolErrorHookArgs = ToolHookArgs & {
   run: RunControl;
 };
 
-export interface PromptHook<RawResponse = unknown> {
+export interface AgentHook<RawResponse = unknown> {
   onRunStart?: HookCallback<RunStartHookArgs>;
   onRunEnd?: HookCallback<RunEndHookArgs>;
   onRunError?: HookCallback<RunErrorHookArgs>;

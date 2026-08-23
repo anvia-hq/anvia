@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { GrokAudioGenerationModel, GrokTranscriptionModel } from "../src/index";
+import { GrokSpeechGenerationModel } from "../src/grok/speech-generation";
+import { GrokTranscriptionModel } from "../src/grok/transcription";
 
 describe("Grok batch media models", () => {
-  it("maps audio generation to xAI TTS and returns binary audio", async () => {
+  it("maps speech generation to xAI TTS and returns binary audio", async () => {
     const calls: Array<{ url: string; init: RequestInit | undefined }> = [];
     const fetchFn = (async (url: string | URL | Request, init?: RequestInit) => {
       calls.push({ url: String(url), init });
@@ -11,17 +12,17 @@ describe("Grok batch media models", () => {
         headers: { "content-type": "audio/mpeg" },
       });
     }) as typeof fetch;
-    const model = new GrokAudioGenerationModel({
+    const model = new GrokSpeechGenerationModel({
       apiKey: "key",
       baseUrl: "https://api.x.ai/v1",
       fetch: fetchFn,
     });
 
-    const response = await model.audioGeneration({
+    const response = await model.speechGeneration({
       text: "Hello",
       voice: "eve",
       speed: 1,
-      additionalParams: {
+      providerOptions: {
         language: "id",
         output_format: { codec: "mp3", sample_rate: 24_000 },
       },
@@ -35,12 +36,12 @@ describe("Grok batch media models", () => {
       output_format: { codec: "mp3", sample_rate: 24_000 },
     });
     expect(new Headers(calls[0]?.init?.headers).get("authorization")).toBe("Bearer key");
-    expect(Array.from(response.audio)).toEqual([1, 2, 3]);
-    expect(response.mediaType).toBe("audio/mpeg");
+    expect(Array.from(response.audio.data)).toEqual([1, 2, 3]);
+    expect(response.audio.mediaType).toBe("audio/mpeg");
   });
 
   it("accepts base64 JSON TTS responses and rejects unsupported speed", async () => {
-    const model = new GrokAudioGenerationModel({
+    const model = new GrokSpeechGenerationModel({
       apiKey: "key",
       baseUrl: "https://api.x.ai/v1",
       fetch: async () =>
@@ -51,13 +52,12 @@ describe("Grok batch media models", () => {
     });
 
     await expect(
-      model.audioGeneration({ text: "Hello", voice: "eve", speed: 1 }),
+      model.speechGeneration({ text: "Hello", voice: "eve", speed: 1 }),
     ).resolves.toMatchObject({
-      audio: new Uint8Array([1, 2, 3]),
-      mediaType: "audio/wav",
+      audio: { data: new Uint8Array([1, 2, 3]), mediaType: "audio/wav" },
     });
     await expect(
-      model.audioGeneration({ text: "Hello", voice: "eve", speed: 1.5 }),
+      model.speechGeneration({ text: "Hello", voice: "eve", speed: 1.5 }),
     ).rejects.toThrow("does not expose speed control");
   });
 
@@ -78,7 +78,7 @@ describe("Grok batch media models", () => {
       data: new Uint8Array([1, 2, 3]),
       filename: "speech.mp3",
       language: "en",
-      additionalParams: {
+      providerOptions: {
         format: true,
         keyterm: ["Anvia", "Grok"],
       },

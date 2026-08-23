@@ -1,37 +1,31 @@
-import type { ContextUsage, Message } from "@anvia/core/completion";
 import type {
+  ClientDataMap,
+  ClientInteraction,
+  ClientMetadata,
+  ClientStreamCursor,
+  ClientStreamEvent,
+  ClientStreamRequest,
+  ClientTransport,
   CreateUIAttachment,
   UIMessage,
-  UIStreamEvent,
-  UIStreamRequest,
-  UIStreamResume,
-} from "@anvia/core/ui";
+} from "@anvia/client";
+import type { AgentInteractionResponse } from "@anvia/core/agent/interactions";
+import type { ContextUsage } from "@anvia/core/completion";
 
-export type {
-  CreateUIAttachment,
-  UIAttachment,
-  UIError,
-  UIMessage,
-  UIMessagePart,
-  UIMessageRole,
-  UIStreamEvent,
-  UIStreamRequest,
-  UIStreamResume,
-} from "@anvia/core/ui";
+export type AnyClientTransport = ClientTransport<
+  ClientStreamRequest,
+  ClientDataMap,
+  ClientMetadata
+>;
 
-export type EventStreamFormat = "jsonl" | "sse";
+type TransportTypes<Transport extends AnyClientTransport> = NonNullable<Transport["_types"]>;
 
-export type TransportOptions = {
-  signal?: AbortSignal;
-  headers?: HeadersInit;
-};
+export type TransportData<Transport extends AnyClientTransport> = TransportTypes<Transport>["data"];
 
-export type EventTransport<TRequest, TEvent> = {
-  send(request: TRequest, options?: TransportOptions): AsyncIterable<TEvent>;
-};
+export type TransportMetadata<Transport extends AnyClientTransport> =
+  TransportTypes<Transport>["metadata"];
 
-export type ChatResumeCursor = UIStreamResume;
-
+export type ChatResumeCursor = ClientStreamCursor;
 export type ChatResumeStorage = "sessionStorage" | "localStorage" | Storage;
 
 export type ChatResumeOptions = {
@@ -40,186 +34,71 @@ export type ChatResumeOptions = {
   auto?: boolean;
 };
 
-export type ChatResumeState = {
-  version: 1;
+export type ChatResumeState<
+  Metadata extends ClientMetadata = ClientMetadata,
+  Data extends ClientDataMap = ClientDataMap,
+> = {
+  version: 3;
   streamId: string;
   lastEventId: number;
-  messages: UIMessage[];
+  messages: readonly UIMessage<Metadata, Data>[];
+  interactions: readonly ClientInteraction[];
+  request: ClientStreamRequest<Metadata>;
 };
 
-export type ResumableStreamEnvelope<TEvent> =
-  | {
-      type: "stream_start";
-      streamId: string;
-      eventId: 0;
-    }
-  | {
-      type: "stream_event";
-      streamId: string;
-      eventId: number;
-      event: TEvent;
-    }
-  | {
-      type: "stream_end";
-      streamId: string;
-      eventId: number;
-      status: "running" | "completed" | "error" | "missing";
-    };
-
-export type ToolApprovalStatus = "pending" | "approved" | "rejected" | "timed_out" | "cancelled";
-
-export type ToolApproval = {
-  id: string;
-  runId?: string;
-  agentId?: string;
-  sessionId?: string;
-  toolName: string;
-  callId?: string;
-  internalCallId?: string;
-  args?: string;
-  status: ToolApprovalStatus;
-  requestedAt?: string;
-  resolvedAt?: string;
-  reason?: string;
-};
-
-export type ToolQuestionStatus = "pending" | "answered" | "cancelled";
-
-export type ToolQuestionChoice = {
-  label: string;
-  value: string;
-};
-
-export type ToolQuestionPrompt = {
-  id: string;
-  question: string;
-  choices: ToolQuestionChoice[];
-};
-
-export type ToolQuestionAnswer = {
-  questionId: string;
-  answer: string;
-  choice?: string;
-  custom?: boolean;
-};
-
-export type ToolQuestion = {
-  id: string;
-  runId?: string;
-  agentId?: string;
-  sessionId?: string;
-  toolName: string;
-  callId?: string;
-  internalCallId?: string;
-  args?: string;
-  questions: ToolQuestionPrompt[];
-  status: ToolQuestionStatus;
-  requestedAt?: string;
-  answeredAt?: string;
-  cancelledAt?: string;
-  answers?: ToolQuestionAnswer[];
-};
-
-export type ToolApprovalDecisionInput = {
-  approvalId: string;
-  approved: boolean;
-  reason?: string;
-  approval?: ToolApproval;
-};
-
-export type ToolQuestionAnswerInput = {
-  questionId: string;
-  answers: ToolQuestionAnswer[];
-  question?: ToolQuestion;
-};
-
-export type HumanInputOptions<TEvent = unknown> = {
-  endpoint?: string | URL;
-  fetch?: typeof fetch;
-  eventToApproval?: (event: TEvent) => ToolApproval | undefined;
-  eventToQuestion?: (event: TEvent) => ToolQuestion | undefined;
-  decideApproval?: (decision: ToolApprovalDecisionInput) => Promise<ToolApproval | undefined>;
-  answerQuestion?: (answer: ToolQuestionAnswerInput) => Promise<ToolQuestion | undefined>;
-};
-
-export type HumanInputState = {
-  approvals: {
-    all: ToolApproval[];
-    pending: ToolApproval[];
-  };
-  questions: {
-    all: ToolQuestion[];
-    pending: ToolQuestion[];
-  };
-};
-
-export type ChatSuggestion = {
+export type ChatSuggestion<Metadata extends ClientMetadata = ClientMetadata> = {
   id: string;
   prompt: string;
   label?: string;
-  metadata?: UIMessage["metadata"];
+  metadata?: Metadata;
 };
 
-export type SendMessageInput =
-  | string
-  | UIMessage
-  | {
-      id?: string;
-      text?: string;
-      attachments?: CreateUIAttachment[];
-      metadata?: UIMessage["metadata"];
-    };
-
-export type CreateChatRequestArgs = {
-  messages: UIMessage[];
-  uiMessages: UIMessage[];
-  coreMessages: Message[];
-  resume?: ChatResumeCursor | undefined;
+export type SendMessageInput<Metadata extends ClientMetadata = ClientMetadata> = {
+  text?: string;
+  attachments?: readonly CreateUIAttachment[];
+  metadata?: Metadata;
 };
 
-export type UseChatStatus = "idle" | "streaming" | "error";
+export type UseChatStatus = "ready" | "submitted" | "streaming" | "waiting" | "error";
 
-export type UseChatOptions<TRequest = UIStreamRequest, TEvent = UIStreamEvent> = {
-  transport?: EventTransport<TRequest, TEvent>;
-  endpoint?: string | URL;
-  format?: EventStreamFormat;
-  initialMessages?: UIMessage[];
+export type UseChatOptions<Transport extends AnyClientTransport = ClientTransport> = {
+  transport: Transport;
+  initialMessages?: readonly UIMessage<TransportMetadata<Transport>, TransportData<Transport>>[];
   resume?: ChatResumeOptions;
-  createRequest?: (args: CreateChatRequestArgs) => TRequest;
-  eventToUIEvent?: (event: TEvent) => UIStreamEvent | undefined;
-  eventToDelta?: (event: TEvent) => string | undefined;
-  eventToFinal?: (event: TEvent) => string | undefined;
-  humanInput?: HumanInputOptions<TEvent>;
-  suggestions?: ChatSuggestion[];
-  onEvent?: (event: TEvent) => void;
-  onError?: (error: unknown) => void;
+  suggestions?: readonly ChatSuggestion<TransportMetadata<Transport>>[];
+  onEvent?(event: ClientStreamEvent<TransportMetadata<Transport>, TransportData<Transport>>): void;
+  onError?(error: Error): void;
 };
 
-export type SetMessages = (
-  messages: UIMessage[] | ((messages: UIMessage[]) => UIMessage[]),
+export type SetMessages<Metadata extends ClientMetadata, Data extends ClientDataMap> = (
+  messages:
+    | readonly UIMessage<Metadata, Data>[]
+    | ((messages: readonly UIMessage<Metadata, Data>[]) => readonly UIMessage<Metadata, Data>[]),
 ) => void;
 
-export type UseChatResult<TEvent = UIStreamEvent> = {
-  messages: UIMessage[];
-  events: TEvent[];
+export type UseChatResult<Transport extends AnyClientTransport = ClientTransport> = {
+  messages: readonly UIMessage<TransportMetadata<Transport>, TransportData<Transport>>[];
+  events: readonly ClientStreamEvent<TransportMetadata<Transport>, TransportData<Transport>>[];
   contextUsage: ContextUsage | undefined;
-  suggestions?: ChatSuggestion[];
-  setMessages: SetMessages;
-  sendMessage(input: SendMessageInput): Promise<void>;
-  send(input?: string): Promise<void>;
+  suggestions: readonly ChatSuggestion<TransportMetadata<Transport>>[];
+  setMessages: SetMessages<TransportMetadata<Transport>, TransportData<Transport>>;
+  sendMessage(input: SendMessageInput<TransportMetadata<Transport>>): Promise<void>;
   regenerate(): Promise<void>;
   stop(): void;
-  reset(messages?: UIMessage[]): void;
+  reset(): void;
   status: UseChatStatus;
-  error: unknown;
+  error: Error | undefined;
   text: string;
-  streamId?: string | undefined;
+  streamId: string | undefined;
   isResuming: boolean;
   resume(): Promise<void>;
-  humanInput: HumanInputState;
-  decidingApprovals: ReadonlySet<string>;
-  answeringQuestions: ReadonlySet<string>;
-  approveTool(approvalId: string, reason?: string): Promise<void>;
-  rejectTool(approvalId: string, reason?: string): Promise<void>;
-  answerToolQuestion(questionId: string, answers: ToolQuestionAnswer[]): Promise<void>;
+  interactions: {
+    all: readonly ClientInteraction[];
+    pending: readonly ClientInteraction[];
+  };
+  respondingInteractions: ReadonlySet<string>;
+  respondToInteraction(options: {
+    interactionId: string;
+    response: AgentInteractionResponse;
+  }): Promise<void>;
 };

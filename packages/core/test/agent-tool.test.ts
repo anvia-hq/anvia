@@ -1,7 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import { z } from "zod";
+import { getAgentToolState } from "../src/agent/tool-state";
 import {
-  AgentBuilder,
+  Agent,
+  AgentToolSuspensionError,
+  type AnyTool,
   AssistantContent,
   type CompletionModel,
   type CompletionRequest,
@@ -9,19 +12,23 @@ import {
   createMiddleware,
   createObserver,
   createTool,
+  createVectorContext,
   defineGuardrailPolicy,
   defineInputGuardrail,
+  type EmbeddingModel,
+  isToolIndex,
+  type JsonObject,
   MaxTurnsError,
-  type Tool,
-  type ToolSearchDocument,
-  ToolSet,
+  type ToolIndex,
   Usage,
-  type VectorSearchIndex,
+  type VectorContext,
+  type VectorSearchResult,
+  type VectorStore,
 } from "./helpers/imports";
 
 class QueueModel implements CompletionModel {
   readonly provider = "test";
-  readonly defaultModel = "test";
+  readonly modelId = "test";
   readonly capabilities = {
     streaming: false,
     tools: true,
@@ -30,6 +37,7 @@ class QueueModel implements CompletionModel {
     documentInput: true,
     outputSchema: true,
     reasoning: true,
+    providerTools: true,
   };
   readonly requests: CompletionRequest[] = [];
 
@@ -56,54 +64,495 @@ function response(choice: CompletionResponse["choice"]): CompletionResponse {
 const addTool = createTool({
   name: "add",
   description: "Add numbers",
-  input: z.object({
+  inputSchema: z.object({
     x: z.number(),
     y: z.number(),
   }),
-  output: z.number(),
+  outputSchema: z.number(),
   execute: ({ x, y }) => x + y,
 });
 
-const searchTool: Tool<{ query: string; topK?: number }, unknown> = {
-  name: "search",
-  definition() {
-    return {
-      name: "search",
-      description: "Search documents",
-      parameters: {
-        type: "object",
-        properties: {
-          query: { type: "string" },
-          topK: { type: "number" },
-        },
-        required: ["query"],
-        additionalProperties: false,
-      },
-    };
-  },
-  call() {
-    return [];
+const embeddingModel: EmbeddingModel = {
+  provider: "test",
+  modelId: "test-embedding",
+  async embedTexts(texts) {
+    return texts.map((document) => ({ document, vector: [1] }));
   },
 };
 
-function emptyIndex<T>(): VectorSearchIndex<T> {
+function emptyStore<T>(): VectorStore<T> {
   return {
+    async ensure() {},
+    async validate() {},
+    async upsert() {},
     async search() {
       return [];
-    },
-    async searchIds() {
-      return [];
-    },
-    asTool() {
-      return searchTool;
     },
   };
 }
 
+function emptyToolIndex(tools: AnyTool[] = [], topK = 1): ToolIndex {
+  return {
+    kind: "tool-index",
+    tools,
+    topK,
+    async search() {
+      return [];
+    },
+  };
+}
+
+describe("Agent construction", () => {
+  it("normalizes the public options into ready-to-run agent state", () => {
+    const model = new QueueModel([]);
+    const outputSchema = z.object({ answer: z.string() });
+    const middleware = createMiddleware({});
+    const observer = createObserver({
+      startRun() {
+        return { end() {} };
+      },
+    });
+    const dynamicContextStore = emptyStore<unknown>();
+    const indexedTool = { ...addTool, name: "indexed_add" };
+    const toolIndex = emptyToolIndex([indexedTool], 3);
+    const skillTool = { ...addTool, name: "skill_add" };
+    const mcpTool = {
+      ...addTool,
+      name: "mcp_add",
+      mcp: { serverName: "math", remoteName: "add" },
+    };
+    const tools = [addTool];
+    const context = [{ id: "policy", text: "Keep answers short." }];
+
+    const agent = new Agent({
+      id: " support ",
+      model,
+      name: "Support",
+      instructions: "Help customers.",
+      context: [
+        ...context,
+        createVectorContext({
+          store: dynamicContextStore,
+          model: embeddingModel,
+          topK: 2,
+          minScore: 0.5,
+        }),
+      ],
+      tools: [...tools, toolIndex],
+      mcpServers: [{ name: "math", tools: [mcpTool] }],
+      skills: {
+        skills: [],
+        tools: [skillTool],
+        instructions: "Use the loaded skills.",
+      },
+      temperature: 0.2,
+      maxTokens: 500,
+      maxTurns: 4,
+      middlewares: [middleware],
+      observability: {
+        observers: { test: observer },
+        primaryTrace: "test",
+        errorPolicy: "throw",
+      },
+      outputSchema,
+    });
+
+    tools.push(skillTool);
+    context.push({ id: "late", text: "Late context." });
+
+    expect(agent.id).toBe("support");
+    expect(agent.instructions).toBe("Help customers.\n\nUse the loaded skills.");
+    expect(agent.context).toEqual([
+      { id: "policy", text: "Keep answers short." },
+      createVectorContext({
+        store: dynamicContextStore,
+        model: embeddingModel,
+        topK: 2,
+        minScore: 0.5,
+      }),
+    ]);
+    expect(agent.tools.map((tool) => tool.name)).toEqual([
+      "add",
+      "skill_add",
+      "mcp_add",
+      "indexed_add",
+    ]);
+    expect(agent.defaultMaxTurns).toBe(4);
+    expect(agent.middlewares).toEqual([middleware]);
+    expect(agent.observability).toEqual({
+      observers: { test: observer },
+      primaryTrace: "test",
+      errorPolicy: "throw",
+    });
+    expect(Object.isFrozen(agent.middlewares)).toBe(true);
+    expect(Object.isFrozen(agent.observability)).toBe(true);
+    expect(Object.isFrozen(agent.observability?.observers)).toBe(true);
+    expect(Object.isFrozen(agent.guardrails)).toBe(true);
+    expect(agent.outputSchema).toBe(outputSchema);
+  });
+
+  it("snapshots nested data options while preserving behavioral capabilities", async () => {
+    const model = new QueueModel([response([AssistantContent.text("done")])]);
+    const document = {
+      id: "policy",
+      text: "Keep answers short.",
+      additionalProps: { source: "initial" },
+    };
+    const providerOptions = { routing: { tier: "initial" } };
+    const toolChoice = { type: "function" as const, name: "provider_search" };
+    const providerTool = {
+      kind: "provider" as const,
+      provider: "test",
+      name: "provider_search",
+      configuration: { mode: "initial" },
+    };
+    const observer = createObserver({
+      startRun() {
+        return { end() {} };
+      },
+    });
+    const observability = {
+      observers: { test: observer },
+      primaryTrace: "test",
+      errorPolicy: "ignore" as "ignore" | "throw",
+    };
+    const inputGuardrail = defineInputGuardrail({
+      id: "initial",
+      check() {
+        return undefined;
+      },
+    });
+    const policy = defineGuardrailPolicy({ id: "policy", input: [inputGuardrail] });
+    const memoryStore = {
+      async load() {
+        return [];
+      },
+      async append() {},
+      async clear() {},
+    };
+    const agent = new Agent({
+      id: "agent",
+      model,
+      context: [document],
+      providerOptions,
+      toolChoice,
+      tools: [providerTool],
+      observability,
+      guardrails: policy,
+      memory: { store: memoryStore },
+    });
+
+    document.additionalProps.source = "mutated";
+    providerOptions.routing.tier = "mutated";
+    toolChoice.name = "mutated";
+    providerTool.configuration.mode = "mutated";
+    observability.errorPolicy = "throw";
+    policy.input.push(
+      defineInputGuardrail({
+        id: "late",
+        check() {
+          return undefined;
+        },
+      }),
+    );
+
+    await agent.generate({ prompt: "hello" });
+
+    expect(agent.context).toEqual([
+      {
+        id: "policy",
+        text: "Keep answers short.",
+        additionalProps: { source: "initial" },
+      },
+    ]);
+    expect(agent.providerOptions).toEqual({ routing: { tier: "initial" } });
+    expect(agent.toolChoice).toEqual({ type: "function", name: "provider_search" });
+    expect(agent.observability?.errorPolicy).toBe("ignore");
+    expect(agent.guardrails[0]?.input).toEqual([inputGuardrail]);
+    expect(model.requests[0]?.providerTools).toEqual([
+      {
+        kind: "provider",
+        provider: "test",
+        name: "provider_search",
+        configuration: { mode: "initial" },
+      },
+    ]);
+    expect(Object.isFrozen(agent.context[0])).toBe(true);
+    expect(Object.isFrozen(agent.providerOptions as object)).toBe(true);
+    expect(Object.isFrozen(agent.toolChoice as object)).toBe(true);
+    expect(Object.isFrozen(agent.observability)).toBe(true);
+    expect(Object.isFrozen(agent.observability?.observers)).toBe(true);
+    expect(Object.isFrozen(agent.guardrails[0]?.input)).toBe(true);
+    expect(Object.isFrozen(agent.memory)).toBe(true);
+    expect(Object.isFrozen(agent.memory?.compaction)).toBe(true);
+    expect(getAgentToolState(agent)).not.toHaveProperty("toolsByName");
+  });
+
+  it("preserves own __proto__ JSON keys without changing the snapshot prototype", () => {
+    const providerOptions = JSON.parse('{"__proto__":{"injected":true},"safe":true}') as JsonObject;
+    const agent = new Agent({
+      id: "agent",
+      model: new QueueModel([]),
+      providerOptions,
+    });
+
+    expect(Object.hasOwn(agent.providerOptions as object, "__proto__")).toBe(true);
+    expect(JSON.stringify(agent.providerOptions)).toBe(
+      '{"__proto__":{"injected":true},"safe":true}',
+    );
+    expect(Object.getPrototypeOf(agent.providerOptions)).toBe(Object.prototype);
+    expect((Object.getPrototypeOf(agent.providerOptions) as Record<string, unknown>).injected).toBe(
+      undefined,
+    );
+  });
+
+  it("copies null-prototype JSON dictionaries instead of retaining mutable aliases", () => {
+    const providerOptions = Object.assign(Object.create(null) as JsonObject, {
+      routing: "initial",
+    });
+    const agent = new Agent({
+      id: "agent",
+      model: new QueueModel([]),
+      providerOptions,
+    });
+
+    providerOptions.routing = "mutated";
+
+    expect(agent.providerOptions).toEqual({ routing: "initial" });
+    expect(agent.providerOptions).not.toBe(providerOptions);
+    expect(Object.isFrozen(agent.providerOptions as object)).toBe(true);
+  });
+
+  it("rejects non-JSON provider options when constructing an Agent", () => {
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+
+    for (const providerOptions of [
+      { nested: { missing: undefined } },
+      { value: Number.NaN },
+      cyclic,
+      [],
+      null,
+      "provider-options",
+      1,
+      true,
+    ]) {
+      expect(
+        () =>
+          new Agent({
+            id: "agent",
+            model: new QueueModel([]),
+            providerOptions: providerOptions as never,
+          }),
+      ).toThrow("Agent providerOptions must be a JSON object.");
+    }
+  });
+
+  it("snapshots tool-index registration metadata", () => {
+    const indexedTool = { ...addTool, name: "indexed" };
+    const index = emptyToolIndex([indexedTool], 2);
+    const agent = new Agent({ id: "agent", model: new QueueModel([]), tools: [index] });
+
+    (index.tools as AnyTool[]).push({ ...addTool, name: "late" });
+    (index as { topK: number }).topK = 9;
+
+    const registered = getAgentToolState(agent).toolIndexes[0];
+    expect(registered?.tools.map((tool) => tool.name)).toEqual(["indexed"]);
+    expect(registered?.topK).toBe(2);
+    expect(Object.isFrozen(registered)).toBe(true);
+    expect(Object.isFrozen(registered?.tools)).toBe(true);
+  });
+
+  it("preserves class-based vector-context getters and format methods", () => {
+    class ClassVectorContext {
+      readonly kind = "vector-context" as const;
+      readonly store = emptyStore<string>();
+      readonly model = embeddingModel;
+
+      get topK(): number {
+        return 2;
+      }
+
+      format(result: VectorSearchResult<string>) {
+        return { id: result.id, text: `class:${result.document}` };
+      }
+    }
+
+    const agent = new Agent({
+      id: "agent",
+      model: new QueueModel([]),
+      context: [new ClassVectorContext()],
+    });
+    const registered = agent.context[0] as VectorContext<string>;
+
+    expect(registered.topK).toBe(2);
+    expect(
+      registered.format?.({
+        id: "doc",
+        score: 1,
+        document: "content",
+      }),
+    ).toEqual({ id: "doc", text: "class:content" });
+  });
+
+  it("snapshots class-based documents through their public fields", () => {
+    class ClassDocument {
+      get id() {
+        return "class-doc";
+      }
+
+      get text() {
+        return "class content";
+      }
+
+      get additionalProps() {
+        return { source: "class" };
+      }
+    }
+    const document = new ClassDocument();
+    const agent = new Agent({ id: "agent", model: new QueueModel([]), context: [document] });
+
+    expect(agent.context).toEqual([
+      { id: "class-doc", text: "class content", additionalProps: { source: "class" } },
+    ]);
+    expect(agent.context[0]).not.toBe(document);
+    expect(Object.isFrozen(agent.context[0])).toBe(true);
+  });
+
+  it("uses the existing max-turn default without requiring build", () => {
+    const agent = new Agent({ id: "agent", model: new QueueModel([]) });
+
+    expect(agent.defaultMaxTurns).toBe(20);
+    expect(agent).not.toHaveProperty("build");
+  });
+
+  it("rejects invalid run limits before execution", () => {
+    const model = new QueueModel([]);
+    const agent = new Agent({ id: "agent", model });
+
+    expect(() => new Agent({ id: "agent", model, maxTurns: Number.NaN })).toThrow(
+      "maxTurns must be a nonnegative safe integer",
+    );
+    expect(() => agent.generate({ prompt: "hello", toolConcurrency: Number.NaN })).toThrow(
+      "toolConcurrency must be a positive safe integer",
+    );
+    expect(() => agent.stream({ prompt: "hello", toolConcurrency: 0 })).toThrow(
+      "toolConcurrency must be a positive safe integer",
+    );
+  });
+
+  it("rejects duplicate executable names across tool indexes", () => {
+    const first = emptyToolIndex([{ ...addTool, name: "shared" }]);
+    const second = emptyToolIndex([{ ...addTool, name: "shared" }]);
+
+    expect(
+      () => new Agent({ id: "agent", model: new QueueModel([]), tools: [first, second] }),
+    ).toThrow('Tool name collision for "shared" between tool index 1 and tool index 2');
+  });
+
+  it("validates structurally supplied retrieval registrations", () => {
+    const contextIndex = {
+      ...createVectorContext({ store: emptyStore<string>(), model: embeddingModel, topK: 1 }),
+      topK: Number.NaN,
+    };
+    const toolIndex = { ...emptyToolIndex([addTool]), minScore: Number.POSITIVE_INFINITY };
+
+    expect(
+      () => new Agent({ id: "agent", model: new QueueModel([]), context: [contextIndex] }),
+    ).toThrow("topK must be a positive safe integer");
+    expect(() => new Agent({ id: "agent", model: new QueueModel([]), tools: [toolIndex] })).toThrow(
+      "minScore must be a finite number",
+    );
+    const malformedToolIndex = {
+      kind: "tool-index",
+      tools: [],
+      topK: 1,
+    } as unknown as ToolIndex;
+    expect(isToolIndex(malformedToolIndex)).toBe(false);
+    expect(
+      () => new Agent({ id: "agent", model: new QueueModel([]), tools: [malformedToolIndex] }),
+    ).toThrow("Invalid tool index");
+  });
+
+  it("resolves indexed tool definitions from the executable at request time", async () => {
+    const dynamicTool: AnyTool = {
+      name: "dynamic",
+      definition(prompt) {
+        return {
+          name: "dynamic",
+          description: `Current definition for ${prompt}`,
+          parameters: { type: "object", properties: {}, additionalProperties: false },
+        };
+      },
+      call() {
+        return "ok";
+      },
+    };
+    const index: ToolIndex = {
+      kind: "tool-index",
+      tools: [dynamicTool],
+      topK: 1,
+      async search() {
+        return [
+          {
+            id: "dynamic",
+            score: 1,
+            document: {
+              toolName: "dynamic",
+              definition: {
+                name: "dynamic",
+                description: "Stale embedded definition",
+                parameters: { type: "object", properties: {} },
+              },
+              text: "dynamic",
+            },
+          },
+        ];
+      },
+    };
+    const model = new QueueModel([response([AssistantContent.text("done")])]);
+    const agent = new Agent({ id: "agent", model, tools: [index] });
+
+    await agent.generate({ prompt: "hello" });
+
+    expect(model.requests[0]?.tools).toEqual([
+      expect.objectContaining({
+        name: "dynamic",
+        description: "Current definition for hello",
+      }),
+    ]);
+  });
+
+  it("registers documents and context indexes through Agent options", () => {
+    const index = createVectorContext({
+      store: emptyStore<string>(),
+      model: embeddingModel,
+      topK: 2,
+    });
+    const agent = new Agent({
+      id: "agent",
+      model: new QueueModel([]),
+      context: [
+        { id: "policy", text: "Keep answers short." },
+        index,
+        { id: "generated", text: "Generated id" },
+      ],
+    });
+
+    expect(agent.context).toEqual([
+      { id: "policy", text: "Keep answers short." },
+      index,
+      { id: "generated", text: "Generated id" },
+    ]);
+    expect(Object.isFrozen(agent.context)).toBe(true);
+    expect(Object.isFrozen(index)).toBe(true);
+  });
+});
+
 describe("Agent.asTool", () => {
   it("stores a stable trimmed agent id", () => {
     const model = new QueueModel([]);
-    const agent = new AgentBuilder(" support ", model).build();
+    const agent = new Agent({ id: " support ", model });
 
     expect(agent.id).toBe("support");
   });
@@ -111,17 +560,19 @@ describe("Agent.asTool", () => {
   it("rejects empty agent ids", () => {
     const model = new QueueModel([]);
 
-    expect(() => new AgentBuilder("", model)).toThrow(TypeError);
-    expect(() => new AgentBuilder("   ", model)).toThrow(TypeError);
-    expect(() => new AgentBuilder(undefined as unknown as string, model)).toThrow(TypeError);
+    expect(() => new Agent({ id: "", model })).toThrow(TypeError);
+    expect(() => new Agent({ id: "   ", model })).toThrow(TypeError);
+    expect(() => new Agent({ id: undefined as unknown as string, model })).toThrow(TypeError);
   });
 
   it("creates a tool definition from an agent", async () => {
     const model = new QueueModel([]);
-    const agent = new AgentBuilder("test-agent", model)
-      .description("Answer support questions.")
-      .build();
-    const tool = agent.asTool({ name: "ask_support" });
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      description: "Answer support questions.",
+    });
+    const tool = agent.asTool({ name: "ask_support", suspension: "reject" });
 
     await expect(Promise.resolve(tool.definition(""))).resolves.toEqual({
       name: "ask_support",
@@ -142,17 +593,67 @@ describe("Agent.asTool", () => {
 
   it("delegates tool calls to the wrapped agent", async () => {
     const model = new QueueModel([response([AssistantContent.text("delegated")])]);
-    const agent = new AgentBuilder("test-agent", model).build();
+    const agent = new Agent({ id: "test-agent", model });
     const tool = agent.asTool({
       name: "ask_agent",
       description: "Ask an agent.",
+      suspension: "reject",
     });
 
     await expect(tool.call({ prompt: "do work" })).resolves.toBe("delegated");
     expect(model.requests[0]?.chatHistory.at(-1)).toMatchObject({
       role: "user",
-      content: [{ type: "text", text: "do work" }],
+      content: "do work",
     });
+  });
+
+  it("preserves schema-backed Agent output through the tool", async () => {
+    const model = new QueueModel([response([AssistantContent.text('{"answer":"delegated"}')])]);
+    const agent = new Agent({
+      id: "typed-agent",
+      model,
+      outputSchema: z.object({ answer: z.string() }),
+    });
+    const tool = agent.asTool({ name: "ask_typed_agent", suspension: "reject" });
+
+    const result = await tool.call({ prompt: "do work" });
+    expectTypeOf(result).toEqualTypeOf<{ answer: string }>();
+    expect(result).toEqual({ answer: "delegated" });
+  });
+
+  it("finalizes a child run when an agent tool cannot expose its pending approval", async () => {
+    let observedError: unknown;
+    const guardedTool = createTool({
+      name: "guarded",
+      description: "Run a guarded operation",
+      inputSchema: z.object({}),
+      requiresApproval: true,
+      execute: () => "approved",
+    });
+    const agent = new Agent({
+      id: "child",
+      model: new QueueModel([response([AssistantContent.toolCall("call_1", "guarded", {})])]),
+      tools: [guardedTool],
+      observability: {
+        observers: {
+          test: createObserver({
+            startRun() {
+              return {
+                end() {},
+                error({ error }) {
+                  observedError = error;
+                },
+              };
+            },
+          }),
+        },
+      },
+    });
+
+    await expect(
+      agent.asTool({ name: "ask_child", suspension: "reject" }).call({ prompt: "run" }),
+    ).rejects.toBeInstanceOf(AgentToolSuspensionError);
+    expect(observedError).toBeUndefined();
   });
 
   it("applies maxTurns when provided", async () => {
@@ -161,104 +662,22 @@ describe("Agent.asTool", () => {
       response([AssistantContent.toolCall("call_2", "add", { x: 2, y: 2 })]),
       response([AssistantContent.text("done")]),
     ]);
-    const agent = new AgentBuilder("test-agent", model).tool(addTool).defaultMaxTurns(3).build();
-    const tool = agent.asTool({ name: "ask_agent", maxTurns: 0 });
+    const agent = new Agent({ id: "test-agent", model, tools: [addTool], maxTurns: 3 });
+    const tool = agent.asTool({ name: "ask_agent", maxTurns: 0, suspension: "reject" });
 
     await expect(tool.call({ prompt: "loop" })).rejects.toBeInstanceOf(MaxTurnsError);
   });
 
-  it("uses shared tool set updates made after agent creation", async () => {
-    const model = new QueueModel([
-      response([AssistantContent.toolCall("call_1", "add", { x: 2, y: 5 })]),
-      response([AssistantContent.text("done")]),
-    ]);
-    const toolSet = new ToolSet();
-    const agent = new AgentBuilder("test-agent", model)
-      .useToolSet(toolSet)
-      .defaultMaxTurns(1)
-      .build();
-
-    toolSet.addTool(addTool);
-
-    await expect(agent.prompt("add numbers").send()).resolves.toMatchObject({ output: "done" });
-    expect(model.requests[0]?.tools).toEqual([expect.objectContaining({ name: "add" })]);
-  });
-
-  it("isolates built agents from later builder collection changes", () => {
-    const model = new QueueModel([]);
-    const builder = new AgentBuilder("test-agent", model).context("initial context");
-    const agent = builder.build();
-    const dynamicContextIndex = emptyIndex<unknown>();
-    const dynamicToolIndex = emptyIndex<ToolSearchDocument>();
-
-    builder
-      .context("late context")
-      .dynamicContext(dynamicContextIndex, { topK: 1 })
-      .dynamicTools(dynamicToolIndex, { topK: 1 })
-      .middleware(createMiddleware({}))
-      .observe(
-        createObserver({
-          startRun() {
-            return {
-              end() {},
-            };
-          },
-        }),
-      )
-      .guardrails(
-        defineGuardrailPolicy({
-          id: "late-policy",
-          input: [
-            defineInputGuardrail({
-              id: "late-input",
-              check(_context, { allow }) {
-                return allow();
-              },
-            }),
-          ],
-        }),
-      );
-
-    expect(agent.staticContext).toEqual([{ id: "static_doc_0", text: "initial context" }]);
-    expect(agent.middlewares).toHaveLength(0);
-    expect(agent.observers).toHaveLength(0);
-    expect(agent.guardrails).toHaveLength(0);
-    expect(agent.dynamicContexts).toHaveLength(0);
-    expect(agent.dynamicTools).toHaveLength(0);
-  });
-
-  it("copies existing builder tools into a shared tool set", async () => {
-    const model = new QueueModel([
-      response([AssistantContent.toolCall("call_1", "add", { x: 2, y: 5 })]),
-      response([AssistantContent.text("done")]),
-    ]);
-    const toolSet = new ToolSet();
-    const agent = new AgentBuilder("test-agent", model)
-      .tool(addTool)
-      .useToolSet(toolSet)
-      .defaultMaxTurns(1)
-      .build();
-
-    expect(toolSet.get("add")).toBe(addTool);
-    await expect(agent.prompt("add numbers").send()).resolves.toMatchObject({ output: "done" });
-  });
-
   it("registers multiple wrapped agents as distinct tools", async () => {
-    const first = new AgentBuilder(
-      "test-agent",
-      new QueueModel([response([AssistantContent.text("one")])]),
-    )
-      .build()
-      .asTool({ name: "ask_one" });
-    const second = new AgentBuilder(
-      "test-agent",
-      new QueueModel([response([AssistantContent.text("two")])]),
-    )
-      .build()
-      .asTool({ name: "ask_two" });
-    const toolSet = ToolSet.fromTools([first, second]);
-
-    await expect(toolSet.call("ask_one", JSON.stringify({ prompt: "run" }))).resolves.toBe("one");
-    await expect(toolSet.call("ask_two", JSON.stringify({ prompt: "run" }))).resolves.toBe("two");
+    const first = new Agent({
+      id: "test-agent",
+      model: new QueueModel([response([AssistantContent.text("one")])]),
+    }).asTool({ name: "ask_one", suspension: "reject" });
+    const second = new Agent({
+      id: "test-agent",
+      model: new QueueModel([response([AssistantContent.text("two")])]),
+    }).asTool({ name: "ask_two", suspension: "reject" });
+    await expect(first.call({ prompt: "run" })).resolves.toBe("one");
+    await expect(second.call({ prompt: "run" })).resolves.toBe("two");
   });
 });

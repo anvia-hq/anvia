@@ -1,4 +1,5 @@
 import type { JsonValue } from "@anvia/core/completion";
+import { isQuestionTool } from "@anvia/core/tool";
 import type {
   StudioAgent,
   StudioAgentConfig,
@@ -9,11 +10,18 @@ import type {
   StudioPipeline,
   StudioPipelineConfig,
 } from "../types";
+import { staticContextDocuments, vectorContexts } from "./agent-context";
 import { evalConfig } from "./eval-config";
 import { serializeUnknown } from "./json";
+import { agentHasKnowledge } from "./knowledge";
 import { createStudioModelRegistry, studioModelsConfig } from "./models";
 import type { ResolvedStores, StudioRuntimeOptions } from "./options";
-import { agentHasMcpTools, agentToolItems, mcpServerName } from "./tool-metadata";
+import {
+  agentHasMcpServers,
+  agentToolItems,
+  mcpServerName,
+  toolRequiresApproval,
+} from "./tool-metadata";
 
 export type { ResolvedStores, StudioRuntimeOptions } from "./options";
 
@@ -36,6 +44,8 @@ export function agentConfig(agent: StudioAgent): StudioAgentConfig {
 
 export function agentRuntimeSummary(agent: StudioAgent): StudioAgentRuntimeSummary {
   const tools = agentToolItems(agent);
+  const staticContext = staticContextDocuments(agent.agent);
+  const indexedContext = vectorContexts(agent.agent);
   const name = agent.name ?? agent.agent.name;
   const description = agent.description ?? agent.agent.description;
   const summary: StudioAgentRuntimeSummary = {
@@ -44,13 +54,13 @@ export function agentRuntimeSummary(agent: StudioAgent): StudioAgentRuntimeSumma
     toolCount: tools.length,
     staticToolCount: tools.filter((item) => item.source === "static").length,
     dynamicToolCount: tools.filter((item) => item.source === "dynamic").length,
-    approvalToolCount: tools.filter((item) => item.tool.approval !== undefined).length,
+    approvalToolCount: tools.filter((item) => toolRequiresApproval(item.tool)).length,
     mcpToolCount: tools.filter((item) => mcpServerName(item.tool) !== undefined).length,
-    staticContextCount: agent.agent.staticContext.length,
-    dynamicContextCount: agent.agent.dynamicContexts.length,
-    observerCount: agent.agent.observers.length,
+    staticContextCount: staticContext.length,
+    dynamicContextCount: indexedContext.length,
+    observerCount: Object.keys(agent.agent.observability?.observers ?? {}).length,
     hasMemory: agent.agent.memory !== undefined,
-    hasHook: agent.agent.hook !== undefined,
+    hasLifecycle: agent.agent.lifecycle !== undefined,
     hasOutputSchema: agent.agent.outputSchema !== undefined,
   };
   if (name !== undefined) summary.name = name;
@@ -136,14 +146,10 @@ export function capabilityConfig(
   if (_options.evals.length > 0) {
     capabilities.evals = { enabled: true };
   }
-  if (
-    agents.some(
-      (agent) => agent.agent.toolSet.values().length > 0 || agent.agent.dynamicTools.length > 0,
-    )
-  ) {
+  if (agents.some((agent) => agent.agent.tools.length > 0)) {
     capabilities.tools = { enabled: true };
   }
-  if (agents.some(agentHasMcpTools)) {
+  if (agents.some(agentHasMcpServers)) {
     capabilities.mcps = { enabled: true };
   }
   if (sandboxCount > 0) {
@@ -151,22 +157,13 @@ export function capabilityConfig(
   }
 
   if (
-    agents.some(
-      (agent) =>
-        agent.agent.hook !== undefined ||
-        agent.agent.toolSet.values().some((tool) => tool.approval),
+    agents.some((agent) =>
+      agent.agent.tools.some((tool) => toolRequiresApproval(tool) || isQuestionTool(tool)),
     )
   ) {
-    capabilities.approvals = { enabled: true };
+    capabilities.interactions = { enabled: true };
   }
-  if (
-    agents.some(
-      (agent) =>
-        agent.agent.staticContext.length > 0 ||
-        agent.agent.dynamicContexts.length > 0 ||
-        agent.agent.dynamicTools.length > 0,
-    )
-  ) {
+  if (agents.some(agentHasKnowledge)) {
     capabilities.knowledge = { enabled: true };
   }
   return capabilities;

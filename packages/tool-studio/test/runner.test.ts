@@ -3,45 +3,45 @@ import { createRequire } from "node:module";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AgentBuilder } from "@anvia/core/agent";
+import { Agent, createVectorContext } from "@anvia/core/agent";
 import {
-  AssistantContent,
+  type CompletionModelStreamEvent,
   type CompletionRequest,
   type CompletionResponse,
-  type CompletionStreamEvent,
   type Message as CoreMessage,
   type JsonObject,
-  Message,
+  type ProviderTool,
   type StreamingCompletionModel,
-  ToolContent,
   Usage,
-  UserContent,
 } from "@anvia/core/completion";
 import { type Embedding, type EmbeddingModel, embedDocuments } from "@anvia/core/embeddings";
 import { type EvalMetric, EvalOutcome } from "@anvia/core/evals";
-import { createHook, skipTool } from "@anvia/core/hooks";
-import { connectMcp, type McpClient } from "@anvia/core/mcp";
+import type { McpServer, McpTool } from "@anvia/core/mcp";
 import type {
-  MemoryAppendInput,
-  MemoryContext,
+  MemoryAppendOptions,
+  MemoryCompactionMessage,
   MemoryConversation,
-  MemoryErrorInput,
+  MemoryErrorOptions,
   MemoryInspector,
+  MemoryScope,
   MemoryStore,
 } from "@anvia/core/memory";
 import type { AgentObserver, AgentRunObserver, AgentRunStartArgs } from "@anvia/core/observability";
-import { PipelineBuilder } from "@anvia/core/pipeline";
-import { createToolIndex, type Tool } from "@anvia/core/tool";
-import {
-  InMemoryVectorStore,
-  type VectorSearchIndex,
-  type VectorSearchRequest,
-  type VectorSearchToolOptions,
-} from "@anvia/core/vector-store";
+import { Pipeline } from "@anvia/core/pipeline";
+import { createQuestionTool, createToolIndex, type Tool } from "@anvia/core/tool";
+import { InMemoryVectorStore, type VectorStore } from "@anvia/core/vector-store";
 import { Hono } from "hono";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 import { z } from "zod";
 import {
+  AssistantContent,
+  Message,
+  ToolContent,
+  UserContent,
+} from "../../core/test/helpers/imports";
+import {
+  type AgentRunResponse,
+  type AgentRunStreamEvent,
   createInMemoryStudioStore,
   Studio,
   type StudioSessionRunTranscriptInput,
@@ -55,7 +55,7 @@ const { DatabaseSync } = createRequire(import.meta.url)(
 
 class QueueModel {
   readonly provider = "test";
-  readonly defaultModel = "test";
+  readonly modelId = "test";
   readonly capabilities = {
     streaming: false,
     tools: true,
@@ -64,6 +64,7 @@ class QueueModel {
     documentInput: true,
     outputSchema: true,
     reasoning: true,
+    providerTools: true,
   };
   readonly requests: CompletionRequest[] = [];
 
@@ -73,7 +74,7 @@ class QueueModel {
     return {
       provider: this.provider,
       stream: options.stream === true,
-      model: request.model ?? this.defaultModel,
+      model: this.modelId,
       messageCount: request.chatHistory.length,
     };
   }
@@ -92,7 +93,7 @@ type CompletionOutcome = { response: CompletionResponse } | { error: unknown };
 
 class FlakyQueueModel {
   readonly provider = "test";
-  readonly defaultModel = "test";
+  readonly modelId = "test";
   readonly capabilities = {
     streaming: false,
     tools: true,
@@ -121,7 +122,7 @@ class FlakyQueueModel {
 
 class StreamingQueueModel implements StreamingCompletionModel {
   readonly provider = "test";
-  readonly defaultModel = "test";
+  readonly modelId = "test";
   readonly capabilities = {
     streaming: true,
     tools: true,
@@ -135,7 +136,7 @@ class StreamingQueueModel implements StreamingCompletionModel {
 
   constructor(
     private readonly responses: Array<
-      Iterable<CompletionStreamEvent> | AsyncIterable<CompletionStreamEvent>
+      Iterable<CompletionModelStreamEvent> | AsyncIterable<CompletionModelStreamEvent>
     >,
   ) {}
 
@@ -147,34 +148,52 @@ class StreamingQueueModel implements StreamingCompletionModel {
     return {
       provider: this.provider,
       stream: options.stream === true,
-      model: request.model ?? this.defaultModel,
+      model: this.modelId,
       messageCount: request.chatHistory.length,
     };
   }
 
-  async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionStreamEvent> {
+  async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionModelStreamEvent> {
     this.requests.push(request);
     const response = this.responses.shift();
     if (response === undefined) {
       throw new Error("No queued stream response");
     }
+    let hasFinal = false;
+    let hasToolCall = false;
     for await (const event of response) {
+      hasFinal ||= event.type === "final";
+      hasToolCall ||=
+        event.type === "tool_call" ||
+        event.type === "tool_call_delta" ||
+        event.type === "provider_tool_call";
       yield event;
+    }
+    if (!hasFinal) {
+      yield {
+        type: "final",
+        response: {
+          choice: [],
+          usage: Usage.empty(),
+          rawResponse: {},
+          finishReason: hasToolCall ? "tool-calls" : "stop",
+        },
+      };
     }
   }
 }
 
 async function* streamThenThrow(
-  events: CompletionStreamEvent[],
+  events: CompletionModelStreamEvent[],
   error: unknown,
-): AsyncIterable<CompletionStreamEvent> {
+): AsyncIterable<CompletionModelStreamEvent> {
   yield* events;
   throw error;
 }
 
 class GatedReasoningModel implements StreamingCompletionModel {
   readonly provider = "test";
-  readonly defaultModel = "test";
+  readonly modelId = "test";
   readonly capabilities = {
     streaming: true,
     tools: true,
@@ -191,36 +210,45 @@ class GatedReasoningModel implements StreamingCompletionModel {
     throw new Error("completion should not be called");
   }
 
-  async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionStreamEvent> {
+  async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionModelStreamEvent> {
     this.requests.push(request);
     yield { type: "reasoning_delta", delta: "thinking" };
     await new Promise<void>((resolve) => {
       this.releaseText = resolve;
     });
     yield { type: "text_delta", delta: "done" };
+    yield {
+      type: "final",
+      response: {
+        choice: [],
+        usage: Usage.empty(),
+        rawResponse: {},
+        finishReason: "stop",
+      },
+    };
   }
 }
 
 class RecordingMemoryStore implements MemoryStore {
-  readonly appendCalls: MemoryAppendInput[] = [];
-  readonly errorCalls: MemoryErrorInput[] = [];
+  readonly appendCalls: MemoryAppendOptions[] = [];
+  readonly errorCalls: MemoryErrorOptions[] = [];
   private readonly sessions = new Map<string, CoreMessage[]>();
 
-  async load(context: MemoryContext): Promise<CoreMessage[]> {
-    return [...(this.sessions.get(context.sessionId) ?? [])];
+  async load({ scope }: { scope: MemoryScope }): Promise<CoreMessage[]> {
+    return [...(this.sessions.get(scope.sessionId) ?? [])];
   }
 
-  async append(input: MemoryAppendInput): Promise<void> {
+  async append(input: MemoryAppendOptions): Promise<void> {
     this.appendCalls.push({ ...input, messages: [...input.messages] });
-    const current = this.sessions.get(input.context.sessionId) ?? [];
-    this.sessions.set(input.context.sessionId, [...current, ...input.messages]);
+    const current = this.sessions.get(input.scope.sessionId) ?? [];
+    this.sessions.set(input.scope.sessionId, [...current, ...input.messages]);
   }
 
-  async clear(context: MemoryContext): Promise<void> {
-    this.sessions.delete(context.sessionId);
+  async clear({ scope }: { scope: MemoryScope }): Promise<void> {
+    this.sessions.delete(scope.sessionId);
   }
 
-  async recordError(input: MemoryErrorInput): Promise<void> {
+  async recordError(input: MemoryErrorOptions): Promise<void> {
     this.errorCalls.push({ ...input, messages: [...input.messages] });
   }
 }
@@ -238,26 +266,26 @@ class InspectableMemoryStore implements MemoryStore {
           )
           .slice(0, options.limit)
           .map(({ messages: _messages, ...conversation }) => conversation),
-      getConversation: async (ref) => this.conversations.find((item) => item.ref === ref),
+      getConversation: async ({ ref }) => this.conversations.find((item) => item.ref === ref),
     };
   }
 
-  async load(context: MemoryContext): Promise<CoreMessage[]> {
+  async load({ scope }: { scope: MemoryScope }): Promise<CoreMessage[]> {
     return (
       this.conversations
-        .find((conversation) => conversation.sessionId === context.sessionId)
+        .find((conversation) => conversation.sessionId === scope.sessionId)
         ?.messages.map((record) => record.message) ?? []
     );
   }
 
-  async append(_input: MemoryAppendInput): Promise<void> {}
+  async append(_input: MemoryAppendOptions): Promise<void> {}
 
-  async clear(_context: MemoryContext): Promise<void> {}
+  async clear(_options: { scope: MemoryScope }): Promise<void> {}
 }
 
 class FailingStreamingModel implements StreamingCompletionModel {
   readonly provider = "test";
-  readonly defaultModel = "test";
+  readonly modelId = "test";
   readonly capabilities = {
     streaming: true,
     tools: true,
@@ -273,7 +301,7 @@ class FailingStreamingModel implements StreamingCompletionModel {
     throw new Error("completion should not be called");
   }
 
-  async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionStreamEvent> {
+  async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionModelStreamEvent> {
     this.requests.push(request);
     yield { type: "text_delta", delta: "partial" };
     throw new Error("stream failed");
@@ -281,6 +309,8 @@ class FailingStreamingModel implements StreamingCompletionModel {
 }
 
 class KeywordEmbeddingModel implements EmbeddingModel {
+  readonly provider = "test";
+  readonly modelId = "keyword";
   readonly calls: string[][] = [];
 
   async embedTexts(texts: string[]): Promise<Embedding[]> {
@@ -354,36 +384,18 @@ function createRefundTool(execute: (args: { orderId: string; amount: number }) =
         },
       };
     },
-    approval: {
-      when: ({ args }) => args.amount > 0,
-      reason: ({ args }) => `Approve refund of ${args.amount} for ${args.orderId}.`,
-      rejectMessage: "Rejected by test.",
-    },
+    requiresApproval: ({ amount, orderId }) =>
+      amount > 0 ? { reason: `Approve refund of ${amount} for ${orderId}.` } : false,
     call(args) {
       return execute(args);
     },
   } satisfies Tool<{ orderId: string; amount: number }, string>;
 }
 
-const askQuestionTool = {
+const askQuestionTool = createQuestionTool({
   name: "ask_question",
-  definition() {
-    return {
-      name: "ask_question",
-      description: "Ask the user for missing input",
-      parameters: {
-        type: "object",
-        properties: {
-          questions: { type: "array" },
-        },
-        required: ["questions"],
-      },
-    };
-  },
-  call() {
-    throw new Error("Studio should answer ask_question without executing the tool");
-  },
-} satisfies Tool<unknown, string>;
+  description: "Ask the user for missing input",
+});
 
 const lookupPolicyTool = {
   name: "lookup_policy",
@@ -423,11 +435,19 @@ function vectorFor(text: string): number[] {
 }
 
 describe("Anvia studio", () => {
+  it("exposes only canonical Agent interaction events", () => {
+    expectTypeOf<Extract<AgentRunStreamEvent, { type: "approval_required" }>>().toBeNever();
+    expectTypeOf<Extract<AgentRunStreamEvent, { type: "tool_approval_request" }>>().toBeNever();
+    expectTypeOf<Extract<AgentRunStreamEvent, { type: "interaction_response" }>>().not.toBeNever();
+  });
+
   it("generates config from registered agents", async () => {
-    const agent = new AgentBuilder("support", new QueueModel([]))
-      .name("Support")
-      .description("Support assistant")
-      .build();
+    const agent = new Agent({
+      id: "support",
+      model: new QueueModel([]),
+      name: "Support",
+      description: "Support assistant",
+    });
     const runner = new Studio([agent], {
       quickPrompts: {
         support: ["What can you do?"],
@@ -444,6 +464,7 @@ describe("Anvia studio", () => {
           quickPrompts: ["What can you do?"],
           metadata: {
             staticContextCount: 0,
+            hasLifecycle: false,
             hasOutputSchema: false,
             observerCount: 0,
             approvalToolCount: 0,
@@ -470,13 +491,17 @@ describe("Anvia studio", () => {
   });
 
   it("uses agent ids and uniquifies duplicates", () => {
-    const first = new AgentBuilder("support-triage", new QueueModel([]))
-      .name("Support Triage")
-      .build();
-    const duplicate = new AgentBuilder("support-triage", new QueueModel([]))
-      .name("Support Triage")
-      .build();
-    const unnamed = new AgentBuilder("agent-3", new QueueModel([])).build();
+    const first = new Agent({
+      id: "support-triage",
+      model: new QueueModel([]),
+      name: "Support Triage",
+    });
+    const duplicate = new Agent({
+      id: "support-triage",
+      model: new QueueModel([]),
+      name: "Support Triage",
+    });
+    const unnamed = new Agent({ id: "agent-3", model: new QueueModel([]) });
     const runner = new Studio([first, duplicate, unnamed], {
       quickPrompts: {
         "support-triage": ["first"],
@@ -498,15 +523,15 @@ describe("Anvia studio", () => {
   });
 
   it("exposes configured and listed provider models", async () => {
-    const agent = new AgentBuilder("support", new QueueModel([])).name("Support").build();
+    const agent = new Agent({ id: "support", model: new QueueModel([]), name: "Support" });
     const runner = new Studio([agent], {
       models: {
-        default: "openai:gpt-5",
+        defaultModelRef: { providerId: "openai", modelId: "gpt-5" },
         providers: [
           {
             id: "openai",
             name: "OpenAI",
-            defaultModel: "gpt-5",
+            defaultModelId: "gpt-5",
             models: [
               {
                 id: "gpt-5",
@@ -523,7 +548,7 @@ describe("Anvia studio", () => {
         ],
         agents: {
           support: {
-            default: "openai:gpt-5",
+            defaultModelRef: { providerId: "openai", modelId: "gpt-5" },
             allowed: ["openai:*"],
           },
         },
@@ -531,12 +556,12 @@ describe("Anvia studio", () => {
     });
 
     expect(runner.config().models).toMatchObject({
-      default: "openai:gpt-5",
+      defaultModelRef: "openai:gpt-5",
       providers: [
         {
           id: "openai",
           name: "OpenAI",
-          defaultModel: "gpt-5",
+          defaultModelId: "gpt-5",
           models: [
             {
               ref: "openai:gpt-5",
@@ -549,7 +574,7 @@ describe("Anvia studio", () => {
       ],
       agents: {
         support: {
-          default: "openai:gpt-5",
+          defaultModelRef: "openai:gpt-5",
           allowed: ["openai:*"],
         },
       },
@@ -558,7 +583,7 @@ describe("Anvia studio", () => {
     const models = await runner.fetch(new Request("http://runner.test/agents/support/models"));
     await expect(models.json()).resolves.toMatchObject({
       agentId: "support",
-      defaultModel: "openai:gpt-5",
+      defaultModelRef: "openai:gpt-5",
       models: [
         { ref: "openai:gpt-5", name: "GPT-5" },
         { ref: "openai:gpt-5-mini", name: "GPT-5 mini", metadata: { ownedBy: "provider" } },
@@ -572,17 +597,17 @@ describe("Anvia studio", () => {
       response([AssistantContent.text("First answer")]),
       response([AssistantContent.text("Second answer")]),
     ]);
-    const agent = new AgentBuilder("support", baseModel).build();
+    const agent = new Agent({ id: "support", model: baseModel });
     const runner = new Studio([agent], {
       models: {
         providers: [
           {
             id: "test",
-            defaultModel: "primary",
+            defaultModelId: "primary",
             models: [{ id: "secondary", modalities: { input: ["text"], output: ["text"] } }],
-            createCompletionModel: (model) => {
-              if (model !== "secondary") {
-                throw new Error(`Unexpected model: ${model}`);
+            createCompletionModel: ({ modelId }) => {
+              if (modelId !== "secondary") {
+                throw new Error(`Unexpected model: ${modelId}`);
               }
               return selectedModel;
             },
@@ -590,7 +615,7 @@ describe("Anvia studio", () => {
         ],
         agents: {
           support: {
-            allowed: ["test:secondary"],
+            allowed: [{ providerId: "test", modelId: "secondary" }],
           },
         },
       },
@@ -607,9 +632,10 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         body: JSON.stringify({
+          type: "messages",
           sessionId: session.id,
-          message: "first",
-          model: "test:secondary",
+          messages: [Message.user("first")],
+          model: { providerId: "test", modelId: "secondary" },
         }),
       }),
     );
@@ -619,8 +645,9 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         body: JSON.stringify({
+          type: "messages",
           sessionId: session.id,
-          message: "second",
+          messages: [Message.user("second")],
         }),
       }),
     );
@@ -637,7 +664,7 @@ describe("Anvia studio", () => {
   });
 
   it("rejects models outside the agent policy", async () => {
-    const agent = new AgentBuilder("support", new QueueModel([])).build();
+    const agent = new Agent({ id: "support", model: new QueueModel([]) });
     const runner = new Studio([agent], {
       models: {
         providers: [
@@ -648,7 +675,7 @@ describe("Anvia studio", () => {
         ],
         agents: {
           support: {
-            allowed: ["test:allowed"],
+            allowed: [{ providerId: "test", modelId: "allowed" }],
           },
         },
       },
@@ -658,8 +685,9 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         body: JSON.stringify({
-          message: "hello",
-          model: "test:blocked",
+          type: "messages",
+          messages: [Message.user("hello")],
+          model: { providerId: "test", modelId: "blocked" },
         }),
       }),
     );
@@ -673,29 +701,52 @@ describe("Anvia studio", () => {
     });
   });
 
+  it("rejects malformed wildcard model policies without broadening them", () => {
+    const agent = new Agent({ id: "support", model: new QueueModel([]) });
+
+    expect(
+      () =>
+        new Studio([agent], {
+          models: {
+            providers: [
+              {
+                id: "test",
+                createCompletionModel: () => new QueueModel([]),
+              },
+            ],
+            agents: {
+              support: {
+                allowed: ["test:exact" as never],
+              },
+            },
+          },
+        }),
+    ).toThrow("Invalid wildcard model reference: test:exact");
+  });
+
   it("accepts multimodal message payloads from Studio runs", async () => {
     const model = new QueueModel([response([AssistantContent.text("image noted")])]);
-    const agent = new AgentBuilder("support", model).build();
+    const agent = new Agent({ id: "support", model });
     const runner = new Studio([agent]);
 
     const run = await runner.fetch(
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         body: JSON.stringify({
-          message: {
-            role: "user",
-            content: [
-              { type: "text", text: "Describe this image." },
-              {
-                type: "image",
-                source: {
-                  type: "base64",
-                  data: "aW1hZ2U=",
+          type: "messages",
+          messages: [
+            {
+              role: "user",
+              content: [
+                { type: "text", text: "Describe this image." },
+                {
+                  type: "image",
+                  image: { type: "data", data: "aW1hZ2U=" },
                   mediaType: "image/png",
                 },
-              },
-            ],
-          },
+              ],
+            },
+          ],
         }),
       }),
     );
@@ -705,7 +756,7 @@ describe("Anvia studio", () => {
       role: "user",
       content: [
         { type: "text", text: "Describe this image." },
-        { type: "image", source: { type: "base64", mediaType: "image/png" } },
+        { type: "image", image: { type: "data" }, mediaType: "image/png" },
       ],
     });
 
@@ -714,22 +765,22 @@ describe("Anvia studio", () => {
       role: "user",
       content: [
         { type: "text", text: "Describe this image." },
-        { type: "image", source: { type: "base64", mediaType: "image/png" } },
+        { type: "image", image: { type: "data" }, mediaType: "image/png" },
       ],
     });
   });
 
   it("registers pipelines separately from agents", async () => {
-    const agent = new AgentBuilder("support", new QueueModel([])).name("Support").build();
-    const pipeline = new PipelineBuilder(z.string(), {
+    const agent = new Agent({ id: "support", model: new QueueModel([]), name: "Support" });
+    const pipeline = new Pipeline({
       id: "ticket-pipeline",
+      inputSchema: z.string(),
       name: "Ticket Pipeline",
       description: "Prepare support tickets",
       metadata: { owner: "support" },
     })
-      .step((input) => input.trim(), { id: "normalize", name: "Normalize" })
-      .step((input) => input.toUpperCase(), { id: "classify", name: "Classify" })
-      .build();
+      .step({ id: "normalize", name: "Normalize", run: ({ input }) => input.trim() })
+      .step({ id: "classify", name: "Classify", run: ({ input }) => input.toUpperCase() });
     const runner = new Studio([agent, pipeline]);
 
     expect(runner.config()).toMatchObject({
@@ -763,20 +814,64 @@ describe("Anvia studio", () => {
       graph: {
         id: "ticket-pipeline",
         nodes: [
-          { id: "input", kind: "input" },
-          { id: "normalize", kind: "step", label: "Normalize" },
-          { id: "classify", kind: "step", label: "Classify" },
-          { id: "output", kind: "output" },
+          { id: "$input", path: ["$input"], kind: "input" },
+          { id: "normalize", path: ["normalize"], kind: "step", label: "Normalize" },
+          { id: "classify", path: ["classify"], kind: "step", label: "Classify" },
+          { id: "$output", path: ["$output"], kind: "output" },
         ],
       },
     });
   });
 
+  it("stores stage logs under the Studio registration id", async () => {
+    const pipeline = new Pipeline({ id: "aliased-pipeline", inputSchema: z.string() }).step({
+      id: "uppercase",
+      run: ({ input }) => input.toUpperCase(),
+    });
+    const runner = new Studio([pipeline, pipeline]);
+
+    const buffered = await runner.fetch(
+      new Request("http://runner.test/pipelines/aliased-pipeline-2/runs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ input: "buffered" }),
+      }),
+    );
+    expect(buffered.status).toBe(200);
+
+    const streamed = await runner.fetch(
+      new Request("http://runner.test/pipelines/aliased-pipeline-2/runs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ input: "streamed", stream: true }),
+      }),
+    );
+    expect(streamed.status).toBe(200);
+    await readJsonl(streamed);
+
+    const registeredLogs = (await (
+      await runner.fetch(
+        new Request("http://runner.test/pipelines/aliased-pipeline-2/logs?limit=100"),
+      )
+    ).json()) as { logs: Array<{ event: string }> };
+    expect(registeredLogs.logs.filter((log) => log.event === "step.started")).toHaveLength(2);
+
+    const originalLogs = (await (
+      await runner.fetch(
+        new Request("http://runner.test/pipelines/aliased-pipeline/logs?limit=100"),
+      )
+    ).json()) as { logs: Array<{ event: string }> };
+    expect(originalLogs.logs).toEqual([]);
+  });
+
   it("runs pipelines over HTTP and persists runs plus metadata-only pipeline logs", async () => {
-    const pipeline = new PipelineBuilder(z.string(), { id: "audit-pipeline" })
-      .step((input) => input.trim(), { id: "normalize", name: "Normalize" })
-      .step((input) => ({ reply: input.toUpperCase() }), { id: "shape", name: "Shape" })
-      .build();
+    const pipeline = new Pipeline({ id: "audit-pipeline", inputSchema: z.string() })
+      .step({ id: "normalize", name: "Normalize", run: ({ input }) => input.trim() })
+      .step({
+        id: "shape",
+        name: "Shape",
+        run: ({ input }) => ({ reply: input.toUpperCase() }),
+      });
     const studioDbPath = join(studioDbDir ?? tmpdir(), "pipeline.sqlite");
     const runner = new Studio([pipeline], {
       stores: {
@@ -840,7 +935,11 @@ describe("Anvia studio", () => {
     const nextBody = (await nextPage.json()) as {
       logs: Array<{ event: string; sequence: number; metadata?: unknown }>;
     };
-    expect(nextBody.logs[0]).toMatchObject({ event: "step.started", sequence: 2 });
+    expect(nextBody.logs[0]).toMatchObject({
+      event: "step.started",
+      sequence: 2,
+      metadata: { nodeId: "normalize", nodePath: ["normalize"] },
+    });
     expect(nextBody.logs.map((log) => log.event)).toContain("pipeline.run_completed");
     expect(nextBody).not.toHaveProperty("nextCursor");
 
@@ -942,9 +1041,11 @@ describe("Anvia studio", () => {
   });
 
   it("replays persisted pipeline runs outside the first runs page", async () => {
-    const pipeline = new PipelineBuilder(z.string(), { id: "audit-pipeline" })
-      .step((input) => ({ reply: input.toUpperCase() }), { id: "shape", name: "Shape" })
-      .build();
+    const pipeline = new Pipeline({ id: "audit-pipeline", inputSchema: z.string() }).step({
+      id: "shape",
+      name: "Shape",
+      run: ({ input }) => ({ reply: input.toUpperCase() }),
+    });
     const store = createSqliteSessionStore({
       path: join(studioDbDir ?? tmpdir(), "replay.sqlite"),
     });
@@ -1016,14 +1117,13 @@ describe("Anvia studio", () => {
     }
   });
 
-  it("starts a served single-agent runner from a built agent", async () => {
-    const agent = new AgentBuilder(
-      "support",
-      new QueueModel([response([AssistantContent.text("ok")])]),
-    )
-      .name("Support")
-      .description("Support assistant")
-      .build();
+  it("starts a served single-agent runner", async () => {
+    const agent = new Agent({
+      id: "support",
+      model: new QueueModel([response([AssistantContent.text("ok")])]),
+      name: "Support",
+      description: "Support assistant",
+    });
     const runner = new Studio([agent]).start({ port: 0, log: false });
 
     try {
@@ -1041,7 +1141,7 @@ describe("Anvia studio", () => {
         new Request("http://runner.test/agents/support/runs", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ message: "hi" }),
+          body: JSON.stringify({ type: "messages", messages: [Message.user("hi")] }),
         }),
       );
       expect(res.status).toBe(200);
@@ -1053,7 +1153,7 @@ describe("Anvia studio", () => {
 
   it("can leave process signal handling to the application", () => {
     const listenersBeforeStart = process.listeners("SIGINT");
-    const agent = new AgentBuilder("support", new QueueModel([])).build();
+    const agent = new Agent({ id: "support", model: new QueueModel([]) });
     const runner = new Studio([agent]).start({ port: 0, log: false, handleSignals: false });
 
     try {
@@ -1063,9 +1163,60 @@ describe("Anvia studio", () => {
     }
   });
 
+  it("preserves loopback connection metadata for local sandbox views", async () => {
+    const port = await availableLoopbackPort();
+    const studio = new Studio([], {
+      sandboxes: [
+        {
+          inspector: {
+            id: "browser",
+            provider: "docker",
+            workdir: "/workspace",
+            publishedPorts: [
+              { containerPort: 6080, host: "127.0.0.1", hostPort: 49152, protocol: "tcp" },
+            ],
+          },
+          views: [
+            {
+              id: "desktop",
+              label: "Browser",
+              source: {
+                protocol: "novnc",
+                containerPort: 6080,
+                control: {
+                  snapshot: () => ({ mode: "agent" as const }),
+                  acquireHumanControl: async () => {
+                    throw new Error("Not used in this test.");
+                  },
+                },
+              },
+              access: { mode: "local" },
+              authentication: { type: "password", password: "password" },
+            },
+          ],
+        },
+      ],
+    }).start({ port, hostname: "127.0.0.1", log: false, handleSignals: false });
+
+    try {
+      const baseUrl = `http://127.0.0.1:${port}`;
+      const sandboxes = await fetchEventually(`${baseUrl}/sandboxes`);
+      const summary = (await sandboxes.json()) as { sandboxes: Array<{ ref: string }> };
+      const ref = summary.sandboxes[0]?.ref;
+      if (ref === undefined) throw new Error("Expected a sandbox reference.");
+      const control = await fetch(`${baseUrl}/sandboxes/${ref}/views/desktop/control`, {
+        headers: { origin: baseUrl },
+      });
+      expect(control.status).toBe(200);
+      await expect(control.json()).resolves.toEqual({ mode: "agent" });
+    } finally {
+      studio.close();
+    }
+  });
+
   it("serves until aborted and awaits shutdown cleanup", async () => {
     const controller = new AbortController();
-    const agent = new AgentBuilder("support", new QueueModel([])).build();
+    const agent = new Agent({ id: "support", model: new QueueModel([]) });
     const studio = new Studio([agent]);
     let releaseCleanup: () => void = () => {};
     let markCleanupStarted: () => void = () => {};
@@ -1111,7 +1262,7 @@ describe("Anvia studio", () => {
         else reject(new Error("Expected a TCP server address"));
       });
     });
-    const agent = new AgentBuilder("support", new QueueModel([])).build();
+    const agent = new Agent({ id: "support", model: new QueueModel([]) });
     const studio = new Studio([agent]);
     let cleanedUp = false;
 
@@ -1135,10 +1286,12 @@ describe("Anvia studio", () => {
 
   it("uses built-in stores with automatic Studio traces", async () => {
     const model = new QueueModel([response([AssistantContent.text("traced")])]);
-    const agent = new AgentBuilder("support", model)
-      .name("Support")
-      .description("Support assistant")
-      .build();
+    const agent = new Agent({
+      id: "support",
+      model,
+      name: "Support",
+      description: "Support assistant",
+    });
     const studio = new Studio([agent]).start({ port: 0, log: false });
 
     try {
@@ -1156,7 +1309,11 @@ describe("Anvia studio", () => {
         new Request("http://runner.test/agents/support/runs", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ message: "trace me", sessionId: session.id }),
+          body: JSON.stringify({
+            type: "messages",
+            messages: [Message.user("trace me")],
+            sessionId: session.id,
+          }),
         }),
       );
       expect(run.status).toBe(200);
@@ -1174,22 +1331,26 @@ describe("Anvia studio", () => {
 
   it("preserves dynamic context when Studio wraps agents for traces", async () => {
     const embeddings = new KeywordEmbeddingModel();
-    const embedded = await embedDocuments(
-      embeddings,
-      [{ id: "refund-policy", text: "Refund policy is 30 days." }],
-      {
-        id: (document) => document.id,
-        content: (document) => document.text,
-      },
-    );
-    const index = InMemoryVectorStore.fromDocuments(embedded).index(embeddings);
+    const { documents: embedded } = await embedDocuments({
+      model: embeddings,
+      documents: [{ id: "refund-policy", text: "Refund policy is 30 days." }],
+      id: (document) => document.id,
+      content: (document) => document.text,
+    });
+    const store = InMemoryVectorStore.fromDocuments({ documents: embedded });
     const model = new QueueModel([response([AssistantContent.text("ok")])]);
-    const agent = new AgentBuilder("support", model)
-      .dynamicContext(index, {
-        topK: 1,
-        format: (result) => ({ id: result.id, text: result.document.text }),
-      })
-      .build();
+    const agent = new Agent({
+      id: "support",
+      model,
+      context: [
+        createVectorContext({
+          store,
+          model: embeddings,
+          topK: 1,
+          format: (result) => ({ id: result.id, text: result.document.text }),
+        }),
+      ],
+    });
     const runner = new Studio([agent]);
 
     const created = await runner.fetch(
@@ -1205,7 +1366,11 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "refund policy", sessionId: session.id }),
+        body: JSON.stringify({
+          type: "messages",
+          messages: [Message.user("refund policy")],
+          sessionId: session.id,
+        }),
       }),
     );
 
@@ -1220,9 +1385,13 @@ describe("Anvia studio", () => {
 
   it("preserves dynamic tools when Studio wraps agents for traces", async () => {
     const embeddings = new KeywordEmbeddingModel();
-    const index = await createToolIndex(embeddings, [lookupPolicyTool]);
+    const index = await createToolIndex({
+      model: embeddings,
+      tools: [lookupPolicyTool],
+      topK: 1,
+    });
     const model = new QueueModel([response([AssistantContent.text("ok")])]);
-    const agent = new AgentBuilder("support", model).dynamicTools(index, { topK: 1 }).build();
+    const agent = new Agent({ id: "support", model, tools: [index] });
     const runner = new Studio([agent]);
 
     const created = await runner.fetch(
@@ -1238,7 +1407,11 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "refund policy", sessionId: session.id }),
+        body: JSON.stringify({
+          type: "messages",
+          messages: [Message.user("refund policy")],
+          sessionId: session.id,
+        }),
       }),
     );
 
@@ -1250,15 +1423,54 @@ describe("Anvia studio", () => {
     ]);
   });
 
+  it("preserves provider tools when Studio wraps agents for traces", async () => {
+    const providerTool: ProviderTool = {
+      kind: "provider",
+      provider: "test",
+      name: "web_search",
+    };
+    const model = new QueueModel([response([AssistantContent.text("ok")])]);
+    const agent = new Agent({ id: "support", model, tools: [providerTool] });
+    const runner = new Studio([agent]);
+
+    const created = await runner.fetch(
+      new Request("http://runner.test/sessions", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ agentId: "support" }),
+      }),
+    );
+    const session = (await created.json()) as { id: string };
+
+    const run = await runner.fetch(
+      new Request("http://runner.test/agents/support/runs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          type: "messages",
+          messages: [Message.user("research")],
+          sessionId: session.id,
+        }),
+      }),
+    );
+
+    expect(run.status).toBe(200);
+    expect(model.requests[0]?.providerTools).toEqual([providerTool]);
+  });
+
   it("exposes tool metadata for registered agents", async () => {
     const embeddings = new KeywordEmbeddingModel();
-    const index = await createToolIndex(embeddings, [lookupPolicyTool]);
+    const index = await createToolIndex({
+      model: embeddings,
+      tools: [lookupPolicyTool],
+      topK: 1,
+    });
     const refundTool = createRefundTool(() => "ok");
-    const agent = new AgentBuilder("support", new QueueModel([]))
-      .tool(addTool)
-      .tool(refundTool)
-      .dynamicTools(index, { topK: 1 })
-      .build();
+    const agent = new Agent({
+      id: "support",
+      model: new QueueModel([]),
+      tools: [addTool, refundTool, index],
+    });
     const runner = new Studio([agent]);
 
     expect(runner.config().capabilities.tools).toEqual({ enabled: true });
@@ -1280,7 +1492,7 @@ describe("Anvia studio", () => {
           agentId: "support",
           name: "issue_refund",
           source: "static",
-          approval: { required: true, rejectMessage: "Rejected by test." },
+          approval: { required: true },
         }),
         expect.objectContaining({
           agentId: "support",
@@ -1294,7 +1506,7 @@ describe("Anvia studio", () => {
   });
 
   it("runs registered tools directly", async () => {
-    const agent = new AgentBuilder("support", new QueueModel([])).tool(addTool).build();
+    const agent = new Agent({ id: "support", model: new QueueModel([]), tools: [addTool] });
     const runner = new Studio([agent]);
 
     const res = await runner.fetch(
@@ -1310,17 +1522,20 @@ describe("Anvia studio", () => {
       agentId: "support",
       toolName: "add",
       status: "success",
-      result: "5",
+      result: { type: "json", value: 5 },
       events: [],
     });
   });
 
-  it("automatically exposes sandbox sessions bound to agent tools", async () => {
-    const session = {
+  it("exposes only explicitly registered sandbox inspectors", async () => {
+    const inspector = {
       id: "workspace_1",
       provider: "test-sandbox",
       workdir: "/workspace",
-      listFiles: async () => [{ path: "notes.txt", type: "file", size: 5 }],
+      publishedPorts: [
+        { containerPort: 6080, host: "127.0.0.1", hostPort: 49152, protocol: "tcp" },
+      ],
+      listFiles: async () => [{ path: "notes.txt", type: "file" as const, size: 5 }],
       readFile: async () => new TextEncoder().encode("hello"),
     };
     const tool: Tool<Record<string, never>, string> = {
@@ -1332,12 +1547,37 @@ describe("Anvia studio", () => {
       }),
       call: () => "notes.txt",
     };
-    Object.defineProperty(tool, Symbol.for("anvia.sandbox.tool.metadata"), {
-      value: { session },
-      enumerable: false,
+    const agent = new Agent({ id: "coder", model: new QueueModel([]), tools: [tool] });
+    const implicit = new Studio([agent]);
+    expect(implicit.config().capabilities.sandboxes).toBeUndefined();
+
+    const runner = new Studio([agent], {
+      sandboxes: [
+        {
+          inspector,
+          agentIds: ["coder"],
+          toolNames: ["list_files"],
+          views: [
+            {
+              id: "desktop",
+              label: "Browser",
+              source: {
+                protocol: "novnc",
+                containerPort: 6080,
+                control: {
+                  snapshot: () => ({ mode: "agent" as const }),
+                  acquireHumanControl: async () => {
+                    throw new Error("Not used in this test.");
+                  },
+                },
+              },
+              access: { mode: "local" },
+              authentication: { type: "password", password: "password" },
+            },
+          ],
+        },
+      ],
     });
-    const agent = new AgentBuilder("coder", new QueueModel([])).tool(tool).build();
-    const runner = new Studio([agent]);
 
     expect(runner.config().capabilities.sandboxes).toEqual({ enabled: true });
     const sandboxes = await runner.fetch(new Request("http://runner.test/sandboxes"));
@@ -1350,6 +1590,8 @@ describe("Anvia studio", () => {
           workdir: "/workspace",
           agentIds: ["coder"],
           toolNames: ["list_files"],
+          views: [{ id: "desktop", label: "Browser", protocol: "novnc" }],
+          capabilities: { views: true },
         },
       ],
     });
@@ -1362,12 +1604,17 @@ describe("Anvia studio", () => {
   });
 
   it("exposes runtime status and richer agent runtime metadata", async () => {
-    const agent = new AgentBuilder("support", new QueueModel([]))
-      .name("Support")
-      .tool(addTool)
-      .defaultMaxTurns(4)
-      .build();
+    const agent = new Agent({
+      id: "support",
+      name: "Support",
+      model: new QueueModel([]),
+      tools: [addTool],
+      maxTurns: 4,
+      lifecycle: { onStart() {} },
+    });
     const runner = new Studio([agent]);
+
+    expect(runner.config().agents[0]?.metadata).toMatchObject({ hasLifecycle: true });
 
     const status = await runner.fetch(new Request("http://runner.test/status"));
     expect(status.status).toBe(200);
@@ -1401,7 +1648,7 @@ describe("Anvia studio", () => {
       approvalToolCount: 0,
       mcpToolCount: 0,
       hasMemory: false,
-      hasHook: false,
+      hasLifecycle: true,
       hasOutputSchema: false,
       defaultMaxTurns: 4,
     });
@@ -1410,7 +1657,7 @@ describe("Anvia studio", () => {
   it("serializes cyclic model metadata in runtime summaries", async () => {
     const model = new QueueModel([]);
     Object.assign(model, { self: model });
-    const agent = new AgentBuilder("support", model).build();
+    const agent = new Agent({ id: "support", model });
     const runner = new Studio([agent]);
 
     const runtime = await runner.fetch(new Request("http://runner.test/agents/support/runtime"));
@@ -1425,34 +1672,33 @@ describe("Anvia studio", () => {
   });
 
   it("exposes MCP server metadata for registered agents", async () => {
-    const mcpClient: McpClient = {
-      async listTools() {
+    const mcpTool: McpTool = {
+      name: "github_lookup_policy",
+      mcp: { serverName: "policies", remoteName: "lookup_policy" },
+      definition() {
         return {
-          tools: [
-            {
-              name: "lookup_policy",
-              description: "Look up policy documents",
-              inputSchema: {
-                type: "object",
-                properties: {
-                  query: { type: "string" },
-                },
-                required: ["query"],
-              },
-            },
-          ],
+          name: "github_lookup_policy",
+          description: "Look up policy documents",
+          parameters: {
+            type: "object",
+            properties: { query: { type: "string" } },
+            required: ["query"],
+          },
         };
       },
-      async callTool() {
-        return { content: [{ type: "text", text: "policy" }] };
+      async call() {
+        return [{ type: "text", text: "policy" }];
       },
-      async close() {},
     };
-    const mcpServer = await connectMcp({
+    const mcpServer: McpServer = {
       name: "policies",
-      connect: async () => mcpClient,
+      tools: [mcpTool],
+    };
+    const agent = new Agent({
+      id: "support",
+      model: new QueueModel([]),
+      mcpServers: [mcpServer],
     });
-    const agent = new AgentBuilder("support", new QueueModel([])).mcp([mcpServer]).build();
     const runner = new Studio([agent]);
 
     expect(runner.config().capabilities.mcps).toEqual({ enabled: true });
@@ -1468,7 +1714,7 @@ describe("Anvia studio", () => {
           toolCount: 1,
           tools: [
             {
-              name: "lookup_policy",
+              name: "github_lookup_policy",
               description: "Look up policy documents",
               source: "static",
               approval: { required: false },
@@ -1492,18 +1738,37 @@ describe("Anvia studio", () => {
       tools: [
         expect.objectContaining({
           agentId: "support",
-          name: "lookup_policy",
+          name: "github_lookup_policy",
           source: "static",
           mcpServerName: "policies",
         }),
       ],
     });
+
+    const toolRun = await runner.fetch(
+      new Request("http://runner.test/agents/support/tools/github_lookup_policy/runs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ args: { query: "refunds" } }),
+      }),
+    );
+    expect(toolRun.status).toBe(200);
+    await expect(toolRun.json()).resolves.toMatchObject({
+      toolName: "github_lookup_policy",
+      status: "success",
+      result: {
+        type: "json",
+        value: [{ type: "text", text: "policy" }],
+      },
+    });
   });
 
   it("reports knowledge capability and exposes the knowledge inspector route", async () => {
-    const agent = new AgentBuilder("support", new QueueModel([]))
-      .context("Refund policy is 30 days.", "refund-policy")
-      .build();
+    const agent = new Agent({
+      id: "support",
+      model: new QueueModel([]),
+      context: [{ id: "refund-policy", text: "Refund policy is 30 days." }],
+    });
     const runner = new Studio([agent]);
 
     expect(runner.config().capabilities).toMatchObject({
@@ -1551,29 +1816,38 @@ describe("Anvia studio", () => {
 
   it("exposes inspectable dynamic knowledge items and unsupported source states", async () => {
     const embeddings = new KeywordEmbeddingModel();
-    const embedded = await embedDocuments(
-      embeddings,
-      [
+    const { documents: embedded } = await embedDocuments({
+      model: embeddings,
+      documents: [
         { id: "refund-policy", text: "Refund policy is 30 days." },
         { id: "shipping-policy", text: "Shipping updates go to operations." },
       ],
-      {
-        id: (document) => document.id,
-        content: (document) => document.text,
+      id: (document) => document.id,
+      content: (document) => document.text,
+    });
+    const inspectableStore = InMemoryVectorStore.fromDocuments({ documents: embedded });
+    const unsupportedStore: VectorStore<{ text: string }> = {
+      async ensure() {},
+      async validate() {},
+      async upsert() {},
+      async search() {
+        return [];
       },
-    );
-    const inspectableIndex = InMemoryVectorStore.fromDocuments(embedded).index(embeddings);
-    const unsupportedIndex: VectorSearchIndex<{ text: string }> = {
-      search: async (_request: VectorSearchRequest) => [],
-      searchIds: async (_request: VectorSearchRequest) => [],
-      asTool: (_options: VectorSearchToolOptions) => lookupPolicyTool,
     };
-    const toolIndex = await createToolIndex(embeddings, [lookupPolicyTool]);
-    const agent = new AgentBuilder("support", new QueueModel([]))
-      .dynamicContext(inspectableIndex, { topK: 1 })
-      .dynamicContext(unsupportedIndex, { topK: 1 })
-      .dynamicTools(toolIndex, { topK: 1 })
-      .build();
+    const toolIndex = await createToolIndex({
+      model: embeddings,
+      tools: [lookupPolicyTool],
+      topK: 1,
+    });
+    const agent = new Agent({
+      id: "support",
+      model: new QueueModel([]),
+      context: [
+        createVectorContext({ store: inspectableStore, model: embeddings, topK: 1 }),
+        createVectorContext({ store: unsupportedStore, model: embeddings, topK: 1 }),
+      ],
+      tools: [toolIndex],
+    });
     const runner = new Studio([agent]);
 
     const knowledge = (await (
@@ -1651,13 +1925,12 @@ describe("Anvia studio", () => {
   });
 
   it("starts a served runner from configured agents", async () => {
-    const agent = new AgentBuilder(
-      "support",
-      new QueueModel([response([AssistantContent.text("ok")])]),
-    )
-      .name("Support")
-      .tool(createRefundTool(() => "ok"))
-      .build();
+    const agent = new Agent({
+      id: "support",
+      model: new QueueModel([response([AssistantContent.text("ok")])]),
+      name: "Support",
+      tools: [createRefundTool(() => "ok")],
+    });
     const runner = new Studio([agent], {
       quickPrompts: {
         support: ["Issue a refund"],
@@ -1667,14 +1940,14 @@ describe("Anvia studio", () => {
     try {
       expect(runner.config()).toMatchObject({
         agents: [{ id: "support", name: "Support", quickPrompts: ["Issue a refund"] }],
-        capabilities: { approvals: { enabled: true } },
+        capabilities: { interactions: { enabled: true } },
       });
 
       const res = await runner.fetch(
         new Request("http://runner.test/agents/support/runs", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ message: "hi" }),
+          body: JSON.stringify({ type: "messages", messages: [Message.user("hi")] }),
         }),
       );
       expect(res.status).toBe(200);
@@ -1685,7 +1958,7 @@ describe("Anvia studio", () => {
 
   it("runs an agent without streaming and passes history", async () => {
     const model = new QueueModel([response([AssistantContent.text("Anvia")])]);
-    const agent = new AgentBuilder("support", model).instructions("system").build();
+    const agent = new Agent({ id: "support", model, instructions: "system" });
     const runner = new Studio([agent]);
 
     const res = await runner.fetch(
@@ -1693,8 +1966,12 @@ describe("Anvia studio", () => {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          message: "What is this?",
-          history: [Message.user("The project is Anvia."), Message.assistant("Noted.")],
+          type: "messages",
+          messages: [
+            Message.user("The project is Anvia."),
+            Message.assistant("Noted."),
+            Message.user("What is this?"),
+          ],
           maxTurns: 2,
           toolConcurrency: 3,
           metadata: { requestId: "req_1" },
@@ -1713,13 +1990,98 @@ describe("Anvia studio", () => {
     ]);
   });
 
-  it("retries transient completion failures for buffered agent runs", async () => {
+  it("links separate buffered runs across an interaction response", async () => {
+    let executed = false;
+    const refundTool = createRefundTool(({ orderId, amount }) => {
+      executed = true;
+      return `Refunded ${amount} for ${orderId}`;
+    });
+    const observer = new TraceObserver();
+    const model = new QueueModel([
+      response([
+        AssistantContent.toolCall(
+          "tool_1",
+          "issue_refund",
+          { orderId: "ORD-1", amount: 25 },
+          "call_1",
+        ),
+      ]),
+      response([AssistantContent.text("Refund complete")]),
+    ]);
+    const agent = new Agent({
+      id: "support",
+      model,
+      tools: [refundTool],
+      observability: { observers: { external: observer }, primaryTrace: "external" },
+      maxTurns: 2,
+    });
+    const runner = new Studio([agent]);
+
+    const firstResponse = await runner.fetch(
+      new Request("http://runner.test/agents/support/runs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          type: "messages",
+          messages: [Message.user("refund")],
+          maxTurns: 2,
+          trace: { name: "interaction-phase", metadata: { source: "test" } },
+        }),
+      }),
+    );
+    const first = (await firstResponse.json()) as AgentRunResponse;
+    if (first.type !== "interaction") throw new Error("Expected interaction outcome");
+    expect(first).not.toHaveProperty("continuation");
+    expect(first).not.toHaveProperty("messages");
+    expect(executed).toBe(false);
+
+    const resumedResponse = await runner.fetch(
+      new Request("http://runner.test/agents/support/runs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          type: "interaction_response",
+          interactionId: first.interaction.id,
+          response: { type: "tool-approval", approved: true },
+        }),
+      }),
+    );
+    expect(resumedResponse.status).toBe(200);
+    const result = (await resumedResponse.json()) as AgentRunResponse;
+    expect(result).toMatchObject({
+      type: "response",
+      output: "Refund complete",
+      resumedFrom: {
+        runId: first.runId,
+        interactionId: first.interaction.id,
+      },
+    });
+    expect(result.runId).not.toBe(first.runId);
+    expect(observer.starts.map((start) => start.runId)).toEqual([first.runId, result.runId]);
+    expect(observer.starts.map((start) => start.trace)).toEqual([
+      expect.objectContaining({
+        name: "interaction-phase",
+        metadata: expect.objectContaining({ source: "test" }),
+      }),
+      expect.objectContaining({
+        name: "interaction-phase",
+        metadata: expect.objectContaining({ source: "test" }),
+      }),
+    ]);
+    expect(executed).toBe(true);
+  });
+
+  it("inherits configured retries for buffered agent runs", async () => {
     const error = Object.assign(new Error("temporarily unavailable"), { status: 503 });
     const model = new FlakyQueueModel([
       { error },
       { response: response([AssistantContent.text("recovered")]) },
     ]);
-    const agent = new AgentBuilder("support", model).build();
+    const agent = new Agent({
+      id: "support",
+      model,
+      retries: { initialDelayMs: 0, maxDelayMs: 0 },
+    });
     const runner = new Studio([agent]);
     const random = vi.spyOn(Math, "random").mockReturnValue(0);
 
@@ -1728,7 +2090,7 @@ describe("Anvia studio", () => {
         new Request("http://runner.test/agents/support/runs", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ message: "hi" }),
+          body: JSON.stringify({ type: "messages", messages: [Message.user("hi")] }),
         }),
       );
 
@@ -1744,7 +2106,11 @@ describe("Anvia studio", () => {
   it("passes trace options to observed non-streaming runs and preserves trace output", async () => {
     const observer = new TraceObserver();
     const model = new QueueModel([response([AssistantContent.text("traced")])]);
-    const agent = new AgentBuilder("support", model).observe(observer).build();
+    const agent = new Agent({
+      id: "support",
+      model,
+      observability: { observers: { external: observer }, primaryTrace: "external" },
+    });
     const runner = new Studio([agent]);
 
     const res = await runner.fetch(
@@ -1752,7 +2118,8 @@ describe("Anvia studio", () => {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          message: "trace me",
+          type: "messages",
+          messages: [Message.user("trace me")],
           trace: {
             name: "ui-run",
             sessionId: "session_1",
@@ -1766,7 +2133,11 @@ describe("Anvia studio", () => {
     expect(res.status).toBe(200);
     await expect(res.json()).resolves.toMatchObject({
       output: "traced",
-      trace: { traceId: "trace_1", observationId: "obs_1" },
+      trace: {
+        observer: "studio",
+        traceId: expect.any(String),
+        observationId: expect.any(String),
+      },
     });
     expect(observer.starts[0]?.trace).toMatchObject({
       name: "ui-run",
@@ -1778,39 +2149,53 @@ describe("Anvia studio", () => {
 
   it("streams agent events as JSONL", async () => {
     const model = new StreamingQueueModel([[{ type: "text_delta", delta: "hello" }]]);
-    const agent = new AgentBuilder("support", model).build();
+    const agent = new Agent({ id: "support", model });
     const runner = new Studio([agent]);
 
     const res = await runner.fetch(
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "hi", stream: true }),
+        body: JSON.stringify({ type: "messages", messages: [Message.user("hi")], stream: true }),
       }),
     );
 
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toContain("application/x-ndjson");
-    expect(await readJsonl(res)).toMatchObject([
-      { type: "turn_start", turn: 1 },
-      {
+    expect(res.headers.get("x-anvia-stream-protocol")).toBe("anvia.client.v3");
+    expect(await readJsonl(res)).toEqual([
+      expect.objectContaining({ type: "run_start", source: "agent" }),
+      expect.objectContaining({ type: "turn_start", turn: 1 }),
+      expect.objectContaining({
         type: "generation_start",
         turn: 1,
-        modelInfo: { provider: "test", defaultModel: "test" },
-      },
-      { type: "text_delta", turn: 1, delta: "hello" },
-      { type: "turn_end", turn: 1 },
-      { type: "final", output: "hello" },
+        model: { provider: "test", modelId: "test" },
+      }),
+      expect.objectContaining({ type: "message_start", turn: 1, role: "assistant" }),
+      expect.objectContaining({ type: "text_start", turn: 1 }),
+      expect.objectContaining({ type: "text_delta", turn: 1, delta: "hello" }),
+      expect.objectContaining({ type: "text_end", turn: 1, text: "hello" }),
+      expect.objectContaining({ type: "message_end", turn: 1 }),
+      expect.objectContaining({ type: "turn_end", turn: 1 }),
+      expect.objectContaining({
+        type: "run_end",
+        status: "completed",
+        output: "hello",
+      }),
     ]);
   });
 
-  it("retries transient streaming failures before the first provider event", async () => {
+  it("inherits configured retries for streaming agent runs", async () => {
     const error = Object.assign(new Error("temporarily unavailable"), { status: 503 });
     const model = new StreamingQueueModel([
       streamThenThrow([], error),
       [{ type: "text_delta", delta: "recovered" }],
     ]);
-    const agent = new AgentBuilder("support", model).build();
+    const agent = new Agent({
+      id: "support",
+      model,
+      retries: { initialDelayMs: 0, maxDelayMs: 0 },
+    });
     const runner = new Studio([agent]);
     const random = vi.spyOn(Math, "random").mockReturnValue(0);
 
@@ -1819,7 +2204,7 @@ describe("Anvia studio", () => {
         new Request("http://runner.test/agents/support/runs", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ message: "hi", stream: true }),
+          body: JSON.stringify({ type: "messages", messages: [Message.user("hi")], stream: true }),
         }),
       );
       const events = await readJsonl(res);
@@ -1827,7 +2212,11 @@ describe("Anvia studio", () => {
       expect(res.status).toBe(200);
       expect(events).not.toContainEqual(expect.objectContaining({ type: "error" }));
       expect(events).toContainEqual(
-        expect.objectContaining({ type: "final", output: "recovered" }),
+        expect.objectContaining({
+          type: "run_end",
+          status: "completed",
+          output: "recovered",
+        }),
       );
       expect(model.requests).toHaveLength(2);
       expect(model.requests[1]).toBe(model.requests[0]);
@@ -1838,7 +2227,7 @@ describe("Anvia studio", () => {
 
   it("accepts shared UI-style agent run requests", async () => {
     const model = new QueueModel([response([AssistantContent.text("hello")])]);
-    const agent = new AgentBuilder("support", model).build();
+    const agent = new Agent({ id: "support", model });
     const runner = new Studio([agent]);
 
     const res = await runner.fetch(
@@ -1846,6 +2235,7 @@ describe("Anvia studio", () => {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
+          type: "messages",
           messages: [Message.user("hi")],
           metadata: { source: "test" },
         }),
@@ -1858,7 +2248,7 @@ describe("Anvia studio", () => {
 
   it("normalizes UI-style agent run messages into history plus the latest prompt", async () => {
     const model = new QueueModel([response([AssistantContent.text("next")])]);
-    const agent = new AgentBuilder("support", model).build();
+    const agent = new Agent({ id: "support", model });
     const runner = new Studio([agent]);
 
     const res = await runner.fetch(
@@ -1866,6 +2256,7 @@ describe("Anvia studio", () => {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
+          type: "messages",
           messages: [Message.user("before"), Message.assistant("old"), Message.user("next")],
         }),
       }),
@@ -1880,7 +2271,7 @@ describe("Anvia studio", () => {
   });
 
   it("rejects UI-style history combined with a session id", async () => {
-    const agent = new AgentBuilder("support", new QueueModel([])).build();
+    const agent = new Agent({ id: "support", model: new QueueModel([]) });
     const runner = new Studio([agent]);
     const created = await runner.fetch(
       new Request("http://runner.test/sessions", {
@@ -1896,6 +2287,7 @@ describe("Anvia studio", () => {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
+          type: "messages",
           messages: [Message.user("before"), Message.user("next")],
           sessionId: session.id,
         }),
@@ -1904,13 +2296,13 @@ describe("Anvia studio", () => {
 
     expect(res.status).toBe(400);
     await expect(res.json()).resolves.toMatchObject({
-      error: { message: "sessionId cannot be combined with history" },
+      error: { message: "sessionId requires exactly one user message" },
     });
   });
 
-  it("keeps legacy message bodies authoritative when both request shapes are sent", async () => {
+  it("rejects mixed legacy and canonical message bodies", async () => {
     const model = new QueueModel([response([AssistantContent.text("legacy")])]);
-    const agent = new AgentBuilder("support", model).build();
+    const agent = new Agent({ id: "support", model });
     const runner = new Studio([agent]);
 
     const res = await runner.fetch(
@@ -1924,11 +2316,14 @@ describe("Anvia studio", () => {
       }),
     );
 
-    expect(res.status).toBe(200);
-    expect(model.requests[0]?.chatHistory).toEqual([Message.user("legacy")]);
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({
+      error: { message: "Legacy message/history requests are not supported; use messages" },
+    });
+    expect(model.requests).toHaveLength(0);
   });
 
-  it("pauses protected streaming tool calls until approval", async () => {
+  it("suspends a protected stream and resumes it through the canonical run route", async () => {
     let executed = false;
     const refundTool = createRefundTool(({ orderId, amount }) => {
       executed = true;
@@ -1945,413 +2340,140 @@ describe("Anvia studio", () => {
       ],
       [{ type: "text_delta", delta: "Refund complete" }],
     ]);
-    const agent = new AgentBuilder("support", model).tool(refundTool).defaultMaxTurns(2).build();
-    const runner = new Studio([agent]);
+    const runner = new Studio([
+      new Agent({ id: "support", model, tools: [refundTool], maxTurns: 2 }),
+    ]);
 
-    const res = await runner.fetch(
+    const firstResponse = await runner.fetch(
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "refund", stream: true }),
+        body: JSON.stringify({
+          type: "messages",
+          messages: [Message.user("refund")],
+          stream: true,
+        }),
       }),
     );
-
-    expect(res.status).toBe(200);
-    const reader = createJsonlReader(res);
-    const eventsBeforeApproval: unknown[] = [];
-    let approvalId = "";
-    while (approvalId.length === 0) {
-      const event = await withTimeout(reader.read(), 1_000);
-      eventsBeforeApproval.push(event);
-      if ((event as { type?: string }).type === "tool_approval_request") {
-        approvalId = (event as { approval: { id: string } }).approval.id;
-      }
-    }
-
-    expect(eventsBeforeApproval).toContainEqual(
-      expect.objectContaining({ type: "tool_call", toolCall: expect.any(Object) }),
-    );
+    const firstEvents = await readJsonl(firstResponse);
+    const interactionEvent = firstEvents.find(
+      (event) =>
+        (event as { type?: string }).type === "interaction" &&
+        (event as { interaction?: { type?: string } }).interaction?.type === "tool-approval",
+    ) as { interaction: { id: string }; runId: string } | undefined;
+    expect(interactionEvent).toBeDefined();
     expect(executed).toBe(false);
-
-    const pending = (await (
-      await runner.fetch(new Request("http://runner.test/approvals?status=pending"))
-    ).json()) as { approvals: Array<{ id: string; status: string; toolName: string }> };
-    expect(pending.approvals).toEqual([
+    expect(firstEvents).toContainEqual(
       expect.objectContaining({
-        id: approvalId,
-        status: "pending",
-        toolName: "issue_refund",
+        type: "run_end",
+        status: "suspended",
+        runId: interactionEvent?.runId,
       }),
-    ]);
+    );
 
-    const decision = await runner.fetch(
-      new Request(`http://runner.test/approvals/${approvalId}/decision`, {
+    const resumedResponse = await runner.fetch(
+      new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ approved: true }),
+        body: JSON.stringify({
+          type: "interaction_response",
+          interactionId: interactionEvent?.interaction.id,
+          response: { type: "tool-approval", approved: true, reason: "Reviewed" },
+          stream: true,
+        }),
       }),
     );
-    expect(decision.status).toBe(200);
-    await expect(decision.json()).resolves.toMatchObject({ id: approvalId, status: "approved" });
+    const resumedEvents = await readJsonl(resumedResponse);
+    expect(executed).toBe(true);
+    expect(resumedEvents).toContainEqual(
+      expect.objectContaining({
+        type: "tool_result",
+        result: { status: "success", output: "Refunded 25 for ORD-1" },
+      }),
+    );
+    const resumedEnd = resumedEvents.find(
+      (event) => (event as { type?: string }).type === "run_end",
+    ) as { runId: string; status: string } | undefined;
+    expect(resumedEnd).toMatchObject({ status: "completed" });
+    expect(resumedEnd?.runId).not.toBe(interactionEvent?.runId);
 
     const duplicate = await runner.fetch(
-      new Request(`http://runner.test/approvals/${approvalId}/decision`, {
+      new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ approved: true }),
+        body: JSON.stringify({
+          type: "interaction_response",
+          interactionId: interactionEvent?.interaction.id,
+          response: { type: "tool-approval", approved: true },
+        }),
       }),
     );
     expect(duplicate.status).toBe(409);
-
-    const missing = await runner.fetch(
-      new Request("http://runner.test/approvals/missing/decision", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ approved: true }),
-      }),
-    );
-    expect(missing.status).toBe(404);
-
-    const remaining = await readRemainingJsonl(reader);
-    expect(executed).toBe(true);
-    expect(remaining).toContainEqual(
-      expect.objectContaining({
-        type: "tool_approval_result",
-        approval: expect.objectContaining({ id: approvalId, status: "approved" }),
-      }),
-    );
-    expect(remaining).toContainEqual(
-      expect.objectContaining({
-        type: "tool_result",
-        result: "Refunded 25 for ORD-1",
-      }),
-    );
-    expect(remaining).toContainEqual(expect.objectContaining({ type: "final" }));
   });
 
-  it("cancels pending approvals when a streaming response is cancelled", async () => {
+  it("rejects a protected tool without executing it", async () => {
     let executed = false;
-    const refundTool = createRefundTool(() => {
-      executed = true;
-      return "should not run";
-    });
-    const model = new StreamingQueueModel([
-      [
-        {
-          type: "tool_call_delta",
-          id: "call_1",
-          name: "issue_refund",
-          argumentsDelta: '{"orderId":"ORD-1","amount":25}',
-        },
-      ],
+    const model = new QueueModel([
+      response([
+        AssistantContent.toolCall("call_1", "issue_refund", {
+          orderId: "ORD-1",
+          amount: 25,
+        }),
+      ]),
+      response([AssistantContent.text("Refund denied")]),
     ]);
-    const agent = new AgentBuilder("support", model).tool(refundTool).defaultMaxTurns(2).build();
-    const runner = new Studio([agent]);
-    const response = await runner.fetch(
+    const runner = new Studio([
+      new Agent({
+        id: "support",
+        model,
+        tools: [
+          createRefundTool(() => {
+            executed = true;
+            return "should not run";
+          }),
+        ],
+        maxTurns: 2,
+      }),
+    ]);
+
+    const firstResponse = await runner.fetch(
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "refund", stream: true }),
+        body: JSON.stringify({
+          type: "messages",
+          messages: [Message.user("refund")],
+        }),
       }),
     );
-    const reader = createJsonlReader(response);
-    let approvalId = "";
-    while (approvalId.length === 0) {
-      const event = await withTimeout(reader.read(), 1_000);
-      if ((event as { type?: string }).type === "tool_approval_request") {
-        approvalId = (event as { approval: { id: string } }).approval.id;
-      }
-    }
+    const first = (await firstResponse.json()) as AgentRunResponse;
+    if (first.type !== "interaction") throw new Error("Expected interaction outcome");
 
-    await withTimeout(reader.cancel(), 1_000);
-
-    const pending = (await (
-      await runner.fetch(new Request("http://runner.test/approvals?status=pending"))
-    ).json()) as { approvals: unknown[] };
-    expect(pending.approvals).toEqual([]);
-    const resolved = (await (
-      await runner.fetch(new Request("http://runner.test/approvals?status=resolved"))
-    ).json()) as { approvals: Array<{ id: string; status: string; reason?: string }> };
-    expect(resolved.approvals).toContainEqual(
-      expect.objectContaining({
-        id: approvalId,
-        status: "cancelled",
-        reason: "Run cancelled in Anvia Studio.",
-      }),
-    );
-    expect(executed).toBe(false);
-  });
-
-  it("rejects protected tool calls without executing them and persists approval status", async () => {
-    let executed = false;
-    const refundTool = createRefundTool(() => {
-      executed = true;
-      return "should not run";
-    });
-    const model = new StreamingQueueModel([
-      [
-        {
-          type: "tool_call_delta",
-          id: "call_1",
-          name: "issue_refund",
-          argumentsDelta: '{"orderId":"ORD-1","amount":25}',
-        },
-      ],
-      [{ type: "text_delta", delta: "Refund denied" }],
-    ]);
-    const agent = new AgentBuilder("support", model).tool(refundTool).defaultMaxTurns(2).build();
-    const runner = new Studio([agent]);
-    const created = await runner.fetch(
-      new Request("http://runner.test/sessions", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ agentId: "support" }),
-      }),
-    );
-    const session = (await created.json()) as { id: string };
-
-    const res = await runner.fetch(
+    const resumedResponse = await runner.fetch(
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "refund", sessionId: session.id, stream: true }),
-      }),
-    );
-    expect(res.status).toBe(200);
-
-    const reader = createJsonlReader(res);
-    let approvalId = "";
-    while (approvalId.length === 0) {
-      const event = await withTimeout(reader.read(), 1_000);
-      if ((event as { type?: string }).type === "tool_approval_request") {
-        approvalId = (event as { approval: { id: string } }).approval.id;
-      }
-    }
-
-    const decision = await runner.fetch(
-      new Request(`http://runner.test/approvals/${approvalId}/decision`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ approved: false }),
-      }),
-    );
-    expect(decision.status).toBe(200);
-    const remaining = await readRemainingJsonl(reader);
-
-    expect(executed).toBe(false);
-    expect(remaining).toContainEqual(
-      expect.objectContaining({
-        type: "tool_result",
-        result: "Rejected by test.",
-      }),
-    );
-
-    const loaded = await runner.fetch(new Request(`http://runner.test/sessions/${session.id}`));
-    await expect(loaded.json()).resolves.toMatchObject({
-      transcript: [
-        { kind: "message", role: "user", text: "refund" },
-        {
-          kind: "tool",
-          toolName: "issue_refund",
-          approval: {
-            id: approvalId,
-            status: "rejected",
-            reason: "Rejected by test.",
-          },
-          result: "Rejected by test.",
-        },
-        { kind: "message", role: "assistant", text: "Refund denied" },
-      ],
-    });
-  });
-
-  it("handles hook-based approval requests in streaming runs", async () => {
-    let executed = false;
-    const refundTool = {
-      name: "issue_refund",
-      definition() {
-        return {
-          name: "issue_refund",
-          description: "Issue a customer refund",
-          parameters: {
-            type: "object",
-            properties: {
-              orderId: { type: "string" },
-              amount: { type: "number" },
-            },
-            required: ["orderId", "amount"],
-          },
-        };
-      },
-      call(args) {
-        executed = true;
-        return `Refunded ${args.amount} for ${args.orderId}`;
-      },
-    } satisfies Tool<{ orderId: string; amount: number }, string>;
-    const model = new StreamingQueueModel([
-      [
-        {
-          type: "tool_call_delta",
-          id: "call_1",
-          name: "issue_refund",
-          argumentsDelta: '{"orderId":"ORD-1","amount":25}',
-        },
-      ],
-      [{ type: "text_delta", delta: "Refund complete" }],
-    ]);
-    const agent = new AgentBuilder("support", model)
-      .tool(refundTool)
-      .hook(
-        createHook({
-          onToolCall({ toolName, tool }) {
-            if (toolName === "issue_refund") {
-              return tool.requestApproval({
-                reason: "Review refund before issuing it.",
-                rejectMessage: "Rejected by hook.",
-              });
-            }
-            return tool.run();
+        body: JSON.stringify({
+          type: "interaction_response",
+          interactionId: first.interaction.id,
+          response: {
+            type: "tool-approval",
+            approved: false,
+            reason: "Rejected in Anvia Studio.",
           },
         }),
-      )
-      .defaultMaxTurns(2)
-      .build();
-    const runner = new Studio([agent]);
-
-    const res = await runner.fetch(
-      new Request("http://runner.test/agents/support/runs", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "refund", stream: true }),
       }),
     );
-
-    expect(res.status).toBe(200);
-    const reader = createJsonlReader(res);
-    let approvalId = "";
-    while (approvalId.length === 0) {
-      const event = await withTimeout(reader.read(), 1_000);
-      if ((event as { type?: string }).type === "tool_approval_request") {
-        const approval = (event as { approval: { id: string; reason?: string } }).approval;
-        approvalId = approval.id;
-        expect(approval.reason).toBe("Review refund before issuing it.");
-      }
-    }
+    expect(resumedResponse.status).toBe(200);
+    await expect(resumedResponse.json()).resolves.toMatchObject({
+      type: "response",
+      output: "Refund denied",
+      resumedFrom: { runId: first.runId, interactionId: first.interaction.id },
+    });
     expect(executed).toBe(false);
-
-    const decision = await runner.fetch(
-      new Request(`http://runner.test/approvals/${approvalId}/decision`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ approved: true }),
-      }),
-    );
-    expect(decision.status).toBe(200);
-
-    const remaining = await readRemainingJsonl(reader);
-    expect(executed).toBe(true);
-    expect(remaining).toContainEqual(
-      expect.objectContaining({
-        type: "tool_approval_result",
-        approval: expect.objectContaining({ id: approvalId, status: "approved" }),
-      }),
-    );
-    expect(remaining).toContainEqual(
-      expect.objectContaining({
-        type: "tool_result",
-        result: "Refunded 25 for ORD-1",
-      }),
-    );
   });
 
-  it("skips rejected hook-based approval requests with the reject message", async () => {
-    let executed = false;
-    const refundTool = {
-      name: "issue_refund",
-      definition() {
-        return {
-          name: "issue_refund",
-          description: "Issue a customer refund",
-          parameters: {
-            type: "object",
-            properties: {
-              orderId: { type: "string" },
-              amount: { type: "number" },
-            },
-            required: ["orderId", "amount"],
-          },
-        };
-      },
-      call() {
-        executed = true;
-        return "should not run";
-      },
-    } satisfies Tool<{ orderId: string; amount: number }, string>;
-    const model = new StreamingQueueModel([
-      [
-        {
-          type: "tool_call_delta",
-          id: "call_1",
-          name: "issue_refund",
-          argumentsDelta: '{"orderId":"ORD-1","amount":25}',
-        },
-      ],
-      [{ type: "text_delta", delta: "Refund denied" }],
-    ]);
-    const agent = new AgentBuilder("support", model)
-      .tool(refundTool)
-      .hook(
-        createHook({
-          onToolCall({ tool }) {
-            return tool.requestApproval({
-              reason: "Review refund before issuing it.",
-              rejectMessage: "Rejected by hook.",
-            });
-          },
-        }),
-      )
-      .defaultMaxTurns(2)
-      .build();
-    const runner = new Studio([agent]);
-
-    const res = await runner.fetch(
-      new Request("http://runner.test/agents/support/runs", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "refund", stream: true }),
-      }),
-    );
-
-    expect(res.status).toBe(200);
-    const reader = createJsonlReader(res);
-    let approvalId = "";
-    while (approvalId.length === 0) {
-      const event = await withTimeout(reader.read(), 1_000);
-      if ((event as { type?: string }).type === "tool_approval_request") {
-        approvalId = (event as { approval: { id: string } }).approval.id;
-      }
-    }
-
-    const decision = await runner.fetch(
-      new Request(`http://runner.test/approvals/${approvalId}/decision`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ approved: false }),
-      }),
-    );
-    expect(decision.status).toBe(200);
-
-    const remaining = await readRemainingJsonl(reader);
-    expect(executed).toBe(false);
-    expect(remaining).toContainEqual(
-      expect.objectContaining({
-        type: "tool_result",
-        result: "Rejected by hook.",
-      }),
-    );
-  });
-
-  it("pauses ask_question tool calls until Studio receives answers", async () => {
+  it("uses the first-class question tool and validates answers on resume", async () => {
     const model = new StreamingQueueModel([
       [
         {
@@ -2362,249 +2484,137 @@ describe("Anvia studio", () => {
             questions: [
               {
                 id: "priority",
-                question: "Which priority should we use?",
-                choices: ["Low", "Medium", "High"],
+                text: "Which priority should we use?",
+                choices: [
+                  { label: "Low", value: "low" },
+                  { label: "High", value: "high" },
+                ],
               },
-              {
-                id: "notes",
-                question: "Any extra context?",
-                choices: [{ label: "Other", value: "other" }],
-              },
+              { id: "notes", text: "Any extra context?" },
             ],
           }),
         },
       ],
       [{ type: "text_delta", delta: "Thanks for the context" }],
     ]);
-    const agent = new AgentBuilder("support", model)
-      .tool(askQuestionTool)
-      .defaultMaxTurns(2)
-      .build();
-    const runner = new Studio([agent]);
-
-    const created = await runner.fetch(
-      new Request("http://runner.test/sessions", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ agentId: "support" }),
-      }),
-    );
-    const session = (await created.json()) as { id: string };
-
-    const res = await runner.fetch(
-      new Request("http://runner.test/agents/support/runs", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "ask", sessionId: session.id, stream: true }),
-      }),
-    );
-
-    expect(res.status).toBe(200);
-    const reader = createJsonlReader(res);
-    let questionId = "";
-    while (questionId.length === 0) {
-      const event = await withTimeout(reader.read(), 1_000);
-      if ((event as { type?: string }).type === "tool_question_request") {
-        questionId = (event as { question: { id: string } }).question.id;
-      }
-    }
-
-    const pending = (await (
-      await runner.fetch(new Request("http://runner.test/questions?status=pending"))
-    ).json()) as { questions: Array<{ id: string; status: string; toolName: string }> };
-    expect(pending.questions).toEqual([
-      expect.objectContaining({
-        id: questionId,
-        status: "pending",
-        toolName: "ask_question",
-      }),
+    const runner = new Studio([
+      new Agent({ id: "support", model, tools: [askQuestionTool], maxTurns: 2 }),
     ]);
 
-    const answer = await runner.fetch(
-      new Request(`http://runner.test/questions/${questionId}/answer`, {
+    const firstResponse = await runner.fetch(
+      new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          answers: [
-            { questionId: "priority", answer: "High", choice: "High" },
-            { questionId: "notes", answer: "Customer is blocked.", custom: true },
-          ],
+          type: "messages",
+          messages: [Message.user("ask")],
+          stream: true,
         }),
       }),
     );
-    expect(answer.status).toBe(200);
-    await expect(answer.json()).resolves.toMatchObject({ id: questionId, status: "answered" });
+    const firstEvents = await readJsonl(firstResponse);
+    const interactionEvent = firstEvents.find(
+      (event) =>
+        (event as { type?: string }).type === "interaction" &&
+        (event as { interaction?: { type?: string } }).interaction?.type === "tool-question",
+    ) as { interaction: { id: string; questions: unknown[] } } | undefined;
+    expect(interactionEvent?.interaction.questions).toHaveLength(2);
 
-    const remaining = await readRemainingJsonl(reader);
-    expect(remaining).toContainEqual(
-      expect.objectContaining({
-        type: "tool_question_result",
-        question: expect.objectContaining({ id: questionId, status: "answered" }),
-      }),
-    );
-    expect(remaining).toContainEqual(
-      expect.objectContaining({
-        type: "tool_result",
-        result: JSON.stringify({
-          answers: [
-            { questionId: "priority", answer: "High", choice: "High" },
-            { questionId: "notes", answer: "Customer is blocked.", custom: true },
-          ],
+    const invalid = await runner.fetch(
+      new Request("http://runner.test/agents/support/runs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          type: "interaction_response",
+          interactionId: interactionEvent?.interaction.id,
+          response: {
+            type: "tool-question",
+            answers: [{ questionId: "priority", value: "high" }],
+          },
         }),
       }),
     );
+    expect(invalid.status).toBe(400);
 
-    const loaded = await runner.fetch(new Request(`http://runner.test/sessions/${session.id}`));
-    await expect(loaded.json()).resolves.toMatchObject({
-      transcript: [
-        { kind: "message", role: "user", text: "ask" },
-        {
-          kind: "tool",
-          toolName: "ask_question",
-          question: {
-            id: questionId,
-            status: "answered",
+    const resumedResponse = await runner.fetch(
+      new Request("http://runner.test/agents/support/runs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          type: "interaction_response",
+          interactionId: interactionEvent?.interaction.id,
+          response: {
+            type: "tool-question",
             answers: [
-              { questionId: "priority", answer: "High", choice: "High" },
-              { questionId: "notes", answer: "Customer is blocked.", custom: true },
+              { questionId: "priority", value: "high" },
+              { questionId: "notes", value: "Customer is blocked." },
             ],
           },
-        },
-        { kind: "message", role: "assistant", text: "Thanks for the context" },
-      ],
-    });
-  });
-
-  it("cancels pending questions when a streaming response is cancelled", async () => {
-    const model = new StreamingQueueModel([
-      [
-        {
-          type: "tool_call_delta",
-          id: "call_1",
-          name: "ask_question",
-          argumentsDelta: JSON.stringify({
-            questions: [
-              {
-                id: "priority",
-                question: "Which priority should we use?",
-                choices: ["Low", "High"],
-              },
-            ],
-          }),
-        },
-      ],
-    ]);
-    const agent = new AgentBuilder("support", model)
-      .tool(askQuestionTool)
-      .defaultMaxTurns(2)
-      .build();
-    const runner = new Studio([agent]);
-    const created = await runner.fetch(
-      new Request("http://runner.test/sessions", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ agentId: "support" }),
+          stream: true,
+        }),
       }),
     );
-    const session = (await created.json()) as { id: string };
-    const response = await runner.fetch(
-      new Request("http://runner.test/agents/support/runs", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "ask", sessionId: session.id, stream: true }),
-      }),
-    );
-    const reader = createJsonlReader(response);
-    let questionId = "";
-    while (questionId.length === 0) {
-      const event = await withTimeout(reader.read(), 1_000);
-      if ((event as { type?: string }).type === "tool_question_request") {
-        questionId = (event as { question: { id: string } }).question.id;
-      }
-    }
-
-    await withTimeout(reader.cancel(), 1_000);
-
-    const pending = (await (
-      await runner.fetch(new Request("http://runner.test/questions?status=pending"))
-    ).json()) as { questions: unknown[] };
-    expect(pending.questions).toEqual([]);
-    const resolved = (await (
-      await runner.fetch(new Request("http://runner.test/questions?status=resolved"))
-    ).json()) as { questions: Array<{ id: string; status: string; cancelledAt?: string }> };
-    expect(resolved.questions).toContainEqual(
-      expect.objectContaining({
-        id: questionId,
-        status: "cancelled",
-        cancelledAt: expect.any(String),
-      }),
-    );
-    const loaded = await runner.fetch(new Request(`http://runner.test/sessions/${session.id}`));
-    await expect(loaded.json()).resolves.toMatchObject({
-      transcript: [
-        { kind: "message", role: "user", text: "ask" },
-        {
-          kind: "tool",
-          toolName: "ask_question",
-          question: {
-            id: questionId,
-            status: "cancelled",
-            cancelledAt: expect.any(String),
-          },
-        },
-        {
-          kind: "message",
-          role: "assistant",
-          text: "",
-          durationMs: expect.any(Number),
-        },
-      ],
-    });
-  });
-
-  it("skips invalid ask_question calls that omit choices", async () => {
-    const model = new StreamingQueueModel([
-      [
-        {
-          type: "tool_call_delta",
-          id: "call_1",
-          name: "ask_question",
-          argumentsDelta: JSON.stringify({
-            questions: [
-              {
-                id: "notes",
-                question: "Any extra context?",
-                choices: [],
-              },
-            ],
-          }),
-        },
-      ],
-      [{ type: "text_delta", delta: "I need choices first" }],
-    ]);
-    const agent = new AgentBuilder("support", model)
-      .tool(askQuestionTool)
-      .defaultMaxTurns(2)
-      .build();
-    const runner = new Studio([agent]);
-
-    const res = await runner.fetch(
-      new Request("http://runner.test/agents/support/runs", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "ask", stream: true }),
-      }),
-    );
-
-    expect(res.status).toBe(200);
-    const events = await readJsonl(res);
-    expect(events).not.toContainEqual(expect.objectContaining({ type: "tool_question_request" }));
-    expect(events).toContainEqual(
+    const resumedEvents = await readJsonl(resumedResponse);
+    expect(resumedEvents).toContainEqual(
       expect.objectContaining({
         type: "tool_result",
-        result: "ask_question requires every question to include text and at least one choice.",
+        result: {
+          status: "success",
+          output: {
+            answers: [
+              { questionId: "priority", value: "high" },
+              { questionId: "notes", value: "Customer is blocked." },
+            ],
+          },
+        },
       }),
     );
+    expect(resumedEvents).toContainEqual(
+      expect.objectContaining({ type: "run_end", status: "completed" }),
+    );
+  });
+
+  it("does not claim continuations across Studio process restarts", async () => {
+    const model = new QueueModel([
+      response([
+        AssistantContent.toolCall("call_1", "issue_refund", {
+          orderId: "ORD-1",
+          amount: 25,
+        }),
+      ]),
+    ]);
+    const agent = new Agent({
+      id: "support",
+      model,
+      tools: [createRefundTool(() => "done")],
+    });
+    const firstRunner = new Studio([agent]);
+    const firstResponse = await firstRunner.fetch(
+      new Request("http://runner.test/agents/support/runs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          type: "messages",
+          messages: [Message.user("refund")],
+        }),
+      }),
+    );
+    const first = (await firstResponse.json()) as AgentRunResponse;
+    if (first.type !== "interaction") throw new Error("Expected interaction outcome");
+
+    const restartedRunner = new Studio([agent]);
+    const unavailable = await restartedRunner.fetch(
+      new Request("http://runner.test/agents/support/runs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          type: "interaction_response",
+          interactionId: first.interaction.id,
+          response: { type: "tool-approval", approved: true },
+        }),
+      }),
+    );
+    expect(unavailable.status).toBe(404);
   });
 
   it("runs approval metadata tools directly when the approval condition is false", async () => {
@@ -2614,9 +2624,7 @@ describe("Anvia studio", () => {
         executed = true;
         return `Refunded ${amount} for ${orderId}`;
       }),
-      approval: {
-        when: () => false,
-      },
+      requiresApproval: false,
     } satisfies Tool<{ orderId: string; amount: number }, string>;
     const model = new StreamingQueueModel([
       [
@@ -2629,127 +2637,40 @@ describe("Anvia studio", () => {
       ],
       [{ type: "text_delta", delta: "Refund complete" }],
     ]);
-    const agent = new AgentBuilder("support", model).tool(refundTool).defaultMaxTurns(2).build();
+    const agent = new Agent({ id: "support", model, tools: [refundTool], maxTurns: 2 });
     const runner = new Studio([agent]);
 
     const res = await runner.fetch(
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "refund", stream: true }),
+        body: JSON.stringify({
+          type: "messages",
+          messages: [Message.user("refund")],
+          stream: true,
+        }),
       }),
     );
 
     expect(res.status).toBe(200);
     const events = await readJsonl(res);
-    expect(events).not.toContainEqual(expect.objectContaining({ type: "tool_approval_request" }));
+    expect(events).not.toContainEqual(
+      expect.objectContaining({
+        type: "interaction",
+      }),
+    );
     expect(events).toContainEqual(
       expect.objectContaining({
         type: "tool_result",
-        result: "Refunded 25 for ORD-1",
+        result: { status: "success", output: "Refunded 25 for ORD-1" },
       }),
     );
     expect(executed).toBe(true);
   });
 
-  it("lets existing tool hooks skip protected tools before Studio approval", async () => {
-    let executed = false;
-    const refundTool = createRefundTool(() => {
-      executed = true;
-      return "should not run";
-    });
-    const model = new StreamingQueueModel([
-      [
-        {
-          type: "tool_call_delta",
-          id: "call_1",
-          name: "issue_refund",
-          argumentsDelta: '{"orderId":"ORD-1","amount":25}',
-        },
-      ],
-      [{ type: "text_delta", delta: "Skipped" }],
-    ]);
-    const agent = new AgentBuilder("support", model)
-      .tool(refundTool)
-      .hook(
-        createHook({
-          onToolCall() {
-            return skipTool("Blocked by existing hook.");
-          },
-        }),
-      )
-      .defaultMaxTurns(2)
-      .build();
-    const runner = new Studio([agent]);
-
-    const res = await runner.fetch(
-      new Request("http://runner.test/agents/support/runs", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "refund", stream: true }),
-      }),
-    );
-
-    expect(res.status).toBe(200);
-    const events = await readJsonl(res);
-    expect(events).not.toContainEqual(expect.objectContaining({ type: "tool_approval_request" }));
-    expect(events).toContainEqual(
-      expect.objectContaining({
-        type: "tool_result",
-        result: "Blocked by existing hook.",
-      }),
-    );
-    expect(executed).toBe(false);
-  });
-
-  it("lets existing tool hooks terminate protected tools before Studio approval", async () => {
-    const refundTool = createRefundTool(() => "should not run");
-    const model = new StreamingQueueModel([
-      [
-        {
-          type: "tool_call_delta",
-          id: "call_1",
-          name: "issue_refund",
-          argumentsDelta: '{"orderId":"ORD-1","amount":25}',
-        },
-      ],
-    ]);
-    const agent = new AgentBuilder("support", model)
-      .tool(refundTool)
-      .hook(
-        createHook({
-          onToolCall() {
-            return { type: "terminate", reason: "Blocked by existing hook." };
-          },
-        }),
-      )
-      .defaultMaxTurns(2)
-      .build();
-    const runner = new Studio([agent]);
-
-    const res = await runner.fetch(
-      new Request("http://runner.test/agents/support/runs", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "refund", stream: true }),
-      }),
-    );
-
-    expect(res.status).toBe(200);
-    const events = await readJsonl(res);
-    expect(events).not.toContainEqual(expect.objectContaining({ type: "tool_approval_request" }));
-    expect(events).toContainEqual(
-      expect.objectContaining({
-        type: "error",
-        error: expect.objectContaining({ reason: "Blocked by existing hook." }),
-        usage: Usage.empty(),
-      }),
-    );
-  });
-
   it("flushes reasoning deltas before the run completes", async () => {
     const model = new GatedReasoningModel();
-    const agent = new AgentBuilder("support", model).build();
+    const agent = new Agent({ id: "support", model });
     const runner = new Studio([agent]);
 
     const created = await runner.fetch(
@@ -2765,7 +2686,12 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "hi", sessionId: session.id, stream: true }),
+        body: JSON.stringify({
+          type: "messages",
+          messages: [Message.user("hi")],
+          sessionId: session.id,
+          stream: true,
+        }),
       }),
     );
 
@@ -2786,61 +2712,82 @@ describe("Anvia studio", () => {
       type: "reasoning_delta",
       delta: "thinking",
     });
+    const remainingEvents = readRemainingJsonl(reader);
+    await waitFor(() => model.releaseText !== undefined);
     model.releaseText?.();
-    await expect(readRemainingJsonl(reader)).resolves.toContainEqual(
-      expect.objectContaining({ type: "final" }),
+    await expect(remainingEvents).resolves.toContainEqual(
+      expect.objectContaining({ type: "run_end", status: "completed" }),
     );
   });
 
   it("preserves trace output on streaming final events", async () => {
     const observer = new TraceObserver("trace_stream");
     const model = new StreamingQueueModel([[{ type: "text_delta", delta: "hello" }]]);
-    const agent = new AgentBuilder("support", model).observe(observer).build();
+    const agent = new Agent({
+      id: "support",
+      model,
+      observability: { observers: { external: observer }, primaryTrace: "external" },
+    });
     const runner = new Studio([agent]);
 
     const res = await runner.fetch(
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "hi", stream: true, trace: { name: "stream" } }),
+        body: JSON.stringify({
+          type: "messages",
+          messages: [Message.user("hi")],
+          stream: true,
+          trace: { name: "stream" },
+        }),
       }),
     );
 
     expect(res.status).toBe(200);
     expect(await readJsonl(res)).toContainEqual(
       expect.objectContaining({
-        type: "final",
-        trace: { traceId: "trace_stream", observationId: "obs_1" },
+        type: "run_end",
+        status: "completed",
+        trace: {
+          observer: "studio",
+          traceId: expect.any(String),
+          observationId: expect.any(String),
+        },
       }),
     );
     expect(observer.starts[0]?.trace).toMatchObject({ name: "stream" });
   });
 
   it("marks observability enabled when a registered agent has observers", () => {
-    const agent = new AgentBuilder("support", new QueueModel([]))
-      .observe(new TraceObserver())
-      .build();
+    const agent = new Agent({
+      id: "support",
+      model: new QueueModel([]),
+      observability: { observers: { external: new TraceObserver() } },
+    });
     const runner = new Studio([agent]);
 
     expect(runner.config().capabilities.observability).toEqual({ enabled: true });
   });
 
-  it("marks approvals enabled when a registered agent protects tools", () => {
-    const agent = new AgentBuilder("support", new QueueModel([]))
-      .tool(createRefundTool(() => "ok"))
-      .build();
-    const runner = new Studio([agent]);
+  it("reserves the studio observer name for local trace persistence", () => {
+    const agent = new Agent({
+      id: "support",
+      model: new QueueModel([]),
+      observability: { observers: { studio: new TraceObserver() } },
+    });
 
-    expect(runner.config().capabilities.approvals).toEqual({ enabled: true });
+    expect(() => new Studio([agent])).toThrow('reserves the observer name "studio"');
   });
 
-  it("marks approvals enabled when a registered agent has hooks", () => {
-    const agent = new AgentBuilder("support", new QueueModel([]))
-      .hook(createHook({ onToolCall: ({ tool }) => tool.requestApproval() }))
-      .build();
+  it("marks interactions enabled when a registered agent protects tools", () => {
+    const agent = new Agent({
+      id: "support",
+      model: new QueueModel([]),
+      tools: [createRefundTool(() => "ok")],
+    });
     const runner = new Studio([agent]);
 
-    expect(runner.config().capabilities.approvals).toEqual({ enabled: true });
+    expect(runner.config().capabilities.interactions).toEqual({ enabled: true });
   });
 
   it("serves the runner UI shell routes", async () => {
@@ -2916,7 +2863,7 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/missing/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "hi" }),
+        body: JSON.stringify({ type: "messages", messages: [Message.user("hi")] }),
       }),
     );
 
@@ -2935,7 +2882,7 @@ describe("Anvia studio", () => {
       response([AssistantContent.text("Second answer")]),
     ]);
     const path = join(studioDbDir ?? tmpdir(), "studio.sqlite");
-    const agent = new AgentBuilder("support", model).build();
+    const agent = new Agent({ id: "support", model });
     const runner = new Studio([agent], {
       stores: {
         sessions: createSqliteSessionStore({ path }),
@@ -2959,7 +2906,11 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "First question", sessionId: session.id }),
+        body: JSON.stringify({
+          type: "messages",
+          messages: [Message.user("First question")],
+          sessionId: session.id,
+        }),
       }),
     );
     expect(firstRun.status).toBe(200);
@@ -2968,18 +2919,22 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "Follow up", sessionId: session.id }),
+        body: JSON.stringify({
+          type: "messages",
+          messages: [Message.user("Follow up")],
+          sessionId: session.id,
+        }),
       }),
     );
     expect(secondRun.status).toBe(200);
 
     expect(model.requests[1]?.chatHistory).toEqual([
-      Message.user("First question"),
+      Message.user([{ type: "text", text: "First question" }]),
       expect.objectContaining(Message.assistant("First answer")),
       Message.user("Follow up"),
     ]);
 
-    const reloadedRunner = new Studio([new AgentBuilder("support", new QueueModel([])).build()], {
+    const reloadedRunner = new Studio([new Agent({ id: "support", model: new QueueModel([]) })], {
       stores: {
         sessions: createSqliteSessionStore({ path }),
       },
@@ -2994,9 +2949,9 @@ describe("Anvia studio", () => {
       title: "First question",
       messageCount: 4,
       messages: [
-        Message.user("First question"),
+        Message.user([{ type: "text", text: "First question" }]),
         Message.assistant("First answer"),
-        Message.user("Follow up"),
+        Message.user([{ type: "text", text: "Follow up" }]),
         Message.assistant("Second answer"),
       ],
       transcript: [
@@ -3024,7 +2979,7 @@ describe("Anvia studio", () => {
       response([AssistantContent.text("Second answer")]),
     ]);
     const memory = new RecordingMemoryStore();
-    const agent = new AgentBuilder("support", model).memory(memory).build();
+    const agent = new Agent({ id: "support", model, memory: { store: memory } });
     const runner = new Studio([agent]);
 
     const created = await runner.fetch(
@@ -3040,7 +2995,11 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "First question", sessionId: session.id }),
+        body: JSON.stringify({
+          type: "messages",
+          messages: [Message.user("First question")],
+          sessionId: session.id,
+        }),
       }),
     );
     expect(firstRun.status).toBe(200);
@@ -3049,7 +3008,11 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "Follow up", sessionId: session.id }),
+        body: JSON.stringify({
+          type: "messages",
+          messages: [Message.user("Follow up")],
+          sessionId: session.id,
+        }),
       }),
     );
     expect(secondRun.status).toBe(200);
@@ -3077,9 +3040,195 @@ describe("Anvia studio", () => {
     });
   });
 
+  it("streams, logs, and persists explicit memory compaction events", async () => {
+    const store = createInMemoryStudioStore();
+    store.createSession({ id: "compaction-session", agentId: "support" });
+    await store.append({
+      scope: { sessionId: "compaction-session" },
+      runId: "seed",
+      turn: 1,
+      messages: [
+        Message.user("first"),
+        Message.assistant("first answer"),
+        Message.user("recent"),
+        Message.assistant("recent answer"),
+      ],
+    });
+    const model = new StreamingQueueModel([[{ type: "text_delta", delta: "done" }]]);
+    const agent = new Agent({
+      id: "support",
+      model,
+      memory: {
+        store,
+        compaction: {
+          trigger: { afterTokens: 4 },
+          retention: { recentTokens: 1 },
+          compactor: async () => ({ summary: "Earlier discussion." }),
+        },
+      },
+    });
+    const runner = new Studio([agent], { stores: { sessions: store } });
+
+    const run = await runner.fetch(
+      new Request("http://runner.test/agents/support/runs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          type: "messages",
+          messages: [Message.user("next")],
+          sessionId: "compaction-session",
+          stream: true,
+        }),
+      }),
+    );
+    const events = await readJsonl(run);
+    const compactionIndex = events.findIndex(
+      (event) =>
+        typeof event === "object" &&
+        event !== null &&
+        "type" in event &&
+        event.type === "memory_compaction",
+    );
+    const firstTurnIndex = events.findIndex(
+      (event) =>
+        typeof event === "object" &&
+        event !== null &&
+        "type" in event &&
+        event.type === "turn_start",
+    );
+
+    expect(compactionIndex).toBeGreaterThanOrEqual(0);
+    expect(firstTurnIndex).toBeGreaterThan(compactionIndex);
+    expect(events[compactionIndex]).toMatchObject({
+      type: "memory_compaction",
+      originalMessageCount: 4,
+      compactedMessageCount: 2,
+      retainedMessageCount: 2,
+      attempts: 1,
+      usage: Usage.empty(),
+    });
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "data",
+        name: "studio.session_log",
+        data: expect.objectContaining({ event: "memory.compacted" }),
+      }),
+    );
+
+    await expect(store.load({ scope: { sessionId: "compaction-session" } })).resolves.toEqual([
+      expect.objectContaining({
+        role: "system",
+        content: "Earlier discussion.",
+        metadata: {
+          anvia: {
+            memoryCompaction: { version: 1, compactedMessageCount: 2 },
+          },
+        },
+      }),
+      Message.user("recent"),
+      Message.assistant("recent answer"),
+      Message.user("next"),
+      expect.objectContaining(Message.assistant("done")),
+    ]);
+    const logs = await runner.fetch(
+      new Request("http://runner.test/sessions/compaction-session/logs"),
+    );
+    await expect(logs.json()).resolves.toMatchObject({
+      logs: expect.arrayContaining([
+        expect.objectContaining({
+          event: "memory.compacted",
+          metadata: expect.objectContaining({
+            originalMessageCount: 4,
+            compactedMessageCount: 2,
+            retainedMessageCount: 2,
+            attempts: 1,
+          }),
+        }),
+      ]),
+    });
+  });
+
+  it("preserves buffered failure transcripts and logs after memory compaction", async () => {
+    const store = createInMemoryStudioStore();
+    store.createSession({ id: "failed-compaction-session", agentId: "support" });
+    await store.append({
+      scope: { sessionId: "failed-compaction-session" },
+      runId: "seed",
+      turn: 1,
+      messages: [
+        Message.user("first"),
+        Message.assistant("first answer"),
+        Message.user("recent"),
+        Message.assistant("recent answer"),
+      ],
+    });
+    const model = new QueueModel([]);
+    const agent = new Agent({
+      id: "support",
+      model,
+      memory: {
+        store,
+        compaction: {
+          trigger: { afterTokens: 4 },
+          retention: { recentTokens: 1 },
+          compactor: async () => ({ summary: "Earlier discussion." }),
+        },
+      },
+    });
+    const runner = new Studio([agent], { stores: { sessions: store } });
+
+    const run = await runner.fetch(
+      new Request("http://runner.test/agents/support/runs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          type: "messages",
+          messages: [Message.user("next")],
+          sessionId: "failed-compaction-session",
+        }),
+      }),
+    );
+
+    expect(run.status).toBe(500);
+    expect(model.requests).toHaveLength(1);
+    await expect(
+      store.load({ scope: { sessionId: "failed-compaction-session" } }),
+    ).resolves.toEqual([
+      expect.objectContaining({ role: "system", content: "Earlier discussion." }),
+      Message.user("recent"),
+      Message.assistant("recent answer"),
+      Message.user("next"),
+    ]);
+
+    const loaded = await runner.fetch(
+      new Request("http://runner.test/sessions/failed-compaction-session"),
+    );
+    await expect(loaded.json()).resolves.toMatchObject({
+      transcript: [
+        { kind: "message", role: "user", text: "next" },
+        {
+          kind: "message",
+          role: "assistant",
+          text: "",
+          durationMs: expect.any(Number),
+        },
+      ],
+    });
+
+    const logsResponse = await runner.fetch(
+      new Request("http://runner.test/sessions/failed-compaction-session/logs"),
+    );
+    const { logs } = (await logsResponse.json()) as { logs: Array<{ event: string }> };
+    const compactionLogs = logs.filter((log) => log.event === "memory.compacted");
+    expect(compactionLogs).toHaveLength(1);
+    expect(logs.findIndex((log) => log.event === "run.failed")).toBeGreaterThan(
+      logs.findIndex((log) => log.event === "memory.compacted"),
+    );
+  });
+
   it("exposes stored sessions through memory explorer routes", async () => {
     const model = new QueueModel([response([AssistantContent.text("Ticket is blocked")])]);
-    const agent = new AgentBuilder("support", model).build();
+    const agent = new Agent({ id: "support", model });
     const runner = new Studio([agent]);
 
     const created = await runner.fetch(
@@ -3100,7 +3249,11 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "Check ticket", sessionId: session.id }),
+        body: JSON.stringify({
+          type: "messages",
+          messages: [Message.user("Check ticket")],
+          sessionId: session.id,
+        }),
       }),
     );
     expect(run.status).toBe(200);
@@ -3189,9 +3342,17 @@ describe("Anvia studio", () => {
         ],
       },
     ]);
-    const support = new AgentBuilder("support", new QueueModel([])).memory(memory).build();
-    const billing = new AgentBuilder("billing", new QueueModel([])).memory(memory).build();
-    const fallback = new AgentBuilder("fallback", new QueueModel([])).build();
+    const support = new Agent({
+      id: "support",
+      model: new QueueModel([]),
+      memory: { store: memory },
+    });
+    const billing = new Agent({
+      id: "billing",
+      model: new QueueModel([]),
+      memory: { store: memory },
+    });
+    const fallback = new Agent({ id: "fallback", model: new QueueModel([]) });
     const runner = new Studio([support, billing, fallback]);
 
     const sourcesResponse = await runner.fetch(new Request("http://runner.test/memory/sources"));
@@ -3275,9 +3436,11 @@ describe("Anvia studio", () => {
   });
 
   it("reports non-inspectable agent memory without falling back to Studio sessions", async () => {
-    const agent = new AgentBuilder("support", new QueueModel([]))
-      .memory(new RecordingMemoryStore())
-      .build();
+    const agent = new Agent({
+      id: "support",
+      model: new QueueModel([]),
+      memory: { store: new RecordingMemoryStore() },
+    });
     const runner = new Studio([agent]);
 
     const config = await runner.fetch(new Request("http://runner.test/config"));
@@ -3301,7 +3464,7 @@ describe("Anvia studio", () => {
 
   it("persists streaming sessions with UI transcript entries", async () => {
     const model = new StreamingQueueModel([[{ type: "text_delta", delta: "hello" }]]);
-    const agent = new AgentBuilder("support", model).build();
+    const agent = new Agent({ id: "support", model });
     const runner = new Studio([agent]);
 
     const created = await runner.fetch(
@@ -3317,12 +3480,19 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "hi", sessionId: session.id, stream: true }),
+        body: JSON.stringify({
+          type: "messages",
+          messages: [Message.user("hi")],
+          sessionId: session.id,
+          stream: true,
+        }),
       }),
     );
 
     expect(res.status).toBe(200);
-    expect(await readJsonl(res)).toContainEqual(expect.objectContaining({ type: "final" }));
+    expect(await readJsonl(res)).toContainEqual(
+      expect.objectContaining({ type: "run_end", status: "completed" }),
+    );
 
     const loaded = await runner.fetch(new Request(`http://runner.test/sessions/${session.id}`));
     await expect(loaded.json()).resolves.toMatchObject({
@@ -3342,7 +3512,7 @@ describe("Anvia studio", () => {
 
   it("persists cancelled streams with their partial transcript and audit log", async () => {
     const model = new GatedReasoningModel();
-    const agent = new AgentBuilder("support", model).build();
+    const agent = new Agent({ id: "support", model });
     const store = createInMemoryStudioStore();
     const saves: StudioSessionRunTranscriptInput[] = [];
     const saveSessionRunTranscript = store.saveSessionRunTranscript.bind(store);
@@ -3364,7 +3534,12 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "think", sessionId: session.id, stream: true }),
+        body: JSON.stringify({
+          type: "messages",
+          messages: [Message.user("think")],
+          sessionId: session.id,
+          stream: true,
+        }),
       }),
     );
     const reader = createJsonlReader(response);
@@ -3416,7 +3591,7 @@ describe("Anvia studio", () => {
 
   it("streams and persists metadata-only session audit logs", async () => {
     const model = new StreamingQueueModel([[{ type: "text_delta", delta: "safe answer" }]]);
-    const agent = new AgentBuilder("support", model).build();
+    const agent = new Agent({ id: "support", model });
     const runner = new Studio([agent]);
 
     const created = await runner.fetch(
@@ -3433,7 +3608,8 @@ describe("Anvia studio", () => {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          message: "my raw secret prompt",
+          type: "messages",
+          messages: [Message.user("my raw secret prompt")],
           sessionId: session.id,
           stream: true,
         }),
@@ -3443,29 +3619,37 @@ describe("Anvia studio", () => {
     expect(run.status).toBe(200);
     const events = await readJsonl(run);
     const streamedLogs = events.filter(
-      (event): event is { type: "session_log"; log: { event: string; sequence: number } } =>
+      (
+        event,
+      ): event is {
+        type: "data";
+        name: "studio.session_log";
+        data: { event: string; sequence: number };
+      } =>
         typeof event === "object" &&
         event !== null &&
         "type" in event &&
-        event.type === "session_log",
+        event.type === "data" &&
+        "name" in event &&
+        event.name === "studio.session_log",
     );
     expect(streamedLogs).toContainEqual(
-      expect.objectContaining({ log: expect.objectContaining({ event: "run.started" }) }),
+      expect.objectContaining({ data: expect.objectContaining({ event: "run.started" }) }),
     );
     expect(streamedLogs).toContainEqual(
-      expect.objectContaining({ log: expect.objectContaining({ event: "memory.loaded" }) }),
+      expect.objectContaining({ data: expect.objectContaining({ event: "memory.loaded" }) }),
     );
     expect(streamedLogs).toContainEqual(
-      expect.objectContaining({ log: expect.objectContaining({ event: "prompt.prepared" }) }),
+      expect.objectContaining({ data: expect.objectContaining({ event: "prompt.prepared" }) }),
     );
     expect(streamedLogs).toContainEqual(
-      expect.objectContaining({ log: expect.objectContaining({ event: "run.completed" }) }),
+      expect.objectContaining({ data: expect.objectContaining({ event: "run.completed" }) }),
     );
     expect(streamedLogs).toContainEqual(
-      expect.objectContaining({ log: expect.objectContaining({ event: "memory.saved" }) }),
+      expect.objectContaining({ data: expect.objectContaining({ event: "memory.saved" }) }),
     );
     expect(streamedLogs).not.toContainEqual(
-      expect.objectContaining({ log: expect.objectContaining({ event: "run.cancelled" }) }),
+      expect.objectContaining({ data: expect.objectContaining({ event: "run.cancelled" }) }),
     );
 
     const firstPage = await runner.fetch(
@@ -3515,15 +3699,19 @@ describe("Anvia studio", () => {
       ],
       [{ type: "text_delta", delta: "7" }],
     ]);
-    const childAgent = new AgentBuilder("child", childModel)
-      .name("Child Agent")
-      .tool(addTool)
-      .defaultMaxTurns(2)
-      .build();
-    const parentAgent = new AgentBuilder("parent", parentModel)
-      .tool(childAgent.asTool({ name: "ask_child", stream: true }))
-      .defaultMaxTurns(2)
-      .build();
+    const childAgent = new Agent({
+      id: "child",
+      model: childModel,
+      name: "Child Agent",
+      tools: [addTool],
+      maxTurns: 2,
+    });
+    const parentAgent = new Agent({
+      id: "parent",
+      model: parentModel,
+      tools: [childAgent.asTool({ name: "ask_child", stream: true, suspension: "reject" })],
+      maxTurns: 2,
+    });
     const runner = new Studio([parentAgent]);
 
     const created = await runner.fetch(
@@ -3539,13 +3727,23 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/parent/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "delegate", sessionId: session.id, stream: true }),
+        body: JSON.stringify({
+          type: "messages",
+          messages: [Message.user("delegate")],
+          sessionId: session.id,
+          stream: true,
+        }),
       }),
     );
 
     expect(res.status).toBe(200);
     const events = await readJsonl(res);
-    expect(events).toContainEqual(expect.objectContaining({ type: "agent_tool_event" }));
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "run_start",
+        scope: expect.objectContaining({ agentId: "child", parentToolName: "ask_child" }),
+      }),
+    );
 
     const loaded = await runner.fetch(new Request(`http://runner.test/sessions/${session.id}`));
     await expect(loaded.json()).resolves.toMatchObject({
@@ -3646,7 +3844,7 @@ describe("Anvia studio", () => {
   });
 
   it("validates session run requests", async () => {
-    const agent = new AgentBuilder("support", new QueueModel([])).build();
+    const agent = new Agent({ id: "support", model: new QueueModel([]) });
     const runner = new Studio([agent]);
 
     const invalid = await runner.fetch(
@@ -3654,7 +3852,8 @@ describe("Anvia studio", () => {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          message: "hi",
+          type: "messages",
+          messages: [Message.user("hi")],
           sessionId: "session_1",
           history: [Message.user("old")],
         }),
@@ -3662,14 +3861,21 @@ describe("Anvia studio", () => {
     );
     expect(invalid.status).toBe(400);
     await expect(invalid.json()).resolves.toMatchObject({
-      error: { code: "bad_request", message: "sessionId cannot be combined with history" },
+      error: {
+        code: "bad_request",
+        message: "Legacy message/history requests are not supported; use messages",
+      },
     });
 
     const missing = await runner.fetch(
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "hi", sessionId: "missing" }),
+        body: JSON.stringify({
+          type: "messages",
+          messages: [Message.user("hi")],
+          sessionId: "missing",
+        }),
       }),
     );
     expect(missing.status).toBe(404);
@@ -3680,7 +3886,7 @@ describe("Anvia studio", () => {
 
   it("persists non-streaming runner traces linked to a session", async () => {
     const model = new QueueModel([response([AssistantContent.text("traced answer")])]);
-    const agent = new AgentBuilder("support", model).build();
+    const agent = new Agent({ id: "support", model });
     const runner = new Studio([agent]);
 
     const created = await runner.fetch(
@@ -3697,16 +3903,22 @@ describe("Anvia studio", () => {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          message: "trace me",
+          type: "messages",
+          messages: [Message.user("trace me")],
           sessionId: session.id,
           trace: { name: "support-run", metadata: { source: "test" } },
         }),
       }),
     );
     expect(run.status).toBe(200);
-    await expect(run.json()).resolves.toMatchObject({
+    const runResult = (await run.json()) as AgentRunResponse;
+    expect(runResult).toMatchObject({
       output: "traced answer",
-      trace: { observationId: expect.any(String), traceId: expect.any(String) },
+      trace: {
+        observer: "studio",
+        observationId: expect.any(String),
+        traceId: expect.any(String),
+      },
     });
 
     const traces = await runner.fetch(
@@ -3716,12 +3928,14 @@ describe("Anvia studio", () => {
     const traceList = (await traces.json()) as { traces: Array<{ id: string }> };
     expect(traceList.traces).toHaveLength(1);
     expect(traceList.traces[0]).toMatchObject({
+      runId: runResult.runId,
       sessionId: session.id,
       name: "support-run",
       status: "success",
       output: "traced answer",
       observationCount: 1,
       metadata: expect.objectContaining({
+        runId: runResult.runId,
         metadata: { source: "test", agentId: "support" },
       }),
     });
@@ -3740,15 +3954,14 @@ describe("Anvia studio", () => {
           status: "success",
           metadata: expect.objectContaining({
             provider: "test",
-            model: "test",
-            defaultModel: "test",
+            modelId: "test",
             toolCount: 0,
             toolNames: [],
             documentCount: 0,
             historyCount: 1,
             modelInfo: expect.objectContaining({
               provider: "test",
-              model: "test",
+              modelId: "test",
               capabilities: expect.objectContaining({ streaming: false }),
             }),
             modelCall: expect.objectContaining({
@@ -3770,7 +3983,7 @@ describe("Anvia studio", () => {
 
   it("deletes sessions and their traces", async () => {
     const model = new QueueModel([response([AssistantContent.text("delete me")])]);
-    const agent = new AgentBuilder("support", model).build();
+    const agent = new Agent({ id: "support", model });
     const runner = new Studio([agent]);
 
     const created = await runner.fetch(
@@ -3786,7 +3999,11 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "trace then delete", sessionId: session.id }),
+        body: JSON.stringify({
+          type: "messages",
+          messages: [Message.user("trace then delete")],
+          sessionId: session.id,
+        }),
       }),
     );
 
@@ -3826,7 +4043,7 @@ describe("Anvia studio", () => {
       ],
       [{ type: "text_delta", delta: "7" }],
     ]);
-    const agent = new AgentBuilder("support", model).tool(addTool).defaultMaxTurns(2).build();
+    const agent = new Agent({ id: "support", model, tools: [addTool], maxTurns: 2 });
     const runner = new Studio([agent]);
 
     const created = await runner.fetch(
@@ -3842,11 +4059,18 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "add", sessionId: session.id, stream: true }),
+        body: JSON.stringify({
+          type: "messages",
+          messages: [Message.user("add")],
+          sessionId: session.id,
+          stream: true,
+        }),
       }),
     );
     expect(run.status).toBe(200);
-    expect(await readJsonl(run)).toContainEqual(expect.objectContaining({ type: "final" }));
+    expect(await readJsonl(run)).toContainEqual(
+      expect.objectContaining({ type: "run_end", status: "completed" }),
+    );
 
     const traces = (await (
       await runner.fetch(new Request(`http://runner.test/sessions/${session.id}/traces`))
@@ -3863,8 +4087,7 @@ describe("Anvia studio", () => {
           status: "success",
           metadata: expect.objectContaining({
             provider: "test",
-            model: "test",
-            defaultModel: "test",
+            modelId: "test",
             toolCount: 1,
             toolNames: ["add"],
             documentCount: 0,
@@ -3872,7 +4095,7 @@ describe("Anvia studio", () => {
             firstDeltaMs: expect.any(Number),
             modelInfo: expect.objectContaining({
               provider: "test",
-              model: "test",
+              modelId: "test",
               capabilities: expect.objectContaining({ streaming: true }),
             }),
             modelCall: expect.objectContaining({
@@ -3910,8 +4133,7 @@ describe("Anvia studio", () => {
           status: "success",
           metadata: expect.objectContaining({
             provider: "test",
-            model: "test",
-            defaultModel: "test",
+            modelId: "test",
             toolCount: 1,
             toolNames: ["add"],
             documentCount: 0,
@@ -3930,7 +4152,7 @@ describe("Anvia studio", () => {
   });
 
   it("persists failed runner traces with partial session memory", async () => {
-    const agent = new AgentBuilder("support", new QueueModel([])).build();
+    const agent = new Agent({ id: "support", model: new QueueModel([]) });
     const runner = new Studio([agent]);
 
     const created = await runner.fetch(
@@ -3946,7 +4168,11 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "fail", sessionId: session.id }),
+        body: JSON.stringify({
+          type: "messages",
+          messages: [Message.user("fail")],
+          sessionId: session.id,
+        }),
       }),
     );
     expect(run.status).toBe(500);
@@ -3984,7 +4210,7 @@ describe("Anvia studio", () => {
 
   it("persists streaming failures with partial transcript entries", async () => {
     const model = new FailingStreamingModel();
-    const agent = new AgentBuilder("support", model).build();
+    const agent = new Agent({ id: "support", model });
     const runner = new Studio([agent]);
 
     const created = await runner.fetch(
@@ -4000,7 +4226,12 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "stream fail", sessionId: session.id, stream: true }),
+        body: JSON.stringify({
+          type: "messages",
+          messages: [Message.user("stream fail")],
+          sessionId: session.id,
+          stream: true,
+        }),
       }),
     );
 
@@ -4016,7 +4247,7 @@ describe("Anvia studio", () => {
     expect(events).toContainEqual(
       expect.objectContaining({
         type: "error",
-        error: expect.objectContaining({ message: "stream failed" }),
+        error: { message: "An unexpected error occurred." },
       }),
     );
     expect(model.requests).toHaveLength(1);
@@ -4039,17 +4270,73 @@ describe("Anvia studio", () => {
     });
   });
 
+  it("isolates in-memory messages and compaction snapshots from caller mutation", async () => {
+    const store = createInMemoryStudioStore();
+    store.createSession({ id: "session_1", agentId: "support" });
+    const original = Message.user([{ type: "text", text: "original" }]);
+    await store.append({
+      scope: { sessionId: "session_1" },
+      runId: "run_1",
+      turn: 1,
+      messages: [original],
+    });
+    if (typeof original.content === "string") {
+      throw new Error("Expected structured user content");
+    }
+    const originalText = original.content[0];
+    if (originalText?.type !== "text") {
+      throw new Error("Expected text message");
+    }
+    (originalText as { text: string }).text = "mutated after append";
+
+    const snapshot = await store.compaction?.snapshot({ scope: { sessionId: "session_1" } });
+    if (snapshot === undefined || store.compaction === undefined) {
+      throw new Error("Expected in-memory compaction capability");
+    }
+    const snapshotMessage = snapshot.messages[0];
+    const snapshotText =
+      snapshotMessage?.role === "user" && typeof snapshotMessage.content !== "string"
+        ? snapshotMessage.content[0]
+        : undefined;
+    if (snapshotText?.type !== "text") {
+      throw new Error("Expected text snapshot message");
+    }
+    (snapshotText as { text: string }).text = "mutated snapshot";
+
+    await expect(store.load({ scope: { sessionId: "session_1" } })).resolves.toEqual([
+      Message.user([{ type: "text", text: "original" }]),
+    ]);
+    const replacement = Message.system("Earlier discussion.", {
+      metadata: {
+        anvia: {
+          memoryCompaction: { version: 1, compactedMessageCount: 1 },
+        },
+      },
+    }) as MemoryCompactionMessage;
+    await expect(
+      store.compaction.replacePrefix({
+        scope: { sessionId: "session_1" },
+        revision: snapshot.revision,
+        messageCount: 1,
+        replacement,
+        runId: "compaction_1",
+      }),
+    ).resolves.toEqual({ status: "committed" });
+  });
+
   it("uses the SQLite session store as a core memory store", async () => {
     const store = createSqliteSessionStore({ path: ":memory:" });
     store.createSession({ id: "session_1", agentId: "support" });
 
     await store.append({
-      context: { sessionId: "session_1" },
+      scope: { sessionId: "session_1" },
       runId: "run_1",
       turn: 1,
       messages: [Message.user("hi")],
     });
-    await expect(store.load({ sessionId: "session_1" })).resolves.toEqual([Message.user("hi")]);
+    await expect(store.load({ scope: { sessionId: "session_1" } })).resolves.toEqual([
+      Message.user([{ type: "text", text: "hi" }]),
+    ]);
 
     await store.saveSessionRunTranscript({
       id: "session_1",
@@ -4084,7 +4371,7 @@ describe("Anvia studio", () => {
     ]);
 
     await store.recordError?.({
-      context: { sessionId: "session_1", metadata: { studioRunId: "run_2" } },
+      scope: { sessionId: "session_1", metadata: { studioRunId: "run_2" } },
       runId: "core_run_2",
       error: new Error("failed"),
       messages: [Message.user("failed")],
@@ -4101,11 +4388,67 @@ describe("Anvia studio", () => {
       { entryId: 2, kind: "message", role: "user", text: "failed" },
     ]);
 
-    await store.clear({ sessionId: "session_1" });
+    await store.clear({ scope: { sessionId: "session_1" } });
     expect(await store.getSession("session_1")).toMatchObject({
       messageCount: 0,
       messages: [],
       transcript: [],
+    });
+  });
+
+  it("atomically replaces SQLite memory prefixes and exposes compaction messages", async () => {
+    const store = createSqliteSessionStore({ path: ":memory:" });
+    store.createSession({ id: "session_1", agentId: "support" });
+    const retained = [
+      Message.user([{ type: "text", text: "recent" }]),
+      Message.assistant("recent answer"),
+    ];
+    await store.append({
+      scope: { sessionId: "session_1" },
+      runId: "run_1",
+      turn: 1,
+      messages: [Message.user("old"), Message.assistant("old answer"), ...retained],
+    });
+    const snapshot = await store.compaction?.snapshot({
+      scope: { sessionId: "session_1" },
+    });
+    expect(snapshot).toBeDefined();
+    if (snapshot === undefined || store.compaction === undefined) {
+      throw new Error("Expected SQLite compaction capability");
+    }
+    const replacement = Message.system("Earlier discussion.", {
+      metadata: {
+        anvia: {
+          memoryCompaction: { version: 1, compactedMessageCount: 2 },
+        },
+      },
+    }) as MemoryCompactionMessage;
+
+    await expect(
+      store.compaction.replacePrefix({
+        scope: { sessionId: "session_1" },
+        revision: snapshot.revision,
+        messageCount: 2,
+        replacement,
+        runId: "compaction_1",
+      }),
+    ).resolves.toEqual({ status: "committed" });
+    await expect(
+      store.compaction.replacePrefix({
+        scope: { sessionId: "session_1" },
+        revision: snapshot.revision,
+        messageCount: 1,
+        replacement,
+        runId: "stale",
+      }),
+    ).resolves.toEqual({ status: "conflict" });
+    await expect(store.load({ scope: { sessionId: "session_1" } })).resolves.toEqual([
+      replacement,
+      ...retained,
+    ]);
+    expect(await store.getSession("session_1")).toMatchObject({
+      messageCount: 3,
+      messages: [replacement, ...retained],
     });
   });
 
@@ -4119,13 +4462,13 @@ describe("Anvia studio", () => {
 
     expect(() =>
       store.append({
-        context: { sessionId: "session_1" },
+        scope: { sessionId: "session_1" },
         runId: "run_1",
         turn: 1,
         messages: [invalidMessage],
       }),
     ).toThrow("Studio message metadata must be a strict JSON value");
-    await expect(store.load({ sessionId: "session_1" })).resolves.toEqual([]);
+    await expect(store.load({ scope: { sessionId: "session_1" } })).resolves.toEqual([]);
   });
 
   it("persists session messages and parts in normalized SQLite tables", async () => {
@@ -4184,13 +4527,13 @@ describe("Anvia studio", () => {
     ];
 
     await store.append({
-      context: { sessionId: "session_1" },
+      scope: { sessionId: "session_1" },
       runId: "run_1",
       turn: 1,
       messages: messages.slice(0, 2),
     });
     await store.append({
-      context: { sessionId: "session_1" },
+      scope: { sessionId: "session_1" },
       runId: "run_1",
       turn: 2,
       messages: messages.slice(2),
@@ -4215,7 +4558,7 @@ describe("Anvia studio", () => {
     db.close();
 
     const reloaded = createSqliteSessionStore({ path });
-    await expect(reloaded.load({ sessionId: "session_1" })).resolves.toEqual(messages);
+    await expect(reloaded.load({ scope: { sessionId: "session_1" } })).resolves.toEqual(messages);
     expect(await reloaded.getSession("session_1")).toMatchObject({
       id: "session_1",
       messageCount: 4,
@@ -4269,17 +4612,19 @@ describe("Anvia studio", () => {
     db.close();
 
     const store = createSqliteSessionStore({ path });
-    await expect(store.load({ sessionId: "session_1" })).resolves.toEqual([Message.user("legacy")]);
+    await expect(store.load({ scope: { sessionId: "session_1" } })).resolves.toEqual([
+      Message.user([{ type: "text", text: "legacy" }]),
+    ]);
     const metadata = { composer: { entities: [{ id: "document-1" }] } };
     await store.append({
-      context: { sessionId: "session_1" },
+      scope: { sessionId: "session_1" },
       runId: "run_1",
       turn: 1,
       messages: [Message.user("new", { metadata })],
     });
-    await expect(store.load({ sessionId: "session_1" })).resolves.toEqual([
-      Message.user("legacy"),
-      Message.user("new", { metadata }),
+    await expect(store.load({ scope: { sessionId: "session_1" } })).resolves.toEqual([
+      Message.user([{ type: "text", text: "legacy" }]),
+      Message.user([{ type: "text", text: "new" }], { metadata }),
     ]);
 
     const migrated = new DatabaseSync(path);
@@ -4350,18 +4695,16 @@ describe("Anvia studio", () => {
   });
 
   it("lists global runner traces with filters", async () => {
-    const mainAgent = new AgentBuilder(
-      "main",
-      new QueueModel([response([AssistantContent.text("main answer")])]),
-    )
-      .name("Main")
-      .build();
-    const backupAgent = new AgentBuilder(
-      "backup",
-      new QueueModel([response([AssistantContent.text("backup answer")])]),
-    )
-      .name("Backup")
-      .build();
+    const mainAgent = new Agent({
+      id: "main",
+      model: new QueueModel([response([AssistantContent.text("main answer")])]),
+      name: "Main",
+    });
+    const backupAgent = new Agent({
+      id: "backup",
+      model: new QueueModel([response([AssistantContent.text("backup answer")])]),
+      name: "Backup",
+    });
     const runner = new Studio([mainAgent, backupAgent]);
 
     const mainCreated = await runner.fetch(
@@ -4385,21 +4728,33 @@ describe("Anvia studio", () => {
       new Request("http://runner.test/agents/main/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "main", sessionId: mainSession.id }),
+        body: JSON.stringify({
+          type: "messages",
+          messages: [Message.user("main")],
+          sessionId: mainSession.id,
+        }),
       }),
     );
     await runner.fetch(
       new Request("http://runner.test/agents/backup/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "backup", sessionId: backupSession.id }),
+        body: JSON.stringify({
+          type: "messages",
+          messages: [Message.user("backup")],
+          sessionId: backupSession.id,
+        }),
       }),
     );
     await runner.fetch(
       new Request("http://runner.test/agents/main/runs", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "fail", sessionId: mainSession.id }),
+        body: JSON.stringify({
+          type: "messages",
+          messages: [Message.user("fail")],
+          sessionId: mainSession.id,
+        }),
       }),
     );
 
@@ -4455,10 +4810,10 @@ describe("Anvia studio", () => {
   });
 
   it("streams realtime observability events", async () => {
-    const agent = new AgentBuilder(
-      "support",
-      new QueueModel([response([AssistantContent.text("observed")])]),
-    ).build();
+    const agent = new Agent({
+      id: "support",
+      model: new QueueModel([response([AssistantContent.text("observed")])]),
+    });
     const runner = new Studio([agent]);
     const session = (await (
       await runner.fetch(
@@ -4481,7 +4836,8 @@ describe("Anvia studio", () => {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          message: "observe",
+          type: "messages",
+          messages: [Message.user("observe")],
           sessionId: session.id,
           trace: { name: "observability-test" },
         }),
@@ -4656,7 +5012,11 @@ async function readJsonl(response: Response): Promise<unknown[]> {
     .trim()
     .split("\n")
     .filter((line) => line.length > 0)
-    .map((line) => JSON.parse(line));
+    .map((line) => JSON.parse(line) as unknown)
+    .flatMap((value) => {
+      const unwrapped = unwrapClientFrame(value);
+      return unwrapped.kind === "event" ? [unwrapped.value] : [];
+    });
 }
 
 function createJsonlReader(response: Response): {
@@ -4677,29 +5037,50 @@ function createJsonlReader(response: Response): {
       await reader.cancel();
     },
     async read(): Promise<unknown> {
-      while (events.length === 0) {
-        const next = await reader.read();
-        if (next.done) {
-          buffer += decoder.decode();
-          if (buffer.trim().length > 0) {
-            events.push(JSON.parse(buffer));
-            buffer = "";
-            break;
+      while (true) {
+        while (events.length === 0) {
+          const next = await reader.read();
+          if (next.done) {
+            buffer += decoder.decode();
+            if (buffer.trim().length > 0) {
+              events.push(JSON.parse(buffer) as unknown);
+              buffer = "";
+              break;
+            }
+            throw new Error("Stream ended before another JSONL event");
           }
+          buffer += decoder.decode(next.value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() ?? "";
+          for (const line of lines) {
+            if (line.trim().length > 0) {
+              events.push(JSON.parse(line) as unknown);
+            }
+          }
+        }
+        const value = events.shift();
+        const unwrapped = unwrapClientFrame(value);
+        if (unwrapped.kind === "event") return unwrapped.value;
+        if (unwrapped.kind === "end") {
           throw new Error("Stream ended before another JSONL event");
         }
-        buffer += decoder.decode(next.value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-        for (const line of lines) {
-          if (line.trim().length > 0) {
-            events.push(JSON.parse(line));
-          }
-        }
       }
-      return events.shift();
     },
   };
+}
+
+function unwrapClientFrame(
+  value: unknown,
+): { kind: "event"; value: unknown } | { kind: "skip" } | { kind: "end" } {
+  if (typeof value !== "object" || value === null || !("type" in value)) {
+    return { kind: "event", value };
+  }
+  if (value.type === "stream_event" && "event" in value) {
+    return { kind: "event", value: value.event };
+  }
+  if (value.type === "stream_start") return { kind: "skip" };
+  if (value.type === "stream_end") return { kind: "end" };
+  return { kind: "event", value };
 }
 
 function isTraceObservabilityEvent(event: unknown): boolean {
@@ -4747,5 +5128,33 @@ async function waitFor(predicate: () => boolean, ms = 1000): Promise<void> {
       throw new Error("Timed out waiting for condition");
     }
     await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
+
+async function availableLoopbackPort(): Promise<number> {
+  const server = createServer();
+  const port = await new Promise<number>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      if (typeof address === "object" && address !== null) resolve(address.port);
+      else reject(new Error("Expected a TCP server address."));
+    });
+  });
+  await new Promise<void>((resolve, reject) =>
+    server.close((error) => (error === undefined ? resolve() : reject(error))),
+  );
+  return port;
+}
+
+async function fetchEventually(url: string): Promise<Response> {
+  const startedAt = Date.now();
+  while (true) {
+    try {
+      return await fetch(url);
+    } catch (error) {
+      if (Date.now() - startedAt > 1000) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
   }
 }

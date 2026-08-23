@@ -1,8 +1,11 @@
+export { RedisVectorClient } from "./client.js";
 export { filterToRedisQuery } from "./filters.js";
-export { RedisVectorIndex } from "./search-index.js";
 export { RedisVectorStore } from "./store.js";
 export type {
   RedisClientLike,
   RedisDistance,
-  RedisVectorStoreConnectOptions,
+  RedisMetadataFieldType,
+  RedisMetadataSchema,
+  RedisVectorClientOptions,
+  RedisVectorStoreOptions,
 } from "./types.js";

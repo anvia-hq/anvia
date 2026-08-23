@@ -1,24 +1,34 @@
-export { GeminiClient, type GeminiClientOptions } from "./client";
-export { GeminiCompletionModel } from "./completion";
 export {
-  GeminiEmbeddingModel,
-  type GeminiEmbeddingModelOptions,
-  type GeminiEmbeddingTaskType,
+  GeminiClient,
+  type GeminiClientOptions,
+  type GeminiCompletionModelHandle,
+  type GeminiCompletionModelOptions,
+  type GeminiEmbeddingModelHandle,
+  type GeminiImageGenerationModelHandle,
+  type GeminiImageGenerationModelOptions,
+  type GeminiTranscriptionModelHandle,
+  type GeminiTranscriptionModelOptions,
+} from "./client";
+export type {
+  GeminiEmbeddingModelOptions,
+  GeminiEmbeddingTaskType,
 } from "./embedding";
 export {
   GEMINI_2_5_FLASH_IMAGE,
+  GEMINI_3_1_FLASH_IMAGE,
+  GEMINI_3_1_FLASH_LITE_IMAGE,
+  GEMINI_3_PRO_IMAGE,
   GEMINI_3_PRO_IMAGE_PREVIEW,
-  GeminiImageGenerationModel,
-  GeminiImagenGenerationModel,
   IMAGEN_4_GENERATE,
 } from "./image-generation";
 export type {
-  GeminiCompletionModelName,
-  GeminiEmbeddingModelName,
-  GeminiImageGenerationModelName,
-  GeminiTranscriptionModelName,
-  KnownGeminiCompletionModelName,
-  KnownGeminiEmbeddingModelName,
-  KnownGeminiImageGenerationModelName,
+  GeminiCompletionModelId,
+  GeminiEmbeddingModelId,
+  GeminiGenerateContentImageModelId,
+  GeminiGenerateImagesModelId,
+  GeminiTranscriptionModelId,
+  KnownGeminiCompletionModelId,
+  KnownGeminiEmbeddingModelId,
+  KnownGeminiGenerateContentImageModelId,
+  KnownGeminiGenerateImagesModelId,
 } from "./models";
-export { GeminiTranscriptionModel } from "./transcription";

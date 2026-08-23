@@ -1,6 +1,6 @@
 {
   "name": "@anvia/memory-drizzle",
-  "version": "0.4.0",
+  "version": "1.0.0",
   "description": "Drizzle-backed durable session memory store for Anvia.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",
@@ -42,7 +42,7 @@
     "vitest": "^4.0.8"
   },
   "peerDependencies": {
-    "@anvia/core": ">=0.13.0 <1.0.0",
+    "@anvia/core": "workspace:*",
     "drizzle-orm": ">=0.45.2 <1.0.0"
   }
 }

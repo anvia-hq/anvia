@@ -1,8 +1,9 @@
+import type { ModelCallOptions } from "../model-call-options";
 import { isJsonValue } from "./json";
 
 export type JsonPrimitive = string | number | boolean | null;
-export type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
-export type JsonObject = { [key: string]: JsonValue | undefined };
+export type JsonValue = JsonPrimitive | JsonObject | readonly JsonValue[];
+export type JsonObject = { [key: string]: JsonValue };
 
 export type Document = {
   id: string;
@@ -10,343 +11,156 @@ export type Document = {
   additionalProps?: Record<string, string>;
 };
 
-export type Text = {
+export type TextPart = Readonly<{
   type: "text";
   text: string;
   signature?: string;
-};
+}>;
 
 export type ImageDetail = "auto" | "low" | "high";
 
-export type ImageContent = {
+export type FileData =
+  | Readonly<{ type: "url"; url: string }>
+  | Readonly<{ type: "data"; data: string }>
+  | Readonly<{ type: "text"; text: string }>;
+
+export type ImagePart = Readonly<{
   type: "image";
-  source:
-    | {
-        type: "url";
-        url: string;
-      }
-    | {
-        type: "base64";
-        data: string;
-        mediaType: string;
-      };
+  image: Exclude<FileData, Readonly<{ type: "text"; text: string }>>;
+  mediaType?: string;
   detail?: ImageDetail;
-};
+}>;
 
-export type DocumentContent = {
-  type: "document";
-  source:
-    | {
-        type: "url";
-        url: string;
-        mediaType: string;
-        filename?: string;
-      }
-    | {
-        type: "base64";
-        data: string;
-        mediaType: string;
-        filename?: string;
-      }
-    | {
-        type: "text";
-        text: string;
-        mediaType?: string;
-        filename?: string;
-      };
-};
+export type FilePart = Readonly<{
+  type: "file";
+  data: FileData;
+  mediaType: string;
+  filename?: string;
+}>;
 
-export type Reasoning = {
+export type ReasoningPart = Readonly<{
   type: "reasoning";
   text: string;
   id?: string;
-  content?: ReasoningContent[];
-};
+  details?: readonly ReasoningDetail[];
+}>;
 
-export type ReasoningContent =
-  | {
+export type ReasoningDetail =
+  | Readonly<{
       type: "text";
       text: string;
       signature?: string;
-    }
-  | {
+    }>
+  | Readonly<{
       type: "summary";
       text: string;
-    }
-  | {
+    }>
+  | Readonly<{
       type: "encrypted";
       data: string;
-    }
-  | {
+    }>
+  | Readonly<{
       type: "redacted";
       data: string;
-    };
+    }>;
 
-export type ReasoningContentType = ReasoningContent["type"];
+export type ReasoningContentType = ReasoningDetail["type"];
 
-export type ToolFunction = {
-  name: string;
-  arguments: JsonValue;
-};
-
-export type ToolCall = {
-  type: "tool_call";
-  id: string;
+export type ToolCallPart = Readonly<{
+  type: "tool-call";
+  toolCallId: string;
   callId?: string;
-  function: ToolFunction;
+  toolName: string;
+  input: JsonValue;
   signature?: string;
-  additionalParams?: JsonValue;
-};
+}>;
 
-export type ToolResultContent =
-  | { type: "text"; text: string }
-  | { type: "image"; data: string; mediaType?: string };
+export type ToolResultContentPart = TextPart | FilePart;
 
-export type ToolResult = {
-  type: "tool_result";
-  id: string;
+export type ToolResultOutput =
+  | Readonly<{ type: "text"; value: string }>
+  | Readonly<{ type: "json"; value: JsonValue }>
+  | Readonly<{ type: "content"; value: readonly ToolResultContentPart[] }>
+  | Readonly<{ type: "execution-denied"; reason?: string }>
+  | Readonly<{ type: "error-text"; value: string }>
+  | Readonly<{ type: "error-json"; value: JsonValue }>;
+
+export type ToolResultPart = Readonly<{
+  type: "tool-result";
+  toolCallId: string;
   callId?: string;
-  toolName?: string;
-  content: ToolResultContent[];
-};
+  toolName: string;
+  output: ToolResultOutput;
+}>;
 
-export type MessageOptions = {
-  metadata?: JsonValue | undefined;
-};
+export type ToolApprovalResponsePart = Readonly<{
+  type: "tool-approval-response";
+  interactionId: string;
+  toolCallId: string;
+  callId?: string;
+  toolName: string;
+  approved: boolean;
+  reason?: string;
+}>;
 
-export type AssistantMessageOptions = MessageOptions & {
-  id?: string | undefined;
-};
+export type ToolQuestionAnswer = Readonly<{
+  questionId: string;
+  value: string;
+}>;
 
-export type ToolResultOptions = {
-  callId?: string | undefined;
-  toolName?: string | undefined;
-};
+export type ToolQuestionResponsePart = Readonly<{
+  type: "tool-question-response";
+  interactionId: string;
+  toolCallId: string;
+  callId?: string;
+  toolName: string;
+  answers: readonly ToolQuestionAnswer[];
+}>;
 
-export type ToolResultMessageOptions = ToolResultOptions & MessageOptions;
+export type ToolInteractionResponsePart = ToolApprovalResponsePart | ToolQuestionResponsePart;
 
-export type UserContent = Text | ImageContent | DocumentContent;
-export type AssistantContent = Text | ToolCall | Reasoning | ImageContent;
-export type ToolContent = ToolResult;
+export type UserContentPart = TextPart | ImagePart | FilePart;
+export type AssistantContentPart = TextPart | ImagePart | FilePart | ReasoningPart | ToolCallPart;
 
-export type SystemMessage = {
+export type SystemMessage<Metadata extends JsonObject = JsonObject> = Readonly<{
   role: "system";
   content: string;
-  metadata?: JsonValue;
-};
+  metadata?: Metadata;
+}>;
 
-export type UserMessage = {
+export type UserMessage<Metadata extends JsonObject = JsonObject> = Readonly<{
   role: "user";
-  content: UserContent[];
-  metadata?: JsonValue;
-};
+  content: string | readonly UserContentPart[];
+  metadata?: Metadata;
+}>;
 
-export type AssistantMessage = {
+export type AssistantMessage<Metadata extends JsonObject = JsonObject> = Readonly<{
   role: "assistant";
   id?: string;
-  content: AssistantContent[];
-  metadata?: JsonValue;
-};
+  content: string | readonly AssistantContentPart[];
+  metadata?: Metadata;
+}>;
 
-export type ToolMessage = {
+export type ToolMessage<Metadata extends JsonObject = JsonObject> = Readonly<{
   role: "tool";
-  content: ToolContent[];
-  metadata?: JsonValue;
-};
+  content: readonly (ToolResultPart | ToolInteractionResponsePart)[];
+  metadata?: Metadata;
+}>;
 
-export type Message = SystemMessage | UserMessage | AssistantMessage | ToolMessage;
+export type Message<Metadata extends JsonObject = JsonObject> =
+  | SystemMessage<Metadata>
+  | UserMessage<Metadata>
+  | AssistantMessage<Metadata>
+  | ToolMessage<Metadata>;
 
-export const UserContent = {
-  text(text: string): Text {
-    return { type: "text", text };
-  },
-  imageUrl(url: string, options: { detail?: ImageDetail } = {}): ImageContent {
-    const image: ImageContent = { type: "image", source: { type: "url", url } };
-    if (options.detail !== undefined) {
-      image.detail = options.detail;
-    }
-    return image;
-  },
-  imageBase64(
-    data: string,
-    mediaType: string,
-    options: { detail?: ImageDetail } = {},
-  ): ImageContent {
-    const image: ImageContent = {
-      type: "image",
-      source: { type: "base64", data, mediaType },
-    };
-    if (options.detail !== undefined) {
-      image.detail = options.detail;
-    }
-    return image;
-  },
-  documentUrl(
-    url: string,
-    mediaType: string,
-    options: { filename?: string | undefined } = {},
-  ): DocumentContent {
-    return {
-      type: "document",
-      source:
-        options.filename === undefined
-          ? { type: "url", url, mediaType }
-          : { type: "url", url, mediaType, filename: options.filename },
-    };
-  },
-  documentBase64(
-    data: string,
-    mediaType: string,
-    options: { filename?: string | undefined } = {},
-  ): DocumentContent {
-    return {
-      type: "document",
-      source:
-        options.filename === undefined
-          ? { type: "base64", data, mediaType }
-          : { type: "base64", data, mediaType, filename: options.filename },
-    };
-  },
-  documentText(text: string): Text {
-    return { type: "text", text };
-  },
-};
-
-export const ToolContent = {
-  toolResult(
-    id: string,
-    content: string | ToolResultContent[],
-    callIdOrOptions?: string | ToolResultOptions,
-    toolName?: string,
-  ): ToolResult {
-    const normalized =
-      typeof content === "string" ? [{ type: "text" as const, text: content }] : content;
-    const options = normalizeToolResultOptions(callIdOrOptions, toolName);
-    const result: ToolResult = { type: "tool_result", id, content: normalized };
-    if (options.callId !== undefined) {
-      result.callId = options.callId;
-    }
-    if (options.toolName !== undefined) {
-      result.toolName = options.toolName;
-    }
-    return result;
-  },
-};
-
-function normalizeToolResultOptions(
-  callIdOrOptions?: string | ToolResultOptions,
-  toolName?: string,
-): ToolResultOptions {
-  if (callIdOrOptions === undefined) {
-    return toolName === undefined ? {} : { toolName };
+export function reasoningDisplayText(
+  reasoning: ReasoningPart | readonly ReasoningDetail[],
+): string {
+  const details = "type" in reasoning ? reasoning.details : reasoning;
+  if (details === undefined) {
+    return "type" in reasoning ? reasoning.text : "";
   }
-  if (typeof callIdOrOptions === "string") {
-    return toolName === undefined
-      ? { callId: callIdOrOptions }
-      : { callId: callIdOrOptions, toolName };
-  }
-  return toolName === undefined ? callIdOrOptions : { ...callIdOrOptions, toolName };
-}
-
-export function serializeToolResultOutput(output: unknown): string {
-  if (typeof output === "string") {
-    return output;
-  }
-
-  try {
-    const serialized = JSON.stringify(output);
-    return serialized === undefined ? String(output) : serialized;
-  } catch {
-    return String(output);
-  }
-}
-
-export function isToolResultContentArray(value: unknown): value is ToolResultContent[] {
-  return (
-    Array.isArray(value) &&
-    value.length > 0 &&
-    value.every((item) => {
-      if (typeof item !== "object" || item === null || !("type" in item)) {
-        return false;
-      }
-      if (item.type === "text") {
-        return "text" in item && typeof item.text === "string";
-      }
-      if (item.type === "image") {
-        return (
-          "data" in item &&
-          typeof item.data === "string" &&
-          (!("mediaType" in item) ||
-            item.mediaType === undefined ||
-            typeof item.mediaType === "string")
-        );
-      }
-      return false;
-    })
-  );
-}
-
-export const AssistantContent = {
-  text(text: string): Text {
-    return { type: "text", text };
-  },
-  imageUrl(url: string, options: { detail?: ImageDetail } = {}): ImageContent {
-    const image: ImageContent = { type: "image", source: { type: "url", url } };
-    if (options.detail !== undefined) {
-      image.detail = options.detail;
-    }
-    return image;
-  },
-  imageBase64(
-    data: string,
-    mediaType: string,
-    options: { detail?: ImageDetail } = {},
-  ): ImageContent {
-    const image: ImageContent = {
-      type: "image",
-      source: { type: "base64", data, mediaType },
-    };
-    if (options.detail !== undefined) {
-      image.detail = options.detail;
-    }
-    return image;
-  },
-  reasoning(text: string, id?: string): Reasoning {
-    return id === undefined ? { type: "reasoning", text } : { type: "reasoning", text, id };
-  },
-  reasoningFromContent(content: ReasoningContent[], id?: string): Reasoning {
-    const text = reasoningDisplayText(content);
-    const reasoning: Reasoning = { type: "reasoning", text, content };
-    return id === undefined ? reasoning : { ...reasoning, id };
-  },
-  reasoningSummary(text: string, id?: string): Reasoning {
-    return AssistantContent.reasoningFromContent([{ type: "summary", text }], id);
-  },
-  reasoningEncrypted(data: string, id?: string): Reasoning {
-    return AssistantContent.reasoningFromContent([{ type: "encrypted", data }], id);
-  },
-  reasoningRedacted(data: string, id?: string): Reasoning {
-    return AssistantContent.reasoningFromContent([{ type: "redacted", data }], id);
-  },
-  toolCall(id: string, name: string, args: JsonValue, callId?: string): ToolCall {
-    const base: ToolCall = {
-      type: "tool_call",
-      id,
-      function: {
-        name,
-        arguments: args,
-      },
-    };
-    return callId === undefined ? base : { ...base, callId };
-  },
-};
-
-export function reasoningDisplayText(reasoning: Reasoning | ReasoningContent[]): string {
-  const content = Array.isArray(reasoning) ? reasoning : reasoning.content;
-  if (content === undefined) {
-    return Array.isArray(reasoning) ? "" : reasoning.text;
-  }
-  return content
+  return details
     .flatMap((item) => {
       if (item.type === "text" || item.type === "summary") {
         return [item.text];
@@ -354,62 +168,6 @@ export function reasoningDisplayText(reasoning: Reasoning | ReasoningContent[]):
       return [];
     })
     .join("");
-}
-
-export const Message = {
-  system(content: string, options: MessageOptions = {}): Message {
-    return { role: "system", content, ...messageMetadata(options) };
-  },
-  user(content: string | UserContent[], options: MessageOptions = {}): Message {
-    return {
-      role: "user",
-      content: typeof content === "string" ? [UserContent.text(content)] : content,
-      ...messageMetadata(options),
-    };
-  },
-  assistant(
-    content: string | AssistantContent[],
-    idOrOptions?: string | AssistantMessageOptions,
-  ): Message {
-    const normalized = typeof content === "string" ? [AssistantContent.text(content)] : content;
-    const options = typeof idOrOptions === "string" ? { id: idOrOptions } : (idOrOptions ?? {});
-    const metadata = messageMetadata(options).metadata;
-    const message: AssistantMessage =
-      options.id === undefined
-        ? { role: "assistant", content: normalized }
-        : { role: "assistant", id: options.id, content: normalized };
-    if (metadata !== undefined) {
-      message.metadata = metadata;
-    }
-    return message;
-  },
-  tool(content: ToolContent | ToolContent[], options: MessageOptions = {}): Message {
-    return {
-      role: "tool",
-      content: Array.isArray(content) ? content : [content],
-      ...messageMetadata(options),
-    };
-  },
-  toolResult(id: string, output: unknown, options: ToolResultMessageOptions = {}): Message {
-    const content = isToolResultContentArray(output) ? output : serializeToolResultOutput(output);
-    return Message.tool(
-      ToolContent.toolResult(id, content, {
-        callId: options.callId,
-        toolName: options.toolName,
-      }),
-      { metadata: options.metadata },
-    );
-  },
-};
-
-function messageMetadata(options: MessageOptions): { metadata?: JsonValue } {
-  if (options.metadata === undefined) {
-    return {};
-  }
-  if (!isJsonValue(options.metadata)) {
-    throw new TypeError("Message metadata must be a strict JSON value.");
-  }
-  return { metadata: options.metadata };
 }
 
 export type ToolChoice =
@@ -500,27 +258,23 @@ export type ModelContextLimits = {
   maxOutputTokens?: number;
 };
 
-export type CompletionModelInfo<ModelName extends string = string> = {
-  id: ModelName;
+export type CompletionModelInfo = {
+  modelId: string;
   context: ModelContextLimits;
 };
 
-export type CompletionModelMetadataOptions = {
-  modelOverrides?: Readonly<Record<string, ModelContextLimits>>;
-};
-
-export type ContextUsage<ModelName extends string = string> = {
-  model: CompletionModelInfo<ModelName>;
+export type ContextUsage = {
+  model: CompletionModelInfo;
   usedTokens: number;
   remainingTokens: number;
   usedPercent: number;
   remainingPercent: number;
 };
 
-export function calculateContextUsage<ModelName extends string>(
+export function calculateContextUsage(
   usage: Usage,
-  model: CompletionModelInfo<ModelName> | undefined,
-): ContextUsage<ModelName> | undefined {
+  model: CompletionModelInfo | undefined,
+): ContextUsage | undefined {
   if (
     model === undefined ||
     !Number.isFinite(usage.inputTokens) ||
@@ -543,27 +297,28 @@ export function calculateContextUsage<ModelName extends string>(
   };
 }
 
-export function withContextUsage<RawResponse, ModelName extends string>(
+export function withContextUsage<RawResponse>(
   response: CompletionResponse<RawResponse>,
-  model: CompletionModelInfo<ModelName> | undefined,
+  model: CompletionModelInfo | undefined,
 ): CompletionResponse<RawResponse> {
   const contextUsage = calculateContextUsage(response.usage, model);
   return contextUsage === undefined ? response : { ...response, contextUsage };
 }
 
-export function resolveCompletionModelInfo<ModelName extends string>(
-  model: ModelName,
+export function resolveModelContextLimits(
+  modelId: string,
   catalog: Readonly<Record<string, ModelContextLimits>>,
-  overrides?: Readonly<Record<string, ModelContextLimits>>,
-): CompletionModelInfo<ModelName> | undefined {
-  const context = overrides?.[model] ?? catalog[model];
-  return context === undefined ? undefined : { id: model, context };
+  override?: ModelContextLimits,
+): ModelContextLimits | undefined {
+  return override ?? catalog[modelId];
 }
 
 export type AssistantGenerationMetadata = {
   provider: string;
-  model: string;
+  modelId: string;
   usage: Usage;
+  finishReason?: CompletionFinishReason;
+  providerFinishReason?: string;
   contextUsage?: ContextUsage;
   sources?: CompletionSource[];
   providerToolCalls?: ProviderToolCall[];
@@ -592,6 +347,12 @@ export const Usage = {
       result.details = details;
     }
     return result;
+  },
+  isEmpty(usage: Usage): boolean {
+    return (
+      isEmptyUsage(usage) &&
+      (usage.details === undefined || Object.values(usage.details).every((value) => value === 0))
+    );
   },
 };
 
@@ -636,21 +397,26 @@ export function getAssistantGenerationMetadata(
   if (
     !isJsonObjectValue(generation) ||
     typeof generation.provider !== "string" ||
-    typeof generation.model !== "string" ||
+    typeof generation.modelId !== "string" ||
     !isUsageValue(generation.usage)
   ) {
     return undefined;
   }
+  let usage: Usage = { ...generation.usage };
+  if (generation.usage.details !== undefined) {
+    usage = { ...usage, details: { ...generation.usage.details } };
+  }
   const metadata: AssistantGenerationMetadata = {
     provider: generation.provider,
-    model: generation.model,
-    usage: {
-      ...generation.usage,
-      ...(generation.usage.details === undefined
-        ? {}
-        : { details: { ...generation.usage.details } }),
-    },
+    modelId: generation.modelId,
+    usage,
   };
+  if (isCompletionFinishReason(generation.finishReason)) {
+    metadata.finishReason = generation.finishReason;
+  }
+  if (typeof generation.providerFinishReason === "string") {
+    metadata.providerFinishReason = generation.providerFinishReason;
+  }
   if (isContextUsageValue(generation.contextUsage)) {
     metadata.contextUsage = {
       ...generation.contextUsage,
@@ -664,10 +430,13 @@ export function getAssistantGenerationMetadata(
     metadata.sources = generation.sources.map((source) => ({ ...source }));
   }
   if (isProviderToolCallArray(generation.providerToolCalls)) {
-    metadata.providerToolCalls = generation.providerToolCalls.map((toolCall) => ({
-      ...toolCall,
-      ...(toolCall.details === undefined ? {} : { details: { ...toolCall.details } }),
-    }));
+    metadata.providerToolCalls = generation.providerToolCalls.map((toolCall) => {
+      let copy: ProviderToolCall = { ...toolCall };
+      if (toolCall.details !== undefined) {
+        copy = { ...copy, details: { ...toolCall.details } };
+      }
+      return copy;
+    });
   }
   return metadata;
 }
@@ -682,7 +451,7 @@ function isContextUsageValue(value: JsonValue | undefined): value is JsonObject 
   }
   const context = value.model.context;
   if (
-    typeof value.model.id === "string" &&
+    typeof value.model.modelId === "string" &&
     isJsonObjectValue(context) &&
     isPositiveFiniteNumber(context.contextWindow) &&
     isOptionalPositiveFiniteNumber(context.maxInputTokens) &&
@@ -792,8 +561,7 @@ function isProviderToolCallArray(value: JsonValue | undefined): value is Provide
   );
 }
 
-export type CompletionRequest<ModelName extends string = string> = {
-  model?: ModelName;
+export type CompletionRequest = {
   instructions?: string;
   chatHistory: Message[];
   documents: Document[];
@@ -802,19 +570,47 @@ export type CompletionRequest<ModelName extends string = string> = {
   temperature?: number;
   maxTokens?: number;
   toolChoice?: ToolChoice;
-  additionalParams?: JsonValue;
+  providerOptions?: JsonObject;
   outputSchema?: JsonObject;
 };
 
+export type CompletionFinishReason = "stop" | "length" | "content-filter" | "tool-calls" | "other";
+
 export type CompletionResponse<RawResponse = unknown> = {
-  choice: AssistantContent[];
+  choice: AssistantContentPart[];
   usage: Usage;
+  finishReason?: CompletionFinishReason;
+  providerFinishReason?: string;
   contextUsage?: ContextUsage;
   rawResponse: RawResponse;
   messageId?: string;
   sources?: CompletionSource[];
   providerToolCalls?: ProviderToolCall[];
 };
+
+export type CompletionResult<Output = string, RawResponse = unknown> = {
+  output: Output;
+  text: string;
+  content: readonly AssistantContentPart[];
+  usage: Usage;
+  finishReason?: CompletionFinishReason;
+  providerFinishReason?: string;
+  contextUsage?: ContextUsage;
+  rawResponse: RawResponse;
+  messageId?: string;
+  sources?: readonly CompletionSource[];
+  providerToolCalls?: readonly ProviderToolCall[];
+};
+
+function isCompletionFinishReason(value: JsonValue | undefined): value is CompletionFinishReason {
+  return (
+    value === "stop" ||
+    value === "length" ||
+    value === "content-filter" ||
+    value === "tool-calls" ||
+    value === "other"
+  );
+}
 
 export type CompletionModelCapabilities = {
   streaming: boolean;
@@ -827,21 +623,24 @@ export type CompletionModelCapabilities = {
   providerTools?: boolean;
 };
 
-export interface CompletionModel<RawResponse = unknown, ModelName extends string = string> {
+export interface CompletionModel<RawResponse = unknown> {
   readonly provider: string;
-  readonly defaultModel: ModelName;
+  readonly modelId: string;
+  readonly contextLimits?: ModelContextLimits | undefined;
   readonly capabilities: CompletionModelCapabilities;
-  getModelInfo?(model?: ModelName): CompletionModelInfo<ModelName> | undefined;
   traceRequest?(
-    request: CompletionRequest<ModelName>,
+    request: CompletionRequest,
     options?: { stream?: boolean | undefined },
   ): JsonObject | undefined;
-  completion(request: CompletionRequest<ModelName>): Promise<CompletionResponse<RawResponse>>;
+  completion(
+    request: CompletionRequest,
+    options?: ModelCallOptions,
+  ): Promise<CompletionResponse<RawResponse>>;
 }
 
 export type ToolCallArgumentsMode = "append" | "replace";
 
-export type CompletionStreamEvent<RawResponse = unknown> =
+export type CompletionStreamPart =
   | {
       type: "text_delta";
       delta: string;
@@ -864,7 +663,7 @@ export type CompletionStreamEvent<RawResponse = unknown> =
     }
   | {
       type: "tool_call";
-      toolCall: ToolCall;
+      toolCall: ToolCallPart;
     }
   | {
       type: "source";
@@ -877,7 +676,10 @@ export type CompletionStreamEvent<RawResponse = unknown> =
   | {
       type: "message_id";
       id: string;
-    }
+    };
+
+export type CompletionModelStreamEvent<RawResponse = unknown> =
+  | CompletionStreamPart
   | {
       type: "final";
       response: CompletionResponse<RawResponse>;
@@ -888,11 +690,24 @@ export type CompletionStreamEvent<RawResponse = unknown> =
       usage?: Usage;
     };
 
-export interface StreamingCompletionModel<RawResponse = unknown, ModelName extends string = string>
-  extends CompletionModel<RawResponse, ModelName> {
+export type CompletionStreamEvent<Output = string, RawResponse = unknown> =
+  | CompletionStreamPart
+  | {
+      type: "final";
+      result: CompletionResult<Output, RawResponse>;
+    }
+  | {
+      type: "error";
+      error: unknown;
+      usage: Usage;
+    };
+
+export interface StreamingCompletionModel<RawResponse = unknown>
+  extends CompletionModel<RawResponse> {
   streamCompletion(
-    request: CompletionRequest<ModelName>,
-  ): AsyncIterable<CompletionStreamEvent<RawResponse>>;
+    request: CompletionRequest,
+    options?: ModelCallOptions,
+  ): AsyncIterable<CompletionModelStreamEvent<RawResponse>>;
 }
 
 export class CompletionCapabilityError extends Error {
@@ -907,7 +722,7 @@ export function assertCompletionRequestSupported(
   request: CompletionRequest,
   options: { streaming?: boolean | undefined } = {},
 ): void {
-  const modelLabel = `${model.provider}:${request.model ?? model.defaultModel}`;
+  const modelLabel = `${model.provider}:${model.modelId}`;
   const capabilities = model.capabilities;
 
   if (options.streaming === true && !capabilities.streaming) {
@@ -939,22 +754,22 @@ export function assertCompletionRequestSupported(
   }
 }
 
-export function textFromAssistantContent(content: AssistantContent[]): string {
+export function textFromAssistantContent(content: readonly AssistantContentPart[]): string {
   return content.flatMap((item) => (item.type === "text" ? [item.text] : [])).join("\n");
 }
 
 function requestHasImageInput(request: CompletionRequest): boolean {
   return request.chatHistory.some((message) =>
-    message.role === "system" ? false : message.content.some((content) => content.type === "image"),
+    message.role === "system" || typeof message.content === "string"
+      ? false
+      : message.content.some((content) => content.type === "image"),
   );
 }
 
 function requestHasFileDocumentInput(request: CompletionRequest): boolean {
   return request.chatHistory.some((message) =>
-    message.role === "user"
-      ? message.content.some(
-          (content) => content.type === "document" && content.source.type !== "text",
-        )
+    message.role === "user" && typeof message.content !== "string"
+      ? message.content.some((content) => content.type === "file" && content.data.type !== "text")
       : false,
   );
 }

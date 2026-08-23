@@ -4,6 +4,8 @@ import type {
   AgentGenerationErrorArgs,
   AgentGenerationObserver,
   AgentGenerationStartArgs,
+  AgentObserver,
+  AgentObserverTraceInfo,
   AgentRunEndArgs,
   AgentRunErrorArgs,
   AgentRunEventArgs,
@@ -14,7 +16,7 @@ import type {
   AgentToolObserver,
   AgentToolStartArgs,
   AgentToolStreamEventArgs,
-  AgentTraceInfo,
+  AgentToolSuspendedArgs,
 } from "@anvia/core/observability";
 import {
   type Attributes,
@@ -50,20 +52,18 @@ import {
   toolStartAttributes,
   usageAttributesFromRecord,
 } from "./helpers.js";
-import type { OtelTracing, OtelTracingOptions } from "./types.js";
+import type { OtelObserverOptions } from "./types.js";
 
-export const otel = {
-  create(options: OtelTracingOptions = {}): OtelTracing {
-    return new OtelAgentObserver(options);
-  },
-};
+export function createOtelObserver(options: OtelObserverOptions = {}): AgentObserver {
+  return new OtelAgentObserver(options);
+}
 
-class OtelAgentObserver implements OtelTracing {
+class OtelAgentObserver implements AgentObserver {
   private readonly tracer: Tracer;
   private readonly serviceName: string | undefined;
-  private readonly options: OtelTracingOptions;
+  private readonly options: OtelObserverOptions;
 
-  constructor(options: OtelTracingOptions) {
+  constructor(options: OtelObserverOptions) {
     this.options = options;
     this.tracer =
       options.tracer ??
@@ -90,13 +90,13 @@ class OtelAgentObserver implements OtelTracing {
 }
 
 class OtelRunObserver implements AgentRunObserver {
-  readonly trace: AgentTraceInfo;
+  readonly trace: AgentObserverTraceInfo;
   private readonly rootContext: Context;
 
   constructor(
     private readonly tracer: Tracer,
     private readonly root: Span,
-    private readonly options: OtelTracingOptions,
+    private readonly options: OtelObserverOptions,
   ) {
     const spanContext = root.spanContext();
     this.trace = {
@@ -157,7 +157,7 @@ function eventTimestamp(value: Date | string | undefined): Date | undefined {
 class OtelGenerationObserver implements AgentGenerationObserver {
   constructor(
     private readonly generation: Span,
-    private readonly options: OtelTracingOptions,
+    private readonly options: OtelObserverOptions,
   ) {}
 
   end(args: AgentGenerationEndArgs): void {
@@ -190,7 +190,7 @@ class OtelToolObserver implements AgentToolObserver {
   constructor(
     private readonly tracer: Tracer,
     private readonly tool: Span,
-    private readonly options: OtelTracingOptions,
+    private readonly options: OtelObserverOptions,
   ) {
     this.toolContext = trace.setSpan(ROOT_CONTEXT, tool);
   }
@@ -224,12 +224,15 @@ class OtelToolObserver implements AgentToolObserver {
     }
 
     if (child.type === "generation_start" && isRecord(child.request)) {
-      const generationArgs: AgentGenerationStartArgs = {
+      let generationArgs: AgentGenerationStartArgs = {
         turn: childTurn,
         request: child.request as AgentGenerationStartArgs["request"],
       };
       if (isRecord(child.modelInfo)) {
-        generationArgs.modelInfo = child.modelInfo as AgentGenerationStartArgs["modelInfo"];
+        generationArgs = {
+          ...generationArgs,
+          modelInfo: child.modelInfo as AgentGenerationStartArgs["modelInfo"],
+        };
       }
       this.childGeneration(agentId, agentName, childTurn, args, agent).setAttributes(
         generationStartAttributes(generationArgs, this.options),
@@ -259,13 +262,12 @@ class OtelToolObserver implements AgentToolObserver {
 
     if (child.type === "tool_call" && isRecord(child.toolCall)) {
       const toolCall = child.toolCall;
-      const toolCallFunction = isRecord(toolCall.function) ? toolCall.function : undefined;
-      const toolName = typeof toolCallFunction?.name === "string" ? toolCallFunction.name : "tool";
+      const toolName = typeof toolCall.toolName === "string" ? toolCall.toolName : "tool";
       const toolCallId =
-        typeof toolCall.callId === "string"
-          ? toolCall.callId
-          : typeof toolCall.id === "string"
-            ? toolCall.id
+        typeof toolCall.toolCallId === "string"
+          ? toolCall.toolCallId
+          : typeof toolCall.callId === "string"
+            ? toolCall.callId
             : undefined;
       const span = this.tracer.startSpan(
         `${agentLabel(agentId, agentName)}.${toolName}`,
@@ -277,11 +279,7 @@ class OtelToolObserver implements AgentToolObserver {
             "anvia.child_agent.turn": childTurn,
             "anvia.tool.name": toolName,
             "anvia.tool.call_id": toolCallId,
-            "anvia.tool.args": capturedJson(
-              toolCallFunction?.arguments ?? {},
-              "input",
-              this.options,
-            ),
+            "anvia.tool.args": capturedJson(toolCall.input, "input", this.options),
             "anvia.parent_tool.name": args.toolName,
             "anvia.parent_tool.internal_call_id": args.internalCallId,
             "anvia.parent_tool.call_id": args.toolCallId,
@@ -333,17 +331,29 @@ class OtelToolObserver implements AgentToolObserver {
       return;
     }
 
-    if (child.type === "final") {
+    if (child.type === "response" || child.type === "interaction" || child.type === "blocked") {
+      const result = child;
       const attributes: Attributes = {
-        "anvia.child_agent.output": capturedString(
-          typeof child.output === "string" ? child.output : undefined,
+        "anvia.child_agent.status":
+          result.type === "response"
+            ? "response"
+            : result.type === "interaction"
+              ? "interaction"
+              : "blocked",
+        "anvia.child_agent.text": capturedString(
+          typeof result.text === "string" ? result.text : undefined,
           "output",
           this.options,
         ),
-        "anvia.child_agent.messages": capturedJson(child.messages, "output", this.options),
+        "anvia.child_agent.output": capturedJson(
+          result.type === "response" ? result.output : undefined,
+          "output",
+          this.options,
+        ),
+        "anvia.child_agent.messages": capturedJson(result.messages, "output", this.options),
       };
-      if (isRecord(child.usage)) {
-        Object.assign(attributes, usageAttributesFromRecord(child.usage));
+      if (isRecord(result.usage)) {
+        Object.assign(attributes, usageAttributesFromRecord(result.usage));
       }
       agent.setAttributes(compactAttributes(attributes));
       agent.setStatus({ code: SpanStatusCode.OK });
@@ -365,6 +375,17 @@ class OtelToolObserver implements AgentToolObserver {
   end(args: AgentToolEndArgs): void {
     this.endOpenChildren();
     this.tool.setAttributes(toolEndAttributes(args, this.options));
+    this.tool.setStatus({ code: SpanStatusCode.OK });
+    this.tool.end();
+  }
+
+  suspend(args: AgentToolSuspendedArgs): void {
+    this.endOpenChildren();
+    this.tool.setAttributes({
+      "anvia.tool.status": "suspended",
+      "anvia.tool.interaction.id": args.interaction.id,
+      "anvia.tool.interaction.type": args.interaction.type,
+    });
     this.tool.setStatus({ code: SpanStatusCode.OK });
     this.tool.end();
   }

@@ -30,6 +30,7 @@ import {
 } from "../../components/ui/studio";
 import { cn } from "../../lib/utils";
 import { errorMessage } from "../shared/format";
+import { requestJson } from "../shared/request";
 
 const maxInlinePreviewBytes = 1024 * 1024;
 const textExtensions = new Set([
@@ -101,6 +102,7 @@ export function SandboxesPage(props: {
   const selectedRef = props.initialSandboxRef ?? sandboxes[0]?.ref ?? "";
   const selectedSandbox = sandboxes.find((sandbox) => sandbox.ref === selectedRef);
   const selectedSandboxRef = selectedSandbox?.ref;
+  const supportsFiles = selectedSandbox?.capabilities.files ?? false;
   const supportsPorts = selectedSandbox?.capabilities.ports ?? false;
   const supportsProcesses = selectedSandbox?.capabilities.processes ?? false;
 
@@ -156,7 +158,9 @@ export function SandboxesPage(props: {
   }, [selectedRef]);
 
   useEffect(() => {
-    if (selectedSandboxRef === undefined) {
+    if (selectedSandboxRef === undefined || !supportsFiles) {
+      setFiles([]);
+      setFileLoadState("idle");
       return;
     }
     const controller = new AbortController();
@@ -179,7 +183,7 @@ export function SandboxesPage(props: {
         if (!controller.signal.aborted) setFileLoadState("idle");
       });
     return () => controller.abort();
-  }, [currentPath, refreshSequence, reportError, selectedSandboxRef]);
+  }, [currentPath, refreshSequence, reportError, selectedSandboxRef, supportsFiles]);
 
   useEffect(() => {
     if (selectedSandboxRef === undefined) {
@@ -323,12 +327,12 @@ export function SandboxesPage(props: {
       <StudioPageShell className="grid-rows-[auto_minmax(0,1fr)]" aria-label="Sandboxes">
         <StudioPageHeader
           title="Sandboxes"
-          description="Read-only files, published ports, and managed processes discovered from agent tools."
+          description="Read-only sandbox inspectors explicitly registered by the application."
         />
         <StudioPageContent className="overflow-auto">
           <StudioEmptyState
             title="No sandbox workspaces"
-            text="Add tools created by createSandboxTools(session) to an agent to inspect its live workspace here."
+            text="Register a sandbox inspector in the Studio options to inspect it here."
           />
         </StudioPageContent>
       </StudioPageShell>
@@ -339,7 +343,7 @@ export function SandboxesPage(props: {
     <StudioPageShell className="grid-rows-[auto_minmax(0,1fr)]" aria-label="Sandboxes">
       <StudioPageHeader
         title="Sandboxes"
-        description="Read-only files, published ports, and managed processes discovered from agent tools."
+        description="Read-only sandbox inspectors explicitly registered by the application."
         action={
           <Button
             disabled={summaryLoadState === "loading"}
@@ -364,7 +368,7 @@ export function SandboxesPage(props: {
             text={
               summaryLoadState === "loading"
                 ? "Reading live sandbox workspaces."
-                : "Studio discovers sessions automatically from tools returned by createSandboxTools(session)."
+                : "Register live sandbox inspectors in the Studio options."
             }
           />
         ) : (
@@ -374,20 +378,27 @@ export function SandboxesPage(props: {
               selectedRef={selectedRef}
               onSelect={props.onSelectSandbox}
             />
-            <FileBrowser
-              currentPath={currentPath}
-              files={files}
-              loading={fileLoadState === "loading"}
-              onOpenDirectory={(filePath) => {
-                clearPreview();
-                setCurrentPath(filePath);
-              }}
-              onOpenFile={(file) => void openFile(file)}
-              onSelectPath={(filePath) => {
-                clearPreview();
-                setCurrentPath(filePath);
-              }}
-            />
+            {supportsFiles ? (
+              <FileBrowser
+                currentPath={currentPath}
+                files={files}
+                loading={fileLoadState === "loading"}
+                onOpenDirectory={(filePath) => {
+                  clearPreview();
+                  setCurrentPath(filePath);
+                }}
+                onOpenFile={(file) => void openFile(file)}
+                onSelectPath={(filePath) => {
+                  clearPreview();
+                  setCurrentPath(filePath);
+                }}
+              />
+            ) : (
+              <StudioEmptyState
+                title="Files unavailable"
+                text="This registration did not expose file inspection."
+              />
+            )}
             <div className="grid min-h-0 gap-3 overflow-y-auto pr-1">
               {selectedSandbox === undefined ? (
                 <StudioEmptyState
@@ -554,9 +565,13 @@ function SandboxOverview(props: { sandbox: StudioSandboxSummary; error: string }
         </div>
         <StudioStatusBadge>{props.sandbox.provider}</StudioStatusBadge>
       </div>
-      <div className="mt-4 grid grid-cols-2 gap-3 text-xs">
+      <div className="mt-4 grid grid-cols-3 gap-3 text-xs">
         <MetadataList label="Agents" values={props.sandbox.agentIds} />
         <MetadataList label="Sandbox tools" values={props.sandbox.toolNames} />
+        <MetadataList
+          label="Views"
+          values={props.sandbox.views.map((view) => `${view.label} (${view.protocol})`)}
+        />
       </div>
       {props.error.length > 0 ? (
         <p className="m-0 mt-3 rounded-lg border border-destructive/25 bg-destructive/5 px-3 py-2 text-xs leading-5 text-destructive">
@@ -794,19 +809,6 @@ function LogBlock(props: { label: string; text: string; truncated: boolean }) {
       </pre>
     </div>
   );
-}
-
-async function requestJson<T>(
-  url: string,
-  label: string,
-  signal: AbortSignal,
-  cache: RequestCache = "default",
-): Promise<T> {
-  const response = await fetch(url, { cache, signal });
-  if (!response.ok) {
-    throw new Error(await responseErrorMessage(response, label));
-  }
-  return (await response.json()) as T;
 }
 
 function sandboxBreadcrumbs(filePath: string): Array<{ label: string; path: string }> {

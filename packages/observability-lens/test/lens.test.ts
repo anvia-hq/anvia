@@ -2,7 +2,7 @@ import { defineEvalSuite, exactMatch, selectPromptOutput } from "@anvia/core/eva
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { resolveLensConfig } from "../src/config";
 import { createLensRedactor } from "../src/redaction";
-import { createLensEvalReporter, lens } from "../src/tracing";
+import { LensClient } from "../src/tracing";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -83,8 +83,8 @@ describe("Lens eval ergonomics", () => {
     vi.stubEnv("ANVIA_LENS_BASE_URL", "");
     vi.stubEnv("ANVIA_LENS_PUBLIC_KEY", "");
     vi.stubEnv("ANVIA_LENS_SECRET_KEY", "");
-    const tracing = lens.createFromEnv({ optional: true, serviceName: "typed-evals" });
-    const reporter = createLensEvalReporter(tracing);
+    const client = new LensClient({ optional: true, serviceName: "typed-evals" });
+    const reporter = client.evalReporter();
     const suite = defineEvalSuite({
       name: "typed lens",
       cases: [{ id: "case", input: "hello", expected: "hello" }],
@@ -102,10 +102,11 @@ describe("Lens eval ergonomics", () => {
     vi.stubEnv("ANVIA_LENS_SECRET_KEY", undefined);
     vi.stubEnv("ANVIA_LENS_SERVICE_NAME", undefined);
 
-    const tracing = lens.createFromEnv({ optional: true, serviceName: "evals" });
-    expect(tracing.enabled).toBe(false);
-    await expect(tracing.flush()).resolves.toBeUndefined();
-    await expect(tracing.shutdown()).resolves.toBeUndefined();
+    const client = new LensClient({ optional: true, serviceName: "evals" });
+    expect(client.enabled).toBe(false);
+    await expect(client.flush()).resolves.toBeUndefined();
+    await expect(client.close()).resolves.toBeUndefined();
+    await expect(client.close()).resolves.toBeUndefined();
   });
 
   it("still rejects partially configured optional environments", () => {
@@ -113,27 +114,61 @@ describe("Lens eval ergonomics", () => {
     vi.stubEnv("ANVIA_LENS_PUBLIC_KEY", undefined);
     vi.stubEnv("ANVIA_LENS_SECRET_KEY", undefined);
 
-    expect(() => lens.createFromEnv({ optional: true, serviceName: "evals" })).toThrow(
+    expect(() => new LensClient({ optional: true, serviceName: "evals" })).toThrow(
       /publicKey is required/,
     );
   });
 
-  it("flushes no-op reporters on run end and enables auto-flush in the bundle", async () => {
+  it("closes terminally without initializing unused infrastructure", async () => {
+    const client = new LensClient({
+      baseUrl: "https://lens.test",
+      publicKey: "public",
+      secretKey: "secret",
+      serviceName: "test",
+    });
+
+    const observer = client.observer();
+    const reporter = client.evalReporter();
+    const datasets = client.datasetClient();
+    await client.close();
+    await client.close();
+    await client[Symbol.asyncDispose]();
+    expect(() => client.observer()).toThrow("LensClient is closed");
+    await expect(
+      observer.startRun({
+        runId: "closed",
+        prompt: { role: "user", content: "closed" },
+        history: [],
+        maxTurns: 1,
+      }),
+    ).rejects.toThrow("LensClient is closed");
+    await expect(
+      reporter.report({
+        suiteName: "closed",
+        case: { id: "closed", input: "closed" },
+        metric: {
+          name: "closed",
+          evaluate: () => {
+            throw new Error("unused");
+          },
+        },
+        outcome: { outcome: "pass", score: true },
+      }),
+    ).rejects.toThrow("LensClient is closed");
+    expect(() => datasets.getDataset({ name: "closed" })).toThrow("LensClient is closed");
+  });
+
+  it("keeps reporter completion separate from client flushing", async () => {
     vi.stubEnv("ANVIA_LENS_BASE_URL", undefined);
     vi.stubEnv("ANVIA_LENS_PUBLIC_KEY", undefined);
     vi.stubEnv("ANVIA_LENS_SECRET_KEY", undefined);
-    const tracing = lens.createFromEnv({ optional: true, serviceName: "evals" });
-    const flush = vi.spyOn(tracing, "flush");
-    const reporter = createLensEvalReporter(tracing, { flushOnRunEnd: true });
+    const client = new LensClient({ optional: true, serviceName: "evals" });
+    const flush = vi.spyOn(client, "flush");
+    const reporter = client.evalReporter();
 
     await reporter.onRunEnd?.(runEndArgs());
-    expect(flush).toHaveBeenCalledOnce();
-
-    const integration = lens.evals({ optional: true, serviceName: "evals" });
-    const integrationFlush = vi.spyOn(integration.observer, "flush");
-    await integration.reporter.onRunEnd?.(runEndArgs());
-    expect(integration.enabled).toBe(false);
-    expect(integrationFlush).toHaveBeenCalledOnce();
+    expect(flush).not.toHaveBeenCalled();
+    await client[Symbol.asyncDispose]();
   });
 });
 

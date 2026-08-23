@@ -18,7 +18,7 @@ function isJsonValueWithAncestors(value: unknown, ancestors: WeakSet<object>): v
   ancestors.add(value);
   try {
     if (Array.isArray(value)) {
-      if (!hasOnlyDenseArrayProperties(value)) {
+      if (Object.getPrototypeOf(value) !== Array.prototype || !hasOnlyDenseArrayProperties(value)) {
         return false;
       }
       for (let index = 0; index < value.length; index += 1) {

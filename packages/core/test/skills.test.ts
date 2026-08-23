@@ -3,12 +3,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
-  AgentBuilder,
+  Agent,
   AssistantContent,
   type CompletionModel,
+  type CompletionModelStreamEvent,
   type CompletionRequest,
   type CompletionResponse,
-  type CompletionStreamEvent,
   createHook,
   createMiddleware,
   loadSkills,
@@ -16,15 +16,15 @@ import {
   SkillValidationError,
   type StreamingCompletionModel,
   skill,
-  ToolSet,
   Usage,
+  withInternalAgentRunOptions,
 } from "./helpers/imports";
 
 const tempDirs: string[] = [];
 
 class QueueModel implements CompletionModel {
   readonly provider = "test";
-  readonly defaultModel = "test";
+  readonly modelId = "test";
   readonly capabilities = {
     streaming: false,
     tools: true,
@@ -50,7 +50,7 @@ class QueueModel implements CompletionModel {
 
 class StreamingQueueModel implements StreamingCompletionModel {
   readonly provider = "test";
-  readonly defaultModel = "test";
+  readonly modelId = "test";
   readonly capabilities = {
     streaming: true,
     tools: true,
@@ -62,13 +62,13 @@ class StreamingQueueModel implements StreamingCompletionModel {
   };
   readonly requests: CompletionRequest[] = [];
 
-  constructor(private readonly responses: CompletionStreamEvent[][]) {}
+  constructor(private readonly responses: CompletionModelStreamEvent[][]) {}
 
   async completion(): Promise<CompletionResponse> {
     throw new Error("completion should not be called");
   }
 
-  async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionStreamEvent> {
+  async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionModelStreamEvent> {
     this.requests.push(request);
     const response = this.responses.shift();
     if (response === undefined) {
@@ -155,23 +155,27 @@ describe("skills", () => {
       scriptFiles: { "helper.sh": "#!/bin/sh\necho helper\n" },
     });
     const skillSet = await loadSkills(skill.local(root));
-    const toolSet = new ToolSet().addTools(skillSet.tools);
+    const agent = new Agent({
+      id: "skills",
+      model: new QueueModel([]),
+      tools: skillSet.tools,
+    });
 
     await expect(
-      toolSet.call("get_skill_instructions", JSON.stringify({ skillName: "review" })),
-    ).resolves.toBe("# Review\nUse direct feedback.");
+      agent.callTool("get_skill_instructions", JSON.stringify({ skillName: "review" })),
+    ).resolves.toEqual({ type: "text", value: "# Review\nUse direct feedback." });
     await expect(
-      toolSet.call(
+      agent.callTool(
         "get_skill_reference",
         JSON.stringify({ skillName: "review", referencePath: "guide.md" }),
       ),
-    ).resolves.toBe("Reference text");
+    ).resolves.toEqual({ type: "text", value: "Reference text" });
     await expect(
-      toolSet.call(
+      agent.callTool(
         "get_skill_script",
         JSON.stringify({ skillName: "review", scriptPath: "helper.sh" }),
       ),
-    ).resolves.toBe("#!/bin/sh\necho helper\n");
+    ).resolves.toEqual({ type: "text", value: "#!/bin/sh\necho helper\n" });
   });
 
   it("executes skill scripts and reports failures", async () => {
@@ -185,10 +189,14 @@ describe("skills", () => {
       },
     });
     const skillSet = await loadSkills(skill.local(root));
-    const toolSet = new ToolSet().addTools(skillSet.tools);
+    const agent = new Agent({
+      id: "skills",
+      model: new QueueModel([]),
+      tools: skillSet.tools,
+    });
 
     await expect(
-      toolSet.call(
+      agent.callTool(
         "run_skill_script",
         JSON.stringify({
           skillName: "scripts",
@@ -196,15 +204,18 @@ describe("skills", () => {
           args: ["one", "two"],
         }),
       ),
-    ).resolves.toBe("stdout:\nstdout:one\n\n\nstderr:\nstderr:two\n");
+    ).resolves.toEqual({
+      type: "text",
+      value: "stdout:\nstdout:one\n\n\nstderr:\nstderr:two\n",
+    });
     await expect(
-      toolSet.call(
+      agent.callTool(
         "run_skill_script",
         JSON.stringify({ skillName: "scripts", scriptPath: "fail.sh" }),
       ),
     ).rejects.toThrow("Skill script exited with code 2");
     await expect(
-      toolSet.call(
+      agent.callTool(
         "run_skill_script",
         JSON.stringify({ skillName: "scripts", scriptPath: "slow.sh", timeoutMs: 50 }),
       ),
@@ -218,10 +229,14 @@ describe("skills", () => {
       referenceFiles: { "guide.md": "Reference text" },
     });
     const skillSet = await loadSkills(skill.local(root));
-    const toolSet = new ToolSet().addTools(skillSet.tools);
+    const agent = new Agent({
+      id: "skills",
+      model: new QueueModel([]),
+      tools: skillSet.tools,
+    });
 
     await expect(
-      toolSet.call(
+      agent.callTool(
         "get_skill_reference",
         JSON.stringify({ skillName: "review", referencePath: "../SKILL.md" }),
       ),
@@ -242,23 +257,25 @@ describe("skills", () => {
       response([AssistantContent.text("loaded")]),
     ]);
     const events: string[] = [];
-    const agent = new AgentBuilder("test-agent", model)
-      .instructions("Base instructions.")
-      .skills(skillSet)
-      .hook(
-        createHook({
-          onToolCall({ toolName }) {
-            events.push(`call:${toolName}`);
-          },
-          onToolResult({ toolName, result }) {
-            events.push(`result:${toolName}:${result}`);
-          },
-        }),
-      )
-      .defaultMaxTurns(1)
-      .build();
+    const hook = createHook({
+      onToolCall({ toolName }) {
+        events.push(`call:${toolName}`);
+      },
+      onToolResult({ toolName, result }) {
+        events.push(`result:${toolName}:${result}`);
+      },
+    });
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      instructions: "Base instructions.",
+      skills: skillSet,
+      maxTurns: 1,
+    });
 
-    await expect(agent.prompt("review").send()).resolves.toMatchObject({ output: "loaded" });
+    await expect(
+      agent.generate({ prompt: "review", ...withInternalAgentRunOptions({}, { hook }) }),
+    ).resolves.toMatchObject({ output: "loaded" });
 
     expect(model.requests[0]?.instructions).toEqual(
       expect.stringContaining("Base instructions.\n\nYou have access to Agent Skills."),
@@ -284,27 +301,29 @@ describe("skills", () => {
       response([AssistantContent.text("loaded")]),
     ]);
     const events: string[] = [];
-    const agent = new AgentBuilder("test-agent", model)
-      .skills(skillSet)
-      .middleware(
+    const hook = createHook({
+      onToolResult({ result }) {
+        events.push(`hook:${result}`);
+      },
+    });
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      skills: skillSet,
+      middlewares: [
         createMiddleware({
           onToolOutput({ result }) {
             events.push(`middleware:${result}`);
             return "middleware changed result";
           },
         }),
-      )
-      .hook(
-        createHook({
-          onToolResult({ result }) {
-            events.push(`hook:${result}`);
-          },
-        }),
-      )
-      .defaultMaxTurns(1)
-      .build();
+      ],
+      maxTurns: 1,
+    });
 
-    await expect(agent.prompt("review").send()).resolves.toMatchObject({ output: "loaded" });
+    await expect(
+      agent.generate({ prompt: "review", ...withInternalAgentRunOptions({}, { hook }) }),
+    ).resolves.toMatchObject({ output: "loaded" });
 
     expect(events).toEqual(["hook:# Review\nUse direct feedback."]);
     expect(model.requests[1]?.chatHistory.at(-1)).toEqual(
@@ -333,27 +352,29 @@ describe("skills", () => {
       response([AssistantContent.text("loaded")]),
     ]);
     const events: string[] = [];
-    const agent = new AgentBuilder("test-agent", model)
-      .tools(skillSet.tools)
-      .middleware(
+    const hook = createHook({
+      onToolResult({ result }) {
+        events.push(`hook:${result}`);
+      },
+    });
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      tools: skillSet.tools,
+      middlewares: [
         createMiddleware({
           onToolOutput({ result }) {
             events.push(`middleware:${result}`);
             return "middleware changed result";
           },
         }),
-      )
-      .hook(
-        createHook({
-          onToolResult({ result }) {
-            events.push(`hook:${result}`);
-          },
-        }),
-      )
-      .defaultMaxTurns(1)
-      .build();
+      ],
+      maxTurns: 1,
+    });
 
-    await expect(agent.prompt("review").send()).resolves.toMatchObject({ output: "loaded" });
+    await expect(
+      agent.generate({ prompt: "review", ...withInternalAgentRunOptions({}, { hook }) }),
+    ).resolves.toMatchObject({ output: "loaded" });
 
     expect(events).toEqual(["hook:# Review\nUse direct feedback."]);
     expect(model.requests[1]?.chatHistory.at(-1)).toEqual(
@@ -383,12 +404,28 @@ describe("skills", () => {
           name: "get_skill_instructions",
           argumentsDelta: '{"skillName":"review"}',
         },
+        {
+          type: "final",
+          response: {
+            ...response([
+              AssistantContent.toolCall("call_1", "get_skill_instructions", {
+                skillName: "review",
+              }),
+            ]),
+            finishReason: "tool-calls",
+          },
+        },
       ],
-      [{ type: "text_delta", delta: "loaded" }],
+      successfulTextStream("loaded"),
     ]);
-    const agent = new AgentBuilder("test-agent", model).skills(skillSet).defaultMaxTurns(1).build();
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      skills: skillSet,
+      maxTurns: 1,
+    });
 
-    const events = await collect(agent.prompt("review").stream());
+    const events = await collect(agent.stream({ prompt: "review" }));
 
     expect(events).toContainEqual(
       expect.objectContaining({
@@ -397,7 +434,7 @@ describe("skills", () => {
         result: "# Review\nUse direct feedback.",
       }),
     );
-    expect(events.at(-1)).toMatchObject({ type: "final", output: "loaded" });
+    expect(events.at(-1)).toMatchObject({ type: "response", output: "loaded" });
     expect(model.requests[0]?.tools.map((tool) => tool.name)).toContain("get_skill_instructions");
   });
 });
@@ -408,6 +445,19 @@ function response(choice: CompletionResponse["choice"]): CompletionResponse {
     usage: Usage.empty(),
     rawResponse: {},
   };
+}
+
+function successfulTextStream(text: string): CompletionModelStreamEvent[] {
+  return [
+    { type: "text_delta", delta: text },
+    {
+      type: "final",
+      response: {
+        ...response([AssistantContent.text(text)]),
+        finishReason: "stop",
+      },
+    },
+  ];
 }
 
 async function collect<T>(events: AsyncIterable<T>): Promise<T[]> {

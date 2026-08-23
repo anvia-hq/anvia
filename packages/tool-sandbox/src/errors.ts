@@ -1,38 +1,39 @@
-export class SandboxError extends Error {
+export type DockerSandboxErrorCode =
+  | "docker_unavailable"
+  | "docker_command_failed"
+  | "image_not_found"
+  | "volume_not_found"
+  | "sandbox_not_found"
+  | "invalid_state"
+  | "invalid_path"
+  | "timeout"
+  | "file_too_large"
+  | "tool_policy"
+  | "port"
+  | "process";
+
+export class DockerSandboxError extends Error {
   constructor(
     message: string,
-    readonly cause?: unknown,
+    readonly code: DockerSandboxErrorCode,
+    readonly details?: unknown,
+    options?: ErrorOptions,
   ) {
-    super(message);
-    this.name = new.target.name;
+    super(message, options);
+    this.name = "DockerSandboxError";
   }
 }
 
-export class SandboxDockerUnavailableError extends SandboxError {}
-
-export class SandboxDockerCommandError extends SandboxError {
-  constructor(
-    message: string,
-    readonly result: {
-      stdout: string;
-      stderr: string;
-      exitCode: number;
-    },
-  ) {
-    super(message);
-  }
+export function dockerSandboxError(
+  message: string,
+  code: DockerSandboxErrorCode,
+  cause?: unknown,
+  details?: unknown,
+): DockerSandboxError {
+  return new DockerSandboxError(
+    message,
+    code,
+    details,
+    cause === undefined ? undefined : { cause },
+  );
 }
-
-export class SandboxSessionDestroyedError extends SandboxError {}
-
-export class SandboxPathError extends SandboxError {}
-
-export class SandboxTimeoutError extends SandboxError {}
-
-export class SandboxFileSizeError extends SandboxError {}
-
-export class SandboxToolPolicyError extends SandboxError {}
-
-export class SandboxPortError extends SandboxError {}
-
-export class SandboxProcessError extends SandboxError {}

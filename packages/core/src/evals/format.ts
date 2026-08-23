@@ -1,11 +1,6 @@
 export function defaultOutputValue(output: unknown): unknown {
-  if (
-    typeof output === "object" &&
-    output !== null &&
-    "output" in output &&
-    typeof (output as { output?: unknown }).output === "string"
-  ) {
-    return (output as { output: string }).output;
+  if (typeof output === "object" && output !== null && "output" in output) {
+    return (output as { output: unknown }).output;
   }
   return output;
 }

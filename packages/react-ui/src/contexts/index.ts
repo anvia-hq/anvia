@@ -25,7 +25,9 @@ export type {
 export { InternalComposerProvider, useComposer } from "./composer";
 export type {
   ApprovalContextValue,
+  ApprovalInteraction,
   QuestionContextValue,
+  QuestionInteraction,
   QuestionPromptContextValue,
 } from "./human-input";
 export {
@@ -58,7 +60,9 @@ export type {
 } from "./thread-list";
 export {
   InternalThreadListItemProvider,
+  InternalThreadListRootProvider,
   ThreadListProvider,
+  useInternalThreadListRoot,
   useThreadList,
   useThreadListItem,
 } from "./thread-list";

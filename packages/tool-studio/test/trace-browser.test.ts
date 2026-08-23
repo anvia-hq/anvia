@@ -1,5 +1,5 @@
-import { Message } from "@anvia/core";
 import { describe, expect, it } from "vitest";
+import { Message } from "../../core/test/helpers/imports";
 import {
   jsonSyntaxTokens,
   plainTraceValue,

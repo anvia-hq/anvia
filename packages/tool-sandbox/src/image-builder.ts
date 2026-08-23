@@ -121,10 +121,10 @@ export function renderSandboxImageContext(
   generatorVersion: string,
 ): SandboxImageContext {
   const files = new Map<string, string>();
-  const pythonRequirements = [
-    ...(spec.features.includes("artifacts") ? artifactPythonPackages : []),
-    ...spec.packages.uv,
-  ];
+  const pythonRequirements = [...spec.packages.uv];
+  if (spec.features.includes("artifacts")) {
+    pythonRequirements.unshift(...artifactPythonPackages);
+  }
   const npmDependencies = npmDependenciesFor(spec);
 
   files.set("Dockerfile", `${renderDockerfile(spec, pythonRequirements, npmDependencies)}\n`);
@@ -224,11 +224,10 @@ function renderDockerfile(
     lines.push("COPY --from=uv-runtime /uv /uvx /usr/local/bin/");
   }
 
-  const aptPackages = unique([
-    ...commonAptPackages,
-    ...(spec.features.includes("artifacts") ? ["fonts-dejavu-core"] : []),
-    ...spec.packages.apt,
-  ]).sort();
+  const requestedAptPackages = [...commonAptPackages];
+  if (spec.features.includes("artifacts")) requestedAptPackages.push("fonts-dejavu-core");
+  requestedAptPackages.push(...spec.packages.apt);
+  const aptPackages = unique(requestedAptPackages).sort();
   lines.push(
     "",
     "RUN apt-get update \\",
@@ -274,9 +273,9 @@ function renderDockerfile(
     lines.push("ENV PATH=/opt/anvia-js/node_modules/.bin:$PATH");
   }
 
+  lines.push("");
+  if (hasPlaywright) lines.push("ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright");
   lines.push(
-    "",
-    ...(hasPlaywright ? ["ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright"] : []),
     "RUN mkdir -p /workspace",
     "WORKDIR /workspace",
     "ENTRYPOINT []",
@@ -287,15 +286,11 @@ function renderDockerfile(
 }
 
 function renderDockerignore(hasPython: boolean, hasNpm: boolean): string {
-  return [
-    "**",
-    "!Dockerfile",
-    "!.dockerignore",
-    "!anvia-sandbox.json",
-    ...(hasPython ? ["!pyproject.toml"] : []),
-    ...(hasNpm ? ["!package.json"] : []),
-    "",
-  ].join("\n");
+  const lines = ["**", "!Dockerfile", "!.dockerignore", "!anvia-sandbox.json"];
+  if (hasPython) lines.push("!pyproject.toml");
+  if (hasNpm) lines.push("!package.json");
+  lines.push("");
+  return lines.join("\n");
 }
 
 function renderPythonProject(spec: SandboxImageSpec, requirements: readonly string[]): string {

@@ -1,0 +1,108 @@
+// One-shot end-to-end demo: build a real Anvia agent, trace it, attach scores,
+// run a one-case eval suite with the Langfuse eval reporter, flush, then log
+// every artifact ID.
+
+import { Agent } from "@anvia/core/agent";
+import { agentEvalTarget, contains, runEvalSuite } from "@anvia/core/evals";
+import { assertCompleted, buildSupportAgent, getTicket } from "./_support/agent.js";
+import { optionalEnv } from "./_support/env.js";
+import { buildOpenAIClient, defaultModelId } from "./_support/model.js";
+import { createTracing } from "./_support/tracing.js";
+
+const datasetName = `quickstart-dataset-${Date.now()}`;
+
+async function main(): Promise<void> {
+  await using tracing = createTracing({ name: "langfuse-ops-quickstart" });
+  const langfuseBaseUrl = optionalEnv("LANGFUSE_BASE_URL") ?? "https://cloud.langfuse.com";
+  const client = buildOpenAIClient();
+  const agent = buildSupportAgent(
+    client.completionModel({ modelId: defaultModelId(), api: "responses" }),
+    {
+      tracing,
+      tools: [getTicket],
+    },
+  );
+
+  const response = await agent.generate({
+    prompt: "Summarize ticket TICKET-1001 for the product engineering team.",
+    trace: {
+      name: "quickstart-support-ticket",
+      userId: "quickstart-user",
+      sessionId: "quickstart-session",
+      metadata: { example: "00-quickstart" },
+      tags: ["langfuse-ops", "quickstart"],
+    },
+  });
+  assertCompleted(response);
+
+  console.log("[quickstart] agent output:", response.output);
+  console.log("[quickstart] trace:", response.trace?.traceId);
+  if (response.trace?.traceId !== undefined) {
+    console.log(
+      "[quickstart] inspect in Langfuse:",
+      `${langfuseBaseUrl.replace(/\/$/, "")} (trace ${response.trace.traceId})`,
+    );
+  }
+
+  if (response.trace?.traceId !== undefined) {
+    await tracing.score({
+      traceId: response.trace.traceId,
+      name: "quality",
+      value: 0.92,
+      dataType: "NUMERIC",
+      comment: "Heuristic quality score from quickstart demo",
+    });
+    await tracing.score({
+      traceId: response.trace.traceId,
+      name: "verdict",
+      value: "pass",
+      dataType: "CATEGORICAL",
+      configId: "quickstart-verdict",
+    });
+  }
+
+  const evalCase: {
+    id: string;
+    input: string;
+    expected: string;
+    metadata?: Record<string, string>;
+  } = {
+    id: "q-1",
+    input: "How long do refunds stay available?",
+    expected: "30 days",
+  };
+  if (response.trace?.traceId !== undefined) {
+    const metadata: Record<string, string> = { traceId: response.trace.traceId };
+    if (response.trace.observationId !== undefined) {
+      metadata.observationId = response.trace.observationId;
+    }
+    evalCase.metadata = metadata;
+  }
+  const evalAgent = new Agent({
+    id: "eval-target",
+    model: client.completionModel({ modelId: defaultModelId(), api: "responses" }),
+    instructions: "Answer with a short factual sentence.",
+    maxTurns: 1,
+  });
+  const evalResult = await runEvalSuite({
+    name: "quickstart-suite",
+    cases: [evalCase],
+    target: agentEvalTarget<string>({
+      agent: evalAgent,
+      request: ({ input }) => ({ prompt: input }),
+    }),
+    metrics: [contains()],
+    reporters: [tracing.evalReporter()],
+  });
+  console.log("[quickstart] eval result:", evalResult.results[0]?.metrics[0]);
+
+  const datasetClient = tracing.datasetClient();
+  await datasetClient.createDataset({ name: datasetName });
+  console.log("[quickstart] scores: quality, verdict, contains");
+  console.log("[quickstart] dataset:", datasetName);
+}
+
+main().catch((error: unknown) => {
+  console.error("[quickstart] failed:", error);
+  process.exit(1);
+});

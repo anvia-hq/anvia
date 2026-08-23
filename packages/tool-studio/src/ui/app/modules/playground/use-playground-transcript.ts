@@ -1,7 +1,8 @@
-import type { ToolResultContent } from "@anvia/core/completion";
+import type { ClientStreamEvent } from "@anvia/client";
+import type { ToolResultContentPart } from "@anvia/core/completion";
 import { type Dispatch, type SetStateAction, useState } from "react";
-import type { AgentRunStreamEvent, StudioTranscriptChildAgentEvent } from "../../../../types";
-import { errorMessage, formatToolValue } from "../shared/format";
+import type { StudioToolQuestionAnswer, StudioTranscriptChildAgentEvent } from "../../../../types";
+import { formatToolValue } from "../shared/format";
 import {
   findMatchingToolIndex,
   findMatchingToolIndexByCall,
@@ -16,7 +17,7 @@ type TranscriptQuestion = NonNullable<TranscriptToolEntry["question"]>;
 export function usePlaygroundTranscript(): {
   messages: TranscriptEntry[];
   setMessages: Dispatch<SetStateAction<TranscriptEntry[]>>;
-  appendAgentToolEvent: (event: Extract<AgentRunStreamEvent, { type: "agent_tool_event" }>) => void;
+  appendAgentToolEvent: (event: ClientStreamEvent) => void;
   appendAssistantError: (message: string) => void;
   appendAssistantText: (delta: string) => void;
   appendReasoningText: (delta: string, reasoningId: string | undefined) => void;
@@ -26,12 +27,14 @@ export function usePlaygroundTranscript(): {
     callId: string | undefined;
     args: string;
     result: string;
-    structuredResult?: ToolResultContent[];
+    structuredResult?: readonly ToolResultContentPart[];
   }) => void;
   assignAssistantTraceId: (traceId: string) => void;
   cancelPendingRun: (durationMs: number) => void;
   clearPendingAssistant: () => void;
   completeRun: (durationMs: number) => void;
+  resolveToolApproval: (id: string, approved: boolean, reason?: string) => void;
+  resolveToolQuestion: (id: string, answers: StudioToolQuestionAnswer[]) => void;
   updateToolApproval: (approval: ToolApprovalUpdate) => void;
   updateToolQuestion: (question: ToolQuestionUpdate) => void;
 } {
@@ -58,11 +61,63 @@ export function usePlaygroundTranscript(): {
     clearPendingAssistant: () => setMessages((current) => withoutPendingAssistant(current)),
     completeRun: (durationMs) =>
       setMessages((current) => completeTranscriptRun(current, durationMs)),
+    resolveToolApproval: (id, approved, reason) =>
+      setMessages((current) => resolveToolApproval(current, id, approved, reason)),
+    resolveToolQuestion: (id, answers) =>
+      setMessages((current) => resolveToolQuestion(current, id, answers)),
     updateToolApproval: (approval) =>
       setMessages((current) => updateToolApproval(current, approval)),
     updateToolQuestion: (question) =>
       setMessages((current) => updateToolQuestion(current, question)),
   };
+}
+
+function resolveToolApproval(
+  entries: TranscriptEntry[],
+  id: string,
+  approved: boolean,
+  reason?: string,
+): TranscriptEntry[] {
+  const next = [...entries];
+  for (let index = next.length - 1; index >= 0; index -= 1) {
+    const entry = next[index];
+    if (entry?.kind !== "tool" || entry.approval?.id !== id) continue;
+    const approval = {
+      ...entry.approval,
+      status: approved ? ("approved" as const) : ("rejected" as const),
+      resolvedAt: new Date().toISOString(),
+    };
+    if (reason !== undefined) Object.assign(approval, { reason });
+    next[index] = {
+      ...entry,
+      approval,
+    };
+    break;
+  }
+  return next;
+}
+
+function resolveToolQuestion(
+  entries: TranscriptEntry[],
+  id: string,
+  answers: StudioToolQuestionAnswer[],
+): TranscriptEntry[] {
+  const next = [...entries];
+  for (let index = next.length - 1; index >= 0; index -= 1) {
+    const entry = next[index];
+    if (entry?.kind !== "tool" || entry.question?.id !== id) continue;
+    next[index] = {
+      ...entry,
+      question: {
+        ...entry.question,
+        status: "answered",
+        answeredAt: new Date().toISOString(),
+        answers,
+      },
+    };
+    break;
+  }
+  return next;
 }
 
 export function cancelPendingTranscriptRun(
@@ -318,7 +373,7 @@ function appendToolResult(
     callId: string | undefined;
     args: string;
     result: string;
-    structuredResult?: ToolResultContent[];
+    structuredResult?: readonly ToolResultContentPart[];
   },
 ): TranscriptEntry[] {
   const next = withoutPendingAssistant(entries);
@@ -352,22 +407,27 @@ function appendToolResult(
 
 function appendAgentToolEvent(
   entries: TranscriptEntry[],
-  event: Extract<AgentRunStreamEvent, { type: "agent_tool_event" }>,
+  event: ClientStreamEvent,
 ): TranscriptEntry[] {
+  const scope = event.scope;
+  if (scope?.agentId === undefined || scope.parentToolCallId === undefined) {
+    return entries;
+  }
   const childEvent = childAgentTranscriptEvent(event);
   if (childEvent === undefined) {
     return entries;
   }
   const next = withoutPendingAssistant(entries);
-  const matchedIndex = findMatchingToolIndex(next, event.toolName, event.toolCallId);
+  const toolName = scope.parentToolName ?? "agent";
+  const matchedIndex = findMatchingToolIndex(next, toolName, scope.parentToolCallId);
   if (matchedIndex < 0) {
     const entry: TranscriptToolEntry = {
       entryId: nextTranscriptId(),
       kind: "tool",
-      toolName: event.toolName,
+      toolName,
       childEvents: [childEvent],
     };
-    if (event.toolCallId !== undefined) entry.callId = event.toolCallId;
+    entry.callId = scope.parentToolCallId;
     next.push(entry);
     return next;
   }
@@ -401,60 +461,65 @@ function withoutPendingAssistant(entries: TranscriptEntry[]): TranscriptEntry[] 
 }
 
 function childAgentTranscriptEvent(
-  event: Extract<AgentRunStreamEvent, { type: "agent_tool_event" }>,
+  event: ClientStreamEvent,
 ): StudioTranscriptChildAgentEvent | undefined {
-  const child = event.event;
-  if (child.type === "text_delta") {
+  const scope = event.scope;
+  if (scope?.agentId === undefined) return undefined;
+  if (event.type === "text_delta") {
     const entry: Extract<StudioTranscriptChildAgentEvent, { kind: "message" }> = {
       kind: "message",
-      agentId: event.agentId,
-      text: child.delta,
+      agentId: scope.agentId,
+      text: event.delta,
     };
-    if (event.agentName !== undefined) entry.agentName = event.agentName;
+    if (scope.agentName !== undefined) entry.agentName = scope.agentName;
     return entry;
   }
-  if (child.type === "reasoning_delta") {
+  if (event.type === "reasoning_delta") {
     const entry: Extract<StudioTranscriptChildAgentEvent, { kind: "reasoning" }> = {
       kind: "reasoning",
-      agentId: event.agentId,
-      text: child.delta,
+      agentId: scope.agentId,
+      text: event.delta,
     };
-    if (event.agentName !== undefined) entry.agentName = event.agentName;
-    if (child.id !== undefined) entry.reasoningId = child.id;
+    if (scope.agentName !== undefined) entry.agentName = scope.agentName;
+    entry.reasoningId = event.partId;
     return entry;
   }
-  if (child.type === "tool_call") {
+  if (event.type === "tool_call_end") {
     const entry: Extract<StudioTranscriptChildAgentEvent, { kind: "tool" }> = {
       kind: "tool",
-      agentId: event.agentId,
-      toolName: child.toolCall.function.name,
-      args: formatToolValue(child.toolCall.function.arguments),
+      agentId: scope.agentId,
+      toolName: event.toolName,
+      args: formatToolValue(event.input),
     };
-    if (event.agentName !== undefined) entry.agentName = event.agentName;
-    const callId = child.toolCall.callId ?? child.toolCall.id;
-    if (callId !== undefined) entry.callId = callId;
+    if (scope.agentName !== undefined) entry.agentName = scope.agentName;
+    entry.callId = event.callId ?? event.toolCallId;
     return entry;
   }
-  if (child.type === "tool_result") {
+  if (event.type === "tool_result") {
     const entry: Extract<StudioTranscriptChildAgentEvent, { kind: "tool" }> = {
       kind: "tool",
-      agentId: event.agentId,
-      toolName: child.toolName,
-      args: child.args,
-      result: child.result,
+      agentId: scope.agentId,
+      toolName: event.toolName,
+      args: formatToolValue(event.input),
+      result:
+        event.result.status === "success"
+          ? formatToolValue(event.result.output)
+          : event.result.error.message,
     };
-    if (event.agentName !== undefined) entry.agentName = event.agentName;
-    if (child.toolCallId !== undefined) entry.callId = child.toolCallId;
-    if (child.structuredResult !== undefined) entry.structuredResult = child.structuredResult;
+    if (scope.agentName !== undefined) entry.agentName = scope.agentName;
+    entry.callId = event.callId ?? event.toolCallId;
+    if (event.result.status === "success" && event.result.content !== undefined) {
+      entry.structuredResult = event.result.content;
+    }
     return entry;
   }
-  if (child.type === "error") {
+  if (event.type === "error") {
     const entry: Extract<StudioTranscriptChildAgentEvent, { kind: "message" }> = {
       kind: "message",
-      agentId: event.agentId,
-      text: `Error: ${errorMessage(child.error)}`,
+      agentId: scope.agentId,
+      text: `Error: ${event.error.message}`,
     };
-    if (event.agentName !== undefined) entry.agentName = event.agentName;
+    if (scope.agentName !== undefined) entry.agentName = scope.agentName;
     return entry;
   }
   return undefined;

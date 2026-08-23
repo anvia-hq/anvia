@@ -1,148 +1,65 @@
 import type {
   CompletionModelCapabilities,
-  CompletionModelInfo,
-  CompletionModelMetadataOptions,
+  CompletionModelStreamEvent,
   CompletionRequest,
   CompletionResponse,
-  CompletionStreamEvent,
   JsonObject,
+  ModelCallOptions,
+  ModelContextLimits,
   StreamingCompletionModel,
 } from "@anvia/core/completion";
-import { resolveCompletionModelInfo, withContextUsage } from "@anvia/core/completion";
-import { OpenAIChatCompletionModel, OpenAIResponsesCompletionModel } from "@anvia/openai";
+import { OpenAIClient } from "@anvia/openai";
 import type { OpenAI } from "openai";
-import { GROK_4_5 } from "./constants";
-import { GROK_COMPLETION_MODEL_CONTEXT_LIMITS, type GrokCompletionModelName } from "./models";
+import type { GrokCompletionModelId } from "./models";
 
-export class GrokResponsesCompletionModel
-  implements StreamingCompletionModel<unknown, GrokCompletionModelName>
-{
+export class GrokCompletionModel implements StreamingCompletionModel<unknown> {
   readonly provider = "grok";
   readonly capabilities: CompletionModelCapabilities;
-  private readonly delegate: OpenAIResponsesCompletionModel;
+  private readonly delegate: StreamingCompletionModel<unknown>;
 
   constructor(
     client: OpenAI,
-    readonly defaultModel: GrokCompletionModelName = GROK_4_5,
-    private readonly metadataOptions: CompletionModelMetadataOptions = {},
+    readonly modelId: GrokCompletionModelId,
+    api: "responses" | "chat",
+    readonly contextLimits?: ModelContextLimits,
   ) {
-    this.delegate = new OpenAIResponsesCompletionModel(client, defaultModel);
-    this.capabilities = { ...this.delegate.capabilities, providerTools: true };
-  }
-
-  getModelInfo(
-    model: GrokCompletionModelName = this.defaultModel,
-  ): CompletionModelInfo<GrokCompletionModelName> | undefined {
-    return resolveCompletionModelInfo(
-      model,
-      GROK_COMPLETION_MODEL_CONTEXT_LIMITS,
-      this.metadataOptions.modelOverrides,
-    );
+    this.delegate = new OpenAIClient({ client }).completionModel({
+      modelId,
+      api,
+      contextLimits,
+    });
+    this.capabilities = { ...this.delegate.capabilities };
+    if (api === "responses") this.capabilities = { ...this.capabilities, providerTools: true };
   }
 
   traceRequest(
-    request: CompletionRequest<GrokCompletionModelName>,
+    request: CompletionRequest,
     options: { stream?: boolean | undefined } = {},
   ): JsonObject {
     return {
-      ...this.delegate.traceRequest(request, options),
+      ...(this.delegate.traceRequest?.(request, options) ?? {}),
       provider: this.provider,
     };
   }
 
   async completion(
-    request: CompletionRequest<GrokCompletionModelName>,
+    request: CompletionRequest,
+    options?: ModelCallOptions,
   ): Promise<CompletionResponse> {
     assertGrokProviderTools(request);
-    return withContextUsage(
-      await this.delegate.completion(request),
-      this.getModelInfo(request.model ?? this.defaultModel),
-    );
+    return this.delegate.completion(request, options);
   }
 
   async *streamCompletion(
-    request: CompletionRequest<GrokCompletionModelName>,
-  ): AsyncIterable<CompletionStreamEvent> {
+    request: CompletionRequest,
+    options?: ModelCallOptions,
+  ): AsyncIterable<CompletionModelStreamEvent> {
     assertGrokProviderTools(request);
-    for await (const event of this.delegate.streamCompletion(request)) {
-      yield event.type === "final"
-        ? {
-            ...event,
-            response: withContextUsage(
-              event.response,
-              this.getModelInfo(request.model ?? this.defaultModel),
-            ),
-          }
-        : event;
-    }
+    yield* this.delegate.streamCompletion(request, options);
   }
 }
 
-export class GrokChatCompletionModel
-  implements StreamingCompletionModel<unknown, GrokCompletionModelName>
-{
-  readonly provider = "grok-chat";
-  readonly capabilities: CompletionModelCapabilities;
-  private readonly delegate: OpenAIChatCompletionModel;
-
-  constructor(
-    client: OpenAI,
-    readonly defaultModel: GrokCompletionModelName = GROK_4_5,
-    private readonly metadataOptions: CompletionModelMetadataOptions = {},
-  ) {
-    this.delegate = new OpenAIChatCompletionModel(client, defaultModel);
-    this.capabilities = this.delegate.capabilities;
-  }
-
-  getModelInfo(
-    model: GrokCompletionModelName = this.defaultModel,
-  ): CompletionModelInfo<GrokCompletionModelName> | undefined {
-    return resolveCompletionModelInfo(
-      model,
-      GROK_COMPLETION_MODEL_CONTEXT_LIMITS,
-      this.metadataOptions.modelOverrides,
-    );
-  }
-
-  traceRequest(
-    request: CompletionRequest<GrokCompletionModelName>,
-    options: { stream?: boolean | undefined } = {},
-  ): JsonObject {
-    return {
-      ...this.delegate.traceRequest(request, options),
-      provider: this.provider,
-    };
-  }
-
-  async completion(
-    request: CompletionRequest<GrokCompletionModelName>,
-  ): Promise<CompletionResponse> {
-    assertGrokProviderTools(request);
-    return withContextUsage(
-      await this.delegate.completion(request),
-      this.getModelInfo(request.model ?? this.defaultModel),
-    );
-  }
-
-  async *streamCompletion(
-    request: CompletionRequest<GrokCompletionModelName>,
-  ): AsyncIterable<CompletionStreamEvent> {
-    assertGrokProviderTools(request);
-    for await (const event of this.delegate.streamCompletion(request)) {
-      yield event.type === "final"
-        ? {
-            ...event,
-            response: withContextUsage(
-              event.response,
-              this.getModelInfo(request.model ?? this.defaultModel),
-            ),
-          }
-        : event;
-    }
-  }
-}
-
-function assertGrokProviderTools(request: CompletionRequest<GrokCompletionModelName>): void {
+function assertGrokProviderTools(request: CompletionRequest): void {
   const mismatched = request.providerTools?.find((tool) => tool.provider !== "grok");
   if (mismatched !== undefined) {
     throw new TypeError(

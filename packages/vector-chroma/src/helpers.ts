@@ -1,6 +1,6 @@
 import type { EmbeddedDocument, VectorMetadata } from "@anvia/core/embeddings";
 import type { VectorSearchResult } from "@anvia/core/vector-store";
-import type { ChromaClientLike, ChromaCollectionLike } from "./types.js";
+import type { ChromaClientLike, ChromaCollectionLike, ChromaVectorStoreOptions } from "./types.js";
 
 export function serializeDocument(document: unknown): string {
   return typeof document === "string" ? document : JSON.stringify(document);
@@ -32,7 +32,7 @@ export function chromaRecords<T, Metadata extends VectorMetadata>(
   return document.embeddings.map((embedding, index) => ({
     id: document.embeddings.length === 1 ? document.id : `${document.id}#embedding:${index}`,
     document: serializeDocument(document.document),
-    metadata: document.metadata,
+    metadata: { ...(document.metadata ?? {}), __anvia_document_id: document.id },
     embedding: embedding.vector,
   }));
 }
@@ -41,13 +41,17 @@ export function logicalDocumentId(id: string): string {
   return id.replace(/#embedding:\d+$/, "");
 }
 
-export function distanceToCosineScore(distance: number): number {
-  return 1 - distance;
+export function distanceToScore(
+  distance: number,
+  metric: ChromaVectorStoreOptions["metric"],
+): number {
+  return metric === "euclidean" ? -distance : 1 - distance;
 }
 
 export function parseQueryResults<T, Metadata extends VectorMetadata>(
   response: unknown,
-  threshold: number | undefined,
+  minScore: number | undefined,
+  metric: ChromaVectorStoreOptions["metric"],
 ): Array<VectorSearchResult<T, Metadata>> {
   const raw = response as {
     ids?: string[][];
@@ -61,8 +65,8 @@ export function parseQueryResults<T, Metadata extends VectorMetadata>(
   const distances = raw.distances?.[0] ?? [];
 
   const results = ids.flatMap((id, index) => {
-    const score = distanceToCosineScore(distances[index] ?? 0);
-    if (threshold !== undefined && score < threshold) {
+    const score = distanceToScore(distances[index] ?? 0, metric);
+    if (minScore !== undefined && score < minScore) {
       return [];
     }
     const result: VectorSearchResult<T, Metadata> = {
@@ -72,23 +76,22 @@ export function parseQueryResults<T, Metadata extends VectorMetadata>(
     };
     const metadata = metadatas[index];
     if (metadata !== null && metadata !== undefined) {
-      result.metadata = metadata;
+      const { __anvia_document_id: _documentId, ...publicMetadata } = metadata;
+      if (Object.keys(publicMetadata).length > 0) result.metadata = publicMetadata as Metadata;
     }
     return [result];
   });
 
   const byId = new Map<string, VectorSearchResult<T, Metadata>>();
   for (const result of results) {
-    if (!byId.has(result.id)) {
-      byId.set(result.id, result);
-    }
+    const current = byId.get(result.id);
+    if (current === undefined || result.score > current.score) byId.set(result.id, result);
   }
   return [...byId.values()];
 }
 
-export async function defaultChromaClient(): Promise<ChromaClientLike> {
-  const chroma = await import("chromadb");
-  return new chroma.ChromaClient() as ChromaClientLike;
+export function chromaResultCount(response: unknown): number {
+  return (response as { ids?: string[][] }).ids?.[0]?.length ?? 0;
 }
 
 export async function getOrCreateCollection(
@@ -97,7 +100,15 @@ export async function getOrCreateCollection(
 ): Promise<ChromaCollectionLike> {
   try {
     return await client.getCollection(options);
-  } catch {
+  } catch (error) {
+    if (!isMissingCollectionError(error)) throw error;
     return await client.createCollection(options);
   }
+}
+
+function isMissingCollectionError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    /(?:not found|does not exist|unknown collection|missing|404)/i.test(error.message)
+  );
 }

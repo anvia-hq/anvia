@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ChatProvider, HumanInput } from "../src";
+import { ChatProvider, HumanInputPrimitive as HumanInput } from "../src";
 import { createChatController, multiPromptQuestion, pendingApproval } from "./helpers";
 
 afterEach(() => {
@@ -21,24 +21,19 @@ describe("HumanInput primitives", () => {
 
     expect(screen.queryByTestId("approvals")).toBeNull();
     expect(screen.queryByTestId("questions")).toBeNull();
-    expect(screen.getByTestId("approvals-mounted").getAttribute("data-empty")).toBe("");
-    expect(screen.getByTestId("questions-mounted").getAttribute("data-empty")).toBe("");
+    expect(screen.getByTestId("approvals-mounted").getAttribute("data-state")).toBe("empty");
+    expect(screen.getByTestId("questions-mounted").getAttribute("data-state")).toBe("empty");
   });
 
   it("approves and rejects pending tool approvals", () => {
     const approval = pendingApproval();
-    const approveTool = vi.fn(async () => {});
-    const rejectTool = vi.fn(async () => {});
+    const respondToInteraction = vi.fn(async () => {});
 
     render(
       <ChatProvider
         controller={createChatController({
-          approveTool,
-          rejectTool,
-          humanInput: {
-            approvals: { all: [approval], pending: [approval] },
-            questions: { all: [], pending: [] },
-          },
+          respondToInteraction,
+          interactions: { all: [approval], pending: [approval] },
         })}
       >
         <HumanInput.Approvals />
@@ -48,22 +43,25 @@ describe("HumanInput primitives", () => {
     fireEvent.click(screen.getByText("Approve"));
     fireEvent.click(screen.getByText("Reject"));
 
-    expect(approveTool).toHaveBeenCalledWith("approval_1");
-    expect(rejectTool).toHaveBeenCalledWith("approval_1");
+    expect(respondToInteraction).toHaveBeenNthCalledWith(1, {
+      interactionId: "approval_1",
+      response: { type: "tool-approval", approved: true },
+    });
+    expect(respondToInteraction).toHaveBeenNthCalledWith(2, {
+      interactionId: "approval_1",
+      response: { type: "tool-approval", approved: false },
+    });
   });
 
   it("passes approval reasons and renders panel status", () => {
     const approval = pendingApproval();
-    const approveTool = vi.fn(async () => {});
+    const respondToInteraction = vi.fn(async () => {});
 
     render(
       <ChatProvider
         controller={createChatController({
-          approveTool,
-          humanInput: {
-            approvals: { all: [approval], pending: [approval] },
-            questions: { all: [], pending: [] },
-          },
+          respondToInteraction,
+          interactions: { all: [approval], pending: [approval] },
         })}
       >
         <HumanInput.Panel>
@@ -79,7 +77,10 @@ describe("HumanInput primitives", () => {
     });
     fireEvent.click(screen.getByText("Approve"));
 
-    expect(approveTool).toHaveBeenCalledWith("approval_1", "looks safe");
+    expect(respondToInteraction).toHaveBeenCalledWith({
+      interactionId: "approval_1",
+      response: { type: "tool-approval", approved: true, reason: "looks safe" },
+    });
   });
 
   it("answers pending tool questions from selected choices", () => {
@@ -87,7 +88,7 @@ describe("HumanInput primitives", () => {
       questions: [
         {
           id: "confirm",
-          question: "Continue?",
+          text: "Continue?",
           choices: [
             { label: "Yes", value: "yes" },
             { label: "No", value: "no" },
@@ -95,16 +96,13 @@ describe("HumanInput primitives", () => {
         },
       ],
     });
-    const answerToolQuestion = vi.fn(async () => {});
+    const respondToInteraction = vi.fn(async () => {});
 
     render(
       <ChatProvider
         controller={createChatController({
-          answerToolQuestion,
-          humanInput: {
-            approvals: { all: [], pending: [] },
-            questions: { all: [question], pending: [question] },
-          },
+          respondToInteraction,
+          interactions: { all: [question], pending: [question] },
         })}
       >
         <HumanInput.Questions />
@@ -114,9 +112,13 @@ describe("HumanInput primitives", () => {
     fireEvent.click(screen.getByText("Yes"));
     fireEvent.click(screen.getByText("Submit"));
 
-    expect(answerToolQuestion).toHaveBeenCalledWith("question_1", [
-      { questionId: "confirm", answer: "Yes", choice: "yes" },
-    ]);
+    expect(respondToInteraction).toHaveBeenCalledWith({
+      interactionId: "question_1",
+      response: {
+        type: "tool-question",
+        answers: [{ questionId: "confirm", value: "yes" }],
+      },
+    });
   });
 
   it("answers pending tool questions from text prompts", () => {
@@ -124,21 +126,17 @@ describe("HumanInput primitives", () => {
       questions: [
         {
           id: "details",
-          question: "What changed?",
-          choices: [],
+          text: "What changed?",
         },
       ],
     });
-    const answerToolQuestion = vi.fn(async () => {});
+    const respondToInteraction = vi.fn(async () => {});
 
     render(
       <ChatProvider
         controller={createChatController({
-          answerToolQuestion,
-          humanInput: {
-            approvals: { all: [], pending: [] },
-            questions: { all: [question], pending: [question] },
-          },
+          respondToInteraction,
+          interactions: { all: [question], pending: [question] },
         })}
       >
         <HumanInput.Questions />
@@ -150,8 +148,12 @@ describe("HumanInput primitives", () => {
     });
     fireEvent.click(screen.getByText("Submit"));
 
-    expect(answerToolQuestion).toHaveBeenCalledWith("question_1", [
-      { questionId: "details", answer: "Updated the config", custom: true },
-    ]);
+    expect(respondToInteraction).toHaveBeenCalledWith({
+      interactionId: "question_1",
+      response: {
+        type: "tool-question",
+        answers: [{ questionId: "details", value: "Updated the config" }],
+      },
+    });
   });
 });

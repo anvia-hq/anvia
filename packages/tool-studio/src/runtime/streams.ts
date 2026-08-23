@@ -1,4 +1,5 @@
-import { createEventStream } from "@anvia/server";
+import type { ClientDataMap, ClientMetadata, ClientStream } from "@anvia/client";
+import { createClientStreamResponse, createEventStreamResponse } from "@anvia/server";
 import { serializeError } from "./errors";
 
 type StudioStreamErrorEvent = {
@@ -15,7 +16,19 @@ const studioJsonlHeaders: HeadersInit = {
 };
 
 export function streamStudioJsonl<TEvent>(events: AsyncIterable<TEvent>): Response {
-  return createEventStream(withStudioStreamErrors(events), {
+  return createEventStreamResponse({
+    events: withStudioStreamErrors(events),
+    format: "jsonl",
+    headers: studioJsonlHeaders,
+  });
+}
+
+export function streamStudioClient<
+  Metadata extends ClientMetadata = ClientMetadata,
+  Data extends ClientDataMap = ClientDataMap,
+>(options: { events: ClientStream<Metadata, Data> }): Response {
+  return createClientStreamResponse({
+    events: options.events,
     format: "jsonl",
     headers: studioJsonlHeaders,
   });
@@ -39,8 +52,9 @@ function withStudioStreamErrors<TEvent>(
             const next = await iterator.next();
             if (next.done === true) {
               done = true;
+              return next;
             }
-            return next;
+            return { done: false, value: serializeStreamError(next.value) };
           } catch (error) {
             done = true;
             return {
@@ -57,6 +71,19 @@ function withStudioStreamErrors<TEvent>(
       };
     },
   };
+}
+
+function serializeStreamError<TEvent>(event: TEvent): TEvent {
+  if (
+    typeof event !== "object" ||
+    event === null ||
+    !("type" in event) ||
+    event.type !== "error" ||
+    !("error" in event)
+  ) {
+    return event;
+  }
+  return { ...event, error: serializeError(event.error) } as TEvent;
 }
 
 function studioStreamError(error: unknown): StudioStreamErrorEvent {

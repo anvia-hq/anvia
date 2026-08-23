@@ -1,4 +1,4 @@
-import type { UIAttachment } from "@anvia/react";
+import type { UIAttachment } from "@anvia/client";
 import { createContext, createElement, type ReactElement, type ReactNode, useContext } from "react";
 
 export type AttachmentContextValue = {
@@ -21,7 +21,7 @@ export function InternalAttachmentProvider({
 export function useAttachment(): AttachmentContextValue {
   const value = useContext(AttachmentContext);
   if (value === undefined) {
-    throw new Error("Attachment primitives must be used inside Attachment.Root.");
+    throw new Error("Attachment primitives must be used inside AttachmentPrimitive.Root.");
   }
   return value;
 }

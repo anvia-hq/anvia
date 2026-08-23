@@ -11,14 +11,14 @@ import {
   ThreadListRoot,
 } from "./parts";
 
-export const ThreadList = {
+export const ThreadListPrimitive = {
   Root: ThreadListRoot,
   New: ThreadListNew,
   Items: ThreadListItems,
   Empty: ThreadListEmpty,
 } as const;
 
-export const ThreadListItem = {
+export const ThreadListItemPrimitive = {
   Root: ThreadListItemRoot,
   Trigger: ThreadListItemTrigger,
   Title: ThreadListItemTitle,

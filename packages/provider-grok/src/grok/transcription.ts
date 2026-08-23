@@ -1,8 +1,8 @@
-import type { JsonObject, JsonValue } from "@anvia/core/completion";
+import type { JsonObject, JsonValue, ModelCallOptions } from "@anvia/core/completion";
 import type {
   TranscriptionModel,
   TranscriptionRequest,
-  TranscriptionResponse,
+  TranscriptionResult,
 } from "@anvia/core/transcription";
 import {
   type GrokHttpOptions,
@@ -14,10 +14,14 @@ import {
 
 export class GrokTranscriptionModel implements TranscriptionModel<unknown> {
   readonly provider = "grok";
+  readonly modelId = undefined;
 
   constructor(private readonly http: GrokHttpOptions) {}
 
-  async transcription(request: TranscriptionRequest): Promise<TranscriptionResponse<unknown>> {
+  async transcription(
+    request: TranscriptionRequest,
+    options?: ModelCallOptions,
+  ): Promise<TranscriptionResult<unknown>> {
     if (request.prompt !== undefined) {
       throw new TypeError("Grok batch transcription does not support prompt.");
     }
@@ -25,23 +29,30 @@ export class GrokTranscriptionModel implements TranscriptionModel<unknown> {
       throw new TypeError("Grok batch transcription does not support temperature.");
     }
     const form = new FormData();
-    const additional = jsonObject(request.additionalParams);
-    for (const [name, value] of Object.entries(additional)) {
-      if (name === "file") {
+    const providerOptions = jsonObject(request.providerOptions);
+    for (const [name, value] of Object.entries(providerOptions)) {
+      if (name === "file" || name === "language") {
         continue;
       }
       appendFormValue(form, name, value);
     }
-    if (request.language !== undefined && additional.language === undefined) {
-      form.append("language", request.language);
-    }
-    form.append("file", new Blob([request.data]), request.filename);
+    appendFormValue(form, "language", request.language ?? providerOptions.language);
+    form.append(
+      "file",
+      new Blob(
+        [request.data],
+        request.mediaType === undefined ? undefined : { type: request.mediaType },
+      ),
+      request.filename,
+    );
 
-    const response = await grokFetch(this.http)(grokEndpoint(this.http, "stt"), {
+    const requestOptions: RequestInit = {
       method: "POST",
       headers: grokHeaders(this.http),
       body: form,
-    });
+    };
+    if (options?.abortSignal !== undefined) requestOptions.signal = options.abortSignal;
+    const response = await grokFetch(this.http)(grokEndpoint(this.http, "stt"), requestOptions);
     if (!response.ok) {
       return throwGrokHttpError(response, "speech-to-text");
     }
@@ -61,7 +72,7 @@ function jsonObject(value: unknown): JsonObject {
     return {};
   }
   if (!isObject(value) || Array.isArray(value)) {
-    throw new TypeError("Grok transcription additionalParams must be an object.");
+    throw new TypeError("Grok transcription providerOptions must be an object.");
   }
   return value as JsonObject;
 }

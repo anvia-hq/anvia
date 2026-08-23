@@ -1,53 +1,16 @@
-export { createDirectTransport } from "./direct";
-export type { FetchEventStreamOptions } from "./fetch";
-export { EventStreamHttpError, fetchEventStream } from "./fetch";
-export {
-  defaultAnswerQuestion,
-  defaultDecideApproval,
-  defaultEventToApproval,
-  defaultEventToQuestion,
-} from "./human-input";
-export type { InitialMessagesFromMemoryOptions } from "./memory";
 export { initialMessagesFromMemory } from "./memory";
+export type { SmoothStreamItemAdapter, StreamSmoothingLifecycle } from "./stream-smoothing";
 export type {
-  SmoothStreamItemAdapter,
-  StreamSmoothingLifecycle,
-} from "./stream-smoothing";
-export { readJsonlStream, readSseStream } from "./streams";
-export type { CreateFetchTransportOptions } from "./transport";
-export { createChatTransport, createFetchTransport } from "./transport";
-export type {
+  AnyClientTransport,
   ChatResumeCursor,
   ChatResumeOptions,
   ChatResumeState,
   ChatResumeStorage,
   ChatSuggestion,
-  CreateChatRequestArgs,
-  CreateUIAttachment,
-  EventStreamFormat,
-  EventTransport,
-  HumanInputOptions,
-  HumanInputState,
-  ResumableStreamEnvelope,
   SendMessageInput,
-  ToolApproval,
-  ToolApprovalDecisionInput,
-  ToolApprovalStatus,
-  ToolQuestion,
-  ToolQuestionAnswer,
-  ToolQuestionAnswerInput,
-  ToolQuestionChoice,
-  ToolQuestionPrompt,
-  ToolQuestionStatus,
-  TransportOptions,
-  UIAttachment,
-  UIError,
-  UIMessage,
-  UIMessagePart,
-  UIMessageRole,
-  UIStreamEvent,
-  UIStreamRequest,
-  UIStreamResume,
+  SetMessages,
+  TransportData,
+  TransportMetadata,
   UseChatOptions,
   UseChatResult,
   UseChatStatus,
@@ -55,7 +18,6 @@ export type {
 export { useChat } from "./use-chat";
 export type {
   UseCompletionOptions,
-  UseCompletionRequestArgs,
   UseCompletionResult,
   UseCompletionStatus,
 } from "./use-completion";

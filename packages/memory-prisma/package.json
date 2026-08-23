@@ -1,6 +1,6 @@
 {
   "name": "@anvia/memory-prisma",
-  "version": "0.3.1",
+  "version": "1.0.0",
   "description": "Prisma-backed durable session memory store for Anvia.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",
@@ -41,7 +41,7 @@
     "vitest": "^4.0.8"
   },
   "peerDependencies": {
-    "@anvia/core": ">=0.13.0 <1.0.0",
+    "@anvia/core": "workspace:*",
     "@prisma/client": ">=7.9.1 <8.0.0"
   }
 }

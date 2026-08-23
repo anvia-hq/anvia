@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createThinkTool, ToolCallError, ToolSet } from "./helpers/imports";
+import { createThinkTool } from "./helpers/imports";
 
 describe("createThinkTool", () => {
   it("creates the default think tool definition", async () => {
@@ -24,19 +24,17 @@ describe("createThinkTool", () => {
   });
 
   it("returns the supplied thought", async () => {
-    const toolSet = ToolSet.fromTools([createThinkTool()]);
+    const tool = createThinkTool();
 
-    await expect(
-      toolSet.call("think", JSON.stringify({ thought: "Check the intermediate sum." })),
-    ).resolves.toBe("Check the intermediate sum.");
+    await expect(tool.call({ thought: "Check the intermediate sum." })).resolves.toBe(
+      "Check the intermediate sum.",
+    );
   });
 
   it("rejects invalid input through normal tool validation", async () => {
-    const toolSet = ToolSet.fromTools([createThinkTool()]);
+    const tool = createThinkTool();
 
-    await expect(toolSet.call("think", JSON.stringify({ thought: 42 }))).rejects.toBeInstanceOf(
-      ToolCallError,
-    );
+    await expect(tool.call({ thought: 42 } as never)).rejects.toThrow();
   });
 
   it("allows name and description overrides", async () => {

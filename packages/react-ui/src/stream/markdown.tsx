@@ -20,6 +20,7 @@ import { splitStreamMarkdownBlocks } from "./markdown-blocks";
 import { createStreamGradientRevealPlugin, type StreamRevealLifecycle } from "./markdown-reveal";
 
 export type StreamMarkdownProps = Omit<PrimitiveProps<"div">, "children"> & {
+  "data-state"?: string | undefined;
   components?: Components;
   content: string;
   live?: boolean;
@@ -88,8 +89,8 @@ export const StreamMarkdown = forwardRef<HTMLDivElement, StreamMarkdownProps>(
             key={block.startOffset}
           />
         )),
-        "data-anvia-stream-markdown": "",
-        "data-live": live ? "" : undefined,
+        "data-role": "markdown",
+        "data-state": props["data-state"] ?? (live ? "streaming" : "idle"),
       } as PrimitiveProps<"div">,
       ref,
     );
@@ -131,12 +132,12 @@ function withStreamRevealComponent(
     span(spanProps) {
       const safeProps = componentPropsWithoutKey(spanProps);
       const internalProps = safeProps as typeof safeProps & {
-        "data-anvia-stream-duration-ms"?: string | undefined;
-        "data-anvia-stream-opacity"?: string | undefined;
-        "data-anvia-stream-reveal"?: string | undefined;
-        "data-anvia-stream-reveal-id"?: string | undefined;
+        "data-reveal-duration-ms"?: string | undefined;
+        "data-reveal-opacity"?: string | undefined;
+        "data-reveal-id"?: string | undefined;
+        "data-state"?: string | undefined;
       };
-      if (internalProps["data-anvia-stream-reveal"] !== undefined) {
+      if (internalProps["data-state"] === "revealing") {
         return streamRevealSpan(internalProps, onRevealSettled);
       }
       if (consumerSpan !== undefined) {
@@ -161,19 +162,18 @@ function componentPropsWithoutKey<T extends object>(props: T): T {
 function streamRevealSpan(
   props: ComponentPropsWithoutRef<"span"> & {
     node?: unknown;
-    "data-anvia-stream-duration-ms"?: string | undefined;
-    "data-anvia-stream-opacity"?: string | undefined;
-    "data-anvia-stream-reveal"?: string | undefined;
-    "data-anvia-stream-reveal-id"?: string | undefined;
+    "data-reveal-duration-ms"?: string | undefined;
+    "data-reveal-opacity"?: string | undefined;
+    "data-reveal-id"?: string | undefined;
   },
   onRevealSettled: (revealId: string) => void,
 ): ReactNode {
   const {
     children,
     node: _node,
-    "data-anvia-stream-duration-ms": durationMs,
-    "data-anvia-stream-opacity": opacity,
-    "data-anvia-stream-reveal-id": revealId,
+    "data-reveal-duration-ms": durationMs,
+    "data-reveal-opacity": opacity,
+    "data-reveal-id": revealId,
     onAnimationEnd,
     ...elementProps
   } = props;
@@ -182,7 +182,7 @@ function streamRevealSpan(
   return (
     <span
       {...elementProps}
-      data-anvia-stream-reveal-id={revealId}
+      data-state="revealing"
       key={revealId ?? "stream-reveal"}
       onAnimationEnd={(event) => {
         onAnimationEnd?.(event);

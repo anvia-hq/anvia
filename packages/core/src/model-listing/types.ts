@@ -15,5 +15,5 @@ export type ModelList = {
 };
 
 export interface ModelListingClient {
-  listModels(): Promise<ModelList>;
+  listModels(options?: { abortSignal?: AbortSignal | undefined }): Promise<ModelList>;
 }

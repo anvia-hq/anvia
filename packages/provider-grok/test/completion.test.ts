@@ -1,17 +1,32 @@
-import {
-  type CompletionRequest,
-  type CompletionStreamEvent,
-  Message,
+import type {
+  CompletionModelStreamEvent,
+  CompletionRequest,
+  ModelContextLimits,
 } from "@anvia/core/completion";
+import type OpenAI from "openai";
 import { describe, expect, it } from "vitest";
-import { GrokChatCompletionModel, GrokResponsesCompletionModel, tools } from "../src/index";
+import { Message } from "../../core/test/helpers/imports";
+import { GrokCompletionModel } from "../src/grok/completion";
+import { GrokClient, tools } from "../src/index";
+
+class GrokResponsesCompletionModel extends GrokCompletionModel {
+  constructor(client: OpenAI, modelId: string, contextLimits?: ModelContextLimits) {
+    super(client, modelId, "responses", contextLimits);
+  }
+}
+
+class GrokChatCompletionModel extends GrokCompletionModel {
+  constructor(client: OpenAI, modelId: string, contextLimits?: ModelContextLimits) {
+    super(client, modelId, "chat", contextLimits);
+  }
+}
 
 describe("Grok completion models", () => {
   it("exposes Responses capability metadata with Grok provider identity", () => {
     const model = new GrokResponsesCompletionModel({} as never, "grok-test");
 
     expect(model.provider).toBe("grok");
-    expect(model.defaultModel).toBe("grok-test");
+    expect(model.modelId).toBe("grok-test");
     expect(model.capabilities).toEqual({
       streaming: true,
       tools: true,
@@ -25,15 +40,16 @@ describe("Grok completion models", () => {
   });
 
   it("exposes model-specific context limits", () => {
-    const model = new GrokResponsesCompletionModel({} as never, "grok-4.5");
-
-    expect(model.getModelInfo()).toEqual({
-      id: "grok-4.5",
-      context: { contextWindow: 500_000 },
+    const model = new GrokClient({ apiKey: "test" }).completionModel({
+      modelId: "grok-4.6",
+      api: "responses",
     });
+
+    expect(model.modelId).toBe("grok-4.6");
+    expect(model.contextLimits).toEqual({ contextWindow: 500_000 });
   });
 
-  it("combines local, Grok, and legacy raw Responses tools", async () => {
+  it("uses canonical local and Grok tools instead of providerOptions.tools", async () => {
     const calls: unknown[] = [];
     const model = new GrokResponsesCompletionModel(
       {
@@ -52,7 +68,7 @@ describe("Grok completion models", () => {
       documents: [],
       tools: [{ name: "local", description: "Local", parameters: { type: "object" } }],
       providerTools: [tools.webSearch({ allowedDomains: ["x.ai"] })],
-      additionalParams: { tools: [{ type: "code_interpreter" }], max_turns: 5 },
+      providerOptions: { tools: [{ type: "code_interpreter" }], max_turns: 5 },
     });
 
     expect(calls).toEqual([
@@ -67,7 +83,6 @@ describe("Grok completion models", () => {
             parameters: { type: "object" },
           },
           { type: "web_search", filters: { allowed_domains: ["x.ai"] } },
-          { type: "code_interpreter" },
         ],
         max_turns: 5,
       },
@@ -105,7 +120,7 @@ describe("Grok completion models", () => {
       chatHistory: [Message.user("hello", { metadata: { composer: { entities: [] } } })],
       documents: [],
       tools: [],
-      additionalParams: {
+      providerOptions: {
         reasoning: { effort: "high" },
       },
     });
@@ -145,6 +160,23 @@ describe("Grok completion models", () => {
                 item_id: "tool_1",
                 name: "write_file",
                 arguments: '{"path":"README.md"}',
+              },
+              {
+                type: "response.completed",
+                response: {
+                  id: "response_1",
+                  status: "completed",
+                  output: [
+                    {
+                      type: "function_call",
+                      id: "tool_1",
+                      call_id: "call_1",
+                      name: "write_file",
+                      arguments: '{"path":"README.md"}',
+                    },
+                  ],
+                  usage: {},
+                },
               },
             ]),
         },
@@ -209,8 +241,8 @@ describe("Grok completion models", () => {
   it("exposes Chat capability metadata with Grok provider identity", () => {
     const model = new GrokChatCompletionModel({} as never, "grok-chat-test");
 
-    expect(model.provider).toBe("grok-chat");
-    expect(model.defaultModel).toBe("grok-chat-test");
+    expect(model.provider).toBe("grok");
+    expect(model.modelId).toBe("grok-chat-test");
     expect(model.capabilities).toEqual({
       streaming: true,
       tools: true,
@@ -231,7 +263,7 @@ describe("Grok completion models", () => {
     };
 
     expect(model.traceRequest(request, { stream: true })).toMatchObject({
-      provider: "grok-chat",
+      provider: "grok",
       api: "chat.completions",
       stream: true,
       model: "grok-chat-test",
@@ -342,9 +374,9 @@ async function* streamFrom(events: unknown[]): AsyncIterable<unknown> {
 }
 
 async function collect(
-  events: AsyncIterable<CompletionStreamEvent>,
-): Promise<CompletionStreamEvent[]> {
-  const result: CompletionStreamEvent[] = [];
+  events: AsyncIterable<CompletionModelStreamEvent>,
+): Promise<CompletionModelStreamEvent[]> {
+  const result: CompletionModelStreamEvent[] = [];
   for await (const event of events) {
     result.push(event);
   }

@@ -7,6 +7,8 @@ export function SandboxesRoute() {
   const studio = useActivatedRoute("sandboxes");
   const params = useParams({ strict: false }) as { sandboxRef?: string };
   const navigate = useNavigate();
+  const pageProps: { initialSandboxRef?: string } = {};
+  if (params.sandboxRef !== undefined) pageProps.initialSandboxRef = params.sandboxRef;
 
   return (
     <Suspense fallback={<PageLoading />}>
@@ -19,7 +21,7 @@ export function SandboxesRoute() {
             params: { sandboxRef },
           });
         }}
-        {...(params.sandboxRef === undefined ? {} : { initialSandboxRef: params.sandboxRef })}
+        {...pageProps}
       />
     </Suspense>
   );

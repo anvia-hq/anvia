@@ -1,0 +1,502 @@
+import type {
+  AssistantContentPart,
+  FilePart,
+  ImagePart,
+  JsonObject,
+  JsonValue,
+  Message,
+  ToolCallPart,
+  ToolResultOutput,
+  ToolResultPart,
+  UserContentPart,
+} from "@anvia/core/completion";
+import { isJsonValue } from "@anvia/core/completion";
+import type {
+  ClientDataMap,
+  UIAttachment,
+  UIMessage,
+  UIMessagePart,
+  UIToolMessagePart,
+} from "./types";
+
+type ToolLocation = { messageIndex: number; partIndex: number };
+
+export function uiMessagesToMessages<
+  Metadata extends JsonObject = JsonObject,
+  Data extends ClientDataMap = ClientDataMap,
+>(messages: readonly UIMessage<Metadata, Data>[]): Message<Metadata>[] {
+  const result: Message<Metadata>[] = [];
+
+  for (const message of messages) {
+    assertMetadata(message.metadata);
+
+    if (message.role === "system") {
+      assertOnlyParts(message, ["text", "data", "error"]);
+      result.push({
+        role: "system",
+        content: textFromParts(message.parts),
+        ...metadataField(message.metadata),
+      });
+      continue;
+    }
+
+    if (message.role === "user") {
+      assertOnlyParts(message, ["text", "attachment", "data", "error"]);
+      const content: UserContentPart[] = [];
+      for (const part of message.parts) {
+        if (part.type === "text") {
+          content.push(textContent(part.text, part.signature));
+        } else if (part.type === "attachment") {
+          content.push(attachmentToUserContent(part.attachment));
+        }
+      }
+      result.push({ role: "user", content, ...metadataField(message.metadata) });
+      continue;
+    }
+
+    if (message.role === "assistant") {
+      assertOnlyParts(message, [
+        "text",
+        "reasoning",
+        "tool",
+        "attachment",
+        "source",
+        "data",
+        "error",
+      ]);
+      const content: AssistantContentPart[] = [];
+      const toolResults: ToolResultPart[] = [];
+      for (const part of message.parts) {
+        if (part.type === "text") {
+          content.push(textContent(part.text, part.signature));
+        } else if (part.type === "reasoning") {
+          let reasoning: Extract<AssistantContentPart, { type: "reasoning" }> = {
+            type: "reasoning",
+            text: part.text,
+          };
+          if (part.reasoningId !== undefined) reasoning = { ...reasoning, id: part.reasoningId };
+          if (part.content !== undefined) reasoning = { ...reasoning, details: part.content };
+          content.push(reasoning);
+        } else if (part.type === "tool") {
+          assertReplayableToolPart(part);
+          let toolCall: ToolCallPart = {
+            type: "tool-call",
+            toolCallId: part.toolCallId,
+            toolName: part.toolName,
+            input: part.input,
+          };
+          if (part.callId !== undefined) toolCall = { ...toolCall, callId: part.callId };
+          if (part.signature !== undefined) toolCall = { ...toolCall, signature: part.signature };
+          content.push(toolCall);
+          if (part.state === "output-available" || part.state === "error") {
+            toolResults.push(toolResultFromPart(part));
+          }
+        } else if (part.type === "attachment") {
+          content.push(attachmentToAssistantContent(part.attachment));
+        }
+      }
+
+      let assistant: Extract<Message<Metadata>, { role: "assistant" }> = {
+        role: "assistant",
+        content,
+        ...metadataField(message.metadata),
+      };
+      if (message.modelMessageId !== undefined) {
+        assistant = { ...assistant, id: message.modelMessageId };
+      }
+      result.push(assistant);
+      if (toolResults.length > 0) {
+        result.push({ role: "tool", content: toolResults });
+      }
+      continue;
+    }
+
+    assertOnlyParts(message, ["tool", "data", "error"]);
+    const content: ToolResultPart[] = [];
+    for (const part of message.parts) {
+      if (part.type !== "tool") continue;
+      assertToolResultPart(part);
+      content.push(toolResultFromPart(part));
+    }
+    result.push({ role: "tool", content, ...metadataField(message.metadata) });
+  }
+
+  return result;
+}
+
+export function messagesToUIMessages<Metadata extends JsonObject = JsonObject>(
+  messages: readonly Message<Metadata>[],
+): UIMessage<Metadata>[] {
+  const result: UIMessage<Metadata>[] = [];
+  const byToolCallId = new Map<string, ToolLocation>();
+  const byCallId = new Map<string, ToolLocation>();
+
+  for (const message of messages) {
+    assertMetadata(message.metadata);
+
+    if (message.role === "system") {
+      result.push({
+        id: createId("msg"),
+        role: "system",
+        parts: [{ id: createId("part"), type: "text", text: message.content }],
+        ...metadataField(message.metadata),
+      });
+      continue;
+    }
+
+    if (message.role === "user") {
+      const content =
+        typeof message.content === "string"
+          ? ([{ type: "text", text: message.content }] satisfies UserContentPart[])
+          : message.content;
+      const parts: UIMessagePart[] = content.map((part) => contentToUIMessagePart(part));
+      result.push({
+        id: createId("msg"),
+        role: "user",
+        parts,
+        ...metadataField(message.metadata),
+      });
+      continue;
+    }
+
+    if (message.role === "assistant") {
+      const content =
+        typeof message.content === "string"
+          ? ([{ type: "text", text: message.content }] satisfies AssistantContentPart[])
+          : message.content;
+      const parts: UIMessagePart[] = content.map(assistantContentToUIMessagePart);
+      let uiMessage: UIMessage<Metadata> = {
+        id: createId("msg"),
+        role: "assistant",
+        parts,
+        ...metadataField(message.metadata),
+      };
+      if (message.id !== undefined) uiMessage = { ...uiMessage, modelMessageId: message.id };
+      const messageIndex = result.length;
+      result.push(uiMessage);
+      for (const [partIndex, part] of parts.entries()) {
+        if (part.type !== "tool") continue;
+        const location = { messageIndex, partIndex };
+        byToolCallId.set(part.toolCallId, location);
+        if (part.callId !== undefined) byCallId.set(part.callId, location);
+      }
+      continue;
+    }
+
+    const unmerged: UIToolMessagePart[] = [];
+    for (const content of message.content) {
+      if (content.type !== "tool-result") continue;
+      const location =
+        (content.callId === undefined ? undefined : byCallId.get(content.callId)) ??
+        byToolCallId.get(content.toolCallId);
+      const ownerPart = toolPartAt(result, location);
+      if (ownerPart === undefined || ownerPart.state === "input-streaming") {
+        throw new TypeError(
+          `Tool result "${content.toolCallId}" requires a matching completed tool call.`,
+        );
+      }
+      const part = toolResultToUIMessagePart(content, ownerPart.toolName, ownerPart.input);
+
+      if (message.metadata === undefined && location !== undefined) {
+        const owner = result[location.messageIndex];
+        const existing = owner?.parts[location.partIndex];
+        if (owner !== undefined && existing?.type === "tool") {
+          const parts = [...owner.parts];
+          parts[location.partIndex] = { ...existing, ...part, id: existing.id };
+          result[location.messageIndex] = { ...owner, parts };
+          continue;
+        }
+      }
+      unmerged.push(part);
+    }
+    if (unmerged.length > 0 || message.metadata !== undefined) {
+      result.push({
+        id: createId("msg"),
+        role: "tool",
+        parts: unmerged,
+        ...metadataField(message.metadata),
+      });
+    }
+  }
+
+  return result;
+}
+
+function contentToUIMessagePart(content: UserContentPart): UIMessagePart {
+  if (content.type === "text") {
+    const part: Extract<UIMessagePart, { type: "text" }> = {
+      id: createId("part"),
+      type: "text",
+      text: content.text,
+    };
+    if (content.signature !== undefined) part.signature = content.signature;
+    return part;
+  }
+  return {
+    id: createId("part"),
+    type: "attachment",
+    attachment: contentToAttachment(content),
+  };
+}
+
+function assistantContentToUIMessagePart(content: AssistantContentPart): UIMessagePart {
+  if (content.type === "text") return contentToUIMessagePart(content);
+  if (content.type === "reasoning") {
+    const part: Extract<UIMessagePart, { type: "reasoning" }> = {
+      id: createId("part"),
+      type: "reasoning",
+      text: content.text,
+    };
+    if (content.id !== undefined) part.reasoningId = content.id;
+    if (content.details !== undefined) part.content = content.details;
+    return part;
+  }
+  if (content.type === "tool-call") {
+    const part: UIToolMessagePart = {
+      id: toolPartId(content.toolCallId),
+      type: "tool",
+      toolName: content.toolName,
+      toolCallId: content.toolCallId,
+      state: "input-available",
+      input: content.input,
+    };
+    if (content.callId !== undefined) part.callId = content.callId;
+    if (content.signature !== undefined) part.signature = content.signature;
+    return part;
+  }
+  return {
+    id: createId("part"),
+    type: "attachment",
+    attachment: contentToAttachment(content),
+  };
+}
+
+function textContent(text: string, signature?: string): Extract<UserContentPart, { type: "text" }> {
+  return signature === undefined ? { type: "text", text } : { type: "text", text, signature };
+}
+
+function toolResultFromPart(
+  part: Extract<UIToolMessagePart, { state: "output-available" | "error" }>,
+): ToolResultPart {
+  let result: ToolResultPart = {
+    type: "tool-result",
+    toolCallId: part.toolCallId,
+    toolName: part.toolName,
+    output: toolOutputFromPart(part),
+  };
+  if (part.callId !== undefined) result = { ...result, callId: part.callId };
+  return result;
+}
+
+function toolOutputFromPart(
+  part: Extract<UIToolMessagePart, { state: "output-available" | "error" }>,
+): ToolResultOutput {
+  if (part.state === "error") {
+    return { type: "error-text", value: part.error.message };
+  }
+  if (part.resultContent !== undefined) {
+    return { type: "content", value: part.resultContent };
+  }
+  const output = part.output;
+  return typeof output === "string"
+    ? { type: "text", value: output }
+    : { type: "json", value: output };
+}
+
+function attachmentToUserContent(attachment: UIAttachment): UserContentPart {
+  if (attachment.type === "image" || attachment.mediaType?.startsWith("image/") === true) {
+    return attachmentToImageContent(attachment);
+  }
+  return attachmentToFileContent(attachment);
+}
+
+function attachmentToAssistantContent(attachment: UIAttachment): AssistantContentPart {
+  return attachment.type === "image" || attachment.mediaType?.startsWith("image/") === true
+    ? attachmentToImageContent(attachment)
+    : attachmentToFileContent(attachment);
+}
+
+function attachmentToImageContent(attachment: UIAttachment): ImagePart {
+  const image: ImagePart["image"] =
+    attachment.url !== undefined
+      ? { type: "url", url: attachment.url }
+      : attachment.data !== undefined
+        ? { type: "data", data: attachment.data }
+        : (() => {
+            throw new TypeError("Image attachments require a URL or base64 data.");
+          })();
+  let content: ImagePart = {
+    type: "image",
+    image,
+  };
+  if (attachment.mediaType !== undefined) content = { ...content, mediaType: attachment.mediaType };
+  if (attachment.detail !== undefined) content = { ...content, detail: attachment.detail };
+  return content;
+}
+
+function attachmentToFileContent(attachment: UIAttachment): FilePart {
+  const data: FilePart["data"] =
+    attachment.url !== undefined
+      ? { type: "url", url: attachment.url }
+      : attachment.data !== undefined
+        ? { type: "data", data: attachment.data }
+        : attachment.text !== undefined
+          ? { type: "text", text: attachment.text }
+          : (() => {
+              throw new TypeError("File attachments require a URL, base64 data, or text.");
+            })();
+  let content: FilePart = {
+    type: "file",
+    data,
+    mediaType: attachment.mediaType ?? "application/octet-stream",
+  };
+  if (attachment.name !== undefined) content = { ...content, filename: attachment.name };
+  return content;
+}
+
+function contentToAttachment(content: ImagePart | FilePart): UIAttachment {
+  const attachment: UIAttachment = {
+    id: createId("attachment"),
+    type: content.type === "image" ? "image" : "file",
+  };
+  if (content.type === "image") {
+    if (content.detail !== undefined) attachment.detail = content.detail;
+    if (content.mediaType !== undefined) attachment.mediaType = content.mediaType;
+    if (content.image.type === "url") attachment.url = content.image.url;
+    else attachment.data = content.image.data;
+    return attachment;
+  }
+  attachment.mediaType = content.mediaType;
+  if (content.filename !== undefined) attachment.name = content.filename;
+  if (content.data.type === "url") attachment.url = content.data.url;
+  else if (content.data.type === "data") attachment.data = content.data.data;
+  else attachment.text = content.data.text;
+  return attachment;
+}
+
+function toolResultToUIMessagePart(
+  content: ToolResultPart,
+  fallbackToolName: string,
+  input: JsonValue,
+): UIToolMessagePart {
+  const output = content.output;
+  const common = {
+    id: toolPartId(content.toolCallId),
+    type: "tool" as const,
+    toolName: content.toolName || fallbackToolName,
+    toolCallId: content.toolCallId,
+    input,
+  };
+  if (content.callId !== undefined) Object.assign(common, { callId: content.callId });
+  if (output.type === "error-text" || output.type === "error-json") {
+    return {
+      ...common,
+      state: "error",
+      error: {
+        message: output.type === "error-text" ? output.value : JSON.stringify(output.value),
+      },
+    };
+  }
+  if (output.type === "execution-denied") {
+    return {
+      ...common,
+      state: "error",
+      error: { message: output.reason ?? "Tool execution was denied." },
+    };
+  }
+  const part: UIToolMessagePart = {
+    ...common,
+    state: "output-available",
+    output: toolResultOutput(output),
+  };
+  if (output.type === "content") part.resultContent = output.value;
+  return part;
+}
+
+function toolResultOutput(output: ToolResultOutput): JsonValue {
+  if (output.type === "text" || output.type === "error-text") return output.value;
+  if (output.type === "json" || output.type === "error-json") return output.value;
+  if (output.type === "execution-denied") return output.reason ?? "Tool execution was denied.";
+  return output.value.length === 1 && output.value[0]?.type === "text"
+    ? output.value[0].text
+    : output.value.map((part) =>
+        part.type === "text" ? { ...part } : { ...part, data: { ...part.data } },
+      );
+}
+
+function toolPartAt(
+  messages: readonly UIMessage[],
+  location: ToolLocation | undefined,
+): UIToolMessagePart | undefined {
+  if (location === undefined) return undefined;
+  const part = messages[location.messageIndex]?.parts[location.partIndex];
+  return part?.type === "tool" ? part : undefined;
+}
+
+function assertReplayableToolPart(
+  part: UIToolMessagePart,
+): asserts part is Exclude<UIToolMessagePart, { state: "input-streaming" }> {
+  if (part.state === "input-streaming") {
+    throw new TypeError(
+      `Tool call "${part.toolCallId}" is still streaming and cannot be converted to a model message.`,
+    );
+  }
+  if (!isJsonValue(part.input)) {
+    throw new TypeError(`Tool call "${part.toolCallId}" input must be a strict JSON value.`);
+  }
+}
+
+function assertToolResultPart(
+  part: UIToolMessagePart,
+): asserts part is Extract<UIToolMessagePart, { state: "output-available" | "error" }> {
+  assertReplayableToolPart(part);
+  if (part.state === "input-available") {
+    throw new TypeError(
+      `Tool message part "${part.toolCallId}" requires an output or execution error.`,
+    );
+  }
+}
+
+function textFromParts(parts: readonly UIMessagePart[]): string {
+  return parts.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("");
+}
+
+function assertOnlyParts(
+  message: UIMessage<JsonObject, ClientDataMap>,
+  allowed: readonly UIMessagePart["type"][],
+): void {
+  for (const part of message.parts) {
+    if (!allowed.includes(part.type)) {
+      throw new TypeError(`${message.role} UI messages cannot contain ${part.type} parts.`);
+    }
+  }
+}
+
+function assertMetadata(metadata: JsonObject | undefined): void {
+  if (metadata !== undefined && (!isJsonValue(metadata) || Array.isArray(metadata))) {
+    throw new TypeError("Message metadata must be a strict JSON object.");
+  }
+}
+
+function metadataField<Metadata extends JsonObject>(
+  metadata: Metadata | undefined,
+): { metadata?: Metadata } {
+  return metadata === undefined ? {} : { metadata };
+}
+
+function toolPartId(toolCallId: string): string {
+  return `tool_${toolCallId}`;
+}
+
+let nextId = 0;
+
+export function createClientId(prefix: string): string {
+  const random = globalThis.crypto?.randomUUID?.();
+  if (random !== undefined) return `${prefix}_${random}`;
+  nextId += 1;
+  return `${prefix}_${nextId.toString(36)}`;
+}
+
+function createId(prefix: string): string {
+  return createClientId(prefix);
+}

@@ -1,16 +1,19 @@
-import { AgentBuilder } from "@anvia/core/agent";
+import { Agent } from "@anvia/core/agent";
 import {
-  AssistantContent,
+  type CompletionModelStreamEvent,
+  CompletionProviderOutputError,
   type CompletionRequest,
   type CompletionResponse,
-  type CompletionStreamEvent,
-  Message,
-  ToolContent,
   Usage,
-  UserContent,
 } from "@anvia/core/completion";
 import type { Tool } from "@anvia/core/tool";
 import { describe, expect, it } from "vitest";
+import {
+  AssistantContent,
+  Message,
+  ToolContent,
+  UserContent,
+} from "../../core/test/helpers/imports";
 import {
   AnthropicCompletionModel,
   anthropicMessageHelpers,
@@ -18,13 +21,14 @@ import {
   fromAnthropicStreamEvent,
   toAnthropicMessagesParams,
 } from "../src/anthropic/completion";
+import { AnthropicClient } from "../src/index";
 
 describe("Anthropic Messages mapping", () => {
   it("exposes Anthropic capability metadata", () => {
     const model = new AnthropicCompletionModel({} as never, "claude-test");
 
     expect(model.provider).toBe("anthropic");
-    expect(model.defaultModel).toBe("claude-test");
+    expect(model.modelId).toBe("claude-test");
     expect(model.capabilities).toEqual({
       streaming: true,
       tools: true,
@@ -37,12 +41,11 @@ describe("Anthropic Messages mapping", () => {
   });
 
   it("exposes model-specific context limits", () => {
-    const model = new AnthropicCompletionModel({} as never, "claude-sonnet-4-20250514");
-
-    expect(model.getModelInfo()).toEqual({
-      id: "claude-sonnet-4-20250514",
-      context: { contextWindow: 200_000, maxOutputTokens: 64_000 },
+    const model = new AnthropicClient({ client: {} as never }).completionModel({
+      modelId: "claude-opus-5",
     });
+
+    expect(model.contextLimits).toEqual({ contextWindow: 1_000_000, maxOutputTokens: 128_000 });
   });
 
   it("rejects unsupported output schemas before provider calls", async () => {
@@ -108,6 +111,52 @@ describe("Anthropic Messages mapping", () => {
     });
   });
 
+  it("marks failed and denied tool results as errors", () => {
+    const params = toAnthropicMessagesParams("claude-sonnet-4-20250514", {
+      chatHistory: [
+        {
+          role: "tool",
+          content: [
+            {
+              type: "tool-result",
+              toolCallId: "tool_error",
+              toolName: "lookup",
+              output: { type: "error-json", value: { code: "FAILED" } },
+            },
+            {
+              type: "tool-result",
+              toolCallId: "tool_denied",
+              toolName: "delete",
+              output: { type: "execution-denied", reason: "Not allowed." },
+            },
+          ],
+        },
+      ],
+      documents: [],
+      tools: [],
+    });
+
+    expect(params.messages).toEqual([
+      {
+        role: "user",
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: "tool_error",
+            content: '{"code":"FAILED"}',
+            is_error: true,
+          },
+          {
+            type: "tool_result",
+            tool_use_id: "tool_denied",
+            content: "Not allowed.",
+            is_error: true,
+          },
+        ],
+      },
+    ]);
+  });
+
   it("maps multimodal tool results to Anthropic content blocks", () => {
     const params = toAnthropicMessagesParams("claude-sonnet-4-20250514", {
       chatHistory: [
@@ -119,7 +168,11 @@ describe("Anthropic Messages mapping", () => {
             "toolu_1",
             [
               { type: "text", text: '{"coordMap":"0,0,100,100,100,100"}' },
-              { type: "image", data: "base64-png", mediaType: "image/png" },
+              {
+                type: "file",
+                data: { type: "data", data: "base64-png" },
+                mediaType: "image/png",
+              },
             ],
             "fc_1",
           ),
@@ -191,13 +244,11 @@ describe("Anthropic Messages mapping", () => {
     expect(params.messages).toEqual([
       {
         role: "user",
-        content: [
-          { type: "text", text: "<file id: owner>\nMira owns launch checklists.\n</file>\n" },
-        ],
+        content: "<file id: owner>\nMira owns launch checklists.\n</file>\n",
       },
       {
         role: "user",
-        content: [{ type: "text", text: "What is the owner?" }],
+        content: "What is the owner?",
       },
     ]);
   });
@@ -246,18 +297,19 @@ describe("Anthropic Messages mapping", () => {
       anthropicMessageHelpers.messageToAnthropicMessages(
         Message.user([UserContent.documentBase64("abc123", "text/csv")]),
       ),
-    ).toThrow("Anthropic Messages only supports PDF document attachments");
+    ).toThrow("Anthropic Messages only supports image and PDF file attachments");
 
     expect(() =>
       anthropicMessageHelpers.messageToAnthropicMessages(
         Message.assistant([AssistantContent.imageBase64("abc123", "image/png")]),
       ),
-    ).toThrow("Anthropic Messages does not support image content in assistant history");
+    ).toThrow("Anthropic Messages does not support image or file content in assistant history");
   });
 
   it("maps Anthropic tool_use blocks back to internal tool calls", () => {
     const response = fromAnthropicMessage({
       id: "msg_1",
+      stop_reason: "tool_use",
       content: [
         {
           type: "tool_use",
@@ -274,7 +326,9 @@ describe("Anthropic Messages mapping", () => {
       },
     });
 
-    expect(response.choice).toEqual([AssistantContent.toolCall("toolu_1", "add", { x: 2, y: 5 })]);
+    expect(response.choice).toEqual([
+      AssistantContent.toolCall("toolu_1", "add", { x: 2, y: 5 }, "toolu_1"),
+    ]);
     expect(response.usage).toEqual({
       ...Usage.empty(),
       inputTokens: 15,
@@ -291,6 +345,79 @@ describe("Anthropic Messages mapping", () => {
       },
     });
     expect(response.messageId).toBe("msg_1");
+  });
+
+  it("rejects missing or blank Anthropic tool identities", () => {
+    for (const block of [
+      { type: "tool_use", name: "add", input: {} },
+      { type: "tool_use", id: "   ", name: "add", input: {} },
+      { type: "tool_use", id: "toolu_1", input: {} },
+      { type: "tool_use", id: "toolu_1", name: "\t", input: {} },
+    ]) {
+      expect(
+        thrownProviderOutputError(() =>
+          fromAnthropicMessage({ stop_reason: "tool_use", content: [block], usage: {} }),
+        ),
+      ).toMatchObject({ kind: "invalid-tool-call" });
+    }
+  });
+
+  it("rejects Anthropic tool input that is not deeply JSON-safe", () => {
+    const invalidInputs = [
+      { nested: { missing: undefined } },
+      { nested: Number.POSITIVE_INFINITY },
+      new Date("2026-01-01T00:00:00.000Z"),
+      Symbol("unsupported-tool-input"),
+    ];
+
+    for (const input of invalidInputs) {
+      expect(
+        thrownProviderOutputError(() =>
+          fromAnthropicMessage({
+            stop_reason: "tool_use",
+            content: [{ type: "tool_use", id: "toolu_1", name: "add", input }],
+            usage: {},
+          }),
+        ),
+      ).toMatchObject({ kind: "invalid-tool-arguments", toolCallId: "toolu_1" });
+    }
+  });
+
+  it("maps Anthropic output limits to the normalized length reason", () => {
+    const response = fromAnthropicMessage({
+      stop_reason: "max_tokens",
+      content: [{ type: "text", text: '{"answer":"partial' }],
+      usage: {},
+    });
+
+    expect(response).toMatchObject({
+      finishReason: "length",
+      providerFinishReason: "max_tokens",
+    });
+  });
+
+  it.each([
+    ["max_tokens", "truncated-tool-call", "length"],
+    ["refusal", "filtered-tool-call", "content-filter"],
+    ["end_turn", "invalid-tool-call", "stop"],
+    ["pause_turn", "invalid-tool-call", "other"],
+  ] as const)("rejects %s responses that contain tool calls", (stopReason, kind, finishReason) => {
+    expect(
+      thrownProviderOutputError(() =>
+        fromAnthropicMessage({
+          stop_reason: stopReason,
+          content: [
+            {
+              type: "tool_use",
+              id: "toolu_1",
+              name: "Write",
+              input: { file_path: "src/main.tsx", content: "hello" },
+            },
+          ],
+          usage: {},
+        }),
+      ),
+    ).toMatchObject({ kind, finishReason });
   });
 
   it("maps Anthropic thinking and redacted thinking blocks", () => {
@@ -317,12 +444,12 @@ describe("Anthropic Messages mapping", () => {
       {
         type: "reasoning",
         text: "I should inspect the inputs.",
-        content: [{ type: "text", text: "I should inspect the inputs.", signature: "sig_1" }],
+        details: [{ type: "text", text: "I should inspect the inputs.", signature: "sig_1" }],
       },
       {
         type: "reasoning",
         text: "",
-        content: [{ type: "redacted", data: "redacted" }],
+        details: [{ type: "redacted", data: "redacted" }],
       },
       AssistantContent.text("Done."),
     ]);
@@ -450,9 +577,9 @@ describe("Anthropic Messages mapping", () => {
         { type: "message_stop" },
       ],
     ]);
-    const agent = new AgentBuilder("test-agent", model).build();
+    const agent = new Agent({ id: "test-agent", model });
 
-    const events = await collect(agent.prompt("say hello").stream());
+    const events = await collect(agent.stream({ prompt: "say hello" }));
 
     expect(events).toContainEqual({
       type: "text_delta",
@@ -460,7 +587,7 @@ describe("Anthropic Messages mapping", () => {
       delta: "Hello",
     });
     expect(events.at(-1)).toMatchObject({
-      type: "final",
+      type: "response",
       output: "Hello",
       usage: {
         inputTokens: 13,
@@ -471,7 +598,11 @@ describe("Anthropic Messages mapping", () => {
     });
     expect(events.find((event) => event.type === "turn_end")).toMatchObject({
       type: "turn_end",
-      response: { messageId: "msg_1" },
+      response: {
+        messageId: "msg_1",
+        finishReason: "stop",
+        providerFinishReason: "end_turn",
+      },
     });
   });
 
@@ -688,6 +819,8 @@ describe("Anthropic Messages mapping", () => {
         },
       },
       { type: "content_block_stop", index: 2 },
+      { type: "message_delta", delta: { stop_reason: "tool_use" }, usage: {} },
+      { type: "message_stop" },
     ]);
 
     expect(accumulatedToolArguments(events, "toolu_write")).toEqual({
@@ -696,41 +829,348 @@ describe("Anthropic Messages mapping", () => {
     });
   });
 
-  it("does not duplicate streamed tool input when input_json_delta also arrives", async () => {
-    const events = await collectStreamEvents([
-      {
-        type: "content_block_start",
-        index: 2,
-        content_block: {
-          type: "tool_use",
-          id: "toolu_write",
-          name: "Write",
-          input: '{"file_path":"src/main.tsx","content":"start"}',
+  it("rejects argument deltas after complete start-block tool input", async () => {
+    await expect(
+      collectStreamEvents([
+        {
+          type: "content_block_start",
+          index: 2,
+          content_block: {
+            type: "tool_use",
+            id: "toolu_write",
+            name: "Write",
+            input: { file_path: "src/main.tsx", content: "start" },
+          },
         },
-      },
-      {
-        type: "content_block_delta",
-        index: 2,
-        delta: {
-          type: "input_json_delta",
-          partial_json: '{"file_path":"src/main.tsx","content":"delta"}',
+        {
+          type: "content_block_delta",
+          index: 2,
+          delta: {
+            type: "input_json_delta",
+            partial_json: '{"file_path":"src/main.tsx","content":"delta"}',
+          },
         },
-      },
-      { type: "content_block_stop", index: 2 },
-    ]);
-
-    expect(
-      events.filter(
-        (event) => event.type === "tool_call_delta" && event.argumentsDelta !== undefined,
-      ),
-    ).toHaveLength(1);
-    expect(accumulatedToolArguments(events, "toolu_write")).toEqual({
-      file_path: "src/main.tsx",
-      content: "start",
+      ]),
+    ).rejects.toMatchObject({
+      name: "CompletionProviderOutputError",
+      kind: "invalid-tool-arguments",
+      toolCallId: "toolu_write",
     });
   });
 
-  it("keeps streamed input_json_delta tool arguments when the final message has empty tool input", async () => {
+  it("rejects malformed native start-block input instead of replacing it with partial_json", async () => {
+    const toolCalls: unknown[] = [];
+    const model = anthropicModelWithStreams([
+      [
+        {
+          type: "content_block_start",
+          index: 0,
+          content_block: {
+            type: "tool_use",
+            id: "toolu_1",
+            name: "Write",
+            input: "not-json",
+          },
+        },
+        {
+          type: "content_block_delta",
+          index: 0,
+          delta: {
+            type: "input_json_delta",
+            partial_json: '{"file_path":"src/main.tsx","content":"hello"}',
+          },
+        },
+        { type: "content_block_stop", index: 0 },
+        { type: "message_delta", delta: { stop_reason: "tool_use" }, usage: {} },
+        { type: "message_stop" },
+      ],
+      finalTextStream(),
+    ]);
+    const agent = new Agent({ id: "test-agent", model, tools: [writeTool(toolCalls)] });
+
+    const events = await collect(agent.stream({ prompt: "write" }));
+
+    expect(events.find((event) => event.type === "error")).toMatchObject({
+      error: {
+        name: "CompletionProviderOutputError",
+        kind: "invalid-tool-arguments",
+        toolCallId: "toolu_1",
+      },
+    });
+    expect(toolCalls).toEqual([]);
+  });
+
+  it("rejects a serialized JSON prefix in native start-block input", async () => {
+    await expect(
+      collectStreamEvents([
+        {
+          type: "content_block_start",
+          index: 0,
+          content_block: {
+            type: "tool_use",
+            id: "toolu_1",
+            name: "Write",
+            input: '{"file_path":',
+          },
+        },
+      ]),
+    ).rejects.toMatchObject({
+      name: "CompletionProviderOutputError",
+      kind: "invalid-tool-arguments",
+      toolCallId: "toolu_1",
+    });
+  });
+
+  it("rejects malformed streamed tool arguments instead of quoting them", async () => {
+    await expect(
+      collectStreamEvents([
+        {
+          type: "content_block_start",
+          index: 0,
+          content_block: {
+            type: "tool_use",
+            id: "toolu_1",
+            name: "Write",
+            input: "not-json",
+          },
+        },
+        { type: "content_block_stop", index: 0 },
+        { type: "message_stop" },
+      ]),
+    ).rejects.toMatchObject({
+      name: "CompletionProviderOutputError",
+      kind: "invalid-tool-arguments",
+      toolCallId: "toolu_1",
+    });
+  });
+
+  it("rejects input_json_delta after its tool content block has closed", async () => {
+    await expect(
+      collectStreamEvents([
+        {
+          type: "content_block_start",
+          index: 0,
+          content_block: {
+            type: "tool_use",
+            id: "toolu_1",
+            name: "Write",
+            input: {},
+          },
+        },
+        { type: "content_block_stop", index: 0 },
+        {
+          type: "content_block_delta",
+          index: 0,
+          delta: { type: "input_json_delta", partial_json: "{}" },
+        },
+      ]),
+    ).rejects.toMatchObject({
+      name: "CompletionProviderOutputError",
+      kind: "invalid-tool-call",
+      toolCallId: "toolu_1",
+    });
+  });
+
+  it.each([
+    "   ",
+    "",
+  ])("rejects an explicit %j tool argument fragment instead of treating it as absent", async (partialJson) => {
+    await expect(
+      collectStreamEvents([
+        {
+          type: "content_block_start",
+          index: 0,
+          content_block: {
+            type: "tool_use",
+            id: "toolu_1",
+            name: "Write",
+            input: {},
+          },
+        },
+        {
+          type: "content_block_delta",
+          index: 0,
+          delta: { type: "input_json_delta", partial_json: partialJson },
+        },
+        { type: "content_block_stop", index: 0 },
+        { type: "message_delta", delta: { stop_reason: "tool_use" }, usage: {} },
+        { type: "message_stop" },
+      ]),
+    ).rejects.toMatchObject({
+      name: "CompletionProviderOutputError",
+      kind: "malformed-tool-arguments",
+      toolCallId: "toolu_1",
+    });
+  });
+
+  it("emits explicit empty-object arguments for a legitimate no-argument tool", async () => {
+    const events = await collectStreamEvents([
+      {
+        type: "content_block_start",
+        index: 0,
+        content_block: {
+          type: "tool_use",
+          id: "toolu_1",
+          name: "NoArgs",
+          input: {},
+        },
+      },
+      { type: "content_block_stop", index: 0 },
+      { type: "message_delta", delta: { stop_reason: "tool_use" }, usage: {} },
+      { type: "message_stop" },
+    ]);
+
+    expect(events).toContainEqual({
+      type: "tool_call_delta",
+      id: "toolu_1",
+      argumentsDelta: "{}",
+    });
+    expect(finalResponseFrom(events)).toMatchObject({ finishReason: "tool-calls" });
+  });
+
+  it("rejects streamed tool progress terminated by end_turn", async () => {
+    await expect(
+      collectStreamEvents([
+        {
+          type: "content_block_start",
+          index: 0,
+          content_block: {
+            type: "tool_use",
+            id: "toolu_1",
+            name: "NoArgs",
+            input: {},
+          },
+        },
+        { type: "content_block_stop", index: 0 },
+        { type: "message_delta", delta: { stop_reason: "end_turn" }, usage: {} },
+        { type: "message_stop" },
+      ]),
+    ).rejects.toMatchObject({
+      name: "CompletionProviderOutputError",
+      kind: "invalid-tool-call",
+      finishReason: "stop",
+    });
+  });
+
+  it("classifies an unsafe final-message tool marker before parsing malformed tool fields", async () => {
+    await expect(
+      collectStreamEvents([
+        {
+          type: "message_stop",
+          message: {
+            stop_reason: "max_tokens",
+            content: [{ type: "tool_use", id: 42, name: null, input: "{" }],
+            usage: { input_tokens: 5, output_tokens: 8 },
+          },
+        },
+      ]),
+    ).rejects.toMatchObject({
+      name: "CompletionProviderOutputError",
+      kind: "truncated-tool-call",
+      finishReason: "length",
+      usage: { inputTokens: 5, outputTokens: 8, totalTokens: 13 },
+    });
+  });
+
+  it("rejects a final message whose stop reason contradicts the streamed stop reason", async () => {
+    await expect(
+      collectStreamEvents([
+        {
+          type: "message_delta",
+          delta: { stop_reason: "max_tokens" },
+          usage: { output_tokens: 8 },
+        },
+        {
+          type: "message_stop",
+          message: {
+            stop_reason: "tool_use",
+            content: [{ type: "tool_use", id: "toolu_1", name: "NoArgs", input: {} }],
+          },
+        },
+      ]),
+    ).rejects.toMatchObject({
+      name: "CompletionProviderOutputError",
+      kind: "invalid-tool-call",
+      usage: { outputTokens: 8 },
+    });
+  });
+
+  it("blocks max_tokens tool calls before execution", async () => {
+    const toolCalls: unknown[] = [];
+    const model = anthropicModelWithStreams([
+      [
+        {
+          type: "content_block_start",
+          index: 0,
+          content_block: {
+            type: "tool_use",
+            id: "toolu_1",
+            name: "Write",
+            input: {},
+          },
+        },
+        {
+          type: "content_block_delta",
+          index: 0,
+          delta: {
+            type: "input_json_delta",
+            partial_json: '{"file_path":"src/main.tsx","content":',
+          },
+        },
+        { type: "content_block_stop", index: 0 },
+        {
+          type: "message_delta",
+          delta: { stop_reason: "max_tokens" },
+          usage: { output_tokens: 8 },
+        },
+        { type: "message_stop" },
+      ],
+    ]);
+    const agent = new Agent({ id: "test-agent", model, tools: [writeTool(toolCalls)] });
+
+    const events = await collect(agent.stream({ prompt: "write" }));
+
+    expect(events.find((event) => event.type === "error")).toMatchObject({
+      error: {
+        name: "CompletionProviderOutputError",
+        kind: "truncated-tool-call",
+        finishReason: "length",
+      },
+    });
+    expect(toolCalls).toEqual([]);
+  });
+
+  it("blocks tool calls when the Anthropic stream has no terminal event", async () => {
+    const toolCalls: unknown[] = [];
+    const model = anthropicModelWithStreams([
+      [
+        {
+          type: "content_block_start",
+          index: 0,
+          content_block: {
+            type: "tool_use",
+            id: "toolu_1",
+            name: "Write",
+            input: { file_path: "src/main.tsx", content: "hello" },
+          },
+        },
+        { type: "content_block_stop", index: 0 },
+      ],
+    ]);
+    const agent = new Agent({ id: "test-agent", model, tools: [writeTool(toolCalls)] });
+
+    const events = await collect(agent.stream({ prompt: "write" }));
+
+    expect(events.find((event) => event.type === "error")).toMatchObject({
+      error: {
+        name: "CompletionProviderOutputError",
+        kind: "incomplete-stream",
+      },
+    });
+    expect(toolCalls).toEqual([]);
+  });
+
+  it("accepts streamed tool arguments when the final message agrees exactly", async () => {
     const toolCalls: unknown[] = [];
     const model = anthropicModelWithStreams([
       [
@@ -752,28 +1192,38 @@ describe("Anthropic Messages mapping", () => {
           type: "message_stop",
           message: {
             id: "msg_1",
-            content: [{ type: "tool_use", id: "toolu_1", name: "Write", input: {} }],
+            stop_reason: "tool_use",
+            content: [
+              {
+                type: "tool_use",
+                id: "toolu_1",
+                name: "Write",
+                input: { file_path: "src/main.tsx", content: "hello" },
+              },
+            ],
           },
         },
       ],
       finalTextStream(),
     ]);
-    const agent = new AgentBuilder("test-agent", model).tool(writeTool(toolCalls)).build();
+    const agent = new Agent({ id: "test-agent", model, tools: [writeTool(toolCalls)] });
 
-    const events = await collect(agent.prompt("write").stream());
+    const events = await collect(agent.stream({ prompt: "write" }));
 
     expect(events).toContainEqual({
       type: "tool_call",
       turn: 1,
-      toolCall: AssistantContent.toolCall("toolu_1", "Write", {
-        file_path: "src/main.tsx",
-        content: "hello",
-      }),
+      toolCall: AssistantContent.toolCall(
+        "toolu_1",
+        "Write",
+        { file_path: "src/main.tsx", content: "hello" },
+        "toolu_1",
+      ),
     });
     expect(toolCalls).toEqual([{ file_path: "src/main.tsx", content: "hello" }]);
   });
 
-  it("keeps streamed start-block tool arguments when the final message has empty tool input", async () => {
+  it("rejects a final tool input that contradicts complete streamed input", async () => {
     const toolCalls: unknown[] = [];
     const model = anthropicModelWithStreams([
       [
@@ -792,29 +1242,69 @@ describe("Anthropic Messages mapping", () => {
           type: "message_stop",
           message: {
             id: "msg_1",
+            stop_reason: "tool_use",
             content: [{ type: "tool_use", id: "toolu_1", name: "Write", input: {} }],
           },
         },
       ],
       finalTextStream(),
     ]);
-    const agent = new AgentBuilder("test-agent", model).tool(writeTool(toolCalls)).build();
+    const agent = new Agent({ id: "test-agent", model, tools: [writeTool(toolCalls)] });
 
-    const events = await collect(agent.prompt("write").stream());
+    const events = await collect(agent.stream({ prompt: "write" }));
 
-    expect(events).toContainEqual({
-      type: "tool_call",
-      turn: 1,
-      toolCall: AssistantContent.toolCall("toolu_1", "Write", {
-        file_path: "src/main.tsx",
-        content: "hello",
-      }),
+    expect(events.find((event) => event.type === "error")).toMatchObject({
+      error: {
+        name: "CompletionProviderOutputError",
+        kind: "invalid-tool-call",
+        toolCallId: "toolu_1",
+      },
     });
-    expect(toolCalls).toEqual([{ file_path: "src/main.tsx", content: "hello" }]);
+    expect(toolCalls).toEqual([]);
+  });
+
+  it("rejects conflicting streamed finish reasons", async () => {
+    await expect(
+      collectStreamEvents([
+        {
+          type: "message_delta",
+          delta: { stop_reason: "end_turn" },
+          usage: { output_tokens: 1 },
+        },
+        {
+          type: "message_delta",
+          delta: { stop_reason: "tool_use" },
+          usage: { output_tokens: 2 },
+        },
+      ]),
+    ).rejects.toMatchObject({
+      name: "CompletionProviderOutputError",
+      kind: "invalid-tool-call",
+    });
+  });
+
+  it("rejects semantic progress after a streamed finish reason", async () => {
+    await expect(
+      collectStreamEvents([
+        {
+          type: "message_delta",
+          delta: { stop_reason: "end_turn" },
+          usage: { output_tokens: 1 },
+        },
+        {
+          type: "content_block_delta",
+          index: 0,
+          delta: { type: "text_delta", text: "late" },
+        },
+      ]),
+    ).rejects.toMatchObject({
+      name: "CompletionProviderOutputError",
+      kind: "invalid-tool-call",
+    });
   });
 });
 
-async function collectStreamEvents(events: unknown[]): Promise<CompletionStreamEvent[]> {
+async function collectStreamEvents(events: unknown[]): Promise<CompletionModelStreamEvent[]> {
   const model = new AnthropicCompletionModel(
     {
       messages: {
@@ -824,7 +1314,7 @@ async function collectStreamEvents(events: unknown[]): Promise<CompletionStreamE
     "claude-test",
   );
 
-  const mapped: CompletionStreamEvent[] = [];
+  const mapped: CompletionModelStreamEvent[] = [];
   for await (const event of model.streamCompletion({
     chatHistory: [Message.user("write a file")],
     documents: [],
@@ -835,9 +1325,9 @@ async function collectStreamEvents(events: unknown[]): Promise<CompletionStreamE
   return mapped;
 }
 
-function finalResponseFrom(events: CompletionStreamEvent[]): CompletionResponse {
+function finalResponseFrom(events: CompletionModelStreamEvent[]): CompletionResponse {
   const event = events.find(
-    (item): item is Extract<CompletionStreamEvent, { type: "final" }> => item.type === "final",
+    (item): item is Extract<CompletionModelStreamEvent, { type: "final" }> => item.type === "final",
   );
   if (event === undefined) {
     throw new Error("Expected final stream event");
@@ -908,7 +1398,7 @@ async function collect<T>(events: AsyncIterable<T>): Promise<T[]> {
   return result;
 }
 
-function accumulatedToolArguments(events: CompletionStreamEvent[], id: string): unknown {
+function accumulatedToolArguments(events: CompletionModelStreamEvent[], id: string): unknown {
   const argumentsText = events
     .flatMap((event) =>
       event.type === "tool_call_delta" && event.id === id && event.argumentsDelta !== undefined
@@ -917,4 +1407,14 @@ function accumulatedToolArguments(events: CompletionStreamEvent[], id: string): 
     )
     .join("");
   return argumentsText.length === 0 ? {} : JSON.parse(argumentsText);
+}
+
+function thrownProviderOutputError(call: () => unknown): CompletionProviderOutputError {
+  try {
+    call();
+  } catch (error) {
+    if (error instanceof CompletionProviderOutputError) return error;
+    throw error;
+  }
+  throw new Error("Expected CompletionProviderOutputError");
 }

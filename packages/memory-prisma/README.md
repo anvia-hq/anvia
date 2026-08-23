@@ -48,62 +48,80 @@ npx prisma migrate dev --name add_anvia_memory
 ## Usage
 
 ```ts
-import { AgentBuilder } from "@anvia/core";
-import { createPrismaMemoryStore } from "@anvia/memory-prisma";
+import { Agent } from "@anvia/core";
+import { PrismaMemoryStore } from "@anvia/memory-prisma";
 import { prisma } from "./db";
 
-const memory = createPrismaMemoryStore(prisma, {
-  scope: {
+const memory = new PrismaMemoryStore({
+  client: prisma,
+  scopeKey: {
     metadataKeys: ["tenantId"],
   },
 });
 
-const agent = new AgentBuilder("support", model)
-  .memory(memory, { savePolicy: "turn" })
-  .build();
+await memory.validate();
 
-await agent
-  .session("thread_123", {
+const agent = new Agent({
+  id: "support",
+  model: model,
+  memory: { store: memory, savePolicy: "turn" },
+});
+
+await agent.generate({
+  prompt: "Where is my order?",
+  session: {
+    sessionId: "thread_123",
     userId: "user_456",
     metadata: { tenantId: "tenant_789" },
-  })
-  .prompt("Where is my order?")
-  .send();
+  },
+});
 ```
 
-`scope` defines the database key for one memory thread. By default the key includes `sessionId` and `userId`; `metadataKeys: ["tenantId"]` also includes `metadata.tenantId`, which isolates memory across tenants or workspaces. Scope is storage isolation, not authorization.
+`scopeKey` defines the database key for one memory thread. By default the key includes `sessionId`
+and `userId`; `metadataKeys: ["tenantId"]` also includes `metadata.tenantId`, which isolates memory
+across tenants or workspaces. Scope is storage isolation, not authorization.
+
+The Prisma client and its shutdown lifecycle remain caller-owned. `validate()` performs a
+non-mutating read-path check; schema creation remains in the application's Prisma migrations.
 
 The store also exposes core's optional read-only memory inspector. When this agent is registered
 with `@anvia/studio`, existing Prisma conversations appear automatically on the Memory page. Studio
 does not copy the messages or require another schema migration.
+
+When the messages delegate supports `deleteMany`, the store also exposes
+`compaction.snapshot({ scope })` and atomic `compaction.replacePrefix({ ... })`. Compaction messages
+remain visible as ordinary ordered system messages. With narrower custom delegates the capability
+is absent, rather than pretending replacement is atomic.
 
 ## Custom delegates
 
 The default client path expects Prisma delegates named `agentMemorySession`, `agentMemoryMessage`, and `agentMemoryError`. If your app uses custom model names, pass delegates explicitly:
 
 ```ts
-const memory = PrismaMemoryStore.fromDelegates({
-  sessions: prisma.customMemorySession,
-  messages: prisma.customMemoryMessage,
-  errors: prisma.customMemoryError,
-  transaction: (operation, options) =>
-    prisma.$transaction(
-      (tx) =>
-        operation({
-          sessions: tx.customMemorySession,
-          messages: tx.customMemoryMessage,
-          errors: tx.customMemoryError,
-          transaction: async (nested) => nested({
+const memory = new PrismaMemoryStore({
+  delegates: {
+    sessions: prisma.customMemorySession,
+    messages: prisma.customMemoryMessage,
+    errors: prisma.customMemoryError,
+    transaction: (operation, options) =>
+      prisma.$transaction(
+        (tx) =>
+          operation({
             sessions: tx.customMemorySession,
             messages: tx.customMemoryMessage,
             errors: tx.customMemoryError,
-            transaction: async () => {
-              throw new Error("Nested transactions are not supported.");
-            },
+            transaction: async (nested) => nested({
+              sessions: tx.customMemorySession,
+              messages: tx.customMemoryMessage,
+              errors: tx.customMemoryError,
+              transaction: async () => {
+                throw new Error("Nested transactions are not supported.");
+              },
+            }),
           }),
-        }),
-      options,
-    ),
+        options,
+      ),
+  },
 });
 ```
 

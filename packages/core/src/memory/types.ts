@@ -1,22 +1,50 @@
-import type { JsonObject, Message, SystemMessage, Usage } from "../completion/types";
+import type {
+  CompletionModel,
+  JsonObject,
+  Message,
+  SystemMessage,
+  Usage,
+} from "../completion/types";
+import type { RetrySetting } from "../retry";
 
 export type MemorySavePolicy = "message" | "turn" | "run";
 
-export type MemoryContext = {
+export type MemoryScope = {
   sessionId: string;
   userId?: string | undefined;
   metadata?: JsonObject | undefined;
 };
 
-export type MemoryAppendInput = {
-  context: MemoryContext;
+export type MemoryScopeKeyOptions = {
+  includeUserId?: boolean | undefined;
+  metadataKeys?: readonly string[] | undefined;
+};
+
+export type CreateMemoryScopeKeyOptions = MemoryScopeKeyOptions & {
+  scope: MemoryScope;
+};
+
+export type MemoryScopeKeyResolver =
+  | MemoryScopeKeyOptions
+  | ((options: { scope: MemoryScope }) => string);
+
+export type MemoryLoadOptions = {
+  scope: MemoryScope;
+};
+
+export type MemoryAppendOptions = {
+  scope: MemoryScope;
   runId: string;
   turn: number;
   messages: Message[];
 };
 
-export type MemoryErrorInput = {
-  context: MemoryContext;
+export type MemoryClearOptions = {
+  scope: MemoryScope;
+};
+
+export type MemoryErrorOptions = {
+  scope: MemoryScope;
   runId: string;
   error: unknown;
   messages: Message[];
@@ -25,6 +53,10 @@ export type MemoryErrorInput = {
 export type MemoryConversationListOptions = {
   limit: number;
   userId?: string | undefined;
+};
+
+export type MemoryConversationGetOptions = {
+  ref: string;
 };
 
 export type MemoryConversationSummary = {
@@ -53,43 +85,65 @@ export type MemoryConversation = MemoryConversationSummary & {
 /** Optional, read-only discovery surface for developer tooling such as Studio. */
 export interface MemoryInspector {
   listConversations(options: MemoryConversationListOptions): Promise<MemoryConversationSummary[]>;
-  getConversation(ref: string): Promise<MemoryConversation | undefined>;
+  getConversation(options: MemoryConversationGetOptions): Promise<MemoryConversation | undefined>;
 }
 
 export interface MemoryStore {
   readonly inspector?: MemoryInspector | undefined;
-  readonly compaction?: MemoryCompactionStore | undefined;
-  load(context: MemoryContext): Promise<Message[]>;
-  append(input: MemoryAppendInput): Promise<void>;
-  clear(context: MemoryContext): Promise<void>;
-  recordError?(input: MemoryErrorInput): Promise<void>;
+  readonly compaction?: MemoryCompactionCapability | undefined;
+  load(options: MemoryLoadOptions): Promise<Message[]>;
+  append(options: MemoryAppendOptions): Promise<void>;
+  clear(options: MemoryClearOptions): Promise<void>;
+  recordError?(options: MemoryErrorOptions): Promise<void>;
 }
 
+export type MemoryCompactionMetadata = {
+  version: 1;
+  compactedMessageCount: number;
+};
+
+export type MemoryCompactionMessage = Omit<SystemMessage, "metadata"> & {
+  metadata: {
+    anvia: {
+      memoryCompaction: MemoryCompactionMetadata;
+    };
+  };
+};
+
 export type MemoryCompactionSnapshot = {
-  /** Opaque store revision used to reject stale compaction commits. */
+  /** Opaque store revision used to reject stale compaction replacements. */
   revision: string;
   messages: Message[];
 };
 
-export type MemoryCompactionCommitInput = {
-  context: MemoryContext;
+export type MemoryCompactionSnapshotOptions = {
+  scope: MemoryScope;
+};
+
+export type MemoryCompactionReplacePrefixOptions = {
+  scope: MemoryScope;
   revision: string;
-  compactedMessageCount: number;
-  summary: SystemMessage;
+  messageCount: number;
+  replacement: MemoryCompactionMessage;
   runId: string;
 };
 
-export type MemoryCompactionCommitResult = "committed" | "conflict";
+export type MemoryCompactionReplacePrefixResult = {
+  status: "committed" | "conflict";
+};
 
-/** Optional durable prefix-replacement capability used by automatic memory compaction. */
-export interface MemoryCompactionStore {
-  load(context: MemoryContext): Promise<MemoryCompactionSnapshot>;
-  commit(input: MemoryCompactionCommitInput): Promise<MemoryCompactionCommitResult>;
+/** Optional atomic prefix-replacement capability used by automatic memory compaction. */
+export interface MemoryCompactionCapability {
+  snapshot(options: MemoryCompactionSnapshotOptions): Promise<MemoryCompactionSnapshot>;
+  replacePrefix(
+    options: MemoryCompactionReplacePrefixOptions,
+  ): Promise<MemoryCompactionReplacePrefixResult>;
 }
 
 export type MemoryCompactorInput = {
-  context: MemoryContext;
+  scope: MemoryScope;
   messages: Message[];
+  abortSignal?: AbortSignal | undefined;
 };
 
 export type MemoryCompactorResult = {
@@ -99,24 +153,32 @@ export type MemoryCompactorResult = {
 
 export type MemoryCompactor = (input: MemoryCompactorInput) => Promise<MemoryCompactorResult>;
 
-export type SummaryMemoryCompactorOptions = {
+/** Counts the approximate or exact model tokens represented by a message list. */
+export type MemoryTokenCounter = (messages: readonly Message[]) => number | Promise<number>;
+
+export type CreateSummaryMemoryCompactorOptions = {
+  model: CompletionModel;
   instructions?: string | undefined;
   maxTokens?: number | undefined;
   temperature?: number | undefined;
+  providerOptions?: JsonObject | undefined;
+  retries?: RetrySetting | undefined;
+};
+
+export type MemoryCompactionConflictRetryOptions = {
+  maxAttempts: number;
 };
 
 export type MemoryCompactionOptions = {
-  maxMessages: number;
-  keepRecentUserTurns?: number | undefined;
+  trigger: {
+    afterTokens: number;
+  };
+  retention?: {
+    recentTokens?: number | undefined;
+  };
+  tokenCounter?: MemoryTokenCounter | undefined;
   compactor: MemoryCompactor;
-  conflictRetries?: number | undefined;
-};
-
-export type ResolvedMemoryCompactionOptions = {
-  maxMessages: number;
-  keepRecentUserTurns: number;
-  compactor: MemoryCompactor;
-  conflictRetries: number;
+  conflictRetries?: false | MemoryCompactionConflictRetryOptions | undefined;
 };
 
 export type MemoryOptions = {
@@ -124,17 +186,23 @@ export type MemoryOptions = {
   compaction?: MemoryCompactionOptions | undefined;
 };
 
-export type ResolvedMemoryOptions = {
-  savePolicy: MemorySavePolicy;
-  compaction?: ResolvedMemoryCompactionOptions | undefined;
+export type MemoryCompactionInfo = {
+  originalMessageCount: number;
+  compactedMessageCount: number;
+  retainedMessageCount: number;
+  originalTokenCount: number;
+  compactedTokenCount: number;
+  retainedTokenCount: number;
+  resultTokenCount: number;
+  attempts: number;
+  usage: Usage;
 };
 
-export type MemoryRegistration = {
-  store: MemoryStore;
-  options: ResolvedMemoryOptions;
-};
-
-export type SessionOptions = {
-  userId?: string | undefined;
-  metadata?: JsonObject | undefined;
-};
+export type MemoryCompactionResult =
+  | ({ type: "compacted" } & MemoryCompactionInfo)
+  | {
+      type: "skipped";
+      reason: "nothing_to_compact";
+      originalMessageCount: number;
+      originalTokenCount: number;
+    };

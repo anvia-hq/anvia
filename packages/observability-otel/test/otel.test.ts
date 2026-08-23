@@ -1,4 +1,4 @@
-import { AssistantContent, Message, type ToolCall, type Usage } from "@anvia/core/completion";
+import type { ToolCallPart, Usage } from "@anvia/core/completion";
 import { EvalOutcome } from "@anvia/core/evals";
 import type { AgentGenerationStartArgs } from "@anvia/core/observability";
 import {
@@ -13,7 +13,8 @@ import {
 } from "@opentelemetry/api";
 import { type Logger, SeverityNumber } from "@opentelemetry/api-logs";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createOtelEvalReporter, otel } from "../src/index";
+import { AssistantContent, Message } from "../../core/test/helpers/imports";
+import { createOtelEvalReporter, createOtelObserver } from "../src/index";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -267,6 +268,17 @@ describe("OpenTelemetry eval reporter", () => {
     expect(() => reporter.report(args)).toThrow(/traceId and observationId/);
     expect(emit).not.toHaveBeenCalled();
 
+    expect(() =>
+      reporter.report({
+        ...args,
+        trace: {
+          observer: "langfuse",
+          traceId: "1234567890abcdef1234567890abcdef",
+          observationId: "1234567890abcdef",
+        },
+      }),
+    ).toThrow(/observer "otel"/);
+
     await createOtelEvalReporter({ logger }).report({
       ...args,
       trace: {
@@ -290,8 +302,9 @@ describe("otel", () => {
     const tracer = new FakeTracer();
     const getTracer = vi.spyOn(trace, "getTracer");
 
-    const tracing = otel.create({ tracer: tracer.tracer });
+    const tracing = createOtelObserver({ tracer: tracer.tracer });
     await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hello"),
       history: [],
@@ -306,16 +319,17 @@ describe("otel", () => {
     const tracer = new FakeTracer();
     const getTracer = vi.spyOn(trace, "getTracer").mockReturnValue(tracer.tracer);
 
-    otel.create({ tracerVersion: "1.2.3" });
+    createOtelObserver({ tracerVersion: "1.2.3" });
 
     expect(getTracer).toHaveBeenCalledWith("@anvia/otel", "1.2.3");
   });
 
   it("uses the generic run span name when no agent name is provided", async () => {
     const tracer = new FakeTracer();
-    const tracing = otel.create({ tracer: tracer.tracer });
+    const tracing = createOtelObserver({ tracer: tracer.tracer });
 
     await tracing.startRun({
+      runId: "run_1",
       prompt: userMessage("hello"),
       history: [],
       maxTurns: 1,
@@ -326,9 +340,10 @@ describe("otel", () => {
 
   it("maps runs, generations, tools, and attributes to OpenTelemetry spans", async () => {
     const tracer = new FakeTracer();
-    const tracing = otel.create({ tracer: tracer.tracer, serviceName: "cookbook" });
+    const tracing = createOtelObserver({ tracer: tracer.tracer, serviceName: "cookbook" });
 
     const run = await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       agentDescription: "Support agent",
       instructions: "Answer clearly.",
@@ -399,7 +414,10 @@ describe("otel", () => {
       toolCallId: "call-1",
     });
     await run?.end({
+      runId: "run-1",
+      status: "completed",
       output: "Done",
+      text: "Done",
       usage: usage(2, 3),
       messages: [],
     });
@@ -410,7 +428,7 @@ describe("otel", () => {
     expect(generationSpan?.parentSpanId).toBe(root?.spanContextValue.spanId);
     expect(generationSpan?.attributes).toMatchObject({
       "anvia.generation.turn": 1,
-      "anvia.generation.model": "test-model",
+      "anvia.generation.model_id": "test-model",
       "anvia.generation.tool_count": 0,
       "anvia.generation.has_output_schema": false,
       "anvia.generation.message_id": "msg-1",
@@ -441,7 +459,8 @@ describe("otel", () => {
     expect(toolSpan?.ended).toBe(true);
 
     expect(root?.attributes).toMatchObject({
-      "anvia.run.output": "Done",
+      "anvia.run.text": "Done",
+      "anvia.run.output": '"Done"',
       "anvia.usage.input_tokens": 2,
       "anvia.usage.output_tokens": 3,
       "anvia.usage.total_tokens": 5,
@@ -452,8 +471,9 @@ describe("otel", () => {
 
   it("omits prompt, response, and tool payloads in safe capture mode", async () => {
     const tracer = new FakeTracer();
-    const tracing = otel.create({ tracer: tracer.tracer, captureMode: "safe" });
+    const tracing = createOtelObserver({ tracer: tracer.tracer, captureMode: "safe" });
     const run = await tracing.startRun({
+      runId: "run_1",
       instructions: "private instructions",
       prompt: userMessage("private prompt"),
       history: [userMessage("private history")],
@@ -487,7 +507,14 @@ describe("otel", () => {
       internalCallId: "internal-1",
       toolCallId: "call-1",
     });
-    await run?.end({ output: "private output", usage: usage(2, 3), messages: [] });
+    await run?.end({
+      runId: "run-1",
+      status: "completed",
+      output: "private output",
+      text: "private output",
+      usage: usage(2, 3),
+      messages: [],
+    });
 
     expect(tracer.spans[0]?.attributes).not.toHaveProperty("anvia.agent.instructions");
     expect(tracer.spans[0]?.attributes).not.toHaveProperty("anvia.run.prompt");
@@ -506,13 +533,14 @@ describe("otel", () => {
       [11, "<truncated>"],
     ] as const) {
       const tracer = new FakeTracer();
-      const tracing = otel.create({
+      const tracing = createOtelObserver({
         tracer: tracer.tracer,
         captureMode: "full",
         captureMaxBytes,
       });
 
       await tracing.startRun({
+        runId: "run_1",
         instructions: "sensitive payload",
         prompt: userMessage("hello"),
         history: [],
@@ -527,8 +555,9 @@ describe("otel", () => {
 
   it("records ad-hoc run events", async () => {
     const tracer = new FakeTracer();
-    const tracing = otel.create({ tracer: tracer.tracer });
+    const tracing = createOtelObserver({ tracer: tracer.tracer });
     const run = await tracing.startRun({
+      runId: "run_1",
       prompt: userMessage("hello"),
       history: [],
       maxTurns: 1,
@@ -554,9 +583,10 @@ describe("otel", () => {
 
   it("keeps message metadata on run transcripts but omits it from model inputs", async () => {
     const tracer = new FakeTracer();
-    const tracing = otel.create({ tracer: tracer.tracer });
+    const tracing = createOtelObserver({ tracer: tracer.tracer });
     const metadata = { composer: { entities: [{ id: "document-1" }] } };
     const run = await tracing.startRun({
+      runId: "run_1",
       prompt: Message.user("hello", { metadata }),
       history: [Message.user("earlier", { metadata })],
       maxTurns: 1,
@@ -575,11 +605,10 @@ describe("otel", () => {
     await run?.startGeneration?.({
       ...generationStartArgs(),
       request: {
-        model: "test-model",
         chatHistory: [Message.user("hello", { metadata })],
         documents: [],
         tools: [],
-        additionalParams: {},
+        providerOptions: {},
       },
     });
     const generationInput = JSON.parse(
@@ -589,7 +618,10 @@ describe("otel", () => {
     expect(generationInput.messages[0]).not.toHaveProperty("metadata");
 
     await run?.end({
+      runId: "run-1",
+      status: "completed",
       output: "done",
+      text: "done",
       usage: usage(1, 1),
       messages: [Message.assistant("done", { metadata })],
     });
@@ -601,12 +633,13 @@ describe("otel", () => {
 
   it("transforms structured generation instructions and messages before capture", async () => {
     const tracer = new FakeTracer();
-    const tracing = otel.create({
+    const tracing = createOtelObserver({
       tracer: tracer.tracer,
       transformInput: (value) =>
         JSON.parse(JSON.stringify(value).replaceAll("private", "<redacted>")),
     });
     const run = await tracing.startRun({
+      runId: "run_1",
       prompt: userMessage("private prompt"),
       history: [],
       maxTurns: 1,
@@ -629,8 +662,9 @@ describe("otel", () => {
 
   it("records generation request options and output schema metadata", async () => {
     const tracer = new FakeTracer();
-    const tracing = otel.create({ tracer: tracer.tracer });
+    const tracing = createOtelObserver({ tracer: tracer.tracer });
     const run = await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hello"),
       history: [],
@@ -640,7 +674,6 @@ describe("otel", () => {
     const generation = await run?.startGeneration?.({
       turn: 1,
       request: {
-        model: "test-model",
         chatHistory: [userMessage("hello")],
         documents: [],
         tools: [
@@ -653,7 +686,7 @@ describe("otel", () => {
         temperature: 0.2,
         maxTokens: 128,
         toolChoice: { type: "function", name: "get_ticket" },
-        additionalParams: {},
+        providerOptions: {},
         outputSchema: { type: "object" },
       },
     });
@@ -679,17 +712,18 @@ describe("otel", () => {
 
   it("serializes unsupported trace metadata as a failure marker", async () => {
     const tracer = new FakeTracer();
-    const tracing = otel.create({ tracer: tracer.tracer });
+    const tracing = createOtelObserver({ tracer: tracer.tracer });
     const circular: Record<string, unknown> = {};
     circular.self = circular;
 
     await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hello"),
       history: [],
       maxTurns: 1,
       trace: {
-        metadata: { circular },
+        metadata: { circular } as never,
       },
     });
 
@@ -700,8 +734,9 @@ describe("otel", () => {
 
   it("records run, generation, and tool errors", async () => {
     const tracer = new FakeTracer();
-    const tracing = otel.create({ tracer: tracer.tracer });
+    const tracing = createOtelObserver({ tracer: tracer.tracer });
     const run = await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hello"),
       history: [],
@@ -751,8 +786,9 @@ describe("otel", () => {
 
   it("nests streamed child agent spans under the parent tool span", async () => {
     const tracer = new FakeTracer();
-    const tracing = otel.create({ tracer: tracer.tracer });
+    const tracing = createOtelObserver({ tracer: tracer.tracer });
     const run = await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("delegate"),
       history: [],
@@ -801,7 +837,7 @@ describe("otel", () => {
             instructions: "Use the child policy.",
             chatHistory: [userMessage("inspect")],
           },
-          modelInfo: { provider: "test", defaultModel: "test-model" },
+          modelInfo: { provider: "test", modelId: "test-model" },
         },
       },
     });
@@ -876,9 +912,10 @@ describe("otel", () => {
         agentId: "child",
         agentName: "Child Agent",
         event: {
-          type: "final",
+          type: "response",
           runId: "child-run",
           output: "7",
+          text: "7",
           usage: usage(2, 1),
           messages: [Message.assistant("7")],
         },
@@ -916,8 +953,9 @@ describe("otel", () => {
 
   it("applies safe capture to streamed child agent payloads", async () => {
     const tracer = new FakeTracer();
-    const tracing = otel.create({ tracer: tracer.tracer, captureMode: "safe" });
+    const tracing = createOtelObserver({ tracer: tracer.tracer, captureMode: "safe" });
     const run = await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("delegate"),
       history: [],
@@ -953,7 +991,7 @@ describe("otel", () => {
             instructions: "private child instructions",
             chatHistory: [userMessage("private child prompt")],
           },
-          modelInfo: { provider: "test", defaultModel: "test-model" },
+          modelInfo: { provider: "test", modelId: "test-model" },
         },
       },
     });
@@ -1030,9 +1068,10 @@ describe("otel", () => {
         agentId: "child",
         agentName: "Child Agent",
         event: {
-          type: "final",
+          type: "response",
           runId: "child-run",
           output: "private child output",
+          text: "private child output",
           usage: usage(2, 1),
           messages: [Message.assistant("private child message")],
         },
@@ -1053,8 +1092,9 @@ describe("otel", () => {
 
   it("records streamed child agent errors", async () => {
     const tracer = new FakeTracer();
-    const tracing = otel.create({ tracer: tracer.tracer });
+    const tracing = createOtelObserver({ tracer: tracer.tracer });
     const run = await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("delegate"),
       history: [],
@@ -1099,8 +1139,9 @@ describe("otel", () => {
 
   it("ends open streamed child spans when the parent tool ends", async () => {
     const tracer = new FakeTracer();
-    const tracing = otel.create({ tracer: tracer.tracer });
+    const tracing = createOtelObserver({ tracer: tracer.tracer });
     const run = await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("delegate"),
       history: [],
@@ -1164,10 +1205,11 @@ describe("otel", () => {
 
   it("joins valid incoming trace ids and ignores invalid ones", async () => {
     const tracer = new FakeTracer();
-    const tracing = otel.create({ tracer: tracer.tracer });
+    const tracing = createOtelObserver({ tracer: tracer.tracer });
     const incomingTraceId = "1234567890abcdef1234567890abcdef";
 
     const joined = await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hello"),
       history: [],
@@ -1175,6 +1217,7 @@ describe("otel", () => {
       trace: { traceId: incomingTraceId },
     });
     const generated = await tracing.startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hello"),
       history: [],
@@ -1270,13 +1313,13 @@ class FakeSpan {
 function generationStartArgs(): AgentGenerationStartArgs {
   return {
     turn: 1,
+    modelInfo: { provider: "test", modelId: "test-model" },
     request: {
-      model: "test-model",
       instructions: "Answer clearly.",
       chatHistory: [userMessage("hello")],
       documents: [],
       tools: [],
-      additionalParams: {},
+      providerOptions: {},
     },
   };
 }
@@ -1295,7 +1338,7 @@ function usage(inputTokens: number, outputTokens: number): Usage {
   };
 }
 
-function toolCall(): ToolCall {
+function toolCall(): ToolCallPart {
   return AssistantContent.toolCall("call-1", "get_ticket", { id: "TICKET-1" });
 }
 

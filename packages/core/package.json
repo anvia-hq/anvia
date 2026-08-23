@@ -1,6 +1,6 @@
 {
   "name": "@anvia/core",
-  "version": "0.26.0",
+  "version": "1.0.0",
   "description": "Core runtime primitives for context-aware Anvia agents.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",
@@ -17,6 +17,7 @@
     "access": "public"
   },
   "type": "module",
+  "sideEffects": false,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -28,13 +29,17 @@
       "types": "./dist/agent/index.d.ts",
       "import": "./dist/agent/index.js"
     },
+    "./agent/interactions": {
+      "types": "./dist/agent/interactions/index.d.ts",
+      "import": "./dist/agent/interactions/index.js"
+    },
     "./internal/agent": {
       "types": "./dist/internal/agent.d.ts",
       "import": "./dist/internal/agent.js"
     },
-    "./audio-generation": {
-      "types": "./dist/audio-generation/index.d.ts",
-      "import": "./dist/audio-generation/index.js"
+    "./speech-generation": {
+      "types": "./dist/speech-generation/index.d.ts",
+      "import": "./dist/speech-generation/index.js"
     },
     "./completion": {
       "types": "./dist/completion/index.d.ts",
@@ -48,9 +53,9 @@
       "types": "./dist/evals/index.d.ts",
       "import": "./dist/evals/index.js"
     },
-    "./loaders": {
-      "types": "./dist/loaders/index.d.ts",
-      "import": "./dist/loaders/index.js"
+    "./documents": {
+      "types": "./dist/documents/index.d.ts",
+      "import": "./dist/documents/index.js"
     },
     "./extractor": {
       "types": "./dist/extractor/index.d.ts",
@@ -68,10 +73,6 @@
       "types": "./dist/memory/index.d.ts",
       "import": "./dist/memory/index.js"
     },
-    "./hooks": {
-      "types": "./dist/hooks/index.d.ts",
-      "import": "./dist/hooks/index.js"
-    },
     "./model-listing": {
       "types": "./dist/model-listing/index.d.ts",
       "import": "./dist/model-listing/index.js"
@@ -83,10 +84,6 @@
     "./pipeline": {
       "types": "./dist/pipeline/index.d.ts",
       "import": "./dist/pipeline/index.js"
-    },
-    "./request": {
-      "types": "./dist/request/index.d.ts",
-      "import": "./dist/request/index.js"
     },
     "./skills": {
       "types": "./dist/skills/index.d.ts",
@@ -104,10 +101,6 @@
       "types": "./dist/tool/index.d.ts",
       "import": "./dist/tool/index.js"
     },
-    "./ui": {
-      "types": "./dist/ui/index.d.ts",
-      "import": "./dist/ui/index.js"
-    },
     "./transcription": {
       "types": "./dist/transcription/index.d.ts",
       "import": "./dist/transcription/index.js"
@@ -118,22 +111,27 @@
     }
   },
   "scripts": {
-    "build": "tsup src/index.ts src/agent/index.ts src/hooks/index.ts src/request/index.ts src/internal/agent.ts src/audio-generation/index.ts src/completion/index.ts src/embeddings/index.ts src/evals/index.ts src/image-generation/index.ts src/loaders/index.ts src/extractor/index.ts src/guardrails/index.ts src/mcp/index.ts src/memory/index.ts src/model-listing/index.ts src/observability/index.ts src/pipeline/index.ts src/skills/index.ts src/streaming/index.ts src/tool/index.ts src/ui/index.ts src/transcription/index.ts src/vector-store/index.ts --format esm --dts --sourcemap --clean",
+    "build": "tsup src/index.ts src/agent/index.ts src/agent/interactions/index.ts src/internal/agent.ts src/speech-generation/index.ts src/completion/index.ts src/embeddings/index.ts src/evals/index.ts src/image-generation/index.ts src/documents/index.ts src/extractor/index.ts src/guardrails/index.ts src/mcp/index.ts src/memory/index.ts src/model-listing/index.ts src/observability/index.ts src/pipeline/index.ts src/skills/index.ts src/streaming/index.ts src/tool/index.ts src/transcription/index.ts src/vector-store/index.ts --format esm --dts --sourcemap --clean",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.30.0",
-    "pdfjs-dist": "^6.2.108",
-    "tinyglobby": "^0.2.17",
-    "undici": "^6.25.0",
     "yaml": "^2.9.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "^24.9.1",
+    "pdfjs-dist": "^6.2.108",
     "tsup": "^8.5.0",
     "typescript": "^5.9.3",
     "vitest": "^4.0.8"
+  },
+  "peerDependencies": {
+    "pdfjs-dist": "^6.2.108"
+  },
+  "peerDependenciesMeta": {
+    "pdfjs-dist": {
+      "optional": true
+    }
   }
 }

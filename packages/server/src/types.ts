@@ -5,7 +5,7 @@ export type EventStreamErrorEvent = {
   error: unknown;
 };
 
-export type CreateEventStreamOptions<TEvent> = {
+export type CreateEventStreamResponseOptions<TEvent> = {
   format?: EventStreamFormat;
   headers?: HeadersInit;
   status?: number;
@@ -15,16 +15,14 @@ export type CreateEventStreamOptions<TEvent> = {
   sse?: SseStreamOptions<TEvent>;
 };
 
-export type CreateEventStreamResumeOptions<TEvent> = {
+export type ResumeEventStreamResponseOptions<TEvent> = {
   format?: EventStreamFormat;
   headers?: HeadersInit;
   status?: number;
   statusText?: string;
-  resume: {
-    streamId: string;
-    after: number;
-    store: ResumableStreamStore<TEvent>;
-  };
+  streamId: string;
+  after: number;
+  store: ResumableStreamStore<TEvent>;
   jsonl?: JsonlStreamOptions<ResumableStreamEnvelope<TEvent>>;
   sse?: SseStreamOptions<ResumableStreamEnvelope<TEvent>>;
 };

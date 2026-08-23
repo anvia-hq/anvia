@@ -1,36 +1,43 @@
+import type { GoogleGenAI } from "@google/genai";
 import { describe, expect, expectTypeOf, it } from "vitest";
 import { toGoogleGenAIOptions } from "../src/gemini/client";
 import {
   GeminiClient,
-  GeminiCompletionModel,
-  type GeminiCompletionModelName,
-  GeminiEmbeddingModel,
-  type GeminiImageGenerationModelName,
-  type GeminiTranscriptionModelName,
+  type GeminiClientOptions,
+  type GeminiCompletionModelId,
+  type GeminiGenerateContentImageModelId,
+  type GeminiGenerateImagesModelId,
+  type GeminiTranscriptionModelId,
 } from "../src/index";
 
 describe("GeminiClient", () => {
+  it("rejects mixed injected and managed configuration", () => {
+    const mixed = { client: fakeSdk() as unknown as GoogleGenAI, apiKey: "ignored" };
+    expectTypeOf(mixed).not.toMatchTypeOf<GeminiClientOptions>();
+    expect(() => new GeminiClient(mixed as never)).toThrow(
+      "GeminiClient cannot combine client with apiKey",
+    );
+  });
+
   it("types known Gemini models while accepting custom model strings", () => {
     const client = new GeminiClient({ client: fakeSdk() as never });
 
     expectTypeOf(
-      client.completionModel("gemini-2.5-flash").defaultModel,
-    ).toEqualTypeOf<GeminiCompletionModelName>();
-    client.completionModel("custom-gemini-model");
+      client.completionModel({ modelId: "gemini-2.5-flash" }).modelId,
+    ).toEqualTypeOf<string>();
+    expectTypeOf("gemini-2.5-flash").toMatchTypeOf<GeminiCompletionModelId>();
+    client.completionModel({ modelId: "custom-gemini-model" });
 
-    client.embeddingModel("gemini-embedding-001");
-    client.embeddingModel("custom-gemini-embedding");
+    client.embeddingModel({ modelId: "gemini-embedding-001" });
+    client.embeddingModel({ modelId: "custom-gemini-embedding" });
 
-    expectTypeOf(
-      client.imageGenerationModel("gemini-2.5-flash-image").defaultModel,
-    ).toEqualTypeOf<GeminiImageGenerationModelName>();
-    client.imageGenerationModel("custom-gemini-image");
-    client.imagenGenerationModel("imagen-4.0-generate-001");
+    expectTypeOf("gemini-2.5-flash-image").toMatchTypeOf<GeminiGenerateContentImageModelId>();
+    expectTypeOf("imagen-4.0-generate-001").toMatchTypeOf<GeminiGenerateImagesModelId>();
+    client.imageGenerationModel({ api: "generateContent", modelId: "custom-gemini-image" });
+    client.imageGenerationModel({ api: "generateImages", modelId: "imagen-4.0-generate-001" });
 
-    expectTypeOf(
-      client.transcriptionModel("gemini-2.5-flash").defaultModel,
-    ).toEqualTypeOf<GeminiTranscriptionModelName>();
-    client.transcriptionModel("custom-gemini-transcription");
+    expectTypeOf("gemini-2.5-flash").toMatchTypeOf<GeminiTranscriptionModelId>();
+    client.transcriptionModel({ modelId: "custom-gemini-transcription" });
   });
 
   it("creates Gemini API SDK options from explicit apiKey", () => {
@@ -39,7 +46,9 @@ describe("GeminiClient", () => {
 
   it("creates Vertex AI SDK options from explicit project and location", () => {
     expect(
-      toGoogleGenAIOptions({ vertexai: true, project: "project", location: "us-central1" }),
+      toGoogleGenAIOptions({
+        vertexAi: { projectId: "project", location: "us-central1" },
+      }),
     ).toEqual({
       vertexai: true,
       project: "project",
@@ -55,10 +64,11 @@ describe("GeminiClient", () => {
 
     expect(
       toGoogleGenAIOptions({
-        vertexai: true,
-        project: "project",
-        location: "us-central1",
-        googleAuthOptions: { credentials },
+        vertexAi: {
+          projectId: "project",
+          location: "us-central1",
+          googleAuthOptions: { credentials },
+        },
       }),
     ).toEqual({
       vertexai: true,
@@ -69,11 +79,11 @@ describe("GeminiClient", () => {
   });
 
   it("validates explicit Gemini and Vertex credentials", () => {
-    expect(() => new GeminiClient()).toThrow("Missing Gemini apiKey");
-    expect(() => new GeminiClient({ vertexai: true, project: "project" })).toThrow(
+    expect(() => new GeminiClient({} as never)).toThrow("Missing Gemini apiKey");
+    expect(() => new GeminiClient({ vertexAi: { projectId: "project" } } as never)).toThrow(
       "Missing Vertex Gemini location",
     );
-    expect(() => new GeminiClient({ vertexai: true, location: "us-central1" })).toThrow(
+    expect(() => new GeminiClient({ vertexAi: { location: "us-central1" } } as never)).toThrow(
       "Missing Vertex Gemini project",
     );
   });
@@ -81,23 +91,26 @@ describe("GeminiClient", () => {
   it("creates completion and embedding models with an injected SDK client", () => {
     const client = new GeminiClient({ client: fakeSdk() as never });
 
-    expect(client.completionModel()).toBeInstanceOf(GeminiCompletionModel);
-    expect(client.embeddingModel()).toBeInstanceOf(GeminiEmbeddingModel);
+    expect(client.completionModel({ modelId: "gemini-test" }).modelId).toBe("gemini-test");
+    expect(client.embeddingModel({ modelId: "embedding-test" }).modelId).toBe("embedding-test");
   });
 
   it("lists models from the Gemini SDK", async () => {
+    const calls: unknown[] = [];
     const client = new GeminiClient({
       client: {
         models: {
-          list: async () =>
-            asyncIterable([
+          list: async (params: unknown) => {
+            calls.push(params);
+            return asyncIterable([
               {
                 name: "models/gemini-2.5-flash",
                 displayName: "Gemini 2.5 Flash",
                 description: "Fast Gemini model.",
                 inputTokenLimit: 1_048_576,
               },
-            ]),
+            ]);
+          },
         },
       } as never,
     });
@@ -112,6 +125,14 @@ describe("GeminiClient", () => {
         },
       ],
     });
+    expect(calls).toEqual([
+      {
+        config: {
+          pageSize: 1000,
+          httpOptions: { retryOptions: { attempts: 1 } },
+        },
+      },
+    ]);
   });
 
   it("preserves model field precedence across compatible aliases", async () => {

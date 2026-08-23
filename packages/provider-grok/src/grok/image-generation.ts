@@ -3,44 +3,48 @@ import type {
   GeneratedImage,
   ImageGenerationModel,
   ImageGenerationRequest,
-  ImageGenerationResponse,
+  ImageGenerationResult,
+  ModelCallOptions,
 } from "@anvia/core/image-generation";
 import type { OpenAI } from "openai";
-import { GROK_IMAGINE_IMAGE } from "./constants";
-import type { GrokImageGenerationModelName } from "./models";
+import type { GrokImageGenerationModelId } from "./models";
 
-export class GrokImageGenerationModel
-  implements ImageGenerationModel<unknown, GrokImageGenerationModelName>
-{
+export class GrokImageGenerationModel implements ImageGenerationModel<unknown> {
   readonly provider = "grok";
 
   constructor(
     private readonly client: OpenAI,
-    readonly defaultModel: GrokImageGenerationModelName = GROK_IMAGINE_IMAGE,
+    readonly modelId: GrokImageGenerationModelId,
     private readonly fetchFn: typeof fetch | undefined = defaultFetch(),
   ) {}
 
   async imageGeneration(
     request: ImageGenerationRequest,
-  ): Promise<ImageGenerationResponse<unknown>> {
+    options?: ModelCallOptions,
+  ): Promise<ImageGenerationResult<unknown>> {
+    const providerOptions = isPlainObject(request.providerOptions) ? request.providerOptions : {};
     const params: Record<string, unknown> = {
-      model: this.defaultModel,
+      ...providerOptions,
+      model: this.modelId,
       prompt: request.prompt,
       n: 1,
       response_format: "b64_json",
       aspect_ratio: aspectRatio(request.width, request.height),
-      ...providerAdditionalParams(request.additionalParams),
     };
 
-    const response = await this.client.images.generate(params as never);
-    return imageResponseFromGrok(response, this.fetchFn);
+    const response = await this.client.images.generate(params as never, {
+      signal: options?.abortSignal,
+      maxRetries: 0,
+    });
+    return imageResponseFromGrok(response, this.fetchFn, options?.abortSignal);
   }
 }
 
 export async function imageResponseFromGrok(
   response: unknown,
   fetchFn?: typeof fetch,
-): Promise<ImageGenerationResponse<unknown>> {
+  abortSignal?: AbortSignal,
+): Promise<ImageGenerationResult<unknown>> {
   const raw = isPlainObject(response) ? response : {};
   const data = Array.isArray(raw.data) ? raw.data : [];
   const images: GeneratedImage[] = [];
@@ -59,19 +63,18 @@ export async function imageResponseFromGrok(
     }
 
     if (typeof item.url === "string") {
-      images.push(await fetchGeneratedImage(item.url, fetchFn, imageMediaType(item, raw)));
+      images.push(
+        await fetchGeneratedImage(item.url, fetchFn, imageMediaType(item, raw), abortSignal),
+      );
     }
   }
 
-  const image = images[0]?.data;
-  if (image === undefined) {
+  if (images.length === 0) {
     throw new Error("Grok image generation response contained no images.");
   }
 
   return {
-    image,
-    images,
-    mediaType: images[0]?.mediaType,
+    images: images as [GeneratedImage, ...GeneratedImage[]],
     rawResponse: response,
   };
 }
@@ -124,6 +127,7 @@ async function fetchGeneratedImage(
   url: string,
   fetchFn: typeof fetch | undefined,
   fallbackMediaType: string,
+  abortSignal?: AbortSignal,
 ): Promise<GeneratedImage> {
   if (fetchFn === undefined) {
     throw new Error(
@@ -133,7 +137,10 @@ async function fetchGeneratedImage(
 
   const validatedUrl = validateGeneratedImageUrl(url);
 
-  const response = await fetchFn(validatedUrl);
+  const response = await fetchFn(
+    validatedUrl,
+    abortSignal === undefined ? undefined : { signal: abortSignal },
+  );
   if (!response.ok) {
     throw new Error(`Failed to fetch Grok image URL: ${response.status}`);
   }
@@ -143,17 +150,6 @@ async function fetchGeneratedImage(
     data: new Uint8Array(await response.arrayBuffer()),
     mediaType,
   };
-}
-
-function providerAdditionalParams(value: unknown): Record<string, unknown> {
-  if (!isPlainObject(value)) {
-    return {};
-  }
-
-  const params = { ...value };
-  delete params.model;
-  delete params.prompt;
-  return params;
 }
 
 function validateGeneratedImageUrl(url: string): string {

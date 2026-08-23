@@ -18,6 +18,18 @@ It gives teams more structure than raw model calls without forcing a heavyweight
 
 The core design is dependency-injection oriented: your app creates provider models, typed tools, memory stores, vector indexes, observers, services, and transports, then passes the relevant objects into Anvia agents, runners, or adapters. Anvia runs the model/tool loop; your application keeps ownership of product architecture.
 
+## Release Channels
+
+Anvia 1.0 is currently available as a release candidate. The npm `latest` tag remains on the v0
+maintenance line until 1.0 reaches general availability.
+
+- Use `@rc` for new development and 1.0 validation. RC APIs can still change before GA.
+- Use `@latest` for the supported v0 line. v0 receives bug and security fixes, not new features.
+- Keep all Anvia packages on the same channel; do not mix v0 and v1 packages in one application.
+
+The 1.0 candidate must complete a seven-day frozen soak before GA. See the
+[1.0 release policy](docs/releases/v1.md) for the branch, npm-tag, freeze, and promotion rules.
+
 ## Why Anvia
 
 - Provider-neutral clients for OpenAI-compatible APIs, Anthropic, Gemini, and Mistral.
@@ -33,33 +45,38 @@ The core design is dependency-injection oriented: your app creates provider mode
 Install the core runtime and a provider adapter:
 
 ```sh
-pnpm add @anvia/core @anvia/openai
+pnpm add @anvia/core@rc @anvia/openai@rc
 ```
 
-Create a provider client, build an agent, and run it from your app:
+Create a provider client, construct an agent, and run it from your app:
 
 ```ts
-import { AgentBuilder } from "@anvia/core";
+import { Agent } from "@anvia/core";
 import { OpenAIClient } from "@anvia/openai";
 
 const client = new OpenAIClient({ apiKey });
-const model = client.completionModel("gpt-5.5");
+const model = client.completionModel({ modelId: "gpt-5.5", api: "responses" });
 
-const supportAgent = new AgentBuilder("support", model)
-  .instructions("Answer support questions clearly. Ask for missing details.")
-  .build();
+const supportAgent = new Agent({
+  id: "support",
+  model: model,
+  instructions: "Answer support questions clearly. Ask for missing details.",
+});
 
-const response = await supportAgent
-  .prompt("A customer cannot reset their password. What should I check first?")
-  .send();
+const response = await supportAgent.generate({
+  prompt: "A customer cannot reset their password. What should I check first?",
+});
 
+if (response.type !== "response") {
+  throw new Error(`Agent returned ${response.type}`);
+}
 console.log(response.output);
 ```
 
 Use the same runtime shape with other providers:
 
 ```sh
-pnpm add @anvia/anthropic @anvia/gemini @anvia/mistral
+pnpm add @anvia/anthropic@rc @anvia/gemini@rc @anvia/mistral@rc
 ```
 
 Anvia clients take explicit constructor values and do not read environment variables on their own, so credentials stay in your existing configuration layer.
@@ -76,7 +93,7 @@ new Studio([agent]).start({ port: 4021 });
 
 | Capability | Use it for |
 | --- | --- |
-| Agents | Promptable workflows with instructions, context, tools, hooks, history, streaming, and typed outputs. |
+| Agents | Model workflows with instructions, context, tools, lifecycle callbacks, memory, approvals, and streaming. |
 | Tools | Safe, typed access to application-owned actions such as lookup, search, mutation, approval, or dispatch. |
 | Extractors | Schema-shaped data from text, tickets, documents, messages, and model responses. |
 | Pipelines | Explicit multi-step workflows that combine functions, agents, extraction, branching, and batching. |
@@ -86,7 +103,7 @@ new Studio([agent]).start({ port: 4021 });
 
 ## Cookbook
 
-The [cookbook](examples/cookbook/README.md) is the fastest way to see Anvia in motion. It walks from a first text call through tools, structured output, providers, multimodal inputs, pipelines, retrieval, multi-agent workflows, evals, Studio, and integrations.
+The [cookbook](cookbook/README.md) is the fastest way to see Anvia in motion. It walks from a first text call through tools, structured output, providers, multimodal inputs, pipelines, retrieval, multi-agent workflows, evals, Studio, and integrations.
 
 Run the first example from the repository root:
 

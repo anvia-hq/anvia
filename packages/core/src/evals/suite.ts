@@ -73,7 +73,7 @@ export type DefinedEvalSuite<
   metrics: Metrics;
 };
 
-export type EvalSuiteTypeBuilder<Input, Output, Expected = unknown> = {
+type EvalMetricFactory<Input, Output, Expected = unknown> = {
   defineMetric<const Name extends string = string>(
     metric: EvalMetric<Input, Output, boolean, Expected, Name> & { dataType: "BOOLEAN" },
   ): EvalMetric<Input, Output, boolean, Expected, Name>;
@@ -110,7 +110,7 @@ export function defineEvalCases<const Cases extends readonly EvalCaseLike[]>(cas
   return cases;
 }
 
-export function defineEvalSuite<Input, Output, Expected = unknown>(): EvalSuiteTypeBuilder<
+export function defineEvalSuite<Input, Output, Expected = unknown>(): EvalMetricFactory<
   Input,
   Output,
   Expected
@@ -139,11 +139,11 @@ export function defineEvalSuite(
   >,
 ):
   | DefinedEvalSuite<readonly EvalCaseLike[], unknown, readonly EvalMetric<unknown, unknown>[]>
-  | EvalSuiteTypeBuilder<unknown, unknown, unknown> {
+  | EvalMetricFactory<unknown, unknown, unknown> {
   if (options !== undefined) return options;
   return {
     defineMetric(metric: EvalMetric<unknown, unknown>) {
       return metric;
     },
-  } as EvalSuiteTypeBuilder<unknown, unknown, unknown>;
+  } as EvalMetricFactory<unknown, unknown, unknown>;
 }

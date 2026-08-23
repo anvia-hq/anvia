@@ -3,8 +3,8 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   resolve: {
     alias: {
-      "@anvia/core/audio-generation": new URL(
-        "../core/src/audio-generation/index.ts",
+      "@anvia/core/speech-generation": new URL(
+        "../core/src/speech-generation/index.ts",
         import.meta.url,
       ).pathname,
       "@anvia/core/completion": new URL("../core/src/completion/index.ts", import.meta.url)

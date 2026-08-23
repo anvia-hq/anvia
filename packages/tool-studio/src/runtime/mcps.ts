@@ -5,7 +5,7 @@ import type {
   StudioAgentMcpToolMetadata,
 } from "../types";
 import { errorResponse } from "./http";
-import { agentToolItems, approvalMetadata, mcpServerName } from "./tool-metadata";
+import { approvalMetadata } from "./tool-metadata";
 
 export function registerMcpRoutes(
   app: Hono,
@@ -30,47 +30,27 @@ export function registerMcpRoutes(
 export async function agentMcpMetadata(
   agent: StudioAgent,
 ): Promise<StudioAgentMcpServerMetadata[]> {
-  const servers = new Map<string, StudioAgentMcpToolMetadata[]>();
-  const seen = new Set<string>();
-
-  for (const { tool, source } of agentToolItems(agent)) {
-    const serverName = mcpServerName(tool);
-    if (serverName === undefined) {
-      continue;
-    }
-
-    const definition = await tool.definition("");
-    const key = `${serverName}:${source}:${definition.name}`;
-    if (seen.has(key)) {
-      continue;
-    }
-    seen.add(key);
-
-    const tools = servers.get(serverName) ?? [];
-    tools.push({
-      name: definition.name,
-      description: definition.description,
-      parameters: definition.parameters,
-      source,
-      approval: approvalMetadata(tool),
-    });
-    servers.set(serverName, tools);
-  }
-
-  return [...servers.entries()]
-    .map(([name, tools]) => {
-      const sortedTools = tools.sort((left, right) => {
-        if (left.source !== right.source) {
-          return left.source === "static" ? -1 : 1;
-        }
-        return left.name.localeCompare(right.name);
-      });
+  return Promise.all(
+    agent.agent.mcpServers.map(async (server) => {
+      const tools: StudioAgentMcpToolMetadata[] = await Promise.all(
+        server.tools.map(async (tool) => {
+          const definition = await tool.definition("");
+          return {
+            name: definition.name,
+            description: definition.description,
+            parameters: definition.parameters,
+            source: "static" as const,
+            approval: approvalMetadata(tool),
+          };
+        }),
+      );
+      const sortedTools = tools.sort((left, right) => left.name.localeCompare(right.name));
       return {
         agentId: agent.id,
-        name,
+        name: server.name,
         toolCount: sortedTools.length,
         tools: sortedTools,
       };
-    })
-    .sort((left, right) => left.name.localeCompare(right.name));
+    }),
+  ).then((servers) => servers.sort((left, right) => left.name.localeCompare(right.name)));
 }

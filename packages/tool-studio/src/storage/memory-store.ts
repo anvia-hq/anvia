@@ -1,5 +1,11 @@
 import type { JsonObject, JsonValue, Message } from "@anvia/core/completion";
-import type { MemoryAppendInput, MemoryContext, MemoryErrorInput } from "@anvia/core/memory";
+import type {
+  MemoryAppendOptions,
+  MemoryCompactionCapability,
+  MemoryCompactionReplacePrefixOptions,
+  MemoryErrorOptions,
+  MemoryScope,
+} from "@anvia/core/memory";
 import { traceSummary } from "../runtime/trace-summary";
 import { renumberTranscript, transcriptFromMessages } from "../runtime/transcript";
 import { isJsonObject, isJsonValue } from "../runtime/type-guards";
@@ -45,6 +51,16 @@ class InMemoryStudioStore
   implements StudioSessionStore, StudioTraceStore, StudioPipelineLogStore, StudioPipelineRunStore
 {
   readonly kind = "memory";
+  readonly compaction: MemoryCompactionCapability = {
+    snapshot: ({ scope }) => {
+      const messages = this.sessions.get(scope.sessionId)?.messages ?? [];
+      return Promise.resolve({
+        revision: memoryRevision(messages),
+        messages: cloneMessages(messages),
+      });
+    },
+    replacePrefix: (options) => this.replaceCompactionPrefix(options),
+  };
   private readonly sessions = new Map<string, MemorySessionRecord>();
   private readonly traces = new Map<string, StudioTrace>();
   private readonly pipelineLogs = new Map<string, StudioPipelineLogEntry[]>();
@@ -95,22 +111,22 @@ class InMemoryStudioStore
     return materializeSession(session);
   }
 
-  load(context: MemoryContext): Promise<Message[]> {
-    return Promise.resolve(this.sessions.get(context.sessionId)?.messages ?? []);
+  load({ scope }: { scope: MemoryScope }): Promise<Message[]> {
+    return Promise.resolve(cloneMessages(this.sessions.get(scope.sessionId)?.messages ?? []));
   }
 
-  append(input: MemoryAppendInput): Promise<void> {
-    const session = this.sessions.get(input.context.sessionId);
+  append(input: MemoryAppendOptions): Promise<void> {
+    const session = this.sessions.get(input.scope.sessionId);
     if (session !== undefined) {
-      session.messages.push(...input.messages);
+      session.messages.push(...cloneMessages(input.messages));
       session.messageCount = session.messages.length;
       session.updatedAt = new Date().toISOString();
     }
     return Promise.resolve();
   }
 
-  clear(context: MemoryContext): Promise<void> {
-    const session = this.sessions.get(context.sessionId);
+  clear({ scope }: { scope: MemoryScope }): Promise<void> {
+    const session = this.sessions.get(scope.sessionId);
     if (session !== undefined) {
       session.messages = [];
       session.runs = [];
@@ -120,14 +136,34 @@ class InMemoryStudioStore
     return Promise.resolve();
   }
 
-  async recordError(input: MemoryErrorInput): Promise<void> {
+  async recordError(input: MemoryErrorOptions): Promise<void> {
     await this.saveSessionRunTranscript({
-      id: input.context.sessionId,
-      runId: studioRunId(input.context) ?? input.runId,
+      id: input.scope.sessionId,
+      runId: studioRunId(input.scope) ?? input.runId,
       transcript: transcriptFromMessages(input.messages),
       status: "error",
       error: serializeJsonError(input.error),
     });
+  }
+
+  private replaceCompactionPrefix(
+    input: MemoryCompactionReplacePrefixOptions,
+  ): Promise<{ status: "committed" | "conflict" }> {
+    if (!Number.isSafeInteger(input.messageCount) || input.messageCount < 1) {
+      throw new RangeError("messageCount must be a positive integer.");
+    }
+    const session = this.sessions.get(input.scope.sessionId);
+    if (
+      session === undefined ||
+      memoryRevision(session.messages) !== input.revision ||
+      input.messageCount > session.messages.length
+    ) {
+      return Promise.resolve({ status: "conflict" });
+    }
+    session.messages.splice(0, input.messageCount, structuredClone(input.replacement));
+    session.messageCount = session.messages.length;
+    session.updatedAt = new Date().toISOString();
+    return Promise.resolve({ status: "committed" });
   }
 
   saveSessionRunTranscript(input: StudioSessionRunTranscriptInput): StudioSession | undefined {
@@ -285,9 +321,13 @@ function sessionSummary(session: MemorySessionRecord): StudioSessionSummary {
 function materializeSession(session: MemorySessionRecord): StudioSession {
   return {
     ...sessionSummary(session),
-    messages: [...session.messages],
+    messages: cloneMessages(session.messages),
     transcript: renumberTranscript(session.runs.flatMap((run) => run.transcript)),
   };
+}
+
+function cloneMessages(messages: readonly Message[]): Message[] {
+  return structuredClone([...messages]);
 }
 
 function traceAgentId(trace: StudioTrace): string | undefined {
@@ -297,9 +337,13 @@ function traceAgentId(trace: StudioTrace): string | undefined {
     : undefined;
 }
 
-function studioRunId(context: MemoryContext): string | undefined {
-  const value = context.metadata?.studioRunId;
+function studioRunId(scope: MemoryScope): string | undefined {
+  const value = scope.metadata?.studioRunId;
   return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function memoryRevision(messages: Message[]): string {
+  return JSON.stringify(messages);
 }
 
 function serializeJsonError(error: unknown): JsonValue {

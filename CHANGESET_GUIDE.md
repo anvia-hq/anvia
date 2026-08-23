@@ -62,15 +62,23 @@ The workflow will:
 
 Review the release PR before merging it. Make sure package versions and changelog entries are correct.
 
-## Publish To npm Manually
+## Publish To npm
 
 Merging the `Version Packages` release PR into `main` does not publish to npm. Publishing is manual dispatch only.
 
-Publishing requires the repository secret:
+Every public package trusts the repository's `release.yml` GitHub Actions workflow through npm
+Trusted Publishing. The trusted publisher configuration is:
 
 ```txt
-NPM_TOKEN
+organization: anvia-hq
+repository: anvia
+workflow: release.yml
+environment: npm-publish
+allowed action: npm publish
 ```
+
+The workflow uses short-lived OIDC credentials. Do not add an npm write token or `NPM_TOKEN`
+secret.
 
 To publish:
 
@@ -80,32 +88,22 @@ To publish:
 4. Click `Run workflow`.
 5. Run it from the `main` branch.
 
-The manual publish job builds packages before publishing:
-
-```sh
-pnpm release
-```
-
-That command runs:
-
-```sh
-pnpm --filter './packages/*' build && changeset publish
-```
-
-After packages publish successfully, the release workflow deploys the production docs. Docs do not deploy automatically on every push to `main`.
+The workflow validates, builds, typechecks, tests, packs, and publishes the synchronized package
+train before creating package tags and GitHub Releases.
 
 ## Publish Preview Packages
 
-Preview packages are early-access builds from `main`. They do not use Changesets, do not create GitHub Releases, do not deploy docs, and do not update the `latest` npm tag.
+Preview packages are early-access builds from `staging`. They do not use Changesets, do not create
+GitHub Releases, and do not update the `latest` npm tag.
 
 Create changesets with the feature or fix PR that changes package behavior. Do not add a changeset only because you want a preview build. Preview publishing does not consume `.changeset/*.md` files; those changesets remain available for the stable `Version Packages` PR.
 
 To publish a preview:
 
 1. Open GitHub Actions.
-2. Select the `Publish Preview Packages` workflow.
+2. Select the `Release Packages` workflow.
 3. Click `Run workflow`.
-4. Run it from the `main` branch.
+4. Run it from the `staging` branch with the `preview` channel.
 
 The workflow publishes every public package with a generated prerelease version:
 

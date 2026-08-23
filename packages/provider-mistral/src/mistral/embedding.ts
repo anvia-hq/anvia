@@ -1,48 +1,54 @@
-import type { Embedding, EmbeddingModel } from "@anvia/core/embeddings";
+import type { Embedding, EmbeddingModel, ModelCallOptions } from "@anvia/core/embeddings";
 import type { Mistral } from "@mistralai/mistralai";
-import type { MistralEmbeddingModelName } from "./models";
+import type { MistralEmbeddingModelId } from "./models";
 
 export type MistralEmbeddingModelOptions = {
+  modelId: MistralEmbeddingModelId;
   dimensions?: number | undefined;
   maxBatchSize?: number | undefined;
 };
 
 export class MistralEmbeddingModel implements EmbeddingModel {
+  readonly provider = "mistral";
+  readonly modelId: MistralEmbeddingModelId;
   readonly dimensions: number | undefined;
   readonly maxBatchSize: number;
 
   constructor(
     private readonly client: Mistral,
-    private readonly model: MistralEmbeddingModelName,
-    options: MistralEmbeddingModelOptions = {},
+    options: MistralEmbeddingModelOptions,
   ) {
+    this.modelId = options.modelId;
     this.dimensions = options.dimensions;
     this.maxBatchSize = options.maxBatchSize ?? 1024;
   }
 
-  async embedTexts(texts: string[]): Promise<Embedding[]> {
+  async embedTexts(texts: string[], options?: ModelCallOptions): Promise<Embedding[]> {
     const embeddings: Embedding[] = [];
     for (let index = 0; index < texts.length; index += this.maxBatchSize) {
       const batch = texts.slice(index, index + this.maxBatchSize);
-      embeddings.push(...(await this.embedBatch(batch)));
+      embeddings.push(...(await this.embedBatch(batch, options)));
     }
     return embeddings;
   }
 
-  private async embedBatch(texts: string[]): Promise<Embedding[]> {
+  private async embedBatch(texts: string[], options?: ModelCallOptions): Promise<Embedding[]> {
     if (texts.length === 0) {
       return [];
     }
 
     const params: Record<string, unknown> = {
-      model: this.model,
+      model: this.modelId,
       inputs: texts,
     };
     if (this.dimensions !== undefined) {
-      params.dimensions = this.dimensions;
+      params.outputDimension = this.dimensions;
     }
 
-    const response = await this.client.embeddings.create(params as never);
+    const response = await this.client.embeddings.create(
+      params as never,
+      { signal: options?.abortSignal, retries: { strategy: "none" } } as never,
+    );
     const data = dataFromResponse(response, texts.length);
     if (data.length !== texts.length) {
       throw new Error(

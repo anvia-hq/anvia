@@ -1,704 +1,391 @@
-import { describe, expect, it } from "vitest";
-import { z } from "zod";
-import { matchesVectorFilter } from "../src/vector-store/filter";
+import { describe, expect, it, vi } from "vitest";
 import {
-  AgentBuilder,
-  AssistantContent,
-  angularDistance,
-  type CompletionModel,
-  type CompletionRequest,
-  type CompletionResponse,
-  type CompletionStreamEvent,
-  chebyshevDistance,
-  cosineSimilarity,
-  createTool,
-  createToolIndex,
-  dotProduct,
-  type Embedding,
+  createVectorContext,
+  createVectorSearchTool,
   type EmbeddingModel,
   embedDocuments,
-  embedHybridDocuments,
   embedSparseQuery,
   embedSparseTexts,
   embedText,
   embedTexts,
-  embedTools,
-  euclideanDistance,
+  type HybridVectorSearchRequest,
+  type HybridVectorStore,
   InMemoryVectorStore,
-  manhattanDistance,
-  type SparseEmbedding,
+  isVectorContext,
+  retrieveDocuments,
   type SparseEmbeddingModel,
-  type StreamingCompletionModel,
-  Usage,
-  vectorFilter,
+  type VectorSearchRequest,
+  type VectorStoreUpsertOptions,
 } from "./helpers/imports";
 
-class KeywordEmbeddingModel implements EmbeddingModel {
-  readonly maxBatchSize: number;
+class KeywordModel implements EmbeddingModel {
+  readonly provider = "test";
+  readonly modelId = "keyword";
+  readonly dimensions = 2;
+  readonly maxBatchSize = 2;
   readonly calls: string[][] = [];
-
-  constructor(maxBatchSize = 10) {
-    this.maxBatchSize = maxBatchSize;
-  }
-
-  async embedTexts(texts: string[]): Promise<Embedding[]> {
+  async embedTexts(texts: string[]) {
     this.calls.push(texts);
-    return texts.map((document) => ({ document, vector: vectorFor(document) }));
-  }
-}
-
-class KeywordSparseEmbeddingModel implements SparseEmbeddingModel {
-  readonly maxBatchSize = 8;
-
-  async embedTexts(texts: string[]): Promise<SparseEmbedding[]> {
     return texts.map((document) => ({
       document,
-      vector: sparseVectorFor(document),
+      vector: [document.toLowerCase().includes("cat") ? 1 : 0, 1],
     }));
   }
-
-  async embedQuery(query: string): Promise<SparseEmbedding> {
-    return { document: query, vector: sparseVectorFor(query) };
-  }
 }
 
-class QueueModel implements CompletionModel {
+class SparseModel implements SparseEmbeddingModel {
   readonly provider = "test";
-  readonly defaultModel = "test";
-  readonly capabilities = {
-    streaming: false,
-    tools: true,
-    toolChoice: true,
-    imageInput: true,
-    documentInput: true,
-    outputSchema: true,
-    reasoning: true,
-  };
-  readonly requests: CompletionRequest[] = [];
-
-  async completion(request: CompletionRequest): Promise<CompletionResponse> {
-    this.requests.push(request);
-    return {
-      choice: [AssistantContent.text("ok")],
-      usage: Usage.empty(),
-      rawResponse: {},
-    };
+  readonly modelId = "sparse";
+  async embedTexts(texts: string[]) {
+    return texts.map((document) => ({ document, vector: { indices: [0], values: [1] } }));
+  }
+  async embedQuery(query: string) {
+    return { document: query, vector: { indices: [1], values: [2] } };
   }
 }
 
-class StreamingQueueModel extends QueueModel implements StreamingCompletionModel {
-  override readonly capabilities = {
-    streaming: true,
-    tools: true,
-    toolChoice: true,
-    imageInput: true,
-    documentInput: true,
-    outputSchema: true,
-    reasoning: true,
-  };
-
-  async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionStreamEvent> {
-    this.requests.push(request);
-    yield {
-      type: "final",
-      response: {
-        choice: [AssistantContent.text("ok")],
-        usage: Usage.empty(),
-        rawResponse: {},
-      },
-    };
-  }
-}
-
-class ToolCallingModel extends QueueModel {
-  private calls = 0;
-
-  async completion(request: CompletionRequest): Promise<CompletionResponse> {
-    this.requests.push(request);
-    this.calls += 1;
-    return {
-      choice:
-        this.calls === 1
-          ? [
-              AssistantContent.toolCall("call_1", "issue_refund", {
-                orderId: "A-100",
-              }),
-            ]
-          : [AssistantContent.text("done")],
-      usage: Usage.empty(),
-      rawResponse: {},
-    };
-  }
-}
-
-class TwoTurnModel extends QueueModel {
-  private calls = 0;
-
-  async completion(request: CompletionRequest): Promise<CompletionResponse> {
-    this.requests.push(request);
-    this.calls += 1;
-    return {
-      choice:
-        this.calls === 1
-          ? [AssistantContent.toolCall("call_1", "seed_topic", {})]
-          : [AssistantContent.text("done")],
-      usage: Usage.empty(),
-      rawResponse: {},
-    };
-  }
-}
-
-const issueRefundTool = createTool({
-  name: "issue_refund",
-  description: "Issue a refund for a customer order.",
-  input: z.object({
-    orderId: z.string(),
-  }),
-  output: z.string(),
-  execute: ({ orderId }) => `refunded ${orderId}`,
-});
-
-const lookupDogTool = createTool({
-  name: "lookup_dog",
-  description: "Look up dog care runbooks.",
-  input: z.object({}),
-  output: z.string(),
-  execute: () => "dog",
-});
-
-describe("embeddings", () => {
-  it("embeds text and batches text arrays", async () => {
-    const model = new KeywordEmbeddingModel(2);
-
-    await expect(embedText(model, "cat")).resolves.toEqual({
-      document: "cat",
-      vector: [1, 0, 0],
-    });
-    await expect(embedTexts(model, ["cat", "dog", "risk"])).resolves.toHaveLength(3);
-    expect(model.calls).toEqual([["cat"], ["cat", "dog"], ["risk"]]);
+describe("embedding helpers", () => {
+  it("accepts object arguments and returns named results", async () => {
+    const model = new KeywordModel();
+    const { embedding } = await embedText({ model, text: "cat" });
+    const { embeddings } = await embedTexts({ model, texts: ["cat", "dog", "cat two"] });
+    expect(embedding.vector).toEqual([1, 1]);
+    expect(embeddings).toHaveLength(3);
+    expect(model.calls).toEqual([["cat"], ["cat", "dog"], ["cat two"]]);
   });
 
-  it("embeds typed documents with selectors and metadata", async () => {
-    const model = new KeywordEmbeddingModel(2);
-    const docs = [
-      { id: "a", title: "Cats", body: ["cat", "pet"] },
-      { id: "b", title: "Dogs", body: ["dog"] },
-    ];
-
-    const embedded = await embedDocuments(model, docs, {
-      id: (doc) => doc.id,
-      content: (doc) => doc.body,
-      metadata: (doc) => ({ title: doc.title }),
-      concurrency: 2,
-    });
-
-    expect(embedded).toMatchObject([
-      {
-        id: "a",
-        metadata: { title: "Cats" },
-        embeddings: [{ document: "cat" }, { document: "pet" }],
-      },
-      { id: "b", metadata: { title: "Dogs" }, embeddings: [{ document: "dog" }] },
-    ]);
-  });
-
-  it("embeds hybrid dense and sparse documents with aligned vectors", async () => {
-    const dense = new KeywordEmbeddingModel();
-    const sparse = new KeywordSparseEmbeddingModel();
-    const docs = [
-      { id: "a", texts: ["cat guide"] },
-      { id: "b", texts: ["dog note", "dog care"] },
-    ];
-
-    const embedded = await embedHybridDocuments({ dense, sparse }, docs, {
-      id: (doc) => doc.id,
-      content: (doc) => doc.texts,
-    });
-
-    expect(embedded).toHaveLength(2);
-    expect(embedded[0]?.embeddings).toHaveLength(1);
-    expect(embedded[0]?.sparseEmbeddings).toHaveLength(1);
-    expect(embedded[1]?.embeddings).toHaveLength(2);
-    expect(embedded[1]?.sparseEmbeddings).toHaveLength(2);
-    expect(embedded[0]?.sparseEmbeddings?.[0]?.vector.indices.length).toBeGreaterThan(0);
-
-    await expect(embedSparseTexts(sparse, ["alpha", "beta"])).resolves.toHaveLength(2);
-    await expect(embedSparseQuery(sparse, "query")).resolves.toMatchObject({
-      document: "query",
-    });
-  });
-
-  it("computes vector distances", () => {
-    expect(dotProduct([1, 2, 3], [1, 5, 7])).toBe(32);
-    expect(cosineSimilarity([1, 2, 3], [1, 5, 7])).toBeCloseTo(0.9875414397);
-    expect(angularDistance([1, 2, 3], [1, 5, 7])).toBeCloseTo(0.0502980301);
-    expect(euclideanDistance([1, 2, 3], [1, 5, 7])).toBe(5);
-    expect(manhattanDistance([1, 2, 3], [1, 5, 7])).toBe(7);
-    expect(chebyshevDistance([1, 2, 3], [1, 5, 7])).toBe(4);
-    expect(cosineSimilarity([0, 0], [1, 1])).toBe(0);
-  });
-});
-
-describe("in-memory vector store", () => {
-  it("searches by cosine similarity and returns ids", async () => {
-    const model = new KeywordEmbeddingModel();
-    const embedded = await sampleEmbedded(model);
-    const index = InMemoryVectorStore.fromDocuments(embedded).index(model);
-
-    await expect(index.search({ query: "cat", topK: 2 })).resolves.toMatchObject([
-      { id: "cat", score: 1, document: { title: "Cat guide" } },
-      { id: "risk", document: { title: "Risk memo" } },
-    ]);
-    await expect(index.searchIds({ query: "cat", topK: 1 })).resolves.toEqual([
-      { id: "cat", score: 1 },
-    ]);
-  });
-
-  it("applies threshold, filters, multiple embeddings, add, get, and replacement", async () => {
-    const model = new KeywordEmbeddingModel();
-    const store = InMemoryVectorStore.fromDocuments(await sampleEmbedded(model));
-    const replacement = await embedDocuments(
+  it("embeds dense documents and rejects duplicate ids", async () => {
+    const model = new KeywordModel();
+    const { documents } = await embedDocuments({
       model,
-      [{ id: "dog", title: "Dog update", texts: ["dog"] }],
-      {
-        id: (doc) => doc.id,
-        content: (doc) => doc.texts,
-        metadata: () => ({ category: "animal", rank: 5 }),
-      },
-    );
-    store.addDocuments(replacement);
-    const index = store.index(model);
-
-    expect(store.get("dog")?.document).toEqual({ id: "dog", title: "Dog update", texts: ["dog"] });
+      documents: [
+        { id: "a", text: "cat" },
+        { id: "b", text: "dog" },
+      ],
+      id: (document) => document.id,
+      content: (document) => document.text,
+      metadata: (document) => ({ source: document.id }),
+    });
+    expect(documents[0]).toMatchObject({ id: "a", metadata: { source: "a" } });
     await expect(
-      index.search({
-        query: "dog",
-        topK: 5,
-        threshold: 0.9,
-        filter: vectorFilter.and(vectorFilter.eq("category", "animal"), vectorFilter.gt("rank", 2)),
+      embedDocuments({
+        model,
+        documents: [{ id: "a" }, { id: "a" }],
+        id: (document) => document.id,
+        content: (document) => document.id,
       }),
-    ).resolves.toMatchObject([{ id: "dog" }]);
+    ).rejects.toThrow("Duplicate embedded document id: a");
   });
 
-  it("supports LSH and vector search tools", async () => {
-    const model = new KeywordEmbeddingModel();
-    const store = InMemoryVectorStore.fromDocuments(await sampleEmbedded(model), {
-      index: { type: "lsh", numTables: 2, numHyperplanes: 4, seed: 7 },
+  it("embeds aligned dense and sparse documents through one helper", async () => {
+    const { documents } = await embedDocuments({
+      models: { dense: new KeywordModel(), sparse: new SparseModel() },
+      documents: [{ id: "a", texts: ["cat", "cat two"] }],
+      id: (document) => document.id,
+      content: (document) => document.texts,
     });
-    const index = store.index(model);
-    const tool = index.asTool({ name: "search_docs", topK: 1 });
-
-    await expect(index.search({ query: "risk", topK: 1 })).resolves.toMatchObject([{ id: "risk" }]);
-    await expect(tool.call({ query: "cat" })).resolves.toMatchObject([{ id: "cat" }]);
-    expect(await tool.definition("")).toMatchObject({ name: "search_docs" });
+    expect(documents[0]?.embeddings).toHaveLength(2);
+    expect(documents[0]?.sparseEmbeddings).toHaveLength(2);
+    expect(
+      (await embedSparseTexts({ model: new SparseModel(), texts: ["a"] })).embeddings,
+    ).toHaveLength(1);
+    expect(
+      (await embedSparseQuery({ model: new SparseModel(), query: "a" })).embedding.vector.indices,
+    ).toEqual([1]);
   });
 
-  it("inspects paginated documents without embeddings", async () => {
-    const model = new KeywordEmbeddingModel();
-    const index = InMemoryVectorStore.fromDocuments(await sampleEmbedded(model)).index(model);
-
-    await expect(index.inspect({ limit: 2 })).resolves.toEqual({
-      items: [
-        {
-          id: "cat",
-          document: { id: "cat", title: "Cat guide", texts: ["cat", "pet"] },
-          metadata: { category: "animal", rank: 3 },
-        },
-        {
-          id: "dog",
-          document: { id: "dog", title: "Dog guide", texts: ["dog"] },
-          metadata: { category: "animal", rank: 3 },
-        },
-      ],
-      nextCursor: "2",
-      totalCount: 3,
-    });
-    await expect(index.inspect({ limit: 2, cursor: "2" })).resolves.toEqual({
-      items: [
-        {
-          id: "risk",
-          document: { id: "risk", title: "Risk memo", texts: ["risk"] },
-          metadata: { category: "finance", rank: 1 },
-        },
-      ],
-      totalCount: 3,
-    });
-    await expect(
-      index.inspect({ limit: 5, filter: vectorFilter.eq("category", "animal") }),
-    ).resolves.toMatchObject({
-      items: [{ id: "cat" }, { id: "dog" }],
-      totalCount: 2,
-    });
-  });
-
-  it("rejects mixed embedding dimensions when creating a store", () => {
-    expect(() =>
-      InMemoryVectorStore.fromDocuments([
-        {
-          id: "short",
-          document: { title: "Short" },
-          embeddings: [{ document: "short", vector: [1, 0] }],
-        },
-        {
-          id: "long",
-          document: { title: "Long" },
-          embeddings: [{ document: "long", vector: [1, 0, 0] }],
-        },
-      ]),
-    ).toThrow("Vector dimension mismatch");
-  });
-
-  it("rejects mismatched added embeddings without mutating the store", () => {
-    const store = InMemoryVectorStore.fromDocuments([
-      {
-        id: "base",
-        document: { title: "Base" },
-        embeddings: [{ document: "base", vector: [1, 0, 0] }],
-      },
-    ]);
-
-    expect(() =>
-      store.addDocuments([
-        {
-          id: "bad",
-          document: { title: "Bad" },
-          embeddings: [{ document: "bad", vector: [1, 0] }],
-        },
-      ]),
-    ).toThrow("Vector dimension mismatch");
-    expect(store.get("bad")).toBeUndefined();
-    expect(store.len()).toBe(1);
-  });
-
-  it("rejects query embeddings with dimensions that differ from stored documents", async () => {
-    const store = InMemoryVectorStore.fromDocuments([
-      {
-        id: "base",
-        document: { title: "Base" },
-        embeddings: [{ document: "base", vector: [1, 0, 0] }],
-      },
-    ]);
-    const queryModel: EmbeddingModel = {
+  it("retries failed batches and honors abort signals", async () => {
+    let attempts = 0;
+    const model: EmbeddingModel = {
+      provider: "test",
+      modelId: "retry",
       async embedTexts(texts) {
-        return texts.map((document) => ({ document, vector: [1, 0] }));
+        attempts += 1;
+        if (attempts === 1) throw Object.assign(new Error("busy"), { status: 503 });
+        return texts.map((document) => ({ document, vector: [1] }));
       },
     };
-
-    await expect(store.index(queryModel).search({ query: "base", topK: 1 })).rejects.toThrow(
-      "Vector dimension mismatch",
-    );
-  });
-});
-
-describe("vector metadata filters", () => {
-  const metadata = {
-    active: true,
-    category: "ops",
-    rank: 3,
-  };
-
-  it("matches absent filters and rejects absent metadata when a filter is present", () => {
-    expect(matchesVectorFilter(undefined, undefined)).toBe(true);
-    expect(matchesVectorFilter(metadata, undefined)).toBe(true);
-    expect(matchesVectorFilter(undefined, vectorFilter.eq("category", "ops"))).toBe(false);
+    await expect(
+      embedTexts({ model, texts: ["a"], retries: { maxAttempts: 2, initialDelayMs: 0 } }),
+    ).resolves.toMatchObject({ embeddings: [{ vector: [1] }] });
+    expect(attempts).toBe(2);
+    const controller = new AbortController();
+    controller.abort();
+    await expect(
+      embedText({ model, text: "a", abortSignal: controller.signal }),
+    ).rejects.toMatchObject({ name: "AbortError" });
   });
 
-  it("evaluates equality and ordered comparisons for supported metadata values", () => {
-    expect(matchesVectorFilter(metadata, vectorFilter.eq("category", "ops"))).toBe(true);
-    expect(matchesVectorFilter(metadata, vectorFilter.eq("category", "support"))).toBe(false);
-    expect(matchesVectorFilter(metadata, vectorFilter.gt("rank", 2))).toBe(true);
-    expect(matchesVectorFilter(metadata, vectorFilter.gt("rank", 3))).toBe(false);
-    expect(matchesVectorFilter(metadata, vectorFilter.lt("rank", 4))).toBe(true);
-    expect(matchesVectorFilter(metadata, vectorFilter.lt("rank", 3))).toBe(false);
-    expect(matchesVectorFilter(metadata, vectorFilter.gt("category", "alpha"))).toBe(true);
-    expect(matchesVectorFilter(metadata, vectorFilter.lt("category", "zulu"))).toBe(true);
-    expect(matchesVectorFilter(metadata, vectorFilter.gt("active", false))).toBe(true);
-    expect(matchesVectorFilter(metadata, vectorFilter.lt("active", true))).toBe(false);
-  });
-
-  it("does not match ordered comparisons for missing or mixed-type values", () => {
-    expect(matchesVectorFilter(metadata, vectorFilter.gt("missing", 1))).toBe(false);
-    expect(matchesVectorFilter(metadata, vectorFilter.lt("rank", "4"))).toBe(false);
-    expect(matchesVectorFilter(metadata, vectorFilter.gt("active", 0))).toBe(false);
-  });
-
-  it("combines filters with boolean operators", () => {
-    expect(
-      matchesVectorFilter(
-        metadata,
-        vectorFilter.and(vectorFilter.eq("category", "ops"), vectorFilter.gt("rank", 2)),
-      ),
-    ).toBe(true);
-    expect(
-      matchesVectorFilter(
-        metadata,
-        vectorFilter.and(vectorFilter.eq("category", "ops"), vectorFilter.lt("rank", 2)),
-      ),
-    ).toBe(false);
-    expect(
-      matchesVectorFilter(
-        metadata,
-        vectorFilter.or(vectorFilter.eq("category", "support"), vectorFilter.eq("rank", 3)),
-      ),
-    ).toBe(true);
-    expect(
-      matchesVectorFilter(
-        metadata,
-        vectorFilter.or(vectorFilter.eq("category", "support"), vectorFilter.eq("rank", 4)),
-      ),
-    ).toBe(false);
-  });
-});
-
-describe("agent dynamic context", () => {
-  it("injects retrieved context into send requests", async () => {
-    const embeddingModel = new KeywordEmbeddingModel();
-    const index = InMemoryVectorStore.fromDocuments(await sampleEmbedded(embeddingModel)).index(
-      embeddingModel,
-    );
-    const completionModel = new QueueModel();
-    const agent = new AgentBuilder("test-agent", completionModel)
-      .context("static context", "static")
-      .dynamicContext(index, { topK: 1 })
-      .build();
-
-    await agent.prompt("cat").send();
-
-    expect(completionModel.requests[0]?.documents).toMatchObject([
-      { id: "static", text: "static context" },
-      { id: "cat", text: expect.stringContaining("Cat guide") },
-    ]);
-  });
-
-  it("injects retrieved context into stream requests", async () => {
-    const embeddingModel = new KeywordEmbeddingModel();
-    const index = InMemoryVectorStore.fromDocuments(await sampleEmbedded(embeddingModel)).index(
-      embeddingModel,
-    );
-    const completionModel = new StreamingQueueModel();
-    const agent = new AgentBuilder("test-agent", completionModel)
-      .dynamicContext(index, { topK: 1 })
-      .build();
-
-    for await (const _event of agent.prompt("dog").stream()) {
-      // exhaust stream
-    }
-
-    expect(completionModel.requests[0]?.documents).toMatchObject([
-      { id: "dog", text: expect.stringContaining("Dog guide") },
-    ]);
-  });
-});
-
-describe("agent dynamic tools", () => {
-  it("embeds tools into stable searchable records", async () => {
-    const model = new KeywordEmbeddingModel();
-    const embedded = await embedTools(model, [issueRefundTool], {
-      metadata: () => ({ domain: "billing" }),
+  it("rejects results from embedding models that finish after cancellation", async () => {
+    let finishDense: ((value: Array<{ document: string; vector: number[] }>) => void) | undefined;
+    const denseModel: EmbeddingModel = {
+      provider: "test",
+      modelId: "late-dense",
+      embedTexts: () =>
+        new Promise((resolve) => {
+          finishDense = resolve;
+        }),
+    };
+    const denseAbort = new AbortController();
+    const denseResult = embedTexts({
+      model: denseModel,
+      texts: ["late"],
+      abortSignal: denseAbort.signal,
     });
+    await Promise.resolve();
+    denseAbort.abort();
+    finishDense?.([{ document: "late", vector: [1] }]);
+    await expect(denseResult).rejects.toMatchObject({ name: "AbortError" });
 
-    expect(embedded).toMatchObject([
-      {
-        id: "issue_refund",
-        document: {
-          toolName: "issue_refund",
-          definition: expect.objectContaining({
-            name: "issue_refund",
-            description: "Issue a refund for a customer order.",
-          }),
-          text: expect.stringContaining("issue_refund"),
-          metadata: { domain: "billing" },
-        },
-        metadata: { domain: "billing" },
+    let finishSparse:
+      | ((
+          value: Array<{ document: string; vector: { indices: number[]; values: number[] } }>,
+        ) => void)
+      | undefined;
+    const sparseModel: SparseEmbeddingModel = {
+      provider: "test",
+      modelId: "late-sparse",
+      embedTexts: () =>
+        new Promise((resolve) => {
+          finishSparse = resolve;
+        }),
+      async embedQuery(query) {
+        return { document: query, vector: { indices: [0], values: [1] } };
       },
-    ]);
+    };
+    const sparseAbort = new AbortController();
+    const sparseResult = embedSparseTexts({
+      model: sparseModel,
+      texts: ["late"],
+      abortSignal: sparseAbort.signal,
+    });
+    await Promise.resolve();
+    sparseAbort.abort();
+    finishSparse?.([{ document: "late", vector: { indices: [0], values: [1] } }]);
+    await expect(sparseResult).rejects.toMatchObject({ name: "AbortError" });
   });
 
-  it("passes dynamic tool inspection through to the wrapped index", async () => {
-    const embeddingModel = new KeywordEmbeddingModel();
-    const index = await createToolIndex(embeddingModel, [issueRefundTool, lookupDogTool]);
-
-    await expect(index.inspect?.({ limit: 1 })).resolves.toMatchObject({
-      items: [
-        {
-          id: "issue_refund",
-          document: {
-            toolName: "issue_refund",
-            definition: expect.objectContaining({ name: "issue_refund" }),
+  it("validates concurrency, dense vectors, sparse vectors, and document chunks", async () => {
+    await expect(
+      embedTexts({ model: new KeywordModel(), texts: ["cat"], concurrency: 0 }),
+    ).rejects.toThrow("Embedding concurrency");
+    await expect(
+      embedTexts({
+        model: {
+          provider: "test",
+          modelId: "invalid-dense",
+          dimensions: 2,
+          async embedTexts() {
+            return [{ document: "cat", vector: [Number.NaN, 1] }];
           },
         },
+        texts: ["cat"],
+      }),
+    ).rejects.toThrow("non-finite vector");
+    await expect(
+      embedSparseQuery({
+        model: {
+          provider: "test",
+          modelId: "invalid-sparse",
+          async embedTexts() {
+            return [];
+          },
+          async embedQuery(query) {
+            return { document: query, vector: { indices: [1], values: [] } };
+          },
+        },
+        query: "cat",
+      }),
+    ).rejects.toThrow("mismatched indices and values");
+    await expect(
+      embedDocuments({
+        model: new KeywordModel(),
+        documents: ["cat"],
+        content: () => [],
+      }),
+    ).rejects.toThrow("at least one text chunk");
+  });
+});
+
+describe("vector stores and retrieval", () => {
+  it("searches an in-memory store with raw vectors and replaces documents", async () => {
+    const model = new KeywordModel();
+    const { documents } = await embedDocuments({
+      model,
+      documents: [
+        { id: "cat", text: "cat guide" },
+        { id: "dog", text: "dog guide" },
       ],
-      nextCursor: "1",
-      totalCount: 2,
+      id: (document) => document.id,
+      content: (document) => document.text,
+    });
+    const store = InMemoryVectorStore.fromDocuments({ documents, dimensions: 2 });
+    expect(await store.search({ vector: [1, 1], topK: 1 })).toMatchObject([{ id: "cat" }]);
+    const firstDocument = documents[0];
+    if (firstDocument === undefined) throw new Error("Expected an embedded document");
+    await store.upsert({
+      documents: [{ ...firstDocument, document: { id: "cat", text: "updated" } }],
+    });
+    expect(store.get({ id: "cat" })?.document).toMatchObject({ text: "updated" });
+  });
+
+  it("composes dense retrieval without giving the store a model", async () => {
+    const model = new KeywordModel();
+    const search = vi.fn(async (_request: VectorSearchRequest) => [
+      { id: "cat", score: 1, document: "Cat guide" },
+    ]);
+    const store = { async ensure() {}, async validate() {}, async upsert() {}, search };
+    await expect(
+      retrieveDocuments({ store, model, query: "cat", topK: 3, minScore: 0.5 }),
+    ).resolves.toMatchObject([{ id: "cat" }]);
+    expect(search).toHaveBeenCalledWith(
+      expect.objectContaining({ vector: [1, 1], topK: 3, minScore: 0.5 }),
+    );
+  });
+
+  it("deduplicates chunk results by document id using the best score", async () => {
+    const store = {
+      async ensure() {},
+      async validate() {},
+      async upsert() {},
+      async search() {
+        return [
+          { id: "same", score: 0.4, document: "older chunk" },
+          { id: "other", score: 0.7, document: "other" },
+          { id: "same", score: 0.9, document: "best chunk" },
+        ];
+      },
+    };
+    await expect(
+      retrieveDocuments({ store, model: new KeywordModel(), query: "cat", topK: 5 }),
+    ).resolves.toEqual([
+      { id: "same", score: 0.9, document: "best chunk" },
+      { id: "other", score: 0.7, document: "other" },
+    ]);
+  });
+
+  it("retries embedding and search independently", async () => {
+    let embeddingAttempts = 0;
+    let searchAttempts = 0;
+    const model: EmbeddingModel = {
+      provider: "test",
+      modelId: "retry-retrieval",
+      async embedTexts(texts) {
+        embeddingAttempts += 1;
+        if (embeddingAttempts === 1)
+          throw Object.assign(new Error("embedding busy"), { status: 503 });
+        return texts.map((document) => ({ document, vector: [1] }));
+      },
+    };
+    const store = {
+      async ensure() {},
+      async validate() {},
+      async upsert() {},
+      async search() {
+        searchAttempts += 1;
+        if (searchAttempts === 1) throw Object.assign(new Error("search busy"), { status: 503 });
+        return [{ id: "doc", score: 1, document: "result" }];
+      },
+    };
+    await expect(
+      retrieveDocuments({
+        store,
+        model,
+        query: "cat",
+        topK: 1,
+        retries: { maxAttempts: 2, initialDelayMs: 0 },
+      }),
+    ).resolves.toMatchObject([{ id: "doc" }]);
+    expect({ embeddingAttempts, searchAttempts }).toEqual({
+      embeddingAttempts: 2,
+      searchAttempts: 2,
     });
   });
 
-  it("injects selected dynamic tools into send requests and executes them", async () => {
-    const embeddingModel = new KeywordEmbeddingModel();
-    const index = await createToolIndex(embeddingModel, [issueRefundTool, lookupDogTool]);
-    const completionModel = new ToolCallingModel();
-    const agent = new AgentBuilder("test-agent", completionModel)
-      .dynamicTools(index, { topK: 1, threshold: 0.9 })
-      .build();
-
-    const response = await agent.prompt("refund order A-100").send();
-
-    expect(completionModel.requests[0]?.tools).toEqual([
-      expect.objectContaining({ name: "issue_refund" }),
+  it("composes hybrid retrieval only with a hybrid-capable store", async () => {
+    const searchHybrid = vi.fn(async (_request: HybridVectorSearchRequest) => [
+      { id: "hybrid", score: 0.9, document: "Hybrid" },
     ]);
-    expect(response.messages).toContainEqual(
+    const store: HybridVectorStore<string> = {
+      async ensure() {},
+      async validate() {},
+      async upsert(_options: VectorStoreUpsertOptions<string>) {},
+      async search() {
+        return [];
+      },
+      searchHybrid,
+    };
+    const results = await retrieveDocuments({
+      store,
+      models: { dense: new KeywordModel(), sparse: new SparseModel() },
+      query: "cat",
+      topK: 2,
+      fusion: "rrf",
+    });
+    expect(results[0]?.id).toBe("hybrid");
+    expect(searchHybrid).toHaveBeenCalledWith(
       expect.objectContaining({
-        role: "tool",
-        content: [
-          expect.objectContaining({
-            type: "tool_result",
-            content: [{ type: "text", text: "refunded A-100" }],
-          }),
-        ],
+        vector: [1, 1],
+        sparseVector: { indices: [1], values: [2] },
+        fusion: "rrf",
       }),
     );
   });
 
-  it("injects selected dynamic tools into stream requests", async () => {
-    const embeddingModel = new KeywordEmbeddingModel();
-    const index = await createToolIndex(embeddingModel, [issueRefundTool, lookupDogTool]);
-    const completionModel = new StreamingQueueModel();
-    const agent = new AgentBuilder("test-agent", completionModel)
-      .dynamicTools(index, { topK: 1, threshold: 0.9 })
-      .build();
-
-    for await (const _event of agent.prompt("dog").stream()) {
-      // exhaust stream
-    }
-
-    expect(completionModel.requests[0]?.tools).toEqual([
-      expect.objectContaining({ name: "lookup_dog" }),
-    ]);
+  it("creates an explicit model-plus-store search tool", async () => {
+    const model = new KeywordModel();
+    const store = InMemoryVectorStore.fromDocuments({
+      documents: [
+        { id: "cat", document: "Cat guide", embeddings: [{ document: "cat", vector: [1, 1] }] },
+      ],
+      dimensions: 2,
+    });
+    const tool = createVectorSearchTool({
+      store,
+      model,
+      name: "search_notes",
+      topK: 1,
+      minScore: 0.5,
+    });
+    await expect(tool.call({ query: "cat" })).resolves.toMatchObject([{ id: "cat" }]);
+    await expect(tool.call({ query: "cat", topK: 0 })).rejects.toThrow();
   });
 
-  it("dedupes static and dynamic tools by preferring static definitions", async () => {
-    const embeddingModel = new KeywordEmbeddingModel();
-    const dynamicRefundTool = createTool({
-      name: "issue_refund",
-      description: "Dynamic refund tool.",
-      input: z.object({ orderId: z.string() }),
-      output: z.string(),
-      execute: () => "dynamic",
-    });
-    const staticRefundTool = createTool({
-      name: "issue_refund",
-      description: "Static refund tool.",
-      input: z.object({ orderId: z.string() }),
-      output: z.string(),
-      execute: () => "static",
-    });
-    const index = await createToolIndex(embeddingModel, [dynamicRefundTool]);
-    const completionModel = new QueueModel();
-    const agent = new AgentBuilder("test-agent", completionModel)
-      .tool(staticRefundTool)
-      .dynamicTools(index, { topK: 1, threshold: 0.9 })
-      .build();
-
-    await agent.prompt("refund order A-100").send();
-
-    expect(completionModel.requests[0]?.tools).toEqual([
-      expect.objectContaining({ name: "issue_refund", description: "Static refund tool." }),
+  it("keeps tool filters fixed, uses configured topK, and forwards abort signals", async () => {
+    const controller = new AbortController();
+    const search = vi.fn(async (_request: VectorSearchRequest) => [
+      { id: "cat", score: 1, document: "Cat guide" },
     ]);
+    const store = { async ensure() {}, async validate() {}, async upsert() {}, search };
+    const filter = { type: "eq", key: "tenantId", value: "tenant-a" } as const;
+    const tool = createVectorSearchTool({
+      store,
+      model: new KeywordModel(),
+      name: "search_notes",
+      topK: 4,
+      minScore: 0.7,
+      filter,
+    });
+    await tool.call({ query: "cat" }, { abortSignal: controller.signal });
+    expect(search).toHaveBeenLastCalledWith({
+      vector: [1, 1],
+      topK: 4,
+      minScore: 0.7,
+      filter,
+      abortSignal: controller.signal,
+    });
+    await tool.call({ query: "cat", topK: 2 });
+    expect(search).toHaveBeenLastCalledWith(expect.objectContaining({ topK: 2, filter }));
   });
 
-  it("sends no dynamic tools when retrieval has no matches", async () => {
-    const embeddingModel = new KeywordEmbeddingModel();
-    const index = await createToolIndex(embeddingModel, [issueRefundTool]);
-    const completionModel = new QueueModel();
-    const agent = new AgentBuilder("test-agent", completionModel)
-      .dynamicTools(index, { topK: 1, threshold: 0.95 })
-      .build();
-
-    await agent.prompt("start").send();
-
-    expect(completionModel.requests[0]?.tools).toEqual([]);
-  });
-
-  it("uses the latest tool-result text for later turn dynamic selection", async () => {
-    const embeddingModel = new KeywordEmbeddingModel();
-    const index = await createToolIndex(embeddingModel, [issueRefundTool, lookupDogTool]);
-    const seedTopicTool = createTool({
-      name: "seed_topic",
-      description: "Seed the next turn topic.",
-      input: z.object({}),
-      output: z.string(),
-      execute: () => "refund",
+  it("creates explicit vector contexts", () => {
+    const context = createVectorContext({
+      store: new InMemoryVectorStore<string>({ dimensions: 2 }),
+      model: new KeywordModel(),
+      topK: 2,
+      minScore: 0.25,
     });
-    const completionModel = new TwoTurnModel();
-    const agent = new AgentBuilder("test-agent", completionModel)
-      .tool(seedTopicTool)
-      .dynamicTools(index, { topK: 1, threshold: 0.9 })
-      .build();
-
-    await agent.prompt("start").send();
-
-    expect(completionModel.requests[0]?.tools).toEqual([
-      expect.objectContaining({ name: "seed_topic" }),
-    ]);
-    expect(completionModel.requests[1]?.tools).toEqual([
-      expect.objectContaining({ name: "seed_topic" }),
-      expect.objectContaining({ name: "issue_refund" }),
-    ]);
+    expect(isVectorContext(context)).toBe(true);
+    expect(context.kind).toBe("vector-context");
   });
 });
-
-function vectorFor(text: string): number[] {
-  if (text.includes("cat") || text.includes("pet")) {
-    return [1, 0, 0];
-  }
-  if (text.includes("dog")) {
-    return [0, 1, 0];
-  }
-  if (text.includes("refund")) {
-    return [0, 0, 1];
-  }
-  if (text.includes("start")) {
-    return [0.1, 0.1, 0.1];
-  }
-  if (text.includes("risk")) {
-    return [0.25, 0, 0.75];
-  }
-  return [0, 0, 1];
-}
-
-function sparseVectorFor(text: string): { indices: number[]; values: number[] } {
-  const tokens = text
-    .toLowerCase()
-    .split(/\W+/)
-    .filter((token) => token.length > 0);
-  const indices: number[] = [];
-  const values: number[] = [];
-  for (const token of tokens) {
-    let hash = 0;
-    for (let index = 0; index < token.length; index += 1) {
-      hash = (hash * 31 + token.charCodeAt(index)) >>> 0;
-    }
-    indices.push(hash % 10_000);
-    values.push(1);
-  }
-  return { indices, values };
-}
-
-async function sampleEmbedded(model: EmbeddingModel) {
-  return embedDocuments(
-    model,
-    [
-      { id: "cat", title: "Cat guide", texts: ["cat", "pet"] },
-      { id: "dog", title: "Dog guide", texts: ["dog"] },
-      { id: "risk", title: "Risk memo", texts: ["risk"] },
-    ],
-    {
-      id: (doc) => doc.id,
-      content: (doc) => doc.texts,
-      metadata: (doc) => ({
-        category: doc.id === "risk" ? "finance" : "animal",
-        rank: doc.id === "risk" ? 1 : 3,
-      }),
-    },
-  );
-}

@@ -1,6 +1,6 @@
 {
   "name": "@anvia/memory-postgres",
-  "version": "0.3.0",
+  "version": "1.0.0",
   "description": "Postgres-backed durable session memory store for Anvia.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",
@@ -31,7 +31,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "pg": "^8.22.0"
+    "pg": "^8.23.0"
   },
   "devDependencies": {
     "@anvia/core": "workspace:*",
@@ -42,6 +42,6 @@
     "vitest": "^4.0.8"
   },
   "peerDependencies": {
-    "@anvia/core": ">=0.13.0 <1.0.0"
+    "@anvia/core": "workspace:*"
   }
 }

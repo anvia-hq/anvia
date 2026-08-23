@@ -1,5 +1,5 @@
-import { Message, UserContent } from "@anvia/core/completion";
 import { describe, expect, it, vi } from "vitest";
+import { Message, UserContent } from "../../core/test/helpers/imports";
 import { transcriptFromMessages } from "../src/runtime/transcript";
 import {
   cancelPendingTranscriptRun,
@@ -126,6 +126,7 @@ describe("Studio transcript helpers", () => {
               id: "choice",
               question: "Continue?",
               choices: [{ label: "Yes", value: "yes" }],
+              allowCustom: false,
             },
           ],
         },

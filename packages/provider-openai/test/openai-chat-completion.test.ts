@@ -1,41 +1,30 @@
-import { AgentBuilder, type Tool } from "@anvia/core";
+import { Agent, type Tool } from "@anvia/core";
+import {
+  COMPLETION_PROVIDER_OUTPUT_ERROR_CODE,
+  type CompletionModelStreamEvent,
+  type CompletionRequest,
+} from "@anvia/core/completion";
+import { describe, expect, it } from "vitest";
 import {
   AssistantContent,
-  type CompletionRequest,
-  type CompletionStreamEvent,
   Message,
   ToolContent,
   UserContent,
-} from "@anvia/core/completion";
-import { describe, expect, it } from "vitest";
-import { OpenAIChatCompletionModel, OpenAIClient } from "../src/index";
+} from "../../core/test/helpers/imports";
+import { OpenAIClient } from "../src/index";
 import {
   fromOpenAIChatCompletionResponse,
   fromOpenAIChatCompletionStreamChunk,
+  OpenAIChatCompletionModel,
   toOpenAIChatCompletionParams,
 } from "../src/openai/chat-completion";
-
-const INVALID_TOOL_INDEX_ERROR =
-  "OpenAI Chat Completions stream returned a tool call with an invalid index; expected a finite nonnegative integer.";
-const AMBIGUOUS_CHOICE_ERROR =
-  "OpenAI Chat Completions stream returned ambiguous completion choices without valid indices; provider output cannot be assembled safely.";
-const MISSING_TOOL_FINISH_ERROR =
-  "OpenAI Chat Completions tool-call stream ended without a terminal finish reason; provider output may be incomplete.";
-const LENGTH_TOOL_FINISH_ERROR =
-  'OpenAI Chat Completions tool-call stream ended with finish_reason "length"; provider output may be incomplete.';
-const CONTENT_FILTER_TOOL_FINISH_ERROR =
-  'OpenAI Chat Completions tool-call stream ended with finish_reason "content_filter"; tool calls will not be executed.';
-const UNSUPPORTED_TOOL_FINISH_ERROR =
-  "OpenAI Chat Completions tool-call stream ended with an unsupported finish reason; provider output cannot be assembled safely.";
-const CONFLICTING_TOOL_FINISH_ERROR =
-  "OpenAI Chat Completions tool-call stream returned conflicting terminal finish reasons; provider output cannot be assembled safely.";
 
 describe("OpenAI chat-completions client path", () => {
   it("exposes OpenAI chat-completions capability metadata", () => {
     const model = new OpenAIChatCompletionModel({} as never, "custom-chat-model");
 
-    expect(model.provider).toBe("openai-chat");
-    expect(model.defaultModel).toBe("custom-chat-model");
+    expect(model.provider).toBe("openai");
+    expect(model.modelId).toBe("custom-chat-model");
     expect(model.capabilities).toEqual({
       streaming: true,
       tools: true,
@@ -63,11 +52,8 @@ describe("OpenAI chat-completions client path", () => {
       },
     };
 
-    const openai = new OpenAIClient({
-      client: client as never,
-      completionApi: "chat",
-    });
-    const model = openai.completionModel("custom-chat-model");
+    const openai = new OpenAIClient({ client: client as never });
+    const model = openai.completionModel({ modelId: "custom-chat-model", api: "chat" });
 
     expect(model).toBeInstanceOf(OpenAIChatCompletionModel);
     await model.completion({
@@ -83,13 +69,33 @@ describe("OpenAI chat-completions client path", () => {
     ]);
   });
 
-  it("uses chat completions by default for custom base URLs", () => {
+  it("preserves normalized and provider finish reasons for non-streaming responses", () => {
+    const response = fromOpenAIChatCompletionResponse({
+      choices: [
+        {
+          index: 0,
+          finish_reason: "length",
+          message: { role: "assistant", content: '{"answer":"partial' },
+        },
+      ],
+      usage: {},
+    });
+
+    expect(response).toMatchObject({
+      finishReason: "length",
+      providerFinishReason: "length",
+    });
+  });
+
+  it("keeps protocol selection explicit for custom base URLs", () => {
     const openai = new OpenAIClient({
       apiKey: "test",
       baseUrl: "https://provider.example.com/v1",
     });
 
-    expect(openai.completionModel("custom-chat-model")).toBeInstanceOf(OpenAIChatCompletionModel);
+    expect(openai.completionModel({ modelId: "custom-chat-model", api: "chat" })).toBeInstanceOf(
+      OpenAIChatCompletionModel,
+    );
   });
 
   it("preserves assistant reasoning and provider tool call ids across tool turns", () => {
@@ -180,6 +186,32 @@ describe("OpenAI chat-completions client path", () => {
     expect(params.messages).toEqual([{ role: "assistant", content: "visible response" }]);
   });
 
+  it("keeps strict json_schema response formatting for structured output", () => {
+    const schema = {
+      type: "object",
+      properties: { phase: { type: "string" } },
+      required: ["phase"],
+      additionalProperties: false,
+      title: "hypothesis_response",
+    };
+
+    const params = toOpenAIChatCompletionParams("custom-chat-model", {
+      chatHistory: [Message.user("Create hypotheses")],
+      documents: [],
+      tools: [],
+      outputSchema: schema,
+    });
+
+    expect(params.response_format).toEqual({
+      type: "json_schema",
+      json_schema: {
+        name: "hypothesis_response",
+        strict: true,
+        schema,
+      },
+    });
+  });
+
   it("adds compatible content to empty assistant history", () => {
     const params = toOpenAIChatCompletionParams("deepseek-v4-flash", {
       chatHistory: [Message.assistant([])],
@@ -227,7 +259,7 @@ describe("OpenAI chat-completions client path", () => {
     });
 
     expect(response.choice).toEqual([
-      AssistantContent.reasoning("provider reasoning text"),
+      AssistantContent.reasoningFromContent([{ type: "text", text: "provider reasoning text" }]),
       AssistantContent.text("created"),
     ]);
   });
@@ -287,14 +319,14 @@ describe("OpenAI chat-completions client path", () => {
 
   it("assembles interleaved reasoning and text into one ordered Agent response", async () => {
     const model = openAIChatModelWithStreams([reasoningInterleaveStream()]);
-    const agent = new AgentBuilder("test-agent", model).build();
+    const agent = new Agent({ id: "test-agent", model });
 
-    const events = await collect(agent.prompt("introduce yourself").stream());
+    const events = await collect(agent.stream({ prompt: "introduce yourself" }));
     const turnEnd = events.find((event) => event.type === "turn_end");
 
     expect(turnEnd?.type).toBe("turn_end");
     if (turnEnd?.type !== "turn_end") {
-      throw new Error("Expected AgentBuilder to emit a turn_end event");
+      throw new Error("Expected Agent to emit a turn_end event");
     }
     expect(turnEnd.response.choice).toEqual([
       {
@@ -353,14 +385,84 @@ describe("OpenAI chat-completions client path", () => {
       done: false,
       value: { type: "text_delta", delta: " world" },
     });
+    await expect(iterator.next()).resolves.toMatchObject({
+      done: false,
+      value: {
+        type: "final",
+        response: {
+          finishReason: "stop",
+          providerFinishReason: "stop",
+        },
+      },
+    });
     await expect(iterator.next()).resolves.toEqual({ done: true, value: undefined });
   });
 
+  it("preserves a length finish reason for text-only streams", async () => {
+    const model = openAIChatModelWithStreams([
+      [
+        {
+          choices: [
+            { index: 0, finish_reason: "length", delta: { content: '{"answer":"partial' } },
+          ],
+        },
+        { choices: [], usage: { prompt_tokens: 1, completion_tokens: 2, total_tokens: 3 } },
+      ],
+    ]);
+
+    const events = await collectStreamEvents(model);
+    expect(events.at(-1)).toMatchObject({
+      type: "final",
+      response: {
+        finishReason: "length",
+        providerFinishReason: "length",
+      },
+    });
+  });
+
+  it("preserves a terminal finish reason when an OpenAI-compatible stream omits usage", async () => {
+    const model = openAIChatModelWithStreams([
+      [
+        {
+          id: "cmpl_without_usage",
+          choices: [
+            { index: 0, finish_reason: "length", delta: { content: '{"answer":"partial' } },
+          ],
+        },
+      ],
+    ]);
+
+    const events = await collectStreamEvents(model);
+    expect(events.at(-1)).toEqual({
+      type: "final",
+      response: {
+        choice: [],
+        usage: {
+          inputTokens: 0,
+          outputTokens: 0,
+          totalTokens: 0,
+          cachedInputTokens: 0,
+          cacheCreationInputTokens: 0,
+        },
+        finishReason: "length",
+        providerFinishReason: "length",
+        rawResponse: {
+          id: "cmpl_without_usage",
+          choices: [
+            { index: 0, finish_reason: "length", delta: { content: '{"answer":"partial' } },
+          ],
+        },
+        messageId: "cmpl_without_usage",
+      },
+    });
+  });
+
   it("rejects malformed non-streaming tool arguments", () => {
-    expect(() =>
+    const error = thrownBy(() =>
       fromOpenAIChatCompletionResponse({
         choices: [
           {
+            finish_reason: "tool_calls",
             message: {
               role: "assistant",
               tool_calls: [
@@ -373,28 +475,305 @@ describe("OpenAI chat-completions client path", () => {
             },
           },
         ],
+        usage: {
+          prompt_tokens: 7,
+          completion_tokens: 2,
+          prompt_tokens_details: { cached_tokens: 3 },
+        },
+      }),
+    );
+
+    expect(error).toMatchObject(
+      providerOutputError("malformed-tool-arguments", {
+        toolCallId: "tool_0",
+        usage: {
+          inputTokens: 7,
+          outputTokens: 2,
+          totalTokens: 9,
+          cachedInputTokens: 3,
+        },
+      }),
+    );
+  });
+
+  it("retries malformed provider tool-call arguments without executing the tool", async () => {
+    const completionRequests: unknown[] = [];
+    const toolExecutions: unknown[] = [];
+    const client = new OpenAIClient({
+      client: {
+        chat: {
+          completions: {
+            create: async (request: unknown) => {
+              completionRequests.push(request);
+              return {
+                id: "chatcmpl_malformed_tool",
+                choices: [
+                  {
+                    index: 0,
+                    finish_reason: "tool_calls",
+                    message: {
+                      role: "assistant",
+                      content: null,
+                      tool_calls: [
+                        {
+                          id: "tool_0",
+                          type: "function",
+                          function: { name: "test_tool", arguments: '{"query":' },
+                        },
+                      ],
+                    },
+                  },
+                ],
+                usage: {},
+              };
+            },
+          },
+        },
+      } as never,
+    });
+    const agent = new Agent({
+      id: "malformed-tool-retry",
+      model: client.completionModel({ modelId: "chat-test", api: "chat" }),
+      tools: [recordingTool("test_tool", toolExecutions)],
+    });
+
+    const error = await agent
+      .generate({
+        prompt: "Call test_tool.",
+        retries: { maxAttempts: 3, initialDelayMs: 0, maxDelayMs: 0 },
+      })
+      .catch((value: unknown) => value);
+
+    expect(toolExecutions).toHaveLength(0);
+    expect(error).toMatchObject(
+      providerOutputError("malformed-tool-arguments", { toolCallId: "tool_0" }),
+    );
+    expect(completionRequests).toHaveLength(3);
+  });
+
+  it("rejects and retries a valid tool call that is missing its finish reason", async () => {
+    const completionRequests: unknown[] = [];
+    const toolExecutions: unknown[] = [];
+    const client = new OpenAIClient({
+      client: {
+        chat: {
+          completions: {
+            create: async (request: unknown) => {
+              completionRequests.push(request);
+              return {
+                id: "chatcmpl_missing_tool_finish",
+                choices: [
+                  {
+                    index: 0,
+                    finish_reason: null,
+                    message: {
+                      role: "assistant",
+                      content: null,
+                      tool_calls: [
+                        {
+                          id: "tool_0",
+                          type: "function",
+                          function: { name: "test_tool", arguments: '{"query":"safe"}' },
+                        },
+                      ],
+                    },
+                  },
+                ],
+                usage: { prompt_tokens: 2, completion_tokens: 1 },
+              };
+            },
+          },
+        },
+      } as never,
+    });
+    const agent = new Agent({
+      id: "missing-chat-tool-finish",
+      model: client.completionModel({ modelId: "chat-test", api: "chat" }),
+      tools: [recordingTool("test_tool", toolExecutions)],
+    });
+
+    const error = await agent
+      .generate({
+        prompt: "Call test_tool.",
+        retries: { maxAttempts: 3, initialDelayMs: 0, maxDelayMs: 0 },
+      })
+      .catch((value: unknown) => value);
+
+    expect(error).toMatchObject(
+      providerOutputError("incomplete-tool-call", {
+        usage: { inputTokens: 2, outputTokens: 1, totalTokens: 3 },
+      }),
+    );
+    expect(completionRequests).toHaveLength(3);
+    expect(toolExecutions).toHaveLength(0);
+  });
+
+  it.each([
+    ["missing", undefined, "incomplete-tool-call"],
+    ["non-string", { query: "x" }, "invalid-tool-arguments"],
+    ["non-finite", "1e400", "invalid-tool-arguments"],
+  ])("rejects %s terminal tool arguments", (_label, argumentsValue, kind) => {
+    const error = thrownBy(() =>
+      fromOpenAIChatCompletionResponse({
+        choices: [
+          {
+            finish_reason: "tool_calls",
+            message: {
+              role: "assistant",
+              tool_calls: [
+                {
+                  id: "tool_0",
+                  type: "function",
+                  function: { name: "Echo", arguments: argumentsValue },
+                },
+              ],
+            },
+          },
+        ],
         usage: {},
       }),
-    ).toThrow(
-      'Completion returned tool call "tool_0" with malformed JSON arguments; this indicates invalid provider output or incomplete stream assembly.',
+    );
+
+    expect(error).toMatchObject(providerOutputError(kind, { toolCallId: "tool_0" }));
+  });
+
+  it.each([
+    ["length", "truncated-tool-call", "length"],
+    ["content_filter", "filtered-tool-call", "content-filter"],
+  ])("prioritizes an unsafe %s finish over malformed Chat tool arguments", (providerFinishReason, kind, finishReason) => {
+    const error = thrownBy(() =>
+      fromOpenAIChatCompletionResponse({
+        choices: [
+          {
+            finish_reason: providerFinishReason,
+            message: {
+              role: "assistant",
+              tool_calls: [
+                {
+                  id: "tool_0",
+                  type: "function",
+                  function: { name: "Echo", arguments: '{"query":' },
+                },
+              ],
+            },
+          },
+        ],
+        usage: { prompt_tokens: 5, completion_tokens: 2 },
+      }),
+    );
+
+    expect(error).toMatchObject(
+      providerOutputError(kind, {
+        finishReason,
+        usage: { inputTokens: 5, outputTokens: 2, totalTokens: 7 },
+      }),
     );
   });
 
   it.each([
-    ["scalar", '"hello"', "hello"],
-    ["empty", "", {}],
-    ["whitespace-only", " \n\t", {}],
-  ])("maps %s non-streaming tool arguments", (_label, argumentsText, expectedArguments) => {
+    ["length", "truncated-tool-call", "length"],
+    ["content_filter", "filtered-tool-call", "content-filter"],
+  ])("prioritizes an unsafe streamed %s finish over malformed native tool fields", async (providerFinishReason, kind, finishReason) => {
+    const model = openAIChatModelWithStreams([
+      [
+        {
+          choices: [
+            {
+              index: 0,
+              finish_reason: providerFinishReason,
+              delta: {
+                tool_calls: [
+                  {
+                    index: "invalid",
+                    id: "call_exec",
+                    function: { name: 42, arguments: { command: "pwd" } },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+        {
+          choices: [],
+          usage: { prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 },
+        },
+      ],
+    ]);
+
+    await expect(collectStreamEvents(model)).rejects.toMatchObject(
+      providerOutputError(kind, {
+        finishReason,
+        usage: { inputTokens: 3, outputTokens: 2, totalTokens: 5 },
+      }),
+    );
+  });
+
+  it.each([
+    ["length", "truncated-tool-call", 3],
+    ["content_filter", "filtered-tool-call", 1],
+  ])("does not execute a valid tool call ending with %s", async (finishReason, kind, expectedRequests) => {
+    const completionRequests: unknown[] = [];
+    const toolExecutions: unknown[] = [];
+    const client = new OpenAIClient({
+      client: {
+        chat: {
+          completions: {
+            create: async (request: unknown) => {
+              completionRequests.push(request);
+              return {
+                choices: [
+                  {
+                    index: 0,
+                    finish_reason: finishReason,
+                    message: {
+                      role: "assistant",
+                      tool_calls: [
+                        {
+                          id: "tool_0",
+                          type: "function",
+                          function: { name: "test_tool", arguments: '{"query":"safe"}' },
+                        },
+                      ],
+                    },
+                  },
+                ],
+                usage: { prompt_tokens: 2, completion_tokens: 1 },
+              };
+            },
+          },
+        },
+      } as never,
+    });
+    const agent = new Agent({
+      id: `unsafe-finish-${finishReason}`,
+      model: client.completionModel({ modelId: "chat-test", api: "chat" }),
+      tools: [recordingTool("test_tool", toolExecutions)],
+    });
+
+    const error = await agent
+      .generate({
+        prompt: "Call test_tool.",
+        retries: { maxAttempts: 3, initialDelayMs: 0, maxDelayMs: 0 },
+      })
+      .catch((value: unknown) => value);
+
+    expect(error).toMatchObject(providerOutputError(kind));
+    expect(completionRequests).toHaveLength(expectedRequests);
+    expect(toolExecutions).toHaveLength(0);
+  });
+
+  it("maps scalar non-streaming tool arguments", () => {
     const response = fromOpenAIChatCompletionResponse({
       choices: [
         {
+          finish_reason: "tool_calls",
           message: {
             role: "assistant",
             tool_calls: [
               {
                 id: "tool_0",
                 type: "function",
-                function: { name: "Echo", arguments: argumentsText },
+                function: { name: "Echo", arguments: '"hello"' },
               },
             ],
           },
@@ -404,8 +783,34 @@ describe("OpenAI chat-completions client path", () => {
     });
 
     expect(response.choice).toEqual([
-      AssistantContent.toolCall("tool_0", "Echo", expectedArguments),
+      AssistantContent.toolCall("tool_0", "Echo", "hello", "tool_0"),
     ]);
+  });
+
+  it.each([
+    ["empty", ""],
+    ["whitespace-only", " \n\t"],
+  ])("rejects %s non-streaming tool arguments", (_label, argumentsText) => {
+    expect(() =>
+      fromOpenAIChatCompletionResponse({
+        choices: [
+          {
+            finish_reason: "tool_calls",
+            message: {
+              role: "assistant",
+              tool_calls: [
+                {
+                  id: "tool_0",
+                  type: "function",
+                  function: { name: "Echo", arguments: argumentsText },
+                },
+              ],
+            },
+          },
+        ],
+        usage: {},
+      }),
+    ).toThrowError(expect.objectContaining({ kind: "malformed-tool-arguments" }));
   });
 
   it("maps Chat Completions refusals to visible assistant text", () => {
@@ -467,11 +872,13 @@ describe("OpenAI chat-completions client path", () => {
       ],
       finalTextStream(),
     ]);
-    const agent = new AgentBuilder("test-agent", model)
-      .tool(recordingTool("ExecCommand", calls))
-      .build();
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      tools: [recordingTool("ExecCommand", calls)],
+    });
 
-    const events = await collect(agent.prompt("run pwd").stream());
+    const events = await collect(agent.stream({ prompt: "run pwd" }));
 
     expect(events).toContainEqual({
       type: "tool_call",
@@ -501,12 +908,13 @@ describe("OpenAI chat-completions client path", () => {
       ],
       finalTextStream(),
     ]);
-    const agent = new AgentBuilder("test-agent", model)
-      .tool(recordingTool("ExecCommand", execCalls))
-      .tool(recordingTool("ReadFile", readCalls))
-      .build();
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      tools: [recordingTool("ExecCommand", execCalls), recordingTool("ReadFile", readCalls)],
+    });
 
-    const events = await collect(agent.prompt("run tools").stream());
+    const events = await collect(agent.stream({ prompt: "run tools" }));
 
     expect(events.flatMap((event) => (event.type === "tool_call" ? [event.toolCall] : []))).toEqual(
       [
@@ -531,15 +939,100 @@ describe("OpenAI chat-completions client path", () => {
         chatChunk([chatChoice([], 0, "tool_calls")]),
       ],
     ]);
-    const agent = new AgentBuilder("test-agent", model)
-      .tool(recordingTool("ExecCommand", calls))
-      .tool(recordingTool("ReadFile", calls))
-      .build();
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      tools: [recordingTool("ExecCommand", calls), recordingTool("ReadFile", calls)],
+    });
 
-    await expect(collect(agent.prompt("run tools").stream())).rejects.toThrow(
-      INVALID_TOOL_INDEX_ERROR,
-    );
+    const events = await collect(agent.stream({ prompt: "run tools" }));
+    expect(events.at(-1)).toMatchObject({
+      type: "error",
+      error: providerOutputError("invalid-tool-call"),
+    });
     expect(calls).toHaveLength(0);
+  });
+
+  it("rejects malformed streamed tool-call containers and discriminants", () => {
+    expect(
+      thrownBy(() =>
+        fromOpenAIChatCompletionStreamChunk({
+          choices: [{ index: 0, delta: { tool_calls: { invalid: true } } }],
+        }),
+      ),
+    ).toMatchObject(providerOutputError("invalid-tool-call"));
+
+    expect(
+      thrownBy(() =>
+        fromOpenAIChatCompletionStreamChunk({
+          choices: [
+            {
+              index: 0,
+              delta: {
+                tool_calls: [
+                  {
+                    index: 0,
+                    id: "call_0",
+                    type: "custom",
+                    function: { name: "Echo", arguments: "{}" },
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+      ),
+    ).toMatchObject(providerOutputError("invalid-tool-call", { toolCallId: "call_0" }));
+  });
+
+  it("rejects non-function non-streaming tool-call discriminants", () => {
+    expect(
+      thrownBy(() =>
+        fromOpenAIChatCompletionResponse({
+          choices: [
+            {
+              index: 0,
+              finish_reason: "tool_calls",
+              message: {
+                tool_calls: [
+                  {
+                    id: "call_0",
+                    type: "custom",
+                    function: { name: "Echo", arguments: "{}" },
+                  },
+                ],
+              },
+            },
+          ],
+          usage: {},
+        }),
+      ),
+    ).toMatchObject(providerOutputError("invalid-tool-call", { toolCallId: "call_0" }));
+  });
+
+  it.each([
+    ["length", "truncated-tool-call", "length"],
+    ["content_filter", "filtered-tool-call", "content-filter"],
+  ] as const)("gives %s precedence over a malformed non-streaming tool-call container", (providerFinishReason, kind, finishReason) => {
+    expect(
+      thrownBy(() =>
+        fromOpenAIChatCompletionResponse({
+          choices: [
+            {
+              index: 0,
+              finish_reason: providerFinishReason,
+              message: { tool_calls: { invalid: true } },
+            },
+          ],
+          usage: { prompt_tokens: 2, completion_tokens: 3 },
+        }),
+      ),
+    ).toMatchObject(
+      providerOutputError(kind, {
+        finishReason,
+        usage: { inputTokens: 2, outputTokens: 3, totalTokens: 5 },
+      }),
+    );
   });
 
   it.each([
@@ -550,11 +1043,13 @@ describe("OpenAI chat-completions client path", () => {
     ["fractional", 0.5],
     ["missing", undefined],
   ])("rejects a %s streamed tool-call index", (_label, index) => {
-    expect(() =>
-      fromOpenAIChatCompletionStreamChunk(
-        chatChunk([chatChoice([toolCallDelta(index, "call_echo", "Echo", "{}")])]),
+    expect(
+      thrownBy(() =>
+        fromOpenAIChatCompletionStreamChunk(
+          chatChunk([chatChoice([toolCallDelta(index, "call_echo", "Echo", "{}")])]),
+        ),
       ),
-    ).toThrow(INVALID_TOOL_INDEX_ERROR);
+    ).toMatchObject(providerOutputError("invalid-tool-call"));
   });
 
   it("selects completion choice zero without merging alternatives", () => {
@@ -586,11 +1081,13 @@ describe("OpenAI chat-completions client path", () => {
   });
 
   it("rejects ambiguous unindexed completion choices", () => {
-    expect(() =>
-      fromOpenAIChatCompletionStreamChunk({
-        choices: [{ delta: { content: "first" } }, { delta: { content: "second" } }],
-      }),
-    ).toThrow(AMBIGUOUS_CHOICE_ERROR);
+    expect(
+      thrownBy(() =>
+        fromOpenAIChatCompletionStreamChunk({
+          choices: [{ delta: { content: "first" } }, { delta: { content: "second" } }],
+        }),
+      ),
+    ).toMatchObject(providerOutputError("invalid-tool-call"));
   });
 
   it("rejects a tool-call stream that ends without a terminal finish reason", async () => {
@@ -602,7 +1099,9 @@ describe("OpenAI chat-completions client path", () => {
       ],
     ]);
 
-    await expect(collectStreamEvents(model)).rejects.toThrow(MISSING_TOOL_FINISH_ERROR);
+    await expect(collectStreamEvents(model)).rejects.toMatchObject(
+      providerOutputError("incomplete-tool-call"),
+    );
     await expect(
       collectStreamEvents(
         openAIChatModelWithStreams([
@@ -614,7 +1113,6 @@ describe("OpenAI chat-completions client path", () => {
         ]),
       ),
     ).resolves.toEqual([{ type: "text_delta", delta: "partial" }]);
-    expect(MISSING_TOOL_FINISH_ERROR).not.toContain("pwd");
   });
 
   it.each([
@@ -640,10 +1138,10 @@ describe("OpenAI chat-completions client path", () => {
   });
 
   it.each([
-    ["length", LENGTH_TOOL_FINISH_ERROR],
-    ["content_filter", CONTENT_FILTER_TOOL_FINISH_ERROR],
-    ["abort", UNSUPPORTED_TOOL_FINISH_ERROR],
-  ])("rejects a tool-call stream ending with %s", async (finishReason, expectedError) => {
+    ["length", "truncated-tool-call", "length"],
+    ["content_filter", "filtered-tool-call", "content-filter"],
+    ["abort", "invalid-tool-call", undefined],
+  ])("rejects a tool-call stream ending with %s", async (finishReason, kind, normalizedReason) => {
     const model = openAIChatModelWithStreams([
       [
         chatChunk([
@@ -653,11 +1151,20 @@ describe("OpenAI chat-completions client path", () => {
             finishReason,
           ),
         ]),
+        {
+          id: "chatcmpl_test",
+          choices: [],
+          usage: { prompt_tokens: 3, completion_tokens: 2 },
+        },
       ],
     ]);
 
-    await expect(collectStreamEvents(model)).rejects.toThrow(expectedError);
-    expect(expectedError).not.toContain("pwd");
+    await expect(collectStreamEvents(model)).rejects.toMatchObject(
+      providerOutputError(kind, {
+        finishReason: normalizedReason,
+        usage: { inputTokens: 3, outputTokens: 2, totalTokens: 5 },
+      }),
+    );
   });
 
   it("rejects conflicting terminal finish reasons", async () => {
@@ -674,25 +1181,80 @@ describe("OpenAI chat-completions client path", () => {
       ],
     ]);
 
-    await expect(collectStreamEvents(model)).rejects.toThrow(CONFLICTING_TOOL_FINISH_ERROR);
+    await expect(collectStreamEvents(model)).rejects.toMatchObject(
+      providerOutputError("invalid-tool-call"),
+    );
+  });
+
+  it("rejects streams that contain choices but never a primary choice", async () => {
+    const model = openAIChatModelWithStreams([
+      [
+        {
+          choices: [{ index: 1, finish_reason: "stop", delta: { content: "alternate" } }],
+        },
+        { choices: [], usage: { prompt_tokens: 1, completion_tokens: 1 } },
+      ],
+    ]);
+
+    await expect(collectStreamEvents(model)).rejects.toMatchObject(
+      providerOutputError("invalid-tool-call"),
+    );
+  });
+
+  it("rejects malformed choice entries instead of silently dropping them", () => {
+    expect(() =>
+      fromOpenAIChatCompletionStreamChunk({ choices: [null, { index: 0, delta: {} }] }),
+    ).toThrowError(expect.objectContaining(providerOutputError("invalid-tool-call")));
+  });
+
+  it("rejects semantic progress after a terminal finish reason", async () => {
+    const model = openAIChatModelWithStreams([
+      [
+        chatChunk([
+          chatChoice(
+            [toolCallDelta(0, "call_exec", "ExecCommand", '{"command":"pwd"}')],
+            0,
+            "tool_calls",
+          ),
+        ]),
+        chatChunk([{ index: 0, finish_reason: null, delta: { content: "late" } }]),
+      ],
+    ]);
+
+    await expect(collectStreamEvents(model)).rejects.toMatchObject(
+      providerOutputError("invalid-tool-call"),
+    );
   });
 
   it("attributes malformed arguments after a terminal tool finish to provider output", async () => {
     const calls: unknown[] = [];
-    const model = openAIChatModelWithStreams([
+    const remainingStreams = [
       [
         chatChunk([chatChoice([toolCallDelta(0, "call_exec", "ExecCommand", '{"command":"pwd"')])]),
         chatChunk([chatChoice([], 0, "tool_calls")]),
       ],
-    ]);
-    const agent = new AgentBuilder("test-agent", model)
-      .tool(recordingTool("ExecCommand", calls))
-      .build();
+      finalTextStream(),
+      finalTextStream(),
+    ];
+    const model = openAIChatModelWithStreams(remainingStreams);
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      tools: [recordingTool("ExecCommand", calls)],
+    });
 
-    await expect(collect(agent.prompt("run pwd").stream())).rejects.toThrow(
-      'Completion returned tool call "tool_0" with malformed JSON arguments; this indicates invalid provider output or incomplete stream assembly.',
+    const events = await collect(
+      agent.stream({
+        prompt: "run pwd",
+        retries: { maxAttempts: 3, initialDelayMs: 0, maxDelayMs: 0 },
+      }),
     );
+    expect(events.at(-1)).toMatchObject({
+      type: "error",
+      error: providerOutputError("malformed-tool-arguments", { toolCallId: "tool_0" }),
+    });
     expect(calls).toHaveLength(0);
+    expect(remainingStreams).toHaveLength(2);
   });
 
   it("omits empty streamed tool metadata while preserving argument fragments", () => {
@@ -768,7 +1330,7 @@ describe("OpenAI chat-completions client path", () => {
         documents: [],
         tools: [],
       }),
-    ).rejects.toThrow("openai-chat:custom-chat-model does not support document file input.");
+    ).rejects.toThrow("openai:custom-chat-model does not support document file input.");
     expect(calls).toHaveLength(0);
   });
 });
@@ -803,7 +1365,7 @@ function toolCallDelta(index: unknown, id: string, name: string, argumentsText?:
   if (argumentsText !== undefined) {
     fn.arguments = argumentsText;
   }
-  return { index, id, function: fn };
+  return { index, id, type: "function", function: fn };
 }
 
 function recordingTool(name: string, calls: unknown[]): Tool {
@@ -879,7 +1441,7 @@ function reasoningInterleaveStream(): unknown[] {
 
 async function collectStreamEvents(
   model: OpenAIChatCompletionModel,
-): Promise<CompletionStreamEvent[]> {
+): Promise<CompletionModelStreamEvent[]> {
   return collect(
     model.streamCompletion({
       chatHistory: [Message.user("run a tool")],
@@ -903,11 +1465,32 @@ async function collect<T>(events: AsyncIterable<T>): Promise<T[]> {
   return result;
 }
 
+function thrownBy(callback: () => unknown): unknown {
+  try {
+    callback();
+  } catch (error) {
+    return error;
+  }
+  throw new Error("Expected callback to throw.");
+}
+
+function providerOutputError(
+  kind: string,
+  values: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    name: "CompletionProviderOutputError",
+    code: COMPLETION_PROVIDER_OUTPUT_ERROR_CODE,
+    kind,
+    ...values,
+  };
+}
+
 function streamedReasoningEvents(
-  events: CompletionStreamEvent[],
-): Array<Extract<CompletionStreamEvent, { type: "reasoning_delta" }>> {
+  events: CompletionModelStreamEvent[],
+): Array<Extract<CompletionModelStreamEvent, { type: "reasoning_delta" }>> {
   return events.filter(
-    (event): event is Extract<CompletionStreamEvent, { type: "reasoning_delta" }> =>
+    (event): event is Extract<CompletionModelStreamEvent, { type: "reasoning_delta" }> =>
       event.type === "reasoning_delta",
   );
 }

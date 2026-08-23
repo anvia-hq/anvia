@@ -1,229 +1,206 @@
-import { type Embedding, type EmbeddingModel, embedDocuments } from "@anvia/core/embeddings";
-import { vectorFilter } from "@anvia/core/vector-store";
-import { describe, expect, it } from "vitest";
-import { filterToWeaviateWhere, WeaviateVectorStore } from "../src/index";
-import type { WeaviateClientLike } from "../src/types";
+import { describe, expect, it, vi } from "vitest";
+import * as publicApi from "../src/index.js";
+import { type WeaviateClientLike, WeaviateVectorClient } from "../src/index.js";
 
-class MockEmbeddingModel implements EmbeddingModel {
-  async embedTexts(texts: string[]): Promise<Embedding[]> {
-    return texts.map((document) => ({
-      document,
-      vector: document.toLowerCase().includes("cat") ? [1, 0] : [0, 1],
+const connectToCustom = vi.hoisted(() =>
+  vi.fn(async () => ({
+    collections: {
+      exists: vi.fn(async () => true),
+      create: vi.fn(async () => undefined),
+      get: vi.fn(),
+    },
+  })),
+);
+
+vi.mock("weaviate-client", () => ({ default: { connectToCustom } }));
+
+describe("WeaviateVectorClient", () => {
+  it("exports the client without legacy index or connect APIs", () => {
+    expect(publicApi).toHaveProperty("WeaviateVectorClient");
+    expect(publicApi).not.toHaveProperty("WeaviateVectorIndex");
+    expect(publicApi.WeaviateVectorStore).not.toHaveProperty("connect");
+    expect(publicApi.WeaviateVectorStore.prototype).not.toHaveProperty("index");
+    expect(publicApi.WeaviateVectorStore.prototype).not.toHaveProperty("asTool");
+  });
+  it("uses explicit lifecycle, replacement, and raw-vector search", async () => {
+    const deleteMany = vi.fn(async () => undefined);
+    const insertMany = vi.fn(async () => undefined);
+    const nearVector = vi.fn(async () => ({
+      objects: [
+        {
+          uuid: "point",
+          properties: {
+            __anvia_document_id: "doc",
+            __anvia_document: JSON.stringify({ text: "cat" }),
+          },
+          metadata: { certainty: 0.55, distance: 0.1 },
+        },
+      ],
     }));
-  }
-}
-
-class MockWeaviateClient implements WeaviateClientLike {
-  readonly createdCollections: Record<string, unknown>[] = [];
-  readonly batchedObjects: Record<string, unknown>[] = [];
-  readonly queries: unknown[] = [];
-  private existingCollections = new Set<string>();
-
-  collections = {
-    create: async (config: Record<string, unknown>) => {
-      this.createdCollections.push(config);
-      this.existingCollections.add(config.name as string);
-      return {};
-    },
-    get: (_name: string) => ({
-      query: {
-        nearVector: async (params: Record<string, unknown>) => {
-          this.queries.push(params);
-          return [
-            {
-              __anvia_document_id: "doc1",
-              __anvia_document: JSON.stringify({ title: "Cat guide" }),
-              kind: "animal",
-              _additional: { certainty: 0.9 },
-            },
-            {
-              __anvia_document_id: "doc1",
-              __anvia_document: JSON.stringify({ title: "Cat guide" }),
-              kind: "animal",
-              _additional: { certainty: 0.8 },
-            },
-            {
-              __anvia_document_id: "doc2",
-              __anvia_document: "plain dog note",
-              _additional: { certainty: 0.4 },
-            },
-          ];
-        },
+    const collection = { query: { nearVector }, data: { deleteMany, insertMany } };
+    const client: WeaviateClientLike = {
+      collections: {
+        exists: vi.fn(async () => true),
+        create: vi.fn(async () => undefined),
+        get: vi.fn(() => collection),
       },
-    }),
-    delete: async (_name: string) => ({}),
-    exists: async (name: string) => this.existingCollections.has(name),
-  };
-
-  batch = {
-    objectsBatcher: () => {
-      const objs: Record<string, unknown>[] = [];
-      const batcher = {
-        withObject: (obj: Record<string, unknown>) => {
-          objs.push(obj);
-          return batcher;
-        },
-        do: async () => {
-          this.batchedObjects.push(...objs);
-          return {};
-        },
-      };
-      return batcher;
-    },
-  };
-
-  addExisting(name: string) {
-    this.existingCollections.add(name);
-  }
-}
-
-describe("WeaviateVectorStore", () => {
-  it("creates a missing collection with vector size and default cosine distance", async () => {
-    const client = new MockWeaviateClient();
-
-    await WeaviateVectorStore.connect({
-      client,
-      className: "Docs",
-      vectorSize: 2,
+    };
+    const store = new WeaviateVectorClient({ client }).vectorStore<{ text: string }>({
+      collectionName: "Docs",
+      dimensions: 2,
     });
-
-    expect(client.createdCollections[0]).toEqual({
-      name: "Docs",
-      vectorizers: null,
-      vectorIndexConfig: { distance: "cosine" },
-      properties: [
-        { name: "__anvia_document_id", dataType: "text" },
-        { name: "__anvia_document", dataType: "text" },
+    expect(client.collections.exists).not.toHaveBeenCalled();
+    await store.validate();
+    await store.upsert({
+      documents: [
+        { id: "doc", document: { text: "cat" }, embeddings: [{ document: "cat", vector: [1, 0] }] },
       ],
     });
+    expect(deleteMany).toHaveBeenCalled();
+    expect(insertMany).toHaveBeenCalled();
+    await expect(store.search({ vector: [1, 0], topK: 1 })).resolves.toMatchObject([
+      { id: "doc", score: 0.9 },
+    ]);
+    expect(nearVector).toHaveBeenCalledWith(
+      [1, 0],
+      expect.objectContaining({ limit: 1, returnMetadata: ["distance"] }),
+      { abortSignal: undefined },
+    );
   });
 
-  it("respects createIfMissing false and throws if missing", async () => {
-    const client = new MockWeaviateClient();
+  it("passes provider-accurate hosts and ports to the native client", async () => {
+    const owner = new WeaviateVectorClient({
+      httpHost: "weaviate.internal",
+      httpPort: 8088,
+      grpcHost: "weaviate-grpc.internal",
+      grpcPort: 50061,
+    });
 
-    await expect(
-      WeaviateVectorStore.connect({
-        client,
-        className: "Docs",
-        vectorSize: 2,
-        createIfMissing: false,
+    await owner.nativeClient();
+
+    expect(connectToCustom).toHaveBeenCalledWith(
+      expect.objectContaining({
+        httpHost: "weaviate.internal",
+        httpPort: 8088,
+        grpcHost: "weaviate-grpc.internal",
+        grpcPort: 50061,
       }),
-    ).rejects.toThrow("Collection Docs does not exist");
+    );
   });
 
-  it("respects createIfMissing false and succeeds if exists", async () => {
-    const client = new MockWeaviateClient();
-    client.addExisting("Docs");
-
-    await WeaviateVectorStore.connect({
-      client,
-      className: "Docs",
-      vectorSize: 2,
-      createIfMissing: false,
+  it("rejects partial delete and insert failures", async () => {
+    const documents = [
+      { id: "doc", document: "doc", embeddings: [{ document: "doc", vector: [1, 0] }] },
+    ];
+    const failedDelete = vi.fn(async () => ({ failed: 1, successful: 0, matches: 1 }));
+    const skippedInsert = vi.fn(async () => ({ hasErrors: false, errors: {} }));
+    const deleteClient: WeaviateClientLike = {
+      collections: {
+        exists: vi.fn(async () => true),
+        create: vi.fn(async () => undefined),
+        get: vi.fn(() => ({
+          query: { nearVector: vi.fn(async () => ({ objects: [] })) },
+          data: { deleteMany: failedDelete, insertMany: skippedInsert },
+        })),
+      },
+    };
+    const deleteStore = new WeaviateVectorClient({ client: deleteClient }).vectorStore({
+      collectionName: "Docs",
+      dimensions: 2,
     });
+    await expect(deleteStore.upsert({ documents })).rejects.toThrow("failed to delete");
+    expect(skippedInsert).not.toHaveBeenCalled();
 
-    expect(client.createdCollections).toEqual([]);
+    const insertClient: WeaviateClientLike = {
+      collections: {
+        exists: vi.fn(async () => true),
+        create: vi.fn(async () => undefined),
+        get: vi.fn(() => ({
+          query: { nearVector: vi.fn(async () => ({ objects: [] })) },
+          data: {
+            deleteMany: vi.fn(async () => ({ failed: 0, successful: 1, matches: 1 })),
+            insertMany: vi.fn(async () => ({ hasErrors: true, errors: { 0: new Error("bad") } })),
+          },
+        })),
+      },
+    };
+    const insertStore = new WeaviateVectorClient({ client: insertClient }).vectorStore({
+      collectionName: "Docs",
+      dimensions: 2,
+    });
+    await expect(insertStore.upsert({ documents })).rejects.toThrow("failed to insert");
   });
 
-  it("upserts precomputed embeddings and queries with Anvia embeddings", async () => {
-    const client = new MockWeaviateClient();
-    const model = new MockEmbeddingModel();
-    const store = await WeaviateVectorStore.connect<{ title: string }>({
-      client,
-      className: "Docs",
-      vectorSize: 2,
-    });
-    const embedded = await embedDocuments(model, [{ id: "doc1", title: "Cat guide" }], {
-      id: (doc: { id: string; title: string }) => doc.id,
-      content: (doc: { id: string; title: string }) => doc.title,
-      metadata: () => ({ kind: "animal" }),
-    });
-
-    await store.upsertDocuments(embedded);
-    expect(client.batchedObjects[0]).toMatchObject({
-      class: "Docs",
-      vector: [1, 0],
-      properties: {
-        __anvia_document_id: "doc1",
-        __anvia_document: JSON.stringify({ id: "doc1", title: "Cat guide" }),
-        kind: "animal",
+  it("normalizes non-cosine distance without using certainty", async () => {
+    const nearVector = vi.fn(async () => ({
+      objects: [
+        {
+          uuid: "point",
+          properties: { __anvia_document_id: "doc", __anvia_document: "doc" },
+          metadata: { certainty: 0.99, distance: 0.25 },
+        },
+      ],
+    }));
+    const client: WeaviateClientLike = {
+      collections: {
+        exists: vi.fn(async () => true),
+        create: vi.fn(async () => undefined),
+        get: vi.fn(() => ({ query: { nearVector } })),
       },
+    };
+    const store = new WeaviateVectorClient({ client }).vectorStore<string>({
+      collectionName: "Docs",
+      dimensions: 2,
+      metric: "euclidean",
     });
 
-    const results = await store.index(model).search({
-      query: "cat",
-      topK: 2,
-      threshold: 0.5,
-      filter: vectorFilter.eq("kind", "animal"),
-    });
-
-    expect(results).toEqual([
-      {
-        id: "doc1",
-        score: 0.9,
-        document: { title: "Cat guide" },
-        metadata: { kind: "animal" },
-      },
+    await expect(store.search({ vector: [1, 0], topK: 1 })).resolves.toEqual([
+      { id: "doc", document: "doc", score: -0.25 },
     ]);
   });
 
-  it("rejects documents with no embeddings", async () => {
-    const client = new MockWeaviateClient();
-    const store = await WeaviateVectorStore.connect<string>({
-      client,
-      className: "Docs",
-      vectorSize: 2,
-    });
-
-    await expect(
-      store.upsertDocuments([{ id: "doc1", document: "empty", embeddings: [] }]),
-    ).rejects.toThrow("Document doc1 has no embeddings");
-  });
-
-  it("rejects reserved metadata keys", async () => {
-    const client = new MockWeaviateClient();
-    const store = await WeaviateVectorStore.connect<string>({
-      client,
-      className: "Docs",
-      vectorSize: 2,
-    });
-
-    await expect(
-      store.upsertDocuments([
+  it("expands physical candidates until topK logical documents are available", async () => {
+    const nearVector = vi.fn(async (_vector: number[], options?: { limit?: number }) => {
+      const candidates = [
         {
-          id: "doc1",
-          document: "reserved",
-          metadata: { __anvia_document_id: "bad" },
-          embeddings: [{ document: "reserved", vector: [1, 0] }],
+          uuid: "a-1",
+          properties: { __anvia_document_id: "a", __anvia_document: "A" },
+          metadata: { distance: 0.1 },
         },
-      ]),
-    ).rejects.toThrow("Metadata key __anvia_document_id is reserved");
-  });
-});
-
-describe("filterToWeaviateWhere", () => {
-  it("translates eq filter", () => {
-    expect(filterToWeaviateWhere(vectorFilter.eq("kind", "animal"))).toEqual({
-      operator: "Equal",
-      path: ["kind"],
-      valueString: "animal",
-      valueInt: undefined,
-      valueBoolean: undefined,
-      valueNumber: undefined,
+        {
+          uuid: "a-2",
+          properties: { __anvia_document_id: "a", __anvia_document: "A" },
+          metadata: { distance: 0.2 },
+        },
+        {
+          uuid: "b",
+          properties: { __anvia_document_id: "b", __anvia_document: "B" },
+          metadata: { distance: 0.3 },
+        },
+        {
+          uuid: "c",
+          properties: { __anvia_document_id: "c", __anvia_document: "C" },
+          metadata: { distance: 0.4 },
+        },
+      ];
+      return { objects: candidates.slice(0, options?.limit) };
     });
-  });
-
-  it("translates compound filters", () => {
-    expect(
-      filterToWeaviateWhere(
-        vectorFilter.and(vectorFilter.gt("rank", 2), vectorFilter.lt("rank", 5)),
-      ),
-    ).toEqual({
-      operator: "And",
-      operands: [
-        { operator: "GreaterThan", path: ["rank"], valueNumber: 2, valueString: undefined },
-        { operator: "LessThan", path: ["rank"], valueNumber: 5, valueString: undefined },
-      ],
+    const client: WeaviateClientLike = {
+      collections: {
+        exists: vi.fn(async () => true),
+        create: vi.fn(async () => undefined),
+        get: vi.fn(() => ({ query: { nearVector } })),
+      },
+    };
+    const store = new WeaviateVectorClient({ client }).vectorStore<string>({
+      collectionName: "Docs",
+      dimensions: 2,
     });
+
+    await expect(store.search({ vector: [1, 0], topK: 2 })).resolves.toMatchObject([
+      { id: "a" },
+      { id: "b" },
+    ]);
+    expect(nearVector.mock.calls.map(([, options]) => options?.limit)).toEqual([2, 4]);
   });
 });

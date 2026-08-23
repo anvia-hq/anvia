@@ -253,3 +253,20 @@
     stroke: var(--muted-foreground);
   }
 }
+@keyframes studio-stream-gradient-settle {
+  to {
+    opacity: 1;
+  }
+}
+
+.studio-markdown [data-state="revealing"] {
+  opacity: var(--anvia-stream-reveal-opacity, 1);
+  animation: studio-stream-gradient-settle var(--anvia-stream-reveal-duration, 180ms) linear both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .studio-markdown [data-state="revealing"] {
+    opacity: 1;
+    animation: none;
+  }
+}

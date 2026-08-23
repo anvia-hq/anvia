@@ -10,6 +10,8 @@ import {
 } from "react";
 import type {
   StudioConfig,
+  StudioSandboxesSummary,
+  StudioSandboxSummary,
   StudioSession,
   StudioSessionSummary,
   StudioTraceSummary,
@@ -22,6 +24,10 @@ import {
 } from "./app-helpers";
 import { useStudioTheme } from "./app-theme";
 import { useAgentModels } from "./modules/agents/use-agent-models";
+import {
+  type BrowserWorkspace,
+  browserWorkspaceForTool,
+} from "./modules/playground/browser-workspace";
 import { usePlaygroundRun } from "./modules/playground/use-playground-run";
 import { usePlaygroundTranscript } from "./modules/playground/use-playground-transcript";
 import { useStudioSessions } from "./modules/sessions/use-studio-sessions";
@@ -32,6 +38,7 @@ import {
   type StudioPageAvailability,
 } from "./modules/shared/navigation";
 import { defaultKnowledgeTab } from "./modules/shared/path";
+import { requestJson } from "./modules/shared/request";
 import {
   formValue,
   nextSequence,
@@ -59,6 +66,9 @@ export function StudioConsole() {
   const [status, setStatus] = useState("Loading");
   const [, setError] = useState("");
   const [runState, setRunState] = useState<RunState>("idle");
+  const [sandboxes, setSandboxes] = useState<StudioSandboxSummary[]>([]);
+  const [browserWorkspace, setBrowserWorkspace] = useState<BrowserWorkspace | undefined>();
+  const [browserWorkspaceOpen, setBrowserWorkspaceOpen] = useState(false);
   const [transcriptResetKey, setTranscriptResetKey] = useState(0);
   const promptRef = useRef<HTMLTextAreaElement | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
@@ -152,6 +162,21 @@ export function StudioConsole() {
   const agents = config?.agents ?? [];
   const pipelines = config?.pipelines ?? [];
   const hasAgents = agents.length > 0;
+  useEffect(() => {
+    if (!sandboxesEnabled) {
+      setSandboxes([]);
+      setBrowserWorkspace(undefined);
+      setBrowserWorkspaceOpen(false);
+      return;
+    }
+    const controller = new AbortController();
+    void requestJson<StudioSandboxesSummary>("/sandboxes", "Sandboxes", controller.signal)
+      .then((summary) => setSandboxes(summary.sandboxes))
+      .catch((loadError: unknown) => {
+        if (!controller.signal.aborted) setError(errorMessage(loadError));
+      });
+    return () => controller.abort();
+  }, [sandboxesEnabled]);
   const navigateToTracing = useCallback(() => {
     setActivePage("tracing");
   }, []);
@@ -227,6 +252,20 @@ export function StudioConsole() {
     onError: setError,
   });
   const hasMessages = messages.length > 0;
+  const openBrowserWorkspaceForTool = useCallback(
+    (toolName: string) => {
+      const workspace = browserWorkspaceForTool(
+        sandboxes,
+        selectedAgent?.id ?? selectedAgentId,
+        toolName,
+      );
+      if (workspace !== undefined) {
+        setBrowserWorkspace(workspace);
+        setBrowserWorkspaceOpen(true);
+      }
+    },
+    [sandboxes, selectedAgent?.id, selectedAgentId],
+  );
   const handleSessionLoaded = useCallback(
     (
       session: StudioSession,
@@ -240,6 +279,8 @@ export function StudioConsole() {
       setSessionTraceSummaries(traceSummaries);
       setMessages(enrichTranscriptWithTraceIds(session.transcript, traceSummaries));
       setAttachments([]);
+      setBrowserWorkspace(undefined);
+      setBrowserWorkspaceOpen(false);
       if (options.updatePath !== false) {
         setActivePage("playground");
         navigateSessionPath(session.id);
@@ -259,6 +300,8 @@ export function StudioConsole() {
       setSessionTraceSummaries([]);
       setPrompt("");
       setAttachments([]);
+      setBrowserWorkspace(undefined);
+      setBrowserWorkspaceOpen(false);
       if (activePage === "playground") {
         navigateSessionPath(undefined);
       }
@@ -309,6 +352,7 @@ export function StudioConsole() {
     onRunStateChange: setRunState,
     onSessionTraceSummariesChange: setSessionTraceSummaries,
     onStatus: setStatus,
+    onToolCall: openBrowserWorkspaceForTool,
   });
 
   const startNewChat = useCallback(
@@ -323,6 +367,8 @@ export function StudioConsole() {
       setSessionTraceSummaries([]);
       setPrompt("");
       setAttachments([]);
+      setBrowserWorkspace(undefined);
+      setBrowserWorkspaceOpen(false);
       setActivePage("playground");
       setError("");
       if (options.updatePath !== false) {
@@ -348,6 +394,8 @@ export function StudioConsole() {
       setSessionTraceSummaries([]);
       setPrompt("");
       setAttachments([]);
+      setBrowserWorkspace(undefined);
+      setBrowserWorkspaceOpen(false);
       setActivePage("playground");
       setError("");
       navigateSessionPath(undefined);
@@ -461,6 +509,8 @@ export function StudioConsole() {
     agents,
     answeringQuestions,
     attachments,
+    browserWorkspace,
+    browserWorkspaceOpen,
     decidingApprovals,
     deleteCandidate,
     hasAgents,
@@ -501,6 +551,8 @@ export function StudioConsole() {
     navigatePage,
     navigateKnowledgeTab,
     setDeleteCandidate,
+    closeBrowserWorkspace: () => setBrowserWorkspaceOpen(false),
+    openBrowserWorkspace: () => setBrowserWorkspaceOpen(true),
     setError,
     setKnowledgeTab,
     setSelectedModelRef,

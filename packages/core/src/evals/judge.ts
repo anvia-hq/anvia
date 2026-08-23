@@ -1,6 +1,6 @@
 import type { CompletionModel, JsonObject, Usage } from "../completion";
 import { Usage as UsageValue } from "../completion";
-import { ExtractorBuilder } from "../extractor";
+import { extract } from "../extractor";
 import type { ZodSchema } from "../schema";
 import type { EvalMetadata } from "./types";
 
@@ -16,13 +16,15 @@ export async function runJudge<T>(args: {
   prompt: string;
   retries: number;
 }): Promise<JudgeResult<T>> {
-  const result = await new ExtractorBuilder(args.model, args.schema)
-    .instructions(args.instructions)
-    .temperature(0)
-    .retries(args.retries)
-    .build()
-    .extractWithUsage(args.prompt);
-  return { data: result.data, usage: result.usage };
+  const result = await extract({
+    model: args.model,
+    outputSchema: args.schema,
+    instructions: args.instructions,
+    text: args.prompt,
+    temperature: 0,
+    retries: args.retries <= 0 ? undefined : { maxAttempts: Math.trunc(args.retries) + 1 },
+  });
+  return { data: result.output, usage: result.usage };
 }
 
 export function addUsage(...values: Usage[]): Usage {
@@ -37,7 +39,7 @@ export function evaluationMetadata(details: JsonObject, usage: Usage): EvalMetad
   return { evaluation };
 }
 
-export function usageToJson(usage: Usage): JsonObject {
+function usageToJson(usage: Usage): JsonObject {
   const value: JsonObject = {
     inputTokens: usage.inputTokens,
     outputTokens: usage.outputTokens,

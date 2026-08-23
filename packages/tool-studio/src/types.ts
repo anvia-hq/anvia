@@ -1,22 +1,33 @@
 import type {
+  Agent,
+  AgentInteractionOutcome,
+  AgentOutcome,
+  AgentStreamEvent,
+} from "@anvia/core/agent";
+import type { AgentInteractionResponse } from "@anvia/core/agent/interactions";
+import type {
   CompletionModel,
   CompletionModelCapabilities,
   JsonObject,
   JsonValue,
   Message,
   StreamingCompletionModel,
-  ToolResultContent,
+  ToolResultContentPart,
   Usage,
 } from "@anvia/core/completion";
-import type { Agent } from "@anvia/core/internal/agent";
+import type {
+  MemoryAppendOptions,
+  MemoryErrorOptions,
+  MemoryScope,
+  MemoryStore,
+} from "@anvia/core/memory";
 import type { ModelList } from "@anvia/core/model-listing";
 import type { Pipeline, PipelineGraph } from "@anvia/core/pipeline";
-import type { AgentStreamEvent, PromptResponse } from "@anvia/core/request";
 import type { Hono } from "hono";
 
 export type StudioCapability =
   | "agents"
-  | "approvals"
+  | "interactions"
   | "evals"
   | "memory"
   | "knowledge"
@@ -30,6 +41,7 @@ export type StudioCapability =
   | "traces";
 
 export type AgentTraceInfo = {
+  observer: string;
   traceId?: string | undefined;
   observationId?: string | undefined;
 };
@@ -38,14 +50,13 @@ export type AgentTraceOptions = {
   name?: string | undefined;
   userId?: string | undefined;
   sessionId?: string | undefined;
-  metadata?: Record<string, unknown> | undefined;
+  metadata?: JsonObject | undefined;
   tags?: string[] | undefined;
   version?: string | undefined;
   traceId?: string | undefined;
-  failOnObserverError?: boolean | undefined;
 };
 
-export type StudioModelRef = string | { provider: string; model: string };
+export type StudioModelRef = { providerId: string; modelId: string };
 
 export type StudioModelModality = "text" | "image" | "document" | "audio" | "video";
 
@@ -66,21 +77,21 @@ export type StudioModelDefinition = {
 export type StudioModelProvider = {
   id: string;
   name?: string;
-  defaultModel?: string;
+  defaultModelId?: string;
   models?: StudioModelDefinition[];
-  createCompletionModel(model: string): CompletionModel | StreamingCompletionModel;
-  listModels?: () => Promise<ModelList>;
+  createCompletionModel(options: { modelId: string }): CompletionModel | StreamingCompletionModel;
+  listModels?: (options?: { abortSignal?: AbortSignal | undefined }) => Promise<ModelList>;
   metadata?: JsonObject;
 };
 
 export type StudioAgentModelPolicy = {
-  default?: StudioModelRef;
+  defaultModelRef?: StudioModelRef;
   allowed?: Array<StudioModelRef | `${string}:*`>;
 };
 
 export type StudioModelConfig = {
   providers: StudioModelProvider[];
-  default?: StudioModelRef;
+  defaultModelRef?: StudioModelRef;
   agents?: Record<string, StudioAgentModelPolicy>;
 };
 
@@ -93,26 +104,26 @@ export type StudioModelSummary = StudioModelDefinition & {
 export type StudioModelProviderConfig = {
   id: string;
   name?: string;
-  defaultModel?: string;
+  defaultModelId?: string;
   models: StudioModelSummary[];
   metadata?: JsonObject;
   warning?: string;
 };
 
 export type StudioAgentModelPolicyConfig = {
-  default?: string;
+  defaultModelRef?: string;
   allowed?: string[];
 };
 
 export type StudioModelsConfig = {
   providers: StudioModelProviderConfig[];
-  default?: string;
+  defaultModelRef?: string;
   agents: Record<string, StudioAgentModelPolicyConfig>;
 };
 
 export type StudioAgentModelsSummary = {
   agentId: string;
-  defaultModel?: string;
+  defaultModelRef?: string;
   models: StudioModelSummary[];
   warnings?: JsonObject[];
 };
@@ -152,7 +163,7 @@ export type StudioAgentRuntimeSummary = {
   dynamicContextCount: number;
   observerCount: number;
   hasMemory: boolean;
-  hasHook: boolean;
+  hasLifecycle: boolean;
   hasOutputSchema: boolean;
   defaultMaxTurns?: number;
   metadata?: JsonObject;
@@ -200,7 +211,7 @@ export type StudioEvalSuite<
   concurrency?: number;
   // biome-ignore lint/suspicious/noExplicitAny: Studio passes reporters through to core.
   reporters?: any[];
-  failOnReporterError?: boolean;
+  reporterErrorPolicy?: "collect" | "throw";
   id?: string;
   description?: string;
   metadata?: JsonObject;
@@ -295,9 +306,137 @@ export type StudioAgentToolsSummary = {
 };
 
 export type StudioSandboxCapabilities = {
-  files: true;
+  files: boolean;
   ports: boolean;
   processes: boolean;
+  views: boolean;
+};
+
+export type StudioSandboxInspectorFileEntry = Readonly<{
+  path: string;
+  type: StudioSandboxFileType;
+  size?: number;
+}>;
+
+export type StudioSandboxInspectorPort = Readonly<{
+  containerPort: number;
+  host: string;
+  hostPort: number;
+  protocol: string;
+}>;
+
+export type StudioSandboxInspectorProcess = Readonly<{
+  id: string;
+  command: string;
+  args: readonly string[];
+  cwd?: string;
+  status: StudioSandboxProcessStatus;
+  exitCode?: number;
+  startedAt: string;
+  endedAt?: string;
+}>;
+
+export type StudioSandboxInspector = Readonly<{
+  id: string;
+  provider: string;
+  workdir: string;
+  listFiles?: (
+    options?: Readonly<{ path?: string; abortSignal?: AbortSignal }>,
+  ) => Promise<readonly StudioSandboxInspectorFileEntry[]>;
+  readFile?: (
+    options: Readonly<{ path: string; abortSignal?: AbortSignal }>,
+  ) => Promise<Uint8Array>;
+  publishedPorts?: readonly StudioSandboxInspectorPort[];
+  listProcesses?: (
+    options?: Readonly<{ abortSignal?: AbortSignal }>,
+  ) => Promise<readonly StudioSandboxInspectorProcess[]>;
+  readProcessLogs?: (
+    options: Readonly<{ processId: string; tailBytes?: number; abortSignal?: AbortSignal }>,
+  ) => Promise<StudioSandboxInspectorProcessLogs>;
+}>;
+
+export type StudioSandboxInspectorProcessLogs = Readonly<{
+  stdout: Uint8Array;
+  stderr: Uint8Array;
+  stdoutTruncated: boolean;
+  stderrTruncated: boolean;
+}>;
+
+export type StudioSandboxViewControlSnapshot = Readonly<{
+  mode: "agent" | "human";
+  ownerId?: string;
+  expiresAt?: string;
+}>;
+
+export type StudioSandboxViewControlLease = Readonly<{
+  id: string;
+  ownerId: string;
+  expiresAt: string;
+  renew(options: Readonly<{ leaseTimeoutMs: number }>): StudioSandboxViewControlSnapshot;
+  release(): void;
+}>;
+
+export type StudioSandboxViewControl = Readonly<{
+  snapshot(): StudioSandboxViewControlSnapshot;
+  acquireHumanControl(
+    options: Readonly<{
+      ownerId: string;
+      leaseTimeoutMs: number;
+      abortSignal?: AbortSignal;
+    }>,
+  ): Promise<StudioSandboxViewControlLease>;
+}>;
+
+export type StudioSandboxViewSource = Readonly<{
+  protocol: "novnc";
+  containerPort: number;
+  control: StudioSandboxViewControl;
+}>;
+
+export type StudioSandboxViewAuthorizeArgs = Readonly<{
+  request: Request;
+  sandboxRef: string;
+  viewId: string;
+}>;
+
+export type StudioSandboxViewAccess =
+  | Readonly<{ mode: "local" }>
+  | Readonly<{
+      mode: "authorize";
+      authorize(args: StudioSandboxViewAuthorizeArgs): boolean | Promise<boolean>;
+    }>;
+
+export type StudioSandboxViewAuthentication =
+  | Readonly<{ type: "none" }>
+  | Readonly<{ type: "password"; password: string }>;
+
+export type StudioSandboxViewRegistration = Readonly<{
+  id: string;
+  label: string;
+  source: StudioSandboxViewSource;
+  access: StudioSandboxViewAccess;
+  authentication: StudioSandboxViewAuthentication;
+}>;
+
+export type StudioSandboxRegistration = Readonly<{
+  inspector: StudioSandboxInspector;
+  agentIds?: readonly string[];
+  toolNames?: readonly string[];
+  views?: readonly StudioSandboxViewRegistration[];
+}>;
+
+export type StudioSandboxViewSummary = {
+  id: string;
+  label: string;
+  protocol: "novnc";
+};
+
+export type StudioSandboxViewConnection = {
+  sandboxRef: string;
+  viewId: string;
+  protocol: "novnc";
+  websocketPath: string;
+  authentication: StudioSandboxViewAuthentication;
 };
 
 export type StudioSandboxSummary = {
@@ -307,6 +446,7 @@ export type StudioSandboxSummary = {
   workdir: string;
   agentIds: string[];
   toolNames: string[];
+  views: StudioSandboxViewSummary[];
   capabilities: StudioSandboxCapabilities;
 };
 
@@ -437,7 +577,7 @@ export type StudioTranscriptToolEntry = {
   callId?: string;
   args?: string;
   result?: string;
-  structuredResult?: ToolResultContent[];
+  structuredResult?: readonly ToolResultContentPart[];
   childEvents?: StudioTranscriptChildAgentEvent[];
   approval?: StudioToolApprovalTranscript;
   question?: StudioToolQuestionTranscript;
@@ -465,7 +605,7 @@ export type StudioTranscriptChildAgentEvent =
       callId?: string;
       args?: string;
       result?: string;
-      structuredResult?: ToolResultContent[];
+      structuredResult?: readonly ToolResultContentPart[];
     };
 
 export type StudioTranscriptEntry =
@@ -500,7 +640,7 @@ export type StudioSessionListOptions = {
   limit: number;
 };
 
-export type StudioSessionRunStatus = "running" | "success" | "error" | "cancelled";
+export type StudioSessionRunStatus = "running" | "success" | "suspended" | "error" | "cancelled";
 
 export type StudioSessionRunTranscriptInput = {
   id: string;
@@ -553,32 +693,10 @@ export type StudioSessionLogListOptions = {
   after?: number;
 };
 
-export type StudioMemoryContext = {
-  sessionId: string;
-  userId?: string | undefined;
-  metadata?: JsonObject | undefined;
-};
-
-export type StudioMemoryAppendInput = {
-  context: StudioMemoryContext;
-  runId: string;
-  turn: number;
-  messages: Message[];
-};
-
-export type StudioMemoryErrorInput = {
-  context: StudioMemoryContext;
-  runId: string;
-  error: unknown;
-  messages: Message[];
-};
-
-export type StudioMemoryStore = {
-  load(context: StudioMemoryContext): Promise<Message[]>;
-  append(input: StudioMemoryAppendInput): Promise<void>;
-  clear(context: StudioMemoryContext): Promise<void>;
-  recordError?(input: StudioMemoryErrorInput): Promise<void>;
-};
+export type StudioMemoryScope = MemoryScope;
+export type StudioMemoryAppendOptions = MemoryAppendOptions;
+export type StudioMemoryErrorOptions = MemoryErrorOptions;
+export type StudioMemoryStore = MemoryStore;
 
 export type StudioSessionStore = StudioMemoryStore & {
   readonly kind?: string;
@@ -605,7 +723,7 @@ export type StudioSessionStore = StudioMemoryStore & {
   deleteSession?(id: string): boolean | Promise<boolean>;
 };
 
-export type StudioTraceStatus = "running" | "success" | "error";
+export type StudioTraceStatus = "running" | "success" | "suspended" | "error";
 
 export type StudioTraceObservationKind = "agent" | "generation" | "tool";
 
@@ -627,6 +745,7 @@ export type StudioTraceObservation = {
 
 export type StudioTraceSummary = {
   id: string;
+  runId?: string;
   sessionId: string;
   name?: string;
   status: StudioTraceStatus;
@@ -695,7 +814,7 @@ export type StudioKnowledgeSourceSummary = {
   count: number;
   registrationIndex?: number;
   topK?: number;
-  threshold?: number;
+  minScore?: number;
   inspectable?: boolean;
   itemCount?: number;
 };
@@ -910,6 +1029,7 @@ export type StudioOptions = {
   stores?: StudioStores;
   ui?: boolean | StudioUiOptions;
   models?: StudioModelConfig;
+  sandboxes?: readonly StudioSandboxRegistration[];
 };
 
 export type StudioServeOptions = {
@@ -924,11 +1044,6 @@ export type StudioServeLifecycleOptions = Omit<StudioServeOptions, "handleSignal
   onShutdown?: () => void | Promise<void>;
 };
 
-export type StudioToolApprovalDecision = {
-  approved: boolean;
-  reason?: string;
-};
-
 export type StudioToolApprovalStatus =
   | "pending"
   | "approved"
@@ -936,37 +1051,12 @@ export type StudioToolApprovalStatus =
   | "timed_out"
   | "cancelled";
 
-export type StudioToolApproval = {
-  id: string;
-  runId: string;
-  agentId: string;
-  sessionId?: string;
-  toolName: string;
-  callId?: string;
-  internalCallId: string;
-  args: string;
-  status: StudioToolApprovalStatus;
-  requestedAt: string;
-  resolvedAt?: string;
-  reason?: string;
-};
-
 export type StudioToolApprovalTranscript = {
   id: string;
   status: StudioToolApprovalStatus;
   requestedAt: string;
   resolvedAt?: string;
   reason?: string;
-};
-
-export type StudioToolApprovalRequestEvent = {
-  type: "tool_approval_request";
-  approval: StudioToolApproval;
-};
-
-export type StudioToolApprovalResultEvent = {
-  type: "tool_approval_result";
-  approval: StudioToolApproval;
 };
 
 export type StudioToolQuestionChoice = {
@@ -978,6 +1068,7 @@ export type StudioToolQuestionPrompt = {
   id: string;
   question: string;
   choices: StudioToolQuestionChoice[];
+  allowCustom: boolean;
 };
 
 export type StudioToolQuestionAnswer = {
@@ -989,23 +1080,6 @@ export type StudioToolQuestionAnswer = {
 
 export type StudioToolQuestionStatus = "pending" | "answered" | "cancelled";
 
-export type StudioToolQuestion = {
-  id: string;
-  runId: string;
-  agentId: string;
-  sessionId?: string;
-  toolName: string;
-  callId?: string;
-  internalCallId: string;
-  args: string;
-  questions: StudioToolQuestionPrompt[];
-  status: StudioToolQuestionStatus;
-  requestedAt: string;
-  answeredAt?: string;
-  cancelledAt?: string;
-  answers?: StudioToolQuestionAnswer[];
-};
-
 export type StudioToolQuestionTranscript = {
   id: string;
   status: StudioToolQuestionStatus;
@@ -1014,16 +1088,6 @@ export type StudioToolQuestionTranscript = {
   cancelledAt?: string;
   questions: StudioToolQuestionPrompt[];
   answers?: StudioToolQuestionAnswer[];
-};
-
-export type StudioToolQuestionRequestEvent = {
-  type: "tool_question_request";
-  question: StudioToolQuestion;
-};
-
-export type StudioToolQuestionResultEvent = {
-  type: "tool_question_result";
-  question: StudioToolQuestion;
 };
 
 export type StudioSessionLogEvent = {
@@ -1159,37 +1223,40 @@ export type StudioPipelineRunResponse = {
   output: JsonValue;
 };
 
-export type AgentRunRequest = {
-  message: string | Message;
-  history?: Message[];
-  sessionId?: string;
+type AgentRunRequestBase = {
   stream?: boolean;
-  maxTurns?: number;
-  toolConcurrency?: number;
-  model?: StudioModelRef;
   metadata?: JsonObject;
   trace?: AgentTraceOptions;
 };
 
-export type AgentRunUIRequest = {
-  messages: Message[];
-  sessionId?: string;
-  stream?: boolean;
-  maxTurns?: number;
-  toolConcurrency?: number;
-  model?: StudioModelRef;
-  metadata?: JsonObject;
-  trace?: AgentTraceOptions;
-};
+export type AgentRunRequest =
+  | (AgentRunRequestBase & {
+      type: "messages";
+      messages: readonly Message[];
+      sessionId?: string;
+      maxTurns?: number;
+      toolConcurrency?: number;
+      model?: StudioModelRef;
+      interactionId?: never;
+      response?: never;
+    })
+  | (AgentRunRequestBase & {
+      type: "interaction_response";
+      interactionId: string;
+      response: AgentInteractionResponse;
+      messages?: never;
+      sessionId?: never;
+      maxTurns?: never;
+      toolConcurrency?: never;
+      model?: never;
+    });
 
-export type AgentRunResponse = PromptResponse;
+export type AgentRunResponse =
+  | Exclude<AgentOutcome, AgentInteractionOutcome>
+  | Omit<AgentInteractionOutcome, "continuation" | "messages">;
 
 export type AgentRunStreamEvent =
   | AgentStreamEvent
-  | StudioToolApprovalRequestEvent
-  | StudioToolApprovalResultEvent
-  | StudioToolQuestionRequestEvent
-  | StudioToolQuestionResultEvent
   | StudioSessionLogEvent
   | StudioPipelineLogEvent
   | StudioPipelineFinalEvent;
@@ -1197,6 +1264,7 @@ export type AgentRunStreamEvent =
 export type StudioErrorCode =
   | "bad_request"
   | "conflict"
+  | "forbidden"
   | "not_found"
   | "payload_too_large"
   | "unsupported_capability"

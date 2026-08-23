@@ -1,235 +1,267 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
+import { z } from "zod";
 import {
-  AssistantContent,
+  createMessageSchema,
   getAssistantGenerationMetadata,
   isJsonValue,
+  isMessage,
   type JsonValue,
-  Message,
-  type Message as MessageType,
+  type Message,
+  parseMessage,
+  parseMessages,
   reasoningDisplayText,
-  ToolContent,
-  UserContent,
 } from "./helpers/imports";
 
-describe("message attachment content", () => {
-  it("creates user image and document attachments", () => {
-    expect(
-      Message.user([
-        UserContent.text("Inspect this."),
-        UserContent.imageUrl("https://example.com/image.png", { detail: "auto" }),
-        UserContent.imageBase64("abc123", "image/png", { detail: "high" }),
-        UserContent.documentBase64("pdf123", "application/pdf", { filename: "report.pdf" }),
-      ]),
-    ).toEqual({
-      role: "user",
-      content: [
-        { type: "text", text: "Inspect this." },
-        {
-          type: "image",
-          source: { type: "url", url: "https://example.com/image.png" },
-          detail: "auto",
+function CompileMessageBoundary() {
+  // @ts-expect-error System messages require string content.
+  const invalidSystem = { role: "system", content: [] } satisfies Message;
+  const invalidUserContent: Extract<Message, { role: "user" }>["content"] = [
+    // @ts-expect-error User messages do not accept reasoning parts.
+    { type: "reasoning", text: "private" },
+  ];
+  // @ts-expect-error Message metadata must be a JSON object.
+  const invalidMetadata = { role: "user", content: "hello", metadata: "tenant" } satisfies Message;
+  const invalidToolInput = {
+    role: "assistant",
+    content: [
+      {
+        type: "tool-call",
+        toolCallId: "tool_1",
+        toolName: "lookup",
+        // @ts-expect-error Tool inputs must be strict JSON values.
+        input: 1n,
+      },
+    ],
+  } satisfies Message;
+  const invalidToolOutput = {
+    role: "tool",
+    content: [
+      {
+        type: "tool-result",
+        toolCallId: "tool_1",
+        toolName: "lookup",
+        output: {
+          type: "json",
+          // @ts-expect-error Tool outputs must use the explicit JSON-safe output union.
+          value: undefined,
         },
-        {
-          type: "image",
-          source: { type: "base64", data: "abc123", mediaType: "image/png" },
-          detail: "high",
-        },
-        {
-          type: "document",
-          source: {
-            type: "base64",
-            data: "pdf123",
+      },
+    ],
+  } satisfies Message;
+  const providerLeak = {
+    role: "user",
+    content: "hello",
+    // @ts-expect-error additionalParams was removed from the provider-neutral message boundary.
+    additionalParams: { cache: true },
+  } satisfies Message;
+  void [
+    invalidSystem,
+    invalidUserContent,
+    invalidMetadata,
+    invalidToolInput,
+    invalidToolOutput,
+    providerLeak,
+  ];
+}
+void CompileMessageBoundary;
+
+describe("structural messages", () => {
+  it("constructs familiar role/content messages without factories", () => {
+    const messages = [
+      { role: "system", content: "Be concise." },
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "Inspect this." },
+          {
+            type: "image",
+            image: { type: "url", url: "https://example.com/image.png" },
+            detail: "auto",
+          },
+          {
+            type: "file",
+            data: { type: "data", data: "pdf123" },
             mediaType: "application/pdf",
             filename: "report.pdf",
           },
-        },
-      ],
-    });
+        ],
+        metadata: { tenantId: "acme" },
+      },
+    ] satisfies readonly Message[];
+
+    expectTypeOf(messages).toMatchTypeOf<readonly Message[]>();
+    expect(parseMessages(messages)).toEqual(messages);
   });
 
-  it("creates assistant image history content", () => {
-    expect(Message.assistant([AssistantContent.imageBase64("abc123", "image/png")])).toEqual({
+  it("preserves reasoning details, signatures, and provider call identifiers", () => {
+    const message = {
       role: "assistant",
+      id: "msg_1",
       content: [
         {
-          type: "image",
-          source: { type: "base64", data: "abc123", mediaType: "image/png" },
+          type: "reasoning",
+          id: "reasoning_1",
+          text: "Checked the plan.",
+          details: [
+            { type: "summary", text: "Checked the plan." },
+            { type: "encrypted", data: "opaque" },
+            { type: "text", text: "Visible.", signature: "sig_1" },
+            { type: "redacted", data: "redacted" },
+          ],
         },
-      ],
-    });
-  });
-
-  it("keeps legacy reasoning content shape and supports structured reasoning", () => {
-    expect(AssistantContent.reasoning("Think once.", "rs_1")).toEqual({
-      type: "reasoning",
-      text: "Think once.",
-      id: "rs_1",
-    });
-
-    const reasoning = AssistantContent.reasoningFromContent(
-      [
-        { type: "summary", text: "Checked the plan." },
-        { type: "encrypted", data: "opaque" },
-        { type: "text", text: "Visible thinking.", signature: "sig_1" },
-        { type: "redacted", data: "redacted" },
-      ],
-      "rs_2",
-    );
-
-    expect(reasoning).toEqual({
-      type: "reasoning",
-      id: "rs_2",
-      text: "Checked the plan.Visible thinking.",
-      content: [
-        { type: "summary", text: "Checked the plan." },
-        { type: "encrypted", data: "opaque" },
-        { type: "text", text: "Visible thinking.", signature: "sig_1" },
-        { type: "redacted", data: "redacted" },
-      ],
-    });
-    expect(reasoningDisplayText(reasoning)).toBe("Checked the plan.Visible thinking.");
-  });
-
-  it("creates a tool result message from string output", () => {
-    expect(Message.toolResult("abc", "hello")).toEqual({
-      role: "tool",
-      content: [
         {
-          type: "tool_result",
-          id: "abc",
-          content: [{ type: "text", text: "hello" }],
-        },
-      ],
-    });
-  });
-
-  it("creates a tool result message from JSON-serializable output with callId", () => {
-    expect(Message.toolResult("abc", { ok: true }, { callId: "call_123" })).toEqual({
-      role: "tool",
-      content: [
-        {
-          type: "tool_result",
-          id: "abc",
-          callId: "call_123",
-          content: [{ type: "text", text: '{"ok":true}' }],
-        },
-      ],
-    });
-  });
-
-  it("creates a tool result message with toolName metadata", () => {
-    expect(
-      Message.toolResult("abc", { ok: true }, { callId: "call_123", toolName: "exec_command" }),
-    ).toEqual({
-      role: "tool",
-      content: [
-        {
-          type: "tool_result",
-          id: "abc",
-          callId: "call_123",
-          toolName: "exec_command",
-          content: [{ type: "text", text: '{"ok":true}' }],
-        },
-      ],
-    });
-  });
-
-  it("supports positional tool result toolName metadata", () => {
-    expect(ToolContent.toolResult("abc", "hello", undefined, "read_file")).toEqual({
-      type: "tool_result",
-      id: "abc",
-      toolName: "read_file",
-      content: [{ type: "text", text: "hello" }],
-    });
-    expect(ToolContent.toolResult("abc", "hello", "call_123", "read_file")).toEqual({
-      type: "tool_result",
-      id: "abc",
-      callId: "call_123",
-      toolName: "read_file",
-      content: [{ type: "text", text: "hello" }],
-    });
-  });
-
-  it("preserves structured tool result content", () => {
-    expect(Message.toolResult("abc", [{ type: "text", text: "hello" }])).toEqual({
-      role: "tool",
-      content: [
-        {
-          type: "tool_result",
-          id: "abc",
-          content: [{ type: "text", text: "hello" }],
-        },
-      ],
-    });
-  });
-
-  it("omits callId when no callId is provided", () => {
-    const message = Message.toolResult("abc", "hello");
-
-    expect(message.role).toBe("tool");
-    if (message.role !== "tool") {
-      throw new Error("Expected tool message");
-    }
-    expect(message).toMatchObject({
-      role: "tool",
-      content: [{ type: "tool_result", id: "abc" }],
-    });
-    const [toolResult] = message.content;
-    expect(toolResult).toBeDefined();
-    if (toolResult === undefined) {
-      throw new Error("Expected tool result content");
-    }
-    expect("callId" in toolResult).toBe(false);
-  });
-
-  it("supports old and metadata-aware message factory signatures", () => {
-    const metadata = { composer: { entities: [] } };
-    const messages = [
-      Message.system("system"),
-      Message.system("system", { metadata }),
-      Message.user("user"),
-      Message.user("user", { metadata }),
-      Message.assistant("assistant"),
-      Message.assistant("assistant", "assistant_1"),
-      Message.assistant("assistant", { id: "assistant_1", metadata }),
-      Message.tool(ToolContent.toolResult("tool_1", "done")),
-      Message.tool(ToolContent.toolResult("tool_1", "done"), { metadata }),
-      Message.toolResult("tool_1", "done", {
-        callId: "call_1",
-        toolName: "lookup",
-        metadata,
-      }),
-    ];
-
-    expectTypeOf(messages).toMatchTypeOf<MessageType[]>();
-    expect(messages[6]).toEqual({
-      role: "assistant",
-      id: "assistant_1",
-      content: [{ type: "text", text: "assistant" }],
-      metadata,
-    });
-    expect(messages[9]).toEqual({
-      role: "tool",
-      content: [
-        {
-          type: "tool_result",
-          id: "tool_1",
-          callId: "call_1",
+          type: "tool-call",
+          toolCallId: "tool_1",
+          callId: "provider_call_1",
           toolName: "lookup",
-          content: [{ type: "text", text: "done" }],
+          input: { query: "release" },
+          signature: "sig_2",
         },
       ],
-      metadata,
-    });
+    } satisfies Message;
+
+    expect(parseMessage(message)).toEqual(message);
+    const reasoning = message.content[0];
+    expect(reasoning?.type).toBe("reasoning");
+    if (reasoning?.type === "reasoning") {
+      expect(reasoningDisplayText(reasoning)).toBe("Checked the plan.Visible.");
+    }
   });
 
-  it("reads valid framework generation metadata without accepting malformed values", () => {
-    const message = Message.assistant("assistant", {
+  it("models explicit tool result outputs", () => {
+    const messages = [
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: "tool_1",
+            callId: "provider_call_1",
+            toolName: "lookup",
+            output: { type: "json", value: { found: true } },
+          },
+          {
+            type: "tool-result",
+            toolCallId: "tool_2",
+            toolName: "download",
+            output: {
+              type: "content",
+              value: [
+                { type: "text", text: "report" },
+                {
+                  type: "file",
+                  data: { type: "data", data: "cGRm" },
+                  mediaType: "application/pdf",
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ] satisfies readonly Message[];
+
+    expect(parseMessages(messages)).toEqual(messages);
+  });
+});
+
+describe("message validation", () => {
+  it("rejects unknown keys and invalid role/content combinations", () => {
+    expect(() => parseMessage({ role: "system", content: [], extra: true })).toThrow();
+    expect(() => parseMessage({ role: "tool", content: "done" })).toThrow();
+    expect(() =>
+      parseMessage({ role: "user", content: [{ type: "reasoning", text: "no" }] }),
+    ).toThrow();
+    expect(() =>
+      parseMessage({ role: "assistant", content: [{ type: "tool-call", input: 1n }] }),
+    ).toThrow();
+    expect(() =>
+      parseMessage({
+        role: "user",
+        content: [{ type: "image", image: { type: "url", url: "not a URL" } }],
+      }),
+    ).toThrow();
+    expect(() =>
+      parseMessage({
+        role: "user",
+        content: [
+          {
+            type: "file",
+            data: { type: "data", data: "not-base64!" },
+            mediaType: "application/pdf",
+          },
+        ],
+      }),
+    ).toThrow();
+    expect(isMessage({ role: "user", content: "hello" })).toBe(true);
+    expect(isMessage({ role: "user", content: "hello", metadata: "tenant" })).toBe(false);
+    expect(isMessage({ role: "assistant", id: undefined, content: "hello" })).toBe(false);
+    expect(() =>
+      parseMessage({
+        role: "assistant",
+        content: [{ type: "text", text: "hello", signature: undefined }],
+      }),
+    ).toThrow("strict JSON");
+  });
+
+  it("validates application metadata and infers its type", () => {
+    const schema = createMessageSchema({
+      metadataSchema: z.object({ tenantId: z.string(), priority: z.number().int() }).strict(),
+    });
+    const message = schema.parse({
+      role: "user",
+      content: "hello",
+      metadata: { tenantId: "acme", priority: 2 },
+    });
+
+    expectTypeOf(message.metadata).toEqualTypeOf<
+      { tenantId: string; priority: number } | undefined
+    >();
+    expect(() =>
+      schema.parse({ role: "user", content: "hello", metadata: { tenantId: "acme" } }),
+    ).toThrow();
+  });
+
+  it("round-trips valid strict JSON and rejects lossy structures", () => {
+    const message = {
+      role: "user",
+      content: "hello",
+      metadata: { nested: [null, true, 1, "ok"] },
+    } satisfies Message;
+    expect(parseMessage(JSON.parse(JSON.stringify(message)))).toEqual(message);
+
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+    class JsonArraySubclass extends Array<unknown> {}
+    const customPrototypeArray = ["value"];
+    Object.setPrototypeOf(customPrototypeArray, { toJSON: () => ["changed"] });
+    for (const value of [
+      Number.NaN,
+      undefined,
+      () => {},
+      Symbol("value"),
+      1n,
+      cyclic,
+      new Date(),
+      new JsonArraySubclass("value"),
+      customPrototypeArray,
+    ]) {
+      expect(isJsonValue(value)).toBe(false);
+    }
+  });
+});
+
+describe("generation metadata", () => {
+  it("reads valid framework metadata without accepting inconsistent usage", () => {
+    const valid = {
+      role: "assistant",
+      content: "assistant",
       metadata: {
         anvia: {
           generation: {
             provider: "test",
-            model: "test-model",
+            modelId: "test-model",
+            finishReason: "length",
+            providerFinishReason: "max_output_tokens",
             usage: {
               inputTokens: 7,
               outputTokens: 2,
@@ -240,147 +272,24 @@ describe("message attachment content", () => {
           },
         },
       },
-    });
-
-    expect(getAssistantGenerationMetadata(message)).toEqual({
+    } satisfies Message;
+    expect(getAssistantGenerationMetadata(valid)).toMatchObject({
       provider: "test",
-      model: "test-model",
-      usage: {
-        inputTokens: 7,
-        outputTokens: 2,
-        totalTokens: 9,
-        cachedInputTokens: 1,
-        cacheCreationInputTokens: 0,
-      },
+      modelId: "test-model",
+      finishReason: "length",
+      providerFinishReason: "max_output_tokens",
+      usage: { totalTokens: 9 },
     });
-    expect(getAssistantGenerationMetadata(Message.user("user"))).toBeUndefined();
-    expect(
-      getAssistantGenerationMetadata(
-        Message.assistant("assistant", {
-          metadata: {
-            anvia: {
-              generation: {
-                provider: "test",
-                model: "test-model",
-                usage: { inputTokens: -1 },
-              },
-            },
-          },
-        }),
-      ),
-    ).toBeUndefined();
-  });
 
-  it("rejects incomplete or inconsistent generation usage details", () => {
-    const messageWithDetails = (details: Record<string, number>) =>
-      Message.assistant("assistant", {
-        metadata: {
-          anvia: {
-            generation: {
-              provider: "test",
-              model: "test-model",
-              usage: {
-                inputTokens: 7,
-                outputTokens: 2,
-                totalTokens: 9,
-                cachedInputTokens: 1,
-                cacheCreationInputTokens: 0,
-                details,
-              },
-            },
-          },
-        },
-      });
-
-    expect(
-      getAssistantGenerationMetadata(
-        messageWithDetails({ input: 6, input_cached_tokens: 1, output: 2 }),
-      ),
-    ).toBeUndefined();
-    expect(
-      getAssistantGenerationMetadata(
-        messageWithDetails({ input: 6, input_cached_tokens: 1, output: 2, total: 10 }),
-      ),
-    ).toBeUndefined();
-    expect(
-      getAssistantGenerationMetadata(
-        messageWithDetails({ input: 6, input_cached_tokens: 1, output: 2, total: 9 }),
-      ),
-    ).toMatchObject({ usage: { details: { total: 9 } } });
-  });
-
-  it("rejects internally inconsistent context usage metadata", () => {
-    const messageWithContextUsage = (contextUsage: JsonValue) =>
-      Message.assistant("assistant", {
-        metadata: {
-          anvia: {
-            generation: {
-              provider: "test",
-              model: "test-model",
-              usage: {
-                inputTokens: 60,
-                outputTokens: 15,
-                totalTokens: 75,
-                cachedInputTokens: 0,
-                cacheCreationInputTokens: 0,
-              },
-              contextUsage,
-            },
-          },
-        },
-      });
-    const validContextUsage = {
-      model: { id: "test-model", context: { contextWindow: 100 } },
-      usedTokens: 60,
-      remainingTokens: 40,
-      usedPercent: 60,
-      remainingPercent: 40,
+    const invalid = structuredClone(valid) as unknown as {
+      metadata: { anvia: { generation: { usage: { inputTokens: number } } } };
     };
-
-    expect(
-      getAssistantGenerationMetadata(messageWithContextUsage(validContextUsage)),
-    ).toMatchObject({ contextUsage: validContextUsage });
-    for (const inconsistent of [
-      { ...validContextUsage, remainingTokens: 90 },
-      { ...validContextUsage, usedPercent: 10 },
-      { ...validContextUsage, remainingPercent: 10 },
-    ]) {
-      expect(
-        getAssistantGenerationMetadata(messageWithContextUsage(inconsistent)),
-      ).not.toHaveProperty("contextUsage");
-    }
+    invalid.metadata.anvia.generation.usage.inputTokens = -1;
+    expect(getAssistantGenerationMetadata(invalid as unknown as Message)).toBeUndefined();
   });
 
-  it("validates strict JSON values without accepting lossy structures", () => {
-    const shared = { value: 1 };
-    expect(isJsonValue({ shared, duplicate: shared, list: [null, true, 1, "ok"] })).toBe(true);
-    expect(isJsonValue(Object.assign(Object.create(null), { value: "ok" }))).toBe(true);
-
-    const cyclic: Record<string, unknown> = {};
-    cyclic.self = cyclic;
-    const sparse = new Array(2);
-    sparse[1] = "value";
-    const invalidValues = [
-      Number.NaN,
-      Number.POSITIVE_INFINITY,
-      undefined,
-      () => {},
-      Symbol("value"),
-      1n,
-      cyclic,
-      sparse,
-      new Date(),
-      { value: undefined },
-    ];
-
-    for (const value of invalidValues) {
-      expect(isJsonValue(value)).toBe(false);
-    }
-  });
-
-  it("rejects invalid runtime metadata at factory boundaries", () => {
-    expect(() => Message.user("hello", { metadata: { score: Number.NaN } as JsonValue })).toThrow(
-      "Message metadata must be a strict JSON value.",
-    );
+  it("keeps JsonValue metadata compile-time safe", () => {
+    const metadata = { tenantId: "acme" } satisfies JsonValue;
+    expect(metadata).toEqual({ tenantId: "acme" });
   });
 });

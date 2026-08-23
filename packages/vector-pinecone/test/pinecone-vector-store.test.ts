@@ -1,169 +1,146 @@
-import { type Embedding, type EmbeddingModel, embedDocuments } from "@anvia/core/embeddings";
-import { vectorFilter } from "@anvia/core/vector-store";
-import { describe, expect, it } from "vitest";
-import { filterToPineconeFilter, PineconeVectorStore } from "../src/index";
+import { describe, expect, it, vi } from "vitest";
+import * as publicApi from "../src/index.js";
+import {
+  type PineconeClientLike,
+  type PineconeNamespaceLike,
+  PineconeVectorClient,
+} from "../src/index.js";
 
-class MockEmbeddingModel implements EmbeddingModel {
-  async embedTexts(texts: string[]): Promise<Embedding[]> {
-    return texts.map((document) => ({
-      document,
-      vector: document.toLowerCase().includes("cat") ? [1, 0] : [0, 1],
-    }));
-  }
-}
-
-class MockNamespace {
-  readonly upserts: unknown[] = [];
-  readonly queries: unknown[] = [];
-
-  async upsert(vectors: unknown): Promise<void> {
-    this.upserts.push(vectors);
-  }
-
-  async query(options: unknown): Promise<unknown> {
-    this.queries.push(options);
-    return {
-      matches: [
-        {
-          id: "point1",
-          score: 0.9,
-          metadata: {
-            __anvia_document_id: "doc1",
-            __anvia_document: JSON.stringify({ title: "Cat guide" }),
-            kind: "animal",
+describe("PineconeVectorClient", () => {
+  it("exports the client without legacy index or connect APIs", () => {
+    expect(publicApi).toHaveProperty("PineconeVectorClient");
+    expect(publicApi).not.toHaveProperty("PineconeVectorIndex");
+    expect(publicApi.PineconeVectorStore).not.toHaveProperty("connect");
+    expect(publicApi.PineconeVectorStore.prototype).not.toHaveProperty("index");
+    expect(publicApi.PineconeVectorStore.prototype).not.toHaveProperty("asTool");
+  });
+  it("provisions explicitly and uses raw-vector store operations", async () => {
+    const namespace: PineconeNamespaceLike = {
+      deleteMany: vi.fn(async () => undefined),
+      upsert: vi.fn(async () => undefined),
+      query: vi.fn(async () => ({
+        matches: [
+          {
+            id: "point",
+            score: 0.9,
+            metadata: {
+              __anvia_document_id: "doc",
+              __anvia_document: JSON.stringify({ text: "cat" }),
+            },
           },
-        },
-        {
-          id: "point2",
-          score: 0.4,
-          metadata: {
-            __anvia_document_id: "doc2",
-            __anvia_document: "plain dog note",
-          },
-        },
+        ],
+      })),
+    };
+    const client: PineconeClientLike = {
+      listIndexes: vi.fn(async () => ({ indexes: [{ name: "docs" }] })),
+      createIndex: vi.fn(async () => undefined),
+      index: vi.fn(() => ({ namespace: () => namespace })),
+    };
+    const store = new PineconeVectorClient({ client }).vectorStore<{ text: string }>({
+      indexName: "docs",
+      dimensions: 2,
+    });
+    expect(client.listIndexes).not.toHaveBeenCalled();
+    await store.validate();
+    await store.upsert({
+      documents: [
+        { id: "doc", document: { text: "cat" }, embeddings: [{ document: "cat", vector: [1, 0] }] },
       ],
+    });
+    expect(namespace.deleteMany).toHaveBeenCalled();
+    expect(namespace.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        records: [expect.objectContaining({ id: expect.any(String), values: [1, 0] })],
+      }),
+    );
+    await store.search({ vector: [1, 0], topK: 1 });
+    expect(namespace.query).toHaveBeenCalledWith(expect.objectContaining({ vector: [1, 0] }));
+  });
+
+  it("normalizes Euclidean distance so larger scores are better", async () => {
+    const namespace: PineconeNamespaceLike = {
+      deleteMany: vi.fn(async () => undefined),
+      upsert: vi.fn(async () => undefined),
+      query: vi.fn(async () => ({
+        matches: [
+          {
+            id: "near",
+            score: 0.2,
+            metadata: { __anvia_document_id: "near", __anvia_document: "near" },
+          },
+          {
+            id: "far",
+            score: 0.8,
+            metadata: { __anvia_document_id: "far", __anvia_document: "far" },
+          },
+        ],
+      })),
     };
-  }
-}
-
-class MockPineconeClient {
-  readonly indexes = new Set<string>();
-  readonly creates: unknown[] = [];
-  readonly namespaces = new Map<string, MockNamespace>();
-
-  async listIndexes(): Promise<unknown> {
-    return {};
-  }
-
-  async createIndex(options: unknown): Promise<unknown> {
-    this.indexes.add((options as { name: string }).name);
-    this.creates.push(options);
-    return {};
-  }
-
-  index(indexName: string) {
-    const ns = new MockNamespace();
-    this.namespaces.set(indexName, ns);
-    return {
-      namespace: () => ns,
+    const client: PineconeClientLike = {
+      listIndexes: vi.fn(async () => ({ indexes: [{ name: "docs" }] })),
+      createIndex: vi.fn(async () => undefined),
+      index: vi.fn(() => ({ namespace: () => namespace })),
     };
-  }
-}
-
-describe("PineconeVectorStore", () => {
-  it("connects, upserts precomputed embeddings, and queries with Anvia embeddings", async () => {
-    const client = new MockPineconeClient();
-    const model = new MockEmbeddingModel();
-    const store = await PineconeVectorStore.connect<{ title: string }>({
-      client,
+    const store = new PineconeVectorClient({ client }).vectorStore<string>({
       indexName: "docs",
-    });
-    const ns: MockNamespace = client.namespaces.get("docs") as MockNamespace;
-    const embedded = await embedDocuments(model, [{ id: "doc1", title: "Cat guide" }], {
-      id: (doc) => doc.id,
-      content: (doc) => doc.title,
-      metadata: () => ({ kind: "animal" }),
+      dimensions: 2,
+      metric: "euclidean",
     });
 
-    await store.upsertDocuments(embedded);
-    const results = await store.index(model).search({
-      query: "cat",
-      topK: 2,
-      threshold: 0.5,
-      filter: vectorFilter.eq("kind", "animal"),
-    });
-
-    expect(ns.upserts[0]).toMatchObject([
-      {
-        values: [1, 0],
-        metadata: {
-          __anvia_document_id: "doc1",
-          __anvia_document: JSON.stringify({ id: "doc1", title: "Cat guide" }),
-          kind: "animal",
-        },
-      },
-    ]);
-    expect(ns.queries[0]).toMatchObject({
-      vector: [1, 0],
-      topK: 2,
-      filter: { kind: { $eq: "animal" } },
-      includeMetadata: true,
-    });
-    expect(results).toEqual([
-      {
-        id: "doc1",
-        score: 0.9,
-        document: { title: "Cat guide" },
-        metadata: { kind: "animal" },
-      },
+    await expect(store.search({ vector: [1, 0], topK: 2, minScore: -0.5 })).resolves.toEqual([
+      { id: "near", document: "near", score: -0.2 },
     ]);
   });
 
-  it("translates compound filters", () => {
-    expect(
-      filterToPineconeFilter(
-        vectorFilter.and(vectorFilter.gt("rank", 2), vectorFilter.lt("rank", 5)),
-      ),
-    ).toEqual({
-      $and: [{ rank: { $gt: 2 } }, { rank: { $lt: 5 } }],
-    });
-    expect(
-      filterToPineconeFilter(
-        vectorFilter.or(vectorFilter.eq("a", true), vectorFilter.eq("b", false)),
-      ),
-    ).toEqual({
-      $or: [{ a: { $eq: true } }, { b: { $eq: false } }],
-    });
-  });
-
-  it("rejects documents with no embeddings", async () => {
-    const client = new MockPineconeClient();
-    const store = await PineconeVectorStore.connect<string>({
-      client,
-      indexName: "docs",
-    });
-
-    await expect(
-      store.upsertDocuments([{ id: "doc1", document: "empty", embeddings: [] }]),
-    ).rejects.toThrow("Document doc1 has no embeddings");
-  });
-
-  it("rejects reserved metadata keys", async () => {
-    const client = new MockPineconeClient();
-    const store = await PineconeVectorStore.connect<string>({
-      client,
-      indexName: "docs",
-    });
-
-    await expect(
-      store.upsertDocuments([
+  it("expands physical candidates until topK logical documents are available", async () => {
+    const query = vi.fn(async (options: Record<string, unknown>) => {
+      const matches = [
         {
-          id: "doc1",
-          document: "reserved",
-          metadata: { __anvia_document_id: "bad" },
-          embeddings: [{ document: "reserved", vector: [1, 0] }],
+          id: "a-1",
+          score: 0.9,
+          metadata: { __anvia_document_id: "a", __anvia_document: "A" },
         },
-      ]),
-    ).rejects.toThrow("Metadata key __anvia_document_id is reserved");
+        {
+          id: "a-2",
+          score: 0.8,
+          metadata: { __anvia_document_id: "a", __anvia_document: "A" },
+        },
+      ];
+      if (options.topK !== 2) {
+        matches.push(
+          {
+            id: "b",
+            score: 0.7,
+            metadata: { __anvia_document_id: "b", __anvia_document: "B" },
+          },
+          {
+            id: "c",
+            score: 0.6,
+            metadata: { __anvia_document_id: "c", __anvia_document: "C" },
+          },
+        );
+      }
+      return { matches };
+    });
+    const namespace: PineconeNamespaceLike = {
+      deleteMany: vi.fn(async () => undefined),
+      upsert: vi.fn(async () => undefined),
+      query,
+    };
+    const client: PineconeClientLike = {
+      listIndexes: vi.fn(async () => ({ indexes: [{ name: "docs" }] })),
+      createIndex: vi.fn(async () => undefined),
+      index: vi.fn(() => ({ namespace: () => namespace })),
+    };
+    const store = new PineconeVectorClient({ client }).vectorStore<string>({
+      indexName: "docs",
+      dimensions: 2,
+    });
+
+    await expect(store.search({ vector: [1, 0], topK: 2 })).resolves.toMatchObject([
+      { id: "a" },
+      { id: "b" },
+    ]);
+    expect(query.mock.calls.map(([options]) => options.topK)).toEqual([2, 4]);
   });
 });

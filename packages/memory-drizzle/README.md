@@ -48,20 +48,36 @@ npx drizzle-kit migrate
 ## Usage
 
 ```ts
-import { drizzleMemorySchema, createDrizzleMemoryStore } from "@anvia/memory-drizzle";
+import { DrizzleMemoryStore, drizzleMemorySchema } from "@anvia/memory-drizzle";
 
 export const schema = {
   ...drizzleMemorySchema,
 };
 
-const memory = createDrizzleMemoryStore(db);
+const memory = new DrizzleMemoryStore({
+  db,
+  schema: drizzleMemorySchema,
+  scopeKey: { metadataKeys: ["tenantId"] },
+});
+
+await memory.validate();
 ```
 
 This adapter exports the table definitions so users can add the memory schema to
 their Drizzle schema instead of copying table shapes by hand.
 
+The Drizzle database and its shutdown lifecycle remain caller-owned. `validate()` performs a
+non-mutating read-path check; schema creation remains in the application's Drizzle migrations.
+The database must support `transaction()` because writes and compaction are atomic. The default
+`lock: "advisory"` mode also requires `execute()`; use `lock: "none"` only when the database
+provides equivalent write serialization.
+
 Its optional read-only memory inspector lets `@anvia/studio` discover existing conversations and
 ordered message records directly from these tables.
+
+The store exposes `compaction.snapshot({ scope })` and atomic
+`compaction.replacePrefix({ ... })`. Compaction messages remain visible as ordinary ordered system
+messages; this adapter never chooses retention, calls a model, or retries mutations.
 
 ## Development
 

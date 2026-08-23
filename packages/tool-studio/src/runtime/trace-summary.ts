@@ -7,6 +7,7 @@ export function traceSummary(trace: StudioTrace): StudioTraceSummary {
     startedAt: trace.startedAt,
     observationCount: trace.observations.length,
   };
+  if (trace.runId !== undefined) summary.runId = trace.runId;
   if (trace.name !== undefined) summary.name = trace.name;
   if (trace.endedAt !== undefined) summary.endedAt = trace.endedAt;
   if (trace.durationMs !== undefined) summary.durationMs = trace.durationMs;

@@ -1,0 +1,60 @@
+import { Agent } from "@anvia/core/agent";
+import { createTool } from "@anvia/core/tool";
+import { OpenAIClient } from "@anvia/openai";
+import { z } from "zod";
+
+const weatherTool = createTool({
+  name: "get_weather",
+  description: "Get a simple local weather forecast.",
+  inputSchema: z.object({
+    city: z.string().describe("The city to check."),
+  }),
+  outputSchema: z.object({
+    city: z.string(),
+    forecast: z.string(),
+  }),
+  execute(args) {
+    return {
+      city: args.city,
+      forecast: "Warm with light wind.",
+    };
+  },
+});
+
+const client = new OpenAIClient({
+  baseUrl: process.env.OPENAI_BASEURL,
+  apiKey: process.env.OPENAI_API_KEY ?? "",
+});
+const agentModel = client.completionModel({ modelId: "gpt-5.5", api: "responses" });
+
+const agent = new Agent({
+  id: "agent",
+  model: agentModel,
+  instructions: "Use the weather tool when the user asks for weather.",
+  maxTurns: 2,
+  tools: [weatherTool],
+});
+
+// Provisional deltas let the UI show a tool as soon as the model names it.
+const preparedToolIds = new Set<string>();
+
+for await (const event of agent.stream({ prompt: "What is the weather in Jakarta?" })) {
+  if (event.type === "tool_call_delta" && event.name && !preparedToolIds.has(event.id)) {
+    preparedToolIds.add(event.id);
+    console.log(`Preparing ${event.name} tool...`);
+  }
+
+  if (event.type === "tool_call") {
+    console.log("tool call:", event.toolCall.toolName, event.toolCall.input);
+  }
+
+  if (event.type === "tool_result") {
+    console.log("tool result:", event.result);
+  }
+
+  if (event.type === "text_delta") {
+    process.stdout.write(event.delta);
+  }
+}
+
+process.stdout.write("\n");

@@ -1,5 +1,4 @@
 import { createRoot } from "react-dom/client";
-import "@anvia/react-ui/stream/styles.css";
 import { StudioConsole } from "./app";
 import "./styles.css";
 

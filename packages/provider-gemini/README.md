@@ -19,38 +19,40 @@ pnpm --filter @anvia/gemini build
 ## Usage
 
 ```ts
-import { AgentBuilder } from "@anvia/core";
+import { Agent } from "@anvia/core";
 import { GeminiClient } from "@anvia/gemini";
 
 const client = new GeminiClient({
   apiKey,
 });
 
-const model = client.completionModel("gemini-2.5-flash");
+const model = client.completionModel({ modelId: "gemini-3.7-flash" });
 
-const agent = new AgentBuilder("assistant", model)
-  .instructions("Answer clearly and concisely.")
-  .build();
+const agent = new Agent({
+  id: "assistant",
+  model: model,
+  instructions: "Answer clearly and concisely.",
+});
 
-const response = await agent.prompt("Summarize Anvia in one sentence.").send();
-
-console.log(response.output);
+const result = await agent.generate({ prompt: "Summarize Anvia in one sentence." });
+if (result.type === "response") console.log(result.output);
 ```
 
 ## Vertex AI
 
-Use Vertex AI by passing `vertexai: true` with a Google Cloud project and location:
+Use the exclusive Vertex AI configuration with a Google Cloud project and location:
 
 ```ts
 import { GeminiClient } from "@anvia/gemini";
 
 const client = new GeminiClient({
-  vertexai: true,
-  project: "my-gcp-project",
-  location: "us-central1",
+  vertexAi: {
+    projectId: "my-gcp-project",
+    location: "us-central1",
+  },
 });
 
-const model = client.completionModel("gemini-2.5-flash");
+const model = client.completionModel({ modelId: "gemini-3.7-flash" });
 ```
 
 The Google SDK uses Application Default Credentials. For a service-account JSON file, set
@@ -64,11 +66,12 @@ Trusted credential objects can also be passed explicitly:
 
 ```ts
 const client = new GeminiClient({
-  vertexai: true,
-  project: "my-gcp-project",
-  location: "us-central1",
-  googleAuthOptions: {
-    credentials: serviceAccountJson,
+  vertexAi: {
+    projectId: "my-gcp-project",
+    location: "us-central1",
+    googleAuthOptions: {
+      credentials: serviceAccountJson,
+    },
   },
 });
 ```
@@ -79,34 +82,39 @@ JSON or service-account keys.
 ## Embeddings
 
 ```ts
-const embeddings = client.embeddingModel("gemini-embedding-001");
+const embeddings = client.embeddingModel({ modelId: "gemini-embedding-2" });
 const vectors = await embeddings.embedTexts(["Anvia is a TypeScript AI runtime."]);
 ```
 
 ## Image Generation
 
-`imageGenerationModel()` uses Gemini native image generation models such as Nano Banana.
-Use `imagenGenerationModel()` when you specifically want Imagen.
+Choose the image API explicitly. Gemini native image models use `generateContent`; Imagen uses
+`generateImages`.
 
 ```ts
 import { GEMINI_2_5_FLASH_IMAGE, IMAGEN_4_GENERATE, GeminiClient } from "@anvia/gemini";
 
 const client = new GeminiClient({ apiKey });
 
-const nativeImageModel = client.imageGenerationModel(GEMINI_2_5_FLASH_IMAGE);
-const imagenModel = client.imagenGenerationModel(IMAGEN_4_GENERATE);
+const nativeImageModel = client.imageGenerationModel({
+  api: "generateContent",
+  modelId: GEMINI_2_5_FLASH_IMAGE,
+});
+const imagenModel = client.imageGenerationModel({
+  api: "generateImages",
+  modelId: IMAGEN_4_GENERATE,
+});
 ```
 
 ## Exports
 
 - `GeminiClient`
-- `GeminiCompletionModel`
-- `GeminiEmbeddingModel`
-- `GeminiImageGenerationModel`
-- `GeminiImagenGenerationModel`
-- `GeminiTranscriptionModel`
+- structural completion, embedding, image, and transcription handle types
+- Gemini model-ID types
 - `GEMINI_2_5_FLASH_IMAGE`
-- `GEMINI_3_PRO_IMAGE_PREVIEW`
+- `GEMINI_3_1_FLASH_IMAGE`
+- `GEMINI_3_1_FLASH_LITE_IMAGE`
+- `GEMINI_3_PRO_IMAGE`
 - `IMAGEN_4_GENERATE`
 - `gemini`
 

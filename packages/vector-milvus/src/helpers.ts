@@ -64,26 +64,17 @@ export function milvusRows<T, Metadata extends VectorMetadata>(
 
 export function parseQueryResults<T, Metadata extends VectorMetadata>(
   response: unknown,
-  threshold: number | undefined,
+  minScore: number | undefined,
+  metric: MilvusMetric,
 ): Array<VectorSearchResult<T, Metadata>> {
-  const raw = response as {
-    results?: Array<
-      Array<{
-        id: string;
-        score?: number;
-        [documentIdFieldName]?: string;
-        [documentFieldName]?: string;
-        [key: string]: unknown;
-      }>
-    >;
-  };
-  const matches = raw.results?.[0] ?? [];
+  const matches = milvusMatches(response);
 
   const byId = new Map<string, VectorSearchResult<T, Metadata>>();
 
   for (const match of matches) {
-    const score = match.score ?? 0;
-    if (threshold !== undefined && score < threshold) {
+    const rawScore = match.score ?? 0;
+    const score = metric === "L2" ? -rawScore : rawScore;
+    if (minScore !== undefined && score < minScore) {
       continue;
     }
 
@@ -107,9 +98,22 @@ export function parseQueryResults<T, Metadata extends VectorMetadata>(
   return [...byId.values()];
 }
 
-export async function defaultMilvusClient(): Promise<MilvusClientLike> {
-  const { MilvusClient } = await import("@zilliz/milvus2-sdk-node");
-  return new MilvusClient({ address: "localhost:19530" }) as unknown as MilvusClientLike;
+export function milvusResultCount(response: unknown): number {
+  return milvusMatches(response).length;
+}
+
+type MilvusMatch = {
+  id: string;
+  score?: number;
+  [documentIdFieldName]?: string;
+  [documentFieldName]?: string;
+  [key: string]: unknown;
+};
+
+function milvusMatches(response: unknown): MilvusMatch[] {
+  const results = (response as { results?: Array<MilvusMatch | MilvusMatch[]> }).results ?? [];
+  const first = results[0];
+  return Array.isArray(first) ? first : (results as MilvusMatch[]);
 }
 
 export async function ensureCollection(
@@ -125,6 +129,7 @@ export async function ensureCollection(
 
   await client.createCollection({
     collection_name: collectionName,
+    enable_dynamic_field: true,
     fields: [
       { name: "id", data_type: "VarChar", max_length: 64, is_primary_key: true },
       { name: documentIdFieldName, data_type: "VarChar", max_length: 4096 },
@@ -141,6 +146,37 @@ export async function ensureCollection(
     metric_type: metric,
     params: { M: 16, efConstruction: 256 },
   });
+}
+
+export function validateMilvusCollection(
+  response: unknown,
+  collectionName: string,
+  dimensions: number,
+): void {
+  const schema = (response as { schema?: { fields?: unknown[] } }).schema;
+  if (schema?.fields === undefined) return;
+  const vector = schema.fields.find(
+    (
+      field,
+    ): field is {
+      name?: string;
+      dim?: unknown;
+      type_params?: Array<{ key?: string; value?: unknown }>;
+    } =>
+      typeof field === "object" &&
+      field !== null &&
+      (field as { name?: unknown }).name === "vector",
+  );
+  if (vector === undefined) {
+    throw new Error(`Milvus collection ${collectionName} is missing its vector field`);
+  }
+  const rawDimensions =
+    vector.dim ?? vector.type_params?.find((parameter) => parameter.key === "dim")?.value;
+  if (rawDimensions !== undefined && Number(rawDimensions) !== dimensions) {
+    throw new Error(
+      `Milvus collection ${collectionName} has ${String(rawDimensions)} dimensions; expected ${dimensions}`,
+    );
+  }
 }
 
 function metadataFromRow<Metadata extends VectorMetadata>(

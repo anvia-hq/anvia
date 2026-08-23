@@ -1,0 +1,54 @@
+import { Agent } from "@anvia/core/agent";
+import { McpClient } from "@anvia/mcp";
+import { OpenAIClient } from "@anvia/openai";
+import { Studio } from "@anvia/studio";
+
+const client = new OpenAIClient({
+  baseUrl: process.env.OPENAI_BASEURL,
+  apiKey: process.env.OPENAI_API_KEY ?? "",
+});
+const port = Number(process.env.RUNNER_PORT ?? 4021);
+
+const counterMcp = new McpClient({
+  name: "counter",
+  transport: {
+    type: "stdio",
+    command: "tsx",
+    args: ["10_integrations/_support/mcp-counter-server.ts"],
+  },
+});
+const counterServer = await counterMcp.connect();
+
+const model = client.completionModel({ modelId: "gpt-5.6-luna", api: "responses" });
+const agent = new Agent({
+  id: "studio-mcp-counter",
+  model: model,
+  name: "Studio MCP Counter",
+  description: "Demonstrates MCP tools surfaced through Studio.",
+  instructions: [
+    "Use MCP tools for arithmetic and counter updates.",
+    "When the user asks to add numbers, call the add MCP tool.",
+    "When the user asks to update the counter, call increment_counter.",
+  ].join("\n"),
+  mcpServers: [counterServer],
+  maxTurns: 4,
+});
+
+const studio = new Studio([agent], {
+  quickPrompts: {
+    "studio-mcp-counter": [
+      "Add 8 and 13, then increment the counter by the result.",
+      "Increment the counter by 3 and tell me the new value.",
+      "What MCP tools are available to you?",
+    ],
+  },
+});
+
+console.log(`Open http://localhost:${port}/ui/playground to chat with the MCP-backed agent.`);
+console.log(`Open http://localhost:${port}/ui/mcps to inspect and run connected MCP tools.`);
+console.log(`Open http://localhost:${port}/ui/tools to see all registered Studio tools.`);
+
+await studio.serve({
+  port,
+  onShutdown: () => counterMcp.close(),
+});

@@ -1,80 +1,122 @@
-import type { StreamingCompletionModel } from "@anvia/core/completion";
+import {
+  type ModelContextLimits,
+  resolveModelContextLimits,
+  type StreamingCompletionModel,
+} from "@anvia/core/completion";
+import type { EmbeddingModel } from "@anvia/core/embeddings";
+import type { ImageGenerationModel } from "@anvia/core/image-generation";
 import {
   type ModelList,
   type ModelListingClient,
   ModelListingError,
 } from "@anvia/core/model-listing";
+import type { SpeechGenerationModel } from "@anvia/core/speech-generation";
+import type { TranscriptionModel } from "@anvia/core/transcription";
 import OpenAI from "openai";
-import { OpenAIAudioGenerationModel, TTS_1 } from "./audio-generation";
 import { OpenAIChatCompletionModel } from "./chat-completion";
-import { OpenAIEmbeddingModel, type ProviderEmbeddingModelOptions } from "./embedding";
-import { GPT_IMAGE_1, OpenAIImageGenerationModel } from "./image-generation";
+import { OpenAIEmbeddingModel, type OpenAIEmbeddingModelOptions } from "./embedding";
+import { OpenAIImageGenerationModel } from "./image-generation";
 import type {
-  OpenAIAudioGenerationModelName,
-  OpenAICompletionModelName,
-  OpenAIEmbeddingModelName,
-  OpenAIImageGenerationModelName,
-  OpenAITranscriptionModelName,
+  OpenAICompletionModelId,
+  OpenAIImageGenerationModelId,
+  OpenAISpeechGenerationModelId,
+  OpenAITranscriptionModelId,
 } from "./models";
+import { OPENAI_COMPLETION_MODEL_CONTEXT_LIMITS } from "./models";
 import { OpenAIResponsesCompletionModel } from "./responses";
-import { OpenAITranscriptionModel, WHISPER_1 } from "./transcription";
+import { OpenAISpeechGenerationModel } from "./speech-generation";
+import { OpenAITranscriptionModel } from "./transcription";
 
-export type OpenAIClientOptions = {
-  apiKey?: string | undefined;
+type OpenAIManagedClientOptions = {
+  apiKey: string;
   baseUrl?: string | undefined;
   headers?: Record<string, string> | undefined;
-  completionApi?: "responses" | "chat" | undefined;
-  client?: OpenAI | undefined;
+  client?: never;
 };
 
+type OpenAIInjectedClientOptions = {
+  client: OpenAI;
+  apiKey?: never;
+  baseUrl?: never;
+  headers?: never;
+};
+
+export type OpenAIClientOptions = OpenAIManagedClientOptions | OpenAIInjectedClientOptions;
+
+export type OpenAICompletionModelOptions = {
+  modelId: OpenAICompletionModelId;
+  api: "responses" | "chat";
+  contextLimits?: ModelContextLimits | undefined;
+};
+
+export type OpenAIImageGenerationModelOptions = { modelId: OpenAIImageGenerationModelId };
+export type OpenAISpeechGenerationModelOptions = { modelId: OpenAISpeechGenerationModelId };
+export type OpenAITranscriptionModelOptions = { modelId: OpenAITranscriptionModelId };
+
+export type OpenAICompletionModel = StreamingCompletionModel<unknown>;
+export type OpenAIEmbeddingModelHandle = EmbeddingModel;
+export type OpenAIImageGenerationModelHandle = ImageGenerationModel<unknown>;
+export type OpenAISpeechGenerationModelHandle = SpeechGenerationModel<unknown>;
+export type OpenAITranscriptionModelHandle = TranscriptionModel<unknown>;
+
 export class OpenAIClient implements ModelListingClient {
-  readonly client: OpenAI;
-  private readonly completionApi: "responses" | "chat";
+  private readonly sdk: OpenAI;
 
-  constructor(options: OpenAIClientOptions = {}) {
-    this.completionApi =
-      options.completionApi ?? (options.baseUrl === undefined ? "responses" : "chat");
-    this.client =
-      options.client ??
-      new OpenAI({
-        apiKey: requireApiKey(options.apiKey),
-        baseURL: options.baseUrl,
-        defaultHeaders: options.headers,
-      });
+  constructor(options: OpenAIClientOptions) {
+    if (options.client !== undefined) {
+      rejectManagedOptionsWithInjectedClient(options, ["apiKey", "baseUrl", "headers"]);
+      this.sdk = options.client;
+      return;
+    }
+    this.sdk = new OpenAI({
+      apiKey: requireApiKey(options.apiKey),
+      baseURL: options.baseUrl,
+      defaultHeaders: options.headers,
+      maxRetries: 0,
+    });
   }
 
-  completionModel(
-    model: OpenAICompletionModelName = "gpt-5",
-  ): StreamingCompletionModel<unknown, OpenAICompletionModelName> {
-    return this.completionApi === "chat"
-      ? new OpenAIChatCompletionModel(this.client, model)
-      : new OpenAIResponsesCompletionModel(this.client, model);
+  completionModel(options: OpenAICompletionModelOptions): OpenAICompletionModel {
+    const modelId = requireModelId(options.modelId);
+    const contextLimits = resolveModelContextLimits(
+      modelId,
+      OPENAI_COMPLETION_MODEL_CONTEXT_LIMITS,
+      options.contextLimits,
+    );
+    return options.api === "chat"
+      ? new OpenAIChatCompletionModel(this.sdk, modelId, contextLimits)
+      : new OpenAIResponsesCompletionModel(this.sdk, modelId, contextLimits);
   }
 
-  embeddingModel(
-    model: OpenAIEmbeddingModelName = "text-embedding-3-small",
-    options: ProviderEmbeddingModelOptions = {},
-  ): OpenAIEmbeddingModel {
-    return new OpenAIEmbeddingModel(this.client, model, options);
+  embeddingModel(options: OpenAIEmbeddingModelOptions): OpenAIEmbeddingModelHandle {
+    requireModelId(options.modelId);
+    validateOptionalPositiveSafeInteger(options.dimensions, "dimensions");
+    validateOptionalPositiveSafeInteger(options.maxBatchSize, "maxBatchSize");
+    return new OpenAIEmbeddingModel(this.sdk, options);
   }
 
   imageGenerationModel(
-    model: OpenAIImageGenerationModelName = GPT_IMAGE_1,
-  ): OpenAIImageGenerationModel {
-    return new OpenAIImageGenerationModel(this.client, model);
+    options: OpenAIImageGenerationModelOptions,
+  ): OpenAIImageGenerationModelHandle {
+    return new OpenAIImageGenerationModel(this.sdk, requireModelId(options.modelId));
   }
 
-  audioGenerationModel(model: OpenAIAudioGenerationModelName = TTS_1): OpenAIAudioGenerationModel {
-    return new OpenAIAudioGenerationModel(this.client, model);
+  speechGenerationModel(
+    options: OpenAISpeechGenerationModelOptions,
+  ): OpenAISpeechGenerationModelHandle {
+    return new OpenAISpeechGenerationModel(this.sdk, requireModelId(options.modelId));
   }
 
-  transcriptionModel(model: OpenAITranscriptionModelName = WHISPER_1): OpenAITranscriptionModel {
-    return new OpenAITranscriptionModel(this.client, model);
+  transcriptionModel(options: OpenAITranscriptionModelOptions): OpenAITranscriptionModelHandle {
+    return new OpenAITranscriptionModel(this.sdk, requireModelId(options.modelId));
   }
 
-  async listModels(): Promise<ModelList> {
+  async listModels(options: { abortSignal?: AbortSignal | undefined } = {}): Promise<ModelList> {
     try {
-      const response = await this.client.models.list();
+      const response = await this.sdk.models.list({
+        signal: options.abortSignal,
+        maxRetries: 0,
+      });
       const data = (await collectModelsFromResponse(response))
         .map(toListedModel)
         .filter(isListedModel);
@@ -85,12 +127,32 @@ export class OpenAIClient implements ModelListingClient {
   }
 }
 
+function rejectManagedOptionsWithInjectedClient(options: object, keys: readonly string[]): void {
+  const conflict = keys.find((key) => key in options);
+  if (conflict !== undefined) {
+    throw new TypeError(`OpenAIClient cannot combine client with ${conflict}.`);
+  }
+}
+
 function requireApiKey(apiKey: string | undefined): string {
-  if (apiKey === undefined || apiKey.length === 0) {
+  if (apiKey === undefined || apiKey.trim().length === 0) {
     throw new Error("Missing OpenAI credentials. Pass apiKey when constructing OpenAIClient.");
   }
 
   return apiKey;
+}
+
+function requireModelId<ModelId extends string>(modelId: ModelId): ModelId {
+  if (modelId.trim().length === 0) {
+    throw new TypeError("modelId must be a non-empty string");
+  }
+  return modelId;
+}
+
+function validateOptionalPositiveSafeInteger(value: number | undefined, name: string): void {
+  if (value !== undefined && (!Number.isSafeInteger(value) || value <= 0)) {
+    throw new TypeError(`${name} must be a positive safe integer`);
+  }
 }
 
 async function collectModelsFromResponse(response: unknown): Promise<unknown[]> {

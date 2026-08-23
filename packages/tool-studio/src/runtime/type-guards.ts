@@ -1,8 +1,8 @@
 import {
   isJsonValue as isCoreJsonValue,
+  isMessage,
   type JsonObject,
   type JsonValue,
-  type Message,
 } from "@anvia/core/completion";
 import type { AgentTraceOptions } from "../types";
 
@@ -18,25 +18,17 @@ export function isJsonValue(value: unknown): value is JsonValue {
   return isCoreJsonValue(value);
 }
 
-export function isMessageInput(value: unknown): value is string | Message {
-  return typeof value === "string" || isMessage(value);
-}
-
-export function isMessage(value: unknown): value is Message {
-  if (!isObject(value) || typeof value.role !== "string") {
-    return false;
-  }
-  if (value.role === "system") {
-    return typeof value.content === "string";
-  }
-  if (value.role === "user" || value.role === "assistant" || value.role === "tool") {
-    return Array.isArray(value.content);
-  }
-  return false;
-}
+export { isMessage };
 
 export function isAgentTraceOptions(value: unknown): value is AgentTraceOptions {
   if (!isObject(value)) {
+    return false;
+  }
+  if (
+    !Object.keys(value).every((key) =>
+      ["name", "userId", "sessionId", "metadata", "tags", "version", "traceId"].includes(key),
+    )
+  ) {
     return false;
   }
   return (
@@ -45,9 +37,8 @@ export function isAgentTraceOptions(value: unknown): value is AgentTraceOptions 
     optionalString(value.sessionId) &&
     optionalString(value.version) &&
     optionalString(value.traceId) &&
-    optionalBoolean(value.failOnObserverError) &&
     optionalStringArray(value.tags) &&
-    optionalObject(value.metadata)
+    (value.metadata === undefined || isJsonObject(value.metadata))
   );
 }
 
@@ -63,16 +54,8 @@ function optionalString(value: unknown): boolean {
   return value === undefined || typeof value === "string";
 }
 
-function optionalBoolean(value: unknown): boolean {
-  return value === undefined || typeof value === "boolean";
-}
-
 function optionalStringArray(value: unknown): boolean {
   return (
     value === undefined || (Array.isArray(value) && value.every((item) => typeof item === "string"))
   );
-}
-
-function optionalObject(value: unknown): boolean {
-  return value === undefined || isObject(value);
 }

@@ -19,7 +19,7 @@ pnpm --filter @anvia/studio build
 ## Usage
 
 ```ts
-import { AgentBuilder } from "@anvia/core";
+import { Agent } from "@anvia/core";
 import { OpenAIClient } from "@anvia/openai";
 import { Studio } from "@anvia/studio";
 
@@ -27,11 +27,13 @@ const client = new OpenAIClient({
   apiKey,
 });
 
-const agent = new AgentBuilder("support", client.completionModel())
-  .name("Support")
-  .description("Answers support questions.")
-  .instructions("Answer support questions clearly.")
-  .build();
+const agent = new Agent({
+  id: "support",
+  model: client.completionModel({ modelId: "gpt-5", api: "responses" }),
+  name: "Support",
+  description: "Answers support questions.",
+  instructions: "Answer support questions clearly.",
+});
 
 new Studio([agent]).start({
   port: 4021,
@@ -49,7 +51,7 @@ http://localhost:4021/ui/playground
 Studio can expose a shared model catalog and let each agent choose from registered providers:
 
 ```ts
-import { AgentBuilder } from "@anvia/core";
+import { Agent } from "@anvia/core";
 import { AnthropicClient } from "@anvia/anthropic";
 import { OpenAIClient } from "@anvia/openai";
 import { Studio } from "@anvia/studio";
@@ -57,10 +59,12 @@ import { Studio } from "@anvia/studio";
 const openai = new OpenAIClient({ apiKey: process.env.OPENAI_API_KEY });
 const anthropic = new AnthropicClient({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-const agent = new AgentBuilder("support", openai.completionModel("gpt-5"))
-  .name("Support")
-  .instructions("Answer support questions clearly.")
-  .build();
+const agent = new Agent({
+  id: "support",
+  model: openai.completionModel({ modelId: "gpt-5", api: "responses" }),
+  name: "Support",
+  instructions: "Answer support questions clearly.",
+});
 
 new Studio([agent], {
   models: {
@@ -68,8 +72,9 @@ new Studio([agent], {
       {
         id: "openai",
         name: "OpenAI",
-        defaultModel: "gpt-5",
-        createCompletionModel: (model) => openai.completionModel(model),
+        defaultModelId: "gpt-5",
+        createCompletionModel: ({ modelId }) =>
+          openai.completionModel({ modelId, api: "responses" }),
         listModels: () => openai.listModels(),
         models: [
           {
@@ -81,14 +86,14 @@ new Studio([agent], {
       {
         id: "anthropic",
         name: "Anthropic",
-        defaultModel: "claude-sonnet-4-20250514",
-        createCompletionModel: (model) => anthropic.completionModel(model),
+        defaultModelId: "claude-sonnet-4-20250514",
+        createCompletionModel: ({ modelId }) => anthropic.completionModel({ modelId }),
       },
     ],
     agents: {
       support: {
-        default: "openai:gpt-5",
-        allowed: ["openai:*", "anthropic:claude-sonnet-4-20250514"],
+        defaultModelRef: { providerId: "openai", modelId: "gpt-5" },
+        allowed: ["openai:*", { providerId: "anthropic", modelId: "claude-sonnet-4-20250514" }],
       },
     },
   },
@@ -100,8 +105,11 @@ also select a model per run:
 
 ```json
 {
-  "message": "Summarize this ticket",
-  "model": "anthropic:claude-sonnet-4-20250514",
+  "messages": [{ "role": "user", "content": "Summarize this ticket" }],
+  "model": {
+    "providerId": "anthropic",
+    "modelId": "claude-sonnet-4-20250514"
+  },
   "stream": true
 }
 ```
@@ -119,6 +127,10 @@ Studio exposes:
 - Memory explorer for users, conversations, messages, and transcript steps backed by the session store
 - Status dashboard for storage adapters, record counts, and enabled capabilities
 - Knowledge tabs for static context, dynamic context, dynamic tools, and retrieval log
+
+Studio reads MCP provenance directly from `Agent.mcpServers`. Prefixes configured by an
+`McpClient` remain visible in both the MCP inspector and direct tool runner, while the remote tool
+name stays available on the typed MCP registration.
 
 ## Session Storage
 
@@ -152,3 +164,41 @@ pnpm --filter @anvia/studio typecheck
 pnpm --filter @anvia/studio test
 pnpm --filter @anvia/studio build
 ```
+## Browser sandbox views
+
+Sandbox registrations may include explicit noVNC views. Studio resolves the upstream only through the
+inspector's loopback-published port and exposes an authorized, same-origin WebSocket bridge. Studio's
+programmatic noVNC client renders the desktop directly, so the stock noVNC splash, toolbar, and password
+prompt are not part of the UI.
+
+```ts
+const studio = new Studio([agent], {
+  sandboxes: [
+    {
+      inspector: browser.inspector({ files: true, ports: true, processes: true }),
+      views: [
+        {
+          id: "desktop",
+          label: "Browser",
+          source: browser.desktop,
+          access: { mode: "local" },
+          authentication: { type: "password", password },
+        },
+      ],
+    },
+  ],
+});
+```
+
+Local mode requires a loopback connection and a same-origin browser request. Remotely reachable Studio
+instances must instead provide `{ mode: "authorize", authorize }`; the application callback runs for
+the viewer connection, WebSocket upgrade, and every takeover operation. Studio does not provide or infer
+an application authentication system. View credentials are omitted from sandbox discovery metadata and
+URLs and returned only by the authorized, non-cacheable viewer-connection endpoint.
+
+When a registered agent emits a matching browser tool call, Playground replaces its Sessions sidebar
+with a larger resizable desktop panel. The embedded desktop remains view-only until the user explicitly
+takes control. That lease blocks Anvia browser tools, is renewed by the UI, and expires when abandoned.
+It is a coordination boundary rather than a replacement for application authorization. The Sandboxes
+page continues to expose the registered view as inspectable runtime metadata. Closing the Playground
+panel restores Sessions without forgetting the current browser; use **Open browser** to show it again.

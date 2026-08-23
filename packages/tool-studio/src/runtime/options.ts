@@ -5,6 +5,7 @@ import type {
   StudioPipeline,
   StudioPipelineLogStore,
   StudioPipelineRunStore,
+  StudioSandboxRegistration,
   StudioSessionStore,
   StudioStores,
   StudioTraceStore,
@@ -29,4 +30,5 @@ export type StudioRuntimeOptions = {
   models?: StudioModelConfig;
   stores?: StudioStores;
   ui?: boolean | StudioUiOptions;
+  sandboxes?: readonly StudioSandboxRegistration[];
 };

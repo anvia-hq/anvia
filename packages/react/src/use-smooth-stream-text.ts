@@ -31,14 +31,15 @@ export function useSmoothStreamText(
     () => [{ key: "text", text: content }],
     [content],
   );
-  const smooth = useSmoothStreamItems(items, {
+  const streamOptions = {
     adapter: textStreamAdapter,
     isStreaming: options.isStreaming,
     resetKey: options.resetKey,
-    ...(options.flushImmediately === undefined
-      ? {}
-      : { flushImmediately: options.flushImmediately }),
-  });
+  };
+  if (options.flushImmediately !== undefined) {
+    Object.assign(streamOptions, { flushImmediately: options.flushImmediately });
+  }
+  const smooth = useSmoothStreamItems(items, streamOptions);
 
   return {
     text: smooth.items[0]?.text ?? "",

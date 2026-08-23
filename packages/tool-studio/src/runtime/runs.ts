@@ -1,5 +1,17 @@
-import type { Message } from "@anvia/core/completion";
-import type { AgentStreamEvent } from "@anvia/core/request";
+import {
+  type AgentClientStreamContext,
+  type ClientStreamEvent,
+  customAgentEventsToClientStream,
+} from "@anvia/client";
+import type { AgentStreamEvent } from "@anvia/core/agent";
+import { parseAgentInteractionResponse } from "@anvia/core/agent/interactions";
+import {
+  isJsonValue,
+  type JsonObject,
+  type Message,
+  parseMessages,
+  type ToolResultOutput,
+} from "@anvia/core/completion";
 import type { Context } from "hono";
 import type {
   AgentRunRequest,
@@ -14,18 +26,18 @@ import type {
 import { serializeError } from "./errors";
 import { errorResponse } from "./http";
 import { formatJson } from "./json";
-import { streamStudioJsonl } from "./streams";
+import { streamStudioClient } from "./streams";
 import {
   isAgentTraceOptions,
   isJsonObject,
-  isMessage,
-  isMessageInput,
   isNonNegativeInteger,
   isObject,
   isPositiveInteger,
 } from "./type-guards";
 
 export { transcriptFromMessages } from "./transcript";
+
+export type TranslatedAgentStreamEvent = AgentStreamEvent;
 
 export class AsyncEventQueue<T> {
   private readonly values: T[] = [];
@@ -63,64 +75,51 @@ export class AsyncEventQueue<T> {
   }
 }
 
-export async function* mergeRunAndApprovalEvents(
-  runEvents: AsyncIterable<AgentStreamEvent>,
-  approvalEvents: AsyncEventQueue<AgentRunStreamEvent>,
-): AsyncIterable<AgentRunStreamEvent> {
-  type TaggedNext =
-    | { source: "run"; value: IteratorResult<AgentStreamEvent> }
-    | { source: "approval"; value: IteratorResult<AgentRunStreamEvent> };
-  const runIterator = runEvents[Symbol.asyncIterator]();
-  let runDone = false;
-  let runNext: Promise<IteratorResult<AgentStreamEvent>> | undefined = runIterator.next();
-  let approvalNext: Promise<IteratorResult<AgentRunStreamEvent>> | undefined =
-    approvalEvents.next();
-
-  try {
-    while (runNext !== undefined || approvalNext !== undefined) {
-      const pending: Promise<TaggedNext>[] = [];
-      if (runNext !== undefined) {
-        pending.push(runNext.then((value) => ({ source: "run", value })));
-      }
-      if (approvalNext !== undefined) {
-        pending.push(approvalNext.then((value) => ({ source: "approval", value })));
-      }
-
-      const result = await Promise.race(pending);
-
-      if (result.source === "run") {
-        if (result.value.done === true) {
-          runDone = true;
-          runNext = undefined;
-          approvalEvents.close();
-        } else {
-          runNext = runIterator.next();
-          yield result.value.value;
-        }
-        continue;
-      }
-
-      if (result.value.done === true) {
-        approvalNext = undefined;
-      } else {
-        approvalNext = approvalEvents.next();
-        yield result.value.value;
-      }
-    }
-  } finally {
-    if (!runDone && runIterator.return !== undefined) {
-      await runIterator.return();
-    }
-    approvalEvents.close();
-  }
-}
-
 export function streamAgentRunEvents(
   _c: Context,
   events: AsyncIterable<AgentRunStreamEvent>,
-  options: { onCancel?: () => void | Promise<void> } = {},
+  options: { runId: string; onCancel?: () => void | Promise<void> },
 ): Response {
-  return streamStudioJsonl(withAgentRunCancellation(events, options.onCancel));
+  return streamStudioClient({
+    events: customAgentEventsToClientStream<AgentRunStreamEvent>({
+      events: withAgentRunCancellation(events, options.onCancel),
+      runId: options.runId,
+      mapCustomEvent: studioEventToClientEvent,
+    }),
+  });
+}
+
+function studioEventToClientEvent(
+  event: AgentRunStreamEvent,
+  context: AgentClientStreamContext,
+): ClientStreamEvent | undefined {
+  if (event.type === "session_log" && isJsonValue(event.log)) {
+    return {
+      type: "data",
+      runId: context.runId,
+      name: "studio.session_log",
+      data: event.log,
+      transient: true,
+    };
+  }
+  if (event.type === "pipeline_log" && isJsonValue(event.log)) {
+    return {
+      type: "data",
+      runId: context.runId,
+      name: "studio.pipeline_log",
+      data: event.log,
+      transient: true,
+    };
+  }
+  if (event.type === "pipeline_final" && isJsonValue(event.output)) {
+    return {
+      type: "data",
+      runId: context.runId,
+      name: "studio.pipeline_final",
+      data: event.output,
+    };
+  }
+  return undefined;
 }
 
 function withAgentRunCancellation(
@@ -156,7 +155,7 @@ function withAgentRunCancellation(
               }
               return next;
             }
-            if (next.value.type === "final" || next.value.type === "error") {
+            if (isTerminalAgentEvent(next.value)) {
               terminal = true;
             }
             return next;
@@ -197,7 +196,7 @@ export function traceForRun(
 ): AgentTraceOptions {
   const options: AgentTraceOptions = {};
   if (trace !== undefined) Object.assign(options, trace);
-  const metadata: Record<string, unknown> = {};
+  const metadata: JsonObject = {};
   if (trace?.metadata !== undefined) Object.assign(metadata, trace.metadata);
   metadata.agentId = agentId;
   options.metadata = metadata;
@@ -214,13 +213,14 @@ export function createPersistedStreamingSessionTranscript(props: {
   runId: string;
   startedAt: number;
   persistGeneratedMessages?: boolean;
+  generatedMessagesStartIndex?: 0 | 1;
 }): {
   events: AsyncIterable<AgentRunStreamEvent>;
   cancel: () => Promise<void>;
 } {
   const transcript: StudioTranscriptEntry[] = [messageToTranscriptEntry(props.message, 0)];
   const title = optionalTitle(props.message);
-  let status: "running" | "success" | "error" | "cancelled" = "running";
+  let status: "running" | "success" | "suspended" | "error" | "cancelled" = "running";
   let saveTail: Promise<void> = Promise.resolve();
   const isCancelled = () => status === "cancelled";
 
@@ -255,11 +255,17 @@ export function createPersistedStreamingSessionTranscript(props: {
           return;
         }
         acceptTranscriptStreamEvent(transcript, event);
-        if (event.type === "final" || event.type === "error") {
+        if (isTerminalAgentEvent(event)) {
           assignTranscriptRunDuration(transcript, Date.now() - props.startedAt);
         }
         const eventStatus =
-          event.type === "final" ? "success" : event.type === "error" ? "error" : "running";
+          event.type === "response" || event.type === "interaction" || event.type === "blocked"
+            ? event.type === "interaction"
+              ? "suspended"
+              : "success"
+            : event.type === "error"
+              ? "error"
+              : "running";
 
         const saveInput: Parameters<typeof props.store.saveSessionRunTranscript>[0] = {
           id: props.session.id,
@@ -270,10 +276,13 @@ export function createPersistedStreamingSessionTranscript(props: {
         };
         if (event.type === "error") saveInput.error = serializeError(event.error);
         await saveTranscript(saveInput);
-        const generatedMessages = event.type === "final" ? event.messages.slice(1) : [];
+        const generatedMessages =
+          event.type === "response" || event.type === "interaction" || event.type === "blocked"
+            ? event.messages.slice(props.generatedMessagesStartIndex ?? 1)
+            : [];
         if (props.persistGeneratedMessages === true && generatedMessages.length > 0) {
           await props.store.append({
-            context: { sessionId: props.session.id },
+            scope: { sessionId: props.session.id },
             runId: props.runId,
             turn: 1,
             messages: generatedMessages,
@@ -389,9 +398,9 @@ function acceptTranscriptStreamEvent(
     transcript.push({
       entryId: transcript.length,
       kind: "tool",
-      toolName: event.toolCall.function.name,
-      callId: event.toolCall.callId ?? event.toolCall.id,
-      args: formatJson(event.toolCall.function.arguments),
+      toolName: event.toolCall.toolName,
+      callId: event.toolCall.callId ?? event.toolCall.toolCallId,
+      args: formatJson(event.toolCall.input),
     });
   }
   if (event.type === "tool_result") {
@@ -432,87 +441,74 @@ function acceptTranscriptStreamEvent(
     }
     appendChildAgentTranscriptEvent(matched, event);
   }
-  if (event.type === "tool_approval_request") {
+  if (event.type === "interaction") {
+    const interaction = event.interaction;
     const matched = findTranscriptToolEntry(
       transcript,
-      event.approval.toolName,
-      approvalCallId(event.approval),
+      interaction.toolName,
+      interaction.callId ?? interaction.toolCallId,
     );
-    if (matched !== undefined) {
-      matched.approval = {
-        id: event.approval.id,
-        status: event.approval.status,
-        requestedAt: event.approval.requestedAt,
-      };
-    }
-  }
-  if (event.type === "tool_approval_result") {
-    const matched = findTranscriptToolEntry(
-      transcript,
-      event.approval.toolName,
-      approvalCallId(event.approval),
-    );
-    if (matched !== undefined) {
+    if (matched !== undefined && interaction.type === "tool-approval") {
       const approval: NonNullable<typeof matched.approval> = {
-        id: event.approval.id,
-        status: event.approval.status,
-        requestedAt: event.approval.requestedAt,
+        id: interaction.id,
+        status: "pending",
+        requestedAt: new Date().toISOString(),
       };
-      if (event.approval.resolvedAt !== undefined) approval.resolvedAt = event.approval.resolvedAt;
-      if (event.approval.reason !== undefined) approval.reason = event.approval.reason;
+      if (interaction.reason !== undefined) approval.reason = interaction.reason;
       matched.approval = approval;
     }
-  }
-  if (event.type === "tool_question_request") {
-    const matched = findTranscriptToolEntry(
-      transcript,
-      event.question.toolName,
-      questionCallId(event.question),
-    );
-    if (matched !== undefined) {
+    if (matched !== undefined && interaction.type === "tool-question") {
       matched.question = {
-        id: event.question.id,
-        status: event.question.status,
-        requestedAt: event.question.requestedAt,
-        questions: event.question.questions,
+        id: interaction.id,
+        status: "pending",
+        requestedAt: new Date().toISOString(),
+        questions: interaction.questions.map((question) => ({
+          id: question.id,
+          question: question.text,
+          choices: [...(question.choices ?? [])],
+          allowCustom: question.choices === undefined || question.allowCustom === true,
+        })),
       };
     }
   }
-  if (event.type === "tool_question_result") {
+  if (event.type === "interaction_response") {
+    const response = event.response;
     const matched = findTranscriptToolEntry(
       transcript,
-      event.question.toolName,
-      questionCallId(event.question),
+      response.toolName,
+      response.callId ?? response.toolCallId,
     );
-    if (matched !== undefined) {
-      const question: NonNullable<typeof matched.question> = {
-        id: event.question.id,
-        status: event.question.status,
-        requestedAt: event.question.requestedAt,
-        questions: event.question.questions,
+    const respondedAt = new Date().toISOString();
+    if (matched?.approval !== undefined && response.type === "tool-approval-response") {
+      const approval: NonNullable<typeof matched.approval> = {
+        ...matched.approval,
+        status: response.approved ? "approved" : "rejected",
+        resolvedAt: respondedAt,
       };
-      if (event.question.answeredAt !== undefined) question.answeredAt = event.question.answeredAt;
-      if (event.question.cancelledAt !== undefined) {
-        question.cancelledAt = event.question.cancelledAt;
-      }
-      if (event.question.answers !== undefined) question.answers = event.question.answers;
-      matched.question = question;
+      if (response.reason !== undefined) approval.reason = response.reason;
+      matched.approval = approval;
+    }
+    if (matched?.question !== undefined && response.type === "tool-question-response") {
+      matched.question = {
+        ...matched.question,
+        status: "answered",
+        answeredAt: respondedAt,
+        answers: response.answers.map((answer) => ({
+          questionId: answer.questionId,
+          answer: answer.value,
+        })),
+      };
     }
   }
-  if (event.type === "final" && event.trace?.traceId !== undefined) {
+  if (
+    (event.type === "response" || event.type === "interaction" || event.type === "blocked") &&
+    event.trace?.traceId !== undefined
+  ) {
     assignTranscriptTraceId(transcript, event.trace.traceId);
   }
   if (event.type === "error") {
     appendTranscriptAssistantError(transcript, errorText(event.error));
   }
-}
-
-function approvalCallId(approval: { callId?: string; toolCallId?: string }): string | undefined {
-  return approval.callId ?? approval.toolCallId;
-}
-
-function questionCallId(question: { callId?: string; toolCallId?: string }): string | undefined {
-  return question.callId ?? question.toolCallId;
 }
 
 function appendChildAgentTranscriptEvent(
@@ -585,9 +581,9 @@ function childAgentTranscriptEvent(
     const entry: Extract<StudioTranscriptChildAgentEvent, { kind: "tool" }> = {
       kind: "tool",
       agentId: event.agentId,
-      toolName: child.toolCall.function.name,
-      callId: child.toolCall.callId ?? child.toolCall.id,
-      args: formatJson(child.toolCall.function.arguments),
+      toolName: child.toolCall.toolName,
+      callId: child.toolCall.callId ?? child.toolCall.toolCallId,
+      args: formatJson(child.toolCall.input),
     };
     if (event.agentName !== undefined) entry.agentName = event.agentName;
     return entry;
@@ -759,18 +755,19 @@ function extractMessageText(message: string | Message): string {
   if (message.role === "system") {
     return message.content;
   }
+  if (typeof message.content === "string") {
+    return message.content;
+  }
   return message.content
     .flatMap((item) => {
       if (item.type === "text" || item.type === "reasoning") {
         return [item.text];
       }
-      if (item.type === "tool_call") {
-        return [`${item.function.name}(${formatJson(item.function.arguments)})`];
+      if (item.type === "tool-call") {
+        return [`${item.toolName}(${formatJson(item.input)})`];
       }
-      if (item.type === "tool_result") {
-        return item.content.map((result) =>
-          "text" in result ? result.text : `[image:${result.mediaType ?? "image/png"}]`,
-        );
+      if (item.type === "tool-result") {
+        return [toolResultOutputText(item.output)];
       }
       return [];
     })
@@ -783,23 +780,26 @@ function optionalTranscriptAttachments(message: string | Message): {
   if (typeof message === "string" || message.role !== "user") {
     return {};
   }
+  if (typeof message.content === "string") {
+    return {};
+  }
   const attachments = message.content.flatMap((content): StudioTranscriptAttachment[] => {
     if (content.type === "image") {
       const attachment: StudioTranscriptAttachment = { kind: "image" };
-      if (content.source.type === "base64") {
-        attachment.data = content.source.data;
-        attachment.mediaType = content.source.mediaType;
+      if (content.image.type === "data") {
+        attachment.data = content.image.data;
+        if (content.mediaType !== undefined) attachment.mediaType = content.mediaType;
       } else {
-        attachment.url = content.source.url;
+        attachment.url = content.image.url;
       }
       return [attachment];
     }
-    if (content.type === "document") {
+    if (content.type === "file") {
       const attachment: StudioTranscriptAttachment = { kind: "document" };
-      if (content.source.filename !== undefined) attachment.name = content.source.filename;
-      if (content.source.mediaType !== undefined) attachment.mediaType = content.source.mediaType;
-      if (content.source.type === "base64") attachment.data = content.source.data;
-      if (content.source.type === "url") attachment.url = content.source.url;
+      if (content.filename !== undefined) attachment.name = content.filename;
+      attachment.mediaType = content.mediaType;
+      if (content.data.type === "data") attachment.data = content.data.data;
+      if (content.data.type === "url") attachment.url = content.data.url;
       return [attachment];
     }
     return [];
@@ -819,8 +819,18 @@ export async function parseRunRequest(c: Context): Promise<AgentRunRequest | { e
     return { error: errorResponse(c, 400, "bad_request", "Request body must be an object") };
   }
 
-  const request =
-    "message" in body ? parseLegacyRunRequestBody(c, body) : parseUiRunRequestBody(c, body);
+  if ("message" in body || "history" in body) {
+    return {
+      error: errorResponse(
+        c,
+        400,
+        "bad_request",
+        "Legacy message/history requests are not supported; use messages",
+      ),
+    };
+  }
+
+  const request = parseRunRequestBody(c, body);
   if ("error" in request) {
     return request;
   }
@@ -828,36 +838,50 @@ export async function parseRunRequest(c: Context): Promise<AgentRunRequest | { e
   return parseRunRequestOptions(c, body, request);
 }
 
-function parseLegacyRunRequestBody(
+function parseRunRequestBody(
   c: Context,
   body: Record<string, unknown>,
 ): AgentRunRequest | { error: Response } {
-  if (!isMessageInput(body.message)) {
+  if (body.type === "interaction_response") {
+    if (typeof body.interactionId !== "string" || body.interactionId.trim().length === 0) {
+      return { error: errorResponse(c, 400, "bad_request", "interactionId must be a string") };
+    }
+    if (body.messages !== undefined || body.sessionId !== undefined || body.model !== undefined) {
+      return {
+        error: errorResponse(
+          c,
+          400,
+          "bad_request",
+          "Interaction responses cannot include messages, sessionId, or model",
+        ),
+      };
+    }
+    try {
+      return {
+        type: "interaction_response",
+        interactionId: body.interactionId,
+        response: parseAgentInteractionResponse(body.response),
+      };
+    } catch {
+      return {
+        error: errorResponse(c, 400, "bad_request", "response must be an interaction response"),
+      };
+    }
+  }
+  if (body.type !== "messages") {
     return {
-      error: errorResponse(c, 400, "bad_request", "Request body requires a string or Message"),
+      error: errorResponse(
+        c,
+        400,
+        "bad_request",
+        'type must be "messages" or "interaction_response"',
+      ),
     };
   }
-
-  const request: AgentRunRequest = {
-    message: typeof body.message === "string" ? body.message : body.message,
-  };
-
-  if ("history" in body) {
-    if (!Array.isArray(body.history) || !body.history.every(isMessage)) {
-      return { error: errorResponse(c, 400, "bad_request", "history must be a Message array") };
-    }
-    request.history = body.history;
-  }
-
-  return request;
-}
-
-function parseUiRunRequestBody(
-  c: Context,
-  body: Record<string, unknown>,
-): AgentRunRequest | { error: Response } {
-  const messages = body.messages;
-  if (!Array.isArray(messages) || !messages.every(isMessage)) {
+  let messages: Message[];
+  try {
+    messages = parseMessages(body.messages);
+  } catch {
     return {
       error: errorResponse(c, 400, "bad_request", "messages must be a non-empty Message array"),
     };
@@ -875,11 +899,13 @@ function parseUiRunRequestBody(
       error: errorResponse(c, 400, "bad_request", "messages must be a non-empty Message array"),
     };
   }
+  if (message.role !== "user") {
+    return {
+      error: errorResponse(c, 400, "bad_request", "The final message must be user-authored"),
+    };
+  }
 
-  const history = messages.slice(0, -1);
-  const request: AgentRunRequest = { message };
-  if (history.length > 0) request.history = history;
-  return request;
+  return { type: "messages", messages };
 }
 
 function parseRunRequestOptions(
@@ -887,13 +913,13 @@ function parseRunRequestOptions(
   body: Record<string, unknown>,
   request: AgentRunRequest,
 ): AgentRunRequest | { error: Response } {
-  if ("sessionId" in body) {
+  if (request.type === "messages" && "sessionId" in body) {
     if (typeof body.sessionId !== "string" || body.sessionId.trim().length === 0) {
       return { error: errorResponse(c, 400, "bad_request", "sessionId must be a string") };
     }
-    if (request.history !== undefined) {
+    if (request.messages.length !== 1 || request.messages[0]?.role !== "user") {
       return {
-        error: errorResponse(c, 400, "bad_request", "sessionId cannot be combined with history"),
+        error: errorResponse(c, 400, "bad_request", "sessionId requires exactly one user message"),
       };
     }
     request.sessionId = body.sessionId;
@@ -906,7 +932,7 @@ function parseRunRequestOptions(
     request.stream = body.stream;
   }
 
-  if ("maxTurns" in body) {
+  if (request.type === "messages" && "maxTurns" in body) {
     if (!isNonNegativeInteger(body.maxTurns)) {
       return {
         error: errorResponse(c, 400, "bad_request", "maxTurns must be a non-negative integer"),
@@ -915,7 +941,7 @@ function parseRunRequestOptions(
     request.maxTurns = body.maxTurns;
   }
 
-  if ("toolConcurrency" in body) {
+  if (request.type === "messages" && "toolConcurrency" in body) {
     if (!isPositiveInteger(body.toolConcurrency)) {
       return {
         error: errorResponse(c, 400, "bad_request", "toolConcurrency must be a positive integer"),
@@ -924,17 +950,15 @@ function parseRunRequestOptions(
     request.toolConcurrency = body.toolConcurrency;
   }
 
-  if ("model" in body) {
-    if (typeof body.model === "string") {
-      request.model = body.model;
-    } else if (
+  if (request.type === "messages" && "model" in body) {
+    if (
       isObject(body.model) &&
-      typeof body.model.provider === "string" &&
-      typeof body.model.model === "string"
+      typeof body.model.providerId === "string" &&
+      typeof body.model.modelId === "string"
     ) {
       request.model = {
-        provider: body.model.provider,
-        model: body.model.model,
+        providerId: body.model.providerId,
+        modelId: body.model.modelId,
       };
     } else {
       return {
@@ -942,7 +966,7 @@ function parseRunRequestOptions(
           c,
           400,
           "bad_request",
-          "model must be a provider:model string or { provider, model } object",
+          "model must be a { providerId, modelId } object",
         ),
       };
     }
@@ -965,4 +989,26 @@ function parseRunRequestOptions(
   }
 
   return request;
+}
+
+function toolResultOutputText(output: ToolResultOutput): string {
+  if (output.type === "text" || output.type === "error-text") return output.value;
+  if (output.type === "json" || output.type === "error-json") return formatJson(output.value);
+  if (output.type === "execution-denied") return output.reason ?? "Execution denied";
+  return output.value
+    .map((part) =>
+      part.type === "text"
+        ? part.text
+        : `[file:${part.mediaType}${part.filename === undefined ? "" : `:${part.filename}`}]`,
+    )
+    .join("\n");
+}
+
+function isTerminalAgentEvent(event: AgentRunStreamEvent): boolean {
+  return (
+    event.type === "response" ||
+    event.type === "interaction" ||
+    event.type === "blocked" ||
+    event.type === "error"
+  );
 }

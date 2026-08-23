@@ -1,3 +1,3 @@
 export { createOtelEvalReporter } from "./eval-reporter.js";
-export { otel } from "./tracing.js";
-export type { OtelEvalReporterOptions, OtelTracing, OtelTracingOptions } from "./types.js";
+export { createOtelObserver } from "./tracing.js";
+export type { OtelEvalReporterOptions, OtelObserverOptions } from "./types.js";

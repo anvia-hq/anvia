@@ -15,35 +15,39 @@ import type {
   ThreadListController,
   ThreadListRecord,
 } from "../src";
-import { Attachment } from "../src/attachment";
+import { AttachmentPrimitive } from "../src/attachment";
 import type { ComposerSubmitMessage as ChatComposerSubmitMessage } from "../src/chat";
-import { ChatProvider, Composer, Thread } from "../src/chat";
-import { Completion, CompletionProvider } from "../src/completion";
-import { HumanInput } from "../src/human-input";
-import { Image } from "../src/image";
-import { Message } from "../src/message";
-import { SelectionToolbar } from "../src/selection-toolbar";
+import { ChatProvider, ComposerPrimitive, ThreadPrimitive } from "../src/chat";
+import { CompletionPrimitive, CompletionProvider } from "../src/completion";
+import { HumanInputPrimitive } from "../src/human-input";
+import { ImagePrimitive } from "../src/image";
+import { MessagePrimitive } from "../src/message";
+import { SelectionToolbarPrimitive } from "../src/selection-toolbar";
 import {
   ChatProvider as SharedChatProvider,
   CompletionProvider as SharedCompletionProvider,
   ThreadListProvider as SharedThreadListProvider,
 } from "../src/shared";
-import { ThreadList, ThreadListItem, ThreadListProvider } from "../src/thread-list";
+import {
+  ThreadListItemPrimitive,
+  ThreadListPrimitive,
+  ThreadListProvider,
+} from "../src/thread-list";
 
 describe("public entrypoints", () => {
   it("exports namespace barrels from subpaths", () => {
-    expect(Attachment.Root).toBeTypeOf("object");
-    expect(Thread.Root).toBeTypeOf("object");
-    expect(Composer.Root).toBeTypeOf("object");
-    expect(Composer.AttachmentInput).toBeTypeOf("object");
-    expect(Message.Root).toBeTypeOf("object");
-    expect(Message.Entity).toBeTypeOf("object");
-    expect(HumanInput.Approvals).toBeTypeOf("object");
-    expect(Completion.Root).toBeTypeOf("object");
-    expect(Image.Root).toBeTypeOf("object");
-    expect(SelectionToolbar.Root).toBeTypeOf("object");
-    expect(ThreadList.Root).toBeTypeOf("object");
-    expect(ThreadListItem.Root).toBeTypeOf("object");
+    expect(AttachmentPrimitive.Root).toBeTypeOf("object");
+    expect(ThreadPrimitive.Root).toBeTypeOf("object");
+    expect(ComposerPrimitive.Root).toBeTypeOf("object");
+    expect(ComposerPrimitive.AttachmentInput).toBeTypeOf("object");
+    expect(MessagePrimitive.Root).toBeTypeOf("object");
+    expect(MessagePrimitive.Entity).toBeTypeOf("object");
+    expect(HumanInputPrimitive.Approvals).toBeTypeOf("object");
+    expect(CompletionPrimitive.Root).toBeTypeOf("object");
+    expect(ImagePrimitive.Root).toBeTypeOf("object");
+    expect(SelectionToolbarPrimitive.Root).toBeTypeOf("object");
+    expect(ThreadListPrimitive.Root).toBeTypeOf("object");
+    expect(ThreadListItemPrimitive.Root).toBeTypeOf("object");
   });
 
   it("keeps shared provider exports aligned with domain barrels", () => {
@@ -56,9 +60,9 @@ describe("public entrypoints", () => {
     expectTypeOf<MessageToolPart>().toMatchTypeOf<{ type: "tool" }>();
     expectTypeOf<MessageAttachmentPart>().toMatchTypeOf<{ type: "attachment" }>();
     expectTypeOf<MessageEntityProps>().toMatchTypeOf<{ entity: ComposerEntity }>();
-    expectTypeOf<ComposerMessageMetadata>().toMatchTypeOf<{
-      composer: { entities: ComposerEntity[] };
-    }>();
+    expectTypeOf<ComposerMessageMetadata["composer"]["entities"]>().toMatchTypeOf<
+      readonly object[]
+    >();
     expectTypeOf<File>().toMatchTypeOf<ComposerAttachmentInput>();
     expectTypeOf<
       Array<{ id: string; type: "image" | "document" | "file" }>

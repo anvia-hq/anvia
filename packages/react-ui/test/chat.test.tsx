@@ -1,11 +1,12 @@
-import {
-  type EventTransport,
-  type SendMessageInput,
-  type UIAttachment,
-  type UIStreamEvent,
-  type UIStreamRequest,
-  useChat,
-} from "@anvia/react";
+import type {
+  ClientStreamEvent,
+  ClientStreamFrame,
+  ClientStreamRequest,
+  ClientTransport,
+  UIAttachment,
+} from "@anvia/client";
+import { CLIENT_STREAM_PROTOCOL } from "@anvia/client";
+import { type SendMessageInput, useChat } from "@anvia/react";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { Editor } from "@tiptap/core";
 import { StrictMode, useEffect, useMemo, useState } from "react";
@@ -17,7 +18,12 @@ import type {
   ComposerTriggerDefinition,
   ComposerTriggerItemsArgs,
 } from "../src";
-import { ChatProvider, Composer, Thread, useComposer } from "../src";
+import {
+  ChatProvider,
+  ComposerPrimitive as Composer,
+  ThreadPrimitive as Thread,
+  useComposer,
+} from "../src";
 import { createChatController, textMessage } from "./helpers";
 
 afterEach(() => {
@@ -166,25 +172,45 @@ describe("Chat primitives", () => {
     );
 
     const button = screen.getByTestId("send");
-    expect(button.getAttribute("data-anvia-submit")).toBe("");
+    expect(button.getAttribute("data-state")).toBe("enabled");
 
     fireEvent.click(button);
 
-    expect(sendMessage).toHaveBeenCalledWith("hello");
+    expect(sendMessage).toHaveBeenCalledWith({ text: "hello" });
   });
 
   it("clears the default textarea composer while the chat stream is still pending", async () => {
     const streamStarted = createDeferred();
     const streamCompletion = createDeferred();
-    const transport: EventTransport<UIStreamRequest, UIStreamEvent> = {
+    const transport: ClientTransport<ClientStreamRequest> = {
       send: vi.fn(async function* () {
         streamStarted.resolve();
+        yield {
+          type: "stream_start",
+          protocol: CLIENT_STREAM_PROTOCOL,
+          streamId: "stream_1",
+          eventId: 0,
+          resumable: false,
+        } satisfies ClientStreamFrame;
         await streamCompletion.promise;
-        const event: UIStreamEvent = {
+        const event: ClientStreamEvent = {
           type: "message_start",
-          message: { id: "assistant_1", role: "assistant", parts: [] },
+          runId: "run_1",
+          messageId: "assistant_1",
+          role: "assistant",
         };
-        yield event;
+        yield {
+          type: "stream_event",
+          streamId: "stream_1",
+          eventId: 1,
+          event,
+        } satisfies ClientStreamFrame;
+        yield {
+          type: "stream_end",
+          streamId: "stream_1",
+          eventId: 1,
+          status: "completed",
+        } satisfies ClientStreamFrame;
       }),
     };
 
@@ -251,7 +277,7 @@ describe("Chat primitives", () => {
       await sendCompletion.promise;
     });
 
-    expect(sendMessage).toHaveBeenCalledWith("Hello");
+    expect(sendMessage).toHaveBeenCalledWith({ text: "Hello" });
     expect(lastInputChangeWhilePending).toBe("");
     expect(inputWhilePending).toBe("");
   });
@@ -317,6 +343,40 @@ describe("Chat primitives", () => {
     expect(stateWhilePending).toBe(
       JSON.stringify({ input: "", attachmentIds: [], entityIds: [], quote: undefined }),
     );
+  });
+
+  it("rejects non-JSON entity data injected through composer state", async () => {
+    const sendMessage = vi.fn(async () => {});
+    const customPrototypeArray = ["user"];
+    Object.setPrototypeOf(customPrototypeArray, { toJSON: () => ["changed"] });
+    const entity: ComposerEntity = {
+      id: "user_ada",
+      triggerId: "people",
+      trigger: "@",
+      label: "Ada",
+      text: "@Ada",
+      range: { from: 0, to: 4 },
+      data: customPrototypeArray as never,
+    };
+    let submission: Promise<void> | undefined;
+
+    render(
+      <ChatProvider controller={createChatController({ sendMessage })}>
+        <Composer.Root defaultEntities={[entity]} defaultInput="@Ada">
+          <ComposerSubmitInvoker
+            onSubmit={(value) => {
+              submission = value;
+            }}
+          />
+        </Composer.Root>
+      </ChatProvider>,
+    );
+
+    fireEvent.click(screen.getByText("Submit directly"));
+
+    if (submission === undefined) throw new Error("Expected a composer submission promise");
+    await expect(submission).rejects.toThrow("Composer entity data must be a JSON value.");
+    expect(sendMessage).not.toHaveBeenCalled();
   });
 
   it("keeps a rejected default submission cleared without overwriting a new draft", async () => {
@@ -427,7 +487,7 @@ describe("Chat primitives", () => {
     });
 
     expect(callsWhilePending).toBe(1);
-    expect(sendMessage).toHaveBeenCalledWith("Hello");
+    expect(sendMessage).toHaveBeenCalledWith({ text: "Hello" });
   });
 
   it("submits quote-only composer messages", async () => {
@@ -551,7 +611,7 @@ describe("Chat primitives", () => {
     expect(screen.getByText("Request failed")).toBeTruthy();
     fireEvent.click(screen.getByText("Summarize this"));
 
-    expect(sendMessage).toHaveBeenCalledWith("Summarize");
+    expect(sendMessage).toHaveBeenCalledWith({ text: "Summarize" });
   });
 
   it("controls optional thread collection wrappers with keepMounted", () => {
@@ -566,11 +626,11 @@ describe("Chat primitives", () => {
       </ChatProvider>,
     );
 
-    expect(screen.getByTestId("messages").getAttribute("data-empty")).toBe("");
+    expect(screen.getByTestId("messages").getAttribute("data-state")).toBe("empty");
     expect(screen.queryByTestId("messages-unmounted")).toBeNull();
     expect(screen.queryByTestId("suggestions")).toBeNull();
-    expect(screen.getByTestId("suggestions-mounted").getAttribute("data-empty")).toBe("");
-    expect(container.querySelector("[data-anvia-thread-suggestions]")).toBeTruthy();
+    expect(screen.getByTestId("suggestions-mounted").getAttribute("data-state")).toBe("empty");
+    expect(container.querySelector('[data-role="suggestions"]')).toBeTruthy();
   });
 
   it("adds file attachments and submits them with composer input", async () => {
@@ -588,16 +648,14 @@ describe("Chat primitives", () => {
       </ChatProvider>,
     );
 
-    expect(container.querySelector("[data-anvia-composer-attachments]")).toBeNull();
+    expect(container.querySelector('[data-role="attachments"]')).toBeNull();
 
-    const input = container.querySelector("[data-anvia-attachment-input]");
+    const input = container.querySelector('input[type="file"]');
     expect(input).toBeInstanceOf(HTMLInputElement);
     fireEvent.change(input as HTMLInputElement, { target: { files: [file] } });
 
     await waitFor(() => {
-      expect(container.querySelector("[data-anvia-composer-attachments]")).toBeInstanceOf(
-        HTMLDivElement,
-      );
+      expect(container.querySelector('[data-role="attachments"]')).toBeInstanceOf(HTMLDivElement);
       expect(screen.getByText("hello.txt")).toBeTruthy();
     });
 
@@ -617,7 +675,7 @@ describe("Chat primitives", () => {
     });
 
     await waitFor(() => {
-      expect(container.querySelector("[data-anvia-composer-attachments]")).toBeNull();
+      expect(container.querySelector('[data-role="attachments"]')).toBeNull();
     });
   });
 
@@ -711,7 +769,7 @@ describe("Chat primitives", () => {
     fireEvent.click(screen.getByText("Open people"));
 
     const item = screen.getByText("Ada");
-    expect(item.getAttribute("data-anvia-composer-trigger-item")).toBe("");
+    expect(item.getAttribute("data-state")).toBe("selected");
     fireEvent.click(item);
     fireEvent.click(screen.getByText("Send"));
 
@@ -729,6 +787,53 @@ describe("Chat primitives", () => {
                 text: "@Ada",
                 range: { from: 0, to: 4 },
                 data: { kind: "user" },
+              },
+            ],
+          },
+        },
+      });
+    });
+  });
+
+  it("preserves explicit null trigger data in submitted entity metadata", async () => {
+    const sendMessage = vi.fn(async () => {});
+    const trigger: ComposerTriggerDefinition = {
+      id: "people",
+      char: "@",
+      items: [{ id: "user_ada", label: "Ada", data: null }],
+    };
+
+    render(
+      <ChatProvider controller={createChatController({ sendMessage })}>
+        <Composer.Root triggers={[trigger]}>
+          <Composer.Input />
+          <Composer.TriggerMenu />
+          <Composer.Submit />
+        </Composer.Root>
+      </ChatProvider>,
+    );
+
+    act(() => {
+      composerTiptapEditor().commands.insertContent("@");
+    });
+    await waitFor(() => expect(screen.getByText("Ada")).toBeTruthy());
+    fireEvent.click(screen.getByText("Ada"));
+    fireEvent.click(screen.getByText("Send"));
+
+    await waitFor(() => {
+      expect(sendMessage).toHaveBeenCalledWith({
+        text: "@Ada ",
+        metadata: {
+          composer: {
+            entities: [
+              {
+                id: "user_ada",
+                triggerId: "people",
+                trigger: "@",
+                label: "Ada",
+                text: "@Ada",
+                range: { from: 0, to: 4 },
+                data: null,
               },
             ],
           },
@@ -769,10 +874,10 @@ describe("Chat primitives", () => {
       expect(screen.getByText("Grace")).toBeTruthy();
     });
     expect(screen.queryByText("Lin")).toBeNull();
-    expect(screen.getByText("Ada").getAttribute("data-selected")).toBe("");
+    expect(screen.getByText("Ada").getAttribute("data-state")).toBe("selected");
 
     fireEvent.keyDown(composerEditor(), { key: "ArrowDown" });
-    expect(screen.getByText("Grace").getAttribute("data-selected")).toBe("");
+    expect(screen.getByText("Grace").getAttribute("data-state")).toBe("selected");
     const selection = window.getSelection();
     if (selection !== null) {
       vi.spyOn(selection, "collapseToEnd").mockImplementation(() => {});
@@ -847,7 +952,7 @@ describe("Chat primitives", () => {
       entities: [],
       signal: expect.any(AbortSignal),
     });
-    expect(screen.getByTestId("trigger-menu").getAttribute("data-loading")).toBe("");
+    expect(screen.getByTestId("trigger-menu").getAttribute("data-state")).toBe("loading");
 
     await act(async () => {
       itemsCompletion.resolve([{ id: "project_anvia", label: "Anvia", data: { kind: "project" } }]);
@@ -990,9 +1095,7 @@ describe("Chat primitives", () => {
     const composerEditorElements = new Set(
       addEventListener.mock.calls.flatMap(([type], index) => {
         const element = addEventListener.mock.contexts[index] as HTMLElement;
-        return type === "keydown" && element.hasAttribute("data-anvia-composer-editor")
-          ? [element]
-          : [];
+        return type === "keydown" && element.classList.contains("ProseMirror") ? [element] : [];
       }),
     );
     const composerEditorListenerCalls = (
@@ -1020,9 +1123,7 @@ describe("Chat primitives", () => {
         ([type, , options], index) =>
           type === "keydown" &&
           options === true &&
-          (addEventListener.mock.contexts[index] as HTMLElement).hasAttribute(
-            "data-anvia-composer-editor",
-          ),
+          (addEventListener.mock.contexts[index] as HTMLElement).classList.contains("ProseMirror"),
       ),
     ).toHaveLength(0);
     expect(
@@ -1030,8 +1131,8 @@ describe("Chat primitives", () => {
         ([type, , options], index) =>
           type === "keydown" &&
           options === true &&
-          (removeEventListener.mock.contexts[index] as HTMLElement).hasAttribute(
-            "data-anvia-composer-editor",
+          (removeEventListener.mock.contexts[index] as HTMLElement).classList.contains(
+            "ProseMirror",
           ),
       ),
     ).toHaveLength(0);
@@ -1066,10 +1167,10 @@ describe("Chat primitives", () => {
 
     fireEvent.click(screen.getByText("Blocked"));
     expect(composerEditor().textContent).toBe("@");
-    expect(screen.getByText("Blocked").getAttribute("data-disabled")).toBe("");
+    expect(screen.getByText("Blocked").getAttribute("data-state")).toBe("disabled");
 
     fireEvent.mouseEnter(screen.getByText("Ada"));
-    expect(screen.getByText("Ada").getAttribute("data-selected")).toBe("");
+    expect(screen.getByText("Ada").getAttribute("data-state")).toBe("selected");
     const selection = window.getSelection();
     if (selection !== null) {
       vi.spyOn(selection, "collapseToEnd").mockImplementation(() => {});
@@ -1093,7 +1194,7 @@ describe("Chat primitives", () => {
     );
 
     const menu = screen.getByTestId("trigger-menu");
-    expect(menu.getAttribute("data-empty")).toBe("");
+    expect(menu.getAttribute("data-state")).toBe("closed");
     expect(menu.textContent).toBe("");
   });
 
@@ -1152,7 +1253,7 @@ describe("Chat primitives", () => {
     await waitFor(() => {
       expect(composerEditor().textContent).toBe("");
     });
-    expect(container.querySelector("[data-anvia-composer-attachments]")).toBeNull();
+    expect(container.querySelector('[data-role="attachments"]')).toBeNull();
 
     fireEvent.click(screen.getByText("Set enter"));
     fireEvent.keyDown(composerEditor(), { key: "Enter" });
@@ -1165,6 +1266,38 @@ describe("Chat primitives", () => {
       attachments: [],
       metadata: { source: "custom" },
     });
+  });
+
+  it("rejects non-JSON entity data before custom composer submit", async () => {
+    const submitMessage = vi.fn<ComposerSubmitMessage>(async () => {});
+    const entity: ComposerEntity = {
+      id: "user_ada",
+      triggerId: "people",
+      trigger: "@",
+      label: "Ada",
+      text: "@Ada",
+      range: { from: 0, to: 4 },
+      data: new Date() as never,
+    };
+    let submission: Promise<void> | undefined;
+
+    render(
+      <ChatProvider controller={createChatController()}>
+        <Composer.Root defaultEntities={[entity]} defaultInput="@Ada" submitMessage={submitMessage}>
+          <ComposerSubmitInvoker
+            onSubmit={(value) => {
+              submission = value;
+            }}
+          />
+        </Composer.Root>
+      </ChatProvider>,
+    );
+
+    fireEvent.click(screen.getByText("Submit directly"));
+
+    if (submission === undefined) throw new Error("Expected a composer submission promise");
+    await expect(submission).rejects.toThrow("Composer entity data must be a JSON value.");
+    expect(submitMessage).not.toHaveBeenCalled();
   });
 
   it("lets custom composer submit control when state is cleared", async () => {
@@ -1304,7 +1437,7 @@ describe("Chat primitives", () => {
     await waitFor(() => {
       expect(sendMessage).toHaveBeenCalledTimes(1);
     });
-    expect(sendMessage).toHaveBeenCalledWith("hello");
+    expect(sendMessage).toHaveBeenCalledWith({ text: "hello" });
   });
 
   it("auto-resizes composer input up to the configured max rows", () => {

@@ -1,4 +1,4 @@
-import type { UIMessage, UIMessagePart } from "@anvia/react";
+import type { UIMessage, UIMessagePart } from "@anvia/client";
 import { createContext, createElement, type ReactElement, type ReactNode, useContext } from "react";
 
 export type MessageContextValue = {
@@ -45,7 +45,9 @@ export function InternalMessagePartProvider({
 export function useMessage(): MessageContextValue {
   const value = useContext(MessageContext);
   if (value === undefined) {
-    throw new Error("Message primitives must be used inside Message.Root or Thread.Messages.");
+    throw new Error(
+      "Message primitives must be used inside MessagePrimitive.Root or ThreadPrimitive.Messages.",
+    );
   }
   return value;
 }
@@ -53,7 +55,9 @@ export function useMessage(): MessageContextValue {
 export function useMessagePart(): MessagePartContextValue {
   const value = useContext(MessagePartContext);
   if (value === undefined) {
-    throw new Error("Message part primitives must be used inside Message.Parts or Message.Part.");
+    throw new Error(
+      "Message part primitives must be used inside MessagePrimitive.Parts or MessagePrimitive.Part.",
+    );
   }
   return value;
 }

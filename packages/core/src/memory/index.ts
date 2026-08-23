@@ -1,7 +1,8 @@
 export {
   createSummaryMemoryCompactor,
-  isMemoryCompactionSummary,
+  isMemoryCompactionMessage,
 } from "./compaction";
 export * from "./errors";
-export * from "./options";
+export { estimateMemoryTokens } from "./options";
+export { createMemoryScopeKey } from "./scope-key";
 export * from "./types";

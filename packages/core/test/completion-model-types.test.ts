@@ -1,18 +1,15 @@
 import { describe, expectTypeOf, it } from "vitest";
-import type { ModelId } from "../src/model-listing";
+import { createCompletionRequest } from "../src/internal/completion-request";
 import {
   type CompletionModel,
   type CompletionRequest,
-  CompletionRequestBuilder,
   Message,
   type Usage,
 } from "./helpers/imports";
 
-type TestModelName = ModelId<"known-model">;
-
-class TypedModel implements CompletionModel<unknown, TestModelName> {
+class TypedModel implements CompletionModel {
   readonly provider = "test";
-  readonly defaultModel: TestModelName = "known-model";
+  readonly modelId = "known-model" as const;
   readonly capabilities = {
     streaming: false,
     tools: true,
@@ -23,7 +20,7 @@ class TypedModel implements CompletionModel<unknown, TestModelName> {
     reasoning: true,
   };
 
-  async completion(request: CompletionRequest<TestModelName>) {
+  async completion(request: CompletionRequest) {
     return {
       choice: [],
       usage: {} as Usage,
@@ -33,12 +30,16 @@ class TypedModel implements CompletionModel<unknown, TestModelName> {
 }
 
 describe("completion model types", () => {
-  it("infers known model names for request builder overrides while accepting custom strings", () => {
-    const request = new CompletionRequestBuilder(new TypedModel(), Message.user("hello"))
-      .modelOverride("known-model")
-      .modelOverride("custom-model")
-      .build();
+  it("binds identity to the model and omits request-level model selection", () => {
+    const model = new TypedModel();
+    const request = createCompletionRequest(Message.user("hello"), {});
 
-    expectTypeOf(request.model).toEqualTypeOf<TestModelName | undefined>();
+    expectTypeOf(model.modelId).toEqualTypeOf<"known-model">();
+    expectTypeOf(request).not.toHaveProperty("model");
+
+    createCompletionRequest(Message.user("hello"), {
+      // @ts-expect-error modelOverride was removed; construct another model handle instead.
+      modelOverride: "custom-model",
+    });
   });
 });

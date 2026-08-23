@@ -1,4 +1,5 @@
-import type { ChatSuggestion, UIMessage, UseChatStatus } from "@anvia/react";
+import type { UIMessage } from "@anvia/client";
+import type { ChatSuggestion, UseChatStatus } from "@anvia/react";
 import {
   Fragment,
   forwardRef,
@@ -19,7 +20,7 @@ import {
   useChatContext,
   useThread,
 } from "../contexts";
-import { Message } from "../message/index";
+import { MessagePrimitive } from "../message/index";
 import { composeRefs, type PrimitiveProps, renderPrimitive } from "../primitives";
 
 type ThreadMessagesChildren = ReactNode | ((message: UIMessage) => ReactNode);
@@ -29,6 +30,7 @@ const ThreadRoot = forwardRef<HTMLDivElement, PrimitiveProps<"div">>(
   function ThreadRoot(props, ref) {
     const chat = useChatContext();
     const viewportRef = useRef<HTMLElement | null>(null);
+    const messagesRef = useRef<HTMLElement | null>(null);
     const [atBottom, setAtBottom] = useState(true);
     const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
       const viewport = viewportRef.current;
@@ -38,7 +40,7 @@ const ThreadRoot = forwardRef<HTMLDivElement, PrimitiveProps<"div">>(
       viewport.scrollTo({ top: viewport.scrollHeight, behavior });
     }, []);
     const thread = useMemo<ThreadContextValue>(
-      () => ({ viewportRef, atBottom, setAtBottom, scrollToBottom }),
+      () => ({ viewportRef, messagesRef, atBottom, setAtBottom, scrollToBottom }),
       [atBottom, scrollToBottom],
     );
 
@@ -48,7 +50,6 @@ const ThreadRoot = forwardRef<HTMLDivElement, PrimitiveProps<"div">>(
           "div",
           {
             ...props,
-            "data-anvia-thread": "",
             "data-state": chat.status,
           } as PrimitiveProps<"div">,
           ref,
@@ -89,7 +90,7 @@ const ThreadViewport = forwardRef<HTMLDivElement, ThreadViewportProps>(function 
     if (viewport === null || !autoScroll || typeof ResizeObserver !== "function") {
       return;
     }
-    const content = viewport.querySelector<HTMLElement>("[data-anvia-thread-messages]");
+    const content = thread.messagesRef.current;
     if (content === null) {
       return;
     }
@@ -118,7 +119,6 @@ const ThreadViewport = forwardRef<HTMLDivElement, ThreadViewportProps>(function 
     {
       ...props,
       onScroll: handleScroll,
-      "data-anvia-thread-viewport": "",
       "data-state": thread.atBottom ? "bottom" : "away",
     } as PrimitiveProps<"div">,
     composedRef,
@@ -131,7 +131,6 @@ const ThreadViewportFooter = forwardRef<HTMLDivElement, PrimitiveProps<"div">>(
       "div",
       {
         ...props,
-        "data-anvia-thread-viewport-footer": "",
       } as PrimitiveProps<"div">,
       ref,
     );
@@ -149,7 +148,6 @@ const ThreadEmpty = forwardRef<HTMLDivElement, PrimitiveProps<"div">>(
       "div",
       {
         ...props,
-        "data-anvia-thread-empty": "",
       } as PrimitiveProps<"div">,
       ref,
     );
@@ -172,7 +170,6 @@ const ThreadStatus = forwardRef<HTMLDivElement, ThreadStatusProps>(function Thre
     {
       ...props,
       children: renderedChildren ?? chat.status,
-      "data-anvia-thread-status": "",
       "data-state": chat.status,
     } as PrimitiveProps<"div">,
     ref,
@@ -182,7 +179,7 @@ const ThreadStatus = forwardRef<HTMLDivElement, ThreadStatusProps>(function Thre
 const ThreadLoading = forwardRef<HTMLDivElement, PrimitiveProps<"div">>(
   function ThreadLoading(props, ref) {
     const chat = useChatContext();
-    if (chat.status !== "streaming") {
+    if (chat.status !== "submitted" && chat.status !== "streaming") {
       return null;
     }
 
@@ -191,7 +188,6 @@ const ThreadLoading = forwardRef<HTMLDivElement, PrimitiveProps<"div">>(
       {
         ...props,
         children: props.children ?? "Loading",
-        "data-anvia-thread-loading": "",
       } as PrimitiveProps<"div">,
       ref,
     );
@@ -217,7 +213,6 @@ const ThreadError = forwardRef<HTMLDivElement, ThreadErrorProps>(function Thread
     {
       ...props,
       children: renderedChildren ?? errorMessage(chat.error),
-      "data-anvia-thread-error": "",
       role: props.role ?? "alert",
     } as PrimitiveProps<"div">,
     ref,
@@ -234,6 +229,14 @@ const ThreadMessages = forwardRef<HTMLDivElement, ThreadMessagesProps>(function 
   ref,
 ) {
   const chat = useChatContext();
+  const thread = useThread();
+  const composedRef = useMemo(
+    () =>
+      composeRefs<HTMLDivElement>(ref, (node) => {
+        thread.messagesRef.current = node;
+      }),
+    [ref, thread.messagesRef],
+  );
   const empty = chat.messages.length === 0;
   if (empty && !keepMounted) {
     return null;
@@ -248,10 +251,9 @@ const ThreadMessages = forwardRef<HTMLDivElement, ThreadMessagesProps>(function 
           {typeof children === "function" ? children(message) : (children ?? defaultMessage())}
         </InternalMessageProvider>
       )),
-      "data-anvia-thread-messages": "",
-      "data-empty": empty ? "" : undefined,
+      "data-state": empty ? "empty" : "populated",
     } as PrimitiveProps<"div">,
-    ref,
+    composedRef,
   );
 });
 
@@ -282,8 +284,8 @@ const ThreadSuggestions = forwardRef<HTMLDivElement, ThreadSuggestionsProps>(
             </ThreadSuggestion>
           ),
         ),
-        "data-anvia-thread-suggestions": "",
-        "data-empty": empty ? "" : undefined,
+        "data-role": "suggestions",
+        "data-state": empty ? "empty" : "populated",
       } as PrimitiveProps<"div">,
       ref,
     );
@@ -301,7 +303,8 @@ const ThreadSuggestion = forwardRef<HTMLButtonElement, ThreadSuggestionProps>(
     const chat = useChatContext();
     const suggestionPrompt = prompt ?? suggestion?.prompt ?? "";
     const disabled =
-      props.disabled ?? (suggestionPrompt.length === 0 || chat.status === "streaming");
+      props.disabled ??
+      (suggestionPrompt.length === 0 || chat.status === "submitted" || chat.status === "streaming");
 
     const handleClick = useCallback(
       (event: MouseEvent<HTMLButtonElement>) => {
@@ -309,7 +312,7 @@ const ThreadSuggestion = forwardRef<HTMLButtonElement, ThreadSuggestionProps>(
         if (event.defaultPrevented || disabled) {
           return;
         }
-        void chat.sendMessage(suggestionPrompt);
+        void chat.sendMessage({ text: suggestionPrompt });
       },
       [chat, disabled, onClick, suggestionPrompt],
     );
@@ -322,7 +325,6 @@ const ThreadSuggestion = forwardRef<HTMLButtonElement, ThreadSuggestionProps>(
         disabled,
         onClick: handleClick,
         type: props.type ?? "button",
-        "data-anvia-thread-suggestion": "",
         "data-state": disabled ? "disabled" : "enabled",
       } as PrimitiveProps<"button">,
       ref,
@@ -354,7 +356,6 @@ const ThreadScrollToBottom = forwardRef<HTMLButtonElement, PrimitiveProps<"butto
         disabled,
         onClick: handleClick,
         type: props.type ?? "button",
-        "data-anvia-scroll-to-bottom": "",
         "data-state": thread.atBottom ? "bottom" : "away",
       } as PrimitiveProps<"button">,
       ref,
@@ -364,12 +365,12 @@ const ThreadScrollToBottom = forwardRef<HTMLButtonElement, PrimitiveProps<"butto
 
 function defaultMessage(): ReactNode {
   return (
-    <Message.Root>
-      <Message.Content>
-        <Message.Parts />
-      </Message.Content>
-      <Message.Actions />
-    </Message.Root>
+    <MessagePrimitive.Root>
+      <MessagePrimitive.Content>
+        <MessagePrimitive.Parts />
+      </MessagePrimitive.Content>
+      <MessagePrimitive.Actions />
+    </MessagePrimitive.Root>
   );
 }
 
@@ -383,7 +384,7 @@ function errorMessage(error: unknown): string {
   return "Something went wrong.";
 }
 
-export const Thread = {
+export const ThreadPrimitive = {
   Root: ThreadRoot,
   Viewport: ThreadViewport,
   ViewportFooter: ThreadViewportFooter,

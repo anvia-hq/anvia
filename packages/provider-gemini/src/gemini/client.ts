@@ -1,83 +1,127 @@
 import {
+  type ModelContextLimits,
+  resolveModelContextLimits,
+  type StreamingCompletionModel,
+} from "@anvia/core/completion";
+import type { EmbeddingModel } from "@anvia/core/embeddings";
+import type { ImageGenerationModel } from "@anvia/core/image-generation";
+import {
   type ModelList,
   type ModelListingClient,
   ModelListingError,
 } from "@anvia/core/model-listing";
+import type { TranscriptionModel } from "@anvia/core/transcription";
 import { GoogleGenAI, type GoogleGenAIOptions } from "@google/genai";
 import { GeminiCompletionModel } from "./completion";
 import { GeminiEmbeddingModel, type GeminiEmbeddingModelOptions } from "./embedding";
-import {
-  GEMINI_2_5_FLASH_IMAGE,
-  GeminiImageGenerationModel,
-  GeminiImagenGenerationModel,
-  IMAGEN_4_GENERATE,
-} from "./image-generation";
+import { GeminiImageGenerationModel, GeminiImagenGenerationModel } from "./image-generation";
 import type {
-  GeminiCompletionModelName,
-  GeminiEmbeddingModelName,
-  GeminiImageGenerationModelName,
-  GeminiTranscriptionModelName,
+  GeminiCompletionModelId,
+  GeminiGenerateContentImageModelId,
+  GeminiGenerateImagesModelId,
+  GeminiTranscriptionModelId,
 } from "./models";
+import { GEMINI_COMPLETION_MODEL_CONTEXT_LIMITS } from "./models";
+import { disableGeminiNativeRetries } from "./retry";
 import { GeminiTranscriptionModel } from "./transcription";
 
 type GeminiApiClientOptions = {
-  apiKey?: string | undefined;
-  vertexai?: false | undefined;
-  project?: never;
-  location?: never;
+  apiKey: string;
+  vertexAi?: never;
+  client?: never;
 };
 
 type VertexClientOptions = {
-  vertexai: true;
-  project?: string | undefined;
-  location?: string | undefined;
-  googleAuthOptions?: GoogleGenAIOptions["googleAuthOptions"];
+  vertexAi: {
+    projectId: string;
+    location: string;
+    googleAuthOptions?: GoogleGenAIOptions["googleAuthOptions"];
+  };
   apiKey?: never;
+  client?: never;
 };
 
-export type GeminiClientOptions = (GeminiApiClientOptions | VertexClientOptions) & {
-  client?: GoogleGenAI | undefined;
+type InjectedClientOptions = {
+  client: GoogleGenAI;
+  apiKey?: never;
+  vertexAi?: never;
 };
+
+export type GeminiClientOptions =
+  | GeminiApiClientOptions
+  | VertexClientOptions
+  | InjectedClientOptions;
+
+export type GeminiCompletionModelOptions = {
+  modelId: GeminiCompletionModelId;
+  contextLimits?: ModelContextLimits | undefined;
+};
+
+export type GeminiImageGenerationModelOptions =
+  | { api: "generateContent"; modelId: GeminiGenerateContentImageModelId }
+  | { api: "generateImages"; modelId: GeminiGenerateImagesModelId };
+
+export type GeminiTranscriptionModelOptions = { modelId: GeminiTranscriptionModelId };
+
+export type GeminiCompletionModelHandle = StreamingCompletionModel<unknown>;
+export type GeminiEmbeddingModelHandle = EmbeddingModel;
+export type GeminiImageGenerationModelHandle = ImageGenerationModel<unknown>;
+export type GeminiTranscriptionModelHandle = TranscriptionModel<unknown>;
 
 export class GeminiClient implements ModelListingClient {
-  readonly client: GoogleGenAI;
+  private readonly sdk: GoogleGenAI;
 
-  constructor(options: GeminiClientOptions = {}) {
-    this.client = options.client ?? new GoogleGenAI(toGoogleGenAIOptions(options));
+  constructor(options: GeminiClientOptions) {
+    if (options.client !== undefined) {
+      rejectManagedOptionsWithInjectedClient(options, ["apiKey", "vertexAi"]);
+      this.sdk = options.client;
+      return;
+    }
+    this.sdk = new GoogleGenAI(toGoogleGenAIOptions(options));
   }
 
-  completionModel(model: GeminiCompletionModelName = "gemini-2.5-flash"): GeminiCompletionModel {
-    return new GeminiCompletionModel(this.client, model);
+  completionModel(options: GeminiCompletionModelOptions): GeminiCompletionModelHandle {
+    const modelId = requireModelId(options.modelId);
+    return new GeminiCompletionModel(
+      this.sdk,
+      modelId,
+      resolveModelContextLimits(
+        modelId,
+        GEMINI_COMPLETION_MODEL_CONTEXT_LIMITS,
+        options.contextLimits,
+      ),
+    );
   }
 
-  embeddingModel(
-    model: GeminiEmbeddingModelName = "gemini-embedding-001",
-    options: GeminiEmbeddingModelOptions = {},
-  ): GeminiEmbeddingModel {
-    return new GeminiEmbeddingModel(this.client, model, options);
+  embeddingModel(options: GeminiEmbeddingModelOptions): GeminiEmbeddingModelHandle {
+    requireModelId(options.modelId);
+    validateOptionalPositiveSafeInteger(options.dimensions, "dimensions");
+    validateOptionalPositiveSafeInteger(options.maxBatchSize, "maxBatchSize");
+    return new GeminiEmbeddingModel(this.sdk, options);
   }
 
   imageGenerationModel(
-    model: GeminiImageGenerationModelName = GEMINI_2_5_FLASH_IMAGE,
-  ): GeminiImageGenerationModel {
-    return new GeminiImageGenerationModel(this.client, model);
+    options: GeminiImageGenerationModelOptions,
+  ): GeminiImageGenerationModelHandle {
+    const modelId = requireModelId(options.modelId);
+    return options.api === "generateContent"
+      ? new GeminiImageGenerationModel(this.sdk, modelId)
+      : new GeminiImagenGenerationModel(this.sdk, modelId);
   }
 
-  imagenGenerationModel(
-    model: GeminiImageGenerationModelName = IMAGEN_4_GENERATE,
-  ): GeminiImagenGenerationModel {
-    return new GeminiImagenGenerationModel(this.client, model);
+  transcriptionModel(options: GeminiTranscriptionModelOptions): GeminiTranscriptionModelHandle {
+    return new GeminiTranscriptionModel(this.sdk, requireModelId(options.modelId));
   }
 
-  transcriptionModel(
-    model: GeminiTranscriptionModelName = "gemini-2.5-flash",
-  ): GeminiTranscriptionModel {
-    return new GeminiTranscriptionModel(this.client, model);
-  }
-
-  async listModels(): Promise<ModelList> {
+  async listModels(options: { abortSignal?: AbortSignal | undefined } = {}): Promise<ModelList> {
     try {
-      const response = await this.client.models.list({ config: { pageSize: 1000 } });
+      const config = { pageSize: 1000 };
+      if (options.abortSignal !== undefined) {
+        Object.assign(config, { abortSignal: options.abortSignal });
+      }
+      const response = await this.sdk.models.list({
+        config: disableGeminiNativeRetries(config),
+      });
       const data = (await collectModelsFromResponse(response))
         .map(toListedModel)
         .filter(isListedModel);
@@ -88,16 +132,27 @@ export class GeminiClient implements ModelListingClient {
   }
 }
 
+function rejectManagedOptionsWithInjectedClient(options: object, keys: readonly string[]): void {
+  const conflict = keys.find((key) => key in options);
+  if (conflict !== undefined) {
+    throw new TypeError(`GeminiClient cannot combine client with ${conflict}.`);
+  }
+}
+
 export function toGoogleGenAIOptions(options: GeminiClientOptions): GoogleGenAIOptions {
-  if (options.vertexai === true) {
-    return {
+  if ("client" in options && options.client !== undefined) {
+    throw new TypeError("Injected Gemini clients do not have managed SDK options.");
+  }
+  if ("vertexAi" in options && options.vertexAi !== undefined) {
+    const sdkOptions: GoogleGenAIOptions = {
       vertexai: true,
-      project: requireOption(options.project, "project", "Vertex Gemini"),
-      location: requireOption(options.location, "location", "Vertex Gemini"),
-      ...(options.googleAuthOptions === undefined
-        ? {}
-        : { googleAuthOptions: options.googleAuthOptions }),
+      project: requireOption(options.vertexAi.projectId, "projectId", "Vertex Gemini"),
+      location: requireOption(options.vertexAi.location, "location", "Vertex Gemini"),
     };
+    if (options.vertexAi.googleAuthOptions !== undefined) {
+      sdkOptions.googleAuthOptions = options.vertexAi.googleAuthOptions;
+    }
+    return sdkOptions;
   }
 
   return {
@@ -106,11 +161,24 @@ export function toGoogleGenAIOptions(options: GeminiClientOptions): GoogleGenAIO
 }
 
 function requireOption(value: string | undefined, name: string, label: string): string {
-  if (value === undefined || value.length === 0) {
+  if (value === undefined || value.trim().length === 0) {
     throw new Error(`Missing ${label} ${name}. Pass ${name} when constructing GeminiClient.`);
   }
 
   return value;
+}
+
+function requireModelId<ModelId extends string>(modelId: ModelId): ModelId {
+  if (modelId.trim().length === 0) {
+    throw new TypeError("modelId must be a non-empty string");
+  }
+  return modelId;
+}
+
+function validateOptionalPositiveSafeInteger(value: number | undefined, name: string): void {
+  if (value !== undefined && (!Number.isSafeInteger(value) || value <= 0)) {
+    throw new TypeError(`${name} must be a positive safe integer`);
+  }
 }
 
 async function collectModelsFromResponse(response: unknown): Promise<unknown[]> {

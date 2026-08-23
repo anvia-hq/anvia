@@ -120,20 +120,22 @@ export function qdrantPoints<T, Metadata extends VectorMetadata>(
 
 export function parseQueryResults<T, Metadata extends VectorMetadata>(
   response: unknown,
-  threshold: number | undefined,
+  minScore: number | undefined,
+  metric?: QdrantDistance | undefined,
 ): Array<VectorSearchResult<T, Metadata>> {
   const points = rawPoints(response);
   const byId = new Map<string, VectorSearchResult<T, Metadata>>();
 
   for (const point of points) {
-    if (threshold !== undefined && point.score < threshold) {
+    const score = metric === "Euclid" ? -point.score : point.score;
+    if (minScore !== undefined && score < minScore) {
       continue;
     }
 
     const id = String(point.payload?.[documentIdPayloadKey] ?? point.id);
     const result: VectorSearchResult<T, Metadata> = {
       id,
-      score: point.score,
+      score,
       document: parseDocument(point.payload?.[documentPayloadKey]),
     };
     const metadata = metadataFromPayload<Metadata>(point.payload);
@@ -149,6 +151,10 @@ export function parseQueryResults<T, Metadata extends VectorMetadata>(
   return [...byId.values()];
 }
 
+export function qdrantResultCount(response: unknown): number {
+  return rawPoints(response).length;
+}
+
 export async function qdrantDocumentPage<T, Metadata extends VectorMetadata>(
   client: QdrantClientLike,
   collectionName: string,
@@ -156,6 +162,7 @@ export async function qdrantDocumentPage<T, Metadata extends VectorMetadata>(
     limit: number;
     cursor?: string | undefined;
     filter?: unknown;
+    providerOptions?: Record<string, unknown> | undefined;
   },
 ): Promise<VectorInspectPage<T, Metadata>> {
   if (typeof client.scroll !== "function") {
@@ -181,6 +188,7 @@ export async function qdrantDocumentPage<T, Metadata extends VectorMetadata>(
 
   while (true) {
     const response = await client.scroll(collectionName, {
+      ...(options.providerOptions ?? {}),
       filter: options.filter,
       limit: Math.max(100, limit * 2),
       offset,

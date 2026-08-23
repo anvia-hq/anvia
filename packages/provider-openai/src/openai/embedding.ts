@@ -1,44 +1,47 @@
-import type { Embedding, EmbeddingModel } from "@anvia/core/embeddings";
+import type { Embedding, EmbeddingModel, ModelCallOptions } from "@anvia/core/embeddings";
 import type OpenAI from "openai";
-import type { OpenAIEmbeddingModelName } from "./models";
+import type { OpenAIEmbeddingModelId } from "./models";
 
-export type ProviderEmbeddingModelOptions = {
+export type OpenAIEmbeddingModelOptions = {
+  modelId: OpenAIEmbeddingModelId;
   dimensions?: number | undefined;
   user?: string | undefined;
   maxBatchSize?: number | undefined;
 };
 
 export class OpenAIEmbeddingModel implements EmbeddingModel {
+  readonly provider = "openai";
+  readonly modelId: OpenAIEmbeddingModelId;
   readonly dimensions: number | undefined;
   readonly maxBatchSize: number;
   private readonly user: string | undefined;
 
   constructor(
     private readonly client: OpenAI,
-    private readonly model: OpenAIEmbeddingModelName,
-    options: ProviderEmbeddingModelOptions = {},
+    options: OpenAIEmbeddingModelOptions,
   ) {
+    this.modelId = options.modelId;
     this.dimensions = options.dimensions;
     this.maxBatchSize = options.maxBatchSize ?? 1024;
     this.user = options.user;
   }
 
-  async embedTexts(texts: string[]): Promise<Embedding[]> {
+  async embedTexts(texts: string[], options?: ModelCallOptions): Promise<Embedding[]> {
     const embeddings: Embedding[] = [];
     for (let index = 0; index < texts.length; index += this.maxBatchSize) {
       const batch = texts.slice(index, index + this.maxBatchSize);
-      embeddings.push(...(await this.embedBatch(batch)));
+      embeddings.push(...(await this.embedBatch(batch, options)));
     }
     return embeddings;
   }
 
-  private async embedBatch(texts: string[]): Promise<Embedding[]> {
+  private async embedBatch(texts: string[], options?: ModelCallOptions): Promise<Embedding[]> {
     if (texts.length === 0) {
       return [];
     }
 
     const params: Record<string, unknown> = {
-      model: this.model,
+      model: this.modelId,
       input: texts,
     };
     if (this.dimensions !== undefined) {
@@ -48,7 +51,10 @@ export class OpenAIEmbeddingModel implements EmbeddingModel {
       params.user = this.user;
     }
 
-    const response = await this.client.embeddings.create(params as never);
+    const response = await this.client.embeddings.create(params as never, {
+      signal: options?.abortSignal,
+      maxRetries: 0,
+    });
     const data = embeddingDataFromResponse(response, texts.length);
     if (data.length !== texts.length) {
       throw new Error(

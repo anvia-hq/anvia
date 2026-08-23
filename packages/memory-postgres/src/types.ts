@@ -1,6 +1,6 @@
-import type { MemoryAppendInput, MemoryContext, MemoryErrorInput } from "@anvia/core/memory";
+import type { MemoryScopeKeyResolver } from "@anvia/core/memory";
 
-export type PostgresMemoryErrorMode = "store" | "ignore";
+export type PostgresMemoryErrorPolicy = "store" | "ignore";
 export type PostgresMemoryLockMode = "advisory" | "none";
 
 export type PostgresMemoryQueryResult = {
@@ -9,6 +9,7 @@ export type PostgresMemoryQueryResult = {
 
 export type PostgresMemoryClientLike = {
   query(text: string, values?: readonly unknown[]): Promise<PostgresMemoryQueryResult>;
+  end?(): Promise<void>;
 };
 
 export type PostgresMemoryTransactionClientLike = PostgresMemoryClientLike & {
@@ -19,10 +20,15 @@ export type PostgresMemoryPoolLike = PostgresMemoryClientLike & {
   connect(): Promise<PostgresMemoryTransactionClientLike>;
 };
 
-export type PostgresMemoryScopeOptions = {
-  includeUserId?: boolean | undefined;
-  metadataKeys?: string[] | undefined;
-};
+export type PostgresMemoryClientOptions =
+  | {
+      connectionString: string;
+      client?: never;
+    }
+  | {
+      client: PostgresMemoryClientLike;
+      connectionString?: never;
+    };
 
 export type PostgresMemoryTableNames = {
   sessions?: string | undefined;
@@ -36,15 +42,8 @@ export type PostgresMemorySchemaOptions = {
 };
 
 export type PostgresMemoryStoreOptions = PostgresMemorySchemaOptions & {
-  client?: PostgresMemoryClientLike | undefined;
-  connectionString?: string | undefined;
-  createIfMissing?: boolean | undefined;
-  scope?: PostgresMemoryScopeOptions | ((context: MemoryContext) => string) | undefined;
-  errors?: PostgresMemoryErrorMode | undefined;
+  scopeKey?: MemoryScopeKeyResolver | undefined;
+  errorPolicy?: PostgresMemoryErrorPolicy | undefined;
   validateMessages?: boolean | undefined;
   lock?: PostgresMemoryLockMode | undefined;
 };
-
-export type PostgresMemoryAppendInput = MemoryAppendInput;
-export type PostgresMemoryContext = MemoryContext;
-export type PostgresMemoryErrorInput = MemoryErrorInput;

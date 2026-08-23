@@ -1,9 +1,10 @@
 import type { JsonObject } from "@anvia/core/completion";
-import { Agent } from "@anvia/core/internal/agent";
+import { Agent, getAgentToolState } from "@anvia/core/internal/agent";
 import { Pipeline } from "@anvia/core/pipeline";
-import { serve } from "@hono/node-server";
+import { serve, type WebSocketServerLike } from "@hono/node-server";
 import type { Hono } from "hono";
 import { Hono as HonoApp } from "hono";
+import { WebSocketServer } from "ws";
 import { StudioTraceObserver } from "../traces/trace-observer";
 import type {
   AnviaStudio,
@@ -11,6 +12,7 @@ import type {
   StudioConfig,
   StudioOptions,
   StudioPipeline,
+  StudioSandboxRegistration,
   StudioServeLifecycleOptions,
   StudioServeOptions,
   StudioSessionStore,
@@ -23,9 +25,9 @@ import {
   resolveStudioUiOptions,
   studioUiEntryPath,
 } from "../ui/routes";
-import { registerAgentRunRoute } from "./agent-runs";
+import { staticContextDocuments, vectorContexts } from "./agent-context";
+import { type PreparedAgentRun, registerAgentRunRoute } from "./agent-runs";
 import { cloneAgent } from "./agent-utils";
-import { createApprovalRuntime, registerApprovalRoutes } from "./approvals";
 import {
   agentConfig,
   agentRuntimeSummary,
@@ -35,6 +37,7 @@ import {
 } from "./config";
 import { registerEvalRoutes } from "./evals";
 import { errorResponse, unsupportedCapability } from "./http";
+import { createStudioContinuationRegistry } from "./interactions";
 import { registerKnowledgeRoutes } from "./knowledge";
 import { registerMcpRoutes } from "./mcps";
 import { createStudioMemorySourceRegistry, registerMemoryRoutes } from "./memory";
@@ -46,11 +49,12 @@ import {
 } from "./observability";
 import type { StudioRuntimeOptions } from "./options";
 import { registerPipelineRoutes } from "./pipelines";
-import { createQuestionRuntime, registerQuestionRoutes } from "./questions";
+import { registerSandboxViewRoutes } from "./sandbox-views";
 import { createStudioSandboxRegistry, registerSandboxRoutes } from "./sandboxes";
 import { registerSessionRoutes } from "./sessions";
 import { normalizeAgents, normalizePipelines, resolveStores } from "./shared";
 import { registerStatusRoutes } from "./status";
+import { toolRequiresApproval } from "./tool-metadata";
 import { registerToolRoutes } from "./tools";
 import { registerTraceRoutes } from "./trace-routes";
 
@@ -63,6 +67,7 @@ export class Studio implements AnviaStudio {
   private readonly options: StudioRuntimeOptions;
   private studio: StudioApp;
   private server: ReturnType<typeof serve> | undefined;
+  private websocketServer: WebSocketServer | undefined;
   private sigintHandler: (() => void) | undefined;
 
   constructor(targets: StudioTarget[] = [], options: StudioOptions = {}) {
@@ -94,8 +99,14 @@ export class Studio implements AnviaStudio {
 
     const port = serveOptions.port ?? Number(process.env.RUNNER_PORT ?? 4021);
     const serverOptions: Parameters<typeof serve>[0] = {
-      fetch: (request) => this.fetch(request),
+      fetch: (request, env) => this.studio.app.fetch(request, env),
       port,
+    };
+    this.websocketServer = new WebSocketServer({ noServer: true });
+    serverOptions.websocket = {
+      // @types/ws overloads are stricter than Hono's structural adapter, while Hono officially
+      // supports ws.WebSocketServer. Keep the interop assertion at this single ownership boundary.
+      server: this.websocketServer as unknown as WebSocketServerLike,
     };
     if (serveOptions.hostname !== undefined) serverOptions.hostname = serveOptions.hostname;
     this.server = serve(serverOptions);
@@ -150,6 +161,8 @@ export class Studio implements AnviaStudio {
     }
     this.server?.close();
     this.server = undefined;
+    this.websocketServer?.close();
+    this.websocketServer = undefined;
     this.studio.close();
   }
 
@@ -242,6 +255,21 @@ function studioOptionsFromTargets(
   if (options.models !== undefined) runtimeOptions.models = options.models;
   if (options.stores !== undefined) runtimeOptions.stores = options.stores;
   if (options.ui !== undefined) runtimeOptions.ui = options.ui;
+  if (options.sandboxes !== undefined) {
+    runtimeOptions.sandboxes = options.sandboxes.map((registration) => {
+      let snapshot: StudioSandboxRegistration = { inspector: registration.inspector };
+      if (registration.agentIds !== undefined) {
+        snapshot = { ...snapshot, agentIds: [...registration.agentIds] };
+      }
+      if (registration.toolNames !== undefined) {
+        snapshot = { ...snapshot, toolNames: [...registration.toolNames] };
+      }
+      if (registration.views !== undefined) {
+        snapshot = { ...snapshot, views: [...registration.views] };
+      }
+      return snapshot;
+    });
+  }
   return runtimeOptions;
 }
 
@@ -287,13 +315,13 @@ function uniqueAgentId(baseId: string, ids: Set<string>): string {
 
 function agentMetadata(agent: Agent): JsonObject {
   const metadata: JsonObject = {
-    staticContextCount: agent.staticContext.length,
-    dynamicContextCount: agent.dynamicContexts.length,
-    dynamicToolCount: agent.dynamicTools.length,
+    staticContextCount: staticContextDocuments(agent).length,
+    dynamicContextCount: vectorContexts(agent).length,
+    dynamicToolCount: getAgentToolState(agent).toolIndexes.length,
+    hasLifecycle: agent.lifecycle !== undefined,
     hasOutputSchema: agent.outputSchema !== undefined,
-    hasHook: agent.hook !== undefined,
-    observerCount: agent.observers.length,
-    approvalToolCount: agent.toolSet.values().filter((tool) => tool.approval !== undefined).length,
+    observerCount: Object.keys(agent.observability?.observers ?? {}).length,
+    approvalToolCount: agent.tools.filter(toolRequiresApproval).length,
   };
   if (agent.defaultMaxTurns !== undefined) metadata.defaultMaxTurns = agent.defaultMaxTurns;
   return metadata;
@@ -310,9 +338,8 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
   const agentMap = new Map(agents.map((agent) => [agent.id, agent]));
   const pipelineMap = new Map(pipelines.map((pipeline) => [pipeline.id, pipeline]));
   const evalMap = new Map(options.evals.map((suite) => [suite.id ?? suite.name, suite]));
-  const approvalRuntime = createApprovalRuntime();
-  const questionRuntime = createQuestionRuntime();
-  const sandboxRegistry = createStudioSandboxRegistry(agents);
+  const continuationRegistry = createStudioContinuationRegistry<PreparedAgentRun>();
+  const sandboxRegistry = createStudioSandboxRegistry(agents, options.sandboxes ?? []);
   const memorySources = createStudioMemorySourceRegistry(agents, stores.sessions);
   const app = new HonoApp();
   const uiOptions = isStudioUiEnabled(options.ui) ? resolveStudioUiOptions(options.ui) : undefined;
@@ -371,8 +398,7 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
   registerMcpRoutes(app, { agentMap });
   registerToolRoutes(app, { agentMap });
   registerSandboxRoutes(app, sandboxRegistry);
-  registerApprovalRoutes(app, approvalRuntime);
-  registerQuestionRoutes(app, questionRuntime);
+  const closeSandboxViews = registerSandboxViewRoutes(app, sandboxRegistry);
   registerObservabilityRoutes(app, observabilityHub);
   registerEvalRoutes(app, {
     evals: options.evals,
@@ -393,8 +419,7 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
     agentMap,
     stores,
     modelRegistry,
-    approvalRuntime,
-    questionRuntime,
+    continuationRegistry,
   });
 
   if (memorySources.size > 0 || stores.sessions !== undefined) {
@@ -430,7 +455,10 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
     config(): StudioConfig {
       return buildConfig(options, agents, pipelines, stores, sandboxRegistry.size);
     },
-    close() {},
+    close() {
+      continuationRegistry.clear();
+      closeSandboxViews();
+    },
   };
   if (stores.sessions !== undefined) Object.assign(studio, { sessionStore: stores.sessions });
   if (stores.traces !== undefined) Object.assign(studio, { traceStore: stores.traces });
@@ -441,23 +469,29 @@ function withStudioTraceObserver(
   studioAgent: StudioAgent,
   traceStore: StudioTraceStore | undefined,
 ): StudioAgent {
-  if (traceStore === undefined || hasStudioTraceObserver(studioAgent.agent)) {
-    return studioAgent;
+  if (traceStore === undefined) return studioAgent;
+  const existing = studioAgent.agent.observability;
+  const studioObserver = existing?.observers.studio;
+  if (studioObserver !== undefined && !(studioObserver instanceof StudioTraceObserver)) {
+    throw new TypeError('Studio reserves the observer name "studio" for local trace persistence.');
+  }
+  for (const [name, observer] of Object.entries(existing?.observers ?? {})) {
+    if (observer instanceof StudioTraceObserver && name !== "studio") {
+      throw new TypeError('StudioTraceObserver must be registered with the name "studio".');
+    }
   }
 
   return {
     ...studioAgent,
     agent: cloneAgent(studioAgent.agent, {
-      observers: [
-        ...studioAgent.agent.observers,
-        { observer: new StudioTraceObserver({ store: traceStore }) },
-      ],
+      observability: {
+        observers: {
+          ...(existing?.observers ?? {}),
+          studio: studioObserver ?? new StudioTraceObserver({ store: traceStore }),
+        },
+        primaryTrace: "studio",
+        errorPolicy: existing?.errorPolicy ?? "ignore",
+      },
     }),
   };
-}
-
-function hasStudioTraceObserver(agent: Agent): boolean {
-  return agent.observers.some(
-    (registration) => registration.observer instanceof StudioTraceObserver,
-  );
 }

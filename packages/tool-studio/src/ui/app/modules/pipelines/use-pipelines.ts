@@ -1,4 +1,4 @@
-import { createFetchTransport, EventStreamHttpError } from "@anvia/react";
+import { createFetchEventTransport, EventStreamHttpError } from "@anvia/client/transport";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   StudioConfig,
@@ -17,12 +17,12 @@ type PipelineRunStreamRequest = {
   body: Record<string, unknown>;
 };
 
-const pipelineRunStreamTransport = createFetchTransport<PipelineRunStreamRequest, unknown>({
-  endpoint: (request) => request.endpoint,
+const pipelineRunStreamTransport = createFetchEventTransport<PipelineRunStreamRequest, unknown>({
+  endpoint: ({ request }) => request.endpoint,
   method: "POST",
   format: "jsonl",
   headers: { "content-type": "application/json" },
-  body: (request) => JSON.stringify(request.body),
+  body: ({ request }) => JSON.stringify(request.body),
 });
 
 export function usePipelines(props: {
@@ -205,11 +205,13 @@ export function usePipelines(props: {
     try {
       await consumePipelineRunStream(
         pipelineRunStreamTransport.send({
-          endpoint: `/pipelines/${encodeURIComponent(pipelineId)}/runs`,
-          body: {
-            input,
-            stream: true,
-            metadata: { source: "anvia-studio" },
+          request: {
+            endpoint: `/pipelines/${encodeURIComponent(pipelineId)}/runs`,
+            body: {
+              input,
+              stream: true,
+              metadata: { source: "anvia-studio" },
+            },
           },
         }),
       );
@@ -235,12 +237,14 @@ export function usePipelines(props: {
     try {
       await consumePipelineRunStream(
         pipelineRunStreamTransport.send({
-          endpoint: `/pipelines/${encodeURIComponent(pipelineId)}/runs/${encodeURIComponent(
-            runId,
-          )}/replay`,
-          body: {
-            stream: true,
-            metadata: { source: "anvia-studio" },
+          request: {
+            endpoint: `/pipelines/${encodeURIComponent(pipelineId)}/runs/${encodeURIComponent(
+              runId,
+            )}/replay`,
+            body: {
+              stream: true,
+              metadata: { source: "anvia-studio" },
+            },
           },
         }),
       );

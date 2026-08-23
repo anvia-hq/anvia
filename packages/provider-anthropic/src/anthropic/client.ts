@@ -1,39 +1,76 @@
 import Anthropic from "@anthropic-ai/sdk";
 import {
+  type ModelContextLimits,
+  resolveModelContextLimits,
+  type StreamingCompletionModel,
+} from "@anvia/core/completion";
+import {
   type ModelList,
   type ModelListingClient,
   ModelListingError,
 } from "@anvia/core/model-listing";
 import { AnthropicCompletionModel } from "./completion";
-import type { AnthropicCompletionModelName } from "./models";
+import {
+  ANTHROPIC_COMPLETION_MODEL_CONTEXT_LIMITS,
+  type AnthropicCompletionModelId,
+} from "./models";
 
-export type AnthropicClientOptions = {
-  apiKey?: string | undefined;
+type AnthropicManagedClientOptions = {
+  apiKey: string;
   baseUrl?: string | undefined;
-  client?: Anthropic | undefined;
+  client?: never;
 };
 
+type AnthropicInjectedClientOptions = {
+  client: Anthropic;
+  apiKey?: never;
+  baseUrl?: never;
+};
+
+export type AnthropicClientOptions = AnthropicManagedClientOptions | AnthropicInjectedClientOptions;
+
+export type AnthropicCompletionModelOptions = {
+  modelId: AnthropicCompletionModelId;
+  contextLimits?: ModelContextLimits | undefined;
+};
+
+export type AnthropicCompletionModelHandle = StreamingCompletionModel<unknown>;
+
 export class AnthropicClient implements ModelListingClient {
-  readonly client: Anthropic;
+  private readonly sdk: Anthropic;
 
-  constructor(options: AnthropicClientOptions = {}) {
-    this.client =
-      options.client ??
-      new Anthropic({
-        apiKey: requireApiKey(options.apiKey),
-        baseURL: options.baseUrl,
-      });
+  constructor(options: AnthropicClientOptions) {
+    if (options.client !== undefined) {
+      rejectManagedOptionsWithInjectedClient(options, ["apiKey", "baseUrl"]);
+      this.sdk = options.client;
+      return;
+    }
+    this.sdk = new Anthropic({
+      apiKey: requireApiKey(options.apiKey),
+      baseURL: options.baseUrl,
+      maxRetries: 0,
+    });
   }
 
-  completionModel(
-    model: AnthropicCompletionModelName = "claude-sonnet-4-20250514",
-  ): AnthropicCompletionModel {
-    return new AnthropicCompletionModel(this.client, model);
+  completionModel(options: AnthropicCompletionModelOptions): AnthropicCompletionModelHandle {
+    const modelId = requireModelId(options.modelId);
+    return new AnthropicCompletionModel(
+      this.sdk,
+      modelId,
+      resolveModelContextLimits(
+        modelId,
+        ANTHROPIC_COMPLETION_MODEL_CONTEXT_LIMITS,
+        options.contextLimits,
+      ),
+    );
   }
 
-  async listModels(): Promise<ModelList> {
+  async listModels(options: { abortSignal?: AbortSignal | undefined } = {}): Promise<ModelList> {
     try {
-      const response = await this.client.models.list();
+      const response = await this.sdk.models.list(undefined, {
+        signal: options.abortSignal,
+        maxRetries: 0,
+      });
       const data = (await collectModelsFromResponse(response))
         .map(toListedModel)
         .filter(isListedModel);
@@ -44,14 +81,28 @@ export class AnthropicClient implements ModelListingClient {
   }
 }
 
+function rejectManagedOptionsWithInjectedClient(options: object, keys: readonly string[]): void {
+  const conflict = keys.find((key) => key in options);
+  if (conflict !== undefined) {
+    throw new TypeError(`AnthropicClient cannot combine client with ${conflict}.`);
+  }
+}
+
 function requireApiKey(apiKey: string | undefined): string {
-  if (apiKey === undefined || apiKey.length === 0) {
+  if (apiKey === undefined || apiKey.trim().length === 0) {
     throw new Error(
       "Missing Anthropic credentials. Pass apiKey when constructing AnthropicClient.",
     );
   }
 
   return apiKey;
+}
+
+function requireModelId<ModelId extends string>(modelId: ModelId): ModelId {
+  if (modelId.trim().length === 0) {
+    throw new TypeError("modelId must be a non-empty string");
+  }
+  return modelId;
 }
 
 async function collectModelsFromResponse(response: unknown): Promise<unknown[]> {

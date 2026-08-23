@@ -2,104 +2,114 @@ import type {
   CompletionModel,
   Document,
   JsonObject,
-  JsonValue,
   ProviderTool,
   ToolChoice,
 } from "../completion/index";
-import type { GuardrailPolicy } from "../guardrails";
-import type { PromptHook } from "../hooks";
-import type { MemoryRegistration } from "../memory/types";
-import type { AgentObserverRegistration } from "../observability";
-import type { ToolSearchDocument } from "../tool/dynamic-tools";
+import type { GuardrailPolicy, GuardrailPolicyInput } from "../guardrails";
+import type { McpServer } from "../mcp";
+import type {
+  MemoryCompactionConflictRetryOptions,
+  MemoryCompactor,
+  MemoryOptions,
+  MemorySavePolicy,
+  MemoryStore,
+  MemoryTokenCounter,
+} from "../memory/types";
+import type { AgentObservabilityOptions } from "../observability";
+import type { RetrySetting } from "../retry";
+import type { ZodSchema } from "../schema";
+import type { SkillSet } from "../skills";
+import type { ToolIndex } from "../tool/dynamic-tools";
 import type { AgentMiddleware } from "../tool/middleware";
-import type { ToolApprovalsOptions } from "../tool/tool";
-import type { ToolSet } from "../tool/tool-set";
-import type { VectorFilter, VectorSearchIndex, VectorSearchResult } from "../vector-store";
+import type { AnyTool } from "../tool/tool";
+import type { AgentLifecycle } from "./lifecycle";
+import type { VectorContext } from "./vector-context";
 
-export type AgentOptions<M extends CompletionModel = CompletionModel> = {
+export type AgentToolInput = AnyTool | ProviderTool | ToolIndex;
+export type AgentContextInput<T = unknown> = Document | VectorContext<T>;
+
+type RawResponseOf<Model> =
+  Model extends CompletionModel<infer RawResponse> ? RawResponse : unknown;
+
+export type AgentOptions<
+  Output = string,
+  M extends CompletionModel = CompletionModel,
+  ContextDocument = unknown,
+> = {
   id: string;
   name?: string | undefined;
   description?: string | undefined;
   model: M;
   instructions?: string | undefined;
-  staticContext?: Document[];
+  context?: readonly AgentContextInput<ContextDocument>[] | undefined;
+  tools?: readonly AgentToolInput[] | undefined;
+  mcpServers?: readonly McpServer[] | undefined;
+  skills?: SkillSet | undefined;
   temperature?: number | undefined;
   maxTokens?: number | undefined;
-  additionalParams?: JsonValue | undefined;
-  toolSet?: ToolSet | undefined;
-  providerTools?: ProviderTool[] | undefined;
+  providerOptions?: JsonObject | undefined;
+  retries?: RetrySetting | undefined;
+  toolChoice?: ToolChoice | undefined;
+  maxTurns?: number | undefined;
+  lifecycle?: AgentLifecycle<Output, RawResponseOf<M>> | undefined;
+  outputSchema?: ZodSchema<Output> | undefined;
+  observability?: AgentObservabilityOptions | undefined;
+  guardrails?: GuardrailPolicyInput | undefined;
+  middlewares?: readonly AgentMiddleware[] | undefined;
+  memory?: AgentMemoryOptions | undefined;
+};
+
+export type AgentMemoryOptions = MemoryOptions & {
+  store: MemoryStore;
+};
+
+export type AgentMemory = {
+  store: MemoryStore;
+  savePolicy: MemorySavePolicy;
+  compaction?:
+    | {
+        trigger: { afterTokens: number };
+        retention: { recentTokens: number };
+        tokenCounter: MemoryTokenCounter;
+        compactor: MemoryCompactor;
+        conflictRetries: false | MemoryCompactionConflictRetryOptions;
+      }
+    | undefined;
+};
+
+export type ResolvedAgentOptions<
+  Output = string,
+  M extends CompletionModel = CompletionModel,
+  ContextDocument = unknown,
+> = {
+  id: string;
+  name?: string | undefined;
+  description?: string | undefined;
+  model: M;
+  instructions?: string | undefined;
+  context?: readonly AgentContextInput<ContextDocument>[] | undefined;
+  temperature?: number | undefined;
+  maxTokens?: number | undefined;
+  providerOptions?: JsonObject | undefined;
+  retries?: RetrySetting | undefined;
+  tools?: readonly AnyTool[] | undefined;
+  mcpServers?: readonly McpServer[] | undefined;
+  providerTools?: readonly ProviderTool[] | undefined;
+  toolIndexes?: readonly ToolIndex[] | undefined;
   toolChoice?: ToolChoice | undefined;
   defaultMaxTurns?: number | undefined;
-  hook?: PromptHook | undefined;
-  outputSchema?: JsonObject | undefined;
-  observers?: AgentObserverRegistration[] | undefined;
-  approvals?: ToolApprovalsOptions | undefined;
-  guardrails?: GuardrailPolicy[] | undefined;
-  dynamicContexts?: DynamicContextRegistration[] | undefined;
-  dynamicTools?: DynamicToolRegistration[] | undefined;
-  middlewares?: AgentMiddleware[] | undefined;
-  memory?: MemoryRegistration | undefined;
-  eventStore?: AgentEventStoreRegistration | undefined;
+  lifecycle?: AgentLifecycle<Output, RawResponseOf<M>> | undefined;
+  outputSchema?: ZodSchema<Output> | undefined;
+  observability?: AgentObservabilityOptions | undefined;
+  guardrails?: readonly GuardrailPolicy[] | undefined;
+  middlewares?: readonly AgentMiddleware[] | undefined;
+  memory?: AgentMemory | undefined;
 };
 
 export type AgentToolOptions = {
   name: string;
+  suspension: "reject";
   description?: string | undefined;
   maxTurns?: number | undefined;
   stream?: boolean | undefined;
-};
-
-export type AgentEventStoreInclude = "all" | "agent_tool_events";
-
-export type AgentEventStoreOptions = {
-  include?: AgentEventStoreInclude | undefined;
-};
-
-export type AgentEventAppendInput = {
-  runId: string;
-  agentId: string;
-  agentName?: string | undefined;
-  turn?: number | undefined;
-  toolName?: string | undefined;
-  toolCallId?: string | undefined;
-  internalCallId?: string | undefined;
-  event: unknown;
-};
-
-export type AgentEventRecord = AgentEventAppendInput & {
-  createdAt?: Date | undefined;
-};
-
-export interface AgentEventStore {
-  append(input: AgentEventAppendInput): Promise<void>;
-  load(runId: string): Promise<AgentEventRecord[]>;
-  clear?(runId: string): Promise<void>;
-}
-
-export type AgentEventStoreRegistration = {
-  store: AgentEventStore;
-  options: Required<AgentEventStoreOptions>;
-};
-
-export type DynamicContextOptions<T = unknown> = {
-  topK: number;
-  threshold?: number | undefined;
-  filter?: VectorFilter | undefined;
-  format?: ((result: VectorSearchResult<T>) => Document) | undefined;
-};
-
-export type DynamicContextRegistration<T = unknown> = {
-  index: VectorSearchIndex<T>;
-  options: DynamicContextOptions<T>;
-};
-
-export type DynamicToolOptions = {
-  topK: number;
-  threshold?: number | undefined;
-  filter?: VectorFilter | undefined;
-};
-
-export type DynamicToolRegistration = {
-  index: VectorSearchIndex<ToolSearchDocument>;
-  options: DynamicToolOptions;
 };

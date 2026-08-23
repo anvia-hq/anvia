@@ -16,7 +16,6 @@ const MessageActions = forwardRef<HTMLDivElement, PrimitiveProps<"div">>(
             <MessageRegenerate />
           </>
         ),
-        "data-anvia-message-actions": "",
       } as PrimitiveProps<"div">,
       ref,
     );
@@ -71,7 +70,6 @@ const MessageCopy = forwardRef<HTMLButtonElement, PrimitiveProps<"button">>(func
       disabled,
       onClick: handleClick,
       type: props.type ?? "button",
-      "data-anvia-copy": "",
       "data-state": copyState,
     } as PrimitiveProps<"button">,
     ref,
@@ -87,7 +85,8 @@ const MessageRegenerate = forwardRef<HTMLButtonElement, PrimitiveProps<"button">
       .find((item) => item.role === "assistant");
     const disabled =
       props.disabled ??
-      (chat.status === "streaming" ||
+      (chat.status === "submitted" ||
+        chat.status === "streaming" ||
         message.role !== "assistant" ||
         latestAssistantMessage?.id !== message.id);
 
@@ -110,7 +109,6 @@ const MessageRegenerate = forwardRef<HTMLButtonElement, PrimitiveProps<"button">
         disabled,
         onClick: handleClick,
         type: props.type ?? "button",
-        "data-anvia-regenerate": "",
         "data-state": disabled ? "disabled" : "idle",
       } as PrimitiveProps<"button">,
       ref,

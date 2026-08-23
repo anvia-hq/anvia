@@ -3,7 +3,13 @@ import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ComposerQuote } from "../src";
-import { ChatProvider, Composer, Message, SelectionToolbar, Thread } from "../src";
+import {
+  ChatProvider,
+  ComposerPrimitive as Composer,
+  MessagePrimitive as Message,
+  SelectionToolbarPrimitive as SelectionToolbar,
+  ThreadPrimitive as Thread,
+} from "../src";
 import { createChatController, textMessage } from "./helpers";
 
 const originalClipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, "clipboard");

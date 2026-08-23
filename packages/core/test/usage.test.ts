@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   calculateContextUsage,
-  resolveCompletionModelInfo,
+  resolveModelContextLimits,
   Usage,
   withContextUsage,
 } from "../src/completion";
@@ -82,12 +82,12 @@ describe("context usage", () => {
   it("uses provider input tokens as raw context occupancy", () => {
     expect(
       calculateContextUsage(usage, {
-        id: "model-a",
+        modelId: "model-a",
         context: { contextWindow: 100, maxInputTokens: 80, maxOutputTokens: 20 },
       }),
     ).toEqual({
       model: {
-        id: "model-a",
+        modelId: "model-a",
         context: { contextWindow: 100, maxInputTokens: 80, maxOutputTokens: 20 },
       },
       usedTokens: 60,
@@ -100,7 +100,7 @@ describe("context usage", () => {
   it("clamps percentages while preserving over-limit token usage", () => {
     const contextUsage = calculateContextUsage(
       { ...usage, inputTokens: 125, totalTokens: 140 },
-      { id: "model-a", context: { contextWindow: 100 } },
+      { modelId: "model-a", context: { contextWindow: 100 } },
     );
 
     expect(contextUsage).toMatchObject({
@@ -115,21 +115,22 @@ describe("context usage", () => {
     expect(calculateContextUsage(Usage.empty(), undefined)).toBeUndefined();
     expect(
       calculateContextUsage(Usage.empty(), {
-        id: "model-a",
+        modelId: "model-a",
         context: { contextWindow: 100 },
       }),
     ).toBeUndefined();
   });
 
-  it("resolves overrides before catalogs and decorates responses", () => {
-    const info = resolveCompletionModelInfo(
+  it("resolves a bound model override before its catalog and decorates responses", () => {
+    const context = resolveModelContextLimits(
       "custom",
       { custom: { contextWindow: 100 } },
-      { custom: { contextWindow: 200 } },
+      { contextWindow: 200 },
     );
+    const info = context === undefined ? undefined : { modelId: "custom", context };
     const response = withContextUsage({ choice: [], usage, rawResponse: {} }, info);
 
     expect(response.contextUsage?.model.context.contextWindow).toBe(200);
-    expect(resolveCompletionModelInfo("unknown", {})).toBeUndefined();
+    expect(resolveModelContextLimits("unknown", {})).toBeUndefined();
   });
 });

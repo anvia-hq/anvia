@@ -1,14 +1,24 @@
-import type { Message } from "@anvia/core";
+import { createMemoryScopeKey, type MemoryCompactionMessage, type Message } from "@anvia/core";
 import { describe, expect, it } from "vitest";
+import { richMessages } from "../../core/test/helpers/rich-messages";
+import * as memoryDrizzle from "../src/index.js";
 import {
   agentMemoryErrors,
   agentMemoryMessages,
   agentMemorySessions,
-  createDrizzleMemoryScopeKey,
-  createDrizzleMemoryStore,
+  type DrizzleMemoryDatabaseLike,
+  DrizzleMemoryStore,
+  type DrizzleMemoryStoreOptions,
   drizzleMemorySchema,
 } from "../src/index.js";
 import { isMemoryMessage, serializeUnknownError } from "../src/message.js";
+
+// @ts-expect-error The positional store factory was removed.
+const removedStoreFactory = memoryDrizzle.createDrizzleMemoryStore;
+// @ts-expect-error Scope-key creation is canonical in @anvia/core/memory.
+const removedScopeKeyFactory = memoryDrizzle.createDrizzleMemoryScopeKey;
+void removedStoreFactory;
+void removedScopeKeyFactory;
 
 const userMessage: Message = {
   role: "user",
@@ -20,111 +30,18 @@ const assistantMessage: Message = {
   content: [{ type: "text", text: "stored" }],
 };
 
-const richMessages: Message[] = [
-  { role: "system", content: "System instructions", metadata: { source: "system" } },
-  {
-    role: "user",
-    metadata: { composer: { entities: [{ id: "document-1" }] } },
-    content: [
-      { type: "text", text: "Inspect these", signature: "user-signature" },
-      {
-        type: "image",
-        source: { type: "url", url: "https://example.test/image.png" },
-        detail: "high",
-      },
-      {
-        type: "image",
-        source: { type: "base64", data: "aW1hZ2U=", mediaType: "image/png" },
-        detail: "low",
-      },
-      {
-        type: "document",
-        source: {
-          type: "url",
-          url: "https://example.test/report.pdf",
-          mediaType: "application/pdf",
-          filename: "report.pdf",
-        },
-      },
-      {
-        type: "document",
-        source: {
-          type: "base64",
-          data: "cmVwb3J0",
-          mediaType: "application/pdf",
-          filename: "inline.pdf",
-        },
-      },
-      {
-        type: "document",
-        source: { type: "text", text: "inline document", mediaType: "text/plain" },
-      },
-    ],
-  },
-  {
-    role: "assistant",
-    id: "assistant-1",
+function memoryCompactionMessage(
+  content: string,
+  compactedMessageCount: number,
+): MemoryCompactionMessage {
+  return {
+    role: "system",
+    content,
     metadata: {
-      source: "assistant",
-      anvia: {
-        generation: {
-          provider: "test",
-          model: "test-model",
-          usage: {
-            inputTokens: 12,
-            outputTokens: 4,
-            totalTokens: 16,
-            cachedInputTokens: 3,
-            cacheCreationInputTokens: 0,
-          },
-        },
-      },
+      anvia: { memoryCompaction: { version: 1, compactedMessageCount } },
     },
-    content: [
-      { type: "text", text: "Working", signature: "assistant-signature" },
-      {
-        type: "reasoning",
-        id: "reasoning-1",
-        text: "analysis summary",
-        content: [
-          { type: "text", text: "analysis", signature: "reasoning-signature" },
-          { type: "summary", text: " summary" },
-          { type: "encrypted", data: "ciphertext" },
-          { type: "redacted", data: "redacted-data" },
-        ],
-      },
-      {
-        type: "tool_call",
-        id: "tool-1",
-        callId: "call-1",
-        function: { name: "lookup", arguments: { query: "Anvia", limit: 3 } },
-        signature: "tool-signature",
-        additionalParams: { provider: "test" },
-      },
-      {
-        type: "image",
-        source: { type: "base64", data: "b3V0cHV0", mediaType: "image/png" },
-        detail: "auto",
-      },
-    ],
-  },
-  {
-    role: "tool",
-    metadata: { source: "tool" },
-    content: [
-      {
-        type: "tool_result",
-        id: "tool-1",
-        callId: "call-1",
-        toolName: "lookup",
-        content: [
-          { type: "text", text: "result" },
-          { type: "image", data: "cmVzdWx0", mediaType: "image/png" },
-        ],
-      },
-    ],
-  },
-];
+  };
+}
 
 describe("Drizzle memory public API", () => {
   it("uses core strict JSON validation for message metadata", async () => {
@@ -141,10 +58,10 @@ describe("Drizzle memory public API", () => {
 
     expect(isMemoryMessage(validMessage)).toBe(true);
     expect(isMemoryMessage(invalidMessage)).toBe(false);
-    const store = createDrizzleMemoryStore(new FakeDrizzleDb());
+    const store = createTestMemoryStore(new FakeDrizzleDb());
     await expect(
       store.append({
-        context: { sessionId: "thread-invalid" },
+        scope: { sessionId: "thread-invalid" },
         runId: "run-invalid",
         turn: 0,
         messages: [invalidMessage],
@@ -176,91 +93,121 @@ describe("Drizzle memory public API", () => {
     expect(agentMemoryErrors).toBe(drizzleMemorySchema.agentMemoryErrors);
   });
 
+  it("validates configured tables through a non-mutating read path", async () => {
+    const db = new FakeDrizzleDb();
+    const store = new DrizzleMemoryStore({ db });
+
+    await expect(store.validate()).resolves.toBeUndefined();
+    expect(db.events).toEqual([]);
+    expect(db.sessions.size).toBe(0);
+    expect(db.messages).toHaveLength(0);
+    expect(db.errors).toHaveLength(0);
+  });
+
+  it("rejects databases without transaction support", () => {
+    const db = new FakeDrizzleDb();
+    const withoutTransactions = {
+      select: db.select.bind(db),
+      insert: db.insert.bind(db),
+      delete: db.delete.bind(db),
+      execute: db.execute.bind(db),
+    };
+
+    expect(() => new DrizzleMemoryStore({ db: withoutTransactions })).toThrow(
+      "requires db.transaction",
+    );
+  });
+
   it("appends multiple turns, loads in position order, and clears scoped messages", async () => {
     const db = new FakeDrizzleDb();
-    const store = createDrizzleMemoryStore(db);
+    const store = createTestMemoryStore(db);
     const context = { sessionId: "thread-1", userId: "user-1" };
 
     await store.append({
-      context,
+      scope: context,
       runId: "run-1",
       turn: 0,
       messages: [userMessage, assistantMessage],
     });
     await store.append({
-      context,
+      scope: context,
       runId: "run-2",
       turn: 1,
       messages: [userMessage],
     });
 
-    expect(await store.load(context)).toEqual([userMessage, assistantMessage, userMessage]);
-    expect(await store.load({ sessionId: "thread-1", userId: "user-2" })).toEqual([]);
+    expect(await store.load({ scope: context })).toEqual([
+      userMessage,
+      assistantMessage,
+      userMessage,
+    ]);
+    expect(await store.load({ scope: { sessionId: "thread-1", userId: "user-2" } })).toEqual([]);
     expect(db.events).toEqual(["transaction", "lock", "transaction", "lock"]);
 
-    await store.clear(context);
-    expect(await store.load(context)).toEqual([]);
+    await store.clear({ scope: context });
+    expect(await store.load({ scope: context })).toEqual([]);
   });
 
   it("atomically compacts a prefix and rejects stale revisions", async () => {
     const db = new FakeDrizzleDb();
-    const store = createDrizzleMemoryStore(db);
+    const store = createTestMemoryStore(db);
     const context = { sessionId: "thread-compaction", userId: "user-1" };
     await store.append({
-      context,
+      scope: context,
       runId: "run-1",
       turn: 1,
       messages: [userMessage, assistantMessage],
     });
     await store.append({
-      context,
+      scope: context,
       runId: "run-2",
       turn: 1,
       messages: [userMessage],
     });
-    const stale = await store.compaction.load(context);
+    const stale = await store.compaction.snapshot({ scope: context });
     await store.append({
-      context,
+      scope: context,
       runId: "run-2",
       turn: 2,
       messages: [assistantMessage],
     });
-    const summary: Extract<Message, { role: "system" }> = {
-      role: "system",
-      content: "Earlier conversation summary",
-    };
+    const replacement = memoryCompactionMessage("Earlier conversation summary", 2);
 
     await expect(
-      store.compaction.commit({
-        context,
+      store.compaction.replacePrefix({
+        scope: context,
         revision: stale.revision,
-        compactedMessageCount: 2,
-        summary,
+        messageCount: 2,
+        replacement,
         runId: "memory-compaction:1",
       }),
-    ).resolves.toBe("conflict");
+    ).resolves.toEqual({ status: "conflict" });
 
-    const current = await store.compaction.load(context);
+    const current = await store.compaction.snapshot({ scope: context });
     await expect(
-      store.compaction.commit({
-        context,
+      store.compaction.replacePrefix({
+        scope: context,
         revision: current.revision,
-        compactedMessageCount: 2,
-        summary,
+        messageCount: 2,
+        replacement,
         runId: "memory-compaction:2",
       }),
-    ).resolves.toBe("committed");
-    await expect(store.load(context)).resolves.toEqual([summary, userMessage, assistantMessage]);
+    ).resolves.toEqual({ status: "committed" });
+    await expect(store.load({ scope: context })).resolves.toEqual([
+      replacement,
+      userMessage,
+      assistantMessage,
+    ]);
 
     const [conversation] = await store.inspector.listConversations({ limit: 1 });
     const inspected =
       conversation === undefined
         ? undefined
-        : await store.inspector.getConversation(conversation.ref);
+        : await store.inspector.getConversation({ ref: conversation.ref });
     expect(inspected).toMatchObject({
       messageCount: 3,
       messages: [
-        { position: 1, runId: "memory-compaction:2", turn: 0, message: summary },
+        { position: 1, runId: "memory-compaction:2", turn: 0, message: replacement },
         { position: 2, runId: "run-2", turn: 1, message: userMessage },
         { position: 3, runId: "run-2", turn: 2, message: assistantMessage },
       ],
@@ -268,9 +215,9 @@ describe("Drizzle memory public API", () => {
   });
 
   it("inspects persisted conversations with ordered message records", async () => {
-    const store = createDrizzleMemoryStore(new FakeDrizzleDb());
+    const store = createTestMemoryStore(new FakeDrizzleDb());
     await store.append({
-      context: {
+      scope: {
         sessionId: "thread-1",
         userId: "user-1",
         metadata: { tenantId: "tenant-1" },
@@ -295,7 +242,7 @@ describe("Drizzle memory public API", () => {
         messageCount: 2,
       },
     ]);
-    await expect(store.inspector.getConversation("session-1")).resolves.toMatchObject({
+    await expect(store.inspector.getConversation({ ref: "session-1" })).resolves.toMatchObject({
       messages: [
         { position: 0, runId: "run-1", turn: 5, message: userMessage },
         { position: 1, runId: "run-1", turn: 5, message: assistantMessage },
@@ -304,35 +251,35 @@ describe("Drizzle memory public API", () => {
   });
 
   it("round-trips every supported message content shape", async () => {
-    const store = createDrizzleMemoryStore(new FakeDrizzleDb());
+    const store = createTestMemoryStore(new FakeDrizzleDb());
     const context = { sessionId: "rich-thread", userId: "user-1" };
 
-    await store.append({ context, runId: "run-rich", turn: 0, messages: richMessages });
+    await store.append({ scope: context, runId: "run-rich", turn: 0, messages: richMessages });
 
-    await expect(store.load(context)).resolves.toEqual(richMessages);
+    await expect(store.load({ scope: context })).resolves.toEqual(richMessages);
   });
 
   it("does not open a transaction for empty appends", async () => {
     const db = new FakeDrizzleDb();
-    const store = createDrizzleMemoryStore(db);
+    const store = createTestMemoryStore(db);
 
     await store.append({
-      context: { sessionId: "thread-1" },
+      scope: { sessionId: "thread-1" },
       runId: "run-1",
       turn: 0,
       messages: [],
     });
 
     expect(db.events).toEqual([]);
-    expect(await store.load({ sessionId: "thread-1" })).toEqual([]);
+    expect(await store.load({ scope: { sessionId: "thread-1" } })).toEqual([]);
   });
 
   it("stores and can ignore failed-run diagnostics", async () => {
     const db = new FakeDrizzleDb();
-    const store = createDrizzleMemoryStore(db);
+    const store = createTestMemoryStore(db);
 
     await store.recordError({
-      context: { sessionId: "thread-1" },
+      scope: { sessionId: "thread-1" },
       runId: "run-1",
       error: new Error("failed"),
       messages: [userMessage],
@@ -348,10 +295,10 @@ describe("Drizzle memory public API", () => {
     expect(db.events).toEqual(["transaction", "lock"]);
 
     const ignoringDb = new FakeDrizzleDb();
-    const ignoringStore = createDrizzleMemoryStore(ignoringDb, { errors: "ignore" });
+    const ignoringStore = createTestMemoryStore(ignoringDb, { errorPolicy: "ignore" });
 
     await ignoringStore.recordError({
-      context: { sessionId: "thread-1" },
+      scope: { sessionId: "thread-1" },
       runId: "run-1",
       error: new Error("failed"),
       messages: [userMessage],
@@ -363,16 +310,16 @@ describe("Drizzle memory public API", () => {
 
   it("serializes JSON and non-JSON failed-run diagnostics", async () => {
     const db = new FakeDrizzleDb();
-    const store = createDrizzleMemoryStore(db);
+    const store = createTestMemoryStore(db);
 
     await store.recordError({
-      context: { sessionId: "thread-json" },
+      scope: { sessionId: "thread-json" },
       runId: "run-json",
       error: { code: 409, retryable: false },
       messages: richMessages,
     });
     await store.recordError({
-      context: { sessionId: "thread-bigint" },
+      scope: { sessionId: "thread-bigint" },
       runId: "run-bigint",
       error: 42n,
       messages: [],
@@ -390,60 +337,53 @@ describe("Drizzle memory public API", () => {
 
   it("requires db.execute for advisory locking but supports lock none without it", async () => {
     const noExecuteDb = createNoExecuteDrizzleDb(new FakeDrizzleDb());
-    const lockingStore = createDrizzleMemoryStore(noExecuteDb);
-
-    await expect(
-      lockingStore.append({
-        context: { sessionId: "thread-1" },
-        runId: "run-1",
-        turn: 0,
-        messages: [userMessage],
-      }),
-    ).rejects.toThrow("advisory locking requires db.execute");
+    expect(() => createTestMemoryStore(noExecuteDb)).toThrow(
+      'with lock: "advisory" requires db.execute',
+    );
 
     const unlockedDb = new FakeDrizzleDb();
-    const unlockedStore = createDrizzleMemoryStore(createNoExecuteDrizzleDb(unlockedDb), {
+    const unlockedStore = createTestMemoryStore(createNoExecuteDrizzleDb(unlockedDb), {
       lock: "none",
     });
     await unlockedStore.append({
-      context: { sessionId: "thread-1" },
+      scope: { sessionId: "thread-1" },
       runId: "run-1",
       turn: 0,
       messages: [userMessage],
     });
 
-    expect(await unlockedStore.load({ sessionId: "thread-1" })).toEqual([userMessage]);
-    expect(unlockedDb.events).toEqual([]);
+    expect(await unlockedStore.load({ scope: { sessionId: "thread-1" } })).toEqual([userMessage]);
+    expect(unlockedDb.events).toEqual(["transaction"]);
   });
 
   it("rejects malformed stored messages by default and can bypass validation", async () => {
     const db = new FakeDrizzleDb();
-    const store = createDrizzleMemoryStore(db);
+    const store = createTestMemoryStore(db);
     const context = { sessionId: "thread-1" };
     const malformed = { role: "bad", content: [] };
 
     await store.append({
-      context,
+      scope: context,
       runId: "run-1",
       turn: 0,
       messages: [userMessage],
     });
     db.replaceFirstMessage(malformed);
 
-    await expect(store.load(context)).rejects.toThrow("valid Anvia Message");
+    await expect(store.load({ scope: context })).rejects.toThrow("valid Anvia Message");
 
-    const unsafeStore = createDrizzleMemoryStore(db, { validateMessages: false });
-    await expect(unsafeStore.load(context)).resolves.toEqual([malformed]);
+    const unsafeStore = createTestMemoryStore(db, { validateMessages: false });
+    await expect(unsafeStore.load({ scope: context })).resolves.toEqual([malformed]);
   });
 
   it("uses custom scope functions", async () => {
     const db = new FakeDrizzleDb();
-    const store = createDrizzleMemoryStore(db, {
-      scope: (context) => String(context.metadata?.tenantId ?? "unknown"),
+    const store = createTestMemoryStore(db, {
+      scopeKey: ({ scope }) => String(scope.metadata?.tenantId ?? "unknown"),
     });
 
     await store.append({
-      context: { sessionId: "thread-1", metadata: { tenantId: "tenant-1" } },
+      scope: { sessionId: "thread-1", metadata: { tenantId: "tenant-1" } },
       runId: "run-1",
       turn: 0,
       messages: [userMessage],
@@ -451,49 +391,69 @@ describe("Drizzle memory public API", () => {
 
     expect(db.scopeKeys()).toEqual(["tenant-1"]);
     await expect(
-      store.load({ sessionId: "different-thread", metadata: { tenantId: "tenant-1" } }),
+      store.load({
+        scope: { sessionId: "different-thread", metadata: { tenantId: "tenant-1" } },
+      }),
     ).resolves.toEqual([userMessage]);
   });
 
   it("creates stable scope keys from metadata paths", () => {
     expect(
-      createDrizzleMemoryScopeKey(
-        {
+      createMemoryScopeKey({
+        scope: {
           sessionId: "thread-1",
           userId: "user-1",
           metadata: { tenant: { id: "tenant-1" } },
         },
-        { metadataKeys: ["tenant.id"] },
-      ),
+        metadataKeys: ["tenant.id"],
+      }),
     ).toBe(JSON.stringify(["thread-1", "user-1", "tenant-1"]));
   });
 
   it("keeps falsey metadata values and normalizes missing scope paths to null", () => {
     expect(
-      createDrizzleMemoryScopeKey(
-        { sessionId: "thread-1", metadata: { count: 0, enabled: false } },
-        { metadataKeys: ["count", "enabled", "missing.value"] },
-      ),
+      createMemoryScopeKey({
+        scope: { sessionId: "thread-1", metadata: { count: 0, enabled: false } },
+        metadataKeys: ["count", "enabled", "missing.value"],
+      }),
     ).toBe(JSON.stringify(["thread-1", null, 0, false, null]));
   });
 
   it("can omit user ids from generated scope keys", () => {
     expect(
-      createDrizzleMemoryScopeKey(
-        { sessionId: "thread-1", userId: "user-1" },
-        { includeUserId: false },
-      ),
+      createMemoryScopeKey({
+        scope: { sessionId: "thread-1", userId: "user-1" },
+        includeUserId: false,
+      }),
     ).toBe(JSON.stringify(["thread-1"]));
   });
 
-  it("fails clearly when the database object is not Drizzle-like", async () => {
-    const store = createDrizzleMemoryStore({});
-
-    await expect(store.load({ sessionId: "thread-1" })).rejects.toThrow(
+  it("fails clearly when the database object is not Drizzle-like", () => {
+    expect(() => createTestMemoryStore({})).toThrow(
       "DrizzleMemoryStore expected db.select to be a function.",
     );
   });
+
+  it("rejects the removed positional constructor at compile time", () => {
+    if (Date.now() === Number.NEGATIVE_INFINITY) {
+      const db = new FakeDrizzleDb();
+      // @ts-expect-error DrizzleMemoryStore accepts one options object.
+      new DrizzleMemoryStore(db);
+      new DrizzleMemoryStore({
+        db,
+        // @ts-expect-error Scope-key configuration was renamed.
+        scope: {},
+      });
+    }
+  });
 });
+
+function createTestMemoryStore(
+  db: DrizzleMemoryDatabaseLike,
+  options: Omit<DrizzleMemoryStoreOptions, "db"> = {},
+): DrizzleMemoryStore {
+  return new DrizzleMemoryStore({ db, ...options });
+}
 
 type SessionRow = {
   id: string;
@@ -810,6 +770,7 @@ function createNoExecuteDrizzleDb(db: FakeDrizzleDb): object {
     select: db.select.bind(db),
     insert: db.insert.bind(db),
     delete: db.delete.bind(db),
+    transaction: db.transaction.bind(db),
   };
 }
 

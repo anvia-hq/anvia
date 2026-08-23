@@ -1,6 +1,7 @@
 import { Buffer } from "node:buffer";
 import { describe, expect, it } from "vitest";
-import { aspectRatio, GrokImageGenerationModel, imageResponseFromGrok } from "../src/index";
+import { GrokImageGenerationModel } from "../src/grok/image-generation";
+import { aspectRatio, imageResponseFromGrok } from "../src/index";
 
 describe("Grok image generation", () => {
   it("maps core image requests to default xAI image generation params", async () => {
@@ -36,7 +37,7 @@ describe("Grok image generation", () => {
     ]);
   });
 
-  it("maps core image requests while letting native image params override defaults", async () => {
+  it("maps core image requests while canonical fields override provider options", async () => {
     const calls: unknown[] = [];
     const model = new GrokImageGenerationModel(
       {
@@ -61,7 +62,7 @@ describe("Grok image generation", () => {
       prompt: "draw a diagram",
       width: 1024,
       height: 768,
-      additionalParams: {
+      providerOptions: {
         model: "ignored-model",
         prompt: "ignored prompt",
         n: 2,
@@ -75,14 +76,14 @@ describe("Grok image generation", () => {
       {
         model: "grok-image-test",
         prompt: "draw a diagram",
-        n: 2,
-        response_format: "url",
-        aspect_ratio: "1:1",
+        n: 1,
+        response_format: "b64_json",
+        aspect_ratio: "4:3",
         resolution: "720p",
       },
     ]);
-    expect(Array.from(response.image)).toEqual([1, 2, 3]);
-    expect(response.mediaType).toBe("image/jpeg");
+    expect(Array.from(response.images[0].data)).toEqual([1, 2, 3]);
+    expect(response.images[0].mediaType).toBe("image/jpeg");
   });
 
   it("fetches URL image responses into bytes", async () => {
@@ -105,8 +106,8 @@ describe("Grok image generation", () => {
     );
 
     expect(fetchCalls).toEqual(["https://imgen.x.ai/example.jpeg"]);
-    expect(Array.from(response.image)).toEqual([4, 5, 6]);
-    expect(response.mediaType).toBe("image/jpeg");
+    expect(Array.from(response.images[0].data)).toEqual([4, 5, 6]);
+    expect(response.images[0].mediaType).toBe("image/jpeg");
   });
 
   it("rejects URL image responses without fetch", async () => {

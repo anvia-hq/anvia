@@ -18,6 +18,16 @@ import type {
   RunEvalSuiteOptions,
 } from "./types";
 
+export class EvalReporterDispatchError extends AggregateError {
+  readonly phase: string;
+
+  constructor(phase: string, errors: readonly unknown[]) {
+    super(errors, `Evaluation reporter ${phase} failed ${errors.length} time(s).`);
+    this.name = "EvalReporterDispatchError";
+    this.phase = phase;
+  }
+}
+
 export async function runEvalSuite<
   Input,
   Output,
@@ -55,7 +65,7 @@ export async function runEvalSuite<
     reporterErrors = await notifyRunStart(
       reporters,
       lifecycle,
-      options.failOnReporterError === true,
+      options.reporterErrorPolicy ?? "collect",
     );
   } catch (error) {
     await notifyRunEnd(reporters, {
@@ -90,25 +100,26 @@ export async function runEvalSuite<
     metrics: aggregates.metrics,
     cases: aggregates.cases,
     usage: aggregates.usage,
-    ...(aggregates.cost === undefined ? {} : { cost: aggregates.cost }),
     durationMs: Date.now() - startedAtMs,
     reporterErrors,
   };
+  if (aggregates.cost !== undefined) {
+    result.cost = aggregates.cost;
+  }
+  const runEndArgs: EvalRunEndArgs = {
+    ...lifecycle,
+    status: "completed",
+    completedAt,
+    durationMs: result.durationMs,
+    metrics: result.metrics,
+    cases: result.cases,
+    usage: result.usage,
+  };
+  if (result.cost !== undefined) {
+    runEndArgs.cost = result.cost;
+  }
   result.reporterErrors.push(
-    ...(await notifyRunEnd(
-      reporters,
-      {
-        ...lifecycle,
-        status: "completed",
-        completedAt,
-        durationMs: result.durationMs,
-        metrics: result.metrics,
-        cases: result.cases,
-        usage: result.usage,
-        ...(result.cost === undefined ? {} : { cost: result.cost }),
-      },
-      options.failOnReporterError === true,
-    )),
+    ...(await notifyRunEnd(reporters, runEndArgs, options.reporterErrorPolicy ?? "collect")),
   );
   return result;
 }
@@ -186,7 +197,7 @@ async function runEvalCase<
       trace: traceResult.trace,
       traceError: traceResult.error,
       reporters: options.reporters ?? [],
-      failOnReporterError: options.failOnReporterError === true,
+      reporterErrorPolicy: options.reporterErrorPolicy ?? "collect",
     });
     const metricResult: EvalMetricResult = {
       metricName: metric.name,
@@ -261,13 +272,11 @@ async function reportOutcome<Input, Output, Expected>(args: {
   trace: EvalTraceRef | undefined;
   traceError: unknown;
   reporters: readonly EvalReporter<Input, Output, Expected>[];
-  failOnReporterError: boolean;
+  reporterErrorPolicy: "collect" | "throw";
 }): Promise<unknown[]> {
   const errors: unknown[] = [];
   if (args.traceError !== undefined) {
-    if (args.failOnReporterError) throw args.traceError;
     errors.push(args.traceError);
-    return errors;
   }
   for (const reporter of args.reporters) {
     try {
@@ -282,12 +291,10 @@ async function reportOutcome<Input, Output, Expected>(args: {
         outcome: args.outcome,
       });
     } catch (error) {
-      if (args.failOnReporterError) {
-        throw error;
-      }
       errors.push(error);
     }
   }
+  throwReporterErrors("report", errors, args.reporterErrorPolicy);
   return errors;
 }
 
@@ -307,21 +314,20 @@ function resolveRun<Input, Output, Expected>(
       throw new TypeError(`Evaluation run ${label} must contain 1 to 256 characters`);
     }
   }
-  return {
+  const run: EvalRunContext = {
     id,
     startedAt: new Date(startedAtMs).toISOString(),
-    ...(options.run?.datasetName === undefined ? {} : { datasetName: options.run.datasetName }),
-    ...(options.run?.datasetVersion === undefined
-      ? {}
-      : { datasetVersion: options.run.datasetVersion }),
-    ...(options.run?.metadata === undefined ? {} : { metadata: options.run.metadata }),
   };
+  if (options.run?.datasetName !== undefined) run.datasetName = options.run.datasetName;
+  if (options.run?.datasetVersion !== undefined) run.datasetVersion = options.run.datasetVersion;
+  if (options.run?.metadata !== undefined) run.metadata = options.run.metadata;
+  return run;
 }
 
 async function notifyRunStart<Input, Output, Expected>(
   reporters: readonly EvalReporter<Input, Output, Expected>[],
   args: EvalRunStartArgs,
-  failOnReporterError: boolean,
+  errorPolicy: "collect" | "throw",
 ): Promise<unknown[]> {
   const errors: unknown[] = [];
   for (const reporter of reporters) {
@@ -329,17 +335,17 @@ async function notifyRunStart<Input, Output, Expected>(
     try {
       await reporter.onRunStart(args);
     } catch (error) {
-      if (failOnReporterError) throw error;
       errors.push(error);
     }
   }
+  throwReporterErrors("onRunStart", errors, errorPolicy);
   return errors;
 }
 
 async function notifyRunEnd<Input, Output, Expected>(
   reporters: readonly EvalReporter<Input, Output, Expected>[],
   args: EvalRunEndArgs,
-  failOnReporterError = false,
+  errorPolicy: "collect" | "throw" = "collect",
 ): Promise<unknown[]> {
   const errors: unknown[] = [];
   for (const reporter of reporters) {
@@ -347,11 +353,21 @@ async function notifyRunEnd<Input, Output, Expected>(
     try {
       await reporter.onRunEnd(args);
     } catch (error) {
-      if (failOnReporterError) throw error;
       errors.push(error);
     }
   }
+  throwReporterErrors("onRunEnd", errors, errorPolicy);
   return errors;
+}
+
+function throwReporterErrors(
+  phase: string,
+  errors: readonly unknown[],
+  errorPolicy: "collect" | "throw",
+): void {
+  if (errorPolicy === "throw" && errors.length > 0) {
+    throw new EvalReporterDispatchError(phase, errors);
+  }
 }
 
 function countMetricOutcomes(

@@ -1,20 +1,21 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  AgentBuilder,
+  Agent,
+  AgentRunCancelledError,
   type AgentStreamEvent,
   AssistantContent,
   type CompletionModel,
+  type CompletionModelStreamEvent,
   type CompletionRequest,
   type CompletionResponse,
-  type CompletionStreamEvent,
   createSummaryMemoryCompactor,
-  isMemoryCompactionSummary,
-  type MemoryAppendInput,
-  type MemoryCompactionCommitInput,
+  isMemoryCompactionMessage,
+  type MemoryAppendOptions,
+  type MemoryCompactionCapability,
   MemoryCompactionConflictError,
   MemoryCompactionError,
-  type MemoryCompactionStore,
-  type MemoryContext,
+  type MemoryCompactionReplacePrefixOptions,
+  type MemoryScope,
   type MemoryStore,
   Message,
   type Message as MessageType,
@@ -24,7 +25,7 @@ import {
 
 class QueueModel implements CompletionModel {
   readonly provider = "test";
-  readonly defaultModel = "test";
+  readonly modelId = "test";
   readonly capabilities = {
     streaming: false,
     tools: true,
@@ -50,7 +51,7 @@ class QueueModel implements CompletionModel {
 
 class StreamingQueueModel implements StreamingCompletionModel {
   readonly provider = "test";
-  readonly defaultModel = "test";
+  readonly modelId = "test";
   readonly capabilities = {
     streaming: true,
     tools: true,
@@ -62,13 +63,13 @@ class StreamingQueueModel implements StreamingCompletionModel {
   };
   readonly requests: CompletionRequest[] = [];
 
-  constructor(private readonly events: CompletionStreamEvent[][]) {}
+  constructor(private readonly events: CompletionModelStreamEvent[][]) {}
 
   async completion(): Promise<CompletionResponse> {
     throw new Error("completion should not be called");
   }
 
-  async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionStreamEvent> {
+  async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionModelStreamEvent> {
     this.requests.push(request);
     const events = this.events.shift();
     if (events === undefined) {
@@ -79,25 +80,27 @@ class StreamingQueueModel implements StreamingCompletionModel {
 }
 
 class CompactingMemoryStore implements MemoryStore {
-  readonly appendCalls: MemoryAppendInput[] = [];
-  readonly commitCalls: MemoryCompactionCommitInput[] = [];
-  readonly compaction: MemoryCompactionStore = {
-    load: async () => ({
+  readonly appendCalls: MemoryAppendOptions[] = [];
+  readonly replaceCalls: MemoryCompactionReplacePrefixOptions[] = [];
+  afterCommit: (() => void) | undefined;
+  readonly compaction: MemoryCompactionCapability = {
+    snapshot: async () => ({
       revision: String(this.revision),
       messages: [...this.messages],
     }),
-    commit: async (input) => {
-      this.commitCalls.push(input);
+    replacePrefix: async (input) => {
+      this.replaceCalls.push(input);
       if (this.conflictsRemaining > 0) {
         this.conflictsRemaining -= 1;
-        return "conflict";
+        return { status: "conflict" };
       }
       if (input.revision !== String(this.revision)) {
-        return "conflict";
+        return { status: "conflict" };
       }
-      this.messages = [input.summary, ...this.messages.slice(input.compactedMessageCount)];
+      this.messages = [input.replacement, ...this.messages.slice(input.messageCount)];
       this.revision += 1;
-      return "committed";
+      this.afterCommit?.();
+      return { status: "committed" };
     },
   };
   private revision = 1;
@@ -111,7 +114,7 @@ class CompactingMemoryStore implements MemoryStore {
     return [...this.messages];
   }
 
-  async append(input: MemoryAppendInput): Promise<void> {
+  async append(input: MemoryAppendOptions): Promise<void> {
     this.appendCalls.push({ ...input, messages: [...input.messages] });
     this.messages.push(...input.messages);
     this.revision += 1;
@@ -138,7 +141,20 @@ function response(
   };
 }
 
-const context: MemoryContext = { sessionId: "session-1" };
+function successfulTextStream(text: string): CompletionModelStreamEvent[] {
+  return [
+    { type: "text_delta", delta: text },
+    {
+      type: "final",
+      response: {
+        ...response(text),
+        finishReason: "stop",
+      },
+    },
+  ];
+}
+
+const scope: MemoryScope = { sessionId: "session-1" };
 
 describe("memory compaction", () => {
   it("summarizes old user-led turns, persists the summary, and includes its usage", async () => {
@@ -168,25 +184,32 @@ describe("memory compaction", () => {
     const summaryModel = new QueueModel([response("Earlier discussion summary.", summaryUsage)]);
     const mainModel = new QueueModel([response("done", mainUsage)]);
     const events: string[] = [];
-    const agent = new AgentBuilder("test", mainModel)
-      .observe({
-        startRun: () => ({
-          event: ({ name }) => {
-            events.push(name);
+    const agent = new Agent({
+      id: "test",
+      model: mainModel,
+      observability: {
+        observers: {
+          test: {
+            startRun: () => ({
+              event: ({ name }) => {
+                events.push(name);
+              },
+              end: () => {},
+            }),
           },
-          end: () => {},
-        }),
-      })
-      .memory(store, {
-        compaction: {
-          maxMessages: 6,
-          keepRecentUserTurns: 1,
-          compactor: createSummaryMemoryCompactor(summaryModel),
         },
-      })
-      .build();
+      },
+      memory: {
+        store,
+        compaction: {
+          trigger: { afterTokens: 6 },
+          retention: { recentTokens: 1 },
+          compactor: createSummaryMemoryCompactor({ model: summaryModel }),
+        },
+      },
+    });
 
-    const result = await agent.session(context.sessionId).prompt("next").send();
+    const result = await agent.generate({ prompt: "next", session: scope });
 
     expect(summaryModel.requests).toHaveLength(1);
     expect(mainModel.requests[0]?.chatHistory).toEqual([
@@ -196,71 +219,244 @@ describe("memory compaction", () => {
       Message.user("next"),
     ]);
     expect(result.usage).toEqual(Usage.add(summaryUsage, mainUsage));
+    expect(result.memoryCompaction).toMatchObject({
+      originalMessageCount: 6,
+      compactedMessageCount: 4,
+      retainedMessageCount: 2,
+      attempts: 1,
+      usage: summaryUsage,
+    });
+    expect(result.memoryCompaction?.originalTokenCount).toBeGreaterThan(
+      result.memoryCompaction?.resultTokenCount ?? Number.POSITIVE_INFINITY,
+    );
     expect(events).toContain("memory.compaction");
-    expect(store.commitCalls[0]).toMatchObject({ compactedMessageCount: 4 });
-    expect(store.snapshot().filter(isMemoryCompactionSummary)).toHaveLength(1);
+    expect(store.replaceCalls[0]).toMatchObject({ messageCount: 4 });
+    expect(store.snapshot().filter(isMemoryCompactionMessage)).toHaveLength(1);
   });
 
   it("does not compact below the configured threshold", async () => {
     const store = new CompactingMemoryStore([Message.user("first"), Message.assistant("answer")]);
     const compactor = vi.fn(async () => ({ summary: "unused" }));
     const model = new QueueModel([response("done")]);
-    const agent = new AgentBuilder("test", model)
-      .memory(store, {
+    const agent = new Agent({
+      id: "test",
+      model,
+      memory: {
+        store,
         compaction: {
-          maxMessages: 10,
+          trigger: { afterTokens: 10 },
           compactor,
         },
-      })
-      .build();
+      },
+    });
 
-    await agent.session(context.sessionId).prompt("next").send();
+    await agent.generate({ prompt: "next", session: scope });
 
     expect(compactor).not.toHaveBeenCalled();
-    expect(store.commitCalls).toHaveLength(0);
+    expect(store.replaceCalls).toHaveLength(0);
   });
 
-  it("validates compaction options and defaults keepRecentUserTurns to 4", () => {
+  it("triggers from token pressure rather than message count", async () => {
+    const tokenCounter = (messages: readonly MessageType[]) =>
+      messages.reduce((total, message) => total + JSON.stringify(message).length, 0);
+    const compactor = vi.fn(async () => ({ summary: "earlier context" }));
+    const store = new CompactingMemoryStore([
+      Message.user("A".repeat(200)),
+      Message.assistant("old answer"),
+      Message.user("recent"),
+      Message.assistant("recent answer"),
+    ]);
+    const agent = new Agent({
+      id: "test",
+      model: new QueueModel([response("done")]),
+      memory: {
+        store,
+        compaction: {
+          trigger: { afterTokens: 200 },
+          retention: { recentTokens: 150 },
+          tokenCounter,
+          compactor,
+        },
+      },
+    });
+
+    await agent.generate({ prompt: "next", session: scope });
+
+    expect(compactor).toHaveBeenCalledOnce();
+    expect(store.replaceCalls[0]?.messageCount).toBe(2);
+  });
+
+  it("manually compacts configured memory regardless of the automatic threshold", async () => {
+    const store = new CompactingMemoryStore([
+      Message.user("first"),
+      Message.assistant("first answer"),
+      Message.user("second"),
+      Message.assistant("second answer"),
+      Message.user("recent"),
+      Message.assistant("recent answer"),
+    ]);
+    const agent = new Agent({
+      id: "test",
+      model: new QueueModel([]),
+      memory: {
+        store,
+        compaction: {
+          trigger: { afterTokens: 100 },
+          retention: { recentTokens: 4 },
+          tokenCounter: (messages) => messages.length,
+          compactor: async () => ({ summary: "Earlier discussion." }),
+        },
+      },
+    });
+
+    const result = await agent.compactMemory({ session: scope });
+
+    expect(result).toEqual({
+      type: "compacted",
+      originalMessageCount: 6,
+      compactedMessageCount: 2,
+      retainedMessageCount: 4,
+      originalTokenCount: 6,
+      compactedTokenCount: 2,
+      retainedTokenCount: 4,
+      resultTokenCount: 5,
+      attempts: 1,
+      usage: Usage.empty(),
+    });
+    expect(store.snapshot()[0]).toSatisfy(isMemoryCompactionMessage);
+  });
+
+  it("returns an explicit skipped result when manual compaction cannot preserve a newer turn", async () => {
+    const store = new CompactingMemoryStore([
+      Message.user("only turn"),
+      Message.assistant("answer"),
+    ]);
+    const agent = new Agent({
+      id: "test",
+      model: new QueueModel([]),
+      memory: {
+        store,
+        compaction: {
+          trigger: { afterTokens: 100 },
+          retention: { recentTokens: 10 },
+          tokenCounter: (messages) => messages.length,
+          compactor: async () => ({ summary: "unused" }),
+        },
+      },
+    });
+
+    await expect(agent.compactMemory({ session: scope })).resolves.toEqual({
+      type: "skipped",
+      reason: "nothing_to_compact",
+      originalMessageCount: 2,
+      originalTokenCount: 2,
+    });
+    expect(store.replaceCalls).toHaveLength(0);
+  });
+
+  it("validates compaction options and resolves explicit defaults", () => {
     const store = new CompactingMemoryStore([]);
     const model = new QueueModel([]);
     const compactor = async () => ({ summary: "summary" });
 
-    expect(() =>
-      new AgentBuilder("test", model).memory(store, {
-        compaction: { maxMessages: 0, compactor },
-      }),
+    expect(
+      () =>
+        new Agent({
+          id: "test",
+          model,
+          memory: { store, compaction: { trigger: { afterTokens: 0 }, compactor } },
+        }),
     ).toThrow(RangeError);
-    expect(() =>
-      new AgentBuilder("test", model).memory(store, {
-        compaction: { maxMessages: 4, keepRecentUserTurns: 0, compactor },
-      }),
+    expect(
+      () =>
+        new Agent({
+          id: "test",
+          model,
+          memory: {
+            store,
+            compaction: {
+              trigger: { afterTokens: 4 },
+              retention: { recentTokens: 4 },
+              compactor,
+            },
+          },
+        }),
+    ).toThrow("must be less than afterTokens");
+    expect(
+      () =>
+        new Agent({
+          id: "test",
+          model,
+          memory: {
+            store,
+            compaction: {
+              trigger: { afterTokens: 4 },
+              tokenCounter: "nope" as unknown as (messages: readonly MessageType[]) => number,
+              compactor,
+            },
+          },
+        }),
+    ).toThrow("tokenCounter");
+    expect(
+      () =>
+        new Agent({
+          id: "test",
+          model,
+          memory: {
+            store,
+            compaction: {
+              trigger: { afterTokens: 4 },
+              retention: { recentTokens: 0 },
+              compactor,
+            },
+          },
+        }),
     ).toThrow(RangeError);
-    expect(() =>
-      new AgentBuilder("test", model).memory(store, {
-        compaction: { maxMessages: 4, conflictRetries: -1, compactor },
-      }),
+    expect(
+      () =>
+        new Agent({
+          id: "test",
+          model,
+          memory: {
+            store,
+            compaction: {
+              trigger: { afterTokens: 4 },
+              conflictRetries: { maxAttempts: 0 },
+              compactor,
+            },
+          },
+        }),
     ).toThrow(RangeError);
-    expect(() =>
-      new AgentBuilder("test", model).memory(store, {
-        compaction: {
-          maxMessages: 4,
-          compactor: "nope" as unknown as () => Promise<{ summary: string }>,
-        },
-      }),
+    expect(
+      () =>
+        new Agent({
+          id: "test",
+          model,
+          memory: {
+            store,
+            compaction: {
+              trigger: { afterTokens: 4 },
+              compactor: "nope" as unknown as () => Promise<{ summary: string }>,
+            },
+          },
+        }),
     ).toThrow(TypeError);
 
-    const agent = new AgentBuilder("test", model)
-      .memory(store, {
+    const agent = new Agent({
+      id: "test",
+      model,
+      memory: {
+        store,
         compaction: {
-          maxMessages: 8,
+          trigger: { afterTokens: 8 },
           compactor,
         },
-      })
-      .build();
-    expect(agent.memory?.options.compaction).toMatchObject({
-      maxMessages: 8,
-      keepRecentUserTurns: 4,
-      conflictRetries: 1,
+      },
+    });
+    expect(agent.memory?.compaction).toMatchObject({
+      trigger: { afterTokens: 8 },
+      retention: { recentTokens: 2 },
+      conflictRetries: false,
     });
   });
 
@@ -276,22 +472,25 @@ describe("memory compaction", () => {
     const store = new CompactingMemoryStore(history);
     const compactor = vi.fn(async () => ({ summary: "unused" }));
     const model = new QueueModel([response("done")]);
-    const agent = new AgentBuilder("test", model)
-      .memory(store, {
+    const agent = new Agent({
+      id: "test",
+      model,
+      memory: {
+        store,
         compaction: {
-          maxMessages: 4,
-          keepRecentUserTurns: 2,
+          trigger: { afterTokens: 4 },
+          retention: { recentTokens: 2 },
           compactor,
         },
-      })
-      .build();
+      },
+    });
 
-    await agent.session(context.sessionId).prompt("next").send();
+    await agent.generate({ prompt: "next", session: scope });
 
     expect(history.length + 1).toBeGreaterThan(4);
     expect(compactor).not.toHaveBeenCalled();
-    expect(store.commitCalls).toHaveLength(0);
-    expect(store.snapshot().filter(isMemoryCompactionSummary)).toHaveLength(0);
+    expect(store.replaceCalls).toHaveLength(0);
+    expect(store.snapshot().filter(isMemoryCompactionMessage)).toHaveLength(0);
   });
 
   it("truncates long inline document text in the summary prompt", async () => {
@@ -299,8 +498,9 @@ describe("memory compaction", () => {
     const history = [
       Message.user([
         {
-          type: "document",
-          source: { type: "text", text: longDocument, mediaType: "text/plain" },
+          type: "file",
+          data: { type: "text", text: longDocument },
+          mediaType: "text/plain",
         },
       ]),
       Message.assistant("noted"),
@@ -312,23 +512,30 @@ describe("memory compaction", () => {
     const store = new CompactingMemoryStore(history);
     const summaryModel = new QueueModel([response("summary")]);
     const mainModel = new QueueModel([response("done")]);
-    const agent = new AgentBuilder("test", mainModel)
-      .memory(store, {
+    const agent = new Agent({
+      id: "test",
+      model: mainModel,
+      memory: {
+        store,
         compaction: {
-          maxMessages: 6,
-          keepRecentUserTurns: 1,
-          compactor: createSummaryMemoryCompactor(summaryModel),
+          trigger: { afterTokens: 6 },
+          retention: { recentTokens: 1 },
+          compactor: createSummaryMemoryCompactor({ model: summaryModel }),
         },
-      })
-      .build();
+      },
+    });
 
-    await agent.session(context.sessionId).prompt("next").send();
+    await agent.generate({ prompt: "next", session: scope });
 
     const summaryPrompt = summaryModel.requests[0]?.chatHistory[0];
     const serialized =
-      summaryPrompt?.role === "user" && summaryPrompt.content[0]?.type === "text"
-        ? summaryPrompt.content[0].text
-        : "";
+      summaryPrompt?.role !== "user"
+        ? ""
+        : typeof summaryPrompt.content === "string"
+          ? summaryPrompt.content
+          : summaryPrompt.content[0]?.type === "text"
+            ? summaryPrompt.content[0].text
+            : "";
     expect(serialized).toContain("[truncated 500 chars]");
     expect(serialized).not.toContain(longDocument);
   });
@@ -353,21 +560,29 @@ describe("memory compaction", () => {
       response("summary two", summaryUsage),
     ]);
     const mainModel = new QueueModel([response("done")]);
-    const agent = new AgentBuilder("test", mainModel)
-      .memory(store, {
+    const agent = new Agent({
+      id: "test",
+      model: mainModel,
+      memory: {
+        store,
         compaction: {
-          maxMessages: 4,
-          keepRecentUserTurns: 1,
-          compactor: createSummaryMemoryCompactor(summaryModel),
+          trigger: { afterTokens: 4 },
+          retention: { recentTokens: 1 },
+          compactor: createSummaryMemoryCompactor({ model: summaryModel }),
+          conflictRetries: { maxAttempts: 2 },
         },
-      })
-      .build();
+      },
+    });
 
-    const result = await agent.session(context.sessionId).prompt("next").send();
+    const result = await agent.generate({ prompt: "next", session: scope });
 
     expect(summaryModel.requests).toHaveLength(2);
-    expect(store.commitCalls).toHaveLength(2);
+    expect(store.replaceCalls).toHaveLength(2);
     expect(result.usage).toEqual(Usage.add(summaryUsage, summaryUsage));
+    expect(result.memoryCompaction).toMatchObject({
+      attempts: 2,
+      usage: Usage.add(summaryUsage, summaryUsage),
+    });
   });
 
   it("fails after the configured number of stale commits", async () => {
@@ -382,17 +597,21 @@ describe("memory compaction", () => {
     );
     const summaryModel = new QueueModel([response("one"), response("two")]);
     const mainModel = new QueueModel([]);
-    const agent = new AgentBuilder("test", mainModel)
-      .memory(store, {
+    const agent = new Agent({
+      id: "test",
+      model: mainModel,
+      memory: {
+        store,
         compaction: {
-          maxMessages: 4,
-          keepRecentUserTurns: 1,
-          compactor: createSummaryMemoryCompactor(summaryModel),
+          trigger: { afterTokens: 4 },
+          retention: { recentTokens: 1 },
+          compactor: createSummaryMemoryCompactor({ model: summaryModel }),
+          conflictRetries: { maxAttempts: 2 },
         },
-      })
-      .build();
+      },
+    });
 
-    await expect(agent.session(context.sessionId).prompt("next").send()).rejects.toBeInstanceOf(
+    await expect(agent.generate({ prompt: "next", session: scope })).rejects.toBeInstanceOf(
       MemoryCompactionConflictError,
     );
     expect(mainModel.requests).toHaveLength(0);
@@ -420,26 +639,29 @@ describe("memory compaction", () => {
       response("two", summaryUsage),
     ]);
     const mainModel = new StreamingQueueModel([]);
-    const agent = new AgentBuilder("test", mainModel)
-      .memory(store, {
+    const agent = new Agent({
+      id: "test",
+      model: mainModel,
+      memory: {
+        store,
         compaction: {
-          maxMessages: 4,
-          keepRecentUserTurns: 1,
-          compactor: createSummaryMemoryCompactor(summaryModel),
+          trigger: { afterTokens: 4 },
+          retention: { recentTokens: 1 },
+          compactor: createSummaryMemoryCompactor({ model: summaryModel }),
+          conflictRetries: { maxAttempts: 2 },
         },
-      })
-      .build();
+      },
+    });
     const events: AgentStreamEvent[] = [];
 
-    await expect(async () => {
-      for await (const event of agent.session(context.sessionId).prompt("next").stream()) {
-        events.push(event);
-      }
-    }).rejects.toBeInstanceOf(MemoryCompactionConflictError);
+    for await (const event of agent.stream({ prompt: "next", session: scope })) {
+      events.push(event);
+    }
 
     const error = events.find((event) => event.type === "error");
     expect(error).toMatchObject({
       type: "error",
+      error: expect.any(MemoryCompactionConflictError),
       usage: Usage.add(summaryUsage, summaryUsage),
     });
     expect(mainModel.requests).toHaveLength(0);
@@ -454,26 +676,317 @@ describe("memory compaction", () => {
     ]);
     const summaryModel: CompletionModel = {
       provider: "test",
-      defaultModel: "test",
+      modelId: "test",
       capabilities: new QueueModel([]).capabilities,
       completion: async () => {
         throw new Error("summary unavailable");
       },
     };
     const mainModel = new QueueModel([]);
-    const agent = new AgentBuilder("test", mainModel)
-      .memory(store, {
+    const agent = new Agent({
+      id: "test",
+      model: mainModel,
+      memory: {
+        store,
         compaction: {
-          maxMessages: 4,
-          keepRecentUserTurns: 1,
-          compactor: createSummaryMemoryCompactor(summaryModel),
+          trigger: { afterTokens: 4 },
+          retention: { recentTokens: 1 },
+          compactor: createSummaryMemoryCompactor({ model: summaryModel }),
         },
-      })
-      .build();
+      },
+    });
 
-    await expect(agent.session(context.sessionId).prompt("next").send()).rejects.toBeInstanceOf(
+    await expect(agent.generate({ prompt: "next", session: scope })).rejects.toBeInstanceOf(
       MemoryCompactionError,
     );
+    expect(mainModel.requests).toHaveLength(0);
+  });
+
+  it("rejects malformed custom compactor results at the runtime boundary", async () => {
+    const store = new CompactingMemoryStore([
+      Message.user("first"),
+      Message.assistant("first answer"),
+      Message.user("recent"),
+      Message.assistant("recent answer"),
+    ]);
+    const mainModel = new QueueModel([]);
+    const agent = new Agent({
+      id: "test",
+      model: mainModel,
+      memory: {
+        store,
+        compaction: {
+          trigger: { afterTokens: 4 },
+          retention: { recentTokens: 1 },
+          tokenCounter: (messages) => messages.length,
+          compactor: async () => ({ summary: 42 }) as unknown as { summary: string },
+        },
+      },
+    });
+
+    await expect(agent.generate({ prompt: "next", session: scope })).rejects.toThrow(
+      "must return a summary string",
+    );
+    expect(mainModel.requests).toHaveLength(0);
+    expect(store.replaceCalls).toHaveLength(0);
+  });
+
+  it("emits compaction before the first turn and mirrors it on the final result", async () => {
+    const store = new CompactingMemoryStore([
+      Message.user("first"),
+      Message.assistant("first answer"),
+      Message.user("recent"),
+      Message.assistant("recent answer"),
+    ]);
+    const mainModel = new StreamingQueueModel([successfulTextStream("done")]);
+    const agent = new Agent({
+      id: "test",
+      model: mainModel,
+      memory: {
+        store,
+        compaction: {
+          trigger: { afterTokens: 4 },
+          retention: { recentTokens: 1 },
+          tokenCounter: (messages) => messages.length,
+          compactor: async () => ({ summary: "Earlier discussion." }),
+        },
+      },
+    });
+    const events: AgentStreamEvent[] = [];
+
+    for await (const event of agent.stream({ prompt: "next", session: scope })) {
+      events.push(event);
+    }
+
+    expect(events[0]).toMatchObject({
+      type: "memory_compaction",
+      originalMessageCount: 4,
+      compactedMessageCount: 2,
+      retainedMessageCount: 2,
+      originalTokenCount: 4,
+      compactedTokenCount: 2,
+      retainedTokenCount: 2,
+      resultTokenCount: 3,
+      attempts: 1,
+      usage: Usage.empty(),
+    });
+    expect(events[1]?.type).toBe("turn_start");
+    const final = events.at(-1);
+    expect(final).toMatchObject({
+      type: "response",
+      memoryCompaction: {
+        originalMessageCount: 4,
+        compactedMessageCount: 2,
+        retainedMessageCount: 2,
+        attempts: 1,
+        usage: Usage.empty(),
+      },
+    });
+  });
+
+  it("stores a cumulative compacted-message count across repeated compactions", async () => {
+    const priorCompaction = Message.system("Earlier summary.", {
+      metadata: {
+        anvia: {
+          memoryCompaction: {
+            version: 1,
+            compactedMessageCount: 4,
+          },
+        },
+      },
+    });
+    const store = new CompactingMemoryStore([
+      priorCompaction,
+      Message.user("middle"),
+      Message.assistant("middle answer"),
+      Message.user("recent"),
+      Message.assistant("recent answer"),
+    ]);
+    const mainModel = new QueueModel([response("done")]);
+    const agent = new Agent({
+      id: "test",
+      model: mainModel,
+      memory: {
+        store,
+        compaction: {
+          trigger: { afterTokens: 5 },
+          retention: { recentTokens: 1 },
+          compactor: async () => ({ summary: "Updated summary." }),
+        },
+      },
+    });
+
+    const result = await agent.generate({ prompt: "next", session: scope });
+
+    expect(result.memoryCompaction).toMatchObject({
+      originalMessageCount: 5,
+      compactedMessageCount: 3,
+      retainedMessageCount: 2,
+    });
+    expect(store.snapshot()[0]).toMatchObject({
+      role: "system",
+      metadata: {
+        anvia: {
+          memoryCompaction: {
+            version: 1,
+            compactedMessageCount: 6,
+          },
+        },
+      },
+    });
+  });
+
+  it("retries summary provider calls independently from the main agent model", async () => {
+    const store = new CompactingMemoryStore([
+      Message.user("first"),
+      Message.assistant("first answer"),
+      Message.user("recent"),
+      Message.assistant("recent answer"),
+    ]);
+    const summaryDelegate = new QueueModel([response("summary")]);
+    let summaryAttempts = 0;
+    const summaryModel: CompletionModel = {
+      provider: summaryDelegate.provider,
+      modelId: summaryDelegate.modelId,
+      capabilities: summaryDelegate.capabilities,
+      async completion(request) {
+        summaryAttempts += 1;
+        if (summaryAttempts === 1) {
+          throw Object.assign(new Error("temporarily unavailable"), { status: 503 });
+        }
+        return summaryDelegate.completion(request);
+      },
+    };
+    const mainModel = new QueueModel([response("done")]);
+    const agent = new Agent({
+      id: "test",
+      model: mainModel,
+      retries: false,
+      memory: {
+        store,
+        compaction: {
+          trigger: { afterTokens: 4 },
+          retention: { recentTokens: 1 },
+          compactor: createSummaryMemoryCompactor({
+            model: summaryModel,
+            retries: { maxAttempts: 2, initialDelayMs: 0, maxDelayMs: 0 },
+          }),
+        },
+      },
+    });
+
+    await agent.generate({ prompt: "next", session: scope });
+
+    expect(summaryAttempts).toBe(2);
+    expect(summaryDelegate.requests).toHaveLength(1);
+    expect(mainModel.requests).toHaveLength(1);
+  });
+
+  it("passes the active run signal to compactors and cancels before the main model call", async () => {
+    const store = new CompactingMemoryStore([
+      Message.user("first"),
+      Message.assistant("first answer"),
+      Message.user("recent"),
+      Message.assistant("recent answer"),
+    ]);
+    const mainModel = new QueueModel([]);
+    const controller = new AbortController();
+    let receivedSignal: AbortSignal | undefined;
+    let enterCompactor!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      enterCompactor = resolve;
+    });
+    const agent = new Agent({
+      id: "test",
+      model: mainModel,
+      memory: {
+        store,
+        compaction: {
+          trigger: { afterTokens: 4 },
+          retention: { recentTokens: 1 },
+          compactor: ({ abortSignal }) => {
+            receivedSignal = abortSignal;
+            enterCompactor();
+            return new Promise((_, reject) => {
+              abortSignal?.addEventListener("abort", () => reject(abortSignal.reason), {
+                once: true,
+              });
+            });
+          },
+        },
+      },
+    });
+
+    const run = agent.generate({ prompt: "next", session: scope, abortSignal: controller.signal });
+    await entered;
+    controller.abort("stop compaction");
+
+    await expect(run).rejects.toBeInstanceOf(AgentRunCancelledError);
+    expect(receivedSignal).toBeDefined();
+    expect(receivedSignal).not.toBe(controller.signal);
+    expect(receivedSignal?.aborted).toBe(true);
+    expect(mainModel.requests).toHaveLength(0);
+    expect(store.replaceCalls).toHaveLength(0);
+  });
+
+  it("reports a committed compaction before honoring an abort raised during replacement", async () => {
+    const store = new CompactingMemoryStore([
+      Message.user("first"),
+      Message.assistant("first answer"),
+      Message.user("recent"),
+      Message.assistant("recent answer"),
+    ]);
+    const mainModel = new StreamingQueueModel([]);
+    const controller = new AbortController();
+    const observerEvents: string[] = [];
+    store.afterCommit = () => controller.abort("stop after commit");
+    const agent = new Agent({
+      id: "test",
+      model: mainModel,
+      observability: {
+        observers: {
+          test: {
+            startRun: () => ({
+              event: ({ name }) => {
+                observerEvents.push(name);
+              },
+              end: () => {},
+              error: () => {},
+            }),
+          },
+        },
+      },
+      memory: {
+        store,
+        compaction: {
+          trigger: { afterTokens: 4 },
+          retention: { recentTokens: 1 },
+          compactor: async () => ({ summary: "Earlier discussion." }),
+        },
+      },
+    });
+
+    const events: AgentStreamEvent[] = [];
+    for await (const event of agent.stream({
+      prompt: "next",
+      session: scope,
+      abortSignal: controller.signal,
+    })) {
+      events.push(event);
+    }
+
+    expect(events[0]).toMatchObject({
+      type: "memory_compaction",
+      originalMessageCount: 4,
+      compactedMessageCount: 2,
+      retainedMessageCount: 2,
+    });
+    expect(events[1]).toMatchObject({
+      type: "error",
+      error: expect.any(AgentRunCancelledError),
+    });
+    expect(observerEvents).toContain("memory.compaction");
+    expect(store.snapshot()[0]).toSatisfy(isMemoryCompactionMessage);
     expect(mainModel.requests).toHaveLength(0);
   });
 
@@ -486,7 +999,8 @@ describe("memory compaction", () => {
         },
         {
           type: "image",
-          source: { type: "base64", data: "SECRET_BASE64", mediaType: "image/png" },
+          image: { type: "data", data: "SECRET_BASE64" },
+          mediaType: "image/png",
         },
       ]),
       Message.assistant([
@@ -501,24 +1015,31 @@ describe("memory compaction", () => {
     const store = new CompactingMemoryStore(history);
     const summaryModel = new QueueModel([response("summary")]);
     const mainModel = new QueueModel([response("done")]);
-    const agent = new AgentBuilder("test", mainModel)
-      .memory(store, {
+    const agent = new Agent({
+      id: "test",
+      model: mainModel,
+      memory: {
+        store,
         compaction: {
-          maxMessages: 6,
-          keepRecentUserTurns: 1,
-          compactor: createSummaryMemoryCompactor(summaryModel),
+          trigger: { afterTokens: 6 },
+          retention: { recentTokens: 1 },
+          compactor: createSummaryMemoryCompactor({ model: summaryModel }),
         },
-      })
-      .build();
+      },
+    });
 
-    await agent.session(context.sessionId).prompt("next").send();
+    await agent.generate({ prompt: "next", session: scope });
 
     const summaryPrompt = summaryModel.requests[0]?.chatHistory[0];
     expect(summaryPrompt?.role).toBe("user");
     const serialized =
-      summaryPrompt?.role === "user" && summaryPrompt.content[0]?.type === "text"
-        ? summaryPrompt.content[0].text
-        : "";
+      summaryPrompt?.role !== "user"
+        ? ""
+        : typeof summaryPrompt.content === "string"
+          ? summaryPrompt.content
+          : summaryPrompt.content[0]?.type === "text"
+            ? summaryPrompt.content[0].text
+            : "";
     expect(serialized).toContain("lookup");
     expect(serialized).toContain("found");
     expect(serialized).toContain("data omitted");
@@ -546,13 +1067,19 @@ describe("memory compaction", () => {
     };
     const model = new QueueModel([]);
 
-    expect(() =>
-      new AgentBuilder("test", model).memory(store, {
-        compaction: {
-          maxMessages: 4,
-          compactor: async () => ({ summary: "summary" }),
-        },
-      }),
+    expect(
+      () =>
+        new Agent({
+          id: "test",
+          model,
+          memory: {
+            store,
+            compaction: {
+              trigger: { afterTokens: 4 },
+              compactor: async () => ({ summary: "summary" }),
+            },
+          },
+        }),
     ).toThrow("compaction capability");
   });
 });

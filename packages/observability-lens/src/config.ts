@@ -1,4 +1,4 @@
-import type { LensTracingOptions } from "./types.js";
+import type { LensClientOptions } from "./types.js";
 
 export type ResolvedLensConfig = {
   baseUrl: string;
@@ -12,7 +12,7 @@ export type ResolvedLensConfig = {
   captureMaxBytes: number;
 };
 
-export function resolveLensConfig(options: LensTracingOptions = {}): ResolvedLensConfig {
+export function resolveLensConfig(options: LensClientOptions = {}): ResolvedLensConfig {
   const baseUrl = required("baseUrl", options.baseUrl, process.env.ANVIA_LENS_BASE_URL).replace(
     /\/+$/,
     "",
@@ -59,7 +59,7 @@ function required(
   const value = first(option, environment);
   if (value === undefined) {
     throw new Error(
-      `Anvia Lens ${name} is required; pass it to lens.create() or set ANVIA_LENS_${envName(name)}`,
+      `Anvia Lens ${name} is required; pass it to LensClient or set ANVIA_LENS_${envName(name)}`,
     );
   }
   return value;

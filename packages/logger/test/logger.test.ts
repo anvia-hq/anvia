@@ -1,3 +1,4 @@
+import { AgentStructuredOutputError, CompletionProviderOutputError, Usage } from "@anvia/core";
 import type { AgentRunObserver, AgentToolObserver } from "@anvia/core/observability";
 import { describe, expect, it } from "vitest";
 import { createConsoleLogger, createLoggerObserver, createPinoLogger, type Logger } from "../src";
@@ -74,11 +75,13 @@ describe("createPinoLogger", () => {
 describe("createLoggerObserver", () => {
   it("logs agent run, generation, and tool lifecycle events", async () => {
     const logger = new RecordingLogger();
-    const observer = createLoggerObserver(logger, {
+    const observer = createLoggerObserver({
+      logger,
       includeToolResult: true,
     });
 
     const run = (await observer.startRun({
+      runId: "run_1",
       agentName: "support",
       agentDescription: "Support assistant",
       instructions: "Answer support questions.",
@@ -102,7 +105,7 @@ describe("createLoggerObserver", () => {
       providerRequest: { provider: "test" },
       modelInfo: {
         provider: "test",
-        defaultModel: "test-model",
+        modelId: "test-model",
       },
     });
 
@@ -124,12 +127,10 @@ describe("createLoggerObserver", () => {
     const tool = (await run.startTool?.({
       turn: 1,
       toolCall: {
-        type: "tool_call",
-        id: "tool_1",
-        function: {
-          name: "lookup",
-          arguments: "{}",
-        },
+        type: "tool-call",
+        toolCallId: "tool_1",
+        toolName: "lookup",
+        input: {},
       },
       toolName: "lookup",
       args: "{}",
@@ -139,12 +140,10 @@ describe("createLoggerObserver", () => {
     tool.end({
       turn: 1,
       toolCall: {
-        type: "tool_call",
-        id: "tool_1",
-        function: {
-          name: "lookup",
-          arguments: "{}",
-        },
+        type: "tool-call",
+        toolCallId: "tool_1",
+        toolName: "lookup",
+        input: {},
       },
       toolName: "lookup",
       args: "{}",
@@ -154,7 +153,10 @@ describe("createLoggerObserver", () => {
     });
 
     run.end({
+      status: "completed",
+      runId: "run_1",
       output: "ok",
+      text: "ok",
       usage: {
         inputTokens: 1,
         outputTokens: 1,
@@ -175,6 +177,7 @@ describe("createLoggerObserver", () => {
     ]);
     expect(logger.records[0]?.context).toMatchObject({
       component: "anvia.agent",
+      runId: "run_1",
       agentName: "support",
       userId: "user_1",
       sessionId: "session_1",
@@ -190,7 +193,252 @@ describe("createLoggerObserver", () => {
     });
     expect(logger.records[5]?.context).not.toHaveProperty("output");
   });
+
+  it("logs completion retry events with diagnostics and without model output", async () => {
+    const logger = new RecordingLogger();
+    const observer = createLoggerObserver({ logger });
+    const run = (await observer.startRun({
+      runId: "run_retry",
+      prompt: { role: "user", content: "hello" },
+      history: [],
+      maxTurns: 1,
+    })) as AgentRunObserver;
+
+    await run.event?.({
+      name: "completion.retry",
+      level: "WARNING",
+      attributes: {
+        attempt: 1,
+        maxAttempts: 2,
+        errorName: "CompletionProviderOutputError",
+        errorCode: "ANVIA_COMPLETION_PROVIDER_OUTPUT",
+        providerOutputKind: "malformed-tool-arguments",
+        failurePhase: "truncated",
+        finishReason: "length",
+        outputLength: 140_542,
+        attemptUsage: { inputTokens: 10, outputTokens: 20, totalTokens: 30 },
+        cumulativeUsage: { inputTokens: 10, outputTokens: 20, totalTokens: 30 },
+        previousResponse: "omitted",
+        includedOutputLength: 0,
+        rawArguments: "private model arguments",
+      },
+    });
+
+    expect(logger.records.at(-1)).toMatchObject({
+      level: "warn",
+      message: "agent event",
+      context: {
+        eventName: "completion.retry",
+        eventLevel: "WARNING",
+        attempt: 1,
+        maxAttempts: 2,
+        errorName: "CompletionProviderOutputError",
+        errorCode: "ANVIA_COMPLETION_PROVIDER_OUTPUT",
+        providerOutputKind: "malformed-tool-arguments",
+        failurePhase: "truncated",
+        finishReason: "length",
+        outputLength: 140_542,
+        previousResponse: "omitted",
+        includedOutputLength: 0,
+      },
+    });
+    expect(JSON.stringify(logger.records.at(-1))).not.toContain("model output");
+    expect(JSON.stringify(logger.records.at(-1))).not.toContain("private model arguments");
+  });
+
+  it.each([
+    ["malformed-tool-arguments", undefined],
+    ["filtered-tool-call", "content-filter"],
+  ] as const)("logs terminal %s classification without provider-controlled identifiers", async (kind, finishReason) => {
+    const logger = new RecordingLogger();
+    const observer = createLoggerObserver({ logger });
+    const run = (await observer.startRun({
+      runId: "run_provider_output_error",
+      prompt: { role: "user", content: "hello" },
+      history: [],
+      maxTurns: 1,
+    })) as AgentRunObserver;
+    const error =
+      kind === "filtered-tool-call"
+        ? new CompletionProviderOutputError({
+            kind,
+            toolCallId: "private-provider-tool-id",
+            finishReason: "content-filter",
+          })
+        : new CompletionProviderOutputError({
+            kind,
+            toolCallId: "private-provider-tool-id",
+          });
+
+    await run.error?.({ error, usage: Usage.empty(), messages: [] });
+
+    expect(logger.records.at(-1)).toMatchObject({
+      level: "error",
+      message: "agent run failed",
+      context: {
+        error: {
+          name: "CompletionProviderOutputError",
+          code: "ANVIA_COMPLETION_PROVIDER_OUTPUT",
+          kind,
+        },
+      },
+    });
+    if (finishReason !== undefined) {
+      expect(logger.records.at(-1)?.context.error).toMatchObject({ finishReason });
+    }
+    expect(JSON.stringify(logger.records.at(-1))).not.toContain("private-provider-tool-id");
+  });
+
+  it("does not log arbitrary observer event attributes by default", async () => {
+    const logger = new RecordingLogger();
+    const observer = createLoggerObserver({ logger });
+    const run = (await observer.startRun({
+      runId: "run_event",
+      prompt: { role: "user", content: "hello" },
+      history: [],
+      maxTurns: 1,
+    })) as AgentRunObserver;
+
+    await run.event?.({
+      name: "guardrail.decision",
+      level: "WARNING",
+      attributes: {
+        decision: "deny",
+        reason: "customer-secret-guardrail-reason",
+      },
+    });
+
+    expect(logger.records.at(-1)).toMatchObject({
+      level: "warn",
+      message: "agent event",
+      context: {
+        eventName: "guardrail.decision",
+        eventLevel: "WARNING",
+      },
+    });
+    expect(JSON.stringify(logger.records.at(-1))).not.toContain("customer-secret");
+    expect(logger.records.at(-1)?.context).not.toHaveProperty("decision");
+    expect(logger.records.at(-1)?.context).not.toHaveProperty("reason");
+  });
+
+  it("serializes nested Error causes before handing them to Pino", async () => {
+    const lines: Array<Record<string, unknown>> = [];
+    const logger = createPinoLogger({
+      level: "error",
+      destination: {
+        write: (line: string) => {
+          lines.push(JSON.parse(line) as Record<string, unknown>);
+        },
+      },
+    });
+    const observer = createLoggerObserver({ logger });
+    const run = (await observer.startRun({
+      runId: "run_error",
+      prompt: { role: "user", content: "hello" },
+      history: [],
+      maxTurns: 1,
+    })) as AgentRunObserver;
+    const rootCause = new SyntaxError("Unexpected token");
+    const nestedCause = new Error("Invalid JSON", { cause: rootCause });
+    const error = new Error("Structured output failed", { cause: nestedCause });
+
+    run.error?.({
+      error,
+      usage: {
+        inputTokens: 0,
+        outputTokens: 0,
+        totalTokens: 0,
+        cachedInputTokens: 0,
+        cacheCreationInputTokens: 0,
+      },
+      messages: [],
+    });
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0]?.error).toMatchObject({
+      name: "Error",
+      message: "Structured output failed",
+      stack: expect.any(String),
+      cause: {
+        name: "Error",
+        message: "Invalid JSON",
+        stack: expect.any(String),
+        cause: {
+          name: "SyntaxError",
+          message: "Unexpected token",
+          stack: expect.any(String),
+        },
+      },
+    });
+  });
+
+  it("redacts structured-output cause details while retaining safe diagnostics", async () => {
+    const rejectedOutput = "customer-secret-structured-output";
+    const error = new AgentStructuredOutputError({
+      phase: "parse",
+      attempt: 2,
+      maxAttempts: 2,
+      outputLength: rejectedOutput.length,
+      normalizedLength: rejectedOutput.length,
+      outputFormat: "raw",
+      attemptUsage: Usage.empty(),
+      usage: Usage.empty(),
+      cause: new SyntaxError(`Unexpected token in ${rejectedOutput}`),
+    });
+
+    const record = await recordPinoRunError(error);
+
+    expect(JSON.stringify(record)).not.toContain(rejectedOutput);
+    expect(record.error).toMatchObject({
+      name: "AgentStructuredOutputError",
+      phase: "parse",
+      attempt: 2,
+      maxAttempts: 2,
+      outputLength: rejectedOutput.length,
+      normalizedLength: rejectedOutput.length,
+      outputFormat: "raw",
+      cause: {
+        name: "SyntaxError",
+        message: "Structured-output cause details redacted.",
+      },
+    });
+  });
+
+  it("bounds deeply nested error-cause serialization", async () => {
+    let error: Error = new Error("root cause");
+    for (let depth = 0; depth < 100; depth += 1) {
+      error = new Error(`cause ${depth}`, { cause: error });
+    }
+
+    const record = await recordPinoRunError(error);
+
+    expect(JSON.stringify(record)).toContain("[Error cause depth limit]");
+  });
 });
+
+async function recordPinoRunError(error: Error): Promise<Record<string, unknown>> {
+  const lines: Array<Record<string, unknown>> = [];
+  const observer = createLoggerObserver({
+    logger: createPinoLogger({
+      level: "error",
+      destination: {
+        write: (line: string) => {
+          lines.push(JSON.parse(line) as Record<string, unknown>);
+        },
+      },
+    }),
+  });
+  const run = (await observer.startRun({
+    runId: "run_error",
+    prompt: { role: "user", content: "hello" },
+    history: [],
+    maxTurns: 1,
+  })) as AgentRunObserver;
+  run.error?.({ error, usage: Usage.empty(), messages: [] });
+  const record = lines[0];
+  if (record === undefined) throw new Error("Expected Pino error record.");
+  return record;
+}
 
 class RecordingLogger implements Logger {
   readonly records: { level: string; message: string; context: Record<string, unknown> }[];

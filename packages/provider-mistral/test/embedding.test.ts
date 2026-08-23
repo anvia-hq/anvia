@@ -26,15 +26,16 @@ describe("Mistral embedding models", () => {
     });
 
     const embeddings = await client
-      .embeddingModel("mistral-embed-test", {
+      .embeddingModel({
+        modelId: "mistral-embed-test",
         dimensions: 8,
         maxBatchSize: 2,
       })
       .embedTexts(["a", "bb", "ccc"]);
 
     expect(calls).toEqual([
-      { model: "mistral-embed-test", inputs: ["a", "bb"], dimensions: 8 },
-      { model: "mistral-embed-test", inputs: ["ccc"], dimensions: 8 },
+      { model: "mistral-embed-test", inputs: ["a", "bb"], outputDimension: 8 },
+      { model: "mistral-embed-test", inputs: ["ccc"], outputDimension: 8 },
     ]);
     expect(embeddings).toEqual([
       { document: "a", vector: [1, 0] },
@@ -54,7 +55,9 @@ describe("Mistral embedding models", () => {
       } as never,
     });
 
-    await expect(client.embeddingModel().embedTexts([])).resolves.toEqual([]);
+    await expect(
+      client.embeddingModel({ modelId: "mistral-embed" }).embedTexts([]),
+    ).resolves.toEqual([]);
   });
 
   it("validates Mistral embedding response length", async () => {
@@ -66,9 +69,9 @@ describe("Mistral embedding models", () => {
       } as never,
     });
 
-    await expect(client.embeddingModel().embedTexts(["a", "b"])).rejects.toThrow(
-      "Embedding response length 1 did not match input length 2",
-    );
+    await expect(
+      client.embeddingModel({ modelId: "mistral-embed" }).embedTexts(["a", "b"]),
+    ).rejects.toThrow("Embedding response length 1 did not match input length 2");
   });
 
   it("rejects duplicate embedding response indexes", async () => {
@@ -85,9 +88,9 @@ describe("Mistral embedding models", () => {
       } as never,
     });
 
-    await expect(client.embeddingModel().embedTexts(["a", "b"])).rejects.toThrow(
-      "Duplicate Mistral embedding response index 0.",
-    );
+    await expect(
+      client.embeddingModel({ modelId: "mistral-embed" }).embedTexts(["a", "b"]),
+    ).rejects.toThrow("Duplicate Mistral embedding response index 0.");
   });
 
   it("rejects missing or non-integer embedding response indexes", async () => {
@@ -113,12 +116,12 @@ describe("Mistral embedding models", () => {
       } as never,
     });
 
-    await expect(missingIndexClient.embeddingModel().embedTexts(["a", "b"])).rejects.toThrow(
-      "Invalid Mistral embedding response index at position 0.",
-    );
-    await expect(fractionalIndexClient.embeddingModel().embedTexts(["a", "b"])).rejects.toThrow(
-      "Invalid Mistral embedding response index at position 0.",
-    );
+    await expect(
+      missingIndexClient.embeddingModel({ modelId: "mistral-embed" }).embedTexts(["a", "b"]),
+    ).rejects.toThrow("Invalid Mistral embedding response index at position 0.");
+    await expect(
+      fractionalIndexClient.embeddingModel({ modelId: "mistral-embed" }).embedTexts(["a", "b"]),
+    ).rejects.toThrow("Invalid Mistral embedding response index at position 0.");
   });
 
   it("rejects out-of-range embedding response indexes", async () => {
@@ -135,9 +138,9 @@ describe("Mistral embedding models", () => {
       } as never,
     });
 
-    await expect(client.embeddingModel().embedTexts(["a", "b"])).rejects.toThrow(
-      "Mistral embedding response index 2 was outside the input range.",
-    );
+    await expect(
+      client.embeddingModel({ modelId: "mistral-embed" }).embedTexts(["a", "b"]),
+    ).rejects.toThrow("Mistral embedding response index 2 was outside the input range.");
   });
 
   it("rejects invalid embedding vectors", async () => {
@@ -154,8 +157,8 @@ describe("Mistral embedding models", () => {
       } as never,
     });
 
-    await expect(client.embeddingModel().embedTexts(["a", "b"])).rejects.toThrow(
-      "Invalid Mistral embedding response vector at position 1.",
-    );
+    await expect(
+      client.embeddingModel({ modelId: "mistral-embed" }).embedTexts(["a", "b"]),
+    ).rejects.toThrow("Invalid Mistral embedding response vector at position 1.");
   });
 });

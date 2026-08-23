@@ -1,5 +1,5 @@
 export type GrokHttpOptions = {
-  apiKey?: string | undefined;
+  apiKey: string;
   baseUrl: string;
   headers?: Record<string, string> | undefined;
   fetch?: typeof fetch | undefined;

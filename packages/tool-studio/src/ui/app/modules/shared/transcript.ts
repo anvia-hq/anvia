@@ -1,5 +1,5 @@
+import { readJsonlStream } from "@anvia/client/transport";
 import type { Message } from "@anvia/core/completion";
-import { readJsonlStream } from "@anvia/react";
 import type { ChangeEvent } from "react";
 import { formatToolValue } from "./format";
 import { isRecord } from "./object";

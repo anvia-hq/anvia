@@ -32,6 +32,7 @@ import {
   nodeStatusFromLogs,
   nodeTypes,
   type PipelineFlow,
+  pipelineNodeKey,
   toFlow,
 } from "./pipeline-flow";
 
@@ -60,7 +61,9 @@ export function PipelinesPage(props: {
   const [selectedNodeId, setSelectedNodeId] = useState<string | undefined>();
   const graph = props.detail?.graph;
   const selectedNode =
-    graph?.nodes.find((node) => node.id === selectedNodeId) ?? graph?.nodes[0] ?? undefined;
+    graph?.nodes.find((node) => pipelineNodeKey(node.path) === selectedNodeId) ??
+    graph?.nodes[0] ??
+    undefined;
   const nodeStatuses = useMemo(
     () => nodeStatusFromLogs(props.logs, props.activeRunId),
     [props.logs, props.activeRunId],

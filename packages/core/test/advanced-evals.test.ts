@@ -22,7 +22,7 @@ import {
 
 class QueueJudgeModel implements CompletionModel {
   readonly provider = "test";
-  readonly defaultModel = "judge";
+  readonly modelId = "judge";
   readonly capabilities = {
     streaming: false,
     tools: true,
@@ -51,7 +51,7 @@ type JudgeRoute = {
 
 class RoutedJudgeModel implements CompletionModel {
   readonly provider = "test";
-  readonly defaultModel = "routed-judge";
+  readonly modelId = "routed-judge";
   readonly capabilities = {
     streaming: false,
     tools: true,
@@ -200,6 +200,17 @@ describe("advanced eval metrics", () => {
     expect(result.metrics.failed).toBe(2);
     expect(result.metrics.invalid).toBe(0);
     expect(result.results[1]?.metrics[0]?.outcome).toMatchObject({ outcome: "fail", score: 0 });
+  });
+
+  it("rejects parsed numbers outside the JSON value contract", async () => {
+    const result = await runEvalSuite({
+      name: "finite-json",
+      cases: [{ id: "non-finite", input: "non-finite" }],
+      target: () => '{"value":1e400}',
+      metrics: [jsonCorrectness({ schema: z.object({ value: z.any() }) })],
+    });
+
+    expect(result.results[0]?.metrics[0]?.outcome).toMatchObject({ outcome: "fail", score: 0 });
   });
 
   it("scores hallucination as lower-is-better and reads context from EvalCase", async () => {
@@ -360,7 +371,30 @@ describe("advanced eval metrics", () => {
     expect(model.requests).toHaveLength(3);
   });
 
-  it("scores turn relevancy from EvalTurn arrays and native PromptResponse messages", async () => {
+  it("rejects non-JSON G-Eval expected output without calling the judge", async () => {
+    const model = new QueueJudgeModel([]);
+    const result = await runEvalSuite({
+      name: "g-eval-json-boundary",
+      cases: [{ id: "case", input: "Question", expected: { value: Number.POSITIVE_INFINITY } }],
+      target: () => "Answer",
+      metrics: [
+        gEval({
+          name: "correctness",
+          model,
+          evaluationParams: ["expectedOutput"],
+          evaluationSteps: ["Compare the output."],
+        }),
+      ],
+    });
+
+    expect(result.results[0]?.metrics[0]?.outcome).toMatchObject({
+      outcome: "invalid",
+      reason: "G-Eval expectedOutput must be a JSON value.",
+    });
+    expect(model.requests).toHaveLength(0);
+  });
+
+  it("scores turn relevancy from EvalTurn arrays and native AgentResponse messages", async () => {
     const turns = [
       { role: "user" as const, content: "My name is Ada" },
       { role: "assistant" as const, content: "Hello Ada" },

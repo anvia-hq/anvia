@@ -3,7 +3,13 @@ import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
 import { isJsonValue, type JsonObject, type JsonValue, type Message } from "@anvia/core/completion";
-import type { MemoryAppendInput, MemoryContext, MemoryErrorInput } from "@anvia/core/memory";
+import type {
+  MemoryAppendOptions,
+  MemoryCompactionCapability,
+  MemoryCompactionReplacePrefixOptions,
+  MemoryErrorOptions,
+  MemoryScope,
+} from "@anvia/core/memory";
 import { renumberTranscript, transcriptFromMessages } from "../runtime/transcript";
 import type {
   StudioPipelineLogAppendInput,
@@ -156,6 +162,13 @@ class SqliteSessionStore
   implements StudioSessionStore, StudioTraceStore, StudioPipelineLogStore, StudioPipelineRunStore
 {
   readonly kind = "sqlite";
+  readonly compaction: MemoryCompactionCapability = {
+    snapshot: ({ scope }) => {
+      const messages = this.listSessionMessages(scope.sessionId);
+      return Promise.resolve({ revision: memoryRevision(messages), messages });
+    },
+    replacePrefix: (options) => this.replaceCompactionPrefix(options),
+  };
   private db: DatabaseSyncType | undefined;
 
   constructor(private readonly path: string) {}
@@ -243,12 +256,12 @@ class SqliteSessionStore
     return this.getSession(id);
   }
 
-  load(context: MemoryContext): Promise<Message[]> {
-    const session = this.getSession(context.sessionId);
+  load({ scope }: { scope: MemoryScope }): Promise<Message[]> {
+    const session = this.getSession(scope.sessionId);
     return Promise.resolve(session?.messages ?? []);
   }
 
-  append(input: MemoryAppendInput): Promise<void> {
+  append(input: MemoryAppendOptions): Promise<void> {
     const db = this.database();
 
     try {
@@ -259,7 +272,7 @@ class SqliteSessionStore
            FROM anvia_studio_sessions
            WHERE id = $id`,
         )
-        .get({ $id: input.context.sessionId }) as SessionRow | undefined;
+        .get({ $id: input.scope.sessionId }) as SessionRow | undefined;
 
       if (row === undefined) {
         db.exec("ROLLBACK");
@@ -267,15 +280,15 @@ class SqliteSessionStore
       }
 
       const updatedAt = new Date().toISOString();
-      const nextIndex = this.nextMessageIndex(input.context.sessionId);
+      const nextIndex = this.nextMessageIndex(input.scope.sessionId);
 
-      this.insertMessages(input.context.sessionId, input.messages, nextIndex, updatedAt);
+      this.insertMessages(input.scope.sessionId, input.messages, nextIndex, updatedAt);
       db.prepare(
         `UPDATE anvia_studio_sessions
          SET updated_at = $updatedAt
          WHERE id = $id`,
       ).run({
-        $id: input.context.sessionId,
+        $id: input.scope.sessionId,
         $updatedAt: updatedAt,
       });
       db.exec("COMMIT");
@@ -288,7 +301,7 @@ class SqliteSessionStore
     }
   }
 
-  clear(context: MemoryContext): Promise<void> {
+  clear({ scope }: { scope: MemoryScope }): Promise<void> {
     const db = this.database();
     const updatedAt = new Date().toISOString();
 
@@ -299,14 +312,14 @@ class SqliteSessionStore
          SET updated_at = $updatedAt
          WHERE id = $id`,
       ).run({
-        $id: context.sessionId,
+        $id: scope.sessionId,
         $updatedAt: updatedAt,
       });
       db.prepare("DELETE FROM anvia_studio_session_messages WHERE session_id = $id").run({
-        $id: context.sessionId,
+        $id: scope.sessionId,
       });
       db.prepare("DELETE FROM anvia_studio_session_runs WHERE session_id = $id").run({
-        $id: context.sessionId,
+        $id: scope.sessionId,
       });
       db.exec("COMMIT");
       return Promise.resolve();
@@ -318,21 +331,62 @@ class SqliteSessionStore
     }
   }
 
-  async recordError(input: MemoryErrorInput): Promise<void> {
-    const runId = studioRunId(input.context) ?? input.runId;
-    const existing = this.getSessionRun(input.context.sessionId, runId);
+  async recordError(input: MemoryErrorOptions): Promise<void> {
+    const runId = studioRunId(input.scope) ?? input.runId;
+    const existing = this.getSessionRun(input.scope.sessionId, runId);
     const transcript =
       existing === undefined ||
       parseJsonArray<StudioTranscriptEntry>(existing.transcript_json).length === 0
         ? transcriptFromMessages(input.messages)
         : parseJsonArray<StudioTranscriptEntry>(existing.transcript_json);
     await this.saveSessionRunTranscript({
-      id: input.context.sessionId,
+      id: input.scope.sessionId,
       runId,
       transcript,
       status: "error",
       error: serializeJsonError(input.error),
     });
+  }
+
+  private replaceCompactionPrefix(
+    input: MemoryCompactionReplacePrefixOptions,
+  ): Promise<{ status: "committed" | "conflict" }> {
+    if (!Number.isSafeInteger(input.messageCount) || input.messageCount < 1) {
+      throw new RangeError("messageCount must be a positive integer.");
+    }
+    const db = this.database();
+    try {
+      db.exec("BEGIN IMMEDIATE");
+      const messages = this.listSessionMessages(input.scope.sessionId);
+      if (
+        memoryRevision(messages) !== input.revision ||
+        input.messageCount > messages.length ||
+        this.getSessionRow(input.scope.sessionId) === undefined
+      ) {
+        db.exec("ROLLBACK");
+        return Promise.resolve({ status: "conflict" });
+      }
+      db.prepare("DELETE FROM anvia_studio_session_messages WHERE session_id = $id").run({
+        $id: input.scope.sessionId,
+      });
+      const updatedAt = new Date().toISOString();
+      this.insertMessages(
+        input.scope.sessionId,
+        [input.replacement, ...messages.slice(input.messageCount)],
+        0,
+        updatedAt,
+      );
+      db.prepare(
+        `UPDATE anvia_studio_sessions
+         SET updated_at = $updatedAt
+         WHERE id = $id`,
+      ).run({ $id: input.scope.sessionId, $updatedAt: updatedAt });
+      db.exec("COMMIT");
+      return Promise.resolve({ status: "committed" });
+    } catch (error) {
+      if (db.isTransaction) db.exec("ROLLBACK");
+      throw error;
+    }
   }
 
   saveSessionRunTranscript(input: StudioSessionRunTranscriptInput): StudioSession | undefined {
@@ -1235,6 +1289,9 @@ function messageParts(message: Message): StoredMessagePart[] {
     return [{ type: "text", value: { type: "text", text: message.content } }];
   }
 
+  if (typeof message.content === "string") {
+    return [{ type: "text", value: { type: "text", text: message.content } }];
+  }
   return message.content.map((content) => ({
     type: content.type,
     value: content,
@@ -1243,41 +1300,47 @@ function messageParts(message: Message): StoredMessagePart[] {
 
 function messageFromRows(row: MessageRow, partRows: MessagePartRow[]): Message {
   const parts = partRows.map((partRow) => JSON.parse(partRow.part_json) as unknown);
-  const metadata = parseJsonValue<JsonValue>(row.metadata_json);
-  if (metadata !== undefined && !isJsonValue(metadata)) {
-    throw new TypeError("Stored Studio message metadata is not a strict JSON value.");
+  const metadata = parseJsonValue<JsonObject>(row.metadata_json);
+  if (
+    metadata !== undefined &&
+    (!isJsonValue(metadata) ||
+      typeof metadata !== "object" ||
+      metadata === null ||
+      Array.isArray(metadata))
+  ) {
+    throw new TypeError("Stored Studio message metadata is not a strict JSON object.");
   }
   if (row.role === "system") {
-    const message: Extract<Message, { role: "system" }> = {
+    let message: Extract<Message, { role: "system" }> = {
       role: "system",
       content: systemContentFromParts(parts),
     };
-    if (metadata !== undefined) message.metadata = metadata;
+    if (metadata !== undefined) message = { ...message, metadata };
     return message;
   }
   if (row.role === "user") {
-    const message: Extract<Message, { role: "user" }> = {
+    let message: Extract<Message, { role: "user" }> = {
       role: "user",
       content: parts as Extract<Message, { role: "user" }>["content"],
     };
-    if (metadata !== undefined) message.metadata = metadata;
+    if (metadata !== undefined) message = { ...message, metadata };
     return message;
   }
   if (row.role === "assistant") {
-    const message: Extract<Message, { role: "assistant" }> = {
+    let message: Extract<Message, { role: "assistant" }> = {
       role: "assistant",
       content: parts as Extract<Message, { role: "assistant" }>["content"],
     };
-    if (row.message_id !== null) message.id = row.message_id;
-    if (metadata !== undefined) message.metadata = metadata;
+    if (row.message_id !== null) message = { ...message, id: row.message_id };
+    if (metadata !== undefined) message = { ...message, metadata };
     return message;
   }
   if (row.role === "tool") {
-    const message: Extract<Message, { role: "tool" }> = {
+    let message: Extract<Message, { role: "tool" }> = {
       role: "tool",
       content: parts as Extract<Message, { role: "tool" }>["content"],
     };
-    if (metadata !== undefined) message.metadata = metadata;
+    if (metadata !== undefined) message = { ...message, metadata };
     return message;
   }
 
@@ -1366,6 +1429,7 @@ function toTraceSummary(row: TraceRow): StudioTraceSummary {
   if (error !== undefined) summary.error = error;
   if (usage !== undefined) summary.usage = usage;
   if (metadata !== undefined) summary.metadata = metadata;
+  if (typeof metadata?.runId === "string") summary.runId = metadata.runId;
   return summary;
 }
 
@@ -1381,9 +1445,13 @@ function parseJsonValue<T>(value: string | null): T | undefined {
   return JSON.parse(value) as T;
 }
 
-function studioRunId(context: MemoryContext): string | undefined {
-  const value = context.metadata?.studioRunId;
+function studioRunId(scope: MemoryScope): string | undefined {
+  const value = scope.metadata?.studioRunId;
   return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function memoryRevision(messages: Message[]): string {
+  return JSON.stringify(messages);
 }
 
 function serializeJsonError(error: unknown): JsonValue {

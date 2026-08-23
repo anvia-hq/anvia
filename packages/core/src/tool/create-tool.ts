@@ -1,6 +1,12 @@
 import type { z } from "zod";
+import { assertToolApprovalRequirement } from "../internal/agent-runtime/approval-requirement";
+import {
+  attachPreparedToolOwner,
+  preparedToolInput,
+  withoutPreparedToolInput,
+} from "../internal/agent-runtime/prepared-tool-call";
 import { toProviderJsonSchema, type ZodSchema } from "../schema/zod-schema";
-import type { Tool, ToolApprovalPolicy, ToolCallContext } from "./tool";
+import type { Tool, ToolCallContext, ToolRequiresApproval } from "./tool";
 
 export type CreateToolOptions<
   InputSchema extends ZodSchema,
@@ -9,9 +15,9 @@ export type CreateToolOptions<
 > = {
   name: string;
   description: string;
-  input: InputSchema;
-  output?: OutputSchema;
-  approval?: ToolApprovalPolicy<z.output<InputSchema>>;
+  inputSchema: InputSchema;
+  outputSchema?: OutputSchema;
+  requiresApproval?: ToolRequiresApproval<z.output<InputSchema>>;
   execute(
     args: z.output<InputSchema>,
     context: ToolCallContext,
@@ -26,7 +32,7 @@ type CreateToolOutput<
 > = OutputSchema extends ZodSchema ? z.output<OutputSchema> : Output;
 
 export function createTool<InputSchema extends ZodSchema, Output = unknown>(
-  options: CreateToolOptions<InputSchema, undefined, Output> & { output?: undefined },
+  options: CreateToolOptions<InputSchema, undefined, Output> & { outputSchema?: undefined },
 ): Tool<z.output<InputSchema>, Output>;
 
 export function createTool<InputSchema extends ZodSchema, OutputSchema extends ZodSchema>(
@@ -40,32 +46,55 @@ export function createTool<
 >(
   options: CreateToolOptions<InputSchema, OutputSchema, Output>,
 ): Tool<z.output<InputSchema>, CreateToolOutput<OutputSchema, Output>> {
-  const parameters = toProviderJsonSchema(options.input);
+  const { name, description, inputSchema, outputSchema, execute } = options;
+  const requiresApproval = snapshotApprovalRequirement(options.requiresApproval);
+  if (requiresApproval !== undefined) {
+    assertToolApprovalRequirement(requiresApproval, { allowFunction: true });
+  }
+  const parameters = toProviderJsonSchema(inputSchema);
+  const preparedInputOwner = {};
   const definition = () => ({
-    name: options.name,
-    description: options.description,
-    parameters,
+    name,
+    description,
+    parameters: globalThis.structuredClone(parameters),
   });
   const call = async (
     args: z.output<InputSchema>,
     context: ToolCallContext = {},
   ): Promise<CreateToolOutput<OutputSchema, Output>> => {
-    const parsedArgs = options.input.parse(args);
-    const result = await options.execute(parsedArgs, context);
-    return (
-      options.output === undefined ? result : options.output.parse(result)
-    ) as CreateToolOutput<OutputSchema, Output>;
+    const prepared = preparedToolInput(context, preparedInputOwner);
+    const parsedArgs =
+      prepared === undefined ? inputSchema.parse(args) : (prepared.input as z.output<InputSchema>);
+    const executionContext = prepared === undefined ? context : withoutPreparedToolInput(context);
+    const result = await execute(parsedArgs, executionContext);
+    return (outputSchema === undefined ? result : outputSchema.parse(result)) as CreateToolOutput<
+      OutputSchema,
+      Output
+    >;
   };
-  const parseApprovalArgs = (args: unknown): z.output<InputSchema> => options.input.parse(args);
+  const parseInput = (args: unknown): z.output<InputSchema> => inputSchema.parse(args);
 
-  if (options.approval === undefined) {
-    return { name: options.name, definition, call, parseApprovalArgs };
-  }
-  return {
-    name: options.name,
-    approval: options.approval,
+  const tool: Tool<z.output<InputSchema>, CreateToolOutput<OutputSchema, Output>> = {
+    name,
     definition,
     call,
-    parseApprovalArgs,
+    parseInput,
   };
+  if (requiresApproval !== undefined) {
+    Object.defineProperty(tool, "requiresApproval", {
+      configurable: false,
+      enumerable: true,
+      value: requiresApproval,
+      writable: false,
+    });
+  }
+  return attachPreparedToolOwner(tool, preparedInputOwner);
+}
+
+function snapshotApprovalRequirement<Args>(
+  requirement: ToolRequiresApproval<Args> | undefined,
+): ToolRequiresApproval<Args> | undefined {
+  return typeof requirement === "object" && requirement !== null
+    ? Object.freeze({ ...requirement })
+    : requirement;
 }

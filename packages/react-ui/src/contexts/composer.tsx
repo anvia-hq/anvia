@@ -1,4 +1,4 @@
-import type { CreateUIAttachment, UIAttachment } from "@anvia/react";
+import type { ClientMetadata, CreateUIAttachment, UIAttachment } from "@anvia/client";
 import { createContext, createElement, type ReactElement, type ReactNode, useContext } from "react";
 import type { ChatController } from "./chat";
 
@@ -7,8 +7,8 @@ export type ComposerEntityData =
   | number
   | boolean
   | null
-  | ComposerEntityData[]
-  | { [key: string]: ComposerEntityData | undefined };
+  | readonly ComposerEntityData[]
+  | { [key: string]: ComposerEntityData };
 
 export type ComposerAttachmentInput = File | CreateUIAttachment;
 export type ComposerAttachmentsUpdate =
@@ -60,9 +60,21 @@ export type ComposerEntity = {
   };
   data?: ComposerEntityData | undefined;
 };
-export type ComposerMessageMetadata = {
-  composer: {
-    entities: ComposerEntity[];
+type ComposerMessageEntity = ClientMetadata & {
+  id: string;
+  triggerId: string;
+  trigger: string;
+  label: string;
+  text: string;
+  range: ClientMetadata & {
+    from: number;
+    to: number;
+  };
+  data?: ComposerEntityData | undefined;
+};
+export type ComposerMessageMetadata = ClientMetadata & {
+  composer: ClientMetadata & {
+    entities: readonly ComposerMessageEntity[];
   };
 };
 export type ComposerTriggerState = {
@@ -125,7 +137,7 @@ export function InternalComposerProvider({
 export function useComposer(): ComposerContextValue {
   const value = useContext(ComposerContext);
   if (value === undefined) {
-    throw new Error("Composer primitives must be used inside Composer.Root.");
+    throw new Error("Composer primitives must be used inside ComposerPrimitive.Root.");
   }
   return value;
 }

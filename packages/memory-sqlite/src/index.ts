@@ -1,15 +1,13 @@
+export { SqliteMemoryClient } from "./client.js";
 export {
-  createSqliteMemoryScopeKey,
-  createSqliteMemoryStore,
+  createSqliteMemorySchemaSql,
   SqliteMemoryStore,
 } from "./store.js";
 export type {
-  SqliteMemoryAppendInput,
-  SqliteMemoryContext,
-  SqliteMemoryErrorInput,
-  SqliteMemoryErrorMode,
-  SqliteMemoryMessageRow,
-  SqliteMemoryScopeOptions,
-  SqliteMemorySessionRow,
+  SqliteMemoryClientOptions,
+  SqliteMemoryDatabaseLike,
+  SqliteMemoryErrorPolicy,
+  SqliteMemorySchemaOptions,
   SqliteMemoryStoreOptions,
+  SqliteMemoryTableNames,
 } from "./types.js";

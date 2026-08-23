@@ -1,0 +1,60 @@
+export type {
+  AgentClientStreamContext,
+  AgentClientStreamOptions,
+  ClientStreamAdapterOptions,
+  CompletionClientStreamOptions,
+} from "./adapters";
+export {
+  agentToClientStream,
+  completionToClientStream,
+  customAgentEventsToClientStream,
+} from "./adapters";
+export type {
+  CreateDirectClientTransportOptions,
+  CreateHttpClientTransportOptions,
+} from "./client-transport";
+export {
+  createDirectClientTransport,
+  createHttpClientTransport,
+} from "./client-transport";
+export { createClientId, messagesToUIMessages, uiMessagesToMessages } from "./messages";
+export {
+  ClientProtocolError,
+  maskedClientError,
+  normalizeClientError,
+  parseClientStreamEvent,
+  parseClientStreamFrame,
+  parseClientStreamRequest,
+  parseUIMessage,
+  parseUIMessages,
+} from "./protocol";
+export { applyClientStreamEvent, assistantText, messageText } from "./reducer";
+export type {
+  ClientCompletionRequest,
+  ClientDataMap,
+  ClientDataSchema,
+  ClientDataSchemas,
+  ClientErrorMapper,
+  ClientInteraction,
+  ClientMetadata,
+  ClientMetadataSchema,
+  ClientOutputMapper,
+  ClientStream,
+  ClientStreamCursor,
+  ClientStreamError,
+  ClientStreamEvent,
+  ClientStreamFrame,
+  ClientStreamRequest,
+  ClientStreamScope,
+  ClientTransport,
+  ClientTransportSendOptions,
+  CreateUIAttachment,
+  UIAttachment,
+  UIError,
+  UIMessage,
+  UIMessageGeneration,
+  UIMessagePart,
+  UIMessageRole,
+  UIToolMessagePart,
+} from "./types";
+export { CLIENT_STREAM_PROTOCOL } from "./types";

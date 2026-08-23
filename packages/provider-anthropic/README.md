@@ -19,22 +19,23 @@ pnpm --filter @anvia/anthropic build
 ## Usage
 
 ```ts
-import { AgentBuilder } from "@anvia/core";
+import { Agent } from "@anvia/core";
 import { AnthropicClient } from "@anvia/anthropic";
 
 const client = new AnthropicClient({
   apiKey,
 });
 
-const model = client.completionModel("claude-sonnet-4-20250514");
+const model = client.completionModel({ modelId: "claude-opus-5" });
 
-const agent = new AgentBuilder("assistant", model)
-  .instructions("Answer clearly and concisely.")
-  .build();
+const agent = new Agent({
+  id: "assistant",
+  model: model,
+  instructions: "Answer clearly and concisely.",
+});
 
-const response = await agent.prompt("Summarize Anvia in one sentence.").send();
-
-console.log(response.output);
+const result = await agent.generate({ prompt: "Summarize Anvia in one sentence." });
+if (result.type === "response") console.log(result.output);
 ```
 
 ## Anthropic-Compatible APIs
@@ -49,7 +50,7 @@ const client = new AnthropicClient({
   baseUrl,
 });
 
-const model = client.completionModel("provider/model-name");
+const model = client.completionModel({ modelId: "provider/model-name" });
 ```
 
 ## Vertex AI
@@ -64,7 +65,7 @@ const client = new AnthropicVertexClient({
   region: "global",
 });
 
-const model = client.completionModel("claude-sonnet-5");
+const model = client.completionModel({ modelId: "claude-sonnet-5" });
 ```
 
 The client follows the standard Google authentication flow. It reads
@@ -108,7 +109,8 @@ provide `listModels()`.
 
 - `AnthropicClient`
 - `AnthropicVertexClient`
-- `AnthropicCompletionModel`
+- structural Anthropic and Vertex completion handle types
+- `AnthropicCompletionModelId`
 - `anthropic`
 
 ## Development

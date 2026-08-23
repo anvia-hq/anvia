@@ -1,10 +1,13 @@
-import { type Message, textFromAssistantContent } from "@anvia/core/completion";
+import type { Message } from "@anvia/core/completion";
+import type { EvalReporter } from "@anvia/core/evals";
 import type {
   AgentGenerationEndArgs,
   AgentGenerationErrorArgs,
   AgentGenerationObserver,
   AgentGenerationStartArgs,
   AgentGenerationUpdateArgs,
+  AgentObserver,
+  AgentObserverTraceInfo,
   AgentRunEndArgs,
   AgentRunErrorArgs,
   AgentRunEventArgs,
@@ -16,21 +19,30 @@ import type {
   AgentToolObserver,
   AgentToolStartArgs,
   AgentToolStreamEventArgs,
-  AgentTraceInfo,
+  AgentToolSuspendedArgs,
 } from "@anvia/core/observability";
 import { LangfuseSpanProcessor } from "@langfuse/otel";
 import {
-  type LangfuseAgent,
+  LangfuseAgent,
+  LangfuseEvent,
   type LangfuseEventAttributes,
-  type LangfuseGeneration,
+  LangfuseGeneration,
   type LangfuseGenerationAttributes,
+  LangfuseGuardrail,
   LangfuseOtelSpanAttributes,
-  type LangfuseSpan,
-  type LangfuseTool,
-  startObservation,
+  LangfuseSpan,
+  LangfuseTool,
 } from "@langfuse/tracing";
+import {
+  ROOT_CONTEXT,
+  type Span,
+  type SpanContext,
+  TraceFlags,
+  type Tracer,
+  trace,
+} from "@opentelemetry/api";
 import { resourceFromAttributes } from "@opentelemetry/resources";
-import { NodeSDK } from "@opentelemetry/sdk-node";
+import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
 import { SEMRESATTRS_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
 import { sanitizeTraceValue, validateCaptureMaxBytes } from "./capture.js";
 import {
@@ -38,6 +50,13 @@ import {
   langfuseResolvedConfigSymbol,
   resolveLangfuseConfig,
 } from "./config.js";
+import { createLangfuseDatasetClient } from "./dataset-client.js";
+import { createLangfuseEvalReporter } from "./eval-reporter.js";
+import {
+  type LangfuseEvalExperimentOptions,
+  type LangfuseEvalExperimentResult,
+  runLangfuseEvalExperiment,
+} from "./experiment-runner.js";
 import {
   agentLabel,
   childMetadata,
@@ -50,41 +69,124 @@ import {
   usageDetails,
   usageDetailsFromRecord,
 } from "./helpers.js";
+import { createLangfusePromptClient } from "./prompt-client.js";
 import { createPiiRedactor, type PiiRedactor } from "./redaction.js";
 import { ScoreQueue } from "./scoring.js";
 import type {
   LangfuseCaptureMode,
+  LangfuseClientOptions,
+  LangfuseDatasetClient,
+  LangfuseDatasetClientOptions,
+  LangfuseDatasetItem,
+  LangfuseEvalReporterOptions,
+  LangfuseObserverOptions,
+  LangfusePromptClient,
+  LangfusePromptClientOptions,
   LangfuseRedactionMode,
+  LangfuseRunExperimentOptions,
   LangfuseScoreArgs,
-  LangfuseTraceHandle,
-  LangfuseTracing,
-  LangfuseTracingOptions,
 } from "./types.js";
 
-export const langfuse = {
-  create(options: LangfuseTracingOptions = {}): LangfuseTracing {
-    return new LangfuseAgentObserver(options);
-  },
+type LangfuseResources = {
+  readonly processor: LangfuseSpanProcessor;
+  readonly provider: NodeTracerProvider;
+  readonly observations: LangfuseObservationFactory;
+  readonly queue: ScoreQueue | null;
 };
 
-class LangfuseAgentObserver implements LangfuseTracing {
-  private readonly processor: LangfuseSpanProcessor;
-  private readonly sdk: NodeSDK;
+type LangfuseCapture = {
+  readonly redactor: PiiRedactor | undefined;
+  readonly redactInputs: LangfuseRedactionMode | undefined;
+  readonly redactOutputs: LangfuseRedactionMode | undefined;
+  readonly captureMode: LangfuseCaptureMode;
+  readonly captureMaxBytes: number;
+};
+
+type LangfuseParent = { readonly otelSpan: Span } | SpanContext;
+
+class LangfuseObservationFactory {
+  constructor(private readonly tracer: Tracer) {}
+
+  agent(
+    name: string,
+    attributes: Parameters<LangfuseAgent["update"]>[0],
+    parent?: LangfuseParent | undefined,
+  ): LangfuseAgent {
+    return new LangfuseAgent({ otelSpan: this.startSpan(name, parent), attributes });
+  }
+
+  span(
+    name: string,
+    attributes: Parameters<LangfuseSpan["update"]>[0],
+    parent: LangfuseParent,
+  ): LangfuseSpan {
+    return new LangfuseSpan({ otelSpan: this.startSpan(name, parent), attributes });
+  }
+
+  generation(
+    name: string,
+    attributes: LangfuseGenerationAttributes,
+    parent: LangfuseParent,
+  ): LangfuseGeneration {
+    return new LangfuseGeneration({ otelSpan: this.startSpan(name, parent), attributes });
+  }
+
+  tool(
+    name: string,
+    attributes: Parameters<LangfuseTool["update"]>[0],
+    parent: LangfuseParent,
+  ): LangfuseTool {
+    return new LangfuseTool({ otelSpan: this.startSpan(name, parent), attributes });
+  }
+
+  guardrail(
+    name: string,
+    attributes: Parameters<LangfuseGuardrail["update"]>[0],
+    parent: LangfuseParent,
+  ): LangfuseGuardrail {
+    return new LangfuseGuardrail({ otelSpan: this.startSpan(name, parent), attributes });
+  }
+
+  event(
+    name: string,
+    attributes: LangfuseEventAttributes,
+    parent: LangfuseParent,
+    timestamp?: Date | undefined,
+  ): LangfuseEvent {
+    const endTime = timestamp ?? new Date();
+    return new LangfuseEvent({
+      otelSpan: this.startSpan(name, parent, timestamp),
+      attributes,
+      timestamp: endTime,
+    });
+  }
+
+  private startSpan(name: string, parent?: LangfuseParent, startTime?: Date): Span {
+    const parentContext =
+      parent === undefined
+        ? ROOT_CONTEXT
+        : "otelSpan" in parent
+          ? trace.setSpan(ROOT_CONTEXT, parent.otelSpan)
+          : trace.setSpanContext(ROOT_CONTEXT, parent);
+    return this.tracer.startSpan(name, startTime === undefined ? {} : { startTime }, parentContext);
+  }
+}
+
+export class LangfuseClient {
   readonly [langfuseResolvedConfigSymbol]: LangfuseResolvedConfig;
   private readonly publicKey: string | undefined;
   private readonly secretKey: string | undefined;
   private readonly baseUrl: string;
   private readonly serviceName: string | undefined;
   private readonly timeoutMs: number;
-  private readonly queue: ScoreQueue | null;
-  private currentHandle: LangfuseTraceHandle | undefined;
-  private readonly redactor: PiiRedactor | undefined;
-  private readonly redactInputs: LangfuseRedactionMode | undefined;
-  private readonly redactOutputs: LangfuseRedactionMode | undefined;
-  private readonly captureMode: LangfuseCaptureMode;
-  private readonly captureMaxBytes: number;
+  private readonly options: LangfuseClientOptions;
+  private resource: LangfuseResources | undefined;
+  private initialization: Promise<LangfuseResources> | undefined;
+  private closePromise: Promise<void> | undefined;
+  private closed = false;
 
-  constructor(options: LangfuseTracingOptions) {
+  constructor(options: LangfuseClientOptions = {}) {
+    this.options = options;
     const resolvedConfig = resolveLangfuseConfig(options);
     this[langfuseResolvedConfigSymbol] = resolvedConfig;
     this.publicKey = resolvedConfig.publicKey;
@@ -92,57 +194,100 @@ class LangfuseAgentObserver implements LangfuseTracing {
     this.baseUrl = resolvedConfig.baseUrl;
     this.serviceName = resolvedConfig.serviceName;
     this.timeoutMs = resolvedConfig.timeoutMs;
-    const processorOptions: ConstructorParameters<typeof LangfuseSpanProcessor>[0] = {
-      baseUrl: this.baseUrl,
-    };
-    if (this.publicKey !== undefined) processorOptions.publicKey = this.publicKey;
-    if (this.secretKey !== undefined) processorOptions.secretKey = this.secretKey;
-    if (resolvedConfig.environment !== undefined) {
-      processorOptions.environment = resolvedConfig.environment;
-    }
-    if (resolvedConfig.release !== undefined) processorOptions.release = resolvedConfig.release;
-    this.processor = new LangfuseSpanProcessor(processorOptions);
-    const sdkOptions: ConstructorParameters<typeof NodeSDK>[0] = {
-      spanProcessors: [this.processor],
-    };
-    if (this.serviceName !== undefined) {
-      sdkOptions.resource = resourceFromAttributes({
-        [SEMRESATTRS_SERVICE_NAME]: this.serviceName,
-      });
-    }
-    this.sdk = new NodeSDK(sdkOptions);
-    this.sdk.start();
-    const batchSize = options.scoreBatchSize ?? 0;
-    this.queue =
-      batchSize > 0 && this.publicKey !== undefined && this.secretKey !== undefined
-        ? new ScoreQueue({
-            baseUrl: this.baseUrl,
-            publicKey: this.publicKey,
-            secretKey: this.secretKey,
-            timeoutMs: this.timeoutMs,
-            batchSize,
-            flushIntervalMs: options.scoreFlushIntervalMs ?? 250,
-            maxRetries: options.scoreMaxRetries ?? 3,
-          })
-        : null;
-    this.redactInputs = options.redactInputs;
-    this.redactOutputs = options.redactOutputs;
-    this.captureMode = options.captureMode ?? "safe";
-    this.captureMaxBytes = validateCaptureMaxBytes(options.captureMaxBytes);
-    this.redactor =
-      options.redactInputs !== undefined || options.redactOutputs !== undefined
-        ? createPiiRedactor(options.redaction)
-        : undefined;
   }
 
-  async startRun(args: AgentRunStartArgs): Promise<AgentRunObserver> {
+  observer(options: LangfuseObserverOptions = {}): AgentObserver {
+    this.assertOpen();
+    return new LangfuseAgentObserver(this, resolveLangfuseCapture(options));
+  }
+
+  evalReporter<Input = unknown, Output = unknown, Expected = unknown>(
+    options: LangfuseEvalReporterOptions = {},
+  ): EvalReporter<Input, Output, Expected> {
+    this.assertOpen();
+    const reporter = createLangfuseEvalReporter<Input, Output, Expected>(this, options);
+    return {
+      report: (args) => {
+        this.assertOpen();
+        return reporter.report(args);
+      },
+    };
+  }
+
+  promptClient(options: LangfusePromptClientOptions = {}): LangfusePromptClient {
+    this.assertOpen();
+    const prompts = createLangfusePromptClient(this, options);
+    return {
+      getPrompt: (getOptions) => {
+        this.assertOpen();
+        return prompts.getPrompt(getOptions);
+      },
+      getPromptText: (getOptions) => {
+        this.assertOpen();
+        return prompts.getPromptText(getOptions);
+      },
+      getPromptChat: (getOptions) => {
+        this.assertOpen();
+        return prompts.getPromptChat(getOptions);
+      },
+      refresh: () => {
+        this.assertOpen();
+        prompts.refresh();
+      },
+    };
+  }
+
+  datasetClient(options: LangfuseDatasetClientOptions = {}): LangfuseDatasetClient {
+    this.assertOpen();
+    const datasets = createLangfuseDatasetClient(this, options);
+    const client = this;
+    return {
+      createDataset(dataset) {
+        client.assertOpen();
+        return datasets.createDataset(dataset);
+      },
+      getDataset<Input, Expected>(getOptions: { name: string }) {
+        client.assertOpen();
+        return datasets.getDataset<Input, Expected>(getOptions);
+      },
+      upsertItems<Input, Expected>(upsertOptions: {
+        name: string;
+        items: readonly LangfuseDatasetItem<Input, Expected>[];
+      }) {
+        client.assertOpen();
+        return datasets.upsertItems(upsertOptions);
+      },
+      runExperiment<Input, Output, Expected>(
+        experimentOptions: LangfuseRunExperimentOptions<Input, Output, Expected>,
+      ) {
+        client.assertOpen();
+        return datasets.runExperiment<Input, Output, Expected>(experimentOptions);
+      },
+    };
+  }
+
+  runEvalExperiment<Input, Output, Expected = unknown>(
+    options: LangfuseEvalExperimentOptions<Input, Output, Expected>,
+  ): Promise<LangfuseEvalExperimentResult<Input, Output, Expected>> {
+    this.assertOpen();
+    return runLangfuseEvalExperiment(this, options);
+  }
+
+  async startObservedRun(
+    args: AgentRunStartArgs,
+    capture: LangfuseCapture,
+  ): Promise<AgentRunObserver> {
+    const resource = await this.resources();
     const traceId = args.trace?.traceId;
-    const capturedInput = this.captureInput({
-      instructions: args.instructions,
-      prompt: args.prompt,
-      history: args.history,
-    });
-    const capturedTraceMetadata = this.captureInput(args.trace?.metadata ?? {});
+    const capturedInput = captureInput(
+      {
+        instructions: args.instructions,
+        prompt: args.prompt,
+        history: args.history,
+      },
+      capture,
+    );
+    const capturedTraceMetadata = captureInput(args.trace?.metadata ?? {}, capture);
     const metadata: Record<string, unknown> = {
       agentName: args.agentName,
       agentDescription: args.agentDescription,
@@ -154,86 +299,52 @@ class LangfuseAgentObserver implements LangfuseTracing {
     } else {
       metadata.traceMetadata = capturedTraceMetadata;
     }
-    const rootAttributes: Parameters<typeof startObservation>[1] = {
+    const rootAttributes: Parameters<LangfuseAgent["update"]>[0] = {
       input: capturedInput,
       metadata,
     };
-    if (args.trace?.version !== undefined) {
-      rootAttributes.version = args.trace.version;
-    }
-
-    const root = startObservation(
+    if (args.trace?.version !== undefined) rootAttributes.version = args.trace.version;
+    const root = resource.observations.agent(
       args.agentName ?? "agent.run",
       rootAttributes,
       traceId === undefined
-        ? { asType: "agent" }
+        ? undefined
         : {
-            asType: "agent",
-            parentSpanContext: {
-              traceId,
-              spanId: "0000000000000001",
-              traceFlags: 1,
-            },
+            traceId,
+            spanId: "0000000000000001",
+            traceFlags: TraceFlags.SAMPLED,
           },
     );
     applyTraceAttributes(root, args, capturedTraceMetadata);
-
-    const promptRef = resolvePromptRef(args);
-    const runObserver = new LangfuseRunObserver(
+    return new LangfuseRunObserver(
       root,
-      {
-        traceId: root.traceId,
-        observationId: root.id,
-      },
-      promptRef,
-      {
-        redactor: this.redactor,
-        redactInputs: this.redactInputs,
-        redactOutputs: this.redactOutputs,
-        captureMode: this.captureMode,
-        captureMaxBytes: this.captureMaxBytes,
-      },
+      resource.observations,
+      { traceId: root.traceId, observationId: root.id },
+      resolvePromptRef(args),
+      capture,
     );
-    this.currentHandle = runObserver.getHandle();
-    runObserver.setCurrentHandle = (handle) => {
-      this.currentHandle = handle;
-    };
-    runObserver.clearCurrentHandle = () => {
-      if (this.currentHandle === runObserver.getHandle()) {
-        this.currentHandle = undefined;
-      }
-    };
-    return runObserver;
   }
 
   async flush(): Promise<void> {
-    await this.queue?.flush();
-    await this.processor.forceFlush();
+    this.assertOpen();
+    const resource =
+      this.resource ?? (this.initialization === undefined ? undefined : await this.initialization);
+    if (resource === undefined) return;
+    await resource.queue?.flush();
+    await resource.processor.forceFlush();
   }
 
-  async shutdown(): Promise<void> {
-    await this.queue?.shutdown();
-    await this.sdk.shutdown();
+  close(): Promise<void> {
+    this.closePromise ??= this.closeResources();
+    return this.closePromise;
   }
 
-  async flushScores(): Promise<void> {
-    await this.queue?.flush();
+  async [Symbol.asyncDispose](): Promise<void> {
+    await this.close();
   }
 
   scoreQueueDepth(): number {
-    return this.queue?.depth() ?? 0;
-  }
-
-  getCurrentTrace(): LangfuseTraceHandle | undefined {
-    return this.currentHandle;
-  }
-
-  private captureInput<T>(value: T): unknown {
-    const redacted =
-      this.redactor === undefined || this.redactInputs === undefined
-        ? value
-        : applyRedaction(this.redactor, value, this.redactInputs);
-    return sanitizeTraceValue(redacted, this.captureMaxBytes);
+    return this.resource?.queue?.depth() ?? 0;
   }
 
   async score(args: LangfuseScoreArgs): Promise<void> {
@@ -244,13 +355,109 @@ class LangfuseAgentObserver implements LangfuseTracing {
       throw new Error("Langfuse score requires publicKey and secretKey");
     }
     assertScoreValue(args.value, args.dataType);
-
-    if (this.queue !== null) {
-      this.queue.enqueue(args);
+    const resource = await this.resources();
+    if (resource.queue !== null) {
+      resource.queue.enqueue(args);
       return;
     }
-
     await this.sendScore(args);
+  }
+
+  private resources(): Promise<LangfuseResources> {
+    this.assertOpen();
+    if (this.resource !== undefined) return Promise.resolve(this.resource);
+    this.initialization ??= this.createResources()
+      .then((resource) => {
+        this.resource = resource;
+        return resource;
+      })
+      .catch((error: unknown) => {
+        this.initialization = undefined;
+        throw error;
+      });
+    return this.initialization;
+  }
+
+  private async createResources(): Promise<LangfuseResources> {
+    const resolvedConfig = this[langfuseResolvedConfigSymbol];
+    const processorOptions: ConstructorParameters<typeof LangfuseSpanProcessor>[0] = {
+      baseUrl: this.baseUrl,
+    };
+    if (this.publicKey !== undefined) processorOptions.publicKey = this.publicKey;
+    if (this.secretKey !== undefined) processorOptions.secretKey = this.secretKey;
+    if (resolvedConfig.environment !== undefined) {
+      processorOptions.environment = resolvedConfig.environment;
+    }
+    if (resolvedConfig.release !== undefined) processorOptions.release = resolvedConfig.release;
+    const processor = new LangfuseSpanProcessor(processorOptions);
+    const providerOptions: ConstructorParameters<typeof NodeTracerProvider>[0] = {
+      spanProcessors: [processor],
+    };
+    if (this.serviceName !== undefined) {
+      providerOptions.resource = resourceFromAttributes({
+        [SEMRESATTRS_SERVICE_NAME]: this.serviceName,
+      });
+    }
+    let provider: NodeTracerProvider;
+    try {
+      provider = new NodeTracerProvider(providerOptions);
+    } catch (error) {
+      await processor.shutdown().catch(() => undefined);
+      throw error;
+    }
+    try {
+      const batchSize = this.options.scores?.batchSize ?? 0;
+      const queue =
+        batchSize > 0 && this.publicKey !== undefined && this.secretKey !== undefined
+          ? new ScoreQueue({
+              baseUrl: this.baseUrl,
+              publicKey: this.publicKey,
+              secretKey: this.secretKey,
+              timeoutMs: this.timeoutMs,
+              batchSize,
+              flushIntervalMs: this.options.scores?.flushIntervalMs ?? 250,
+              maxAttempts: scoreMaxAttempts(this.options.scores?.retries),
+            })
+          : null;
+      return {
+        processor,
+        provider,
+        observations: new LangfuseObservationFactory(
+          provider.getTracer("@anvia/langfuse", "1.0.0"),
+        ),
+        queue,
+      };
+    } catch (error) {
+      await provider.shutdown().catch(() => undefined);
+      throw error;
+    }
+  }
+
+  private async closeResources(): Promise<void> {
+    this.closed = true;
+    const pending =
+      this.resource === undefined ? this.initialization : Promise.resolve(this.resource);
+    if (pending === undefined) return;
+    let resource: LangfuseResources;
+    try {
+      resource = await pending;
+    } catch {
+      return;
+    }
+    const settled = await Promise.allSettled([
+      resource.queue?.shutdown() ?? Promise.resolve(),
+      resource.provider.shutdown(),
+    ]);
+    const failures = settled.flatMap((result) =>
+      result.status === "rejected" ? [result.reason] : [],
+    );
+    if (failures.length > 0) {
+      throw new AggregateError(failures, "Failed to close LangfuseClient.");
+    }
+  }
+
+  private assertOpen(): void {
+    if (this.closed) throw new Error("LangfuseClient is closed.");
   }
 
   private async sendScore(args: LangfuseScoreArgs): Promise<void> {
@@ -270,6 +477,46 @@ class LangfuseAgentObserver implements LangfuseTracing {
       );
     }
   }
+}
+
+class LangfuseAgentObserver implements AgentObserver {
+  constructor(
+    private readonly client: LangfuseClient,
+    private readonly capture: LangfuseCapture,
+  ) {}
+
+  startRun(args: AgentRunStartArgs): Promise<AgentRunObserver> {
+    return this.client.startObservedRun(args, this.capture);
+  }
+}
+
+function resolveLangfuseCapture(options: LangfuseObserverOptions): LangfuseCapture {
+  return {
+    redactor:
+      options.redactInputs !== undefined || options.redactOutputs !== undefined
+        ? createPiiRedactor(options.redaction)
+        : undefined,
+    redactInputs: options.redactInputs,
+    redactOutputs: options.redactOutputs,
+    captureMode: options.captureMode ?? "safe",
+    captureMaxBytes: validateCaptureMaxBytes(options.captureMaxBytes),
+  };
+}
+
+function captureInput<T>(value: T, capture: LangfuseCapture): unknown {
+  const redacted =
+    capture.redactor === undefined || capture.redactInputs === undefined
+      ? value
+      : applyRedaction(capture.redactor, value, capture.redactInputs);
+  return sanitizeTraceValue(redacted, capture.captureMaxBytes);
+}
+
+function scoreMaxAttempts(retries: { maxAttempts: number } | undefined): number {
+  if (retries === undefined) return 3;
+  if (!Number.isSafeInteger(retries.maxAttempts) || retries.maxAttempts < 1) {
+    throw new TypeError("Langfuse score retries.maxAttempts must be a positive integer.");
+  }
+  return retries.maxAttempts;
 }
 
 function assertScoreValue(value: number | string, dataType: LangfuseScoreArgs["dataType"]): void {
@@ -329,7 +576,7 @@ function applyTraceAttributes(
     root.otelSpan.setAttribute(LangfuseOtelSpanAttributes.TRACE_SESSION_ID, args.trace.sessionId);
   }
   if (args.trace?.tags !== undefined) {
-    root.otelSpan.setAttribute(LangfuseOtelSpanAttributes.TRACE_TAGS, args.trace.tags);
+    root.otelSpan.setAttribute(LangfuseOtelSpanAttributes.TRACE_TAGS, [...args.trace.tags]);
   }
   for (const [key, value] of Object.entries(
     isRecord(capturedMetadata) ? capturedMetadata : { value: capturedMetadata },
@@ -430,24 +677,14 @@ function asMetadata(value: unknown): Record<string, unknown> {
   return isRecord(value) ? value : { value };
 }
 
-function eventStartTime(value: Date | string | undefined): Date | undefined {
-  if (value instanceof Date) {
-    return Number.isNaN(value.getTime()) ? undefined : value;
-  }
-  if (typeof value !== "string") {
-    return undefined;
-  }
+function eventStartTime(value: string | undefined): Date | undefined {
+  if (value === undefined) return undefined;
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? undefined : parsed;
 }
 
 class LangfuseRunObserver implements AgentRunObserver {
   private readonly turnSpans = new Map<number, LangfuseSpan>();
-  // Assigned by LangfuseAgentObserver.startRun so that the run can
-  // publish trace-handle updates back to the agent observer.
-  setCurrentHandle: ((handle: LangfuseTraceHandle) => void) | undefined;
-  clearCurrentHandle: (() => void) | undefined;
-  private handle: LangfuseTraceHandle;
   private readonly promptRef: AgentRunPromptRef | undefined;
   private readonly redactor: PiiRedactor | undefined;
   private readonly redactInputs: LangfuseRedactionMode | undefined;
@@ -457,7 +694,8 @@ class LangfuseRunObserver implements AgentRunObserver {
 
   constructor(
     private readonly root: LangfuseAgent,
-    readonly trace: AgentTraceInfo,
+    private readonly observations: LangfuseObservationFactory,
+    readonly trace: AgentObserverTraceInfo,
     promptRef: AgentRunPromptRef | undefined,
     redaction: {
       redactor: PiiRedactor | undefined;
@@ -467,7 +705,6 @@ class LangfuseRunObserver implements AgentRunObserver {
       captureMaxBytes: number;
     },
   ) {
-    this.handle = this.buildHandle();
     this.promptRef = promptRef;
     this.redactor = redaction.redactor;
     this.redactInputs = redaction.redactInputs;
@@ -504,7 +741,7 @@ class LangfuseRunObserver implements AgentRunObserver {
       safeInput.tools = args.request.tools;
       safeInput.providerTools = args.request.providerTools;
       safeInput.outputSchema = args.request.outputSchema;
-      safeInput.additionalParams = args.request.additionalParams;
+      safeInput.providerOptions = args.request.providerOptions;
     }
     const metadata: Record<string, unknown> = {
       turn: args.turn,
@@ -512,8 +749,8 @@ class LangfuseRunObserver implements AgentRunObserver {
       toolNames: args.request.tools.map((tool) => tool.name),
       providerToolNames: args.request.providerTools?.map((tool) => tool.name) ?? [],
       hasOutputSchema: args.request.outputSchema !== undefined,
-      additionalParamKeys: isRecord(args.request.additionalParams)
-        ? Object.keys(args.request.additionalParams)
+      providerOptionKeys: isRecord(args.request.providerOptions)
+        ? Object.keys(args.request.providerOptions)
         : [],
     };
     if (this.captureMode === "full" && args.providerRequest !== undefined) {
@@ -522,7 +759,7 @@ class LangfuseRunObserver implements AgentRunObserver {
     if (args.modelInfo !== undefined) {
       const modelInfo: Record<string, unknown> = {
         provider: args.modelInfo.provider,
-        defaultModel: args.modelInfo.defaultModel,
+        modelId: args.modelInfo.modelId,
       };
       if (args.modelInfo.capabilities !== undefined) {
         modelInfo.capabilities = args.modelInfo.capabilities;
@@ -532,7 +769,7 @@ class LangfuseRunObserver implements AgentRunObserver {
     Object.assign(metadata, promptMetadata(this.promptRef));
     const generationAttributes: LangfuseGenerationAttributes = {
       input: this.redactInputValue(safeInput),
-      model: args.request.model ?? args.modelInfo?.defaultModel ?? "default",
+      model: args.modelInfo?.modelId ?? "unknown",
       modelParameters: modelParameters(args.request),
       metadata: asMetadata(this.redactInputValue(metadata)),
     };
@@ -543,9 +780,11 @@ class LangfuseRunObserver implements AgentRunObserver {
         isFallback: false,
       };
     }
-    const generation = turn.startObservation(`model.turn.${args.turn}`, generationAttributes, {
-      asType: "generation",
-    });
+    const generation = this.observations.generation(
+      `model.turn.${args.turn}`,
+      generationAttributes,
+      turn,
+    );
     return new LangfuseGenerationObserver(generation, this, new Date());
   }
 
@@ -560,7 +799,7 @@ class LangfuseRunObserver implements AgentRunObserver {
       if (args.toolDefinition !== undefined) metadata.toolDefinition = args.toolDefinition;
       if (args.toolMetadata !== undefined) metadata.toolMetadata = args.toolMetadata;
     }
-    const tool = turn.startObservation(
+    const tool = this.observations.tool(
       `tool.${args.toolName}`,
       {
         input: this.redactInputValue({
@@ -569,19 +808,28 @@ class LangfuseRunObserver implements AgentRunObserver {
         }),
         metadata: asMetadata(this.redactInputValue(metadata)),
       },
-      { asType: "tool" },
+      turn,
     );
-    return new LangfuseToolObserver(tool, this);
+    return new LangfuseToolObserver(tool, this, this.observations);
   }
 
   end(args: AgentRunEndArgs): void {
     this.closeAllTurns();
-    const redactedOutput = this.redactOutputValue(args.output);
+    const observedOutput =
+      args.status === "completed"
+        ? { status: args.status, output: args.output, text: args.text }
+        : args.status === "blocked"
+          ? { status: args.status, stage: args.stage, text: args.text }
+          : { status: args.status, interaction: args.interaction, text: args.text };
+    const redactedOutput = this.redactOutputValue(observedOutput);
     const metadata: Record<string, unknown> = {
+      runId: args.runId,
+      status: args.status,
       usage: args.usage,
       messageCount: args.messages.length,
       sources: this.redactOutputValue(args.sources),
       providerToolCalls: this.redactOutputValue(args.providerToolCalls),
+      resumedFrom: this.redactOutputValue(args.resumedFrom),
     };
     if (this.captureMode === "full") {
       metadata.messages = this.redactTranscript(args.messages);
@@ -592,7 +840,6 @@ class LangfuseRunObserver implements AgentRunObserver {
         metadata,
       })
       .end();
-    this.clearCurrentHandle?.();
   }
 
   error(args: AgentRunErrorArgs): void {
@@ -615,7 +862,6 @@ class LangfuseRunObserver implements AgentRunObserver {
         metadata,
       })
       .end();
-    this.clearCurrentHandle?.();
   }
 
   event(args: AgentRunEventArgs): void {
@@ -625,33 +871,7 @@ class LangfuseRunObserver implements AgentRunObserver {
       attributes.level = args.level;
     }
     const startTime = eventStartTime(args.timestamp);
-    this.root.startObservation(args.name, attributes, {
-      asType: "event",
-      ...(startTime === undefined ? {} : { startTime }),
-    });
-  }
-
-  getHandle(): LangfuseTraceHandle {
-    return this.handle;
-  }
-
-  private buildHandle(): LangfuseTraceHandle {
-    return {
-      traceId: this.trace.traceId ?? "",
-      observationId: this.trace.observationId ?? "",
-      addAttributes: (attributes) => {
-        this.root.update({ metadata: asMetadata(this.redactOutputValue(attributes)) });
-        this.setCurrentHandle?.(this.handle);
-      },
-      addEvent: (name, attributes) => {
-        this.root.startObservation(
-          name,
-          { metadata: asMetadata(this.redactOutputValue(attributes ?? {})) },
-          { asType: "event" },
-        );
-        this.setCurrentHandle?.(this.handle);
-      },
-    };
+    this.observations.event(args.name, attributes, this.root, startTime);
   }
 
   private turnSpan(turn: number): LangfuseSpan {
@@ -660,12 +880,12 @@ class LangfuseRunObserver implements AgentRunObserver {
       return existing;
     }
 
-    const span = this.root.startObservation(
+    const span = this.observations.span(
       `turn.${turn}`,
       {
         metadata: { turn },
       },
-      { asType: "span" },
+      this.root,
     );
     this.turnSpans.set(turn, span);
     return span;
@@ -691,7 +911,7 @@ class LangfuseRunObserver implements AgentRunObserver {
     return this.captureMode === "full";
   }
 
-  redactTranscript(messages: Message[]): unknown {
+  redactTranscript(messages: AgentRunEndArgs["messages"]): unknown {
     const inputRedacted =
       this.redactor === undefined || this.redactInputs === undefined
         ? messages
@@ -718,7 +938,9 @@ class LangfuseGenerationObserver implements AgentGenerationObserver {
   }
 
   end(args: AgentGenerationEndArgs): void {
-    const redactedText = this.run.redactOutputValue(textFromAssistantContent(args.response.choice));
+    const redactedText = this.run.redactOutputValue(
+      textFromObservedAssistantContent(args.response.choice),
+    );
     const redactedChoice = this.run.redactOutputValue(args.response.choice);
     const metadata: Record<string, unknown> = { turn: args.turn };
     if (args.firstDeltaMs !== undefined) metadata.firstDeltaMs = args.firstDeltaMs;
@@ -757,6 +979,12 @@ class LangfuseGenerationObserver implements AgentGenerationObserver {
   }
 }
 
+function textFromObservedAssistantContent(
+  content: AgentGenerationEndArgs["response"]["choice"],
+): string {
+  return content.flatMap((item) => (item.type === "text" ? [item.text] : [])).join("\n");
+}
+
 class LangfuseToolObserver implements AgentToolObserver {
   private readonly childAgents = new Map<string, LangfuseAgent>();
   private readonly childGenerations = new Map<
@@ -774,6 +1002,7 @@ class LangfuseToolObserver implements AgentToolObserver {
   constructor(
     private readonly tool: LangfuseTool,
     private readonly run: LangfuseRunObserver,
+    private readonly observations: LangfuseObservationFactory,
   ) {}
 
   streamEvent(args: AgentToolStreamEventArgs): void {
@@ -793,7 +1022,7 @@ class LangfuseToolObserver implements AgentToolObserver {
       const historyMessages = Array.isArray(child.history)
         ? (child.history.filter(isRecord) as Message[])
         : [];
-      agent.startObservation(
+      this.observations.event(
         `${agentLabel(agentId, agentName)}.turn.${childTurn}.start`,
         {
           input: this.run.redactInputValue({
@@ -804,7 +1033,7 @@ class LangfuseToolObserver implements AgentToolObserver {
             this.run.redactInputValue(childMetadata(args, agentId, agentName, childTurn)),
           ),
         },
-        { asType: "event" },
+        agent,
       );
       return;
     }
@@ -824,7 +1053,7 @@ class LangfuseToolObserver implements AgentToolObserver {
         input.tools = request.tools;
         input.providerTools = request.providerTools;
         input.outputSchema = request.outputSchema;
-        input.additionalParams = request.additionalParams;
+        input.providerOptions = request.providerOptions;
       }
       const toolNames = Array.isArray(request.tools)
         ? request.tools
@@ -838,16 +1067,11 @@ class LangfuseToolObserver implements AgentToolObserver {
             .map((tool) => tool.name)
             .filter((name): name is string => typeof name === "string")
         : [];
-      const generation = agent.startObservation(
+      const generation = this.observations.generation(
         `${agentLabel(agentId, agentName)}.model.turn.${childTurn}`,
         {
           input: this.run.redactInputValue(input),
-          model:
-            typeof request.model === "string"
-              ? request.model
-              : typeof modelInfo?.defaultModel === "string"
-                ? modelInfo.defaultModel
-                : "default",
+          model: typeof modelInfo?.modelId === "string" ? modelInfo.modelId : "unknown",
           modelParameters: modelParameters(request as AgentGenerationStartArgs["request"]),
           metadata: asMetadata(
             this.run.redactInputValue({
@@ -860,7 +1084,7 @@ class LangfuseToolObserver implements AgentToolObserver {
             }),
           ),
         },
-        { asType: "generation" },
+        agent,
       );
       this.childGenerations.set(generationKey(agentId, childTurn), {
         generation,
@@ -907,7 +1131,7 @@ class LangfuseToolObserver implements AgentToolObserver {
     if (child.type === "source" || child.type === "provider_tool_call") {
       const childGeneration = this.childGenerations.get(generationKey(agentId, childTurn));
       const parent = childGeneration?.generation ?? agent;
-      parent.startObservation(
+      this.observations.event(
         `${agentLabel(agentId, agentName)}.${child.type}`,
         {
           output: this.run.redactOutputValue(
@@ -917,14 +1141,14 @@ class LangfuseToolObserver implements AgentToolObserver {
             this.run.redactOutputValue(childMetadata(args, agentId, agentName, childTurn)),
           ),
         },
-        { asType: "event" },
+        parent,
       );
       return;
     }
 
     if (child.type === "guardrail_decision") {
-      agent
-        .startObservation(
+      this.observations
+        .guardrail(
           `${agentLabel(agentId, agentName)}.guardrail`,
           {
             output: this.run.redactOutputValue(child.decision),
@@ -932,7 +1156,7 @@ class LangfuseToolObserver implements AgentToolObserver {
               this.run.redactOutputValue(childMetadata(args, agentId, agentName, childTurn)),
             ),
           },
-          { asType: "guardrail" },
+          agent,
         )
         .end();
       return;
@@ -944,19 +1168,18 @@ class LangfuseToolObserver implements AgentToolObserver {
         output: this.run.redactOutputValue({ toolCall: child.toolCall }),
       });
       const toolCall = child.toolCall;
-      const toolCallFunction = isRecord(toolCall.function) ? toolCall.function : undefined;
-      const toolName = typeof toolCallFunction?.name === "string" ? toolCallFunction.name : "tool";
+      const toolName = typeof toolCall.toolName === "string" ? toolCall.toolName : "tool";
       const toolCallId =
-        typeof toolCall.callId === "string"
-          ? toolCall.callId
-          : typeof toolCall.id === "string"
-            ? toolCall.id
+        typeof toolCall.toolCallId === "string"
+          ? toolCall.toolCallId
+          : typeof toolCall.callId === "string"
+            ? toolCall.callId
             : undefined;
-      const childTool = agent.startObservation(
+      const childTool = this.observations.tool(
         `${agentLabel(agentId, agentName)}.${toolName}`,
         {
           input: this.run.redactInputValue({
-            args: toolCallFunction?.arguments ?? {},
+            args: toolCall.input,
             toolCall,
           }),
           metadata: asMetadata(
@@ -967,7 +1190,7 @@ class LangfuseToolObserver implements AgentToolObserver {
             }),
           ),
         },
-        { asType: "tool" },
+        agent,
       );
       const childToolRecord: (typeof this.childTools)[number] = {
         agentId,
@@ -1007,14 +1230,19 @@ class LangfuseToolObserver implements AgentToolObserver {
       return;
     }
 
-    if (child.type === "final") {
+    if (child.type === "response" || child.type === "interaction" || child.type === "blocked") {
+      const result = child;
       const update: Parameters<LangfuseAgent["update"]>[0] = {
-        output: this.run.redactOutputValue(child.output),
+        output: this.run.redactOutputValue({
+          type: result.type,
+          output: result.type === "response" ? result.output : undefined,
+          text: result.text,
+        }),
       };
       const metadata: Record<string, unknown> = {};
-      if (isRecord(child.usage)) metadata.usage = child.usage;
-      if (this.run.isFullCapture() && Array.isArray(child.messages)) {
-        metadata.messages = this.run.redactTranscript(child.messages as Message[]);
+      if (isRecord(result.usage)) metadata.usage = result.usage;
+      if (this.run.isFullCapture() && Array.isArray(result.messages)) {
+        metadata.messages = this.run.redactTranscript(result.messages as Message[]);
       }
       if (Object.keys(metadata).length > 0) update.metadata = metadata;
       agent.update(update).end();
@@ -1066,6 +1294,26 @@ class LangfuseToolObserver implements AgentToolObserver {
     this.tool.update(attributes).end();
   }
 
+  suspend(args: AgentToolSuspendedArgs): void {
+    this.endOpenChildren();
+    this.tool
+      .update({
+        output: this.run.redactOutputValue({
+          status: "suspended",
+          interaction: args.interaction,
+        }),
+        metadata: {
+          turn: args.turn,
+          internalCallId: args.internalCallId,
+          interactionId: args.interaction.id,
+          interactionType: args.interaction.type,
+        },
+        level: "WARNING",
+        statusMessage: "Tool call suspended for human interaction",
+      })
+      .end();
+  }
+
   error(args: AgentToolErrorArgs): void {
     this.endOpenChildren();
     const redactedError = this.run.redactOutputValue(errorMessage(args.error));
@@ -1092,14 +1340,14 @@ class LangfuseToolObserver implements AgentToolObserver {
     if (existing !== undefined) {
       return existing;
     }
-    const agent = this.tool.startObservation(
+    const agent = this.observations.agent(
       `${agentLabel(agentId, agentName)}.run`,
       {
         metadata: asMetadata(
           this.run.redactInputValue(childMetadata(args, agentId, agentName, args.turn)),
         ),
       },
-      { asType: "agent" },
+      this.tool,
     );
     this.childAgents.set(agentId, agent);
     return agent;

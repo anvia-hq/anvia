@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
-  AgentBuilder,
+  Agent,
   type AgentStreamEvent,
   AssistantContent,
+  assertCompleted,
   type CompletionModel,
+  type CompletionModelStreamEvent,
   type CompletionRequest,
   type CompletionResponse,
-  type CompletionStreamEvent,
   createHook,
   createObserver,
   defineGuardrailPolicy,
@@ -19,11 +20,12 @@ import {
   type OutputGuardrail,
   type StreamingCompletionModel,
   Usage,
+  withInternalAgentRunOptions,
 } from "./helpers/imports";
 
 class QueueModel implements CompletionModel {
   readonly provider = "test";
-  readonly defaultModel = "test";
+  readonly modelId = "test";
   readonly capabilities = {
     streaming: false,
     tools: true,
@@ -49,7 +51,7 @@ class QueueModel implements CompletionModel {
 
 class StreamingQueueModel implements StreamingCompletionModel {
   readonly provider = "test";
-  readonly defaultModel = "test";
+  readonly modelId = "test";
   readonly capabilities = {
     streaming: true,
     tools: true,
@@ -61,13 +63,13 @@ class StreamingQueueModel implements StreamingCompletionModel {
   };
   readonly requests: CompletionRequest[] = [];
 
-  constructor(private readonly responses: CompletionStreamEvent[][]) {}
+  constructor(private readonly responses: CompletionModelStreamEvent[][]) {}
 
   async completion(): Promise<CompletionResponse> {
     throw new Error("completion should not be called");
   }
 
-  async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionStreamEvent> {
+  async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionModelStreamEvent> {
     this.requests.push(request);
     const response = this.responses.shift();
     if (response === undefined) {
@@ -115,14 +117,19 @@ describe("guardrails", () => {
         });
       },
     });
-    const agent = new AgentBuilder("test-agent", model)
-      .guardrails(defineGuardrailPolicy({ id: "policy", input: [inputGuardrail] }))
-      .build();
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      guardrails: defineGuardrailPolicy({ id: "policy", input: [inputGuardrail] }),
+    });
 
-    const result = await agent.prompt("hello secret").send();
+    const result = await agent.generate({ prompt: "hello secret" });
+    assertCompleted(result);
 
     expect(result.output).toBe("done");
-    expect(model.requests[0]?.chatHistory).toEqual([Message.user("hello [redacted]")]);
+    expect(model.requests[0]?.chatHistory).toEqual([
+      Message.user([{ type: "text", text: "hello [redacted]" }]),
+    ]);
     expect(result.guardrails).toMatchObject([
       { guardrailId: "redact-input", action: "rewrite", applied: true },
     ]);
@@ -139,13 +146,22 @@ describe("guardrails", () => {
         });
       },
     });
-    const agent = new AgentBuilder("test-agent", model)
-      .guardrails(defineGuardrailPolicy({ id: "policy", input: [inputGuardrail] }))
-      .build();
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      guardrails: defineGuardrailPolicy({ id: "policy", input: [inputGuardrail] }),
+    });
 
-    const result = await agent.prompt("blocked").send();
+    const result = await agent.generate({ prompt: "blocked" });
 
-    expect(result.output).toBe("Input blocked.");
+    expect(result).toMatchObject({
+      type: "blocked",
+      stage: "input",
+      reason: "blocked",
+      message: "Input blocked.",
+      text: "Input blocked.",
+    });
+    if (result.type !== "blocked") throw new Error("Expected a blocked result.");
     expect(model.requests).toHaveLength(0);
     expect(result.guardrails).toMatchObject([
       { guardrailId: "block-input", action: "block", applied: true },
@@ -155,9 +171,11 @@ describe("guardrails", () => {
   it("records blocked input guardrail decisions through observers", async () => {
     const model = new QueueModel([]);
     const observedEvents: unknown[] = [];
+    const trace = { traceId: "trace-blocked", observationId: "run-blocked" };
     const observer = createObserver({
       startRun() {
         return {
+          trace,
           event(args) {
             observedEvents.push(args);
           },
@@ -171,14 +189,18 @@ describe("guardrails", () => {
         return block({ reason: "blocked", message: "Input blocked." });
       },
     });
-    const agent = new AgentBuilder("test-agent", model)
-      .observe(observer)
-      .guardrails(defineGuardrailPolicy({ id: "policy", input: [inputGuardrail] }))
-      .build();
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      observability: { observers: { test: observer }, primaryTrace: "test" },
+      guardrails: defineGuardrailPolicy({ id: "policy", input: [inputGuardrail] }),
+    });
 
-    const result = await agent.prompt("blocked").send();
+    const result = await agent.generate({ prompt: "blocked" });
 
-    expect(result.output).toBe("Input blocked.");
+    expect(result).toMatchObject({ type: "blocked", stage: "input", text: "Input blocked." });
+    if (result.type !== "blocked") throw new Error("Expected a blocked result.");
+    expect(result.trace).toEqual({ observer: "test", ...trace });
     expect(observedEvents).toMatchObject([
       {
         name: "guardrail.decision",
@@ -194,6 +216,47 @@ describe("guardrails", () => {
     ]);
   });
 
+  it("includes observer trace in a blocked streaming final event", async () => {
+    const model = new StreamingQueueModel([]);
+    const trace = { traceId: "trace-stream-blocked", observationId: "run-stream-blocked" };
+    const inputGuardrail = defineInputGuardrail({
+      id: "block-stream-input",
+      check(_ctx, { block }) {
+        return block({ reason: "blocked", message: "Stream input blocked." });
+      },
+    });
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      observability: {
+        observers: {
+          test: createObserver({
+            startRun() {
+              return { trace, end() {} };
+            },
+          }),
+        },
+        primaryTrace: "test",
+      },
+      guardrails: defineGuardrailPolicy({ id: "policy", input: [inputGuardrail] }),
+    });
+
+    const events: AgentStreamEvent[] = [];
+    for await (const event of agent.stream({ prompt: "blocked" })) {
+      events.push(event);
+    }
+
+    expect(model.requests).toHaveLength(0);
+    expect(events.at(-1)).toMatchObject({
+      type: "blocked",
+      stage: "input",
+      reason: "blocked",
+      message: "Stream input blocked.",
+      text: "Stream input blocked.",
+      trace,
+    });
+  });
+
   it("redacts repeated regex matches and text document sources", async () => {
     const model = new QueueModel([
       response([AssistantContent.text("first")]),
@@ -205,24 +268,32 @@ describe("guardrails", () => {
       patterns: [/secret/g],
       reason: "secret_redacted",
     });
-    const agent = new AgentBuilder("test-agent", model)
-      .guardrails(defineGuardrailPolicy({ id: "policy", input: [redactInput] }))
-      .build();
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      guardrails: defineGuardrailPolicy({ id: "policy", input: [redactInput] }),
+    });
 
-    await agent
-      .prompt(
+    await agent.generate({
+      messages: [
         Message.user([
           { type: "text", text: "secret secret" },
-          { type: "document", source: { type: "text", text: "secret doc" } },
+          {
+            type: "file",
+            data: { type: "text", text: "secret doc" },
+            mediaType: "text/plain",
+          },
         ]),
-      )
-      .send();
-    await agent.prompt("secret").send();
+      ],
+    });
+    await agent.generate({ prompt: "secret" });
 
     expect(model.requests[0]?.chatHistory[0]).toEqual(
-      Message.user("[redacted] [redacted]\n[redacted] doc"),
+      Message.user([{ type: "text", text: "[redacted] [redacted]\n[redacted] doc" }]),
     );
-    expect(model.requests[1]?.chatHistory[0]).toEqual(Message.user("[redacted]"));
+    expect(model.requests[1]?.chatHistory[0]).toEqual(
+      Message.user([{ type: "text", text: "[redacted]" }]),
+    );
   });
 
   it("rewrites final output before returning and committing the assistant message", async () => {
@@ -236,18 +307,21 @@ describe("guardrails", () => {
         });
       },
     });
-    const agent = new AgentBuilder("test-agent", model)
-      .guardrails(defineGuardrailPolicy({ id: "policy", output: [outputGuardrail] }))
-      .build();
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      guardrails: defineGuardrailPolicy({ id: "policy", output: [outputGuardrail] }),
+    });
 
-    const result = await agent.prompt("hello").send();
+    const result = await agent.generate({ prompt: "hello" });
+    assertCompleted(result);
 
     expect(result.output).toBe("[redacted] token");
     const assistantMessage = result.messages.at(-1);
     expect(assistantMessage).toMatchObject(Message.assistant("[redacted] token"));
     expect(assistantMessage && getAssistantGenerationMetadata(assistantMessage)).toEqual({
       provider: "test",
-      model: "test",
+      modelId: "test",
       usage: Usage.empty(),
     });
     expect(result.guardrails).toMatchObject([
@@ -271,12 +345,14 @@ describe("guardrails", () => {
         });
       },
     });
-    const agent = new AgentBuilder("test-agent", model)
-      .guardrails(defineGuardrailPolicy({ id: "policy", output: [outputGuardrail] }))
-      .build();
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      guardrails: defineGuardrailPolicy({ id: "policy", output: [outputGuardrail] }),
+    });
 
     const events: AgentStreamEvent[] = [];
-    for await (const event of agent.prompt("hello").stream()) {
+    for await (const event of agent.stream({ prompt: "hello" })) {
       events.push(event);
     }
 
@@ -292,7 +368,7 @@ describe("guardrails", () => {
         decision: expect.objectContaining({ guardrailId: "stream-output", action: "rewrite" }),
       }),
     );
-    expect(events.at(-1)).toMatchObject({ type: "final", output: "[redacted] token" });
+    expect(events.at(-1)).toMatchObject({ type: "response", output: "[redacted] token" });
   });
 
   it("skips output guardrails for streamed intermediate turns when steering continues", async () => {
@@ -307,7 +383,9 @@ describe("guardrails", () => {
         { type: "final", response: response([AssistantContent.text("secret second")]) },
       ],
     ]);
-    let steer: ((input: string) => boolean) | undefined;
+    let steer:
+      | ((input: { prompt: string }) => Readonly<{ id: string; status: "queued" }>)
+      | undefined;
     const outputGuardrail = defineOutputGuardrail({
       id: "stream-final-only",
       check(ctx, { rewrite }) {
@@ -318,28 +396,28 @@ describe("guardrails", () => {
         });
       },
     });
-    const agent = new AgentBuilder("test-agent", model)
-      .hook(
-        createHook({
-          onTurnEnd({ turn }) {
-            if (turn === 1) {
-              expect(steer?.("revise")).toBe(true);
-            }
-          },
-        }),
-      )
-      .guardrails(defineGuardrailPolicy({ id: "policy", output: [outputGuardrail] }))
-      .build();
-    const request = agent.prompt("hello");
-    steer = request.steer.bind(request);
+    const hook = createHook({
+      onTurnEnd({ turn }) {
+        if (turn === 1) {
+          expect(steer?.({ prompt: "revise" })).toMatchObject({ status: "queued" });
+        }
+      },
+    });
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      guardrails: defineGuardrailPolicy({ id: "policy", output: [outputGuardrail] }),
+    });
+    const stream = agent.stream({ prompt: "hello", ...withInternalAgentRunOptions({}, { hook }) });
+    steer = stream.steer.bind(stream);
 
     const events: AgentStreamEvent[] = [];
-    for await (const event of request.stream()) {
+    for await (const event of stream) {
       events.push(event);
     }
 
     expect(checkedOutputs).toEqual(["secret second"]);
     expect(model.requests).toHaveLength(2);
-    expect(events.at(-1)).toMatchObject({ type: "final", output: "[redacted] second" });
+    expect(events.at(-1)).toMatchObject({ type: "response", output: "[redacted] second" });
   });
 });

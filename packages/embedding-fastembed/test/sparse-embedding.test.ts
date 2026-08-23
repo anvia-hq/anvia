@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  createFastEmbedSparseEmbeddingModel,
+  adaptFastEmbedSparseEmbeddingModel,
   DEFAULT_FASTEMBED_SPARSE_EMBEDDING_MODEL,
-  FastEmbedSparseEmbeddingModel,
   type FastEmbedSparseRuntime,
+  loadFastEmbedSparseEmbeddingModel,
 } from "../src/index";
 
 const initMock = vi.hoisted(() => vi.fn());
@@ -33,8 +33,9 @@ describe("FastEmbedSparseEmbeddingModel", () => {
       }),
       queryEmbed: vi.fn(async () => ({ indices: [9], values: [0.9] })),
     };
-    const model = new FastEmbedSparseEmbeddingModel(runtime, {
-      model: "prithivida/Splade_PP_en_v1",
+    const model = adaptFastEmbedSparseEmbeddingModel({
+      runtime,
+      modelId: "prithivida/Splade_PP_en_v1",
       maxBatchSize: 4,
     });
 
@@ -48,7 +49,7 @@ describe("FastEmbedSparseEmbeddingModel", () => {
     });
     expect(runtime.passageEmbed).toHaveBeenCalledWith(["alpha", "beta"], 4);
     expect(runtime.queryEmbed).toHaveBeenCalledWith("search");
-    expect(model.model).toBe(DEFAULT_FASTEMBED_SPARSE_EMBEDDING_MODEL);
+    expect(model.modelId).toBe(DEFAULT_FASTEMBED_SPARSE_EMBEDDING_MODEL);
   });
 
   it("creates a default SPLADE++ sparse model", async () => {
@@ -60,8 +61,10 @@ describe("FastEmbedSparseEmbeddingModel", () => {
     };
     initMock.mockResolvedValueOnce(runtime);
 
-    const model = await createFastEmbedSparseEmbeddingModel();
-    expect(model.model).toBe("prithivida/Splade_PP_en_v1");
+    const model = await loadFastEmbedSparseEmbeddingModel({
+      modelId: DEFAULT_FASTEMBED_SPARSE_EMBEDDING_MODEL,
+    });
+    expect(model.modelId).toBe("prithivida/Splade_PP_en_v1");
     expect(initMock).toHaveBeenCalled();
   });
 
@@ -75,7 +78,10 @@ describe("FastEmbedSparseEmbeddingModel", () => {
         values: new Float32Array([1]),
       })),
     };
-    const model = new FastEmbedSparseEmbeddingModel(runtime);
+    const model = adaptFastEmbedSparseEmbeddingModel({
+      runtime,
+      modelId: "prithivida/Splade_PP_en_v1",
+    });
 
     await expect(model.embedTexts(["alpha"])).rejects.toThrow("invalid vector");
     await expect(model.embedQuery("search")).rejects.toThrow("invalid vector");

@@ -1,18 +1,23 @@
 export {
-  createFastEmbedEmbeddingModel,
+  adaptFastEmbedEmbeddingModel,
   DEFAULT_FASTEMBED_EMBEDDING_MODEL,
-  FastEmbedEmbeddingModel,
+  loadFastEmbedEmbeddingModel,
 } from "./model.js";
 export {
-  createFastEmbedSparseEmbeddingModel,
+  adaptFastEmbedSparseEmbeddingModel,
   DEFAULT_FASTEMBED_SPARSE_EMBEDDING_MODEL,
-  FastEmbedSparseEmbeddingModel,
+  loadFastEmbedSparseEmbeddingModel,
 } from "./sparse-model.js";
 export type {
-  FastEmbedEmbeddingModelName,
-  FastEmbedEmbeddingModelOptions,
+  AdaptFastEmbedEmbeddingModelOptions,
+  AdaptFastEmbedSparseEmbeddingModelOptions,
+  ExecutionProvider,
+  FastEmbedEmbeddingModelHandle,
+  FastEmbedEmbeddingModelId,
   FastEmbedRuntime,
-  FastEmbedSparseEmbeddingModelName,
-  FastEmbedSparseEmbeddingModelOptions,
+  FastEmbedSparseEmbeddingModelHandle,
+  FastEmbedSparseEmbeddingModelId,
   FastEmbedSparseRuntime,
+  LoadFastEmbedEmbeddingModelOptions,
+  LoadFastEmbedSparseEmbeddingModelOptions,
 } from "./types.js";

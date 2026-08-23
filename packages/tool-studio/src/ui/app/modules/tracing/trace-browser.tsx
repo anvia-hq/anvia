@@ -311,10 +311,12 @@ function TraceStatusBadge({ status }: { status: string }) {
         status === "success" &&
           "bg-emerald-200 text-emerald-950 dark:bg-emerald-300 dark:text-emerald-950",
         status === "error" && "bg-rose-200 text-rose-950 dark:bg-rose-300 dark:text-rose-950",
-        status === "running" && "bg-amber-200 text-amber-950 dark:bg-amber-300 dark:text-amber-950",
+        (status === "running" || status === "suspended") &&
+          "bg-amber-200 text-amber-950 dark:bg-amber-300 dark:text-amber-950",
         status !== "success" &&
           status !== "error" &&
           status !== "running" &&
+          status !== "suspended" &&
           "bg-slate-200 text-slate-900 dark:bg-slate-300 dark:text-slate-950",
       )}
     >

@@ -1,7 +1,7 @@
 import type { ModelContextLimits } from "@anvia/core/completion";
 import type { ModelId } from "@anvia/core/model-listing";
 
-export type KnownOpenAICompletionModelName =
+export type KnownOpenAICompletionModelId =
   | "gpt-3.5-turbo"
   | "gpt-4"
   | "gpt-4-turbo"
@@ -37,6 +37,10 @@ export type KnownOpenAICompletionModelName =
   | "gpt-5.4-pro"
   | "gpt-5.5"
   | "gpt-5.5-pro"
+  | "gpt-5.6"
+  | "gpt-5.6-luna"
+  | "gpt-5.6-sol"
+  | "gpt-5.6-terra"
   | "o1"
   | "o1-pro"
   | "o3"
@@ -46,7 +50,7 @@ export type KnownOpenAICompletionModelName =
   | "o4-mini"
   | "o4-mini-deep-research";
 
-export type OpenAICompletionModelName = ModelId<KnownOpenAICompletionModelName>;
+export type OpenAICompletionModelId = ModelId<KnownOpenAICompletionModelId>;
 
 const CONTEXT_128K_16K = { contextWindow: 128_000, maxOutputTokens: 16_384 };
 const CONTEXT_200K_100K = { contextWindow: 200_000, maxOutputTokens: 100_000 };
@@ -103,6 +107,10 @@ export const OPENAI_COMPLETION_MODEL_CONTEXT_LIMITS: Readonly<Record<string, Mod
     "gpt-5.4-pro": CONTEXT_1M_128K,
     "gpt-5.5": CONTEXT_1M_128K,
     "gpt-5.5-pro": CONTEXT_1M_128K,
+    "gpt-5.6": CONTEXT_1M_128K,
+    "gpt-5.6-luna": CONTEXT_1M_128K,
+    "gpt-5.6-sol": CONTEXT_1M_128K,
+    "gpt-5.6-terra": CONTEXT_1M_128K,
     o1: CONTEXT_200K_100K,
     "o1-pro": CONTEXT_200K_100K,
     o3: CONTEXT_200K_100K,
@@ -113,28 +121,41 @@ export const OPENAI_COMPLETION_MODEL_CONTEXT_LIMITS: Readonly<Record<string, Mod
     "o4-mini-deep-research": CONTEXT_200K_100K,
   };
 
-export type KnownOpenAIEmbeddingModelName =
+export type KnownOpenAIEmbeddingModelId =
   | "text-embedding-3-large"
   | "text-embedding-3-small"
   | "text-embedding-ada-002";
 
-export type OpenAIEmbeddingModelName = ModelId<KnownOpenAIEmbeddingModelName>;
+export type OpenAIEmbeddingModelId = ModelId<KnownOpenAIEmbeddingModelId>;
 
-export type KnownOpenAIImageGenerationModelName =
+export type KnownOpenAIImageGenerationModelId =
   | "chatgpt-image-latest"
   | "dall-e-2"
   | "dall-e-3"
   | "gpt-image-1"
   | "gpt-image-1-mini"
   | "gpt-image-1.5"
-  | "gpt-image-2";
+  | "gpt-image-2"
+  | "gpt-image-2-2026-04-21";
 
-export type OpenAIImageGenerationModelName = ModelId<KnownOpenAIImageGenerationModelName>;
+export type OpenAIImageGenerationModelId = ModelId<KnownOpenAIImageGenerationModelId>;
 
-export type KnownOpenAIAudioGenerationModelName = "tts-1" | "tts-1-hd";
+export type KnownOpenAISpeechGenerationModelId =
+  | "gpt-4o-mini-tts"
+  | "gpt-4o-mini-tts-2025-03-20"
+  | "gpt-4o-mini-tts-2025-12-15"
+  | "tts-1"
+  | "tts-1-hd";
 
-export type OpenAIAudioGenerationModelName = ModelId<KnownOpenAIAudioGenerationModelName>;
+export type OpenAISpeechGenerationModelId = ModelId<KnownOpenAISpeechGenerationModelId>;
 
-export type KnownOpenAITranscriptionModelName = "whisper-1";
+export type KnownOpenAITranscriptionModelId =
+  | "gpt-4o-mini-transcribe"
+  | "gpt-4o-mini-transcribe-2025-03-20"
+  | "gpt-4o-mini-transcribe-2025-12-15"
+  | "gpt-4o-transcribe"
+  | "gpt-4o-transcribe-diarize"
+  | "gpt-transcribe"
+  | "whisper-1";
 
-export type OpenAITranscriptionModelName = ModelId<KnownOpenAITranscriptionModelName>;
+export type OpenAITranscriptionModelId = ModelId<KnownOpenAITranscriptionModelId>;

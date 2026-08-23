@@ -1,40 +1,44 @@
-import {
-  createChatTransport,
-  type ToolApproval,
-  type ToolQuestion,
-  type ToolQuestionAnswer,
-  useChat,
-} from "@anvia/react";
-import { type RefObject, useRef } from "react";
-import type { AgentRunStreamEvent, StudioConfig, StudioTraceSummary } from "../../../../types";
+import type { ClientStreamEvent, ClientStreamRequest, ClientTransport } from "@anvia/client";
+import { createHttpClientTransport } from "@anvia/client";
+import type { Message } from "@anvia/core/completion";
+import { useChat } from "@anvia/react";
+import { type RefObject, useMemo, useRef } from "react";
+import type { StudioConfig, StudioSessionLogEntry, StudioTraceSummary } from "../../../../types";
 import { agentRunErrorMessage, serializedStreamErrorText } from "../../app-errors";
 import {
   enrichTranscriptWithTraceIds,
   type PromptAttachment,
   type StudioAgentRunRequest,
+  studioModelRefFromKey,
   transcriptAttachmentsForPrompt,
-  userUIMessageWithAttachments,
+  uiAttachmentsForPrompt,
 } from "../../app-helpers";
 import type { useStudioSessions } from "../sessions/use-studio-sessions";
 import { errorMessage, formatToolValue, titleFromText } from "../shared/format";
 import { nextPaint, nextTranscriptId, resizeTextarea, toHistory } from "../shared/transcript";
-import type {
-  ActivePage,
-  RunState,
-  ToolApprovalUpdate,
-  ToolQuestionUpdate,
-  TranscriptEntry,
-} from "../shared/types";
+import type { ActivePage, RunState, TranscriptEntry } from "../shared/types";
 import type { useTraces } from "../tracing/use-traces";
 import type { usePlaygroundTranscript } from "./use-playground-transcript";
 
 type PlaygroundTranscriptController = ReturnType<typeof usePlaygroundTranscript>;
 type StudioSessionsController = ReturnType<typeof useStudioSessions>;
 type StudioTracesController = ReturnType<typeof useTraces>;
-type PlaygroundRunRequestContext = Omit<StudioAgentRunRequest, "message"> & {
-  promptText: string;
-  useTextMessage: boolean;
+type PlaygroundRunRequestContext = Omit<
+  Extract<StudioAgentRunRequest, { type: "messages" }>,
+  "messages" | "type"
+> & {
+  history?: readonly Message[];
 };
+
+const studioAgentTransport = createHttpClientTransport<StudioAgentRunRequest>({
+  endpoint: ({ request }) => `/agents/${encodeURIComponent(request.agentId)}/runs`,
+  format: "jsonl",
+  headers: { "content-type": "application/json" },
+  body: ({ request }) => {
+    const { agentId: _agentId, ...body } = request;
+    return JSON.stringify(body);
+  },
+});
 
 export function usePlaygroundRun(props: {
   attachments: PromptAttachment[];
@@ -56,6 +60,7 @@ export function usePlaygroundRun(props: {
   onRunStateChange: (runState: RunState) => void;
   onSessionTraceSummariesChange: (traceSummaries: StudioTraceSummary[]) => void;
   onStatus: (status: string) => void;
+  onToolCall: (toolName: string) => void;
 }) {
   const {
     attachments,
@@ -68,6 +73,7 @@ export function usePlaygroundRun(props: {
     onRunStateChange,
     onSessionTraceSummariesChange,
     onStatus,
+    onToolCall,
     promptRef,
     runState,
     selectedAgent,
@@ -82,75 +88,46 @@ export function usePlaygroundRun(props: {
   const playgroundRunErrorRef = useRef<unknown>(undefined);
   const playgroundRunStoppedRef = useRef(false);
   const playgroundRunTerminalRef = useRef(false);
+  const playgroundWaitingRef = useRef(false);
   const playgroundRunStartedAtRef = useRef<number | undefined>(undefined);
   const playgroundVisibleEventRef = useRef<Promise<void>>(Promise.resolve());
 
-  const playgroundChat = useChat<StudioAgentRunRequest, AgentRunStreamEvent>({
-    transport: createChatTransport<StudioAgentRunRequest, AgentRunStreamEvent>({
-      endpoint: (request) => `/agents/${encodeURIComponent(request.agentId)}/runs`,
-      method: "POST",
-      format: "jsonl",
-      headers: {
-        "content-type": "application/json",
-      },
-      body: (request) => {
-        const { agentId: _agentId, ...body } = request;
-        return JSON.stringify(body);
-      },
-      mapEvent: (event) => event as AgentRunStreamEvent,
-    }),
-    createRequest: ({ coreMessages }) => {
-      const context = playgroundRunRequestRef.current;
-      if (context === undefined) {
-        throw new Error("Missing playground run request");
-      }
-      const message = context.useTextMessage ? context.promptText : coreMessages.at(-1);
-      if (message === undefined) {
-        throw new Error("Missing playground prompt message");
-      }
-      return runRequestFromContext(context, message);
-    },
-    eventToDelta: () => undefined,
-    eventToFinal: () => undefined,
-    humanInput: {
-      eventToApproval: (event) =>
-        event.type === "tool_approval_request" || event.type === "tool_approval_result"
-          ? event.approval
-          : undefined,
-      eventToQuestion: (event) =>
-        event.type === "tool_question_request" || event.type === "tool_question_result"
-          ? event.question
-          : undefined,
-      decideApproval: async (input) => {
-        const response = await fetch(
-          `/approvals/${encodeURIComponent(input.approvalId)}/decision`,
-          {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ approved: input.approved }),
-          },
-        );
-        if (!response.ok) {
-          throw new Error(`Approval decision failed with HTTP ${response.status}`);
+  const playgroundTransport = useMemo<ClientTransport<ClientStreamRequest>>(
+    () => ({
+      send(options) {
+        const context = playgroundRunRequestRef.current;
+        if (context === undefined) {
+          throw new Error("Missing playground run request");
         }
-        const approval = (await response.json()) as ToolApproval;
-        updateTranscriptApproval(transcript, approval);
-        return approval;
-      },
-      answerQuestion: async (input) => {
-        const response = await fetch(`/questions/${encodeURIComponent(input.questionId)}/answer`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ answers: input.answers }),
+        if (options.request.type === "interaction_response") {
+          const request = {
+            agentId: context.agentId,
+            ...options.request,
+            stream: true,
+          };
+          if (context.metadata !== undefined) {
+            Object.assign(request, { metadata: context.metadata });
+          }
+          return studioAgentTransport.send({
+            ...options,
+            request,
+          });
+        }
+        const prompt = options.request.messages.at(-1);
+        if (prompt === undefined || prompt.role !== "user") {
+          throw new Error("Missing playground prompt message");
+        }
+        return studioAgentTransport.send({
+          ...options,
+          request: runRequestFromContext(context, prompt),
         });
-        if (!response.ok) {
-          throw new Error(`Question answer failed with HTTP ${response.status}`);
-        }
-        const question = (await response.json()) as ToolQuestion;
-        updateTranscriptQuestion(transcript, question);
-        return question;
       },
-    },
+    }),
+    [],
+  );
+
+  const playgroundChat = useChat({
+    transport: playgroundTransport,
     onEvent(event) {
       if (playgroundRunTerminalRef.current) {
         return;
@@ -181,6 +158,7 @@ export function usePlaygroundRun(props: {
       (trimmed.length === 0 && promptAttachments.length === 0) ||
       agentId.length === 0 ||
       runState === "running" ||
+      playgroundChat.status === "submitted" ||
       playgroundChat.status === "streaming"
     ) {
       return;
@@ -188,6 +166,7 @@ export function usePlaygroundRun(props: {
 
     playgroundRunStoppedRef.current = false;
     playgroundRunTerminalRef.current = false;
+    playgroundWaitingRef.current = false;
     onRunStateChange("running");
     onBeforeRun();
     onActivePageChange("playground");
@@ -195,10 +174,6 @@ export function usePlaygroundRun(props: {
     onPromptChange("");
     onAttachmentsChange([]);
     requestAnimationFrame(() => resizeTextarea(promptRef.current));
-    const promptMessage =
-      promptAttachments.length === 0
-        ? { text: trimmed }
-        : userUIMessageWithAttachments(trimmed, promptAttachments);
     transcript.setMessages((current) => {
       const userEntry: TranscriptEntry = {
         entryId: nextTranscriptId(),
@@ -234,20 +209,26 @@ export function usePlaygroundRun(props: {
       if (selectedModelRef.length > 0) metadata.studioModel = selectedModelRef;
       const runContext: PlaygroundRunRequestContext = {
         agentId,
-        promptText: trimmed,
-        useTextMessage: promptAttachments.length === 0,
         stream: true,
         metadata,
       };
       if (sessionId.length > 0) runContext.sessionId = sessionId;
       if (history !== undefined) runContext.history = history;
-      if (selectedModelRef.length > 0) runContext.model = selectedModelRef;
+      if (selectedModelRef.length > 0) {
+        runContext.model = studioModelRefFromKey(selectedModelRef);
+      }
       playgroundRunRequestRef.current = runContext;
       const startedAt = Date.now();
       playgroundRunStartedAtRef.current = startedAt;
 
-      await playgroundChat.sendMessage(promptMessage);
+      await playgroundChat.sendMessage({
+        text: trimmed,
+        attachments: uiAttachmentsForPrompt(promptAttachments),
+      });
       await playgroundVisibleEventRef.current;
+      if (playgroundWaitingRef.current) {
+        return;
+      }
 
       if (playgroundRunErrorRef.current === undefined) {
         await sessions.loadAllSessions();
@@ -276,15 +257,20 @@ export function usePlaygroundRun(props: {
         completeWorkingRun();
       }
     } finally {
-      completeWorkingRun();
-      playgroundRunRequestRef.current = undefined;
-      playgroundChat.reset();
-      onRunStateChange("idle");
+      if (!playgroundWaitingRef.current) {
+        completeWorkingRun();
+        playgroundRunRequestRef.current = undefined;
+        playgroundChat.reset();
+        onRunStateChange("idle");
+      }
     }
   }
 
   function stopPrompt() {
-    if (playgroundChat.status !== "streaming" || playgroundRunTerminalRef.current) {
+    if (
+      (playgroundChat.status !== "submitted" && playgroundChat.status !== "streaming") ||
+      playgroundRunTerminalRef.current
+    ) {
       return;
     }
     playgroundRunStoppedRef.current = true;
@@ -295,74 +281,133 @@ export function usePlaygroundRun(props: {
     onStatus("Stopping");
   }
 
-  function decideToolApproval(approvalId: string, approved: boolean) {
+  function decideToolApproval(interactionId: string, approved: boolean) {
     onError("");
-    const decision = approved
-      ? playgroundChat.approveTool(approvalId)
-      : playgroundChat.rejectTool(approvalId);
-    void decision.catch((decisionError) => onError(errorMessage(decisionError)));
+    playgroundWaitingRef.current = false;
+    const decision = playgroundChat.respondToInteraction({
+      interactionId,
+      response: { type: "tool-approval", approved },
+    });
+    void decision
+      .then(() => {
+        transcript.resolveToolApproval(interactionId, approved);
+        finishInteractionPhase();
+      })
+      .catch((decisionError) => onError(errorMessage(decisionError)));
   }
 
-  function answerToolQuestion(questionId: string, answers: ToolQuestionAnswer[]) {
+  function answerToolQuestion(
+    interactionId: string,
+    answers: Array<{ questionId: string; answer: string; choice?: string; custom?: boolean }>,
+  ) {
     onError("");
+    playgroundWaitingRef.current = false;
     void playgroundChat
-      .answerToolQuestion(questionId, answers)
+      .respondToInteraction({
+        interactionId,
+        response: {
+          type: "tool-question",
+          answers: answers.map((answer) => ({
+            questionId: answer.questionId,
+            value: answer.custom === true ? answer.answer : (answer.choice ?? answer.answer),
+          })),
+        },
+      })
+      .then(() => {
+        transcript.resolveToolQuestion(interactionId, answers);
+        finishInteractionPhase();
+      })
       .catch((answerError) => onError(errorMessage(answerError)));
   }
 
-  function acceptStreamEvent(event: AgentRunStreamEvent): boolean {
+  function finishInteractionPhase() {
+    if (playgroundWaitingRef.current) return;
+    completeWorkingRun();
+    playgroundRunRequestRef.current = undefined;
+    playgroundChat.reset();
+    onRunStateChange("idle");
+  }
+
+  function acceptStreamEvent(event: ClientStreamEvent): boolean {
+    if (event.scope?.parentToolCallId !== undefined) {
+      transcript.appendAgentToolEvent(event);
+      return true;
+    }
     if (event.type === "text_delta") {
       transcript.appendAssistantText(event.delta);
       return true;
     }
     if (event.type === "reasoning_delta") {
-      transcript.appendReasoningText(event.delta, event.id);
+      transcript.appendReasoningText(event.delta, event.partId);
       return true;
     }
-    if (event.type === "tool_call") {
+    if (event.type === "tool_call_end") {
+      onToolCall(event.toolName);
       transcript.appendToolCall(
-        event.toolCall.function.name,
-        formatToolValue(event.toolCall.function.arguments),
-        event.toolCall.callId ?? event.toolCall.id,
+        event.toolName,
+        formatToolValue(event.input),
+        event.callId ?? event.toolCallId,
       );
       return true;
     }
     if (event.type === "tool_result") {
       const result: Parameters<typeof transcript.appendToolResult>[0] = {
         toolName: event.toolName,
-        callId: event.toolCallId,
-        args: event.args,
-        result: event.result,
+        callId: event.callId ?? event.toolCallId,
+        args: formatToolValue(event.input),
+        result:
+          event.result.status === "success"
+            ? formatToolValue(event.result.output)
+            : event.result.error.message,
       };
-      if (event.structuredResult !== undefined) result.structuredResult = event.structuredResult;
+      if (event.result.status === "success" && event.result.content !== undefined) {
+        result.structuredResult = event.result.content;
+      }
       transcript.appendToolResult(result);
       return true;
     }
-    if (event.type === "agent_tool_event") {
-      transcript.appendAgentToolEvent(event);
+    if (event.type === "interaction") {
+      const requestedAt = new Date().toISOString();
+      if (event.interaction.type === "tool-approval") {
+        const approval = {
+          id: event.interaction.id,
+          toolName: event.interaction.toolName,
+          callId: event.interaction.callId ?? event.interaction.toolCallId,
+          status: "pending",
+          requestedAt,
+        } as const;
+        if (event.interaction.reason !== undefined) {
+          Object.assign(approval, { reason: event.interaction.reason });
+        }
+        transcript.updateToolApproval(approval);
+      } else {
+        transcript.updateToolQuestion({
+          id: event.interaction.id,
+          toolName: event.interaction.toolName,
+          callId: event.interaction.callId ?? event.interaction.toolCallId,
+          status: "pending",
+          requestedAt,
+          questions: event.interaction.questions.map((question) => ({
+            id: question.id,
+            question: question.text,
+            choices: [...(question.choices ?? [])],
+            allowCustom: question.choices === undefined || question.allowCustom === true,
+          })),
+        });
+      }
       return true;
     }
-    if (event.type === "tool_approval_request") {
-      transcript.updateToolApproval(event.approval);
+    if (event.type === "data" && event.name === "studio.session_log") {
+      sessions.appendSessionLogEntry(event.data as unknown as StudioSessionLogEntry);
       return true;
     }
-    if (event.type === "tool_approval_result") {
-      transcript.updateToolApproval(event.approval);
-      return true;
-    }
-    if (event.type === "tool_question_request") {
-      transcript.updateToolQuestion(event.question);
-      return true;
-    }
-    if (event.type === "tool_question_result") {
-      transcript.updateToolQuestion(event.question);
-      return true;
-    }
-    if (event.type === "session_log") {
-      sessions.appendSessionLogEntry(event.log);
-      return true;
-    }
-    if (event.type === "final") {
+    if (event.type === "run_end") {
+      if (event.status === "suspended") {
+        playgroundWaitingRef.current = true;
+        onRunStateChange("idle");
+        onStatus("Waiting for input");
+        return true;
+      }
       playgroundRunTerminalRef.current = true;
       if (event.trace?.traceId !== undefined) {
         transcript.assignAssistantTraceId(event.trace.traceId);
@@ -400,9 +445,9 @@ export function usePlaygroundRun(props: {
   }
 
   return {
-    answeringQuestions: new Set(playgroundChat.answeringQuestions),
-    decidingApprovals: new Set(playgroundChat.decidingApprovals),
-    isStreaming: playgroundChat.status === "streaming",
+    answeringQuestions: new Set(playgroundChat.respondingInteractions),
+    decidingApprovals: new Set(playgroundChat.respondingInteractions),
+    isStreaming: playgroundChat.status === "submitted" || playgroundChat.status === "streaming",
     answerToolQuestion,
     decideToolApproval,
     runPrompt,
@@ -412,70 +457,16 @@ export function usePlaygroundRun(props: {
 
 function runRequestFromContext(
   context: PlaygroundRunRequestContext,
-  message: StudioAgentRunRequest["message"],
+  message: Message,
 ): StudioAgentRunRequest {
   const request: StudioAgentRunRequest = {
     agentId: context.agentId,
-    message,
-    stream: context.stream,
-    metadata: context.metadata,
+    type: "messages",
+    messages: context.sessionId === undefined ? [...(context.history ?? []), message] : [message],
   };
+  if (context.stream !== undefined) request.stream = context.stream;
+  if (context.metadata !== undefined) request.metadata = context.metadata;
   if (context.sessionId !== undefined) request.sessionId = context.sessionId;
-  if (context.history !== undefined) request.history = context.history;
   if (context.model !== undefined) request.model = context.model;
   return request;
-}
-
-function updateTranscriptApproval(
-  transcript: PlaygroundTranscriptController,
-  approval: ToolApproval,
-) {
-  const update = transcriptApprovalUpdate(approval);
-  if (update !== undefined) {
-    transcript.updateToolApproval(update);
-  }
-}
-
-function updateTranscriptQuestion(
-  transcript: PlaygroundTranscriptController,
-  question: ToolQuestion,
-) {
-  const update = transcriptQuestionUpdate(question);
-  if (update !== undefined) {
-    transcript.updateToolQuestion(update);
-  }
-}
-
-function transcriptApprovalUpdate(approval: ToolApproval): ToolApprovalUpdate | undefined {
-  if (approval.requestedAt === undefined) {
-    return undefined;
-  }
-  const update: ToolApprovalUpdate = {
-    id: approval.id,
-    toolName: approval.toolName,
-    status: approval.status,
-    requestedAt: approval.requestedAt,
-  };
-  if (approval.callId !== undefined) update.callId = approval.callId;
-  if (approval.resolvedAt !== undefined) update.resolvedAt = approval.resolvedAt;
-  if (approval.reason !== undefined) update.reason = approval.reason;
-  return update;
-}
-
-function transcriptQuestionUpdate(question: ToolQuestion): ToolQuestionUpdate | undefined {
-  if (question.requestedAt === undefined) {
-    return undefined;
-  }
-  const update: ToolQuestionUpdate = {
-    id: question.id,
-    toolName: question.toolName,
-    status: question.status,
-    requestedAt: question.requestedAt,
-    questions: question.questions,
-  };
-  if (question.callId !== undefined) update.callId = question.callId;
-  if (question.answeredAt !== undefined) update.answeredAt = question.answeredAt;
-  if (question.cancelledAt !== undefined) update.cancelledAt = question.cancelledAt;
-  if (question.answers !== undefined) update.answers = question.answers;
-  return update;
 }

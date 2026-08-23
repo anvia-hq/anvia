@@ -1,8 +1,6 @@
 # @anvia/chroma
 
-ChromaDB vector store adapter for Anvia.
-
-Use this package when you want to store Anvia embedded documents in ChromaDB and query them through Anvia's vector search interfaces.
+ChromaDB vector client and store adapter for Anvia.
 
 ## Installation
 
@@ -10,86 +8,49 @@ Use this package when you want to store Anvia embedded documents in ChromaDB and
 pnpm add @anvia/chroma @anvia/core chromadb
 ```
 
-In this monorepo, the package is available through the workspace:
-
-```sh
-pnpm --filter @anvia/chroma build
-```
-
 ## Usage
 
 ```ts
 import { embedDocuments } from "@anvia/core/embeddings";
+import { retrieveDocuments } from "@anvia/core/vector-store";
 import { OpenAIClient } from "@anvia/openai";
-import { ChromaVectorStore } from "@anvia/chroma";
+import { ChromaVectorClient } from "@anvia/chroma";
 
-const openai = new OpenAIClient({
-  apiKey,
-});
-
-const embeddings = openai.embeddingModel("text-embedding-3-small");
-
-const documents = await embedDocuments(
-  embeddings,
-  [
-    {
-      id: "password-reset",
-      title: "Password reset policy",
-      body: "Password reset links expire after 30 minutes.",
-      product: "support",
-    },
-    {
-      id: "priority-support",
-      title: "Priority support",
-      body: "Enterprise customers receive priority support.",
-      product: "support",
-    },
-  ],
-  {
-    id: (document) => document.id,
-    content: (document) => `${document.title}\n${document.body}`,
-    metadata: (document) => ({
-      product: document.product,
-      title: document.title,
-    }),
-  },
-);
-
-const store = await ChromaVectorStore.connect({
+const openai = new OpenAIClient({ apiKey: process.env.OPENAI_API_KEY! });
+const embeddings = openai.embeddingModel({ modelId: "text-embedding-3-small" });
+const chroma = new ChromaVectorClient({ path: "http://localhost:8000" });
+const store = chroma.vectorStore<{ id: string; text: string }>({
   collectionName: "support_docs",
+  dimensions: 1536,
+  metric: "cosine",
 });
 
-await store.upsertDocuments(documents);
+await store.ensure();
 
-const index = store.index(embeddings);
-const results = await index.search({
-  query: "How long does a password reset link last?",
+const { documents } = await embedDocuments({
+  model: embeddings,
+  documents: [{ id: "password-reset", text: "Reset links expire after 30 minutes." }],
+  id: (document) => document.id,
+  content: (document) => document.text,
+});
+await store.upsert({ documents });
+
+const results = await retrieveDocuments({
+  store,
+  model: embeddings,
+  query: "How long does a reset link last?",
   topK: 3,
 });
 
-console.log(results);
+await chroma.close();
 ```
 
-## ChromaDB
+Constructing a client or store performs no I/O. `ensure()` creates or validates the collection;
+`validate()` only validates an existing collection. Search accepts raw vectors, while
+`retrieveDocuments()` explicitly composes a store with an embedding model.
 
-By default, `ChromaVectorStore.connect` creates a `ChromaClient` from the `chromadb` package. You can also pass a custom client:
-
-```ts
-const store = await ChromaVectorStore.connect({
-  client,
-  collectionName: "support_docs",
-  createIfMissing: true,
-});
-```
-
-`connect(...)` is async by design. It verifies or creates the Chroma collection before returning a store, so configuration and connection errors fail early instead of surfacing later from `upsertDocuments(...)` or `search(...)`. Constructors stay synchronous and side-effect free.
-
-## Exports
-
-- `ChromaVectorStore`
-- `ChromaVectorIndex`
-- `filterToChromaWhere`
-- `ChromaVectorStoreConnectOptions`
+Pass `client` to `ChromaVectorClient` to inject a native client. Injected clients remain
+caller-owned and are not closed by `close()`.
 
 ## Development
 

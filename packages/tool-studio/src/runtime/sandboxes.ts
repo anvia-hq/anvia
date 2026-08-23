@@ -5,46 +5,31 @@ import type {
   StudioErrorCode,
   StudioSandboxFileEntry,
   StudioSandboxFileType,
+  StudioSandboxInspector,
   StudioSandboxProcess,
   StudioSandboxProcessLogsResponse,
   StudioSandboxProcessStatus,
+  StudioSandboxRegistration,
   StudioSandboxSummary,
+  StudioSandboxViewRegistration,
 } from "../types";
 import { serializeError } from "./errors";
 import { errorResponse } from "./http";
-import { agentToolItems } from "./tool-metadata";
 
-const sandboxToolMetadataKey = Symbol.for("anvia.sandbox.tool.metadata");
 const maxFileResponseBytes = 10 * 1024 * 1024;
 const defaultProcessLogBytes = 64 * 1024;
 const maxProcessLogBytes = 1024 * 1024;
 
-type SandboxSessionLike = {
-  readonly id: string;
-  readonly provider: string;
-  readonly workdir: string;
-  readonly publishedPorts?: unknown;
-  listFiles(path?: string): Promise<unknown>;
-  readFile(path: string): Promise<unknown>;
-  listProcesses?: () => Promise<unknown>;
-  readProcessLogs?: (processId: string, options?: { tailBytes?: number }) => Promise<unknown>;
-};
-
-type SandboxRegistryEntry = {
-  session: SandboxSessionLike;
+export type StudioSandboxRegistryEntry = {
+  inspector: StudioSandboxInspector;
   summary: StudioSandboxSummary;
-};
-
-type SandboxRegistryDraft = {
-  session: SandboxSessionLike;
-  agentIds: Set<string>;
-  toolNames: Set<string>;
+  views: ReadonlyMap<string, StudioSandboxViewRegistration>;
 };
 
 export class StudioSandboxRegistry {
-  private readonly entries: Map<string, SandboxRegistryEntry>;
+  private readonly entries: Map<string, StudioSandboxRegistryEntry>;
 
-  constructor(entries: SandboxRegistryEntry[]) {
+  constructor(entries: StudioSandboxRegistryEntry[]) {
     this.entries = new Map(entries.map((entry) => [entry.summary.ref, entry]));
   }
 
@@ -56,62 +41,51 @@ export class StudioSandboxRegistry {
     return [...this.entries.values()].map((entry) => copySummary(entry.summary));
   }
 
-  get(ref: string): SandboxRegistryEntry | undefined {
+  get(ref: string): StudioSandboxRegistryEntry | undefined {
     return this.entries.get(ref);
   }
 }
 
-export function createStudioSandboxRegistry(agents: StudioAgent[]): StudioSandboxRegistry {
-  const drafts = new Map<SandboxSessionLike, SandboxRegistryDraft>();
-
-  for (const agent of agents) {
-    for (const { tool } of agentToolItems(agent)) {
-      const session = sandboxSessionFromTool(tool);
-      if (session === undefined) {
-        continue;
-      }
-
-      const draft = drafts.get(session) ?? {
-        session,
-        agentIds: new Set<string>(),
-        toolNames: new Set<string>(),
-      };
-      draft.agentIds.add(agent.id);
-      draft.toolNames.add(tool.name);
-      drafts.set(session, draft);
+export function createStudioSandboxRegistry(
+  agents: StudioAgent[],
+  registrations: readonly StudioSandboxRegistration[],
+): StudioSandboxRegistry {
+  const agentIds = new Set(agents.map((agent) => agent.id));
+  const refs = new Set<string>();
+  const entries = registrations.map((registration, index): StudioSandboxRegistryEntry => {
+    validateRegistration(registration, index, agentIds);
+    const inspector = registration.inspector;
+    const ref = sandboxRef(inspector.provider, inspector.id);
+    if (refs.has(ref)) {
+      throw new TypeError(
+        `sandboxes contains a duplicate provider/id registration: ${inspector.provider}/${inspector.id}`,
+      );
     }
-  }
-
-  const refCounts = new Map<string, number>();
-  const entries = [...drafts.values()]
-    .sort((left, right) =>
-      `${left.session.provider}\0${left.session.id}`.localeCompare(
-        `${right.session.provider}\0${right.session.id}`,
-      ),
-    )
-    .map((draft): SandboxRegistryEntry => {
-      const baseRef = sandboxRef(draft.session.provider, draft.session.id);
-      const occurrence = (refCounts.get(baseRef) ?? 0) + 1;
-      refCounts.set(baseRef, occurrence);
-      const ref = occurrence === 1 ? baseRef : `${baseRef}.${occurrence}`;
-      return {
-        session: draft.session,
-        summary: {
-          ref,
-          id: draft.session.id,
-          provider: draft.session.provider,
-          workdir: draft.session.workdir,
-          agentIds: [...draft.agentIds].sort(),
-          toolNames: [...draft.toolNames].sort(),
-          capabilities: {
-            files: true,
-            ports: supportsPorts(draft.session),
-            processes: supportsProcesses(draft.session),
-          },
+    refs.add(ref);
+    const views = new Map((registration.views ?? []).map((view) => [view.id, view]));
+    return {
+      inspector,
+      views,
+      summary: {
+        ref,
+        id: inspector.id,
+        provider: inspector.provider,
+        workdir: inspector.workdir,
+        agentIds: sortedUnique(registration.agentIds ?? []),
+        toolNames: sortedUnique(registration.toolNames ?? []),
+        views: [...views.values()]
+          .map((view) => ({ id: view.id, label: view.label, protocol: view.source.protocol }))
+          .sort((left, right) => left.id.localeCompare(right.id)),
+        capabilities: {
+          files: supportsFiles(inspector),
+          ports: supportsPorts(inspector),
+          processes: supportsProcesses(inspector),
+          views: views.size > 0,
         },
-      };
-    });
-
+      },
+    };
+  });
+  entries.sort((left, right) => left.summary.ref.localeCompare(right.summary.ref));
   return new StudioSandboxRegistry(entries);
 }
 
@@ -123,26 +97,22 @@ export function registerSandboxRoutes(app: Hono, registry: StudioSandboxRegistry
 
   app.get("/sandboxes/:sandboxRef", (c) => {
     const entry = registry.get(c.req.param("sandboxRef"));
-    if (entry === undefined) {
-      return errorResponse(c, 404, "not_found", "Sandbox not found");
-    }
-    return c.json(copySummary(entry.summary));
+    return entry === undefined
+      ? errorResponse(c, 404, "not_found", "Sandbox not found")
+      : c.json(copySummary(entry.summary));
   });
 
   app.get("/sandboxes/:sandboxRef/files", async (c) => {
     const entry = registry.get(c.req.param("sandboxRef"));
-    if (entry === undefined) {
-      return errorResponse(c, 404, "not_found", "Sandbox not found");
-    }
-
+    if (entry === undefined) return errorResponse(c, 404, "not_found", "Sandbox not found");
+    if (!supportsFiles(entry.inspector)) return unsupportedSandboxOperation(c, "files");
     try {
       const requestedPath = c.req.query("path") ?? ".";
       const normalizedPath = normalizeSandboxPath(requestedPath, true);
-      const entries = await listSandboxFiles(entry.session, normalizedPath);
       return c.json({
         sandboxRef: entry.summary.ref,
         path: normalizedPath,
-        entries,
+        entries: await listSandboxFiles(entry.inspector, normalizedPath, c.req.raw.signal),
       });
     } catch (error) {
       return sandboxErrorResponse(c, error);
@@ -151,10 +121,8 @@ export function registerSandboxRoutes(app: Hono, registry: StudioSandboxRegistry
 
   app.get("/sandboxes/:sandboxRef/files/content", async (c) => {
     const entry = registry.get(c.req.param("sandboxRef"));
-    if (entry === undefined) {
-      return errorResponse(c, 404, "not_found", "Sandbox not found");
-    }
-
+    if (entry === undefined) return errorResponse(c, 404, "not_found", "Sandbox not found");
+    if (!supportsFiles(entry.inspector)) return unsupportedSandboxOperation(c, "files.content");
     try {
       const requestedPath = c.req.query("path");
       if (requestedPath === undefined) {
@@ -164,10 +132,12 @@ export function registerSandboxRoutes(app: Hono, registry: StudioSandboxRegistry
       if (download !== undefined && download !== "1") {
         throw new SandboxRouteError(400, "bad_request", "download must be 1 when provided");
       }
-
       const normalizedPath = normalizeSandboxPath(requestedPath, false);
-      const parentPath = path.posix.dirname(normalizedPath);
-      const siblings = await listSandboxFiles(entry.session, parentPath);
+      const siblings = await listSandboxFiles(
+        entry.inspector,
+        path.posix.dirname(normalizedPath),
+        c.req.raw.signal,
+      );
       const file = siblings.find((candidate) => candidate.path === normalizedPath);
       if (file === undefined) {
         throw new SandboxRouteError(404, "not_found", "Sandbox file not found");
@@ -179,27 +149,24 @@ export function registerSandboxRoutes(app: Hono, registry: StudioSandboxRegistry
           "Sandbox content path must refer to a regular file",
         );
       }
-      if (file.size !== undefined && file.size > maxFileResponseBytes) {
+      if (file.size !== undefined && file.size > maxFileResponseBytes)
         throw fileTooLarge(file.size);
-      }
-
-      const rawBytes = await entry.session.readFile(normalizedPath);
+      const rawBytes = await entry.inspector.readFile({
+        path: normalizedPath,
+        abortSignal: c.req.raw.signal,
+      });
       if (!(rawBytes instanceof Uint8Array)) {
         throw new TypeError("Sandbox readFile returned an invalid byte payload");
       }
-      if (rawBytes.byteLength > maxFileResponseBytes) {
-        throw fileTooLarge(rawBytes.byteLength);
-      }
-
-      const bytes = new Uint8Array(rawBytes.byteLength);
-      bytes.set(rawBytes);
+      if (rawBytes.byteLength > maxFileResponseBytes) throw fileTooLarge(rawBytes.byteLength);
+      const bytes = rawBytes.slice();
       const disposition = download === "1" ? "attachment" : "inline";
       const filename = encodeURIComponent(path.posix.basename(normalizedPath));
       return new Response(bytes, {
         headers: {
           "cache-control": "no-store",
           "content-disposition": `${disposition}; filename*=UTF-8''${filename}`,
-          "content-length": String(bytes.byteLength),
+          "content-length": `${bytes.byteLength}`,
           "content-type": "application/octet-stream",
           "x-content-type-options": "nosniff",
         },
@@ -211,17 +178,12 @@ export function registerSandboxRoutes(app: Hono, registry: StudioSandboxRegistry
 
   app.get("/sandboxes/:sandboxRef/ports", (c) => {
     const entry = registry.get(c.req.param("sandboxRef"));
-    if (entry === undefined) {
-      return errorResponse(c, 404, "not_found", "Sandbox not found");
-    }
-    if (!supportsPorts(entry.session)) {
-      return unsupportedSandboxOperation(c, "ports");
-    }
-
+    if (entry === undefined) return errorResponse(c, 404, "not_found", "Sandbox not found");
+    if (!supportsPorts(entry.inspector)) return unsupportedSandboxOperation(c, "ports");
     try {
       return c.json({
         sandboxRef: entry.summary.ref,
-        ports: normalizePorts(entry.session.publishedPorts),
+        ports: normalizePorts(entry.inspector.publishedPorts),
       });
     } catch (error) {
       return sandboxErrorResponse(c, error);
@@ -230,17 +192,16 @@ export function registerSandboxRoutes(app: Hono, registry: StudioSandboxRegistry
 
   app.get("/sandboxes/:sandboxRef/processes", async (c) => {
     const entry = registry.get(c.req.param("sandboxRef"));
-    if (entry === undefined) {
-      return errorResponse(c, 404, "not_found", "Sandbox not found");
-    }
-    if (!supportsProcesses(entry.session)) {
+    if (entry === undefined) return errorResponse(c, 404, "not_found", "Sandbox not found");
+    if (!supportsProcesses(entry.inspector)) {
       return unsupportedSandboxOperation(c, "processes");
     }
-
     try {
       return c.json({
         sandboxRef: entry.summary.ref,
-        processes: normalizeProcesses(await entry.session.listProcesses()),
+        processes: normalizeProcesses(
+          await entry.inspector.listProcesses({ abortSignal: c.req.raw.signal }),
+        ),
       });
     } catch (error) {
       return sandboxErrorResponse(c, error);
@@ -249,22 +210,25 @@ export function registerSandboxRoutes(app: Hono, registry: StudioSandboxRegistry
 
   app.get("/sandboxes/:sandboxRef/processes/:processId/logs", async (c) => {
     const entry = registry.get(c.req.param("sandboxRef"));
-    if (entry === undefined) {
-      return errorResponse(c, 404, "not_found", "Sandbox not found");
-    }
-    if (!supportsProcesses(entry.session)) {
+    if (entry === undefined) return errorResponse(c, 404, "not_found", "Sandbox not found");
+    if (!supportsProcesses(entry.inspector)) {
       return unsupportedSandboxOperation(c, "processes.logs");
     }
-
     try {
       const tailBytes = parseTailBytes(c.req.query("tailBytes"));
       const processId = c.req.param("processId");
-      const processes = normalizeProcesses(await entry.session.listProcesses());
+      const processes = normalizeProcesses(
+        await entry.inspector.listProcesses({ abortSignal: c.req.raw.signal }),
+      );
       if (!processes.some((process) => process.id === processId)) {
         throw new SandboxRouteError(404, "not_found", "Sandbox process not found");
       }
       const logs = normalizeProcessLogs(
-        await entry.session.readProcessLogs(processId, { tailBytes }),
+        await entry.inspector.readProcessLogs({
+          processId,
+          tailBytes,
+          abortSignal: c.req.raw.signal,
+        }),
         tailBytes,
       );
       return c.json({
@@ -283,15 +247,104 @@ async function sandboxNoStore(c: Context, next: Next): Promise<void> {
   await next();
 }
 
-function sandboxSessionFromTool(tool: object): SandboxSessionLike | undefined {
-  const metadata = (tool as { [sandboxToolMetadataKey]?: unknown })[sandboxToolMetadataKey];
-  if (!isRecord(metadata)) {
-    return undefined;
+function validateRegistration(
+  registration: StudioSandboxRegistration,
+  index: number,
+  knownAgentIds: Set<string>,
+): void {
+  if (!isRecord(registration) || !isInspector(registration.inspector)) {
+    throw new TypeError(`sandboxes[${index}] must contain a valid inspector.`);
   }
-  return isSandboxSession(metadata.session) ? metadata.session : undefined;
+  const inspector = registration.inspector;
+  const files = supportsFiles(inspector);
+  if ((inspector.listFiles === undefined) !== (inspector.readFile === undefined)) {
+    throw new TypeError(`sandboxes[${index}] must register both file inspector methods.`);
+  }
+  const processes = supportsProcesses(inspector);
+  if ((inspector.listProcesses === undefined) !== (inspector.readProcessLogs === undefined)) {
+    throw new TypeError(`sandboxes[${index}] must register both process inspector methods.`);
+  }
+  if (!files && !supportsPorts(inspector) && !processes) {
+    throw new TypeError(`sandboxes[${index}] inspector exposes no capabilities.`);
+  }
+  for (const agentId of sortedUnique(registration.agentIds ?? [])) {
+    if (!knownAgentIds.has(agentId)) {
+      throw new TypeError(`sandboxes[${index}] references an unknown agent: ${agentId}`);
+    }
+  }
+  sortedUnique(registration.toolNames ?? []);
+  validateViews(registration.views, inspector, index);
 }
 
-function isSandboxSession(value: unknown): value is SandboxSessionLike {
+function validateViews(
+  views: readonly StudioSandboxViewRegistration[] | undefined,
+  inspector: StudioSandboxInspector,
+  registrationIndex: number,
+): void {
+  if (views === undefined) return;
+  if (!Array.isArray(views))
+    throw new TypeError(`sandboxes[${registrationIndex}].views must be an array.`);
+  if (!supportsPorts(inspector)) {
+    throw new TypeError(`sandboxes[${registrationIndex}] views require published port inspection.`);
+  }
+  const ids = new Set<string>();
+  for (const [viewIndex, view] of views.entries()) {
+    const prefix = `sandboxes[${registrationIndex}].views[${viewIndex}]`;
+    const candidate: unknown = view;
+    if (
+      !isRecord(candidate) ||
+      typeof candidate.id !== "string" ||
+      !/^[a-z0-9](?:[a-z0-9_-]{0,62})$/.test(candidate.id)
+    ) {
+      throw new TypeError(`${prefix}.id must be a stable lowercase identifier.`);
+    }
+    if (ids.has(candidate.id)) throw new TypeError(`${prefix}.id is duplicated: ${candidate.id}`);
+    ids.add(candidate.id);
+    if (typeof candidate.label !== "string" || candidate.label.length === 0) {
+      throw new TypeError(`${prefix}.label must be a non-empty string.`);
+    }
+    const source = candidate.source;
+    if (
+      !isRecord(source) ||
+      source.protocol !== "novnc" ||
+      !isPort(source.containerPort) ||
+      !isRecord(source.control) ||
+      typeof source.control.snapshot !== "function" ||
+      typeof source.control.acquireHumanControl !== "function"
+    ) {
+      throw new TypeError(`${prefix}.source must be a valid noVNC view source.`);
+    }
+    const port = inspector.publishedPorts?.find(
+      (candidate) =>
+        candidate.containerPort === source.containerPort && candidate.protocol === "tcp",
+    );
+    if (port === undefined || !isLoopbackHost(port.host)) {
+      throw new TypeError(`${prefix}.source must resolve to a loopback-published TCP port.`);
+    }
+    const access = candidate.access;
+    if (!isRecord(access) || (access.mode !== "local" && access.mode !== "authorize")) {
+      throw new TypeError(`${prefix}.access must explicitly select local or authorize mode.`);
+    }
+    if (access.mode === "authorize" && typeof access.authorize !== "function") {
+      throw new TypeError(`${prefix}.access.authorize must be a function.`);
+    }
+    const authentication = candidate.authentication;
+    if (
+      !isRecord(authentication) ||
+      (authentication.type !== "none" && authentication.type !== "password")
+    ) {
+      throw new TypeError(`${prefix}.authentication must explicitly select none or password.`);
+    }
+    if (
+      authentication.type === "password" &&
+      (typeof authentication.password !== "string" || authentication.password.length === 0)
+    ) {
+      throw new TypeError(`${prefix}.authentication.password must be a non-empty string.`);
+    }
+  }
+}
+
+function isInspector(value: unknown): value is StudioSandboxInspector {
   return (
     isRecord(value) &&
     typeof value.id === "string" &&
@@ -299,22 +352,27 @@ function isSandboxSession(value: unknown): value is SandboxSessionLike {
     typeof value.provider === "string" &&
     value.provider.length > 0 &&
     typeof value.workdir === "string" &&
-    value.workdir.length > 0 &&
-    typeof value.listFiles === "function" &&
-    typeof value.readFile === "function"
+    value.workdir.length > 0
   );
 }
 
-function supportsPorts(session: SandboxSessionLike): boolean {
-  return Array.isArray(session.publishedPorts);
+function supportsFiles(
+  inspector: StudioSandboxInspector,
+): inspector is StudioSandboxInspector &
+  Required<Pick<StudioSandboxInspector, "listFiles" | "readFile">> {
+  return typeof inspector.listFiles === "function" && typeof inspector.readFile === "function";
+}
+
+function supportsPorts(inspector: StudioSandboxInspector): boolean {
+  return Array.isArray(inspector.publishedPorts);
 }
 
 function supportsProcesses(
-  session: SandboxSessionLike,
-): session is SandboxSessionLike &
-  Required<Pick<SandboxSessionLike, "listProcesses" | "readProcessLogs">> {
+  inspector: StudioSandboxInspector,
+): inspector is StudioSandboxInspector &
+  Required<Pick<StudioSandboxInspector, "listProcesses" | "readProcessLogs">> {
   return (
-    typeof session.listProcesses === "function" && typeof session.readProcessLogs === "function"
+    typeof inspector.listProcesses === "function" && typeof inspector.readProcessLogs === "function"
   );
 }
 
@@ -327,25 +385,32 @@ function copySummary(summary: StudioSandboxSummary): StudioSandboxSummary {
     ...summary,
     agentIds: [...summary.agentIds],
     toolNames: [...summary.toolNames],
+    views: summary.views.map((view) => ({ ...view })),
     capabilities: { ...summary.capabilities },
   };
 }
 
+function isLoopbackHost(host: string): boolean {
+  return host === "127.0.0.1" || host === "::1" || host === "localhost";
+}
+
 async function listSandboxFiles(
-  session: SandboxSessionLike,
+  inspector: StudioSandboxInspector &
+    Required<Pick<StudioSandboxInspector, "listFiles" | "readFile">>,
   filePath: string,
+  abortSignal: AbortSignal,
 ): Promise<StudioSandboxFileEntry[]> {
-  return normalizeFileEntries(await session.listFiles(filePath)).sort((left, right) => {
-    if (left.type === "directory" && right.type !== "directory") return -1;
-    if (left.type !== "directory" && right.type === "directory") return 1;
-    return left.path.localeCompare(right.path);
-  });
+  return normalizeFileEntries(await inspector.listFiles({ path: filePath, abortSignal })).sort(
+    (left, right) => {
+      if (left.type === "directory" && right.type !== "directory") return -1;
+      if (left.type !== "directory" && right.type === "directory") return 1;
+      return left.path.localeCompare(right.path);
+    },
+  );
 }
 
 function normalizeFileEntries(value: unknown): StudioSandboxFileEntry[] {
-  if (!Array.isArray(value)) {
-    throw new TypeError("Sandbox listFiles returned an invalid payload");
-  }
+  if (!Array.isArray(value)) throw new TypeError("Sandbox listFiles returned an invalid payload");
   return value.map((item) => {
     if (!isRecord(item) || typeof item.path !== "string" || !isFileType(item.type)) {
       throw new TypeError("Sandbox listFiles returned an invalid entry");
@@ -358,19 +423,18 @@ function normalizeFileEntries(value: unknown): StudioSandboxFileEntry[] {
     }
     const entry: StudioSandboxFileEntry = { path: entryPath, type: item.type };
     if (item.size !== undefined) {
-      if (typeof item.size !== "number" || !Number.isFinite(item.size) || item.size < 0) {
+      if (!Number.isSafeInteger(item.size) || Number(item.size) < 0) {
         throw new TypeError("Sandbox listFiles returned an invalid file size");
       }
-      entry.size = item.size;
+      entry.size = item.size as number;
     }
     return entry;
   });
 }
 
 function normalizePorts(value: unknown) {
-  if (!Array.isArray(value)) {
+  if (!Array.isArray(value))
     throw new TypeError("Sandbox publishedPorts returned an invalid payload");
-  }
   return value.map((item) => {
     if (
       !isRecord(item) ||
@@ -391,9 +455,8 @@ function normalizePorts(value: unknown) {
 }
 
 function normalizeProcesses(value: unknown): StudioSandboxProcess[] {
-  if (!Array.isArray(value)) {
+  if (!Array.isArray(value))
     throw new TypeError("Sandbox listProcesses returned an invalid payload");
-  }
   return value.map((item) => {
     if (
       !isRecord(item) ||
@@ -409,7 +472,7 @@ function normalizeProcesses(value: unknown): StudioSandboxProcess[] {
     const process: StudioSandboxProcess = {
       id: item.id,
       command: item.command,
-      args: item.args,
+      args: [...item.args],
       status: item.status,
       startedAt: item.startedAt,
     };
@@ -426,15 +489,15 @@ function normalizeProcessLogs(
 ): Omit<StudioSandboxProcessLogsResponse, "sandboxRef" | "processId"> {
   if (
     !isRecord(value) ||
-    typeof value.stdout !== "string" ||
-    typeof value.stderr !== "string" ||
+    !(value.stdout instanceof Uint8Array) ||
+    !(value.stderr instanceof Uint8Array) ||
     typeof value.stdoutTruncated !== "boolean" ||
     typeof value.stderrTruncated !== "boolean"
   ) {
     throw new TypeError("Sandbox readProcessLogs returned an invalid payload");
   }
-  const stdout = boundedLogText(value.stdout, maxBytes);
-  const stderr = boundedLogText(value.stderr, maxBytes);
+  const stdout = boundedLogBytes(value.stdout, maxBytes);
+  const stderr = boundedLogBytes(value.stderr, maxBytes);
   return {
     stdout: stdout.text,
     stderr: stderr.text,
@@ -443,22 +506,16 @@ function normalizeProcessLogs(
   };
 }
 
-function boundedLogText(value: string, maxBytes: number): { text: string; truncated: boolean } {
-  const bytes = new TextEncoder().encode(value);
-  if (bytes.byteLength <= maxBytes) {
-    return { text: value, truncated: false };
-  }
-  if (maxBytes === 0) {
-    return { text: "", truncated: true };
-  }
-
-  let start = bytes.byteLength - maxBytes;
-  while (start < bytes.byteLength && (bytes[start] ?? 0) >> 6 === 2) {
-    start += 1;
-  }
+function boundedLogBytes(
+  value: Uint8Array,
+  maxBytes: number,
+): { text: string; truncated: boolean } {
+  if (maxBytes === 0) return { text: "", truncated: value.byteLength > 0 };
+  let start = Math.max(0, value.byteLength - maxBytes);
+  while (start < value.byteLength && ((value[start] ?? 0) & 0xc0) === 0x80) start += 1;
   return {
-    text: new TextDecoder().decode(bytes.subarray(start)),
-    truncated: true,
+    text: new TextDecoder("utf-8", { fatal: true }).decode(value.subarray(start)),
+    truncated: start > 0,
   };
 }
 
@@ -483,9 +540,7 @@ function normalizeSandboxPath(input: string, allowRoot: boolean): string {
 }
 
 function parseTailBytes(value: string | undefined): number {
-  if (value === undefined) {
-    return defaultProcessLogBytes;
-  }
+  if (value === undefined) return defaultProcessLogBytes;
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < 0 || parsed > maxProcessLogBytes) {
     throw new SandboxRouteError(
@@ -508,15 +563,13 @@ function sandboxErrorResponse(c: Context, error: unknown): Response {
   if (error instanceof SandboxRouteError) {
     return errorResponse(c, error.status, error.code, error.message);
   }
-  const name = errorName(error);
-  if (name === "SandboxPathError") {
-    return errorResponse(c, 400, "bad_request", errorMessage(error));
-  }
-  if (name === "SandboxFileSizeError") {
+  const code = errorCode(error);
+  if (code === "invalid_path") return errorResponse(c, 400, "bad_request", errorMessage(error));
+  if (code === "file_too_large") {
     return errorResponse(c, 413, "payload_too_large", errorMessage(error));
   }
-  if (name === "SandboxSessionDestroyedError") {
-    return errorResponse(c, 409, "conflict", "Sandbox session is no longer available");
+  if (code === "invalid_state" || code === "sandbox_not_found") {
+    return errorResponse(c, 409, "conflict", "Sandbox is no longer available");
   }
   return errorResponse(
     c,
@@ -545,6 +598,19 @@ class SandboxRouteError extends Error {
   }
 }
 
+function sortedUnique(values: readonly string[]): string[] {
+  if (!Array.isArray(values)) throw new TypeError("Sandbox associations must be arrays.");
+  const result = new Set<string>();
+  for (const value of values as readonly unknown[]) {
+    if (typeof value !== "string" || value.length === 0) {
+      throw new TypeError("Sandbox associations must contain non-empty strings.");
+    }
+    if (result.has(value)) throw new TypeError(`Sandbox association is duplicated: ${value}`);
+    result.add(value);
+  }
+  return [...result].sort();
+}
+
 function isFileType(value: unknown): value is StudioSandboxFileType {
   return value === "file" || value === "directory" || value === "symlink" || value === "other";
 }
@@ -558,13 +624,13 @@ function isPort(value: unknown): value is number {
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function errorName(error: unknown): string {
-  return isRecord(error) && typeof error.name === "string" ? error.name : "";
+function errorCode(error: unknown): string | undefined {
+  return isRecord(error) && typeof error.code === "string" ? error.code : undefined;
 }
 
 function errorMessage(error: unknown): string {
-  return isRecord(error) && typeof error.message === "string" ? error.message : String(error);
+  return isRecord(error) && typeof error.message === "string" ? error.message : "Sandbox failed";
 }

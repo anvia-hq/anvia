@@ -1,10 +1,11 @@
-import type { JsonValue } from "../completion/types";
+import type { JsonObject } from "../completion/types";
+import type { ModelCallOptions } from "../model-call-options";
 
 export type ImageGenerationRequest = {
   prompt: string;
   width: number;
   height: number;
-  additionalParams?: JsonValue | undefined;
+  providerOptions?: JsonObject | undefined;
 };
 
 export type GeneratedImage = {
@@ -12,15 +13,16 @@ export type GeneratedImage = {
   mediaType?: string | undefined;
 };
 
-export type ImageGenerationResponse<RawResponse = unknown> = {
-  image: Uint8Array;
-  images: GeneratedImage[];
-  mediaType?: string | undefined;
+export type ImageGenerationResult<RawResponse = unknown> = {
+  images: readonly [GeneratedImage, ...GeneratedImage[]];
   rawResponse: RawResponse;
 };
 
-export interface ImageGenerationModel<RawResponse = unknown, ModelName extends string = string> {
-  readonly provider?: string | undefined;
-  readonly defaultModel?: ModelName | undefined;
-  imageGeneration(request: ImageGenerationRequest): Promise<ImageGenerationResponse<RawResponse>>;
+export interface ImageGenerationModel<RawResponse = unknown> {
+  readonly provider: string;
+  readonly modelId: string | undefined;
+  imageGeneration(
+    request: ImageGenerationRequest,
+    options?: ModelCallOptions,
+  ): Promise<ImageGenerationResult<RawResponse>>;
 }

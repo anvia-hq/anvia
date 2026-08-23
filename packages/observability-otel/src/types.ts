@@ -1,8 +1,7 @@
-import type { AgentObserver } from "@anvia/core/observability";
 import type { Tracer } from "@opentelemetry/api";
 import type { Logger } from "@opentelemetry/api-logs";
 
-export type OtelTracingOptions = {
+export type OtelObserverOptions = {
   tracer?: Tracer | undefined;
   tracerName?: string | undefined;
   tracerVersion?: string | undefined;
@@ -13,9 +12,8 @@ export type OtelTracingOptions = {
   transformOutput?: ((value: unknown) => unknown) | undefined;
 };
 
-export type OtelTracing = AgentObserver;
-
 export type OtelEvalReporterOptions = {
+  traceObserver?: string | undefined;
   logger?: Logger | undefined;
   loggerName?: string | undefined;
   loggerVersion?: string | undefined;

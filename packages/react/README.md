@@ -1,91 +1,102 @@
 # @anvia/react
 
-React hooks and client transports for Anvia applications.
+React controllers for the explicit `@anvia/client` stream protocol.
 
 ```tsx
+import { createHttpClientTransport, type UIMessage } from "@anvia/client";
 import { useChat } from "@anvia/react";
-import { useState } from "react";
+
+const transport = createHttpClientTransport({ endpoint: "/api/chat" });
 
 export function Chat() {
-  const chat = useChat({ endpoint: "/api/chat" });
-  const [input, setInput] = useState("");
+  const chat = useChat({ transport });
 
   return (
     <form
       onSubmit={(event) => {
         event.preventDefault();
-        void chat.sendMessage(input);
-        setInput("");
+        void chat.sendMessage({ text: "Hello" });
       }}
     >
-      <div>
-        {chat.messages.map((message) => (
-          <p key={message.id}>
-            {message.parts
-              .filter((part) => part.type === "text")
-              .map((part) => part.text)
-              .join("")}
-          </p>
-        ))}
-      </div>
-      <input value={input} onChange={(event) => setInput(event.target.value)} />
-      <button disabled={chat.status === "streaming"}>Send</button>
+      {chat.messages.map((message: UIMessage) => (
+        <div key={message.id}>
+          {message.parts
+            .filter((part) => part.type === "text")
+            .map((part) => part.text)
+            .join("")}
+        </div>
+      ))}
+      <button disabled={chat.status === "submitted" || chat.status === "streaming"}>Send</button>
     </form>
   );
 }
 ```
 
-## Exports
-
-- `readJsonlStream(stream)` parses newline-delimited JSON streams.
-- `readSseStream(stream)` parses Server-Sent Events with JSON `data:` payloads.
-- `fetchEventStream(url, options)` fetches JSONL or SSE streams as `AsyncIterable`.
-- `createFetchTransport(options)` creates an `EventTransport`; it defaults to POST JSON and omits implicit bodies for GET/HEAD.
-- `createChatTransport(options)` creates the default fetch-backed chat transport.
-- `useChat(options)` manages `UIMessage[]` chat state from any `EventTransport`, including optional human-input approval/question state and opt-in stream resume.
-- `useCompletion(options)` appends completion turns into `UIMessage[]` state and exposes derived `completion` text.
-- `useSmoothStreamText(content, lifecycle)` buffers and paces an append-only display string without changing stream events or message state.
-- `useSmoothStreamItems(items, { adapter, ...lifecycle })` applies the same pacing to mixed text/tool item lists while preserving semantic ordering.
-
-Both smoothing hooks require `{ isStreaming, resetKey }`. Keep the lifecycle mounted when the
-source stops so buffered text can drain; change `resetKey` when switching conversations or loading
-history. Use `flushImmediately` for terminal errors.
-
-Default hook requests use one shared wire shape:
+`useChat` and `useCompletion` require an explicit transport boundary:
 
 ```ts
-type UIStreamRequest = {
-  messages: Message[];
-  stream: true;
-  metadata?: JsonValue;
-  resume?: {
-    streamId: string;
-    after: number;
-  };
-};
+const transport = createHttpClientTransport({ endpoint: "/api/chat" });
+useChat({ transport });
+
+useChat({
+  transport: createDirectClientTransport({
+    handler: ({ request, abortSignal }) => handleChat({ request, abortSignal }),
+  }),
+});
 ```
 
-Hooks convert their local `UIMessage[]` state into core messages before sending. Custom
-`createRequest` callbacks receive `{ messages, uiMessages, coreMessages, resume? }`, where
-`messages` and `uiMessages` are UI-shaped for compatibility, `coreMessages` is the default wire
-payload, and `resume` is the optional continue-stream cursor (`ChatResumeCursor` /
-`UIStreamResume`) that must be forwarded on resumable routes.
+Import transports, protocol types, `UIMessage`, and conversion helpers from `@anvia/client`.
+`@anvia/react` deliberately does not re-export them.
+Import Agent interaction types directly from `@anvia/core/agent/interactions` when an application
+needs to name them.
 
-The shared boundary is:
+`useChat`:
+
+- consumes only framed `ClientStreamFrame` values;
+- exposes `ready | submitted | streaming | waiting | error` status;
+- keeps readonly `UIMessage[]` locally and sends core `Message[]` in `ClientStreamRequest`;
+- exposes canonical events through `onEvent` and the returned `events` array;
+- supports optional resumable streams and unified Agent interaction state.
+
+The default request is:
 
 ```ts
-type EventTransport<TRequest, TEvent> = {
-  send(request: TRequest, options?: TransportOptions): AsyncIterable<TEvent>;
-};
+type ClientStreamRequest =
+  | {
+      type: "messages";
+      messages: readonly Message[];
+      metadata?: JsonObject;
+      resume?: { streamId: string; after: number };
+    }
+  | {
+      type: "interaction_response";
+      interactionId: string;
+      response: AgentInteractionResponse;
+      metadata?: JsonObject;
+      resume?: { streamId: string; after: number };
+    };
 ```
 
-Default hooks can consume raw `createCompletionStream(...)` events, raw agent stream events, or
-`UIStreamEvent` records. A completion endpoint can return:
+When `chat.status === "waiting"`, render `chat.interactions.pending` and resume through the same
+transport boundary:
 
 ```ts
-createEventStream(createCompletionStream(model, { messages: body.messages }));
+await chat.respondToInteraction({
+  interactionId,
+  response: { type: "tool-approval", approved: true },
+});
 ```
 
-For chat streams that should survive navigation or reload, pair `useChat({ resume: { key } })` with
-an endpoint that returns `createEventStream(events, { resumable: { id, store } })` and continues with
-`createEventStream({ resume: { streamId, after, store } })` when the request body includes `resume`.
+The browser never receives an `AgentContinuation`; the server retains and atomically claims it by
+interaction ID.
+
+For resumable chat, pair `useChat({ transport, resume: { key } })` with
+`createClientStreamResponse({ events, resumable })` and `resumeClientStreamResponse(...)` on the
+server.
+
+`useCompletion({ transport })` is a genuine single-turn controller. Call
+`complete({ prompt })`, or manage `input` and call `submit()`. Each call replaces the previous
+completion, events, and usage; it never exposes or accumulates chat messages.
+
+`useSmoothStreamText` and `useSmoothStreamItems` only smooth presentation. They do not change
+protocol events or message state.

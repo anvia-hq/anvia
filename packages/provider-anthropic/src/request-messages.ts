@@ -1,6 +1,5 @@
 import {
   type CompletionRequest,
-  Message,
   type Message as MessageType,
   normalizeDocuments,
 } from "@anvia/core/completion";
@@ -15,7 +14,7 @@ export function orderedRequestMessages(
 ): MessageType[] {
   const messages: MessageType[] = [];
   if (options.includeInstructionsAsSystem === true && request.instructions !== undefined) {
-    messages.push(Message.system(request.instructions));
+    messages.push({ role: "system", content: request.instructions });
   }
   messages.push(...request.chatHistory.filter((message) => message.role === "system"));
   const documents = normalizeDocuments(request.documents);

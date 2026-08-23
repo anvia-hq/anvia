@@ -1,6 +1,5 @@
 import type { JsonValue } from "@anvia/core/completion";
 import type { EvalReporter } from "@anvia/core/evals";
-import type { AgentObserver } from "@anvia/core/observability";
 
 export type LensCaptureMode = "safe" | "full";
 
@@ -14,7 +13,7 @@ export type LensRedactionOptions = {
   replacement?: string | undefined;
 };
 
-export type LensTracingOptions = {
+export type LensClientOptions = {
   baseUrl?: string | undefined;
   publicKey?: string | undefined;
   secretKey?: string | undefined;
@@ -27,34 +26,20 @@ export type LensTracingOptions = {
   redactInputs?: boolean | undefined;
   redactOutputs?: boolean | undefined;
   redaction?: LensRedactionOptions | undefined;
+  optional?: boolean | undefined;
 };
 
+export type LensObserverOptions = Pick<
+  LensClientOptions,
+  "captureMode" | "captureMaxBytes" | "redactInputs" | "redactOutputs" | "redaction"
+>;
+
 export type LensEvalReporterOptions = {
+  traceObserver?: string | undefined;
   publishInvalid?: boolean | undefined;
   includeMetadata?: boolean | undefined;
   includePayloads?: boolean | undefined;
   onMissingTrace?: "emit" | "ignore" | "warn" | "throw" | undefined;
-  flushOnRunEnd?: boolean | undefined;
-};
-
-export type LensTracing = AgentObserver & {
-  readonly enabled: boolean;
-  flush(): Promise<void>;
-  shutdown(): Promise<void>;
-};
-
-export type LensFromEnvOptions = Omit<LensTracingOptions, "baseUrl" | "publicKey" | "secretKey"> & {
-  optional?: boolean | undefined;
-};
-
-export type LensEvalsOptions = LensFromEnvOptions & LensEvalReporterOptions;
-
-export type LensEvalIntegration<Input = unknown, Output = unknown, Expected = unknown> = {
-  readonly enabled: boolean;
-  observer: LensTracing;
-  reporter: LensEvalReporter<Input, Output, Expected>;
-  flush(): Promise<void>;
-  shutdown(): Promise<void>;
 };
 
 export type LensEvalReporter<Input = unknown, Output = unknown, Expected = unknown> = EvalReporter<
@@ -72,6 +57,7 @@ export type LensDatasetClientOptions = {
 };
 
 export type LensDatasetGetOptions = {
+  name: string;
   version?: string | undefined;
 };
 
@@ -94,7 +80,6 @@ export type LensDataset<Input = unknown, Expected = unknown> = {
 
 export type LensDatasetClient = {
   getDataset<Input = unknown, Expected = unknown>(
-    name: string,
-    options?: LensDatasetGetOptions,
+    options: LensDatasetGetOptions,
   ): Promise<LensDataset<Input, Expected>>;
 };

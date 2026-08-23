@@ -1,32 +1,31 @@
-import type { JsonObject, JsonValue, MemoryStore, Message } from "@anvia/core";
+import type { JsonObject, MemoryStore, Message } from "@anvia/core";
 import type {
-  MemoryAppendInput,
-  MemoryCompactionCommitInput,
-  MemoryCompactionCommitResult,
+  MemoryAppendOptions,
+  MemoryCompactionCapability,
+  MemoryCompactionReplacePrefixOptions,
+  MemoryCompactionReplacePrefixResult,
   MemoryCompactionSnapshot,
-  MemoryCompactionStore,
-  MemoryContext,
   MemoryConversation,
   MemoryConversationListOptions,
   MemoryConversationSummary,
-  MemoryErrorInput,
+  MemoryErrorOptions,
   MemoryInspector,
+  MemoryScope,
 } from "@anvia/core/memory";
+import { createMemoryScopeKey } from "@anvia/core/memory";
 import { parseMemoryMessage, serializeUnknownError } from "./message.js";
 import type {
   PrismaMemoryClientLike,
   PrismaMemoryConventionalDelegates,
   PrismaMemoryDelegates,
-  PrismaMemoryScopeOptions,
-  PrismaMemorySessionCreateData,
   PrismaMemoryStoreOptions,
   PrismaMemoryTransactionOptions,
 } from "./types.js";
 
-const defaultScopeOptions: { includeUserId: boolean; metadataKeys: string[] } = {
-  includeUserId: true,
-  metadataKeys: [],
-};
+type ResolvedPrismaMemoryStoreOptions = Required<
+  Pick<PrismaMemoryStoreOptions, "errorPolicy" | "validateMessages">
+> &
+  Pick<PrismaMemoryStoreOptions, "scopeKey" | "transaction">;
 
 type PrismaInspectionSessionRow = {
   id: string;
@@ -53,73 +52,60 @@ type PrismaCompactionMessageRow = {
   message: unknown;
 };
 
-export function createPrismaMemoryStore(
-  client: unknown,
-  options: PrismaMemoryStoreOptions = {},
-): PrismaMemoryStore {
-  return PrismaMemoryStore.fromClient(client, options);
-}
-
-export function createPrismaMemoryScopeKey(
-  context: MemoryContext,
-  options: PrismaMemoryScopeOptions = {},
-): string {
-  const includeUserId = options.includeUserId ?? defaultScopeOptions.includeUserId;
-  const metadataKeys = options.metadataKeys ?? defaultScopeOptions.metadataKeys;
-  const values: JsonValue[] = [context.sessionId];
-
-  if (includeUserId) {
-    values.push(context.userId ?? null);
-  }
-
-  for (const key of metadataKeys) {
-    values.push(metadataValue(context.metadata, key) ?? null);
-  }
-
-  return JSON.stringify(values);
-}
-
 export class PrismaMemoryStore implements MemoryStore {
   readonly kind = "prisma";
   readonly inspector: MemoryInspector | undefined;
-  readonly compaction: MemoryCompactionStore | undefined;
+  readonly compaction: MemoryCompactionCapability | undefined;
 
-  private constructor(
-    private readonly delegates: PrismaMemoryDelegates,
-    private readonly options: Required<
-      Pick<PrismaMemoryStoreOptions, "errors" | "validateMessages">
-    > &
-      Pick<PrismaMemoryStoreOptions, "scope" | "transaction">,
-  ) {
+  private readonly delegates: PrismaMemoryDelegates;
+  private readonly options: ResolvedPrismaMemoryStoreOptions;
+
+  constructor(options: PrismaMemoryStoreOptions) {
+    this.delegates =
+      options.delegates === undefined ? conventionalDelegates(options.client) : options.delegates;
+    this.options = resolveOptions(options);
+    const delegates = this.delegates;
     this.inspector = hasInspectionDelegates(delegates)
       ? {
           listConversations: (options) => this.listConversations(options),
-          getConversation: (ref) => this.getConversation(ref),
+          getConversation: ({ ref }) => this.getConversation(ref),
         }
       : undefined;
     this.compaction =
       typeof delegates.messages.deleteMany === "function"
         ? {
-            load: (context) => this.loadCompactionSnapshot(context),
-            commit: (input) => this.commitCompaction(input),
+            snapshot: ({ scope }) => this.loadCompactionSnapshot(scope),
+            replacePrefix: (options) => this.replaceCompactionPrefix(options),
           }
         : undefined;
   }
 
-  static fromClient(client: unknown, options: PrismaMemoryStoreOptions = {}): PrismaMemoryStore {
-    return new PrismaMemoryStore(conventionalDelegates(client), resolveOptions(options));
+  async validate(): Promise<void> {
+    await this.delegates.messages.findMany({
+      where: { memorySession: { scopeKey: "__anvia_memory_validation__" } },
+      orderBy: { position: "asc" },
+      take: 1,
+      select: {
+        id: true,
+        memorySessionId: true,
+        runId: true,
+        turn: true,
+        position: true,
+        role: true,
+        message: true,
+        createdAt: true,
+      },
+    });
+    if (this.options.errorPolicy === "store" && this.delegates.errors === undefined) {
+      throw new Error(
+        'PrismaMemoryStore validation requires an errors delegate. Pass errorPolicy: "ignore" to disable failed-run storage.',
+      );
+    }
   }
 
-  static fromDelegates(
-    delegates: PrismaMemoryDelegates,
-    options: PrismaMemoryStoreOptions = {},
-  ): PrismaMemoryStore {
-    return new PrismaMemoryStore(delegates, resolveOptions(options));
-  }
-
-  async load(context: MemoryContext): Promise<Message[]> {
+  async load({ scope }: { scope: MemoryScope }): Promise<Message[]> {
     const rows = await this.delegates.messages.findMany({
-      where: { memorySession: { scopeKey: this.scopeKey(context) } },
+      where: { memorySession: { scopeKey: this.scopeKey(scope) } },
       orderBy: { position: "asc" },
       select: { message: true },
     });
@@ -129,14 +115,14 @@ export class PrismaMemoryStore implements MemoryStore {
     );
   }
 
-  async append(input: MemoryAppendInput): Promise<void> {
+  async append(input: MemoryAppendOptions): Promise<void> {
     if (input.messages.length === 0) {
       return;
     }
     this.validateInputMessages(input.messages);
 
     await this.delegates.transaction(async (tx) => {
-      const session = await upsertSession(tx, input.context, this.scopeKey(input.context));
+      const session = await upsertSession(tx, input.scope, this.scopeKey(input.scope));
       const last = await tx.messages.findFirst({
         where: { memorySessionId: session.id },
         orderBy: { position: "desc" },
@@ -157,20 +143,20 @@ export class PrismaMemoryStore implements MemoryStore {
     }, this.options.transaction);
   }
 
-  async clear(context: MemoryContext): Promise<void> {
+  async clear({ scope }: { scope: MemoryScope }): Promise<void> {
     await this.delegates.sessions.deleteMany({
-      where: { scopeKey: this.scopeKey(context) },
+      where: { scopeKey: this.scopeKey(scope) },
     });
   }
 
-  async recordError(input: MemoryErrorInput): Promise<void> {
-    if (this.options.errors === "ignore") {
+  async recordError(input: MemoryErrorOptions): Promise<void> {
+    if (this.options.errorPolicy === "ignore") {
       return;
     }
     this.validateInputMessages(input.messages);
     if (this.delegates.errors === undefined) {
       throw new Error(
-        'PrismaMemoryStore recordError requires an errors delegate. Pass errors: "ignore" to disable failed-run storage.',
+        'PrismaMemoryStore recordError requires an errors delegate. Pass errorPolicy: "ignore" to disable failed-run storage.',
       );
     }
 
@@ -179,7 +165,7 @@ export class PrismaMemoryStore implements MemoryStore {
         throw new Error("PrismaMemoryStore transaction did not provide an errors delegate.");
       }
 
-      const session = await upsertSession(tx, input.context, this.scopeKey(input.context));
+      const session = await upsertSession(tx, input.scope, this.scopeKey(input.scope));
       await tx.errors.create({
         data: {
           memorySessionId: session.id,
@@ -191,7 +177,7 @@ export class PrismaMemoryStore implements MemoryStore {
     }, this.options.transaction);
   }
 
-  private async loadCompactionSnapshot(context: MemoryContext): Promise<MemoryCompactionSnapshot> {
+  private async loadCompactionSnapshot(context: MemoryScope): Promise<MemoryCompactionSnapshot> {
     const rows = (await this.delegates.messages.findMany({
       where: { memorySession: { scopeKey: this.scopeKey(context) } },
       orderBy: { position: "asc" },
@@ -205,28 +191,25 @@ export class PrismaMemoryStore implements MemoryStore {
     };
   }
 
-  private async commitCompaction(
-    input: MemoryCompactionCommitInput,
-  ): Promise<MemoryCompactionCommitResult> {
-    this.validateInputMessages([input.summary]);
-    assertCompactedMessageCount(input.compactedMessageCount);
+  private async replaceCompactionPrefix(
+    input: MemoryCompactionReplacePrefixOptions,
+  ): Promise<MemoryCompactionReplacePrefixResult> {
+    this.validateInputMessages([input.replacement]);
+    assertCompactionMessageCount(input.messageCount);
 
     try {
       return await this.delegates.transaction(async (tx) => {
         const rows = (await tx.messages.findMany({
-          where: { memorySession: { scopeKey: this.scopeKey(input.context) } },
+          where: { memorySession: { scopeKey: this.scopeKey(input.scope) } },
           orderBy: { position: "asc" },
           select: { id: true, memorySessionId: true, position: true, message: true },
         })) as PrismaCompactionMessageRow[];
-        if (
-          compactionRevision(rows) !== input.revision ||
-          input.compactedMessageCount > rows.length
-        ) {
-          return "conflict";
+        if (compactionRevision(rows) !== input.revision || input.messageCount > rows.length) {
+          return { status: "conflict" };
         }
-        const boundary = rows[input.compactedMessageCount - 1];
+        const boundary = rows[input.messageCount - 1];
         if (boundary === undefined) {
-          return "conflict";
+          return { status: "conflict" };
         }
         if (tx.messages.deleteMany === undefined) {
           throw new Error(
@@ -236,15 +219,15 @@ export class PrismaMemoryStore implements MemoryStore {
         const deleted = await tx.messages.deleteMany({
           where: {
             id: {
-              in: rows.slice(0, input.compactedMessageCount).map((row) => row.id),
+              in: rows.slice(0, input.messageCount).map((row) => row.id),
             },
           },
         });
-        if (deleted.count !== input.compactedMessageCount) {
+        if (deleted.count !== input.messageCount) {
           // Throw so Prisma rolls back the deleteMany before mapping to "conflict".
           throw new MemoryCompactionConflictAbort();
         }
-        const session = await upsertSession(tx, input.context, this.scopeKey(input.context));
+        const session = await upsertSession(tx, input.scope, this.scopeKey(input.scope));
         await tx.messages.createMany({
           data: [
             {
@@ -252,16 +235,16 @@ export class PrismaMemoryStore implements MemoryStore {
               runId: input.runId,
               turn: 0,
               position: boundary.position,
-              role: input.summary.role,
-              message: input.summary,
+              role: input.replacement.role,
+              message: input.replacement,
             },
           ],
         });
-        return "committed";
+        return { status: "committed" };
       }, compactionTransactionOptions(this.options.transaction));
     } catch (error) {
       if (error instanceof MemoryCompactionConflictAbort) {
-        return "conflict";
+        return { status: "conflict" };
       }
       throw error;
     }
@@ -317,11 +300,11 @@ export class PrismaMemoryStore implements MemoryStore {
     };
   }
 
-  private scopeKey(context: MemoryContext): string {
-    if (typeof this.options.scope === "function") {
-      return this.options.scope(context);
+  private scopeKey(context: MemoryScope): string {
+    if (typeof this.options.scopeKey === "function") {
+      return this.options.scopeKey({ scope: context });
     }
-    return createPrismaMemoryScopeKey(context, this.options.scope);
+    return createMemoryScopeKey({ scope: context, ...this.options.scopeKey });
   }
 
   private validateInputMessages(messages: Message[]): void {
@@ -333,10 +316,10 @@ export class PrismaMemoryStore implements MemoryStore {
   }
 }
 
-function resolveOptions(options: PrismaMemoryStoreOptions): PrismaMemoryStore["options"] {
+function resolveOptions(options: PrismaMemoryStoreOptions): ResolvedPrismaMemoryStoreOptions {
   return {
-    scope: options.scope,
-    errors: options.errors ?? "store",
+    scopeKey: options.scopeKey,
+    errorPolicy: options.errorPolicy ?? "store",
     validateMessages: options.validateMessages ?? true,
     transaction: options.transaction,
   };
@@ -344,12 +327,14 @@ function resolveOptions(options: PrismaMemoryStoreOptions): PrismaMemoryStore["o
 
 async function upsertSession(
   delegates: PrismaMemoryDelegates,
-  context: MemoryContext,
+  context: MemoryScope,
   scopeKey: string,
 ): Promise<{ id: string }> {
   return delegates.sessions.upsert({
     where: { scopeKey },
     update: {
+      sessionId: context.sessionId,
+      userId: context.userId ?? null,
       metadata: metadata(context),
     },
     create: sessionCreateData(context, scopeKey),
@@ -358,10 +343,10 @@ async function upsertSession(
 }
 
 function sessionCreateData(
-  context: MemoryContext,
+  context: MemoryScope,
   scopeKey: string,
-): PrismaMemorySessionCreateData {
-  const data: PrismaMemorySessionCreateData = {
+): { scopeKey: string; sessionId: string; userId?: string; metadata: JsonObject } {
+  const data: { scopeKey: string; sessionId: string; userId?: string; metadata: JsonObject } = {
     scopeKey,
     sessionId: context.sessionId,
     metadata: metadata(context),
@@ -372,23 +357,8 @@ function sessionCreateData(
   return data;
 }
 
-function metadata(context: MemoryContext): JsonObject {
+function metadata(context: MemoryScope): JsonObject {
   return context.metadata ?? {};
-}
-
-function metadataValue(metadata: JsonObject | undefined, path: string): JsonValue | undefined {
-  let current: JsonValue | undefined = metadata;
-  for (const part of path.split(".")) {
-    if (!isJsonObject(current)) {
-      return undefined;
-    }
-    current = current[part];
-  }
-  return current;
-}
-
-function isJsonObject(value: JsonValue | undefined): value is JsonObject {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function conventionalDelegates(client: unknown): PrismaMemoryDelegates {
@@ -503,9 +473,9 @@ class MemoryCompactionConflictAbort extends Error {
   }
 }
 
-function assertCompactedMessageCount(value: number): void {
+function assertCompactionMessageCount(value: number): void {
   if (!Number.isSafeInteger(value) || value < 1) {
-    throw new RangeError("compactedMessageCount must be a positive integer.");
+    throw new RangeError("messageCount must be a positive integer.");
   }
 }
 

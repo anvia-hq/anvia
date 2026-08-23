@@ -1,6 +1,6 @@
 {
   "name": "@anvia/lancedb",
-  "version": "0.2.7",
+  "version": "1.0.0",
   "description": "LanceDB vector store adapter for Anvia.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",
@@ -31,7 +31,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@lancedb/lancedb": "^0.33.0"
+    "@lancedb/lancedb": "^0.37.1",
+    "apache-arrow": "21.2.0"
   },
   "devDependencies": {
     "@anvia/core": "workspace:*",
@@ -41,6 +42,6 @@
     "vitest": "^4.0.8"
   },
   "peerDependencies": {
-    "@anvia/core": ">=0.7.1 <1.0.0"
+    "@anvia/core": "workspace:*"
   }
 }

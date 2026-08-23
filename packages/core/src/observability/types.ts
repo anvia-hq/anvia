@@ -1,126 +1,150 @@
+import type { AgentInteractionRequest } from "../agent/interactions";
+import type { AgentDeltaEvent, AgentRunLink } from "../agent/run-types";
 import type {
   CompletionModelCapabilities,
   CompletionRequest,
   CompletionResponse,
   CompletionSource,
   JsonObject,
-  JsonValue,
   Message,
   ProviderToolCall,
-  ToolCall,
+  ToolCallPart,
   ToolDefinition,
-  ToolResultContent,
+  ToolResultContentPart,
   Usage,
 } from "../completion";
-import type { AgentDeltaEvent } from "../request/types";
+import type { DeepReadonly } from "../internal/type-utils";
 import type { ToolCallStreamEvent } from "../tool";
 
 export type AgentTraceInfo = {
-  traceId?: string | undefined;
-  observationId?: string | undefined;
+  readonly observer: string;
+  readonly traceId?: string | undefined;
+  readonly observationId?: string | undefined;
 };
 
+export type AgentObserverTraceInfo = Omit<AgentTraceInfo, "observer">;
+
 export type AgentTraceOptions = {
-  name?: string | undefined;
-  userId?: string | undefined;
-  sessionId?: string | undefined;
-  metadata?: Record<string, unknown> | undefined;
-  tags?: string[] | undefined;
-  version?: string | undefined;
-  traceId?: string | undefined;
-  failOnObserverError?: boolean | undefined;
-  promptRef?: AgentRunPromptRef | undefined;
+  readonly name?: string | undefined;
+  readonly userId?: string | undefined;
+  readonly sessionId?: string | undefined;
+  readonly metadata?: DeepReadonly<JsonObject> | undefined;
+  readonly tags?: readonly string[] | undefined;
+  readonly version?: string | undefined;
+  readonly traceId?: string | undefined;
+  readonly promptRef?: AgentRunPromptRef | undefined;
 };
 
 export type AgentRunPromptRef = {
-  name: string;
-  version?: number | undefined;
+  readonly name: string;
+  readonly version?: number | undefined;
 };
 
 export type AgentRunStartArgs = {
-  agentName?: string | undefined;
-  agentDescription?: string | undefined;
-  instructions?: string | undefined;
-  trace?: AgentTraceOptions | undefined;
-  prompt: Message;
-  promptRef?: AgentRunPromptRef | undefined;
-  history: Message[];
-  maxTurns: number;
+  readonly runId: string;
+  readonly agentName?: string | undefined;
+  readonly agentDescription?: string | undefined;
+  readonly instructions?: string | undefined;
+  readonly trace?: DeepReadonly<AgentTraceOptions> | undefined;
+  readonly prompt: DeepReadonly<Message>;
+  readonly promptRef?: DeepReadonly<AgentRunPromptRef> | undefined;
+  readonly history: readonly DeepReadonly<Message>[];
+  readonly maxTurns: number;
 };
 
-export type AgentRunEndArgs = {
-  output: string;
-  usage: Usage;
-  messages: Message[];
-  sources?: CompletionSource[] | undefined;
-  providerToolCalls?: ProviderToolCall[] | undefined;
+type AgentRunEndArgsBase = {
+  readonly runId: string;
+  readonly text: string;
+  readonly usage: DeepReadonly<Usage>;
+  readonly messages: readonly DeepReadonly<Message>[];
+  readonly sources?: readonly DeepReadonly<CompletionSource>[] | undefined;
+  readonly providerToolCalls?: readonly DeepReadonly<ProviderToolCall>[] | undefined;
+  readonly resumedFrom?: DeepReadonly<AgentRunLink> | undefined;
 };
+
+export type AgentRunEndArgs =
+  | (AgentRunEndArgsBase & {
+      readonly status: "completed";
+      readonly output: unknown;
+    })
+  | (AgentRunEndArgsBase & {
+      readonly status: "blocked";
+      readonly stage: "input" | "output";
+    })
+  | (AgentRunEndArgsBase & {
+      readonly status: "suspended";
+      readonly interaction: DeepReadonly<AgentInteractionRequest>;
+    });
 
 export type AgentRunErrorArgs = {
-  error: unknown;
-  usage: Usage;
-  messages: Message[];
+  readonly error: unknown;
+  readonly usage: DeepReadonly<Usage>;
+  readonly messages: readonly DeepReadonly<Message>[];
 };
 
 export type AgentGenerationModelInfo = {
-  provider: string;
-  defaultModel: string;
-  capabilities?: CompletionModelCapabilities | undefined;
+  readonly provider: string;
+  readonly modelId: string;
+  readonly capabilities?: DeepReadonly<CompletionModelCapabilities> | undefined;
 };
 
 export type AgentGenerationStartArgs = {
-  turn: number;
-  request: CompletionRequest;
-  providerRequest?: JsonObject | undefined;
-  modelInfo?: AgentGenerationModelInfo | undefined;
+  readonly turn: number;
+  readonly request: DeepReadonly<CompletionRequest>;
+  readonly providerRequest?: DeepReadonly<JsonObject> | undefined;
+  readonly modelInfo?: DeepReadonly<AgentGenerationModelInfo> | undefined;
 };
 
 export type AgentGenerationEndArgs<RawResponse = unknown> = {
-  turn: number;
-  response: CompletionResponse<RawResponse>;
-  firstDeltaMs?: number | undefined;
+  readonly turn: number;
+  readonly response: DeepReadonly<CompletionResponse<RawResponse>>;
+  readonly firstDeltaMs?: number | undefined;
 };
 
 export type AgentGenerationErrorArgs = {
-  turn: number;
-  error: unknown;
+  readonly turn: number;
+  readonly error: unknown;
 };
 
 export type AgentGenerationUpdateArgs = {
-  turn: number;
-  delta: AgentDeltaEvent;
+  readonly turn: number;
+  readonly delta: DeepReadonly<AgentDeltaEvent>;
 };
 
 export type AgentRunEventArgs = {
-  name: string;
-  attributes?: Record<string, JsonValue | undefined> | undefined;
-  level?: "DEFAULT" | "WARNING" | "ERROR" | undefined;
-  timestamp?: Date | string | undefined;
+  readonly name: string;
+  readonly attributes?: DeepReadonly<JsonObject> | undefined;
+  readonly level?: "DEFAULT" | "WARNING" | "ERROR" | undefined;
+  readonly timestamp?: string | undefined;
 };
 
 export type AgentToolStartArgs = {
-  turn: number;
-  toolCall: ToolCall;
-  toolName: string;
-  args: string;
-  internalCallId: string;
-  toolCallId?: string | undefined;
-  toolDefinition?: ToolDefinition | undefined;
-  toolMetadata?: JsonObject | undefined;
+  readonly turn: number;
+  readonly toolCall: DeepReadonly<ToolCallPart>;
+  readonly toolName: string;
+  readonly args: string;
+  readonly internalCallId: string;
+  readonly toolCallId?: string | undefined;
+  readonly toolDefinition?: DeepReadonly<ToolDefinition> | undefined;
+  readonly toolMetadata?: DeepReadonly<JsonObject> | undefined;
 };
 
 export type AgentToolEndArgs = AgentToolStartArgs & {
-  result: string;
-  structuredResult?: ToolResultContent[] | undefined;
-  skipped: boolean;
+  readonly result: string;
+  readonly structuredResult?: readonly DeepReadonly<ToolResultContentPart>[] | undefined;
+  readonly skipped: boolean;
 };
 
 export type AgentToolErrorArgs = AgentToolStartArgs & {
-  error: unknown;
+  readonly error: unknown;
+};
+
+export type AgentToolSuspendedArgs = AgentToolStartArgs & {
+  readonly interaction: DeepReadonly<AgentInteractionRequest>;
 };
 
 export type AgentToolStreamEventArgs = AgentToolStartArgs & {
-  event: ToolCallStreamEvent;
+  readonly event: DeepReadonly<ToolCallStreamEvent>;
 };
 
 export interface AgentGenerationObserver {
@@ -132,11 +156,12 @@ export interface AgentGenerationObserver {
 export interface AgentToolObserver {
   streamEvent?(args: AgentToolStreamEventArgs): void | Promise<void>;
   end(args: AgentToolEndArgs): void | Promise<void>;
+  suspend?(args: AgentToolSuspendedArgs): void | Promise<void>;
   error?(args: AgentToolErrorArgs): void | Promise<void>;
 }
 
 export interface AgentRunObserver {
-  readonly trace?: AgentTraceInfo | undefined;
+  readonly trace?: AgentObserverTraceInfo | undefined;
   startGeneration?(
     args: AgentGenerationStartArgs,
   ): AgentGenerationObserver | undefined | Promise<AgentGenerationObserver | undefined>;
@@ -152,19 +177,14 @@ export interface AgentObserver {
   startRun(
     args: AgentRunStartArgs,
   ): AgentRunObserver | undefined | Promise<AgentRunObserver | undefined>;
-  flush?(): void | Promise<void>;
-  shutdown?(): void | Promise<void>;
 }
 
-export type AgentObserverRegistration = {
-  observer: AgentObserver;
-  failOnObserverError?: boolean | undefined;
-};
+export type AgentObserverMap = Readonly<Record<string, AgentObserver>>;
 
-export type ObserveOptions = {
-  failOnObserverError?: boolean | undefined;
-};
+export type AgentObserverErrorPolicy = "ignore" | "throw";
 
-export function createObserver(observer: AgentObserver): AgentObserver {
-  return observer;
-}
+export type AgentObservabilityOptions<Observers extends AgentObserverMap = AgentObserverMap> = {
+  readonly observers: Observers;
+  readonly primaryTrace?: Extract<keyof Observers, string> | undefined;
+  readonly errorPolicy?: AgentObserverErrorPolicy | undefined;
+};

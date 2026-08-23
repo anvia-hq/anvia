@@ -1,4 +1,4 @@
-import type { UIAttachment } from "@anvia/react";
+import type { UIAttachment } from "@anvia/client";
 import {
   forwardRef,
   type KeyboardEvent,
@@ -38,7 +38,9 @@ const ImageRoot = forwardRef<HTMLElement, ImageRootProps>(function ImageRoot(
   const [zoomOpen, setZoomOpen] = useState(false);
 
   if (attachment === undefined) {
-    throw new Error("Image.Root requires an attachment prop or Attachment context.");
+    throw new Error(
+      "ImagePrimitive.Root requires an attachment prop or AttachmentPrimitive context.",
+    );
   }
 
   const src = imageSource(attachment);
@@ -73,9 +75,7 @@ const ImageRoot = forwardRef<HTMLElement, ImageRootProps>(function ImageRoot(
               <ImageName />
             </>
           ),
-          "data-anvia-image": "",
           "data-state": src === undefined ? "unavailable" : "ready",
-          "data-type": attachment.type,
         } as PrimitiveProps<"figure">,
         ref,
       )}
@@ -118,10 +118,9 @@ const ImagePreview = forwardRef<HTMLDivElement, ImagePreviewProps>(function Imag
           fallback
         ) : (
           <>
-            {state === "ready" ? null : <span data-anvia-image-fallback="">{fallback}</span>}
+            {state === "ready" ? null : <span>{fallback}</span>}
             <img
               alt={alt ?? image.name ?? "Image"}
-              data-anvia-image-img=""
               hidden={state !== "ready"}
               onError={() => setState("error")}
               onLoad={() => setState("ready")}
@@ -129,7 +128,6 @@ const ImagePreview = forwardRef<HTMLDivElement, ImagePreviewProps>(function Imag
             />
           </>
         ),
-      "data-anvia-image-preview": "",
       "data-state": state,
     } as PrimitiveProps<"div">,
     ref,
@@ -145,7 +143,6 @@ const ImageName = forwardRef<HTMLElement, PrimitiveProps<"figcaption">>(
       {
         ...props,
         children: props.children ?? image.name ?? image.mediaType ?? image.attachment.type,
-        "data-anvia-image-name": "",
       } as PrimitiveProps<"figcaption">,
       ref,
     );
@@ -158,7 +155,6 @@ const ImageActions = forwardRef<HTMLDivElement, PrimitiveProps<"div">>(
       "div",
       {
         ...props,
-        "data-anvia-image-actions": "",
       } as PrimitiveProps<"div">,
       ref,
     );
@@ -199,7 +195,6 @@ const ImageCopy = forwardRef<HTMLButtonElement, PrimitiveProps<"button">>(functi
       disabled,
       onClick: handleClick,
       type: props.type ?? "button",
-      "data-anvia-image-copy": "",
       "data-state": copyState,
     } as PrimitiveProps<"button">,
     ref,
@@ -240,7 +235,6 @@ const ImageDownload = forwardRef<HTMLButtonElement, ImageDownloadProps>(function
       disabled,
       onClick: handleClick,
       type: props.type ?? "button",
-      "data-anvia-image-download": "",
       "data-state": disabled ? "disabled" : "enabled",
     } as PrimitiveProps<"button">,
     ref,
@@ -271,7 +265,6 @@ const ImageZoomTrigger = forwardRef<HTMLButtonElement, PrimitiveProps<"button">>
         disabled,
         onClick: handleClick,
         type: props.type ?? "button",
-        "data-anvia-image-zoom-trigger": "",
         "data-state": disabled ? "disabled" : "enabled",
       } as PrimitiveProps<"button">,
       ref,
@@ -358,13 +351,12 @@ const ImageZoomOverlay = forwardRef<HTMLDivElement, ImageZoomOverlayProps>(
       "div",
       {
         ...props,
-        children: <img alt={image.name ?? "Image"} data-anvia-image-zoom-img="" src={image.src} />,
+        children: <img alt={image.name ?? "Image"} src={image.src} />,
         onClick: handleClick,
         onKeyDown: handleKeyDown,
         "aria-modal": props["aria-modal"] ?? true,
         role: props.role ?? "dialog",
         tabIndex: props.tabIndex ?? -1,
-        "data-anvia-image-zoom-overlay": "",
       } as PrimitiveProps<"div">,
       composedRef,
     );

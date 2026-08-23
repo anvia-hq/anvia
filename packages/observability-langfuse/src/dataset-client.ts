@@ -9,14 +9,14 @@ import type {
   LangfuseRunExperimentOptions,
   LangfuseRunExperimentResult,
   LangfuseRunItemError,
-  LangfuseTracing,
+  LangfuseScorer,
 } from "./types.js";
 
 const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGINATION_PAGES = 100;
 
 export function createLangfuseDatasetClient(
-  tracing: Pick<LangfuseTracing, "score">,
+  tracing: LangfuseScorer,
   options: LangfuseDatasetClientOptions = {},
 ): LangfuseDatasetClient {
   const resolvedConfig = resolveLangfuseConfig(options, getResolvedLangfuseConfig(tracing));
@@ -76,7 +76,10 @@ export function createLangfuseDatasetClient(
       return result;
     },
 
-    async getDataset<Input, Expected>(name: string): Promise<LangfuseDataset<Input, Expected>> {
+    async getDataset<Input, Expected>(options: {
+      name: string;
+    }): Promise<LangfuseDataset<Input, Expected>> {
+      const { name } = options;
       const items: LangfuseDatasetItem<Input, Expected>[] = [];
       let description: string | undefined;
       let metadata: Record<string, JsonValue | undefined> | undefined;
@@ -128,10 +131,11 @@ export function createLangfuseDatasetClient(
       return dataset;
     },
 
-    async upsertItems<Input, Expected>(
-      name: string,
-      items: LangfuseDatasetItem<Input, Expected>[],
-    ): Promise<void> {
+    async upsertItems<Input, Expected>(options: {
+      name: string;
+      items: readonly LangfuseDatasetItem<Input, Expected>[];
+    }): Promise<void> {
+      const { name, items } = options;
       const url = `${baseUrl}/api/public/datasets/${encodeURIComponent(name)}/items`;
       await request<unknown>(url, {
         method: "POST",
@@ -144,7 +148,7 @@ export function createLangfuseDatasetClient(
     ): Promise<LangfuseRunExperimentResult> {
       let items = opts.items;
       if (items === undefined) {
-        const dataset = await this.getDataset<Input, Expected>(opts.datasetName);
+        const dataset = await this.getDataset<Input, Expected>({ name: opts.datasetName });
         items = dataset.items;
       }
       if (items === undefined || items.length === 0) {

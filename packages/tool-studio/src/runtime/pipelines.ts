@@ -208,18 +208,25 @@ async function executePipelineRun(
     if (body.metadata !== undefined) streamOptions.metadata = body.metadata;
     if (props.logStore !== undefined) streamOptions.logStore = props.logStore;
     if (props.runStore !== undefined) streamOptions.runStore = props.runStore;
+    streamOptions.abortSignal = c.req.raw.signal;
     return streamPipelineRun(c, streamOptions);
   }
 
   try {
     await appendPipelineLog(props.logStore, pipelineRunStartedLog(pipeline, runId));
-    const output = await pipeline.pipeline.run(body.input, {
+    const result = await pipeline.pipeline.run({
+      input: body.input,
+      runId,
+      metadata: body.metadata,
+      abortSignal: c.req.raw.signal,
       observer: {
         async onEvent(event) {
-          await appendPipelineLog(props.logStore, pipelineStageLog(pipeline.id, runId, event));
+          await appendPipelineLog(props.logStore, pipelineStageLog(event, pipeline.id));
         },
       },
+      failOnObserverError: true,
     });
+    const output = result.output;
     const jsonOutput = toJsonValue(output);
     const endedAt = Date.now();
     const successRecord: StudioPipelineRunSaveInput = {
@@ -291,6 +298,7 @@ function streamPipelineRun(
     metadata?: JsonObject;
     logStore?: StudioPipelineLogStore;
     runStore?: StudioPipelineRunStore;
+    abortSignal?: AbortSignal;
   },
 ): Response {
   return streamStudioJsonl(pipelineRunEvents(props));
@@ -305,25 +313,31 @@ async function* pipelineRunEvents(props: {
   metadata?: JsonObject;
   logStore?: StudioPipelineLogStore;
   runStore?: StudioPipelineRunStore;
+  abortSignal?: AbortSignal;
 }): AsyncIterable<AgentRunStreamEvent> {
   yield* emitPipelineLog(props.logStore, pipelineRunStartedLog(props.pipeline, props.runId));
 
   const events = new AsyncEventQueue<AgentRunStreamEvent>();
   const run = props.pipeline.pipeline
-    .run(props.input, {
+    .run({
+      input: props.input,
+      runId: props.runId,
+      metadata: props.metadata,
+      abortSignal: props.abortSignal,
       observer: {
         async onEvent(event: PipelineRunEvent) {
           const log = await appendPipelineLog(
             props.logStore,
-            pipelineStageLog(props.pipeline.id, props.runId, event),
+            pipelineStageLog(event, props.pipeline.id),
           );
           if (log !== undefined) {
             events.push({ type: "pipeline_log", log });
           }
         },
       },
+      failOnObserverError: true,
     })
-    .then(async (output) => {
+    .then(async ({ output }) => {
       const jsonOutput = toJsonValue(output);
       const endedAt = Date.now();
       const successRecord: StudioPipelineRunSaveInput = {

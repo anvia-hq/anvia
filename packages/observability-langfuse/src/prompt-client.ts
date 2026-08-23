@@ -6,13 +6,13 @@ import type {
   LangfusePromptClient,
   LangfusePromptClientOptions,
   LangfusePromptGetOptions,
-  LangfuseTracing,
+  LangfuseScorer,
 } from "./types.js";
 
 const DEFAULT_CACHE_TTL_MS = 60_000;
 
 export function createLangfusePromptClient(
-  tracing: Pick<LangfuseTracing, "score">,
+  tracing: LangfuseScorer,
   options: LangfusePromptClientOptions = {},
 ): LangfusePromptClient {
   const resolvedConfig = resolveLangfuseConfig(options, getResolvedLangfuseConfig(tracing));
@@ -41,10 +41,8 @@ export function createLangfusePromptClient(
     return (await response.json()) as T;
   }
 
-  async function getPrompt(
-    name: string,
-    opts: LangfusePromptGetOptions = {},
-  ): Promise<LangfusePrompt> {
+  async function getPrompt(options: LangfusePromptGetOptions): Promise<LangfusePrompt> {
+    const { name, ...opts } = options;
     const key = `${name}::${opts.version ?? ""}::${opts.label ?? ""}`;
     const ttl = opts.cacheTtlMs ?? defaultTtl;
     if (opts.refresh !== true) {
@@ -81,22 +79,19 @@ export function createLangfusePromptClient(
     return prompt;
   }
 
-  function getPromptText(name: string, opts?: LangfusePromptGetOptions): Promise<string> {
-    return getPrompt(name, opts).then((prompt) => {
+  function getPromptText(options: LangfusePromptGetOptions): Promise<string> {
+    return getPrompt(options).then((prompt) => {
       if (typeof prompt.prompt !== "string") {
-        throw new Error(`Prompt ${name} is a chat prompt; expected text`);
+        throw new Error(`Prompt ${options.name} is a chat prompt; expected text`);
       }
       return prompt.prompt;
     });
   }
 
-  function getPromptChat(
-    name: string,
-    opts?: LangfusePromptGetOptions,
-  ): Promise<LangfuseChatMessage[]> {
-    return getPrompt(name, opts).then((prompt) => {
+  function getPromptChat(options: LangfusePromptGetOptions): Promise<LangfuseChatMessage[]> {
+    return getPrompt(options).then((prompt) => {
       if (typeof prompt.prompt === "string") {
-        throw new Error(`Prompt ${name} is a text prompt; expected chat`);
+        throw new Error(`Prompt ${options.name} is a text prompt; expected chat`);
       }
       return prompt.prompt;
     });

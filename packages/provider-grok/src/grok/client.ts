@@ -1,78 +1,140 @@
 import {
+  type ModelContextLimits,
+  resolveModelContextLimits,
+  type StreamingCompletionModel,
+} from "@anvia/core/completion";
+import type { ImageGenerationModel } from "@anvia/core/image-generation";
+import {
   type ModelList,
   type ModelListingClient,
   ModelListingError,
 } from "@anvia/core/model-listing";
+import type { SpeechGenerationModel } from "@anvia/core/speech-generation";
+import type { TranscriptionModel } from "@anvia/core/transcription";
 import OpenAI from "openai";
-import { GrokAudioGenerationModel } from "./audio-generation";
-import { GrokChatCompletionModel, GrokResponsesCompletionModel } from "./completion";
-import { GROK_4_5, GROK_IMAGINE_IMAGE, XAI_BASE_URL } from "./constants";
+import { GrokCompletionModel } from "./completion";
+import { XAI_BASE_URL } from "./constants";
 import type { GrokHttpOptions } from "./http";
 import { GrokImageGenerationModel } from "./image-generation";
-import type { GrokCompletionModelName, GrokImageGenerationModelName } from "./models";
+import type { GrokCompletionModelId, GrokImageGenerationModelId } from "./models";
+import { GROK_COMPLETION_MODEL_CONTEXT_LIMITS } from "./models";
+import { GrokSpeechGenerationModel } from "./speech-generation";
 import { GrokTranscriptionModel } from "./transcription";
 
-export type GrokClientOptions = {
-  apiKey?: string | undefined;
+type GrokManagedClientOptions = {
+  apiKey: string;
   baseUrl?: string | undefined;
   headers?: Record<string, string> | undefined;
-  completionApi?: "responses" | "chat" | undefined;
-  client?: OpenAI | undefined;
   fetch?: typeof fetch | undefined;
+  client?: never;
+  http?: never;
 };
 
+type GrokInjectedClientOptions = {
+  client: OpenAI;
+  http: {
+    apiKey: string;
+    baseUrl?: string | undefined;
+    headers?: Record<string, string> | undefined;
+    fetch?: typeof fetch | undefined;
+  };
+  apiKey?: never;
+  baseUrl?: never;
+  headers?: never;
+  fetch?: never;
+};
+
+export type GrokClientOptions = GrokManagedClientOptions | GrokInjectedClientOptions;
+
+export type GrokCompletionModelOptions = {
+  modelId: GrokCompletionModelId;
+  api: "responses" | "chat";
+  contextLimits?: ModelContextLimits | undefined;
+};
+
+export type GrokImageGenerationModelOptions = { modelId: GrokImageGenerationModelId };
+export type GrokCompletionModelHandle = StreamingCompletionModel<unknown>;
+export type GrokImageGenerationModelHandle = ImageGenerationModel<unknown>;
+export type GrokSpeechGenerationModelHandle = SpeechGenerationModel<unknown>;
+export type GrokTranscriptionModelHandle = TranscriptionModel<unknown>;
+
 export class GrokClient implements ModelListingClient {
-  readonly client: OpenAI;
-  private readonly completionApi: "responses" | "chat";
+  private readonly sdk: OpenAI;
   private readonly fetchFn: typeof fetch | undefined;
   private readonly httpOptions: GrokHttpOptions;
 
-  constructor(options: GrokClientOptions = {}) {
-    this.completionApi = options.completionApi ?? "responses";
-    const baseUrl = options.baseUrl ?? clientString(options.client, "baseURL") ?? XAI_BASE_URL;
-    const apiKey = options.apiKey ?? clientString(options.client, "apiKey");
-    this.client =
+  constructor(options: GrokClientOptions) {
+    const managed = options.client === undefined;
+    if (managed) {
+      if ("http" in options) {
+        throw new TypeError("GrokClient cannot combine managed credentials with http.");
+      }
+    } else {
+      rejectManagedOptionsWithInjectedClient(options, ["apiKey", "baseUrl", "headers", "fetch"]);
+    }
+    const http = managed
+      ? {
+          apiKey: requireApiKey(options.apiKey),
+          baseUrl: options.baseUrl ?? XAI_BASE_URL,
+          headers: options.headers,
+          fetch: options.fetch,
+        }
+      : {
+          apiKey: requireApiKey(options.http.apiKey),
+          baseUrl: options.http.baseUrl ?? XAI_BASE_URL,
+          headers: options.http.headers,
+          fetch: options.http.fetch,
+        };
+    this.sdk =
       options.client ??
       new OpenAI({
-        apiKey: requireApiKey(apiKey),
-        baseURL: baseUrl,
-        defaultHeaders: options.headers,
-        fetch: options.fetch,
+        apiKey: http.apiKey,
+        baseURL: http.baseUrl,
+        defaultHeaders: http.headers,
+        fetch: http.fetch,
+        maxRetries: 0,
       });
-    this.fetchFn = options.fetch ?? clientFetch(options.client) ?? defaultFetch();
+    this.fetchFn = http.fetch ?? defaultFetch();
     this.httpOptions = {
-      apiKey,
-      baseUrl,
-      headers: options.headers ?? clientHeaders(options.client),
+      apiKey: http.apiKey,
+      baseUrl: http.baseUrl,
+      headers: http.headers,
       fetch: this.fetchFn,
     };
   }
 
-  completionModel(
-    model: GrokCompletionModelName = GROK_4_5,
-  ): GrokResponsesCompletionModel | GrokChatCompletionModel {
-    return this.completionApi === "chat"
-      ? new GrokChatCompletionModel(this.client, model)
-      : new GrokResponsesCompletionModel(this.client, model);
+  completionModel(options: GrokCompletionModelOptions): GrokCompletionModelHandle {
+    const modelId = requireModelId(options.modelId);
+    return new GrokCompletionModel(
+      this.sdk,
+      modelId,
+      options.api,
+      resolveModelContextLimits(
+        modelId,
+        GROK_COMPLETION_MODEL_CONTEXT_LIMITS,
+        options.contextLimits,
+      ),
+    );
   }
 
-  imageGenerationModel(
-    model: GrokImageGenerationModelName = GROK_IMAGINE_IMAGE,
-  ): GrokImageGenerationModel {
-    return new GrokImageGenerationModel(this.client, model, this.fetchFn);
+  imageGenerationModel(options: GrokImageGenerationModelOptions): GrokImageGenerationModelHandle {
+    return new GrokImageGenerationModel(this.sdk, requireModelId(options.modelId), this.fetchFn);
   }
 
-  audioGenerationModel(): GrokAudioGenerationModel {
-    return new GrokAudioGenerationModel(this.httpOptions);
+  speechGenerationModel(): GrokSpeechGenerationModelHandle {
+    return new GrokSpeechGenerationModel(this.httpOptions);
   }
 
-  transcriptionModel(): GrokTranscriptionModel {
+  transcriptionModel(): GrokTranscriptionModelHandle {
     return new GrokTranscriptionModel(this.httpOptions);
   }
 
-  async listModels(): Promise<ModelList> {
+  async listModels(options: { abortSignal?: AbortSignal | undefined } = {}): Promise<ModelList> {
     try {
-      const response = await this.client.models.list();
+      const response = await this.sdk.models.list({
+        signal: options.abortSignal,
+        maxRetries: 0,
+      });
       const data = (await collectModelsFromResponse(response))
         .map(toListedModel)
         .filter(isListedModel);
@@ -83,47 +145,30 @@ export class GrokClient implements ModelListingClient {
   }
 }
 
+function rejectManagedOptionsWithInjectedClient(options: object, keys: readonly string[]): void {
+  const conflict = keys.find((key) => key in options);
+  if (conflict !== undefined) {
+    throw new TypeError(`GrokClient cannot combine client with ${conflict}.`);
+  }
+}
+
 function requireApiKey(apiKey: string | undefined): string {
-  if (apiKey === undefined || apiKey.length === 0) {
+  if (apiKey === undefined || apiKey.trim().length === 0) {
     throw new Error("Missing Grok credentials. Pass apiKey when constructing GrokClient.");
   }
 
   return apiKey;
 }
 
+function requireModelId<ModelId extends string>(modelId: ModelId): ModelId {
+  if (modelId.trim().length === 0) {
+    throw new TypeError("modelId must be a non-empty string");
+  }
+  return modelId;
+}
+
 function defaultFetch(): typeof fetch | undefined {
   return typeof globalThis.fetch === "function" ? globalThis.fetch.bind(globalThis) : undefined;
-}
-
-function clientString(client: OpenAI | undefined, key: "apiKey" | "baseURL"): string | undefined {
-  if (client === undefined) {
-    return undefined;
-  }
-  const value = (client as unknown as Record<string, unknown>)[key];
-  return typeof value === "string" ? value : undefined;
-}
-
-function clientFetch(client: OpenAI | undefined): typeof fetch | undefined {
-  if (client === undefined) {
-    return undefined;
-  }
-  const value = (client as unknown as Record<string, unknown>).fetch;
-  return typeof value === "function" ? (value as typeof fetch) : undefined;
-}
-
-function clientHeaders(client: OpenAI | undefined): Record<string, string> | undefined {
-  if (client === undefined) {
-    return undefined;
-  }
-  const value = (client as unknown as Record<string, unknown>).defaultHeaders;
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return undefined;
-  }
-  return Object.fromEntries(
-    Object.entries(value).flatMap(([key, headerValue]) =>
-      typeof headerValue === "string" ? [[key, headerValue]] : [],
-    ),
-  );
 }
 
 async function collectModelsFromResponse(response: unknown): Promise<unknown[]> {

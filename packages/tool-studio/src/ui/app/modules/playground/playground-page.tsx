@@ -1,5 +1,18 @@
-import { Archive, ArrowUp, Paperclip, Stop, X } from "@phosphor-icons/react";
-import type { ChangeEvent, KeyboardEvent, RefObject } from "react";
+import {
+  Archive,
+  ArrowUp,
+  Browser as BrowserIcon,
+  Paperclip,
+  Stop,
+  X,
+} from "@phosphor-icons/react";
+import {
+  type ChangeEvent,
+  type CSSProperties,
+  type KeyboardEvent,
+  type RefObject,
+  useState,
+} from "react";
 import type {
   StudioConfig,
   StudioModelSummary,
@@ -24,7 +37,9 @@ import {
 import { StudioPageShell } from "../../components/ui/studio";
 import { Textarea } from "../../components/ui/textarea";
 import { cn } from "../../lib/utils";
+import { StudioBrowserView } from "../sandboxes/browser-view";
 import type { RunState, TranscriptEntry } from "../shared/types";
+import type { BrowserWorkspace } from "./browser-workspace";
 import { SmoothedTranscript } from "./smoothed-transcript";
 
 export function PlaygroundPage(props: {
@@ -32,6 +47,8 @@ export function PlaygroundPage(props: {
   allSessions: StudioSessionSummary[];
   answeringQuestions: Set<string>;
   attachments: PromptAttachment[];
+  browserWorkspace: BrowserWorkspace | undefined;
+  browserWorkspaceOpen: boolean;
   decidingApprovals: Set<string>;
   hasMessages: boolean;
   isStreaming: boolean;
@@ -53,7 +70,10 @@ export function PlaygroundPage(props: {
   onAddPromptAttachments: (event: ChangeEvent<HTMLInputElement>) => void;
   onApprovalDecision: (approvalId: string, approved: boolean) => void;
   onDeleteSession: (session: StudioSessionSummary) => void;
+  onCloseBrowserWorkspace: () => void;
+  onError: (error: unknown) => void;
   onLoadSession: (sessionId: string) => void;
+  onOpenBrowserWorkspace: () => void;
   onOpenTrace: (traceId: string) => void;
   onPromptChange: (event: ChangeEvent<HTMLTextAreaElement>) => void;
   onPromptKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
@@ -68,8 +88,26 @@ export function PlaygroundPage(props: {
   onSelectModel: (modelRef: string) => void;
   onTranscriptScroll: () => void;
 }) {
+  const [browserPanelWidth, setBrowserPanelWidth] = useState(720);
+  const activeBrowserWorkspace = props.browserWorkspaceOpen ? props.browserWorkspace : undefined;
+  const browserPanelStyle =
+    activeBrowserWorkspace === undefined
+      ? undefined
+      : ({
+          "--studio-browser-panel-width": `${browserPanelWidth}px`,
+          gridTemplateColumns:
+            "minmax(0, 1fr) minmax(440px, min(var(--studio-browser-panel-width), 72vw))",
+        } as CSSProperties);
+
   return (
-    <StudioPageShell className="grid-cols-[minmax(0,1fr)_minmax(0,460px)] max-xl:grid-cols-1">
+    <StudioPageShell
+      className={cn(
+        activeBrowserWorkspace === undefined
+          ? "grid-cols-[minmax(0,1fr)_minmax(0,460px)] max-xl:grid-cols-1"
+          : undefined,
+      )}
+      style={browserPanelStyle}
+    >
       <div className="grid min-h-0 min-w-0">
         <div className="grid h-full min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto]">
           <section
@@ -78,7 +116,7 @@ export function PlaygroundPage(props: {
             onScroll={props.onTranscriptScroll}
           >
             <div
-              className="mx-auto grid min-h-full w-full max-w-200 content-start items-start gap-6 pb-8"
+              className="mx-auto grid min-h-full w-full max-w-200 content-start items-start gap-5 pb-8 [&>[data-entry-kind=tool]+[data-entry-kind=tool]]:-mt-3"
               data-studio-transcript-content=""
             >
               {!props.hasMessages ? (
@@ -189,6 +227,18 @@ export function PlaygroundPage(props: {
                   >
                     <StudioIcon icon={Paperclip} aria-hidden="true" />
                   </Button>
+                  {props.browserWorkspace === undefined || props.browserWorkspaceOpen ? null : (
+                    <Button
+                      aria-label="Open browser workspace"
+                      className="h-9 min-h-9 gap-1.5 rounded-lg border-border bg-transparent px-2.5 text-xs text-muted-foreground shadow-none hover:bg-accent hover:text-accent-foreground"
+                      type="button"
+                      variant="ghost"
+                      onClick={props.onOpenBrowserWorkspace}
+                    >
+                      <StudioIcon icon={BrowserIcon} aria-hidden="true" />
+                      Browser
+                    </Button>
+                  )}
                 </div>
                 <div className="flex min-w-0 items-center gap-2">
                   {props.selectedAgentModels.length === 0 ? null : (
@@ -261,14 +311,75 @@ export function PlaygroundPage(props: {
           </form>
         </div>
       </div>
-      <PlaygroundSessionsPanel
-        sessions={props.allSessions}
-        selectedSessionId={props.selectedSessionId}
-        runState={props.runState}
-        onDeleteSession={props.onDeleteSession}
-        onLoadSession={props.onLoadSession}
-      />
+      {activeBrowserWorkspace === undefined ? (
+        <PlaygroundSessionsPanel
+          sessions={props.allSessions}
+          selectedSessionId={props.selectedSessionId}
+          runState={props.runState}
+          onDeleteSession={props.onDeleteSession}
+          onLoadSession={props.onLoadSession}
+        />
+      ) : (
+        <PlaygroundBrowserPanel
+          workspace={activeBrowserWorkspace}
+          width={browserPanelWidth}
+          onClose={props.onCloseBrowserWorkspace}
+          onError={props.onError}
+          onWidthChange={setBrowserPanelWidth}
+        />
+      )}
     </StudioPageShell>
+  );
+}
+
+function PlaygroundBrowserPanel(props: {
+  workspace: BrowserWorkspace;
+  width: number;
+  onClose: () => void;
+  onError: (error: unknown) => void;
+  onWidthChange: (width: number) => void;
+}) {
+  const resize = (clientX: number) => {
+    const maximum = Math.max(440, Math.min(1_100, window.innerWidth * 0.72));
+    props.onWidthChange(Math.round(Math.min(maximum, Math.max(440, window.innerWidth - clientX))));
+  };
+
+  return (
+    <aside
+      className="relative h-full min-h-0 min-w-0 overflow-hidden border-l border-border bg-background"
+      aria-label="Browser workspace"
+    >
+      <hr
+        aria-label="Resize browser workspace"
+        aria-orientation="vertical"
+        aria-valuemax={1100}
+        aria-valuemin={440}
+        aria-valuenow={props.width}
+        className="absolute inset-y-0 -left-1 z-20 m-0 h-auto w-2 cursor-col-resize touch-none border-0 bg-transparent transition-colors hover:bg-primary/35 focus-visible:bg-primary/35 focus-visible:outline-none"
+        tabIndex={0}
+        onKeyDown={(event) => {
+          if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+          event.preventDefault();
+          props.onWidthChange(
+            Math.min(1_100, Math.max(440, props.width + (event.key === "ArrowLeft" ? 24 : -24))),
+          );
+        }}
+        onPointerDown={(event) => {
+          event.currentTarget.setPointerCapture(event.pointerId);
+          resize(event.clientX);
+        }}
+        onPointerMove={(event) => {
+          if (event.currentTarget.hasPointerCapture(event.pointerId)) resize(event.clientX);
+        }}
+      />
+      <StudioBrowserView
+        className="border-0"
+        sandboxRef={props.workspace.sandboxRef}
+        view={props.workspace.view}
+        onClose={props.onClose}
+        onError={props.onError}
+      />
+    </aside>
   );
 }
 

@@ -170,7 +170,7 @@ function AgentRegistryRow(props: {
         ) : (
           <div className="flex min-w-0 flex-wrap gap-2">
             <CapabilityBadge enabled={runtime.hasMemory}>memory</CapabilityBadge>
-            <CapabilityBadge enabled={runtime.hasHook}>hook</CapabilityBadge>
+            <CapabilityBadge enabled={runtime.hasLifecycle}>lifecycle</CapabilityBadge>
             <CapabilityBadge enabled={runtime.hasOutputSchema}>schema</CapabilityBadge>
             {runtime.defaultMaxTurns === undefined ? null : (
               <Badge className={neutralBadge}>{runtime.defaultMaxTurns} turns</Badge>
@@ -240,7 +240,7 @@ function formatModelValue(value: unknown): string {
     return `[${value.length}]`;
   }
   if (typeof value === "object") {
-    const model = objectString(value, "model") ?? objectString(value, "defaultModel");
+    const model = objectString(value, "modelId");
     const provider = objectString(value, "provider");
     const id = objectString(value, "id") ?? objectString(value, "name");
     const modelName = model ?? id;

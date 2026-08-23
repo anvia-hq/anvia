@@ -1,6 +1,6 @@
 import { SelectionToolbarCopy, SelectionToolbarQuote, SelectionToolbarRoot } from "./parts";
 
-export const SelectionToolbar = {
+export const SelectionToolbarPrimitive = {
   Root: SelectionToolbarRoot,
   Quote: SelectionToolbarQuote,
   Copy: SelectionToolbarCopy,

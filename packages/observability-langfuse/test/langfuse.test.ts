@@ -1,10 +1,4 @@
-import {
-  AssistantContent,
-  type JsonValue,
-  Message,
-  type Message as MessageType,
-  type Usage,
-} from "@anvia/core/completion";
+import type { JsonValue, Message as MessageType, Usage } from "@anvia/core/completion";
 import { EvalOutcome, exactMatch, runEvalSuite } from "@anvia/core/evals";
 import type {
   AgentGenerationStartArgs,
@@ -12,17 +6,17 @@ import type {
   AgentToolObserver,
 } from "@anvia/core/observability";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { AssistantContent, Message } from "../../core/test/helpers/imports";
 import { sanitizeTraceValue } from "../src/capture";
 import { createLangfuseDatasetClient } from "../src/dataset-client";
-import { runEvalAsExperiment } from "../src/experiment-runner";
-import { createLangfuseEvalReporter as createReporter, langfuse } from "../src/index";
+import { createLangfuseEvalReporter as createReporter } from "../src/eval-reporter";
+import { LangfuseClient } from "../src/index";
 import { createLangfusePromptClient } from "../src/prompt-client";
 import { ScoreQueue } from "../src/scoring";
 
 const mocks = vi.hoisted(() => ({
-  forceFlush: vi.fn(),
-  shutdown: vi.fn(),
-  sdkStart: vi.fn(),
+  forceFlush: vi.fn(async () => {}),
+  shutdown: vi.fn(async () => {}),
   processorConstructor: vi.fn(),
   sdkConstructor: vi.fn(),
   startObservation: vi.fn(),
@@ -35,6 +29,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@langfuse/otel", () => ({
   LangfuseSpanProcessor: class LangfuseSpanProcessor {
     forceFlush = mocks.forceFlush;
+    shutdown = vi.fn(async () => {});
 
     constructor(options: unknown) {
       mocks.processorConstructor(options);
@@ -42,16 +37,42 @@ vi.mock("@langfuse/otel", () => ({
   },
 }));
 
-vi.mock("@opentelemetry/sdk-node", () => ({
-  NodeSDK: class NodeSDK {
-    start = mocks.sdkStart;
+vi.mock("@opentelemetry/sdk-trace-node", () => ({
+  NodeTracerProvider: class NodeTracerProvider {
     shutdown = mocks.shutdown;
+    forceFlush = mocks.forceFlush;
 
     constructor(options: unknown) {
       mocks.sdkConstructor(options);
     }
+
+    getTracer() {
+      return {
+        startSpan(name: string, options: unknown, context: unknown) {
+          return { __name: name, __options: options, __context: context };
+        },
+      };
+    }
   },
 }));
+
+vi.mock("@opentelemetry/api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@opentelemetry/api")>();
+  const rootContext = { __root: true };
+  return {
+    ...actual,
+    ROOT_CONTEXT: rootContext,
+    trace: {
+      ...actual.trace,
+      setSpan: (_context: unknown, span: { __observation?: unknown }) => ({
+        __parentObservation: span.__observation,
+      }),
+      setSpanContext: (_context: unknown, spanContext: unknown) => ({
+        __parentSpanContext: spanContext,
+      }),
+    },
+  };
+});
 
 vi.mock("@opentelemetry/resources", () => ({
   resourceFromAttributes: (attributes: Record<string, unknown>) =>
@@ -62,16 +83,58 @@ vi.mock("@opentelemetry/semantic-conventions", () => ({
   SEMRESATTRS_SERVICE_NAME: "service.name",
 }));
 
-vi.mock("@langfuse/tracing", () => ({
-  LangfuseOtelSpanAttributes: {
-    TRACE_NAME: "langfuse.trace.name",
-    TRACE_USER_ID: "langfuse.trace.user_id",
-    TRACE_SESSION_ID: "langfuse.trace.session_id",
-    TRACE_TAGS: "langfuse.trace.tags",
-    TRACE_METADATA: "langfuse.trace.metadata",
-  },
-  startObservation: mocks.startObservation,
-}));
+vi.mock("@langfuse/tracing", () => {
+  function observationClass(asType: string) {
+    return class Observation {
+      constructor(params: {
+        otelSpan: {
+          __name: string;
+          __options: { startTime?: Date | undefined };
+          __context?: {
+            __parentObservation?: { startObservation(...args: unknown[]): unknown } | undefined;
+            __parentSpanContext?: unknown;
+          };
+        };
+        attributes?: unknown;
+      }) {
+        const options: Record<string, unknown> = { asType };
+        if (params.otelSpan.__options.startTime !== undefined) {
+          options.startTime = params.otelSpan.__options.startTime;
+        }
+        const parent = params.otelSpan.__context?.__parentObservation;
+        if (parent !== undefined) {
+          Object.assign(
+            this,
+            parent.startObservation(params.otelSpan.__name, params.attributes, options),
+          );
+          return;
+        }
+        const parentSpanContext = params.otelSpan.__context?.__parentSpanContext;
+        if (parentSpanContext !== undefined) options.parentSpanContext = parentSpanContext;
+        Object.assign(
+          this,
+          mocks.startObservation(params.otelSpan.__name, params.attributes, options),
+        );
+      }
+    };
+  }
+
+  return {
+    LangfuseAgent: observationClass("agent"),
+    LangfuseEvent: observationClass("event"),
+    LangfuseGeneration: observationClass("generation"),
+    LangfuseGuardrail: observationClass("guardrail"),
+    LangfuseSpan: observationClass("span"),
+    LangfuseTool: observationClass("tool"),
+    LangfuseOtelSpanAttributes: {
+      TRACE_NAME: "langfuse.trace.name",
+      TRACE_USER_ID: "langfuse.trace.user_id",
+      TRACE_SESSION_ID: "langfuse.trace.session_id",
+      TRACE_TAGS: "langfuse.trace.tags",
+      TRACE_METADATA: "langfuse.trace.metadata",
+    },
+  };
+});
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -84,6 +147,17 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+async function startTestRun(client: LangfuseClient): Promise<void> {
+  const root = fakeObservation("root", "trace-init", "observation-init");
+  mocks.startObservation.mockReturnValueOnce(root);
+  await client.observer().startRun({
+    runId: "run_init",
+    prompt: userMessage("initialize"),
+    history: [],
+    maxTurns: 1,
+  });
+}
+
 describe("langfuse", () => {
   it("captures system instructions and falls back to the provider default model", async () => {
     const root = fakeObservation("root", "trace-system", "obs-root-system");
@@ -93,8 +167,9 @@ describe("langfuse", () => {
     turn.startObservation.mockReturnValueOnce(generation);
     mocks.startObservation.mockReturnValueOnce(root);
 
-    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
-    const run = (await tracing.startRun({
+    const tracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk" });
+    const run = (await tracing.observer().startRun({
+      runId: "run_1",
       instructions: "You are a careful support agent.",
       prompt: userMessage("hello"),
       history: [],
@@ -111,17 +186,15 @@ describe("langfuse", () => {
       { asType: "agent" },
     );
 
-    const requestWithoutModel = { ...generationStartArgs().request };
-    delete requestWithoutModel.model;
     await run.startGeneration?.({
       ...generationStartArgs(),
       request: {
-        ...requestWithoutModel,
+        ...generationStartArgs().request,
         instructions: "You are a careful support agent.",
       },
       modelInfo: {
         provider: "test",
-        defaultModel: "provider-default",
+        modelId: "provider-default",
       },
     });
 
@@ -144,7 +217,7 @@ describe("langfuse", () => {
       tools: [{ name: "lookup", description: "Lookup", parameters: { type: "object" } }],
       providerTools: [{ kind: "provider", provider: "test", name: "search" }],
       outputSchema: { type: "object" },
-      additionalParams: { seed: 7 },
+      providerOptions: { seed: 7 },
     };
 
     for (const [captureMode, includesFullFields] of [
@@ -162,12 +235,12 @@ describe("langfuse", () => {
       turn.startObservation.mockReturnValueOnce(generation);
       mocks.startObservation.mockReturnValueOnce(root);
 
-      const tracing = langfuse.create({
+      const tracing = new LangfuseClient({
         publicKey: "pk",
         secretKey: "sk",
-        captureMode,
       });
-      const run = (await tracing.startRun({
+      const run = (await tracing.observer({ captureMode }).startRun({
+        runId: "run_1",
         prompt: userMessage("hello"),
         history: [],
         maxTurns: 1,
@@ -190,7 +263,7 @@ describe("langfuse", () => {
         toolNames: ["lookup"],
         providerToolNames: ["search"],
         hasOutputSchema: true,
-        additionalParamKeys: ["seed"],
+        providerOptionKeys: ["seed"],
       });
       expect("documents" in attributes.input).toBe(includesFullFields);
       expect("tools" in attributes.input).toBe(includesFullFields);
@@ -200,7 +273,7 @@ describe("langfuse", () => {
   });
 
   it("creates tracing from explicit options and delegates lifecycle methods", async () => {
-    const tracing = langfuse.create({
+    const tracing = new LangfuseClient({
       publicKey: "public",
       secretKey: "secret",
       baseUrl: "https://langfuse.test",
@@ -208,6 +281,8 @@ describe("langfuse", () => {
       release: "release-1",
     });
 
+    expect(mocks.processorConstructor).not.toHaveBeenCalled();
+    await startTestRun(tracing);
     expect(mocks.processorConstructor).toHaveBeenCalledWith({
       publicKey: "public",
       secretKey: "secret",
@@ -218,23 +293,89 @@ describe("langfuse", () => {
     expect(mocks.sdkConstructor).toHaveBeenCalledWith({
       spanProcessors: [expect.any(Object)],
     });
-    expect(mocks.sdkStart).toHaveBeenCalledOnce();
-
     await tracing.flush();
-    await tracing.shutdown();
+    await tracing.close();
 
     expect(mocks.forceFlush).toHaveBeenCalledOnce();
     expect(mocks.shutdown).toHaveBeenCalledOnce();
   });
 
-  it("resolves options from environment variables when not provided explicitly", () => {
+  it("keeps construction and accessors side-effect free and closes terminally before use", async () => {
+    const client = new LangfuseClient({ publicKey: "public", secretKey: "secret" });
+
+    const observer = client.observer();
+    const reporter = client.evalReporter();
+    const prompts = client.promptClient();
+    const datasets = client.datasetClient();
+    expect(mocks.sdkConstructor).not.toHaveBeenCalled();
+
+    await client.close();
+    await client.close();
+    await client[Symbol.asyncDispose]();
+    expect(mocks.sdkConstructor).not.toHaveBeenCalled();
+    expect(mocks.shutdown).not.toHaveBeenCalled();
+    expect(() => client.observer()).toThrow("LangfuseClient is closed");
+    await expect(
+      observer.startRun({
+        runId: "closed",
+        prompt: userMessage("closed"),
+        history: [],
+        maxTurns: 1,
+      }),
+    ).rejects.toThrow("LangfuseClient is closed");
+    expect(() =>
+      reporter.report({
+        suiteName: "closed",
+        case: { id: "closed", input: "closed" },
+        trace: { traceId: "closed" },
+        metric: metric("closed"),
+        outcome: EvalOutcome.pass(true),
+      }),
+    ).toThrow("LangfuseClient is closed");
+    expect(() => prompts.refresh()).toThrow("LangfuseClient is closed");
+    expect(() => datasets.getDataset({ name: "closed" })).toThrow("LangfuseClient is closed");
+  });
+
+  it("memoizes concurrent initialization and retries after initialization failure", async () => {
+    const client = new LangfuseClient({ publicKey: "public", secretKey: "secret" });
+    const firstRoot = fakeObservation("first", "trace-first", "observation-first");
+    const secondRoot = fakeObservation("second", "trace-second", "observation-second");
+    mocks.startObservation.mockReturnValueOnce(firstRoot).mockReturnValueOnce(secondRoot);
+
+    await Promise.all([
+      client.observer().startRun({
+        runId: "run_first",
+        prompt: userMessage("first"),
+        history: [],
+        maxTurns: 1,
+      }),
+      client.observer().startRun({
+        runId: "run_second",
+        prompt: userMessage("second"),
+        history: [],
+        maxTurns: 1,
+      }),
+    ]);
+    expect(mocks.sdkConstructor).toHaveBeenCalledOnce();
+
+    const retrying = new LangfuseClient({ publicKey: "public", secretKey: "secret" });
+    mocks.sdkConstructor.mockImplementationOnce(() => {
+      throw new Error("start failed");
+    });
+    await expect(startTestRun(retrying)).rejects.toThrow("start failed");
+    mocks.startObservation.mockReset();
+    await expect(startTestRun(retrying)).resolves.toBeUndefined();
+    expect(mocks.sdkConstructor).toHaveBeenCalledTimes(3);
+  });
+
+  it("resolves options from environment variables when not provided explicitly", async () => {
     vi.stubEnv("LANGFUSE_PUBLIC_KEY", "env-public");
     vi.stubEnv("LANGFUSE_SECRET_KEY", "env-secret");
     vi.stubEnv("LANGFUSE_BASE_URL", "https://env.langfuse.test");
     vi.stubEnv("LANGFUSE_TRACING_ENVIRONMENT", "staging");
     vi.stubEnv("LANGFUSE_RELEASE", "env-release");
 
-    langfuse.create();
+    await startTestRun(new LangfuseClient());
 
     expect(mocks.processorConstructor).toHaveBeenCalledWith({
       baseUrl: "https://env.langfuse.test",
@@ -245,28 +386,30 @@ describe("langfuse", () => {
     });
   });
 
-  it("ignores legacy LANGFUSE_ENVIRONMENT in favor of LANGFUSE_TRACING_ENVIRONMENT", () => {
+  it("ignores legacy LANGFUSE_ENVIRONMENT in favor of LANGFUSE_TRACING_ENVIRONMENT", async () => {
     vi.stubEnv("LANGFUSE_ENVIRONMENT", "legacy");
 
-    langfuse.create();
+    await startTestRun(new LangfuseClient());
 
     const call = mocks.processorConstructor.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(call).toBeDefined();
     expect(call).not.toHaveProperty("environment");
   });
 
-  it("prefers explicit options over environment variables", () => {
+  it("prefers explicit options over environment variables", async () => {
     vi.stubEnv("LANGFUSE_PUBLIC_KEY", "env-public");
     vi.stubEnv("LANGFUSE_SECRET_KEY", "env-secret");
     vi.stubEnv("LANGFUSE_TRACING_ENVIRONMENT", "staging");
     vi.stubEnv("LANGFUSE_RELEASE", "env-release");
 
-    langfuse.create({
-      publicKey: "option-public",
-      secretKey: "option-secret",
-      environment: "prod",
-      release: "option-release",
-    });
+    await startTestRun(
+      new LangfuseClient({
+        publicKey: "option-public",
+        secretKey: "option-secret",
+        environment: "prod",
+        release: "option-release",
+      }),
+    );
 
     expect(mocks.processorConstructor).toHaveBeenCalledWith({
       baseUrl: "https://cloud.langfuse.com",
@@ -277,11 +420,11 @@ describe("langfuse", () => {
     });
   });
 
-  it("treats empty string env values as missing", () => {
+  it("treats empty string env values as missing", async () => {
     vi.stubEnv("LANGFUSE_PUBLIC_KEY", "");
     vi.stubEnv("LANGFUSE_SECRET_KEY", "");
 
-    langfuse.create();
+    await startTestRun(new LangfuseClient());
 
     const call = mocks.processorConstructor.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(call).toBeDefined();
@@ -289,8 +432,8 @@ describe("langfuse", () => {
     expect(call).not.toHaveProperty("secretKey");
   });
 
-  it("surfaces serviceName as a NodeSDK resource attribute when set via option", () => {
-    langfuse.create({ serviceName: "support-agent" });
+  it("surfaces serviceName as a tracer-provider resource attribute when set via option", async () => {
+    await startTestRun(new LangfuseClient({ serviceName: "support-agent" }));
 
     expect(mocks.resourceFromAttributes).toHaveBeenCalledWith({
       "service.name": "support-agent",
@@ -304,10 +447,10 @@ describe("langfuse", () => {
     });
   });
 
-  it("surfaces serviceName as a NodeSDK resource attribute when set via env", () => {
+  it("surfaces serviceName as a tracer-provider resource attribute when set via env", async () => {
     vi.stubEnv("LANGFUSE_SERVICE_NAME", "env-service");
 
-    langfuse.create();
+    await startTestRun(new LangfuseClient());
 
     expect(mocks.resourceFromAttributes).toHaveBeenCalledWith({
       "service.name": "env-service",
@@ -321,8 +464,8 @@ describe("langfuse", () => {
     });
   });
 
-  it("does not construct a NodeSDK resource when serviceName is absent", () => {
-    langfuse.create({ publicKey: "pk", secretKey: "sk" });
+  it("does not construct a tracer-provider resource when serviceName is absent", async () => {
+    await startTestRun(new LangfuseClient({ publicKey: "pk", secretKey: "sk" }));
 
     const call = mocks.sdkConstructor.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(call).toBeDefined();
@@ -334,8 +477,9 @@ describe("langfuse", () => {
     const root = fakeObservation("root", "trace-1", "obs-root");
     mocks.startObservation.mockReturnValueOnce(root);
 
-    const tracing = langfuse.create({ serviceName: "support-agent" });
-    await tracing.startRun({
+    const tracing = new LangfuseClient({ serviceName: "support-agent" });
+    await tracing.observer().startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hi"),
       history: [],
@@ -359,12 +503,12 @@ describe("langfuse", () => {
     turn.startObservation.mockReturnValueOnce(generation);
     mocks.startObservation.mockReturnValueOnce(root);
 
-    const tracing = langfuse.create({
+    const tracing = new LangfuseClient({
       publicKey: "pk",
       secretKey: "sk",
-      captureMode: "full",
     });
-    const run = (await tracing.startRun({
+    const run = (await tracing.observer({ captureMode: "full" }).startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hi"),
       history: [],
@@ -374,16 +518,15 @@ describe("langfuse", () => {
     await run.startGeneration?.({
       turn: 1,
       request: {
-        model: "gpt-4o",
         chatHistory: [userMessage("hi")],
         documents: [],
         tools: [],
-        additionalParams: {},
+        providerOptions: {},
       },
       providerRequest: { model: "gpt-4o", messages: [{ role: "user", content: "hi" }] },
       modelInfo: {
         provider: "openai",
-        defaultModel: "gpt-4o",
+        modelId: "gpt-4o",
         capabilities: {
           streaming: true,
           tools: true,
@@ -403,7 +546,7 @@ describe("langfuse", () => {
           providerRequest: { model: "gpt-4o", messages: [{ role: "user", content: "hi" }] },
           modelInfo: {
             provider: "openai",
-            defaultModel: "gpt-4o",
+            modelId: "gpt-4o",
             capabilities: {
               streaming: true,
               tools: true,
@@ -428,12 +571,12 @@ describe("langfuse", () => {
     turn.startObservation.mockReturnValueOnce(generation);
     mocks.startObservation.mockReturnValueOnce(root);
 
-    const tracing = langfuse.create({
+    const tracing = new LangfuseClient({
       publicKey: "pk",
       secretKey: "sk",
-      captureMode: "full",
     });
-    const run = (await tracing.startRun({
+    const run = (await tracing.observer({ captureMode: "full" }).startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hi"),
       history: [],
@@ -443,13 +586,12 @@ describe("langfuse", () => {
     await run.startGeneration?.({
       turn: 1,
       request: {
-        model: "gpt-4o",
         chatHistory: [userMessage("hi")],
         documents: [],
         tools: [],
-        additionalParams: {},
+        providerOptions: {},
       },
-      modelInfo: { provider: "openai", defaultModel: "gpt-4o" },
+      modelInfo: { provider: "openai", modelId: "gpt-4o" },
     });
 
     const call = turn.startObservation.mock.calls[0]?.[1] as
@@ -457,7 +599,7 @@ describe("langfuse", () => {
       | undefined;
     expect(call?.metadata?.modelInfo).toEqual({
       provider: "openai",
-      defaultModel: "gpt-4o",
+      modelId: "gpt-4o",
     });
     expect(call?.metadata?.modelInfo).not.toHaveProperty("capabilities");
   });
@@ -470,15 +612,21 @@ describe("langfuse", () => {
     turn.startObservation.mockReturnValueOnce(generation);
     mocks.startObservation.mockReturnValueOnce(root);
 
-    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
-    const run = (await tracing.startRun({
+    const tracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk" });
+    const run = (await tracing.observer().startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hi"),
       history: [],
       maxTurns: 1,
     })) as AgentRunObserver;
 
-    await run.startGeneration?.(generationStartArgs());
+    const args = generationStartArgs();
+    const argsWithoutModelInfo: AgentGenerationStartArgs = {
+      turn: args.turn,
+      request: args.request,
+    };
+    await run.startGeneration?.(argsWithoutModelInfo);
 
     const call = turn.startObservation.mock.calls[0]?.[1] as
       | { metadata?: Record<string, unknown> }
@@ -495,8 +643,9 @@ describe("langfuse", () => {
     turn.startObservation.mockReturnValueOnce(generation);
     mocks.startObservation.mockReturnValueOnce(root);
 
-    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
-    const run = (await tracing.startRun({
+    const tracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk" });
+    const run = (await tracing.observer().startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hi"),
       history: [],
@@ -530,8 +679,9 @@ describe("langfuse", () => {
     turn.startObservation.mockReturnValueOnce(generation);
     mocks.startObservation.mockReturnValueOnce(root);
 
-    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
-    const run = (await tracing.startRun({
+    const tracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk" });
+    const run = (await tracing.observer().startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hi"),
       history: [],
@@ -562,12 +712,12 @@ describe("langfuse", () => {
     turn.startObservation.mockReturnValueOnce(tool);
     mocks.startObservation.mockReturnValueOnce(root);
 
-    const tracing = langfuse.create({
+    const tracing = new LangfuseClient({
       publicKey: "pk",
       secretKey: "sk",
-      captureMode: "full",
     });
-    const run = (await tracing.startRun({
+    const run = (await tracing.observer({ captureMode: "full" }).startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hi"),
       history: [],
@@ -613,8 +763,9 @@ describe("langfuse", () => {
     turn.startObservation.mockReturnValueOnce(tool);
     mocks.startObservation.mockReturnValueOnce(root);
 
-    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
-    const run = (await tracing.startRun({
+    const tracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk" });
+    const run = (await tracing.observer().startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hi"),
       history: [],
@@ -658,8 +809,9 @@ describe("langfuse", () => {
     turn.startObservation.mockReturnValueOnce(tool);
     mocks.startObservation.mockReturnValueOnce(root);
 
-    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
-    const run = (await tracing.startRun({
+    const tracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk" });
+    const run = (await tracing.observer().startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hi"),
       history: [],
@@ -700,13 +852,13 @@ describe("langfuse", () => {
     turn.startObservation.mockReturnValueOnce(generation).mockReturnValueOnce(tool);
     mocks.startObservation.mockReturnValueOnce(root);
 
-    const tracing = langfuse.create({
+    const tracing = new LangfuseClient({
       publicKey: "option-public",
       secretKey: "option-secret",
       baseUrl: "https://option.test",
-      captureMode: "full",
     });
-    const run = await tracing.startRun({
+    const run = await tracing.observer({ captureMode: "full" }).startRun({
+      runId: "run_1",
       agentName: "support",
       agentDescription: "Support agent",
       prompt: userMessage("Summarize ticket"),
@@ -785,7 +937,10 @@ describe("langfuse", () => {
       toolCallId: "call-1",
     });
     await runObserver.end({
+      runId: "run-1",
+      status: "completed",
       output: "Done",
+      text: "Done",
       usage: usage(2, 3),
       messages: [],
     });
@@ -823,7 +978,7 @@ describe("langfuse", () => {
     );
     expect(root.update).toHaveBeenCalledWith(
       expect.objectContaining({
-        output: "Done",
+        output: { status: "completed", output: "Done", text: "Done" },
         metadata: expect.objectContaining({ messages: [] }),
       }),
     );
@@ -839,12 +994,12 @@ describe("langfuse", () => {
     mocks.startObservation.mockReturnValueOnce(root);
     const metadata = { composer: { entities: [{ id: "document-1" }] } };
 
-    const tracing = langfuse.create({
+    const tracing = new LangfuseClient({
       publicKey: "pk",
       secretKey: "sk",
-      captureMode: "full",
     });
-    const run = (await tracing.startRun({
+    const run = (await tracing.observer({ captureMode: "full" }).startRun({
+      runId: "run_1",
       prompt: Message.user("hello", { metadata }),
       history: [Message.user("earlier", { metadata })],
       maxTurns: 1,
@@ -874,7 +1029,10 @@ describe("langfuse", () => {
     expect(generationInput.messages[0]).not.toHaveProperty("metadata");
 
     await run.end({
+      runId: "run-1",
+      status: "completed",
       output: "done",
+      text: "done",
       usage: usage(1, 1),
       messages: [Message.assistant("done", { metadata })],
     });
@@ -904,8 +1062,9 @@ describe("langfuse", () => {
       .mockReturnValueOnce(childTool);
     mocks.startObservation.mockReturnValueOnce(root);
 
-    const tracing = langfuse.create({ publicKey: "public", secretKey: "secret" });
-    const run = (await tracing.startRun({
+    const tracing = new LangfuseClient({ publicKey: "public", secretKey: "secret" });
+    const run = (await tracing.observer().startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("delegate"),
       history: [],
@@ -1020,9 +1179,10 @@ describe("langfuse", () => {
         agentId: "child",
         agentName: "Child Agent",
         event: {
-          type: "final",
+          type: "response",
           runId: "child-run",
           output: "7",
+          text: "7",
           usage: usage(2, 1),
           messages: [],
         },
@@ -1080,8 +1240,9 @@ describe("langfuse", () => {
     childAgent.startObservation.mockReturnValueOnce(childTurnEvent);
     mocks.startObservation.mockReturnValueOnce(root);
 
-    const tracing = langfuse.create({ publicKey: "public", secretKey: "secret" });
-    const run = (await tracing.startRun({
+    const tracing = new LangfuseClient({ publicKey: "public", secretKey: "secret" });
+    const run = (await tracing.observer().startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("delegate"),
       history: [],
@@ -1128,8 +1289,9 @@ describe("langfuse", () => {
     turn.startObservation.mockReturnValueOnce(toolObservation);
     mocks.startObservation.mockReturnValueOnce(root);
 
-    const tracing = langfuse.create({ publicKey: "public", secretKey: "secret" });
-    const run = (await tracing.startRun({
+    const tracing = new LangfuseClient({ publicKey: "public", secretKey: "secret" });
+    const run = (await tracing.observer().startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("skip"),
       history: [],
@@ -1173,8 +1335,9 @@ describe("langfuse", () => {
     parentTool.startObservation.mockReturnValueOnce(childAgent);
     mocks.startObservation.mockReturnValueOnce(root);
 
-    const tracing = langfuse.create({ publicKey: "public", secretKey: "secret" });
-    const run = (await tracing.startRun({
+    const tracing = new LangfuseClient({ publicKey: "public", secretKey: "secret" });
+    const run = (await tracing.observer().startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("delegate"),
       history: [],
@@ -1246,8 +1409,9 @@ describe("langfuse", () => {
       .mockReturnValueOnce(childTool);
     mocks.startObservation.mockReturnValueOnce(root);
 
-    const tracing = langfuse.create({ publicKey: "public", secretKey: "secret" });
-    const run = (await tracing.startRun({
+    const tracing = new LangfuseClient({ publicKey: "public", secretKey: "secret" });
+    const run = (await tracing.observer().startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("delegate"),
       history: [],
@@ -1320,7 +1484,7 @@ describe("langfuse", () => {
   });
 
   it("scores traces through the Langfuse public API", async () => {
-    const tracing = langfuse.create({
+    const tracing = new LangfuseClient({
       publicKey: "public",
       secretKey: "secret",
       baseUrl: "https://langfuse.test",
@@ -1358,19 +1522,19 @@ describe("langfuse", () => {
   });
 
   it("validates score requirements", async () => {
-    const tracing = langfuse.create({ publicKey: "public", secretKey: "secret" });
+    const tracing = new LangfuseClient({ publicKey: "public", secretKey: "secret" });
     await expect(tracing.score({ traceId: "", name: "quality", value: 1 })).rejects.toThrow(
       "Langfuse score requires traceId",
     );
 
-    const missingKeys = langfuse.create({ publicKey: "", secretKey: "" });
+    const missingKeys = new LangfuseClient({ publicKey: "", secretKey: "" });
     await expect(
       missingKeys.score({ traceId: "trace-1", name: "quality", value: 1 }),
     ).rejects.toThrow("Langfuse score requires publicKey and secretKey");
   });
 
   it("forwards dataType through the score body", async () => {
-    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
+    const tracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk" });
 
     await tracing.score({
       traceId: "trace-1",
@@ -1397,7 +1561,7 @@ describe("langfuse", () => {
   });
 
   it("rejects CATEGORICAL with a non-string value", async () => {
-    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
+    const tracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk" });
     await expect(
       tracing.score({
         traceId: "trace-1",
@@ -1410,7 +1574,7 @@ describe("langfuse", () => {
   });
 
   it("accepts BOOLEAN scores with 0 or 1 and rejects other numbers", async () => {
-    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
+    const tracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk" });
 
     await tracing.score({ traceId: "trace-1", name: "is-correct", value: 0, dataType: "BOOLEAN" });
     expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body))).toMatchObject({
@@ -1431,7 +1595,7 @@ describe("langfuse", () => {
   });
 
   it("rejects NUMERIC with a non-number value", async () => {
-    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
+    const tracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk" });
     await expect(
       tracing.score({
         traceId: "trace-1",
@@ -1444,7 +1608,7 @@ describe("langfuse", () => {
   });
 
   it("sends configId and accepts scoreConfigId as an alias", async () => {
-    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
+    const tracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk" });
 
     await tracing.score({ traceId: "trace-1", name: "quality", value: 1, configId: "cfg-1" });
     expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body))).toMatchObject({
@@ -1459,7 +1623,7 @@ describe("langfuse", () => {
   });
 
   it("prefers configId over scoreConfigId when both are set", async () => {
-    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
+    const tracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk" });
     await tracing.score({
       traceId: "trace-1",
       name: "quality",
@@ -1473,7 +1637,7 @@ describe("langfuse", () => {
   });
 
   it("forwards environment and timestamp overrides in the score body", async () => {
-    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
+    const tracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk" });
     await tracing.score({
       traceId: "trace-1",
       name: "quality",
@@ -1489,7 +1653,7 @@ describe("langfuse", () => {
   });
 
   it("normalizes a Date timestamp to ISO 8601", async () => {
-    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
+    const tracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk" });
     await tracing.score({
       traceId: "trace-1",
       name: "quality",
@@ -1503,7 +1667,7 @@ describe("langfuse", () => {
   it("applies a default 30s timeout and respects timeoutMs", async () => {
     const fetchMock = vi.mocked(fetch);
 
-    const defaultTracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
+    const defaultTracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk" });
     await defaultTracing.score({ traceId: "trace-1", name: "quality", value: 1 });
     const defaultSignal = (fetchMock.mock.calls[0]?.[1] as RequestInit | undefined)?.signal as
       | AbortSignal
@@ -1512,7 +1676,7 @@ describe("langfuse", () => {
     expect(defaultSignal?.aborted).toBe(false);
 
     vi.mocked(fetch).mockClear();
-    const slowTracing = langfuse.create({ publicKey: "pk", secretKey: "sk", timeoutMs: 50 });
+    const slowTracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk", timeoutMs: 50 });
     fetchMock.mockImplementationOnce(
       (_url, init) =>
         new Promise((_, reject) => {
@@ -1541,7 +1705,7 @@ describe("langfuse", () => {
     Object.defineProperty(response, "text", { value: textSpy });
     vi.mocked(fetch).mockReturnValueOnce(Promise.resolve(response));
 
-    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
+    const tracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk" });
     await tracing.score({ traceId: "trace-1", name: "quality", value: 1 });
     expect(textSpy).not.toHaveBeenCalled();
   });
@@ -1549,7 +1713,7 @@ describe("langfuse", () => {
   it("includes the error response text in the rejection message", async () => {
     vi.mocked(fetch).mockReturnValueOnce(Promise.resolve(new Response("oops", { status: 500 })));
 
-    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
+    const tracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk" });
     await expect(tracing.score({ traceId: "trace-1", name: "quality", value: 1 })).rejects.toThrow(
       /oops/,
     );
@@ -1583,6 +1747,23 @@ describe("langfuse", () => {
     });
   });
 
+  it("does not post scores to a trace owned by another observer", async () => {
+    const score = vi.fn();
+    const args = {
+      suiteName: "suite",
+      case: { id: "case-1", input: "input" },
+      trace: { observer: "otel", traceId: "trace-1" },
+      metric: metric("quality"),
+      outcome: EvalOutcome.pass(true),
+    };
+
+    await createReporter({ score }).report(args);
+    expect(score).not.toHaveBeenCalled();
+
+    await createReporter({ score }, { traceObserver: "otel" }).report(args);
+    expect(score).toHaveBeenCalledOnce();
+  });
+
   it("skips invalid eval outcomes by default and can publish them as zero", async () => {
     const score = vi.fn();
     const reporter = createReporter({ score });
@@ -1613,7 +1794,7 @@ describe("langfuse", () => {
     );
   });
 
-  it("does not crash eval suites for missing trace ids unless strict reporting is enabled", async () => {
+  it("does not crash eval suites for missing trace ids unless missing traces throw", async () => {
     const score = vi.fn();
     const result = await runEvalSuite({
       name: "suite",
@@ -1632,7 +1813,7 @@ describe("langfuse", () => {
       cases: [{ id: "case-1", input: "input" }],
       target: async (input) => input,
       metrics: [metric("quality")],
-      reporters: [createReporter({ score }, { strict: true })],
+      reporters: [createReporter({ score }, { onMissingTrace: "throw" })],
     });
 
     expect(strict.results[0]?.metrics[0]?.reporterErrors).toHaveLength(1);
@@ -2008,21 +2189,6 @@ describe("langfuse", () => {
     expect(score).not.toHaveBeenCalled();
   });
 
-  it("strict: true continues to work as an alias for onMissingTrace 'throw'", async () => {
-    const score = vi.fn();
-    const reporter = createReporter({ score }, { strict: true });
-
-    await expect(
-      reporter.report({
-        suiteName: "suite",
-        case: { id: "case-1", input: "input" },
-        output: "answer",
-        metric: metric("quality"),
-        outcome: EvalOutcome.pass(true),
-      }),
-    ).rejects.toThrow(/traceId/);
-  });
-
   it("forwards args.outcome.metadata into the score metadata", async () => {
     const score = vi.fn();
     const reporter = createReporter({ score });
@@ -2111,8 +2277,9 @@ describe("LangfuseGenerationObserver.update", () => {
     turn.startObservation.mockReturnValueOnce(generation);
     mocks.startObservation.mockReturnValueOnce(root);
 
-    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
-    const run = (await tracing.startRun({
+    const tracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk" });
+    const run = (await tracing.observer().startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hi"),
       history: [],
@@ -2134,8 +2301,9 @@ describe("LangfuseGenerationObserver.update", () => {
     turn.startObservation.mockReturnValueOnce(generation);
     mocks.startObservation.mockReturnValueOnce(root);
 
-    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
-    const run = (await tracing.startRun({
+    const tracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk" });
+    const run = (await tracing.observer().startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hi"),
       history: [],
@@ -2162,8 +2330,9 @@ describe("LangfuseGenerationObserver.update", () => {
     turn.startObservation.mockReturnValueOnce(generation);
     mocks.startObservation.mockReturnValueOnce(root);
 
-    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
-    const run = (await tracing.startRun({
+    const tracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk" });
+    const run = (await tracing.observer().startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hi"),
       history: [],
@@ -2186,8 +2355,9 @@ describe("LangfuseGenerationObserver.update", () => {
     turn.startObservation.mockReturnValueOnce(generation);
     mocks.startObservation.mockReturnValueOnce(root);
 
-    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
-    const run = (await tracing.startRun({
+    const tracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk" });
+    const run = (await tracing.observer().startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hi"),
       history: [],
@@ -2230,7 +2400,7 @@ describe("ScoreQueue", () => {
       clearTimer: (handle: unknown) => void;
       flushIntervalMs: number;
       batchSize: number;
-      maxRetries: number;
+      maxAttempts: number;
     }> = {},
   ): QueueHandle {
     const fetchMock = (overrides.fetchImpl ??
@@ -2247,7 +2417,7 @@ describe("ScoreQueue", () => {
       timeoutMs: 5_000,
       batchSize: overrides.batchSize ?? 3,
       flushIntervalMs: overrides.flushIntervalMs ?? 100,
-      maxRetries: overrides.maxRetries ?? 3,
+      maxAttempts: overrides.maxAttempts ?? 3,
       fetchImpl: fetchMock as typeof fetch,
       sleep: sleepMock as (ms: number) => Promise<void>,
     };
@@ -2423,13 +2593,13 @@ describe("ScoreQueue", () => {
     expect(queue.depth()).toBe(0);
   });
 
-  it("gives up after maxRetries and throws LangfuseScoreError", async () => {
+  it("gives up after maxAttempts and throws LangfuseScoreError", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 500 }));
     const sleepMock = vi.fn(async () => {});
     const { queue } = makeQueue({
       fetchImpl: fetchMock as unknown as typeof fetch,
       sleep: sleepMock,
-      maxRetries: 3,
+      maxAttempts: 3,
     });
 
     queue.enqueue(scoreArgs());
@@ -2448,7 +2618,7 @@ describe("ScoreQueue", () => {
     const { queue } = makeQueue({
       batchSize: 1,
       fetchImpl: fetchMock as unknown as typeof fetch,
-      maxRetries: 2,
+      maxAttempts: 2,
       setTimer,
     });
 
@@ -2483,15 +2653,15 @@ describe("ScoreQueue", () => {
     expect(() => queue.enqueue(scoreArgs())).toThrow(/shut down/);
   });
 
-  it("shutdown remains best-effort when pending scores cannot be delivered", async () => {
+  it("shutdown reports when pending scores cannot be delivered", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 500 }));
     const { queue } = makeQueue({
       fetchImpl: fetchMock as unknown as typeof fetch,
-      maxRetries: 1,
+      maxAttempts: 1,
     });
 
     queue.enqueue(scoreArgs());
-    await expect(queue.shutdown()).resolves.toBeUndefined();
+    await expect(queue.shutdown()).rejects.toMatchObject({ name: "LangfuseScoreError" });
 
     expect(fetchMock).toHaveBeenCalledOnce();
     expect(queue.depth()).toBe(1);
@@ -2501,7 +2671,7 @@ describe("ScoreQueue", () => {
 
 describe("score queue integration", () => {
   it("score() direct-sends when scoreBatchSize is not set", async () => {
-    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
+    const tracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk" });
     expect(tracing.scoreQueueDepth()).toBe(0);
 
     await tracing.score({ traceId: "t", name: "n", value: 1 });
@@ -2510,10 +2680,10 @@ describe("score queue integration", () => {
   });
 
   it("score() enqueues when scoreBatchSize is set and exposes depth", async () => {
-    const tracing = langfuse.create({
+    const tracing = new LangfuseClient({
       publicKey: "pk",
       secretKey: "sk",
-      scoreBatchSize: 10,
+      scores: { batchSize: 10 },
     });
     expect(tracing.scoreQueueDepth()).toBe(0);
 
@@ -2522,17 +2692,17 @@ describe("score queue integration", () => {
     expect(tracing.scoreQueueDepth()).toBe(1);
   });
 
-  it("flushScores() drains the queue and posts one batched request", async () => {
-    const tracing = langfuse.create({
+  it("flush() drains the queue and posts one batched request", async () => {
+    const tracing = new LangfuseClient({
       publicKey: "pk",
       secretKey: "sk",
-      scoreBatchSize: 10,
+      scores: { batchSize: 10 },
     });
     await tracing.score({ traceId: "t1", name: "quality", value: 1 });
     await tracing.score({ traceId: "t2", name: "latency", value: 0.4 });
     expect(tracing.scoreQueueDepth()).toBe(2);
 
-    await tracing.flushScores();
+    await tracing.flush();
     expect(vi.mocked(fetch)).toHaveBeenCalledOnce();
     const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body));
     expect(body).toHaveLength(2);
@@ -2540,10 +2710,10 @@ describe("score queue integration", () => {
   });
 
   it("flush() also drains the score queue in addition to processor.forceFlush()", async () => {
-    const tracing = langfuse.create({
+    const tracing = new LangfuseClient({
       publicKey: "pk",
       secretKey: "sk",
-      scoreBatchSize: 10,
+      scores: { batchSize: 10 },
     });
     await tracing.score({ traceId: "t1", name: "quality", value: 1 });
     expect(tracing.scoreQueueDepth()).toBe(1);
@@ -2554,32 +2724,45 @@ describe("score queue integration", () => {
     expect(mocks.forceFlush).toHaveBeenCalledOnce();
   });
 
-  it("shutdown() drains the score queue and stops the SDK", async () => {
-    const tracing = langfuse.create({
+  it("close() drains the score queue and stops the tracer provider", async () => {
+    const tracing = new LangfuseClient({
       publicKey: "pk",
       secretKey: "sk",
-      scoreBatchSize: 10,
+      scores: { batchSize: 10 },
     });
     await tracing.score({ traceId: "t1", name: "quality", value: 1 });
 
-    await tracing.shutdown();
+    await tracing.close();
     expect(vi.mocked(fetch)).toHaveBeenCalledOnce();
     expect(tracing.scoreQueueDepth()).toBe(0);
+    expect(mocks.shutdown).toHaveBeenCalledOnce();
+  });
+
+  it("close() reports score flush failures after still stopping the SDK", async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 500 }));
+    const client = new LangfuseClient({
+      publicKey: "pk",
+      secretKey: "sk",
+      scores: { batchSize: 10, retries: { maxAttempts: 1 } },
+    });
+    await client.score({ traceId: "trace", name: "quality", value: 1 });
+
+    await expect(client.close()).rejects.toMatchObject({ name: "AggregateError" });
     expect(mocks.shutdown).toHaveBeenCalledOnce();
   });
 
   it("LangfuseScoreError carries the failed scores when a batch fails non-retryably", async () => {
     vi.mocked(fetch).mockReturnValueOnce(Promise.resolve(new Response("bad", { status: 400 })));
 
-    const tracing = langfuse.create({
+    const tracing = new LangfuseClient({
       publicKey: "pk",
       secretKey: "sk",
-      scoreBatchSize: 10,
+      scores: { batchSize: 10 },
     });
     await tracing.score({ traceId: "t1", name: "quality", value: 1 });
     await tracing.score({ traceId: "t2", name: "latency", value: 0.4 });
 
-    await expect(tracing.flushScores()).rejects.toMatchObject({
+    await expect(tracing.flush()).rejects.toMatchObject({
       name: "LangfuseScoreError",
       scores: expect.arrayContaining([
         expect.objectContaining({ traceId: "t1" }),
@@ -2649,144 +2832,22 @@ describe("usageDetailsFromRecord", () => {
   });
 });
 
-describe("LangfuseTraceHandle", () => {
-  it("getCurrentTrace() returns undefined before any run", () => {
-    const tracing = langfuse.create({ publicKey: "public", secretKey: "secret" });
-    expect(tracing.getCurrentTrace()).toBeUndefined();
-  });
-
-  it("getCurrentTrace() returns a handle during a run and clears it after end", async () => {
-    const root = fakeObservation("root", "trace-7", "obs-root-7");
-    root.startObservation.mockReturnValue(root);
-    mocks.startObservation.mockReturnValueOnce(root);
-
-    const tracing = langfuse.create({ publicKey: "public", secretKey: "secret" });
-    const runObserver = (await tracing.startRun({
-      agentName: "support",
-      prompt: userMessage("hi"),
-      history: [],
-      maxTurns: 1,
-    })) as AgentRunObserver;
-
-    const handle = tracing.getCurrentTrace();
-    expect(handle).toBeDefined();
-    expect(handle?.traceId).toBe("trace-7");
-    expect(handle?.observationId).toBe("obs-root-7");
-    expect(handle?.traceId).toBe(runObserver.trace?.traceId);
-    expect(handle?.observationId).toBe(runObserver.trace?.observationId);
-
-    await runObserver.end({
-      output: "Done",
-      usage: usage(1, 2),
-      messages: [],
-    });
-    expect(tracing.getCurrentTrace()).toBeUndefined();
-  });
-
-  it("getCurrentTrace() returns undefined after a run errors", async () => {
-    const root = fakeObservation("root", "trace-8", "obs-root-8");
-    root.startObservation.mockReturnValue(root);
-    mocks.startObservation.mockReturnValueOnce(root);
-
-    const tracing = langfuse.create({ publicKey: "public", secretKey: "secret" });
-    const runObserver = (await tracing.startRun({
-      agentName: "support",
-      prompt: userMessage("hi"),
-      history: [],
-      maxTurns: 1,
-    })) as AgentRunObserver;
-
-    expect(tracing.getCurrentTrace()).toBeDefined();
-
-    await runObserver.error?.({
-      error: new Error("boom"),
-      usage: usage(0, 0),
-      messages: [],
-    });
-    expect(tracing.getCurrentTrace()).toBeUndefined();
-  });
-
-  it("addAttributes updates the root observation metadata", async () => {
-    const root = fakeObservation("root", "trace-9", "obs-root-9");
-    root.startObservation.mockReturnValue(root);
-    mocks.startObservation.mockReturnValueOnce(root);
-
-    const tracing = langfuse.create({ publicKey: "public", secretKey: "secret" });
-    await tracing.startRun({
-      agentName: "support",
-      prompt: userMessage("hi"),
-      history: [],
-      maxTurns: 1,
-    });
-
-    tracing.getCurrentTrace()?.addAttributes({ quality: "high", score: 0.9 });
-    expect(root.update).toHaveBeenCalledWith({ metadata: { quality: "high", score: 0.9 } });
-  });
-
-  it("addEvent creates an auto-ended event observation under the root", async () => {
-    const root = fakeObservation("root", "trace-10", "obs-root-10");
-    const event = fakeObservation("event", "trace-10", "obs-event-1");
-    root.startObservation.mockReturnValueOnce(event);
-    mocks.startObservation.mockReturnValueOnce(root);
-
-    const tracing = langfuse.create({ publicKey: "public", secretKey: "secret" });
-    await tracing.startRun({
-      agentName: "support",
-      prompt: userMessage("hi"),
-      history: [],
-      maxTurns: 1,
-    });
-
-    tracing.getCurrentTrace()?.addEvent("retrieval.done", { docCount: 4 });
-    expect(root.startObservation).toHaveBeenCalledWith(
-      "retrieval.done",
-      { metadata: { docCount: 4 } },
-      { asType: "event" },
-    );
-    expect(event.end).not.toHaveBeenCalled();
-  });
-
-  it("event? on the run observer creates an event observation", async () => {
-    const root = fakeObservation("root", "trace-11", "obs-root-11");
-    const event = fakeObservation("event", "trace-11", "obs-event-2");
-    root.startObservation.mockReturnValueOnce(event);
-    mocks.startObservation.mockReturnValueOnce(root);
-
-    const tracing = langfuse.create({ publicKey: "public", secretKey: "secret" });
-    const runObserver = (await tracing.startRun({
-      agentName: "support",
-      prompt: userMessage("hi"),
-      history: [],
-      maxTurns: 1,
-    })) as AgentRunObserver;
-
-    await runObserver.event?.({
-      name: "validation.passed",
-      attributes: { checks: 3 },
-    });
-
-    expect(root.startObservation).toHaveBeenCalledWith(
-      "validation.passed",
-      { metadata: { checks: 3 } },
-      { asType: "event" },
-    );
-    expect(event.end).not.toHaveBeenCalled();
-  });
-
-  it("maps runtime event level and timestamp to native event attributes", async () => {
+describe("Langfuse run events", () => {
+  it("maps runtime events to child event observations", async () => {
     const root = fakeObservation("root", "trace-event", "obs-root-event");
     const event = fakeObservation("event", "trace-event", "obs-event");
     root.startObservation.mockReturnValueOnce(event);
     mocks.startObservation.mockReturnValueOnce(root);
-    const timestamp = new Date("2026-01-02T03:04:05.000Z");
-
-    const tracing = langfuse.create({ publicKey: "public", secretKey: "secret" });
-    const runObserver = (await tracing.startRun({
+    const timestamp = "2026-01-02T03:04:05.000Z";
+    const client = new LangfuseClient({ publicKey: "public", secretKey: "secret" });
+    const run = (await client.observer().startRun({
+      runId: "run_1",
       prompt: userMessage("hi"),
       history: [],
       maxTurns: 1,
     })) as AgentRunObserver;
-    await runObserver.event?.({
+
+    await run.event?.({
       name: "guardrail.warning",
       level: "WARNING",
       timestamp,
@@ -2796,101 +2857,28 @@ describe("LangfuseTraceHandle", () => {
     expect(root.startObservation).toHaveBeenCalledWith(
       "guardrail.warning",
       { level: "WARNING", metadata: { rule: "pii" } },
-      { asType: "event", startTime: timestamp },
+      { asType: "event", startTime: new Date(timestamp) },
     );
-    expect(event.end).not.toHaveBeenCalled();
-  });
-
-  it("multiple addEvent calls within one run all create observations", async () => {
-    const root = fakeObservation("root", "trace-12", "obs-root-12");
-    const eventA = fakeObservation("eventA", "trace-12", "obs-event-A");
-    const eventB = fakeObservation("eventB", "trace-12", "obs-event-B");
-    root.startObservation.mockReturnValueOnce(eventA).mockReturnValueOnce(eventB);
-    mocks.startObservation.mockReturnValueOnce(root);
-
-    const tracing = langfuse.create({ publicKey: "public", secretKey: "secret" });
-    await tracing.startRun({
-      agentName: "support",
-      prompt: userMessage("hi"),
-      history: [],
-      maxTurns: 1,
-    });
-
-    const handle = tracing.getCurrentTrace();
-    handle?.addEvent("retrieval.done");
-    handle?.addEvent("validation.passed");
-
-    expect(root.startObservation).toHaveBeenCalledTimes(2);
-    expect(root.startObservation).toHaveBeenNthCalledWith(
-      1,
-      "retrieval.done",
-      { metadata: {} },
-      { asType: "event" },
-    );
-    expect(root.startObservation).toHaveBeenNthCalledWith(
-      2,
-      "validation.passed",
-      { metadata: {} },
-      { asType: "event" },
-    );
-    expect(eventA.end).not.toHaveBeenCalled();
-    expect(eventB.end).not.toHaveBeenCalled();
-  });
-
-  it("sequential runs replace the handle (last-write-wins)", async () => {
-    const rootA = fakeObservation("rootA", "trace-A", "obs-root-A");
-    const rootB = fakeObservation("rootB", "trace-B", "obs-root-B");
-    rootA.startObservation.mockReturnValue(rootA);
-    rootB.startObservation.mockReturnValue(rootB);
-    mocks.startObservation.mockReturnValueOnce(rootA).mockReturnValueOnce(rootB);
-
-    const tracing = langfuse.create({ publicKey: "public", secretKey: "secret" });
-    const runA = (await tracing.startRun({
-      agentName: "agent-a",
-      prompt: userMessage("hi"),
-      history: [],
-      maxTurns: 1,
-    })) as AgentRunObserver;
-    const handleA = tracing.getCurrentTrace();
-    expect(handleA?.traceId).toBe("trace-A");
-
-    await runA.end({
-      output: "Done A",
-      usage: usage(1, 1),
-      messages: [],
-    });
-
-    const runB = (await tracing.startRun({
-      agentName: "agent-b",
-      prompt: userMessage("hi"),
-      history: [],
-      maxTurns: 1,
-    })) as AgentRunObserver;
-    const handleB = tracing.getCurrentTrace();
-    expect(handleB?.traceId).toBe("trace-B");
-    expect(handleB).not.toBe(handleA);
-
-    await runB.end({
-      output: "Done B",
-      usage: usage(1, 1),
-      messages: [],
-    });
-    expect(tracing.getCurrentTrace()).toBeUndefined();
   });
 });
 
 function fakeObservation(name: string, traceId: string, id: string) {
+  const otelSpan: {
+    setAttribute: ReturnType<typeof vi.fn>;
+    __observation?: unknown;
+  } = {
+    setAttribute: vi.fn(),
+  };
   const observation = {
     name,
     id,
     traceId,
-    otelSpan: {
-      setAttribute: vi.fn(),
-    },
+    otelSpan,
     startObservation: vi.fn(),
     update: vi.fn(),
     end: vi.fn(),
   };
+  otelSpan.__observation = observation;
   observation.update.mockReturnValue(observation);
   return observation;
 }
@@ -2898,12 +2886,12 @@ function fakeObservation(name: string, traceId: string, id: string) {
 function generationStartArgs(): AgentGenerationStartArgs {
   return {
     turn: 1,
+    modelInfo: { provider: "test", modelId: "test-model" },
     request: {
-      model: "test-model",
       chatHistory: [userMessage("hello")],
       documents: [],
       tools: [],
-      additionalParams: {},
+      providerOptions: {},
     },
   };
 }
@@ -2915,7 +2903,7 @@ function childGenerationStartEvent() {
     request: generationStartArgs().request,
     modelInfo: {
       provider: "test",
-      defaultModel: "test-model",
+      modelId: "test-model",
       capabilities: {
         streaming: true,
         tools: true,
@@ -2974,7 +2962,7 @@ describe("LangfuseDatasetClient", () => {
   it("createDataset PUTs to /api/public/datasets/:name with auth", async () => {
     vi.mocked(fetch).mockReturnValueOnce(Promise.resolve(makeFetchResponse({ id: 1 })));
 
-    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
+    const tracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk" });
     const client = createDatasetClient(tracing, {
       publicKey: "pk",
       secretKey: "sk",
@@ -3004,7 +2992,7 @@ describe("LangfuseDatasetClient", () => {
   it("reuses credentials and baseUrl from a langfuse tracing instance", async () => {
     vi.mocked(fetch).mockReturnValueOnce(Promise.resolve(makeFetchResponse({ id: 1 })));
 
-    const tracing = langfuse.create({
+    const tracing = new LangfuseClient({
       publicKey: "trace-pk",
       secretKey: "trace-sk",
       baseUrl: "https://trace.langfuse.test",
@@ -3021,7 +3009,7 @@ describe("LangfuseDatasetClient", () => {
   it("prefers explicit dataset client options over tracing config", async () => {
     vi.mocked(fetch).mockReturnValueOnce(Promise.resolve(makeFetchResponse({ id: 1 })));
 
-    const tracing = langfuse.create({
+    const tracing = new LangfuseClient({
       publicKey: "trace-pk",
       secretKey: "trace-sk",
       baseUrl: "https://trace.langfuse.test",
@@ -3070,12 +3058,12 @@ describe("LangfuseDatasetClient", () => {
       ),
     );
 
-    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
+    const tracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk" });
     const client = createDatasetClient(tracing, {
       publicKey: "pk",
       secretKey: "sk",
     });
-    const dataset = await client.getDataset<{ q: string }, string>("support-set");
+    const dataset = await client.getDataset<{ q: string }, string>({ name: "support-set" });
 
     expect(dataset.name).toBe("support-set");
     expect(dataset.description).toBe("smoke");
@@ -3110,13 +3098,13 @@ describe("LangfuseDatasetClient", () => {
         ),
       );
 
-    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
+    const tracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk" });
     const client = createDatasetClient(tracing, {
       publicKey: "pk",
       secretKey: "sk",
       pageSize: 1,
     });
-    const dataset = await client.getDataset<string, string>("support-set");
+    const dataset = await client.getDataset<string, string>({ name: "support-set" });
 
     expect(dataset.items).toHaveLength(2);
     expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2);
@@ -3127,15 +3115,18 @@ describe("LangfuseDatasetClient", () => {
   it("upsertItems POSTs the items array", async () => {
     vi.mocked(fetch).mockReturnValueOnce(Promise.resolve(new Response(null, { status: 204 })));
 
-    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
+    const tracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk" });
     const client = createDatasetClient(tracing, {
       publicKey: "pk",
       secretKey: "sk",
     });
-    await client.upsertItems("support-set", [
-      { id: "i-1", input: { q: "hi" }, expected: "hello" },
-      { id: "i-2", input: { q: "bye" } },
-    ]);
+    await client.upsertItems({
+      name: "support-set",
+      items: [
+        { id: "i-1", input: { q: "hi" }, expected: "hello" },
+        { id: "i-2", input: { q: "bye" } },
+      ],
+    });
 
     const [url, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
     expect(url).toContain("/api/public/datasets/support-set/items");
@@ -3151,21 +3142,21 @@ describe("LangfuseDatasetClient", () => {
   it("upsertItems throws on non-2xx with the response body", async () => {
     vi.mocked(fetch).mockReturnValueOnce(Promise.resolve(makeFetchResponse("bad request", 400)));
 
-    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
+    const tracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk" });
     const client = createDatasetClient(tracing, {
       publicKey: "pk",
       secretKey: "sk",
     });
 
-    await expect(client.upsertItems("support-set", [{ id: "i-1", input: "x" }])).rejects.toThrow(
-      /bad request/,
-    );
+    await expect(
+      client.upsertItems({ name: "support-set", items: [{ id: "i-1", input: "x" }] }),
+    ).rejects.toThrow(/bad request/);
   });
 
   it("runExperiment accepts local items and POSTs one batched run", async () => {
     vi.mocked(fetch).mockReturnValueOnce(Promise.resolve(new Response(null, { status: 204 })));
 
-    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
+    const tracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk" });
     const client = createDatasetClient(tracing, {
       publicKey: "pk",
       secretKey: "sk",
@@ -3228,7 +3219,7 @@ describe("LangfuseDatasetClient", () => {
       )
       .mockReturnValueOnce(Promise.resolve(new Response(null, { status: 204 })));
 
-    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
+    const tracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk" });
     const client = createDatasetClient(tracing, {
       publicKey: "pk",
       secretKey: "sk",
@@ -3250,7 +3241,7 @@ describe("LangfuseDatasetClient", () => {
   it("runExperiment continues on per-item errors", async () => {
     vi.mocked(fetch).mockReturnValueOnce(Promise.resolve(new Response(null, { status: 204 })));
 
-    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
+    const tracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk" });
     const client = createDatasetClient(tracing, {
       publicKey: "pk",
       secretKey: "sk",
@@ -3281,7 +3272,7 @@ describe("LangfuseDatasetClient", () => {
   it("runExperiment throws on non-2xx POST", async () => {
     vi.mocked(fetch).mockReturnValueOnce(Promise.resolve(makeFetchResponse("server error", 500)));
 
-    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
+    const tracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk" });
     const client = createDatasetClient(tracing, {
       publicKey: "pk",
       secretKey: "sk",
@@ -3302,7 +3293,7 @@ describe("LangfuseDatasetClient", () => {
       Promise.resolve(makeFetchResponse({ name: "empty-set", items: [], meta: { totalPages: 1 } })),
     );
 
-    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
+    const tracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk" });
     const client = createDatasetClient(tracing, {
       publicKey: "pk",
       secretKey: "sk",
@@ -3323,17 +3314,13 @@ describe("LangfuseDatasetClient", () => {
   });
 });
 
-describe("runEvalAsExperiment", () => {
+describe("LangfuseClient.runEvalExperiment", () => {
   it("runs the eval suite and posts a dataset run with per-case outputs and traces", async () => {
     vi.mocked(fetch).mockReturnValueOnce(Promise.resolve(new Response(null, { status: 204 })));
 
-    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
-    const client = createDatasetClient(tracing, {
-      publicKey: "pk",
-      secretKey: "sk",
-    });
-    const { suite, datasetRun } = await runEvalAsExperiment(
-      {
+    const tracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk" });
+    const { suite, datasetRun } = await tracing.runEvalExperiment({
+      suite: {
         name: "smoke",
         cases: [
           { id: "c-1", input: "a", expected: "A" },
@@ -3344,13 +3331,11 @@ describe("runEvalAsExperiment", () => {
         metrics: [exactMatch()],
         reporters: [],
       },
-      {
-        tracing,
-        client,
+      experiment: {
         datasetName: "smoke-set",
         runName: "smoke-run",
       },
-    );
+    });
 
     expect(suite.metrics.passed).toBe(2);
     expect(datasetRun.posted).toBe(2);
@@ -3373,17 +3358,13 @@ describe("runEvalAsExperiment", () => {
   });
 
   it("optionally wires metric scores into the dataset run", async () => {
-    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
-    const client = createDatasetClient(tracing, {
-      publicKey: "pk",
-      secretKey: "sk",
-    });
-    const { suite } = await runEvalAsExperiment<
+    const tracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk" });
+    const { suite } = await tracing.runEvalExperiment<
       string,
       { answer: string; trace: { traceId: string; observationId: string } },
       string
-    >(
-      {
+    >({
+      suite: {
         name: "smoke",
         cases: [{ id: "c-1", input: "a", expected: "a" }],
         target: async (input) => ({
@@ -3392,14 +3373,12 @@ describe("runEvalAsExperiment", () => {
         }),
         metrics: [exactMatch({ actual: ({ output }) => output.answer })],
       },
-      {
-        tracing,
-        client,
+      experiment: {
         datasetName: "smoke-set",
         runName: "smoke-run",
         publishScores: true,
       },
-    );
+    });
 
     expect(suite.metrics.passed).toBe(1);
     expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2);
@@ -3416,7 +3395,7 @@ describe("runEvalAsExperiment", () => {
 });
 
 function createDatasetClient(
-  tracing: ReturnType<typeof langfuse.create>,
+  tracing: LangfuseClient,
   options: Parameters<typeof createLangfuseDatasetClient>[1] = {},
 ): ReturnType<typeof createLangfuseDatasetClient> {
   return createLangfuseDatasetClient(tracing, options);
@@ -3446,9 +3425,9 @@ describe("LangfusePromptClient", () => {
       ),
     );
 
-    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
+    const tracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk" });
     const client = createPromptClient(tracing, { publicKey: "pk", secretKey: "sk" });
-    const prompt = await client.getPrompt("support.system");
+    const prompt = await client.getPrompt({ name: "support.system" });
 
     expect(prompt.name).toBe("support.system");
     expect(prompt.version).toBe(3);
@@ -3475,13 +3454,13 @@ describe("LangfusePromptClient", () => {
       ),
     );
 
-    const tracing = langfuse.create({
+    const tracing = new LangfuseClient({
       publicKey: "trace-pk",
       secretKey: "trace-sk",
       baseUrl: "https://trace.langfuse.test",
     });
     const client = createPromptClient(tracing);
-    await client.getPrompt("support.system");
+    await client.getPrompt({ name: "support.system" });
 
     const [url, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
     expect(url).toBe("https://trace.langfuse.test/api/public/v2/prompts/support.system");
@@ -3501,7 +3480,7 @@ describe("LangfusePromptClient", () => {
       ),
     );
 
-    const tracing = langfuse.create({
+    const tracing = new LangfuseClient({
       publicKey: "trace-pk",
       secretKey: "trace-sk",
       baseUrl: "https://trace.langfuse.test",
@@ -3511,7 +3490,7 @@ describe("LangfusePromptClient", () => {
       secretKey: "option-sk",
       baseUrl: "https://option.langfuse.test",
     });
-    await client.getPrompt("support.system");
+    await client.getPrompt({ name: "support.system" });
 
     const [url, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
     expect(url).toBe("https://option.langfuse.test/api/public/v2/prompts/support.system");
@@ -3535,7 +3514,7 @@ describe("LangfusePromptClient", () => {
     );
 
     const client = createLangfusePromptClient({ score: async () => undefined });
-    await client.getPrompt("support.system");
+    await client.getPrompt({ name: "support.system" });
 
     const [url, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
     expect(url).toBe("https://env.langfuse.test/api/public/v2/prompts/support.system");
@@ -3555,9 +3534,9 @@ describe("LangfusePromptClient", () => {
       ),
     );
 
-    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
+    const tracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk" });
     const client = createPromptClient(tracing, { publicKey: "pk", secretKey: "sk" });
-    await client.getPrompt("support.system", { version: 2, label: "staging" });
+    await client.getPrompt({ name: "support.system", version: 2, label: "staging" });
 
     const [url] = vi.mocked(fetch).mock.calls[0] as [string];
     expect(url).toContain("version=2");
@@ -3576,10 +3555,10 @@ describe("LangfusePromptClient", () => {
       ),
     );
 
-    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
+    const tracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk" });
     const client = createPromptClient(tracing, { publicKey: "pk", secretKey: "sk" });
-    const a = await client.getPrompt("support.system");
-    const b = await client.getPrompt("support.system");
+    const a = await client.getPrompt({ name: "support.system" });
+    const b = await client.getPrompt({ name: "support.system" });
     expect(a).toBe(b);
     expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1);
   });
@@ -3596,15 +3575,15 @@ describe("LangfusePromptClient", () => {
         }),
       );
 
-      const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
+      const tracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk" });
       const client = createPromptClient(tracing, {
         publicKey: "pk",
         secretKey: "sk",
         cacheTtlMs: 1000,
       });
-      await client.getPrompt("support.system");
+      await client.getPrompt({ name: "support.system" });
       vi.advanceTimersByTime(2000);
-      await client.getPrompt("support.system");
+      await client.getPrompt({ name: "support.system" });
       expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2);
     } finally {
       vi.useRealTimers();
@@ -3621,10 +3600,10 @@ describe("LangfusePromptClient", () => {
       }),
     );
 
-    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
+    const tracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk" });
     const client = createPromptClient(tracing, { publicKey: "pk", secretKey: "sk" });
-    await client.getPrompt("support.system");
-    await client.getPrompt("support.system", { refresh: true });
+    await client.getPrompt({ name: "support.system" });
+    await client.getPrompt({ name: "support.system", refresh: true });
     expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2);
   });
 
@@ -3633,9 +3612,9 @@ describe("LangfusePromptClient", () => {
       Promise.resolve(new Response("not found", { status: 404 })),
     );
 
-    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
+    const tracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk" });
     const client = createPromptClient(tracing, { publicKey: "pk", secretKey: "sk" });
-    await expect(client.getPrompt("missing")).rejects.toThrow(/not found/);
+    await expect(client.getPrompt({ name: "missing" })).rejects.toThrow(/not found/);
   });
 
   it("getPromptText returns the string for type=text", async () => {
@@ -3650,9 +3629,11 @@ describe("LangfusePromptClient", () => {
       ),
     );
 
-    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
+    const tracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk" });
     const client = createPromptClient(tracing, { publicKey: "pk", secretKey: "sk" });
-    await expect(client.getPromptText("support.system")).resolves.toBe("You are a support agent.");
+    await expect(client.getPromptText({ name: "support.system" })).resolves.toBe(
+      "You are a support agent.",
+    );
   });
 
   it("getPromptText throws when the prompt is type=chat", async () => {
@@ -3667,9 +3648,9 @@ describe("LangfusePromptClient", () => {
       ),
     );
 
-    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
+    const tracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk" });
     const client = createPromptClient(tracing, { publicKey: "pk", secretKey: "sk" });
-    await expect(client.getPromptText("support.chat")).rejects.toThrow(/chat prompt/);
+    await expect(client.getPromptText({ name: "support.chat" })).rejects.toThrow(/chat prompt/);
   });
 
   it("getPromptChat returns the array for type=chat", async () => {
@@ -3687,9 +3668,9 @@ describe("LangfusePromptClient", () => {
       ),
     );
 
-    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
+    const tracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk" });
     const client = createPromptClient(tracing, { publicKey: "pk", secretKey: "sk" });
-    await expect(client.getPromptChat("support.chat")).resolves.toEqual([
+    await expect(client.getPromptChat({ name: "support.chat" })).resolves.toEqual([
       { role: "system", content: "You are a support agent." },
       { role: "user", content: "Help!" },
     ]);
@@ -3705,11 +3686,11 @@ describe("LangfusePromptClient", () => {
       }),
     );
 
-    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
+    const tracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk" });
     const client = createPromptClient(tracing, { publicKey: "pk", secretKey: "sk" });
-    await client.getPrompt("support.system");
+    await client.getPrompt({ name: "support.system" });
     client.refresh();
-    await client.getPrompt("support.system");
+    await client.getPrompt({ name: "support.system" });
     expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2);
   });
 });
@@ -3720,8 +3701,9 @@ describe("Langfuse prompt attribute binding", () => {
     root.startObservation.mockReturnValue(root);
     mocks.startObservation.mockReturnValueOnce(root);
 
-    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
-    await tracing.startRun({
+    const tracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk" });
+    await tracing.observer().startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hi"),
       history: [],
@@ -3744,8 +3726,9 @@ describe("Langfuse prompt attribute binding", () => {
     root.startObservation.mockReturnValue(root);
     mocks.startObservation.mockReturnValueOnce(root);
 
-    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
-    await tracing.startRun({
+    const tracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk" });
+    await tracing.observer().startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hi"),
       history: [],
@@ -3768,8 +3751,9 @@ describe("Langfuse prompt attribute binding", () => {
     root.startObservation.mockReturnValue(root);
     mocks.startObservation.mockReturnValueOnce(root);
 
-    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
-    await tracing.startRun({
+    const tracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk" });
+    await tracing.observer().startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hi"),
       history: [],
@@ -3791,8 +3775,9 @@ describe("Langfuse prompt attribute binding", () => {
     turn.startObservation.mockReturnValueOnce(generation);
     mocks.startObservation.mockReturnValueOnce(root);
 
-    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
-    const run = await tracing.startRun({
+    const tracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk" });
+    const run = await tracing.observer().startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hi"),
       history: [],
@@ -3822,7 +3807,7 @@ describe("Langfuse prompt attribute binding", () => {
 });
 
 function createPromptClient(
-  tracing: ReturnType<typeof langfuse.create>,
+  tracing: LangfuseClient,
   options: Parameters<typeof createLangfusePromptClient>[1] = {},
 ): ReturnType<typeof createLangfusePromptClient> {
   return createLangfusePromptClient(tracing, options);
@@ -3906,16 +3891,17 @@ describe("PII redaction", () => {
         role: "assistant",
         content: [
           { type: "text", text: "use 10.0.0.1" },
-          { type: "tool_call", id: "c", function: { name: "x", arguments: {} } },
+          { type: "tool-call", toolCallId: "c", toolName: "x", input: {} },
         ],
       },
     ]);
     expect(out[0]?.content[0]).toMatchObject({ text: "hi [REDACTED]" });
     expect(out[1]?.content[0]).toMatchObject({ text: "use [REDACTED]" });
     expect(out[1]?.content[1]).toEqual({
-      type: "tool_call",
-      id: "c",
-      function: { name: "x", arguments: {} },
+      type: "tool-call",
+      toolCallId: "c",
+      toolName: "x",
+      input: {},
     });
   });
 
@@ -3931,7 +3917,7 @@ describe("PII redaction", () => {
       r.redactMessages([
         {
           role: "assistant",
-          content: [{ type: "tool_call", id: "c", function: { name: "x", arguments: nested } }],
+          content: [{ type: "tool-call", toolCallId: "c", toolName: "x", input: nested }],
         },
       ]),
     ).not.toThrow();
@@ -4037,8 +4023,9 @@ describe("Langfuse redaction integration", () => {
     root.startObservation.mockReturnValue(root);
     mocks.startObservation.mockReturnValueOnce(root);
 
-    const tracing = langfuse.create({ publicKey: "pk", secretKey: "sk" });
-    await tracing.startRun({
+    const tracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk" });
+    await tracing.observer().startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("email alice@example.com please"),
       history: [],
@@ -4057,12 +4044,12 @@ describe("Langfuse redaction integration", () => {
     root.startObservation.mockReturnValue(root);
     mocks.startObservation.mockReturnValueOnce(root);
 
-    const tracing = langfuse.create({
+    const tracing = new LangfuseClient({
       publicKey: "pk",
       secretKey: "sk",
-      redactInputs: true,
     });
-    await tracing.startRun({
+    await tracing.observer({ redactInputs: true }).startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("email alice@example.com please"),
       history: [userMessage("also bob@example.com")],
@@ -4087,12 +4074,12 @@ describe("Langfuse redaction integration", () => {
     turn.startObservation.mockReturnValueOnce(generation);
     mocks.startObservation.mockReturnValueOnce(root);
 
-    const tracing = langfuse.create({
+    const tracing = new LangfuseClient({
       publicKey: "pk",
       secretKey: "sk",
-      redactInputs: "deep",
     });
-    const run = await tracing.startRun({
+    const run = await tracing.observer({ redactInputs: "deep" }).startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hi"),
       history: [],
@@ -4124,12 +4111,12 @@ describe("Langfuse redaction integration", () => {
     turn.startObservation.mockReturnValueOnce(generation);
     mocks.startObservation.mockReturnValueOnce(root);
 
-    const tracing = langfuse.create({
+    const tracing = new LangfuseClient({
       publicKey: "pk",
       secretKey: "sk",
-      redactOutputs: true,
     });
-    const run = (await tracing.startRun({
+    const run = (await tracing.observer({ redactOutputs: true }).startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hi"),
       history: [],
@@ -4161,12 +4148,12 @@ describe("Langfuse redaction integration", () => {
     turn.startObservation.mockReturnValueOnce(generation);
     mocks.startObservation.mockReturnValueOnce(root);
 
-    const tracing = langfuse.create({
+    const tracing = new LangfuseClient({
       publicKey: "pk",
       secretKey: "sk",
-      redactOutputs: "deep",
     });
-    const run = (await tracing.startRun({
+    const run = (await tracing.observer({ redactOutputs: "deep" }).startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hi"),
       history: [],
@@ -4199,13 +4186,12 @@ describe("Langfuse redaction integration", () => {
     turn.startObservation.mockReturnValueOnce(tool);
     mocks.startObservation.mockReturnValueOnce(root);
 
-    const tracing = langfuse.create({
+    const tracing = new LangfuseClient({
       publicKey: "pk",
       secretKey: "sk",
-      redactInputs: true,
-      redactOutputs: true,
     });
-    const run = (await tracing.startRun({
+    const run = (await tracing.observer({ redactInputs: true, redactOutputs: true }).startRun({
+      runId: "run_1",
       agentName: "support",
       prompt: userMessage("hi"),
       history: [],
@@ -4245,18 +4231,19 @@ describe("Langfuse redaction integration", () => {
     root.startObservation.mockReturnValue(root);
     mocks.startObservation.mockReturnValueOnce(root);
 
-    const tracing = langfuse.create({
+    const tracing = new LangfuseClient({
       publicKey: "pk",
       secretKey: "sk",
-      redactInputs: true,
-      redaction: { replacement: "<HIDDEN>" },
     });
-    await tracing.startRun({
-      agentName: "support",
-      prompt: userMessage("alice@example.com"),
-      history: [],
-      maxTurns: 1,
-    });
+    await tracing
+      .observer({ redactInputs: true, redaction: { replacement: "<HIDDEN>" } })
+      .startRun({
+        runId: "run_1",
+        agentName: "support",
+        prompt: userMessage("alice@example.com"),
+        history: [],
+        maxTurns: 1,
+      });
 
     const inputArg = mocks.startObservation.mock.calls[0]?.[1] as {
       input: { prompt: { content: Array<{ text?: string }> } };

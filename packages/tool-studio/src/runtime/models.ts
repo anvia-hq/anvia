@@ -25,14 +25,14 @@ type RuntimeProvider = StudioModelProvider & {
 };
 
 export type StudioModelRegistry = {
-  readonly defaultModel?: string;
+  readonly defaultModelRef?: string;
   readonly providers: Map<string, RuntimeProvider>;
   readonly agentPolicies: Map<string, NormalizedAgentModelPolicy>;
   readonly modelCache: Map<string, CompletionModel>;
 };
 
 type NormalizedAgentModelPolicy = {
-  default?: string;
+  defaultModelRef?: string;
   allowed?: string[];
 };
 
@@ -74,8 +74,8 @@ export function createStudioModelRegistry(
       id,
       staticModels,
     };
-    if (provider.defaultModel !== undefined) {
-      runtimeProvider.defaultModel = normalizeModelId(provider.defaultModel);
+    if (provider.defaultModelId !== undefined) {
+      runtimeProvider.defaultModelId = normalizeModelId(provider.defaultModelId);
     }
     providers.set(id, runtimeProvider);
   }
@@ -85,8 +85,10 @@ export function createStudioModelRegistry(
     agentPolicies: normalizeAgentPolicies(config.agents ?? {}),
     modelCache: new Map(),
   };
-  if (config.default !== undefined) {
-    Object.assign(registry, { defaultModel: normalizeModelRef(config.default) });
+  if (config.defaultModelRef !== undefined) {
+    Object.assign(registry, {
+      defaultModelRef: normalizeModelRef(config.defaultModelRef),
+    });
   }
   return registry;
 }
@@ -108,7 +110,7 @@ export function studioModelsConfig(
       models,
     };
     if (provider.name !== undefined) config.name = provider.name;
-    if (provider.defaultModel !== undefined) config.defaultModel = provider.defaultModel;
+    if (provider.defaultModelId !== undefined) config.defaultModelId = provider.defaultModelId;
     if (provider.metadata !== undefined) config.metadata = provider.metadata;
     return config;
   });
@@ -124,7 +126,7 @@ export function studioModelsConfig(
     providers,
     agents: agentsConfig,
   };
-  if (registry.defaultModel !== undefined) config.default = registry.defaultModel;
+  if (registry.defaultModelRef !== undefined) config.defaultModelRef = registry.defaultModelRef;
   return config;
 }
 
@@ -139,11 +141,11 @@ export function registerModelRoutes(
     const providers = await Promise.all(
       [...props.registry.providers.values()].map((provider) => providerCatalog(provider)),
     );
-    const response: { providers: StudioModelProviderConfig[]; defaultModel?: string } = {
+    const response: { providers: StudioModelProviderConfig[]; defaultModelRef?: string } = {
       providers,
     };
-    if (props.registry.defaultModel !== undefined) {
-      response.defaultModel = props.registry.defaultModel;
+    if (props.registry.defaultModelRef !== undefined) {
+      response.defaultModelRef = props.registry.defaultModelRef;
     }
     return c.json(response);
   });
@@ -186,8 +188,8 @@ export function resolveStudioModel(
   const selectedRef =
     normalizeOptionalModelRef(input.request.model) ??
     sessionModelRef(input.sessionMetadata) ??
-    registry.agentPolicies.get(input.agent.id)?.default ??
-    registry.defaultModel;
+    registry.agentPolicies.get(input.agent.id)?.defaultModelRef ??
+    registry.defaultModelRef;
   if (selectedRef === undefined) {
     return { warnings: [] };
   }
@@ -201,7 +203,7 @@ export function resolveStudioModel(
 
   let model = registry.modelCache.get(selectedRef);
   if (model === undefined) {
-    model = provider.createCompletionModel(modelId);
+    model = provider.createCompletionModel({ modelId });
     registry.modelCache.set(selectedRef, model);
   }
 
@@ -223,12 +225,7 @@ export function normalizeOptionalModelRef(ref: StudioModelRef | undefined): stri
 }
 
 export function normalizeModelRef(ref: StudioModelRef): string {
-  if (typeof ref === "string") {
-    const trimmed = ref.trim();
-    const parsed = parseModelRef(trimmed);
-    return `${parsed.providerId}:${parsed.modelId}`;
-  }
-  return `${normalizeProviderId(ref.provider)}:${normalizeModelId(ref.model)}`;
+  return `${normalizeProviderId(ref.providerId)}:${normalizeModelId(ref.modelId)}`;
 }
 
 export function parseModelRef(ref: string): { providerId: string; modelId: string } {
@@ -287,12 +284,12 @@ async function agentModelsCatalog(
       }
     });
 
-  const defaultModel = policy?.default ?? registry.defaultModel;
+  const defaultModelRef = policy?.defaultModelRef ?? registry.defaultModelRef;
   const summary: StudioAgentModelsSummary = {
     agentId: agent.id,
     models: [...models, ...exactPolicyModels],
   };
-  if (defaultModel !== undefined) summary.defaultModel = defaultModel;
+  if (defaultModelRef !== undefined) summary.defaultModelRef = defaultModelRef;
   if (warnings.length > 0) summary.warnings = warnings;
   return summary;
 }
@@ -336,7 +333,7 @@ async function providerCatalog(provider: RuntimeProvider): Promise<StudioModelPr
     models: [...models.values()].sort((left, right) => left.ref.localeCompare(right.ref)),
   };
   if (provider.name !== undefined) catalog.name = provider.name;
-  if (provider.defaultModel !== undefined) catalog.defaultModel = provider.defaultModel;
+  if (provider.defaultModelId !== undefined) catalog.defaultModelId = provider.defaultModelId;
   if (provider.metadata !== undefined) catalog.metadata = provider.metadata;
   if (warning !== undefined) catalog.warning = warning;
   return catalog;
@@ -380,22 +377,35 @@ function normalizeAgentPolicies(
   return new Map(
     Object.entries(policies).map(([agentId, policy]) => {
       const normalized: NormalizedAgentModelPolicy = {};
-      if (policy.default !== undefined) normalized.default = normalizeModelRef(policy.default);
+      if (policy.defaultModelRef !== undefined) {
+        normalized.defaultModelRef = normalizeModelRef(policy.defaultModelRef);
+      }
       if (policy.allowed !== undefined) {
-        normalized.allowed = policy.allowed.map((entry) =>
-          typeof entry === "string" && entry.trim().endsWith(":*")
-            ? `${normalizeProviderId(entry.trim().slice(0, -2))}:*`
-            : normalizeModelRef(entry),
-        );
+        normalized.allowed = policy.allowed.map((entry) => {
+          if (typeof entry === "string") {
+            return normalizeWildcardModelRef(entry);
+          }
+          return normalizeModelRef(entry);
+        });
       }
       return [agentId.trim(), normalized];
     }),
   );
 }
 
+function normalizeWildcardModelRef(ref: string): string {
+  const normalized = ref.trim();
+  if (!normalized.endsWith(":*")) {
+    throw new ModelSelectionError(`Invalid wildcard model reference: ${ref}`);
+  }
+  return `${normalizeProviderId(normalized.slice(0, -2))}:*`;
+}
+
 function publicPolicy(policy: NormalizedAgentModelPolicy): StudioAgentModelPolicyConfig {
   const config: StudioAgentModelPolicyConfig = {};
-  if (policy.default !== undefined) config.default = policy.default;
+  if (policy.defaultModelRef !== undefined) {
+    config.defaultModelRef = policy.defaultModelRef;
+  }
   if (policy.allowed !== undefined) config.allowed = policy.allowed;
   return config;
 }
@@ -434,15 +444,13 @@ function modelWarnings(
 function requestModalities(request: AgentRunRequest): Set<StudioModelModality> {
   const modalities = new Set<StudioModelModality>(["text"]);
   for (const message of requestMessages(request)) {
-    if (typeof message === "string") {
-      continue;
-    }
     if (message.role === "user" || message.role === "assistant") {
+      if (typeof message.content === "string") continue;
       for (const content of message.content) {
         if (content.type === "image") {
           modalities.add("image");
         }
-        if (content.type === "document") {
+        if (content.type === "file") {
           modalities.add("document");
         }
       }
@@ -451,8 +459,8 @@ function requestModalities(request: AgentRunRequest): Set<StudioModelModality> {
   return modalities;
 }
 
-function requestMessages(request: AgentRunRequest): Array<string | Message> {
-  return [...(request.history ?? []), request.message];
+function requestMessages(request: AgentRunRequest): readonly Message[] {
+  return request.type === "messages" ? request.messages : [];
 }
 
 function normalizeProviderId(id: string): string {

@@ -1,3 +1,4 @@
+export { AgentObserverDispatchError } from "./group";
 export type {
   AgentGenerationEndArgs,
   AgentGenerationErrorArgs,
@@ -5,8 +6,11 @@ export type {
   AgentGenerationObserver,
   AgentGenerationStartArgs,
   AgentGenerationUpdateArgs,
+  AgentObservabilityOptions,
   AgentObserver,
-  AgentObserverRegistration,
+  AgentObserverErrorPolicy,
+  AgentObserverMap,
+  AgentObserverTraceInfo,
   AgentRunEndArgs,
   AgentRunErrorArgs,
   AgentRunEventArgs,
@@ -18,8 +22,7 @@ export type {
   AgentToolObserver,
   AgentToolStartArgs,
   AgentToolStreamEventArgs,
+  AgentToolSuspendedArgs,
   AgentTraceInfo,
   AgentTraceOptions,
-  ObserveOptions,
 } from "./types";
-export { createObserver } from "./types";

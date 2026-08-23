@@ -1,15 +1,24 @@
-import type { JsonObject, Message as MessageType } from "@anvia/core";
-import { Message } from "@anvia/core";
+import type { JsonObject, MemoryCompactionMessage, Message as MessageType } from "@anvia/core";
+import { createMemoryScopeKey } from "@anvia/core";
 import { describe, expect, it } from "vitest";
+import { Message } from "../../core/test/helpers/imports";
+import { richMessages } from "../../core/test/helpers/rich-messages";
+import * as memoryPrisma from "../src/index";
 import {
-  createPrismaMemoryScopeKey,
-  createPrismaMemoryStore,
   type PrismaMemoryClientLike,
   type PrismaMemoryDelegates,
   PrismaMemoryStore,
+  type PrismaMemoryStoreOptions,
   type PrismaMemoryTransactionOptions,
 } from "../src/index";
 import { isMemoryMessage, serializeUnknownError } from "../src/message";
+
+// @ts-expect-error The positional store factory was removed.
+const removedStoreFactory = memoryPrisma.createPrismaMemoryStore;
+// @ts-expect-error Scope-key creation is canonical in @anvia/core/memory.
+const removedScopeKeyFactory = memoryPrisma.createPrismaMemoryScopeKey;
+void removedStoreFactory;
+void removedScopeKeyFactory;
 
 type SessionRow = {
   id: string;
@@ -29,6 +38,19 @@ type MessageRow = {
   message: unknown;
 };
 
+function memoryCompactionMessage(
+  content: string,
+  compactedMessageCount: number,
+): MemoryCompactionMessage {
+  return {
+    role: "system",
+    content,
+    metadata: {
+      anvia: { memoryCompaction: { version: 1, compactedMessageCount } },
+    },
+  };
+}
+
 type ErrorRow = {
   memorySessionId: string;
   runId: string;
@@ -38,7 +60,11 @@ type ErrorRow = {
 
 type UpsertArgs = {
   where: { scopeKey: string };
-  update: { metadata: JsonObject };
+  update: {
+    sessionId: string;
+    userId: string | null;
+    metadata: JsonObject;
+  };
   create: {
     scopeKey: string;
     sessionId: string;
@@ -67,112 +93,6 @@ type CreateErrorArgs = {
   data: ErrorRow;
 };
 
-const richMessages: MessageType[] = [
-  { role: "system", content: "System instructions", metadata: { source: "system" } },
-  {
-    role: "user",
-    metadata: { composer: { entities: [{ id: "document-1" }] } },
-    content: [
-      { type: "text", text: "Inspect these", signature: "user-signature" },
-      {
-        type: "image",
-        source: { type: "url", url: "https://example.test/image.png" },
-        detail: "high",
-      },
-      {
-        type: "image",
-        source: { type: "base64", data: "aW1hZ2U=", mediaType: "image/png" },
-        detail: "low",
-      },
-      {
-        type: "document",
-        source: {
-          type: "url",
-          url: "https://example.test/report.pdf",
-          mediaType: "application/pdf",
-          filename: "report.pdf",
-        },
-      },
-      {
-        type: "document",
-        source: {
-          type: "base64",
-          data: "cmVwb3J0",
-          mediaType: "application/pdf",
-          filename: "inline.pdf",
-        },
-      },
-      {
-        type: "document",
-        source: { type: "text", text: "inline document", mediaType: "text/plain" },
-      },
-    ],
-  },
-  {
-    role: "assistant",
-    id: "assistant-1",
-    metadata: {
-      source: "assistant",
-      anvia: {
-        generation: {
-          provider: "test",
-          model: "test-model",
-          usage: {
-            inputTokens: 12,
-            outputTokens: 4,
-            totalTokens: 16,
-            cachedInputTokens: 3,
-            cacheCreationInputTokens: 0,
-          },
-        },
-      },
-    },
-    content: [
-      { type: "text", text: "Working", signature: "assistant-signature" },
-      {
-        type: "reasoning",
-        id: "reasoning-1",
-        text: "analysis summary",
-        content: [
-          { type: "text", text: "analysis", signature: "reasoning-signature" },
-          { type: "summary", text: " summary" },
-          { type: "encrypted", data: "ciphertext" },
-          { type: "redacted", data: "redacted-data" },
-        ],
-      },
-      {
-        type: "tool_call",
-        id: "tool-1",
-        callId: "call-1",
-        function: { name: "lookup", arguments: { query: "Anvia", limit: 3 } },
-        signature: "tool-signature",
-        additionalParams: { provider: "test" },
-      },
-      {
-        type: "image",
-        source: { type: "base64", data: "b3V0cHV0", mediaType: "image/png" },
-        detail: "auto",
-      },
-    ],
-  },
-  {
-    role: "tool",
-    metadata: { source: "tool" },
-    content: [
-      {
-        type: "tool_result",
-        id: "tool-1",
-        callId: "call-1",
-        toolName: "lookup",
-        content: [
-          { type: "text", text: "result" },
-          { type: "image", data: "cmVzdWx0", mediaType: "image/png" },
-        ],
-      },
-    ],
-  },
-];
-
 class FakePrisma {
   readonly sessions = new Map<string, SessionRow>();
   readonly messages: MessageRow[] = [];
@@ -186,6 +106,8 @@ class FakePrisma {
       const args = rawArgs as UpsertArgs;
       const existing = this.sessions.get(args.where.scopeKey);
       if (existing !== undefined) {
+        existing.sessionId = args.update.sessionId;
+        existing.userId = args.update.userId ?? undefined;
         existing.metadata = args.update.metadata;
         return { id: existing.id };
       }
@@ -378,6 +300,16 @@ class FakePrisma {
 }
 
 describe("PrismaMemoryStore", () => {
+  it("validates the configured read path without writing memory", async () => {
+    const prisma = new FakePrisma();
+    const store = new PrismaMemoryStore({ client: prisma.client });
+
+    await expect(store.validate()).resolves.toBeUndefined();
+    expect(prisma.sessions.size).toBe(0);
+    expect(prisma.messages).toHaveLength(0);
+    expect(prisma.errors).toHaveLength(0);
+  });
+
   it("uses core strict JSON validation for message metadata", async () => {
     const validMessage: MessageType = {
       role: "user",
@@ -392,10 +324,10 @@ describe("PrismaMemoryStore", () => {
 
     expect(isMemoryMessage(validMessage)).toBe(true);
     expect(isMemoryMessage(invalidMessage)).toBe(false);
-    const store = createPrismaMemoryStore(new FakePrisma().client);
+    const store = createTestMemoryStore(new FakePrisma().client);
     await expect(
       store.append({
-        context: { sessionId: "thread-invalid" },
+        scope: { sessionId: "thread-invalid" },
         runId: "run-invalid",
         turn: 0,
         messages: [invalidMessage],
@@ -423,8 +355,8 @@ describe("PrismaMemoryStore", () => {
 
   it("appends and loads scoped messages in position order", async () => {
     const prisma = new FakePrisma();
-    const store = createPrismaMemoryStore(prisma.client, {
-      scope: { metadataKeys: ["tenantId"] },
+    const store = createTestMemoryStore(prisma.client, {
+      scopeKey: { metadataKeys: ["tenantId"] },
       transaction: { isolationLevel: "Serializable" },
     });
     const context = {
@@ -434,19 +366,19 @@ describe("PrismaMemoryStore", () => {
     };
 
     await store.append({
-      context,
+      scope: context,
       runId: "run_1",
       turn: 1,
       messages: [Message.user("hi"), Message.assistant("hello")],
     });
     await store.append({
-      context,
+      scope: context,
       runId: "run_2",
       turn: 1,
       messages: [Message.user("again")],
     });
 
-    await expect(store.load(context)).resolves.toEqual([
+    await expect(store.load({ scope: context })).resolves.toEqual([
       Message.user("hi"),
       Message.assistant("hello"),
       Message.user("again"),
@@ -463,59 +395,56 @@ describe("PrismaMemoryStore", () => {
 
   it("atomically compacts a prefix and rejects stale revisions", async () => {
     const prisma = new FakePrisma();
-    const store = createPrismaMemoryStore(prisma.client);
+    const store = createTestMemoryStore(prisma.client);
     const compaction = store.compaction;
     if (compaction === undefined) {
       throw new Error("Expected Prisma compaction capability");
     }
     const context = { sessionId: "thread-compaction", userId: "user-1" };
     await store.append({
-      context,
+      scope: context,
       runId: "run-1",
       turn: 1,
       messages: [Message.user("old"), Message.assistant("old answer")],
     });
     await store.append({
-      context,
+      scope: context,
       runId: "run-2",
       turn: 1,
       messages: [Message.user("recent")],
     });
-    const stale = await compaction.load(context);
+    const stale = await compaction.snapshot({ scope: context });
     await store.append({
-      context,
+      scope: context,
       runId: "run-2",
       turn: 2,
       messages: [Message.assistant("recent answer")],
     });
-    const summary = Message.system("Earlier conversation summary") as Extract<
-      MessageType,
-      { role: "system" }
-    >;
+    const replacement = memoryCompactionMessage("Earlier conversation summary", 2);
 
     await expect(
-      compaction.commit({
-        context,
+      compaction.replacePrefix({
+        scope: context,
         revision: stale.revision,
-        compactedMessageCount: 2,
-        summary,
+        messageCount: 2,
+        replacement,
         runId: "memory-compaction:1",
       }),
-    ).resolves.toBe("conflict");
+    ).resolves.toEqual({ status: "conflict" });
 
-    const current = await compaction.load(context);
+    const current = await compaction.snapshot({ scope: context });
     await expect(
-      compaction.commit({
-        context,
+      compaction.replacePrefix({
+        scope: context,
         revision: current.revision,
-        compactedMessageCount: 2,
-        summary,
+        messageCount: 2,
+        replacement,
         runId: "memory-compaction:2",
       }),
-    ).resolves.toBe("committed");
+    ).resolves.toEqual({ status: "committed" });
     expect(prisma.transactionOptions.at(-1)).toEqual({ isolationLevel: "Serializable" });
-    await expect(store.load(context)).resolves.toEqual([
-      summary,
+    await expect(store.load({ scope: context })).resolves.toEqual([
+      replacement,
       Message.user("recent"),
       Message.assistant("recent answer"),
     ]);
@@ -525,11 +454,11 @@ describe("PrismaMemoryStore", () => {
     const inspected =
       conversation === undefined
         ? undefined
-        : await store.inspector?.getConversation(conversation.ref);
+        : await store.inspector?.getConversation({ ref: conversation.ref });
     expect(inspected).toMatchObject({
       messageCount: 3,
       messages: [
-        { position: 1, runId: "memory-compaction:2", turn: 0, message: summary },
+        { position: 1, runId: "memory-compaction:2", turn: 0, message: replacement },
         { position: 2, runId: "run-2", turn: 1, message: Message.user("recent") },
         {
           position: 3,
@@ -544,19 +473,19 @@ describe("PrismaMemoryStore", () => {
   it("throws when the transaction client omits messages.deleteMany", async () => {
     const prisma = new FakePrisma();
     const context = { sessionId: "thread-missing-delete", userId: "user-1" };
-    const seed = createPrismaMemoryStore(prisma.client);
+    const seed = createTestMemoryStore(prisma.client);
     await seed.append({
-      context,
+      scope: context,
       runId: "run-1",
       turn: 1,
       messages: [Message.user("old"), Message.assistant("old answer"), Message.user("recent")],
     });
-    const snapshot = await seed.compaction?.load(context);
+    const snapshot = await seed.compaction?.snapshot({ scope: context });
     if (snapshot === undefined) {
       throw new Error("Expected Prisma compaction capability");
     }
 
-    const store = PrismaMemoryStore.fromDelegates({
+    const store = createTestMemoryStoreFromDelegates({
       sessions: prisma.agentMemorySession,
       messages: prisma.agentMemoryMessage,
       errors: prisma.agentMemoryError,
@@ -590,11 +519,11 @@ describe("PrismaMemoryStore", () => {
     }
 
     await expect(
-      compaction.commit({
-        context,
+      compaction.replacePrefix({
+        scope: context,
         revision: snapshot.revision,
-        compactedMessageCount: 2,
-        summary: Message.system("summary") as Extract<MessageType, { role: "system" }>,
+        messageCount: 2,
+        replacement: memoryCompactionMessage("summary", 2),
         runId: "memory-compaction:missing-delete",
       }),
     ).rejects.toThrow("messages deleteMany delegate");
@@ -603,20 +532,20 @@ describe("PrismaMemoryStore", () => {
   it("rolls back prefix deletes when deleteMany reports a count mismatch", async () => {
     const prisma = new FakePrisma();
     const context = { sessionId: "thread-delete-mismatch", userId: "user-1" };
-    const seed = createPrismaMemoryStore(prisma.client);
+    const seed = createTestMemoryStore(prisma.client);
     await seed.append({
-      context,
+      scope: context,
       runId: "run-1",
       turn: 1,
       messages: [Message.user("old"), Message.assistant("old answer"), Message.user("recent")],
     });
-    const before = await seed.load(context);
-    const snapshot = await seed.compaction?.load(context);
+    const before = await seed.load({ scope: context });
+    const snapshot = await seed.compaction?.snapshot({ scope: context });
     if (snapshot === undefined) {
       throw new Error("Expected Prisma compaction capability");
     }
 
-    const store = PrismaMemoryStore.fromDelegates({
+    const store = createTestMemoryStoreFromDelegates({
       sessions: prisma.agentMemorySession,
       messages: {
         ...prisma.agentMemoryMessage,
@@ -669,23 +598,23 @@ describe("PrismaMemoryStore", () => {
     }
 
     await expect(
-      compaction.commit({
-        context,
+      compaction.replacePrefix({
+        scope: context,
         revision: snapshot.revision,
-        compactedMessageCount: 2,
-        summary: Message.system("summary") as Extract<MessageType, { role: "system" }>,
+        messageCount: 2,
+        replacement: memoryCompactionMessage("summary", 2),
         runId: "memory-compaction:delete-mismatch",
       }),
-    ).resolves.toBe("conflict");
-    await expect(seed.load(context)).resolves.toEqual(before);
+    ).resolves.toEqual({ status: "conflict" });
+    await expect(seed.load({ scope: context })).resolves.toEqual(before);
     expect(prisma.transactionOptions.at(-1)).toEqual({ isolationLevel: "Serializable" });
   });
 
   it("inspects conventional Prisma sessions when read delegates are available", async () => {
     const prisma = new FakePrisma();
-    const store = createPrismaMemoryStore(prisma.client);
+    const store = createTestMemoryStore(prisma.client);
     await store.append({
-      context: {
+      scope: {
         sessionId: "thread-1",
         userId: "user-1",
         metadata: { tenantId: "tenant-1" },
@@ -710,7 +639,7 @@ describe("PrismaMemoryStore", () => {
         messageCount: 2,
       },
     ]);
-    await expect(store.inspector?.getConversation("session_1")).resolves.toMatchObject({
+    await expect(store.inspector?.getConversation({ ref: "session_1" })).resolves.toMatchObject({
       ref: "session_1",
       messages: [
         { position: 0, runId: "run-1", turn: 3, message: Message.user("hi") },
@@ -731,15 +660,15 @@ describe("PrismaMemoryStore", () => {
       transaction: async (operation) => operation(delegates),
     };
 
-    expect(PrismaMemoryStore.fromDelegates(delegates).inspector).toBeUndefined();
+    expect(createTestMemoryStoreFromDelegates(delegates).inspector).toBeUndefined();
   });
 
   it("omits userId from session data when the context does not provide it", async () => {
     const prisma = new FakePrisma();
-    const store = createPrismaMemoryStore(prisma.client);
+    const store = createTestMemoryStore(prisma.client);
 
     await store.append({
-      context: { sessionId: "thread_without_user" },
+      scope: { sessionId: "thread_without_user" },
       runId: "run_1",
       turn: 1,
       messages: [Message.user("hi")],
@@ -757,20 +686,20 @@ describe("PrismaMemoryStore", () => {
 
   it("round-trips every supported message content shape", async () => {
     const prisma = new FakePrisma();
-    const store = createPrismaMemoryStore(prisma.client);
+    const store = createTestMemoryStore(prisma.client);
     const context = { sessionId: "rich-thread", userId: "user-1" };
 
-    await store.append({ context, runId: "run-rich", turn: 0, messages: richMessages });
+    await store.append({ scope: context, runId: "run-rich", turn: 0, messages: richMessages });
 
-    await expect(store.load(context)).resolves.toEqual(richMessages);
+    await expect(store.load({ scope: context })).resolves.toEqual(richMessages);
   });
 
   it("does not open a transaction for empty appends", async () => {
     const prisma = new FakePrisma();
-    const store = createPrismaMemoryStore(prisma.client);
+    const store = createTestMemoryStore(prisma.client);
 
     await store.append({
-      context: { sessionId: "thread_123" },
+      scope: { sessionId: "thread_123" },
       runId: "run_1",
       turn: 1,
       messages: [],
@@ -783,25 +712,25 @@ describe("PrismaMemoryStore", () => {
 
   it("clears a scoped session and cascades messages and errors", async () => {
     const prisma = new FakePrisma();
-    const store = createPrismaMemoryStore(prisma.client);
+    const store = createTestMemoryStore(prisma.client);
     const context = { sessionId: "thread_123" };
 
     await store.append({
-      context,
+      scope: context,
       runId: "run_1",
       turn: 1,
       messages: [Message.user("hi")],
     });
     await store.recordError({
-      context,
+      scope: context,
       runId: "run_1",
       error: new Error("failed"),
       messages: [Message.user("hi")],
     });
 
-    await store.clear(context);
+    await store.clear({ scope: context });
 
-    await expect(store.load(context)).resolves.toEqual([]);
+    await expect(store.load({ scope: context })).resolves.toEqual([]);
     expect(prisma.sessions.size).toBe(0);
     expect(prisma.messages).toHaveLength(0);
     expect(prisma.errors).toHaveLength(0);
@@ -809,10 +738,10 @@ describe("PrismaMemoryStore", () => {
 
   it("stores failed-run errors by default", async () => {
     const prisma = new FakePrisma();
-    const store = createPrismaMemoryStore(prisma.client);
+    const store = createTestMemoryStore(prisma.client);
 
     await store.recordError({
-      context: { sessionId: "thread_123" },
+      scope: { sessionId: "thread_123" },
       runId: "run_1",
       error: new Error("boom"),
       messages: [Message.user("hi")],
@@ -828,16 +757,16 @@ describe("PrismaMemoryStore", () => {
 
   it("serializes JSON and non-JSON failed-run diagnostics", async () => {
     const prisma = new FakePrisma();
-    const store = createPrismaMemoryStore(prisma.client);
+    const store = createTestMemoryStore(prisma.client);
 
     await store.recordError({
-      context: { sessionId: "thread-json" },
+      scope: { sessionId: "thread-json" },
       runId: "run-json",
       error: { code: 409, retryable: false },
       messages: richMessages,
     });
     await store.recordError({
-      context: { sessionId: "thread-bigint" },
+      scope: { sessionId: "thread-bigint" },
       runId: "run-bigint",
       error: 42n,
       messages: [],
@@ -857,10 +786,10 @@ describe("PrismaMemoryStore", () => {
 
   it("can ignore failed-run errors", async () => {
     const prisma = new FakePrisma();
-    const store = createPrismaMemoryStore(prisma.client, { errors: "ignore" });
+    const store = createTestMemoryStore(prisma.client, { errorPolicy: "ignore" });
 
     await store.recordError({
-      context: { sessionId: "thread_123" },
+      scope: { sessionId: "thread_123" },
       runId: "run_1",
       error: new Error("boom"),
       messages: [Message.user("hi")],
@@ -871,7 +800,7 @@ describe("PrismaMemoryStore", () => {
 
   it("throws when failed-run storage is enabled but no errors delegate exists", async () => {
     const prisma = new FakePrisma();
-    const store = PrismaMemoryStore.fromDelegates({
+    const store = createTestMemoryStoreFromDelegates({
       sessions: prisma.agentMemorySession,
       messages: prisma.agentMemoryMessage,
       transaction: async (operation) =>
@@ -891,7 +820,7 @@ describe("PrismaMemoryStore", () => {
 
     await expect(
       store.recordError({
-        context: { sessionId: "thread_123" },
+        scope: { sessionId: "thread_123" },
         runId: "run_1",
         error: new Error("boom"),
         messages: [Message.user("hi")],
@@ -901,8 +830,8 @@ describe("PrismaMemoryStore", () => {
 
   it("rejects malformed stored messages by default", async () => {
     const prisma = new FakePrisma();
-    const store = createPrismaMemoryStore(prisma.client);
-    const scopeKey = createPrismaMemoryScopeKey({ sessionId: "thread_123" });
+    const store = createTestMemoryStore(prisma.client);
+    const scopeKey = createMemoryScopeKey({ scope: { sessionId: "thread_123" } });
     const session = await prisma.agentMemorySession.upsert({
       where: { scopeKey },
       update: { metadata: {} },
@@ -918,13 +847,15 @@ describe("PrismaMemoryStore", () => {
       message: { role: "bad", content: [] },
     });
 
-    await expect(store.load({ sessionId: "thread_123" })).rejects.toThrow("valid Anvia Message");
+    await expect(store.load({ scope: { sessionId: "thread_123" } })).rejects.toThrow(
+      "valid Anvia Message",
+    );
   });
 
   it("can bypass stored message validation", async () => {
     const prisma = new FakePrisma();
-    const store = createPrismaMemoryStore(prisma.client, { validateMessages: false });
-    const scopeKey = createPrismaMemoryScopeKey({ sessionId: "thread_123" });
+    const store = createTestMemoryStore(prisma.client, { validateMessages: false });
+    const scopeKey = createMemoryScopeKey({ scope: { sessionId: "thread_123" } });
     const malformed = { role: "bad", content: [] };
     const session = await prisma.agentMemorySession.upsert({
       where: { scopeKey },
@@ -941,73 +872,127 @@ describe("PrismaMemoryStore", () => {
       message: malformed,
     });
 
-    await expect(store.load({ sessionId: "thread_123" })).resolves.toEqual([malformed]);
+    await expect(store.load({ scope: { sessionId: "thread_123" } })).resolves.toEqual([malformed]);
   });
 
   it("supports custom delegates", async () => {
     const prisma = new FakePrisma();
-    const store = PrismaMemoryStore.fromDelegates(prisma.delegates);
+    const store = createTestMemoryStoreFromDelegates(prisma.delegates);
 
     await store.append({
-      context: { sessionId: "thread_123" },
+      scope: { sessionId: "thread_123" },
       runId: "run_1",
       turn: 1,
       messages: [Message.user("hi")],
     });
 
-    await expect(store.load({ sessionId: "thread_123" })).resolves.toEqual([Message.user("hi")]);
+    await expect(store.load({ scope: { sessionId: "thread_123" } })).resolves.toEqual([
+      Message.user("hi"),
+    ]);
   });
 
   it("uses custom scope functions", async () => {
     const prisma = new FakePrisma();
-    const store = createPrismaMemoryStore(prisma.client, {
-      scope: (context) => String(context.metadata?.tenantId ?? "unknown"),
+    const store = createTestMemoryStore(prisma.client, {
+      scopeKey: ({ scope }) => String(scope.metadata?.tenantId ?? "unknown"),
     });
 
     await store.append({
-      context: { sessionId: "thread_123", metadata: { tenantId: "tenant_789" } },
+      scope: {
+        sessionId: "thread_123",
+        userId: "user_123",
+        metadata: { tenantId: "tenant_789" },
+      },
       runId: "run_1",
       turn: 1,
       messages: [Message.user("hi")],
     });
 
+    await store.append({
+      scope: {
+        sessionId: "other_thread",
+        userId: "user_456",
+        metadata: { tenantId: "tenant_789" },
+      },
+      runId: "run_2",
+      turn: 2,
+      messages: [Message.user("again")],
+    });
+
     expect([...prisma.sessions.keys()]).toEqual(["tenant_789"]);
+    expect(prisma.sessions.get("tenant_789")).toMatchObject({
+      sessionId: "other_thread",
+      userId: "user_456",
+    });
     await expect(
-      store.load({ sessionId: "other_thread", metadata: { tenantId: "tenant_789" } }),
-    ).resolves.toEqual([Message.user("hi")]);
+      store.load({
+        scope: { sessionId: "other_thread", metadata: { tenantId: "tenant_789" } },
+      }),
+    ).resolves.toEqual([Message.user("hi"), Message.user("again")]);
   });
 
   it("creates scope keys from selected metadata", () => {
     expect(
-      createPrismaMemoryScopeKey(
-        {
+      createMemoryScopeKey({
+        scope: {
           sessionId: "thread_123",
           userId: "user_456",
           metadata: { tenant: { id: "tenant_789" } },
         },
-        { metadataKeys: ["tenant.id"] },
-      ),
+        metadataKeys: ["tenant.id"],
+      }),
     ).toBe(JSON.stringify(["thread_123", "user_456", "tenant_789"]));
   });
 
   it("keeps falsey metadata values and normalizes missing scope paths to null", () => {
     expect(
-      createPrismaMemoryScopeKey(
-        { sessionId: "thread_123", metadata: { count: 0, enabled: false } },
-        { metadataKeys: ["count", "enabled", "missing.value"] },
-      ),
+      createMemoryScopeKey({
+        scope: { sessionId: "thread_123", metadata: { count: 0, enabled: false } },
+        metadataKeys: ["count", "enabled", "missing.value"],
+      }),
     ).toBe(JSON.stringify(["thread_123", null, 0, false, null]));
   });
 
   it("can omit user ids from generated scope keys", () => {
     expect(
-      createPrismaMemoryScopeKey(
-        { sessionId: "thread_123", userId: "user_456" },
-        { includeUserId: false },
-      ),
+      createMemoryScopeKey({
+        scope: { sessionId: "thread_123", userId: "user_456" },
+        includeUserId: false,
+      }),
     ).toBe(JSON.stringify(["thread_123"]));
   });
+
+  it("rejects removed Prisma construction paths at compile time", () => {
+    if (Date.now() === Number.NEGATIVE_INFINITY) {
+      const prisma = new FakePrisma();
+      // @ts-expect-error PrismaMemoryStore accepts one options object.
+      new PrismaMemoryStore(prisma.client);
+      // @ts-expect-error The fromDelegates compatibility constructor was removed.
+      PrismaMemoryStore.fromDelegates(prisma.delegates);
+      new PrismaMemoryStore({
+        client: prisma.client,
+        // @ts-expect-error Error storage uses errorPolicy.
+        errors: "ignore",
+      });
+    }
+  });
 });
+
+type PrismaTestStoreOptions = Omit<PrismaMemoryStoreOptions, "client" | "delegates">;
+
+function createTestMemoryStore(
+  client: object,
+  options: PrismaTestStoreOptions = {},
+): PrismaMemoryStore {
+  return new PrismaMemoryStore({ client, ...options });
+}
+
+function createTestMemoryStoreFromDelegates(
+  delegates: PrismaMemoryDelegates,
+  options: PrismaTestStoreOptions = {},
+): PrismaMemoryStore {
+  return new PrismaMemoryStore({ delegates, ...options });
+}
 
 function removeWhere<T>(items: T[], predicate: (item: T) => boolean): void {
   for (let index = items.length - 1; index >= 0; index -= 1) {

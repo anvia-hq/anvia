@@ -1,19 +1,24 @@
-import type { Agent } from "../agent/agent";
-import { AgentBuilder } from "../agent/builder";
+import { z } from "zod";
 import {
+  type AssistantContentPart,
   CompletionCapabilityError,
   type CompletionModel,
-  CompletionRequestBuilder,
-  type CompletionResponse,
-  type JsonValue,
-  type Message,
-  Message as MessageFactory,
-  type ToolChoice,
+  type CompletionResult,
+  generateCompletion,
+  type JsonObject,
+  type ToolDefinition,
   Usage,
 } from "../completion/index";
-import { extractRagText } from "../internal/rag-text";
-import type { ZodSchema } from "../schema/zod-schema";
-import { createTool } from "../tool/index";
+import { isAbortError } from "../internal/abort";
+import {
+  type ResolvedRetryOptions,
+  type RetrySetting,
+  resolveRetryOptions,
+  retryDelayMs,
+  retryOptionsForFailure,
+  waitForRetry,
+} from "../retry";
+import { toProviderJsonSchema, type ZodSchema } from "../schema/zod-schema";
 
 const SUBMIT_TOOL_NAME = "submit";
 
@@ -22,157 +27,155 @@ const DEFAULT_EXTRACTOR_INSTRUCTIONS =
   "You have access to a `submit` function that defines the structure of the data to extract.\n" +
   "Always call the `submit` function with the structured data. Use default or null values when information is missing.";
 
-export type ExtractionResponse<T> = {
-  data: T;
-  usage: Usage;
-  messages: Message[];
+type RawResponseOf<Model> =
+  Model extends CompletionModel<infer RawResponse> ? RawResponse : unknown;
+
+export type ExtractOptions<Output, Model extends CompletionModel = CompletionModel> = {
+  model: Model;
+  text: string;
+  outputSchema: ZodSchema<Output>;
+  instructions?: string | undefined;
+  retries?: RetrySetting | undefined;
+  temperature?: number | undefined;
+  maxTokens?: number | undefined;
+  providerOptions?: JsonObject | undefined;
+  abortSignal?: AbortSignal | undefined;
+};
+
+export type ExtractionResult<Output, RawResponse = unknown> = Omit<
+  CompletionResult<string, RawResponse>,
+  "output"
+> & {
+  output: Output;
 };
 
 export class ExtractionError extends Error {
+  readonly attempts: number;
+  readonly usage: Usage;
+
   constructor(
     message: string,
-    readonly cause?: unknown,
+    options: {
+      cause?: unknown;
+      attempts: number;
+      usage: Usage;
+    },
   ) {
-    super(message);
+    super(message, options.cause === undefined ? undefined : { cause: options.cause });
     this.name = "ExtractionError";
+    this.attempts = options.attempts;
+    this.usage = options.usage;
   }
 }
 
-export class Extractor<T, M extends CompletionModel = CompletionModel> {
-  constructor(
-    private readonly agent: Agent<M>,
-    private readonly schema: ZodSchema<T>,
-    private readonly retryCount: number,
-  ) {}
-
-  async extract(text: string | Message): Promise<T> {
-    return (await this.extractWithUsage(text)).data;
+/** Extract structured data from text using a required, schema-backed submit tool. */
+export async function extract<Output, Model extends CompletionModel>(
+  options: ExtractOptions<Output, Model>,
+): Promise<ExtractionResult<Output, RawResponseOf<Model>>> {
+  if (!(options.outputSchema instanceof z.ZodType)) {
+    throw new TypeError("extract outputSchema must be a Zod schema.");
+  }
+  if (typeof options.text !== "string") {
+    throw new TypeError("extract text must be a string.");
   }
 
-  async extractWithUsage(text: string | Message): Promise<ExtractionResponse<T>> {
-    return this.run(text);
-  }
+  const retries = resolveExtractionRetries(options.retries);
+  const maxAttempts = retries?.maxAttempts ?? 1;
+  const submitTool = createSubmitTool(options.outputSchema);
+  const instructions = extractionInstructions(options.instructions);
+  let usage = Usage.empty();
+  let lastError: unknown;
 
-  async extractWithHistory(text: string | Message, history: Message[]): Promise<T> {
-    return (await this.run(text, history)).data;
-  }
-
-  getInner(): Agent<M> {
-    return this.agent;
-  }
-
-  private async run(text: string | Message, history?: Message[]): Promise<ExtractionResponse<T>> {
-    let usage = Usage.empty();
-    let lastError: unknown;
-    const prompt = typeof text === "string" ? MessageFactory.user(text) : text;
-
-    for (let attempt = 0; attempt <= this.retryCount; attempt += 1) {
-      try {
-        const toolDefs = await this.agent.toolSet.getToolDefinitions(extractRagText(prompt));
-        const response = await new CompletionRequestBuilder(this.agent.model, prompt)
-          .instructions(this.agent.instructions)
-          .messages(history ?? [])
-          .documents(this.agent.staticContext)
-          .tools([...toolDefs, ...this.agent.providerTools])
-          .temperature(this.agent.temperature)
-          .maxTokens(this.agent.maxTokens)
-          .additionalParams(this.agent.additionalParams)
-          .toolChoice(this.agent.toolChoice)
-          .send();
-        usage = Usage.add(usage, response.usage);
-        const data = extractSubmittedData(response, this.schema);
-        return {
-          data,
-          usage,
-          messages: [
-            ...(history ?? []),
-            prompt,
-            MessageFactory.assistant(response.choice, response.messageId),
-          ],
-        };
-      } catch (error) {
-        if (error instanceof CompletionCapabilityError) {
-          throw error;
-        }
-        lastError = error;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      const result = await generateCompletion({
+        model: options.model,
+        prompt: options.text,
+        instructions,
+        tools: [globalThis.structuredClone(submitTool)],
+        temperature: options.temperature,
+        maxTokens: options.maxTokens,
+        providerOptions: options.providerOptions,
+        toolChoice: "required",
+        retries: false,
+        abortSignal: options.abortSignal,
+      });
+      usage = Usage.add(usage, result.usage);
+      return {
+        ...result,
+        output: extractSubmittedData(result.content, options.outputSchema),
+        usage,
+      };
+    } catch (error) {
+      if (error instanceof CompletionCapabilityError || isAbortError(error)) {
+        throw error;
       }
+      lastError = error;
+      const retryOptions = retryOptionsForFailure(retries, {
+        error,
+        attempt,
+        streaming: false,
+      });
+      if (retryOptions === undefined) {
+        throw new ExtractionError("No data extracted", {
+          cause: lastError,
+          attempts: attempt,
+          usage,
+        });
+      }
+      await waitForRetry(retryDelayMs(retryOptions, attempt), options.abortSignal);
     }
-
-    throw new ExtractionError("No data extracted", lastError);
   }
+
+  throw new ExtractionError("No data extracted", {
+    cause: lastError,
+    attempts: maxAttempts,
+    usage,
+  });
 }
 
-export class ExtractorBuilder<T, M extends CompletionModel = CompletionModel> {
-  private readonly agentBuilder: AgentBuilder<M>;
-  private retryCount = 0;
-
-  constructor(
-    model: M,
-    private readonly schema: ZodSchema<T>,
-  ) {
-    this.agentBuilder = new AgentBuilder("extractor", model)
-      .instructions(DEFAULT_EXTRACTOR_INSTRUCTIONS)
-      .tool(
-        createTool({
-          name: SUBMIT_TOOL_NAME,
-          description: "Submit the structured data extracted from the provided text.",
-          input: schema,
-          output: schema,
-          execute: (args) => args,
-        }),
-      )
-      .toolChoice("required");
-  }
-
-  instructions(instructions: string): this {
-    this.agentBuilder.instructions(instructions);
-    return this;
-  }
-
-  context(text: string, id?: string): this {
-    this.agentBuilder.context(text, id);
-    return this;
-  }
-
-  temperature(temperature: number): this {
-    this.agentBuilder.temperature(temperature);
-    return this;
-  }
-
-  maxTokens(maxTokens: number): this {
-    this.agentBuilder.maxTokens(maxTokens);
-    return this;
-  }
-
-  additionalParams(params: JsonValue): this {
-    this.agentBuilder.additionalParams(params);
-    return this;
-  }
-
-  toolChoice(toolChoice: ToolChoice): this {
-    this.agentBuilder.toolChoice(toolChoice);
-    return this;
-  }
-
-  retries(retries: number): this {
-    this.retryCount = Math.max(0, Math.trunc(retries));
-    return this;
-  }
-
-  build(): Extractor<T, M> {
-    return new Extractor(this.agentBuilder.build(), this.schema, this.retryCount);
-  }
+function extractionInstructions(instructions: string | undefined): string {
+  return instructions === undefined || instructions.length === 0
+    ? DEFAULT_EXTRACTOR_INSTRUCTIONS
+    : `${DEFAULT_EXTRACTOR_INSTRUCTIONS}\n\n${instructions}`;
 }
 
-function extractSubmittedData<T>(response: CompletionResponse, schema: ZodSchema<T>): T {
-  const submitted = response.choice
-    .filter((content) => content.type === "tool_call")
-    .filter((toolCall) => toolCall.function.name === SUBMIT_TOOL_NAME)
+function createSubmitTool<Output>(outputSchema: ZodSchema<Output>): ToolDefinition {
+  return {
+    name: SUBMIT_TOOL_NAME,
+    description: "Submit the structured data extracted from the provided text.",
+    parameters: toProviderJsonSchema(outputSchema, { io: "input" }),
+  };
+}
+
+function resolveExtractionRetries(
+  options: RetrySetting | undefined,
+): ResolvedRetryOptions | undefined {
+  if (options === undefined || options === false) {
+    return undefined;
+  }
+  return resolveRetryOptions({
+    ...options,
+    shouldRetry: options.shouldRetry ?? (() => true),
+  });
+}
+
+function extractSubmittedData<Output>(
+  content: readonly AssistantContentPart[],
+  schema: ZodSchema<Output>,
+): Output {
+  const submitted = content
+    .filter((item) => item.type === "tool-call")
+    .filter((toolCall) => toolCall.toolName === SUBMIT_TOOL_NAME)
     .at(-1);
 
   if (submitted === undefined) {
-    throw new ExtractionError("The model did not call the submit tool");
+    throw new Error("The model did not call the submit tool");
   }
 
-  return schema.parse(submitted.function.arguments);
+  try {
+    return schema.parse(submitted.input);
+  } catch (error) {
+    throw new Error("Submitted data failed output schema validation", { cause: error });
+  }
 }

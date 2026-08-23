@@ -28,8 +28,7 @@ type AsyncQueue<T> = AsyncIterable<T> & {
 };
 
 export function createResumableStream<TEvent>(
-  events: AsyncIterable<TEvent>,
-  options: CreateResumableStreamOptions<TEvent>,
+  options: CreateResumableStreamOptions<TEvent> & { events: AsyncIterable<TEvent> },
 ): AsyncIterable<ResumableStreamEnvelope<TEvent>> {
   const streamId = options.id;
   let openPromise: Promise<void> | undefined;
@@ -40,7 +39,7 @@ export function createResumableStream<TEvent>(
     }
 
     openPromise = options.store.open({ streamId }).then(() => undefined);
-    void drainResumableStream(events, options, openPromise);
+    void drainResumableStream(options.events, options, openPromise);
     return openPromise;
   }
 

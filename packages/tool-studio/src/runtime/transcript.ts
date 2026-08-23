@@ -1,4 +1,4 @@
-import type { Message } from "@anvia/core/completion";
+import type { Message, ToolResultOutput } from "@anvia/core/completion";
 import type { StudioTranscriptAttachment, StudioTranscriptEntry } from "../types";
 import { formatJson } from "./json";
 
@@ -6,7 +6,7 @@ export function renumberTranscript(entries: StudioTranscriptEntry[]): StudioTran
   return entries.map((entry, entryId) => ({ ...entry, entryId }));
 }
 
-export function transcriptFromMessages(messages: Message[]): StudioTranscriptEntry[] {
+export function transcriptFromMessages(messages: readonly Message[]): StudioTranscriptEntry[] {
   const transcript: StudioTranscriptEntry[] = [];
   for (const message of messages) {
     if (message.role === "system") {
@@ -15,7 +15,11 @@ export function transcriptFromMessages(messages: Message[]): StudioTranscriptEnt
     if (message.role === "user") {
       const attachments = attachmentsFromMessage(message);
       let textEntryAdded = false;
-      for (const content of message.content) {
+      const contents =
+        typeof message.content === "string"
+          ? [{ type: "text" as const, text: message.content }]
+          : message.content;
+      for (const content of contents) {
         if (content.type === "text") {
           const entry: StudioTranscriptEntry = {
             entryId: transcript.length,
@@ -29,35 +33,40 @@ export function transcriptFromMessages(messages: Message[]): StudioTranscriptEnt
         }
       }
       if (!textEntryAdded && attachments.length > 0) {
-        transcript.push({
+        const entry: StudioTranscriptEntry = {
           entryId: transcript.length,
           kind: "message",
           role: "user",
           text: "",
           attachments,
-        });
+        };
+        transcript.push(entry);
       }
       continue;
     }
     if (message.role === "tool") {
       for (const content of message.content) {
-        transcript.push({
+        if (content.type !== "tool-result") {
+          continue;
+        }
+        const entry: Extract<StudioTranscriptEntry, { kind: "tool" }> = {
           entryId: transcript.length,
           kind: "tool",
-          toolName: "tool_result",
-          callId: content.callId ?? content.id,
-          result: content.content
-            .map((item) =>
-              "text" in item ? item.text : `[image:${item.mediaType ?? "image/png"}]`,
-            )
-            .join("\n"),
-          structuredResult: content.content,
-        });
+          toolName: content.toolName,
+          callId: content.callId ?? content.toolCallId,
+          result: toolResultText(content.output),
+        };
+        if (content.output.type === "content") entry.structuredResult = content.output.value;
+        transcript.push(entry);
       }
       continue;
     }
 
-    for (const content of message.content) {
+    const contents =
+      typeof message.content === "string"
+        ? [{ type: "text" as const, text: message.content }]
+        : message.content;
+    for (const content of contents) {
       if (content.type === "text") {
         appendAssistantTranscriptText(transcript, content.text);
       } else if (content.type === "reasoning") {
@@ -68,13 +77,13 @@ export function transcriptFromMessages(messages: Message[]): StudioTranscriptEnt
         };
         if (content.id !== undefined) entry.reasoningId = content.id;
         transcript.push(entry);
-      } else if (content.type === "tool_call") {
+      } else if (content.type === "tool-call") {
         transcript.push({
           entryId: transcript.length,
           kind: "tool",
-          toolName: content.function.name,
-          callId: content.callId ?? content.id,
-          args: formatJson(content.function.arguments),
+          toolName: content.toolName,
+          callId: content.callId ?? content.toolCallId,
+          args: formatJson(content.input),
         });
       }
     }
@@ -86,27 +95,41 @@ function attachmentsFromMessage(message: Message): StudioTranscriptAttachment[] 
   if (message.role !== "user" && message.role !== "assistant") {
     return [];
   }
+  if (typeof message.content === "string") return [];
   return message.content.flatMap((content): StudioTranscriptAttachment[] => {
     if (content.type === "image") {
       const attachment: StudioTranscriptAttachment = { kind: "image" };
-      if (content.source.type === "base64") {
-        attachment.data = content.source.data;
-        attachment.mediaType = content.source.mediaType;
+      if (content.image.type === "data") {
+        attachment.data = content.image.data;
+        if (content.mediaType !== undefined) attachment.mediaType = content.mediaType;
       } else {
-        attachment.url = content.source.url;
+        attachment.url = content.image.url;
       }
       return [attachment];
     }
-    if (content.type === "document") {
+    if (content.type === "file") {
       const attachment: StudioTranscriptAttachment = { kind: "document" };
-      if (content.source.filename !== undefined) attachment.name = content.source.filename;
-      if (content.source.mediaType !== undefined) attachment.mediaType = content.source.mediaType;
-      if (content.source.type === "base64") attachment.data = content.source.data;
-      if (content.source.type === "url") attachment.url = content.source.url;
+      if (content.filename !== undefined) attachment.name = content.filename;
+      attachment.mediaType = content.mediaType;
+      if (content.data.type === "data") attachment.data = content.data.data;
+      if (content.data.type === "url") attachment.url = content.data.url;
       return [attachment];
     }
     return [];
   });
+}
+
+function toolResultText(output: ToolResultOutput): string {
+  if (output.type === "text" || output.type === "error-text") return output.value;
+  if (output.type === "json" || output.type === "error-json") return formatJson(output.value);
+  if (output.type === "execution-denied") return output.reason ?? "Execution denied";
+  return output.value
+    .map((part) =>
+      part.type === "text"
+        ? part.text
+        : `[file:${part.mediaType}${part.filename === undefined ? "" : `:${part.filename}`}]`,
+    )
+    .join("\n");
 }
 
 function appendAssistantTranscriptText(transcript: StudioTranscriptEntry[], text: string): void {

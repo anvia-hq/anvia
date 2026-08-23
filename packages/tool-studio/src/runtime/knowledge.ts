@@ -1,4 +1,5 @@
 import type { JsonObject, JsonValue } from "@anvia/core/completion";
+import { getAgentToolState } from "@anvia/core/internal/agent";
 import type { Hono } from "hono";
 import type {
   StudioAgent,
@@ -14,11 +15,12 @@ import type {
   StudioTrace,
   StudioTraceStore,
 } from "../types";
+import { staticContextDocuments, vectorContexts } from "./agent-context";
 import { errorResponse } from "./http";
 import { compactJsonObject, toJsonValue } from "./json";
 import { optionalQueryString, parseLimit } from "./query";
 
-type InspectableIndex = {
+type InspectableStore = {
   inspect?: (request: { limit: number; cursor?: string | undefined; filter?: unknown }) => Promise<{
     items: Array<{ id: string; document: unknown; metadata?: Record<string, unknown> }>;
     nextCursor?: string | undefined;
@@ -76,19 +78,17 @@ export function registerKnowledgeRoutes(
 }
 
 export function agentHasKnowledge(agent: StudioAgent): boolean {
-  return (
-    agent.agent.staticContext.length > 0 ||
-    agent.agent.dynamicContexts.length > 0 ||
-    agent.agent.dynamicTools.length > 0
-  );
+  const toolIndexes = getAgentToolState(agent.agent).toolIndexes;
+  return agent.agent.context.length > 0 || toolIndexes.length > 0;
 }
 
 async function agentKnowledgeConfig(agent: StudioAgent): Promise<StudioAgentKnowledgeConfig> {
   const agentName = agent.name ?? agent.agent.name;
+  const staticContext = staticContextDocuments(agent.agent);
   const config: StudioAgentKnowledgeConfig = {
     agentId: agent.id,
     sources: await knowledgeSources(agent),
-    staticContext: agent.agent.staticContext.map((document) => {
+    staticContext: staticContext.map((document) => {
       const item: StudioStaticKnowledgeDocument = { id: document.id, text: document.text };
       if (document.additionalProps !== undefined) {
         item.additionalProps = jsonObjectFromRecord(document.additionalProps);
@@ -101,32 +101,35 @@ async function agentKnowledgeConfig(agent: StudioAgent): Promise<StudioAgentKnow
 }
 
 async function knowledgeSources(agent: StudioAgent): Promise<StudioKnowledgeSourceSummary[]> {
+  const toolIndexes = getAgentToolState(agent.agent).toolIndexes;
+  const staticContext = staticContextDocuments(agent.agent);
+  const indexedContext = vectorContexts(agent.agent);
   const sources: StudioKnowledgeSourceSummary[] = [
     {
       sourceId: staticSourceId(),
       kind: "static_context",
       label: "Static context",
-      count: agent.agent.staticContext.length,
+      count: staticContext.length,
       inspectable: true,
-      itemCount: agent.agent.staticContext.length,
+      itemCount: staticContext.length,
     },
   ];
 
   const dynamicContextSources = await Promise.all(
-    agent.agent.dynamicContexts.map(async (registration, index) => {
-      const inspect = inspectFn(registration.index);
-      const count = await inspectableCount(inspect, registration.options.filter);
+    indexedContext.map(async (vectorContext, index) => {
+      const inspect = inspectFn(vectorContext.store);
+      const count = await inspectableCount(inspect, vectorContext.filter);
       const source: StudioKnowledgeSourceSummary = {
         sourceId: dynamicContextSourceId(index),
         kind: "dynamic_context",
         label: `Dynamic context ${index + 1}`,
         count: 1,
         registrationIndex: index,
-        topK: registration.options.topK,
+        topK: vectorContext.topK,
         inspectable: inspect !== undefined,
       };
-      if (registration.options.threshold !== undefined) {
-        source.threshold = registration.options.threshold;
+      if (vectorContext.minScore !== undefined) {
+        source.minScore = vectorContext.minScore;
       }
       if (count !== undefined) source.itemCount = count;
       return source;
@@ -134,20 +137,20 @@ async function knowledgeSources(agent: StudioAgent): Promise<StudioKnowledgeSour
   );
 
   const dynamicToolSources = await Promise.all(
-    agent.agent.dynamicTools.map(async (registration, index) => {
-      const inspect = inspectFn(registration.index);
-      const count = await inspectableCount(inspect, registration.options.filter);
+    toolIndexes.map(async (toolIndex, index) => {
+      const inspect = inspectFn(toolIndex);
+      const count = await inspectableCount(inspect, toolIndex.filter);
       const source: StudioKnowledgeSourceSummary = {
         sourceId: dynamicToolsSourceId(index),
         kind: "dynamic_tools",
         label: `Dynamic tools ${index + 1}`,
         count: 1,
         registrationIndex: index,
-        topK: registration.options.topK,
+        topK: toolIndex.topK,
         inspectable: inspect !== undefined,
       };
-      if (registration.options.threshold !== undefined) {
-        source.threshold = registration.options.threshold;
+      if (toolIndex.minScore !== undefined) {
+        source.minScore = toolIndex.minScore;
       }
       if (count !== undefined) source.itemCount = count;
       return source;
@@ -158,7 +161,7 @@ async function knowledgeSources(agent: StudioAgent): Promise<StudioKnowledgeSour
 }
 
 async function inspectableCount(
-  inspect: InspectableIndex["inspect"] | undefined,
+  inspect: InspectableStore["inspect"] | undefined,
   filter?: unknown,
 ): Promise<number | undefined> {
   if (inspect === undefined) {
@@ -177,20 +180,20 @@ async function knowledgeItemsPage(
     return staticKnowledgeItemsPage(agent, request);
   }
 
-  const dynamicContextIndex = dynamicSourceIndex(sourceId, "dynamic_context");
-  if (dynamicContextIndex !== undefined) {
-    const registration = agent.agent.dynamicContexts[dynamicContextIndex];
-    if (registration === undefined) {
+  const vectorContextIndex = dynamicSourceIndex(sourceId, "dynamic_context");
+  if (vectorContextIndex !== undefined) {
+    const vectorContext = vectorContexts(agent.agent)[vectorContextIndex];
+    if (vectorContext === undefined) {
       return undefined;
     }
-    const inspect = inspectFn(registration.index);
+    const inspect = inspectFn(vectorContext.store);
     if (inspect === undefined) {
       return nonInspectablePage(agent.id, sourceId, "dynamic_context");
     }
     const page = await inspect({
       limit: request.limit,
       cursor: request.cursor,
-      filter: registration.options.filter,
+      filter: vectorContext.filter,
     });
     const result: StudioKnowledgeItemsPage = {
       agentId: agent.id,
@@ -206,18 +209,18 @@ async function knowledgeItemsPage(
 
   const dynamicToolsIndex = dynamicSourceIndex(sourceId, "dynamic_tools");
   if (dynamicToolsIndex !== undefined) {
-    const registration = agent.agent.dynamicTools[dynamicToolsIndex];
-    if (registration === undefined) {
+    const toolIndex = getAgentToolState(agent.agent).toolIndexes[dynamicToolsIndex];
+    if (toolIndex === undefined) {
       return undefined;
     }
-    const inspect = inspectFn(registration.index);
+    const inspect = inspectFn(toolIndex);
     if (inspect === undefined) {
       return nonInspectablePage(agent.id, sourceId, "dynamic_tools");
     }
     const page = await inspect({
       limit: request.limit,
       cursor: request.cursor,
-      filter: registration.options.filter,
+      filter: toolIndex.filter,
     });
     const result: StudioKnowledgeItemsPage = {
       agentId: agent.id,
@@ -234,21 +237,22 @@ async function knowledgeItemsPage(
   return undefined;
 }
 
-function inspectFn(index: unknown): InspectableIndex["inspect"] | undefined {
-  if (!isRecord(index) || typeof index.inspect !== "function") {
+function inspectFn(store: unknown): InspectableStore["inspect"] | undefined {
+  if (!isRecord(store) || typeof store.inspect !== "function") {
     return undefined;
   }
-  const inspect = index.inspect;
+  const inspect = store.inspect;
   return (request) =>
-    inspect.call(index, request) as ReturnType<NonNullable<InspectableIndex["inspect"]>>;
+    inspect.call(store, request) as ReturnType<NonNullable<InspectableStore["inspect"]>>;
 }
 
 function staticKnowledgeItemsPage(
   agent: StudioAgent,
   request: { limit: number; cursor?: string | undefined },
 ): StudioKnowledgeItemsPage {
+  const staticContext = staticContextDocuments(agent.agent);
   const start = Math.max(0, Math.trunc(Number(request.cursor ?? "0")));
-  const page = agent.agent.staticContext.slice(start, start + request.limit);
+  const page = staticContext.slice(start, start + request.limit);
   const nextOffset = start + page.length;
   const result: StudioKnowledgeItemsPage = {
     agentId: agent.id,
@@ -266,9 +270,9 @@ function staticKnowledgeItemsPage(
       }
       return item;
     }),
-    totalCount: agent.agent.staticContext.length,
+    totalCount: staticContext.length,
   };
-  if (nextOffset < agent.agent.staticContext.length) result.nextCursor = String(nextOffset);
+  if (nextOffset < staticContext.length) result.nextCursor = String(nextOffset);
   return result;
 }
 

@@ -1,4 +1,4 @@
-import type { UIAttachment } from "@anvia/react";
+import type { UIAttachment } from "@anvia/client";
 import { createContext, createElement, type ReactElement, type ReactNode, useContext } from "react";
 
 export type ImageContextValue = {
@@ -26,7 +26,7 @@ export function InternalImageProvider({
 export function useImage(): ImageContextValue {
   const value = useContext(ImageContext);
   if (value === undefined) {
-    throw new Error("Image primitives must be used inside Image.Root.");
+    throw new Error("Image primitives must be used inside ImagePrimitive.Root.");
   }
   return value;
 }

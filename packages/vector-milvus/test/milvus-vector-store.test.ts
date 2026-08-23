@@ -1,210 +1,116 @@
-import { type Embedding, type EmbeddingModel, embedDocuments } from "@anvia/core/embeddings";
-import { vectorFilter } from "@anvia/core/vector-store";
-import { describe, expect, it } from "vitest";
-import { filterToMilvusExpr, MilvusVectorStore } from "../src/index";
+import { describe, expect, it, vi } from "vitest";
+import * as publicApi from "../src/index.js";
+import { type MilvusClientLike, MilvusVectorClient } from "../src/index.js";
 
-class MockEmbeddingModel implements EmbeddingModel {
-  async embedTexts(texts: string[]): Promise<Embedding[]> {
-    return texts.map((document) => ({
-      document,
-      vector: document.toLowerCase().includes("cat") ? [1, 0] : [0, 1],
-    }));
-  }
-}
-
-class MockMilvusClient {
-  readonly collections = new Set<string>();
-  readonly creates: unknown[] = [];
-  readonly indexCreates: unknown[] = [];
-  readonly inserts: unknown[] = [];
-  readonly searches: unknown[] = [];
-
-  async hasCollection(options: { collection_name: string }): Promise<{ value: boolean }> {
-    return { value: this.collections.has(options.collection_name) };
-  }
-
-  async createCollection(options: Record<string, unknown>): Promise<unknown> {
-    this.collections.add(options.collection_name as string);
-    this.creates.push(options);
-    return {};
-  }
-
-  async createIndex(options: Record<string, unknown>): Promise<unknown> {
-    this.indexCreates.push(options);
-    return {};
-  }
-
-  async loadCollection(): Promise<unknown> {
-    return {};
-  }
-
-  async insert(options: Record<string, unknown>): Promise<unknown> {
-    this.inserts.push(options);
-    return {};
-  }
-
-  async search(options: Record<string, unknown>): Promise<unknown> {
-    this.searches.push(options);
-    return {
+function fixture(): MilvusClientLike {
+  return {
+    hasCollection: vi.fn(async () => ({ value: true })),
+    createCollection: vi.fn(async () => undefined),
+    createIndex: vi.fn(async () => undefined),
+    loadCollection: vi.fn(async () => undefined),
+    insert: vi.fn(async () => undefined),
+    delete: vi.fn(async () => undefined),
+    search: vi.fn(async () => ({
       results: [
-        [
-          {
-            id: "point1",
-            score: 0.9,
-            __anvia_document_id: "doc1",
-            __anvia_document: JSON.stringify({ title: "Cat guide" }),
-            kind: "animal",
-          },
-          {
-            id: "point2",
-            score: 0.4,
-            __anvia_document_id: "doc2",
-            __anvia_document: "plain dog note",
-          },
-        ],
+        {
+          id: "point",
+          score: 0.9,
+          __anvia_document_id: "doc",
+          __anvia_document: JSON.stringify({ text: "cat" }),
+        },
       ],
-    };
-  }
+    })),
+  };
 }
 
-describe("MilvusVectorStore", () => {
-  it("creates a missing collection with vector size and default COSINE metric", async () => {
-    const client = new MockMilvusClient();
-
-    await MilvusVectorStore.connect({
-      client,
-      collectionName: "docs",
-      vectorSize: 2,
-    });
-
-    expect(client.creates[0]).toMatchObject({
-      collection_name: "docs",
-      metric_type: "COSINE",
-    });
-    expect(client.indexCreates[0]).toMatchObject({
-      collection_name: "docs",
-      field_name: "vector",
-      index_type: "HNSW",
-      metric_type: "COSINE",
-    });
+describe("MilvusVectorClient", () => {
+  it("exports the client without legacy index or connect APIs", () => {
+    expect(publicApi).toHaveProperty("MilvusVectorClient");
+    expect(publicApi).not.toHaveProperty("MilvusVectorIndex");
+    expect(publicApi.MilvusVectorStore).not.toHaveProperty("connect");
+    expect(publicApi.MilvusVectorStore.prototype).not.toHaveProperty("index");
+    expect(publicApi.MilvusVectorStore.prototype).not.toHaveProperty("asTool");
   });
-
-  it("respects createIfMissing false", async () => {
-    const client = new MockMilvusClient();
-    client.collections.add("docs");
-
-    await MilvusVectorStore.connect({
-      client,
+  it("does no I/O until lifecycle or data operations", async () => {
+    const client = fixture();
+    const store = new MilvusVectorClient({ client }).vectorStore({
       collectionName: "docs",
-      vectorSize: 2,
-      createIfMissing: false,
+      dimensions: 2,
     });
-
-    expect(client.creates).toEqual([]);
+    expect(client.hasCollection).not.toHaveBeenCalled();
+    await store.validate();
+    expect(client.hasCollection).toHaveBeenCalledOnce();
   });
-
-  it("upserts precomputed embeddings and queries with Anvia embeddings", async () => {
-    const client = new MockMilvusClient();
-    const model = new MockEmbeddingModel();
-    const store = await MilvusVectorStore.connect<{ title: string }>({
-      client,
+  it("replaces and searches with raw vectors", async () => {
+    const client = fixture();
+    const store = new MilvusVectorClient({ client }).vectorStore<{ text: string }>({
       collectionName: "docs",
-      vectorSize: 2,
+      dimensions: 2,
     });
-    const embedded = await embedDocuments(model, [{ id: "doc1", title: "Cat guide" }], {
-      id: (doc) => doc.id,
-      content: (doc) => doc.title,
-      metadata: () => ({ kind: "animal" }),
-    });
-
-    await store.upsertDocuments(embedded);
-    const results = await store.index(model).search({
-      query: "cat",
-      topK: 2,
-      threshold: 0.5,
-      filter: vectorFilter.eq("kind", "animal"),
-    });
-
-    expect(client.inserts[0]).toMatchObject({
-      collection_name: "docs",
-      data: [
-        {
-          vector: [1, 0],
-          __anvia_document_id: "doc1",
-          __anvia_document: JSON.stringify({ id: "doc1", title: "Cat guide" }),
-          kind: "animal",
-        },
+    await store.upsert({
+      documents: [
+        { id: "doc", document: { text: "cat" }, embeddings: [{ document: "cat", vector: [1, 0] }] },
       ],
     });
-    expect(client.searches[0]).toMatchObject({
-      collection_name: "docs",
-      vector: [[1, 0]],
-      limit: 2,
-      filter: 'kind == "animal"',
-    });
-    expect(results).toEqual([
-      {
-        id: "doc1",
-        score: 0.9,
-        document: { title: "Cat guide" },
-        metadata: { kind: "animal" },
-      },
+    expect(client.delete).toHaveBeenCalledBefore(client.insert as never);
+    expect(client.delete).toHaveBeenCalledWith(
+      expect.objectContaining({ filter: expect.stringContaining("__anvia_document_id") }),
+    );
+    expect(client.delete).not.toHaveBeenCalledWith(
+      expect.objectContaining({ expr: expect.anything() }),
+    );
+    await expect(store.search({ vector: [1, 0], topK: 1 })).resolves.toMatchObject([
+      { id: "doc", score: 0.9 },
     ]);
+    expect(client.search).toHaveBeenCalledWith(expect.objectContaining({ data: [[1, 0]] }));
   });
 
-  it("translates compound filters", () => {
-    expect(
-      filterToMilvusExpr(vectorFilter.and(vectorFilter.gt("rank", 2), vectorFilter.lt("rank", 5))),
-    ).toEqual("(rank > 2) && (rank < 5)");
-    expect(
-      filterToMilvusExpr(vectorFilter.or(vectorFilter.eq("a", true), vectorFilter.eq("b", false))),
-    ).toEqual("(a == true) || (b == false)");
-  });
-
-  it("omits the search filter when none is requested", async () => {
-    const client = new MockMilvusClient();
-    const model = new MockEmbeddingModel();
-    const store = await MilvusVectorStore.connect<string>({
-      client,
-      collectionName: "docs",
-      vectorSize: 2,
-    });
-
-    await store.index(model).search({ query: "cat", topK: 2 });
-
-    expect(client.searches[0]).not.toHaveProperty("filter");
-  });
-
-  it("rejects documents with no embeddings", async () => {
-    const client = new MockMilvusClient();
-    const store = await MilvusVectorStore.connect<string>({
-      client,
-      collectionName: "docs",
-      vectorSize: 2,
-    });
-
-    await expect(
-      store.upsertDocuments([{ id: "doc1", document: "empty", embeddings: [] }]),
-    ).rejects.toThrow("Document doc1 has no embeddings");
-  });
-
-  it("rejects reserved metadata keys", async () => {
-    const client = new MockMilvusClient();
-    const store = await MilvusVectorStore.connect<string>({
-      client,
-      collectionName: "docs",
-      vectorSize: 2,
-    });
-
-    await expect(
-      store.upsertDocuments([
+  it("expands physical candidates until topK logical documents are available", async () => {
+    const client = fixture();
+    client.search = vi.fn(async (options) => {
+      const results = [
         {
-          id: "doc1",
-          document: "reserved",
-          metadata: { __anvia_document_id: "bad" },
-          embeddings: [{ document: "reserved", vector: [1, 0] }],
+          id: "a-1",
+          score: 0.9,
+          __anvia_document_id: "a",
+          __anvia_document: "A",
         },
-      ]),
-    ).rejects.toThrow("Metadata key __anvia_document_id is reserved");
+        {
+          id: "a-2",
+          score: 0.8,
+          __anvia_document_id: "a",
+          __anvia_document: "A",
+        },
+      ];
+      if (options.limit !== 2) {
+        results.push(
+          {
+            id: "b",
+            score: 0.7,
+            __anvia_document_id: "b",
+            __anvia_document: "B",
+          },
+          {
+            id: "c",
+            score: 0.6,
+            __anvia_document_id: "c",
+            __anvia_document: "C",
+          },
+        );
+      }
+      return { results };
+    });
+    const store = new MilvusVectorClient({ client }).vectorStore<string>({
+      collectionName: "docs",
+      dimensions: 2,
+    });
+
+    await expect(store.search({ vector: [1, 0], topK: 2 })).resolves.toMatchObject([
+      { id: "a" },
+      { id: "b" },
+    ]);
+    expect(
+      (client.search as ReturnType<typeof vi.fn>).mock.calls.map(([call]) => call.limit),
+    ).toEqual([2, 4]);
   });
 });

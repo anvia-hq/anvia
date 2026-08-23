@@ -2,11 +2,10 @@ import { errorEvent } from "./errors";
 import type { JsonlStreamOptions } from "./types";
 
 export function createJsonlStream<TEvent>(
-  events: AsyncIterable<TEvent>,
-  options: JsonlStreamOptions<TEvent> = {},
+  options: JsonlStreamOptions<TEvent> & { events: AsyncIterable<TEvent> },
 ): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
-  const iterator = events[Symbol.asyncIterator]();
+  const iterator = options.events[Symbol.asyncIterator]();
   const serialize = options.serialize ?? serializeJson;
 
   return new ReadableStream<Uint8Array>({

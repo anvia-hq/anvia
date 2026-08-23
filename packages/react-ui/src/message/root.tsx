@@ -1,8 +1,9 @@
-import type { UIMessage } from "@anvia/react";
-import { forwardRef, type ReactNode } from "react";
+import type { UIMessage } from "@anvia/client";
+import { forwardRef, type ReactNode, useCallback, useMemo } from "react";
 
 import { useMessage } from "../contexts";
-import { type PrimitiveProps, renderPrimitive } from "../primitives";
+import { composeRefs, type PrimitiveProps, renderPrimitive } from "../primitives";
+import { registerMessageElement } from "./elements";
 
 type MessageChildren = ReactNode | ((message: UIMessage) => ReactNode);
 
@@ -16,17 +17,22 @@ const MessageRoot = forwardRef<HTMLElement, MessageRootProps>(function MessageRo
 ) {
   const { message } = useMessage();
   const renderedChildren = typeof children === "function" ? children(message) : children;
+  const registerElement = useCallback(
+    (element: HTMLElement | null) => {
+      if (element !== null) registerMessageElement(element, message.id);
+    },
+    [message.id],
+  );
+  const composedRef = useMemo(() => composeRefs(ref, registerElement), [ref, registerElement]);
 
   return renderPrimitive(
     "article",
     {
       ...props,
       children: renderedChildren,
-      "data-anvia-message": "",
-      "data-anvia-message-id": message.id,
       "data-role": message.role,
     } as PrimitiveProps<"article">,
-    ref,
+    composedRef,
   );
 });
 
@@ -36,7 +42,6 @@ const MessageContent = forwardRef<HTMLDivElement, PrimitiveProps<"div">>(
       "div",
       {
         ...props,
-        "data-anvia-message-content": "",
       } as PrimitiveProps<"div">,
       ref,
     );

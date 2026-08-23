@@ -5,6 +5,7 @@
     "outDir": "dist",
     "baseUrl": ".",
     "paths": {
+      "@anvia/client": ["../client/src/index.ts"],
       "@anvia/core": ["../core/src/index.ts"],
       "@anvia/core/*": ["../core/src/*/index.ts"]
     }

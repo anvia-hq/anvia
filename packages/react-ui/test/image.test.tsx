@@ -1,8 +1,13 @@
-import type { UIAttachment, UIMessage } from "@anvia/react";
+import type { UIAttachment, UIMessage } from "@anvia/client";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ChatProvider, Image, Message, Thread } from "../src";
+import {
+  ChatProvider,
+  ImagePrimitive as Image,
+  MessagePrimitive as Message,
+  ThreadPrimitive as Thread,
+} from "../src";
 import { createChatController } from "./helpers";
 
 afterEach(() => {
@@ -14,17 +19,17 @@ describe("Image primitives", () => {
   it("renders direct image attachments and preview state", () => {
     const attachment = imageAttachment();
 
-    const { container } = render(
-      <Image.Root attachment={attachment}>
+    render(
+      <Image.Root attachment={attachment} data-testid="image-root">
         <Image.Preview loadingFallback="Loading" errorFallback="Broken" />
         <Image.Name />
       </Image.Root>,
     );
 
-    expect(container.querySelector("[data-anvia-image]")).toBeInstanceOf(HTMLElement);
+    expect(screen.getByTestId("image-root")).toBeInstanceOf(HTMLElement);
     expect(screen.getByText("Loading")).toBeTruthy();
 
-    const image = container.querySelector("[data-anvia-image-img]");
+    const image = screen.getByAltText("photo.png");
     expect(image).toBeInstanceOf(HTMLImageElement);
     fireEvent.load(image as HTMLImageElement);
 
@@ -66,7 +71,7 @@ describe("Image primitives", () => {
     trigger.focus();
     fireEvent.click(trigger);
 
-    const overlay = document.querySelector("[data-anvia-image-zoom-overlay]");
+    const overlay = screen.getByRole("dialog");
     expect(overlay).toBeInstanceOf(HTMLDivElement);
     expect(overlay?.getAttribute("aria-modal")).toBe("true");
 
@@ -80,7 +85,7 @@ describe("Image primitives", () => {
     fireEvent.keyDown(overlay as HTMLDivElement, { key: "Escape" });
 
     await waitFor(() => {
-      expect(document.querySelector("[data-anvia-image-zoom-overlay]")).toBeNull();
+      expect(screen.queryByRole("dialog")).toBeNull();
       expect(document.activeElement).toBe(trigger);
     });
   });
@@ -173,7 +178,7 @@ describe("Image primitives", () => {
     };
 
     const { container, rerender } = render(<Image.Root attachment={attachment} />);
-    expect(container.querySelector("[data-anvia-image]")).toBeNull();
+    expect(container.querySelector("figure")).toBeNull();
 
     rerender(
       <Image.Root attachment={{ ...attachment, type: "image" }} renderWhen="always">

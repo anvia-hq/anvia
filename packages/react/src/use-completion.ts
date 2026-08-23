@@ -1,291 +1,158 @@
-import type { ContextUsage, Message } from "@anvia/core/completion";
 import {
-  type UIMessage,
-  type UIStreamEvent,
-  type UIStreamRequest,
-  uiMessagesToCoreMessages,
-} from "@anvia/core/ui";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { contextUsageFromMessages, contextUsageUpdateFromEvent } from "./context-usage";
-import { createFetchTransport } from "./transport";
-import type { EventStreamFormat, EventTransport } from "./types";
-import {
-  appendAssistantDelta,
-  applyAnviaStreamEvent,
-  applyUIStreamEvent,
+  applyClientStreamEvent,
   assistantText,
-  createUserMessage,
-  replaceAssistantText,
-} from "./ui-messages";
+  type ClientCompletionRequest,
+  type ClientDataMap,
+  type ClientMetadata,
+  ClientProtocolError,
+  type ClientStreamEvent,
+  type ClientTransport,
+  normalizeClientError,
+  type UIMessage,
+} from "@anvia/client";
+import type { ContextUsage } from "@anvia/core/completion";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { contextUsageUpdateFromEvent } from "./context-usage";
+import type { UseChatStatus } from "./types";
 
-export type UseCompletionStatus = "idle" | "streaming" | "error";
+export type UseCompletionStatus = UseChatStatus;
 
-export type UseCompletionRequestArgs = {
-  messages: UIMessage[];
-  uiMessages: UIMessage[];
-  coreMessages: Message[];
-};
-
-export type UseCompletionOptions<TRequest = UIStreamRequest, TEvent = UIStreamEvent> = {
-  transport?: EventTransport<TRequest, TEvent>;
-  endpoint?: string | URL;
-  format?: EventStreamFormat;
-  initialMessages?: UIMessage[];
+export type UseCompletionOptions<
+  Metadata extends ClientMetadata = ClientMetadata,
+  Data extends ClientDataMap = ClientDataMap,
+> = {
+  transport: ClientTransport<ClientCompletionRequest<Metadata>, Data, Metadata>;
+  initialInput?: string;
   initialCompletion?: string;
-  createRequest?: (args: UseCompletionRequestArgs) => TRequest;
-  eventToUIEvent?: (event: TEvent) => UIStreamEvent | undefined;
-  eventToDelta?: (event: TEvent) => string | undefined;
-  eventToFinal?: (event: TEvent) => string | undefined;
-  onEvent?: (event: TEvent) => void;
-  onError?: (error: unknown) => void;
+  onEvent?(event: ClientStreamEvent<Metadata, Data>): void;
+  onError?(error: Error): void;
 };
 
-export type UseCompletionResult<TEvent = UIStreamEvent> = {
-  messages: UIMessage[];
+export type UseCompletionResult<
+  Metadata extends ClientMetadata = ClientMetadata,
+  Data extends ClientDataMap = ClientDataMap,
+> = {
   completion: string;
   input: string;
   setInput(input: string): void;
-  complete(prompt?: string): Promise<void>;
+  complete(options: ClientCompletionRequest<Metadata>): Promise<void>;
+  submit(): Promise<void>;
   stop(): void;
-  reset(messagesOrCompletion?: UIMessage[] | string): void;
+  reset(): void;
   status: UseCompletionStatus;
-  error: unknown;
-  events: TEvent[];
+  error: Error | undefined;
+  events: readonly ClientStreamEvent<Metadata, Data>[];
   contextUsage: ContextUsage | undefined;
 };
 
-export function useCompletion<TRequest = UIStreamRequest, TEvent = UIStreamEvent>(
-  options: UseCompletionOptions<TRequest, TEvent> = {},
-): UseCompletionResult<TEvent> {
-  const initialMessages = useMemo(
-    () =>
-      options.initialMessages ??
-      (options.initialCompletion === undefined
-        ? []
-        : [
-            {
-              id: "initial_assistant",
-              role: "assistant" as const,
-              parts: [
-                {
-                  id: "initial_assistant_text",
-                  type: "text" as const,
-                  text: options.initialCompletion,
-                },
-              ],
-            },
-          ]),
-    [options.initialCompletion, options.initialMessages],
-  );
-  const [messages, setMessagesState] = useState<UIMessage[]>(() => [...initialMessages]);
-  const [input, setInput] = useState("");
-  const [events, setEvents] = useState<TEvent[]>([]);
-  const [contextUsage, setContextUsage] = useState<ContextUsage | undefined>(() =>
-    contextUsageFromMessages(initialMessages),
-  );
-  const [status, setStatus] = useState<UseCompletionStatus>("idle");
-  const [error, setError] = useState<unknown>();
+export function useCompletion<
+  Metadata extends ClientMetadata = ClientMetadata,
+  Data extends ClientDataMap = ClientDataMap,
+>(options: UseCompletionOptions<Metadata, Data>): UseCompletionResult<Metadata, Data> {
+  const [input, setInput] = useState(options.initialInput ?? "");
+  const [completion, setCompletion] = useState(options.initialCompletion ?? "");
+  const [events, setEvents] = useState<ClientStreamEvent<Metadata, Data>[]>([]);
+  const [contextUsage, setContextUsage] = useState<ContextUsage>();
+  const [status, setStatus] = useState<UseCompletionStatus>("ready");
+  const [error, setError] = useState<Error>();
+  const messagesRef = useRef<readonly UIMessage<Metadata, Data>[]>([]);
   const abortRef = useRef<AbortController | undefined>(undefined);
-  const messagesRef = useRef(messages);
 
-  useEffect(() => {
-    messagesRef.current = messages;
-  }, [messages]);
+  useEffect(() => () => abortRef.current?.abort(), []);
 
-  useEffect(() => {
-    return () => {
+  const stop = useCallback(() => {
+    abortRef.current?.abort();
+    abortRef.current = undefined;
+    setStatus("ready");
+  }, []);
+
+  const complete = useCallback(
+    async (request: ClientCompletionRequest<Metadata>) => {
+      if (request.prompt.trim().length === 0) {
+        throw new TypeError("complete requires a nonblank prompt.");
+      }
+
       abortRef.current?.abort();
-    };
-  }, []);
+      const controller = new AbortController();
+      abortRef.current = controller;
+      messagesRef.current = [];
+      setCompletion("");
+      setEvents([]);
+      setContextUsage(undefined);
+      setError(undefined);
+      setStatus("submitted");
 
-  const transport = useMemo(() => {
-    if (options.transport !== undefined) {
-      return options.transport;
-    }
-    if (options.endpoint === undefined) {
-      return undefined;
-    }
-
-    return createFetchTransport<UIStreamRequest, UIStreamEvent>({
-      endpoint: options.endpoint,
-      format: options.format ?? "jsonl",
-    }) as EventTransport<TRequest, TEvent>;
-  }, [options.transport, options.endpoint, options.format]);
-
-  const setMessages = useCallback((nextMessages: UIMessage[]) => {
-    messagesRef.current = nextMessages;
-    setMessagesState(nextMessages);
-  }, []);
-
-  const applyEvent = useCallback(
-    (event: TEvent) => {
-      const mappedUIEvent = options.eventToUIEvent?.(event);
-      const contextUpdate = contextUsageUpdateFromEvent(mappedUIEvent ?? event);
-      if (contextUpdate !== undefined) {
-        setContextUsage(contextUpdate.contextUsage);
-      }
-      if (mappedUIEvent !== undefined) {
-        setMessagesState((current) => {
-          const next = applyUIStreamEvent(current, mappedUIEvent);
-          messagesRef.current = next;
-          return next;
-        });
-        return;
-      }
-
-      const hasCustomEventMapper =
-        options.eventToUIEvent !== undefined ||
-        options.eventToDelta !== undefined ||
-        options.eventToFinal !== undefined;
-
-      if (!hasCustomEventMapper) {
-        let handled = false;
-        setMessagesState((current) => {
-          const next = applyAnviaStreamEvent(current, event);
-          if (next === undefined) {
-            return current;
+      let streamError: Error | undefined;
+      try {
+        for await (const frame of options.transport.send({
+          request,
+          abortSignal: controller.signal,
+        })) {
+          if (abortRef.current !== controller || controller.signal.aborted) return;
+          if (frame.type === "stream_start") continue;
+          if (frame.type === "stream_event") {
+            setStatus("streaming");
+            const event = frame.event;
+            setEvents((current) => [...current, event]);
+            options.onEvent?.(event);
+            const nextContextUsage = contextUsageUpdateFromEvent(event);
+            if (nextContextUsage !== undefined) setContextUsage(nextContextUsage);
+            messagesRef.current = applyClientStreamEvent(messagesRef.current, event);
+            setCompletion(assistantText(messagesRef.current));
+            if (event.type === "error") {
+              const eventError = normalizeClientError(event.error);
+              streamError ??= eventError;
+              setError(eventError);
+              setStatus("error");
+              options.onError?.(eventError);
+            }
+            continue;
           }
-          handled = true;
-          messagesRef.current = next;
-          return next;
-        });
-        if (handled) {
+          if (frame.status !== "completed") {
+            throw new ClientProtocolError(
+              `Client completion stream ended with status ${frame.status}.`,
+              frame,
+            );
+          }
+        }
+        if (abortRef.current === controller && !controller.signal.aborted) {
+          setStatus(streamError === undefined ? "ready" : "error");
+        }
+      } catch (caught) {
+        if (isAbortError(caught)) {
+          if (abortRef.current === controller) setStatus("ready");
           return;
         }
-      }
-
-      const delta = options.eventToDelta?.(event);
-      if (delta !== undefined && delta.length > 0) {
-        setMessagesState((current) => {
-          const next = appendAssistantDelta(current, delta);
-          messagesRef.current = next;
-          return next;
-        });
-      }
-
-      const final = options.eventToFinal?.(event);
-      if (final !== undefined) {
-        setMessagesState((current) => {
-          const next = replaceAssistantText(current, final);
-          messagesRef.current = next;
-          return next;
-        });
+        if (abortRef.current !== controller) return;
+        const nextError = normalizeClientError(caught);
+        setError(nextError);
+        setStatus("error");
+        options.onError?.(nextError);
+      } finally {
+        if (abortRef.current === controller) abortRef.current = undefined;
       }
     },
     [options],
   );
 
-  const complete = useCallback(
-    async (nextInput?: string) => {
-      if (transport === undefined) {
-        throw new Error("useCompletion requires either transport or endpoint");
-      }
+  const submit = useCallback(() => complete({ prompt: input }), [complete, input]);
 
-      const prompt = nextInput ?? input;
-      const userMessage = createUserMessage(prompt);
-      if (userMessage === undefined) {
-        return;
-      }
-      const previousAbortController = abortRef.current;
-      previousAbortController?.abort();
-      const currentMessages = messagesRef.current;
-      const baseMessages =
-        previousAbortController !== undefined && currentMessages.at(-1)?.role === "assistant"
-          ? currentMessages.slice(0, -1)
-          : currentMessages;
-      const nextMessages = [...baseMessages, userMessage];
-
-      const abortController = new AbortController();
-      abortRef.current = abortController;
-
-      const createRequest =
-        options.createRequest ??
-        ((args: UseCompletionRequestArgs) =>
-          ({ messages: args.coreMessages, stream: true }) as TRequest);
-
-      setMessages(nextMessages);
-      setInput("");
-      setEvents([]);
-      setError(undefined);
-      setStatus("streaming");
-
-      try {
-        const coreMessages = uiMessagesToCoreMessages(nextMessages);
-        const request = createRequest({
-          messages: nextMessages,
-          uiMessages: nextMessages,
-          coreMessages,
-        });
-
-        for await (const event of transport.send(request, { signal: abortController.signal })) {
-          setEvents((current) => [...current, event]);
-          options.onEvent?.(event);
-          applyEvent(event);
-        }
-
-        if (!abortController.signal.aborted) {
-          setStatus("idle");
-        }
-      } catch (caught) {
-        if (isAbortError(caught)) {
-          if (abortRef.current === abortController) {
-            setStatus("idle");
-          }
-          return;
-        }
-
-        setError(caught);
-        setStatus("error");
-        options.onError?.(caught);
-      } finally {
-        if (abortRef.current === abortController) {
-          abortRef.current = undefined;
-        }
-      }
-    },
-    [applyEvent, input, options, setMessages, transport],
-  );
-
-  const stop = useCallback(() => {
-    abortRef.current?.abort();
-    abortRef.current = undefined;
-    setStatus("idle");
-  }, []);
-
-  const reset = useCallback(
-    (messagesOrCompletion?: UIMessage[] | string) => {
-      abortRef.current?.abort();
-      abortRef.current = undefined;
-      if (Array.isArray(messagesOrCompletion)) {
-        setMessages(messagesOrCompletion);
-        setContextUsage(contextUsageFromMessages(messagesOrCompletion));
-      } else if (typeof messagesOrCompletion === "string") {
-        setMessages([
-          {
-            id: "reset_assistant",
-            role: "assistant",
-            parts: [{ id: "reset_assistant_text", type: "text", text: messagesOrCompletion }],
-          },
-        ]);
-        setContextUsage(undefined);
-      } else {
-        setMessages([]);
-        setContextUsage(undefined);
-      }
-      setEvents([]);
-      setError(undefined);
-      setInput("");
-      setStatus("idle");
-    },
-    [setMessages],
-  );
+  const reset = useCallback(() => {
+    stop();
+    setInput(options.initialInput ?? "");
+    setCompletion(options.initialCompletion ?? "");
+    setEvents([]);
+    setContextUsage(undefined);
+    setError(undefined);
+    messagesRef.current = [];
+  }, [options.initialCompletion, options.initialInput, stop]);
 
   return {
-    messages,
-    completion: assistantText(messages),
+    completion,
     input,
     setInput,
     complete,
+    submit,
     stop,
     reset,
     status,
@@ -296,5 +163,7 @@ export function useCompletion<TRequest = UIStreamRequest, TEvent = UIStreamEvent
 }
 
 function isAbortError(error: unknown): boolean {
-  return error instanceof DOMException && error.name === "AbortError";
+  return (
+    typeof error === "object" && error !== null && "name" in error && error.name === "AbortError"
+  );
 }

@@ -1,47 +1,56 @@
-import { imageGenerationRequest } from "@anvia/core/image-generation";
-import { transcriptionRequest } from "@anvia/core/transcription";
+import { generateImage } from "@anvia/core/image-generation";
+import { transcribe } from "@anvia/core/transcription";
 import { describe, expect, it } from "vitest";
 import { GeminiClient } from "../src/index";
 
 describe("Gemini multimodal models", () => {
   it("maps native Gemini image responses and derives aspect ratio", async () => {
     const client = mockGeminiClient();
-    const model = new GeminiClient({ client: client as never }).imageGenerationModel("gemini-test");
+    const model = new GeminiClient({ client: client as never }).imageGenerationModel({
+      api: "generateContent",
+      modelId: "gemini-test",
+    });
 
-    const response = await imageGenerationRequest(model)
-      .prompt("draw a diagram")
-      .width(1024)
-      .height(768)
-      .send();
+    const response = await generateImage({
+      model,
+      prompt: "draw a diagram",
+      width: 1024,
+      height: 768,
+    });
 
     expect(client.models.generateContentCalls[0]).toEqual({
       model: "gemini-test",
       contents: "draw a diagram",
       config: {
+        httpOptions: { retryOptions: { attempts: 1 } },
         responseModalities: ["TEXT", "IMAGE"],
         imageConfig: { aspectRatio: "4:3" },
       },
     });
-    expect(response.image).toEqual(new Uint8Array([1, 2, 3]));
-    expect(response.mediaType).toBe("image/png");
+    expect(response.images[0].data).toEqual(new Uint8Array([1, 2, 3]));
+    expect(response.images[0].mediaType).toBe("image/png");
   });
 
-  it("lets caller-provided native Gemini image config override derived aspect ratio", async () => {
+  it("preserves provider image config while canonical dimensions win", async () => {
     const client = mockGeminiClient();
-    const model = new GeminiClient({ client: client as never }).imageGenerationModel();
+    const model = new GeminiClient({ client: client as never }).imageGenerationModel({
+      api: "generateContent",
+      modelId: "gemini-2.5-flash-image",
+    });
 
-    await imageGenerationRequest(model)
-      .prompt("draw")
-      .width(1024)
-      .height(768)
-      .additionalParams({
+    await generateImage({
+      model,
+      prompt: "draw",
+      width: 1024,
+      height: 768,
+      providerOptions: {
         config: { imageConfig: { aspectRatio: "16:9", imageSize: "2K" } },
-      })
-      .send();
+      },
+    });
 
     expect(client.models.generateContentCalls[0]).toMatchObject({
       config: {
-        imageConfig: { aspectRatio: "16:9", imageSize: "2K" },
+        imageConfig: { aspectRatio: "4:3", imageSize: "2K" },
         responseModalities: ["TEXT", "IMAGE"],
       },
     });
@@ -49,24 +58,30 @@ describe("Gemini multimodal models", () => {
 
   it("keeps Imagen generation on the explicit Imagen model factory", async () => {
     const client = mockGeminiClient();
-    const model = new GeminiClient({ client: client as never }).imagenGenerationModel(
-      "imagen-test",
-    );
+    const model = new GeminiClient({ client: client as never }).imageGenerationModel({
+      api: "generateImages",
+      modelId: "imagen-test",
+    });
 
-    const response = await imageGenerationRequest(model)
-      .prompt("draw a diagram")
-      .width(1024)
-      .height(768)
-      .additionalParams({ config: { aspectRatio: "16:9", numberOfImages: 2 } })
-      .send();
+    const response = await generateImage({
+      model,
+      prompt: "draw a diagram",
+      width: 1024,
+      height: 768,
+      providerOptions: { config: { aspectRatio: "16:9", numberOfImages: 2 } },
+    });
 
     expect(client.models.generateImagesCalls[0]).toEqual({
       model: "imagen-test",
       prompt: "draw a diagram",
-      config: { aspectRatio: "16:9", numberOfImages: 2 },
+      config: {
+        aspectRatio: "4:3",
+        numberOfImages: 2,
+        httpOptions: { retryOptions: { attempts: 1 } },
+      },
     });
-    expect(response.image).toEqual(new Uint8Array([4, 5, 6]));
-    expect(response.mediaType).toBe("image/jpeg");
+    expect(response.images[0].data).toEqual(new Uint8Array([4, 5, 6]));
+    expect(response.images[0].mediaType).toBe("image/jpeg");
   });
 
   it("rejects malformed native Gemini image responses", async () => {
@@ -81,9 +96,12 @@ describe("Gemini multimodal models", () => {
         ],
       },
     });
-    const model = new GeminiClient({ client: client as never }).imageGenerationModel("gemini-test");
+    const model = new GeminiClient({ client: client as never }).imageGenerationModel({
+      api: "generateContent",
+      modelId: "gemini-test",
+    });
 
-    await expect(imageGenerationRequest(model).prompt("draw").send()).rejects.toThrow(
+    await expect(generateImage({ model, prompt: "draw" })).rejects.toThrow(
       "Gemini image generation response contained invalid base64 image data.",
     );
   });
@@ -101,26 +119,29 @@ describe("Gemini multimodal models", () => {
         ],
       },
     });
-    const model = new GeminiClient({ client: client as never }).imagenGenerationModel(
-      "imagen-test",
-    );
+    const model = new GeminiClient({ client: client as never }).imageGenerationModel({
+      api: "generateImages",
+      modelId: "imagen-test",
+    });
 
-    await expect(imageGenerationRequest(model).prompt("draw").send()).rejects.toThrow(
+    await expect(generateImage({ model, prompt: "draw" })).rejects.toThrow(
       "Gemini image generation response contained invalid base64 image data.",
     );
   });
 
   it("maps transcription requests through generateContent inline audio", async () => {
     const client = mockGeminiClient();
-    const model = new GeminiClient({ client: client as never }).transcriptionModel("gemini-test");
+    const model = new GeminiClient({ client: client as never }).transcriptionModel({
+      modelId: "gemini-test",
+    });
 
-    const response = await transcriptionRequest(model)
-      .data(new Uint8Array([7, 8, 9]))
-      .filename("voice.wav")
-      .prompt("Use support terminology.")
-      .temperature(0.2)
-      .additionalParams({ topP: 0.8 })
-      .send();
+    const response = await transcribe({
+      model,
+      audio: { data: new Uint8Array([7, 8, 9]), filename: "voice.wav" },
+      prompt: "Use support terminology.",
+      temperature: 0.2,
+      providerOptions: { topP: 0.8 },
+    });
 
     expect(client.models.generateContentCalls[0]).toEqual({
       model: "gemini-test",
@@ -138,6 +159,7 @@ describe("Gemini multimodal models", () => {
         },
       ],
       config: {
+        httpOptions: { retryOptions: { attempts: 1 } },
         topP: 0.8,
         temperature: 0.2,
         systemInstruction:

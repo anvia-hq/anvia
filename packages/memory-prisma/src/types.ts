@@ -1,23 +1,29 @@
-import type { JsonObject, JsonValue, Message } from "@anvia/core";
-import type { MemoryAppendInput, MemoryContext, MemoryErrorInput } from "@anvia/core/memory";
+import type { MemoryScopeKeyResolver } from "@anvia/core/memory";
 
-export type PrismaMemoryErrorMode = "store" | "ignore";
-
-export type PrismaMemoryScopeOptions = {
-  includeUserId?: boolean | undefined;
-  metadataKeys?: string[] | undefined;
-};
+export type PrismaMemoryErrorPolicy = "store" | "ignore";
 
 export type PrismaMemoryTransactionOptions = {
   isolationLevel?: string | undefined;
 };
 
-export type PrismaMemoryStoreOptions = {
-  scope?: PrismaMemoryScopeOptions | ((context: MemoryContext) => string) | undefined;
-  errors?: PrismaMemoryErrorMode | undefined;
+type PrismaMemoryStoreBaseOptions = {
+  scopeKey?: MemoryScopeKeyResolver | undefined;
+  errorPolicy?: PrismaMemoryErrorPolicy | undefined;
   validateMessages?: boolean | undefined;
   transaction?: PrismaMemoryTransactionOptions | undefined;
 };
+
+export type PrismaMemoryStoreOptions = PrismaMemoryStoreBaseOptions &
+  (
+    | {
+        client: object;
+        delegates?: never;
+      }
+    | {
+        delegates: PrismaMemoryDelegates;
+        client?: never;
+      }
+  );
 
 export type PrismaMemorySessionRow = {
   id: string;
@@ -71,30 +77,3 @@ export type PrismaMemoryClientLike = PrismaMemoryConventionalDelegates & {
     options?: PrismaMemoryTransactionOptions | undefined,
   ): Promise<T>;
 };
-
-export type PrismaMemorySessionCreateData = {
-  scopeKey: string;
-  sessionId: string;
-  userId?: string | undefined;
-  metadata: JsonObject;
-};
-
-export type PrismaMemoryAppendData = {
-  memorySessionId: string;
-  runId: string;
-  turn: number;
-  position: number;
-  role: Message["role"];
-  message: Message;
-};
-
-export type PrismaMemoryErrorData = {
-  memorySessionId: string;
-  runId: string;
-  error: JsonValue;
-  messages: Message[];
-};
-
-export type PrismaMemoryAppendInput = MemoryAppendInput;
-export type PrismaMemoryContext = MemoryContext;
-export type PrismaMemoryErrorInput = MemoryErrorInput;

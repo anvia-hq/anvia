@@ -1,0 +1,62 @@
+import { embedDocuments } from "@anvia/core/embeddings";
+import { retrieveDocuments, vectorFilter } from "@anvia/core/vector-store";
+import { PineconeVectorClient } from "@anvia/pinecone";
+import { loadTransformersEmbeddingModel } from "@anvia/transformers";
+
+type MarketNote = {
+  id: string;
+  text: string;
+  sector: string;
+};
+
+requireEnv("PINECONE_API_KEY");
+
+const embeddingModel = await loadTransformersEmbeddingModel({ modelId: "Xenova/all-MiniLM-L6-v2" });
+const notes: MarketNote[] = [
+  {
+    id: "cloud",
+    text: "Cloud infrastructure demand remained resilient into quarter end.",
+    sector: "technology",
+  },
+  {
+    id: "rates",
+    text: "Rate-sensitive sectors traded lower after yields moved higher.",
+    sector: "macro",
+  },
+];
+
+const { documents: embedded } = await embedDocuments({
+  model: embeddingModel,
+  documents: notes,
+  id: (note) => note.id,
+  content: (note) => note.text,
+  metadata: (note) => ({ sector: note.sector }),
+});
+
+const client = new PineconeVectorClient({ apiKey: requireEnv("PINECONE_API_KEY") });
+const store = client.vectorStore<MarketNote>({
+  indexName: requireEnv("PINECONE_INDEX_NAME"),
+  namespace: process.env.PINECONE_NAMESPACE ?? "anvia-cookbook",
+  dimensions: 384,
+});
+await store.validate();
+await store.upsert({ documents: embedded });
+
+const results = await retrieveDocuments({
+  store,
+  model: embeddingModel,
+  query: "technology demand",
+  topK: 2,
+  filter: vectorFilter.eq("sector", "technology"),
+});
+
+console.log(results);
+await client.close();
+
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (value === undefined || value.length === 0) {
+    throw new Error(`Set ${name} before running this cookbook example.`);
+  }
+  return value;
+}

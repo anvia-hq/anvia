@@ -1,39 +1,50 @@
 import type {
+  ModelCallOptions,
   TranscriptionModel,
   TranscriptionRequest,
-  TranscriptionResponse,
+  TranscriptionResult,
 } from "@anvia/core/transcription";
 import type { OpenAI } from "openai";
 import { toFile } from "openai";
 import { isPlainObject } from "../utils";
-import type { OpenAITranscriptionModelName } from "./models";
+import type { OpenAITranscriptionModelId } from "./models";
 
 export const WHISPER_1 = "whisper-1";
+export const GPT_TRANSCRIBE = "gpt-transcribe";
+export const GPT_4O_TRANSCRIBE = "gpt-4o-transcribe";
+export const GPT_4O_MINI_TRANSCRIBE = "gpt-4o-mini-transcribe";
+export const GPT_4O_TRANSCRIBE_DIARIZE = "gpt-4o-transcribe-diarize";
 
-export class OpenAITranscriptionModel
-  implements TranscriptionModel<unknown, OpenAITranscriptionModelName>
-{
+export class OpenAITranscriptionModel implements TranscriptionModel<unknown> {
   readonly provider = "openai";
 
   constructor(
     private readonly client: OpenAI,
-    readonly defaultModel: OpenAITranscriptionModelName = WHISPER_1,
+    readonly modelId: OpenAITranscriptionModelId,
   ) {}
 
-  async transcription(request: TranscriptionRequest): Promise<TranscriptionResponse<unknown>> {
+  async transcription(
+    request: TranscriptionRequest,
+    options?: ModelCallOptions,
+  ): Promise<TranscriptionResult<unknown>> {
+    const providerOptions = isPlainObject(request.providerOptions) ? request.providerOptions : {};
     const params: Record<string, unknown> = {
-      model: this.defaultModel,
-      file: await toFile(request.data, request.filename),
+      ...providerOptions,
+      model: this.modelId,
+      file: await toFile(
+        request.data,
+        request.filename,
+        request.mediaType === undefined ? undefined : { type: request.mediaType },
+      ),
     };
 
     if (request.language !== undefined) params.language = request.language;
     if (request.prompt !== undefined) params.prompt = request.prompt;
     if (request.temperature !== undefined) params.temperature = request.temperature;
-    if (request.additionalParams !== undefined && isPlainObject(request.additionalParams)) {
-      Object.assign(params, request.additionalParams);
-    }
-
-    const response = await this.client.audio.transcriptions.create(params as never);
+    const response = await this.client.audio.transcriptions.create(params as never, {
+      signal: options?.abortSignal,
+      maxRetries: 0,
+    });
     return {
       text: transcriptionText(response),
       rawResponse: response,

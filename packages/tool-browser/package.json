@@ -1,0 +1,54 @@
+{
+  "name": "@anvia/browser",
+  "version": "1.0.0",
+  "description": "Visible Chromium runtime and semantic browser tools for Anvia agents.",
+  "author": "anvia",
+  "maintainer": "Indra Zulfi",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/anvia-hq/anvia",
+    "directory": "packages/tool-browser"
+  },
+  "files": [
+    "dist",
+    "image",
+    "security"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "pnpm run build:deps && tsup src/index.ts --format esm --dts --sourcemap --clean",
+    "build:deps": "(test -f ../core/dist/index.d.ts || pnpm --filter @anvia/core build) && pnpm --filter @anvia/sandbox build",
+    "test": "pnpm run build:deps && vitest run",
+    "typecheck": "pnpm run build:deps && tsc --noEmit"
+  },
+  "dependencies": {
+    "@anvia/sandbox": "workspace:*",
+    "playwright-core": "1.61.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@anvia/core": "workspace:*",
+    "@types/node": "^24.9.1",
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.8"
+  },
+  "peerDependencies": {
+    "@anvia/core": "workspace:*"
+  },
+  "engines": {
+    "node": ">=20.12.0"
+  }
+}

@@ -1,15 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
+import { createCompletionRequest } from "../src/internal/completion-request";
 import {
-  AgentBuilder,
+  Agent,
   AssistantContent,
+  assertCompleted,
   type CompletionModel,
+  type CompletionModelStreamEvent,
   type CompletionRequest,
-  CompletionRequestBuilder,
   type CompletionResponse,
-  type CompletionStreamEvent,
-  createCompletion,
+  type CompletionTool,
   createTool,
+  generateCompletion,
   Message,
   type ProviderTool,
   type StreamingCompletionModel,
@@ -25,7 +27,7 @@ const searchTool: ProviderTool = {
 
 class ProviderToolModel implements CompletionModel {
   readonly provider = "test";
-  readonly defaultModel = "test-model";
+  readonly modelId = "test-model";
   readonly capabilities = {
     streaming: false,
     tools: true,
@@ -62,7 +64,7 @@ class StreamingProviderToolModel extends ProviderToolModel implements StreamingC
     providerTools: true,
   };
 
-  async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionStreamEvent> {
+  async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionModelStreamEvent> {
     this.requests.push(request);
     const source = { type: "url" as const, url: "https://example.com" };
     const toolCall = { id: "search_1", name: "web_search", status: "completed" };
@@ -83,14 +85,54 @@ class StreamingProviderToolModel extends ProviderToolModel implements StreamingC
 }
 
 describe("provider-executed tools", () => {
+  it("creates a normalized request with copied collections and every optional field", () => {
+    const history = [Message.system("system"), Message.user("research")];
+    const documents = [{ id: "policy", text: "Refunds take 30 days." }];
+    const localTool: CompletionTool = {
+      name: "local",
+      description: "Local tool",
+      parameters: { type: "object" },
+    };
+    const tools = [localTool, searchTool];
+    const outputSchema = { type: "object", properties: { answer: { type: "string" } } };
+    const providerOptions = { seed: 42 };
+
+    const request = createCompletionRequest(history, {
+      instructions: "Use the policy.",
+      documents,
+      tools,
+      temperature: 0.2,
+      maxTokens: 256,
+      toolChoice: "required",
+      outputSchema,
+      providerOptions,
+    });
+
+    expect(request).toEqual({
+      chatHistory: history,
+      instructions: "Use the policy.",
+      documents,
+      tools: [localTool],
+      providerTools: [searchTool],
+      temperature: 0.2,
+      maxTokens: 256,
+      toolChoice: "required",
+      outputSchema,
+      providerOptions,
+    });
+    expect(request.chatHistory).not.toBe(history);
+    expect(request.documents).not.toBe(documents);
+    expect(request.tools).not.toBe(tools);
+    expect(request.providerTools).not.toBe(tools);
+  });
+
   it("partitions unified completion tools into local and provider collections", () => {
-    const model = new ProviderToolModel();
-    const request = new CompletionRequestBuilder(model, Message.user("research"))
-      .tools([
+    const request = createCompletionRequest(Message.user("research"), {
+      tools: [
         { name: "local", description: "Local tool", parameters: { type: "object" } },
         searchTool,
-      ])
-      .build();
+      ],
+    });
 
     expect(request.tools).toEqual([
       { name: "local", description: "Local tool", parameters: { type: "object" } },
@@ -98,11 +140,12 @@ describe("provider-executed tools", () => {
     expect(request.providerTools).toEqual([searchTool]);
   });
 
-  it("accepts provider tools in createCompletion", async () => {
+  it("accepts provider tools in generateCompletion", async () => {
     const model = new ProviderToolModel();
 
-    const result = await createCompletion(model, {
-      input: "research",
+    const result = await generateCompletion({
+      model,
+      prompt: "research",
       tools: [searchTool],
     });
 
@@ -110,23 +153,24 @@ describe("provider-executed tools", () => {
       tools: [],
       providerTools: [searchTool],
     });
-    expect(result.response.sources).toEqual([{ type: "url", url: "https://example.com" }]);
+    expect(result.sources).toEqual([{ type: "url", url: "https://example.com" }]);
   });
 
-  it("keeps provider tools out of the local Agent ToolSet", async () => {
+  it("keeps provider tools out of the local Agent tools", async () => {
     const model = new ProviderToolModel();
     const localTool = createTool({
       name: "local",
       description: "Local tool",
-      input: z.object({}),
+      inputSchema: z.object({}),
       execute: () => "done",
     });
-    const agent = new AgentBuilder("researcher", model).tools([localTool, searchTool]).build();
+    const agent = new Agent({ id: "researcher", model, tools: [localTool, searchTool] });
 
-    const result = await agent.prompt("research").send();
+    const result = await agent.generate({ prompt: "research" });
+    assertCompleted(result);
 
-    expect(agent.toolSet.get("local")).toBe(localTool);
-    expect(agent.toolSet.get("web_search")).toBeUndefined();
+    expect(agent.getTool("local")).toBe(localTool);
+    expect(agent.getTool("web_search")).toBeUndefined();
     expect(model.requests[0]?.tools.map((tool) => tool.name)).toEqual(["local"]);
     expect(model.requests[0]?.providerTools).toEqual([searchTool]);
     expect(result.sources).toEqual([{ type: "url", url: "https://example.com" }]);
@@ -135,13 +179,30 @@ describe("provider-executed tools", () => {
     ]);
   });
 
+  it("partitions provider tools passed to the public Agent constructor", async () => {
+    const model = new ProviderToolModel();
+    const localTool = createTool({
+      name: "local",
+      description: "Local tool",
+      inputSchema: z.object({}),
+      execute: () => "done",
+    });
+    const agent = new Agent({ id: "researcher", model, tools: [localTool, searchTool] });
+
+    await agent.generate({ prompt: "research" });
+
+    expect(agent.tools).toEqual([localTool]);
+    expect(model.requests[0]?.providerTools).toEqual([searchTool]);
+  });
+
   it("rejects provider tools when the model does not advertise support", async () => {
     const model = new ProviderToolModel();
     model.capabilities.providerTools = false;
 
     await expect(
-      createCompletion(model, {
-        input: "research",
+      generateCompletion({
+        model,
+        prompt: "research",
         tools: [searchTool],
       }),
     ).rejects.toThrow("does not support provider-executed tools");
@@ -149,10 +210,10 @@ describe("provider-executed tools", () => {
 
   it("propagates and aggregates provider artifacts through Agent streams", async () => {
     const model = new StreamingProviderToolModel();
-    const agent = new AgentBuilder("researcher", model).tools([searchTool]).build();
+    const agent = new Agent({ id: "researcher", model, tools: [searchTool] });
 
     const events = [];
-    for await (const event of agent.prompt("research").stream()) {
+    for await (const event of agent.stream({ prompt: "research" })) {
       events.push(event);
     }
 
@@ -167,7 +228,7 @@ describe("provider-executed tools", () => {
       toolCall: { id: "search_1", name: "web_search", status: "completed" },
     });
     expect(events.at(-1)).toMatchObject({
-      type: "final",
+      type: "response",
       sources: [{ type: "url", url: "https://example.com" }],
       providerToolCalls: [{ id: "search_1", name: "web_search", status: "completed" }],
     });

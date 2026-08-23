@@ -1,7 +1,6 @@
 import type { JsonValue } from "@anvia/core/completion";
 import type { EvalCaseResult, EvalSuiteResult, RunEvalSuiteOptions } from "@anvia/core/evals";
 import { runEvalSuite } from "@anvia/core/evals";
-import { createLangfuseDatasetClient } from "./dataset-client.js";
 import { createLangfuseEvalReporter } from "./eval-reporter.js";
 import type {
   LangfuseDatasetClient,
@@ -10,38 +9,38 @@ import type {
   LangfuseEvalReporterOptions,
   LangfuseRunExperimentOptions,
   LangfuseRunExperimentResult,
-  LangfuseTracing,
+  LangfuseScorer,
 } from "./types.js";
 
-export type RunEvalAsExperimentOptions<Input, Output, Expected = unknown> = Omit<
-  LangfuseRunExperimentOptions<Input, Output, Expected>,
-  "items" | "run"
-> & {
-  tracing: Pick<LangfuseTracing, "score">;
-  client?: LangfuseDatasetClient;
-  pageSize?: number | undefined;
-  timeoutMs?: number | undefined;
-  publishScores?: boolean | undefined;
-  reporterOptions?: LangfuseEvalReporterOptions | undefined;
-  includeContexts?: boolean | undefined;
+export type LangfuseEvalExperimentOptions<Input, Output, Expected = unknown> = {
+  suite: RunEvalSuiteOptions<Input, Output, Expected>;
+  experiment: Omit<LangfuseRunExperimentOptions<Input, Output, Expected>, "items" | "run"> & {
+    pageSize?: number | undefined;
+    timeoutMs?: number | undefined;
+    publishScores?: boolean | undefined;
+    reporterOptions?: LangfuseEvalReporterOptions | undefined;
+    includeContexts?: boolean | undefined;
+  };
 };
 
-export type RunEvalAsExperimentResult<Input, Output, Expected = unknown> = {
+export type LangfuseEvalExperimentResult<Input, Output, Expected = unknown> = {
   suite: EvalSuiteResult<Input, Output, Expected>;
   datasetRun: LangfuseRunExperimentResult;
 };
 
-export async function runEvalAsExperiment<Input, Output, Expected = unknown>(
-  evalOptions: RunEvalSuiteOptions<Input, Output, Expected>,
-  experimentOptions: RunEvalAsExperimentOptions<Input, Output, Expected>,
-): Promise<RunEvalAsExperimentResult<Input, Output, Expected>> {
+export async function runLangfuseEvalExperiment<Input, Output, Expected = unknown>(
+  client: LangfuseScorer & {
+    datasetClient(options?: LangfuseDatasetClientOptions): LangfuseDatasetClient;
+  },
+  options: LangfuseEvalExperimentOptions<Input, Output, Expected>,
+): Promise<LangfuseEvalExperimentResult<Input, Output, Expected>> {
+  const evalOptions = options.suite;
+  const experimentOptions = options.experiment;
   const clientOptions: LangfuseDatasetClientOptions = {};
   if (experimentOptions.pageSize !== undefined) clientOptions.pageSize = experimentOptions.pageSize;
   if (experimentOptions.timeoutMs !== undefined)
     clientOptions.timeoutMs = experimentOptions.timeoutMs;
-  const client =
-    experimentOptions.client ??
-    createLangfuseDatasetClient(experimentOptions.tracing, clientOptions);
+  const datasetClient = client.datasetClient(clientOptions);
 
   const suiteOptions: RunEvalSuiteOptions<Input, Output, Expected> =
     experimentOptions.publishScores === true
@@ -50,7 +49,7 @@ export async function runEvalAsExperiment<Input, Output, Expected = unknown>(
           reporters: [
             ...(evalOptions.reporters ?? []),
             createLangfuseEvalReporter<Input, Output, Expected>(
-              experimentOptions.tracing,
+              client,
               experimentOptions.reporterOptions,
             ),
           ],
@@ -107,7 +106,7 @@ export async function runEvalAsExperiment<Input, Output, Expected = unknown>(
     runOptions.description = experimentOptions.description;
   }
   if (experimentOptions.metadata !== undefined) runOptions.metadata = experimentOptions.metadata;
-  const datasetRun = await client.runExperiment<Input, Output, Expected>(runOptions);
+  const datasetRun = await datasetClient.runExperiment<Input, Output, Expected>(runOptions);
 
   return { suite, datasetRun };
 }

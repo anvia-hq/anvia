@@ -4,7 +4,8 @@ import type { VectorSearchResult } from "@anvia/core/vector-store";
 import {
   documentField,
   documentIdField,
-  type RedisClientLike,
+  metadataField,
+  type RedisDistance,
   reservedFieldPrefix,
   vectorField,
 } from "./types.js";
@@ -43,6 +44,7 @@ export function parseDocument<T>(document: unknown): T {
 export function redisHashEntries<T, Metadata extends VectorMetadata>(
   keyPrefix: string,
   document: EmbeddedDocument<T, Metadata>,
+  metadataSchema: Record<string, "numeric" | "tag"> = {},
 ): Array<{ key: string; fields: Record<string, unknown> }> {
   if (document.embeddings.length === 0) {
     throw new Error(`Document ${document.id} has no embeddings`);
@@ -55,9 +57,21 @@ export function redisHashEntries<T, Metadata extends VectorMetadata>(
     const fields: Record<string, unknown> = {
       [documentIdField]: document.id,
       [documentField]: serializeDocument(document.document),
+      [metadataField]: JSON.stringify(document.metadata ?? {}),
       [vectorField]: Buffer.from(new Float32Array(embedding.vector).buffer),
     };
-    Object.assign(fields, document.metadata);
+    for (const [key, type] of Object.entries(metadataSchema)) {
+      const value = document.metadata?.[key];
+      if (value === undefined) continue;
+      if (type === "numeric") {
+        if (typeof value !== "number" || !Number.isFinite(value)) {
+          throw new TypeError(`Redis numeric metadata field ${key} requires finite numbers`);
+        }
+        fields[key] = value;
+      } else {
+        fields[key] = redisTagValue(value);
+      }
+    }
     return {
       key: redisKeyId(keyPrefix, logicalId),
       fields,
@@ -67,7 +81,8 @@ export function redisHashEntries<T, Metadata extends VectorMetadata>(
 
 export function parseQueryResults<T, Metadata extends VectorMetadata>(
   response: unknown,
-  threshold: number | undefined,
+  minScore: number | undefined,
+  metric: RedisDistance,
 ): Array<VectorSearchResult<T, Metadata>> {
   const raw = response as {
     total?: number;
@@ -81,10 +96,12 @@ export function parseQueryResults<T, Metadata extends VectorMetadata>(
 
   for (const doc of documents) {
     const value = doc.value ?? {};
-    const scoreRaw = value.score ?? value.__vector_score;
-    const score = typeof scoreRaw === "string" ? parseFloat(scoreRaw) : ((scoreRaw as number) ?? 0);
+    const scoreRaw = value.__anvia_score ?? value.score ?? value.__vector_score;
+    const distance =
+      typeof scoreRaw === "string" ? parseFloat(scoreRaw) : ((scoreRaw as number) ?? 0);
+    const score = metric === "L2" ? -distance : 1 - distance;
 
-    if (threshold !== undefined && score < threshold) {
+    if (minScore !== undefined && score < minScore) {
       continue;
     }
 
@@ -107,25 +124,18 @@ export function parseQueryResults<T, Metadata extends VectorMetadata>(
   return [...byId.values()];
 }
 
-export async function defaultRedisClient(): Promise<RedisClientLike> {
-  const redis = await import("redis");
-  const url = process.env.REDIS_URL ?? "redis://localhost:6379";
-  const client = redis.createClient({ url });
-  await client.connect();
-  return client as unknown as RedisClientLike;
-}
-
 function metadataFromFields<Metadata extends VectorMetadata>(
   fields: Record<string, unknown>,
 ): Metadata | undefined {
-  const metadata = Object.fromEntries(
-    Object.entries(fields).filter(
-      ([key]) =>
-        !key.startsWith(reservedFieldPrefix) &&
-        key !== vectorField &&
-        key !== "score" &&
-        key !== "__vector_score",
-    ),
-  ) as Metadata;
+  const raw = fields[metadataField];
+  if (raw === null || raw === undefined) return undefined;
+  const metadata = (typeof raw === "string" ? JSON.parse(raw) : raw) as Metadata;
   return Object.keys(metadata).length === 0 ? undefined : metadata;
+}
+
+export function redisTagValue(value: string | number | boolean | null): string {
+  if (value === null) return "n:";
+  if (typeof value === "boolean") return value ? "b:1" : "b:0";
+  if (typeof value === "number") return `d:${value}`;
+  return `s:${value}`;
 }

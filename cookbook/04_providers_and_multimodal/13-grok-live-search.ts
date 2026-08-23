@@ -1,0 +1,24 @@
+import { Agent } from "@anvia/core/agent";
+import { GrokClient, tools as grokTools } from "@anvia/grok";
+
+const grok = new GrokClient({
+  apiKey: process.env.XAI_API_KEY ?? "",
+});
+
+const researcher = new Agent({
+  id: "grok-researcher",
+  model: grok.completionModel({ modelId: "grok-4.5", api: "responses" }),
+  instructions: "Research current information and cite the sources you use.",
+  providerOptions: { max_turns: 5 },
+  tools: [
+    grokTools.webSearch({ allowedDomains: ["x.ai"] }),
+    grokTools.xSearch({ allowedHandles: ["xai"] }),
+  ],
+});
+
+const response = await researcher.generate({ prompt: "What are the latest xAI product updates?" });
+
+if (response.type !== "response") throw new Error("Unexpected tool approval request.");
+console.log(response.output);
+console.log(response.sources);
+console.log(response.providerToolCalls);

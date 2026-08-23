@@ -6,6 +6,7 @@ import type {
   AgentObserver,
   AgentRunEndArgs,
   AgentRunErrorArgs,
+  AgentRunEventArgs,
   AgentRunObserver,
   AgentRunStartArgs,
   AgentToolEndArgs,
@@ -13,6 +14,7 @@ import type {
   AgentToolObserver,
   AgentToolStartArgs,
   AgentToolStreamEventArgs,
+  AgentToolSuspendedArgs,
 } from "@anvia/core/observability";
 import type { LogContext, Logger } from "./types";
 
@@ -24,12 +26,12 @@ export type LoggerObserverOptions = {
 };
 
 export function createLoggerObserver(
-  logger: Logger,
-  options: LoggerObserverOptions = {},
+  options: LoggerObserverOptions & { logger: Logger },
 ): AgentObserver {
+  const { logger, ...observerOptions } = options;
   return {
     startRun(args) {
-      return new LoggerRunObserver(logger, options, args);
+      return new LoggerRunObserver(logger, observerOptions, args);
     },
   };
 }
@@ -44,6 +46,7 @@ class LoggerRunObserver implements AgentRunObserver {
   ) {
     const context: LogContext = {
       component: "anvia.agent",
+      runId: args.runId,
     };
     if (args.agentName !== undefined) context.agentName = args.agentName;
     if (args.trace?.name !== undefined) context.traceName = args.trace.name;
@@ -80,12 +83,37 @@ class LoggerRunObserver implements AgentRunObserver {
     return new LoggerToolObserver(toolLogger, this.options);
   }
 
+  event(args: AgentRunEventArgs): void {
+    const context: LogContext = {
+      eventName: args.name,
+      eventLevel: args.level ?? "DEFAULT",
+    };
+    if (args.timestamp !== undefined) context.eventTimestamp = args.timestamp;
+    if (args.name === "completion.retry" && args.attributes !== undefined) {
+      Object.assign(context, completionRetryContext(args.attributes));
+    }
+    if (args.level === "ERROR") {
+      this.logger.error("agent event", context);
+    } else if (args.level === "WARNING") {
+      this.logger.warn("agent event", context);
+    } else {
+      this.logger.info("agent event", context);
+    }
+  }
+
   end(args: AgentRunEndArgs): void {
     const context: LogContext = {
+      runId: args.runId,
+      status: args.status,
+      text: args.text,
       usage: args.usage,
       messageCount: args.messages.length,
     };
-    if (this.options.includeOutput === true) context.output = args.output;
+    if (args.resumedFrom !== undefined) context.resumedFrom = args.resumedFrom;
+    if (args.status === "blocked") context.blockedStage = args.stage;
+    if (this.options.includeOutput === true && args.status === "completed") {
+      context.output = args.output;
+    }
     this.logger.info("agent run ended", context);
   }
 
@@ -96,6 +124,41 @@ class LoggerRunObserver implements AgentRunObserver {
       messageCount: args.messages.length,
     });
   }
+}
+
+const COMPLETION_RETRY_SCALAR_ATTRIBUTES = [
+  "turn",
+  "attempt",
+  "nextAttempt",
+  "maxAttempts",
+  "delayMs",
+  "streaming",
+  "errorName",
+  "statusCode",
+  "errorCode",
+  "providerOutputKind",
+  "failurePhase",
+  "outputLength",
+  "normalizedLength",
+  "finishReason",
+  "providerFinishReason",
+  "previousResponse",
+  "includedOutputLength",
+] as const;
+
+function completionRetryContext(attributes: Readonly<Record<string, unknown>>): LogContext {
+  const context: LogContext = {};
+  for (const name of COMPLETION_RETRY_SCALAR_ATTRIBUTES) {
+    const value = attributes[name];
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+      context[name] = value;
+    }
+  }
+  for (const name of ["attemptUsage", "cumulativeUsage"] as const) {
+    const value = attributes[name];
+    if (isUsageMetadata(value)) context[name] = { ...value };
+  }
+  return context;
 }
 
 class LoggerGenerationObserver implements AgentGenerationObserver {
@@ -141,6 +204,13 @@ class LoggerToolObserver implements AgentToolObserver {
     this.logger.info("agent tool ended", context);
   }
 
+  suspend(args: AgentToolSuspendedArgs): void {
+    this.logger.info("agent tool suspended", {
+      interactionId: args.interaction.id,
+      interactionType: args.interaction.type,
+    });
+  }
+
   error(args: AgentToolErrorArgs): void {
     this.logger.error("agent tool failed", {
       error: serializeError(args.error),
@@ -155,7 +225,7 @@ function generationStartContext(
   const context: LogContext = {
     turn: args.turn,
     provider: args.modelInfo?.provider,
-    model: args.modelInfo?.defaultModel,
+    model: args.modelInfo?.modelId,
     providerRequest: args.providerRequest,
   };
   if (options.includeRequest === true) context.request = args.request;
@@ -175,15 +245,145 @@ function generationEndContext(
   return context;
 }
 
-function serializeError(error: unknown): unknown {
+const MAX_SERIALIZED_ERROR_CAUSE_DEPTH = 16;
+const COMPLETION_PROVIDER_OUTPUT_ERROR_CODE = "ANVIA_COMPLETION_PROVIDER_OUTPUT";
+const COMPLETION_PROVIDER_OUTPUT_ERROR_KINDS = new Set([
+  "malformed-tool-arguments",
+  "invalid-tool-arguments",
+  "incomplete-stream",
+  "incomplete-tool-call",
+  "invalid-tool-call",
+  "truncated-tool-call",
+  "filtered-tool-call",
+]);
+
+function serializeError(error: unknown, seen = new Set<object>(), depth = 0): unknown {
   if (error instanceof Error) {
-    return {
-      name: error.name,
-      message: error.message,
-      stack: error.stack,
-      cause: error.cause,
-    };
+    if (seen.has(error)) return "[Circular error cause]";
+    if (depth >= MAX_SERIALIZED_ERROR_CAUSE_DEPTH) return "[Error cause depth limit]";
+    seen.add(error);
+    const providerOutputError = isCompletionProviderOutputError(error);
+    const serialized: Record<string, unknown> = providerOutputError
+      ? {
+          name: error.name,
+          message: "Completion provider returned incomplete or unsafe output.",
+        }
+      : {
+          name: error.name,
+          message: error.message,
+          stack: error.stack,
+        };
+    if (isStructuredOutputError(error)) {
+      addStructuredOutputMetadata(serialized, error);
+    }
+    if (providerOutputError) {
+      addCompletionProviderOutputMetadata(serialized, error);
+    }
+    if (error.cause !== undefined) {
+      if (isStructuredOutputError(error)) {
+        serialized.cause = structuredOutputCauseMetadata(error.cause);
+      } else {
+        serialized.cause = serializeError(error.cause, seen, depth + 1);
+      }
+    }
+    return serialized;
   }
 
   return error;
+}
+
+function addCompletionProviderOutputMetadata(
+  serialized: Record<string, unknown>,
+  error: Error,
+): void {
+  const details = error as unknown as Record<string, unknown>;
+  serialized.code = COMPLETION_PROVIDER_OUTPUT_ERROR_CODE;
+  serialized.kind = details.kind;
+  if (
+    details.finishReason === "stop" ||
+    details.finishReason === "length" ||
+    details.finishReason === "content-filter" ||
+    details.finishReason === "tool-calls" ||
+    details.finishReason === "other"
+  ) {
+    serialized.finishReason = details.finishReason;
+  }
+}
+
+function isCompletionProviderOutputError(error: Error): boolean {
+  const details = error as unknown as Record<string, unknown>;
+  return (
+    error.name === "CompletionProviderOutputError" &&
+    details.code === COMPLETION_PROVIDER_OUTPUT_ERROR_CODE &&
+    typeof details.kind === "string" &&
+    COMPLETION_PROVIDER_OUTPUT_ERROR_KINDS.has(details.kind)
+  );
+}
+
+function addStructuredOutputMetadata(serialized: Record<string, unknown>, error: Error): void {
+  const details = error as unknown as Record<string, unknown>;
+  if (
+    details.phase === "truncated" ||
+    details.phase === "content-filter" ||
+    details.phase === "parse" ||
+    details.phase === "schema"
+  ) {
+    serialized.phase = details.phase;
+  }
+  for (const name of ["attempt", "maxAttempts", "outputLength", "normalizedLength"] as const) {
+    const value = details[name];
+    if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) {
+      serialized[name] = value;
+    }
+  }
+  if (
+    details.outputFormat === "raw" ||
+    details.outputFormat === "json-fence" ||
+    details.outputFormat === "unlabeled-fence"
+  ) {
+    serialized.outputFormat = details.outputFormat;
+  }
+  if (
+    details.finishReason === "stop" ||
+    details.finishReason === "length" ||
+    details.finishReason === "content-filter" ||
+    details.finishReason === "tool-calls" ||
+    details.finishReason === "other"
+  ) {
+    serialized.finishReason = details.finishReason;
+  }
+  if (typeof details.providerFinishReason === "string") {
+    serialized.providerFinishReason = details.providerFinishReason;
+  }
+  for (const name of ["attemptUsage", "usage"] as const) {
+    if (isUsageMetadata(details[name])) serialized[name] = { ...details[name] };
+  }
+}
+
+function isStructuredOutputError(error: Error): boolean {
+  return (
+    error.name === "AgentStructuredOutputError" || error.name === "CompletionStructuredOutputError"
+  );
+}
+
+function isUsageMetadata(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const usage = value as Record<string, unknown>;
+  return (
+    typeof usage.inputTokens === "number" &&
+    typeof usage.outputTokens === "number" &&
+    typeof usage.totalTokens === "number"
+  );
+}
+
+function structuredOutputCauseMetadata(cause: unknown): Record<string, unknown> {
+  const metadata: Record<string, unknown> = {
+    message: "Structured-output cause details redacted.",
+  };
+  if (cause instanceof Error) {
+    metadata.name = cause.name;
+  } else {
+    metadata.type = cause === null ? "null" : typeof cause;
+  }
+  return metadata;
 }

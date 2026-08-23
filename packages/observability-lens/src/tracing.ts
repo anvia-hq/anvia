@@ -1,214 +1,253 @@
-import type { AgentRunStartArgs } from "@anvia/core/observability";
-import { createOtelEvalReporter, otel } from "@anvia/otel";
+import type { EvalReporter } from "@anvia/core/evals";
+import type { AgentObserver, AgentRunStartArgs } from "@anvia/core/observability";
+import { createOtelEvalReporter, createOtelObserver } from "@anvia/otel";
 import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-http";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { resourceFromAttributes } from "@opentelemetry/resources";
 import { BatchLogRecordProcessor, LoggerProvider } from "@opentelemetry/sdk-logs";
 import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base";
 import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
-import { resolveLensConfig } from "./config.js";
+import { type ResolvedLensConfig, resolveLensConfig } from "./config.js";
+import { createLensDatasetClient } from "./dataset-client.js";
 import { createLensRedactor } from "./redaction.js";
 import type {
-  LensEvalIntegration,
+  LensClientOptions,
+  LensDatasetClient,
+  LensDatasetClientOptions,
+  LensDatasetGetOptions,
   LensEvalReporter,
   LensEvalReporterOptions,
-  LensEvalsOptions,
-  LensFromEnvOptions,
-  LensTracing,
-  LensTracingOptions,
+  LensObserverOptions,
 } from "./types.js";
 
-const internals = Symbol("@anvia/lens.internals");
-
-type LensInternals = {
-  config: ReturnType<typeof resolveLensConfig>;
-  loggerProvider: LoggerProvider;
-  logger: ReturnType<LoggerProvider["getLogger"]>;
-  captureMaxBytes: number;
-  transformInput: ((value: unknown) => unknown) | undefined;
-  transformOutput: ((value: unknown) => unknown) | undefined;
+type LensResources = {
+  readonly tracerProvider: NodeTracerProvider;
+  readonly loggerProvider: LoggerProvider;
+  readonly tracer: ReturnType<NodeTracerProvider["getTracer"]>;
+  readonly logger: ReturnType<LoggerProvider["getLogger"]>;
 };
 
-type InternalLensTracing = LensTracing & { [internals]: LensInternals };
+export class LensClient {
+  readonly enabled: boolean;
+  private readonly config: ResolvedLensConfig | undefined;
+  private resource: LensResources | undefined;
+  private initialization: Promise<LensResources> | undefined;
+  private closePromise: Promise<void> | undefined;
+  private closed = false;
 
-export function getResolvedLensConfig(tracing: LensTracing) {
-  return (tracing as Partial<InternalLensTracing>)[internals]?.config;
-}
-
-export const lens = {
-  create(options: LensTracingOptions = {}): LensTracing {
-    return new LensAgentObserver(options);
-  },
-  createFromEnv(options: LensFromEnvOptions = {}): LensTracing {
-    const { optional, ...tracingOptions } = options;
-    if (optional === true && !hasLensConnectionEnvironment()) {
-      return new DisabledLensTracing();
+  constructor(private readonly options: LensClientOptions = {}) {
+    if (options.optional === true && !hasLensConnectionEnvironment(options)) {
+      this.enabled = false;
+      this.config = undefined;
+      return;
     }
-    return new LensAgentObserver(tracingOptions);
-  },
-  evals<Input = unknown, Output = unknown, Expected = unknown>(
-    options: LensEvalsOptions = {},
-  ): LensEvalIntegration<Input, Output, Expected> {
-    const {
-      publishInvalid,
-      includeMetadata,
-      includePayloads,
-      onMissingTrace,
-      flushOnRunEnd,
-      ...tracingOptions
-    } = options;
-    const observer = lens.createFromEnv(tracingOptions);
-    const reporterOptions: LensEvalReporterOptions = {
-      flushOnRunEnd: flushOnRunEnd ?? true,
-    };
-    if (publishInvalid !== undefined) reporterOptions.publishInvalid = publishInvalid;
-    if (includeMetadata !== undefined) reporterOptions.includeMetadata = includeMetadata;
-    if (includePayloads !== undefined) reporterOptions.includePayloads = includePayloads;
-    if (onMissingTrace !== undefined) reporterOptions.onMissingTrace = onMissingTrace;
-    return {
-      enabled: observer.enabled,
-      observer,
-      reporter: createLensEvalReporter<Input, Output, Expected>(observer, reporterOptions),
-      async flush() {
-        await observer.flush();
-      },
-      async shutdown() {
-        await observer.shutdown();
-      },
-    };
-  },
-};
+    this.enabled = true;
+    this.config = resolveLensConfig(options);
+  }
 
-export function createLensEvalReporter<Input = unknown, Output = unknown, Expected = unknown>(
-  tracing: LensTracing,
-  options: LensEvalReporterOptions = {},
-): LensEvalReporter<Input, Output, Expected> {
-  if (!tracing.enabled) {
+  observer(options: LensObserverOptions = {}): AgentObserver {
+    this.assertOpen();
+    if (!this.enabled) {
+      return {
+        startRun: () => {
+          this.assertOpen();
+          return undefined;
+        },
+      };
+    }
+    const client = this;
     return {
-      report() {},
-      async onRunEnd() {
-        if (options.flushOnRunEnd === true) await tracing.flush();
+      async startRun(args: AgentRunStartArgs) {
+        const resource = await client.resources();
+        return createOtelObserver(client.otelObserverOptions(resource, options)).startRun(args);
       },
     };
   }
-  const internal = (tracing as Partial<InternalLensTracing>)[internals];
-  if (internal === undefined) {
-    throw new TypeError("createLensEvalReporter requires a tracing instance from lens.create()");
+
+  evalReporter<Input = unknown, Output = unknown, Expected = unknown>(
+    options: LensEvalReporterOptions = {},
+  ): LensEvalReporter<Input, Output, Expected> {
+    this.assertOpen();
+    if (!this.enabled) {
+      return {
+        report: () => {
+          this.assertOpen();
+        },
+      };
+    }
+    let reporter: EvalReporter<Input, Output, Expected> | undefined;
+    const resolve = async () => {
+      this.assertOpen();
+      reporter ??= createOtelEvalReporter<Input, Output, Expected>({
+        ...options,
+        traceObserver: options.traceObserver ?? "lens",
+        includeMetadata: options.includeMetadata ?? false,
+        logger: (await this.resources()).logger,
+      });
+      return reporter;
+    };
+    return {
+      async onRunStart(args) {
+        await (await resolve()).onRunStart?.(args);
+      },
+      async report(args) {
+        await (await resolve()).report(args);
+      },
+      async onRunEnd(args) {
+        await (await resolve()).onRunEnd?.(args);
+      },
+    };
   }
-  const reporter = createOtelEvalReporter<Input, Output, Expected>({
-    ...options,
-    includeMetadata: options.includeMetadata ?? false,
-    captureMaxBytes: internal.captureMaxBytes,
-    transformInput: internal.transformInput,
-    transformOutput: internal.transformOutput,
-    logger: internal.logger,
-  });
-  if (options.flushOnRunEnd !== true) return reporter;
-  return {
-    ...reporter,
-    async onRunEnd(args) {
-      await reporter.onRunEnd?.(args);
-      await tracing.flush();
-    },
-  };
+
+  datasetClient(options: LensDatasetClientOptions = {}): LensDatasetClient {
+    this.assertOpen();
+    if (this.config === undefined) {
+      throw new Error("LensClient is disabled because no connection is configured.");
+    }
+    const datasets = createLensDatasetClient(this.config, options);
+    return {
+      getDataset: <Input = unknown, Expected = unknown>(getOptions: LensDatasetGetOptions) => {
+        this.assertOpen();
+        return datasets.getDataset<Input, Expected>(getOptions);
+      },
+    };
+  }
+
+  async flush(): Promise<void> {
+    this.assertOpen();
+    const resource =
+      this.resource ?? (this.initialization === undefined ? undefined : await this.initialization);
+    if (resource === undefined) return;
+    await Promise.all([resource.tracerProvider.forceFlush(), resource.loggerProvider.forceFlush()]);
+  }
+
+  close(): Promise<void> {
+    this.closePromise ??= this.closeResources();
+    return this.closePromise;
+  }
+
+  async [Symbol.asyncDispose](): Promise<void> {
+    await this.close();
+  }
+
+  private resources(): Promise<LensResources> {
+    this.assertOpen();
+    if (this.config === undefined) {
+      return Promise.reject(
+        new Error("LensClient is disabled because no connection is configured."),
+      );
+    }
+    if (this.resource !== undefined) return Promise.resolve(this.resource);
+    this.initialization ??= Promise.resolve()
+      .then(() => createLensResources(this.config as ResolvedLensConfig))
+      .then((resource) => {
+        this.resource = resource;
+        return resource;
+      })
+      .catch((error: unknown) => {
+        this.initialization = undefined;
+        throw error;
+      });
+    return this.initialization;
+  }
+
+  private otelObserverOptions(resource: LensResources, overrides: LensObserverOptions) {
+    const config = this.config as ResolvedLensConfig;
+    const redactor = createLensRedactor(overrides.redaction ?? this.options.redaction);
+    const redactInputs = overrides.redactInputs ?? this.options.redactInputs;
+    const redactOutputs = overrides.redactOutputs ?? this.options.redactOutputs;
+    return {
+      tracer: resource.tracer,
+      captureMode: overrides.captureMode ?? config.captureMode,
+      captureMaxBytes: overrides.captureMaxBytes ?? config.captureMaxBytes,
+      transformInput: redactInputs ? redactor.redact : undefined,
+      transformOutput: redactOutputs ? redactor.redact : undefined,
+    } as const;
+  }
+
+  private async closeResources(): Promise<void> {
+    this.closed = true;
+    const pending =
+      this.resource === undefined ? this.initialization : Promise.resolve(this.resource);
+    if (pending === undefined) return;
+    let resource: LensResources;
+    try {
+      resource = await pending;
+    } catch {
+      return;
+    }
+    const settled = await Promise.allSettled([
+      resource.tracerProvider.shutdown(),
+      resource.loggerProvider.shutdown(),
+    ]);
+    const failures = settled.flatMap((result) =>
+      result.status === "rejected" ? [result.reason] : [],
+    );
+    if (failures.length > 0) throw new AggregateError(failures, "Failed to close LensClient.");
+  }
+
+  private assertOpen(): void {
+    if (this.closed) throw new Error("LensClient is closed.");
+  }
 }
 
-class LensAgentObserver implements InternalLensTracing {
-  readonly enabled = true;
-  readonly [internals]: LensInternals;
-  private readonly tracerProvider: NodeTracerProvider;
-  private readonly delegate: LensTracing;
-  private shutdownPromise: Promise<void> | undefined;
-
-  constructor(options: LensTracingOptions) {
-    const config = resolveLensConfig(options);
-    const authorization = `Basic ${Buffer.from(`${config.publicKey}:${config.secretKey}`).toString("base64")}`;
-    const headers = { Authorization: authorization };
-    const resource = resourceFromAttributes({
-      "service.name": config.serviceName,
-      "deployment.environment.name": config.environment,
-      "anvia.release": config.release,
-    });
-    const traceExporter = new OTLPTraceExporter({
-      url: `${config.baseUrl}/api/public/otel/v1/traces`,
-      headers,
-      timeoutMillis: config.timeoutMs,
-    });
-    const logExporter = new OTLPLogExporter({
-      url: `${config.baseUrl}/api/public/otel/v1/logs`,
-      headers,
-      timeoutMillis: config.timeoutMs,
-    });
-    this.tracerProvider = new NodeTracerProvider({
+async function createLensResources(config: ResolvedLensConfig): Promise<LensResources> {
+  const authorization = `Basic ${Buffer.from(`${config.publicKey}:${config.secretKey}`).toString("base64")}`;
+  const headers = { Authorization: authorization };
+  const resource = resourceFromAttributes({
+    "service.name": config.serviceName,
+    "deployment.environment.name": config.environment,
+    "anvia.release": config.release,
+  });
+  let tracerProvider: NodeTracerProvider | undefined;
+  let loggerProvider: LoggerProvider | undefined;
+  try {
+    tracerProvider = new NodeTracerProvider({
       resource,
-      spanProcessors: [new BatchSpanProcessor(traceExporter)],
+      spanProcessors: [
+        new BatchSpanProcessor(
+          new OTLPTraceExporter({
+            url: `${config.baseUrl}/api/public/otel/v1/traces`,
+            headers,
+            timeoutMillis: config.timeoutMs,
+          }),
+        ),
+      ],
       forceFlushTimeoutMillis: config.timeoutMs,
     });
-    const loggerProvider = new LoggerProvider({
+    loggerProvider = new LoggerProvider({
       resource,
       processors: [
         new BatchLogRecordProcessor({
-          exporter: logExporter,
+          exporter: new OTLPLogExporter({
+            url: `${config.baseUrl}/api/public/otel/v1/logs`,
+            headers,
+            timeoutMillis: config.timeoutMs,
+          }),
           exportTimeoutMillis: config.timeoutMs,
         }),
       ],
     });
-    const logger = loggerProvider.getLogger("@anvia/lens", "0.1.0");
-    const redactor = createLensRedactor(options.redaction);
-    const transformInput = options.redactInputs ? redactor.redact : undefined;
-    const transformOutput = options.redactOutputs ? redactor.redact : undefined;
-    this[internals] = {
-      config,
+    return {
+      tracerProvider,
       loggerProvider,
-      logger,
-      captureMaxBytes: config.captureMaxBytes,
-      transformInput,
-      transformOutput,
+      tracer: tracerProvider.getTracer("@anvia/lens", "1.0.0"),
+      logger: loggerProvider.getLogger("@anvia/lens", "1.0.0"),
     };
-
-    this.delegate = otel.create({
-      tracer: this.tracerProvider.getTracer("@anvia/lens", "0.1.0"),
-      captureMode: config.captureMode,
-      captureMaxBytes: config.captureMaxBytes,
-      transformInput,
-      transformOutput,
-    }) as LensTracing;
-  }
-
-  startRun(args: AgentRunStartArgs) {
-    return this.delegate.startRun(args);
-  }
-
-  async flush(): Promise<void> {
-    await Promise.all([
-      this.tracerProvider.forceFlush(),
-      this[internals].loggerProvider.forceFlush(),
+  } catch (error) {
+    await Promise.allSettled([
+      tracerProvider?.shutdown() ?? Promise.resolve(),
+      loggerProvider?.shutdown() ?? Promise.resolve(),
     ]);
-  }
-
-  shutdown(): Promise<void> {
-    this.shutdownPromise ??= Promise.all([
-      this.tracerProvider.shutdown(),
-      this[internals].loggerProvider.shutdown(),
-    ]).then(() => undefined);
-    return this.shutdownPromise;
+    throw error;
   }
 }
 
-class DisabledLensTracing implements LensTracing {
-  readonly enabled = false;
-
-  startRun() {
-    return undefined;
-  }
-
-  async flush(): Promise<void> {}
-
-  async shutdown(): Promise<void> {}
-}
-
-function hasLensConnectionEnvironment(): boolean {
+function hasLensConnectionEnvironment(options: LensClientOptions): boolean {
   return [
+    options.baseUrl,
+    options.publicKey,
+    options.secretKey,
     process.env.ANVIA_LENS_BASE_URL,
     process.env.ANVIA_LENS_PUBLIC_KEY,
     process.env.ANVIA_LENS_SECRET_KEY,

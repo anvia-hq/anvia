@@ -1,0 +1,14 @@
+import { defineConfig } from "vitest/config";
+
+export default defineConfig({
+  resolve: {
+    alias: {
+      "@anvia/core/tool": new URL("../core/src/tool/index.ts", import.meta.url).pathname,
+      "@anvia/core": new URL("../core/src/index.ts", import.meta.url).pathname,
+      "@anvia/sandbox": new URL("../tool-sandbox/src/index.ts", import.meta.url).pathname,
+    },
+  },
+  test: {
+    environment: "node",
+  },
+});

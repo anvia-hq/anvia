@@ -1,13 +1,12 @@
-import type { SparseVector } from "@anvia/core/embeddings";
+import type { EmbeddingModel, SparseEmbeddingModel, SparseVector } from "@anvia/core/embeddings";
 import type {
   ExecutionProvider,
   EmbeddingModel as FastEmbedModel,
   SparseEmbeddingModel as FastEmbedSparseModel,
 } from "fastembed";
 
-export type FastEmbedEmbeddingModelName = `${Exclude<FastEmbedModel, FastEmbedModel.CUSTOM>}`;
-
-export type FastEmbedSparseEmbeddingModelName =
+export type FastEmbedEmbeddingModelId = `${Exclude<FastEmbedModel, FastEmbedModel.CUSTOM>}`;
+export type FastEmbedSparseEmbeddingModelId =
   `${Exclude<FastEmbedSparseModel, FastEmbedSparseModel.CUSTOM>}`;
 
 export type FastEmbedRuntime = {
@@ -19,32 +18,35 @@ export type FastEmbedSparseRuntime = {
   queryEmbed(query: string): Promise<unknown>;
 };
 
-export type FastEmbedEmbeddingModelOptions = {
-  model?: FastEmbedEmbeddingModelName | undefined;
+type FastEmbedLoadOptions = {
+  executionProviders?: ExecutionProvider[] | undefined;
+  maxLength?: number | undefined;
+  cacheDir?: string | undefined;
+  showDownloadProgress?: boolean | undefined;
   maxBatchSize?: number | undefined;
-  initOptions?:
-    | {
-        executionProviders?: ExecutionProvider[] | undefined;
-        maxLength?: number | undefined;
-        cacheDir?: string | undefined;
-        showDownloadProgress?: boolean | undefined;
-        modelName?: string | undefined;
-      }
-    | undefined;
 };
 
-export type FastEmbedSparseEmbeddingModelOptions = {
-  model?: FastEmbedSparseEmbeddingModelName | undefined;
-  maxBatchSize?: number | undefined;
-  initOptions?:
-    | {
-        executionProviders?: ExecutionProvider[] | undefined;
-        maxLength?: number | undefined;
-        cacheDir?: string | undefined;
-        showDownloadProgress?: boolean | undefined;
-        modelName?: string | undefined;
-      }
-    | undefined;
+export type LoadFastEmbedEmbeddingModelOptions = FastEmbedLoadOptions & {
+  modelId: FastEmbedEmbeddingModelId;
 };
 
-export type { SparseVector };
+export type LoadFastEmbedSparseEmbeddingModelOptions = FastEmbedLoadOptions & {
+  modelId: FastEmbedSparseEmbeddingModelId;
+};
+
+export type AdaptFastEmbedEmbeddingModelOptions = {
+  runtime: FastEmbedRuntime;
+  modelId: string;
+  maxBatchSize?: number | undefined;
+};
+
+export type AdaptFastEmbedSparseEmbeddingModelOptions = {
+  runtime: FastEmbedSparseRuntime;
+  modelId: string;
+  maxBatchSize?: number | undefined;
+};
+
+export type FastEmbedEmbeddingModelHandle = EmbeddingModel;
+export type FastEmbedSparseEmbeddingModelHandle = SparseEmbeddingModel;
+
+export type { ExecutionProvider, SparseVector };

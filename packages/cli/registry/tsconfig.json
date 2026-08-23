@@ -1,0 +1,16 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "baseUrl": ".",
+    "paths": {
+      "@anvia/client": ["../../client/src/index.ts"],
+      "@anvia/core": ["../../core/src/index.ts"],
+      "@anvia/core/*": ["../../core/src/*/index.ts"],
+      "@anvia/react": ["../../react/src/index.ts"],
+      "@anvia/react-ui": ["../../react-ui/src/index.ts"]
+    }
+  },
+  "include": ["*.tsx"]
+}

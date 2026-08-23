@@ -1,3 +1,2 @@
-export * from "./connect";
-export * from "./connections";
+export { isMcpTool } from "./tool";
 export * from "./types";

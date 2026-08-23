@@ -1,9 +1,9 @@
-import { Message } from "@anvia/core/completion";
 import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest";
+import { Message } from "../../core/test/helpers/imports";
 import {
   AnthropicClient,
-  AnthropicCompletionModel,
-  type AnthropicCompletionModelName,
+  type AnthropicClientOptions,
+  type AnthropicCompletionModelId,
   AnthropicVertexClient,
 } from "../src/index";
 
@@ -12,15 +12,28 @@ describe("Anthropic client", () => {
     vi.unstubAllEnvs();
   });
 
+  it("rejects mixed injected and managed configuration", () => {
+    const mixed = { client: {} as never, baseUrl: "https://example.com" };
+    expectTypeOf(mixed).not.toMatchTypeOf<AnthropicClientOptions>();
+    expect(() => new AnthropicClient(mixed as never)).toThrow(
+      "AnthropicClient cannot combine client with baseUrl",
+    );
+
+    expect(
+      () => new AnthropicVertexClient({ client: {} as never, region: "global" } as never),
+    ).toThrow("AnthropicVertexClient cannot combine client with region");
+  });
+
   it("types known Anthropic models while accepting custom model strings", () => {
     const anthropic = new AnthropicClient({
       client: { messages: { create: async () => ({}) } } as never,
     });
 
     expectTypeOf(
-      anthropic.completionModel("claude-sonnet-4-20250514").defaultModel,
-    ).toEqualTypeOf<AnthropicCompletionModelName>();
-    anthropic.completionModel("custom-messages-model");
+      anthropic.completionModel({ modelId: "claude-sonnet-4-20250514" }).modelId,
+    ).toEqualTypeOf<string>();
+    expectTypeOf("claude-sonnet-4-20250514").toMatchTypeOf<AnthropicCompletionModelId>();
+    anthropic.completionModel({ modelId: "custom-messages-model" });
   });
 
   it("uses the Anthropic client for custom Messages base URLs", async () => {
@@ -41,9 +54,9 @@ describe("Anthropic client", () => {
     const anthropic = new AnthropicClient({
       client: client as never,
     });
-    const model = anthropic.completionModel("custom-messages-model");
+    const model = anthropic.completionModel({ modelId: "custom-messages-model" });
 
-    expect(model).toBeInstanceOf(AnthropicCompletionModel);
+    expect(model.modelId).toBe("custom-messages-model");
     await model.completion({
       chatHistory: [Message.user("hello")],
       documents: [],
@@ -53,7 +66,7 @@ describe("Anthropic client", () => {
       {
         model: "custom-messages-model",
         max_tokens: 1024,
-        messages: [{ role: "user", content: [{ type: "text", text: "hello" }] }],
+        messages: [{ role: "user", content: "hello" }],
       },
     ]);
   });
@@ -65,10 +78,11 @@ describe("Anthropic client", () => {
       authClient: {} as never,
     });
 
-    expect(anthropic.client.projectId).toBe("project");
-    expect(anthropic.client.region).toBe("global");
-    expect(anthropic.completionModel().defaultModel).toBe("claude-sonnet-5");
-    anthropic.completionModel("claude-sonnet-4-5@20250929");
+    expectTypeOf(anthropic).not.toHaveProperty("client");
+    expect(anthropic.completionModel({ modelId: "claude-sonnet-5" }).modelId).toBe(
+      "claude-sonnet-5",
+    );
+    anthropic.completionModel({ modelId: "claude-sonnet-4-5@20250929" });
   });
 
   it("allows the Anthropic Vertex SDK to resolve project and region from the environment", () => {
@@ -79,8 +93,9 @@ describe("Anthropic client", () => {
       authClient: {} as never,
     });
 
-    expect(anthropic.client.projectId).toBe("environment-project");
-    expect(anthropic.client.region).toBe("us");
+    expect(anthropic.completionModel({ modelId: "claude-sonnet-5" }).modelId).toBe(
+      "claude-sonnet-5",
+    );
   });
 
   it("uses an injected Anthropic Vertex Messages client for completions and streams", async () => {
@@ -116,7 +131,7 @@ describe("Anthropic client", () => {
         },
       } as never,
     });
-    const model = anthropic.completionModel();
+    const model = anthropic.completionModel({ modelId: "claude-sonnet-5" });
     const request = {
       chatHistory: [Message.user("hello")],
       documents: [],

@@ -3,50 +3,51 @@ import type {
   GeneratedImage,
   ImageGenerationModel,
   ImageGenerationRequest,
-  ImageGenerationResponse,
+  ImageGenerationResult,
+  ModelCallOptions,
 } from "@anvia/core/image-generation";
 import type { OpenAI } from "openai";
 import { isPlainObject } from "../utils";
-import type { OpenAIImageGenerationModelName } from "./models";
+import type { OpenAIImageGenerationModelId } from "./models";
 
 export const DALL_E_2 = "dall-e-2";
 export const DALL_E_3 = "dall-e-3";
 export const GPT_IMAGE_1 = "gpt-image-1";
 export const GPT_IMAGE_2 = "gpt-image-2";
 
-export class OpenAIImageGenerationModel
-  implements ImageGenerationModel<unknown, OpenAIImageGenerationModelName>
-{
+export class OpenAIImageGenerationModel implements ImageGenerationModel<unknown> {
   readonly provider = "openai";
 
   constructor(
     private readonly client: OpenAI,
-    readonly defaultModel: OpenAIImageGenerationModelName = GPT_IMAGE_1,
+    readonly modelId: OpenAIImageGenerationModelId,
   ) {}
 
   async imageGeneration(
     request: ImageGenerationRequest,
-  ): Promise<ImageGenerationResponse<unknown>> {
+    options?: ModelCallOptions,
+  ): Promise<ImageGenerationResult<unknown>> {
+    const providerOptions = isPlainObject(request.providerOptions) ? request.providerOptions : {};
     const params: Record<string, unknown> = {
-      model: this.defaultModel,
+      ...providerOptions,
+      model: this.modelId,
       prompt: request.prompt,
       size: `${request.width}x${request.height}`,
     };
 
-    if (this.defaultModel === DALL_E_2 || this.defaultModel === DALL_E_3) {
+    if (this.modelId === DALL_E_2 || this.modelId === DALL_E_3) {
       params.response_format = "b64_json";
     }
 
-    if (request.additionalParams !== undefined && isPlainObject(request.additionalParams)) {
-      Object.assign(params, request.additionalParams);
-    }
-
-    const response = await this.client.images.generate(params as never);
+    const response = await this.client.images.generate(params as never, {
+      signal: options?.abortSignal,
+      maxRetries: 0,
+    });
     return imageResponseFromOpenAI(response);
   }
 }
 
-export function imageResponseFromOpenAI(response: unknown): ImageGenerationResponse<unknown> {
+export function imageResponseFromOpenAI(response: unknown): ImageGenerationResult<unknown> {
   const raw = response as Record<string, unknown>;
   const mediaType = mediaTypeFromFormat(
     typeof raw.output_format === "string" ? raw.output_format : "png",
@@ -59,8 +60,7 @@ export function imageResponseFromOpenAI(response: unknown): ImageGenerationRespo
     return [{ data: new Uint8Array(Buffer.from(item.b64_json, "base64")), mediaType }];
   });
 
-  const image = images[0]?.data;
-  if (image === undefined) {
+  if (images.length === 0) {
     if (data.some((item) => isPlainObject(item) && typeof item.url === "string")) {
       throw new Error(
         "OpenAI image generation response contained image URLs, which are not supported.",
@@ -70,9 +70,7 @@ export function imageResponseFromOpenAI(response: unknown): ImageGenerationRespo
   }
 
   return {
-    image,
-    images,
-    mediaType,
+    images: images as [GeneratedImage, ...GeneratedImage[]],
     rawResponse: response,
   };
 }

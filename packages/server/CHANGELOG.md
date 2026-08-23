@@ -1,5 +1,148 @@
 # @anvia/server
 
+## 1.0.0
+
+### Major Changes
+
+- 4564d2f: Prepare the synchronized Anvia 1.0 release train.
+
+### Patch Changes
+
+- 9ae0893: Add a framework-neutral, runtime-validated client stream protocol with explicit completion and Agent
+  adapters, lossless Message/UIMessage conversion, automatic tool-call deltas, masked client errors,
+  typed data events, HTTP and direct transports, and always-framed resumable streams. Remove Core's UI
+  message surface and the ambiguous Server and React event-stream APIs. Require React hooks to use an
+  endpoint or canonical transport, expose four-state request lifecycle status, and migrate Studio to
+  the same explicit boundary. Preserve provider tool identity, final sources, reasoning, transformed
+  data, application metadata, and resumable stream identity across that boundary.
+- 475ae22: Replace process-local approval continuations and Studio-only questions with JSON-safe Agent
+  interactions resumed through `generate()` or `stream()`. Add first-class question tools, explicit
+  interaction response message parts, linked phase-local runs, suspension-aware nested composition,
+  queued steering receipts, and eval responders. Upgrade the Client protocol to v3, unify React and
+  Studio interaction handling, preserve suspensions through memory, traces, and resumable streams,
+  and reject unresolved interaction parts at provider boundaries.
+- 3d2fd23: Replace message factories with strict JSON-safe structural messages, add canonical Core and UI
+  parsers, move custom data validation to typed transports, and adopt the `anvia.client.v2` framed
+  protocol. Make Client and Server calls object-only, make React transport-only with standalone
+  completion state, and require canonical structural message requests in Studio.
+- Updated dependencies [9ae0893]
+- Updated dependencies [0292ede]
+- Updated dependencies [a90416c]
+- Updated dependencies [475ae22]
+- Updated dependencies [c7f4bbc]
+- Updated dependencies [45882ab]
+- Updated dependencies [45882ab]
+- Updated dependencies [640dd3c]
+- Updated dependencies [a4bf9d2]
+- Updated dependencies [3d2fd23]
+  - @anvia/client@1.0.0
+
+## 1.0.0-rc.11
+
+### Patch Changes
+
+- Updated dependencies [995add8]
+- Updated dependencies [9e6df68]
+  - @anvia/client@1.0.0-rc.11
+
+## 1.0.0-rc.10
+
+### Patch Changes
+
+- @anvia/client@1.0.0-rc.10
+
+## 1.0.0-rc.9
+
+### Patch Changes
+
+- @anvia/client@1.0.0-rc.9
+
+## 1.0.0-rc.8
+
+### Patch Changes
+
+- @anvia/client@1.0.0-rc.8
+
+## 1.0.0-rc.7
+
+### Patch Changes
+
+- Updated dependencies [6341fd8]
+  - @anvia/client@1.0.0-rc.7
+
+## 1.0.0-rc.6
+
+### Patch Changes
+
+- @anvia/client@1.0.0-rc.6
+
+## 1.0.0-rc.5
+
+### Patch Changes
+
+- Updated dependencies [e96d038]
+  - @anvia/client@1.0.0-rc.5
+
+## 1.0.0-rc.4
+
+### Patch Changes
+
+- @anvia/client@1.0.0-rc.4
+
+## 1.0.0-rc.3
+
+### Patch Changes
+
+- 475ae22: Replace process-local approval continuations and Studio-only questions with JSON-safe Agent
+  interactions resumed through `generate()` or `stream()`. Add first-class question tools, explicit
+  interaction response message parts, linked phase-local runs, suspension-aware nested composition,
+  queued steering receipts, and eval responders. Upgrade the Client protocol to v3, unify React and
+  Studio interaction handling, preserve suspensions through memory, traces, and resumable streams,
+  and reject unresolved interaction parts at provider boundaries.
+- Updated dependencies [475ae22]
+  - @anvia/client@1.0.0-rc.3
+
+## 1.0.0-rc.2
+
+### Patch Changes
+
+- 9ae0893: Add a framework-neutral, runtime-validated client stream protocol with explicit completion and Agent
+  adapters, lossless Message/UIMessage conversion, automatic tool-call deltas, masked client errors,
+  typed data events, HTTP and direct transports, and always-framed resumable streams. Remove Core's UI
+  message surface and the ambiguous Server and React event-stream APIs. Require React hooks to use an
+  endpoint or canonical transport, expose four-state request lifecycle status, and migrate Studio to
+  the same explicit boundary. Preserve provider tool identity, final sources, reasoning, transformed
+  data, application metadata, and resumable stream identity across that boundary.
+- 3d2fd23: Replace message factories with strict JSON-safe structural messages, add canonical Core and UI
+  parsers, move custom data validation to typed transports, and adopt the `anvia.client.v2` framed
+  protocol. Make Client and Server calls object-only, make React transport-only with standalone
+  completion state, and require canonical structural message requests in Studio.
+- Updated dependencies [9ae0893]
+- Updated dependencies [c7f4bbc]
+- Updated dependencies [640dd3c]
+- Updated dependencies [a4bf9d2]
+- Updated dependencies [3d2fd23]
+  - @anvia/client@1.0.0-rc.2
+
+## 1.0.0-rc.1
+
+### Patch Changes
+
+- Updated dependencies
+  - @anvia/core@1.0.0-rc.1
+
+## 1.0.0-rc.0
+
+### Major Changes
+
+- 4564d2f: Prepare the synchronized Anvia 1.0 release train.
+
+### Patch Changes
+
+- Updated dependencies [4564d2f]
+- Updated dependencies [4ab25bb]
+  - @anvia/core@1.0.0-rc.0
+
 ## 0.7.6
 
 ### Patch Changes

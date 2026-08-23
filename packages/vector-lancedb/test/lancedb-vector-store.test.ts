@@ -1,336 +1,279 @@
-import { type Embedding, type EmbeddingModel, embedDocuments } from "@anvia/core/embeddings";
-import { vectorFilter } from "@anvia/core/vector-store";
-import { describe, expect, it } from "vitest";
-import { filterToLanceExpr, LanceDBVectorStore } from "../src/index";
-import type { LanceDBConnectionLike, LanceDBTableLike } from "../src/types";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, expect, expectTypeOf, it, vi } from "vitest";
+import * as publicApi from "../src/index.js";
+import {
+  type LanceDBConnectionLike,
+  type LanceDBTableLike,
+  LanceDBVectorClient,
+} from "../src/index.js";
 
-class MockEmbeddingModel implements EmbeddingModel {
-  async embedTexts(texts: string[]): Promise<Embedding[]> {
-    return texts.map((document) => ({
-      document,
-      vector: document.toLowerCase().includes("cat") ? [1, 0] : [0, 1],
-    }));
-  }
+// @ts-expect-error LanceDB no longer exposes an engine-specific SQL filter translator.
+type RemovedFilterTranslator = typeof import("../src/index.js").filterToLanceExpr;
+
+function fixture() {
+  const toArray = vi.fn(async () => [
+    {
+      __anvia_document_id: "doc",
+      __anvia_document: JSON.stringify({ text: "cat" }),
+      __anvia_metadata: JSON.stringify({ source: "test", tenantId: "tenant-1" }),
+      __anvia_vector: [1, 0],
+      _distance: 0.1,
+    },
+  ]);
+  const query = {
+    limit: vi.fn(),
+    where: vi.fn(),
+    distanceType: vi.fn(),
+    toArray,
+  };
+  query.limit.mockReturnValue(query);
+  query.where.mockReturnValue(query);
+  query.distanceType.mockReturnValue(query);
+  const table: LanceDBTableLike = {
+    add: vi.fn(async () => undefined),
+    delete: vi.fn(async () => undefined),
+    countRows: vi.fn(async () => 1),
+    search: vi.fn(() => query),
+  };
+  const client: LanceDBConnectionLike = {
+    openTable: vi.fn(async () => table),
+    tableNames: vi.fn(async () => ["docs"]),
+    createTable: vi.fn(async () => table),
+  };
+  return { client, query, table };
 }
 
-class MockLanceDBTable implements LanceDBTableLike {
-  readonly addedRows: Record<string, unknown>[][] = [];
+describe("LanceDBVectorClient", () => {
+  it("exports the client without legacy index or connect APIs", () => {
+    expectTypeOf<RemovedFilterTranslator>().toBeAny();
+    expect(publicApi).toHaveProperty("LanceDBVectorClient");
+    expect(publicApi).not.toHaveProperty("filterToLanceExpr");
+    expect(publicApi).not.toHaveProperty("LanceDBVectorIndex");
+    expect(publicApi.LanceDBVectorStore).not.toHaveProperty("connect");
+    expect(publicApi.LanceDBVectorStore.prototype).not.toHaveProperty("index");
+    expect(publicApi.LanceDBVectorStore.prototype).not.toHaveProperty("asTool");
+  });
+  it("keeps construction lazy and uses explicit lifecycle", async () => {
+    const { client } = fixture();
+    const store = new LanceDBVectorClient({ client }).vectorStore({
+      tableName: "docs",
+      dimensions: 2,
+    });
+    expect(client.tableNames).not.toHaveBeenCalled();
+    await store.ensure();
+    expect(client.tableNames).toHaveBeenCalledOnce();
+  });
+  it("replaces and searches raw vectors", async () => {
+    const { client, query, table } = fixture();
+    const store = new LanceDBVectorClient({ client }).vectorStore<{ text: string }>({
+      tableName: "docs",
+      dimensions: 2,
+    });
+    await store.upsert({
+      documents: [
+        {
+          id: "doc",
+          document: { text: "cat" },
+          metadata: { tenantId: "tenant-1" },
+          embeddings: [{ document: "cat", vector: [1, 0] }],
+        },
+      ],
+    });
+    expect(table.delete).toHaveBeenCalled();
+    expect(table.add).toHaveBeenCalled();
+    expect(table.add).toHaveBeenCalledWith(
+      [
+        expect.objectContaining({
+          __anvia_metadata: JSON.stringify({ tenantId: "tenant-1" }),
+        }),
+      ],
+      undefined,
+    );
+    expect((table.add as ReturnType<typeof vi.fn>).mock.calls[0]?.[0]?.[0]).not.toHaveProperty(
+      "tenantId",
+    );
+    await expect(
+      store.search({
+        vector: [1, 0],
+        topK: 1,
+        filter: { type: "eq", key: "tenantId", value: "tenant-1" },
+      }),
+    ).resolves.toMatchObject([
+      { id: "doc", score: 0.9, metadata: { source: "test", tenantId: "tenant-1" } },
+    ]);
+    expect(query.distanceType).toHaveBeenCalledWith("cosine");
+    expect(query.limit).toHaveBeenCalledWith(1);
+    expect(query.where).not.toHaveBeenCalled();
+  });
 
-  async add(rows: Record<string, unknown>[]): Promise<unknown> {
-    this.addedRows.push(rows);
-    return {};
-  }
+  it("provisions a stable metadata column", async () => {
+    const { client, table } = fixture();
+    client.tableNames = vi.fn(async () => []);
+    client.createEmptyTable = vi.fn(async () => table);
+    const store = new LanceDBVectorClient({ client }).vectorStore({
+      tableName: "docs",
+      dimensions: 2,
+    });
 
-  search(_vector: number[]) {
-    return {
-      limit: (_n: number) => ({
-        filter: async (_expr: string | undefined) => this.mockResults(),
-        toArray: async () => this.mockResults(),
+    await store.ensure();
+
+    const schema = (client.createEmptyTable as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] as {
+      fields: Array<{ name: string }>;
+    };
+    expect(schema.fields.map((field) => field.name)).toContain("__anvia_metadata");
+  });
+
+  it("expands physical candidates until topK logical documents are available", async () => {
+    const limits: number[] = [];
+    const candidates = [
+      { __anvia_document_id: "a", __anvia_document: "A", _distance: 0.1 },
+      { __anvia_document_id: "a", __anvia_document: "A", _distance: 0.2 },
+      { __anvia_document_id: "b", __anvia_document: "B", _distance: 0.3 },
+      { __anvia_document_id: "c", __anvia_document: "C", _distance: 0.4 },
+    ];
+    const table: LanceDBTableLike = {
+      add: vi.fn(async () => undefined),
+      delete: vi.fn(async () => undefined),
+      countRows: vi.fn(async () => candidates.length),
+      search: vi.fn(() => {
+        let limit = 0;
+        const query = {
+          distanceType: vi.fn(() => query),
+          limit: vi.fn((value: number) => {
+            limit = value;
+            limits.push(value);
+            return query;
+          }),
+          where: vi.fn(() => query),
+          toArray: vi.fn(async () => candidates.slice(0, limit)),
+        };
+        return query;
       }),
     };
-  }
+    const client: LanceDBConnectionLike = {
+      openTable: vi.fn(async () => table),
+      tableNames: vi.fn(async () => ["docs"]),
+      createTable: vi.fn(async () => table),
+    };
+    const store = new LanceDBVectorClient({ client }).vectorStore<string>({
+      tableName: "docs",
+      dimensions: 2,
+    });
 
-  async countRows(): Promise<number> {
-    return this.addedRows.reduce((sum, batch) => sum + batch.length, 0);
-  }
+    await expect(store.search({ vector: [1, 0], topK: 2 })).resolves.toMatchObject([
+      { id: "a" },
+      { id: "b" },
+    ]);
+    expect(limits).toEqual([2, 4]);
+  });
 
-  async delete(_filter: string): Promise<unknown> {
-    return {};
-  }
-
-  private mockResults(): unknown[] {
-    return [
+  it("expands physical candidates when metadata filtering removes nearer results", async () => {
+    const limits: number[] = [];
+    const candidates = [
       {
-        __anvia_document_id: "doc1",
-        __anvia_document: JSON.stringify({ title: "Cat guide" }),
-        __anvia_vector: [1, 0],
-        kind: "animal",
+        __anvia_document_id: "a",
+        __anvia_document: "A",
+        __anvia_metadata: JSON.stringify({ tenantId: "other" }),
         _distance: 0.1,
       },
       {
-        __anvia_document_id: "doc2",
-        __anvia_document: "plain dog note",
-        __anvia_vector: [0, 1],
-        _distance: 0.6,
+        __anvia_document_id: "b",
+        __anvia_document: "B",
+        __anvia_metadata: JSON.stringify({ tenantId: "tenant-1" }),
+        _distance: 0.2,
       },
     ];
-  }
-}
-
-class MockLanceDBConnection implements LanceDBConnectionLike {
-  readonly tables = new Map<string, MockLanceDBTable>();
-  readonly createdTables: string[] = [];
-
-  async openTable(name: string): Promise<MockLanceDBTable> {
-    const table = this.tables.get(name);
-    if (!table) {
-      throw new Error(`Table ${name} not found`);
-    }
-    return table;
-  }
-
-  async tableNames(): Promise<string[]> {
-    return [...this.tables.keys()];
-  }
-
-  async createTable(name: string, _data: Record<string, unknown>[]): Promise<MockLanceDBTable> {
-    const table = new MockLanceDBTable();
-    this.tables.set(name, table);
-    this.createdTables.push(name);
-    return table;
-  }
-}
-
-describe("LanceDBVectorStore", () => {
-  it("creates a missing table", async () => {
-    const connection = new MockLanceDBConnection();
-
-    await LanceDBVectorStore.connect({
-      client: connection,
-      tableName: "docs",
-      vectorSize: 2,
-    });
-
-    expect(connection.createdTables).toEqual(["docs"]);
-  });
-
-  it("respects createIfMissing false and throws if table missing", async () => {
-    const connection = new MockLanceDBConnection();
-
-    await expect(
-      LanceDBVectorStore.connect({
-        client: connection,
-        tableName: "docs",
-        vectorSize: 2,
-        createIfMissing: false,
+    const table: LanceDBTableLike = {
+      add: vi.fn(async () => undefined),
+      delete: vi.fn(async () => undefined),
+      countRows: vi.fn(async () => candidates.length),
+      search: vi.fn(() => {
+        let limit = 0;
+        const query = {
+          distanceType: vi.fn(() => query),
+          limit: vi.fn((value: number) => {
+            limit = value;
+            limits.push(value);
+            return query;
+          }),
+          where: vi.fn(() => query),
+          toArray: vi.fn(async () => candidates.slice(0, limit)),
+        };
+        return query;
       }),
-    ).rejects.toThrow("Table docs not found");
-  });
-
-  it("respects createIfMissing false and succeeds if table exists", async () => {
-    const connection = new MockLanceDBConnection();
-    connection.tables.set("docs", new MockLanceDBTable());
-
-    await LanceDBVectorStore.connect({
-      client: connection,
+    };
+    const client: LanceDBConnectionLike = {
+      openTable: vi.fn(async () => table),
+      tableNames: vi.fn(async () => ["docs"]),
+      createTable: vi.fn(async () => table),
+    };
+    const store = new LanceDBVectorClient({ client }).vectorStore<string>({
       tableName: "docs",
-      vectorSize: 2,
-      createIfMissing: false,
-    });
-
-    expect(connection.createdTables).toEqual([]);
-  });
-
-  it("upserts precomputed embeddings and queries with Anvia embeddings", async () => {
-    const connection = new MockLanceDBConnection();
-    const model = new MockEmbeddingModel();
-    const store = await LanceDBVectorStore.connect<{ title: string }>({
-      client: connection,
-      tableName: "docs",
-      vectorSize: 2,
-    });
-    const embedded = await embedDocuments(model, [{ id: "doc1", title: "Cat guide" }], {
-      id: (doc: { id: string; title: string }) => doc.id,
-      content: (doc: { id: string; title: string }) => doc.title,
-      metadata: () => ({ kind: "animal" }),
-    });
-
-    await store.upsertDocuments(embedded);
-    const table = await connection.openTable("docs");
-    expect(table.addedRows[0]).toMatchObject([
-      {
-        __anvia_document_id: "doc1",
-        __anvia_document: JSON.stringify({ id: "doc1", title: "Cat guide" }),
-        __anvia_vector: [1, 0],
-        kind: "animal",
-      },
-    ]);
-
-    const results = await store.index(model).search({
-      query: "cat",
-      topK: 2,
-      threshold: 0.5,
-    });
-
-    expect(results).toEqual([
-      {
-        id: "doc1",
-        score: 0.9,
-        document: { title: "Cat guide" },
-        metadata: { kind: "animal" },
-      },
-    ]);
-  });
-
-  it("rejects documents with no embeddings", async () => {
-    const connection = new MockLanceDBConnection();
-    const store = await LanceDBVectorStore.connect<string>({
-      client: connection,
-      tableName: "docs",
-      vectorSize: 2,
+      dimensions: 2,
     });
 
     await expect(
-      store.upsertDocuments([{ id: "doc1", document: "empty", embeddings: [] }]),
-    ).rejects.toThrow("Document doc1 has no embeddings");
+      store.search({
+        vector: [1, 0],
+        topK: 1,
+        filter: { type: "eq", key: "tenantId", value: "tenant-1" },
+      }),
+    ).resolves.toMatchObject([{ id: "b" }]);
+    expect(limits).toEqual([1, 2]);
   });
 
-  it("rejects reserved metadata keys", async () => {
-    const connection = new MockLanceDBConnection();
-    const store = await LanceDBVectorStore.connect<string>({
-      client: connection,
-      tableName: "docs",
-      vectorSize: 2,
-    });
+  it("applies metadata filters without interpolating SQL", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "anvia-lancedb-filter-security-"));
+    const client = new LanceDBVectorClient({ uri: directory });
+    const store = client.vectorStore<string>({ tableName: "documents", dimensions: 2 });
 
-    await expect(
-      store.upsertDocuments([
-        {
-          id: "doc1",
-          document: "reserved",
-          metadata: { __anvia_document_id: "bad" },
-          embeddings: [{ document: "reserved", vector: [1, 0] }],
-        },
-      ]),
-    ).rejects.toThrow("Metadata key __anvia_document_id is reserved");
-  });
-});
+    try {
+      await store.ensure();
+      await store.upsert({
+        documents: [
+          {
+            id: "document-1",
+            document: "private",
+            metadata: { tenantId: "tenant-1" },
+            embeddings: [{ document: "private", vector: [1, 0] }],
+          },
+        ],
+      });
 
-describe("filterToLanceExpr", () => {
-  it("returns undefined for undefined filter", () => {
-    expect(filterToLanceExpr(undefined)).toBeUndefined();
-  });
-
-  it("translates eq filter", () => {
-    expect(filterToLanceExpr(vectorFilter.eq("kind", "animal"))).toBe("kind = 'animal'");
-    expect(filterToLanceExpr(vectorFilter.eq("count", 5))).toBe("count = 5");
-    expect(filterToLanceExpr(vectorFilter.eq("active", true))).toBe("active = TRUE");
-    expect(filterToLanceExpr(vectorFilter.eq("tag", null))).toBe("tag IS NULL");
-  });
-
-  it("translates gt and lt filters", () => {
-    expect(filterToLanceExpr(vectorFilter.gt("rank", 2))).toBe("rank > 2");
-    expect(filterToLanceExpr(vectorFilter.lt("rank", 5))).toBe("rank < 5");
-  });
-
-  it("translates compound filters", () => {
-    expect(
-      filterToLanceExpr(vectorFilter.and(vectorFilter.gt("rank", 2), vectorFilter.lt("rank", 5))),
-    ).toBe("(rank > 2) AND (rank < 5)");
-    expect(
-      filterToLanceExpr(vectorFilter.or(vectorFilter.eq("a", "x"), vectorFilter.eq("b", "y"))),
-    ).toBe("(a = 'x') OR (b = 'y')");
-  });
-
-  it("escapes single quotes in string values", () => {
-    expect(filterToLanceExpr(vectorFilter.eq("name", "it's"))).toBe("name = 'it''s'");
-  });
-
-  describe("SQL injection protection", () => {
-    it("rejects malicious column names with SQL injection attempts", () => {
-      expect(() =>
-        filterToLanceExpr(vectorFilter.eq("name'; DROP TABLE users; --", "value")),
-      ).toThrow("Invalid column name");
-      expect(() => filterToLanceExpr(vectorFilter.eq("name; DELETE FROM users", "value"))).toThrow(
-        "Invalid column name",
-      );
-      expect(() => filterToLanceExpr(vectorFilter.eq("name OR 1=1", "value"))).toThrow(
-        "Invalid column name",
-      );
-    });
-
-    it("rejects column names with special SQL characters", () => {
-      expect(() => filterToLanceExpr(vectorFilter.eq("name'", "value"))).toThrow(
-        "Invalid column name",
-      );
-      expect(() => filterToLanceExpr(vectorFilter.eq("name;", "value"))).toThrow(
-        "Invalid column name",
-      );
-      expect(() => filterToLanceExpr(vectorFilter.eq("name--", "value"))).toThrow(
-        "Invalid column name",
-      );
-      expect(() => filterToLanceExpr(vectorFilter.eq("name/**/", "value"))).toThrow(
-        "Invalid column name",
-      );
-    });
-
-    it("rejects column names that are SQL keywords", () => {
-      expect(() => filterToLanceExpr(vectorFilter.eq("SELECT", "value"))).toThrow(
-        "Column name segment",
-      );
-      expect(() => filterToLanceExpr(vectorFilter.eq("DROP", "value"))).toThrow(
-        "Column name segment",
-      );
-      expect(() => filterToLanceExpr(vectorFilter.eq("DELETE", "value"))).toThrow(
-        "Column name segment",
-      );
-    });
-
-    it("rejects SQL keywords in nested field segments", () => {
-      expect(() => filterToLanceExpr(vectorFilter.eq("metadata.SELECT", "value"))).toThrow(
-        "Column name segment",
-      );
-      expect(() => filterToLanceExpr(vectorFilter.eq("user.DROP", "value"))).toThrow(
-        "Column name segment",
-      );
-      expect(() => filterToLanceExpr(vectorFilter.eq("data.DELETE.field", "value"))).toThrow(
-        "Column name segment",
-      );
-    });
-
-    it("rejects column names starting with numbers", () => {
-      expect(() => filterToLanceExpr(vectorFilter.eq("123column", "value"))).toThrow(
-        "Invalid column name",
-      );
-    });
-
-    it("rejects non-finite numeric values in gt/lt filters", () => {
-      expect(() => filterToLanceExpr(vectorFilter.gt("rank", NaN))).toThrow(
-        "Value must be a finite number",
-      );
-      expect(() => filterToLanceExpr(vectorFilter.gt("rank", Infinity))).toThrow(
-        "Value must be a finite number",
-      );
-      expect(() => filterToLanceExpr(vectorFilter.lt("rank", -Infinity))).toThrow(
-        "Value must be a finite number",
-      );
-    });
-
-    it("rejects non-numeric values in gt/lt filters", () => {
-      expect(() =>
-        filterToLanceExpr(vectorFilter.gt("rank", "2; DROP TABLE" as unknown as number)),
-      ).toThrow("Expected a number");
-    });
-
-    it("allows valid column names with underscores", () => {
-      expect(filterToLanceExpr(vectorFilter.eq("user_name", "alice"))).toBe("user_name = 'alice'");
-      expect(filterToLanceExpr(vectorFilter.eq("_private_field", "value"))).toBe(
-        "_private_field = 'value'",
-      );
-    });
-
-    it("allows valid column names with dots for nested fields", () => {
-      expect(filterToLanceExpr(vectorFilter.eq("user.name", "alice"))).toBe("user.name = 'alice'");
-      expect(filterToLanceExpr(vectorFilter.eq("metadata.tags.category", "tech"))).toBe(
-        "metadata.tags.category = 'tech'",
-      );
-    });
-
-    it("allows valid numeric values", () => {
-      expect(filterToLanceExpr(vectorFilter.gt("rank", 0))).toBe("rank > 0");
-      expect(filterToLanceExpr(vectorFilter.gt("rank", -100))).toBe("rank > -100");
-      expect(filterToLanceExpr(vectorFilter.lt("rank", 999.99))).toBe("rank < 999.99");
-    });
-
-    it("protects against SQL injection in compound filters", () => {
-      expect(() =>
-        filterToLanceExpr(
-          vectorFilter.and(
-            vectorFilter.eq("name'; DROP TABLE users; --", "value"),
-            vectorFilter.eq("status", "active"),
-          ),
-        ),
-      ).toThrow("Invalid column name");
-    });
+      await expect(
+        store.search({
+          vector: [1, 0],
+          topK: 1,
+          filter: {
+            type: "eq",
+            key: "missing') = 'ignored' OR TRUE --",
+            value: "ignored",
+          },
+        }),
+      ).resolves.toEqual([]);
+      await expect(
+        store.search({
+          vector: [1, 0],
+          topK: 1,
+          filter: {
+            type: "eq",
+            key: "tenantId",
+            value: "tenant-1' OR TRUE --",
+          },
+        }),
+      ).resolves.toEqual([]);
+      await expect(
+        store.search({
+          vector: [1, 0],
+          topK: 1,
+          filter: { type: "eq", key: "tenantId", value: "tenant-1" },
+        }),
+      ).resolves.toMatchObject([{ id: "document-1" }]);
+    } finally {
+      await client.close();
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 });

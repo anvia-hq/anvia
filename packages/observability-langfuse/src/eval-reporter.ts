@@ -5,15 +5,16 @@ import {
   projectEvalOutcome,
   resolveEvalTraceRef,
 } from "@anvia/core/evals";
-import type { LangfuseEvalReporterOptions, LangfuseScoreArgs, LangfuseTracing } from "./types.js";
+import type { LangfuseEvalReporterOptions, LangfuseScoreArgs, LangfuseScorer } from "./types.js";
 
 const DEFAULT_TRUNCATE_BYTES = 2048;
 
 export function createLangfuseEvalReporter<Input = unknown, Output = unknown, Expected = unknown>(
-  tracing: Pick<LangfuseTracing, "score">,
+  tracing: LangfuseScorer,
   options: LangfuseEvalReporterOptions = {},
 ): EvalReporter<Input, Output, Expected> {
-  const onMissingTrace = options.onMissingTrace ?? (options.strict === true ? "throw" : "ignore");
+  const onMissingTrace = options.onMissingTrace ?? "ignore";
+  const traceObserver = options.traceObserver ?? "langfuse";
   const truncateAt = options.truncateInputAt ?? DEFAULT_TRUNCATE_BYTES;
   const includeMessages = options.includeMessages ?? true;
   const includeContext = options.includeContext ?? false;
@@ -31,14 +32,20 @@ export function createLangfuseEvalReporter<Input = unknown, Output = unknown, Ex
           input: args.case.input,
           metadata: args.case.metadata,
         });
-      if (trace?.traceId === undefined || trace.traceId.length === 0) {
+      if (
+        trace?.traceId === undefined ||
+        trace.traceId.length === 0 ||
+        (trace.observer !== undefined && trace.observer !== traceObserver)
+      ) {
         if (onMissingTrace === "throw") {
-          throw new Error("Langfuse eval reporter requires traceId");
+          throw new Error(
+            `Langfuse eval reporter requires traceId from observer ${JSON.stringify(traceObserver)}`,
+          );
         }
         if (onMissingTrace === "warn") {
           // eslint-disable-next-line no-console
           console.warn(
-            "[anvia/langfuse] eval reporter dropped score because no traceId was found",
+            "[anvia/langfuse] eval reporter dropped score because no matching trace was found",
             { caseId: args.case.id, metric: args.metric.name },
           );
         }

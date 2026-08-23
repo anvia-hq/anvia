@@ -14,6 +14,7 @@ import type {
   AgentToolObserver,
   AgentToolStartArgs,
   AgentToolStreamEventArgs,
+  AgentToolSuspendedArgs,
 } from "@anvia/core/observability";
 import {
   compactJsonObject,
@@ -121,6 +122,20 @@ class StudioRunTraceObserver implements AgentRunObserver {
         this.observations.push(parentObservation);
         this.observations.push(...childTrace.observations(parentObservation.id));
       },
+      suspend: (suspendArgs: AgentToolSuspendedArgs) => {
+        this.observations.push(
+          traceObservation({
+            kind: "tool",
+            name: args.toolName,
+            status: "suspended",
+            turn: args.turn,
+            startedAt,
+            input: parseOrString(args.args),
+            output: toJsonValue({ interaction: suspendArgs.interaction }),
+            metadata: toolMetadata(args, false),
+          }),
+        );
+      },
       error: (errorArgs: AgentToolErrorArgs) => {
         const parentObservation = traceObservation({
           kind: "tool",
@@ -139,9 +154,23 @@ class StudioRunTraceObserver implements AgentRunObserver {
   }
 
   async end(args: AgentRunEndArgs): Promise<void> {
-    await this.save("success", {
+    const result: JsonObject = {
+      runId: this.props.args.runId,
+      status: args.status,
+      text: args.text,
+    };
+    if (args.resumedFrom !== undefined) result.resumedFrom = args.resumedFrom;
+    if (args.status === "completed") {
+      result.output = toJsonValue(args.output);
+    } else if (args.status === "blocked") {
+      result.stage = args.stage;
+    } else {
+      result.interaction = toJsonValue(args.interaction);
+    }
+    await this.save(args.status === "suspended" ? "suspended" : "success", {
       endedAt: new Date(),
-      output: args.output,
+      output: args.status === "completed" ? traceOutput(args.output) : args.text,
+      result,
       usage: args.usage,
       messages: toJsonValue(args.messages),
     });
@@ -161,6 +190,7 @@ class StudioRunTraceObserver implements AgentRunObserver {
     result: {
       endedAt: Date;
       output?: string;
+      result?: JsonObject;
       error?: JsonValue;
       usage: StudioTrace["usage"];
       messages: JsonValue;
@@ -173,11 +203,13 @@ class StudioRunTraceObserver implements AgentRunObserver {
     }
 
     const metadata = traceMetadata(this.props.args, result.messages);
+    if (result.result !== undefined) metadata.result = result.result;
     const trace: StudioTrace = {
       id: this.props.id,
+      runId: this.props.args.runId,
       sessionId,
       status,
-      trace: this.trace,
+      trace: { observer: "studio", ...this.trace },
       startedAt: this.startedAt.toISOString(),
       endedAt: result.endedAt.toISOString(),
       durationMs: durationMs(this.startedAt, result.endedAt),
@@ -282,20 +314,19 @@ class ChildAgentToolTraceAccumulator {
 
     if (child.type === "tool_call" && isRecord(child.toolCall)) {
       const toolCall = child.toolCall;
-      const toolCallFunction = isRecord(toolCall.function) ? toolCall.function : undefined;
-      const toolName = typeof toolCallFunction?.name === "string" ? toolCallFunction.name : "tool";
+      const toolName = typeof toolCall.toolName === "string" ? toolCall.toolName : "tool";
       const callId =
-        typeof toolCall.callId === "string"
-          ? toolCall.callId
-          : typeof toolCall.id === "string"
-            ? toolCall.id
+        typeof toolCall.toolCallId === "string"
+          ? toolCall.toolCallId
+          : typeof toolCall.callId === "string"
+            ? toolCall.callId
             : undefined;
       const start: (typeof this.toolStarts)[number] = {
         startedAt: new Date(),
         agentId,
         childTurn,
         toolName,
-        input: toJsonValue(toolCallFunction?.arguments ?? {}),
+        input: toJsonValue("input" in toolCall ? toolCall.input : {}),
         completed: false,
       };
       if (agentName !== undefined) start.agentName = agentName;
@@ -483,6 +514,7 @@ function traceObservation(props: {
 
 function traceMetadata(args: AgentRunStartArgs, messages: JsonValue): JsonObject {
   return compactJsonObject({
+    runId: args.runId,
     agentName: args.agentName,
     agentDescription: args.agentDescription,
     maxTurns: args.maxTurns,
@@ -501,16 +533,13 @@ function generationMetadata(
   const request = args.request;
   const response = endArgs?.response;
   const rawResponse = isRecord(response?.rawResponse) ? response.rawResponse : undefined;
-  const effectiveModel =
-    request.model ?? stringValue(rawResponse?.model) ?? args.modelInfo?.defaultModel ?? "default";
+  const modelId = args.modelInfo?.modelId ?? stringValue(rawResponse?.model) ?? "unknown";
   const providerResponse = providerResponseSummary(rawResponse);
   const usage = response?.usage;
 
   return compactJsonObject({
     provider: args.modelInfo?.provider,
-    model: effectiveModel,
-    requestedModel: request.model,
-    defaultModel: args.modelInfo?.defaultModel,
+    modelId,
     messageId: response?.messageId,
     usage,
     toolCount: request.tools.length,
@@ -520,17 +549,15 @@ function generationMetadata(
     temperature: request.temperature,
     maxTokens: request.maxTokens,
     toolChoice: request.toolChoice,
-    additionalParamKeys: isRecord(request.additionalParams)
-      ? Object.keys(request.additionalParams).sort()
+    providerOptionKeys: isRecord(request.providerOptions)
+      ? Object.keys(request.providerOptions).sort()
       : undefined,
     hasOutputSchema: request.outputSchema !== undefined,
     firstDeltaMs: endArgs?.firstDeltaMs,
     providerResponse,
     modelInfo: compactJsonObject({
       provider: args.modelInfo?.provider,
-      model: effectiveModel,
-      requestedModel: request.model,
-      defaultModel: args.modelInfo?.defaultModel,
+      modelId,
       capabilities: args.modelInfo?.capabilities,
     }),
     modelCall: compactJsonObject({
@@ -557,7 +584,6 @@ function generationMetadata(
 
 function completionRequestSummary(request: AgentGenerationStartArgs["request"]): JsonObject {
   return compactJsonObject({
-    model: request.model,
     instructions: request.instructions === undefined ? undefined : { present: true },
     messageCount: request.chatHistory.length,
     documentCount: request.documents.length,
@@ -567,8 +593,8 @@ function completionRequestSummary(request: AgentGenerationStartArgs["request"]):
     temperature: request.temperature,
     maxTokens: request.maxTokens,
     toolChoice: request.toolChoice,
-    additionalParamKeys: isRecord(request.additionalParams)
-      ? Object.keys(request.additionalParams).sort()
+    providerOptionKeys: isRecord(request.providerOptions)
+      ? Object.keys(request.providerOptions).sort()
       : undefined,
     hasOutputSchema: request.outputSchema !== undefined,
   });
@@ -612,7 +638,6 @@ function toolMetadata(args: AgentToolStartArgs, skipped: boolean, result?: strin
     argumentBytes: byteLength(args.args),
     resultBytes: result === undefined ? undefined : byteLength(result),
     hasCallSignature: args.toolCall.signature !== undefined,
-    hasAdditionalParams: args.toolCall.additionalParams !== undefined,
     toolDescription: args.toolDefinition?.description,
     parameterKeys: Object.keys(properties).sort(),
     requiredParameterKeys: required,
@@ -631,7 +656,6 @@ function toolMetadata(args: AgentToolStartArgs, skipped: boolean, result?: strin
       argumentBytes: byteLength(args.args),
       resultBytes: result === undefined ? undefined : byteLength(result),
       hasCallSignature: args.toolCall.signature !== undefined,
-      hasAdditionalParams: args.toolCall.additionalParams !== undefined,
     }),
   });
 }
@@ -649,6 +673,17 @@ function parseOrString(value: string): JsonValue {
     return toJsonValue(JSON.parse(value));
   } catch {
     return value;
+  }
+}
+
+function traceOutput(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+  try {
+    return JSON.stringify(toJsonValue(value));
+  } catch {
+    return String(value);
   }
 }
 

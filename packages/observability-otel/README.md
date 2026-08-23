@@ -19,11 +19,11 @@ pnpm --filter @anvia/otel build
 ## Usage
 
 ```ts
-import { AgentBuilder } from "@anvia/core";
+import { Agent } from "@anvia/core";
 import { OpenAIClient } from "@anvia/openai";
-import { otel } from "@anvia/otel";
+import { createOtelObserver } from "@anvia/otel";
 
-const tracing = otel.create({
+const tracing = createOtelObserver({
   serviceName: "support-agent",
   captureMode: "safe",
 });
@@ -32,15 +32,20 @@ const client = new OpenAIClient({
   apiKey,
 });
 
-const agent = new AgentBuilder("support", client.completionModel())
-  .instructions("Answer support questions clearly.")
-  .observe(tracing)
-  .build();
+const agent = new Agent({
+  id: "support",
+  model: client.completionModel({ modelId: "gpt-5", api: "responses" }),
+  instructions: "Answer support questions clearly.",
+  observability: {
+    observers: { otel: tracing },
+    primaryTrace: "otel",
+  },
+});
 
-const response = await agent.prompt("How do I reset my password?").send();
+const result = await agent.generate({ prompt: "How do I reset my password?" });
 
-console.log(response.output);
-console.log(response.trace?.traceId);
+if (result.type === "response") console.log(result.output);
+console.log(result.trace?.traceId);
 ```
 
 Initialize OpenTelemetry in your application before creating spans. For OTLP HTTP, configure `@opentelemetry/sdk-node` and `@opentelemetry/exporter-trace-otlp-http` in your app process.
@@ -59,7 +64,10 @@ import { createOtelEvalReporter } from "@anvia/otel";
 const result = await runEvalSuite({
   name: "support-regression",
   cases,
-  target: agentEvalTarget(supportAgent),
+  target: agentEvalTarget<string>({
+    agent: supportAgent,
+    request: ({ input }) => ({ prompt: input }),
+  }),
   metrics,
   reporters: [createOtelEvalReporter({ onMissingTrace: "warn" })],
 });
@@ -70,6 +78,9 @@ returns valid `traceId` and `observationId` values, the event is correlated with
 It otherwise emits an uncorrelated event by default. Configure a logs SDK/exporter in addition to
 your trace exporter, or inject a `Logger` with the `logger` option.
 
+Trace provenance is checked against the `"otel"` Agent observer registration by default. Set
+`traceObserver` when the OpenTelemetry observer is registered under another name.
+
 Set `includeMetadata: false` to omit case, metric, and outcome metadata. Invalid outcomes are
 reported by default and can be disabled with `publishInvalid: false`.
 Metric events include required status, score direction, threshold, and evaluator token usage when
@@ -78,11 +89,10 @@ optional caller-calculated cost.
 
 ## Exports
 
-- `otel`
+- `createOtelObserver`
 - `createOtelEvalReporter`
+- `OtelObserverOptions`
 - `OtelEvalReporterOptions`
-- `OtelTracing`
-- `OtelTracingOptions`
 
 ## Development
 

@@ -4,7 +4,6 @@ import type { VectorSearchResult } from "@anvia/core/vector-store";
 import {
   documentIdMetadataKey,
   documentMetadataKey,
-  type PineconeClientLike,
   type PineconeMetric,
   reservedMetadataPrefix,
 } from "./types.js";
@@ -66,7 +65,8 @@ export function pineconeVectors<T, Metadata extends VectorMetadata>(
 
 export function parseQueryResults<T, Metadata extends VectorMetadata>(
   response: unknown,
-  threshold: number | undefined,
+  minScore: number | undefined,
+  metric: PineconeMetric,
 ): Array<VectorSearchResult<T, Metadata>> {
   const raw = response as {
     matches?: Array<{
@@ -80,8 +80,9 @@ export function parseQueryResults<T, Metadata extends VectorMetadata>(
   const byId = new Map<string, VectorSearchResult<T, Metadata>>();
 
   for (const match of matches) {
-    const score = match.score ?? 0;
-    if (threshold !== undefined && score < threshold) {
+    const rawScore = match.score ?? 0;
+    const score = metric === "euclidean" ? -rawScore : rawScore;
+    if (minScore !== undefined && score < minScore) {
       continue;
     }
 
@@ -105,33 +106,8 @@ export function parseQueryResults<T, Metadata extends VectorMetadata>(
   return [...byId.values()];
 }
 
-export async function defaultPineconeClient(): Promise<PineconeClientLike> {
-  const { Pinecone } = await import("@pinecone-database/pinecone");
-  return new Pinecone() as unknown as PineconeClientLike;
-}
-
-export async function ensureIndex(
-  client: PineconeClientLike,
-  indexName: string,
-  metric: PineconeMetric,
-): Promise<void> {
-  try {
-    await client.listIndexes();
-  } catch {
-    return;
-  }
-
-  try {
-    await client.createIndex({
-      name: indexName,
-      dimension: undefined,
-      metric,
-      spec: { serverless: { cloud: "aws", region: "us-east-1" } },
-      waitUntilReady: true,
-    });
-  } catch {
-    // Index already exists
-  }
+export function pineconeResultCount(response: unknown): number {
+  return ((response as { matches?: Array<Record<string, unknown>> }).matches ?? []).length;
 }
 
 function metadataFromPayload<Metadata extends VectorMetadata>(

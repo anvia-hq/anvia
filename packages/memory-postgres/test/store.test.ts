@@ -1,15 +1,14 @@
-import type { Message } from "@anvia/core";
-import { describe, expect, it } from "vitest";
+import { createMemoryScopeKey, type MemoryCompactionMessage, type Message } from "@anvia/core";
+import { afterEach, describe, expect, it } from "vitest";
+import { richMessages } from "../../core/test/helpers/rich-messages";
 import type {
   PostgresMemoryClientLike,
   PostgresMemoryQueryResult,
+  PostgresMemoryStore,
+  PostgresMemoryStoreOptions,
   PostgresMemoryTransactionClientLike,
 } from "../src/index.js";
-import {
-  createPostgresMemorySchemaSql,
-  createPostgresMemoryScopeKey,
-  createPostgresMemoryStore,
-} from "../src/index.js";
+import { createPostgresMemorySchemaSql, PostgresMemoryClient } from "../src/index.js";
 import { isMemoryMessage, serializeUnknownError } from "../src/message.js";
 
 const userMessage: Message = {
@@ -22,111 +21,18 @@ const assistantMessage: Message = {
   content: [{ type: "text", text: "stored" }],
 };
 
-const richMessages: Message[] = [
-  { role: "system", content: "System instructions", metadata: { source: "system" } },
-  {
-    role: "user",
-    metadata: { composer: { entities: [{ id: "document-1" }] } },
-    content: [
-      { type: "text", text: "Inspect these", signature: "user-signature" },
-      {
-        type: "image",
-        source: { type: "url", url: "https://example.test/image.png" },
-        detail: "high",
-      },
-      {
-        type: "image",
-        source: { type: "base64", data: "aW1hZ2U=", mediaType: "image/png" },
-        detail: "low",
-      },
-      {
-        type: "document",
-        source: {
-          type: "url",
-          url: "https://example.test/report.pdf",
-          mediaType: "application/pdf",
-          filename: "report.pdf",
-        },
-      },
-      {
-        type: "document",
-        source: {
-          type: "base64",
-          data: "cmVwb3J0",
-          mediaType: "application/pdf",
-          filename: "inline.pdf",
-        },
-      },
-      {
-        type: "document",
-        source: { type: "text", text: "inline document", mediaType: "text/plain" },
-      },
-    ],
-  },
-  {
-    role: "assistant",
-    id: "assistant-1",
+function memoryCompactionMessage(
+  content: string,
+  compactedMessageCount: number,
+): MemoryCompactionMessage {
+  return {
+    role: "system",
+    content,
     metadata: {
-      source: "assistant",
-      anvia: {
-        generation: {
-          provider: "test",
-          model: "test-model",
-          usage: {
-            inputTokens: 12,
-            outputTokens: 4,
-            totalTokens: 16,
-            cachedInputTokens: 3,
-            cacheCreationInputTokens: 0,
-          },
-        },
-      },
+      anvia: { memoryCompaction: { version: 1, compactedMessageCount } },
     },
-    content: [
-      { type: "text", text: "Working", signature: "assistant-signature" },
-      {
-        type: "reasoning",
-        id: "reasoning-1",
-        text: "analysis summary",
-        content: [
-          { type: "text", text: "analysis", signature: "reasoning-signature" },
-          { type: "summary", text: " summary" },
-          { type: "encrypted", data: "ciphertext" },
-          { type: "redacted", data: "redacted-data" },
-        ],
-      },
-      {
-        type: "tool_call",
-        id: "tool-1",
-        callId: "call-1",
-        function: { name: "lookup", arguments: { query: "Anvia", limit: 3 } },
-        signature: "tool-signature",
-        additionalParams: { provider: "test" },
-      },
-      {
-        type: "image",
-        source: { type: "base64", data: "b3V0cHV0", mediaType: "image/png" },
-        detail: "auto",
-      },
-    ],
-  },
-  {
-    role: "tool",
-    metadata: { source: "tool" },
-    content: [
-      {
-        type: "tool_result",
-        id: "tool-1",
-        callId: "call-1",
-        toolName: "lookup",
-        content: [
-          { type: "text", text: "result" },
-          { type: "image", data: "cmVzdWx0", mediaType: "image/png" },
-        ],
-      },
-    ],
-  },
-];
+  };
+}
 
 type FakePgCall = {
   text: string;
@@ -383,6 +289,13 @@ class FakePgPool extends FakePgClient {
   }
 }
 
+const memoryClients = new Set<PostgresMemoryClient>();
+
+afterEach(async () => {
+  await Promise.all([...memoryClients].map((client) => client.close()));
+  memoryClients.clear();
+});
+
 describe("PostgresMemoryStore", () => {
   it("uses core strict JSON validation for message metadata", async () => {
     const validMessage: Message = {
@@ -398,13 +311,10 @@ describe("PostgresMemoryStore", () => {
 
     expect(isMemoryMessage(validMessage)).toBe(true);
     expect(isMemoryMessage(invalidMessage)).toBe(false);
-    const store = await createPostgresMemoryStore({
-      client: new FakePgClient(),
-      createIfMissing: false,
-    });
+    const store = await createTestMemoryStore({ client: new FakePgClient() });
     await expect(
       store.append({
-        context: { sessionId: "thread-invalid" },
+        scope: { sessionId: "thread-invalid" },
         runId: "run-invalid",
         turn: 0,
         messages: [invalidMessage],
@@ -432,27 +342,31 @@ describe("PostgresMemoryStore", () => {
 
   it("appends multiple turns, loads in position order, and clears scoped messages", async () => {
     const client = new FakePgClient();
-    const store = await createPostgresMemoryStore({ client, createIfMissing: false });
+    const store = await createTestMemoryStore({ client });
     const context = { sessionId: "thread-1", userId: "user-1" };
 
     await store.append({
-      context,
+      scope: context,
       runId: "run-1",
       turn: 0,
       messages: [userMessage, assistantMessage],
     });
     await store.append({
-      context,
+      scope: context,
       runId: "run-2",
       turn: 1,
       messages: [userMessage],
     });
 
-    expect(await store.load(context)).toEqual([userMessage, assistantMessage, userMessage]);
-    expect(await store.load({ sessionId: "thread-1", userId: "user-2" })).toEqual([]);
+    expect(await store.load({ scope: context })).toEqual([
+      userMessage,
+      assistantMessage,
+      userMessage,
+    ]);
+    expect(await store.load({ scope: { sessionId: "thread-1", userId: "user-2" } })).toEqual([]);
 
-    await store.clear(context);
-    expect(await store.load(context)).toEqual([]);
+    await store.clear({ scope: context });
+    expect(await store.load({ scope: context })).toEqual([]);
     expect(client.queries.some((query) => query.includes("pg_advisory_xact_lock"))).toBe(true);
     expect(client.queries.filter((query) => query === "BEGIN")).toHaveLength(2);
     expect(client.queries.filter((query) => query === "COMMIT")).toHaveLength(2);
@@ -460,63 +374,64 @@ describe("PostgresMemoryStore", () => {
 
   it("atomically compacts a prefix and rejects stale revisions", async () => {
     const client = new FakePgClient();
-    const store = await createPostgresMemoryStore({ client, createIfMissing: false });
+    const store = await createTestMemoryStore({ client });
     const context = { sessionId: "thread-compaction", userId: "user-1" };
     await store.append({
-      context,
+      scope: context,
       runId: "run-1",
       turn: 1,
       messages: [userMessage, assistantMessage],
     });
     await store.append({
-      context,
+      scope: context,
       runId: "run-2",
       turn: 1,
       messages: [userMessage],
     });
-    const stale = await store.compaction.load(context);
+    const stale = await store.compaction.snapshot({ scope: context });
     await store.append({
-      context,
+      scope: context,
       runId: "run-2",
       turn: 2,
       messages: [assistantMessage],
     });
-    const summary: Extract<Message, { role: "system" }> = {
-      role: "system",
-      content: "Earlier conversation summary",
-    };
+    const replacement = memoryCompactionMessage("Earlier conversation summary", 2);
 
     await expect(
-      store.compaction.commit({
-        context,
+      store.compaction.replacePrefix({
+        scope: context,
         revision: stale.revision,
-        compactedMessageCount: 2,
-        summary,
+        messageCount: 2,
+        replacement,
         runId: "memory-compaction:1",
       }),
-    ).resolves.toBe("conflict");
+    ).resolves.toEqual({ status: "conflict" });
 
-    const current = await store.compaction.load(context);
+    const current = await store.compaction.snapshot({ scope: context });
     await expect(
-      store.compaction.commit({
-        context,
+      store.compaction.replacePrefix({
+        scope: context,
         revision: current.revision,
-        compactedMessageCount: 2,
-        summary,
+        messageCount: 2,
+        replacement,
         runId: "memory-compaction:2",
       }),
-    ).resolves.toBe("committed");
-    await expect(store.load(context)).resolves.toEqual([summary, userMessage, assistantMessage]);
+    ).resolves.toEqual({ status: "committed" });
+    await expect(store.load({ scope: context })).resolves.toEqual([
+      replacement,
+      userMessage,
+      assistantMessage,
+    ]);
 
     const [conversation] = await store.inspector.listConversations({ limit: 1 });
     const inspected =
       conversation === undefined
         ? undefined
-        : await store.inspector.getConversation(conversation.ref);
+        : await store.inspector.getConversation({ ref: conversation.ref });
     expect(inspected).toMatchObject({
       messageCount: 3,
       messages: [
-        { position: 1, runId: "memory-compaction:2", turn: 0, message: summary },
+        { position: 1, runId: "memory-compaction:2", turn: 0, message: replacement },
         { position: 2, runId: "run-2", turn: 1, message: userMessage },
         { position: 3, runId: "run-2", turn: 2, message: assistantMessage },
       ],
@@ -525,9 +440,9 @@ describe("PostgresMemoryStore", () => {
 
   it("inspects persisted conversations with message storage metadata", async () => {
     const client = new FakePgClient();
-    const store = await createPostgresMemoryStore({ client, createIfMissing: false });
+    const store = await createTestMemoryStore({ client });
     await store.append({
-      context: {
+      scope: {
         sessionId: "thread-1",
         userId: "user-1",
         metadata: { tenantId: "tenant-1" },
@@ -552,7 +467,7 @@ describe("PostgresMemoryStore", () => {
         messageCount: 2,
       },
     ]);
-    await expect(store.inspector.getConversation("session-1")).resolves.toMatchObject({
+    await expect(store.inspector.getConversation({ ref: "session-1" })).resolves.toMatchObject({
       messages: [
         { position: 0, runId: "run-1", turn: 4, message: userMessage },
         { position: 1, runId: "run-1", turn: 4, message: assistantMessage },
@@ -562,20 +477,20 @@ describe("PostgresMemoryStore", () => {
 
   it("round-trips every supported message content shape", async () => {
     const client = new FakePgClient();
-    const store = await createPostgresMemoryStore({ client, createIfMissing: false });
+    const store = await createTestMemoryStore({ client });
     const context = { sessionId: "rich-thread", userId: "user-1" };
 
-    await store.append({ context, runId: "run-rich", turn: 0, messages: richMessages });
+    await store.append({ scope: context, runId: "run-rich", turn: 0, messages: richMessages });
 
-    await expect(store.load(context)).resolves.toEqual(richMessages);
+    await expect(store.load({ scope: context })).resolves.toEqual(richMessages);
   });
 
   it("does not open a transaction for empty appends", async () => {
     const client = new FakePgClient();
-    const store = await createPostgresMemoryStore({ client, createIfMissing: false });
+    const store = await createTestMemoryStore({ client });
 
     await store.append({
-      context: { sessionId: "thread-1" },
+      scope: { sessionId: "thread-1" },
       runId: "run-1",
       turn: 0,
       messages: [],
@@ -587,7 +502,7 @@ describe("PostgresMemoryStore", () => {
   it("creates schema SQL by default", async () => {
     const client = new FakePgClient();
 
-    await createPostgresMemoryStore({ client });
+    await createTestMemoryStore({ client, ensure: true });
 
     expect(client.queries[0]).toContain("CREATE EXTENSION IF NOT EXISTS pgcrypto");
     expect(client.queries[0]).toContain('"anvia_memory_sessions"');
@@ -596,11 +511,11 @@ describe("PostgresMemoryStore", () => {
   it("rolls back failed transactional appends", async () => {
     const client = new FakePgClient();
     client.failMessageInsert = true;
-    const store = await createPostgresMemoryStore({ client, createIfMissing: false });
+    const store = await createTestMemoryStore({ client });
 
     await expect(
       store.append({
-        context: { sessionId: "thread-1" },
+        scope: { sessionId: "thread-1" },
         runId: "run-1",
         turn: 0,
         messages: [userMessage],
@@ -613,10 +528,10 @@ describe("PostgresMemoryStore", () => {
 
   it("checks out and releases a transaction client when given a pool", async () => {
     const pool = new FakePgPool();
-    const store = await createPostgresMemoryStore({ client: pool, createIfMissing: false });
+    const store = await createTestMemoryStore({ client: pool });
 
     await store.append({
-      context: { sessionId: "thread-1" },
+      scope: { sessionId: "thread-1" },
       runId: "run-1",
       turn: 0,
       messages: [userMessage],
@@ -630,10 +545,10 @@ describe("PostgresMemoryStore", () => {
 
   it("stores and can ignore failed-run diagnostics", async () => {
     const client = new FakePgClient();
-    const store = await createPostgresMemoryStore({ client, createIfMissing: false });
+    const store = await createTestMemoryStore({ client });
 
     await store.recordError({
-      context: { sessionId: "thread-1" },
+      scope: { sessionId: "thread-1" },
       runId: "run-1",
       error: new Error("failed"),
       messages: [userMessage],
@@ -648,14 +563,13 @@ describe("PostgresMemoryStore", () => {
     ]);
 
     const ignoringClient = new FakePgClient();
-    const ignoringStore = await createPostgresMemoryStore({
+    const ignoringStore = await createTestMemoryStore({
       client: ignoringClient,
-      createIfMissing: false,
-      errors: "ignore",
+      errorPolicy: "ignore",
     });
 
     await ignoringStore.recordError({
-      context: { sessionId: "thread-1" },
+      scope: { sessionId: "thread-1" },
       runId: "run-1",
       error: new Error("failed"),
       messages: [userMessage],
@@ -667,16 +581,16 @@ describe("PostgresMemoryStore", () => {
 
   it("serializes JSON and non-JSON failed-run diagnostics", async () => {
     const client = new FakePgClient();
-    const store = await createPostgresMemoryStore({ client, createIfMissing: false });
+    const store = await createTestMemoryStore({ client });
 
     await store.recordError({
-      context: { sessionId: "thread-json" },
+      scope: { sessionId: "thread-json" },
       runId: "run-json",
       error: { code: 409, retryable: false },
       messages: richMessages,
     });
     await store.recordError({
-      context: { sessionId: "thread-bigint" },
+      scope: { sessionId: "thread-bigint" },
       runId: "run-bigint",
       error: 42n,
       messages: [],
@@ -696,14 +610,13 @@ describe("PostgresMemoryStore", () => {
 
   it("can disable advisory locking", async () => {
     const client = new FakePgClient();
-    const store = await createPostgresMemoryStore({
+    const store = await createTestMemoryStore({
       client,
-      createIfMissing: false,
       lock: "none",
     });
 
     await store.append({
-      context: { sessionId: "thread-1" },
+      scope: { sessionId: "thread-1" },
       runId: "run-1",
       turn: 0,
       messages: [userMessage],
@@ -714,14 +627,13 @@ describe("PostgresMemoryStore", () => {
 
   it("uses custom scope functions", async () => {
     const client = new FakePgClient();
-    const store = await createPostgresMemoryStore({
+    const store = await createTestMemoryStore({
       client,
-      createIfMissing: false,
-      scope: (context) => String(context.metadata?.tenantId ?? "unknown"),
+      scopeKey: ({ scope }) => String(scope.metadata?.tenantId ?? "unknown"),
     });
 
     await store.append({
-      context: { sessionId: "thread-1", metadata: { tenantId: "tenant-1" } },
+      scope: { sessionId: "thread-1", metadata: { tenantId: "tenant-1" } },
       runId: "run-1",
       turn: 0,
       messages: [userMessage],
@@ -729,32 +641,33 @@ describe("PostgresMemoryStore", () => {
 
     expect(client.scopeKeys()).toEqual(["tenant-1"]);
     await expect(
-      store.load({ sessionId: "different-thread", metadata: { tenantId: "tenant-1" } }),
+      store.load({
+        scope: { sessionId: "different-thread", metadata: { tenantId: "tenant-1" } },
+      }),
     ).resolves.toEqual([userMessage]);
   });
 
   it("rejects malformed stored messages by default and can bypass validation", async () => {
     const client = new FakePgClient();
-    const store = await createPostgresMemoryStore({ client, createIfMissing: false });
+    const store = await createTestMemoryStore({ client });
     const context = { sessionId: "thread-1" };
     const malformed = { role: "bad", content: [] };
 
     await store.append({
-      context,
+      scope: context,
       runId: "run-1",
       turn: 0,
       messages: [userMessage],
     });
     client.replaceFirstMessage(malformed);
 
-    await expect(store.load(context)).rejects.toThrow("valid Anvia Message");
+    await expect(store.load({ scope: context })).rejects.toThrow("valid Anvia Message");
 
-    const unsafeStore = await createPostgresMemoryStore({
+    const unsafeStore = await createTestMemoryStore({
       client,
-      createIfMissing: false,
       validateMessages: false,
     });
-    await expect(unsafeStore.load(context)).resolves.toEqual([malformed]);
+    await expect(unsafeStore.load({ scope: context })).resolves.toEqual([malformed]);
   });
 
   it("creates quoted schema SQL and rejects invalid identifiers", () => {
@@ -768,32 +681,48 @@ describe("PostgresMemoryStore", () => {
 
   it("creates stable scope keys from metadata paths", () => {
     expect(
-      createPostgresMemoryScopeKey(
-        {
+      createMemoryScopeKey({
+        scope: {
           sessionId: "thread-1",
           userId: "user-1",
           metadata: { tenant: { id: "tenant-1" } },
         },
-        { metadataKeys: ["tenant.id"] },
-      ),
+        metadataKeys: ["tenant.id"],
+      }),
     ).toBe(JSON.stringify(["thread-1", "user-1", "tenant-1"]));
   });
 
   it("keeps falsey metadata values and normalizes missing scope paths to null", () => {
     expect(
-      createPostgresMemoryScopeKey(
-        { sessionId: "thread-1", metadata: { count: 0, enabled: false } },
-        { metadataKeys: ["count", "enabled", "missing.value"] },
-      ),
+      createMemoryScopeKey({
+        scope: { sessionId: "thread-1", metadata: { count: 0, enabled: false } },
+        metadataKeys: ["count", "enabled", "missing.value"],
+      }),
     ).toBe(JSON.stringify(["thread-1", null, 0, false, null]));
   });
 
   it("can omit user ids from generated scope keys", () => {
     expect(
-      createPostgresMemoryScopeKey(
-        { sessionId: "thread-1", userId: "user-1" },
-        { includeUserId: false },
-      ),
+      createMemoryScopeKey({
+        scope: { sessionId: "thread-1", userId: "user-1" },
+        includeUserId: false,
+      }),
     ).toBe(JSON.stringify(["thread-1"]));
   });
 });
+
+type CreateTestMemoryStoreOptions = PostgresMemoryStoreOptions & {
+  client: PostgresMemoryClientLike;
+  ensure?: boolean | undefined;
+};
+
+async function createTestMemoryStore(
+  options: CreateTestMemoryStoreOptions,
+): Promise<PostgresMemoryStore> {
+  const { client: nativeClient, ensure = false, ...storeOptions } = options;
+  const client = new PostgresMemoryClient({ client: nativeClient });
+  memoryClients.add(client);
+  const store = client.memoryStore(storeOptions);
+  if (ensure) await store.ensure();
+  return store;
+}

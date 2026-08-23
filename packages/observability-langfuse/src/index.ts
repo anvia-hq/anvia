@@ -1,11 +1,7 @@
-export { createLangfuseDatasetClient } from "./dataset-client.js";
-export { createLangfuseEvalReporter } from "./eval-reporter.js";
 export type {
-  RunEvalAsExperimentOptions,
-  RunEvalAsExperimentResult,
+  LangfuseEvalExperimentOptions,
+  LangfuseEvalExperimentResult,
 } from "./experiment-runner.js";
-export { runEvalAsExperiment } from "./experiment-runner.js";
-export { createLangfusePromptClient } from "./prompt-client.js";
 export type {
   LangfuseRedactionOptions,
   PiiRedactor,
@@ -13,15 +9,17 @@ export type {
 } from "./redaction.js";
 export { createPiiRedactor, DEFAULT_PATTERNS } from "./redaction.js";
 export { LangfuseScoreError } from "./scoring.js";
-export { langfuse } from "./tracing.js";
+export { LangfuseClient } from "./tracing.js";
 export type {
   LangfuseCaptureMode,
   LangfuseChatMessage,
+  LangfuseClientOptions,
   LangfuseDataset,
   LangfuseDatasetClient,
   LangfuseDatasetClientOptions,
   LangfuseDatasetItem,
   LangfuseEvalReporterOptions,
+  LangfuseObserverOptions,
   LangfusePrompt,
   LangfusePromptClient,
   LangfusePromptClientOptions,
@@ -33,7 +31,4 @@ export type {
   LangfuseRunItemResult,
   LangfuseScoreArgs,
   LangfuseScoreDataType,
-  LangfuseTraceHandle,
-  LangfuseTracing,
-  LangfuseTracingOptions,
 } from "./types.js";

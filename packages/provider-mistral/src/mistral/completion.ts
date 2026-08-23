@@ -1,37 +1,37 @@
+import type { ModelContextLimits } from "@anvia/core/completion";
 import {
-  AssistantContent,
-  type AssistantContent as AssistantContentType,
+  type AssistantContentPart,
   assertCompletionRequestSupported,
+  type CompletionFinishReason,
   type CompletionModelCapabilities,
   type CompletionModelInfo,
-  type CompletionModelMetadataOptions,
+  type CompletionModelStreamEvent,
+  CompletionProviderOutputError,
   type CompletionRequest,
   type CompletionResponse,
-  type CompletionStreamEvent,
-  type DocumentContent,
+  type FilePart,
+  isJsonValue,
   type JsonObject,
   type JsonValue,
   type Message as MessageType,
-  resolveCompletionModelInfo,
+  type ModelCallOptions,
   type StreamingCompletionModel,
   type ToolChoice,
-  type ToolContent,
   type ToolDefinition,
+  type ToolResultPart,
   Usage,
-  type UserContent,
+  type UserContentPart,
   withContextUsage,
 } from "@anvia/core/completion";
 import type { Mistral } from "@mistralai/mistralai";
 import { orderedRequestMessages } from "../request-messages";
 import { isPlainObject, numberFrom, parseToolArguments, schemaName, stringFrom } from "../utils";
-import { MISTRAL_COMPLETION_MODEL_CONTEXT_LIMITS, type MistralCompletionModelName } from "./models";
+import type { MistralCompletionModelId } from "./models";
 
 type MistralChatParams = Record<string, unknown>;
 type MistralChatMessage = Record<string, unknown>;
 
-export class MistralCompletionModel
-  implements StreamingCompletionModel<unknown, MistralCompletionModelName>
-{
+export class MistralCompletionModel implements StreamingCompletionModel<unknown> {
   readonly provider = "mistral";
   readonly capabilities: CompletionModelCapabilities = {
     streaming: true,
@@ -45,70 +45,146 @@ export class MistralCompletionModel
 
   constructor(
     private readonly client: Mistral,
-    readonly defaultModel: MistralCompletionModelName = "mistral-large-latest",
-    private readonly metadataOptions: CompletionModelMetadataOptions = {},
+    readonly modelId: MistralCompletionModelId,
+    readonly contextLimits?: ModelContextLimits,
   ) {}
 
-  getModelInfo(
-    model: MistralCompletionModelName = this.defaultModel,
-  ): CompletionModelInfo<MistralCompletionModelName> | undefined {
-    return resolveCompletionModelInfo(
-      model,
-      MISTRAL_COMPLETION_MODEL_CONTEXT_LIMITS,
-      this.metadataOptions.modelOverrides,
-    );
+  private modelInfo(): CompletionModelInfo | undefined {
+    return this.contextLimits === undefined
+      ? undefined
+      : { modelId: this.modelId, context: this.contextLimits };
   }
 
   traceRequest(
-    request: CompletionRequest<MistralCompletionModelName>,
+    request: CompletionRequest,
     options: { stream?: boolean | undefined } = {},
   ): JsonObject {
-    const params = toMistralChatParams(this.defaultModel, request);
+    const params = toMistralChatParams(this.modelId, request);
     return providerRequestSummary(params, request, options);
   }
 
   async completion(
-    request: CompletionRequest<MistralCompletionModelName>,
+    request: CompletionRequest,
+    options?: ModelCallOptions,
   ): Promise<CompletionResponse> {
     assertCompletionRequestSupported(this, request);
-    const params = toMistralChatParams(this.defaultModel, request);
-    const response = await this.client.chat.complete(params as never);
-    return withContextUsage(
-      fromMistralChatResponse(response),
-      this.getModelInfo(request.model ?? this.defaultModel),
+    const params = toMistralChatParams(this.modelId, request);
+    const response = await this.client.chat.complete(
+      params as never,
+      mistralRequestOptions(options) as never,
     );
+    return withContextUsage(fromMistralChatResponse(response), this.modelInfo());
   }
 
   async *streamCompletion(
-    request: CompletionRequest<MistralCompletionModelName>,
-  ): AsyncIterable<CompletionStreamEvent> {
+    request: CompletionRequest,
+    options?: ModelCallOptions,
+  ): AsyncIterable<CompletionModelStreamEvent> {
     assertCompletionRequestSupported(this, request, { streaming: true });
-    const params = toMistralChatParams(this.defaultModel, request);
-    const stream = await this.client.chat.stream(params as never);
-    for await (const chunk of stream as unknown as AsyncIterable<unknown>) {
-      for (const event of fromMistralChatStreamChunk(chunk)) {
-        yield event.type === "final"
-          ? {
-              ...event,
-              response: withContextUsage(
-                event.response,
-                this.getModelInfo(request.model ?? this.defaultModel),
-              ),
-            }
-          : event;
+    const params = toMistralChatParams(this.modelId, request);
+    const stream = await this.client.chat.stream(
+      params as never,
+      mistralRequestOptions(options) as never,
+    );
+    let providerFinishReason: string | undefined;
+    let finalResponse: CompletionResponse | undefined;
+    let lastChunk: unknown;
+    let sawAnyChoice = false;
+    let sawPrimaryChoice = false;
+    let sawToolProgress = false;
+    for await (const completionEvent of stream as unknown as AsyncIterable<unknown>) {
+      const chunk = mistralCompletionEventData(completionEvent);
+      lastChunk = chunk;
+      const metadata = mistralStreamChunkMetadata(chunk);
+      const chunkFinishReason = finishReasonFromChoice(metadata.primaryChoice);
+      const errorUsage = metadata.usage ?? finalResponse?.usage;
+
+      sawAnyChoice ||= metadata.hasChoices;
+      sawPrimaryChoice ||= metadata.primaryChoice !== undefined;
+
+      const hasSemanticProgress = hasRawMistralSemanticProgress(metadata.primaryChoice);
+      if (providerFinishReason !== undefined && hasSemanticProgress) {
+        throw invalidMistralToolCall(undefined, errorUsage);
       }
+      if (chunkFinishReason !== undefined) {
+        if (providerFinishReason !== undefined && providerFinishReason !== chunkFinishReason) {
+          throw invalidMistralToolCall(undefined, errorUsage);
+        }
+        providerFinishReason = chunkFinishReason;
+      }
+
+      const events = fromMistralChatStreamChunk(chunk);
+      for (const event of events) {
+        if (event.type === "final") {
+          finalResponse = event.response;
+          continue;
+        }
+        if (event.type === "tool_call_delta" || event.type === "tool_call") {
+          sawToolProgress = true;
+        }
+        yield event;
+      }
+    }
+    if (!sawPrimaryChoice) {
+      if (sawAnyChoice) {
+        throw invalidMistralToolCall(undefined, finalResponse?.usage);
+      }
+      throw new CompletionProviderOutputError({
+        kind: "incomplete-stream",
+        usage: finalResponse?.usage,
+      });
+    }
+    if (sawToolProgress && providerFinishReason === undefined) {
+      throw new CompletionProviderOutputError({
+        kind: "incomplete-tool-call",
+        usage: finalResponse?.usage,
+      });
+    }
+    if (finalResponse === undefined && providerFinishReason !== undefined) {
+      finalResponse = {
+        choice: [],
+        usage: Usage.empty(),
+        rawResponse: lastChunk,
+      };
+    }
+    if (finalResponse !== undefined) {
+      applyMistralFinishReason(finalResponse, providerFinishReason);
+      if (sawToolProgress) {
+        assertSafeToolCallFinish(1, finalResponse.finishReason, finalResponse.usage);
+      }
+      yield {
+        type: "final",
+        response: withContextUsage(finalResponse, this.modelInfo()),
+      };
     }
   }
 }
 
+function mistralCompletionEventData(event: unknown): Record<string, unknown> {
+  if (!isPlainObject(event) || !isPlainObject(event.data)) {
+    throw invalidMistralToolCall(undefined);
+  }
+  return event.data;
+}
+
 export function toMistralChatParams(
-  defaultModel: MistralCompletionModelName,
-  request: CompletionRequest<MistralCompletionModelName>,
+  modelId: MistralCompletionModelId,
+  request: CompletionRequest,
 ): MistralChatParams {
+  if (
+    request.providerOptions !== undefined &&
+    (!isPlainObject(request.providerOptions) || !isJsonValue(request.providerOptions))
+  ) {
+    throw new TypeError("Mistral providerOptions must be a JSON object.");
+  }
+  const providerOptions = request.providerOptions ?? {};
   const params: MistralChatParams = {
-    model: request.model ?? defaultModel,
+    ...providerOptions,
+    model: modelId,
     messages: requestMessages(request).flatMap(messageToMistralMessages),
   };
+
+  delete params.tools;
 
   if (request.temperature !== undefined) {
     params.temperature = request.temperature;
@@ -137,20 +213,19 @@ export function toMistralChatParams(
     };
   }
 
-  if (request.additionalParams !== undefined && isPlainObject(request.additionalParams)) {
-    const additionalParams = { ...request.additionalParams };
-    // Model and messages define the request identity; keep them aligned with traceRequest.
-    delete additionalParams.model;
-    delete additionalParams.messages;
-    Object.assign(params, additionalParams);
-  }
-
   return params;
+}
+
+function mistralRequestOptions(options: ModelCallOptions | undefined): {
+  signal?: AbortSignal | undefined;
+  retries: { strategy: "none" };
+} {
+  return { signal: options?.abortSignal, retries: { strategy: "none" } };
 }
 
 function providerRequestSummary(
   params: MistralChatParams,
-  request: CompletionRequest<MistralCompletionModelName>,
+  request: CompletionRequest,
   options: { stream?: boolean | undefined },
 ): JsonObject {
   return compactJsonObject({
@@ -166,8 +241,8 @@ function providerRequestSummary(
     temperature: request.temperature,
     maxTokens: request.maxTokens,
     toolChoice: toolChoiceSummary(request.toolChoice),
-    additionalParamKeys: isPlainObject(request.additionalParams)
-      ? Object.keys(request.additionalParams).sort()
+    providerOptionKeys: isPlainObject(request.providerOptions)
+      ? Object.keys(request.providerOptions).sort()
       : undefined,
   });
 }
@@ -182,44 +257,66 @@ function toolChoiceSummary(toolChoice: ToolChoice | undefined): JsonValue | unde
 function compactJsonObject(values: Record<string, unknown>): JsonObject {
   return Object.fromEntries(
     Object.entries(values).flatMap(([key, value]) => {
-      if (value === undefined) {
+      if (!isJsonValue(value)) {
         return [];
       }
-      return [[key, toJsonValue(value)]];
+      return [[key, value]];
     }),
   ) as JsonObject;
 }
 
-function requestMessages(request: CompletionRequest<MistralCompletionModelName>): MessageType[] {
+function requestMessages(request: CompletionRequest): MessageType[] {
   return orderedRequestMessages(request, { includeInstructionsAsSystem: true });
 }
 
 export function fromMistralChatResponse(response: unknown): CompletionResponse {
-  const raw = response as Record<string, unknown>;
-  const choices = Array.isArray(raw.choices) ? raw.choices : [];
-  const firstChoice = choices.find(isPlainObject);
-  const message = isPlainObject(firstChoice?.message) ? firstChoice.message : {};
-  const choice: AssistantContentType[] = [];
+  if (!isPlainObject(response)) {
+    throw new CompletionProviderOutputError({ kind: "invalid-tool-call" });
+  }
+  const raw = response;
+  const usage = usageFromMistral(raw.usage);
+  const primaryChoice = primaryMistralChoice(raw.choices, usage);
+  const message = isPlainObject(primaryChoice?.message) ? primaryChoice.message : {};
+  const providerFinishReason = finishReasonFromChoice(primaryChoice);
+  const finishReason =
+    providerFinishReason === undefined ? undefined : mistralFinishReason(providerFinishReason);
+  const choice: AssistantContentPart[] = [];
 
   const text = stringContent(message.content);
   if (text !== undefined && text.length > 0) {
-    choice.push(AssistantContent.text(text));
+    choice.push({ type: "text", text });
   }
 
-  const toolCalls = toolCallsFrom(message);
+  const rawToolCalls = message.toolCalls ?? message.tool_calls;
+  assertSafeToolCallFinish(hasRawToolCallValue(rawToolCalls) ? 1 : 0, finishReason, usage);
+  const toolCalls = toolCallsFrom(message, usage);
   for (const [index, toolCall] of toolCalls.entries()) {
-    const fn = isPlainObject(toolCall.function) ? toolCall.function : {};
-    const id = stringFrom(toolCall.id) ?? deterministicToolCallId(raw.id, index);
-    const name = stringFrom(fn.name) ?? "";
-    const args = parseToolArgumentsValue(id, fn.arguments);
-    choice.push(AssistantContent.toolCall(id, name, args));
+    if (!isPlainObject(toolCall.function)) {
+      throw invalidMistralToolCall(undefined, usage);
+    }
+    assertMistralFunctionToolCall(toolCall, usage);
+    const fn = toolCall.function;
+    const id =
+      optionalMistralToolCallId(toolCall.id, usage) ?? deterministicToolCallId(raw.id, index);
+    if (!isNonblankString(id) || !isNonblankString(fn.name)) {
+      throw invalidMistralToolCall(isNonblankString(id) ? id : undefined, usage);
+    }
+    const args = parseToolArgumentsValue(id, fn.arguments, usage);
+    choice.push({
+      type: "tool-call",
+      toolCallId: id,
+      callId: id,
+      toolName: fn.name,
+      input: args,
+    });
   }
 
   const result: CompletionResponse = {
     choice,
-    usage: usageFromMistral(raw.usage),
+    usage,
     rawResponse: response,
   };
+  applyMistralFinishReason(result, providerFinishReason);
 
   if (typeof raw.id === "string") {
     result.messageId = raw.id;
@@ -228,35 +325,50 @@ export function fromMistralChatResponse(response: unknown): CompletionResponse {
   return result;
 }
 
-export function fromMistralChatStreamChunk(chunk: unknown): CompletionStreamEvent[] {
+export function fromMistralChatStreamChunk(chunk: unknown): CompletionModelStreamEvent[] {
   if (!isPlainObject(chunk)) {
-    return [];
+    throw invalidMistralToolCall(undefined);
   }
 
-  const events: CompletionStreamEvent[] = [];
-  const choices = Array.isArray(chunk.choices) ? chunk.choices : [];
-  for (const choice of choices) {
-    if (!isPlainObject(choice) || !isPlainObject(choice.delta)) {
-      continue;
-    }
+  const events: CompletionModelStreamEvent[] = [];
+  const usage = isPlainObject(chunk.usage) ? usageFromMistral(chunk.usage) : undefined;
+  if (chunk.choices === undefined) {
+    throw invalidMistralToolCall(undefined, usage);
+  }
+  const choice = primaryMistralChoice(chunk.choices, usage, { allowMissingPrimary: true });
+  const providerFinishReason = finishReasonFromChoice(choice);
+  const finishReason =
+    providerFinishReason === undefined ? undefined : mistralFinishReason(providerFinishReason);
+  if (hasRawMistralToolCalls(choice) && finishReason !== undefined) {
+    assertSafeToolCallFinish(1, finishReason, usage);
+  }
 
+  if (choice?.delta !== undefined && !isPlainObject(choice.delta)) {
+    throw invalidMistralToolCall(undefined, usage);
+  }
+  if (choice !== undefined && isPlainObject(choice.delta)) {
     const delta = choice.delta;
     const content = stringContent(delta.content);
     if (content !== undefined && content.length > 0) {
       events.push({ type: "text_delta", delta: content });
     }
 
-    for (const toolCall of toolCallsFrom(delta)) {
-      if (!isPlainObject(toolCall)) {
-        continue;
+    for (const toolCall of toolCallsFrom(delta, usage)) {
+      if (!isPlainObject(toolCall.function)) {
+        throw invalidMistralToolCall(undefined, usage);
       }
-      const fn = isPlainObject(toolCall.function) ? toolCall.function : {};
-      const index = numberFrom(toolCall.index);
+      assertMistralFunctionToolCall(toolCall, usage);
+      const fn = toolCall.function;
+      const index = mistralToolCallIndex(toolCall.index, usage);
+      const callId = optionalMistralToolCallId(toolCall.id, usage);
+      const name = optionalMistralToolCallName(fn.name, usage);
+      const argumentsValue = mistralStreamToolArguments(fn.arguments, callId, usage);
       events.push(
         toolCallDelta(`tool_${index}`, {
-          callId: stringFrom(toolCall.id),
-          name: stringFrom(fn.name),
-          argumentsDelta: stringFrom(fn.arguments),
+          callId,
+          name,
+          argumentsDelta: argumentsValue.text,
+          argumentsMode: argumentsValue.mode,
         }),
       );
     }
@@ -275,10 +387,66 @@ export function fromMistralChatStreamChunk(chunk: unknown): CompletionStreamEven
     if (typeof chunk.id === "string") {
       response.messageId = chunk.id;
     }
+    applyMistralFinishReason(response, providerFinishReason);
     events.push({ type: "final", response });
   }
 
   return events;
+}
+
+type MistralStreamChunkMetadata = Readonly<{
+  usage: Usage | undefined;
+  hasChoices: boolean;
+  primaryChoice: Record<string, unknown> | undefined;
+}>;
+
+function mistralStreamChunkMetadata(value: unknown): MistralStreamChunkMetadata {
+  if (!isPlainObject(value)) {
+    throw invalidMistralToolCall(undefined);
+  }
+  const usage = isPlainObject(value.usage) ? usageFromMistral(value.usage) : undefined;
+  if (value.choices === undefined) {
+    throw invalidMistralToolCall(undefined, usage);
+  }
+  const primaryChoice = primaryMistralChoice(value.choices, usage, {
+    allowMissingPrimary: true,
+  });
+  return {
+    usage,
+    hasChoices: Array.isArray(value.choices) && value.choices.length > 0,
+    primaryChoice,
+  };
+}
+
+function hasRawMistralSemanticProgress(choice: Record<string, unknown> | undefined): boolean {
+  if (choice?.delta === undefined) return false;
+  if (!isPlainObject(choice.delta)) return true;
+  const content = stringContent(choice.delta.content);
+  return (content !== undefined && content.length > 0) || hasRawMistralToolCalls(choice);
+}
+
+function hasRawMistralToolCalls(choice: Record<string, unknown> | undefined): boolean {
+  if (!isPlainObject(choice?.delta)) return false;
+  const raw = choice.delta.toolCalls ?? choice.delta.tool_calls;
+  return hasRawToolCallValue(raw);
+}
+
+function hasRawToolCallValue(value: unknown): boolean {
+  return Array.isArray(value) ? value.length > 0 : value !== undefined;
+}
+
+function applyMistralFinishReason(response: CompletionResponse, value: string | undefined): void {
+  if (value === undefined) return;
+  response.finishReason = mistralFinishReason(value);
+  response.providerFinishReason = value;
+}
+
+function mistralFinishReason(value: string): CompletionFinishReason {
+  if (value === "stop") return "stop";
+  if (value === "length" || value === "model_length") return "length";
+  if (value === "content_filter" || value === "safety") return "content-filter";
+  if (value === "tool_calls" || value === "function_call") return "tool-calls";
+  return "other";
 }
 
 function usageFromMistral(usage: unknown): Usage {
@@ -305,6 +473,9 @@ function messageToMistralMessages(message: MessageType): MistralChatMessage[] {
   }
 
   if (message.role === "user") {
+    if (typeof message.content === "string") {
+      return [{ role: "user", content: message.content }];
+    }
     const contentParts: string[] = [];
 
     for (const content of message.content) {
@@ -320,24 +491,34 @@ function messageToMistralMessages(message: MessageType): MistralChatMessage[] {
   }
 
   if (message.role === "tool") {
-    return message.content.map(toolContentToMistralMessage);
+    return message.content.map((content) => {
+      if (content.type !== "tool-result") {
+        throw new TypeError(
+          "Anvia interaction responses must be resolved by Agent before provider calls.",
+        );
+      }
+      return toolContentToMistralMessage(content);
+    });
   }
 
+  if (typeof message.content === "string") {
+    return [{ role: "assistant", content: message.content }];
+  }
   const text = message.content
     .flatMap((content) => (content.type === "text" ? [content.text] : []))
     .join("\n");
-  if (message.content.some((content) => content.type === "image")) {
-    throw new Error("Mistral chat does not support image content in assistant history");
+  if (message.content.some((content) => content.type === "image" || content.type === "file")) {
+    throw new Error("Mistral chat does not support image or file content in assistant history");
   }
 
   const toolCalls = message.content
-    .filter((content) => content.type === "tool_call")
+    .filter((content) => content.type === "tool-call")
     .map((content) => ({
-      id: content.id,
+      id: content.callId ?? content.toolCallId,
       type: "function",
       function: {
-        name: content.function.name,
-        arguments: JSON.stringify(content.function.arguments ?? {}),
+        name: content.toolName,
+        arguments: JSON.stringify(content.input),
       },
     }));
 
@@ -354,20 +535,16 @@ function messageToMistralMessages(message: MessageType): MistralChatMessage[] {
   return [chatMessage];
 }
 
-function toolContentToMistralMessage(content: ToolContent): MistralChatMessage {
+function toolContentToMistralMessage(content: ToolResultPart): MistralChatMessage {
   return {
     role: "tool",
-    toolCallId: content.callId ?? content.id,
-    name: content.toolName ?? content.id,
-    content: content.content
-      .map((item) =>
-        item.type === "text" ? item.text : `[image:${item.mediaType ?? "image/png"}]`,
-      )
-      .join("\n"),
+    toolCallId: content.callId ?? content.toolCallId,
+    name: content.toolName,
+    content: toolResultToMistralText(content),
   };
 }
 
-function userContentToMistralText(content: UserContent): string[] {
+function userContentToMistralText(content: UserContentPart): string[] {
   if (content.type === "text") {
     return [content.text];
   }
@@ -376,19 +553,35 @@ function userContentToMistralText(content: UserContent): string[] {
     throw new Error("Mistral image inputs are not supported yet");
   }
 
-  if (content.type === "document") {
+  if (content.type === "file") {
     return documentToMistralText(content);
   }
 
   return [];
 }
 
-function documentToMistralText(document: DocumentContent): string[] {
-  if (document.source.type === "text") {
-    return [document.source.text];
+function documentToMistralText(document: FilePart): string[] {
+  if (document.data.type === "text") {
+    return [document.data.text];
   }
 
   throw new Error("Mistral document inputs are not supported yet");
+}
+
+function toolResultToMistralText(content: ToolResultPart): string {
+  const output = content.output;
+  if (output.type === "text" || output.type === "error-text") {
+    return output.value;
+  }
+  if (output.type === "json" || output.type === "error-json") {
+    return JSON.stringify(output.value);
+  }
+  if (output.type === "execution-denied") {
+    return output.reason ?? "Tool execution was denied.";
+  }
+  return output.value
+    .map((item) => (item.type === "text" ? item.text : `[file:${item.mediaType}]`))
+    .join("\n");
 }
 
 function toolDefinitionToMistral(tool: ToolDefinition): MistralChatMessage {
@@ -419,9 +612,13 @@ function toolChoiceToMistral(toolChoice: ToolChoice): unknown {
   };
 }
 
-function toolCallsFrom(message: Record<string, unknown>): Record<string, unknown>[] {
+function toolCallsFrom(message: Record<string, unknown>, usage?: Usage): Record<string, unknown>[] {
   const raw = message.toolCalls ?? message.tool_calls;
-  return Array.isArray(raw) ? raw.filter(isPlainObject) : [];
+  if (raw === undefined) return [];
+  if (!Array.isArray(raw) || raw.some((toolCall) => !isPlainObject(toolCall))) {
+    throw invalidMistralToolCall(undefined, usage);
+  }
+  return raw;
 }
 
 function stringContent(content: unknown): string | undefined {
@@ -444,11 +641,18 @@ function stringContent(content: unknown): string | undefined {
   return undefined;
 }
 
-function parseToolArgumentsValue(toolCallId: string, args: unknown): JsonValue {
+function parseToolArgumentsValue(toolCallId: string, args: unknown, usage: Usage): JsonValue {
   if (typeof args === "string") {
-    return parseToolArguments(toolCallId, args);
+    return parseToolArguments(toolCallId, args, usage);
   }
-  return toJsonValue(args);
+  if (!isPlainObject(args) || !isJsonValue(args)) {
+    throw new CompletionProviderOutputError({
+      kind: "invalid-tool-arguments",
+      toolCallId,
+      usage,
+    });
+  }
+  return args;
 }
 
 function deterministicToolCallId(responseId: unknown, index: number): string {
@@ -456,22 +660,140 @@ function deterministicToolCallId(responseId: unknown, index: number): string {
   return `${prefix}-tool-${index.toString()}`;
 }
 
-function toJsonValue(value: unknown): JsonValue {
+function primaryMistralChoice(
+  value: unknown,
+  usage?: Usage,
+  options: Readonly<{ allowMissingPrimary?: boolean }> = {},
+): Record<string, unknown> | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) {
+    throw invalidMistralToolCall(undefined, usage);
+  }
+  const choices = value.filter(isPlainObject);
+  if (choices.length !== value.length) {
+    throw invalidMistralToolCall(undefined, usage);
+  }
   if (
-    value === null ||
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean"
+    choices.some(
+      (choice) =>
+        choice.index !== undefined &&
+        (!Number.isSafeInteger(choice.index) || (choice.index as number) < 0),
+    )
   ) {
-    return value;
+    throw invalidMistralToolCall(undefined, usage);
   }
-  if (Array.isArray(value)) {
-    return value.map(toJsonValue);
+  const indexed = choices.filter((choice) => choice.index === 0);
+  if (indexed.length === 1) return indexed[0];
+  if (indexed.length > 1) throw invalidMistralToolCall(undefined, usage);
+  if (choices.length === 0) return undefined;
+  if (choices.length === 1 && (choices[0]?.index === undefined || choices[0]?.index === 0)) {
+    return choices[0];
   }
-  if (isPlainObject(value)) {
-    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, toJsonValue(item)]));
+  if (
+    options.allowMissingPrimary === true &&
+    choices.every((choice) => choice.index !== undefined)
+  ) {
+    return undefined;
   }
-  return null;
+  throw invalidMistralToolCall(undefined, usage);
+}
+
+function finishReasonFromChoice(choice: Record<string, unknown> | undefined): string | undefined {
+  return stringFrom(choice?.finishReason) ?? stringFrom(choice?.finish_reason);
+}
+
+function assertSafeToolCallFinish(
+  toolCallCount: number,
+  finishReason: CompletionFinishReason | undefined,
+  usage?: Usage,
+): void {
+  if (toolCallCount === 0) return;
+  if (finishReason === undefined) {
+    throw new CompletionProviderOutputError({ kind: "incomplete-tool-call", usage });
+  }
+  if (finishReason === "length") {
+    throw new CompletionProviderOutputError({
+      kind: "truncated-tool-call",
+      finishReason,
+      usage,
+    });
+  }
+  if (finishReason === "content-filter") {
+    throw new CompletionProviderOutputError({
+      kind: "filtered-tool-call",
+      finishReason,
+      usage,
+    });
+  }
+  if (finishReason === "other") {
+    throw new CompletionProviderOutputError({
+      kind: "invalid-tool-call",
+      finishReason,
+      usage,
+    });
+  }
+}
+
+function mistralToolCallIndex(value: unknown, usage?: Usage): number {
+  if (!Number.isSafeInteger(value) || (value as number) < 0) {
+    throw invalidMistralToolCall(undefined, usage);
+  }
+  return value as number;
+}
+
+function assertMistralFunctionToolCall(toolCall: Record<string, unknown>, usage?: Usage): void {
+  if (toolCall.type !== undefined && toolCall.type !== "function") {
+    throw invalidMistralToolCall(optionalMistralToolCallId(toolCall.id, usage), usage);
+  }
+}
+
+function optionalMistralToolCallId(value: unknown, usage?: Usage): string | undefined {
+  if (value === undefined || value === null || value === "null") return undefined;
+  if (!isNonblankString(value)) throw invalidMistralToolCall(undefined, usage);
+  return value;
+}
+
+function optionalMistralToolCallName(value: unknown, usage?: Usage): string | undefined {
+  if (value === undefined || value === "") return undefined;
+  if (!isNonblankString(value)) throw invalidMistralToolCall(undefined, usage);
+  return value;
+}
+
+type MistralStreamToolArguments = Readonly<{
+  text?: string | undefined;
+  mode?: "replace" | undefined;
+}>;
+
+function mistralStreamToolArguments(
+  value: unknown,
+  toolCallId: string | undefined,
+  usage?: Usage,
+): MistralStreamToolArguments {
+  if (value === undefined) return {};
+  if (typeof value === "string") return { text: value };
+  if (!isPlainObject(value) || !isJsonValue(value)) {
+    throw new CompletionProviderOutputError({
+      kind: "invalid-tool-arguments",
+      toolCallId,
+      usage,
+    });
+  }
+  return { text: JSON.stringify(value), mode: "replace" };
+}
+
+function invalidMistralToolCall(
+  toolCallId: string | undefined,
+  usage?: Usage,
+): CompletionProviderOutputError {
+  return new CompletionProviderOutputError({
+    kind: "invalid-tool-call",
+    toolCallId,
+    usage,
+  });
+}
+
+function isNonblankString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
 }
 
 function toolCallDelta(
@@ -480,12 +802,14 @@ function toolCallDelta(
     callId?: string | undefined;
     name?: string | undefined;
     argumentsDelta?: string | undefined;
+    argumentsMode?: "replace" | undefined;
   },
-): CompletionStreamEvent {
-  const event: CompletionStreamEvent = { type: "tool_call_delta", id };
+): CompletionModelStreamEvent {
+  const event: CompletionModelStreamEvent = { type: "tool_call_delta", id };
   if (values.callId !== undefined) event.callId = values.callId;
   if (values.name !== undefined) event.name = values.name;
   if (values.argumentsDelta !== undefined) event.argumentsDelta = values.argumentsDelta;
+  if (values.argumentsMode !== undefined) event.argumentsMode = values.argumentsMode;
   return event;
 }
 

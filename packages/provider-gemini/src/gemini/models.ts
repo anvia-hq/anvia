@@ -1,7 +1,7 @@
 import type { ModelContextLimits } from "@anvia/core/completion";
 import type { ModelId } from "@anvia/core/model-listing";
 
-export type KnownGeminiCompletionModelName =
+export type KnownGeminiCompletionModelId =
   | "gemini-2.0-flash"
   | "gemini-2.0-flash-lite"
   | "gemini-2.5-flash"
@@ -14,17 +14,23 @@ export type KnownGeminiCompletionModelName =
   | "gemini-3-pro-image-preview"
   | "gemini-3-pro-preview"
   | "gemini-3.1-flash-image-preview"
+  | "gemini-3.1-flash-image"
+  | "gemini-3.1-flash-lite-image"
   | "gemini-3.1-flash-lite"
   | "gemini-3.1-flash-lite-preview"
   | "gemini-3.1-pro-preview"
   | "gemini-3.1-pro-preview-customtools"
   | "gemini-3.5-flash"
+  | "gemini-3.5-flash-lite"
+  | "gemini-3.6-flash"
+  | "gemini-3.7-flash"
+  | "gemini-3-pro-image"
   | "gemini-flash-latest"
   | "gemini-flash-lite-latest"
   | "gemma-4-26b-a4b-it"
   | "gemma-4-31b-it";
 
-export type GeminiCompletionModelName = ModelId<KnownGeminiCompletionModelName>;
+export type GeminiCompletionModelId = ModelId<KnownGeminiCompletionModelId>;
 
 const CONTEXT_1M_64K = {
   contextWindow: 1_048_576,
@@ -73,11 +79,29 @@ export const GEMINI_COMPLETION_MODEL_CONTEXT_LIMITS = {
     maxInputTokens: 65_536,
     maxOutputTokens: 65_536,
   },
+  "gemini-3.1-flash-image": {
+    contextWindow: 131_072,
+    maxInputTokens: 131_072,
+    maxOutputTokens: 32_768,
+  },
+  "gemini-3.1-flash-lite-image": {
+    contextWindow: 65_536,
+    maxInputTokens: 65_536,
+    maxOutputTokens: 4_096,
+  },
   "gemini-3.1-flash-lite": CONTEXT_1M_64K,
   "gemini-3.1-flash-lite-preview": CONTEXT_1M_64K,
   "gemini-3.1-pro-preview": CONTEXT_1M_64K,
   "gemini-3.1-pro-preview-customtools": CONTEXT_1M_64K,
   "gemini-3.5-flash": CONTEXT_1M_64K,
+  "gemini-3.5-flash-lite": CONTEXT_1M_64K,
+  "gemini-3.6-flash": CONTEXT_1M_64K,
+  "gemini-3.7-flash": CONTEXT_1M_64K,
+  "gemini-3-pro-image": {
+    contextWindow: 65_536,
+    maxInputTokens: 65_536,
+    maxOutputTokens: 32_768,
+  },
   "gemini-flash-latest": CONTEXT_1M_64K,
   "gemini-flash-lite-latest": CONTEXT_1M_64K,
   "gemma-4-26b-a4b-it": {
@@ -90,18 +114,26 @@ export const GEMINI_COMPLETION_MODEL_CONTEXT_LIMITS = {
     maxInputTokens: 262_144,
     maxOutputTokens: 32_768,
   },
-} satisfies Readonly<Record<KnownGeminiCompletionModelName, ModelContextLimits>>;
+} satisfies Readonly<Record<KnownGeminiCompletionModelId, ModelContextLimits>>;
 
-export type KnownGeminiEmbeddingModelName = "gemini-embedding-001";
+export type KnownGeminiEmbeddingModelId =
+  | "gemini-embedding-001"
+  | "gemini-embedding-2"
+  | "gemini-embedding-2-preview";
 
-export type GeminiEmbeddingModelName = ModelId<KnownGeminiEmbeddingModelName>;
+export type GeminiEmbeddingModelId = ModelId<KnownGeminiEmbeddingModelId>;
 
-export type KnownGeminiImageGenerationModelName =
+export type KnownGeminiGenerateContentImageModelId =
   | "gemini-2.5-flash-image"
+  | "gemini-3.1-flash-image"
+  | "gemini-3.1-flash-lite-image"
   | "gemini-3-pro-image-preview"
   | "gemini-3.1-flash-image-preview"
-  | "imagen-4.0-generate-001";
+  | "gemini-3-pro-image";
 
-export type GeminiImageGenerationModelName = ModelId<KnownGeminiImageGenerationModelName>;
+export type KnownGeminiGenerateImagesModelId = "imagen-4.0-generate-001";
 
-export type GeminiTranscriptionModelName = GeminiCompletionModelName;
+export type GeminiGenerateContentImageModelId = ModelId<KnownGeminiGenerateContentImageModelId>;
+export type GeminiGenerateImagesModelId = ModelId<KnownGeminiGenerateImagesModelId>;
+
+export type GeminiTranscriptionModelId = GeminiCompletionModelId;

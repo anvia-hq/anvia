@@ -1,4 +1,11 @@
-import { createContext, createElement, type ReactElement, type ReactNode, useContext } from "react";
+import {
+  createContext,
+  createElement,
+  type MutableRefObject,
+  type ReactElement,
+  type ReactNode,
+  useContext,
+} from "react";
 
 export type ThreadListRecord = {
   id: string;
@@ -31,8 +38,20 @@ export type ThreadListProviderProps = {
   children?: ReactNode;
 };
 
+export type InternalThreadListRootContextValue = {
+  rootRef: MutableRefObject<HTMLDivElement | null>;
+  newButtonRef: MutableRefObject<HTMLButtonElement | null>;
+  itemElements: MutableRefObject<Map<string, HTMLDivElement>>;
+  triggerElements: MutableRefObject<Map<string, HTMLButtonElement>>;
+  registerItem(threadId: string, element: HTMLDivElement | null): void;
+  registerTrigger(threadId: string, element: HTMLButtonElement | null): void;
+};
+
 const ThreadListContext = createContext<ThreadListController | undefined>(undefined);
 const ThreadListItemContext = createContext<ThreadListItemContextValue | undefined>(undefined);
+const ThreadListRootContext = createContext<InternalThreadListRootContextValue | undefined>(
+  undefined,
+);
 
 export function ThreadListProvider({
   controller,
@@ -51,6 +70,16 @@ export function InternalThreadListItemProvider({
   return createElement(ThreadListItemContext.Provider, { value }, children);
 }
 
+export function InternalThreadListRootProvider({
+  value,
+  children,
+}: {
+  value: InternalThreadListRootContextValue;
+  children?: ReactNode;
+}): ReactElement {
+  return createElement(ThreadListRootContext.Provider, { value }, children);
+}
+
 export function useThreadList(): ThreadListController {
   const value = useContext(ThreadListContext);
   if (value === undefined) {
@@ -62,7 +91,15 @@ export function useThreadList(): ThreadListController {
 export function useThreadListItem(): ThreadListItemContextValue {
   const value = useContext(ThreadListItemContext);
   if (value === undefined) {
-    throw new Error("ThreadListItem primitives must be used inside ThreadList.Items.");
+    throw new Error("ThreadListItem primitives must be used inside ThreadListPrimitive.Items.");
+  }
+  return value;
+}
+
+export function useInternalThreadListRoot(): InternalThreadListRootContextValue {
+  const value = useContext(ThreadListRootContext);
+  if (value === undefined) {
+    throw new Error("Thread-list primitives must be used inside ThreadListPrimitive.Root.");
   }
   return value;
 }

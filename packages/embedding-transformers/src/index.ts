@@ -1,10 +1,14 @@
 export {
-  createTransformersEmbeddingModel,
+  adaptTransformersEmbeddingModel,
   DEFAULT_TRANSFORMERS_EMBEDDING_MODEL,
-  TransformersEmbeddingModel,
+  loadTransformersEmbeddingModel,
 } from "./model.js";
 export type {
-  TransformersEmbeddingModelOptions,
+  AdaptTransformersEmbeddingModelOptions,
+  LoadedTransformersEmbeddingModel,
+  LoadTransformersEmbeddingModelOptions,
+  TransformersEmbeddingModelHandle,
   TransformersFeatureExtractionPipeline,
   TransformersPooling,
+  TransformersTensor,
 } from "./types.js";

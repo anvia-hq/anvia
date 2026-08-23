@@ -1,17 +1,22 @@
+import { Agent, type Tool } from "@anvia/core";
 import {
-  AssistantContent,
+  COMPLETION_PROVIDER_OUTPUT_ERROR_CODE,
+  type CompletionModelStreamEvent,
   type CompletionRequest,
-  type CompletionStreamEvent,
-  Message,
-  ToolContent,
   Usage,
-  UserContent,
 } from "@anvia/core/completion";
 import { describe, expect, it } from "vitest";
-import { OpenAIResponsesCompletionModel } from "../src/index";
+import {
+  AssistantContent,
+  Message,
+  ToolContent,
+  UserContent,
+} from "../../core/test/helpers/imports";
+import { OpenAIClient } from "../src/index";
 import {
   fromOpenAIResponse,
   fromOpenAIStreamEvent,
+  OpenAIResponsesCompletionModel,
   openaiMessageHelpers,
   toOpenAIResponsesParams,
 } from "../src/openai/responses";
@@ -21,7 +26,7 @@ describe("OpenAI Responses mapping", () => {
     const model = new OpenAIResponsesCompletionModel({} as never, "gpt-test");
 
     expect(model.provider).toBe("openai");
-    expect(model.defaultModel).toBe("gpt-test");
+    expect(model.modelId).toBe("gpt-test");
     expect(model.capabilities).toEqual({
       streaming: true,
       tools: true,
@@ -35,19 +40,40 @@ describe("OpenAI Responses mapping", () => {
   });
 
   it("resolves built-in, custom, and unknown model context limits", () => {
-    const model = new OpenAIResponsesCompletionModel({} as never, "gpt-5", {
-      modelOverrides: { custom: { contextWindow: 42_000, maxOutputTokens: 2_000 } },
+    const client = new OpenAIClient({ client: {} as never });
+    const builtIn = client.completionModel({ modelId: "gpt-5.6", api: "responses" });
+    const custom = client.completionModel({
+      modelId: "custom",
+      api: "responses",
+      contextLimits: { contextWindow: 42_000, maxOutputTokens: 2_000 },
+    });
+    const unknown = client.completionModel({ modelId: "unknown", api: "responses" });
+
+    expect(builtIn.contextLimits).toMatchObject({
+      contextWindow: 1_050_000,
+      maxOutputTokens: 128_000,
+    });
+    expect(custom.contextLimits).toEqual({ contextWindow: 42_000, maxOutputTokens: 2_000 });
+    expect(unknown.contextLimits).toBeUndefined();
+  });
+
+  it("maps incomplete max-output responses to the normalized length reason", () => {
+    const response = fromOpenAIResponse({
+      status: "incomplete",
+      incomplete_details: { reason: "max_output_tokens" },
+      output: [
+        {
+          type: "message",
+          content: [{ type: "output_text", text: '{"answer":"partial' }],
+        },
+      ],
+      usage: {},
     });
 
-    expect(model.getModelInfo()).toMatchObject({
-      id: "gpt-5",
-      context: { contextWindow: 400_000, maxOutputTokens: 128_000 },
+    expect(response).toMatchObject({
+      finishReason: "length",
+      providerFinishReason: "max_output_tokens",
     });
-    expect(model.getModelInfo("custom")).toEqual({
-      id: "custom",
-      context: { contextWindow: 42_000, maxOutputTokens: 2_000 },
-    });
-    expect(model.getModelInfo("unknown")).toBeUndefined();
   });
 
   it("attaches context usage to completed and streamed responses", async () => {
@@ -63,6 +89,7 @@ describe("OpenAI Responses mapping", () => {
     const completionModel = new OpenAIResponsesCompletionModel(
       { responses: { create: async () => rawResponse } } as never,
       "gpt-5",
+      { contextWindow: 400_000, maxOutputTokens: 128_000 },
     );
 
     const response = await completionModel.completion(request);
@@ -70,7 +97,7 @@ describe("OpenAI Responses mapping", () => {
     expect(response.contextUsage).toMatchObject({
       usedTokens: 60,
       remainingTokens: 399_940,
-      model: { id: "gpt-5", context: { contextWindow: 400_000 } },
+      model: { modelId: "gpt-5", context: { contextWindow: 400_000 } },
     });
 
     const streamModel = new OpenAIResponsesCompletionModel(
@@ -84,8 +111,9 @@ describe("OpenAI Responses mapping", () => {
         },
       } as never,
       "gpt-5",
+      { contextWindow: 400_000, maxOutputTokens: 128_000 },
     );
-    const events: CompletionStreamEvent[] = [];
+    const events: CompletionModelStreamEvent[] = [];
     for await (const event of streamModel.streamCompletion(request)) {
       events.push(event);
     }
@@ -96,7 +124,7 @@ describe("OpenAI Responses mapping", () => {
     });
   });
 
-  it("merges local, provider, and raw Responses tools without overwriting", () => {
+  it("uses canonical local and provider tools instead of providerOptions.tools", () => {
     const params = toOpenAIResponsesParams("gpt-5", {
       chatHistory: [Message.user("research")],
       documents: [],
@@ -109,7 +137,7 @@ describe("OpenAI Responses mapping", () => {
           configuration: { filters: { allowed_domains: ["example.com"] } },
         },
       ],
-      additionalParams: {
+      providerOptions: {
         tools: [{ type: "code_interpreter" }],
       },
     });
@@ -122,19 +150,18 @@ describe("OpenAI Responses mapping", () => {
         parameters: { type: "object" },
       },
       { type: "web_search", filters: { allowed_domains: ["example.com"] } },
-      { type: "code_interpreter" },
     ]);
   });
 
-  it("rejects non-array raw Responses tools", () => {
-    expect(() =>
+  it("ignores providerOptions.tools when canonical tools are empty", () => {
+    expect(
       toOpenAIResponsesParams("gpt-5", {
         chatHistory: [Message.user("research")],
         documents: [],
         tools: [],
-        additionalParams: { tools: "web_search" },
-      }),
-    ).toThrow("additionalParams.tools must be an array");
+        providerOptions: { tools: "web_search" },
+      }).tools,
+    ).toBeUndefined();
   });
 
   it("maps internal tools and tool outputs to Responses API params", () => {
@@ -192,7 +219,11 @@ describe("OpenAI Responses mapping", () => {
             "call_1",
             [
               { type: "text", text: '{"coordMap":"0,0,100,100,100,100"}' },
-              { type: "image", data: "base64-png", mediaType: "image/png" },
+              {
+                type: "file",
+                data: { type: "data", data: "base64-png" },
+                mediaType: "image/png",
+              },
             ],
             "fc_1",
           ),
@@ -292,18 +323,19 @@ describe("OpenAI Responses mapping", () => {
       openaiMessageHelpers.messageToResponsesInput(
         Message.user([UserContent.documentBase64("abc123", "text/csv")]),
       ),
-    ).toThrow("OpenAI Responses only supports PDF document attachments");
+    ).toThrow("OpenAI Responses only supports image and PDF file attachments");
 
     expect(() =>
       openaiMessageHelpers.messageToResponsesInput(
         Message.assistant([AssistantContent.imageBase64("abc123", "image/png")]),
       ),
-    ).toThrow("OpenAI Responses does not support image content in assistant history");
+    ).toThrow("OpenAI Responses does not support image or file content in assistant history");
   });
 
   it("maps Responses function calls back to internal tool calls", () => {
     const response = fromOpenAIResponse({
       id: "resp_1",
+      status: "completed",
       output: [
         {
           type: "function_call",
@@ -395,45 +427,360 @@ describe("OpenAI Responses mapping", () => {
   });
 
   it("rejects malformed non-streaming Responses tool arguments", () => {
-    expect(() =>
+    expect(
+      thrownBy(() =>
+        fromOpenAIResponse({
+          status: "completed",
+          output: [
+            {
+              type: "function_call",
+              id: "tool_0",
+              call_id: "call_abc",
+              name: "ExecCommand",
+              arguments: '{"command":"pwd"',
+            },
+          ],
+          usage: {
+            input_tokens: 7,
+            output_tokens: 2,
+            input_tokens_details: { cached_tokens: 3 },
+          },
+        }),
+      ),
+    ).toMatchObject(
+      providerOutputError("malformed-tool-arguments", {
+        toolCallId: "tool_0",
+        usage: {
+          inputTokens: 7,
+          outputTokens: 2,
+          totalTokens: 9,
+          cachedInputTokens: 3,
+        },
+      }),
+    );
+  });
+
+  it("retries malformed Responses tool-call arguments without executing the tool", async () => {
+    const completionRequests: unknown[] = [];
+    const toolExecutions: unknown[] = [];
+    const client = new OpenAIClient({
+      client: {
+        responses: {
+          create: async (request: unknown) => {
+            completionRequests.push(request);
+            return {
+              id: "resp_malformed_tool",
+              status: "completed",
+              output: [
+                {
+                  type: "function_call",
+                  id: "tool_0",
+                  call_id: "call_abc",
+                  name: "test_tool",
+                  arguments: '{"query":',
+                },
+              ],
+              usage: {},
+            };
+          },
+        },
+      } as never,
+    });
+    const agent = new Agent({
+      id: "malformed-responses-tool-retry",
+      model: client.completionModel({ modelId: "responses-test", api: "responses" }),
+      tools: [recordingTool("test_tool", toolExecutions)],
+    });
+
+    const error = await agent
+      .generate({
+        prompt: "Call test_tool.",
+        retries: { maxAttempts: 3, initialDelayMs: 0, maxDelayMs: 0 },
+      })
+      .catch((value: unknown) => value);
+
+    expect(error).toMatchObject(
+      providerOutputError("malformed-tool-arguments", { toolCallId: "tool_0" }),
+    );
+    expect(completionRequests).toHaveLength(3);
+    expect(toolExecutions).toHaveLength(0);
+  });
+
+  it.each([
+    ["failed", "failed"],
+    ["cancelled", "cancelled"],
+    ["missing", undefined],
+  ])("rejects and retries a valid Responses tool call with a %s status without executing it", async (_label, status) => {
+    const completionRequests: unknown[] = [];
+    const toolExecutions: unknown[] = [];
+    const client = new OpenAIClient({
+      client: {
+        responses: {
+          create: async (request: unknown) => {
+            completionRequests.push(request);
+            return {
+              id: "resp_unsafe_status",
+              status,
+              output: [
+                {
+                  type: "function_call",
+                  id: "tool_0",
+                  call_id: "call_abc",
+                  name: "test_tool",
+                  arguments: '{"query":"safe"}',
+                },
+              ],
+              usage: { input_tokens: 2, output_tokens: 1 },
+            };
+          },
+        },
+      } as never,
+    });
+    const agent = new Agent({
+      id: `unsafe-responses-status-${status ?? "missing"}`,
+      model: client.completionModel({ modelId: "responses-test", api: "responses" }),
+      tools: [recordingTool("test_tool", toolExecutions)],
+    });
+
+    const error = await agent
+      .generate({
+        prompt: "Call test_tool.",
+        retries: { maxAttempts: 3, initialDelayMs: 0, maxDelayMs: 0 },
+      })
+      .catch((value: unknown) => value);
+
+    expect(error).toMatchObject(
+      providerOutputError("invalid-tool-call", {
+        finishReason: "other",
+        usage: { inputTokens: 2, outputTokens: 1, totalTokens: 3 },
+      }),
+    );
+    expect(completionRequests).toHaveLength(3);
+    expect(toolExecutions).toHaveLength(0);
+  });
+
+  it.each([
+    "failed",
+    "cancelled",
+    "queued",
+    "in_progress",
+  ])("rejects a %s Responses status without treating an empty response as success", (status) => {
+    expect(
+      thrownBy(() =>
+        fromOpenAIResponse({
+          id: "resp_invalid_status",
+          status,
+          output: [],
+          usage: { input_tokens: 2, output_tokens: 1 },
+        }),
+      ),
+    ).toMatchObject(
+      providerOutputError("invalid-response", {
+        usage: { inputTokens: 2, outputTokens: 1, totalTokens: 3 },
+      }),
+    );
+  });
+
+  it("uses the Responses call id when a non-streaming function call omits its item id", () => {
+    expect(
       fromOpenAIResponse({
+        status: "completed",
+        output: [
+          {
+            type: "function_call",
+            status: "completed",
+            call_id: "call_abc",
+            name: "lookup",
+            arguments: "{}",
+          },
+        ],
+        usage: {},
+      }).choice,
+    ).toEqual([AssistantContent.toolCall("call_abc", "lookup", {}, "call_abc")]);
+  });
+
+  it.each([
+    ["missing", undefined, "incomplete-tool-call"],
+    ["non-string", { query: "x" }, "invalid-tool-arguments"],
+    ["non-finite", "1e400", "invalid-tool-arguments"],
+  ])("rejects %s terminal Responses tool arguments", (_label, argumentsValue, kind) => {
+    const error = thrownBy(() =>
+      fromOpenAIResponse({
+        status: "completed",
         output: [
           {
             type: "function_call",
             id: "tool_0",
             call_id: "call_abc",
-            name: "ExecCommand",
-            arguments: '{"command":"pwd"',
+            name: "Echo",
+            arguments: argumentsValue,
           },
         ],
         usage: {},
       }),
-    ).toThrow(
-      'Completion returned tool call "tool_0" with malformed JSON arguments; this indicates invalid provider output or incomplete stream assembly.',
     );
+
+    expect(error).toMatchObject(providerOutputError(kind, { toolCallId: "tool_0" }));
   });
 
   it.each([
-    ["scalar", '"hello"', "hello"],
-    ["empty", "", {}],
-    ["whitespace-only", " \n\t", {}],
-  ])("maps %s non-streaming Responses tool arguments", (_label, argumentsText, expectedArguments) => {
+    "in_progress",
+    "incomplete",
+  ])("rejects a terminal Responses tool item whose status is %s", (status) => {
+    expect(
+      thrownBy(() =>
+        fromOpenAIResponse({
+          status: "completed",
+          output: [
+            {
+              type: "function_call",
+              id: "tool_0",
+              call_id: "call_abc",
+              name: "Echo",
+              arguments: "{}",
+              status,
+            },
+          ],
+          usage: {},
+        }),
+      ),
+    ).toMatchObject(providerOutputError("incomplete-tool-call", { toolCallId: "tool_0" }));
+  });
+
+  it("rejects an incomplete Responses output_item.done tool call", () => {
+    expect(
+      thrownBy(() =>
+        fromOpenAIStreamEvent({
+          type: "response.output_item.done",
+          item: {
+            type: "function_call",
+            id: "tool_0",
+            call_id: "call_abc",
+            name: "Echo",
+            arguments: "{}",
+            status: "incomplete",
+          },
+        }),
+      ),
+    ).toMatchObject(providerOutputError("incomplete-tool-call", { toolCallId: "tool_0" }));
+  });
+
+  it("accepts an in-progress Responses item when its completed item is terminal", () => {
+    expect(
+      fromOpenAIStreamEvent({
+        type: "response.output_item.added",
+        item: {
+          type: "function_call",
+          id: "tool_0",
+          call_id: "call_abc",
+          name: "Echo",
+          arguments: "",
+          status: "in_progress",
+        },
+      }),
+    ).toMatchObject({ type: "tool_call_delta", id: "tool_0" });
+    expect(
+      fromOpenAIStreamEvent({
+        type: "response.output_item.done",
+        item: {
+          type: "function_call",
+          id: "tool_0",
+          call_id: "call_abc",
+          name: "Echo",
+          arguments: "{}",
+          status: "completed",
+        },
+      }),
+    ).toMatchObject({ type: "tool_call", toolCall: { toolCallId: "tool_0", input: {} } });
+  });
+
+  it.each([
+    ["max_output_tokens", "truncated-tool-call", 3],
+    ["content_filter", "filtered-tool-call", 1],
+  ])("does not execute a valid Responses tool call ending with %s", async (incompleteReason, kind, expectedRequests) => {
+    const completionRequests: unknown[] = [];
+    const toolExecutions: unknown[] = [];
+    const client = new OpenAIClient({
+      client: {
+        responses: {
+          create: async (request: unknown) => {
+            completionRequests.push(request);
+            return {
+              id: "resp_unsafe_tool",
+              status: "incomplete",
+              incomplete_details: { reason: incompleteReason },
+              output: [
+                {
+                  type: "function_call",
+                  id: "tool_0",
+                  call_id: "call_abc",
+                  name: "test_tool",
+                  arguments: '{"query":"safe"}',
+                },
+              ],
+              usage: { input_tokens: 2, output_tokens: 1 },
+            };
+          },
+        },
+      } as never,
+    });
+    const agent = new Agent({
+      id: `unsafe-responses-finish-${incompleteReason}`,
+      model: client.completionModel({ modelId: "responses-test", api: "responses" }),
+      tools: [recordingTool("test_tool", toolExecutions)],
+    });
+
+    const error = await agent
+      .generate({
+        prompt: "Call test_tool.",
+        retries: { maxAttempts: 3, initialDelayMs: 0, maxDelayMs: 0 },
+      })
+      .catch((value: unknown) => value);
+
+    expect(error).toMatchObject(providerOutputError(kind));
+    expect(completionRequests).toHaveLength(expectedRequests);
+    expect(toolExecutions).toHaveLength(0);
+  });
+
+  it("maps scalar non-streaming Responses tool arguments", () => {
     const response = fromOpenAIResponse({
+      status: "completed",
       output: [
         {
           type: "function_call",
           id: "tool_0",
           call_id: "call_abc",
           name: "Echo",
-          arguments: argumentsText,
+          arguments: '"hello"',
         },
       ],
       usage: {},
     });
 
     expect(response.choice).toEqual([
-      AssistantContent.toolCall("tool_0", "Echo", expectedArguments, "call_abc"),
+      AssistantContent.toolCall("tool_0", "Echo", "hello", "call_abc"),
     ]);
+  });
+
+  it.each([
+    ["empty", ""],
+    ["whitespace-only", " \n\t"],
+  ])("rejects %s non-streaming Responses tool arguments", (_label, argumentsText) => {
+    expect(() =>
+      fromOpenAIResponse({
+        status: "completed",
+        output: [
+          {
+            type: "function_call",
+            id: "tool_0",
+            call_id: "call_abc",
+            name: "Echo",
+            arguments: argumentsText,
+          },
+        ],
+        usage: {},
+      }),
+    ).toThrowError(expect.objectContaining({ kind: "malformed-tool-arguments" }));
   });
 
   it("maps Responses refusals to visible assistant text", () => {
@@ -469,7 +816,7 @@ describe("OpenAI Responses mapping", () => {
         type: "reasoning",
         id: "rs_1",
         text: "Visible reasoning.Short summary.",
-        content: [
+        details: [
           { type: "text", text: "Visible reasoning." },
           { type: "summary", text: "Short summary." },
           { type: "encrypted", data: "encrypted" },
@@ -665,20 +1012,294 @@ describe("OpenAI Responses mapping", () => {
   });
 
   it("rejects malformed arguments in completed Responses stream items", () => {
-    expect(() =>
-      fromOpenAIStreamEvent({
-        type: "response.output_item.done",
+    expect(
+      thrownBy(() =>
+        fromOpenAIStreamEvent({
+          type: "response.output_item.done",
+          item: {
+            type: "function_call",
+            id: "tool_0",
+            call_id: "call_abc",
+            name: "ExecCommand",
+            arguments: '{"command":"pwd"',
+          },
+        }),
+      ),
+    ).toMatchObject(providerOutputError("malformed-tool-arguments", { toolCallId: "tool_0" }));
+  });
+
+  it.each([
+    ["max_output_tokens", "truncated-tool-call", "length"],
+    ["content_filter", "filtered-tool-call", "content-filter"],
+  ])("prioritizes an unsafe %s Responses stream finish over malformed arguments", async (incompleteReason, kind, finishReason) => {
+    const malformedToolCall = {
+      type: "function_call",
+      id: "tool_0",
+      call_id: "call_abc",
+      name: "lookup",
+      arguments: '{"query":',
+    };
+    const model = openAIResponsesModelWithStream([
+      {
+        type: "response.output_item.added",
+        item: { ...malformedToolCall, arguments: "" },
+      },
+      {
+        type: "response.function_call_arguments.done",
+        item_id: "tool_0",
+        name: "lookup",
+        arguments: malformedToolCall.arguments,
+      },
+      {
+        type: "response.incomplete",
+        response: {
+          id: "resp_incomplete_tool",
+          status: "incomplete",
+          incomplete_details: { reason: incompleteReason },
+          output: [malformedToolCall],
+          usage: { input_tokens: 5, output_tokens: 2 },
+        },
+      },
+    ]);
+
+    await expect(collectResponsesStream(model)).rejects.toMatchObject(
+      providerOutputError(kind, {
+        finishReason,
+        usage: { inputTokens: 5, outputTokens: 2, totalTokens: 7 },
+      }),
+    );
+  });
+
+  it.each([
+    ["max_output_tokens", "truncated-tool-call", "length"],
+    ["content_filter", "filtered-tool-call", "content-filter"],
+  ])("preserves an unsafe %s finish when the terminal Responses snapshot omits the streamed tool call", async (incompleteReason, kind, finishReason) => {
+    const model = openAIResponsesModelWithStream([
+      {
+        type: "response.output_item.added",
         item: {
           type: "function_call",
           id: "tool_0",
           call_id: "call_abc",
-          name: "ExecCommand",
-          arguments: '{"command":"pwd"',
+          name: "lookup",
+          arguments: "",
+        },
+      },
+      {
+        type: "response.incomplete",
+        response: {
+          id: "resp_incomplete_without_snapshot",
+          status: "incomplete",
+          incomplete_details: { reason: incompleteReason },
+          output: [],
+          usage: { input_tokens: 5, output_tokens: 2 },
+        },
+      },
+    ]);
+
+    await expect(collectResponsesStream(model)).rejects.toMatchObject(
+      providerOutputError(kind, {
+        finishReason,
+        usage: { inputTokens: 5, outputTokens: 2, totalTokens: 7 },
+      }),
+    );
+  });
+
+  it("uses the Responses call id when the optional item id is missing", () => {
+    expect(
+      fromOpenAIStreamEvent({
+        type: "response.output_item.done",
+        item: {
+          type: "function_call",
+          status: "completed",
+          call_id: "call_abc",
+          name: "lookup",
+          arguments: "{}",
         },
       }),
-    ).toThrow(
-      'Completion returned tool call "tool_0" with malformed JSON arguments; this indicates invalid provider output or incomplete stream assembly.',
+    ).toEqual({
+      type: "tool_call",
+      toolCall: AssistantContent.toolCall("call_abc", "lookup", {}, "call_abc"),
+    });
+  });
+
+  it("rejects duplicate and post-terminal Responses argument events", async () => {
+    const added = {
+      type: "response.output_item.added",
+      item: {
+        type: "function_call",
+        status: "in_progress",
+        id: "tool_0",
+        call_id: "call_abc",
+        name: "lookup",
+        arguments: "",
+      },
+    };
+    const done = {
+      type: "response.function_call_arguments.done",
+      item_id: "tool_0",
+      name: "lookup",
+      arguments: '{"query":"anvia"}',
+    };
+
+    await expect(
+      collectResponsesStream(openAIResponsesModelWithStream([added, done, done])),
+    ).rejects.toMatchObject(providerOutputError("invalid-tool-call", { toolCallId: "tool_0" }));
+
+    await expect(
+      collectResponsesStream(
+        openAIResponsesModelWithStream([
+          added,
+          done,
+          {
+            type: "response.function_call_arguments.delta",
+            item_id: "tool_0",
+            delta: " ",
+          },
+        ]),
+      ),
+    ).rejects.toMatchObject(providerOutputError("invalid-tool-call", { toolCallId: "tool_0" }));
+  });
+
+  it.each([
+    ["call id", { id: "tool_0", name: "lookup", arguments: "{}" }],
+    ["name", { id: "tool_0", call_id: "call_abc", arguments: "{}" }],
+  ])("rejects a completed Responses stream tool call missing its %s", (_label, item) => {
+    expect(
+      thrownBy(() =>
+        fromOpenAIStreamEvent({
+          type: "response.output_item.done",
+          item: { type: "function_call", ...item },
+        }),
+      ),
+    ).toMatchObject(providerOutputError("invalid-tool-call"));
+  });
+
+  it("rejects a completed Responses provider tool call missing its id", () => {
+    expect(
+      thrownBy(() =>
+        fromOpenAIStreamEvent({
+          type: "response.output_item.done",
+          item: { type: "web_search_call", status: "completed" },
+        }),
+      ),
+    ).toMatchObject(providerOutputError("invalid-tool-call"));
+  });
+
+  it("rejects inconsistent Responses stream tool ids and names", async () => {
+    const idModel = openAIResponsesModelWithStream([
+      {
+        type: "response.output_item.added",
+        item: {
+          type: "function_call",
+          id: "tool_0",
+          call_id: "call_abc",
+          name: "lookup",
+          arguments: "",
+        },
+      },
+      {
+        type: "response.output_item.done",
+        item: {
+          type: "function_call",
+          id: "tool_1",
+          call_id: "call_abc",
+          name: "lookup",
+          arguments: "{}",
+        },
+      },
+    ]);
+    const nameModel = openAIResponsesModelWithStream([
+      {
+        type: "response.output_item.added",
+        item: {
+          type: "function_call",
+          id: "tool_0",
+          call_id: "call_abc",
+          name: "lookup",
+          arguments: "",
+        },
+      },
+      {
+        type: "response.function_call_arguments.done",
+        item_id: "tool_0",
+        name: "search",
+        arguments: "{}",
+      },
+    ]);
+
+    await expect(collectResponsesStream(idModel)).rejects.toMatchObject(
+      providerOutputError("invalid-tool-call"),
     );
+    await expect(collectResponsesStream(nameModel)).rejects.toMatchObject(
+      providerOutputError("invalid-tool-call", { toolCallId: "tool_0" }),
+    );
+  });
+
+  it("requires a terminal Responses event after tool-call progress", async () => {
+    const model = openAIResponsesModelWithStream([
+      {
+        type: "response.function_call_arguments.delta",
+        item_id: "tool_0",
+        delta: '{"query":',
+      },
+    ]);
+
+    await expect(collectResponsesStream(model)).rejects.toMatchObject(
+      providerOutputError("incomplete-tool-call", { toolCallId: "tool_0" }),
+    );
+  });
+
+  it("stops consuming Responses events after completion so a trailing tool call cannot execute", async () => {
+    const toolExecutions: unknown[] = [];
+    let trailingEventRead = false;
+    const model = new OpenAIResponsesCompletionModel(
+      {
+        responses: {
+          create: async () => ({
+            async *[Symbol.asyncIterator]() {
+              yield {
+                type: "response.completed",
+                response: {
+                  id: "resp_completed",
+                  status: "completed",
+                  output: [
+                    {
+                      type: "message",
+                      content: [{ type: "output_text", text: "done" }],
+                    },
+                  ],
+                  usage: {},
+                },
+              };
+              trailingEventRead = true;
+              yield {
+                type: "response.output_item.done",
+                item: {
+                  type: "function_call",
+                  id: "tool_0",
+                  call_id: "call_abc",
+                  name: "test_tool",
+                  arguments: '{"query":"unsafe"}',
+                },
+              };
+            },
+          }),
+        },
+      } as never,
+      "responses-test",
+    );
+    const agent = new Agent({
+      id: "responses-post-terminal-tool-call",
+      model,
+      tools: [recordingTool("test_tool", toolExecutions)],
+    });
+
+    const events = await collectAgentEvents(agent.stream({ prompt: "Finish without a tool." }));
+
+    expect(events.some((event) => event.type === "tool_call")).toBe(false);
+    expect(toolExecutions).toHaveLength(0);
+    expect(trailingEventRead).toBe(false);
   });
 
   it("maps Responses terminal stream failure and incomplete events", () => {
@@ -785,3 +1406,72 @@ describe("OpenAI Responses mapping", () => {
     });
   });
 });
+
+function openAIResponsesModelWithStream(events: unknown[]): OpenAIResponsesCompletionModel {
+  return new OpenAIResponsesCompletionModel(
+    {
+      responses: {
+        create: async () => ({
+          async *[Symbol.asyncIterator]() {
+            for (const event of events) yield event;
+          },
+        }),
+      },
+    } as never,
+    "responses-test",
+  );
+}
+
+async function collectResponsesStream(
+  model: OpenAIResponsesCompletionModel,
+): Promise<CompletionModelStreamEvent[]> {
+  const result: CompletionModelStreamEvent[] = [];
+  for await (const event of model.streamCompletion({
+    chatHistory: [Message.user("Call a tool.")],
+    documents: [],
+    tools: [],
+  })) {
+    result.push(event);
+  }
+  return result;
+}
+
+async function collectAgentEvents<T>(events: AsyncIterable<T>): Promise<T[]> {
+  const result: T[] = [];
+  for await (const event of events) result.push(event);
+  return result;
+}
+
+function recordingTool(name: string, calls: unknown[]): Tool {
+  return {
+    name,
+    definition() {
+      return { name, description: `Record ${name} calls`, parameters: { type: "object" } };
+    },
+    call(args) {
+      calls.push(args);
+      return "ok";
+    },
+  };
+}
+
+function thrownBy(callback: () => unknown): unknown {
+  try {
+    callback();
+  } catch (error) {
+    return error;
+  }
+  throw new Error("Expected callback to throw.");
+}
+
+function providerOutputError(
+  kind: string,
+  values: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    name: "CompletionProviderOutputError",
+    code: COMPLETION_PROVIDER_OUTPUT_ERROR_CODE,
+    kind,
+    ...values,
+  };
+}

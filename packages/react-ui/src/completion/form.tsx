@@ -21,14 +21,15 @@ const CompletionForm = forwardRef<HTMLFormElement, PrimitiveProps<"form">>(funct
   ref,
 ) {
   const completion = useCompletionContext();
-  const canSubmit = completion.input.trim().length > 0 && completion.status !== "streaming";
-  const canStop = completion.status === "streaming";
+  const active = completion.status === "submitted" || completion.status === "streaming";
+  const canSubmit = completion.input.trim().length > 0 && !active;
+  const canStop = active;
 
   const submit = useCallback(async () => {
     if (!canSubmit) {
       return;
     }
-    await completion.complete();
+    await completion.submit();
   }, [canSubmit, completion]);
 
   const value = useMemo<CompletionInputContextValue>(
@@ -71,7 +72,6 @@ const CompletionForm = forwardRef<HTMLFormElement, PrimitiveProps<"form">>(funct
         {
           ...props,
           onSubmit: handleSubmit,
-          "data-anvia-completion-form": "",
           "data-state": completion.status,
         } as PrimitiveProps<"form">,
         ref,
@@ -116,11 +116,10 @@ const CompletionInput = forwardRef<HTMLTextAreaElement, PrimitiveProps<"textarea
       {
         ...props,
         "aria-label": props["aria-label"] ?? "Prompt",
-        disabled: props.disabled ?? input.status === "streaming",
+        disabled: props.disabled ?? (input.status === "submitted" || input.status === "streaming"),
         onChange: handleChange,
         onKeyDown: handleKeyDown,
         value: input.input,
-        "data-anvia-completion-input": "",
       } as PrimitiveProps<"textarea">,
       ref,
     );
@@ -139,7 +138,6 @@ const CompletionSubmit = forwardRef<HTMLButtonElement, PrimitiveProps<"button">>
         children: props.children ?? "Complete",
         disabled,
         type: props.type ?? "submit",
-        "data-anvia-completion-submit": "",
         "data-state": disabled ? "disabled" : "enabled",
       } as PrimitiveProps<"button">,
       ref,
@@ -171,7 +169,6 @@ const CompletionStop = forwardRef<HTMLButtonElement, PrimitiveProps<"button">>(
         disabled,
         onClick: handleClick,
         type: props.type ?? "button",
-        "data-anvia-completion-stop": "",
         "data-state": disabled ? "disabled" : "enabled",
       } as PrimitiveProps<"button">,
       ref,

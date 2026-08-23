@@ -1,56 +1,59 @@
 import { Buffer } from "node:buffer";
 import type {
+  ModelCallOptions,
   TranscriptionModel,
   TranscriptionRequest,
-  TranscriptionResponse,
+  TranscriptionResult,
 } from "@anvia/core/transcription";
 import type { GoogleGenAI } from "@google/genai";
-import type { GeminiTranscriptionModelName } from "./models";
+import type { GeminiTranscriptionModelId } from "./models";
+import { disableGeminiNativeRetries } from "./retry";
 
 const TRANSCRIPTION_PREAMBLE =
   "Transcribe the provided audio exactly. Do not add additional information.";
 
-export class GeminiTranscriptionModel
-  implements TranscriptionModel<unknown, GeminiTranscriptionModelName>
-{
+export class GeminiTranscriptionModel implements TranscriptionModel<unknown> {
   readonly provider = "gemini";
 
   constructor(
     private readonly client: GoogleGenAI,
-    readonly defaultModel: GeminiTranscriptionModelName = "gemini-2.5-flash",
+    readonly modelId: GeminiTranscriptionModelId,
   ) {}
 
-  async transcription(request: TranscriptionRequest): Promise<TranscriptionResponse<unknown>> {
-    const config: Record<string, unknown> = {};
+  async transcription(
+    request: TranscriptionRequest,
+    options?: ModelCallOptions,
+  ): Promise<TranscriptionResult<unknown>> {
+    const config: Record<string, unknown> = isPlainObject(request.providerOptions)
+      ? { ...request.providerOptions }
+      : {};
     if (request.temperature !== undefined) {
       config.temperature = request.temperature;
     }
-    if (isPlainObject(request.additionalParams)) {
-      Object.assign(config, request.additionalParams);
-    }
+    if (options?.abortSignal !== undefined) config.abortSignal = options.abortSignal;
 
     const response = await this.client.models.generateContent({
-      model: this.defaultModel,
+      model: this.modelId,
       contents: [
         {
           role: "user",
           parts: [
             {
               inlineData: {
-                mimeType: mimeTypeFromFilename(request.filename),
+                mimeType: request.mediaType ?? mimeTypeFromFilename(request.filename),
                 data: Buffer.from(request.data).toString("base64"),
               },
             },
           ],
         },
       ],
-      config: {
+      config: disableGeminiNativeRetries({
         ...config,
         systemInstruction:
           request.prompt === undefined
             ? TRANSCRIPTION_PREAMBLE
             : `${TRANSCRIPTION_PREAMBLE}\n\n${request.prompt}`,
-      },
+      }),
     } as never);
 
     return {

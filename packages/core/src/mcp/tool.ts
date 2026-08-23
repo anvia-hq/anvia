@@ -1,34 +1,18 @@
-import type { ToolDefinition } from "../completion/index";
-import type { Tool } from "../tool/index";
-import { createCallToolParams, mapMcpToolResult } from "./result";
-import type { McpClient, McpToolDefinition } from "./types";
+import type { McpTool } from "./types";
 
-const MCP_TOOL_METADATA_KEY = Symbol.for("anvia.mcp.tool.metadata");
-
-export function createMcpTool(
-  definition: McpToolDefinition,
-  client: McpClient,
-  serverName?: string,
-): Tool {
-  const tool: Tool = {
-    name: definition.name,
-    definition(): ToolDefinition {
-      return {
-        name: definition.name,
-        description: definition.description ?? "",
-        parameters: definition.inputSchema,
-      };
-    },
-    async call(args): Promise<string> {
-      const result = await client.callTool(createCallToolParams(definition.name, args));
-      return mapMcpToolResult(result);
-    },
-  };
-  if (serverName !== undefined) {
-    Object.defineProperty(tool, MCP_TOOL_METADATA_KEY, {
-      value: { serverName },
-      enumerable: false,
-    });
+export function isMcpTool(tool: unknown): tool is McpTool {
+  if (typeof tool !== "object" || tool === null || !("mcp" in tool)) {
+    return false;
   }
-  return tool;
+  const mcp = tool.mcp;
+  return (
+    typeof mcp === "object" &&
+    mcp !== null &&
+    "serverName" in mcp &&
+    typeof mcp.serverName === "string" &&
+    mcp.serverName.length > 0 &&
+    "remoteName" in mcp &&
+    typeof mcp.remoteName === "string" &&
+    mcp.remoteName.length > 0
+  );
 }

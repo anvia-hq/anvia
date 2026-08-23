@@ -1,6 +1,7 @@
 import { useParams } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
 import { PlaygroundPage } from "../modules/playground/playground-page";
+import { errorMessage } from "../modules/shared/format";
 import { useActivatedRoute } from "./route-helpers";
 
 export function PlaygroundRoute() {
@@ -40,6 +41,8 @@ export function PlaygroundRoute() {
       allSessions={studio.sessions.allSessions}
       answeringQuestions={studio.answeringQuestions}
       attachments={studio.attachments}
+      browserWorkspace={studio.browserWorkspace}
+      browserWorkspaceOpen={studio.browserWorkspaceOpen}
       decidingApprovals={studio.decidingApprovals}
       hasMessages={studio.hasMessages}
       isStreaming={studio.isStreaming}
@@ -61,8 +64,11 @@ export function PlaygroundRoute() {
       onAddPromptAttachments={studio.addPromptAttachments}
       onApprovalDecision={studio.decideToolApproval}
       onDeleteSession={studio.setDeleteCandidate}
+      onCloseBrowserWorkspace={studio.closeBrowserWorkspace}
+      onError={(error) => studio.setError(errorMessage(error))}
       onLoadSession={(sessionId) => void studio.sessions.loadSession(sessionId)}
       onOpenTrace={studio.traces.selectTrace}
+      onOpenBrowserWorkspace={studio.openBrowserWorkspace}
       onPromptChange={studio.updatePrompt}
       onPromptKeyDown={studio.handlePromptKeyDown}
       onQuestionAnswer={studio.answerToolQuestion}

@@ -2,9 +2,15 @@ import { mkdirSync, mkdtempSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Message } from "@anvia/core";
+import { DatabaseSync } from "node:sqlite";
+import { createMemoryScopeKey, type MemoryCompactionMessage, type Message } from "@anvia/core";
 import { afterEach, describe, expect, it } from "vitest";
-import { createSqliteMemoryScopeKey, createSqliteMemoryStore } from "../src/index.js";
+import { richMessages } from "../../core/test/helpers/rich-messages";
+import {
+  SqliteMemoryClient,
+  type SqliteMemoryStore,
+  type SqliteMemoryStoreOptions,
+} from "../src/index.js";
 import { isMemoryMessage, serializeUnknownError } from "../src/message.js";
 
 const userMessage: Message = {
@@ -17,115 +23,26 @@ const assistantMessage: Message = {
   content: [{ type: "text", text: "stored" }],
 };
 
-const richMessages: Message[] = [
-  { role: "system", content: "System instructions", metadata: { source: "system" } },
-  {
-    role: "user",
-    metadata: { composer: { entities: [{ id: "document-1" }] } },
-    content: [
-      { type: "text", text: "Inspect these", signature: "user-signature" },
-      {
-        type: "image",
-        source: { type: "url", url: "https://example.test/image.png" },
-        detail: "high",
-      },
-      {
-        type: "image",
-        source: { type: "base64", data: "aW1hZ2U=", mediaType: "image/png" },
-        detail: "low",
-      },
-      {
-        type: "document",
-        source: {
-          type: "url",
-          url: "https://example.test/report.pdf",
-          mediaType: "application/pdf",
-          filename: "report.pdf",
-        },
-      },
-      {
-        type: "document",
-        source: {
-          type: "base64",
-          data: "cmVwb3J0",
-          mediaType: "application/pdf",
-          filename: "inline.pdf",
-        },
-      },
-      {
-        type: "document",
-        source: { type: "text", text: "inline document", mediaType: "text/plain" },
-      },
-    ],
-  },
-  {
-    role: "assistant",
-    id: "assistant-1",
+function memoryCompactionMessage(
+  content: string,
+  compactedMessageCount: number,
+): MemoryCompactionMessage {
+  return {
+    role: "system",
+    content,
     metadata: {
-      source: "assistant",
-      anvia: {
-        generation: {
-          provider: "test",
-          model: "test-model",
-          usage: {
-            inputTokens: 12,
-            outputTokens: 4,
-            totalTokens: 16,
-            cachedInputTokens: 3,
-            cacheCreationInputTokens: 0,
-          },
-        },
-      },
+      anvia: { memoryCompaction: { version: 1, compactedMessageCount } },
     },
-    content: [
-      { type: "text", text: "Working", signature: "assistant-signature" },
-      {
-        type: "reasoning",
-        id: "reasoning-1",
-        text: "analysis summary",
-        content: [
-          { type: "text", text: "analysis", signature: "reasoning-signature" },
-          { type: "summary", text: " summary" },
-          { type: "encrypted", data: "ciphertext" },
-          { type: "redacted", data: "redacted-data" },
-        ],
-      },
-      {
-        type: "tool_call",
-        id: "tool-1",
-        callId: "call-1",
-        function: { name: "lookup", arguments: { query: "Anvia", limit: 3 } },
-        signature: "tool-signature",
-        additionalParams: { provider: "test" },
-      },
-      {
-        type: "image",
-        source: { type: "base64", data: "b3V0cHV0", mediaType: "image/png" },
-        detail: "auto",
-      },
-    ],
-  },
-  {
-    role: "tool",
-    metadata: { source: "tool" },
-    content: [
-      {
-        type: "tool_result",
-        id: "tool-1",
-        callId: "call-1",
-        toolName: "lookup",
-        content: [
-          { type: "text", text: "result" },
-          { type: "image", data: "cmVzdWx0", mediaType: "image/png" },
-        ],
-      },
-    ],
-  },
-];
+  };
+}
 
 const tempDirs: string[] = [];
+const databases = new Set<DatabaseSync>();
+const storeDatabases = new WeakMap<SqliteMemoryStore, DatabaseSync>();
 
 afterEach(async () => {
+  for (const database of databases) database.close();
+  databases.clear();
   await Promise.all(tempDirs.map((dir) => rm(dir, { recursive: true, force: true })));
   tempDirs.length = 0;
 });
@@ -145,10 +62,10 @@ describe("SqliteMemoryStore", () => {
 
     expect(isMemoryMessage(validMessage)).toBe(true);
     expect(isMemoryMessage(invalidMessage)).toBe(false);
-    const store = createSqliteMemoryStore();
+    const store = await createTestMemoryStore();
     await expect(
       store.append({
-        context: { sessionId: "thread-invalid" },
+        scope: { sessionId: "thread-invalid" },
         runId: "run-invalid",
         turn: 0,
         messages: [invalidMessage],
@@ -175,92 +92,97 @@ describe("SqliteMemoryStore", () => {
   });
 
   it("appends multiple turns, loads in position order, and clears scoped messages", async () => {
-    const store = createSqliteMemoryStore();
+    const store = await createTestMemoryStore();
     const context = { sessionId: "thread-1", userId: "user-1" };
 
     await store.append({
-      context,
+      scope: context,
       runId: "run-1",
       turn: 0,
       messages: [userMessage, assistantMessage],
     });
     await store.append({
-      context,
+      scope: context,
       runId: "run-2",
       turn: 1,
       messages: [userMessage],
     });
 
-    expect(await store.load(context)).toEqual([userMessage, assistantMessage, userMessage]);
-    expect(await store.load({ sessionId: "thread-1", userId: "user-2" })).toEqual([]);
+    expect(await store.load({ scope: context })).toEqual([
+      userMessage,
+      assistantMessage,
+      userMessage,
+    ]);
+    expect(await store.load({ scope: { sessionId: "thread-1", userId: "user-2" } })).toEqual([]);
     expect(
       sqliteDatabase(store)
         .prepare("SELECT position FROM anvia_memory_messages ORDER BY position ASC")
         .all(),
     ).toEqual([{ position: 0 }, { position: 1 }, { position: 2 }]);
 
-    await store.clear(context);
-    expect(await store.load(context)).toEqual([]);
+    await store.clear({ scope: context });
+    expect(await store.load({ scope: context })).toEqual([]);
   });
 
   it("atomically compacts a prefix and rejects stale revisions", async () => {
-    const store = createSqliteMemoryStore();
+    const store = await createTestMemoryStore();
     const context = { sessionId: "thread-compaction", userId: "user-1" };
     await store.append({
-      context,
+      scope: context,
       runId: "run-1",
       turn: 1,
       messages: [userMessage, assistantMessage],
     });
     await store.append({
-      context,
+      scope: context,
       runId: "run-2",
       turn: 1,
       messages: [userMessage],
     });
-    const stale = await store.compaction.load(context);
+    const stale = await store.compaction.snapshot({ scope: context });
     await store.append({
-      context,
+      scope: context,
       runId: "run-2",
       turn: 2,
       messages: [assistantMessage],
     });
-    const summary: Extract<Message, { role: "system" }> = {
-      role: "system",
-      content: "Earlier conversation summary",
-    };
+    const replacement = memoryCompactionMessage("Earlier conversation summary", 2);
 
     await expect(
-      store.compaction.commit({
-        context,
+      store.compaction.replacePrefix({
+        scope: context,
         revision: stale.revision,
-        compactedMessageCount: 2,
-        summary,
+        messageCount: 2,
+        replacement,
         runId: "memory-compaction:1",
       }),
-    ).resolves.toBe("conflict");
+    ).resolves.toEqual({ status: "conflict" });
 
-    const current = await store.compaction.load(context);
+    const current = await store.compaction.snapshot({ scope: context });
     await expect(
-      store.compaction.commit({
-        context,
+      store.compaction.replacePrefix({
+        scope: context,
         revision: current.revision,
-        compactedMessageCount: 2,
-        summary,
+        messageCount: 2,
+        replacement,
         runId: "memory-compaction:2",
       }),
-    ).resolves.toBe("committed");
-    await expect(store.load(context)).resolves.toEqual([summary, userMessage, assistantMessage]);
+    ).resolves.toEqual({ status: "committed" });
+    await expect(store.load({ scope: context })).resolves.toEqual([
+      replacement,
+      userMessage,
+      assistantMessage,
+    ]);
 
     const [conversation] = await store.inspector.listConversations({ limit: 1 });
     const inspected =
       conversation === undefined
         ? undefined
-        : await store.inspector.getConversation(conversation.ref);
+        : await store.inspector.getConversation({ ref: conversation.ref });
     expect(inspected).toMatchObject({
       messageCount: 3,
       messages: [
-        { position: 1, runId: "memory-compaction:2", turn: 0, message: summary },
+        { position: 1, runId: "memory-compaction:2", turn: 0, message: replacement },
         { position: 2, runId: "run-2", turn: 1, message: userMessage },
         { position: 3, runId: "run-2", turn: 2, message: assistantMessage },
       ],
@@ -268,9 +190,9 @@ describe("SqliteMemoryStore", () => {
   });
 
   it("inspects persisted conversations by opaque row reference", async () => {
-    const store = createSqliteMemoryStore();
+    const store = await createTestMemoryStore();
     await store.append({
-      context: {
+      scope: {
         sessionId: "thread-1",
         userId: "user-1",
         metadata: { tenantId: "tenant-1" },
@@ -280,7 +202,7 @@ describe("SqliteMemoryStore", () => {
       messages: [userMessage, assistantMessage],
     });
     await store.append({
-      context: { sessionId: "thread-2", userId: "user-2" },
+      scope: { sessionId: "thread-2", userId: "user-2" },
       runId: "run-2",
       turn: 0,
       messages: [userMessage],
@@ -302,7 +224,9 @@ describe("SqliteMemoryStore", () => {
       }),
     ]);
 
-    const conversation = await store.inspector.getConversation(conversations[0]?.ref ?? "");
+    const conversation = await store.inspector.getConversation({
+      ref: conversations[0]?.ref ?? "",
+    });
     expect(conversation).toMatchObject({
       sessionId: "thread-1",
       messages: [
@@ -310,38 +234,40 @@ describe("SqliteMemoryStore", () => {
         { position: 1, runId: "run-1", turn: 2, message: assistantMessage },
       ],
     });
-    await expect(store.inspector.getConversation("missing")).resolves.toBeUndefined();
+    await expect(store.inspector.getConversation({ ref: "missing" })).resolves.toBeUndefined();
   });
 
   it("round-trips every supported message content shape", async () => {
-    const store = createSqliteMemoryStore();
+    const store = await createTestMemoryStore();
     const context = { sessionId: "rich-thread", userId: "user-1" };
 
-    await store.append({ context, runId: "run-rich", turn: 0, messages: richMessages });
+    await store.append({ scope: context, runId: "run-rich", turn: 0, messages: richMessages });
 
-    await expect(store.load(context)).resolves.toEqual(richMessages);
+    await expect(store.load({ scope: context })).resolves.toEqual(richMessages);
   });
 
   it("persists messages when reopened from the same file path", async () => {
     const path = sqlitePath();
     const context = { sessionId: "thread-1", userId: "user-1" };
 
-    await createSqliteMemoryStore({ path }).append({
-      context,
+    const firstStore = await createTestMemoryStore({ path });
+    await firstStore.append({
+      scope: context,
       runId: "run-1",
       turn: 0,
       messages: [userMessage],
     });
 
-    await expect(createSqliteMemoryStore({ path }).load(context)).resolves.toEqual([userMessage]);
+    const secondStore = await createTestMemoryStore({ path });
+    await expect(secondStore.load({ scope: context })).resolves.toEqual([userMessage]);
   });
 
   it("stores failed-run diagnostics when enabled", async () => {
-    const store = createSqliteMemoryStore();
+    const store = await createTestMemoryStore();
 
     await expect(
       store.recordError({
-        context: { sessionId: "thread-1" },
+        scope: { sessionId: "thread-1" },
         runId: "run-1",
         error: new Error("failed"),
         messages: [userMessage],
@@ -350,16 +276,16 @@ describe("SqliteMemoryStore", () => {
   });
 
   it("serializes JSON and non-JSON failed-run diagnostics", async () => {
-    const store = createSqliteMemoryStore();
+    const store = await createTestMemoryStore();
 
     await store.recordError({
-      context: { sessionId: "thread-json" },
+      scope: { sessionId: "thread-json" },
       runId: "run-json",
       error: { code: 409, retryable: false },
       messages: richMessages,
     });
     await store.recordError({
-      context: { sessionId: "thread-bigint" },
+      scope: { sessionId: "thread-bigint" },
       runId: "run-bigint",
       error: 42n,
       messages: [],
@@ -385,10 +311,10 @@ describe("SqliteMemoryStore", () => {
   });
 
   it("does not create sessions when failed-run diagnostics are ignored", async () => {
-    const store = createSqliteMemoryStore({ errors: "ignore" });
+    const store = await createTestMemoryStore({ errorPolicy: "ignore" });
 
     await store.recordError({
-      context: { sessionId: "thread-1" },
+      scope: { sessionId: "thread-1" },
       runId: "run-1",
       error: new Error("failed"),
       messages: [userMessage],
@@ -400,11 +326,11 @@ describe("SqliteMemoryStore", () => {
   });
 
   it("rejects malformed stored messages by default", async () => {
-    const store = createSqliteMemoryStore();
+    const store = await createTestMemoryStore();
     const context = { sessionId: "thread-1" };
 
     await store.append({
-      context,
+      scope: context,
       runId: "run-1",
       turn: 0,
       messages: [userMessage],
@@ -415,16 +341,16 @@ describe("SqliteMemoryStore", () => {
         $messageJson: JSON.stringify({ role: "bad", content: [] }),
       });
 
-    await expect(store.load(context)).rejects.toThrow("valid Anvia Message");
+    await expect(store.load({ scope: context })).rejects.toThrow("valid Anvia Message");
   });
 
   it("can bypass stored message validation", async () => {
-    const store = createSqliteMemoryStore({ validateMessages: false });
+    const store = await createTestMemoryStore({ validateMessages: false });
     const context = { sessionId: "thread-1" };
     const malformed = { role: "bad", content: [] };
 
     await store.append({
-      context,
+      scope: context,
       runId: "run-1",
       turn: 0,
       messages: [userMessage],
@@ -433,82 +359,95 @@ describe("SqliteMemoryStore", () => {
       .prepare("UPDATE anvia_memory_messages SET message_json = $messageJson")
       .run({ $messageJson: JSON.stringify(malformed) });
 
-    await expect(store.load(context)).resolves.toEqual([malformed]);
+    await expect(store.load({ scope: context })).resolves.toEqual([malformed]);
   });
 
   it("uses custom scope functions", async () => {
-    const store = createSqliteMemoryStore({
-      scope: (context) => String(context.metadata?.tenantId ?? "unknown"),
+    const store = await createTestMemoryStore({
+      scopeKey: ({ scope }) => String(scope.metadata?.tenantId ?? "unknown"),
     });
 
     await store.append({
-      context: { sessionId: "thread-1", userId: "user-1", metadata: { tenantId: "tenant-1" } },
+      scope: { sessionId: "thread-1", userId: "user-1", metadata: { tenantId: "tenant-1" } },
       runId: "run-1",
       turn: 0,
       messages: [userMessage],
     });
 
     await expect(
-      store.load({ sessionId: "different-thread", metadata: { tenantId: "tenant-1" } }),
+      store.load({
+        scope: { sessionId: "different-thread", metadata: { tenantId: "tenant-1" } },
+      }),
     ).resolves.toEqual([userMessage]);
     await expect(
-      store.load({ sessionId: "thread-1", metadata: { tenantId: "tenant-2" } }),
+      store.load({ scope: { sessionId: "thread-1", metadata: { tenantId: "tenant-2" } } }),
     ).resolves.toEqual([]);
   });
 
-  it("surfaces missing-table errors when createIfMissing is disabled", async () => {
+  it("does not provision tables during ordinary operations", async () => {
     const path = sqlitePath();
     mkdirSync(join(path, ".."), { recursive: true });
 
-    const store = createSqliteMemoryStore({ path, createIfMissing: false });
+    const store = await createTestMemoryStore({ path, ensure: false });
 
-    await expect(store.load({ sessionId: "thread-1" })).rejects.toThrow("no such table");
+    await expect(store.load({ scope: { sessionId: "thread-1" } })).rejects.toThrow("no such table");
   });
 
   it("creates stable scope keys from metadata paths", () => {
     expect(
-      createSqliteMemoryScopeKey(
-        {
+      createMemoryScopeKey({
+        scope: {
           sessionId: "thread-1",
           userId: "user-1",
           metadata: { tenant: { id: "tenant-1" } },
         },
-        { metadataKeys: ["tenant.id"] },
-      ),
+        metadataKeys: ["tenant.id"],
+      }),
     ).toBe(JSON.stringify(["thread-1", "user-1", "tenant-1"]));
   });
 
   it("keeps falsey metadata values and normalizes missing scope paths to null", () => {
     expect(
-      createSqliteMemoryScopeKey(
-        { sessionId: "thread-1", metadata: { count: 0, enabled: false } },
-        { metadataKeys: ["count", "enabled", "missing.value"] },
-      ),
+      createMemoryScopeKey({
+        scope: { sessionId: "thread-1", metadata: { count: 0, enabled: false } },
+        metadataKeys: ["count", "enabled", "missing.value"],
+      }),
     ).toBe(JSON.stringify(["thread-1", null, 0, false, null]));
   });
 
   it("can omit user ids from generated scope keys", () => {
     expect(
-      createSqliteMemoryScopeKey(
-        { sessionId: "thread-1", userId: "user-1" },
-        { includeUserId: false },
-      ),
+      createMemoryScopeKey({
+        scope: { sessionId: "thread-1", userId: "user-1" },
+        includeUserId: false,
+      }),
     ).toBe(JSON.stringify(["thread-1"]));
   });
 });
 
-type SqliteStatement = {
-  all(params?: unknown): unknown[];
-  get(params?: unknown): unknown;
-  run(params?: unknown): unknown;
+function sqliteDatabase(store: SqliteMemoryStore): DatabaseSync {
+  const database = storeDatabases.get(store);
+  if (database === undefined) throw new Error("Missing test database.");
+  return database;
+}
+
+type CreateTestMemoryStoreOptions = SqliteMemoryStoreOptions & {
+  path?: string | undefined;
+  ensure?: boolean | undefined;
 };
 
-type SqliteDatabase = {
-  prepare(sql: string): SqliteStatement;
-};
-
-function sqliteDatabase(store: unknown): SqliteDatabase {
-  return (store as { database(): SqliteDatabase }).database();
+async function createTestMemoryStore(
+  options: CreateTestMemoryStoreOptions = {},
+): Promise<SqliteMemoryStore> {
+  const { path = ":memory:", ensure = true, ...storeOptions } = options;
+  if (path !== ":memory:") mkdirSync(join(path, ".."), { recursive: true });
+  const database = new DatabaseSync(path);
+  databases.add(database);
+  const client = new SqliteMemoryClient({ database });
+  const store = client.memoryStore(storeOptions);
+  storeDatabases.set(store, database);
+  if (ensure) await store.ensure();
+  return store;
 }
 
 function sqlitePath(): string {

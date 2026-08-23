@@ -1,10 +1,9 @@
+import type { ClientInteraction, UIMessage } from "@anvia/client";
 import type {
-  ToolApproval,
-  ToolQuestion,
-  UIMessage,
-  UseChatResult,
-  UseCompletionResult,
-} from "@anvia/react";
+  AgentToolApprovalRequest,
+  AgentToolQuestionRequest,
+} from "@anvia/core/agent/interactions";
+import type { UseChatResult, UseCompletionResult } from "@anvia/react";
 import { vi } from "vitest";
 
 export function textMessage(id: string, role: UIMessage["role"], text: string): UIMessage {
@@ -15,9 +14,7 @@ export function textMessage(id: string, role: UIMessage["role"], text: string): 
   };
 }
 
-export function createChatController(
-  overrides: Partial<UseChatResult<unknown>> = {},
-): UseChatResult<unknown> {
+export function createChatController(overrides: Partial<UseChatResult> = {}): UseChatResult {
   return {
     messages: [],
     events: [],
@@ -25,40 +22,34 @@ export function createChatController(
     suggestions: [],
     setMessages: vi.fn(),
     sendMessage: vi.fn(async () => {}),
-    send: vi.fn(async () => {}),
     regenerate: vi.fn(async () => {}),
     stop: vi.fn(),
     reset: vi.fn(),
-    status: "idle",
+    status: "ready",
     error: undefined,
     text: "",
+    streamId: undefined,
     isResuming: false,
     resume: vi.fn(async () => {}),
-    humanInput: {
-      approvals: { all: [], pending: [] },
-      questions: { all: [], pending: [] },
-    },
-    decidingApprovals: new Set(),
-    answeringQuestions: new Set(),
-    approveTool: vi.fn(async () => {}),
-    rejectTool: vi.fn(async () => {}),
-    answerToolQuestion: vi.fn(async () => {}),
+    interactions: { all: [], pending: [] },
+    respondingInteractions: new Set(),
+    respondToInteraction: vi.fn(async () => {}),
     ...overrides,
   };
 }
 
 export function createCompletionController(
-  overrides: Partial<UseCompletionResult<unknown>> = {},
-): UseCompletionResult<unknown> {
+  overrides: Partial<UseCompletionResult> = {},
+): UseCompletionResult {
   return {
-    messages: [],
     completion: "",
     input: "",
     setInput: vi.fn(),
     complete: vi.fn(async () => {}),
+    submit: vi.fn(async () => {}),
     stop: vi.fn(),
     reset: vi.fn(),
-    status: "idle",
+    status: "ready",
     error: undefined,
     events: [],
     contextUsage: undefined,
@@ -66,38 +57,55 @@ export function createCompletionController(
   };
 }
 
-export function pendingApproval(overrides: Partial<ToolApproval> = {}): ToolApproval {
+export function pendingApproval(
+  overrides: Partial<AgentToolApprovalRequest> = {},
+): ClientInteraction & { request: AgentToolApprovalRequest } {
   return {
-    id: "approval_1",
-    toolName: "deploy",
+    request: {
+      type: "tool-approval",
+      id: "approval_1",
+      toolName: "deploy",
+      toolCallId: "call_1",
+      internalCallId: "internal_1",
+      input: {},
+      ...overrides,
+    },
+    runId: "run_1",
     status: "pending",
-    ...overrides,
   };
 }
 
-export function multiPromptQuestion(overrides: Partial<ToolQuestion> = {}): ToolQuestion {
+export function multiPromptQuestion(
+  overrides: Partial<AgentToolQuestionRequest> = {},
+): ClientInteraction & { request: AgentToolQuestionRequest } {
   return {
-    id: "question_1",
-    toolName: "confirm",
-    questions: [
-      {
-        id: "confirm",
-        question: "Continue?",
-        choices: [
-          { label: "Yes", value: "yes" },
-          { label: "No", value: "no" },
-        ],
-      },
-      {
-        id: "region",
-        question: "Region?",
-        choices: [
-          { label: "US", value: "us" },
-          { label: "EU", value: "eu" },
-        ],
-      },
-    ],
+    request: {
+      type: "tool-question",
+      id: "question_1",
+      toolName: "confirm",
+      toolCallId: "call_1",
+      internalCallId: "internal_1",
+      questions: [
+        {
+          id: "confirm",
+          text: "Continue?",
+          choices: [
+            { label: "Yes", value: "yes" },
+            { label: "No", value: "no" },
+          ],
+        },
+        {
+          id: "region",
+          text: "Region?",
+          choices: [
+            { label: "US", value: "us" },
+            { label: "EU", value: "eu" },
+          ],
+        },
+      ],
+      ...overrides,
+    },
+    runId: "run_1",
     status: "pending",
-    ...overrides,
   };
 }

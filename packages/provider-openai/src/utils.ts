@@ -1,4 +1,10 @@
-import { type JsonObject, type JsonValue, Usage } from "@anvia/core/completion";
+import {
+  CompletionProviderOutputError,
+  isJsonValue,
+  type JsonObject,
+  type JsonValue,
+  Usage,
+} from "@anvia/core/completion";
 
 export function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -39,17 +45,25 @@ export function normalizeOpenAIUsage(options: {
   };
 }
 
-export function parseToolArguments(toolCallId: string, text: string): JsonValue {
-  if (text.trim().length === 0) {
-    return {};
-  }
+export function parseToolArguments(toolCallId: string, text: string, usage?: Usage): JsonValue {
+  let value: unknown;
   try {
-    return JSON.parse(text) as JsonValue;
+    value = JSON.parse(text);
   } catch {
-    throw new Error(
-      `Completion returned tool call "${toolCallId}" with malformed JSON arguments; this indicates invalid provider output or incomplete stream assembly.`,
-    );
+    throw new CompletionProviderOutputError({
+      kind: "malformed-tool-arguments",
+      toolCallId,
+      usage,
+    });
   }
+  if (!isJsonValue(value)) {
+    throw new CompletionProviderOutputError({
+      kind: "invalid-tool-arguments",
+      toolCallId,
+      usage,
+    });
+  }
+  return value;
 }
 
 export function schemaName(schema: JsonObject): string {

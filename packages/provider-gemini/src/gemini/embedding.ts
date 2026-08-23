@@ -1,6 +1,7 @@
-import type { Embedding, EmbeddingModel } from "@anvia/core/embeddings";
+import type { Embedding, EmbeddingModel, ModelCallOptions } from "@anvia/core/embeddings";
 import type { GoogleGenAI } from "@google/genai";
-import type { GeminiEmbeddingModelName } from "./models";
+import type { GeminiEmbeddingModelId } from "./models";
+import { disableGeminiNativeRetries } from "./retry";
 
 export type GeminiEmbeddingTaskType =
   | "TASK_TYPE_UNSPECIFIED"
@@ -14,6 +15,7 @@ export type GeminiEmbeddingTaskType =
   | "CODE_RETRIEVAL_QUERY";
 
 export type GeminiEmbeddingModelOptions = {
+  modelId: GeminiEmbeddingModelId;
   dimensions?: number | undefined;
   maxBatchSize?: number | undefined;
   taskType?: GeminiEmbeddingTaskType | undefined;
@@ -21,6 +23,8 @@ export type GeminiEmbeddingModelOptions = {
 };
 
 export class GeminiEmbeddingModel implements EmbeddingModel {
+  readonly provider = "gemini";
+  readonly modelId: GeminiEmbeddingModelId;
   readonly dimensions: number | undefined;
   readonly maxBatchSize: number;
   private readonly taskType: GeminiEmbeddingTaskType | undefined;
@@ -28,33 +32,37 @@ export class GeminiEmbeddingModel implements EmbeddingModel {
 
   constructor(
     private readonly client: GoogleGenAI,
-    private readonly model: GeminiEmbeddingModelName,
-    options: GeminiEmbeddingModelOptions = {},
+    options: GeminiEmbeddingModelOptions,
   ) {
+    this.modelId = options.modelId;
     this.dimensions = options.dimensions;
     this.maxBatchSize = options.maxBatchSize ?? 100;
     this.taskType = options.taskType;
     this.title = options.title;
   }
 
-  async embedTexts(texts: string[]): Promise<Embedding[]> {
+  async embedTexts(texts: string[], options?: ModelCallOptions): Promise<Embedding[]> {
     const embeddings: Embedding[] = [];
     for (let index = 0; index < texts.length; index += this.maxBatchSize) {
       const batch = texts.slice(index, index + this.maxBatchSize);
-      embeddings.push(...(await this.embedBatch(batch)));
+      embeddings.push(...(await this.embedBatch(batch, options)));
     }
     return embeddings;
   }
 
-  private async embedBatch(texts: string[]): Promise<Embedding[]> {
+  private async embedBatch(texts: string[], options?: ModelCallOptions): Promise<Embedding[]> {
     if (texts.length === 0) {
       return [];
     }
 
+    const config = { ...this.embeddingConfig() };
+    if (options?.abortSignal !== undefined) {
+      Object.assign(config, { abortSignal: options.abortSignal });
+    }
     const response = await this.client.models.embedContent({
-      model: this.model,
+      model: this.modelId,
       contents: texts,
-      config: this.embeddingConfig(),
+      config: disableGeminiNativeRetries(config),
     } as never);
     const rawEmbeddings = embeddingsFromResponse(response);
     if (rawEmbeddings.length !== texts.length) {

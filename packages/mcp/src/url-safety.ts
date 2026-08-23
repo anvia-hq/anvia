@@ -2,7 +2,7 @@ import type { LookupAddress } from "node:dns";
 import { lookup } from "node:dns/promises";
 import type { LookupFunction } from "node:net";
 import { BlockList, isIP } from "node:net";
-import type { StreamableHTTPClientTransportOptions } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import type { StreamableHTTPClientTransportOptions } from "@modelcontextprotocol/client";
 import { Agent, Pool, fetch as undiciFetch } from "undici";
 
 type FetchLike = NonNullable<StreamableHTTPClientTransportOptions["fetch"]>;

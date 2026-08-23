@@ -1,8 +1,10 @@
 import type { IOType } from "node:child_process";
 import type { Stream } from "node:stream";
-import type { OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js";
-import type { StreamableHTTPReconnectionOptions } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
+import type {
+  OAuthClientProvider,
+  StreamableHTTPReconnectionOptions,
+  Transport,
+} from "@modelcontextprotocol/client";
 
 export type { McpServer, McpServerInfo, McpTool } from "@anvia/core/mcp";
 

@@ -1,15 +1,15 @@
 import { readFileSync } from "node:fs";
 import type { JsonObject } from "@anvia/core/completion";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
+import type { Transport } from "@modelcontextprotocol/client";
+import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
+import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { abortError, linkAbortSignal, throwIfAborted } from "./abort";
 import { createMcpTool } from "./tool";
 import type { McpClientOptions, McpConnectOptions, McpServer, McpServerInfo } from "./types";
 import { createSafeMcpFetch, parseAndValidateMcpUrl, parseMcpHttpUrl } from "./url-safety";
 
 let mcpClientVersion: string | undefined;
+const modernMcpProtocolVersion = "2026-07-28";
 
 type ClientResource = {
   readonly client: Client;
@@ -24,6 +24,8 @@ const transportOwnedHttpHeaders = new Set([
   "accept",
   "content-type",
   "last-event-id",
+  "mcp-method",
+  "mcp-name",
   "mcp-protocol-version",
   "mcp-session-id",
 ]);
@@ -196,7 +198,7 @@ async function createTransport(
   if (transport.sessionId !== undefined) {
     parameters = { ...parameters, sessionId: transport.sessionId };
   }
-  return asSdkTransport(new StreamableHTTPClientTransport(url, parameters));
+  return new StreamableHTTPClientTransport(url, parameters);
 }
 
 function copyMcpHeaders(
@@ -216,7 +218,7 @@ function copyMcpHeaders(
       throw new TypeError(`MCP Streamable HTTP header ${name} must be a string`);
     }
     const normalizedName = name.toLowerCase();
-    if (transportOwnedHttpHeaders.has(normalizedName)) {
+    if (transportOwnedHttpHeaders.has(normalizedName) || normalizedName.startsWith("mcp-param-")) {
       throw new TypeError(`MCP Streamable HTTP header ${name} is owned by the transport`);
     }
     if (hasAuthProvider && normalizedName === "authorization") {
@@ -254,26 +256,8 @@ async function listAllTools(
   client: Client,
   abortSignal?: AbortSignal | undefined,
 ): Promise<Awaited<ReturnType<Client["listTools"]>>["tools"]> {
-  const tools: Awaited<ReturnType<Client["listTools"]>>["tools"] = [];
-  const seenCursors = new Set<string>();
-  let cursor: string | undefined;
-
-  do {
-    const page = await client.listTools(
-      cursor === undefined ? undefined : { cursor },
-      requestOptions(abortSignal),
-    );
-    tools.push(...page.tools);
-    cursor = page.nextCursor;
-    if (cursor !== undefined && seenCursors.has(cursor)) {
-      throw new Error(`MCP server returned a repeated tools cursor: ${cursor}`);
-    }
-    if (cursor !== undefined) {
-      seenCursors.add(cursor);
-    }
-  } while (cursor !== undefined);
-
-  return tools;
+  const result = await client.listTools(undefined, requestOptions(abortSignal));
+  return result.tools;
 }
 
 function assertUniqueToolNames(tools: readonly { name: string }[], serverName: string): void {
@@ -287,9 +271,12 @@ function assertUniqueToolNames(tools: readonly { name: string }[], serverName: s
 }
 
 function createSdkClient(): Client {
-  return new Client({
+  const implementation = {
     name: "@anvia/mcp",
     version: getMcpClientVersion(),
+  };
+  return new Client(implementation, {
+    versionNegotiation: { mode: { pin: modernMcpProtocolVersion } },
   });
 }
 
@@ -302,10 +289,6 @@ function getMcpClientVersion(): string {
 
 function requestOptions(signal?: AbortSignal | undefined): { signal?: AbortSignal } {
   return signal === undefined ? {} : { signal };
-}
-
-function asSdkTransport(transport: unknown): Transport {
-  return transport as Transport;
 }
 
 function closeResource(resource: ClientResource): Promise<void> {

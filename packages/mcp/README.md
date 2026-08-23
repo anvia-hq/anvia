@@ -5,6 +5,8 @@ Model Context Protocol client integration for Anvia agents.
 This package owns MCP connections, transports, tool discovery, and cleanup. `@anvia/core` keeps only
 the lightweight MCP registration contracts consumed by `Agent`.
 
+Requires Node.js 20 or newer and uses the official MCP TypeScript SDK v2 client.
+
 ## Installation
 
 ```sh
@@ -47,6 +49,10 @@ try {
 
 Construction performs no I/O. `connect()` discovers every tool page once and returns a frozen
 registration snapshot. Reconnect and rebuild the Agent to adopt changed remote tools.
+
+`@anvia/mcp` requires the modern MCP `2026-07-28` protocol. Connections fail clearly when a server
+does not support that revision; the package never attempts or falls back to the legacy MCP
+handshake.
 
 Built-in Streamable HTTP connections enforce Anvia URL safety by default and do not accept a custom
 `fetch`. Static request headers are explicit transport configuration; arbitrary Fetch `RequestInit`

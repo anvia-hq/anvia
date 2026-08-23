@@ -33,7 +33,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@modelcontextprotocol/client": "^2.0.0",
     "undici": "^8.10.0"
   },
   "devDependencies": {
@@ -45,5 +45,8 @@
   },
   "peerDependencies": {
     "@anvia/core": "workspace:*"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

@@ -1,7 +1,7 @@
 import type { JsonObject, ToolDefinition } from "@anvia/core/completion";
 import type { McpTool } from "@anvia/core/mcp";
 import { ToolOutput } from "@anvia/core/tool";
-import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import type { Client } from "@modelcontextprotocol/client";
 import { createCallToolParams, mapMcpToolResult, parseMcpToolArguments } from "./result";
 
 type SdkMcpToolDefinition = Awaited<ReturnType<Client["listTools"]>>["tools"][number];
@@ -35,7 +35,6 @@ export function createMcpTool(options: {
     async call(args, context) {
       const result = await client.callTool(
         createCallToolParams(definition.name, args),
-        undefined,
         context?.abortSignal === undefined ? {} : { signal: context.abortSignal },
       );
       return ToolOutput.content(mapMcpToolResult(result));

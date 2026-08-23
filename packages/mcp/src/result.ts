@@ -20,7 +20,7 @@ type McpResultContent =
 export type McpToolCallResult =
   | {
       content: McpResultContent[];
-      structuredContent?: Record<string, unknown> | undefined;
+      structuredContent?: unknown;
       isError?: boolean | undefined;
     }
   | {

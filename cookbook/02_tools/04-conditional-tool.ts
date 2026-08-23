@@ -33,6 +33,6 @@ const prompt = enableMathTools
 
 const response = await agent.generate({ prompt });
 
-if (response.status !== "completed") throw new Error("Unexpected tool approval request.");
+if (response.type !== "response") throw new Error("Unexpected tool approval request.");
 console.log("math tools enabled:", enableMathTools);
 console.log(response.output);

@@ -1,16 +1,16 @@
 import { AgentRunBlockedError } from "../agent/errors";
 import type { AgentInteractionRequest, AgentInteractionResponse } from "../agent/interactions";
 import type {
+  AgentInteractionOutcome,
+  AgentOutcome,
   AgentResponse,
-  AgentResult,
   AgentRunOptions,
   AgentRunSettings,
-  AgentSuspendedResult,
 } from "../agent/run-types";
 import type { EvalCase, EvalTarget } from "./types";
 
 type EvaluableAgent<Output> = {
-  generate(input: AgentRunOptions<Output>): Promise<AgentResult<Output>>;
+  generate(input: AgentRunOptions<Output>): Promise<AgentOutcome<Output>>;
 };
 
 type IsAny<Value> = 0 extends 1 & Value ? true : false;
@@ -60,7 +60,7 @@ export type AgentEvalTargetOptions<
 
 export class AgentEvalSuspensionError extends Error {
   constructor(
-    readonly result: AgentSuspendedResult,
+    readonly result: AgentInteractionOutcome,
     message = "Agent eval target suspended without an interaction responder.",
   ) {
     super(message);
@@ -85,7 +85,7 @@ export function agentEvalTarget<
     const runSettings = agentRunSettings(request);
     let response = await options.agent.generate(request);
     let phase = 0;
-    while (response.status === "suspended") {
+    while (response.type === "interaction") {
       if (options.interactions === undefined) {
         throw new AgentEvalSuspensionError(response);
       }
@@ -107,7 +107,7 @@ export function agentEvalTarget<
         ...runSettings,
       });
     }
-    if (response.status === "blocked") throw new AgentRunBlockedError(response);
+    if (response.type === "blocked") throw new AgentRunBlockedError(response);
     return options.output === undefined
       ? (response as Output)
       : await options.output({ response, testCase });

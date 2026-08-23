@@ -153,6 +153,9 @@ export type MemoryCompactorResult = {
 
 export type MemoryCompactor = (input: MemoryCompactorInput) => Promise<MemoryCompactorResult>;
 
+/** Counts the approximate or exact model tokens represented by a message list. */
+export type MemoryTokenCounter = (messages: readonly Message[]) => number | Promise<number>;
+
 export type CreateSummaryMemoryCompactorOptions = {
   model: CompletionModel;
   instructions?: string | undefined;
@@ -168,11 +171,12 @@ export type MemoryCompactionConflictRetryOptions = {
 
 export type MemoryCompactionOptions = {
   trigger: {
-    afterMessages: number;
+    afterTokens: number;
   };
   retention?: {
-    recentUserTurns?: number | undefined;
+    recentTokens?: number | undefined;
   };
+  tokenCounter?: MemoryTokenCounter | undefined;
   compactor: MemoryCompactor;
   conflictRetries?: false | MemoryCompactionConflictRetryOptions | undefined;
 };
@@ -186,6 +190,19 @@ export type MemoryCompactionInfo = {
   originalMessageCount: number;
   compactedMessageCount: number;
   retainedMessageCount: number;
+  originalTokenCount: number;
+  compactedTokenCount: number;
+  retainedTokenCount: number;
+  resultTokenCount: number;
   attempts: number;
   usage: Usage;
 };
+
+export type MemoryCompactionResult =
+  | ({ type: "compacted" } & MemoryCompactionInfo)
+  | {
+      type: "skipped";
+      reason: "nothing_to_compact";
+      originalMessageCount: number;
+      originalTokenCount: number;
+    };

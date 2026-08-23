@@ -13,6 +13,7 @@ import type {
   MemoryOptions,
   MemorySavePolicy,
   MemoryStore,
+  MemoryTokenCounter,
 } from "../memory/types";
 import type { AgentObservabilityOptions } from "../observability";
 import type { RetrySetting } from "../retry";
@@ -67,8 +68,9 @@ export type AgentMemory = {
   savePolicy: MemorySavePolicy;
   compaction?:
     | {
-        trigger: { afterMessages: number };
-        retention: { recentUserTurns: number };
+        trigger: { afterTokens: number };
+        retention: { recentTokens: number };
+        tokenCounter: MemoryTokenCounter;
         compactor: MemoryCompactor;
         conflictRetries: false | MemoryCompactionConflictRetryOptions;
       }

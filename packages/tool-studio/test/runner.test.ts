@@ -2030,7 +2030,7 @@ describe("Anvia studio", () => {
       }),
     );
     const first = (await firstResponse.json()) as AgentRunResponse;
-    if (first.status !== "suspended") throw new Error("Expected suspended run");
+    if (first.type !== "interaction") throw new Error("Expected interaction outcome");
     expect(first).not.toHaveProperty("continuation");
     expect(first).not.toHaveProperty("messages");
     expect(executed).toBe(false);
@@ -2049,7 +2049,7 @@ describe("Anvia studio", () => {
     expect(resumedResponse.status).toBe(200);
     const result = (await resumedResponse.json()) as AgentRunResponse;
     expect(result).toMatchObject({
-      status: "completed",
+      type: "response",
       output: "Refund complete",
       resumedFrom: {
         runId: first.runId,
@@ -2447,7 +2447,7 @@ describe("Anvia studio", () => {
       }),
     );
     const first = (await firstResponse.json()) as AgentRunResponse;
-    if (first.status !== "suspended") throw new Error("Expected suspended run");
+    if (first.type !== "interaction") throw new Error("Expected interaction outcome");
 
     const resumedResponse = await runner.fetch(
       new Request("http://runner.test/agents/support/runs", {
@@ -2466,7 +2466,7 @@ describe("Anvia studio", () => {
     );
     expect(resumedResponse.status).toBe(200);
     await expect(resumedResponse.json()).resolves.toMatchObject({
-      status: "completed",
+      type: "response",
       output: "Refund denied",
       resumedFrom: { runId: first.runId, interactionId: first.interaction.id },
     });
@@ -2600,7 +2600,7 @@ describe("Anvia studio", () => {
       }),
     );
     const first = (await firstResponse.json()) as AgentRunResponse;
-    if (first.status !== "suspended") throw new Error("Expected suspended run");
+    if (first.type !== "interaction") throw new Error("Expected interaction outcome");
 
     const restartedRunner = new Studio([agent]);
     const unavailable = await restartedRunner.fetch(
@@ -3061,8 +3061,8 @@ describe("Anvia studio", () => {
       memory: {
         store,
         compaction: {
-          trigger: { afterMessages: 4 },
-          retention: { recentUserTurns: 1 },
+          trigger: { afterTokens: 4 },
+          retention: { recentTokens: 1 },
           compactor: async () => ({ summary: "Earlier discussion." }),
         },
       },
@@ -3169,8 +3169,8 @@ describe("Anvia studio", () => {
       memory: {
         store,
         compaction: {
-          trigger: { afterMessages: 4 },
-          retention: { recentUserTurns: 1 },
+          trigger: { afterTokens: 4 },
+          retention: { recentTokens: 1 },
           compactor: async () => ({ summary: "Earlier discussion." }),
         },
       },

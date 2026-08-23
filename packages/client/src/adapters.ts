@@ -321,6 +321,10 @@ async function* translateAgentEvent(
         originalMessageCount: event.originalMessageCount,
         compactedMessageCount: event.compactedMessageCount,
         retainedMessageCount: event.retainedMessageCount,
+        originalTokenCount: event.originalTokenCount,
+        compactedTokenCount: event.compactedTokenCount,
+        retainedTokenCount: event.retainedTokenCount,
+        resultTokenCount: event.resultTokenCount,
         attempts: event.attempts,
         usage: event.usage,
       });
@@ -432,21 +436,23 @@ async function* translateAgentEvent(
         decision: event.decision,
       });
       return;
-    case "final": {
-      const result = event.result;
-      if (result.status === "suspended" && scope === undefined) {
+    case "response":
+    case "interaction":
+    case "blocked": {
+      const result = event;
+      if (result.type === "interaction" && scope === undefined) {
         yield scopedEvent(runtime.runId, turn, scope, {
           type: "interaction",
           interaction: result.interaction,
         });
       }
       const output =
-        result.status === "completed"
+        result.type === "response"
           ? clientOutput(result.output, runtime.options.mapOutput)
           : undefined;
       const runEnd: ClientEventOf<"run_end"> = {
         type: "run_end",
-        status: result.status,
+        status: agentOutcomeStatus(result.type),
         text: result.text,
         usage: result.usage,
       };
@@ -1141,7 +1147,20 @@ function scopeKey(scope: ClientStreamScope | undefined): string {
 }
 
 function isRootTerminalAgentEvent(event: AgentStreamEvent<unknown, unknown>): boolean {
-  return event.type === "final" || event.type === "error";
+  return (
+    event.type === "response" ||
+    event.type === "interaction" ||
+    event.type === "blocked" ||
+    event.type === "error"
+  );
+}
+
+function agentOutcomeStatus(
+  type: "response" | "interaction" | "blocked",
+): "completed" | "suspended" | "blocked" {
+  if (type === "response") return "completed";
+  if (type === "interaction") return "suspended";
+  return "blocked";
 }
 
 function propagateCancellation<TSource, TOutput>(

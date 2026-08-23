@@ -19,16 +19,16 @@ import {
 } from "../../agent/lifecycle";
 import { getAgentProviderOutputSchema } from "../../agent/output-schema";
 import type {
-  AgentBlockedResult,
+  AgentBlockedOutcome,
   AgentInput,
+  AgentInteractionOutcome,
+  AgentOutcome,
   AgentResponse,
-  AgentResult,
   AgentRunOptions,
   AgentRunSettings,
   AgentSteerInput,
   AgentSteerReceipt,
   AgentStreamEvent,
-  AgentSuspendedResult,
 } from "../../agent/run-types";
 import { getAgentToolState } from "../../agent/tool-state";
 import { isStreamingCompletionModel } from "../../completion/generate-completion";
@@ -77,6 +77,7 @@ import type {
   AgentGenerationEndArgs,
   AgentGenerationModelInfo,
   AgentGenerationStartArgs,
+  AgentRunEndArgs,
   AgentTraceOptions,
 } from "../../observability/types";
 import {
@@ -109,6 +110,7 @@ import {
   ToolExecutionSuspension,
 } from "./interaction-suspension";
 import { AgentRunMemory, type MemoryPreparation } from "./memory";
+import { normalizeMemoryScope } from "./memory-scope";
 import { fetchContextDocuments, fetchToolDefinitions } from "./retrieval";
 import { getInternalAgentRunOptions, type InternalAgentRunOptions } from "./run-options";
 import { assertNonnegativeSafeInteger, assertPositiveSafeInteger } from "./run-validation";
@@ -163,7 +165,7 @@ async function settleFailureCleanup(
 type RawResponseOf<Model> =
   Model extends CompletionModel<infer RawResponse> ? RawResponse : unknown;
 
-type AgentTerminalResult<Output> = AgentResult<Output>;
+type AgentTerminalResult<Output> = AgentOutcome<Output>;
 
 export class AgentRun<Output = string, M extends CompletionModel = CompletionModel> {
   private chatHistory: MessageType[];
@@ -285,14 +287,15 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     return receipt;
   }
 
-  cancel(reason: string): void {
+  cancel(reason: string): AgentRunCancelledError | undefined {
     if (this.isTerminal() || this.cancellationError !== undefined) {
-      return;
+      return this.cancellationError;
     }
     const messages =
       this.currentMessages.length === 0 ? [this.promptMessage] : [...this.currentMessages];
     const error = new AgentRunCancelledError([...this.chatHistory, ...messages], reason);
     this.setCancellationError(error);
+    return error;
   }
 
   private setCancellationError(error: AgentRunCancelledError): void {
@@ -316,7 +319,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         this.continuationState === undefined
           ? await this.memoryRecorder.prepareHistory(
               runId,
-              newMessages.length,
+              newMessages,
               this.abortController.signal,
             )
           : undefined;
@@ -350,9 +353,13 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         this.promptMessage = inputResult.prompt;
         if (inputResult.blocked) {
           const text = inputResult.message ?? "The request was blocked by a guardrail.";
-          const result: AgentBlockedResult = {
-            status: "blocked",
+          const result: AgentBlockedOutcome = {
+            type: "blocked",
             stage: "input",
+            ...blockedOutcomeDetails(
+              this.guardrailDecisions,
+              "The request was blocked by a guardrail.",
+            ),
             runId,
             text,
             usage,
@@ -364,7 +371,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
           if (this.resumedFrom !== undefined) result.resumedFrom = this.resumedFrom;
           this.runState = "closing";
           await this.runLifecycleFinish(result);
-          await runObservers.end(result);
+          await runObservers.end(observerRunEnd(result));
           this.runState = "completed";
           this.disposeAbortLink();
           return result;
@@ -521,7 +528,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
             newMessages,
             runObservers,
           );
-          if (result.status === "completed") {
+          if (result.type === "response") {
             await this.runRunEndHook(result, newMessages);
           }
           await this.memoryRecorder.commitCompletedRun(
@@ -531,7 +538,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
             pendingTurnMessages,
           );
           await this.runLifecycleFinish(result);
-          await runObservers.end(result);
+          await runObservers.end(observerRunEnd(result));
           this.runState = "completed";
           this.disposeAbortLink();
           return result;
@@ -622,7 +629,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         this.continuationState === undefined
           ? await this.memoryRecorder.prepareHistory(
               runId,
-              newMessages.length,
+              newMessages,
               this.abortController.signal,
             )
           : undefined;
@@ -660,9 +667,13 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         this.promptMessage = inputResult.prompt;
         if (inputResult.blocked) {
           const text = inputResult.message ?? "The request was blocked by a guardrail.";
-          const result: AgentBlockedResult = {
-            status: "blocked",
+          const result: AgentBlockedOutcome = {
+            type: "blocked",
             stage: "input",
+            ...blockedOutcomeDetails(
+              this.guardrailDecisions,
+              "The request was blocked by a guardrail.",
+            ),
             runId,
             text,
             usage,
@@ -674,10 +685,10 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
           if (this.resumedFrom !== undefined) result.resumedFrom = this.resumedFrom;
           this.runState = "closing";
           await this.runLifecycleFinish(result);
-          await runObservers.end(result);
+          await runObservers.end(observerRunEnd(result));
           this.runState = "completed";
           this.disposeAbortLink();
-          yield { type: "final", result };
+          yield result;
           return;
         }
       }
@@ -730,7 +741,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
               suspension: error,
               uncommittedMessages: [],
             });
-            yield { type: "final", result };
+            yield result;
             return;
           }
           throw error;
@@ -946,7 +957,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
               suspension: error,
               uncommittedMessages: [assistantMessage],
             });
-            yield { type: "final", result };
+            yield result;
             return;
           }
           throw error;
@@ -1287,7 +1298,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       args.newMessages,
       args.runObservers,
     );
-    if (result.status === "completed") {
+    if (result.type === "response") {
       await this.runRunEndHook(result, args.newMessages);
     }
     await this.memoryRecorder.commitCompletedRun(
@@ -1297,10 +1308,10 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       args.pendingTurnMessages,
     );
     await this.runLifecycleFinish(result);
-    await args.runObservers.end(result);
+    await args.runObservers.end(observerRunEnd(result));
     this.runState = "completed";
     this.disposeAbortLink();
-    yield { type: "final", result };
+    yield result;
   }
 
   private async finishSuspension(args: {
@@ -1312,7 +1323,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     runObservers: ActiveAgentRunObservers;
     suspension: ToolExecutionSuspension;
     uncommittedMessages: MessageType[];
-  }): Promise<AgentSuspendedResult> {
+  }): Promise<AgentInteractionOutcome> {
     const partialToolMessage: MessageType | undefined =
       args.suspension.completedResults.length === 0
         ? undefined
@@ -1355,8 +1366,8 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       interaction: args.suspension.interaction,
       state: serializeContinuationState(continuationState),
     });
-    const result: AgentSuspendedResult = {
-      status: "suspended",
+    const result: AgentInteractionOutcome = {
+      type: "interaction",
       runId: args.runId,
       text: latestAssistantText([...this.chatHistory, ...args.newMessages]),
       usage: args.usage,
@@ -1370,7 +1381,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     };
     if (this.resumedFrom !== undefined) result.resumedFrom = this.resumedFrom;
     await this.runLifecycleFinish(result);
-    await args.runObservers.end(result);
+    await args.runObservers.end(observerRunEnd(result));
     this.runState = "completed";
     this.currentMessages = [...args.newMessages];
     this.disposeAbortLink();
@@ -1649,13 +1660,13 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       Object.assign(common, { memoryCompaction: lifecycleSnapshot(result.memoryCompaction) });
     }
     const event =
-      result.status === "completed"
+      result.type === "response"
         ? {
             ...common,
             status: "completed",
             output: lifecycleSnapshot(result.output),
           }
-        : result.status === "blocked"
+        : result.type === "blocked"
           ? {
               ...common,
               status: "blocked",
@@ -1787,11 +1798,19 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     };
     if (this.resumedFrom !== undefined) Object.assign(common, { resumedFrom: this.resumedFrom });
     if (blocked) {
-      return { ...common, status: "blocked", stage: "output" };
+      return {
+        ...common,
+        type: "blocked",
+        stage: "output",
+        ...blockedOutcomeDetails(
+          this.guardrailDecisions,
+          "The response was blocked by a guardrail.",
+        ),
+      };
     }
     return {
       ...common,
-      status: "completed",
+      type: "response",
       output: this.parseOutput(text),
     };
   }
@@ -1940,6 +1959,10 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         originalMessageCount: compaction.originalMessageCount,
         compactedMessageCount: compaction.compactedMessageCount,
         retainedMessageCount: compaction.retainedMessageCount,
+        originalTokenCount: compaction.originalTokenCount,
+        compactedTokenCount: compaction.compactedTokenCount,
+        retainedTokenCount: compaction.retainedTokenCount,
+        resultTokenCount: compaction.resultTokenCount,
         attempts: compaction.attempts,
         inputTokens: compaction.usage.inputTokens,
         outputTokens: compaction.usage.outputTokens,
@@ -2411,21 +2434,6 @@ function normalizeSteeringInput(input: AgentSteerInput): MessageType[] {
   return parsedMessages;
 }
 
-function normalizeMemoryScope(scope: MemoryScope): MemoryScope {
-  if (typeof scope !== "object" || scope === null) {
-    throw new TypeError("Agent session must be an object.");
-  }
-  if (typeof scope.sessionId !== "string" || scope.sessionId.trim().length === 0) {
-    throw new TypeError("Agent sessionId must be a non-empty string.");
-  }
-  const normalized: MemoryScope = {
-    sessionId: scope.sessionId.trim(),
-  };
-  if (scope.userId !== undefined) normalized.userId = scope.userId;
-  if (scope.metadata !== undefined) normalized.metadata = scope.metadata;
-  return lifecycleSnapshot(normalized);
-}
-
 function normalizeRequestedRunId(runId: string | undefined): string | undefined {
   if (runId === undefined) {
     return undefined;
@@ -2718,4 +2726,38 @@ function guardrailDecisionAttributes(decision: GuardrailDecisionRecord): JsonObj
     attributes.message = decision.message;
   }
   return attributes;
+}
+
+function blockedOutcomeDetails(
+  decisions: readonly GuardrailDecisionRecord[],
+  fallbackReason: string,
+): { reason: string; message?: string | undefined } {
+  for (let index = decisions.length - 1; index >= 0; index -= 1) {
+    const decision = decisions[index];
+    if (decision?.applied !== true || decision.action !== "block") continue;
+    return decision.message === undefined
+      ? { reason: decision.reason ?? fallbackReason }
+      : { reason: decision.reason ?? fallbackReason, message: decision.message };
+  }
+  return { reason: fallbackReason };
+}
+
+function observerRunEnd<Output>(outcome: AgentOutcome<Output>): AgentRunEndArgs {
+  const common = {
+    runId: outcome.runId,
+    text: outcome.text,
+    usage: outcome.usage,
+    messages: outcome.messages,
+    sources: outcome.sources,
+    providerToolCalls: outcome.providerToolCalls,
+    resumedFrom: outcome.resumedFrom,
+  };
+  switch (outcome.type) {
+    case "response":
+      return { ...common, status: "completed", output: outcome.output };
+    case "blocked":
+      return { ...common, status: "blocked", stage: outcome.stage };
+    case "interaction":
+      return { ...common, status: "suspended", interaction: outcome.interaction };
+  }
 }

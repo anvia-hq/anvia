@@ -58,7 +58,7 @@ const agent = new Agent({
 });
 
 const result = await agent.generate({ prompt: "What is happening with order A123?" });
-if (result.status === "completed") console.log(result.output);
+if (result.type === "response") console.log(result.output);
 ```
 
 ## Direct Completions
@@ -229,7 +229,7 @@ rather than recursively accumulating failed attempts. Truncated output and reaso
 parse and schema repairs include only a bounded, text-only preview of the latest failed response.
 The correction asks for shorter raw JSON matching the schema, without Markdown or commentary.
 Transport failures and structured-output failures therefore cannot exceed `maxAttempts` in total.
-Completed Agent results expose the last generation's `finishReason` and `providerFinishReason`, and
+Agent response outcomes expose the last generation's `finishReason` and `providerFinishReason`, and
 the same fields remain attached to each assistant message's Anvia generation metadata.
 
 Malformed, incomplete, or non-JSON provider tool arguments fail with
@@ -256,30 +256,35 @@ exists; its message never contains the rejected model response. The `completion.
 event records the same safe diagnostics and whether failed output was omitted or previewed, never
 the model output itself.
 
-Agent results are discriminated by `status`. Completed results include typed `output` and `text`;
-guardrail blocks return `status: "blocked"`, `stage`, and `text`; tool approvals and first-class
-questions return a JSON-safe `status: "suspended"` result.
+Agent outcomes are discriminated by `type`. Successful responses include typed `output` and `text`;
+guardrail blocks return `type: "blocked"`, `stage`, `reason`, and an optional `message`; tool
+approvals and first-class questions return a JSON-safe `type: "interaction"` outcome.
 
 ```ts
-const result = await agent.generate({ prompt: "Help with this request." });
+const outcome = await agent.generate({ prompt: "Help with this request." });
 
-if (result.status === "completed") console.log(result.output);
-if (result.status === "blocked") console.log(result.stage, result.text);
-if (result.status === "suspended") {
-  const resumed = await agent.generate({
-    continuation: result.continuation,
-    response:
-      result.interaction.type === "tool-approval"
-        ? { type: "tool-approval", approved: true }
+switch (outcome.type) {
+  case "response":
+    console.log(outcome.output);
+    break;
+  case "blocked":
+    console.log(outcome.stage, outcome.reason);
+    break;
+  case "interaction": {
+    const response =
+      outcome.interaction.type === "tool-approval"
+        ? { type: "tool-approval" as const, approved: true }
         : {
-            type: "tool-question",
-            answers: result.interaction.questions.map((question) => ({
+            type: "tool-question" as const,
+            answers: outcome.interaction.questions.map((question) => ({
               questionId: question.id,
               value: "application-provided answer",
             })),
-          },
-  });
-  console.log(resumed.status, resumed.resumedFrom);
+          };
+    const resumed = await agent.resume(outcome.continuation, response);
+    console.log(resumed.type, resumed.resumedFrom);
+    break;
+  }
 }
 ```
 
@@ -300,16 +305,26 @@ import {
 ```
 
 An Agent with `outputSchema` carries that output type through `generate`, `stream`, `asTool`, and
-Pipeline Agent stages. Agent stream finals use the same result shape:
+Pipeline Agent stages. `stream()` returns a handle with one event consumer plus final-value
+promises, steering, and cancellation. Terminal agent events are the flattened outcomes themselves;
+there is no extra `final.result` wrapper:
 
 ```ts
-for await (const event of agent.stream({ prompt: "Help with this request." })) {
-  if (event.type === "final") {
-    if (event.result.status === "completed") console.log(event.result.output);
-    else console.log(event.result.stage, event.result.text);
-  }
+const stream = agent.stream({ prompt: "Help with this request." });
+
+for await (const event of stream.events) {
+  if (event.type === "text_delta") process.stdout.write(event.delta);
+  if (event.type === "response") console.log(event.output);
+  if (event.type === "interaction") console.log(event.interaction);
+  if (event.type === "blocked") console.log(event.reason);
 }
+
+const outcome = await stream.result;
+console.log(outcome.type, await stream.text);
 ```
+
+Use `stream.textStream` instead of `stream.events` when only text deltas are needed. Event and text
+iteration share one underlying stream and therefore cannot be consumed independently.
 
 Pass `abortSignal` on a run to cancel the active provider call, tools, and nested Agent tools.
 
@@ -383,8 +398,8 @@ const agent = new Agent({
     store: memory,
     savePolicy: "message",
     compaction: {
-      trigger: { afterMessages: 50 },
-      retention: { recentUserTurns: 4 },
+      trigger: { afterTokens: 32_000 },
+      retention: { recentTokens: 8_000 },
       compactor,
       conflictRetries: false,
     },
@@ -393,13 +408,50 @@ const agent = new Agent({
 
 for await (const event of agent.stream({ prompt: "What did we decide?", session })) {
   if (event.type === "memory_compaction") {
-    console.log(event.compactedMessageCount, event.usage);
+    console.log({
+      messages: event.compactedMessageCount,
+      beforeTokens: event.originalTokenCount,
+      afterTokens: event.resultTokenCount,
+      usage: event.usage,
+    });
   }
 }
 ```
 
-The trigger is a threshold, not a hard storage limit. Summary-provider retries belong to the
-compactor; full snapshot-to-replacement conflict retries are separately opt-in.
+The trigger includes the stored transcript and the incoming user message. Retention keeps as many
+recent complete user-led turns as fit the configured budget; the newest complete turn is always
+kept and never split, even when it exceeds that budget. When `retention` is omitted, it defaults to
+25% of `afterTokens`.
+
+The built-in token counter is a lightweight provider-neutral estimate. Pass `tokenCounter` when you
+have a model-specific tokenizer or counting service. A custom counter may be async, can be called
+multiple times, and must return deterministic, monotonic, nonnegative safe integers:
+
+```ts
+compaction: {
+  trigger: { afterTokens: 32_000 },
+  retention: { recentTokens: 8_000 },
+  tokenCounter: (messages) => tokenizer.count(messages),
+  compactor,
+}
+```
+
+You can force the configured policy without starting an Agent run. The result makes a no-op
+explicit rather than throwing:
+
+```ts
+const result = await agent.compactMemory({ session });
+
+if (result.type === "compacted") {
+  console.log(result.originalTokenCount, result.resultTokenCount);
+} else {
+  console.log(result.reason); // "nothing_to_compact"
+}
+```
+
+The automatic trigger is a threshold, not a hard storage limit. Summary-provider retries belong to
+the compactor; full snapshot-to-replacement conflict retries are separately opt-in. A streamed
+`memory_compaction` event is emitted only after the store atomically commits the replacement.
 
 ## Structured Extraction
 

@@ -49,14 +49,14 @@ export function createAgentTool<Output, M extends CompletionModel, ContextDocume
           if (event.type === "error") {
             throw event.error;
           }
-          if (event.type === "final") {
-            if (event.result.status === "suspended") {
-              throw new AgentToolSuspensionError(event.result);
-            }
-            if (event.result.status === "blocked") {
-              throw new AgentRunBlockedError(event.result);
-            }
-            output = event.result.output;
+          if (event.type === "interaction") {
+            throw new AgentToolSuspensionError(event);
+          }
+          if (event.type === "blocked") {
+            throw new AgentRunBlockedError(event);
+          }
+          if (event.type === "response") {
+            output = event.output;
             completed = true;
           }
         }
@@ -70,10 +70,10 @@ export function createAgentTool<Output, M extends CompletionModel, ContextDocume
         maxTurns: options.maxTurns,
         abortSignal: context.abortSignal,
       });
-      if (response.status === "suspended") {
+      if (response.type === "interaction") {
         throw new AgentToolSuspensionError(response);
       }
-      if (response.status === "blocked") {
+      if (response.type === "blocked") {
         throw new AgentRunBlockedError(response);
       }
       return response.output;

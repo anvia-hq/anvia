@@ -203,7 +203,7 @@ describe("Agent MCP registrations", () => {
     );
 
     expect(model.requests[0]?.tools.map((tool) => tool.name)).toContain("mcp_add");
-    expect(streamEvents.at(-1)).toMatchObject({ type: "final", result: { output: "7" } });
+    expect(streamEvents.at(-1)).toMatchObject({ type: "response", output: "7" });
     expect(events).toEqual(['call:mcp_add:{"x":2,"y":5}', "result:mcp_add:7"]);
   });
 
@@ -235,11 +235,11 @@ describe("Agent MCP registrations", () => {
 
     const pending = await agent.generate({ prompt: "run guarded" });
     expect(pending).toMatchObject({
-      status: "suspended",
+      type: "interaction",
       interaction: { type: "tool-approval", toolName: "mcp_guarded" },
     });
     expect(executed).toBe(false);
-    if (pending.status !== "suspended") throw new Error("Expected suspension");
+    if (pending.type !== "interaction") throw new Error("Expected suspension");
     await expect(
       agent.generate({
         continuation: pending.continuation,

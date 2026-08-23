@@ -1,6 +1,6 @@
 {
   "name": "@anvia/sandbox",
-  "version": "1.0.0-rc.10",
+  "version": "1.0.0-rc.11",
   "description": "Sandboxed workspace tools for Anvia agents.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",

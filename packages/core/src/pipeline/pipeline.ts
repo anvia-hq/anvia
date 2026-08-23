@@ -240,10 +240,10 @@ export class Pipeline<Input, Output = Input> {
           ...request,
           abortSignal: context.abortSignal,
         } as AgentRunOptions<AgentOutput, RawResponseOf<Model>>);
-        if (response.status === "suspended") {
+        if (response.type === "interaction") {
           throw new PipelineAgentSuspensionError(response);
         }
-        if (response.status === "blocked") {
+        if (response.type === "blocked") {
           throw new AgentRunBlockedError(response);
         }
         return response.output;

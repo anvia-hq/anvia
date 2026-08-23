@@ -1,5 +1,5 @@
 import type { CompletionFinishReason, Message, Usage } from "../completion/index";
-import type { AgentBlockedResult, AgentSuspendedResult } from "./run-types";
+import type { AgentBlockedOutcome, AgentInteractionOutcome } from "./run-types";
 
 export type AgentStructuredOutputPhase = "truncated" | "content-filter" | "parse" | "schema";
 
@@ -80,7 +80,7 @@ export class AgentRunCancelledError extends Error {
 }
 
 export class AgentRunBlockedError extends Error {
-  constructor(readonly result: AgentBlockedResult) {
+  constructor(readonly result: AgentBlockedOutcome) {
     super(`Agent run was blocked by an ${result.stage} guardrail.`);
     this.name = "AgentRunBlockedError";
   }
@@ -94,7 +94,7 @@ export class AgentStreamClosedError extends Error {
 }
 
 export class AgentToolSuspensionError extends Error {
-  constructor(readonly result: AgentSuspendedResult) {
+  constructor(readonly result: AgentInteractionOutcome) {
     super("Agent tool execution suspended for human interaction.");
     this.name = "AgentToolSuspensionError";
   }

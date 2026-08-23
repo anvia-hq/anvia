@@ -389,7 +389,7 @@ describe("agent memory", () => {
     await expect(
       agent.generate({ prompt: "blocked prompt", session: { sessionId: "session_1" } }),
     ).resolves.toMatchObject({
-      status: "blocked",
+      type: "blocked",
       stage: "input",
       text: "Input blocked.",
     });
@@ -474,13 +474,13 @@ describe("agent memory", () => {
     });
     const scope = { sessionId: "session_1" };
     const pending = await agent.generate({ prompt: "run guarded", session: scope });
-    expect(pending.status).toBe("suspended");
+    expect(pending.type).toBe("interaction");
     expect(store.appendCalls.map((call) => call.messages.map((message) => message.role))).toEqual([
       ["user"],
       ["assistant"],
     ]);
     await expect(store.load({ scope })).resolves.toHaveLength(2);
-    if (pending.status !== "suspended") throw new Error("Expected suspension");
+    if (pending.type !== "interaction") throw new Error("Expected suspension");
 
     await expect(
       agent.generate({
@@ -488,7 +488,7 @@ describe("agent memory", () => {
         response: { type: "tool-approval", approved: true },
       }),
     ).resolves.toMatchObject({
-      status: "completed",
+      type: "response",
       output: "done",
     });
     expect(store.appendCalls.map((call) => call.messages.map((message) => message.role))).toEqual([

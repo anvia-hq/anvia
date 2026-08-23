@@ -1,5 +1,7 @@
 # @anvia/cli
 
+## 1.0.0-rc.11
+
 ## 1.0.0-rc.10
 
 ### Patch Changes

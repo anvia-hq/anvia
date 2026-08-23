@@ -157,7 +157,7 @@ describe("Agent execution", () => {
     });
 
     await expect(agent.generate({ prompt: "hello" })).resolves.toMatchObject({
-      status: "completed",
+      type: "response",
       output: "recovered",
     });
     expect(model.requests).toHaveLength(2);
@@ -201,7 +201,7 @@ describe("Agent execution", () => {
         prompt: "hello",
         retries: { maxAttempts: 2, initialDelayMs: 0, maxDelayMs: 0 },
       }),
-    ).resolves.toMatchObject({ status: "completed", output: "recovered" });
+    ).resolves.toMatchObject({ type: "response", output: "recovered" });
     expect(model.requests).toHaveLength(2);
   });
 
@@ -422,8 +422,8 @@ describe("Agent execution", () => {
     });
 
     const result = await agent.generate({ prompt: "answer" });
-    expect(result.status).toBe("completed");
-    if (result.status !== "completed") throw new Error("Expected a completed result.");
+    expect(result.type).toBe("response");
+    if (result.type !== "response") throw new Error("Expected a completed result.");
     expectTypeOf(result.output).toEqualTypeOf<{ answer: string }>();
     expect(result.output).toEqual({ answer: "typed" });
     expect(result.text).toBe('{"answer":"typed"}');
@@ -1283,7 +1283,7 @@ describe("Agent execution", () => {
     await expect(
       agent.generate({ prompt: "run guarded", ...withInternalAgentRunOptions({}, { hook }) }),
     ).resolves.toMatchObject({
-      status: "suspended",
+      type: "interaction",
       interaction: { type: "tool-approval", toolName: "guarded", reason: "Guarded action." },
     });
     expect(executed).toBe(false);
@@ -1317,15 +1317,13 @@ describe("Agent execution", () => {
       prompt: "run guarded",
       ...withInternalAgentRunOptions({}, { hook }),
     });
-    if (pending.status !== "suspended" || pending.interaction.type !== "tool-approval") {
+    if (pending.type !== "interaction" || pending.interaction.type !== "tool-approval") {
       throw new Error("Expected approval suspension");
     }
     await expect(
-      agent.generate({
-        continuation: pending.continuation,
-        response: { type: "tool-approval", approved: true },
-      }),
+      agent.resume(pending.continuation, { type: "tool-approval", approved: true }),
     ).resolves.toMatchObject({
+      type: "response",
       output: "done",
     });
     expect(executed).toBe(true);
@@ -1358,7 +1356,7 @@ describe("Agent execution", () => {
       prompt: "run guarded",
       ...withInternalAgentRunOptions({}, { hook }),
     });
-    if (pending.status !== "suspended") throw new Error("Expected suspension");
+    if (pending.type !== "interaction") throw new Error("Expected suspension");
     await expect(
       agent.generate({
         continuation: pending.continuation,
@@ -1395,7 +1393,7 @@ describe("Agent execution", () => {
     ]);
     const agent = new Agent({ id: "test-agent", model, tools: [guardedTool] });
     const pending = await agent.generate({ prompt: "run guarded" });
-    if (pending.status !== "suspended") throw new Error("Expected suspension");
+    if (pending.type !== "interaction") throw new Error("Expected suspension");
     const events: string[] = [];
     const middleware = createMiddleware({
       onToolOutput({ result, originalResult }) {
@@ -1532,7 +1530,7 @@ describe("Agent execution", () => {
     const agent = new Agent({ id: "test-agent", model, tools: [guardedTool] });
 
     const pending = await agent.generate({ prompt: "run guarded" });
-    if (pending.status !== "suspended") throw new Error("Expected suspension");
+    if (pending.type !== "interaction") throw new Error("Expected suspension");
     requests.push(pending.interaction);
     await expect(
       agent.generate({
@@ -1596,7 +1594,7 @@ describe("Agent execution", () => {
     const sequenceBeforeRun = sequence;
 
     const pending = await agent.generate({ prompt: "run guarded" });
-    if (pending.status !== "suspended" || pending.interaction.type !== "tool-approval") {
+    if (pending.type !== "interaction" || pending.interaction.type !== "tool-approval") {
       throw new Error("Expected approval suspension");
     }
     expect(pending.interaction.input).toEqual(approvalInput);
@@ -1609,7 +1607,7 @@ describe("Agent execution", () => {
         response: { type: "tool-approval", approved: true },
       }),
     ).resolves.toMatchObject({
-      status: "completed",
+      type: "response",
       output: "done",
     });
     expect(executedInput).toEqual(approvedInput);
@@ -1636,7 +1634,7 @@ describe("Agent execution", () => {
     const agent = new Agent({ id: "test-agent", model, tools: [guardedTool] });
 
     const pending = await agent.generate({ prompt: "run guarded" });
-    if (pending.status !== "suspended") throw new Error("Expected suspension");
+    if (pending.type !== "interaction") throw new Error("Expected suspension");
     const continuation = parseAgentContinuation(JSON.parse(JSON.stringify(pending.continuation)));
     expect(Object.isFrozen(continuation)).toBe(true);
     expect(Object.isFrozen(continuation.state)).toBe(true);
@@ -1654,7 +1652,7 @@ describe("Agent execution", () => {
       continuation,
       response: { type: "tool-approval", approved: true },
     });
-    if (result.status !== "completed") throw new Error("Expected completed result");
+    if (result.type !== "response") throw new Error("Expected completed result");
     expect(result.runId).not.toBe(pending.runId);
     expect(result.resumedFrom).toEqual({
       runId: pending.runId,
@@ -1693,7 +1691,7 @@ describe("Agent execution", () => {
     const agent = new Agent({ id: "test-agent", model, tools: [questionTool] });
 
     const pending = await agent.generate({ prompt: "prepare a report" });
-    if (pending.status !== "suspended" || pending.interaction.type !== "tool-question") {
+    if (pending.type !== "interaction" || pending.interaction.type !== "tool-question") {
       throw new Error("Expected question suspension");
     }
     expect(pending.interaction.questions).toHaveLength(2);
@@ -1751,7 +1749,7 @@ describe("Agent execution", () => {
     });
 
     expect(result).toMatchObject({
-      status: "completed",
+      type: "response",
       output: "done",
       resumedFrom: { runId: pending.runId, interactionId: pending.interaction.id },
     });
@@ -1801,7 +1799,7 @@ describe("Agent execution", () => {
     const result = await agent.generate({ prompt: "ask me" });
 
     expect(result).toMatchObject({
-      status: "completed",
+      type: "response",
       output: "I could not ask that question.",
     });
     expect(model.requests[1]?.chatHistory.at(-1)).toMatchObject({
@@ -1835,7 +1833,7 @@ describe("Agent execution", () => {
     const agent = new Agent({ id: "test-agent", model, tools: [numberTool] });
 
     await expect(agent.generate({ prompt: "run tool" })).resolves.toMatchObject({
-      status: "completed",
+      type: "response",
       output: "recovered",
     });
     expect(executions).toBe(0);
@@ -1900,7 +1898,7 @@ describe("Agent execution", () => {
     });
 
     const pending = await agent.generate({ prompt: "run guarded" });
-    if (pending.status !== "suspended") throw new Error("Expected suspension");
+    if (pending.type !== "interaction") throw new Error("Expected suspension");
     approvalRequests.push(pending.interaction);
     await expect(
       agent.generate({
@@ -1941,7 +1939,7 @@ describe("Agent execution", () => {
     const agent = new Agent({ id: "test-agent", model, tools: [guardedTool] });
 
     const pending = await agent.generate({ prompt: "run guarded" });
-    if (pending.status !== "suspended") throw new Error("Expected suspension");
+    if (pending.type !== "interaction") throw new Error("Expected suspension");
     await expect(
       agent.generate({
         continuation: pending.continuation,
@@ -2008,17 +2006,17 @@ describe("Agent execution", () => {
     const agent = new Agent({ id: "test-agent", model, tools: [guardedTool] });
     const pending = await agent.generate({ prompt: "run guarded" });
     expect(pending).toMatchObject({
-      status: "suspended",
+      type: "interaction",
       interaction: { type: "tool-approval", toolName: "guarded", input: {} },
     });
-    if (pending.status !== "suspended") throw new Error("Expected suspension");
+    if (pending.type !== "interaction") throw new Error("Expected suspension");
     await expect(
       agent.generate({
         continuation: pending.continuation,
         response: { type: "tool-approval", approved: true },
       }),
     ).resolves.toMatchObject({
-      status: "completed",
+      type: "response",
       output: "done",
     });
     expect(executed).toBe(true);
@@ -2043,13 +2041,13 @@ describe("Agent execution", () => {
     ]);
     const agent = new Agent({ id: "test-agent", model, tools: [guardedTool] });
     const pending = await agent.generate({ prompt: "run guarded" });
-    if (pending.status !== "suspended") throw new Error("Expected suspension");
+    if (pending.type !== "interaction") throw new Error("Expected suspension");
 
     const result = await agent.generate({
       continuation: pending.continuation,
       response: { type: "tool-approval", approved: false, reason: "Not allowed." },
     });
-    expect(result).toMatchObject({ status: "completed", output: "denied" });
+    expect(result).toMatchObject({ type: "response", output: "denied" });
     expect(executed).toBe(false);
     expect(model.requests[1]?.chatHistory.at(-1)).toEqual(
       Message.tool([
@@ -2227,7 +2225,7 @@ describe("Agent execution", () => {
 
     expect(observed).toEqual(["hello", "done", "2"]);
     expect(model.requests[0]?.chatHistory).toEqual([Message.user("hello")]);
-    if (result.status !== "completed") throw new Error("Expected completed result");
+    if (result.type !== "response") throw new Error("Expected completed result");
     expect(result.output).toBe("done");
     expect(result.messages).toHaveLength(2);
     expect(result.messages[0]).toEqual(Message.user("hello"));
@@ -2283,7 +2281,7 @@ describe("Agent execution", () => {
     });
 
     await expect(agent.generate({ prompt: "add" })).resolves.toMatchObject({
-      status: "completed",
+      type: "response",
       output: "7",
     });
     expect(events).toEqual([

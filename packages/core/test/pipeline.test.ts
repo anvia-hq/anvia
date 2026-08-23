@@ -311,7 +311,7 @@ describe("Pipeline", () => {
     const error = await pipeline.run({ input: "run guarded tool" }).catch((failure) => failure);
 
     expect(error).toBeInstanceOf(PipelineAgentSuspensionError);
-    expect(error.result.status).toBe("suspended");
+    expect(error.result.type).toBe("interaction");
     expect(observedError).toBeUndefined();
   });
 

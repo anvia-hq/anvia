@@ -98,5 +98,5 @@ const followUp = await agent.generate({
   prompt: "Who owns the ticket we just discussed?",
   session,
 });
-if (followUp.status !== "completed") throw new Error("Unexpected tool approval request.");
+if (followUp.type !== "response") throw new Error("Unexpected tool approval request.");
 console.log(followUp.output);

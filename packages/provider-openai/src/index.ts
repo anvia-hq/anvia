@@ -2,8 +2,13 @@ export * as openai from "./openai/index";
 export {
   DALL_E_2,
   DALL_E_3,
+  GPT_4O_MINI_TRANSCRIBE,
+  GPT_4O_MINI_TTS,
+  GPT_4O_TRANSCRIBE,
+  GPT_4O_TRANSCRIBE_DIARIZE,
   GPT_IMAGE_1,
   GPT_IMAGE_2,
+  GPT_TRANSCRIBE,
   type KnownOpenAICompletionModelId,
   type KnownOpenAIEmbeddingModelId,
   type KnownOpenAIImageGenerationModelId,

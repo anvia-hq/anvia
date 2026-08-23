@@ -1230,12 +1230,12 @@ class LangfuseToolObserver implements AgentToolObserver {
       return;
     }
 
-    if (child.type === "final") {
-      const result = isRecord(child.result) ? child.result : {};
+    if (child.type === "response" || child.type === "interaction" || child.type === "blocked") {
+      const result = child;
       const update: Parameters<LangfuseAgent["update"]>[0] = {
         output: this.run.redactOutputValue({
-          status: result.status,
-          output: result.output,
+          type: result.type,
+          output: result.type === "response" ? result.output : undefined,
           text: result.text,
         }),
       };

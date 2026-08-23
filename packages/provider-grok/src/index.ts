@@ -5,6 +5,7 @@ export {
   fileSearch,
   GROK_4_3,
   GROK_4_5,
+  GROK_4_6,
   GROK_4_20,
   GROK_4_20_NON_REASONING,
   GROK_BUILD_0_1,

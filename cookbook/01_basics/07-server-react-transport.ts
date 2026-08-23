@@ -12,21 +12,18 @@ async function* runEvents(): AsyncIterable<AgentStreamEvent> {
   yield { type: "text_delta", turn: 1, delta: "Hello" };
   yield { type: "text_delta", turn: 1, delta: " from Anvia" };
   yield {
-    type: "final",
-    result: {
-      status: "completed",
-      runId: "run_123",
-      output: "Hello from Anvia",
-      text: "Hello from Anvia",
-      usage: {
-        inputTokens: 0,
-        outputTokens: 0,
-        totalTokens: 0,
-        cachedInputTokens: 0,
-        cacheCreationInputTokens: 0,
-      },
-      messages: [],
+    type: "response",
+    runId: "run_123",
+    output: "Hello from Anvia",
+    text: "Hello from Anvia",
+    usage: {
+      inputTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0,
+      cachedInputTokens: 0,
+      cacheCreationInputTokens: 0,
     },
+    messages: [],
   };
 }
 

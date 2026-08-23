@@ -10,6 +10,7 @@ import type { OpenAISpeechGenerationModelId } from "./models";
 
 export const TTS_1 = "tts-1";
 export const TTS_1_HD = "tts-1-hd";
+export const GPT_4O_MINI_TTS = "gpt-4o-mini-tts";
 
 export class OpenAISpeechGenerationModel implements SpeechGenerationModel<unknown> {
   readonly provider = "openai";

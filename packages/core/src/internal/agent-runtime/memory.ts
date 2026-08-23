@@ -6,13 +6,20 @@ import {
   cumulativeCompactedMessageCount,
 } from "../../memory/compaction";
 import { MemoryCompactionConflictError, MemoryCompactionError } from "../../memory/errors";
-import type { MemoryCompactionInfo, MemorySavePolicy, MemoryScope } from "../../memory/types";
+import type {
+  MemoryCompactionInfo,
+  MemoryCompactionResult,
+  MemorySavePolicy,
+  MemoryScope,
+  MemoryTokenCounter,
+} from "../../memory/types";
 import { throwIfAborted } from "../abort";
 
 export type MemoryPreparation = {
   history: MessageType[];
   usage: ReturnType<typeof Usage.empty>;
   compaction?: MemoryCompactionInfo | undefined;
+  originalTokenCount?: number | undefined;
 };
 
 type MemoryAgent = Pick<Agent, "memory">;
@@ -34,7 +41,7 @@ export class AgentRunMemory {
 
   async prepareHistory(
     runId: string,
-    incomingMessageCount: number,
+    incomingMessages: readonly MessageType[],
     abortSignal?: AbortSignal | undefined,
   ): Promise<MemoryPreparation> {
     const memory = this.memory();
@@ -48,7 +55,7 @@ export class AgentRunMemory {
     const preparation = await this.prepareStoredHistory(
       memory,
       runId,
-      incomingMessageCount,
+      incomingMessages,
       abortSignal,
     );
     const memoryHistory = preparation.history;
@@ -56,6 +63,32 @@ export class AgentRunMemory {
     return {
       ...preparation,
       history: chatHistory,
+    };
+  }
+
+  async compact(
+    runId: string,
+    abortSignal?: AbortSignal | undefined,
+  ): Promise<MemoryCompactionResult> {
+    const memory = this.memory();
+    const scope = this.memoryScope;
+    if (memory === undefined || scope === undefined) {
+      throw new TypeError("Manual memory compaction requires an Agent with configured memory.");
+    }
+    if (memory.compaction === undefined || memory.store.compaction === undefined) {
+      throw new TypeError("Manual memory compaction requires a configured compaction policy.");
+    }
+    const preparation = await this.prepareStoredHistory(memory, runId, [], abortSignal, true);
+    if (preparation.compaction !== undefined) {
+      return { type: "compacted", ...preparation.compaction };
+    }
+    return {
+      type: "skipped",
+      reason: "nothing_to_compact",
+      originalMessageCount: preparation.history.length,
+      originalTokenCount:
+        preparation.originalTokenCount ??
+        (await countTokens(memory.compaction.tokenCounter, preparation.history)),
     };
   }
 
@@ -162,8 +195,9 @@ export class AgentRunMemory {
   private async prepareStoredHistory(
     memory: AgentMemory,
     runId: string,
-    incomingMessageCount: number,
+    incomingMessages: readonly MessageType[],
     abortSignal?: AbortSignal | undefined,
+    force = false,
   ): Promise<MemoryPreparation> {
     const scope = this.memoryScope;
     if (scope === undefined) {
@@ -184,14 +218,22 @@ export class AgentRunMemory {
       throwIfAborted(abortSignal);
       const snapshot = await capability.snapshot({ scope });
       throwIfAborted(abortSignal);
-      const compactedMessageCount = compactedPrefixLength(
+      const selection = await selectCompactionPrefix(
         snapshot.messages,
-        incomingMessageCount,
-        options.trigger.afterMessages,
-        options.retention.recentUserTurns,
+        incomingMessages,
+        options.trigger.afterTokens,
+        options.retention.recentTokens,
+        options.tokenCounter,
+        force,
       );
+      throwIfAborted(abortSignal);
+      const compactedMessageCount = selection.compactedMessageCount;
       if (compactedMessageCount === 0) {
-        return { history: snapshot.messages, usage };
+        return {
+          history: snapshot.messages,
+          usage,
+          originalTokenCount: selection.originalTokenCount,
+        };
       }
 
       const prefix = snapshot.messages.slice(0, compactedMessageCount);
@@ -208,6 +250,11 @@ export class AgentRunMemory {
       if (result.usage !== undefined) {
         usage = Usage.add(usage, result.usage);
       }
+      if (typeof result?.summary !== "string") {
+        throw new MemoryCompactionError("Memory compactor must return a summary string.", {
+          usage,
+        });
+      }
       const summaryText = result.summary.trim();
       if (summaryText.length === 0) {
         throw new MemoryCompactionError("Memory compactor returned an empty summary.", {
@@ -218,6 +265,13 @@ export class AgentRunMemory {
         summaryText,
         cumulativeCompactedMessageCount(prefix),
       );
+      const retained = snapshot.messages.slice(compactedMessageCount);
+      let resultTokenCount: number;
+      try {
+        resultTokenCount = await countTokens(options.tokenCounter, [summary, ...retained]);
+      } catch (error) {
+        throw remappedCompactorError(error, usage);
+      }
       throwIfAborted(abortSignal);
       let replacement: Awaited<ReturnType<typeof capability.replacePrefix>>;
       try {
@@ -235,7 +289,6 @@ export class AgentRunMemory {
         });
       }
       if (replacement.status === "committed") {
-        const retained = snapshot.messages.slice(compactedMessageCount);
         return {
           history: [summary, ...retained],
           usage,
@@ -243,6 +296,10 @@ export class AgentRunMemory {
             originalMessageCount: snapshot.messages.length,
             compactedMessageCount,
             retainedMessageCount: retained.length,
+            originalTokenCount: selection.originalTokenCount,
+            compactedTokenCount: selection.compactedTokenCount,
+            retainedTokenCount: selection.retainedTokenCount,
+            resultTokenCount,
             attempts: attempt,
             usage,
           },
@@ -255,24 +312,96 @@ export class AgentRunMemory {
   }
 }
 
-function compactedPrefixLength(
-  messages: MessageType[],
-  incomingMessageCount: number,
-  afterMessages: number,
-  recentUserTurns: number,
-): number {
-  if (messages.length + incomingMessageCount <= afterMessages) {
-    return 0;
+type CompactionSelection = {
+  compactedMessageCount: number;
+  originalTokenCount: number;
+  compactedTokenCount: number;
+  retainedTokenCount: number;
+};
+
+async function selectCompactionPrefix(
+  messages: readonly MessageType[],
+  incomingMessages: readonly MessageType[],
+  afterTokens: number,
+  recentTokens: number,
+  tokenCounter: MemoryTokenCounter,
+  force: boolean,
+): Promise<CompactionSelection> {
+  const originalTokenCount = await countTokens(tokenCounter, messages);
+  const incomingTokenCount =
+    incomingMessages.length === 0 ? 0 : await countTokens(tokenCounter, incomingMessages);
+  const none = {
+    compactedMessageCount: 0,
+    originalTokenCount,
+    compactedTokenCount: 0,
+    retainedTokenCount: originalTokenCount,
+  };
+  if (!force && originalTokenCount + incomingTokenCount <= afterTokens) {
+    return none;
   }
   const userMessageIndexes = messages.flatMap((message, index) =>
     message.role === "user" ? [index] : [],
   );
-  // Keep the recent user-led tail intact. If there are not enough user messages to retain a
-  // complete tail, skip compaction even when the transcript already exceeds the trigger threshold.
-  if (userMessageIndexes.length <= recentUserTurns) {
-    return 0;
+  if (userMessageIndexes.length <= 1) {
+    return none;
   }
-  return userMessageIndexes[userMessageIndexes.length - recentUserTurns] ?? 0;
+
+  // Retain complete user-led turns. The newest turn is always kept even when it alone exceeds the
+  // retention budget. Find the earliest newer turn whose tail fits with logarithmic counter calls.
+  const tailTokenCounts = new Map<number, number>();
+  const countTail = async (messageIndex: number): Promise<number> => {
+    const cached = tailTokenCounts.get(messageIndex);
+    if (cached !== undefined) return cached;
+    const count = await countTokens(tokenCounter, messages.slice(messageIndex));
+    tailTokenCounts.set(messageIndex, count);
+    return count;
+  };
+  let lower = 0;
+  let upper = userMessageIndexes.length - 1;
+  let retainedBoundary = upper;
+  while (lower <= upper) {
+    const middle = Math.floor((lower + upper) / 2);
+    const candidate = userMessageIndexes[middle] ?? 0;
+    if ((await countTail(candidate)) <= recentTokens) {
+      retainedBoundary = middle;
+      upper = middle - 1;
+    } else {
+      lower = middle + 1;
+    }
+  }
+  const compactedMessageCount = userMessageIndexes[retainedBoundary] ?? 0;
+  if (compactedMessageCount === 0) {
+    return none;
+  }
+  const compactedTokenCount = await countTokens(
+    tokenCounter,
+    messages.slice(0, compactedMessageCount),
+  );
+  const retainedTokenCount =
+    tailTokenCounts.get(compactedMessageCount) ??
+    (await countTokens(tokenCounter, messages.slice(compactedMessageCount)));
+  return {
+    compactedMessageCount,
+    originalTokenCount,
+    compactedTokenCount,
+    retainedTokenCount,
+  };
+}
+
+async function countTokens(
+  tokenCounter: MemoryTokenCounter,
+  messages: readonly MessageType[],
+): Promise<number> {
+  let count: number;
+  try {
+    count = await tokenCounter(messages);
+  } catch (error) {
+    throw new MemoryCompactionError("Memory token counter failed.", { cause: error });
+  }
+  if (!Number.isSafeInteger(count) || count < 0) {
+    throw new MemoryCompactionError("Memory token counter must return a nonnegative safe integer.");
+  }
+  return count;
 }
 
 function remappedCompactorError(error: unknown, usage: ReturnType<typeof Usage.empty>): Error {

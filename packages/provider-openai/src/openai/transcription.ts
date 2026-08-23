@@ -10,6 +10,10 @@ import { isPlainObject } from "../utils";
 import type { OpenAITranscriptionModelId } from "./models";
 
 export const WHISPER_1 = "whisper-1";
+export const GPT_TRANSCRIBE = "gpt-transcribe";
+export const GPT_4O_TRANSCRIBE = "gpt-4o-transcribe";
+export const GPT_4O_MINI_TRANSCRIBE = "gpt-4o-mini-transcribe";
+export const GPT_4O_TRANSCRIBE_DIARIZE = "gpt-4o-transcribe-diarize";
 
 export class OpenAITranscriptionModel implements TranscriptionModel<unknown> {
   readonly provider = "openai";

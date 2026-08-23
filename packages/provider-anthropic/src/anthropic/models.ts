@@ -20,6 +20,9 @@ export type KnownAnthropicCompletionModelId =
   | "claude-opus-4-6"
   | "claude-opus-4-7"
   | "claude-opus-4-8"
+  | "claude-opus-5"
+  | "claude-mythos-5"
+  | "claude-mythos-preview"
   | "claude-sonnet-4-0"
   | "claude-sonnet-4-20250514"
   | "claude-sonnet-4-5"
@@ -52,6 +55,9 @@ export const ANTHROPIC_COMPLETION_MODEL_CONTEXT_LIMITS = {
   "claude-opus-4-6": CONTEXT_1M_128K,
   "claude-opus-4-7": CONTEXT_1M_128K,
   "claude-opus-4-8": CONTEXT_1M_128K,
+  "claude-opus-5": CONTEXT_1M_128K,
+  "claude-mythos-5": CONTEXT_1M_128K,
+  "claude-mythos-preview": CONTEXT_1M_128K,
   "claude-sonnet-4-0": CONTEXT_200K_64K,
   "claude-sonnet-4-20250514": CONTEXT_200K_64K,
   "claude-sonnet-4-5": CONTEXT_200K_64K,

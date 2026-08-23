@@ -331,16 +331,25 @@ class OtelToolObserver implements AgentToolObserver {
       return;
     }
 
-    if (child.type === "final") {
-      const result = isRecord(child.result) ? child.result : {};
+    if (child.type === "response" || child.type === "interaction" || child.type === "blocked") {
+      const result = child;
       const attributes: Attributes = {
-        "anvia.child_agent.status": typeof result.status === "string" ? result.status : undefined,
+        "anvia.child_agent.status":
+          result.type === "response"
+            ? "response"
+            : result.type === "interaction"
+              ? "interaction"
+              : "blocked",
         "anvia.child_agent.text": capturedString(
           typeof result.text === "string" ? result.text : undefined,
           "output",
           this.options,
         ),
-        "anvia.child_agent.output": capturedJson(result.output, "output", this.options),
+        "anvia.child_agent.output": capturedJson(
+          result.type === "response" ? result.output : undefined,
+          "output",
+          this.options,
+        ),
         "anvia.child_agent.messages": capturedJson(result.messages, "output", this.options),
       };
       if (isRecord(result.usage)) {

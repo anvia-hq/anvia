@@ -21,8 +21,8 @@ for await (const event of agent.stream({
     process.stdout.write(event.delta);
   }
 
-  if (event.type === "final") {
+  if (event.type === "response") {
     process.stdout.write("\n");
-    console.log(event.result.usage);
+    console.log(event.usage);
   }
 }

@@ -18,22 +18,23 @@ export type {
   AgentToolStartEvent,
 } from "./agent/lifecycle";
 export type {
-  AgentBlockedResult,
+  AgentBlockedOutcome,
   AgentChildStreamEvent,
   AgentDeltaEvent,
   AgentErrorStreamEvent,
   AgentInput,
+  AgentInteractionOutcome,
   AgentMemoryCompactionEvent,
+  AgentMemoryCompactionOptions,
+  AgentOutcome,
   AgentPrompt,
   AgentResponse,
-  AgentResult,
   AgentRunOptions,
   AgentRunSettings,
   AgentSteerInput,
   AgentSteerReceipt,
   AgentStream,
   AgentStreamEvent,
-  AgentSuspendedResult,
   AgentToolCallDeltaEvent,
 } from "./agent/run-types";
 export type {
@@ -166,6 +167,7 @@ export type {
   MemoryCompactionOptions,
   MemoryCompactionReplacePrefixOptions,
   MemoryCompactionReplacePrefixResult,
+  MemoryCompactionResult,
   MemoryCompactionSnapshot,
   MemoryCompactionSnapshotOptions,
   MemoryCompactor,
@@ -185,10 +187,12 @@ export type {
   MemoryScopeKeyOptions,
   MemoryScopeKeyResolver,
   MemoryStore,
+  MemoryTokenCounter,
 } from "./memory";
 export {
   createMemoryScopeKey,
   createSummaryMemoryCompactor,
+  estimateMemoryTokens,
   isMemoryCompactionMessage,
   MemoryCompactionConflictError,
   MemoryCompactionError,

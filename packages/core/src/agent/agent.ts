@@ -2,10 +2,13 @@ import { isStreamingCompletionModel } from "../completion/generate-completion";
 import type { CompletionModel, JsonObject, ToolChoice } from "../completion/index";
 import type { GuardrailPolicy } from "../guardrails";
 import { AgentRun } from "../internal/agent-runtime/agent-run";
+import { AgentRunMemory } from "../internal/agent-runtime/memory";
+import { normalizeMemoryScope } from "../internal/agent-runtime/memory-scope";
 import { prepareToolCall } from "../internal/agent-runtime/prepared-tool-call";
 import { assertNonnegativeSafeInteger } from "../internal/agent-runtime/run-validation";
 import { assertJsonObject } from "../internal/json-object";
 import type { McpServer } from "../mcp";
+import type { MemoryCompactionResult } from "../memory";
 import type { AgentObservabilityOptions } from "../observability";
 import type { RetrySetting } from "../retry";
 import type { ZodSchema } from "../schema/zod-schema";
@@ -15,10 +18,17 @@ import type { AnyTool, NormalizedToolOutput, Tool, ToolCallContext } from "../to
 import { createAgentStream } from "./agent-stream";
 import { createAgentTool } from "./agent-tool";
 import { normalizeAgentId } from "./ids";
+import type { AgentContinuation, AgentInteractionResponse } from "./interactions";
 import type { AgentLifecycle } from "./lifecycle";
 import { registerAgentProviderOutputSchema } from "./output-schema";
 import { resolveAgentOptions } from "./resolve-options";
-import type { AgentResult, AgentRunOptions, AgentStream, AgentStreamEvent } from "./run-types";
+import type {
+  AgentMemoryCompactionOptions,
+  AgentOutcome,
+  AgentRunOptions,
+  AgentRunSettings,
+  AgentStream,
+} from "./run-types";
 import {
   cloneFrozenPlainData,
   snapshotAgentContext,
@@ -96,18 +106,38 @@ export class Agent<
     this.memory = snapshotAgentMemory(resolved.memory);
   }
 
-  generate(options: AgentRunOptions<Output, RawResponseOf<M>>): Promise<AgentResult<Output>> {
+  generate(options: AgentRunOptions<Output, RawResponseOf<M>>): Promise<AgentOutcome<Output>> {
     return AgentRun.fromAgent(this, options).generate();
+  }
+
+  resume(
+    continuation: AgentContinuation,
+    response: AgentInteractionResponse,
+    settings: AgentRunSettings<Output, RawResponseOf<M>> = {},
+  ): Promise<AgentOutcome<Output>> {
+    return this.generate({ continuation, response, ...settings });
   }
 
   stream(
     options: AgentRunOptions<Output, RawResponseOf<M>>,
-  ): AgentStream<AgentStreamEvent<Output, RawResponseOf<M>>> {
+  ): AgentStream<Output, RawResponseOf<M>> {
     const run = AgentRun.fromAgent(this, options);
     if (!this.model.capabilities.streaming || !isStreamingCompletionModel(this.model)) {
       throw new Error("This completion model does not support streaming");
     }
     return createAgentStream(run);
+  }
+
+  compactMemory(options: AgentMemoryCompactionOptions): Promise<MemoryCompactionResult> {
+    if (typeof options !== "object" || options === null || Array.isArray(options)) {
+      throw new TypeError("Manual memory compaction requires an options object.");
+    }
+    const scope = normalizeMemoryScope(options.session, "Manual memory compaction");
+    const memory = new AgentRunMemory(this, scope, []);
+    return memory.compact(
+      `manual-memory-compaction:${globalThis.crypto.randomUUID()}`,
+      options.abortSignal,
+    );
   }
 
   asTool(options: AgentToolOptions): Tool<{ prompt: string }, Output> {

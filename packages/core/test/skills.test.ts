@@ -434,7 +434,7 @@ describe("skills", () => {
         result: "# Review\nUse direct feedback.",
       }),
     );
-    expect(events.at(-1)).toMatchObject({ type: "final", result: { output: "loaded" } });
+    expect(events.at(-1)).toMatchObject({ type: "response", output: "loaded" });
     expect(model.requests[0]?.tools.map((tool) => tool.name)).toContain("get_skill_instructions");
   });
 });

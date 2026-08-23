@@ -539,7 +539,7 @@ describe("agent observability", () => {
     });
 
     const pending = await agent.generate({ prompt: "run guarded" });
-    if (pending.status !== "suspended") throw new Error("Expected suspension");
+    if (pending.type !== "interaction") throw new Error("Expected suspension");
     expect(eventTypes(observer)).toContain("tool_start");
     expect(eventTypes(observer)).toContain("tool_suspended");
     expect(eventTypes(observer)).not.toContain("tool_error");
@@ -656,7 +656,7 @@ describe("agent observability", () => {
 
     const events = await collect(agent.stream({ prompt: "add" }));
 
-    expect(events.at(-1)).toMatchObject({ type: "final", result: { output: "hello" } });
+    expect(events.at(-1)).toMatchObject({ type: "response", output: "hello" });
     expect(eventTypes(observer)).toEqual([
       "run_start",
       "generation_start",

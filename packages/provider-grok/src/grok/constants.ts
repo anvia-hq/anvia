@@ -1,6 +1,7 @@
 export const XAI_BASE_URL = "https://api.x.ai/v1";
 
 export const GROK_4_5 = "grok-4.5";
+export const GROK_4_6 = "grok-4.6";
 export const GROK_4_3 = "grok-4.3";
 export const GROK_4_20 = "grok-4.20";
 export const GROK_4_20_NON_REASONING = "grok-4.20-non-reasoning";

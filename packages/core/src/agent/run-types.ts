@@ -74,12 +74,17 @@ export type AgentRunSettings<Output = string, RawResponse = unknown> = {
 export type AgentRunOptions<Output = string, RawResponse = unknown> = AgentInput &
   AgentRunSettings<Output, RawResponse>;
 
+export type AgentMemoryCompactionOptions = {
+  session: MemoryScope;
+  abortSignal?: AbortSignal | undefined;
+};
+
 export type AgentRunLink = Readonly<{
   runId: string;
   interactionId: string;
 }>;
 
-export type AgentResultBase = {
+export type AgentOutcomeBase = {
   runId: string;
   text: string;
   usage: Usage;
@@ -95,26 +100,28 @@ export type AgentResultBase = {
   resumedFrom?: AgentRunLink | undefined;
 };
 
-export type AgentResponse<Output = string> = AgentResultBase & {
-  status: "completed";
+export type AgentResponse<Output = string> = AgentOutcomeBase & {
+  type: "response";
   output: Output;
 };
 
-export type AgentBlockedResult = AgentResultBase & {
-  status: "blocked";
+export type AgentBlockedOutcome = AgentOutcomeBase & {
+  type: "blocked";
   stage: "input" | "output";
+  reason: string;
+  message?: string | undefined;
 };
 
-export type AgentSuspendedResult = AgentResultBase & {
-  status: "suspended";
+export type AgentInteractionOutcome = AgentOutcomeBase & {
+  type: "interaction";
   interaction: AgentInteractionRequest;
   continuation: AgentContinuation;
 };
 
-export type AgentResult<Output = string> =
+export type AgentOutcome<Output = string> =
   | AgentResponse<Output>
-  | AgentBlockedResult
-  | AgentSuspendedResult;
+  | AgentBlockedOutcome
+  | AgentInteractionOutcome;
 
 export type AgentDeltaEvent =
   | { type: "text_delta"; delta: string }
@@ -234,10 +241,7 @@ type AgentChildStreamEventBase<Output = string, RawResponse = unknown> =
   | AgentMemoryCompactionEvent
   | AgentInteractionResponseEvent
   | AgentSteeringAppliedEvent
-  | {
-      type: "final";
-      result: AgentResult<Output>;
-    }
+  | AgentOutcome<Output>
   | AgentErrorStreamEvent;
 
 export type AgentChildStreamEvent<Output = string, RawResponse = unknown> =
@@ -259,6 +263,12 @@ export type AgentStreamEvent<Output = string, RawResponse = unknown> =
   | AgentChildStreamEvent<Output, RawResponse>
   | AgentToolStreamEvent;
 
-export interface AgentStream<Event = AgentStreamEvent> extends AsyncIterable<Event> {
+export interface AgentStream<Output = string, RawResponse = unknown>
+  extends AsyncIterable<AgentStreamEvent<Output, RawResponse>> {
+  readonly events: AsyncIterable<AgentStreamEvent<Output, RawResponse>>;
+  readonly textStream: AsyncIterable<string>;
+  readonly text: Promise<string>;
+  readonly result: Promise<AgentOutcome<Output>>;
   steer(input: AgentSteerInput): AgentSteerReceipt;
+  cancel(reason?: string): void;
 }

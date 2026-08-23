@@ -196,6 +196,10 @@ export function memoryCompactedLog(props: {
   originalMessageCount: number;
   compactedMessageCount: number;
   retainedMessageCount: number;
+  originalTokenCount: number;
+  compactedTokenCount: number;
+  retainedTokenCount: number;
+  resultTokenCount: number;
   attempts: number;
   usage: unknown;
 }): StudioSessionLogAppendInput {
@@ -203,6 +207,10 @@ export function memoryCompactedLog(props: {
     originalMessageCount: props.originalMessageCount,
     compactedMessageCount: props.compactedMessageCount,
     retainedMessageCount: props.retainedMessageCount,
+    originalTokenCount: props.originalTokenCount,
+    compactedTokenCount: props.compactedTokenCount,
+    retainedTokenCount: props.retainedTokenCount,
+    resultTokenCount: props.resultTokenCount,
     attempts: props.attempts,
   };
   const usage = usageSummary(props.usage);
@@ -326,10 +334,10 @@ function logsFromStreamEvent(props: {
       },
     ];
   }
-  if (event.type === "final") {
-    const result = event.result;
+  if (event.type === "response" || event.type === "interaction" || event.type === "blocked") {
+    const result = event;
     const logs: StudioSessionLogAppendInput[] = [];
-    if (result.status === "suspended") {
+    if (result.type === "interaction") {
       logs.push({
         sessionId,
         runId,
@@ -494,15 +502,15 @@ function childAgentLog(
       },
     ];
   }
-  if (child.type === "final") {
-    const result = child.result;
+  if (child.type === "response" || child.type === "interaction" || child.type === "blocked") {
+    const result = child;
     const metadata: JsonObject = {
       parentToolName: event.toolName,
       agentId: event.agentId,
       hasAgentName: event.agentName !== undefined,
       outputBytes: byteLength(result.text),
       messageCount: result.messages.length,
-      status: result.status,
+      status: result.type,
     };
     const usage = usageSummary(result.usage);
     if (usage !== undefined) metadata.usage = usage;

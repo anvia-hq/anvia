@@ -20,22 +20,23 @@ export type {
   AgentToolStartEvent,
 } from "./lifecycle";
 export type {
-  AgentBlockedResult,
+  AgentBlockedOutcome,
   AgentChildStreamEvent,
   AgentDeltaEvent,
   AgentErrorStreamEvent,
   AgentInput,
+  AgentInteractionOutcome,
   AgentMemoryCompactionEvent,
+  AgentMemoryCompactionOptions,
+  AgentOutcome,
   AgentPrompt,
   AgentResponse,
-  AgentResult,
   AgentRunOptions,
   AgentRunSettings,
   AgentSteerInput,
   AgentSteerReceipt,
   AgentStream,
   AgentStreamEvent,
-  AgentSuspendedResult,
   AgentToolCallDeltaEvent,
 } from "./run-types";
 export type {

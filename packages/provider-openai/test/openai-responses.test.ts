@@ -41,7 +41,7 @@ describe("OpenAI Responses mapping", () => {
 
   it("resolves built-in, custom, and unknown model context limits", () => {
     const client = new OpenAIClient({ client: {} as never });
-    const builtIn = client.completionModel({ modelId: "gpt-5", api: "responses" });
+    const builtIn = client.completionModel({ modelId: "gpt-5.6", api: "responses" });
     const custom = client.completionModel({
       modelId: "custom",
       api: "responses",
@@ -50,7 +50,7 @@ describe("OpenAI Responses mapping", () => {
     const unknown = client.completionModel({ modelId: "unknown", api: "responses" });
 
     expect(builtIn.contextLimits).toMatchObject({
-      contextWindow: 400_000,
+      contextWindow: 1_050_000,
       maxOutputTokens: 128_000,
     });
     expect(custom.contextLimits).toEqual({ contextWindow: 42_000, maxOutputTokens: 2_000 });

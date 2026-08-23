@@ -44,7 +44,7 @@ const agent = new Agent({
 
 const result = await agent.generate({ prompt: "How do I reset my password?" });
 
-if (result.status === "completed") console.log(result.output);
+if (result.type === "response") console.log(result.output);
 console.log(result.trace?.traceId);
 ```
 

@@ -1,7 +1,7 @@
 import { CompletionForm, CompletionInput, CompletionStop, CompletionSubmit } from "./form";
 import { CompletionOutput, CompletionRoot } from "./root";
 
-export const Completion = {
+export const CompletionPrimitive = {
   Root: CompletionRoot,
   Output: CompletionOutput,
   Form: CompletionForm,

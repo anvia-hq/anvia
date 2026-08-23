@@ -9,7 +9,7 @@ import {
   ImageZoomTrigger,
 } from "./parts";
 
-export const Image = {
+export const ImagePrimitive = {
   Root: ImageRoot,
   Preview: ImagePreview,
   Name: ImageName,

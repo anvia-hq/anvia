@@ -8,6 +8,7 @@
     "langfuse-ops": "0.1.44",
     "peer-core-compat": "0.1.62",
     "@anvia/browser": "1.0.0-rc.2",
+    "@anvia/cli": "1.0.0-rc.9",
     "@anvia/client": "1.0.0-rc.1",
     "@anvia/core": "0.26.0",
     "@anvia/fastembed": "0.3.0",

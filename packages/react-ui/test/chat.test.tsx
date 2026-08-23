@@ -18,7 +18,12 @@ import type {
   ComposerTriggerDefinition,
   ComposerTriggerItemsArgs,
 } from "../src";
-import { ChatProvider, Composer, Thread, useComposer } from "../src";
+import {
+  ChatProvider,
+  ComposerPrimitive as Composer,
+  ThreadPrimitive as Thread,
+  useComposer,
+} from "../src";
 import { createChatController, textMessage } from "./helpers";
 
 afterEach(() => {
@@ -167,7 +172,7 @@ describe("Chat primitives", () => {
     );
 
     const button = screen.getByTestId("send");
-    expect(button.getAttribute("data-anvia-submit")).toBe("");
+    expect(button.getAttribute("data-state")).toBe("enabled");
 
     fireEvent.click(button);
 
@@ -621,11 +626,11 @@ describe("Chat primitives", () => {
       </ChatProvider>,
     );
 
-    expect(screen.getByTestId("messages").getAttribute("data-empty")).toBe("");
+    expect(screen.getByTestId("messages").getAttribute("data-state")).toBe("empty");
     expect(screen.queryByTestId("messages-unmounted")).toBeNull();
     expect(screen.queryByTestId("suggestions")).toBeNull();
-    expect(screen.getByTestId("suggestions-mounted").getAttribute("data-empty")).toBe("");
-    expect(container.querySelector("[data-anvia-thread-suggestions]")).toBeTruthy();
+    expect(screen.getByTestId("suggestions-mounted").getAttribute("data-state")).toBe("empty");
+    expect(container.querySelector('[data-role="suggestions"]')).toBeTruthy();
   });
 
   it("adds file attachments and submits them with composer input", async () => {
@@ -643,16 +648,14 @@ describe("Chat primitives", () => {
       </ChatProvider>,
     );
 
-    expect(container.querySelector("[data-anvia-composer-attachments]")).toBeNull();
+    expect(container.querySelector('[data-role="attachments"]')).toBeNull();
 
-    const input = container.querySelector("[data-anvia-attachment-input]");
+    const input = container.querySelector('input[type="file"]');
     expect(input).toBeInstanceOf(HTMLInputElement);
     fireEvent.change(input as HTMLInputElement, { target: { files: [file] } });
 
     await waitFor(() => {
-      expect(container.querySelector("[data-anvia-composer-attachments]")).toBeInstanceOf(
-        HTMLDivElement,
-      );
+      expect(container.querySelector('[data-role="attachments"]')).toBeInstanceOf(HTMLDivElement);
       expect(screen.getByText("hello.txt")).toBeTruthy();
     });
 
@@ -672,7 +675,7 @@ describe("Chat primitives", () => {
     });
 
     await waitFor(() => {
-      expect(container.querySelector("[data-anvia-composer-attachments]")).toBeNull();
+      expect(container.querySelector('[data-role="attachments"]')).toBeNull();
     });
   });
 
@@ -766,7 +769,7 @@ describe("Chat primitives", () => {
     fireEvent.click(screen.getByText("Open people"));
 
     const item = screen.getByText("Ada");
-    expect(item.getAttribute("data-anvia-composer-trigger-item")).toBe("");
+    expect(item.getAttribute("data-state")).toBe("selected");
     fireEvent.click(item);
     fireEvent.click(screen.getByText("Send"));
 
@@ -871,10 +874,10 @@ describe("Chat primitives", () => {
       expect(screen.getByText("Grace")).toBeTruthy();
     });
     expect(screen.queryByText("Lin")).toBeNull();
-    expect(screen.getByText("Ada").getAttribute("data-selected")).toBe("");
+    expect(screen.getByText("Ada").getAttribute("data-state")).toBe("selected");
 
     fireEvent.keyDown(composerEditor(), { key: "ArrowDown" });
-    expect(screen.getByText("Grace").getAttribute("data-selected")).toBe("");
+    expect(screen.getByText("Grace").getAttribute("data-state")).toBe("selected");
     const selection = window.getSelection();
     if (selection !== null) {
       vi.spyOn(selection, "collapseToEnd").mockImplementation(() => {});
@@ -949,7 +952,7 @@ describe("Chat primitives", () => {
       entities: [],
       signal: expect.any(AbortSignal),
     });
-    expect(screen.getByTestId("trigger-menu").getAttribute("data-loading")).toBe("");
+    expect(screen.getByTestId("trigger-menu").getAttribute("data-state")).toBe("loading");
 
     await act(async () => {
       itemsCompletion.resolve([{ id: "project_anvia", label: "Anvia", data: { kind: "project" } }]);
@@ -1092,9 +1095,7 @@ describe("Chat primitives", () => {
     const composerEditorElements = new Set(
       addEventListener.mock.calls.flatMap(([type], index) => {
         const element = addEventListener.mock.contexts[index] as HTMLElement;
-        return type === "keydown" && element.hasAttribute("data-anvia-composer-editor")
-          ? [element]
-          : [];
+        return type === "keydown" && element.classList.contains("ProseMirror") ? [element] : [];
       }),
     );
     const composerEditorListenerCalls = (
@@ -1122,9 +1123,7 @@ describe("Chat primitives", () => {
         ([type, , options], index) =>
           type === "keydown" &&
           options === true &&
-          (addEventListener.mock.contexts[index] as HTMLElement).hasAttribute(
-            "data-anvia-composer-editor",
-          ),
+          (addEventListener.mock.contexts[index] as HTMLElement).classList.contains("ProseMirror"),
       ),
     ).toHaveLength(0);
     expect(
@@ -1132,8 +1131,8 @@ describe("Chat primitives", () => {
         ([type, , options], index) =>
           type === "keydown" &&
           options === true &&
-          (removeEventListener.mock.contexts[index] as HTMLElement).hasAttribute(
-            "data-anvia-composer-editor",
+          (removeEventListener.mock.contexts[index] as HTMLElement).classList.contains(
+            "ProseMirror",
           ),
       ),
     ).toHaveLength(0);
@@ -1168,10 +1167,10 @@ describe("Chat primitives", () => {
 
     fireEvent.click(screen.getByText("Blocked"));
     expect(composerEditor().textContent).toBe("@");
-    expect(screen.getByText("Blocked").getAttribute("data-disabled")).toBe("");
+    expect(screen.getByText("Blocked").getAttribute("data-state")).toBe("disabled");
 
     fireEvent.mouseEnter(screen.getByText("Ada"));
-    expect(screen.getByText("Ada").getAttribute("data-selected")).toBe("");
+    expect(screen.getByText("Ada").getAttribute("data-state")).toBe("selected");
     const selection = window.getSelection();
     if (selection !== null) {
       vi.spyOn(selection, "collapseToEnd").mockImplementation(() => {});
@@ -1195,7 +1194,7 @@ describe("Chat primitives", () => {
     );
 
     const menu = screen.getByTestId("trigger-menu");
-    expect(menu.getAttribute("data-empty")).toBe("");
+    expect(menu.getAttribute("data-state")).toBe("closed");
     expect(menu.textContent).toBe("");
   });
 
@@ -1254,7 +1253,7 @@ describe("Chat primitives", () => {
     await waitFor(() => {
       expect(composerEditor().textContent).toBe("");
     });
-    expect(container.querySelector("[data-anvia-composer-attachments]")).toBeNull();
+    expect(container.querySelector('[data-role="attachments"]')).toBeNull();
 
     fireEvent.click(screen.getByText("Set enter"));
     fireEvent.keyDown(composerEditor(), { key: "Enter" });

@@ -1,7 +1,12 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ThreadList, type ThreadListController, ThreadListItem, ThreadListProvider } from "../src";
+import {
+  ThreadListPrimitive as ThreadList,
+  type ThreadListController,
+  ThreadListItemPrimitive as ThreadListItem,
+  ThreadListProvider,
+} from "../src";
 
 afterEach(() => {
   cleanup();
@@ -30,7 +35,7 @@ describe("ThreadList primitives", () => {
       deleteThread,
     });
 
-    const { container } = render(
+    render(
       <ThreadListProvider controller={controller}>
         <ThreadList.Root>
           <ThreadList.New />
@@ -58,9 +63,7 @@ describe("ThreadList primitives", () => {
 
     expect(screen.getByText("First")).toBeTruthy();
     expect(screen.getByText("Archived")).toBeTruthy();
-    expect(
-      container.querySelector('[data-thread-id="thread_1"]')?.getAttribute("data-active"),
-    ).toBe("");
+    expect(screen.getByRole("button", { name: "First" }).getAttribute("aria-current")).toBe("true");
 
     fireEvent.click(screen.getByText("New chat"));
     fireEvent.click(screen.getByText("Second"));
@@ -85,7 +88,7 @@ describe("ThreadList primitives", () => {
       </ThreadListProvider>,
     );
 
-    expect(screen.getByTestId("items").getAttribute("data-empty")).toBe("");
+    expect(screen.getByTestId("items").getAttribute("data-state")).toBe("empty");
     expect(screen.getByText("No chats")).toBeTruthy();
   });
 
@@ -104,7 +107,7 @@ describe("ThreadList primitives", () => {
       </ThreadListProvider>,
     );
 
-    expect(screen.getByTestId("items").getAttribute("data-empty")).toBe("");
+    expect(screen.getByTestId("items").getAttribute("data-state")).toBe("empty");
     expect(screen.getByText("No active chats")).toBeTruthy();
     expect(screen.queryByText("No archived chats")).toBeNull();
   });

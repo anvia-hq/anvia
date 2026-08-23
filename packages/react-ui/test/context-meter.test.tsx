@@ -1,7 +1,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { ContextMeter } from "../src";
+import { ContextMeterPrimitive as ContextMeter } from "../src";
 
 const usage = {
   model: { modelId: "gpt-5", context: { contextWindow: 400_000 } },
@@ -22,9 +22,8 @@ describe("ContextMeter", () => {
     const meter = screen.getByRole("progressbar", { name: "75% context left" });
     expect(meter.getAttribute("aria-valuenow")).toBe("75");
     expect(screen.getByText("75% context left")).toBeTruthy();
-    expect(meter.querySelector<HTMLElement>("[data-anvia-context-meter-value]")?.style.width).toBe(
-      "75%",
-    );
+    const visualTrack = meter.querySelector<HTMLElement>("[aria-hidden=true]");
+    expect((visualTrack?.firstElementChild as HTMLElement | null)?.style.width).toBe("75%");
   });
 
   it("supports used context and custom content", () => {

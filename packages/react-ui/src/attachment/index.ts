@@ -1,6 +1,6 @@
 import { AttachmentName, AttachmentPreview, AttachmentRemove, AttachmentRoot } from "./parts";
 
-export const Attachment = {
+export const AttachmentPrimitive = {
   Root: AttachmentRoot,
   Name: AttachmentName,
   Preview: AttachmentPreview,

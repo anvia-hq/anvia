@@ -23,8 +23,6 @@ const AttachmentRoot = forwardRef<HTMLDivElement, AttachmentRootProps>(function 
     {
       ...props,
       children: renderedChildren,
-      "data-anvia-attachment": "",
-      "data-type": attachment.type,
     } as PrimitiveProps<"div">,
     ref,
   );
@@ -39,7 +37,6 @@ const AttachmentName = forwardRef<HTMLSpanElement, PrimitiveProps<"span">>(
       {
         ...props,
         children: props.children ?? attachmentLabel(attachment),
-        "data-anvia-attachment-name": "",
       } as PrimitiveProps<"span">,
       ref,
     );
@@ -55,7 +52,6 @@ const AttachmentPreview = forwardRef<HTMLDivElement, PrimitiveProps<"div">>(
       {
         ...props,
         children: props.children ?? defaultPreview(attachment),
-        "data-anvia-attachment-preview": "",
       } as PrimitiveProps<"div">,
       ref,
     );
@@ -86,7 +82,6 @@ const AttachmentRemove = forwardRef<HTMLButtonElement, PrimitiveProps<"button">>
         disabled,
         onClick: handleClick,
         type: props.type ?? "button",
-        "data-anvia-attachment-remove": "",
         "data-state": disabled ? "disabled" : "enabled",
       } as PrimitiveProps<"button">,
       ref,
@@ -108,21 +103,15 @@ function defaultPreview(attachment: UIAttachment): ReactNode {
   if (isImageAttachment(attachment)) {
     const source = attachment.url ?? attachmentDataUrl(attachment);
     if (source !== undefined) {
-      return (
-        <img alt={attachment.name ?? "Attachment"} data-anvia-attachment-image="" src={source} />
-      );
+      return <img alt={attachment.name ?? "Attachment"} src={source} />;
     }
   }
 
   if (attachment.url !== undefined) {
-    return (
-      <a data-anvia-attachment-link="" href={attachment.url}>
-        {attachmentLabel(attachment)}
-      </a>
-    );
+    return <a href={attachment.url}>{attachmentLabel(attachment)}</a>;
   }
 
-  return <span data-anvia-attachment-kind="">{attachment.mediaType ?? attachment.type}</span>;
+  return <span>{attachment.mediaType ?? attachment.type}</span>;
 }
 
 function attachmentLabel(attachment: UIAttachment): string {

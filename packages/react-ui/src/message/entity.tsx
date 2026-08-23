@@ -10,13 +10,7 @@ const MessageEntity = forwardRef<HTMLSpanElement, MessageEntityProps>(function M
   ref,
 ) {
   return (
-    <span
-      {...props}
-      data-anvia-message-entity=""
-      data-entity-id={entity.id}
-      data-trigger-id={entity.triggerId}
-      ref={ref}
-    >
+    <span {...props} data-role="entity" ref={ref}>
       {children ?? entity.text}
     </span>
   );

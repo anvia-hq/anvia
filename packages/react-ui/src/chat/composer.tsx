@@ -34,7 +34,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { Attachment } from "../attachment/index";
+import { AttachmentPrimitive } from "../attachment/index";
 import {
   type ChatController,
   type ComposerAttachmentInput as ComposerAttachmentInputValue,
@@ -364,7 +364,6 @@ const ComposerRoot = forwardRef<HTMLFormElement, ComposerRootProps>(function Com
         {
           ...props,
           onSubmit: handleSubmit,
-          "data-anvia-composer": "",
           "data-state": chat.status,
         } as PrimitiveProps<"form">,
         ref,
@@ -392,8 +391,6 @@ const ComposerQuotePreview = forwardRef<HTMLQuoteElement, ComposerQuoteProps>(
       {
         ...props,
         children: renderedChildren,
-        "data-anvia-composer-quote": "",
-        "data-message-id": quote.messageId,
       } as PrimitiveProps<"blockquote">,
       ref,
     );
@@ -424,7 +421,6 @@ const ComposerClearQuote = forwardRef<HTMLButtonElement, PrimitiveProps<"button"
         disabled,
         onClick: handleClick,
         type: props.type ?? "button",
-        "data-anvia-clear-quote": "",
         "data-state": disabled ? "disabled" : "enabled",
       } as PrimitiveProps<"button">,
       ref,
@@ -479,7 +475,6 @@ const ComposerInput = forwardRef<HTMLDivElement, ComposerInputProps>(function Co
         attributes: {
           "aria-label": props["aria-label"] ?? "Message",
           "aria-multiline": "true",
-          "data-anvia-composer-editor": "",
           role: "textbox",
         },
         handleKeyDown: (_view, event) => submitComposerFromEditorKeyDown(event, composerRef),
@@ -576,9 +571,8 @@ const ComposerInput = forwardRef<HTMLDivElement, ComposerInputProps>(function Co
       ...props,
       children: <EditorContent editor={editor} />,
       "aria-disabled": composerDisabled ? true : props["aria-disabled"],
-      "data-anvia-composer-input": "",
+      "data-role": "editor",
       "data-state": composerDisabled ? "disabled" : "enabled",
-      "data-auto-resize": autoResize ? "" : undefined,
       onKeyDown: handleKeyDown,
       style: inputStyle,
     } as PrimitiveProps<"div">,
@@ -666,8 +660,6 @@ const ComposerTextareaInput = forwardRef<HTMLTextAreaElement, ComposerTextareaIn
         onKeyDown: handleKeyDown,
         rows: autoResize ? minRows : rows,
         value: composer.input,
-        "data-anvia-composer-input": "",
-        "data-anvia-composer-textarea-input": "",
       } as PrimitiveProps<"textarea">,
       composedInputRef,
     );
@@ -774,16 +766,12 @@ function composerInputExtensions({
     HardBreak,
     Placeholder.configure(placeholder === undefined ? {} : { placeholder }),
     ComposerEntityExtension.configure({
-      HTMLAttributes: {
-        "data-anvia-composer-entity": "",
-      },
+      HTMLAttributes: {},
       deleteTriggerWithBackspace: true,
       renderText: ({ node }) => composerEntityText(node.attrs as ComposerEntityAttrs),
       renderHTML: ({ node, options }) => [
         "span",
-        mergeAttributes(options.HTMLAttributes, {
-          "data-anvia-composer-entity": "",
-        }),
+        mergeAttributes(options.HTMLAttributes, {}),
         composerEntityText(node.attrs as ComposerEntityAttrs),
       ],
       suggestions: triggers.map((trigger) => composerSuggestion(trigger, composerRef)),
@@ -1303,7 +1291,6 @@ const ComposerSubmit = forwardRef<HTMLButtonElement, PrimitiveProps<"button">>(
         children: props.children ?? "Send",
         disabled,
         type: props.type ?? "submit",
-        "data-anvia-submit": "",
         "data-state": disabled ? "disabled" : "enabled",
       } as PrimitiveProps<"button">,
       ref,
@@ -1337,7 +1324,6 @@ const ComposerStop = forwardRef<HTMLButtonElement, PrimitiveProps<"button">>(fun
       disabled,
       onClick: handleClick,
       type: props.type ?? "button",
-      "data-anvia-stop": "",
       "data-state": disabled ? "disabled" : "enabled",
     } as PrimitiveProps<"button">,
     ref,
@@ -1388,11 +1374,14 @@ const ComposerTriggerMenu = forwardRef<HTMLDivElement, ComposerTriggerMenuProps>
         children: renderedChildren,
         role: props.role ?? "listbox",
         style: menuStyle,
-        "data-anvia-composer-trigger-menu": "",
-        "data-empty": empty ? "" : undefined,
-        "data-loading": activeTrigger?.loading ? "" : undefined,
-        "data-trigger": activeTrigger?.trigger.char,
-        "data-trigger-id": activeTrigger?.trigger.id,
+        "data-state":
+          activeTrigger === undefined
+            ? "closed"
+            : activeTrigger.loading
+              ? "loading"
+              : empty
+                ? "empty"
+                : "open",
       } as PrimitiveProps<"div">,
       ref,
     );
@@ -1451,12 +1440,7 @@ const ComposerTriggerItem = forwardRef<HTMLButtonElement, ComposerTriggerItemPro
         role: props.role ?? "option",
         type: props.type ?? "button",
         "aria-selected": selected,
-        "data-anvia-composer-trigger-item": "",
-        "data-disabled": disabled ? "" : undefined,
-        "data-item-id": item.id,
-        "data-selected": selected ? "" : undefined,
-        "data-trigger": activeTrigger.trigger.char,
-        "data-trigger-id": activeTrigger.trigger.id,
+        "data-state": disabled ? "disabled" : selected ? "selected" : "idle",
       } as PrimitiveProps<"button">,
       ref,
     );
@@ -1494,11 +1478,11 @@ const ComposerAttachments = forwardRef<HTMLDivElement, ComposerAttachmentsProps>
           >
             {typeof children === "function"
               ? children(attachment)
-              : (children ?? <Attachment.Root />)}
+              : (children ?? <AttachmentPrimitive.Root />)}
           </InternalAttachmentProvider>
         )),
-        "data-anvia-composer-attachments": "",
-        "data-empty": empty ? "" : undefined,
+        "data-role": "attachments",
+        "data-state": empty ? "empty" : "populated",
       } as PrimitiveProps<"div">,
       ref,
     );
@@ -1542,7 +1526,6 @@ const ComposerAttachmentInput = forwardRef<HTMLInputElement, ComposerAttachmentI
           void handleChange(event);
         },
         type: "file",
-        "data-anvia-attachment-input": "",
         "data-state": disabled ? "disabled" : "enabled",
       } as PrimitiveProps<"input">,
       ref,
@@ -1578,7 +1561,6 @@ const ComposerAddAttachment = forwardRef<HTMLButtonElement, ComposerAddAttachmen
             disabled,
             onClick: handleClick,
             type: props.type ?? "button",
-            "data-anvia-add-attachment": "",
             "data-state": disabled ? "disabled" : "enabled",
           } as PrimitiveProps<"button">,
           ref,
@@ -1653,9 +1635,7 @@ const ComposerAttachmentDropzone = forwardRef<HTMLDivElement, ComposerAttachment
         onDragLeave: handleDragLeave,
         onDragOver: handleDragOver,
         onDrop: handleDrop,
-        "data-anvia-attachment-dropzone": "",
-        "data-dragging": dragging ? "" : undefined,
-        "data-state": disabled ? "disabled" : "enabled",
+        "data-state": disabled ? "disabled" : dragging ? "dragging" : "enabled",
       } as PrimitiveProps<"div">,
       ref,
     );
@@ -1708,7 +1688,7 @@ function createAttachmentId(): string {
   return `attachment_${nextAttachmentId.toString(36)}`;
 }
 
-export const Composer = {
+export const ComposerPrimitive = {
   Root: ComposerRoot,
   Quote: ComposerQuotePreview,
   ClearQuote: ComposerClearQuote,

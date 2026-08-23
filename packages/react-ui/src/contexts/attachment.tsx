@@ -21,7 +21,7 @@ export function InternalAttachmentProvider({
 export function useAttachment(): AttachmentContextValue {
   const value = useContext(AttachmentContext);
   if (value === undefined) {
-    throw new Error("Attachment primitives must be used inside Attachment.Root.");
+    throw new Error("Attachment primitives must be used inside AttachmentPrimitive.Root.");
   }
   return value;
 }

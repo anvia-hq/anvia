@@ -15,7 +15,7 @@ import {
 import type { Components, Options as ReactMarkdownOptions } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-import { Attachment } from "../attachment/index";
+import { AttachmentPrimitive } from "../attachment/index";
 import type { ComposerEntity } from "../contexts";
 import {
   InternalAttachmentProvider,
@@ -80,7 +80,7 @@ const MessageParts = forwardRef<HTMLDivElement, MessagePartsProps>(function Mess
     {
       ...props,
       children: renderMessagePartNodes(parts, children),
-      "data-anvia-message-parts": "",
+      "data-role": "parts",
     } as PrimitiveProps<"div">,
     ref,
   );
@@ -109,9 +109,8 @@ const SmoothedMessageParts = forwardRef<HTMLDivElement, SmoothedMessagePartsProp
       {
         ...props,
         children: renderMessagePartNodes(smooth.items, children, smooth.liveItemKey),
-        "data-anvia-message-parts": "",
-        "data-draining": smooth.isDraining ? "" : undefined,
-        "data-streaming": stream.isStreaming ? "" : undefined,
+        "data-role": "parts",
+        "data-state": smooth.isDraining ? "draining" : stream.isStreaming ? "streaming" : "idle",
       } as PrimitiveProps<"div">,
       ref,
     );
@@ -152,8 +151,7 @@ const MessagePart = forwardRef<HTMLDivElement, MessagePartProps>(function Messag
     {
       ...props,
       children: renderedChildren,
-      "data-anvia-part": "",
-      "data-part": part.type,
+      "data-role": part.type,
     } as PrimitiveProps<"div">,
     ref,
   );
@@ -201,9 +199,14 @@ const MessageTextContent = forwardRef<HTMLSpanElement, MessageTextContentProps>(
       {
         ...props,
         children: props.children ?? (ownsStream ? smooth.text : content),
-        "data-anvia-text": "",
-        "data-draining": ownsStream && smooth.isDraining ? "" : undefined,
-        "data-streaming": ownsStream && stream.isStreaming ? "" : undefined,
+        "data-role": "text",
+        "data-state": ownsStream
+          ? smooth.isDraining
+            ? "draining"
+            : stream.isStreaming
+              ? "streaming"
+              : "idle"
+          : undefined,
       } as PrimitiveProps<"span">,
       ref,
     );
@@ -327,9 +330,13 @@ const MessageMarkdownContent = forwardRef<HTMLDivElement, MessageMarkdownContent
         {...props}
         components={renderedComponents}
         content={renderedMarkdown}
-        data-anvia-markdown=""
-        data-draining={ownsStream && smooth.isDraining ? "" : undefined}
-        data-streaming={ownsStream && stream.isStreaming ? "" : undefined}
+        data-state={
+          ownsStream && smooth.isDraining
+            ? "draining"
+            : ownsStream && stream.isStreaming
+              ? "streaming"
+              : "idle"
+        }
         live={live}
         ref={ref}
         remarkPlugins={renderedRemarkPlugins}
@@ -353,16 +360,16 @@ function markdownComponents(
     ...components,
     span(spanProps) {
       const internalProps = spanProps as typeof spanProps & {
-        "data-anvia-entity-index"?: string | undefined;
+        "data-entity-index"?: string | undefined;
       };
-      const entityIndexValue = internalProps["data-anvia-entity-index"];
+      const entityIndexValue = internalProps["data-entity-index"];
       const entityIndex =
         typeof entityIndexValue === "string" && /^\d+$/.test(entityIndexValue)
           ? Number(entityIndexValue)
           : undefined;
       const entity = entityIndex === undefined ? undefined : entities[entityIndex];
       const consumerProps = { ...internalProps };
-      delete consumerProps["data-anvia-entity-index"];
+      delete consumerProps["data-entity-index"];
 
       if (entity !== undefined) {
         if (renderEntity !== undefined) {
@@ -370,9 +377,7 @@ function markdownComponents(
         }
         const entityProps = {
           ...consumerProps,
-          "data-anvia-message-entity": "",
-          "data-entity-id": entity.id,
-          "data-trigger-id": entity.triggerId,
+          "data-role": "entity",
         };
         if (consumerSpan !== undefined) {
           return createElement(consumerSpan, entityProps);
@@ -402,13 +407,12 @@ const MessageCodeBlock = forwardRef<HTMLPreElement, MessageCodeBlockProps>(
       "pre",
       {
         ...props,
+        "data-role": "code-block",
         children: children ?? (
-          <code data-anvia-code="" data-language={language}>
+          <code className={language === undefined ? undefined : `language-${language}`}>
             {code ?? ""}
           </code>
         ),
-        "data-anvia-code-block": "",
-        "data-language": language,
       } as PrimitiveProps<"pre">,
       ref,
     );
@@ -432,7 +436,6 @@ const MessageReasoning = forwardRef<HTMLDetailsElement, PrimitiveProps<"details"
             <pre>{part.text}</pre>
           </>
         ),
-        "data-anvia-reasoning": "",
       } as PrimitiveProps<"details">,
       ref,
     );
@@ -460,7 +463,7 @@ const MessageTool = forwardRef<HTMLDivElement, MessageToolProps>(function Messag
     {
       ...props,
       children: renderedChildren,
-      "data-anvia-tool": "",
+      "data-role": "tool",
       "data-state": part.state,
     } as PrimitiveProps<"div">,
     ref,
@@ -479,7 +482,6 @@ const MessageToolName = forwardRef<HTMLSpanElement, PrimitiveProps<"span">>(
       {
         ...props,
         children: props.children ?? part.toolName,
-        "data-anvia-tool-name": "",
       } as PrimitiveProps<"span">,
       ref,
     );
@@ -498,7 +500,6 @@ const MessageToolStatus = forwardRef<HTMLSpanElement, PrimitiveProps<"span">>(
       {
         ...props,
         children: props.children ?? toolStateLabel(part.state),
-        "data-anvia-tool-status": "",
         "data-state": part.state,
       } as PrimitiveProps<"span">,
       ref,
@@ -518,7 +519,6 @@ const MessageToolInput = forwardRef<HTMLPreElement, PrimitiveProps<"pre">>(
       {
         ...props,
         children: props.children ?? stringifyValue(part.input),
-        "data-anvia-tool-input": "",
       } as PrimitiveProps<"pre">,
       ref,
     );
@@ -537,7 +537,6 @@ const MessageToolOutput = forwardRef<HTMLPreElement, PrimitiveProps<"pre">>(
       {
         ...props,
         children: props.children ?? stringifyValue(part.output),
-        "data-anvia-tool-output": "",
       } as PrimitiveProps<"pre">,
       ref,
     );
@@ -556,7 +555,6 @@ const MessageToolError = forwardRef<HTMLDivElement, PrimitiveProps<"div">>(
       {
         ...props,
         children: props.children ?? part.error.message,
-        "data-anvia-tool-error": "",
         role: props.role ?? "alert",
       } as PrimitiveProps<"div">,
       ref,
@@ -577,7 +575,7 @@ const MessageAttachment = forwardRef<HTMLDivElement, MessageAttachmentProps>(
     const renderedChildren =
       typeof children === "function"
         ? children(part.attachment)
-        : (children ?? <Attachment.Root />);
+        : (children ?? <AttachmentPrimitive.Root />);
 
     return (
       <InternalAttachmentProvider value={{ attachment: part.attachment }}>
@@ -586,7 +584,6 @@ const MessageAttachment = forwardRef<HTMLDivElement, MessageAttachmentProps>(
           {
             ...props,
             children: renderedChildren,
-            "data-anvia-message-attachment": "",
           } as PrimitiveProps<"div">,
           ref,
         )}
@@ -607,8 +604,6 @@ const MessageData = forwardRef<HTMLPreElement, PrimitiveProps<"pre">>(
       {
         ...props,
         children: props.children ?? stringifyValue(part.data),
-        "data-anvia-data": "",
-        "data-name": part.name,
       } as PrimitiveProps<"pre">,
       ref,
     );
@@ -627,7 +622,6 @@ const MessageError = forwardRef<HTMLDivElement, PrimitiveProps<"div">>(
       {
         ...props,
         children: props.children ?? part.error.message,
-        "data-anvia-error": "",
         role: props.role ?? "alert",
       } as PrimitiveProps<"div">,
       ref,
@@ -672,16 +666,8 @@ function defaultCodeComponent({
   node: _node,
   ...props
 }: ComponentPropsWithoutRef<"code"> & { node?: unknown }): ReactNode {
-  const language = /language-(\S+)/.exec(className ?? "")?.[1];
-
   return (
-    <code
-      className={className}
-      data-anvia-code=""
-      data-anvia-inline-code={language === undefined ? "" : undefined}
-      data-language={language}
-      {...props}
-    >
+    <code className={className} {...props}>
       {children}
     </code>
   );

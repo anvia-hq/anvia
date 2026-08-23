@@ -7,6 +7,7 @@ import { DEPENDENCY_FIELDS, findPublicPackages } from "./release-train.mjs";
 const root = process.cwd();
 const representativePackages = new Set([
   "@anvia/core",
+  "@anvia/cli",
   "@anvia/grok",
   "@anvia/lens",
   "@anvia/mcp",

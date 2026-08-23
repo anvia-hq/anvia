@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ChatProvider, HumanInput } from "../src";
+import { ChatProvider, HumanInputPrimitive as HumanInput } from "../src";
 import { createChatController, multiPromptQuestion, pendingApproval } from "./helpers";
 
 afterEach(() => {
@@ -21,8 +21,8 @@ describe("HumanInput primitives", () => {
 
     expect(screen.queryByTestId("approvals")).toBeNull();
     expect(screen.queryByTestId("questions")).toBeNull();
-    expect(screen.getByTestId("approvals-mounted").getAttribute("data-empty")).toBe("");
-    expect(screen.getByTestId("questions-mounted").getAttribute("data-empty")).toBe("");
+    expect(screen.getByTestId("approvals-mounted").getAttribute("data-state")).toBe("empty");
+    expect(screen.getByTestId("questions-mounted").getAttribute("data-state")).toBe("empty");
   });
 
   it("approves and rejects pending tool approvals", () => {

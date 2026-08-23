@@ -158,10 +158,10 @@ function wrapStreamRevealGraphemes(
             type: "element",
             tagName: "span",
             properties: {
-              "data-anvia-stream-duration-ms": String(remainingMs),
-              "data-anvia-stream-opacity": String(opacity),
-              "data-anvia-stream-reveal": "",
-              "data-anvia-stream-reveal-id": revealId,
+              "data-reveal-duration-ms": String(remainingMs),
+              "data-reveal-opacity": String(opacity),
+              "data-reveal-id": revealId,
+              "data-state": "revealing",
             },
             children: [{ type: "text", value: text }],
           });

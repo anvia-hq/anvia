@@ -16,6 +16,7 @@ import {
   type SelectionToolbarSelection,
   useSelectionToolbar,
 } from "../contexts";
+import { messageElementFromNode } from "../message/elements";
 import { type PrimitiveProps, renderPrimitive } from "../primitives";
 
 type SelectionToolbarRootProps = Omit<PrimitiveProps<"div">, "children"> & {
@@ -120,8 +121,6 @@ const SelectionToolbarRoot = forwardRef<HTMLDivElement, SelectionToolbarRootProp
               </>
             ),
             style: toolbarStyle,
-            "data-anvia-selection-toolbar": "",
-            "data-message-id": selection.messageId,
             role: props.role ?? "toolbar",
           } as PrimitiveProps<"div">,
           ref,
@@ -145,7 +144,6 @@ const SelectionToolbarQuote = forwardRef<HTMLButtonElement, PrimitiveProps<"butt
         disabled,
         onClick: handleClick,
         type: props.type ?? "button",
-        "data-anvia-selection-quote": "",
         "data-state": disabled ? "disabled" : "enabled",
       } as PrimitiveProps<"button">,
       ref,
@@ -165,7 +163,6 @@ const SelectionToolbarCopy = forwardRef<HTMLButtonElement, PrimitiveProps<"butto
         disabled,
         onClick: handleClick,
         type: props.type ?? "button",
-        "data-anvia-selection-copy": "",
         "data-state": disabled ? "disabled" : "enabled",
       } as PrimitiveProps<"button">,
       ref,
@@ -211,29 +208,20 @@ function selectionFromDocument(document: Document): SelectionToolbarSelection | 
 
   const anchorMessage = messageElementFromNode(selection.anchorNode);
   const focusMessage = messageElementFromNode(selection.focusNode);
-  if (anchorMessage === undefined || focusMessage === undefined || anchorMessage !== focusMessage) {
-    return undefined;
-  }
-
-  const messageId = anchorMessage.getAttribute("data-anvia-message-id");
-  if (messageId === null || messageId.length === 0) {
+  if (
+    anchorMessage === undefined ||
+    focusMessage === undefined ||
+    anchorMessage.element !== focusMessage.element
+  ) {
     return undefined;
   }
 
   const range = selection.getRangeAt(0);
   return {
     text,
-    messageId,
+    messageId: anchorMessage.messageId,
     rect: selectionRect(range),
   };
-}
-
-function messageElementFromNode(node: Node | null): HTMLElement | undefined {
-  if (node === null) {
-    return undefined;
-  }
-  const element = node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement;
-  return element?.closest<HTMLElement>("[data-anvia-message-id]") ?? undefined;
 }
 
 function selectionRect(range: Range): DOMRect {

@@ -9,6 +9,7 @@ import {
 
 export type ThreadContextValue = {
   viewportRef: MutableRefObject<HTMLElement | null>;
+  messagesRef: MutableRefObject<HTMLElement | null>;
   atBottom: boolean;
   setAtBottom(atBottom: boolean): void;
   scrollToBottom(behavior?: ScrollBehavior): void;
@@ -29,7 +30,7 @@ export function InternalThreadProvider({
 export function useThread(): ThreadContextValue {
   const value = useContext(ThreadContext);
   if (value === undefined) {
-    throw new Error("Thread primitives must be used inside Thread.Root.");
+    throw new Error("Thread primitives must be used inside ThreadPrimitive.Root.");
   }
   return value;
 }

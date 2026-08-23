@@ -1,5 +1,11 @@
 # @anvia/server
 
+## 1.0.1
+
+### Patch Changes
+
+- @anvia/client@1.0.1
+
 ## 1.0.0
 
 ### Major Changes

@@ -1,5 +1,12 @@
 # @anvia/gemini
 
+## 1.0.1
+
+### Patch Changes
+
+- f29f2f6: Refresh upstream SDK and runtime dependencies to their latest supported releases.
+  - @anvia/core@1.0.1
+
 ## 1.0.0
 
 ### Major Changes

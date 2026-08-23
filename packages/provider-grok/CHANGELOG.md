@@ -1,5 +1,14 @@
 # @anvia/grok
 
+## 1.0.1
+
+### Patch Changes
+
+- f29f2f6: Refresh upstream SDK and runtime dependencies to their latest supported releases.
+- Updated dependencies [f29f2f6]
+  - @anvia/openai@1.0.1
+  - @anvia/core@1.0.1
+
 ## 1.0.0
 
 ### Major Changes

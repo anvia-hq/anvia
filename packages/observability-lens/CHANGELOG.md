@@ -1,5 +1,12 @@
 # @anvia/lens
 
+## 1.0.1
+
+### Patch Changes
+
+- @anvia/core@1.0.1
+- @anvia/otel@1.0.1
+
 ## 1.0.0
 
 ### Major Changes

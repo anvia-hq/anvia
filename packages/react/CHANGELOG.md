@@ -1,5 +1,12 @@
 # @anvia/react
 
+## 1.0.1
+
+### Patch Changes
+
+- @anvia/client@1.0.1
+- @anvia/core@1.0.1
+
 ## 1.0.0
 
 ### Major Changes

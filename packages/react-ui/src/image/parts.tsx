@@ -56,7 +56,7 @@ const ImageRoot = forwardRef<HTMLElement, ImageRootProps>(function ImageRoot(
     if (attachment.name !== undefined) context.name = attachment.name;
     if (attachment.mediaType !== undefined) context.mediaType = attachment.mediaType;
     return context;
-  }, [attachment, attachment.mediaType, attachment.name, isImage, src, zoomOpen]);
+  }, [attachment, isImage, src, zoomOpen]);
   if (!isImage && renderWhen !== "always") {
     return null;
   }
@@ -94,13 +94,14 @@ const ImagePreview = forwardRef<HTMLDivElement, ImagePreviewProps>(function Imag
   ref,
 ) {
   const image = useImage();
+  const src = image.src;
   const [state, setState] = useState<"loading" | "ready" | "error">(
-    image.src === undefined ? "error" : "loading",
+    src === undefined ? "error" : "loading",
   );
 
   useEffect(() => {
-    setState(image.src === undefined ? "error" : "loading");
-  }, [image.src]);
+    setState(src === undefined ? "error" : "loading");
+  }, [src]);
 
   const fallback =
     state === "loading"
@@ -114,7 +115,7 @@ const ImagePreview = forwardRef<HTMLDivElement, ImagePreviewProps>(function Imag
     {
       ...props,
       children:
-        image.src === undefined ? (
+        src === undefined ? (
           fallback
         ) : (
           <>
@@ -124,7 +125,7 @@ const ImagePreview = forwardRef<HTMLDivElement, ImagePreviewProps>(function Imag
               hidden={state !== "ready"}
               onError={() => setState("error")}
               onLoad={() => setState("ready")}
-              src={image.src}
+              src={src}
             />
           </>
         ),
@@ -300,7 +301,7 @@ const ImageZoomOverlay = forwardRef<HTMLDivElement, ImageZoomOverlayProps>(
       return () => {
         document.removeEventListener("keydown", handleKeyDown);
       };
-    }, [image.setZoomOpen, image.zoomOpen]);
+    }, [image]);
 
     useEffect(() => {
       if (!image.zoomOpen) {

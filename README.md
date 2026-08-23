@@ -91,15 +91,15 @@ new Studio([agent]).start({ port: 4021 });
 
 ## What You Can Build
 
-| Capability | Use it for |
-| --- | --- |
-| Agents | Model workflows with instructions, context, tools, lifecycle callbacks, memory, approvals, and streaming. |
-| Tools | Safe, typed access to application-owned actions such as lookup, search, mutation, approval, or dispatch. |
-| Extractors | Schema-shaped data from text, tickets, documents, messages, and model responses. |
-| Pipelines | Explicit multi-step workflows that combine functions, agents, extraction, branching, and batching. |
-| Retrieval | Embeddings, vector search, document context, metadata filters, and RAG workflows. |
-| Observability | Run, generation, tool, usage, trace, and eval events for production visibility. |
-| Studio | A local browser UI for inspecting agents, sessions, traces, pipelines, tools, approvals, and knowledge. |
+| Capability    | Use it for                                                                                                |
+| ------------- | --------------------------------------------------------------------------------------------------------- |
+| Agents        | Model workflows with instructions, context, tools, lifecycle callbacks, memory, approvals, and streaming. |
+| Tools         | Safe, typed access to application-owned actions such as lookup, search, mutation, approval, or dispatch.  |
+| Extractors    | Schema-shaped data from text, tickets, documents, messages, and model responses.                          |
+| Pipelines     | Explicit multi-step workflows that combine functions, agents, extraction, branching, and batching.        |
+| Retrieval     | Embeddings, vector search, document context, metadata filters, and RAG workflows.                         |
+| Observability | Run, generation, tool, usage, trace, and eval events for production visibility.                           |
+| Studio        | A local browser UI for inspecting agents, sessions, traces, pipelines, tools, approvals, and knowledge.   |
 
 ## Cookbook
 

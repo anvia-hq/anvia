@@ -702,8 +702,9 @@ export type CompletionStreamEvent<Output = string, RawResponse = unknown> =
       usage: Usage;
     };
 
-export interface StreamingCompletionModel<RawResponse = unknown>
-  extends CompletionModel<RawResponse> {
+export interface StreamingCompletionModel<
+  RawResponse = unknown,
+> extends CompletionModel<RawResponse> {
   streamCompletion(
     request: CompletionRequest,
     options?: ModelCallOptions,

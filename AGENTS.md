@@ -68,9 +68,8 @@ pnpm --filter './packages/**' test
 ## Formatting And Style
 
 - TypeScript is strict, ESM, target `ES2022`, with `moduleResolution: "Bundler"`.
-- Biome owns formatting and linting. Use repo scripts instead of ad hoc
-  formatting.
-- Biome uses 2-space indentation, double quotes, semicolons, trailing commas for
+- Oxlint owns linting and Oxfmt owns formatting. Use repo scripts instead of invoking them ad hoc.
+- Oxfmt uses 2-space indentation, double quotes, semicolons, trailing commas for
   JavaScript/TypeScript, and 100-column line width.
 - Match each package's import specifier style. Some packages use extensionless
   local imports; many adapter packages use `.js` in source imports.
@@ -112,8 +111,7 @@ behavior belongs in `packages/tool-studio`.
   `packages/vector-milvus`, `packages/vector-pgvector`,
   `packages/vector-pinecone`, `packages/vector-qdrant`,
   `packages/vector-redis`, `packages/vector-weaviate`: vector store adapters.
-- `packages/embedding-fastembed`, `packages/embedding-transformers`: local
-  embedding adapters.
+- `packages/embedding-transformers`: local embedding adapter.
 - `packages/observability-langfuse`, `packages/observability-otel`: tracing,
   eval reporting, scoring, prompt/dataset helpers, and OpenTelemetry adapters.
 - `packages/logger`: console, pino, and observer logger helpers.

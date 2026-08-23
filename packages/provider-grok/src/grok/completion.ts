@@ -37,7 +37,7 @@ export class GrokCompletionModel implements StreamingCompletionModel<unknown> {
     options: { stream?: boolean | undefined } = {},
   ): JsonObject {
     return {
-      ...(this.delegate.traceRequest?.(request, options) ?? {}),
+      ...this.delegate.traceRequest?.(request, options),
       provider: this.provider,
     };
   }

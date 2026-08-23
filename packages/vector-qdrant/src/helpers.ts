@@ -188,7 +188,7 @@ export async function qdrantDocumentPage<T, Metadata extends VectorMetadata>(
 
   while (true) {
     const response = await client.scroll(collectionName, {
-      ...(options.providerOptions ?? {}),
+      ...options.providerOptions,
       filter: options.filter,
       limit: Math.max(100, limit * 2),
       offset,

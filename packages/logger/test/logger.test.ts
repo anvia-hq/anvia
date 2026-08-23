@@ -249,45 +249,48 @@ describe("createLoggerObserver", () => {
   it.each([
     ["malformed-tool-arguments", undefined],
     ["filtered-tool-call", "content-filter"],
-  ] as const)("logs terminal %s classification without provider-controlled identifiers", async (kind, finishReason) => {
-    const logger = new RecordingLogger();
-    const observer = createLoggerObserver({ logger });
-    const run = (await observer.startRun({
-      runId: "run_provider_output_error",
-      prompt: { role: "user", content: "hello" },
-      history: [],
-      maxTurns: 1,
-    })) as AgentRunObserver;
-    const error =
-      kind === "filtered-tool-call"
-        ? new CompletionProviderOutputError({
-            kind,
-            toolCallId: "private-provider-tool-id",
-            finishReason: "content-filter",
-          })
-        : new CompletionProviderOutputError({
-            kind,
-            toolCallId: "private-provider-tool-id",
-          });
+  ] as const)(
+    "logs terminal %s classification without provider-controlled identifiers",
+    async (kind, finishReason) => {
+      const logger = new RecordingLogger();
+      const observer = createLoggerObserver({ logger });
+      const run = (await observer.startRun({
+        runId: "run_provider_output_error",
+        prompt: { role: "user", content: "hello" },
+        history: [],
+        maxTurns: 1,
+      })) as AgentRunObserver;
+      const error =
+        kind === "filtered-tool-call"
+          ? new CompletionProviderOutputError({
+              kind,
+              toolCallId: "private-provider-tool-id",
+              finishReason: "content-filter",
+            })
+          : new CompletionProviderOutputError({
+              kind,
+              toolCallId: "private-provider-tool-id",
+            });
 
-    await run.error?.({ error, usage: Usage.empty(), messages: [] });
+      await run.error?.({ error, usage: Usage.empty(), messages: [] });
 
-    expect(logger.records.at(-1)).toMatchObject({
-      level: "error",
-      message: "agent run failed",
-      context: {
-        error: {
-          name: "CompletionProviderOutputError",
-          code: "ANVIA_COMPLETION_PROVIDER_OUTPUT",
-          kind,
+      expect(logger.records.at(-1)).toMatchObject({
+        level: "error",
+        message: "agent run failed",
+        context: {
+          error: {
+            name: "CompletionProviderOutputError",
+            code: "ANVIA_COMPLETION_PROVIDER_OUTPUT",
+            kind,
+          },
         },
-      },
-    });
-    if (finishReason !== undefined) {
-      expect(logger.records.at(-1)?.context.error).toMatchObject({ finishReason });
-    }
-    expect(JSON.stringify(logger.records.at(-1))).not.toContain("private-provider-tool-id");
-  });
+      });
+      if (finishReason !== undefined) {
+        expect(logger.records.at(-1)?.context.error).toMatchObject({ finishReason });
+      }
+      expect(JSON.stringify(logger.records.at(-1))).not.toContain("private-provider-tool-id");
+    },
+  );
 
   it("does not log arbitrary observer event attributes by default", async () => {
     const logger = new RecordingLogger();

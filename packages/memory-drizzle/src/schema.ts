@@ -9,7 +9,10 @@ export const agentMemorySessions = pgTable(
     scopeKey: text("scope_key").notNull(),
     sessionId: text("session_id").notNull(),
     userId: text("user_id"),
-    metadata: jsonb("metadata").$type<JsonObject>().notNull().default(sql`'{}'::jsonb`),
+    metadata: jsonb("metadata")
+      .$type<JsonObject>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

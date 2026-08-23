@@ -313,7 +313,7 @@ async function mapConcurrent<Input, Output>(
   concurrency: number,
   run: (value: Input) => Promise<Output>,
 ): Promise<Output[]> {
-  const output = new Array<Output>(values.length);
+  const output = Array<Output>(values.length);
   let cursor = 0;
   await Promise.all(
     Array.from({ length: Math.min(concurrency, values.length) }, async () => {

@@ -2,11 +2,7 @@ export type {
   LangfuseEvalExperimentOptions,
   LangfuseEvalExperimentResult,
 } from "./experiment-runner.js";
-export type {
-  LangfuseRedactionOptions,
-  PiiRedactor,
-  RedactorPattern,
-} from "./redaction.js";
+export type { LangfuseRedactionOptions, PiiRedactor, RedactorPattern } from "./redaction.js";
 export { createPiiRedactor, DEFAULT_PATTERNS } from "./redaction.js";
 export { LangfuseScoreError } from "./scoring.js";
 export { LangfuseClient } from "./tracing.js";

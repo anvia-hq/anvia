@@ -12,12 +12,7 @@ export {
   type OpenAITranscriptionModelOptions,
 } from "./client";
 export type { OpenAIEmbeddingModelOptions } from "./embedding";
-export {
-  DALL_E_2,
-  DALL_E_3,
-  GPT_IMAGE_1,
-  GPT_IMAGE_2,
-} from "./image-generation";
+export { DALL_E_2, DALL_E_3, GPT_IMAGE_1, GPT_IMAGE_2 } from "./image-generation";
 export type {
   KnownOpenAICompletionModelId,
   KnownOpenAIEmbeddingModelId,

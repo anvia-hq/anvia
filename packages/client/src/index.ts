@@ -13,10 +13,7 @@ export type {
   CreateDirectClientTransportOptions,
   CreateHttpClientTransportOptions,
 } from "./client-transport";
-export {
-  createDirectClientTransport,
-  createHttpClientTransport,
-} from "./client-transport";
+export { createDirectClientTransport, createHttpClientTransport } from "./client-transport";
 export { createClientId, messagesToUIMessages, uiMessagesToMessages } from "./messages";
 export {
   ClientProtocolError,

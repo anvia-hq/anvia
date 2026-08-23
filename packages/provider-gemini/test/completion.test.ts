@@ -638,24 +638,27 @@ describe("Gemini completion mapping", () => {
     ["MALFORMED_FUNCTION_CALL", "malformed-tool-arguments"],
     ["UNEXPECTED_TOOL_CALL", "invalid-tool-call"],
     ["TOO_MANY_TOOL_CALLS", "invalid-tool-call"],
-  ] as const)("classifies Gemini %s even when no valid function-call part was returned", async (finishReason, kind) => {
-    const response = {
-      candidates: [{ index: 0, finishReason, content: { parts: [] } }],
-      usageMetadata: { promptTokenCount: 2, candidatesTokenCount: 1 },
-    };
-    expectProviderOutputError(() => fromGeminiGenerateContentResponse(response), {
-      kind,
-      usage: expect.objectContaining({ inputTokens: 2, outputTokens: 1 }),
-    });
+  ] as const)(
+    "classifies Gemini %s even when no valid function-call part was returned",
+    async (finishReason, kind) => {
+      const response = {
+        candidates: [{ index: 0, finishReason, content: { parts: [] } }],
+        usageMetadata: { promptTokenCount: 2, candidatesTokenCount: 1 },
+      };
+      expectProviderOutputError(() => fromGeminiGenerateContentResponse(response), {
+        kind,
+        usage: expect.objectContaining({ inputTokens: 2, outputTokens: 1 }),
+      });
 
-    const { error, events } = await collectModelStreamError(geminiModelWithStreams([[response]]));
-    expect(events).toEqual([]);
-    expect(error).toMatchObject({
-      name: "CompletionProviderOutputError",
-      kind,
-      usage: expect.objectContaining({ inputTokens: 2, outputTokens: 1 }),
-    });
-  });
+      const { error, events } = await collectModelStreamError(geminiModelWithStreams([[response]]));
+      expect(events).toEqual([]);
+      expect(error).toMatchObject({
+        name: "CompletionProviderOutputError",
+        kind,
+        usage: expect.objectContaining({ inputTokens: 2, outputTokens: 1 }),
+      });
+    },
+  );
 
   it("maps blocked prompt feedback to an explicit content-filter finish", async () => {
     const blocked = {

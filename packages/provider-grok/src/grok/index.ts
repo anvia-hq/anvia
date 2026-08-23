@@ -19,10 +19,7 @@ export {
   GROK_IMAGINE_IMAGE_QUALITY,
   XAI_BASE_URL,
 } from "./constants";
-export {
-  aspectRatio,
-  imageResponseFromGrok,
-} from "./image-generation";
+export { aspectRatio, imageResponseFromGrok } from "./image-generation";
 export type {
   GrokCompletionModelId,
   GrokImageGenerationModelId,
@@ -36,11 +33,4 @@ export type {
   GrokWebSearchOptions,
   GrokXSearchOptions,
 } from "./tools";
-export {
-  codeInterpreter,
-  fileSearch,
-  mcp,
-  tools,
-  webSearch,
-  xSearch,
-} from "./tools";
+export { codeInterpreter, fileSearch, mcp, tools, webSearch, xSearch } from "./tools";

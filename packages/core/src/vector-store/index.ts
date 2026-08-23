@@ -41,9 +41,10 @@ export type InMemoryVectorStoreFromDocumentsOptions<
   documents: Array<EmbeddedDocument<T, Metadata>>;
 };
 
-export class InMemoryVectorStore<T, Metadata extends VectorMetadata = VectorMetadata>
-  implements VectorStore<T, Metadata>
-{
+export class InMemoryVectorStore<
+  T,
+  Metadata extends VectorMetadata = VectorMetadata,
+> implements VectorStore<T, Metadata> {
   private readonly documents = new Map<string, StoredDocument<T, Metadata>>();
   private readonly indexStrategy: IndexStrategy;
   private lshIndex: LshIndex | undefined;

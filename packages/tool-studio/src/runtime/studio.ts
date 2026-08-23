@@ -244,7 +244,7 @@ function studioOptionsFromTargets(
 ): StudioRuntimeOptions {
   const agents = targets.filter((target): target is Agent => target instanceof Agent);
   const pipelines = targets.filter(
-    // biome-ignore lint/suspicious/noExplicitAny: Studio accepts heterogeneous user pipelines.
+    // oxlint-disable-next-line typescript/no-explicit-any -- Studio accepts heterogeneous user pipelines.
     (target): target is Pipeline<any, any> => target instanceof Pipeline,
   );
   const runtimeOptions: StudioRuntimeOptions = {
@@ -286,7 +286,7 @@ function inferStudioAgents(agents: Agent[], quickPrompts: Record<string, string[
   });
 }
 
-// biome-ignore lint/suspicious/noExplicitAny: Studio accepts heterogeneous user pipelines.
+// oxlint-disable-next-line typescript/no-explicit-any -- Studio accepts heterogeneous user pipelines.
 function inferStudioPipelines(pipelines: Array<Pipeline<any, any>>): StudioPipeline[] {
   const ids = new Set<string>();
   return pipelines.map((pipeline) => {
@@ -486,7 +486,7 @@ function withStudioTraceObserver(
     agent: cloneAgent(studioAgent.agent, {
       observability: {
         observers: {
-          ...(existing?.observers ?? {}),
+          ...existing?.observers,
           studio: studioObserver ?? new StudioTraceObserver({ store: traceStore }),
         },
         primaryTrace: "studio",

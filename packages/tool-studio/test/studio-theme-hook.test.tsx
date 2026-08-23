@@ -12,7 +12,7 @@ describe("useStudioTheme", () => {
   let changeListener: ((event: MediaQueryListEvent) => void) | undefined;
 
   beforeEach(() => {
-    window.localStorage.removeItem("anvia-studio-theme");
+    vi.stubGlobal("localStorage", createMemoryStorage());
     media = {
       matches: false,
       media: "(prefers-color-scheme: dark)",
@@ -39,6 +39,7 @@ describe("useStudioTheme", () => {
     act(() => root.unmount());
     container.remove();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("tracks system preference changes while an explicit theme is selected", () => {
@@ -61,6 +62,25 @@ describe("useStudioTheme", () => {
     expect(container.textContent).toContain("system/dark");
   });
 });
+
+function createMemoryStorage(): Storage {
+  const entries = new Map<string, string>();
+
+  return {
+    clear: () => entries.clear(),
+    getItem: (key) => entries.get(key) ?? null,
+    key: (index) => [...entries.keys()][index] ?? null,
+    get length() {
+      return entries.size;
+    },
+    removeItem: (key) => {
+      entries.delete(key);
+    },
+    setItem: (key, value) => {
+      entries.set(key, value);
+    },
+  };
+}
 
 function ThemeHarness() {
   const { resolvedTheme, theme, toggleTheme } = useStudioTheme();

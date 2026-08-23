@@ -789,37 +789,40 @@ describe("Mistral completion mapping", () => {
     ["length", "truncated-tool-call", "length"],
     ["content_filter", "filtered-tool-call", "content-filter"],
     ["unexpected_reason", "invalid-tool-call", "other"],
-  ] as const)("gives %s precedence over invalid native streamed tool fields", async (providerFinishReason, kind, finishReason) => {
-    const model = mistralModelWithChunks([
-      {
-        choices: [
-          {
-            index: 0,
-            finishReason: providerFinishReason,
-            delta: {
-              toolCalls: [
-                {
-                  index: -1,
-                  id: "call_1",
-                  function: { name: "lookup", arguments: { query: "anvia" } },
-                },
-              ],
+  ] as const)(
+    "gives %s precedence over invalid native streamed tool fields",
+    async (providerFinishReason, kind, finishReason) => {
+      const model = mistralModelWithChunks([
+        {
+          choices: [
+            {
+              index: 0,
+              finishReason: providerFinishReason,
+              delta: {
+                toolCalls: [
+                  {
+                    index: -1,
+                    id: "call_1",
+                    function: { name: "lookup", arguments: { query: "anvia" } },
+                  },
+                ],
+              },
             },
-          },
-        ],
-        usage: { promptTokens: 2, completionTokens: 3 },
-      },
-    ]);
+          ],
+          usage: { promptTokens: 2, completionTokens: 3 },
+        },
+      ]);
 
-    const { error, events } = await collectMistralStreamError(model);
-    expect(events).toEqual([]);
-    expect(error).toMatchObject({
-      name: "CompletionProviderOutputError",
-      kind,
-      finishReason,
-      usage: expect.objectContaining({ inputTokens: 2, outputTokens: 3 }),
-    });
-  });
+      const { error, events } = await collectMistralStreamError(model);
+      expect(events).toEqual([]);
+      expect(error).toMatchObject({
+        name: "CompletionProviderOutputError",
+        kind,
+        finishReason,
+        usage: expect.objectContaining({ inputTokens: 2, outputTokens: 3 }),
+      });
+    },
+  );
 
   it("derives deterministic ids for absent and SDK-placeholder tool-call ids", () => {
     const response = fromMistralChatResponse({

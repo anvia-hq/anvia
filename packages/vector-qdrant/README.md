@@ -57,16 +57,15 @@ document ID, preventing stale chunks. Raw `store.search()` accepts vectors and n
 `mode: "hybrid"` returns a hybrid-capable store. Dense stores do not expose `searchHybrid()`.
 
 ```ts
-import { embedDocuments } from "@anvia/core/embeddings";
+import { embedDocuments, type SparseEmbeddingModel } from "@anvia/core/embeddings";
 import { retrieveDocuments } from "@anvia/core/vector-store";
-import {
-  loadFastEmbedEmbeddingModel,
-  loadFastEmbedSparseEmbeddingModel,
-} from "@anvia/fastembed";
 import { QdrantVectorClient } from "@anvia/qdrant";
+import { loadTransformersEmbeddingModel } from "@anvia/transformers";
 
-const dense = await loadFastEmbedEmbeddingModel({ modelId: "fast-bge-small-en-v1.5" });
-const sparse = await loadFastEmbedSparseEmbeddingModel({ modelId: "prithivida/Splade_PP_en_v1" });
+const dense = await loadTransformersEmbeddingModel({
+  modelId: "Xenova/bge-small-en-v1.5",
+});
+declare const sparse: SparseEmbeddingModel; // Supply your sparse embedding implementation.
 const qdrant = new QdrantVectorClient({ url: process.env.QDRANT_URL });
 const store = qdrant.vectorStore<{ id: string; text: string }>({
   collectionName: "docs_hybrid",

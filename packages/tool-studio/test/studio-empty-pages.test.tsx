@@ -21,17 +21,18 @@ describe("Studio full-page empty states", () => {
     ["Sandboxes", "No live sandboxes detected", renderSandboxes],
     ["Sessions", "No sessions", renderSessions],
     ["Pipelines", "No pipelines", renderPipelines],
-  ] satisfies Array<
-    [string, string, () => string]
-  >)("centers the %s empty state in the available page area", (_, emptyTitle, renderPage) => {
-    const html = renderPage();
+  ] satisfies Array<[string, string, () => string]>)(
+    "centers the %s empty state in the available page area",
+    (_, emptyTitle, renderPage) => {
+      const html = renderPage();
 
-    expect(emptyStateCount(html)).toBe(1);
-    expect(html).toContain(emptyTitle);
-    expect(html).toContain('data-size="default"');
-    expect(emptyStateClasses(html)).toEqual(expect.arrayContaining(["h-full", "min-h-64"]));
-    expect(html).not.toContain("min-h-80 place-items-center");
-  });
+      expect(emptyStateCount(html)).toBe(1);
+      expect(html).toContain(emptyTitle);
+      expect(html).toContain('data-size="default"');
+      expect(emptyStateClasses(html)).toEqual(expect.arrayContaining(["h-full", "min-h-64"]));
+      expect(html).not.toContain("min-h-80 place-items-center");
+    },
+  );
 
   it("does not leave the Sessions table header above an empty state", () => {
     const html = renderSessions();

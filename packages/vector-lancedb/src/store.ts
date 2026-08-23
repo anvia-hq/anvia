@@ -17,9 +17,10 @@ import {
   vectorColumn,
 } from "./types.js";
 
-export class LanceDBVectorStore<T, Metadata extends VectorMetadata = VectorMetadata>
-  implements VectorStore<T, Metadata>
-{
+export class LanceDBVectorStore<
+  T,
+  Metadata extends VectorMetadata = VectorMetadata,
+> implements VectorStore<T, Metadata> {
   constructor(
     private readonly owner: LanceDBVectorClient,
     readonly options: LanceDBVectorStoreOptions,

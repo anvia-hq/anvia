@@ -55,6 +55,7 @@ describe("Image primitives", () => {
                 <Message.Part>
                   <Message.Attachment>
                     <Image.Root>
+                      <Image.Preview data-testid="image-preview" />
                       <Image.ZoomTrigger>Open</Image.ZoomTrigger>
                       <Image.ZoomOverlay />
                     </Image.Root>
@@ -67,9 +68,15 @@ describe("Image primitives", () => {
       </ChatProvider>,
     );
 
+    const preview = screen.getByTestId("image-preview");
+    fireEvent.load(screen.getByAltText("photo.png"));
+    expect(preview.getAttribute("data-state")).toBe("ready");
+
     const trigger = screen.getByText("Open") as HTMLButtonElement;
     trigger.focus();
     fireEvent.click(trigger);
+
+    expect(preview.getAttribute("data-state")).toBe("ready");
 
     const overlay = screen.getByRole("dialog");
     expect(overlay).toBeInstanceOf(HTMLDivElement);
@@ -105,15 +112,15 @@ describe("Image primitives", () => {
     const createObjectURL = vi.fn(() => "blob:download");
     const revokeObjectURL = vi.fn();
     const clickedLinks: Array<{ download: string; href: string; rel: string }> = [];
-    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
-      this: HTMLAnchorElement,
-    ) {
-      clickedLinks.push({
-        download: this.download,
-        href: this.getAttribute("href") ?? "",
-        rel: this.rel,
+    const click = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(function (this: HTMLAnchorElement) {
+        clickedLinks.push({
+          download: this.download,
+          href: this.getAttribute("href") ?? "",
+          rel: this.rel,
+        });
       });
-    });
     const originalFetch = globalThis.fetch;
     const originalCreateObjectURL = URL.createObjectURL;
     const originalRevokeObjectURL = URL.revokeObjectURL;

@@ -32,9 +32,10 @@ import {
   type QdrantVectorStoreOptions,
 } from "./types.js";
 
-export class QdrantVectorStore<T, Metadata extends VectorMetadata = VectorMetadata>
-  implements VectorStore<T, Metadata>
-{
+export class QdrantVectorStore<
+  T,
+  Metadata extends VectorMetadata = VectorMetadata,
+> implements VectorStore<T, Metadata> {
   readonly mode: "dense" | "hybrid";
   readonly denseVectorName: string;
   readonly sparseVectorName: string;
@@ -64,9 +65,9 @@ export class QdrantVectorStore<T, Metadata extends VectorMetadata = VectorMetada
     await this.validate();
   }
   async validate(): Promise<void> {
-    const response = await (await this.owner.nativeClient()).getCollection(
-      this.options.collectionName,
-    );
+    const response = await (
+      await this.owner.nativeClient()
+    ).getCollection(this.options.collectionName);
     validateQdrantCollection(response, {
       vectorSize: this.options.dimensions,
       distance: distanceName(this.options.metric),
@@ -111,7 +112,7 @@ export class QdrantVectorStore<T, Metadata extends VectorMetadata = VectorMetada
     let candidateLimit = request.topK;
     for (;;) {
       const common = {
-        ...(request.providerOptions ?? {}),
+        ...request.providerOptions,
         limit: candidateLimit,
         filter,
         score_threshold:
@@ -162,7 +163,7 @@ export class QdrantVectorStore<T, Metadata extends VectorMetadata = VectorMetada
     const client = await this.owner.nativeClient();
     if (client.query === undefined)
       throw new TypeError("Hybrid Qdrant search requires query(...).");
-    const providerOptions = { ...(request.providerOptions ?? {}) };
+    const providerOptions = { ...request.providerOptions };
     const configuredPrefetchLimit = providerOptions.prefetchLimit;
     delete providerOptions.prefetchLimit;
     if (
@@ -296,7 +297,7 @@ export class QdrantHybridVectorStore<T, Metadata extends VectorMetadata = Vector
   extends QdrantVectorStore<T, Metadata>
   implements HybridVectorStore<T, Metadata>
 {
-  // biome-ignore lint/complexity/noUselessConstructor: narrows the public constructor to hybrid options.
+  // oxlint-disable-next-line eslint/no-useless-constructor -- Narrows the public constructor to hybrid options.
   constructor(owner: QdrantVectorClient, options: QdrantHybridVectorStoreOptions) {
     super(owner, options);
   }

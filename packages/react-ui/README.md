@@ -85,9 +85,7 @@ Streaming smoothing is opt-in and display-only. Keep `useChat` as the owner of t
     flushImmediately: chat.status === "error",
   }}
 >
-  {(part) =>
-    part.type === "text" ? <MessagePrimitive.Markdown /> : <MessagePrimitive.Part />
-  }
+  {(part) => (part.type === "text" ? <MessagePrimitive.Markdown /> : <MessagePrimitive.Part />)}
 </MessagePrimitive.Parts>
 ```
 

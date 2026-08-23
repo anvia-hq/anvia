@@ -18,20 +18,19 @@ afterEach(async () => {
 });
 
 describe("memory-prisma init CLI", () => {
-  it.each([
-    { argv: [] },
-    { argv: ["init", "--help"] },
-    { argv: ["init", "-h"] },
-  ])("prints help without writing files for arguments $argv", async ({ argv }) => {
-    const cwd = createPrismaProject();
-    const events: Event[] = [];
+  it.each([{ argv: [] }, { argv: ["init", "--help"] }, { argv: ["init", "-h"] }])(
+    "prints help without writing files for arguments $argv",
+    async ({ argv }) => {
+      const cwd = createPrismaProject();
+      const events: Event[] = [];
 
-    const code = await runCli(argv, cwd, io(events));
+      const code = await runCli(argv, cwd, io(events));
 
-    expect(code).toBe(0);
-    expect(messages(events)).toContain("Usage: anvia-memory-prisma init [options]");
-    expect(existsSync(join(cwd, "prisma/models/anvia-memory.prisma"))).toBe(false);
-  });
+      expect(code).toBe(0);
+      expect(messages(events)).toContain("Usage: anvia-memory-prisma init [options]");
+      expect(existsSync(join(cwd, "prisma/models/anvia-memory.prisma"))).toBe(false);
+    },
+  );
 
   it.each([
     [["unknown"], "Unknown command: unknown"],

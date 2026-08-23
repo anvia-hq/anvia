@@ -16,9 +16,10 @@ import {
   VectorAlgorithms,
   vectorField,
 } from "./types.js";
-export class RedisVectorStore<T, Metadata extends VectorMetadata = VectorMetadata>
-  implements VectorStore<T, Metadata>
-{
+export class RedisVectorStore<
+  T,
+  Metadata extends VectorMetadata = VectorMetadata,
+> implements VectorStore<T, Metadata> {
   readonly keyPrefix: string;
   constructor(
     private readonly owner: RedisVectorClient,
@@ -109,7 +110,7 @@ export class RedisVectorStore<T, Metadata extends VectorMetadata = VectorMetadat
     for (;;) {
       const knnQuery = `${filter === "*" ? "*" : filter}=>[KNN ${candidateLimit} @${vectorField} $vector AS __anvia_score]`;
       const response = await client.ft.search(this.options.indexName, knnQuery, {
-        ...(request.providerOptions ?? {}),
+        ...request.providerOptions,
         PARAMS: { vector: Buffer.from(new Float32Array(request.vector).buffer) },
         SORTBY: "__anvia_score",
         DIALECT: 2,

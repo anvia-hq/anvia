@@ -16,9 +16,10 @@ import {
 } from "./helpers.js";
 import { documentIdFieldName, type MilvusMetric, type MilvusVectorStoreOptions } from "./types.js";
 
-export class MilvusVectorStore<T, Metadata extends VectorMetadata = VectorMetadata>
-  implements VectorStore<T, Metadata>
-{
+export class MilvusVectorStore<
+  T,
+  Metadata extends VectorMetadata = VectorMetadata,
+> implements VectorStore<T, Metadata> {
   constructor(
     private readonly owner: MilvusVectorClient,
     readonly options: MilvusVectorStoreOptions,
@@ -63,7 +64,7 @@ export class MilvusVectorStore<T, Metadata extends VectorMetadata = VectorMetada
     const data = options.documents.flatMap((document) => milvusRows(document));
     if (data.length > 0)
       await client.insert({
-        ...(options.providerOptions ?? {}),
+        ...options.providerOptions,
         collection_name: this.options.collectionName,
         data,
       });
@@ -75,7 +76,7 @@ export class MilvusVectorStore<T, Metadata extends VectorMetadata = VectorMetada
     let candidateLimit = request.topK;
     for (;;) {
       const response = await client.search({
-        ...(request.providerOptions ?? {}),
+        ...request.providerOptions,
         collection_name: this.options.collectionName,
         data: [request.vector],
         limit: candidateLimit,

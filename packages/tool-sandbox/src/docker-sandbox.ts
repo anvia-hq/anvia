@@ -793,7 +793,7 @@ class DockerSandboxRuntimeImpl {
   async closeActiveOperations(message: string): Promise<void> {
     const reason = new DockerSandboxError(message, "invalid_state");
     for (const controller of this.activeControllers) controller.abort(reason);
-    await Promise.allSettled([...this.activeOperations]);
+    await Promise.allSettled(this.activeOperations);
   }
 
   async disposeProcesses(abortSignal?: AbortSignal): Promise<void> {

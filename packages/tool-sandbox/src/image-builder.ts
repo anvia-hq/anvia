@@ -54,7 +54,7 @@ export const defaultSandboxImageVersions: Readonly<SandboxImageVersions> = {
   bun: "1.3.14",
   python: "3.13.14",
   uv: "0.11.29",
-  playwright: "1.61.0",
+  playwright: "1.62.1",
 };
 
 export const artifactPythonPackages = [

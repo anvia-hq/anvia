@@ -7,7 +7,7 @@ export async function mapWithConcurrency<Input, Output>(
     throw new RangeError("concurrency must be a positive safe integer.");
   }
   const limit = concurrency;
-  const results = new Array<Output>(inputs.length);
+  const results = Array<Output>(inputs.length);
   let nextIndex = 0;
   let firstFailure: { error: unknown } | undefined;
 

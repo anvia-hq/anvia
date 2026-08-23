@@ -39,17 +39,15 @@ const textDocuments = (
         maxSize: 80,
         overlap: 10,
         separators: ["\n\n", "\n", " "],
-      }).map(
-        (chunk): Document => ({
-          id: `${path}#chunk=${chunk.index}`,
-          text: chunk.text,
-          additionalProps: {
-            source: path,
-            mediaType: "text/plain",
-            chunkIndex: String(chunk.index),
-          },
-        }),
-      );
+      }).map((chunk): Document => ({
+        id: `${path}#chunk=${chunk.index}`,
+        text: chunk.text,
+        additionalProps: {
+          source: path,
+          mediaType: "text/plain",
+          chunkIndex: String(chunk.index),
+        },
+      }));
     }),
   )
 ).flat();
@@ -64,18 +62,16 @@ const pdfDocuments = pages.flatMap((page) =>
     strategy: "fixed",
     maxSize: 80,
     overlap: 10,
-  }).map(
-    (chunk): Document => ({
-      id: `${pdfPath}#page=${page.pageNumber}&chunk=${chunk.index}`,
-      text: chunk.text,
-      additionalProps: {
-        source: pdfPath,
-        mediaType: "application/pdf",
-        pageNumber: String(page.pageNumber),
-        chunkIndex: String(chunk.index),
-      },
-    }),
-  ),
+  }).map((chunk): Document => ({
+    id: `${pdfPath}#page=${page.pageNumber}&chunk=${chunk.index}`,
+    text: chunk.text,
+    additionalProps: {
+      source: pdfPath,
+      mediaType: "application/pdf",
+      pageNumber: String(page.pageNumber),
+      chunkIndex: String(chunk.index),
+    },
+  })),
 );
 
 const documents = [...textDocuments, ...pdfDocuments];

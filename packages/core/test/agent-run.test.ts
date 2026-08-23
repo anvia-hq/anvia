@@ -1140,13 +1140,11 @@ describe("Agent execution", () => {
       agent.generate({
         prompt: "add",
         middlewares: [
-          ...[
-            createMiddleware({
-              onToolOutput({ result }) {
-                return { result: `${result}:request` };
-              },
-            }),
-          ],
+          createMiddleware({
+            onToolOutput({ result }) {
+              return { result: `${result}:request` };
+            },
+          }),
           createMiddleware({
             onToolOutput({ result }) {
               return `${result}:legacy`;

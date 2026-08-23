@@ -164,6 +164,7 @@ pnpm --filter @anvia/studio typecheck
 pnpm --filter @anvia/studio test
 pnpm --filter @anvia/studio build
 ```
+
 ## Browser sandbox views
 
 Sandbox registrations may include explicit noVNC views. Studio resolves the upstream only through the

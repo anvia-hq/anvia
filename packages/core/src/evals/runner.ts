@@ -134,7 +134,7 @@ async function runEvalCases<
   run: EvalRunContext,
 ): Promise<Array<EvalCaseResult<Input, Output, Expected, Metrics>>> {
   const concurrency = Math.max(1, Math.trunc(options.concurrency ?? 1));
-  const results = new Array<EvalCaseResult<Input, Output, Expected, Metrics>>(options.cases.length);
+  const results = Array<EvalCaseResult<Input, Output, Expected, Metrics>>(options.cases.length);
   let nextIndex = 0;
   let failure: { error: unknown } | undefined;
 

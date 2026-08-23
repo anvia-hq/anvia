@@ -14,9 +14,10 @@ import {
   type PineconeNamespaceLike,
   type PineconeVectorStoreOptions,
 } from "./types.js";
-export class PineconeVectorStore<T, Metadata extends VectorMetadata = VectorMetadata>
-  implements VectorStore<T, Metadata>
-{
+export class PineconeVectorStore<
+  T,
+  Metadata extends VectorMetadata = VectorMetadata,
+> implements VectorStore<T, Metadata> {
   constructor(
     private readonly owner: PineconeVectorClient,
     readonly options: PineconeVectorStoreOptions,
@@ -70,7 +71,7 @@ export class PineconeVectorStore<T, Metadata extends VectorMetadata = VectorMeta
     });
     const vectors = options.documents.flatMap((document) => pineconeVectors(document));
     if (vectors.length > 0)
-      await namespace.upsert({ ...(options.providerOptions ?? {}), records: vectors });
+      await namespace.upsert({ ...options.providerOptions, records: vectors });
   }
   async search(request: VectorSearchRequest): Promise<Array<VectorSearchResult<T, Metadata>>> {
     validateSearchRequest(request, this.options.dimensions);
@@ -78,7 +79,7 @@ export class PineconeVectorStore<T, Metadata extends VectorMetadata = VectorMeta
     let candidateLimit = request.topK;
     for (;;) {
       const response = await namespace.query({
-        ...(request.providerOptions ?? {}),
+        ...request.providerOptions,
         vector: request.vector,
         topK: candidateLimit,
         filter: filterToPineconeFilter(request.filter),

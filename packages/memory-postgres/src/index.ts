@@ -1,8 +1,5 @@
 export { PostgresMemoryClient } from "./client.js";
-export {
-  createPostgresMemorySchemaSql,
-  PostgresMemoryStore,
-} from "./store.js";
+export { createPostgresMemorySchemaSql, PostgresMemoryStore } from "./store.js";
 export type {
   PostgresMemoryClientLike,
   PostgresMemoryClientOptions,

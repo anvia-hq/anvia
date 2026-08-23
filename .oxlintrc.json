@@ -1,0 +1,49 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "unicorn", "oxc", "react"],
+  "categories": {
+    "correctness": "error"
+  },
+  "rules": {
+    "eslint/no-useless-constructor": "error",
+    "react/immutability": "off",
+    "react/preserve-manual-memoization": "off",
+    "react/purity": "off",
+    "react/refs": "off",
+    "react/set-state-in-effect": "off",
+    "typescript/no-explicit-any": "error",
+    "typescript/no-this-alias": "off"
+  },
+  "overrides": [
+    {
+      "files": ["**/*.test.ts", "**/*.test.tsx"],
+      "rules": {
+        "eslint/no-unsafe-optional-chaining": "off"
+      }
+    },
+    {
+      "files": [
+        "packages/tool-studio/src/ui/app/modules/inspectors/inspectors-containers.tsx",
+        "packages/tool-studio/src/ui/app/modules/pipelines/use-pipelines.ts",
+        "packages/tool-studio/src/ui/app/modules/sandboxes/browser-view.tsx",
+        "packages/tool-studio/src/ui/app/modules/sandboxes/sandboxes-page.tsx"
+      ],
+      "rules": {
+        "react-hooks/exhaustive-deps": "off"
+      }
+    }
+  ],
+  "ignorePatterns": [
+    "node_modules",
+    "dist",
+    "**/dist",
+    "coverage",
+    "**/coverage",
+    ".turbo",
+    "**/.wrangler",
+    "pnpm-lock.yaml"
+  ],
+  "env": {
+    "builtin": true
+  }
+}

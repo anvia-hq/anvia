@@ -1032,7 +1032,7 @@ function toolDefinitionToOpenAI(tool: ToolDefinition): ResponsesInputItem {
 
 function providerToolToOpenAI(tool: ProviderTool): ResponsesInputItem {
   return {
-    ...(tool.configuration ?? {}),
+    ...tool.configuration,
     type: tool.name,
   };
 }

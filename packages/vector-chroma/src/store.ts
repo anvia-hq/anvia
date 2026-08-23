@@ -15,9 +15,10 @@ import {
 } from "./helpers.js";
 import type { ChromaCollectionLike, ChromaVectorStoreOptions } from "./types.js";
 
-export class ChromaVectorStore<T, Metadata extends VectorMetadata = VectorMetadata>
-  implements VectorStore<T, Metadata>
-{
+export class ChromaVectorStore<
+  T,
+  Metadata extends VectorMetadata = VectorMetadata,
+> implements VectorStore<T, Metadata> {
   constructor(
     private readonly owner: ChromaVectorClient,
     readonly options: ChromaVectorStoreOptions,
@@ -36,9 +37,9 @@ export class ChromaVectorStore<T, Metadata extends VectorMetadata = VectorMetada
   }
 
   async validate(): Promise<void> {
-    const collection = await (await this.owner.nativeClient()).getCollection(
-      this.collectionOptions(),
-    );
+    const collection = await (
+      await this.owner.nativeClient()
+    ).getCollection(this.collectionOptions());
     const actualMetric = collection.configuration?.hnsw?.space;
     if (typeof actualMetric === "string" && actualMetric !== metricName(this.options.metric)) {
       throw new Error(
@@ -56,7 +57,7 @@ export class ChromaVectorStore<T, Metadata extends VectorMetadata = VectorMetada
     const records = options.documents.flatMap((document) => chromaRecords(document));
     if (records.length === 0) return;
     const request: Record<string, unknown> = {
-      ...(options.providerOptions ?? {}),
+      ...options.providerOptions,
       ids: records.map((record) => record.id),
       documents: records.map((record) => record.document),
       embeddings: records.map((record) => record.embedding),
@@ -71,7 +72,7 @@ export class ChromaVectorStore<T, Metadata extends VectorMetadata = VectorMetada
     let candidateLimit = request.topK;
     for (;;) {
       const response = await collection.query({
-        ...(request.providerOptions ?? {}),
+        ...request.providerOptions,
         queryEmbeddings: [request.vector],
         nResults: candidateLimit,
         where: filterToChromaWhere(request.filter),

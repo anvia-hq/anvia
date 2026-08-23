@@ -152,7 +152,9 @@ export class PostgresMemoryStore implements MemoryStore {
   }
 
   async load({ scope }: { scope: MemoryScope }): Promise<Message[]> {
-    const result = await (await this.client()).query(
+    const result = await (
+      await this.client()
+    ).query(
       `SELECT m.message
        FROM ${this.tables.messages} m
        INNER JOIN ${this.tables.sessions} s ON s.id = m.memory_session_id
@@ -192,9 +194,9 @@ export class PostgresMemoryStore implements MemoryStore {
   }
 
   async clear({ scope }: { scope: MemoryScope }): Promise<void> {
-    await (await this.client()).query(`DELETE FROM ${this.tables.sessions} WHERE scope_key = $1`, [
-      this.scopeKey(scope),
-    ]);
+    await (
+      await this.client()
+    ).query(`DELETE FROM ${this.tables.sessions} WHERE scope_key = $1`, [this.scopeKey(scope)]);
   }
 
   async recordError(input: MemoryErrorOptions): Promise<void> {
@@ -229,7 +231,9 @@ export class PostgresMemoryStore implements MemoryStore {
   }
 
   private async loadCompactionSnapshot(context: MemoryScope): Promise<MemoryCompactionSnapshot> {
-    const result = await (await this.client()).query(
+    const result = await (
+      await this.client()
+    ).query(
       `SELECT m.id, m.position, m.message
        FROM ${this.tables.messages} m
        INNER JOIN ${this.tables.sessions} s ON s.id = m.memory_session_id
@@ -301,7 +305,9 @@ export class PostgresMemoryStore implements MemoryStore {
       where = `WHERE s.user_id = $${values.length}`;
     }
     values.push(options.limit);
-    const result = await (await this.client()).query(
+    const result = await (
+      await this.client()
+    ).query(
       `SELECT
          s.id AS ref,
          s.session_id,
@@ -322,7 +328,9 @@ export class PostgresMemoryStore implements MemoryStore {
   }
 
   private async getConversation(ref: string): Promise<MemoryConversation | undefined> {
-    const summaryResult = await (await this.client()).query(
+    const summaryResult = await (
+      await this.client()
+    ).query(
       `SELECT
          s.id AS ref,
          s.session_id,
@@ -340,7 +348,9 @@ export class PostgresMemoryStore implements MemoryStore {
     const row = summaryResult.rows[0] as InspectionSessionRow | undefined;
     if (row === undefined) return undefined;
 
-    const messageResult = await (await this.client()).query(
+    const messageResult = await (
+      await this.client()
+    ).query(
       `SELECT position, run_id, turn, created_at, message
        FROM ${this.tables.messages}
        WHERE memory_session_id = $1

@@ -33,7 +33,7 @@ export function KnowledgePage(props: {
   const [selectedKey, setSelectedKey] = useState("");
   const [itemState, setItemState] = useState<ItemState | undefined>();
 
-  const agents = props.summary?.agents ?? [];
+  const agents = useMemo(() => props.summary?.agents ?? [], [props.summary]);
   const evidence = props.summary?.evidence ?? [];
   const sources = useMemo(() => flattenSources(agents), [agents]);
   const activeSourceKind = sourceKindForTab(props.activeTab);

@@ -42,7 +42,7 @@ export function McpsPage(props: {
 }) {
   const selectedAgent =
     props.agents.find((agent) => agent.id === props.selectedAgentId) ?? props.agents[0];
-  const servers = props.summary?.servers ?? [];
+  const servers = useMemo(() => props.summary?.servers ?? [], [props.summary]);
   const toolCount = servers.reduce((total, server) => total + server.toolCount, 0);
   const runnableTools = useMemo(() => mcpRunnableTools(servers), [servers]);
   const [selectedToolKey, setSelectedToolKey] = useState("");

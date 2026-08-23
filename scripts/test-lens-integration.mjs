@@ -40,8 +40,10 @@ const projectId = compose([
   "lens",
   "-d",
   "lens",
+  "--set",
+  `public_key=${environment.ANVIA_LENS_PUBLIC_KEY}`,
   "-Atc",
-  `SELECT project_id FROM project_api_keys WHERE public_key = '${environment.ANVIA_LENS_PUBLIC_KEY}' AND revoked_at IS NULL LIMIT 1`,
+  "SELECT project_id FROM project_api_keys WHERE public_key = :'public_key' AND revoked_at IS NULL LIMIT 1",
 ]).trim();
 if (!/^[0-9a-f-]{36}$/.test(projectId)) {
   throw new Error("The configured public key does not resolve to an active Lens project");
@@ -72,12 +74,14 @@ await waitFor(async () => {
   const [traces, evaluations, runs] = clickhouse(
     `SELECT
       (SELECT count() FROM trace_summaries FINAL
-        WHERE project_id='${projectId}' AND trace_id='${traceId}'),
+        WHERE project_id={project_id:String} AND trace_id={trace_id:String}),
       (SELECT count() FROM evaluation_results FINAL
-        WHERE project_id='${projectId}' AND trace_id='${traceId}' AND run_id='${runId}'),
+        WHERE project_id={project_id:String} AND trace_id={trace_id:String}
+          AND run_id={run_id:String}),
       (SELECT count() FROM evaluation_runs FINAL
-        WHERE project_id='${projectId}' AND id='${runId}' AND status='completed')
+        WHERE project_id={project_id:String} AND id={run_id:String} AND status='completed')
       FORMAT TabSeparatedRaw`,
+    { project_id: projectId, trace_id: traceId, run_id: runId },
   )
     .trim()
     .split("\t")
@@ -90,9 +94,10 @@ const evaluation = JSON.parse(
     `SELECT run_id, trace_id, observation_id, suite_name, case_id, metric_name, outcome,
       service_name, environment, release, payload, payload_status
       FROM evaluation_results FINAL
-      WHERE project_id='${projectId}' AND trace_id='${traceId}'
+      WHERE project_id={project_id:String} AND trace_id={trace_id:String}
       ORDER BY timestamp DESC LIMIT 1
       FORMAT JSONEachRow`,
+    { project_id: projectId, trace_id: traceId },
   ).trim(),
 );
 if (evaluation.observation_id !== observationId) {
@@ -116,7 +121,10 @@ if (
 
 const capturedPayloads = Number(
   clickhouse(
-    `SELECT countIf(input IS NOT NULL OR output IS NOT NULL) FROM spans FINAL WHERE project_id='${projectId}' AND trace_id='${traceId}' FORMAT TabSeparatedRaw`,
+    `SELECT countIf(input IS NOT NULL OR output IS NOT NULL) FROM spans FINAL
+      WHERE project_id={project_id:String} AND trace_id={trace_id:String}
+      FORMAT TabSeparatedRaw`,
+    { project_id: projectId, trace_id: traceId },
   ).trim(),
 );
 if (capturedPayloads !== 0) throw new Error("Safe capture exported an input or output payload");
@@ -130,7 +138,10 @@ if (options.has("--durability")) {
     async () =>
       Number(
         clickhouse(
-          `SELECT count() FROM evaluation_results FINAL WHERE project_id='${projectId}' AND trace_id='${traceId}' FORMAT TabSeparatedRaw`,
+          `SELECT count() FROM evaluation_results FINAL
+            WHERE project_id={project_id:String} AND trace_id={trace_id:String}
+            FORMAT TabSeparatedRaw`,
+          { project_id: projectId, trace_id: traceId },
         ).trim(),
       ) === 1,
     "evaluation durability after ClickHouse restart",
@@ -173,7 +184,10 @@ function composeServiceUrl(service, port) {
   return `http://127.0.0.1:${hostPort}`;
 }
 
-function clickhouse(query) {
+function clickhouse(query, parameters) {
+  const parameterArgs = Object.entries(parameters).map(
+    ([name, value]) => `--param_${name}=${value}`,
+  );
   return compose([
     "exec",
     "-T",
@@ -181,6 +195,7 @@ function clickhouse(query) {
     "clickhouse-client",
     "--database",
     "lens",
+    ...parameterArgs,
     "--query",
     query,
   ]);

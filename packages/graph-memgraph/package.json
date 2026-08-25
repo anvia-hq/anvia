@@ -1,14 +1,14 @@
 {
-  "name": "@anvia/neo4j",
+  "name": "@anvia/memgraph",
   "version": "1.0.2",
-  "description": "Schema-first Neo4j GraphRAG integration for Anvia.",
+  "description": "Schema-first Memgraph GraphRAG integration for Anvia.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/anvia-hq/anvia",
-    "directory": "packages/graph-neo4j"
+    "directory": "packages/graph-memgraph"
   },
   "files": [
     "dist"
@@ -32,15 +32,15 @@
   },
   "dependencies": {
     "@anvia/graph": "workspace:*",
-    "neo4j-driver": "^6.2.0",
-    "zod": "^4.4.3"
+    "neo4j-driver": "^6.2.0"
   },
   "devDependencies": {
     "@anvia/core": "workspace:*",
     "@types/node": "^24.9.1",
     "tsup": "^8.5.0",
     "typescript": "^5.9.3",
-    "vitest": "^4.0.8"
+    "vitest": "^4.0.8",
+    "zod": "^4.4.3"
   },
   "peerDependencies": {
     "@anvia/core": "workspace:*"

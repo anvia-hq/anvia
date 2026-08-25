@@ -1,14 +1,14 @@
 {
-  "name": "@anvia/neo4j",
+  "name": "@anvia/graph",
   "version": "1.0.2",
-  "description": "Schema-first Neo4j GraphRAG integration for Anvia.",
+  "description": "Provider-neutral knowledge graph primitives for Anvia.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/anvia-hq/anvia",
-    "directory": "packages/graph-neo4j"
+    "directory": "packages/graph"
   },
   "files": [
     "dist"
@@ -31,8 +31,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@anvia/graph": "workspace:*",
-    "neo4j-driver": "^6.2.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {

@@ -16,9 +16,8 @@ pnpm add @anvia/graph @anvia/neo4j @anvia/core
 
 ```ts
 import { Agent } from "@anvia/core/agent";
-import { embedDocuments } from "@anvia/core/embeddings";
-import { createGraphSearchTool } from "@anvia/graph";
-import { Neo4jClient, defineNeo4jGraphSchema, extractGraphFacts } from "@anvia/neo4j";
+import { createGraphSearchTool, ingestGraphText } from "@anvia/graph";
+import { Neo4jClient, defineNeo4jGraphSchema } from "@anvia/neo4j";
 import { z } from "zod";
 
 const schema = defineNeo4jGraphSchema({
@@ -71,32 +70,21 @@ const graph = client.managedKnowledgeGraph({
 
 await graph.ensure({ indexTimeoutMs: 60_000 });
 
-const facts = await extractGraphFacts({ model: extractionModel, schema, chunks });
-const [embeddedChunks, embeddedEntities] = await Promise.all([
-  embedDocuments({
-    model: embeddingModel,
-    documents: chunks,
-    id: (chunk) => chunk.id,
-    content: (chunk) => chunk.text,
-  }),
-  embedDocuments({
-    model: embeddingModel,
-    documents: [...facts.output.entities],
-    id: (entity) => entity.key,
-    content: (entity) => formatEntity(entity),
-  }),
-]);
-
-const write = await graph.replaceDocuments({
-  documents,
-  chunks: embeddedChunks.documents,
-  entities: embeddedEntities.documents,
-  relationships: facts.output.relationships,
-  mentions: facts.output.mentions,
+const ingestion = await ingestGraphText({
+  graph,
+  document: { id: "incident-42", text },
+  extractionModel,
+  embeddingModel,
+  chunking: {
+    strategy: "recursive",
+    maxSize: 1_000,
+    overlap: 100,
+    separators: ["\n\n", "\n", " "],
+  },
   conflict: "error",
   orphanEntities: "delete",
 });
-console.log(write);
+console.log(ingestion.write);
 
 const searchGraph = createGraphSearchTool({
   name: "search_support_graph",
@@ -123,9 +111,10 @@ const searchGraph = createGraphSearchTool({
 const agent = new Agent({ id: "support", model: chatModel, tools: [searchGraph] });
 ```
 
-The application owns file discovery, reading, chunking, entity embedding text, model loading,
-retry policy, and Agent lifecycle. `extractGraphFacts()` performs model extraction but no writes.
-`replaceDocuments()` performs one deterministic transaction but no model calls.
+The application owns file discovery, reading, model loading, retry policy, and Agent lifecycle.
+`ingestGraphText()` and `ingestGraphDocuments()` provide the convenient end-to-end path. Advanced
+callers can compose `prepareGraphDocuments()`, `extractGraphFacts()`, `embedDocuments()`, and
+`replaceDocuments()` directly when they need custom orchestration.
 
 Graph property schemas must use `z.strictObject()` and must not coerce, default, transform,
 preprocess, catch, trim, or otherwise overwrite values. This keeps extraction, comparison, and

@@ -1,5 +1,5 @@
 import type { EmbeddingModel } from "@anvia/core/embeddings";
-import type { CreateGraphSearchToolOptions } from "@anvia/graph";
+import { ingestGraphText, type CreateGraphSearchToolOptions } from "@anvia/graph";
 import type {
   ManagedNeo4jKnowledgeGraph,
   Neo4jGraphSchema,
@@ -87,6 +87,21 @@ const existingToolEvidence: CreateGraphSearchToolOptions<
   // @ts-expect-error Existing graph tools cannot hydrate managed chunk evidence.
   evidence: { type: "chunks", maxChunks: 2 },
 };
+
+ingestGraphText({
+  graph: managed,
+  document: { id: "one", text: "Product One" },
+  extractionModel: {} as never,
+  embeddingModel: model,
+});
+
+ingestGraphText({
+  // @ts-expect-error Existing Neo4j registrations are read-only ingestion targets.
+  graph: existing,
+  document: { id: "one", text: "Product One" },
+  extractionModel: {} as never,
+  embeddingModel: model,
+});
 
 void [
   managedEvidence,

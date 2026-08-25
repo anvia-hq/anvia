@@ -1,5 +1,15 @@
 export { extractGraphFacts, GraphFactConflictError } from "./extract.js";
 export {
+  ingestGraphDocuments,
+  ingestGraphText,
+  prepareGraphDocuments,
+  type IngestGraphDocumentsOptions,
+  type IngestGraphDocumentsResult,
+  type IngestGraphTextOptions,
+  type PreparedGraphDocuments,
+  type PrepareGraphDocumentsOptions,
+} from "./ingest.js";
+export {
   resolveGraphExploreOptions,
   type ResolvedGraphExploreExpandOptions,
   type ResolvedGraphExploreOptions,

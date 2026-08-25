@@ -9,6 +9,8 @@ import {
   defineGraphSchema,
   extractGraphFacts,
   GraphFactConflictError,
+  ingestGraphText,
+  prepareGraphDocuments,
   resolveGraphExploreOptions,
 } from "../src/index.js";
 
@@ -91,6 +93,86 @@ describe("provider-neutral graph primitives", () => {
         ],
       }),
     ).rejects.toBeInstanceOf(GraphFactConflictError);
+  });
+
+  it("prepares and writes text with reusable vector documents", async () => {
+    extractMock.mockResolvedValue({
+      output: {
+        entities: [{ ref: "p", type: "Product", properties: { id: "one", name: "One" } }],
+        relationships: [],
+      },
+      usage: Usage.empty(),
+    });
+    const embeddedTexts: string[] = [];
+    const embeddingModel = {
+      provider: "test",
+      modelId: "test",
+      async embedTexts(texts: string[]) {
+        embeddedTexts.push(...texts);
+        return texts.map((document) => ({ document, vector: [document.length] }));
+      },
+    };
+    const replaceDocuments = vi.fn(async () => ({
+      documents: { created: 1, updated: 0, deleted: 0, unchanged: 0 },
+      chunks: { created: 2, updated: 0, deleted: 0, unchanged: 0 },
+      entities: { created: 1, updated: 0, deleted: 0, unchanged: 0 },
+      relationships: { created: 0, updated: 0, deleted: 0, unchanged: 0 },
+      mentions: { created: 1, updated: 0, deleted: 0, unchanged: 0 },
+    }));
+    const graph = { schema, replaceDocuments };
+
+    const result = await ingestGraphText({
+      graph,
+      document: { id: "incident", text: "Product One", metadata: { tenant: "acme" } },
+      extractionModel: {} as never,
+      embeddingModel,
+      chunking: { strategy: "fixed", maxSize: 8 },
+    });
+
+    expect(result.chunks).toHaveLength(2);
+    expect(result.vectorDocuments).toMatchObject([
+      {
+        id: "incident",
+        metadata: { tenant: "acme" },
+        embeddings: [{ vector: [8] }, { vector: [3] }],
+      },
+    ]);
+    expect(embeddedTexts).toContain("Product\nid: one\nname: One");
+    expect(replaceDocuments).toHaveBeenCalledWith(
+      expect.objectContaining({ conflict: "overwrite", orphanEntities: "delete" }),
+    );
+  });
+
+  it("lets advanced callers prepare graph data without writing", async () => {
+    extractMock.mockResolvedValue({
+      output: { entities: [], relationships: [] },
+      usage: Usage.empty(),
+    });
+    const embeddingModel = {
+      provider: "test",
+      modelId: "test",
+      async embedTexts(texts: string[]) {
+        return texts.map((document) => ({ document, vector: [1] }));
+      },
+    };
+    const prepared = await prepareGraphDocuments({
+      graph: { schema },
+      documents: [{ id: "one", text: "Product One" }],
+      extractionModel: {} as never,
+      embeddingModel,
+    });
+
+    expect(prepared.documents).toEqual([{ id: "one" }]);
+    expect(prepared.vectorDocuments[0]?.id).toBe("one");
+
+    await expect(
+      prepareGraphDocuments({
+        graph: { schema },
+        documents: [{ id: "invalid", text: "Product One", metadata: { tags: ["one"] } } as never],
+        extractionModel: {} as never,
+        embeddingModel,
+      }),
+    ).rejects.toThrow("portable primitive value");
   });
 
   it("resolves bounded graph exploration options", () => {

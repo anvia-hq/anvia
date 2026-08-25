@@ -11,6 +11,8 @@ import {
   type HybridVectorSearchRequest,
   type HybridVectorStore,
   InMemoryVectorStore,
+  ingestVectorDocuments,
+  ingestVectorText,
   isVectorContext,
   retrieveDocuments,
   type SparseEmbeddingModel,
@@ -208,6 +210,40 @@ describe("embedding helpers", () => {
 });
 
 describe("vector stores and retrieval", () => {
+  it("ingests chunked text while preserving document-scoped replacement", async () => {
+    const store = new InMemoryVectorStore<{
+      id: string;
+      text: string;
+      metadata?: { tenant: string } | undefined;
+    }>();
+    const first = await ingestVectorDocuments({
+      store,
+      documents: [{ id: "incident", text: "cat abcdef", metadata: { tenant: "one" } }],
+      embeddingModel: new KeywordModel(),
+      chunking: { strategy: "fixed", maxSize: 4 },
+    });
+
+    expect(first.documents).toHaveLength(1);
+    expect(first.documents[0]).toMatchObject({ id: "incident", metadata: { tenant: "one" } });
+    expect(first.documents[0]?.embeddings).toHaveLength(3);
+
+    await ingestVectorText({
+      store,
+      document: { id: "incident", text: "cat", metadata: { tenant: "one" } },
+      embeddingModel: new KeywordModel(),
+      chunking: { strategy: "fixed", maxSize: 4 },
+    });
+    expect(store.get({ id: "incident" })?.embeddings).toHaveLength(1);
+
+    await expect(
+      ingestVectorText({
+        store,
+        document: { id: "invalid", text: "cat", metadata: { score: Number.NaN } } as never,
+        embeddingModel: new KeywordModel(),
+      }),
+    ).rejects.toThrow("finite vector metadata value");
+  });
+
   it("searches an in-memory store with raw vectors and replaces documents", async () => {
     const model = new KeywordModel();
     const { documents } = await embedDocuments({

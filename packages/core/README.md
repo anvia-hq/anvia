@@ -538,6 +538,32 @@ slice. PDF pages are one-based, and the parser task is disposed before extractio
 If parsing or abort handling fails together with parser cleanup, extraction rejects with an
 `AggregateError` containing the operation failure first and the cleanup failure second.
 
+For the common vector ingestion path, embed and upsert raw text with one call:
+
+```ts
+import { ingestVectorText } from "@anvia/core/vector-store";
+
+await ingestVectorText({
+  store,
+  document: {
+    id: "incident-42",
+    text,
+    metadata: { tenant: "acme" },
+  },
+  embeddingModel,
+  chunking: {
+    strategy: "recursive",
+    maxSize: 1_000,
+    overlap: 100,
+    separators: ["\n\n", "\n", " "],
+  },
+});
+```
+
+`ingestVectorDocuments()` accepts the same document shape for batches. Without `chunking`, each
+source document is embedded as one chunk. Chunk embeddings remain grouped under the source document
+ID so re-ingestion replaces its complete vector representation instead of leaving stale chunks.
+
 ## Media
 
 Media helpers follow the same one-object API and share `providerOptions`, `retries`, and

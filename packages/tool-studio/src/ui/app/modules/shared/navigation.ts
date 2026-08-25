@@ -20,6 +20,7 @@ export type StudioPageAvailability = {
   toolsEnabled: boolean;
   sandboxesEnabled: boolean;
   mcpsEnabled: boolean;
+  graphsEnabled: boolean;
   pipelinesEnabled: boolean;
   memoryEnabled: boolean;
   statusEnabled: boolean;

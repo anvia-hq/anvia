@@ -11,6 +11,7 @@ import {
   Plug,
   Pulse,
   Robot,
+  ShareNetwork,
   Toolbox,
   Wrench,
 } from "@phosphor-icons/react";
@@ -50,6 +51,7 @@ export type IconName =
   | "database"
   | "database-lightning"
   | "gauge"
+  | "graph"
   | "list"
   | "message"
   | "plug"
@@ -74,6 +76,8 @@ export function navIcon(name: IconName): Icon {
       return Database;
     case "gauge":
       return Gauge;
+    case "graph":
+      return ShareNetwork;
     case "list":
       return ListBullets;
     case "message":

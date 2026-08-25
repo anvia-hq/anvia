@@ -23,10 +23,14 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./explore": {
+      "types": "./dist/explore.d.ts",
+      "import": "./dist/explore.js"
     }
   },
   "scripts": {
-    "build": "tsup src/index.ts --format esm --dts --sourcemap --clean",
+    "build": "tsup src/index.ts src/explore.ts --format esm --dts --sourcemap --clean",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

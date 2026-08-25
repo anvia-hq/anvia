@@ -3,6 +3,8 @@ import {
   parseGraphProperties,
   type CreateGraphSearchToolOptions,
   type GraphContext,
+  type GraphExploreOptions,
+  type GraphExploreResult,
   type GraphProperties,
   type GraphRetrieveOptions,
   type GraphSchemaLike,
@@ -118,6 +120,11 @@ export abstract class MemgraphKnowledgeGraphBase<
   async retrieve(options: GraphRetrieveOptions<Schema>): Promise<GraphContext> {
     const { retrieveGraphContext } = await import("./retrieve.js");
     return retrieveGraphContext({ ...options, graph: this });
+  }
+
+  async explore(options: GraphExploreOptions<Schema>): Promise<GraphExploreResult> {
+    const { exploreGraph } = await import("./explore.js");
+    return exploreGraph(this, options);
   }
 
   createSearchTool(options: Omit<CreateGraphSearchToolOptions<Schema>, "graph">): GraphSearchTool {

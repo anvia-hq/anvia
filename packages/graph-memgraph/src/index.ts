@@ -12,6 +12,7 @@ export type {
   GraphSchemaOptions as MemgraphGraphSchemaOptions,
 } from "@anvia/graph";
 export { MemgraphClient } from "./client.js";
+export { exploreGraph } from "./explore.js";
 export {
   ManagedMemgraphKnowledgeGraph,
   MemgraphKnowledgeGraph,

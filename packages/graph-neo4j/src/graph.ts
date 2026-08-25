@@ -2,6 +2,8 @@ import {
   createGraphSearchTool,
   type CreateGraphSearchToolOptions,
   type GraphContext,
+  type GraphExploreOptions,
+  type GraphExploreResult,
   type GraphRetrieveOptions,
   type GraphSearchTool,
 } from "@anvia/graph";
@@ -119,6 +121,11 @@ export abstract class Neo4jKnowledgeGraphBase<
       ...options,
       graph: this,
     } as import("./types.js").RetrieveGraphContextOptions<Schema>);
+  }
+
+  async explore(options: GraphExploreOptions<Schema>): Promise<GraphExploreResult> {
+    const { exploreGraph } = await import("./explore.js");
+    return exploreGraph(this, options);
   }
 
   createSearchTool(options: Omit<CreateGraphSearchToolOptions<Schema>, "graph">): GraphSearchTool {
@@ -257,9 +264,9 @@ export class ManagedNeo4jKnowledgeGraph<
         ...entities,
         fulltextIndex: Object.freeze({
           ...this.resources.indexes.entities.fulltext,
-          properties: Object.freeze([
-            ...(this.resources.indexes.entities.fulltext.properties ?? []),
-          ]),
+          properties: Object.freeze(
+            Array.from(this.resources.indexes.entities.fulltext.properties ?? []),
+          ),
         }),
       };
     }
@@ -920,8 +927,8 @@ function validateReplacement<Schema extends Neo4jGraphSchema>(
     else chunks.add(mention.chunkId);
   }
   for (const entityId of entityIds) {
-    const sources = [...(entitySourceChunks.get(entityId) ?? [])];
-    const mentions = [...(mentionChunksByEntity.get(entityId) ?? [])];
+    const sources = Array.from(entitySourceChunks.get(entityId) ?? []);
+    const mentions = Array.from(mentionChunksByEntity.get(entityId) ?? []);
     if (!sameStrings(sources, mentions)) {
       throw new TypeError(`Entity ${entityId} source chunks must exactly match its mentions.`);
     }

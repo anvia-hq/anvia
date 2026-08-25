@@ -281,6 +281,65 @@ describe("MemgraphClient", () => {
     }
   });
 
+  it("explores a bounded provider-neutral graph view", async () => {
+    const driver = fakeDriver(async (query) => {
+      if (query.includes("RETURN id(node) AS id")) {
+        return {
+          records: [
+            record({
+              id: 1,
+              labels: ["SupportEntity", "Incident"],
+              properties: {
+                id: "INC-1",
+                title: "Checkout unavailable",
+                __anvia_key: 'Incident:{"id":"INC-1"}',
+                __anvia_embedding: [1, 0],
+              },
+            }),
+            record({
+              id: 2,
+              labels: ["SupportEntity", "Product"],
+              properties: { id: "checkout", name: "Checkout" },
+            }),
+          ],
+        };
+      }
+      if (query.includes("MATCH (from)-[relationship]->(to)")) {
+        return {
+          records: [
+            record({
+              id: 3,
+              type: "AFFECTS",
+              source: 1,
+              target: 2,
+              properties: { severity: "high", __anvia_graph: "support" },
+            }),
+          ],
+        };
+      }
+      return { records: [] };
+    });
+    const result = await managed(new MemgraphClient({ driver: driver.value })).explore({
+      mode: "overview",
+      maxNodes: 10,
+      maxRelationships: 10,
+    });
+    expect(result.nodes).toHaveLength(2);
+    expect(result.nodes[0]).toMatchObject({
+      id: "1",
+      type: "Incident",
+      identity: { id: "INC-1" },
+      properties: { id: "INC-1", title: "Checkout unavailable" },
+    });
+    expect(result.nodes[0]?.properties).not.toHaveProperty("__anvia_embedding");
+    expect(result.relationships[0]).toMatchObject({
+      type: "AFFECTS",
+      from: "1",
+      to: "2",
+      properties: { severity: "high" },
+    });
+  });
+
   it("validates replacement input before opening a transaction", async () => {
     const driver = fakeDriver();
     await expect(

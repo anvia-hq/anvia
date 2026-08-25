@@ -12,6 +12,12 @@ export const KnowledgePage = lazy(() =>
   })),
 );
 
+export const GraphsPage = lazy(() =>
+  import("./modules/graphs/graphs-page").then((module) => ({
+    default: module.GraphsPage,
+  })),
+);
+
 export const McpsPage = lazy(() =>
   import("./modules/mcps/mcps-page").then((module) => ({
     default: module.McpsPage,

@@ -1,6 +1,7 @@
 import type {
   StudioAgent,
   StudioEvalSuite,
+  StudioGraphRegistration,
   StudioModelConfig,
   StudioPipeline,
   StudioPipelineLogStore,
@@ -31,4 +32,5 @@ export type StudioRuntimeOptions = {
   stores?: StudioStores;
   ui?: boolean | StudioUiOptions;
   sandboxes?: readonly StudioSandboxRegistration[];
+  graphs: StudioGraphRegistration[];
 };

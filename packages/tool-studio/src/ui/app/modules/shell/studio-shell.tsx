@@ -26,6 +26,7 @@ const knowledgeNavIcons = {
 
 export type StudioNavigationProps = {
   activePage: ActivePage;
+  graphsEnabled: boolean;
   hasAgents: boolean;
   knowledgeEnabled: boolean;
   mcpsEnabled: boolean;
@@ -71,6 +72,7 @@ function navigationItems(): NavigationItem[] {
       icon: "container",
     },
     { page: "mcps", label: "MCPs", icon: "plug" },
+    { page: "graphs", label: "Graphs", icon: "graph" },
     ...knowledgeTabs.map((tab) => ({
       page: "knowledge" as const,
       label: tab.label,

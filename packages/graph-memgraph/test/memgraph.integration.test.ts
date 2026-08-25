@@ -153,6 +153,33 @@ describe.skipIf(!enabled)("Memgraph integration", () => {
     expect(context.seeds.length).toBeGreaterThan(0);
     expect(context.evidence[0]?.chunkId).toBe("chunk-1");
 
+    const overview = await graph.explore({ mode: "overview", maxNodes: 10 });
+    expect(overview.nodes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "Incident",
+          properties: { id: "INC-1", title: "Checkout unavailable" },
+        }),
+        expect.objectContaining({
+          type: "Product",
+          properties: { id: "checkout", name: "Checkout" },
+        }),
+      ]),
+    );
+    expect(overview.nodes[0]?.properties).not.toHaveProperty("__anvia_embedding");
+    expect(overview.relationships).toEqual([
+      expect.objectContaining({ type: "AFFECTS", properties: { severity: "high" } }),
+    ]);
+    const incidentNode = overview.nodes.find((node) => node.type === "Incident");
+    if (incidentNode === undefined) throw new Error("Expected an incident explorer node");
+    const expanded = await graph.explore({
+      mode: "expand",
+      nodeIds: [incidentNode.id],
+      maxDepth: 1,
+    });
+    expect(expanded.nodes.map((node) => node.type).sort()).toEqual(["Incident", "Product"]);
+    expect(expanded.relationships).toHaveLength(1);
+
     const deleted = await graph.deleteDocuments({
       documentIds: ["doc-1"],
       orphanEntities: "delete",

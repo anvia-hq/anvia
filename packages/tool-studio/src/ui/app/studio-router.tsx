@@ -2,6 +2,7 @@ import { createRootRoute, createRoute, createRouter, Navigate } from "@tanstack/
 import { StudioConsoleLayout } from "./modules/shell/studio-console-layout";
 import { AgentsRoute } from "./routes/agents-route";
 import { KnowledgeRoute } from "./routes/knowledge-route";
+import { GraphsRoute } from "./routes/graphs-route";
 import { McpsRoute } from "./routes/mcps-route";
 import { MemoryRoute } from "./routes/memory-route";
 import { PipelinesRoute } from "./routes/pipelines-route";
@@ -94,6 +95,12 @@ const pipelinesRoute = createRoute({
   component: PipelinesRoute,
 });
 
+const graphsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "graphs",
+  component: GraphsRoute,
+});
+
 const knowledgeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "knowledge",
@@ -132,6 +139,7 @@ const routeTree = rootRoute.addChildren([
   sandboxDetailRoute,
   mcpsRoute,
   pipelinesRoute,
+  graphsRoute,
   knowledgeRoute,
   knowledgeTabRoute,
   memoryRoute,

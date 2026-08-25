@@ -14,6 +14,7 @@ import {
 const navigation: StudioNavigationProps = {
   activePage: "tools",
   hasAgents: true,
+  graphsEnabled: true,
   knowledgeEnabled: true,
   mcpsEnabled: true,
   memoryEnabled: true,
@@ -61,6 +62,7 @@ describe("Studio Lens shell", () => {
       <StudioSidebar
         {...navigation}
         hasAgents={false}
+        graphsEnabled={false}
         knowledgeEnabled={false}
         mcpsEnabled={false}
         memoryEnabled={false}
@@ -82,6 +84,7 @@ describe("Studio Lens shell", () => {
     expect(sidebar).toContain("Tools");
     expect(sidebar).toContain("Sandboxes");
     expect(sidebar).toContain("MCPs");
+    expect(sidebar).toContain("Graphs");
     expect(sidebar).toContain("Static Context");
     expect(sidebar).toContain("Memory");
     expect(sidebar).toContain("Status");

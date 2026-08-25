@@ -7,6 +7,8 @@ import type {
   StudioCapability,
   StudioCapabilityConfig,
   StudioConfig,
+  StudioGraphConfig,
+  StudioGraphRegistration,
   StudioPipeline,
   StudioPipelineConfig,
 } from "../types";
@@ -89,6 +91,27 @@ export function pipelineConfig(pipeline: StudioPipeline): StudioPipelineConfig {
   return config;
 }
 
+export function graphConfig(registration: StudioGraphRegistration): StudioGraphConfig {
+  const config: StudioGraphConfig = {
+    id: registration.id,
+    nodeTypes: Object.entries(registration.graph.schema.nodes).map(([name, definition]) => ({
+      name,
+      description: definition.description,
+    })),
+    relationshipTypes: Object.entries(registration.graph.schema.relationships).map(
+      ([name, definition]) => ({
+        name,
+        description: definition.description,
+        from: definition.from,
+        to: definition.to,
+      }),
+    ),
+  };
+  if (registration.name !== undefined) config.name = registration.name;
+  if (registration.description !== undefined) config.description = registration.description;
+  return config;
+}
+
 export function buildConfig(
   options: StudioRuntimeOptions,
   agents: StudioAgent[],
@@ -104,6 +127,7 @@ export function buildConfig(
     id: runnerId(options),
     agents: agents.map(agentConfig),
     pipelines: pipelines.map(pipelineConfig),
+    graphs: options.graphs.map(graphConfig),
     evals: options.evals.map(evalConfig),
     chat: {
       quickPrompts: Object.fromEntries(agents.map((agent) => [agent.id, agent.quickPrompts ?? []])),
@@ -142,6 +166,9 @@ export function capabilityConfig(
   }
   if (pipelines.length > 0) {
     capabilities.pipelines = { enabled: true };
+  }
+  if (_options.graphs.length > 0) {
+    capabilities.graphs = { enabled: true };
   }
   if (_options.evals.length > 0) {
     capabilities.evals = { enabled: true };

@@ -36,6 +36,7 @@ import {
   unsupportedCapabilities,
 } from "./config";
 import { registerEvalRoutes } from "./evals";
+import { registerGraphRoutes } from "./graphs";
 import { errorResponse, unsupportedCapability } from "./http";
 import { createStudioContinuationRegistry } from "./interactions";
 import { registerKnowledgeRoutes } from "./knowledge";
@@ -309,6 +310,7 @@ function studioOptionsFromTargets(
     agents: inferStudioAgents(agents, options.quickPrompts ?? {}),
     pipelines: inferStudioPipelines(pipelines),
     evals: options.evals ?? [],
+    graphs: options.graphs === undefined ? [] : [...options.graphs],
   };
   if (options.models !== undefined) runtimeOptions.models = options.models;
   if (options.stores !== undefined) runtimeOptions.stores = options.stores;
@@ -463,6 +465,7 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
     evals: options.evals,
     evalMap,
   });
+  registerGraphRoutes(app, options.graphs);
   const knowledgeOptions: Parameters<typeof registerKnowledgeRoutes>[1] = { agents };
   if (stores.traces !== undefined) knowledgeOptions.traceStore = stores.traces;
   registerKnowledgeRoutes(app, knowledgeOptions);

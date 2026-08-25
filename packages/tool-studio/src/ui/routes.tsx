@@ -68,6 +68,7 @@ export function registerStudioUi(app: Hono, options: ResolvedStudioUiOptions): v
   app.get(`${options.path}/tools`, (c) => redirectWithQuery(c, "/tools"));
   app.get(`${options.path}/mcps`, (c) => redirectWithQuery(c, "/mcps"));
   app.get(`${options.path}/pipelines`, (c) => redirectWithQuery(c, "/pipelines"));
+  app.get(`${options.path}/graphs`, (c) => redirectWithQuery(c, "/graphs"));
   app.get(`${options.path}/sandboxes`, (c) => redirectWithQuery(c, "/sandboxes"));
   app.get(`${options.path}/sandboxes/:sandboxRef`, (c) =>
     redirectWithQuery(c, `/sandboxes/${encodeURIComponent(c.req.param("sandboxRef"))}`),
@@ -91,6 +92,7 @@ export function registerStudioUi(app: Hono, options: ResolvedStudioUiOptions): v
     app.get("/tools", async (c) => c.html(await renderShell()));
     app.get("/mcps", async (c) => c.html(await renderShell()));
     app.get("/pipelines", shellWhenHtml(renderShell));
+    app.get("/graphs", shellWhenHtml(renderShell));
     app.get("/sandboxes", shellWhenHtml(renderShell));
     app.get("/sandboxes/:sandboxRef", shellWhenHtml(renderShell));
     app.get("/memory", async (c) => c.html(await renderShell()));

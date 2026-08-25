@@ -230,6 +230,27 @@ describe("Agent tool execution", () => {
     });
   });
 
+  it("recognizes structured output branded by another Core module instance", async () => {
+    const content = [{ type: "text" as const, text: "cross-instance output" }];
+    const externalOutput = {
+      [Symbol.for("anvia.tool-output.content")]: true,
+      content,
+    };
+    const agent = agentWithTools([
+      createTool({
+        name: "external_output",
+        description: "Return output from another Core instance",
+        inputSchema: z.object({}),
+        execute: () => externalOutput,
+      }),
+    ]);
+
+    await expect(agent.callTool("external_output", "{}")).resolves.toEqual({
+      type: "content",
+      value: content,
+    });
+  });
+
   it("rejects malformed rich tool result content", async () => {
     const agent = agentWithTools([
       createTool({

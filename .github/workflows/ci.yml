@@ -61,3 +61,35 @@ jobs:
 
       - name: Test packages
         run: pnpm --filter './packages/**' test
+
+  bun-compatibility:
+    name: Bun compatibility
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.0.4
+          run_install: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Test built packages with Bun
+        run: pnpm --filter bun-runtime-compat test:bun

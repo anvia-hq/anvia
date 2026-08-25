@@ -165,15 +165,16 @@ describe("MemgraphClient", () => {
         };
       }
       if (query === "SHOW INDEX INFO") {
+        const records = [...texts].map((name) => record({ type: "text", name }));
+        if (lookupCreated) {
+          records.unshift(
+            ...constraints.map(([label, properties]) =>
+              record({ type: "label+property", label, properties: [...properties] }),
+            ),
+          );
+        }
         return {
-          records: [
-            ...(lookupCreated
-              ? constraints.map(([label, properties]) =>
-                  record({ type: "label+property", label, properties: [...properties] }),
-                )
-              : []),
-            ...[...texts].map((name) => record({ type: "text", name })),
-          ],
+          records,
         };
       }
       return { records: [] };

@@ -8,12 +8,15 @@ import type {
   MemgraphVectorIndex,
 } from "./types.js";
 
-export type MemgraphSeedRegistration = Readonly<{
+type RegisteredTextIndex = MemgraphTextIndex & Readonly<{ properties: readonly string[] }>;
+type MemgraphSeedRegistrationValues = {
   labels: readonly string[];
   vectorIndex: MemgraphVectorIndex & Readonly<{ property: string }>;
-  textIndex?: (MemgraphTextIndex & Readonly<{ properties: readonly string[] }>) | undefined;
+  textIndex?: RegisteredTextIndex | undefined;
   entryRelationshipType?: string | undefined;
-}>;
+};
+
+export type MemgraphSeedRegistration = Readonly<MemgraphSeedRegistrationValues>;
 
 export type ExpectedConstraint = Readonly<{
   label: string;
@@ -34,18 +37,17 @@ export function validateExistingSeed(
   validateVectorIndex(seed.vectorIndex);
   assertName(seed.vectorIndex.property, "Memgraph vector property");
   if (seed.textIndex !== undefined) validateTextIndex(seed.textIndex, false);
-  return Object.freeze({
+  const registration: MemgraphSeedRegistrationValues = {
     labels: Object.freeze([...seed.nodeTypes]),
     vectorIndex: Object.freeze({ ...seed.vectorIndex }),
-    ...(seed.textIndex === undefined
-      ? {}
-      : {
-          textIndex: Object.freeze({
-            ...seed.textIndex,
-            properties: [...seed.textIndex.properties],
-          }),
-        }),
-  });
+  };
+  if (seed.textIndex !== undefined) {
+    registration.textIndex = Object.freeze({
+      ...seed.textIndex,
+      properties: [...seed.textIndex.properties],
+    });
+  }
+  return Object.freeze(registration);
 }
 
 export function validateResources<Schema extends GraphSchemaLike>(
@@ -77,22 +79,11 @@ export function validateResources<Schema extends GraphSchemaLike>(
   if (new Set(names).size !== names.length) {
     throw new TypeError("Managed Memgraph index names must be unique.");
   }
+  const chunks = freezeManagedIndex(resources.indexes.chunks);
+  const entities = freezeManagedIndex(resources.indexes.entities);
   return Object.freeze({
     labels: Object.freeze(labels),
-    indexes: Object.freeze({
-      chunks: Object.freeze({
-        vector: Object.freeze({ ...resources.indexes.chunks.vector }),
-        ...(resources.indexes.chunks.text === undefined
-          ? {}
-          : { text: Object.freeze({ ...resources.indexes.chunks.text }) }),
-      }),
-      entities: Object.freeze({
-        vector: Object.freeze({ ...resources.indexes.entities.vector }),
-        ...(resources.indexes.entities.text === undefined
-          ? {}
-          : { text: Object.freeze({ ...resources.indexes.entities.text }) }),
-      }),
-    }),
+    indexes: Object.freeze({ chunks, entities }),
   });
 }
 
@@ -104,19 +95,20 @@ export function seedRegistration(
   textProperties: readonly string[],
   entryRelationshipType?: string,
 ): MemgraphSeedRegistration {
-  return Object.freeze({
+  const registration: MemgraphSeedRegistrationValues = {
     labels: Object.freeze([label]),
     vectorIndex: Object.freeze({ ...vectorIndex, property }),
-    ...(textIndex === undefined
-      ? {}
-      : {
-          textIndex: Object.freeze({
-            ...textIndex,
-            properties: Object.freeze([...textProperties]),
-          }),
-        }),
-    ...(entryRelationshipType === undefined ? {} : { entryRelationshipType }),
-  });
+  };
+  if (textIndex !== undefined) {
+    registration.textIndex = Object.freeze({
+      ...textIndex,
+      properties: Object.freeze([...textProperties]),
+    });
+  }
+  if (entryRelationshipType !== undefined) {
+    registration.entryRelationshipType = entryRelationshipType;
+  }
+  return Object.freeze(registration);
 }
 
 export function createVectorIndex(seed: MemgraphSeedRegistration): string {
@@ -235,7 +227,27 @@ function validateTextIndex(index: MemgraphTextIndex, optionalProperties: boolean
 }
 
 function similarityName(value: MemgraphVectorIndex["similarity"]): string {
-  return value === "cosine" ? "cos" : value === "euclidean" ? "l2sq" : "ip";
+  switch (value) {
+    case "cosine":
+      return "cos";
+    case "euclidean":
+      return "l2sq";
+    case "inner-product":
+      return "ip";
+  }
+}
+
+function freezeManagedIndex(index: {
+  vector: MemgraphVectorIndex;
+  text?: MemgraphTextIndex | undefined;
+}): Readonly<{ vector: MemgraphVectorIndex; text?: MemgraphTextIndex | undefined }> {
+  const registration: { vector: MemgraphVectorIndex; text?: MemgraphTextIndex | undefined } = {
+    vector: Object.freeze({ ...index.vector }),
+  };
+  if (index.text !== undefined) {
+    registration.text = Object.freeze({ ...index.text });
+  }
+  return Object.freeze(registration);
 }
 
 function recordValues(record: DriverRecord): unknown[] {

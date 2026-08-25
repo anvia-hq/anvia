@@ -44,6 +44,7 @@ import {
 import type {
   DeleteMemgraphDocumentsOptions,
   ManagedMemgraphKnowledgeGraphOptions,
+  MemgraphGraphConflict,
   MemgraphGraphValidateOptions,
   MemgraphKnowledgeGraphOptions,
   ReplaceMemgraphDocumentsOptions,
@@ -721,32 +722,45 @@ async function writeEntities<Schema extends GraphSchemaLike>(
     if (conflict === "error") {
       await assertEntityConflicts(transaction, entityLabel, rows);
     }
-    const propertySet =
-      conflict === "keep-existing"
-        ? `ON CREATE SET e += row.properties
-WITH e, row,
-     coalesce(e.${quoteIdentifier("__anvia_source_document_ids")}, []) AS existingDocumentIds,
-     coalesce(e.${quoteIdentifier("__anvia_source_chunk_ids")}, []) AS existingChunkIds`
-        : `WITH e, row,
-     coalesce(e.${quoteIdentifier("__anvia_source_document_ids")}, []) AS existingDocumentIds,
-     coalesce(e.${quoteIdentifier("__anvia_source_chunk_ids")}, []) AS existingChunkIds
-${conflict === "overwrite" ? "SET e = row.properties" : "SET e += row.properties"}`;
+    const propertySet = conflictPropertySet("e", conflict);
+    const embedding = entityEmbeddingExpression(conflict);
     await transaction.run(
       `UNWIND $rows AS row
 MERGE (e:${quoteIdentifier(entityLabel)}:${quoteIdentifier(type)} {${quoteIdentifier("__anvia_key")}: row.key})
 ${propertySet}
 SET e.${quoteIdentifier("__anvia_key")} = row.key,
     e.${quoteIdentifier("__anvia_graph")} = $graph,
-    e.${quoteIdentifier("__anvia_embedding")} = ${
-      conflict === "keep-existing"
-        ? `coalesce(e.${quoteIdentifier("__anvia_embedding")}, row.embedding)`
-        : "row.embedding"
-    },
+    e.${quoteIdentifier("__anvia_embedding")} = ${embedding},
     e.${quoteIdentifier("__anvia_source_document_ids")} = reduce(all = existingDocumentIds, id IN row.sourceDocumentIds | CASE WHEN id IN all THEN all ELSE all + id END),
     e.${quoteIdentifier("__anvia_source_chunk_ids")} = reduce(all = existingChunkIds, id IN row.sourceChunkIds | CASE WHEN id IN all THEN all ELSE all + id END)`,
       { rows, graph: graphName },
     );
   }
+}
+
+function conflictPropertySet(variable: "e" | "r", conflict: MemgraphGraphConflict): string {
+  const sourceDocuments = quoteIdentifier("__anvia_source_document_ids");
+  const sourceChunks = quoteIdentifier("__anvia_source_chunk_ids");
+  const existingSources = `WITH ${variable}, row,
+     coalesce(${variable}.${sourceDocuments}, []) AS existingDocumentIds,
+     coalesce(${variable}.${sourceChunks}, []) AS existingChunkIds`;
+  if (conflict === "keep-existing") {
+    return `ON CREATE SET ${variable} += row.properties
+${existingSources}`;
+  }
+  if (conflict === "overwrite") {
+    return `${existingSources}
+SET ${variable} = row.properties`;
+  }
+  return `${existingSources}
+SET ${variable} += row.properties`;
+}
+
+function entityEmbeddingExpression(conflict: MemgraphGraphConflict): string {
+  if (conflict === "keep-existing") {
+    return `coalesce(e.${quoteIdentifier("__anvia_embedding")}, row.embedding)`;
+  }
+  return "row.embedding";
 }
 
 async function assertEntityConflicts(
@@ -823,16 +837,7 @@ RETURN key, properties(r) AS properties`,
         }
       }
     }
-    const propertySet =
-      conflict === "keep-existing"
-        ? `ON CREATE SET r += row.properties
-WITH r, row,
-     coalesce(r.${quoteIdentifier("__anvia_source_document_ids")}, []) AS existingDocumentIds,
-     coalesce(r.${quoteIdentifier("__anvia_source_chunk_ids")}, []) AS existingChunkIds`
-        : `WITH r, row,
-     coalesce(r.${quoteIdentifier("__anvia_source_document_ids")}, []) AS existingDocumentIds,
-     coalesce(r.${quoteIdentifier("__anvia_source_chunk_ids")}, []) AS existingChunkIds
-${conflict === "overwrite" ? "SET r = row.properties" : "SET r += row.properties"}`;
+    const propertySet = conflictPropertySet("r", conflict);
     await transaction.run(
       `UNWIND $rows AS row
 MATCH (a:${quoteIdentifier(entityLabel)} {${quoteIdentifier("__anvia_key")}: row.from}),
@@ -962,13 +967,13 @@ function snapshotProperties(
       if (typeof properties !== "object" || properties === null || Array.isArray(properties)) {
         throw new TypeError("Memgraph snapshot properties must be an object.");
       }
-      return [
-        key,
-        stableObject({
-          ...(discriminator === undefined ? {} : { [discriminator]: record.get(discriminator) }),
-          properties: properties as Record<string, unknown>,
-        }),
-      ];
+      const snapshot: Record<string, unknown> = {
+        properties: properties as Record<string, unknown>,
+      };
+      if (discriminator !== undefined) {
+        snapshot[discriminator] = record.get(discriminator);
+      }
+      return [key, stableObject(snapshot)];
     }),
   );
 }

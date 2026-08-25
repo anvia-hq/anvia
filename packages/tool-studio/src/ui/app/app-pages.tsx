@@ -68,7 +68,7 @@ export const TraceBrowser = lazy(() =>
 
 export function PageLoading() {
   return (
-    <section className="grid h-full min-h-0 place-items-center bg-background/45 text-base font-medium text-muted-foreground">
+    <section className="grid h-full min-h-0 place-items-center bg-background text-base font-medium text-muted-foreground">
       Loading
     </section>
   );

@@ -217,7 +217,7 @@ function SourceWorkspace(props: {
       ].join(" ")}
     >
       {showSources ? (
-        <div className="min-w-0 overflow-x-auto border-b border-border/80">
+        <div className="min-w-0 overflow-x-auto border-b border-hair">
           <div className="flex min-h-11 min-w-max items-center gap-2">
             <span className="mr-2 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
               {tabLabel(props.activeTab)}
@@ -225,10 +225,8 @@ function SourceWorkspace(props: {
             {props.sources.map((source) => (
               <button
                 className={[
-                  "flex h-7 items-center gap-2 rounded-lg border border-border/80 bg-background/45 px-2.5 text-xs font-semibold text-muted-foreground transition duration-200 hover:border-border/80 hover:bg-muted/45 hover:text-foreground focus-visible:border-ring focus-visible:outline-none",
-                  props.selectedKey === source.key
-                    ? "border-border/80 bg-muted/45 text-foreground"
-                    : "",
+                  "flex h-7 items-center gap-2 rounded-lg border border-hair bg-background px-2.5 text-xs font-semibold text-muted-foreground transition duration-200 hover:border-foreground hover:bg-transparent hover:text-foreground focus-visible:border-ring focus-visible:outline-none",
+                  props.selectedKey === source.key ? "border-hair bg-muted text-foreground" : "",
                 ].join(" ")}
                 key={source.key}
                 type="button"

@@ -8,28 +8,9 @@ import { useStudioTheme } from "../src/ui/app/app-theme";
 describe("useStudioTheme", () => {
   let container: HTMLDivElement;
   let root: Root;
-  let media: MediaQueryList;
-  let changeListener: ((event: MediaQueryListEvent) => void) | undefined;
 
   beforeEach(() => {
     vi.stubGlobal("localStorage", createMemoryStorage());
-    media = {
-      matches: false,
-      media: "(prefers-color-scheme: dark)",
-      onchange: null,
-      addEventListener: vi.fn((_type, listener) => {
-        changeListener = listener as (event: MediaQueryListEvent) => void;
-      }),
-      removeEventListener: vi.fn((_type, listener) => {
-        if (changeListener === listener) {
-          changeListener = undefined;
-        }
-      }),
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-      dispatchEvent: vi.fn(),
-    };
-    vi.spyOn(window, "matchMedia").mockReturnValue(media);
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
@@ -42,24 +23,29 @@ describe("useStudioTheme", () => {
     vi.unstubAllGlobals();
   });
 
-  it("tracks system preference changes while an explicit theme is selected", () => {
+  it("toggles with the button and D shortcut outside editable controls", () => {
     act(() => root.render(<ThemeHarness />));
-    expect(container.textContent).toContain("system/light");
+    expect(container.textContent).toContain("dark/dark");
 
     act(() => container.querySelector("button")?.click());
     expect(container.textContent).toContain("light/light");
 
     act(() => {
-      Object.defineProperty(media, "matches", { configurable: true, value: true });
-      changeListener?.({ matches: true } as MediaQueryListEvent);
+      container
+        .querySelector("input")
+        ?.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "d" }));
     });
     expect(container.textContent).toContain("light/light");
 
-    act(() => container.querySelector("button")?.click());
-    expect(container.textContent).toContain("dark/dark");
+    act(() => {
+      container
+        .querySelector("[contenteditable]")
+        ?.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "D" }));
+    });
+    expect(container.textContent).toContain("light/light");
 
-    act(() => container.querySelector("button")?.click());
-    expect(container.textContent).toContain("system/dark");
+    act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "D", shiftKey: true })));
+    expect(container.textContent).toContain("dark/dark");
   });
 });
 
@@ -85,8 +71,12 @@ function createMemoryStorage(): Storage {
 function ThemeHarness() {
   const { resolvedTheme, theme, toggleTheme } = useStudioTheme();
   return (
-    <button type="button" onClick={toggleTheme}>
-      {theme}/{resolvedTheme}
-    </button>
+    <>
+      <button type="button" onClick={toggleTheme}>
+        {theme}/{resolvedTheme}
+      </button>
+      <input aria-label="Editable field" />
+      <div aria-label="Editable region" contentEditable />
+    </>
   );
 }

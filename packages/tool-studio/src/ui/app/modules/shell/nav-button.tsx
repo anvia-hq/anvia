@@ -28,7 +28,7 @@ export function NavButton(props: {
   return (
     <Button
       className={cn(
-        "h-8 min-h-8 w-full justify-start gap-2 rounded-lg bg-transparent px-2 text-base font-[400] tracking-[-0.006em] text-sidebar-foreground/65 transition-none hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+        "h-8 min-h-8 w-full justify-start gap-2 rounded-lg bg-transparent px-2 text-base font-[400] tracking-[-0.006em] text-muted-foreground transition-none hover:bg-transparent hover:text-sidebar-accent-foreground",
         props.active && "bg-sidebar-accent text-sidebar-accent-foreground",
       )}
       aria-current={props.active ? "page" : undefined}

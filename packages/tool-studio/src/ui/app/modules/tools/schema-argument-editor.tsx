@@ -58,7 +58,7 @@ export function SchemaArgumentEditor(props: {
           Arguments
         </span>
         {canRenderForm ? (
-          <div className="inline-grid h-8 grid-cols-2 overflow-hidden rounded-md border border-border/80 bg-background/45 p-0.5">
+          <div className="inline-grid h-8 grid-cols-2 overflow-hidden rounded-md border border-hair bg-background p-0.5">
             <ModeButton active={effectiveMode === "form"} onClick={() => setMode("form")}>
               Form
             </ModeButton>
@@ -102,7 +102,7 @@ function ModeButton(props: { active: boolean; children: string; onClick: () => v
     <button
       className={
         props.active
-          ? "rounded-[5px] bg-muted/55 px-3 text-xs font-semibold text-foreground"
+          ? "rounded-[5px] bg-muted px-3 text-xs font-semibold text-foreground"
           : "rounded-[5px] px-3 text-xs font-medium text-muted-foreground transition hover:text-foreground"
       }
       type="button"
@@ -122,14 +122,14 @@ function RawJsonEditor(props: {
   return (
     <div className="grid gap-2">
       <Textarea
-        className="min-h-36 resize-y rounded-md border-border bg-background/45 p-3 text-xs leading-5"
+        className="min-h-36 resize-y rounded-md border-border bg-background p-3 text-xs leading-5"
         disabled={props.disabled}
         value={props.value}
         spellCheck={false}
         onChange={(event) => props.onChange(event.target.value)}
       />
       {props.error.length === 0 ? null : (
-        <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs leading-5 text-destructive">
+        <div className="rounded-md border border-status-danger-ink bg-status-danger-fill px-3 py-2 text-xs leading-5 text-destructive">
           {props.error}
         </div>
       )}
@@ -159,7 +159,7 @@ function SchemaField(props: {
   if (type === "object") {
     const fields = schemaFields(props.field.schema);
     return (
-      <fieldset className="grid min-w-0 gap-3 border-b border-border/70 pb-3 last:border-b-0">
+      <fieldset className="grid min-w-0 gap-3 border-b border-hair pb-3 last:border-b-0">
         <div className="flex min-w-0 items-center justify-between gap-3">
           <legend className="min-w-0 truncate text-sm font-semibold text-foreground">
             {label}
@@ -177,7 +177,7 @@ function SchemaField(props: {
             onChange={props.onChange}
           />
         ) : (
-          <div className="grid gap-3 border-l border-border/70 pl-3">
+          <div className="grid gap-3 border-l border-hair pl-3">
             {fields.map((field) => (
               <SchemaField
                 disabled={props.disabled}
@@ -212,7 +212,7 @@ function SchemaField(props: {
   }
 
   return (
-    <div className="grid min-w-0 gap-2 border-b border-border/70 pb-3 last:border-b-0">
+    <div className="grid min-w-0 gap-2 border-b border-hair pb-3 last:border-b-0">
       <FieldHeader label={label} required={props.field.required} />
       {description === undefined ? null : (
         <p className="m-0 text-xs leading-5 text-muted-foreground">{description}</p>
@@ -247,7 +247,7 @@ function ArrayField(props: {
     key: `${formatPath(props.path)}:${index}:${formatEnumValue(item)}`,
   }));
   return (
-    <div className="grid min-w-0 gap-3 border-b border-border/70 pb-3 last:border-b-0">
+    <div className="grid min-w-0 gap-3 border-b border-hair pb-3 last:border-b-0">
       <div className="flex min-w-0 items-center justify-between gap-3">
         <FieldHeader label={props.label} required={props.field.required} />
         {itemSchema === undefined ? null : (
@@ -275,11 +275,11 @@ function ArrayField(props: {
           onChange={props.onChange}
         />
       ) : items.length === 0 ? (
-        <div className="rounded-md border border-dashed border-border/70 px-3 py-2 text-xs text-muted-foreground">
+        <div className="rounded-md border border-dashed border-hair px-3 py-2 text-xs text-muted-foreground">
           Empty array
         </div>
       ) : (
-        <div className="grid gap-3 border-l border-border/70 pl-3">
+        <div className="grid gap-3 border-l border-hair pl-3">
           {itemEntries.map((item) => (
             <div className="grid gap-2" key={item.key}>
               <div className="flex items-center justify-between gap-3">
@@ -327,7 +327,7 @@ function FieldHeader(props: { label: string; required: boolean }) {
 
 function RequiredBadge() {
   return (
-    <span className="rounded-md bg-muted/35 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+    <span className="rounded-md bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
       required
     </span>
   );
@@ -356,7 +356,7 @@ function ScalarFieldControl(props: {
           disabled={props.disabled}
           onValueChange={(value) => props.onChange(props.path, enumOptions[Number(value)])}
         >
-          <SelectTrigger className="h-9 min-h-9 rounded-md border-border bg-background/45 text-sm">
+          <SelectTrigger className="h-9 min-h-9 rounded-md border-border bg-background text-sm">
             <SelectValue placeholder="Select value" />
           </SelectTrigger>
           <SelectContent>
@@ -385,7 +385,7 @@ function ScalarFieldControl(props: {
   const type = schemaPrimaryType(props.schema);
   if (type === "boolean") {
     return (
-      <label className="flex min-h-9 w-fit cursor-pointer items-center gap-2 rounded-md border border-border/70 bg-background/45 px-3 text-sm text-foreground">
+      <label className="flex min-h-9 w-fit cursor-pointer items-center gap-2 rounded-md border border-hair bg-background px-3 text-sm text-foreground">
         <input
           checked={props.value === true}
           disabled={props.disabled}
@@ -414,7 +414,7 @@ function ScalarFieldControl(props: {
   if (type === "string") {
     return (
       <Input
-        className="h-9 rounded-md border-border bg-background/45 text-sm"
+        className="h-9 rounded-md border-border bg-background text-sm"
         disabled={props.disabled}
         type="text"
         value={typeof props.value === "string" ? props.value : ""}
@@ -457,7 +457,7 @@ function NumberFieldControl(props: {
 
   return (
     <Input
-      className="h-9 rounded-md border-border bg-background/45 text-sm"
+      className="h-9 rounded-md border-border bg-background text-sm"
       disabled={props.disabled}
       inputMode={props.type === "integer" ? "numeric" : "decimal"}
       type="text"
@@ -504,7 +504,7 @@ function JsonValueField(props: {
   return (
     <div className="grid gap-2">
       <Textarea
-        className="min-h-24 resize-y rounded-md border-border bg-background/45 p-3 text-xs leading-5"
+        className="min-h-24 resize-y rounded-md border-border bg-background p-3 text-xs leading-5"
         disabled={props.disabled}
         value={draft}
         spellCheck={false}
@@ -522,7 +522,7 @@ function JsonValueField(props: {
         }}
       />
       {parsed.ok || draft.trim().length === 0 ? null : (
-        <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs leading-5 text-destructive">
+        <div className="rounded-md border border-status-danger-ink bg-status-danger-fill px-3 py-2 text-xs leading-5 text-destructive">
           {parsed.error}
         </div>
       )}

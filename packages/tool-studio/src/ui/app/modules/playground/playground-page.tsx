@@ -122,7 +122,7 @@ export function PlaygroundPage(props: {
               {!props.hasMessages ? (
                 <div className="grid min-h-96 place-items-center text-sm font-medium text-muted-foreground">
                   <div className="grid max-w-xl gap-4 text-center">
-                    <div className="mx-auto h-px w-28 bg-muted/55" />
+                    <div className="mx-auto h-px w-28 bg-muted" />
                     <h1 className="m-0 font-heading text-2xl font-medium tracking-tight text-foreground text-balance">
                       What should this agent work on?
                     </h1>
@@ -158,7 +158,7 @@ export function PlaygroundPage(props: {
               <div className="mx-auto grid w-full max-w-200 grid-cols-3 gap-2 max-md:grid-cols-1">
                 {props.selectedAgentQuickPrompts.map((quickPrompt) => (
                   <Button
-                    className="h-auto min-h-16 justify-start whitespace-normal rounded-lg border border-border/80 bg-card/85 px-3 py-2.5 text-left text-sm font-medium leading-5 text-foreground shadow-sm hover:border-border/80 hover:bg-muted/45 hover:text-foreground"
+                    className="h-auto min-h-16 justify-start whitespace-normal rounded-lg border border-hair bg-card px-3 py-2.5 text-left text-sm font-medium leading-5 text-foreground shadow-none hover:border-foreground hover:bg-transparent hover:text-foreground"
                     type="button"
                     variant="ghost"
                     disabled={props.runState === "running" || props.selectedAgentId.length === 0}
@@ -172,9 +172,9 @@ export function PlaygroundPage(props: {
                 ))}
               </div>
             )}
-            <div className="mx-auto grid w-full max-w-200 gap-1.5 rounded-xl border border-border/80 bg-card/95 p-1.5 backdrop-blur">
+            <div className="mx-auto grid w-full max-w-200 gap-1.5 rounded-lg border border-hair bg-card p-1.5 backdrop-blur focus-within:outline-2 focus-within:outline-offset-3 focus-within:outline-ring">
               <Textarea
-                className="min-h-9 min-w-0 resize-none rounded-lg border-0 bg-muted px-2.5 py-1.5 text-base leading-6 text-foreground shadow-none outline-none ring-0 placeholder:text-muted-foreground/70 focus-visible:border-transparent focus-visible:ring-0 focus-visible:outline-none dark:bg-muted"
+                className="min-h-9 min-w-0 resize-none rounded-lg border-0 bg-muted px-2.5 py-1.5 text-base leading-6 text-foreground shadow-none outline-none ring-0 placeholder:text-muted-foreground focus-visible:border-transparent focus-visible:ring-0 focus-visible:outline-none dark:bg-muted"
                 ref={props.promptRef}
                 rows={1}
                 value={props.prompt}
@@ -186,7 +186,7 @@ export function PlaygroundPage(props: {
                 <div className="flex min-w-0 flex-wrap gap-1.5 px-2">
                   {props.attachments.map((attachment) => (
                     <span
-                      className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-border/80 bg-muted/55 px-2 py-1 text-xs font-medium text-muted-foreground"
+                      className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-hair bg-muted px-2 py-1 text-xs font-medium text-muted-foreground"
                       key={attachment.id}
                     >
                       <span className="min-w-0 truncate">
@@ -194,7 +194,7 @@ export function PlaygroundPage(props: {
                       </span>
                       <Button
                         aria-label={`Remove ${attachment.name}`}
-                        className="h-5 min-h-5 w-5 rounded-md border-0 bg-transparent p-0 text-muted-foreground shadow-none hover:bg-accent hover:text-foreground [&_svg]:h-3 [&_svg]:w-3"
+                        className="h-5 min-h-5 w-5 rounded-md border-0 bg-transparent p-0 text-muted-foreground shadow-none hover:bg-transparent hover:text-foreground [&_svg]:h-3 [&_svg]:w-3"
                         size="icon"
                         type="button"
                         variant="ghost"
@@ -218,7 +218,7 @@ export function PlaygroundPage(props: {
                   />
                   <Button
                     aria-label="Attach image or document"
-                    className="size-9 min-h-9 rounded-lg border-border bg-transparent p-0 text-muted-foreground shadow-none hover:bg-accent hover:text-accent-foreground"
+                    className="size-9 min-h-9 rounded-lg border-border bg-transparent p-0 text-muted-foreground shadow-none hover:border-foreground hover:bg-transparent hover:text-foreground"
                     size="icon"
                     type="button"
                     variant="ghost"
@@ -230,7 +230,7 @@ export function PlaygroundPage(props: {
                   {props.browserWorkspace === undefined || props.browserWorkspaceOpen ? null : (
                     <Button
                       aria-label="Open browser workspace"
-                      className="h-9 min-h-9 gap-1.5 rounded-lg border-border bg-transparent px-2.5 text-xs text-muted-foreground shadow-none hover:bg-accent hover:text-accent-foreground"
+                      className="h-9 min-h-9 gap-1.5 rounded-lg border-border bg-transparent px-2.5 text-xs text-muted-foreground shadow-none hover:border-foreground hover:bg-transparent hover:text-foreground"
                       type="button"
                       variant="ghost"
                       onClick={props.onOpenBrowserWorkspace}
@@ -249,7 +249,7 @@ export function PlaygroundPage(props: {
                     >
                       <SelectTrigger
                         aria-label="Select model"
-                        className="flex h-8 min-h-8 w-auto max-w-44 gap-2 border-0 bg-transparent px-2 py-1 text-xs font-medium text-muted-foreground shadow-none hover:bg-accent hover:text-accent-foreground sm:max-w-72"
+                        className="flex h-8 min-h-8 w-auto max-w-44 gap-2 border-0 bg-transparent px-2 py-1 text-xs font-medium text-muted-foreground shadow-none hover:bg-transparent hover:text-foreground sm:max-w-72"
                       >
                         <SelectValue placeholder="Model" />
                       </SelectTrigger>
@@ -270,7 +270,7 @@ export function PlaygroundPage(props: {
                     >
                       <SelectTrigger
                         aria-label="Select agent"
-                        className="flex h-8 min-h-8 w-auto max-w-64 gap-2 border-0 bg-transparent px-2 py-1 text-xs font-medium text-muted-foreground shadow-none hover:bg-accent hover:text-accent-foreground"
+                        className="flex h-8 min-h-8 w-auto max-w-64 gap-2 border-0 bg-transparent px-2 py-1 text-xs font-medium text-muted-foreground shadow-none hover:bg-transparent hover:text-foreground"
                       >
                         <SelectValue placeholder="Agent" />
                       </SelectTrigger>
@@ -355,7 +355,7 @@ function PlaygroundBrowserPanel(props: {
         aria-valuemax={1100}
         aria-valuemin={440}
         aria-valuenow={props.width}
-        className="absolute inset-y-0 -left-1 z-20 m-0 h-auto w-2 cursor-col-resize touch-none border-0 bg-transparent transition-colors hover:bg-primary/35 focus-visible:bg-primary/35 focus-visible:outline-none"
+        className="absolute inset-y-0 -left-1 z-20 m-0 h-auto w-2 cursor-col-resize touch-none border-0 bg-transparent transition-colors hover:bg-action-muted focus-visible:bg-action-muted focus-visible:outline-none"
         tabIndex={0}
         onKeyDown={(event) => {
           if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
@@ -426,7 +426,7 @@ function PlaygroundSessionRow(props: {
     <div className="group relative min-w-0">
       <Button
         className={cn(
-          "h-9 min-h-9 w-full justify-start rounded-lg bg-transparent px-2.5 py-0.5 pr-9 text-base font-[450] tracking-[-0.006em] text-sidebar-foreground/65 shadow-none transition duration-200 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground active:translate-y-px",
+          "h-9 min-h-9 w-full justify-start rounded-lg bg-transparent px-2.5 py-0.5 pr-9 text-base font-[450] tracking-[-0.006em] text-muted-foreground shadow-none transition duration-200 hover:bg-transparent hover:text-sidebar-accent-foreground active:translate-y-px",
           props.active && "bg-sidebar-accent font-semibold text-sidebar-accent-foreground",
         )}
         type="button"
@@ -438,7 +438,7 @@ function PlaygroundSessionRow(props: {
       </Button>
       <Button
         aria-label={`Delete ${title}`}
-        className="absolute right-1 top-1/2 hidden h-7 min-h-7 w-7 -translate-y-1/2 rounded-lg border-0 bg-transparent p-0 text-muted-foreground opacity-70 shadow-none hover:bg-sidebar-accent hover:text-destructive hover:opacity-100 group-hover:inline-flex group-focus-within:inline-flex [&_svg]:h-4 [&_svg]:w-4"
+        className="absolute right-1 top-1/2 hidden h-7 min-h-7 w-7 -translate-y-1/2 rounded-lg border-0 bg-transparent p-0 text-muted-foreground opacity-70 shadow-none hover:bg-transparent hover:text-destructive hover:opacity-100 group-hover:inline-flex group-focus-within:inline-flex [&_svg]:h-4 [&_svg]:w-4"
         size="icon"
         type="button"
         variant="ghost"

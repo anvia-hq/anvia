@@ -52,7 +52,7 @@ export function StudioHeaderMetric(props: {
   return (
     <span
       className={cn(
-        "inline-flex h-8 items-center gap-2 rounded-md border border-border/70 px-2.5 text-xs font-medium text-muted-foreground",
+        "inline-flex h-8 items-center gap-2 rounded-md border border-hair px-2.5 text-xs font-medium text-muted-foreground",
         props.className,
       )}
     >
@@ -71,7 +71,7 @@ export function StudioSurface({ className, ...props }: React.ComponentProps<"div
 export function StudioSection({ className, ...props }: React.ComponentProps<"section">) {
   return (
     <section
-      className={cn("grid gap-3 rounded-xl border border-border bg-card p-4", className)}
+      className={cn("grid gap-3 rounded-none border border-border bg-card p-4", className)}
       {...props}
     />
   );
@@ -79,7 +79,9 @@ export function StudioSection({ className, ...props }: React.ComponentProps<"sec
 
 export function StudioMetric(props: { label: string; value: React.ReactNode; className?: string }) {
   return (
-    <div className={cn("grid gap-1 rounded-xl border border-border bg-card p-4", props.className)}>
+    <div
+      className={cn("grid gap-1 rounded-none border border-border bg-card p-4", props.className)}
+    >
       <span className="text-xs font-medium text-muted-foreground">{props.label}</span>
       <span className="text-lg font-semibold tabular-nums text-foreground">{props.value}</span>
     </div>
@@ -98,7 +100,7 @@ export function StudioEmptyState(props: {
       data-size={props.size ?? "default"}
       data-slot="studio-empty-state"
       className={cn(
-        "flex w-full min-w-0 flex-1 flex-col items-center justify-center gap-4 rounded-xl border border-dashed border-border p-6 text-center text-balance",
+        "flex w-full min-w-0 flex-1 flex-col items-center justify-center gap-4 rounded-none border border-dashed border-border p-6 text-center text-balance",
         props.size === "compact" ? "min-h-32" : "h-full min-h-64",
         props.className,
       )}

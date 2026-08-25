@@ -40,7 +40,7 @@ export function ItemBrowser(props: {
           )}
         </div>
       </div>
-      <div className="flex min-h-12 items-center justify-between gap-3 border-t border-border/80 bg-muted/10 py-2">
+      <div className="flex min-h-12 items-center justify-between gap-3 border-t border-hair bg-muted py-2">
         <span className=" text-xs text-muted-foreground">
           {state === undefined ? "0 loaded" : `${state.items.length} loaded`}
         </span>
@@ -92,14 +92,14 @@ function KnowledgeItemCard(props: {
 }) {
   if (props.item.kind === "dynamic_tool") {
     return (
-      <article className="rounded-xl border border-border/80 bg-background/55 p-4">
+      <article className="rounded-none border border-hair bg-background p-4">
         <DynamicToolInspector item={props.item} source={props.source} />
       </article>
     );
   }
 
   return (
-    <article className="grid gap-3 rounded-xl border border-border/80 bg-background/55 p-4">
+    <article className="grid gap-3 rounded-none border border-hair bg-background p-4">
       <div className="flex min-w-0 items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="truncate text-xs font-semibold text-foreground">
@@ -170,7 +170,7 @@ function DynamicToolsBrowser(props: {
 
   return (
     <section className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden">
-      <header className="grid min-h-16 grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-b border-border/80 py-3 max-md:grid-cols-1">
+      <header className="grid min-h-16 grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-b border-hair py-3 max-md:grid-cols-1">
         <div className="grid min-w-0 gap-1">
           <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
             Runtime tool index
@@ -190,7 +190,7 @@ function DynamicToolsBrowser(props: {
       </header>
 
       <div className="grid min-h-0 grid-cols-[minmax(270px,0.34fr)_minmax(0,1fr)] overflow-hidden max-lg:grid-cols-1 max-lg:grid-rows-[minmax(220px,0.44fr)_minmax(0,1fr)]">
-        <aside className="min-h-0 overflow-auto border-r border-border/80 pr-3 max-lg:border-b max-lg:border-r-0 max-lg:pr-0">
+        <aside className="min-h-0 overflow-auto border-r border-hair pr-3 max-lg:border-b max-lg:border-r-0 max-lg:pr-0">
           <div className="grid gap-1 py-3 pr-3 max-lg:pr-0">
             {props.source === undefined ? <MutedRow text="No knowledge source selected" /> : null}
             {loading && tools.length === 0 ? <MutedRow text="Loading dynamic tools" /> : null}
@@ -223,7 +223,7 @@ function DynamicToolsBrowser(props: {
         </div>
       </div>
 
-      <div className="flex min-h-12 items-center justify-between gap-3 border-t border-border/80 bg-background/30 py-2">
+      <div className="flex min-h-12 items-center justify-between gap-3 border-t border-hair bg-background py-2">
         <span className="text-xs text-muted-foreground">
           {props.state === undefined ? "0 loaded" : `${props.state.items.length} loaded`}
         </span>
@@ -254,8 +254,8 @@ function DynamicToolListItem(props: {
   return (
     <button
       className={[
-        "grid min-w-0 gap-2 rounded-lg border border-transparent px-3 py-3 text-left transition duration-200 hover:border-border/80 hover:bg-muted/25 focus-visible:border-ring focus-visible:outline-none",
-        props.active ? "border-border/80 bg-muted/35 text-foreground" : "text-muted-foreground",
+        "grid min-w-0 gap-2 rounded-lg border border-transparent px-3 py-3 text-left transition duration-200 hover:border-hair hover:bg-transparent hover:text-foreground focus-visible:border-ring focus-visible:outline-none",
+        props.active ? "border-hair bg-row-selected text-foreground" : "text-muted-foreground",
       ].join(" ")}
       type="button"
       onClick={props.onSelect}
@@ -290,7 +290,7 @@ function DynamicToolInspector(props: {
 
   return (
     <article className="grid min-w-0 gap-5">
-      <header className="grid gap-4 border-b border-border/80 pb-5">
+      <header className="grid gap-4 border-b border-hair pb-5">
         <div className="flex min-w-0 items-start justify-between gap-4 max-md:grid">
           <div className="grid min-w-0 gap-2">
             <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
@@ -310,7 +310,7 @@ function DynamicToolInspector(props: {
             {description}
           </p>
         )}
-        <div className="min-w-0 overflow-x-auto border-y border-border/80 bg-muted/15 px-3 py-2">
+        <div className="min-w-0 overflow-x-auto border-y border-hair bg-muted px-3 py-2">
           <code className="font-mono text-sm leading-6 text-foreground">
             {dynamicToolSignature(toolName, parameters)}
           </code>
@@ -343,14 +343,14 @@ function DynamicToolParameterList(props: { parameters: DynamicToolParameter[] })
         </span>
       </div>
       {props.parameters.length === 0 ? (
-        <div className="border-y border-dashed border-border/80 px-3 py-4 text-sm text-muted-foreground">
+        <div className="border-y border-dashed border-hair px-3 py-4 text-sm text-muted-foreground">
           This tool does not declare input parameters.
         </div>
       ) : (
-        <div className="min-w-0 overflow-hidden border-y border-border/80">
+        <div className="min-w-0 overflow-hidden border-y border-hair">
           {props.parameters.map((parameter) => (
             <div
-              className="grid min-w-0 grid-cols-[minmax(140px,0.24fr)_minmax(96px,0.14fr)_minmax(96px,0.14fr)_minmax(0,1fr)] gap-4 border-b border-border/70 py-3 last:border-b-0 max-md:grid-cols-1 max-md:gap-1"
+              className="grid min-w-0 grid-cols-[minmax(140px,0.24fr)_minmax(96px,0.14fr)_minmax(96px,0.14fr)_minmax(0,1fr)] gap-4 border-b border-hair py-3 last:border-b-0 max-md:grid-cols-1 max-md:gap-1"
               key={parameter.name}
             >
               <div className="min-w-0 font-mono text-sm font-semibold text-foreground [overflow-wrap:anywhere]">
@@ -396,11 +396,11 @@ function DynamicToolSourceDetails(props: {
   }
 
   return (
-    <section className="grid gap-3 border-t border-border/80 pt-4">
+    <section className="grid gap-3 border-t border-hair pt-4">
       <h3 className="m-0 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
         Source
       </h3>
-      <dl className="grid border-y border-border/80 sm:grid-cols-3 sm:divide-x sm:divide-border/80">
+      <dl className="grid border-y border-hair sm:grid-cols-3 sm:divide-x sm:divide-hair">
         {details.map((detail) => (
           <div className="min-w-0 px-3 py-3 first:pl-0 last:pr-0" key={detail.label}>
             <dt className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
@@ -511,7 +511,7 @@ function dynamicToolSignature(toolName: string, parameters: DynamicToolParameter
 
 function KnowledgeMetric(props: { label: string; value: number }) {
   return (
-    <span className="inline-flex h-8 items-center gap-2 border border-border/70 bg-background/45 px-2.5 text-xs font-medium text-muted-foreground">
+    <span className="inline-flex h-8 items-center gap-2 border border-hair bg-background px-2.5 text-xs font-medium text-muted-foreground">
       <span className="font-semibold tabular-nums text-foreground">{props.value}</span>
       {props.label}
     </span>
@@ -533,7 +533,7 @@ function JsonDetails(props: { title: string; value: unknown }) {
   const display = jsonDisplay(props.value);
 
   return (
-    <details className="group rounded-xl border border-border/80 bg-card/30">
+    <details className="group rounded-none border border-hair bg-card">
       <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground marker:hidden">
         <span>{props.title}</span>
         <span className="text-xs normal-case tracking-normal text-muted-foreground group-open:hidden">
@@ -543,7 +543,7 @@ function JsonDetails(props: { title: string; value: unknown }) {
           Hide
         </span>
       </summary>
-      <div className="border-t border-border/70">
+      <div className="border-t border-hair">
         <pre className="m-0 max-h-96 overflow-auto p-4 font-mono text-xs leading-5 text-foreground">
           <code>
             <JsonSyntax text={display} />
@@ -568,7 +568,7 @@ export function RetrievalLogPanel(props: {
 }) {
   return (
     <section className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-background">
-      <div className="border-b border-border/80 px-4 py-3">
+      <div className="border-b border-hair px-4 py-3">
         <div className="flex min-w-0 items-start justify-between gap-3">
           <div className="min-w-0">
             <h2 className="m-0 truncate text-sm font-semibold text-foreground">Retrieval log</h2>
@@ -590,7 +590,7 @@ export function RetrievalLogPanel(props: {
         <div className="grid gap-3">
           {props.evidence.map((item) => (
             <article
-              className="grid gap-3 rounded-xl border border-border/80 bg-background/45 p-3"
+              className="grid gap-3 rounded-none border border-hair bg-background p-3"
               key={`${item.traceId}:${item.observationId}`}
             >
               <div className="flex min-w-0 items-start justify-between gap-3">
@@ -645,7 +645,7 @@ export function RetrievalLogPanel(props: {
 
 function JsonBlock(props: { title: string; value: unknown }) {
   return (
-    <div className="grid gap-2 border-t border-border/70 pt-3">
+    <div className="grid gap-2 border-t border-hair pt-3">
       <div className=" text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
         {props.title}
       </div>

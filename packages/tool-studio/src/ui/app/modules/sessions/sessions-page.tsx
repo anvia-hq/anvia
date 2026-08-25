@@ -54,7 +54,7 @@ export function SessionsPage(props: {
   return (
     <StudioPageShell className="overflow-auto pb-6 pr-6" aria-label="Sessions">
       <StudioSurface className="h-full min-w-225">
-        <div className="sticky top-0 z-10 grid min-h-11 grid-cols-[minmax(220px,1.3fr)_180px_120px_120px_72px] items-center gap-4 border-b bg-background/95 px-4 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground backdrop-blur">
+        <div className="sticky top-0 z-10 grid min-h-11 grid-cols-[minmax(220px,1.3fr)_180px_120px_120px_72px] items-center gap-4 border-b bg-header px-4 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground backdrop-blur">
           <span>Session</span>
           <span>Agent</span>
           <span>Messages</span>
@@ -64,8 +64,8 @@ export function SessionsPage(props: {
         {props.sessions.map((session) => (
           <div
             className={cn(
-              "grid min-h-14 w-full min-w-0 grid-cols-[minmax(220px,1.3fr)_180px_120px_120px_72px] items-center gap-4 border-b px-4 text-left text-muted-foreground transition duration-200 hover:bg-accent/80 hover:text-accent-foreground",
-              session.id === props.selectedSessionId && "bg-muted/45 text-foreground",
+              "grid min-h-14 w-full min-w-0 grid-cols-[minmax(220px,1.3fr)_180px_120px_120px_72px] items-center gap-4 border-b px-4 text-left text-muted-foreground transition duration-200 hover:bg-transparent hover:text-foreground",
+              session.id === props.selectedSessionId && "bg-row-selected text-foreground",
             )}
             key={session.id}
           >

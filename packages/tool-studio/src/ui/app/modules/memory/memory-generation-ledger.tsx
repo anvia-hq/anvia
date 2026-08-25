@@ -35,17 +35,17 @@ export function memoryGenerationRows(records: StudioMemoryMessageRecord[]): Memo
 export function MemoryGenerationLedger(props: { records: StudioMemoryMessageRecord[] }) {
   const rows = memoryGenerationRows(props.records);
   return (
-    <section className="grid min-w-0 overflow-hidden border-y border-border/80">
-      <header className="flex min-h-11 items-center justify-between gap-3 bg-muted/10 px-3 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+    <section className="grid min-w-0 overflow-hidden border-y border-hair">
+      <header className="flex min-h-11 items-center justify-between gap-3 bg-muted px-3 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
         <span>Assistant responses</span>
         <span className="font-medium normal-case tracking-normal">{rows.length} responses</span>
       </header>
       {rows.length === 0 ? (
-        <div className="border-t border-border/70 px-4 py-8 text-center text-sm text-muted-foreground">
+        <div className="border-t border-hair px-4 py-8 text-center text-sm text-muted-foreground">
           No persisted assistant responses.
         </div>
       ) : (
-        <div className="grid divide-y divide-border/70 border-t border-border/70">
+        <div className="grid divide-y divide-hair border-t border-hair">
           {rows.map((row) => (
             <GenerationRow row={row} key={`${row.position}:${row.runId}`} />
           ))}
@@ -61,19 +61,15 @@ function GenerationRow(props: { row: MemoryGenerationRow }) {
     <article className="grid min-w-0 gap-3 px-3 py-4">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <Badge className="border-border/80 bg-muted/45 text-foreground">
-            Turn {props.row.turn}
-          </Badge>
+          <Badge className="border-hair bg-muted text-foreground">Turn {props.row.turn}</Badge>
           {generation === undefined ? (
-            <Badge className="border-border/80 bg-background/40 text-muted-foreground">
+            <Badge className="border-hair bg-background text-muted-foreground">
               Usage unavailable
             </Badge>
           ) : (
             <>
-              <Badge className="border-border/80 bg-muted/45 text-foreground">
-                {generation.provider}
-              </Badge>
-              <Badge className="max-w-full truncate border-border/80 bg-muted/45 text-foreground">
+              <Badge className="border-hair bg-muted text-foreground">{generation.provider}</Badge>
+              <Badge className="max-w-full truncate border-hair bg-muted text-foreground">
                 {generation.modelId}
               </Badge>
             </>

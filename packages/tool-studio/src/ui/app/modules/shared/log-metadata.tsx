@@ -25,7 +25,7 @@ export function LogMetadata(props: {
             <span
               className={cn(
                 "min-w-0 break-words",
-                item.tone === "error" ? "text-destructive/85" : "text-muted-foreground/85",
+                item.tone === "error" ? "text-destructive" : "text-muted-foreground",
               )}
               key={item.key}
             >
@@ -36,7 +36,7 @@ export function LogMetadata(props: {
         </div>
       )}
       {hasStructuredDetails ? (
-        <details className="group min-w-0 rounded-lg border border-border bg-muted/30 px-2 py-1">
+        <details className="group min-w-0 rounded-lg border border-border bg-muted px-2 py-1">
           <summary className="cursor-pointer select-none text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground transition group-open:text-foreground">
             Details
           </summary>

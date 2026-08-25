@@ -29,8 +29,8 @@ export function PipelineLogsPanel(props: {
   }
 
   return (
-    <aside className="grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-background/70 max-xl:hidden">
-      <header className="grid min-h-12 min-w-0 gap-1 border-b border-border/80 bg-card/35 px-5 py-4">
+    <aside className="grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-background max-xl:hidden">
+      <header className="grid min-h-12 min-w-0 gap-1 border-b border-hair bg-card px-5 py-4">
         <div className="flex items-center justify-between gap-3">
           <h2 className="m-0 text-sm font-semibold leading-tight text-foreground">Pipeline logs</h2>
           <span className=" text-xs font-semibold tabular-nums text-muted-foreground">
@@ -57,8 +57,8 @@ export function PipelineLogsPanel(props: {
         {props.selectedPipelineId.length > 0 && props.loading && props.logs.length === 0 ? (
           <div className="grid gap-2 px-4 py-4">
             <div className="h-4 w-32 animate-pulse rounded-lg bg-muted" />
-            <div className="h-4 w-64 animate-pulse rounded-lg bg-muted/60" />
-            <div className="h-4 w-52 animate-pulse rounded-lg bg-muted/60" />
+            <div className="h-4 w-64 animate-pulse rounded-lg bg-muted" />
+            <div className="h-4 w-52 animate-pulse rounded-lg bg-muted" />
           </div>
         ) : null}
         {props.selectedPipelineId.length > 0 && !props.loading && props.logs.length === 0 ? (
@@ -93,7 +93,7 @@ function LogRow(props: { log: StudioPipelineLogEntry }) {
   return (
     <article
       className={cn(
-        "min-w-full rounded-lg px-4 py-1.5 text-xs leading-5 transition duration-200 hover:bg-muted/50",
+        "min-w-full rounded-lg px-4 py-1.5 text-xs leading-5 transition duration-200 hover:bg-transparent hover:text-foreground",
       )}
       title={line}
     >
@@ -104,7 +104,7 @@ function LogRow(props: { log: StudioPipelineLogEntry }) {
         </span>
         <span className="min-w-0 break-words font-medium text-foreground">{props.log.message}</span>
       </div>
-      <div className="mt-1 min-w-0 break-words text-muted-foreground/80">
+      <div className="mt-1 min-w-0 break-words text-muted-foreground">
         {props.log.category}/{props.log.event}
       </div>
       <LogMetadata metadata={props.log.metadata} limit={metadataLimit} />

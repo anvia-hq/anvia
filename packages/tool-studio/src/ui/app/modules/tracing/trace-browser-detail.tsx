@@ -27,7 +27,7 @@ export function rawTraceJson(value: unknown): string {
 
 export function TraceJsonTree(props: { value: unknown }) {
   return (
-    <div className="overflow-x-auto rounded-lg border bg-muted/20 p-4 font-mono text-xs leading-5 text-foreground">
+    <div className="overflow-x-auto rounded-lg border bg-muted p-4 font-mono text-xs leading-5 text-foreground">
       <JsonNode depth={0} path="$" value={props.value} />
     </div>
   );
@@ -107,7 +107,7 @@ function JsonBranch(props: {
     <div className="grid min-w-max">
       <button
         aria-expanded={open}
-        className="grid min-w-max grid-cols-[16px_auto] items-center gap-1 rounded-lg py-0.5 pr-2 text-left transition duration-200 hover:bg-accent/45 hover:text-accent-foreground"
+        className="grid min-w-max grid-cols-[16px_auto] items-center gap-1 rounded-lg py-0.5 pr-2 text-left transition duration-200 hover:bg-transparent hover:text-foreground"
         onClick={() => setOpen((current) => !current)}
         style={{ paddingLeft: `${props.depth * jsonIndentSize}px` }}
         type="button"
@@ -166,9 +166,7 @@ function JsonNodeLabel(props: {
   if (props.propertyKey !== undefined) {
     return (
       <>
-        <span className="text-blue-600 dark:text-blue-400">
-          {JSON.stringify(props.propertyKey)}
-        </span>
+        <span className="code-keyword">{JSON.stringify(props.propertyKey)}</span>
         <span className="text-foreground">: </span>
       </>
     );
@@ -186,18 +184,16 @@ function JsonNodeLabel(props: {
 
 function JsonPrimitive(props: { value: unknown }) {
   if (typeof props.value === "string") {
-    return (
-      <span className="text-emerald-700 dark:text-emerald-400">{JSON.stringify(props.value)}</span>
-    );
+    return <span className="code-string">{JSON.stringify(props.value)}</span>;
   }
   if (typeof props.value === "number") {
-    return <span className="text-amber-700 dark:text-amber-400">{String(props.value)}</span>;
+    return <span className="code-number">{String(props.value)}</span>;
   }
   if (typeof props.value === "boolean") {
-    return <span className="text-violet-700 dark:text-violet-400">{String(props.value)}</span>;
+    return <span className="code-literal">{String(props.value)}</span>;
   }
   if (props.value === null) {
-    return <span className="text-muted-foreground">null</span>;
+    return <span className="code-literal">null</span>;
   }
   if (props.value === undefined) {
     return <span className="text-muted-foreground">undefined</span>;
@@ -822,13 +818,13 @@ export function traceToneIconClass(
     case "trace":
       return "bg-foreground text-background";
     case "agent":
-      return "bg-violet-600 text-white";
+      return "bg-tone-agent text-tone-text";
     case "turn":
-      return "bg-violet-600 text-white";
+      return "bg-tone-agent text-tone-text";
     case "generation":
-      return "bg-blue-600 text-white";
+      return "bg-tone-generation text-tone-text";
     case "tool":
-      return "bg-amber-600 text-white";
+      return "bg-tone-tool text-tone-text";
     default:
       return "bg-muted text-muted-foreground";
   }

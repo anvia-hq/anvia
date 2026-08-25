@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { chunkText, extractPdfText } from "../src/documents";
+import { chunkText, chunkTextDocuments, extractPdfText } from "../src/documents";
 
 const fixtureDir = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "loaders");
 
@@ -186,6 +186,54 @@ describe("chunkText", () => {
       // @ts-expect-error Recursive chunking requires explicit separators.
       chunkText({ text: "text", strategy: "recursive", maxSize: 4 });
     }
+  });
+});
+
+describe("chunkTextDocuments", () => {
+  it("creates stable source-aware chunks and preserves metadata", () => {
+    expect(
+      chunkTextDocuments({
+        documents: [{ id: "incident", text: "abcdefgh", metadata: { tenant: "one" } }],
+        chunking: { strategy: "fixed", maxSize: 4 },
+      }),
+    ).toEqual([
+      {
+        id: "incident:chunk:0",
+        documentId: "incident",
+        index: 0,
+        text: "abcd",
+        metadata: { tenant: "one" },
+      },
+      {
+        id: "incident:chunk:1",
+        documentId: "incident",
+        index: 1,
+        text: "efgh",
+        metadata: { tenant: "one" },
+      },
+    ]);
+  });
+
+  it("uses one chunk by default and rejects unsafe source documents", () => {
+    expect(chunkTextDocuments({ documents: [{ id: "one", text: "whole document" }] })).toEqual([
+      {
+        id: "one:chunk:0",
+        documentId: "one",
+        index: 0,
+        text: "whole document",
+      },
+    ]);
+    expect(() =>
+      chunkTextDocuments({
+        documents: [
+          { id: "same", text: "one" },
+          { id: "same", text: "two" },
+        ],
+      }),
+    ).toThrow("Duplicate text document id");
+    expect(() => chunkTextDocuments({ documents: [{ id: "empty", text: "" }] })).toThrow(
+      "non-empty text",
+    );
   });
 });
 

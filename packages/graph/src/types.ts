@@ -1,5 +1,5 @@
 import type { CompletionModel, RetrySetting, Usage } from "@anvia/core";
-import type { EmbeddingModel } from "@anvia/core/embeddings";
+import type { EmbeddedDocument, EmbeddingModel } from "@anvia/core/embeddings";
 import type { Tool } from "@anvia/core/tool";
 import type { z } from "zod";
 
@@ -282,3 +282,22 @@ export type GraphWriteResult = Readonly<{
   relationships: GraphChangeCounts;
   mentions: GraphChangeCounts;
 }>;
+
+export type GraphWriteConflict = "error" | "overwrite" | "keep-existing";
+export type GraphOrphanEntityPolicy = "delete" | "keep";
+
+export type ReplaceGraphDocumentsOptions<Schema extends GraphSchemaLike> = Readonly<{
+  documents: readonly GraphDocument[];
+  chunks: readonly EmbeddedDocument<GraphChunk>[];
+  entities: readonly EmbeddedDocument<GraphEntity<Schema>>[];
+  relationships: readonly GraphRelationship<Schema>[];
+  mentions: readonly GraphMention[];
+  conflict: GraphWriteConflict;
+  orphanEntities: GraphOrphanEntityPolicy;
+  abortSignal?: AbortSignal | undefined;
+}>;
+
+export interface GraphDocumentWriter<Schema extends GraphSchemaLike = GraphSchemaLike> {
+  readonly schema: Schema;
+  replaceDocuments(options: ReplaceGraphDocumentsOptions<Schema>): Promise<GraphWriteResult>;
+}

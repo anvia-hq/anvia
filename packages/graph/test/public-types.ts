@@ -1,13 +1,16 @@
 import type { EmbeddingModel } from "@anvia/core/embeddings";
 import {
   createGraphSearchTool,
+  ingestGraphText,
   type GraphContextRetriever,
+  type GraphDocumentWriter,
   type GraphSchemaLike,
 } from "../src/index.js";
 
 declare const model: EmbeddingModel;
 declare const existing: GraphContextRetriever<GraphSchemaLike, "none">;
 declare const managed: GraphContextRetriever<GraphSchemaLike, "chunks">;
+declare const writer: GraphDocumentWriter<GraphSchemaLike>;
 
 const retrieval = {
   name: "search_graph",
@@ -27,6 +30,21 @@ createGraphSearchTool({
   ...retrieval,
   graph: existing,
   evidence: { type: "none" },
+});
+
+ingestGraphText({
+  graph: writer,
+  document: { id: "one", text: "Product One" },
+  extractionModel: {} as never,
+  embeddingModel: model,
+});
+
+ingestGraphText({
+  // @ts-expect-error Read-only graph registrations do not implement document writes.
+  graph: existing,
+  document: { id: "one", text: "Product One" },
+  extractionModel: {} as never,
+  embeddingModel: model,
 });
 
 createGraphSearchTool({

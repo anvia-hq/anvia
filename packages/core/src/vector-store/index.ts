@@ -24,6 +24,7 @@ import type {
 } from "./types";
 
 export { matchesVectorFilter, vectorFilter } from "./filter";
+export * from "./ingest";
 export { retrieveDocuments } from "./retrieve";
 export type * from "./types";
 

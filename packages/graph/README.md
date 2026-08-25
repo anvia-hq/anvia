@@ -23,6 +23,49 @@ const facts = await extractGraphFacts({ model, schema, chunks });
 Database provisioning, persistence, and query execution belong to graph adapter packages such as
 `@anvia/neo4j` and `@anvia/memgraph`.
 
+## Ingestion
+
+Managed graphs accept the same raw text document shape as vector ingestion:
+
+```ts
+import { ingestGraphText } from "@anvia/graph";
+
+const ingestion = await ingestGraphText({
+  graph,
+  document: {
+    id: "incident-42",
+    text,
+    metadata: { tenant: "acme" },
+  },
+  extractionModel,
+  embeddingModel,
+  chunking: {
+    strategy: "recursive",
+    maxSize: 1_000,
+    overlap: 100,
+    separators: ["\n\n", "\n", " "],
+  },
+  conflict: "error",
+  orphanEntities: "delete",
+});
+```
+
+Use `ingestGraphDocuments()` for a batch. Both functions extract facts, embed chunks and entities,
+and atomically replace each source document in the managed graph. Existing graph registrations are
+read-only and are rejected as ingestion targets by TypeScript.
+
+The result also exposes `vectorDocuments`, grouped by source document ID, so a vector store can
+reuse the chunk embeddings without another model call:
+
+```ts
+await vectorStore.upsert({ documents: ingestion.vectorDocuments });
+```
+
+The graph and vector writes are separate transactions. Applications that require cross-store
+reconciliation should persist their own ingestion status and retry the incomplete write. Advanced
+callers can use `prepareGraphDocuments()` to run chunking, extraction, and embedding without writing,
+then pass its graph fields to `graph.replaceDocuments()` and its `vectorDocuments` to a vector store.
+
 ## Search tool
 
 Create the same Agent tool for any graph adapter implementing `GraphContextRetriever`:

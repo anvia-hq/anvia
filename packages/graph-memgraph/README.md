@@ -11,7 +11,7 @@ pnpm add @anvia/graph @anvia/memgraph @anvia/core
 ## Managed knowledge graph
 
 ```ts
-import { createGraphSearchTool, defineGraphSchema, extractGraphFacts } from "@anvia/graph";
+import { createGraphSearchTool, defineGraphSchema, ingestGraphText } from "@anvia/graph";
 import { MemgraphClient } from "@anvia/memgraph";
 import { z } from "zod";
 
@@ -86,14 +86,17 @@ const graph = client.managedKnowledgeGraph({
 
 await graph.ensure();
 
-const facts = await extractGraphFacts({ model: extractionModel, schema, chunks });
-
-await graph.replaceDocuments({
-  documents,
-  chunks: embeddedChunks,
-  entities: embeddedEntities,
-  relationships: facts.output.relationships,
-  mentions: facts.output.mentions,
+const ingestion = await ingestGraphText({
+  graph,
+  document: { id: "incident-42", text },
+  extractionModel,
+  embeddingModel,
+  chunking: {
+    strategy: "recursive",
+    maxSize: 1_000,
+    overlap: 100,
+    separators: ["\n\n", "\n", " "],
+  },
   conflict: "error",
   orphanEntities: "delete",
 });

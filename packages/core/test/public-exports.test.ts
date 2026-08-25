@@ -183,7 +183,15 @@ describe("public exports", () => {
 
   it("exposes provider-neutral vector filter matching from the vector-store subpath", () => {
     expect("matchesVectorFilter" in vectorStore).toBe(true);
+    expect("ingestVectorDocuments" in vectorStore).toBe(true);
+    expect("ingestVectorText" in vectorStore).toBe(true);
     expect("matchesVectorFilter" in publicCore).toBe(false);
+    expect("ingestVectorText" in publicCore).toBe(false);
+  });
+
+  it("exposes portable text document chunking from the documents subpath", () => {
+    expect("chunkTextDocuments" in documents).toBe(true);
+    expect("chunkTextDocuments" in publicCore).toBe(false);
   });
 
   it("exposes middleware helpers from public entrypoints", () => {

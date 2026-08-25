@@ -170,18 +170,31 @@ export type GraphContext = Readonly<{
   evidence: readonly GraphEvidence[];
 }>;
 
-export type GraphRetrieveOptions<Schema extends GraphSchemaLike> = Readonly<{
+export type GraphEvidenceCapability = "none" | "chunks";
+
+export type GraphEvidenceFor<Capability extends GraphEvidenceCapability> =
+  | Extract<GraphEvidenceOptions, { type: "none" }>
+  | (Capability extends "chunks" ? Extract<GraphEvidenceOptions, { type: "chunks" }> : never);
+
+export type GraphRetrieveOptions<
+  Schema extends GraphSchemaLike,
+  Evidence extends GraphEvidenceCapability = GraphEvidenceCapability,
+> = Readonly<{
   model: EmbeddingModel;
   query: string;
   search: GraphSearchOptions;
   traversal: GraphTraversalOptions<Schema>;
-  evidence: GraphEvidenceOptions;
+  evidence: GraphEvidenceFor<Evidence>;
   retries?: RetrySetting | undefined;
   abortSignal?: AbortSignal | undefined;
 }>;
 
-export interface GraphContextRetriever<Schema extends GraphSchemaLike = GraphSchemaLike> {
-  retrieve(options: GraphRetrieveOptions<Schema>): Promise<GraphContext>;
+export interface GraphContextRetriever<
+  Schema extends GraphSchemaLike = GraphSchemaLike,
+  Evidence extends GraphEvidenceCapability = GraphEvidenceCapability,
+> {
+  readonly evidenceCapability: Evidence;
+  retrieve(options: GraphRetrieveOptions<Schema, Evidence>): Promise<GraphContext>;
 }
 
 export type GraphExploreDirection = "outgoing" | "incoming" | "both";
@@ -239,14 +252,17 @@ export interface GraphExplorer<Schema extends GraphSchemaLike = GraphSchemaLike>
   explore(options: GraphExploreOptions<Schema>): Promise<GraphExploreResult>;
 }
 
-export type CreateGraphSearchToolOptions<Schema extends GraphSchemaLike> = Readonly<{
+export type CreateGraphSearchToolOptions<
+  Schema extends GraphSchemaLike,
+  Retriever extends GraphContextRetriever<Schema> = GraphContextRetriever<Schema>,
+> = Readonly<{
   name: string;
   description: string;
-  graph: GraphContextRetriever<Schema>;
+  graph: Retriever;
   model: EmbeddingModel;
   search: GraphSearchOptions;
   traversal: GraphTraversalOptions<Schema>;
-  evidence: GraphEvidenceOptions;
+  evidence: GraphEvidenceFor<Retriever["evidenceCapability"]>;
   retries?: RetrySetting | undefined;
 }>;
 

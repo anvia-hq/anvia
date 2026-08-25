@@ -1,11 +1,7 @@
 import { Agent } from "@anvia/core/agent";
 import { embedDocuments } from "@anvia/core/embeddings";
-import {
-  createNeo4jGraphSearchTool,
-  defineNeo4jGraphSchema,
-  extractGraphFacts,
-  Neo4jClient,
-} from "@anvia/neo4j";
+import { createGraphSearchTool } from "@anvia/graph";
+import { defineNeo4jGraphSchema, extractGraphFacts, Neo4jClient } from "@anvia/neo4j";
 import { OpenAIClient } from "@anvia/openai";
 import { loadTransformersEmbeddingModel } from "@anvia/transformers";
 import { z } from "zod";
@@ -131,7 +127,7 @@ try {
   });
   console.log(write);
 
-  const searchGraph = createNeo4jGraphSearchTool({
+  const searchGraph = createGraphSearchTool({
     name: "search_support_graph",
     description: "Search operational incidents and affected products.",
     graph,

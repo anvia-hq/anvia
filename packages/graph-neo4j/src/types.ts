@@ -1,6 +1,5 @@
 import type { CompletionModel, RetrySetting, Usage } from "@anvia/core";
 import type { EmbeddedDocument } from "@anvia/core/embeddings";
-import type { Tool } from "@anvia/core/tool";
 import type { Driver } from "neo4j-driver";
 import type { z } from "zod";
 import type { ManagedNeo4jKnowledgeGraph, Neo4jKnowledgeGraph } from "./graph.js";
@@ -276,27 +275,6 @@ export type RetrieveGraphContextOptions<Schema extends Neo4jGraphSchema> =
         evidence: Readonly<{ type: "chunks"; maxChunks: number }>;
       }>);
 
-type CreateNeo4jGraphSearchToolBase<Schema extends Neo4jGraphSchema> = Readonly<{
-  name: string;
-  description: string;
-  model: import("@anvia/core/embeddings").EmbeddingModel;
-  search: Neo4jGraphSearchOptions;
-  traversal: Neo4jGraphTraversalOptions<Schema>;
-  retries?: RetrySetting | undefined;
-}>;
-
-export type CreateNeo4jGraphSearchToolOptions<Schema extends Neo4jGraphSchema> =
-  | (CreateNeo4jGraphSearchToolBase<Schema> &
-      Readonly<{
-        graph: AnyNeo4jKnowledgeGraph<Schema>;
-        evidence: Readonly<{ type: "none" }>;
-      }>)
-  | (CreateNeo4jGraphSearchToolBase<Schema> &
-      Readonly<{
-        graph: ManagedNeo4jKnowledgeGraph<Schema>;
-        evidence: Readonly<{ type: "chunks"; maxChunks: number }>;
-      }>);
-
 export type Neo4jGraphChangeCounts = Readonly<{
   created: number;
   updated: number;
@@ -311,5 +289,3 @@ export type Neo4jGraphWriteResult = Readonly<{
   relationships: Neo4jGraphChangeCounts;
   mentions: Neo4jGraphChangeCounts;
 }>;
-
-export type Neo4jGraphSearchTool = Tool<{ query: string }, Neo4jGraphContext>;

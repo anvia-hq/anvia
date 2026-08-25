@@ -1,6 +1,6 @@
 import type { EmbeddingModel } from "@anvia/core/embeddings";
+import type { CreateGraphSearchToolOptions } from "@anvia/graph";
 import type {
-  CreateNeo4jGraphSearchToolOptions,
   ManagedNeo4jKnowledgeGraph,
   Neo4jGraphSchema,
   Neo4jKnowledgeGraph,
@@ -66,19 +66,25 @@ const missingEvidence: RetrieveGraphContextOptions<Neo4jGraphSchema> = {
 };
 
 // @ts-expect-error Tool registration also requires an explicit evidence mode.
-const toolWithoutEvidence: CreateNeo4jGraphSearchToolOptions<Neo4jGraphSchema> = {
+const toolWithoutEvidence: CreateGraphSearchToolOptions<
+  Neo4jGraphSchema,
+  ManagedNeo4jKnowledgeGraph<Neo4jGraphSchema>
+> = {
   ...retrieval,
   name: "search_graph",
   description: "Search the graph.",
   graph: managed,
 };
 
-// @ts-expect-error Existing graph tools cannot hydrate managed chunk evidence.
-const existingToolEvidence: CreateNeo4jGraphSearchToolOptions<Neo4jGraphSchema> = {
+const existingToolEvidence: CreateGraphSearchToolOptions<
+  Neo4jGraphSchema,
+  Neo4jKnowledgeGraph<Neo4jGraphSchema>
+> = {
   ...retrieval,
   name: "search_graph",
   description: "Search the graph.",
   graph: existing,
+  // @ts-expect-error Existing graph tools cannot hydrate managed chunk evidence.
   evidence: { type: "chunks", maxChunks: 2 },
 };
 

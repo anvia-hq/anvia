@@ -23,6 +23,37 @@ const facts = await extractGraphFacts({ model, schema, chunks });
 Database provisioning, persistence, and query execution belong to graph adapter packages such as
 `@anvia/neo4j` and `@anvia/memgraph`.
 
+## Search tool
+
+Create the same Agent tool for any graph adapter implementing `GraphContextRetriever`:
+
+```ts
+import { createGraphSearchTool } from "@anvia/graph";
+
+const searchGraph = createGraphSearchTool({
+  name: "search_graph",
+  description: "Search connected entities and supporting evidence.",
+  graph,
+  model: embeddingModel,
+  search: {
+    type: "vector",
+    seeds: ["entities"],
+    topK: 8,
+  },
+  traversal: {
+    relationships: ["AFFECTS"],
+    direction: "both",
+    maxDepth: 2,
+    maxNodes: 40,
+    maxRelationships: 80,
+  },
+  evidence: { type: "chunks", maxChunks: 12 },
+});
+```
+
+The graph registration controls which evidence modes are valid. Managed graphs can hydrate stored
+chunks, while existing graph registrations use `{ type: "none" }`.
+
 ## Exploration
 
 Adapters implementing `GraphExplorer` expose a portable, bounded view for visualization:

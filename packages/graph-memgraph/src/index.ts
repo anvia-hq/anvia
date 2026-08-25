@@ -19,5 +19,4 @@ export {
   MemgraphKnowledgeGraphBase,
 } from "./graph.js";
 export { retrieveGraphContext } from "./retrieve.js";
-export { createMemgraphGraphSearchTool } from "./tool.js";
 export type * from "./types.js";

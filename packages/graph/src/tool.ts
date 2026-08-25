@@ -1,6 +1,11 @@
 import { createTool } from "@anvia/core/tool";
 import { z } from "zod";
-import type { CreateGraphSearchToolOptions, GraphSchemaLike, GraphSearchTool } from "./types.js";
+import type {
+  CreateGraphSearchToolOptions,
+  GraphContextRetriever,
+  GraphSchemaLike,
+  GraphSearchTool,
+} from "./types.js";
 
 const primitive = z.union([z.string(), z.number().finite(), z.boolean()]);
 const propertyValue = z.union([
@@ -50,9 +55,10 @@ const contextSchema = z.object({
   ),
 });
 
-export function createGraphSearchTool<Schema extends GraphSchemaLike>(
-  options: CreateGraphSearchToolOptions<Schema>,
-): GraphSearchTool {
+export function createGraphSearchTool<
+  Schema extends GraphSchemaLike,
+  Retriever extends GraphContextRetriever<Schema>,
+>(options: CreateGraphSearchToolOptions<Schema, Retriever>): GraphSearchTool {
   return createTool({
     name: options.name,
     description: options.description,

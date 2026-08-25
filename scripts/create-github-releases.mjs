@@ -7,6 +7,7 @@ const packagesRoot = path.join(root, "packages");
 const dryRun = process.argv.includes("--dry-run");
 const repository = process.env.GITHUB_REPOSITORY ?? getRepositoryFromGitRemote();
 const token = process.env.GITHUB_TOKEN;
+const publishedPackagesFile = process.env.PUBLISHED_PACKAGES_FILE;
 
 if (repository === undefined) {
   throw new Error("GITHUB_REPOSITORY is not set and the GitHub repository could not be inferred.");
@@ -22,8 +23,15 @@ const packages = findPackageDirs(packagesRoot)
   .filter((pkg) => typeof pkg.packageJson.name === "string")
   .filter((pkg) => typeof pkg.packageJson.version === "string")
   .sort((a, b) => a.packageJson.name.localeCompare(b.packageJson.name));
+const publishedPackageVersions = readPublishedPackageVersions();
+const releases =
+  publishedPackageVersions === undefined
+    ? packages
+    : packages.filter((pkg) =>
+        publishedPackageVersions.has(`${pkg.packageJson.name}@${pkg.packageJson.version}`),
+      );
 
-for (const pkg of packages) {
+for (const pkg of releases) {
   const { name, version } = pkg.packageJson;
   const tagName = `${name}@${version}`;
 
@@ -45,6 +53,31 @@ for (const pkg of packages) {
 
   await createRelease({ tagName, name: tagName, body });
   console.info(`Created GitHub Release ${tagName}`);
+}
+
+function readPublishedPackageVersions() {
+  if (publishedPackagesFile === undefined || publishedPackagesFile.length === 0) {
+    return undefined;
+  }
+  const filePath = path.resolve(root, publishedPackagesFile);
+  if (!existsSync(filePath)) {
+    throw new Error(`Published package file does not exist: ${filePath}`);
+  }
+  const releases = JSON.parse(readFileSync(filePath, "utf8"));
+  if (!Array.isArray(releases)) {
+    throw new Error(`Published package file must contain an array: ${filePath}`);
+  }
+  return new Set(
+    releases
+      .filter(
+        (release) =>
+          typeof release?.name === "string" &&
+          release.name.length > 0 &&
+          typeof release.version === "string" &&
+          release.version.length > 0,
+      )
+      .map((release) => `${release.name}@${release.version}`),
+  );
 }
 
 function findPackageDirs(dir) {

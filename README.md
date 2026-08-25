@@ -20,15 +20,14 @@ The core design is dependency-injection oriented: your app creates provider mode
 
 ## Release Channels
 
-Anvia 1.0 is currently available as a release candidate. The npm `latest` tag remains on the v0
-maintenance line until 1.0 reaches general availability.
+Anvia packages version and publish independently. A package release does not force unrelated
+packages onto the same version.
 
-- Use `@rc` for new development and 1.0 validation. RC APIs can still change before GA.
-- Use `@latest` for the supported v0 line. v0 receives bug and security fixes, not new features.
-- Keep all Anvia packages on the same channel; do not mix v0 and v1 packages in one application.
+- Use `@latest` for stable releases.
+- Use `@rc` for package-specific release candidates.
+- Use `@preview` for commit-scoped previews of packages in the pending Changesets plan.
 
-The 1.0 candidate must complete a seven-day frozen soak before GA. See the
-[1.0 release policy](docs/releases/v1.md) for the branch, npm-tag, freeze, and promotion rules.
+See the [package release policy](docs/releases/v1.md) for versioning, publishing, and tag rules.
 
 ## Why Anvia
 
@@ -45,7 +44,7 @@ The 1.0 candidate must complete a seven-day frozen soak before GA. See the
 Install the core runtime and a provider adapter:
 
 ```sh
-pnpm add @anvia/core@rc @anvia/openai@rc
+pnpm add @anvia/core@latest @anvia/openai@latest
 ```
 
 Create a provider client, construct an agent, and run it from your app:

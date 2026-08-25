@@ -91,13 +91,17 @@ if (published.length > 0) {
   }
 }
 
+const releases = skipGitTags
+  ? published
+  : releasesReadyForTags(alreadyPublished, published, failed, recoverablePackageTags());
+
 if (skipGitTags) {
   console.info("Skipping git tag creation.");
 } else {
-  createGitTags(releasesReadyForTags(alreadyPublished, published, failed));
+  createGitTags(releases);
 }
 
-writePublishedPackages(published);
+writePublishedPackages(releases);
 
 if (published.length === 0) {
   console.warn("No unpublished projects to publish");
@@ -218,6 +222,46 @@ function createGitTags(releases) {
     console.info("New tag:", tag);
     run("git", ["tag", tag], root);
   }
+}
+
+function recoverablePackageTags() {
+  const currentResult = spawnSync("git", ["tag", "--points-at", "HEAD", "--list", "@anvia/*@*"], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  if (currentResult.status !== 0) {
+    throw new Error("Unable to list package tags on the current commit.");
+  }
+  const recoverable = new Set(currentResult.stdout.split(/\r?\n/).filter(Boolean));
+
+  for (const pkg of packages) {
+    const tag = `${pkg.packageJson.name}@${pkg.packageJson.version}`;
+    if (!tagExists(tag) && packageManifestChangedAtHead(pkg.dir)) {
+      recoverable.add(tag);
+    }
+  }
+  return recoverable;
+}
+
+function tagExists(tag) {
+  return (
+    spawnSync("git", ["rev-parse", "--quiet", "--verify", `refs/tags/${tag}`], {
+      cwd: root,
+      stdio: "ignore",
+    }).status === 0
+  );
+}
+
+function packageManifestChangedAtHead(dir) {
+  const relativeManifest = path.relative(root, path.join(dir, "package.json"));
+  const result = spawnSync("git", ["diff", "--quiet", "HEAD^", "HEAD", "--", relativeManifest], {
+    cwd: root,
+    stdio: "ignore",
+  });
+  if (result.status !== 0 && result.status !== 1) {
+    throw new Error(`Unable to inspect the release history for ${relativeManifest}.`);
+  }
+  return result.status === 1;
 }
 
 function gitOutput(args) {

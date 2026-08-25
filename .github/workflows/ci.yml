@@ -38,8 +38,8 @@ jobs:
       - name: Check formatting and linting
         run: pnpm check
 
-      - name: Validate release train
-        run: pnpm release-train:validate
+      - name: Validate package releases
+        run: pnpm releases:validate
 
       - name: Test release infrastructure
         run: pnpm test:release-scripts
@@ -51,7 +51,7 @@ jobs:
         run: pnpm --filter './packages/**' --filter '!@anvia/core' build
 
       - name: Verify packed internal versions
-        run: pnpm release-train:verify-packs
+        run: pnpm releases:verify-packs
 
       - name: Typecheck packages
         run: pnpm --filter './packages/**' typecheck

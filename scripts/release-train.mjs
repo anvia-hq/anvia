@@ -2,7 +2,6 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 
-export const RELEASE_BASE_VERSION = "1.0.0";
 export const DEPENDENCY_FIELDS = [
   "dependencies",
   "devDependencies",
@@ -10,11 +9,16 @@ export const DEPENDENCY_FIELDS = [
   "peerDependencies",
 ];
 
-export function createPreviewVersion(buildId) {
+const stableVersionPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+
+export function createPreviewVersion(version, buildId) {
+  if (!stableVersionPattern.test(version)) {
+    throw new Error(`Preview base version must be stable semver; received ${version}.`);
+  }
   if (!/^\d{8}T\d{6}\.sha-[0-9a-f]{7,40}$/.test(buildId)) {
     throw new Error("Preview build ID must use <YYYYMMDDTHHMMSS>.sha-<7-to-40-character-commit>.");
   }
-  return `${RELEASE_BASE_VERSION}-preview.${buildId}`;
+  return `${version}-preview.${buildId}`;
 }
 
 export function assertPreviewAllowed(root = process.cwd()) {
@@ -36,19 +40,24 @@ export function readJson(filePath) {
   return JSON.parse(readFileSync(filePath, "utf8"));
 }
 
-export function assertFixedReleaseTrain(root, packages = findPublicPackages(root)) {
+export function assertIndependentVersioning(root, packages = findPublicPackages(root)) {
   const config = readJson(path.join(root, ".changeset", "config.json"));
-  const expected = packages.map(({ packageJson }) => packageJson.name).sort();
-
-  if (!Array.isArray(config.fixed) || config.fixed.length !== 1) {
-    throw new Error("Changesets must contain exactly one fixed release group.");
+  if (!Array.isArray(config.fixed) || config.fixed.length !== 0) {
+    throw new Error("Changesets fixed groups must be empty so packages version independently.");
+  }
+  if (!Array.isArray(config.linked) || config.linked.length !== 0) {
+    throw new Error("Changesets linked groups must be empty so packages version independently.");
   }
   if (config.privatePackages?.version !== false || config.privatePackages?.tag !== false) {
     throw new Error("Changesets must exclude private workspaces from versioning and tagging.");
   }
-
-  const actual = [...config.fixed[0]].sort();
-  assertSameValues(actual, expected, "Changesets fixed group", "public package set");
+  const publicNames = new Set(packages.map(({ packageJson }) => packageJson.name));
+  const ignoredPublicPackages = (config.ignore ?? []).filter((name) => publicNames.has(name));
+  if (ignoredPublicPackages.length > 0) {
+    throw new Error(
+      `Changesets must not ignore public packages: ${ignoredPublicPackages.sort().join(", ")}.`,
+    );
+  }
 }
 
 export function assertWorkspaceInternalDependencies(packages) {
@@ -67,37 +76,22 @@ export function assertWorkspaceInternalDependencies(packages) {
   }
 }
 
-export function assertSynchronizedVersions(packages, expectedVersion) {
-  const versions = new Set(packages.map(({ packageJson }) => packageJson.version));
-  if (versions.size !== 1 || !versions.has(expectedVersion)) {
-    const details = packages
-      .map(({ packageJson }) => `${packageJson.name}@${packageJson.version}`)
-      .join(", ");
-    throw new Error(`Expected every public package to be ${expectedVersion}; received ${details}.`);
-  }
-}
-
 export function assertStableReleaseState(root, packages = findPublicPackages(root)) {
-  const versions = new Set(packages.map(({ packageJson }) => packageJson.version));
-  if (versions.size !== 1) {
-    const details = packages
-      .map(({ packageJson }) => `${packageJson.name}@${packageJson.version}`)
-      .join(", ");
-    throw new Error(`Stable releases require synchronized package versions; received ${details}.`);
-  }
-
-  const [version] = versions;
-  if (typeof version !== "string" || !/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version)) {
-    throw new Error(
-      `Stable releases require a non-prerelease semantic version; received ${version}.`,
-    );
+  const invalid = packages
+    .filter(({ packageJson }) => !stableVersionPattern.test(packageJson.version))
+    .map(({ packageJson }) => `${packageJson.name}@${packageJson.version}`);
+  if (invalid.length > 0) {
+    throw new Error(`Stable releases require stable semantic versions: ${invalid.join(", ")}.`);
   }
   if (readPrereleaseState(root) !== undefined) {
     throw new Error("Stable releases require Changesets prerelease mode to be exited.");
   }
 
   assertNoPendingChangesets(root);
-  return version;
+  return packages.map(({ packageJson }) => ({
+    name: packageJson.name,
+    version: packageJson.version,
+  }));
 }
 
 export function readPrereleaseState(root = process.cwd()) {
@@ -105,17 +99,14 @@ export function readPrereleaseState(root = process.cwd()) {
   return existsSync(filePath) ? readJson(filePath) : undefined;
 }
 
-export function assertRcPrereleaseState(root, expectedVersion) {
+export function assertPrereleaseState(root, tag, packages = findPublicPackages(root)) {
   const state = readPrereleaseState(root);
-  if (state === undefined || state.mode !== "pre" || state.tag !== "rc") {
-    throw new Error(".changeset/pre.json must be in the rc prerelease mode.");
+  if (state === undefined || state.mode !== "pre" || state.tag !== tag) {
+    throw new Error(`.changeset/pre.json must be in the ${tag} prerelease mode.`);
   }
 
-  parseRcVersion(expectedVersion);
   const initialVersions = Object.keys(state.initialVersions ?? {}).sort();
-  const packageNames = findPublicPackages(root)
-    .map(({ packageJson }) => packageJson.name)
-    .sort();
+  const packageNames = packages.map(({ packageJson }) => packageJson.name).sort();
   const initialVersionSet = new Set(initialVersions);
   const missingPackages = packageNames.filter((name) => !initialVersionSet.has(name));
   if (missingPackages.length > 0) {
@@ -127,27 +118,28 @@ export function assertRcPrereleaseState(root, expectedVersion) {
   if (!Array.isArray(state.changesets)) {
     throw new Error(".changeset/pre.json changesets must be an array.");
   }
-}
-
-export function parseRcTag(tag, { publicOnly = false } = {}) {
-  const match = tag.match(/^v(1\.0\.0-rc\.(0|[1-9]\d*))$/);
-  if (match === null) {
-    throw new Error(`Invalid release-candidate tag: ${tag}`);
+  const prereleasePattern = new RegExp(
+    `^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)-${escapeRegExp(tag)}\\.(0|[1-9]\\d*)$`,
+  );
+  const invalid = packages
+    .filter(
+      ({ packageJson }) =>
+        !stableVersionPattern.test(packageJson.version) &&
+        !prereleasePattern.test(packageJson.version),
+    )
+    .map(({ packageJson }) => `${packageJson.name}@${packageJson.version}`);
+  if (invalid.length > 0) {
+    throw new Error(
+      `Packages must use stable versions or the ${tag} prerelease tag: ${invalid.join(", ")}.`,
+    );
   }
-
-  const candidate = Number(match[2]);
-  if (!Number.isSafeInteger(candidate)) {
-    throw new Error(`Release-candidate number is too large: ${match[2]}`);
+  const prereleases = packages.filter(({ packageJson }) =>
+    prereleasePattern.test(packageJson.version),
+  );
+  if (prereleases.length === 0) {
+    throw new Error(`At least one public package must have a ${tag} prerelease version.`);
   }
-  if (publicOnly && candidate === 0) {
-    throw new Error("rc.0 is an unpublished preparation version and cannot trigger CD.");
-  }
-
-  return { version: match[1], candidate };
-}
-
-export function parseRcVersion(version) {
-  return parseRcTag(`v${version}`).candidate;
+  return prereleases;
 }
 
 export function readPendingChangesets(root = process.cwd()) {
@@ -184,18 +176,9 @@ export function assertNoPendingChangesets(root = process.cwd()) {
   }
 }
 
-export function assertPatchOnlyChangesets(changesets, allowedPackages) {
+export function assertReleasableChangesets(changesets, allowedPackages) {
   if (changesets.length === 0) {
-    throw new Error("A patch changeset is required for the next release candidate.");
-  }
-
-  const invalid = changesets.flatMap(({ id, releases }) =>
-    releases
-      .filter(({ bump }) => bump !== "patch")
-      .map(({ name, bump }) => `${id}: ${name} (${bump})`),
-  );
-  if (invalid.length > 0) {
-    throw new Error(`RC changesets must use patch bumps only: ${invalid.join(", ")}`);
+    throw new Error("At least one changeset is required for a release.");
   }
 
   if (allowedPackages !== undefined) {
@@ -203,34 +186,8 @@ export function assertPatchOnlyChangesets(changesets, allowedPackages) {
       releases.filter(({ name }) => !allowedPackages.has(name)).map(({ name }) => `${id}: ${name}`),
     );
     if (unknown.length > 0) {
-      throw new Error(
-        `RC changesets may only target public release-train packages: ${unknown.join(", ")}`,
-      );
+      throw new Error(`Changesets may only target public packages: ${unknown.join(", ")}`);
     }
-  }
-}
-
-export function assertInitialMajorChangeset(changesets, publicPackageNames) {
-  const majorPackages = new Set(
-    changesets.flatMap(({ releases }) =>
-      releases.filter(({ bump }) => bump === "major").map(({ name }) => name),
-    ),
-  );
-  const missing = [...publicPackageNames].filter((name) => !majorPackages.has(name)).sort();
-  if (missing.length > 0) {
-    throw new Error(
-      `The initial 1.0 changeset must major-bump every public package: ${missing.join(", ")}`,
-    );
-  }
-}
-
-export function assertGitAncestor(root, ancestor, descendant) {
-  const result = spawnSync("git", ["merge-base", "--is-ancestor", ancestor, descendant], {
-    cwd: root,
-    encoding: "utf8",
-  });
-  if (result.status !== 0) {
-    throw new Error(`${ancestor} must be an ancestor of ${descendant}.`);
   }
 }
 
@@ -261,19 +218,6 @@ function findPackageDirs(dir) {
   return directories;
 }
 
-function assertSameValues(actual, expected, actualLabel, expectedLabel) {
-  if (
-    actual.length === expected.length &&
-    actual.every((value, index) => value === expected[index])
-  ) {
-    return;
-  }
-
-  const actualSet = new Set(actual);
-  const expectedSet = new Set(expected);
-  const missing = expected.filter((value) => !actualSet.has(value));
-  const extra = actual.filter((value) => !expectedSet.has(value));
-  throw new Error(
-    `${actualLabel} does not match ${expectedLabel}. Missing: ${missing.join(", ") || "none"}. Extra: ${extra.join(", ") || "none"}.`,
-  );
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

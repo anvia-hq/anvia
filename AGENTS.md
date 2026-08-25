@@ -143,12 +143,12 @@ Root scripts in `scripts/` are release automation:
 - `scripts/publish-packages.mjs`: packs and publishes non-private packages in
   dependency order, skips already-published versions, and creates local git tags
   unless `SKIP_GIT_TAGS=true` or `--skip-git-tags` is used.
-- `scripts/prepare-preview-release.mjs`: rewrites package versions and internal
-  dependency ranges to preview versions. Use `--dry-run` unless intentionally
-  mutating manifests.
+- `scripts/prepare-preview-release.mjs`: uses the Changesets release plan to
+  rewrite only pending public packages to preview versions. Use `--dry-run`
+  unless intentionally mutating manifests.
 - `scripts/create-github-releases.mjs`: creates GitHub Releases for existing
   package tags. Requires `GITHUB_TOKEN` unless `--dry-run` is used.
-- `scripts/notify-discord-release.mjs`: sends stable or preview release notes to
+- `scripts/notify-discord-release.mjs`: sends stable, RC, or preview release notes to
   Discord when `DISCORD_WEBHOOK_URL` is set.
 
 Package publication runs only through `.github/workflows/release.yml` using npm
@@ -192,29 +192,26 @@ pnpm test
 
 ## Changesets And Releases
 
-Changesets are configured in `.changeset/config.json`. The ignored workspaces are `cookbook` and
-`anvia-cli-agent`.
+Changesets are configured in `.changeset/config.json`. Public packages version independently;
+Changesets may also bump required dependents when an internal dependency changes. The ignored
+workspace is `cookbook`.
 
 For public package behavior changes, add or update a changeset unless the user
 or maintainer explicitly says not to. Avoid versioning, publishing, creating
 tags, or deployment commands unless explicitly requested.
 
-### 1.0 RC Flow
+### Release Flow
 
-1. Public API and fix PRs target `staging` and include a patch changeset.
-2. First RC preparation only: run `pnpm rc:enter` in a release PR. This creates
-   unpublished `1.0.0-rc.0`.
-3. To cut a public RC, run `pnpm rc:version` in a release PR and merge it into
-   `staging`.
-4. Tag the exact merged commit and push the tag:
+1. Public package behavior changes include a changeset targeting the owning package.
+2. Merge the generated `Version Packages` PR after confirming it versions only the intended
+   packages and any required dependents.
+3. Dispatch the stable release workflow from `main`. It publishes and tags only package versions
+   that are not already present on npm.
 
-```sh
-git tag v1.0.0-rc.N
-git push origin v1.0.0-rc.N
-```
-
-The tag publishes all public packages together under the npm `rc` tag. Multiple
-change PRs may be combined into one RC.
+For release candidates, target `staging`, use `pnpm rc:enter` for the first candidate or
+`pnpm rc:version` for the next candidate, and merge the generated version state. Dispatch the
+release workflow with the `rc` channel from `staging`. Each changed package receives its own
+prerelease version and package tag. Use `pnpm rc:exit` to return those packages to stable versions.
 
 ## Pull Request Expectations
 

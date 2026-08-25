@@ -50,6 +50,10 @@ console.log(result.trace?.traceId);
 
 Initialize OpenTelemetry in your application before creating spans. For OTLP HTTP, configure `@opentelemetry/sdk-node` and `@opentelemetry/exporter-trace-otlp-http` in your app process.
 
+The application also owns graceful process shutdown. On `SIGINT` or `SIGTERM`, abort and await the
+active Agent run before awaiting the OpenTelemetry SDK's `shutdown()`. Core marks aborted runs as
+`cancelled`; shutting down the SDK first cannot export a root span that is still open.
+
 Set `captureMode: "safe"` to record operational attributes without prompt or response bodies.
 Existing `@anvia/otel` integrations retain full capture when the option is omitted. Use
 `captureMaxBytes` to set a per-value limit and `transformInput` / `transformOutput` to redact or

@@ -1045,6 +1045,34 @@ describe("langfuse", () => {
     );
   });
 
+  it("records cancelled runs as warnings with terminal cancellation metadata", async () => {
+    const root = fakeObservation("root", "trace-cancelled", "obs-cancelled");
+    mocks.startObservation.mockReturnValueOnce(root);
+    const tracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk" });
+    const run = (await tracing.observer().startRun({
+      runId: "run_cancelled",
+      prompt: userMessage("stop"),
+      history: [],
+      maxTurns: 1,
+    })) as AgentRunObserver;
+
+    await run.error?.({
+      status: "cancelled",
+      error: new Error("CLI stopped"),
+      usage: usage(1, 0),
+      messages: [],
+    });
+
+    expect(root.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        level: "WARNING",
+        statusMessage: "CLI stopped",
+        metadata: expect.objectContaining({ status: "cancelled" }),
+      }),
+    );
+    expect(root.end).toHaveBeenCalledOnce();
+  });
+
   it("nests streamed child agent observations under the parent tool observation", async () => {
     const root = fakeObservation("root", "trace-1", "obs-root");
     const turn = fakeObservation("turn", "trace-1", "obs-turn");

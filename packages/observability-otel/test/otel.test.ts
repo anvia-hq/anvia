@@ -761,6 +761,7 @@ describe("otel", () => {
       error: "tool failed",
     });
     await run?.error?.({
+      status: "failed",
       error: new Error("run failed"),
       usage: usage(0, 0),
       messages: [],
@@ -781,7 +782,30 @@ describe("otel", () => {
       code: SpanStatusCode.ERROR,
       message: "run failed",
     });
+    expect(tracer.spans[0]?.attributes["anvia.run.status"]).toBe("failed");
     expect(tracer.spans.every((span) => span.ended)).toBe(true);
+  });
+
+  it("ends cancelled runs with an explicit cancellation attribute", async () => {
+    const tracer = new FakeTracer();
+    const tracing = createOtelObserver({ tracer: tracer.tracer });
+    const run = await tracing.startRun({
+      runId: "run_cancelled",
+      agentName: "support",
+      prompt: userMessage("hello"),
+      history: [],
+      maxTurns: 1,
+    });
+
+    await run?.error?.({
+      status: "cancelled",
+      error: new Error("CLI stopped"),
+      usage: usage(0, 0),
+      messages: [],
+    });
+
+    expect(tracer.spans[0]?.attributes["anvia.run.status"]).toBe("cancelled");
+    expect(tracer.spans[0]?.ended).toBe(true);
   });
 
   it("nests streamed child agent spans under the parent tool span", async () => {

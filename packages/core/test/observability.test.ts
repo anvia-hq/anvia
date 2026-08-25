@@ -1622,6 +1622,7 @@ function runEndArgs(): AgentRunEndArgs {
 
 function runErrorArgs(): AgentRunErrorArgs {
   return {
+    status: "failed",
     error: new Error("run failed"),
     usage: Usage.empty(),
     messages: [],

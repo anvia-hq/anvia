@@ -159,6 +159,7 @@ describe("trace browser helper behavior", () => {
     expect(observationStatusSummary([])).toBe("empty");
     expect(observationStatusSummary([observation({ status: "running" })])).toBe("running");
     expect(observationStatusSummary([observation({ status: "error" })])).toBe("error");
+    expect(observationStatusSummary([observation({ status: "cancelled" })])).toBe("cancelled");
     expect(observationStatusSummary([observation({ status: "success" })])).toBe("success");
     expect(traceObservationLabel(observation({ kind: "agent", name: "agent.run" }))).toBe(
       "agent.run",

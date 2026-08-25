@@ -148,6 +148,7 @@ describe("Agent streaming", () => {
     let providerClosed = false;
     let runEnded = false;
     let runError: unknown;
+    let runErrorStatus: AgentRunErrorArgs["status"] | undefined;
     let generationError: unknown;
     const providerEvents = (async function* (): AsyncIterable<CompletionModelStreamEvent> {
       try {
@@ -171,8 +172,9 @@ describe("Agent streaming", () => {
           end() {
             runEnded = true;
           },
-          error({ error }) {
+          error({ error, status }) {
             runError = error;
+            runErrorStatus = status;
           },
         };
       },
@@ -191,6 +193,7 @@ describe("Agent streaming", () => {
     expect(providerClosed).toBe(true);
     expect(runEnded).toBe(false);
     expect(runError).toBeInstanceOf(AgentRunCancelledError);
+    expect(runErrorStatus).toBe("cancelled");
     expect(generationError).toBeInstanceOf(AgentRunCancelledError);
     expect(generationError).not.toBe(runError);
     expect(generationError).toMatchObject({
@@ -616,6 +619,7 @@ describe("Agent streaming", () => {
     const errorEvent = await nextAgentError(iterator);
 
     expect(errorEvent.usage).toEqual(turnUsage);
+    expect(observedError?.status).toBe("cancelled");
     expect(observedError?.usage).toEqual(errorEvent.usage);
     await expect(iterator.next()).resolves.toEqual({ done: true, value: undefined });
   });

@@ -272,7 +272,7 @@ describe("createLoggerObserver", () => {
               toolCallId: "private-provider-tool-id",
             });
 
-      await run.error?.({ error, usage: Usage.empty(), messages: [] });
+      await run.error?.({ status: "failed", error, usage: Usage.empty(), messages: [] });
 
       expect(logger.records.at(-1)).toMatchObject({
         level: "error",
@@ -291,6 +291,30 @@ describe("createLoggerObserver", () => {
       expect(JSON.stringify(logger.records.at(-1))).not.toContain("private-provider-tool-id");
     },
   );
+
+  it("logs cancelled runs as warnings", async () => {
+    const logger = new RecordingLogger();
+    const observer = createLoggerObserver({ logger });
+    const run = (await observer.startRun({
+      runId: "run_cancelled",
+      prompt: { role: "user", content: "hello" },
+      history: [],
+      maxTurns: 1,
+    })) as AgentRunObserver;
+
+    await run.error?.({
+      status: "cancelled",
+      error: new Error("CLI stopped"),
+      usage: Usage.empty(),
+      messages: [],
+    });
+
+    expect(logger.records.at(-1)).toMatchObject({
+      level: "warn",
+      message: "agent run cancelled",
+      context: { status: "cancelled" },
+    });
+  });
 
   it("does not log arbitrary observer event attributes by default", async () => {
     const logger = new RecordingLogger();
@@ -346,6 +370,7 @@ describe("createLoggerObserver", () => {
     const error = new Error("Structured output failed", { cause: nestedCause });
 
     run.error?.({
+      status: "failed",
       error,
       usage: {
         inputTokens: 0,
@@ -437,7 +462,7 @@ async function recordPinoRunError(error: Error): Promise<Record<string, unknown>
     history: [],
     maxTurns: 1,
   })) as AgentRunObserver;
-  run.error?.({ error, usage: Usage.empty(), messages: [] });
+  run.error?.({ status: "failed", error, usage: Usage.empty(), messages: [] });
   const record = lines[0];
   if (record === undefined) throw new Error("Expected Pino error record.");
   return record;

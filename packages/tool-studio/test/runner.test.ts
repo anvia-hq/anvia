@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { Agent, createVectorContext } from "@anvia/core/agent";
 import {
   type CompletionModelStreamEvent,
+  type ModelCallOptions,
   type CompletionRequest,
   type CompletionResponse,
   type Message as CoreMessage,
@@ -86,6 +87,33 @@ class QueueModel {
       throw new Error("No queued response");
     }
     return response;
+  }
+}
+
+class AbortableModel extends QueueModel {
+  readonly started: Promise<void>;
+  private markStarted: () => void = () => {};
+
+  constructor() {
+    super([]);
+    this.started = new Promise<void>((resolve) => {
+      this.markStarted = resolve;
+    });
+  }
+
+  override completion(
+    _request: CompletionRequest,
+    options?: ModelCallOptions,
+  ): Promise<CompletionResponse> {
+    this.markStarted();
+    return new Promise((_resolve, reject) => {
+      const signal = options?.abortSignal;
+      if (signal?.aborted === true) {
+        reject(signal.reason);
+        return;
+      }
+      signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+    });
   }
 }
 
@@ -1153,14 +1181,113 @@ describe("Anvia studio", () => {
 
   it("can leave process signal handling to the application", () => {
     const listenersBeforeStart = process.listeners("SIGINT");
+    const termListenersBeforeStart = process.listeners("SIGTERM");
     const agent = new Agent({ id: "support", model: new QueueModel([]) });
     const runner = new Studio([agent]).start({ port: 0, log: false, handleSignals: false });
 
     try {
       expect(process.listeners("SIGINT")).toEqual(listenersBeforeStart);
+      expect(process.listeners("SIGTERM")).toEqual(termListenersBeforeStart);
     } finally {
       runner.close();
     }
+  });
+
+  it("handles SIGTERM through graceful shutdown and removes both signal listeners", async () => {
+    const interruptListenersBeforeStart = new Set(process.listeners("SIGINT"));
+    const terminateListenersBeforeStart = new Set(process.listeners("SIGTERM"));
+    const exitCodeBeforeStart = process.exitCode;
+    const agent = new Agent({ id: "support", model: new QueueModel([]) });
+    const runner = new Studio([agent]).start({ port: 0, log: false });
+
+    try {
+      const interruptListeners = process.listeners("SIGINT");
+      const terminateListeners = process.listeners("SIGTERM");
+      expect(interruptListeners).toHaveLength(interruptListenersBeforeStart.size + 1);
+      expect(terminateListeners).toHaveLength(terminateListenersBeforeStart.size + 1);
+
+      const handler = terminateListeners.find(
+        (listener) => !terminateListenersBeforeStart.has(listener),
+      );
+      expect(handler).toBeDefined();
+      handler?.("SIGTERM");
+      await runner.shutdown();
+
+      expect(process.exitCode).toBe(143);
+      expect(process.listeners("SIGINT")).toEqual([...interruptListenersBeforeStart]);
+      expect(process.listeners("SIGTERM")).toEqual([...terminateListenersBeforeStart]);
+    } finally {
+      runner.close();
+      process.exitCode = exitCodeBeforeStart;
+    }
+  });
+
+  it("allows shutdown to be retried after rejecting an invalid timeout", async () => {
+    const studio = new Studio();
+
+    await expect(studio.shutdown({ timeoutMs: 0 })).rejects.toThrow(/positive number/);
+    await expect(studio.shutdown({ timeoutMs: 100 })).resolves.toBeUndefined();
+  });
+
+  it("aborts active runs and waits for observer cancellation before shutdown completes", async () => {
+    const model = new AbortableModel();
+    let observedStatus: "failed" | "cancelled" | undefined;
+    let releaseObserver: () => void = () => {};
+    let markObserverStarted: () => void = () => {};
+    const observerGate = new Promise<void>((resolve) => {
+      releaseObserver = resolve;
+    });
+    const observerStarted = new Promise<void>((resolve) => {
+      markObserverStarted = resolve;
+    });
+    const observer: AgentObserver = {
+      startRun(): AgentRunObserver {
+        return {
+          end() {},
+          async error(args) {
+            observedStatus = args.status;
+            markObserverStarted();
+            await observerGate;
+          },
+        };
+      },
+    };
+    const agent = new Agent({
+      id: "support",
+      model,
+      observability: { observers: { test: observer } },
+    });
+    const studio = new Studio([agent]);
+    const request = studio.fetch(
+      new Request("http://runner.test/agents/support/runs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ type: "messages", messages: [Message.user("wait")] }),
+      }),
+    );
+    await model.started;
+
+    let shutdownSettled = false;
+    const shutdown = studio.shutdown({ timeoutMs: 1_000 }).then(() => {
+      shutdownSettled = true;
+    });
+    await observerStarted;
+    expect(observedStatus).toBe("cancelled");
+    expect(shutdownSettled).toBe(false);
+
+    releaseObserver();
+    await expect(request).resolves.toMatchObject({ status: 500 });
+    await shutdown;
+    expect(shutdownSettled).toBe(true);
+
+    const rejected = await studio.fetch(
+      new Request("http://runner.test/agents/support/runs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ type: "messages", messages: [Message.user("late")] }),
+      }),
+    );
+    expect(rejected.status).toBe(503);
   });
 
   it("preserves loopback connection metadata for local sandbox views", async () => {

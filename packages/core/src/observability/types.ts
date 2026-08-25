@@ -77,6 +77,7 @@ export type AgentRunEndArgs =
     });
 
 export type AgentRunErrorArgs = {
+  readonly status: "failed" | "cancelled";
   readonly error: unknown;
   readonly usage: DeepReadonly<Usage>;
   readonly messages: readonly DeepReadonly<Message>[];

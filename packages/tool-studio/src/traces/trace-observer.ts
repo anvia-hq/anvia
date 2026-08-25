@@ -177,7 +177,7 @@ class StudioRunTraceObserver implements AgentRunObserver {
   }
 
   async error(args: AgentRunErrorArgs): Promise<void> {
-    await this.save("error", {
+    await this.save(args.status === "cancelled" ? "cancelled" : "error", {
       endedAt: new Date(),
       error: serializeError(args.error),
       usage: args.usage,
@@ -406,7 +406,9 @@ class ChildAgentToolTraceAccumulator {
         name: `${agentLabel(agentStart.agentId, agentStart.agentName)}.run`,
         status: agentChildren.some((observation) => observation.status === "error")
           ? "error"
-          : "success",
+          : agentChildren.some((observation) => observation.status === "cancelled")
+            ? "cancelled"
+            : "success",
         turn: this.parent.turn,
         startedAt,
         endedAt,

@@ -753,6 +753,9 @@ export function observationStatusSummary(observations: TraceObservationItem[]): 
   if (observations.some((observation) => observation.status === "error")) {
     return "error";
   }
+  if (observations.some((observation) => observation.status === "cancelled")) {
+    return "cancelled";
+  }
   if (observations.some((observation) => observation.status === "running")) {
     return "running";
   }

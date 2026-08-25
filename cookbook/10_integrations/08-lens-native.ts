@@ -7,6 +7,7 @@ import {
 } from "@anvia/core";
 import { agentEvalTarget, contains, runEvalSuite } from "@anvia/core/evals";
 import { LensClient } from "@anvia/lens";
+import { createProcessShutdownSignal } from "./_support/process-shutdown";
 
 class StaticSupportModel implements CompletionModel {
   readonly provider = "smoke";
@@ -30,7 +31,7 @@ class StaticSupportModel implements CompletionModel {
   }
 }
 
-await using lens = new LensClient({ serviceName: "lens-native-smoke" });
+const lens = new LensClient({ serviceName: "lens-native-smoke" });
 const agent = new Agent({
   id: "lens-native-smoke",
   model: new StaticSupportModel(),
@@ -42,35 +43,41 @@ const agent = new Agent({
   },
 });
 
-const suite = await runEvalSuite({
-  name: "lens-native-smoke",
-  run: { datasetName: "lens-smoke", datasetVersion: "v3" },
-  cases: [
-    {
-      id: "refund-window",
-      input: "How long are refunds available?",
-      expected: "30 days",
-    },
-  ],
-  target: agentEvalTarget<string>({
-    agent,
-    request: ({ input }) => ({ prompt: input }),
-  }),
-  metrics: [contains({ name: "refund-policy-correctness" })],
-  reporters: [lens.evalReporter({ includePayloads: true })],
-  reporterErrorPolicy: "throw",
-});
-const result = suite.results[0];
-console.log(
-  JSON.stringify(
-    {
-      suite: suite.name,
-      runId: suite.run.id,
-      caseId: result?.case.id,
-      outcome: result?.metrics[0]?.outcome.outcome,
-      trace: result?.output?.trace,
-    },
-    null,
-    2,
-  ),
-);
+const shutdown = createProcessShutdownSignal();
+try {
+  const suite = await runEvalSuite({
+    name: "lens-native-smoke",
+    run: { datasetName: "lens-smoke", datasetVersion: "v3" },
+    cases: [
+      {
+        id: "refund-window",
+        input: "How long are refunds available?",
+        expected: "30 days",
+      },
+    ],
+    target: agentEvalTarget<string>({
+      agent,
+      request: ({ input }) => ({ prompt: input, abortSignal: shutdown.signal }),
+    }),
+    metrics: [contains({ name: "refund-policy-correctness" })],
+    reporters: [lens.evalReporter({ includePayloads: true })],
+    reporterErrorPolicy: "throw",
+  });
+  const result = suite.results[0];
+  console.log(
+    JSON.stringify(
+      {
+        suite: suite.name,
+        runId: suite.run.id,
+        caseId: result?.case.id,
+        outcome: result?.metrics[0]?.outcome.outcome,
+        trace: result?.output?.trace,
+      },
+      null,
+      2,
+    ),
+  );
+} finally {
+  shutdown.dispose();
+  await lens.close();
+}

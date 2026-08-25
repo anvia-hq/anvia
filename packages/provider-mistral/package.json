@@ -1,6 +1,6 @@
 {
   "name": "@anvia/mistral",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Mistral provider adapter for Anvia.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",

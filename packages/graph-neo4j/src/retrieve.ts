@@ -271,7 +271,13 @@ function evidenceFromRecord(record: Neo4jRecord): Neo4jGraphEvidence {
 }
 
 function safeIntegerValue(value: unknown, label: string): number {
-  const number = isInt(value) ? (value.inSafeRange() ? value.toNumber() : undefined) : value;
+  let number = value;
+  if (isInt(value)) {
+    number = undefined;
+    if (value.inSafeRange()) {
+      number = value.toNumber();
+    }
+  }
   if (typeof number !== "number" || !Number.isSafeInteger(number)) {
     throw new TypeError(`${label} must be a safe integer.`);
   }
@@ -316,12 +322,7 @@ RETURN DISTINCT elementId(entry) AS elementId`,
   }
   if (traversalSeedIds.size === 0) return { nodes: [], relationships: [] };
   const limitedSeedIds = [...traversalSeedIds].slice(0, options.maxNodes);
-  const pattern =
-    options.direction === "outgoing"
-      ? `(seed)-[*1..${options.maxDepth}]->(node)`
-      : options.direction === "incoming"
-        ? `(seed)<-[*1..${options.maxDepth}]-(node)`
-        : `(seed)-[*1..${options.maxDepth}]-(node)`;
+  const pattern = traversalPattern(options.direction, options.maxDepth);
   const pathLimit = Math.max(options.maxNodes, options.maxRelationships);
   const seedNodes = await graph.query(
     `MATCH (node) WHERE elementId(node) IN $seedIds
@@ -384,6 +385,16 @@ LIMIT $pathLimit`,
     }
   }
   return { nodes: [...nodes.values()], relationships: [...relationships.values()] };
+}
+
+function traversalPattern(direction: "outgoing" | "incoming" | "both", maxDepth: number): string {
+  if (direction === "outgoing") {
+    return `(seed)-[*1..${maxDepth}]->(node)`;
+  }
+  if (direction === "incoming") {
+    return `(seed)<-[*1..${maxDepth}]-(node)`;
+  }
+  return `(seed)-[*1..${maxDepth}]-(node)`;
 }
 
 function contextNode(

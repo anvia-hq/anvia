@@ -205,12 +205,7 @@ RETURN DISTINCT id(entry) AS internalId`,
   if (traversalIds.size === 0) return { nodes: [], relationships: [] };
   const seedIds = [...traversalIds].slice(0, options.maxNodes);
   const types = options.relationships.map(quoteIdentifier).join("|");
-  const pattern =
-    options.direction === "outgoing"
-      ? `(seed)-[:${types} *BFS 1..${options.maxDepth}]->(node)`
-      : options.direction === "incoming"
-        ? `(seed)<-[:${types} *BFS 1..${options.maxDepth}]-(node)`
-        : `(seed)-[:${types} *BFS 1..${options.maxDepth}]-(node)`;
+  const pattern = traversalPattern(types, options.direction, options.maxDepth);
   const seeds = await graph.query(
     `MATCH (node) WHERE id(node) IN $seedIds
 RETURN {internalId: id(node), labels: labels(node), properties: properties(node)} AS node`,
@@ -251,6 +246,20 @@ LIMIT $pathLimit`,
     }
   }
   return { nodes: [...nodes.values()], relationships: [...relationships.values()] };
+}
+
+function traversalPattern(
+  types: string,
+  direction: "outgoing" | "incoming" | "both",
+  maxDepth: number,
+): string {
+  if (direction === "outgoing") {
+    return `(seed)-[:${types} *BFS 1..${maxDepth}]->(node)`;
+  }
+  if (direction === "incoming") {
+    return `(seed)<-[:${types} *BFS 1..${maxDepth}]-(node)`;
+  }
+  return `(seed)-[:${types} *BFS 1..${maxDepth}]-(node)`;
 }
 
 function contextNode(

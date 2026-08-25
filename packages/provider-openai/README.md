@@ -11,6 +11,17 @@ speech generation, or transcription to run on OpenAI models or OpenAI-compatible
 pnpm add @anvia/openai @anvia/core
 ```
 
+### Bun
+
+Bun 1.3.14 is the currently tested and supported runtime baseline:
+
+```sh
+bun add @anvia/openai @anvia/core
+```
+
+Compatibility tests exercise the OpenAI SDK's JSON, streaming, abort, multipart, and binary media
+paths without contacting a model provider.
+
 In this monorepo, the package is available through the workspace:
 
 ```sh

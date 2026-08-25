@@ -20,6 +20,18 @@ adapter on the same release channel.
 pnpm add @anvia/core@rc
 ```
 
+### Bun
+
+Bun 1.3.14 is the currently tested and supported runtime baseline. Install Core on the same
+release channel as the rest of your Anvia packages:
+
+```sh
+bun add @anvia/core@rc
+```
+
+The repository itself remains a pnpm workspace; Bun support applies to applications consuming the
+published package.
+
 See the repository's [1.0 release policy](../../docs/releases/v1.md) for channel and support
 details.
 

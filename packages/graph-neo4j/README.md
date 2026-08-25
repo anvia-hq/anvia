@@ -2,6 +2,11 @@
 
 Schema-first local GraphRAG for Neo4j 2026.01 and newer.
 
+Provider-neutral schemas from `@anvia/graph` are accepted alongside the compatibility
+`defineNeo4jGraphSchema()` API. Registered graphs also expose `graph.retrieve()` and
+`graph.createSearchTool()` so application code can share the same retrieval shape with
+`@anvia/memgraph`.
+
 ## Installation
 
 ```sh

@@ -34,7 +34,7 @@ export type Neo4jGraphSchemaOptions = Readonly<{
 }>;
 
 export type Neo4jGraphSchema<Options extends Neo4jGraphSchemaOptions = Neo4jGraphSchemaOptions> =
-  Readonly<Options & { kind: "neo4j-graph-schema" }>;
+  Readonly<Options & { kind: "neo4j-graph-schema" | "graph-schema" }>;
 
 type NodeDefinitions<Schema extends Neo4jGraphSchema> = Schema["nodes"];
 type RelationshipDefinitions<Schema extends Neo4jGraphSchema> = Schema["relationships"];

@@ -1,4 +1,11 @@
 import {
+  createGraphSearchTool,
+  type CreateGraphSearchToolOptions,
+  type GraphContext,
+  type GraphRetrieveOptions,
+  type GraphSearchTool,
+} from "@anvia/graph";
+import {
   isInt,
   type ManagedTransaction,
   type Record as Neo4jRecord,
@@ -62,8 +69,10 @@ export abstract class Neo4jKnowledgeGraphBase<
     protected readonly owner: Neo4jClient,
     readonly schema: Schema,
   ) {
-    if (schema.kind !== "neo4j-graph-schema") {
-      throw new TypeError("Neo4j knowledge graphs require defineNeo4jGraphSchema().");
+    if (schema.kind !== "neo4j-graph-schema" && schema.kind !== "graph-schema") {
+      throw new TypeError(
+        "Neo4j knowledge graphs require defineGraphSchema() or defineNeo4jGraphSchema().",
+      );
     }
   }
 
@@ -101,6 +110,18 @@ export abstract class Neo4jKnowledgeGraphBase<
       abortSignal,
       async (transaction) => await transaction.run(text, parameters),
     );
+  }
+
+  async retrieve(options: GraphRetrieveOptions<Schema>): Promise<GraphContext> {
+    const { retrieveGraphContext } = await import("./retrieve.js");
+    return retrieveGraphContext({
+      ...options,
+      graph: this,
+    } as import("./types.js").RetrieveGraphContextOptions<Schema>);
+  }
+
+  createSearchTool(options: Omit<CreateGraphSearchToolOptions<Schema>, "graph">): GraphSearchTool {
+    return createGraphSearchTool({ ...options, graph: this });
   }
 
   seed(name: string): SeedRegistration {

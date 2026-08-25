@@ -257,8 +257,61 @@ importers:
         specifier: ^4.0.8
         version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@24.12.2)(@vitest/coverage-v8@4.1.5)(happy-dom@20.9.0)(vite@8.2.2(@types/node@24.12.2)(esbuild@0.28.2)(jiti@2.6.1)(tsx@4.23.12)(yaml@2.9.0))
 
+  packages/graph:
+    dependencies:
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@anvia/core':
+        specifier: workspace:*
+        version: link:../core
+      '@types/node':
+        specifier: ^24.9.1
+        version: 24.12.2
+      tsup:
+        specifier: ^8.5.0
+        version: 8.5.1(jiti@2.6.1)(postcss@8.5.26)(tsx@4.23.12)(typescript@5.9.3)(yaml@2.9.0)
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.0.8
+        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@24.12.2)(happy-dom@20.9.0)(vite@8.2.2(@types/node@24.12.2)(esbuild@0.28.2)(jiti@2.6.1)(tsx@4.23.12)(yaml@2.9.0))
+
+  packages/graph-memgraph:
+    dependencies:
+      '@anvia/graph':
+        specifier: workspace:*
+        version: link:../graph
+      neo4j-driver:
+        specifier: ^6.2.0
+        version: 6.2.0
+    devDependencies:
+      '@anvia/core':
+        specifier: workspace:*
+        version: link:../core
+      '@types/node':
+        specifier: ^24.9.1
+        version: 24.12.2
+      tsup:
+        specifier: ^8.5.0
+        version: 8.5.1(jiti@2.6.1)(postcss@8.5.26)(tsx@4.23.12)(typescript@5.9.3)(yaml@2.9.0)
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.0.8
+        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@24.12.2)(happy-dom@20.9.0)(vite@8.2.2(@types/node@24.12.2)(esbuild@0.28.2)(jiti@2.6.1)(tsx@4.23.12)(yaml@2.9.0))
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+
   packages/graph-neo4j:
     dependencies:
+      '@anvia/graph':
+        specifier: workspace:*
+        version: link:../graph
       neo4j-driver:
         specifier: ^6.2.0
         version: 6.2.0

@@ -1,5 +1,12 @@
 # @anvia/core
 
+## 1.0.3
+
+### Patch Changes
+
+- 3113e9a: Add matching raw-text ingestion helpers for vector stores and managed knowledge graphs, including
+  shared deterministic chunking and reusable graph/vector embeddings.
+
 ## 1.0.2
 
 ### Patch Changes

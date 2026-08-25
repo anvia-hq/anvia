@@ -19,10 +19,14 @@ try {
   await run("pnpm", ["pack", "--pack-destination", packsDirectory], {
     cwd: join(repositoryRoot, "packages/provider-openai"),
   });
+  await run("pnpm", ["pack", "--pack-destination", packsDirectory], {
+    cwd: join(repositoryRoot, "packages/mcp"),
+  });
 
   const archives = await readdir(packsDirectory);
   const coreArchive = requireArchive(archives, "anvia-core-");
   const openaiArchive = requireArchive(archives, "anvia-openai-");
+  const mcpArchive = requireArchive(archives, "anvia-mcp-");
   await writeFile(
     join(consumerDirectory, "package.json"),
     JSON.stringify(
@@ -32,6 +36,7 @@ try {
         type: "module",
         dependencies: {
           "@anvia/core": `file:${join(packsDirectory, coreArchive)}`,
+          "@anvia/mcp": `file:${join(packsDirectory, mcpArchive)}`,
           "@anvia/openai": `file:${join(packsDirectory, openaiArchive)}`,
         },
       },
@@ -86,11 +91,24 @@ import assert from "node:assert/strict";
 import { Agent } from "@anvia/core";
 import { extractPdfText } from "@anvia/core/documents";
 import { toReadableStream } from "@anvia/core/streaming";
+import { McpClient } from "@anvia/mcp";
 import { OpenAIClient } from "@anvia/openai";
 
 assert.equal(typeof Agent, "function");
 assert.equal(typeof extractPdfText, "function");
 assert.equal(typeof toReadableStream, "function");
+assert.equal(typeof McpClient, "function");
+
+const mcpClient = new McpClient({
+  name: "packed-mcp",
+  transport: {
+    type: "custom",
+    create() {
+      throw new Error("Packed MCP transport should not connect during this smoke test");
+    },
+  },
+});
+assert.equal(mcpClient.name, "packed-mcp");
 
 const model = new OpenAIClient({
   client: {
@@ -117,6 +135,6 @@ const result = await agent.generate({ prompt: "hello" });
 assert.equal(result.output, "packed packages work");
 assert.equal(result.usage.totalTokens, 4);
 
-console.log("Packed @anvia/core and @anvia/openai artifacts work under Bun.");
+console.log("Packed @anvia/core, @anvia/openai, and @anvia/mcp artifacts work under Bun.");
 `;
 }

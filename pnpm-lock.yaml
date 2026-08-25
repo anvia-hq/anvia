@@ -1207,6 +1207,9 @@ importers:
       '@anvia/core':
         specifier: workspace:*
         version: link:../../../packages/core
+      '@anvia/mcp':
+        specifier: workspace:*
+        version: link:../../../packages/mcp
       '@anvia/openai':
         specifier: workspace:*
         version: link:../../../packages/provider-openai

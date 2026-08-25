@@ -4,12 +4,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "pretest:bun": "pnpm --filter @anvia/core build && pnpm --filter @anvia/openai build",
+    "pretest:bun": "pnpm --filter @anvia/core build && pnpm --filter @anvia/openai build && pnpm --filter @anvia/mcp build",
     "test:bun": "bun test ./test && node ./scripts/test-packed-artifacts.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@anvia/core": "workspace:*",
+    "@anvia/mcp": "workspace:*",
     "@anvia/openai": "workspace:*"
   },
   "devDependencies": {

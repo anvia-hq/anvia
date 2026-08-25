@@ -60,7 +60,7 @@ export type AnyTool = Omit<Tool<unknown, unknown>, "requiresApproval"> & {
   readonly requiresApproval?: unknown;
 };
 
-const richToolOutput = Symbol("anvia.tool-output.content");
+const richToolOutput: unique symbol = Symbol.for("anvia.tool-output.content");
 
 export type RichToolOutput = Readonly<{
   [richToolOutput]: true;
@@ -121,7 +121,11 @@ export function toolResultContentToText(content: readonly ToolResultContentPart[
 }
 
 function isRichToolOutput(value: unknown): value is RichToolOutput {
-  return typeof value === "object" && value !== null && richToolOutput in value;
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    (value as { [richToolOutput]?: unknown })[richToolOutput] === true
+  );
 }
 
 export function parseToolArgs(args: string): JsonValue {

@@ -5,13 +5,24 @@ Model Context Protocol client integration for Anvia agents.
 This package owns MCP connections, transports, tool discovery, and cleanup. `@anvia/core` keeps only
 the lightweight MCP registration contracts consumed by `Agent`.
 
-Requires Node.js 20 or newer and uses the official MCP TypeScript SDK v2 client.
+Requires Node.js 20 or newer, or Bun 1.3.14, and uses the official MCP TypeScript SDK v2 client.
 
 ## Installation
 
 ```sh
 pnpm add @anvia/mcp @anvia/core
 ```
+
+### Bun
+
+Bun 1.3.14 is the currently tested and supported runtime baseline:
+
+```sh
+bun add @anvia/mcp @anvia/core
+```
+
+Compatibility tests cover modern protocol negotiation, Streamable HTTP with chunked SSE responses,
+stdio subprocesses, URL-safety enforcement, and installation from packed package artifacts.
 
 ## Usage
 

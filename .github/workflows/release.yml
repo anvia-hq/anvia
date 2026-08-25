@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - main
-    tags:
-      - "v1.0.0-rc.*"
   workflow_dispatch:
     inputs:
       channel:
@@ -16,6 +14,7 @@ on:
         options:
           - stable
           - preview
+          - rc
 
 permissions:
   contents: read
@@ -76,7 +75,7 @@ jobs:
 
   prepare:
     name: Validate and build packages
-    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     outputs:
       channel: ${{ steps.release.outputs.channel }}
@@ -94,13 +93,7 @@ jobs:
         env:
           REQUESTED_CHANNEL: ${{ inputs.channel }}
         run: |
-          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
-            {
-              echo "channel=rc"
-              echo "npm_tag=rc"
-              echo "create_tags=true"
-            } >> "$GITHUB_OUTPUT"
-          elif [ "${GITHUB_REF_TYPE}" != "branch" ]; then
+          if [ "${GITHUB_REF_TYPE}" != "branch" ]; then
             echo "Manual publishing must run from a branch."
             exit 1
           elif [ "${REQUESTED_CHANNEL}" = "preview" ]; then
@@ -112,6 +105,16 @@ jobs:
               echo "channel=preview"
               echo "npm_tag=preview"
               echo "create_tags=false"
+            } >> "$GITHUB_OUTPUT"
+          elif [ "${REQUESTED_CHANNEL}" = "rc" ]; then
+            if [ "${GITHUB_REF_NAME}" != "staging" ]; then
+              echo "RC publishing must run from staging."
+              exit 1
+            fi
+            {
+              echo "channel=rc"
+              echo "npm_tag=rc"
+              echo "create_tags=true"
             } >> "$GITHUB_OUTPUT"
           else
             if [ "${GITHUB_REF_NAME}" != "main" ]; then
@@ -126,7 +129,6 @@ jobs:
           fi
 
       - name: Require current release branch
-        if: steps.release.outputs.channel != 'rc'
         run: |
           git fetch origin "${GITHUB_REF_NAME}"
           if [ "$(git rev-parse HEAD)" != "$(git rev-parse "origin/${GITHUB_REF_NAME}")" ]; then
@@ -134,19 +136,15 @@ jobs:
             exit 1
           fi
 
-      - name: Fetch staging
-        if: steps.release.outputs.channel == 'rc'
-        run: git fetch origin staging:refs/remotes/origin/staging
-
       - name: Validate release candidate
         if: steps.release.outputs.channel == 'rc'
-        run: node scripts/validate-release-train.mjs --tag "${GITHUB_REF_NAME}" --require-staging-ancestor
+        run: node scripts/validate-release-train.mjs --prerelease rc
 
-      - name: Validate preview release train
+      - name: Validate preview release state
         if: steps.release.outputs.channel == 'preview'
         run: node scripts/validate-release-train.mjs
 
-      - name: Validate stable release train
+      - name: Validate stable release state
         if: steps.release.outputs.channel == 'stable'
         run: node scripts/validate-release-train.mjs --stable
 
@@ -166,7 +164,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Prepare synchronized preview versions
+      - name: Prepare preview package versions
         if: steps.release.outputs.channel == 'preview'
         run: pnpm preview:version
 
@@ -183,7 +181,7 @@ jobs:
         run: pnpm --filter './packages/**' --filter '!@anvia/core' build
 
       - name: Verify packed internal versions
-        run: pnpm release-train:verify-packs
+        run: pnpm releases:verify-packs
 
       - name: Typecheck packages
         run: pnpm --filter './packages/**' typecheck
@@ -263,6 +261,7 @@ jobs:
         run: pnpm github-releases
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PUBLISHED_PACKAGES_FILE: .published-packages.json
 
       - name: Notify RC Discord channel
         if: needs.prepare.outputs.channel == 'rc'

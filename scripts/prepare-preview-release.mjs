@@ -1,10 +1,10 @@
 import { spawnSync } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import {
   assertPreviewAllowed,
   createPreviewVersion,
-  DEPENDENCY_FIELDS,
   findPublicPackages,
 } from "./release-train.mjs";
 
@@ -12,34 +12,35 @@ const root = process.cwd();
 const dryRun = process.argv.includes("--dry-run");
 const buildId = process.env.PREVIEW_BUILD_ID ?? createBuildId();
 assertPreviewAllowed(root);
+
 const packages = findPublicPackages(root);
-const previewVersion = createPreviewVersion(buildId);
+const packagesByName = new Map(packages.map((pkg) => [pkg.packageJson.name, pkg]));
+const releasePlan = readReleasePlan();
+const releases = releasePlan.releases.filter((release) => release.type !== "none");
+const unknownReleases = releases.filter((release) => !packagesByName.has(release.name));
 
-const previewVersions = new Map(packages.map((pkg) => [pkg.packageJson.name, previewVersion]));
+if (unknownReleases.length > 0) {
+  throw new Error(
+    `Preview releases may only target public packages: ${unknownReleases.map(({ name }) => name).join(", ")}.`,
+  );
+}
 
-for (const pkg of packages) {
-  const nextVersion = previewVersions.get(pkg.packageJson.name);
+if (releases.length === 0) {
+  throw new Error("Preview publishing requires at least one pending public-package changeset.");
+}
+
+for (const release of releases) {
+  const pkg = packagesByName.get(release.name);
+  if (pkg === undefined) {
+    throw new Error(`Changesets planned a release for unknown public package ${release.name}.`);
+  }
+  const nextVersion = createPreviewVersion(release.newVersion, buildId);
   const updated = structuredClone(pkg.packageJson);
   updated.version = nextVersion;
 
-  for (const field of DEPENDENCY_FIELDS) {
-    rewriteInternalDependencies(updated[field], previewVersions);
-  }
-
-  const relativePath = path.relative(root, path.join(pkg.dir, "package.json"));
   console.info(`${pkg.packageJson.name}: ${pkg.packageJson.version} -> ${nextVersion}`);
-
   if (!dryRun) {
     writeFileSync(path.join(pkg.dir, "package.json"), `${JSON.stringify(updated, null, 2)}\n`);
-  } else {
-    for (const field of DEPENDENCY_FIELDS) {
-      for (const [name, version] of rewrittenDependencies(
-        pkg.packageJson[field],
-        previewVersions,
-      )) {
-        console.info(`  ${relativePath} ${field}.${name} -> ${version}`);
-      }
-    }
   }
 }
 
@@ -47,29 +48,21 @@ if (dryRun) {
   console.info("Dry run complete. No package files were changed.");
 }
 
-function rewriteInternalDependencies(dependencies, versions) {
-  if (dependencies === undefined) {
-    return;
-  }
-
-  for (const name of Object.keys(dependencies)) {
-    const version = versions.get(name);
-    if (version !== undefined) {
-      dependencies[name] = version;
+function readReleasePlan() {
+  const tempDir = mkdtempSync(path.join(os.tmpdir(), "anvia-preview-plan-"));
+  const outputPath = path.join(tempDir, "status.json");
+  try {
+    const result = spawnSync("pnpm", ["changeset", "status", "--output", outputPath], {
+      cwd: root,
+      encoding: "utf8",
+      env: process.env,
+    });
+    if (result.status !== 0) {
+      throw new Error(`Unable to calculate preview releases: ${result.stderr || result.stdout}`);
     }
-  }
-}
-
-function* rewrittenDependencies(dependencies, versions) {
-  if (dependencies === undefined) {
-    return;
-  }
-
-  for (const name of Object.keys(dependencies)) {
-    const version = versions.get(name);
-    if (version !== undefined) {
-      yield [name, version];
-    }
+    return JSON.parse(readFileSync(outputPath, "utf8"));
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
   }
 }
 

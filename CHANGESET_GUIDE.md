@@ -56,7 +56,7 @@ After a PR with one or more changesets is merged into `main`, the GitHub Actions
 The workflow will:
 
 1. Open or update a `Version Packages` release PR.
-2. Apply version bumps to changed packages.
+2. Apply independent version bumps to changed packages and any required dependents.
 3. Update package changelogs.
 4. Remove consumed `.changeset/*.md` files.
 
@@ -88,13 +88,14 @@ To publish:
 4. Click `Run workflow`.
 5. Run it from the `main` branch.
 
-The workflow validates, builds, typechecks, tests, packs, and publishes the synchronized package
-train before creating package tags and GitHub Releases.
+The workflow validates, builds, typechecks, tests, and packs the workspace, then publishes only
+package versions that are not already present on npm. It creates tags and GitHub Releases only for
+those packages.
 
 ## Publish Preview Packages
 
-Preview packages are early-access builds from `staging`. They do not use Changesets, do not create
-GitHub Releases, and do not update the `latest` npm tag.
+Preview packages are early-access builds from `staging`. They use the pending Changesets release
+plan, do not create GitHub Releases, and do not update the `latest` npm tag.
 
 Create changesets with the feature or fix PR that changes package behavior. Do not add a changeset only because you want a preview build. Preview publishing does not consume `.changeset/*.md` files; those changesets remain available for the stable `Version Packages` PR.
 
@@ -105,10 +106,11 @@ To publish a preview:
 3. Click `Run workflow`.
 4. Run it from the `staging` branch with the `preview` channel.
 
-The workflow publishes every public package with a generated prerelease version:
+The workflow publishes only planned public packages. Each preview uses that package's planned next
+stable version:
 
 ```txt
-0.7.2-preview.20260620T153000.abc1234
+0.7.3-preview.20260620T153000.sha-abc1234
 ```
 
 Users can install preview packages explicitly:

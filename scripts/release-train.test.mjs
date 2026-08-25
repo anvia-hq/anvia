@@ -16,21 +16,15 @@ import { fileURLToPath } from "node:url";
 import { releasesReadyForTags } from "./publish-release-state.mjs";
 import { releasePresentation } from "./release-notification.mjs";
 import {
-  assertFixedReleaseTrain,
-  assertGitAncestor,
-  assertInitialMajorChangeset,
+  assertIndependentVersioning,
   assertNoPendingChangesets,
-  assertPatchOnlyChangesets,
-  assertPreviewAllowed,
-  assertRcPrereleaseState,
+  assertPrereleaseState,
+  assertReleasableChangesets,
   assertStableReleaseState,
-  assertSynchronizedVersions,
   assertWorkspaceInternalDependencies,
   createPreviewVersion,
   findPublicPackages,
-  parseRcTag,
   readPendingChangesets,
-  readPrereleaseState,
 } from "./release-train.mjs";
 
 const repositoryRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -38,114 +32,136 @@ const rcScript = path.join(repositoryRoot, "scripts", "version-release-candidate
 const previewScript = path.join(repositoryRoot, "scripts", "prepare-preview-release.mjs");
 const validatorScript = path.join(repositoryRoot, "scripts", "validate-release-train.mjs");
 
-test("repository fixed group exactly matches public packages", () => {
+test("repository config versions every public package independently", () => {
   const packages = findPublicPackages(repositoryRoot);
   assert.equal(packages.length, 33);
-  assert.doesNotThrow(() => assertFixedReleaseTrain(repositoryRoot, packages));
+  assert.doesNotThrow(() => assertIndependentVersioning(repositoryRoot, packages));
   assert.doesNotThrow(() => assertWorkspaceInternalDependencies(packages));
 });
 
-test("validates preview and public RC versions", () => {
-  assert.equal(
-    createPreviewVersion("20260814T120102.sha-abcdef0"),
-    "1.0.0-preview.20260814T120102.sha-abcdef0",
-  );
-  assert.deepEqual(parseRcTag("v1.0.0-rc.2", { publicOnly: true }), {
-    version: "1.0.0-rc.2",
-    candidate: 2,
-  });
-  assert.throws(() => parseRcTag("v1.0.0-rc.0", { publicOnly: true }), /unpublished/);
-  assert.throws(() => parseRcTag("v1.0.0-rc.01"), /Invalid/);
-});
+test("independent config rejects fixed, linked, and ignored public packages", () => {
+  const fixture = createReleaseFixture();
+  const configPath = path.join(fixture, ".changeset", "config.json");
+  try {
+    const config = readJson(configPath);
+    writeJson(configPath, { ...config, fixed: [["@fixture/a", "@fixture/b"]] });
+    assert.throws(() => assertIndependentVersioning(fixture), /fixed groups must be empty/);
 
-test("preview dry runs respect the release phase without changing package manifests", () => {
-  const packages = findPublicPackages(repositoryRoot);
-  const before = packages.map(({ dir }) => readFileSync(path.join(dir, "package.json"), "utf8"));
-  const result = spawnSync(process.execPath, [previewScript, "--dry-run"], {
-    cwd: repositoryRoot,
-    encoding: "utf8",
-    env: { ...process.env, PREVIEW_BUILD_ID: "20260814T120102.sha-abcdef0" },
-  });
+    writeJson(configPath, { ...config, linked: [["@fixture/a", "@fixture/b"]] });
+    assert.throws(() => assertIndependentVersioning(fixture), /linked groups must be empty/);
 
-  if (readPrereleaseState(repositoryRoot) === undefined) {
-    assert.equal(result.status, 0, result.stderr);
-    assert.equal(
-      result.stdout.match(/^@anvia\/[^:]+: .* -> 1\.0\.0-preview\.20260814T120102\.sha-abcdef0$/gm)
-        ?.length,
-      packages.length,
-    );
-  } else {
-    assert.notEqual(result.status, 0);
-    assert.match(result.stderr, /Preview releases are disabled/);
+    writeJson(configPath, { ...config, ignore: ["@fixture/a"] });
+    assert.throws(() => assertIndependentVersioning(fixture), /must not ignore public packages/);
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
   }
-
-  assert.deepEqual(
-    packages.map(({ dir }) => readFileSync(path.join(dir, "package.json"), "utf8")),
-    before,
-  );
 });
 
-test("staging ancestry validation rejects a descendant as the ancestor", () => {
-  assert.doesNotThrow(() => assertGitAncestor(repositoryRoot, "HEAD", "HEAD"));
-  assert.throws(() => assertGitAncestor(repositoryRoot, "HEAD", "HEAD^"), /must be an ancestor/);
-});
-
-test("RC changesets reject minor and major bumps", () => {
-  assert.doesNotThrow(() =>
-    assertPatchOnlyChangesets([{ id: "fix", releases: [{ name: "@anvia/core", bump: "patch" }] }]),
+test("preview versions use each package release plan version", () => {
+  assert.equal(
+    createPreviewVersion("1.4.2", "20260814T120102.sha-abcdef0"),
+    "1.4.2-preview.20260814T120102.sha-abcdef0",
   );
   assert.throws(
-    () =>
-      assertPatchOnlyChangesets([
-        { id: "break", releases: [{ name: "@anvia/core", bump: "minor" }] },
-      ]),
-    /patch bumps only/,
+    () => createPreviewVersion("1.4.2-rc.0", "20260814T120102.sha-abcdef0"),
+    /stable semver/,
   );
 });
 
-test("initial RC preparation requires a major declaration for the whole train", () => {
-  const train = new Set(["@anvia/core", "@anvia/openai"]);
-  assert.doesNotThrow(() =>
-    assertInitialMajorChangeset(
-      [
-        {
-          id: "v1",
-          releases: [
-            { name: "@anvia/core", bump: "major" },
-            { name: "@anvia/openai", bump: "major" },
-          ],
-        },
-      ],
-      train,
-    ),
-  );
-  assert.throws(
-    () =>
-      assertInitialMajorChangeset(
-        [{ id: "v1", releases: [{ name: "@anvia/core", bump: "major" }] }],
-        train,
+test("preview dry runs version only packages in the Changesets release plan", () => {
+  const fixture = createReleaseFixture();
+  try {
+    initializeGitFixture(fixture);
+    writeChangeset(fixture, "a-preview", "patch", "Preview package A.", ["a"]);
+    const packages = findPublicPackages(fixture);
+    const before = packages.map(({ dir }) => readFileSync(path.join(dir, "package.json"), "utf8"));
+    const result = spawnSync(process.execPath, [previewScript, "--dry-run"], {
+      cwd: fixture,
+      encoding: "utf8",
+      env: { ...process.env, PREVIEW_BUILD_ID: "20260814T120102.sha-abcdef0" },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(
+      result.stdout,
+      /^@fixture\/a: 1\.0\.2 -> 1\.0\.3-preview\.20260814T120102\.sha-abcdef0$/m,
+    );
+    assert.equal(result.stdout.match(/^@fixture\//gm)?.length, 1);
+
+    assert.deepEqual(
+      packages.map(({ dir }) => readFileSync(path.join(dir, "package.json"), "utf8")),
+      before,
+    );
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
+test("tag recovery includes only current-commit retries", () => {
+  const existing = [
+    { name: "@anvia/core", version: "1.0.2" },
+    { name: "@anvia/studio", version: "1.0.3" },
+  ];
+  const published = [{ name: "@anvia/openai", version: "1.1.0" }];
+  const recoverableTags = new Set(["@anvia/studio@1.0.3"]);
+
+  assert.deepEqual(releasesReadyForTags(existing, published, [], recoverableTags), [
+    published[0],
+    existing[1],
+  ]);
+  assert.deepEqual(releasesReadyForTags(existing, published, [published[0]], recoverableTags), []);
+});
+
+test("release candidate preparation versions only changed packages", () => {
+  const fixture = createReleaseFixture();
+  try {
+    writeChangeset(fixture, "a-fix", "patch", "Fix package A.", ["a"]);
+    runRcScript(fixture, "enter");
+    assertPackageVersion(fixture, "a", "1.0.3-rc.0");
+    assertPackageVersion(fixture, "b", "2.4.0");
+    assert.equal(assertPrereleaseState(fixture, "rc").length, 1);
+    assert.equal(spawnPrereleaseValidator(fixture).status, 0);
+
+    const missingChangeset = spawnRcScript(fixture, "next");
+    assert.notEqual(missingChangeset.status, 0);
+    assert.match(missingChangeset.stderr, /At least one changeset/);
+
+    writeChangeset(fixture, "b-feature", "minor", "Add package B support.", ["b"]);
+    runRcScript(fixture, "next");
+    assertPackageVersion(fixture, "a", "1.0.3-rc.0");
+    assertPackageVersion(fixture, "b", "2.5.0-rc.0");
+    assert.equal(assertPrereleaseState(fixture, "rc").length, 2);
+
+    runRcScript(fixture, "exit");
+    assertPackageVersion(fixture, "a", "1.0.3");
+    assertPackageVersion(fixture, "b", "2.5.0");
+    assert.equal(existsSync(path.join(fixture, ".changeset", "pre.json")), false);
+    assert.equal(assertStableReleaseState(fixture).length, 2);
+    assert.equal(spawnStableValidator(fixture).status, 0);
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
+test("stable validation permits different package versions and rejects pending changesets", () => {
+  const fixture = createReleaseFixture();
+  try {
+    assert.equal(assertStableReleaseState(fixture).length, 2);
+    writeChangeset(fixture, "pending", "patch", "A pending fix.", ["a"]);
+    assert.throws(() => assertStableReleaseState(fixture), /Pending changesets/);
+    assert.throws(() => assertNoPendingChangesets(fixture), /pending/);
+    assert.doesNotThrow(() =>
+      assertReleasableChangesets(
+        readPendingChangesets(fixture),
+        new Set(["@fixture/a", "@fixture/b"]),
       ),
-    /@anvia\/openai/,
-  );
+    );
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
 });
 
-test("partial publish recovery includes registry-existing packages in tag creation", () => {
-  const existing = [{ name: "@anvia/core", version: "1.0.0-rc.1" }];
-  const published = [{ name: "@anvia/openai", version: "1.0.0-rc.1" }];
-  assert.deepEqual(releasesReadyForTags(existing, published, []), [...existing, ...published]);
-  assert.deepEqual(releasesReadyForTags(existing, published, [published[0]]), []);
-});
-
-test("RC notifications use the dedicated npm channel and presentation", () => {
-  assert.deepEqual(releasePresentation("rc"), {
-    title: "Release candidate packages published",
-    npmTag: "rc",
-    color: 0x8b5cf6,
-    description: "Release candidate packages",
-  });
-});
-
-test("OIDC publishing installs workspace dependencies before packing", () => {
+test("manual RC publishing and OIDC setup remain explicit in the workflow", () => {
   const workflow = readFileSync(
     path.join(repositoryRoot, ".github", "workflows", "release.yml"),
     "utf8",
@@ -154,97 +170,27 @@ test("OIDC publishing installs workspace dependencies before packing", () => {
   const installDependencies = publishJob.indexOf("- name: Install dependencies");
   const publishPackages = publishJob.indexOf("- name: Publish packages");
 
+  assert.match(workflow, /RC publishing must run from staging/);
+  assert.match(workflow, /validate-release-train\.mjs --prerelease rc/);
+  assert.doesNotMatch(workflow, /v1\.0\.0-rc\.\*/);
+  assert.doesNotMatch(workflow, /Require current release branch\n\s+if:/);
   assert.notEqual(installDependencies, -1);
   assert.notEqual(publishPackages, -1);
   assert.ok(installDependencies < publishPackages);
   assert.match(publishJob, /- name: Install dependencies\n\s+run: pnpm install --frozen-lockfile/);
 });
 
-test("Changesets drives rc.0 through rc.2 and exits to stable 1.0.0", () => {
-  const fixture = createReleaseFixture();
-  try {
-    runRcScript(fixture, "enter");
-    assertFixtureVersion(fixture, "1.0.0-rc.0");
-    assertRcPrereleaseState(fixture, "1.0.0-rc.0");
-    const preStatePath = path.join(fixture, ".changeset", "pre.json");
-    const preState = JSON.parse(readFileSync(preStatePath, "utf8"));
-    writeJson(preStatePath, { ...preState, tag: "next" });
-    assert.throws(() => assertRcPrereleaseState(fixture, "1.0.0-rc.0"), /rc prerelease mode/);
-    writeJson(preStatePath, preState);
-    assert.throws(() => assertPreviewAllowed(fixture), /disabled/);
-    const packageBPath = path.join(fixture, "packages", "b", "package.json");
-    const packageB = JSON.parse(readFileSync(packageBPath, "utf8"));
-    writeJson(packageBPath, { ...packageB, version: "1.0.0-rc.9" });
-    assert.throws(
-      () => assertSynchronizedVersions(findPublicPackages(fixture), "1.0.0-rc.0"),
-      /Expected every public package/,
-    );
-    writeJson(packageBPath, packageB);
-    assert.match(
-      readFileSync(path.join(fixture, "packages", "a", "CHANGELOG.md"), "utf8"),
-      /1\.0\.0-rc\.0/,
-    );
-
-    writeChangeset(fixture, "invalid-minor", "minor", "Attempt an invalid RC minor.", ["a"]);
-    const invalidRc = spawnRcScript(fixture, "next");
-    assert.notEqual(invalidRc.status, 0);
-    assert.match(invalidRc.stderr, /patch bumps only/);
-    assertFixtureVersion(fixture, "1.0.0-rc.0");
-    rmSync(path.join(fixture, ".changeset", "invalid-minor.md"));
-
-    writeChangeset(fixture, "public-ready", "patch", "Prepare the public release candidate.", [
-      "a",
-    ]);
-    assert.equal(readPendingChangesets(fixture).length, 1);
-    assert.throws(() => assertNoPendingChangesets(fixture), /public-ready/);
-    assertPatchOnlyChangesets(readPendingChangesets(fixture));
-    runRcScript(fixture, "next");
-    assertFixtureVersion(fixture, "1.0.0-rc.1");
-    assert.doesNotThrow(() => assertNoPendingChangesets(fixture));
-    assert.equal(spawnValidator(fixture, "v1.0.0-rc.1").status, 0);
-    const wrongTag = spawnValidator(fixture, "v1.0.0-rc.2");
-    assert.notEqual(wrongTag.status, 0);
-    assert.match(wrongTag.stderr, /Expected every public package/);
-
-    writeChangeset(fixture, "rc-fix", "patch", "Fix a release-candidate issue.", ["b"]);
-    runRcScript(fixture, "next");
-    assertFixtureVersion(fixture, "1.0.0-rc.2");
-    assert.throws(() => assertStableReleaseState(fixture), /non-prerelease semantic version/);
-    const prereleaseStable = spawnStableValidator(fixture);
-    assert.notEqual(prereleaseStable.status, 0);
-    assert.match(prereleaseStable.stderr, /non-prerelease semantic version/);
-
-    runRcScript(fixture, "exit");
-    assertFixtureVersion(fixture, "1.0.0");
-    assert.equal(existsSync(path.join(fixture, ".changeset", "pre.json")), false);
-    assert.equal(
-      JSON.parse(
-        readFileSync(path.join(fixture, "packages", "private-example", "package.json"), "utf8"),
-      ).version,
-      "0.1.0",
-    );
-    assert.throws(() => assertRcPrereleaseState(fixture, "1.0.0"), /prerelease mode/);
-    assert.equal(assertStableReleaseState(fixture), "1.0.0");
-    assert.equal(spawnStableValidator(fixture).status, 0);
-
-    writeChangeset(fixture, "unversioned-fix", "patch", "A pending stable fix.", ["a"]);
-    assert.throws(() => assertStableReleaseState(fixture), /Pending changesets/);
-    const pendingStable = spawnStableValidator(fixture);
-    assert.notEqual(pendingStable.status, 0);
-    assert.match(pendingStable.stderr, /Pending changesets/);
-    rmSync(path.join(fixture, ".changeset", "unversioned-fix.md"));
-
-    const changelog = readFileSync(path.join(fixture, "packages", "a", "CHANGELOG.md"), "utf8");
-    assert.match(changelog, /1\.0\.0-rc\.1/);
-    assert.match(changelog, /1\.0\.0-rc\.2/);
-    assert.match(changelog, /## 1\.0\.0/);
-  } finally {
-    rmSync(fixture, { recursive: true, force: true });
-  }
+test("RC notifications retain their dedicated npm presentation", () => {
+  assert.deepEqual(releasePresentation("rc"), {
+    title: "Release candidate packages published",
+    npmTag: "rc",
+    color: 0x8b5cf6,
+    description: "Release candidate packages",
+  });
 });
 
 function createReleaseFixture() {
-  const root = mkdtempSync(path.join(os.tmpdir(), "anvia-release-train-test-"));
+  const root = mkdtempSync(path.join(os.tmpdir(), "anvia-independent-release-test-"));
   mkdirSync(path.join(root, ".changeset"));
   mkdirSync(path.join(root, "packages", "a"), { recursive: true });
   mkdirSync(path.join(root, "packages", "b"), { recursive: true });
@@ -261,22 +207,24 @@ function createReleaseFixture() {
   writeJson(path.join(root, ".changeset", "config.json"), {
     changelog: "@changesets/cli/changelog",
     commit: false,
-    fixed: [["@fixture/a", "@fixture/b"]],
+    fixed: [],
     linked: [],
     access: "public",
     baseBranch: "main",
     updateInternalDependencies: "patch",
     privatePackages: { version: false, tag: false },
+    ___experimentalUnsafeOptions_WILL_CHANGE_IN_PATCH: {
+      onlyUpdatePeerDependentsWhenOutOfRange: true,
+    },
     ignore: [],
   });
   writeJson(path.join(root, "packages", "a", "package.json"), {
     name: "@fixture/a",
-    version: "0.9.0",
+    version: "1.0.2",
   });
   writeJson(path.join(root, "packages", "b", "package.json"), {
     name: "@fixture/b",
-    version: "0.2.0",
-    peerDependencies: { "@fixture/a": "workspace:*" },
+    version: "2.4.0",
   });
   writeJson(path.join(root, "packages", "private-example", "package.json"), {
     name: "private-example",
@@ -284,13 +232,37 @@ function createReleaseFixture() {
     private: true,
     devDependencies: { "@fixture/a": "workspace:*" },
   });
-  writeChangeset(root, "version-one", "major", "Prepare version 1.0.");
   return root;
 }
 
-function writeChangeset(root, id, bump, summary, packages = ["a", "b"]) {
+function writeChangeset(root, id, bump, summary, packages) {
   const releases = packages.map((name) => `"@fixture/${name}": ${bump}`).join("\n");
   writeFileSync(path.join(root, ".changeset", `${id}.md`), `---\n${releases}\n---\n\n${summary}\n`);
+}
+
+function initializeGitFixture(root) {
+  runCommand("git", ["init", "--initial-branch=main"], root);
+  runCommand("git", ["config", "user.email", "release-test@anvia.dev"], root);
+  runCommand("git", ["config", "user.name", "Anvia Release Test"], root);
+  runCommand(
+    "git",
+    [
+      "add",
+      ".changeset/config.json",
+      "package.json",
+      "pnpm-workspace.yaml",
+      "packages/a/package.json",
+      "packages/b/package.json",
+      "packages/private-example/package.json",
+    ],
+    root,
+  );
+  runCommand("git", ["commit", "-m", "Initialize release fixture"], root);
+}
+
+function runCommand(command, args, root) {
+  const result = spawnSync(command, args, { cwd: root, encoding: "utf8" });
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
 }
 
 function runRcScript(root, action) {
@@ -306,8 +278,8 @@ function spawnRcScript(root, action) {
   });
 }
 
-function spawnValidator(root, tag) {
-  return spawnSync(process.execPath, [validatorScript, "--tag", tag], {
+function spawnPrereleaseValidator(root) {
+  return spawnSync(process.execPath, [validatorScript, "--prerelease", "rc"], {
     cwd: root,
     encoding: "utf8",
     env: { ...process.env, CI: "true" },
@@ -322,10 +294,12 @@ function spawnStableValidator(root) {
   });
 }
 
-function assertFixtureVersion(root, version) {
-  const packages = findPublicPackages(root);
-  assertSynchronizedVersions(packages, version);
-  assert.equal(packages[1].packageJson.peerDependencies["@fixture/a"], "workspace:*");
+function assertPackageVersion(root, packageDir, expected) {
+  assert.equal(readJson(path.join(root, "packages", packageDir, "package.json")).version, expected);
+}
+
+function readJson(filePath) {
+  return JSON.parse(readFileSync(filePath, "utf8"));
 }
 
 function writeJson(filePath, value) {

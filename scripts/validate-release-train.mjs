@@ -1,58 +1,53 @@
 import {
-  assertFixedReleaseTrain,
-  assertGitAncestor,
-  assertInitialMajorChangeset,
+  assertIndependentVersioning,
   assertNoPendingChangesets,
-  assertRcPrereleaseState,
+  assertPrereleaseState,
+  assertReleasableChangesets,
   assertStableReleaseState,
-  assertSynchronizedVersions,
   assertWorkspaceInternalDependencies,
   findPublicPackages,
-  parseRcTag,
   readPendingChangesets,
 } from "./release-train.mjs";
 
 const root = process.cwd();
 const packages = findPublicPackages(root);
-const tag = readOption("--tag");
+const prereleaseTag = readOption("--prerelease");
 const stable = process.argv.includes("--stable");
 
-if (tag !== undefined && stable) {
-  throw new Error("--tag and --stable cannot be used together.");
+if (prereleaseTag !== undefined && stable) {
+  throw new Error("--prerelease and --stable cannot be used together.");
 }
 
-assertFixedReleaseTrain(root, packages);
+assertIndependentVersioning(root, packages);
 assertWorkspaceInternalDependencies(packages);
 
-if (!stable && packages.some(({ packageJson }) => packageJson.version.startsWith("0."))) {
-  assertInitialMajorChangeset(
-    readPendingChangesets(root),
-    new Set(packages.map(({ packageJson }) => packageJson.name)),
-  );
-}
-
-let stableVersion;
-if (stable) {
-  stableVersion = assertStableReleaseState(root, packages);
-}
-
-if (tag !== undefined) {
-  const { version } = parseRcTag(tag, { publicOnly: true });
-  assertSynchronizedVersions(packages, version);
-  assertRcPrereleaseState(root, version);
-  assertNoPendingChangesets(root);
-
-  if (process.argv.includes("--require-staging-ancestor")) {
-    assertGitAncestor(root, process.env.GITHUB_SHA ?? "HEAD", "origin/staging");
+if (!stable && prereleaseTag === undefined) {
+  const pending = readPendingChangesets(root);
+  if (pending.length > 0) {
+    assertReleasableChangesets(
+      pending,
+      new Set(packages.map(({ packageJson }) => packageJson.name)),
+    );
   }
 }
 
+let stableReleases;
+if (stable) {
+  stableReleases = assertStableReleaseState(root, packages);
+}
+
+let prereleases;
+if (prereleaseTag !== undefined) {
+  prereleases = assertPrereleaseState(root, prereleaseTag, packages);
+  assertNoPendingChangesets(root);
+}
+
 console.info(
-  tag !== undefined
-    ? `Validated ${tag} for all ${packages.length} public packages.`
-    : stableVersion !== undefined
-      ? `Validated stable ${stableVersion} for all ${packages.length} public packages.`
-      : `Validated the ${packages.length}-package Anvia release train.`,
+  prereleases !== undefined
+    ? `Validated ${prereleases.length} independently versioned ${prereleaseTag} package${prereleases.length === 1 ? "" : "s"}.`
+    : stableReleases !== undefined
+      ? `Validated stable versions for ${stableReleases.length} independently versioned public packages.`
+      : `Validated independent versioning for ${packages.length} public packages.`,
 );
 
 function readOption(name) {

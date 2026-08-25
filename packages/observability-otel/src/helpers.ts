@@ -81,6 +81,7 @@ export function runErrorAttributes(
   options: OtelObserverOptions = {},
 ): Attributes {
   return compactAttributes({
+    "anvia.run.status": args.status,
     "anvia.run.error": errorMessage(args.error),
     "anvia.run.messages": capturedJson(args.messages, "output", options),
     ...usageAttributes(args.usage),

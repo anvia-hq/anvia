@@ -8,6 +8,7 @@ import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { BatchLogRecordProcessor } from "@opentelemetry/sdk-logs";
 import { NodeSDK } from "@opentelemetry/sdk-node";
 import { z } from "zod";
+import { createProcessShutdownSignal } from "./_support/process-shutdown";
 
 const exporterOptions =
   process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT === undefined
@@ -69,9 +70,11 @@ const agent = new Agent({
   },
 });
 
+const shutdown = createProcessShutdownSignal();
 try {
   const response = await agent.generate({
     prompt: "Summarize ticket TICKET-1001 for the product engineering team.",
+    abortSignal: shutdown.signal,
     trace: {
       name: "support-ticket-summary",
       userId: "cookbook-user",
@@ -96,7 +99,7 @@ try {
     ],
     target: agentEvalTarget<string>({
       agent,
-      request: ({ input }) => ({ prompt: input }),
+      request: ({ input }) => ({ prompt: input, abortSignal: shutdown.signal }),
     }),
     metrics: [contains()],
     reporters: [createOtelEvalReporter({ onMissingTrace: "warn" })],
@@ -104,5 +107,6 @@ try {
 
   console.log("eval:", evalResult.results[0]?.metrics[0]?.outcome);
 } finally {
+  shutdown.dispose();
   await sdk.shutdown();
 }

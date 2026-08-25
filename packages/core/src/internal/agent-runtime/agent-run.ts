@@ -1715,6 +1715,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         }),
       () =>
         runObservers?.error({
+          status: reportedError instanceof AgentRunCancelledError ? "cancelled" : "failed",
           error: reportedError,
           usage,
           messages: [...messages],

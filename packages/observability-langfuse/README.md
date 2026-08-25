@@ -63,6 +63,10 @@ process needs an explicit mid-lifecycle delivery checkpoint. `close()` is idempo
 Each client owns an isolated, unregistered tracer provider, so multiple Langfuse clients and an
 application-wide OpenTelemetry provider can coexist without replacing one another.
 
+Process signals do not unwind an `await using` scope. A CLI should handle `SIGINT` and `SIGTERM`,
+abort and await its active Agent run, and only then await `langfuse.close()`. This order lets Core
+finish the root observation as `cancelled` before Langfuse flushes it.
+
 Observer capture policy is registration-specific:
 
 ```ts

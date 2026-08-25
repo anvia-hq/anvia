@@ -846,6 +846,7 @@ class LangfuseRunObserver implements AgentRunObserver {
     this.closeAllTurns();
     const redactedError = this.redactOutputValue(errorMessage(args.error));
     const metadata: Record<string, unknown> = {
+      status: args.status,
       usage: args.usage,
       messageCount: args.messages.length,
     };
@@ -854,8 +855,13 @@ class LangfuseRunObserver implements AgentRunObserver {
     }
     this.root
       .update({
-        level: "ERROR",
-        statusMessage: typeof redactedError === "string" ? redactedError : "Agent run failed",
+        level: args.status === "cancelled" ? "WARNING" : "ERROR",
+        statusMessage:
+          typeof redactedError === "string"
+            ? redactedError
+            : args.status === "cancelled"
+              ? "Agent run cancelled"
+              : "Agent run failed",
         output: {
           error: redactedError,
         },

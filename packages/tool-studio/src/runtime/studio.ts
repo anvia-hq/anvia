@@ -49,6 +49,7 @@ import {
 } from "./observability";
 import type { StudioRuntimeOptions } from "./options";
 import { registerPipelineRoutes } from "./pipelines";
+import { StudioRunLifecycle } from "./run-lifecycle";
 import { registerSandboxViewRoutes } from "./sandbox-views";
 import { createStudioSandboxRegistry, registerSandboxRoutes } from "./sandboxes";
 import { registerSessionRoutes } from "./sessions";
@@ -68,7 +69,8 @@ export class Studio implements AnviaStudio {
   private studio: StudioApp;
   private server: ReturnType<typeof serve> | undefined;
   private websocketServer: WebSocketServer | undefined;
-  private sigintHandler: (() => void) | undefined;
+  private signalHandlers: { readonly sigint: () => void; readonly sigterm: () => void } | undefined;
+  private shutdownPromise: Promise<void> | undefined;
 
   constructor(targets: StudioTarget[] = [], options: StudioOptions = {}) {
     this.options = studioOptionsFromTargets(targets, options);
@@ -96,6 +98,7 @@ export class Studio implements AnviaStudio {
   start(serveOptions: StudioServeOptions = {}): this {
     this.close();
     this.studio = createStudioApp(this.options);
+    this.shutdownPromise = undefined;
 
     const port = serveOptions.port ?? Number(process.env.RUNNER_PORT ?? 4021);
     const serverOptions: Parameters<typeof serve>[0] = {
@@ -118,18 +121,29 @@ export class Studio implements AnviaStudio {
     }
 
     if (serveOptions.handleSignals ?? true) {
-      this.sigintHandler = () => {
-        this.close();
-        process.exit(0);
+      const shutdownFor = (signal: "SIGINT" | "SIGTERM") => {
+        process.exitCode = signal === "SIGINT" ? 130 : 143;
+        void this.shutdown(shutdownOptions(serveOptions.shutdownTimeoutMs)).catch(
+          (error: unknown) => {
+            console.error(error);
+            process.exitCode = 1;
+          },
+        );
       };
-      process.once("SIGINT", this.sigintHandler);
+      this.signalHandlers = {
+        sigint: () => shutdownFor("SIGINT"),
+        sigterm: () => shutdownFor("SIGTERM"),
+      };
+      process.once("SIGINT", this.signalHandlers.sigint);
+      process.once("SIGTERM", this.signalHandlers.sigterm);
     }
 
     return this;
   }
 
   async serve(serveOptions: StudioServeLifecycleOptions = {}): Promise<void> {
-    const { onShutdown, signal, ...startOptions } = serveOptions;
+    const { onShutdown, shutdownTimeoutMs, signal, ...startOptions } = serveOptions;
+    const failures: unknown[] = [];
 
     try {
       this.start({ ...startOptions, log: false, handleSignals: false });
@@ -148,22 +162,62 @@ export class Studio implements AnviaStudio {
       }
 
       await waitForShutdown(signal);
-    } finally {
-      this.close();
+    } catch (error) {
+      failures.push(error);
+    }
+
+    try {
+      await this.shutdown(shutdownOptions(shutdownTimeoutMs));
+    } catch (error) {
+      failures.push(error);
+    }
+    try {
       await onShutdown?.();
+    } catch (error) {
+      failures.push(error);
+    }
+
+    if (failures.length === 1) throw failures[0];
+    if (failures.length > 1) {
+      throw new AggregateError(failures, "Failed to run and shut down Anvia Studio.");
     }
   }
 
   close(): void {
-    if (this.sigintHandler !== undefined) {
-      process.off("SIGINT", this.sigintHandler);
-      this.sigintHandler = undefined;
+    this.removeSignalHandlers();
+    this.closeNetwork();
+    this.studio.close();
+  }
+
+  shutdown(options: { timeoutMs?: number } = {}): Promise<void> {
+    const timeoutMs = options.timeoutMs ?? 30_000;
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+      return Promise.reject(
+        new TypeError("Anvia Studio shutdown timeoutMs must be a positive number."),
+      );
     }
+    this.shutdownPromise ??= this.shutdownResources(timeoutMs);
+    return this.shutdownPromise;
+  }
+
+  private async shutdownResources(timeoutMs: number): Promise<void> {
+    this.removeSignalHandlers();
+    this.closeNetwork();
+    await this.studio.shutdown({ timeoutMs });
+  }
+
+  private removeSignalHandlers(): void {
+    if (this.signalHandlers === undefined) return;
+    process.off("SIGINT", this.signalHandlers.sigint);
+    process.off("SIGTERM", this.signalHandlers.sigterm);
+    this.signalHandlers = undefined;
+  }
+
+  private closeNetwork(): void {
     this.server?.close();
     this.server = undefined;
     this.websocketServer?.close();
     this.websocketServer = undefined;
-    this.studio.close();
   }
 
   private logAddress(host: string, port: number): void {
@@ -174,6 +228,10 @@ export class Studio implements AnviaStudio {
       console.log(`Studio API: http://${host}:${port}`);
     }
   }
+}
+
+function shutdownOptions(timeoutMs: number | undefined): { timeoutMs?: number } {
+  return timeoutMs === undefined ? {} : { timeoutMs };
 }
 
 type StudioServer = ReturnType<typeof serve>;
@@ -339,6 +397,7 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
   const pipelineMap = new Map(pipelines.map((pipeline) => [pipeline.id, pipeline]));
   const evalMap = new Map(options.evals.map((suite) => [suite.id ?? suite.name, suite]));
   const continuationRegistry = createStudioContinuationRegistry<PreparedAgentRun>();
+  const runLifecycle = new StudioRunLifecycle();
   const sandboxRegistry = createStudioSandboxRegistry(agents, options.sandboxes ?? []);
   const memorySources = createStudioMemorySourceRegistry(agents, stores.sessions);
   const app = new HonoApp();
@@ -410,6 +469,7 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
   const pipelineOptions: Parameters<typeof registerPipelineRoutes>[1] = {
     pipelines,
     pipelineMap,
+    runLifecycle,
   };
   if (stores.pipelineLogs !== undefined) pipelineOptions.logStore = stores.pipelineLogs;
   if (stores.pipelineRuns !== undefined) pipelineOptions.runStore = stores.pipelineRuns;
@@ -420,6 +480,7 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
     stores,
     modelRegistry,
     continuationRegistry,
+    runLifecycle,
   });
 
   if (memorySources.size > 0 || stores.sessions !== undefined) {
@@ -447,6 +508,14 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
     app.all(`/${capability}/*`, (c) => unsupportedCapability(c, capability));
   }
 
+  let closing = false;
+  const beginClose = () => {
+    if (closing) return;
+    closing = true;
+    continuationRegistry.clear();
+    closeSandboxViews();
+    runLifecycle.close();
+  };
   const studio: StudioApp = {
     app,
     fetch(request: Request): Response | Promise<Response> {
@@ -456,8 +525,11 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
       return buildConfig(options, agents, pipelines, stores, sandboxRegistry.size);
     },
     close() {
-      continuationRegistry.clear();
-      closeSandboxViews();
+      beginClose();
+    },
+    async shutdown(shutdownOptions = {}) {
+      beginClose();
+      await runLifecycle.drain(shutdownOptions.timeoutMs ?? 30_000);
     },
   };
   if (stores.sessions !== undefined) Object.assign(studio, { sessionStore: stores.sessions });

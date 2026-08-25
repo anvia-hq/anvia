@@ -35,7 +35,7 @@ const agent = new Agent({
   instructions: "Answer support questions clearly.",
 });
 
-new Studio([agent]).start({
+await new Studio([agent]).serve({
   port: 4021,
 });
 ```
@@ -45,6 +45,25 @@ Then open:
 ```txt
 http://localhost:4021/ui/playground
 ```
+
+## Graceful shutdown
+
+`serve()` handles both `SIGINT` and `SIGTERM`. Studio stops accepting work, aborts active Agent and
+Pipeline runs, waits for their cancellation observers, and then runs `onShutdown`. Use that callback
+to close observability clients or other caller-owned resources:
+
+```ts
+await new Studio([agent]).serve({
+  port: 4021,
+  shutdownTimeoutMs: 30_000,
+  onShutdown: async () => {
+    await Promise.all([lens.close(), langfuse.close(), otelSdk.shutdown()]);
+  },
+});
+```
+
+`shutdown()` provides the same draining behavior for application-managed lifecycles. `close()`
+remains synchronous for compatibility: it aborts active work but does not wait for cleanup.
 
 ## Multi-Provider Models
 

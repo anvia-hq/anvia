@@ -723,7 +723,7 @@ export type StudioSessionStore = StudioMemoryStore & {
   deleteSession?(id: string): boolean | Promise<boolean>;
 };
 
-export type StudioTraceStatus = "running" | "success" | "suspended" | "error";
+export type StudioTraceStatus = "running" | "success" | "suspended" | "error" | "cancelled";
 
 export type StudioTraceObservationKind = "agent" | "generation" | "tool";
 
@@ -1037,6 +1037,7 @@ export type StudioServeOptions = {
   hostname?: string;
   log?: boolean;
   handleSignals?: boolean;
+  shutdownTimeoutMs?: number;
 };
 
 export type StudioServeLifecycleOptions = Omit<StudioServeOptions, "handleSignals"> & {
@@ -1267,6 +1268,7 @@ export type StudioErrorCode =
   | "forbidden"
   | "not_found"
   | "payload_too_large"
+  | "service_unavailable"
   | "unsupported_capability"
   | "internal_error";
 
@@ -1285,4 +1287,5 @@ export type AnviaStudio = {
   fetch(request: Request): Response | Promise<Response>;
   config(): StudioConfig;
   close(): void;
+  shutdown(options?: { timeoutMs?: number }): Promise<void>;
 };

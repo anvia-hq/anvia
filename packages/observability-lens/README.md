@@ -52,6 +52,10 @@ const suite = await runEvalSuite({
 `await using` disposes the client at scope exit, flushing and shutting down both owned providers.
 Use `flush()` only for an explicit delivery checkpoint. `close()` is idempotent and terminal.
 
+Process signals do not unwind an `await using` scope. A CLI should handle `SIGINT` and `SIGTERM`,
+abort and await its active Agent run, and only then await `lens.close()`. This order lets Core finish
+the root observation as `cancelled` before Lens flushes it.
+
 Set `optional: true` to obtain a disabled client when all Lens connection environment variables
 are absent. `lens.enabled` reports the state. The disabled observer and reporter are safe no-ops;
 dataset access still rejects because it requires a configured connection. Partial configuration is

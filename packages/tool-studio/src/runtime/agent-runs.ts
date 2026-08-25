@@ -27,6 +27,7 @@ import {
 } from "./models";
 import { rawObservedStore } from "./observability";
 import type { ResolvedStores } from "./options";
+import type { StudioRunLease, StudioRunLifecycle } from "./run-lifecycle";
 import {
   assignTranscriptRunDuration,
   createPersistedStreamingSessionTranscript,
@@ -54,6 +55,7 @@ type AgentRunRouteProps = {
   stores: ResolvedStores;
   modelRegistry: ReturnType<typeof createStudioModelRegistry>;
   continuationRegistry: StudioContinuationRegistry<PreparedAgentRun>;
+  runLifecycle: StudioRunLifecycle;
 };
 
 type SelectedModel = ReturnType<typeof resolveStudioModel>;
@@ -86,20 +88,36 @@ export function registerAgentRunRoute(app: Hono, props: AgentRunRouteProps): voi
 }
 
 async function handleAgentRun(c: Context, props: AgentRunRouteProps): Promise<Response> {
-  const prepared = await prepareAgentRun(c, props);
-  if (prepared instanceof Response) {
-    return prepared;
+  const lease = props.runLifecycle.start(c.req.raw.signal);
+  if (lease === undefined) {
+    return errorResponse(c, 503, "service_unavailable", "Anvia Studio is shutting down");
   }
 
-  if (prepared.body.stream === true) {
-    return handleStreamingAgentRun(c, prepared, props);
+  try {
+    const prepared = await prepareAgentRun(c, props, lease.abortSignal);
+    if (prepared instanceof Response) {
+      lease.finish();
+      return prepared;
+    }
+
+    if (prepared.body.stream === true) {
+      return handleStreamingAgentRun(c, prepared, props, lease);
+    }
+    try {
+      return await handleBufferedAgentRun(c, prepared, props);
+    } finally {
+      lease.finish();
+    }
+  } catch (error) {
+    lease.finish();
+    throw error;
   }
-  return handleBufferedAgentRun(c, prepared, props);
 }
 
 async function prepareAgentRun(
   c: Context,
   props: AgentRunRouteProps,
+  abortSignal: AbortSignal,
 ): Promise<PreparedAgentRun | Response> {
   const agentId = c.req.param("agentId") as string;
   const agent = props.agentMap.get(agentId);
@@ -136,7 +154,7 @@ async function prepareAgentRun(
     if (body.stream !== undefined) resumedBody = { ...resumedBody, stream: body.stream };
     if (body.metadata !== undefined) resumedBody = { ...resumedBody, metadata: body.metadata };
     if (body.trace !== undefined) resumedBody = { ...resumedBody, trace: body.trace };
-    const runOptions = createRunOptions(resumedBody, agentId, source.session, c.req.raw.signal);
+    const runOptions = createRunOptions(resumedBody, agentId, source.session, abortSignal);
     const execution: RunExecution = {
       generate: (options) =>
         source.runAgent.generate({
@@ -229,7 +247,7 @@ async function prepareAgentRun(
     execution,
     failureMessages: undefined,
     memoryCompactionLogged: false,
-    options: createRunOptions(body, agentId, session, c.req.raw.signal),
+    options: createRunOptions(body, agentId, session, abortSignal),
     runAgent,
     runId,
     runStartedAt,
@@ -417,6 +435,7 @@ function handleStreamingAgentRun(
   c: Context,
   run: PreparedAgentRun,
   props: AgentRunRouteProps,
+  lease: StudioRunLease,
 ): Response {
   const streamOptions = withInternalAgentRunOptions({ ...run.options }, { runId: run.runId });
   const runStream = registerStreamingContinuation(
@@ -446,7 +465,7 @@ function handleStreamingAgentRun(
     stream = persistedRun.events;
   }
 
-  return streamAgentRunEvents(c, stream, {
+  return streamAgentRunEvents(c, finishRunLease(stream, lease), {
     runId: run.runId,
     onCancel: async () => {
       const persistence: Promise<unknown>[] = [];
@@ -464,6 +483,17 @@ function handleStreamingAgentRun(
       await Promise.all(persistence);
     },
   });
+}
+
+async function* finishRunLease(
+  events: AsyncIterable<AgentRunStreamEvent>,
+  lease: StudioRunLease,
+): AsyncIterable<AgentRunStreamEvent> {
+  try {
+    yield* events;
+  } finally {
+    lease.finish();
+  }
 }
 
 async function handleBufferedAgentRun(

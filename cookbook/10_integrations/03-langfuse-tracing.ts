@@ -3,12 +3,13 @@ import { createTool } from "@anvia/core/tool";
 import { LangfuseClient } from "@anvia/langfuse";
 import { OpenAIClient } from "@anvia/openai";
 import { z } from "zod";
+import { createProcessShutdownSignal } from "./_support/process-shutdown";
 
 const client = new OpenAIClient({
   baseUrl: process.env.OPENAI_BASEURL,
   apiKey: process.env.OPENAI_API_KEY ?? "",
 });
-await using tracing = new LangfuseClient({
+const tracing = new LangfuseClient({
   publicKey: process.env.LANGFUSE_PUBLIC_KEY,
   secretKey: process.env.LANGFUSE_SECRET_KEY,
   baseUrl: process.env.LANGFUSE_BASE_URL,
@@ -50,17 +51,24 @@ const agent = new Agent({
   },
 });
 
-const response = await agent.generate({
-  prompt: "Summarize ticket TICKET-1001 for the product engineering team.",
-  trace: {
-    name: "support-ticket-summary",
-    userId: "cookbook-user",
-    sessionId: "cookbook-session",
-    metadata: { ticketId: "TICKET-1001", example: "integrations:03" },
-    tags: ["cookbook", "anvia"],
-  },
-});
+const shutdown = createProcessShutdownSignal();
+try {
+  const response = await agent.generate({
+    prompt: "Summarize ticket TICKET-1001 for the product engineering team.",
+    abortSignal: shutdown.signal,
+    trace: {
+      name: "support-ticket-summary",
+      userId: "cookbook-user",
+      sessionId: "cookbook-session",
+      metadata: { ticketId: "TICKET-1001", example: "integrations:03" },
+      tags: ["cookbook", "anvia"],
+    },
+  });
 
-if (response.type !== "response") throw new Error("Unexpected tool approval request.");
-console.log(response.output);
-console.log("trace:", response.trace);
+  if (response.type !== "response") throw new Error("Unexpected tool approval request.");
+  console.log(response.output);
+  console.log("trace:", response.trace);
+} finally {
+  shutdown.dispose();
+  await tracing.close();
+}

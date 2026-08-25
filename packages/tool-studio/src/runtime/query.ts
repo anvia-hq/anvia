@@ -35,7 +35,8 @@ export function parseTraceStatus(value: string | undefined): StudioTraceStatus |
   return status === "running" ||
     status === "success" ||
     status === "suspended" ||
-    status === "error"
+    status === "error" ||
+    status === "cancelled"
     ? status
     : false;
 }

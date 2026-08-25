@@ -26,6 +26,7 @@ import {
   pipelineStageLog,
 } from "./pipeline-logs";
 import { AsyncEventQueue } from "./runs";
+import type { StudioRunLease, StudioRunLifecycle } from "./run-lifecycle";
 import { streamStudioJsonl } from "./streams";
 import { isJsonObject, isJsonValue, isObject } from "./type-guards";
 
@@ -36,6 +37,7 @@ export function registerPipelineRoutes(
     pipelineMap: Map<string, StudioPipeline>;
     logStore?: StudioPipelineLogStore;
     runStore?: StudioPipelineRunStore;
+    runLifecycle: StudioRunLifecycle;
   },
 ): void {
   app.get("/pipelines", (c) =>
@@ -123,7 +125,7 @@ export function registerPipelineRoutes(
       return body.error;
     }
 
-    return executePipelineRun(c, props, pipeline, body);
+    return executeTrackedPipelineRun(c, props, pipeline, body);
   });
 
   app.post("/pipelines/:pipelineId/runs/:runId/replay", async (c) => {
@@ -163,8 +165,30 @@ export function registerPipelineRoutes(
       metadata: replayMetadata(sourceRun.metadata, body.metadata, sourceRun.runId),
     };
     if (body.stream !== undefined) replayRequest.stream = body.stream;
-    return executePipelineRun(c, props, pipeline, replayRequest);
+    return executeTrackedPipelineRun(c, props, pipeline, replayRequest);
   });
+}
+
+async function executeTrackedPipelineRun(
+  c: Context,
+  props: {
+    logStore?: StudioPipelineLogStore;
+    runStore?: StudioPipelineRunStore;
+    runLifecycle: StudioRunLifecycle;
+  },
+  pipeline: StudioPipeline,
+  body: StudioPipelineRunRequest,
+): Promise<Response> {
+  const lease = props.runLifecycle.start(c.req.raw.signal);
+  if (lease === undefined) {
+    return errorResponse(c, 503, "service_unavailable", "Anvia Studio is shutting down");
+  }
+  try {
+    return await executePipelineRun(c, props, pipeline, body, lease);
+  } catch (error) {
+    lease.finish();
+    throw error;
+  }
 }
 
 async function executePipelineRun(
@@ -175,6 +199,7 @@ async function executePipelineRun(
   },
   pipeline: StudioPipeline,
   body: StudioPipelineRunRequest,
+  lease: StudioRunLease,
 ): Promise<Response> {
   const runId = globalThis.crypto.randomUUID();
   const startedAt = Date.now();
@@ -204,11 +229,12 @@ async function executePipelineRun(
       input: body.input,
       startedAt,
       startedAtIso,
+      onFinish: lease.finish,
     };
     if (body.metadata !== undefined) streamOptions.metadata = body.metadata;
     if (props.logStore !== undefined) streamOptions.logStore = props.logStore;
     if (props.runStore !== undefined) streamOptions.runStore = props.runStore;
-    streamOptions.abortSignal = c.req.raw.signal;
+    streamOptions.abortSignal = lease.abortSignal;
     return streamPipelineRun(c, streamOptions);
   }
 
@@ -218,7 +244,7 @@ async function executePipelineRun(
       input: body.input,
       runId,
       metadata: body.metadata,
-      abortSignal: c.req.raw.signal,
+      abortSignal: lease.abortSignal,
       observer: {
         async onEvent(event) {
           await appendPipelineLog(props.logStore, pipelineStageLog(event, pipeline.id));
@@ -275,6 +301,8 @@ async function executePipelineRun(
       pipelineRunFailedLog(pipeline.id, runId, error, startedAt),
     );
     return errorResponse(c, 500, "internal_error", "Pipeline run failed", serializeError(error));
+  } finally {
+    lease.finish();
   }
 }
 
@@ -299,6 +327,7 @@ function streamPipelineRun(
     logStore?: StudioPipelineLogStore;
     runStore?: StudioPipelineRunStore;
     abortSignal?: AbortSignal;
+    onFinish: () => void;
   },
 ): Response {
   return streamStudioJsonl(pipelineRunEvents(props));
@@ -314,6 +343,7 @@ async function* pipelineRunEvents(props: {
   logStore?: StudioPipelineLogStore;
   runStore?: StudioPipelineRunStore;
   abortSignal?: AbortSignal;
+  onFinish: () => void;
 }): AsyncIterable<AgentRunStreamEvent> {
   yield* emitPipelineLog(props.logStore, pipelineRunStartedLog(props.pipeline, props.runId));
 
@@ -405,7 +435,11 @@ async function* pipelineRunEvents(props: {
       yield next.value;
     }
   } finally {
-    await run;
+    try {
+      await run;
+    } finally {
+      props.onFinish();
+    }
   }
 }
 

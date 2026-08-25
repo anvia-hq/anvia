@@ -327,6 +327,8 @@ Use `stream.textStream` instead of `stream.events` when only text deltas are nee
 iteration share one underlying stream and therefore cannot be consumed independently.
 
 Pass `abortSignal` on a run to cancel the active provider call, tools, and nested Agent tools.
+Run observers receive terminal errors with `status: "cancelled"` for cancellation and
+`status: "failed"` for other failures.
 
 ## Memory
 

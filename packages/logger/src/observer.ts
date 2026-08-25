@@ -118,11 +118,17 @@ class LoggerRunObserver implements AgentRunObserver {
   }
 
   error(args: AgentRunErrorArgs): void {
-    this.logger.error("agent run failed", {
+    const context = {
+      status: args.status,
       error: serializeError(args.error),
       usage: args.usage,
       messageCount: args.messages.length,
-    });
+    };
+    if (args.status === "cancelled") {
+      this.logger.warn("agent run cancelled", context);
+    } else {
+      this.logger.error("agent run failed", context);
+    }
   }
 }
 

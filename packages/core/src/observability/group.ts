@@ -76,6 +76,7 @@ export async function startAgentRunObservers(
     const cleanupFailures = await terminateObservers(runObservers, (observer) =>
       observer.error?.(
         observerSnapshot({
+          status: "failed",
           error: startupError,
           usage: Usage.empty(),
           messages: [...args.history, args.prompt],

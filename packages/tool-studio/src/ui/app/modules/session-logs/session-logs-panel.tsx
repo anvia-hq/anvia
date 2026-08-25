@@ -29,7 +29,7 @@ export function SessionLogsPanel(props: {
   }
 
   return (
-    <aside className="grid h-full min-h-0 min-w-0 max-h-full grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-background/70 max-xl:hidden">
+    <aside className="grid h-full min-h-0 min-w-0 max-h-full grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-background max-xl:hidden">
       <header className="grid min-h-12 min-w-0 gap-1 py-3 pl-0 pr-4">
         <div className="flex items-center justify-between gap-3">
           <h2 className="m-0 text-sm font-semibold leading-tight text-foreground">Session logs</h2>
@@ -91,7 +91,7 @@ function LogRow(props: { log: StudioSessionLogEntry }) {
     .join("  ");
   return (
     <article
-      className="grid min-w-0 gap-1 rounded-lg px-3 py-2 text-xs leading-5 transition duration-200 hover:bg-muted/50"
+      className="grid min-w-0 gap-1 rounded-lg px-3 py-2 text-xs leading-5 transition duration-200 hover:bg-transparent hover:text-foreground"
       title={line}
     >
       <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
@@ -101,7 +101,7 @@ function LogRow(props: { log: StudioSessionLogEntry }) {
         </span>
         <span className="min-w-0 break-words font-medium text-foreground">{props.log.message}</span>
       </div>
-      <div className="min-w-0 break-words text-muted-foreground/80">
+      <div className="min-w-0 break-words text-muted-foreground">
         {props.log.category}/{props.log.event}
       </div>
       <LogMetadata metadata={props.log.metadata} />
@@ -126,7 +126,7 @@ function levelTextClass(level: StudioSessionLogEntry["level"]): string {
     case "error":
       return "text-destructive";
     case "warn":
-      return "text-yellow-500";
+      return "text-status-pending-ink";
     case "debug":
       return "text-muted-foreground";
     case "info":

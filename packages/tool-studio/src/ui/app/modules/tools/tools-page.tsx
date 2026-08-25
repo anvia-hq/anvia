@@ -211,7 +211,7 @@ function ToolRegistryTable(props: {
   return (
     <div className="min-w-[1040px]">
       <table className="w-full border-separate border-spacing-0 text-left">
-        <thead className="sticky top-0 z-10 bg-background/95 backdrop-blur">
+        <thead className="sticky top-0 z-10 bg-header backdrop-blur">
           <tr>
             <ToolTableHead>Tool</ToolTableHead>
             <ToolTableHead>Origin</ToolTableHead>
@@ -301,7 +301,7 @@ function ToolRegistryRow(props: {
 
 function ToolTableHead(props: { children: string }) {
   return (
-    <th className="border-b border-border/80 py-2.5 pr-5 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground first:pl-0">
+    <th className="border-b border-hair py-2.5 pr-5 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground first:pl-0">
       {props.children}
     </th>
   );
@@ -309,7 +309,7 @@ function ToolTableHead(props: { children: string }) {
 
 function ToolTableCell(props: { children: ReactNode }) {
   return (
-    <td className="border-b border-border/70 py-3.5 pr-5 align-top first:pl-0">{props.children}</td>
+    <td className="border-b border-hair py-3.5 pr-5 align-top first:pl-0">{props.children}</td>
   );
 }
 
@@ -334,4 +334,4 @@ function summarizeTools(tools: StudioAgentToolMetadata[]) {
   );
 }
 
-const selectedBadge = "border-border/80 bg-muted/45 text-foreground";
+const selectedBadge = "border-hair bg-row-selected text-foreground";

@@ -8,19 +8,28 @@
       name="description"
       content="Professional Studio interface for Anvia agents, sessions, tools, knowledge, and traces."
     />
+    <meta name="theme-color" content="#09090b" />
+    <link data-anvia-favicon rel="icon" type="image/svg+xml" href="/ui/assets/favicon-dark.svg" />
     <script>
       (() => {
+        let theme = "dark";
         try {
-          const theme = localStorage.getItem("anvia-studio-theme");
-          const dark =
-            theme === "dark" ||
-            (theme !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches);
-          document.documentElement.classList.toggle("dark", dark);
-          document.documentElement.style.colorScheme = dark ? "dark" : "light";
+          const stored = localStorage.getItem("anvia-theme");
+          const legacy = localStorage.getItem("anvia-studio-theme");
+          if (stored === "light" || (stored === null && legacy === "light")) theme = "light";
         } catch {}
+        const root = document.documentElement;
+        root.classList.toggle("dark", theme === "dark");
+        root.dataset.theme = theme;
+        root.style.colorScheme = theme;
+        document
+          .querySelector('meta[name="theme-color"]')
+          ?.setAttribute("content", theme === "dark" ? "#09090b" : "#f4f4f5");
+        const favicon = document.querySelector("link[data-anvia-favicon]");
+        if (favicon)
+          favicon.href = favicon.href.replace("favicon-dark.svg", `favicon-${theme}.svg`);
       })();
     </script>
-    <link rel="icon" type="image/svg+xml" href="/ui/assets/favicon.svg" />
   </head>
   <body>
     <div id="anvia-ui" data-ui-path="/ui">

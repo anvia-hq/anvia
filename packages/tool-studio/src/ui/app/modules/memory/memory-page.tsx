@@ -276,7 +276,7 @@ export function MemoryPage(props: { agents: StudioConfig["agents"]; enabled: boo
             ].join(" ")}
           >
             {error.length === 0 ? null : <InlineError message={error} />}
-            <div className="grid min-h-0 grid-cols-[260px_minmax(320px,0.78fr)_minmax(0,1.22fr)] overflow-hidden border-t border-border/80 max-xl:grid-cols-[240px_minmax(0,1fr)] max-xl:grid-rows-[minmax(240px,0.42fr)_minmax(0,1fr)] max-md:grid-cols-1 max-md:grid-rows-[auto_minmax(240px,0.38fr)_minmax(0,1fr)]">
+            <div className="grid min-h-0 grid-cols-[260px_minmax(320px,0.78fr)_minmax(0,1.22fr)] overflow-hidden border-t border-hair max-xl:grid-cols-[240px_minmax(0,1fr)] max-xl:grid-rows-[minmax(240px,0.42fr)_minmax(0,1fr)] max-md:grid-cols-1 max-md:grid-rows-[auto_minmax(240px,0.38fr)_minmax(0,1fr)]">
               <MemoryUserRail
                 users={users}
                 selectedUserId={selectedUserId}
@@ -313,7 +313,7 @@ function MemoryUserRail(props: {
   onSelect: (userId: string) => void;
 }) {
   return (
-    <aside className="min-h-0 overflow-auto border-r border-border/80 pr-3 max-md:border-b max-md:border-r-0 max-md:pr-0">
+    <aside className="min-h-0 overflow-auto border-r border-hair pr-3 max-md:border-b max-md:border-r-0 max-md:pr-0">
       <div className="grid gap-3 py-4 pr-3 max-md:pr-0">
         <SectionLabel label="Users" value={props.users.length} />
         <UserFilterButton
@@ -349,8 +349,8 @@ function UserFilterButton(props: {
   return (
     <button
       className={[
-        "grid min-w-0 gap-1 rounded-lg border border-transparent px-3 py-2.5 text-left transition duration-200 hover:border-border/80 hover:bg-muted/25 focus-visible:border-ring focus-visible:outline-none",
-        props.active ? "border-border/80 bg-muted/35" : "",
+        "grid min-w-0 gap-1 rounded-lg border border-transparent px-3 py-2.5 text-left transition duration-200 hover:border-hair hover:bg-transparent hover:text-foreground focus-visible:border-ring focus-visible:outline-none",
+        props.active ? "border-hair bg-row-selected" : "",
       ].join(" ")}
       type="button"
       onClick={props.onClick}
@@ -371,15 +371,15 @@ function ConversationLedger(props: {
   onSelect: (conversationRef: string) => void;
 }) {
   return (
-    <section className="min-h-0 overflow-auto border-r border-border/80 px-4 max-xl:border-r-0 max-xl:pr-0 max-md:border-b max-md:px-0">
+    <section className="min-h-0 overflow-auto border-r border-hair px-4 max-xl:border-r-0 max-xl:pr-0 max-md:border-b max-md:px-0">
       <div className="grid gap-3 py-4">
         <SectionLabel label="Conversations" value={props.conversations.length} />
         {props.conversations.length === 0 ? (
-          <div className="border-y border-dashed border-border/80 px-3 py-8 text-center text-sm text-muted-foreground">
+          <div className="border-y border-dashed border-hair px-3 py-8 text-center text-sm text-muted-foreground">
             No conversations for this user.
           </div>
         ) : (
-          <div className="grid border-y border-border/80">
+          <div className="grid border-y border-hair">
             {props.conversations.map((conversation) => (
               <ConversationRow
                 active={conversation.ref === props.selectedConversationRef}
@@ -405,8 +405,8 @@ function ConversationRow(props: {
   return (
     <button
       className={[
-        "grid min-w-0 gap-2 border-b border-border/70 px-3 py-3 text-left transition duration-200 last:border-b-0 hover:bg-muted/20 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-        props.active ? "bg-muted/35" : "",
+        "grid min-w-0 gap-2 border-b border-hair px-3 py-3 text-left transition duration-200 last:border-b-0 hover:bg-transparent hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+        props.active ? "bg-row-selected" : "",
       ].join(" ")}
       type="button"
       onClick={props.onSelect}
@@ -454,7 +454,7 @@ function ConversationDetail(props: {
   return (
     <section className="min-h-0 overflow-auto py-4 pl-5 max-xl:col-span-2 max-xl:pl-0 max-md:col-span-1">
       <div className="grid min-w-0 gap-5">
-        <header className="grid gap-4 border-b border-border/80 pb-5">
+        <header className="grid gap-4 border-b border-hair pb-5">
           <div className="flex min-w-0 items-start justify-between gap-4 max-md:grid">
             <div className="grid min-w-0 gap-2">
               <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
@@ -468,15 +468,15 @@ function ConversationDetail(props: {
               </span>
             </div>
             <div className="flex flex-wrap justify-end gap-2 max-md:justify-start">
-              <Badge className="border-border/80 bg-muted/45 text-foreground">
+              <Badge className="border-hair bg-muted text-foreground">
                 {props.source.storeKind ?? props.source.kind}
               </Badge>
-              <Badge className="border-border/80 bg-muted/45 text-foreground">
+              <Badge className="border-hair bg-muted text-foreground">
                 {sourceAgentLabel(props.agents, props.source, props.conversation.agentIds)}
               </Badge>
             </div>
           </div>
-          <div className="grid border-y border-border/80 sm:grid-cols-4 sm:divide-x sm:divide-border/80">
+          <div className="grid border-y border-hair sm:grid-cols-4 sm:divide-x sm:divide-hair">
             <Fact label="user" value={props.conversation.userId} />
             <Fact label="messages" value={props.conversation.messageCount} />
             <Fact label="created" value={formatRelativeTime(props.conversation.createdAt)} />
@@ -515,14 +515,14 @@ function UnavailableSource(props: { source: StudioMemorySourceSummary }) {
 function JsonPanel(props: { title: string; value: unknown }) {
   const count = Array.isArray(props.value) ? props.value.length : undefined;
   return (
-    <details className="group grid min-w-0 overflow-hidden border-y border-border/80" open>
-      <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 bg-muted/10 px-3 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground marker:hidden">
+    <details className="group grid min-w-0 overflow-hidden border-y border-hair" open>
+      <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 bg-muted px-3 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground marker:hidden">
         <span>{props.title}</span>
         <span className="font-medium normal-case tracking-normal">
           {count === undefined ? "JSON" : `${count} items`}
         </span>
       </summary>
-      <div className="min-w-0 overflow-x-auto border-t border-border/70">
+      <div className="min-w-0 overflow-x-auto border-t border-hair">
         <pre className="m-0 max-h-96 min-w-max p-4 text-xs leading-5 text-foreground">
           <code>
             <JsonSyntax text={formatJson(props.value)} />
@@ -590,7 +590,7 @@ function MemoryEmptyDashboard(props: {
 
 function InlineError(props: { message: string }) {
   return (
-    <div className="mb-3 border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs leading-5 text-destructive">
+    <div className="mb-3 border border-status-danger-ink bg-status-danger-fill px-3 py-2 text-xs leading-5 text-destructive">
       {props.message}
     </div>
   );

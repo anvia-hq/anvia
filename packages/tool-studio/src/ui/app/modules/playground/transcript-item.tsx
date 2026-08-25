@@ -71,7 +71,7 @@ export const TranscriptItem = memo(function TranscriptItem(props: {
         data-entry-kind="message"
       >
         {props.entry.text.trim().length === 0 ? null : (
-          <div className="rounded-2xl bg-muted px-4 py-2.5">
+          <div className="rounded-lg bg-muted px-4 py-2.5">
             <MarkdownText size="base" text={props.entry.text} />
           </div>
         )}
@@ -140,7 +140,7 @@ function AssistantResponseFooter(props: {
       {props.showActions ? (
         <Button
           aria-label={copied ? "Response copied" : "Copy response"}
-          className="h-8 min-h-8 w-8 rounded-lg border border-border/70 bg-muted/30 p-0 text-muted-foreground shadow-none hover:border-border hover:bg-muted/55 hover:text-foreground"
+          className="h-8 min-h-8 w-8 rounded-lg border border-hair bg-muted p-0 text-muted-foreground shadow-none hover:border-foreground hover:bg-transparent hover:text-foreground"
           title={copied ? "Copied" : "Copy response"}
           type="button"
           variant="ghost"
@@ -153,7 +153,7 @@ function AssistantResponseFooter(props: {
         <div className="group relative">
           <Button
             aria-label="Response metrics"
-            className="h-8 min-h-8 w-8 rounded-lg border border-border/70 bg-muted/30 p-0 text-muted-foreground shadow-none hover:border-border hover:bg-muted/55 hover:text-foreground"
+            className="h-8 min-h-8 w-8 rounded-lg border border-hair bg-muted p-0 text-muted-foreground shadow-none hover:border-foreground hover:bg-transparent hover:text-foreground"
             title={metricsTitle(props.metrics)}
             type="button"
             variant="ghost"
@@ -161,7 +161,7 @@ function AssistantResponseFooter(props: {
             <StudioIcon icon={ChartBar} aria-hidden="true" />
           </Button>
           <div
-            className="pointer-events-none absolute left-0 top-full z-30 mt-2 hidden w-64 rounded-lg border border-border/90 bg-popover p-3 text-popover-foreground shadow-xl shadow-black/25 group-focus-within:grid group-hover:grid"
+            className="pointer-events-none absolute left-0 top-full z-30 mt-2 hidden w-64 rounded-lg border border-hair bg-popover p-3 text-popover-foreground shadow-md group-focus-within:grid group-hover:grid"
             role="tooltip"
           >
             <ResponseMetricsTooltip metrics={props.metrics} />
@@ -171,7 +171,7 @@ function AssistantResponseFooter(props: {
       {!props.showActions || traceId === undefined ? null : (
         <Button
           aria-label={`Open trace ${traceId}`}
-          className="h-8 min-h-8 w-8 rounded-lg border border-border/70 bg-muted/30 p-0 text-muted-foreground shadow-none hover:border-border hover:bg-muted/55 hover:text-foreground"
+          className="h-8 min-h-8 w-8 rounded-lg border border-hair bg-muted p-0 text-muted-foreground shadow-none hover:border-foreground hover:bg-transparent hover:text-foreground"
           title={`Open trace ${traceId}`}
           type="button"
           variant="ghost"
@@ -300,10 +300,7 @@ function MessageAttachments(props: {
               ? undefined
               : `data:${attachment.mediaType ?? "image/png"};base64,${attachment.data}`);
           return (
-            <div
-              className="overflow-hidden rounded-lg border border-border/80 bg-card/80"
-              key={key}
-            >
+            <div className="overflow-hidden rounded-lg border border-hair bg-card" key={key}>
               {src === undefined ? (
                 <div className="grid h-20 w-24 place-items-center px-2 text-center text-xs text-muted-foreground">
                   Image
@@ -320,7 +317,7 @@ function MessageAttachments(props: {
         }
         return (
           <span
-            className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-border/80 bg-card/80 px-2 py-1 text-xs font-medium text-muted-foreground"
+            className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-hair bg-card px-2 py-1 text-xs font-medium text-muted-foreground"
             key={key}
           >
             <span className="min-w-0 truncate">
@@ -399,13 +396,13 @@ function ToolEntry(props: {
         <Button
           aria-expanded={hasPayload ? !collapsed : undefined}
           aria-label={`${collapsed ? "Expand" : "Collapse"} ${props.entry.toolName} tool call`}
-          className="h-auto min-h-9 min-w-0 flex-1 justify-start gap-2.5 rounded-lg border-0 bg-transparent px-1 py-0.5 text-left text-inherit shadow-none hover:bg-muted/35 hover:text-inherit"
+          className="h-auto min-h-9 min-w-0 flex-1 justify-start gap-2.5 rounded-lg border-0 bg-transparent px-1 py-0.5 text-left text-inherit shadow-none hover:bg-transparent hover:text-inherit"
           type="button"
           variant="ghost"
           onClick={() => setCollapsed((current) => !current)}
         >
           <span
-            className="grid size-6 shrink-0 place-items-center rounded-md border border-border/80 bg-muted/35 text-muted-foreground"
+            className="grid size-6 shrink-0 place-items-center rounded-md border border-hair bg-muted text-muted-foreground"
             data-tool-icon="action"
           >
             <StudioIcon icon={Lightning} className="size-2.5" weight="fill" aria-hidden="true" />
@@ -417,7 +414,7 @@ function ToolEntry(props: {
             <span className="ml-auto inline-flex shrink-0 items-center gap-1.5 text-sm font-normal text-muted-foreground">
               <span
                 className={cn(
-                  "size-1.5 rounded-full bg-muted-foreground/60",
+                  "size-1.5 rounded-full bg-dim",
                   status === "Running" && "animate-pulse bg-foreground motion-reduce:animate-none",
                   (cancelledInteraction || rejectedApproval || timedOutApproval) &&
                     "bg-destructive",
@@ -469,8 +466,8 @@ function ToolEntry(props: {
 
 function ChildAgentActivity(props: { events: NonNullable<ToolMessage["childEvents"]> }) {
   return (
-    <div className="overflow-hidden rounded-xl border border-border/80 bg-background/65">
-      <div className="bg-muted/20 px-3 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+    <div className="overflow-hidden rounded-none border border-hair bg-background">
+      <div className="bg-muted px-3 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
         Subagent activity
       </div>
       <div className="grid gap-3 p-3">
@@ -479,7 +476,7 @@ function ChildAgentActivity(props: { events: NonNullable<ToolMessage["childEvent
           if (event.kind === "message" || event.kind === "reasoning") {
             return (
               <div
-                className="grid gap-1 rounded-xl border border-border/80 bg-card/90 p-3"
+                className="grid gap-1 rounded-none border border-hair bg-card p-3"
                 key={`${event.kind}-${event.agentId}-${event.text}`}
               >
                 <div className="flex min-w-0 items-center gap-2">
@@ -496,11 +493,11 @@ function ChildAgentActivity(props: { events: NonNullable<ToolMessage["childEvent
           }
           return (
             <div
-              className="grid gap-2 rounded-xl border border-border/80 bg-card/90 p-3"
+              className="grid gap-2 rounded-none border border-hair bg-card p-3"
               key={`${event.kind}-${event.agentId}-${event.toolName}-${event.callId ?? event.args ?? event.result ?? ""}`}
             >
               <div className="flex min-w-0 items-center gap-2">
-                <Badge className="border-border/70 bg-muted/45 px-1.5 py-0.5 text-xs uppercase text-foreground">
+                <Badge className="border-hair bg-muted px-1.5 py-0.5 text-xs uppercase text-foreground">
                   Tool
                 </Badge>
                 <span className="min-w-0 truncate text-xs font-semibold text-muted-foreground">
@@ -554,7 +551,7 @@ function ToolQuestionPanel(props: {
 
   if (activeQuestion === undefined) {
     return (
-      <div className="rounded-xl border border-border bg-background p-4 text-sm font-medium text-muted-foreground">
+      <div className="rounded-none border border-border bg-background p-4 text-sm font-medium text-muted-foreground">
         No questions
       </div>
     );
@@ -572,7 +569,7 @@ function ToolQuestionPanel(props: {
   return (
     <div className="grid gap-3">
       {props.question.status === "cancelled" ? (
-        <div className="rounded-xl border border-border/70 bg-muted/25 px-3 py-2.5 text-sm font-medium text-muted-foreground">
+        <div className="rounded-none border border-hair bg-muted px-3 py-2.5 text-sm font-medium text-muted-foreground">
           Question cancelled
         </div>
       ) : null}
@@ -588,7 +585,7 @@ function ToolQuestionPanel(props: {
         onAdvance={lastQuestion ? undefined : goNext}
       />
       {pending ? (
-        <div className="flex min-w-0 items-center justify-between gap-3 rounded-xl bg-muted/20 px-3 py-2">
+        <div className="flex min-w-0 items-center justify-between gap-3 rounded-none bg-muted px-3 py-2">
           <div className="min-w-0 text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
             {answeredCount}/{total} answered
           </div>
@@ -620,7 +617,7 @@ function ToolQuestionPanel(props: {
           </div>
         </div>
       ) : total > 1 ? (
-        <div className="flex min-w-0 items-center justify-between gap-3 rounded-xl bg-muted/20 px-3 py-2">
+        <div className="flex min-w-0 items-center justify-between gap-3 rounded-none bg-muted px-3 py-2">
           <div className="min-w-0 text-xs font-semibold uppercase tracking-[0.2em] text-foreground">
             Answered
           </div>
@@ -660,7 +657,7 @@ function QuestionPromptControl(props: {
     submittedAnswer !== undefined ? "Answered" : draftAnswer.length > 0 ? "Ready" : "Waiting";
 
   return (
-    <section className="grid gap-4 rounded-xl border border-border/80 bg-background/70 p-4">
+    <section className="grid gap-4 rounded-none border border-hair bg-background p-4">
       <div className="flex min-w-0 items-start justify-between gap-4">
         <div className="grid min-w-0 gap-2">
           <div className=" text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
@@ -682,7 +679,7 @@ function QuestionPromptControl(props: {
         </span>
       </div>
       {submittedAnswer === undefined ? null : (
-        <div className="rounded-lg border border-border/70 bg-muted/45 px-3 py-2 text-sm font-medium text-foreground">
+        <div className="rounded-lg border border-hair bg-muted px-3 py-2 text-sm font-medium text-foreground">
           {submittedAnswer}
         </div>
       )}
@@ -693,7 +690,7 @@ function QuestionPromptControl(props: {
             return (
               <Button
                 key={choice.value}
-                className={cn("h-8 min-h-8 px-3 text-xs", active && "border-foreground/45")}
+                className={cn("h-8 min-h-8 px-3 text-xs", active && "border-foreground")}
                 disabled={props.disabled}
                 size="sm"
                 type="button"
@@ -740,11 +737,11 @@ function questionDraftAnswer(value: QuestionDraft | undefined): string {
 
 function ToolApprovalPanel(props: { approval: ToolApproval }) {
   return (
-    <div className="grid gap-2 rounded-xl border border-border/70 bg-muted/25 px-3 py-2.5">
+    <div className="grid gap-2 rounded-none border border-hair bg-muted px-3 py-2.5">
       <div className="flex min-w-0 items-center gap-2">
         <Badge
           className={cn(
-            "border-border/70 bg-background/60 px-1.5 py-0.5 text-xs uppercase text-muted-foreground",
+            "border-hair bg-background px-1.5 py-0.5 text-xs uppercase text-muted-foreground",
             props.approval.status === "approved" && "text-foreground",
             props.approval.status === "rejected" && "text-destructive",
           )}
@@ -771,7 +768,7 @@ function ToolApprovalActions(props: {
   return (
     <div className="flex shrink-0 items-center gap-1">
       <Button
-        className="h-8 min-h-8 border-0 bg-transparent px-3 text-sm text-muted-foreground shadow-none hover:bg-destructive/10 hover:text-destructive"
+        className="h-8 min-h-8 border-0 bg-transparent px-3 text-sm text-muted-foreground shadow-none hover:bg-status-danger-fill hover:text-destructive"
         disabled={props.disabled}
         size="sm"
         type="button"

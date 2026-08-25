@@ -141,7 +141,7 @@ function TraceTable(props: {
     >
       <ScrollArea className="h-full min-h-0">
         <div className="grid min-w-280">
-          <div className="sticky top-0 z-10 grid min-h-11 grid-cols-[minmax(220px,1.3fr)_150px_120px_120px_120px_120px_110px_90px] items-center gap-4 border-b bg-background/95 px-4 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground backdrop-blur">
+          <div className="sticky top-0 z-10 grid min-h-11 grid-cols-[minmax(220px,1.3fr)_150px_120px_120px_120px_120px_110px_90px] items-center gap-4 border-b bg-header px-4 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground backdrop-blur">
             <span>Trace</span>
             <span>Session</span>
             <span>Agent</span>
@@ -153,7 +153,7 @@ function TraceTable(props: {
           </div>
           {props.traces.map((trace) => (
             <Button
-              className="grid h-auto min-h-14 w-full grid-cols-[minmax(220px,1.3fr)_150px_120px_120px_120px_120px_110px_90px] items-center justify-start gap-4 whitespace-normal rounded-none border-0 border-b bg-transparent px-4 py-2.5 text-left text-muted-foreground shadow-none transition duration-200 hover:bg-accent/70 hover:text-accent-foreground"
+              className="grid h-auto min-h-14 w-full grid-cols-[minmax(220px,1.3fr)_150px_120px_120px_120px_120px_110px_90px] items-center justify-start gap-4 whitespace-normal rounded-none border-0 border-b bg-transparent px-4 py-2.5 text-left text-muted-foreground shadow-none transition duration-200 hover:bg-transparent hover:text-foreground"
               type="button"
               variant="ghost"
               key={trace.id}
@@ -308,17 +308,16 @@ function TraceStatusBadge({ status }: { status: string }) {
     <Badge
       className={cn(
         "border-0 capitalize",
-        status === "success" &&
-          "bg-emerald-200 text-emerald-950 dark:bg-emerald-300 dark:text-emerald-950",
-        status === "error" && "bg-rose-200 text-rose-950 dark:bg-rose-300 dark:text-rose-950",
+        status === "success" && "bg-status-success-fill text-status-success-ink",
+        status === "error" && "bg-status-danger-fill text-status-danger-ink",
         (status === "running" || status === "suspended" || status === "cancelled") &&
-          "bg-amber-200 text-amber-950 dark:bg-amber-300 dark:text-amber-950",
+          "bg-status-pending-fill text-status-pending-ink",
         status !== "success" &&
           status !== "error" &&
           status !== "running" &&
           status !== "suspended" &&
           status !== "cancelled" &&
-          "bg-slate-200 text-slate-900 dark:bg-slate-300 dark:text-slate-950",
+          "bg-status-neutral-fill text-status-neutral-ink",
       )}
     >
       {status}
@@ -543,8 +542,8 @@ function TraceTreeRow(props: {
   return (
     <div
       className={cn(
-        "group flex min-w-0 items-stretch text-muted-foreground hover:bg-muted/60",
-        props.active && "bg-muted text-foreground",
+        "group flex min-w-0 items-stretch text-muted-foreground hover:bg-transparent hover:text-foreground",
+        props.active && "bg-row-selected text-foreground",
       )}
     >
       <button
@@ -573,7 +572,7 @@ function TraceTreeRow(props: {
         <button
           aria-expanded={!props.collapsed}
           aria-label={props.collapsed ? `Expand ${props.title}` : `Collapse ${props.title}`}
-          className="m-1 grid size-7 shrink-0 place-items-center rounded-md hover:bg-background"
+          className="m-1 grid size-7 shrink-0 place-items-center rounded-md hover:bg-transparent hover:text-foreground"
           type="button"
           onClick={props.onToggle}
         >
@@ -797,7 +796,7 @@ function TraceDetailPane(props: {
               />
             )}
             <button
-              className="flex min-w-0 items-center gap-2 rounded-md border bg-muted/20 px-2.5 py-1.5 text-xs hover:bg-muted/60"
+              className="flex min-w-0 items-center gap-2 rounded-md border bg-muted px-2.5 py-1.5 text-xs hover:border-foreground hover:bg-transparent"
               type="button"
               onClick={() => props.onShowSessionTraces(props.trace.sessionId)}
             >
@@ -844,7 +843,7 @@ function TraceDetailPane(props: {
 
 function TraceMetric(props: { icon: ReactNode; label: string; value: string }) {
   return (
-    <div className="flex min-w-0 items-center gap-2 rounded-md border bg-muted/20 px-2.5 py-1.5 text-xs">
+    <div className="flex min-w-0 items-center gap-2 rounded-md border bg-muted px-2.5 py-1.5 text-xs">
       <span className="text-muted-foreground [&_svg]:size-3.5">{props.icon}</span>
       <span className="text-muted-foreground">{props.label}</span>
       <span className="max-w-44 truncate font-mono font-medium">{props.value}</span>
@@ -858,7 +857,7 @@ function PayloadViewSwitch(props: {
 }) {
   return (
     <fieldset
-      className="flex h-8 items-center rounded-md border bg-muted/50 p-0.5"
+      className="flex h-8 items-center rounded-md border bg-muted p-0.5"
       aria-label="Payload view"
     >
       {(["formatted", "json"] as const).map((view) => (
@@ -866,7 +865,7 @@ function PayloadViewSwitch(props: {
           aria-pressed={props.value === view}
           className={cn(
             "h-6 rounded px-2 text-xs font-medium text-muted-foreground",
-            props.value === view && "bg-background text-foreground shadow-sm",
+            props.value === view && "bg-accent text-foreground",
           )}
           key={view}
           type="button"
@@ -900,7 +899,7 @@ function TraceDataSection(props: {
           {rows.map((item) => (
             <article
               className={cn(
-                "grid min-w-0 gap-2 rounded-lg border bg-muted/10 px-4 py-3",
+                "grid min-w-0 gap-2 rounded-lg border bg-muted px-4 py-3",
                 props.compact &&
                   "grid-cols-[150px_minmax(0,1fr)] items-start gap-4 max-lg:grid-cols-1",
               )}
@@ -938,10 +937,10 @@ function TraceRowContent(props: {
                 className={cn(
                   "px-1.5 py-0.5",
                   item.role === "User" &&
-                    "border-border/80 bg-muted-foreground/15 text-muted-foreground",
-                  item.role === "Assistant" && "border-border/80 bg-foreground/15 text-foreground",
+                    "border-hair bg-status-neutral-fill text-muted-foreground",
+                  item.role === "Assistant" && "border-hair bg-status-neutral-fill text-foreground",
                   item.role === "Tool" &&
-                    "border-destructive/40 bg-destructive/15 text-destructive",
+                    "border-status-danger-ink bg-status-danger-fill text-destructive",
                 )}
               >
                 {item.role}

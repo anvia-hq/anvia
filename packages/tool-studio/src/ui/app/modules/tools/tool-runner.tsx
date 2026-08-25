@@ -21,7 +21,7 @@ export function ToolRunner(props: {
   const propertyCount =
     props.selectedTool === undefined ? 0 : schemaPropertyCount(props.selectedTool.parameters);
   return (
-    <section className="grid gap-4 border-t border-border/80 pt-4 xl:grid-cols-[minmax(260px,0.42fr)_minmax(0,1fr)]">
+    <section className="grid gap-4 border-t border-hair pt-4 xl:grid-cols-[minmax(260px,0.42fr)_minmax(0,1fr)]">
       <div className="grid content-start gap-3">
         <div className="grid gap-1.5">
           <h2 className="m-0 text-base font-semibold text-foreground">Runner</h2>
@@ -52,7 +52,7 @@ export function ToolRunner(props: {
           </div>
         )}
         {props.selectedTool?.approval.reason === undefined ? null : (
-          <p className="m-0 border-l border-border/80 pl-3 text-xs leading-5 text-muted-foreground">
+          <p className="m-0 border-l border-hair pl-3 text-xs leading-5 text-muted-foreground">
             {props.selectedTool.approval.reason}
           </p>
         )}
@@ -78,12 +78,12 @@ export function ToolRunner(props: {
           </Button>
         </div>
         {props.runError.length > 0 ? (
-          <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs leading-5 text-destructive">
+          <div className="rounded-md border border-status-danger-ink bg-status-danger-fill px-3 py-2 text-xs leading-5 text-destructive">
             {props.runError}
           </div>
         ) : null}
         {props.selectedTool === undefined ? null : (
-          <details className="group border-t border-border/70 pt-3">
+          <details className="group border-t border-hair pt-3">
             <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground marker:hidden">
               Parameter schema
               <span className="font-medium normal-case tracking-normal">
@@ -109,7 +109,7 @@ function ToolRunResult(props: { response: StudioToolRunResponse }) {
   return (
     <div className="grid gap-3">
       <SchemaBlock value={displayToolRunValue(primaryValue)} title={title} />
-      <details className="group border-t border-border/70 pt-3">
+      <details className="group border-t border-hair pt-3">
         <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground marker:hidden">
           Raw run response
           <span className="font-medium normal-case tracking-normal">
@@ -126,8 +126,8 @@ function ToolRunResult(props: { response: StudioToolRunResponse }) {
 
 export function SchemaBlock(props: { value: unknown; title: string }) {
   return (
-    <section className="grid min-w-0 content-start overflow-hidden rounded-lg bg-background/45">
-      <div className="flex min-h-9 items-center justify-between gap-3 bg-muted/20 px-4">
+    <section className="grid min-w-0 content-start overflow-hidden rounded-lg bg-background">
+      <div className="flex min-h-9 items-center justify-between gap-3 bg-muted px-4">
         <span className=" text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
           {props.title}
         </span>
@@ -146,7 +146,7 @@ export function SchemaBlock(props: { value: unknown; title: string }) {
 
 export function ToolMetaPill(props: { children: ReactNode }) {
   return (
-    <span className="inline-flex min-h-7 items-center rounded-md bg-muted/25 px-2.5 text-xs font-medium text-muted-foreground">
+    <span className="inline-flex min-h-7 items-center rounded-md bg-muted px-2.5 text-xs font-medium text-muted-foreground">
       {props.children}
     </span>
   );
@@ -154,20 +154,20 @@ export function ToolMetaPill(props: { children: ReactNode }) {
 
 export function approvalBadgeClass(required: boolean): string {
   return required
-    ? "border-border/80 bg-muted/35 text-foreground"
-    : "border-transparent bg-transparent text-muted-foreground/60";
+    ? "border-hair bg-muted text-foreground"
+    : "border-transparent bg-transparent text-dim";
 }
 
 export function sourceBadgeClass(source: "static" | "dynamic"): string {
   return source === "dynamic"
-    ? "border-border/80 bg-muted/45 text-foreground"
-    : "border-border/80 bg-muted/55 text-muted-foreground";
+    ? "border-hair bg-muted text-foreground"
+    : "border-hair bg-muted text-muted-foreground";
 }
 
 export function originBadgeClass(tool: StudioAgentToolMetadata): string {
   return tool.mcpServerName === undefined
     ? sourceBadgeClass(tool.source)
-    : "border-border/80 bg-muted/35 text-foreground";
+    : "border-hair bg-muted text-foreground";
 }
 
 export function toolOriginLabel(tool: StudioAgentToolMetadata): string {

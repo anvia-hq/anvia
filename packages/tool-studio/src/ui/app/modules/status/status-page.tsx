@@ -90,7 +90,7 @@ function StatusDashboard(props: { summary: StudioStatusSummary }) {
   ).length;
 
   return (
-    <div className="grid h-full min-h-0 gap-5 border-t border-border/80 pt-4">
+    <div className="grid h-full min-h-0 gap-5 border-t border-hair pt-4">
       <section className="grid gap-5 xl:grid-cols-[minmax(280px,0.58fr)_minmax(0,1.42fr)]">
         <RuntimeSummary summary={props.summary} enabledCapabilityCount={enabledCapabilityCount} />
         <div className="grid gap-5 lg:grid-cols-2">
@@ -108,17 +108,17 @@ function StatusDashboard(props: { summary: StudioStatusSummary }) {
 
 function RuntimeSummary(props: { summary: StudioStatusSummary; enabledCapabilityCount: number }) {
   return (
-    <section className="grid content-start gap-5 border-b border-border/80 pb-5 xl:border-b-0 xl:border-r xl:pb-0 xl:pr-5">
+    <section className="grid content-start gap-5 border-b border-hair pb-5 xl:border-b-0 xl:border-r xl:pb-0 xl:pr-5">
       <div className="grid gap-3">
         <SectionLabel>runtime</SectionLabel>
         <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <Badge className="border-border/80 bg-muted/45 text-foreground">online</Badge>
-          <Badge className="border-border/80 bg-background/45 text-muted-foreground">
+          <Badge className="border-hair bg-muted text-foreground">online</Badge>
+          <Badge className="border-hair bg-background text-muted-foreground">
             {props.enabledCapabilityCount} capabilities
           </Badge>
         </div>
       </div>
-      <div className="grid border-y border-border/80">
+      <div className="grid border-y border-hair">
         <StatusFact label="id" value={props.summary.runner.id} />
         <StatusFact label="name" value={props.summary.runner.name ?? "-"} />
         <StatusFact label="version" value={props.summary.runner.version ?? "-"} />
@@ -139,7 +139,7 @@ function StorageMatrix(props: { storage: StudioStatusSummary["storage"] }) {
       {entries.length === 0 ? (
         <DashedNote text="No storage adapters reported." />
       ) : (
-        <div className="grid border-y border-border/80">
+        <div className="grid border-y border-hair">
           {entries.map(([key, value]) => (
             <StatusRow
               label={humanizeKey(key)}
@@ -161,7 +161,7 @@ function CountsLedger(props: { counts: StudioStatusSummary["counts"] }) {
   return (
     <section className="grid content-start gap-3">
       <SectionHeader title="records" value={`${entries.length} counters`} />
-      <div className="grid border-y border-border/80">
+      <div className="grid border-y border-hair">
         {entries.map(([key, value]) => (
           <StatusRow label={humanizeKey(key)} value={value} key={key} />
         ))}
@@ -178,11 +178,11 @@ function CapabilityLedger(props: { capabilities: StudioStatusSummary["capabiliti
       {entries.length === 0 ? (
         <DashedNote text="No capabilities reported." />
       ) : (
-        <div className="grid border-y border-border/80 sm:grid-cols-2 sm:divide-x sm:divide-border/80">
+        <div className="grid border-y border-hair sm:grid-cols-2 sm:divide-x sm:divide-hair">
           {entries.map(([name, capability], index) => (
             <div
               className={[
-                "grid min-w-0 gap-1 border-b border-border/70 px-3 py-3",
+                "grid min-w-0 gap-1 border-b border-hair px-3 py-3",
                 index >= entries.length - (entries.length % 2 === 0 ? 2 : 1) ? "sm:border-b-0" : "",
               ].join(" ")}
               key={name}
@@ -216,15 +216,15 @@ function RawSummary(props: { summary: StudioStatusSummary }) {
   return (
     <section className="grid min-w-0 content-start gap-3">
       <SectionHeader title="raw summary" value="JSON" />
-      <details className="group grid min-w-0 overflow-hidden border-y border-border/80" open>
-        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 bg-muted/10 px-3 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground marker:hidden">
+      <details className="group grid min-w-0 overflow-hidden border-y border-hair" open>
+        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 bg-muted px-3 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground marker:hidden">
           Payload
           <span className="font-medium normal-case tracking-normal group-open:hidden">Show</span>
           <span className="hidden font-medium normal-case tracking-normal group-open:inline">
             Hide
           </span>
         </summary>
-        <div className="min-w-0 overflow-x-auto border-t border-border/70">
+        <div className="min-w-0 overflow-x-auto border-t border-hair">
           <pre className="m-0 max-h-[28rem] min-w-max p-4 text-xs leading-5 text-foreground">
             <code>
               <JsonSyntax text={JSON.stringify(props.summary, null, 2)} />
@@ -255,7 +255,7 @@ function SectionLabel(props: { children: string }) {
 
 function StatusFact(props: { label: string; value: string | number }) {
   return (
-    <div className="grid min-w-0 gap-1 border-b border-border/70 px-3 py-3 first:pt-3 last:border-b-0">
+    <div className="grid min-w-0 gap-1 border-b border-hair px-3 py-3 first:pt-3 last:border-b-0">
       <span className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
         {props.label}
       </span>
@@ -268,7 +268,7 @@ function StatusFact(props: { label: string; value: string | number }) {
 
 function StatusRow(props: { label: string; value: string | number; tone?: "normal" | "muted" }) {
   return (
-    <div className="grid min-w-0 grid-cols-[minmax(120px,0.5fr)_minmax(0,1fr)] gap-3 border-b border-border/70 px-3 py-3 last:border-b-0">
+    <div className="grid min-w-0 grid-cols-[minmax(120px,0.5fr)_minmax(0,1fr)] gap-3 border-b border-hair px-3 py-3 last:border-b-0">
       <span className="min-w-0 truncate text-sm font-medium text-muted-foreground">
         {props.label}
       </span>
@@ -287,7 +287,7 @@ function StatusRow(props: { label: string; value: string | number; tone?: "norma
 
 function DashedNote(props: { text: string }) {
   return (
-    <div className="border-y border-dashed border-border/80 px-3 py-8 text-center text-sm text-muted-foreground">
+    <div className="border-y border-dashed border-hair px-3 py-8 text-center text-sm text-muted-foreground">
       {props.text}
     </div>
   );

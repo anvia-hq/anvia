@@ -21,7 +21,7 @@ export function MarkdownText(props: {
   return (
     <StreamMarkdown
       className={cn(
-        "studio-markdown prose max-w-none text-current [overflow-wrap:anywhere] prose-headings:text-current prose-headings:font-semibold prose-p:text-current prose-p:leading-7 prose-a:text-current prose-a:decoration-muted-foreground prose-a:underline-offset-2 prose-strong:text-current prose-code:rounded-lg prose-code:border prose-code:border-border/80 prose-code:bg-muted/80 prose-code:px-1 prose-code:py-0.5 prose-code:text-sm prose-code:font-semibold prose-code:text-current prose-code:before:content-none prose-code:after:content-none prose-pre:overflow-auto prose-pre:rounded-lg prose-pre:border prose-pre:border-border/80 prose-pre:bg-card/90 prose-pre:text-current prose-blockquote:border-border prose-blockquote:text-muted-foreground prose-li:marker:text-muted-foreground prose-hr:border-border prose-table:m-0 prose-thead:border-0 prose-tr:border-0 prose-th:p-0 prose-td:p-0 dark:prose-invert dark:prose-headings:text-current dark:prose-p:text-current dark:prose-strong:text-current dark:prose-code:text-current dark:prose-pre:bg-card dark:prose-pre:text-current",
+        "studio-markdown prose max-w-none text-current [overflow-wrap:anywhere] prose-headings:text-current prose-headings:font-semibold prose-p:text-current prose-p:leading-7 prose-a:text-current prose-a:decoration-muted-foreground prose-a:underline-offset-2 prose-strong:text-current prose-code:rounded-lg prose-code:border prose-code:border-hair prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:text-sm prose-code:font-semibold prose-code:text-current prose-code:before:content-none prose-code:after:content-none prose-pre:overflow-auto prose-pre:rounded-lg prose-pre:border prose-pre:border-hair prose-pre:bg-card prose-pre:text-current prose-blockquote:border-border prose-blockquote:text-muted-foreground prose-li:marker:text-muted-foreground prose-hr:border-border prose-table:m-0 prose-thead:border-0 prose-tr:border-0 prose-th:p-0 prose-td:p-0 dark:prose-invert dark:prose-headings:text-current dark:prose-p:text-current dark:prose-strong:text-current dark:prose-code:text-current dark:prose-pre:bg-card dark:prose-pre:text-current",
         size === "base" ? "text-base" : "prose-sm",
       )}
       components={markdownComponents[size]}
@@ -35,7 +35,7 @@ function createMarkdownComponents(size: MarkdownSize): MarkdownComponents {
   return {
     table({ children }) {
       return (
-        <div className="my-4 w-full min-w-0 overflow-hidden rounded-lg border border-border/80 bg-card/90 shadow-sm">
+        <div className="my-4 w-full min-w-0 overflow-hidden rounded-none border border-hair bg-card shadow-none">
           <div className="min-w-0 overflow-x-auto">
             <table
               className={cn(
@@ -50,7 +50,7 @@ function createMarkdownComponents(size: MarkdownSize): MarkdownComponents {
       );
     },
     thead({ children }) {
-      return <thead className="bg-muted/45">{children}</thead>;
+      return <thead className="bg-muted">{children}</thead>;
     },
     tbody({ children }) {
       return <tbody>{children}</tbody>;
@@ -72,7 +72,7 @@ function createMarkdownComponents(size: MarkdownSize): MarkdownComponents {
       return (
         <td
           className={cn(
-            "border-b border-border/70 px-4 leading-6 text-foreground [overflow-wrap:anywhere] first:pl-5 last:pr-5 group-last/row:border-b-0",
+            "border-b border-hair px-4 leading-6 text-foreground [overflow-wrap:anywhere] first:pl-5 last:pr-5 group-last/row:border-b-0",
             size === "base" ? "text-base" : "text-sm",
           )}
           style={{ paddingBottom: "0.75rem", paddingTop: "0.75rem" }}
@@ -169,15 +169,15 @@ function jsonTokenKind(
 function jsonTokenClass(kind: ReturnType<typeof jsonTokenKind>): string {
   switch (kind) {
     case "key":
-      return "text-foreground";
+      return "code-keyword";
     case "string":
-      return "text-foreground dark:text-zinc-100";
+      return "code-string";
     case "number":
-      return "text-muted-foreground dark:text-muted-foreground";
+      return "code-number";
     case "boolean":
-      return "text-destructive dark:text-destructive";
+      return "code-literal";
     case "null":
-      return "text-muted-foreground";
+      return "code-comment";
     case "punctuation":
       return "text-muted-foreground";
   }

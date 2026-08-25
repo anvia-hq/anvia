@@ -36,14 +36,14 @@ describe("TraceBrowser rendering", () => {
     expect(html).toContain("Support");
     expect(html).toContain("success");
     expect(html).toContain("border-0 capitalize");
-    expect(html).toContain("bg-emerald-200");
+    expect(html).toContain("bg-status-success-fill text-status-success-ink");
     expect(html).not.toContain("h-2.5 w-2.5 shrink-0 rounded-lg");
     expect(html).toContain("1.2s");
     expect(html).toContain("36");
     expect(html).toContain("2");
   });
 
-  it("uses the Lens syntax palette for JSON tokens", () => {
+  it("uses the Studio syntax palette for JSON tokens", () => {
     const container = document.createElement("div");
     const root = createRoot(container);
     act(() =>
@@ -53,10 +53,10 @@ describe("TraceBrowser rendering", () => {
     );
     const html = container.innerHTML;
 
-    expect(html).toContain("text-blue-600 dark:text-blue-400");
-    expect(html).toContain("text-emerald-700 dark:text-emerald-400");
-    expect(html).toContain("text-amber-700 dark:text-amber-400");
-    expect(html).toContain("text-violet-700 dark:text-violet-400");
+    expect(html).toContain("code-keyword");
+    expect(html).toContain("code-string");
+    expect(html).toContain("code-number");
+    expect(html).toContain("code-literal");
 
     act(() => root.unmount());
   });

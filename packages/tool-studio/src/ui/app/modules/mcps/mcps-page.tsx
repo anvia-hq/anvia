@@ -213,7 +213,7 @@ function McpServerSection(props: {
 }) {
   return (
     <section className="overflow-hidden border-t">
-      <header className="grid min-h-14 grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-b bg-muted/20 px-4">
+      <header className="grid min-h-14 grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-b bg-muted px-4">
         <div className="grid min-w-0 gap-1">
           <h2 className="m-0 truncate text-sm font-semibold text-foreground">
             {props.server.name}
@@ -222,7 +222,7 @@ function McpServerSection(props: {
             {props.server.agentId}
           </span>
         </div>
-        <Badge className="border-border/80 bg-background/50 text-muted-foreground">
+        <Badge className="border-hair bg-background text-muted-foreground">
           {props.server.toolCount} tools
         </Badge>
       </header>
@@ -249,8 +249,8 @@ function McpToolRow(props: {
 }) {
   const toolKey = mcpToolKey(props.serverName, props.tool);
   return (
-    <article className="grid grid-cols-[minmax(300px,0.75fr)_minmax(0,1fr)] gap-2 rounded-lg border border-transparent bg-background/25 p-2 transition duration-200 hover:border-border/70 hover:bg-background/35 max-lg:grid-cols-1">
-      <div className="grid content-start gap-4 rounded-lg bg-card/25 p-3">
+    <article className="grid grid-cols-[minmax(300px,0.75fr)_minmax(0,1fr)] gap-2 rounded-lg border border-transparent bg-background p-2 transition duration-200 hover:border-hair hover:bg-transparent max-lg:grid-cols-1">
+      <div className="grid content-start gap-4 rounded-lg bg-card p-3">
         <div className="grid gap-1">
           <h3 className="m-0 truncate text-sm font-semibold text-foreground">{props.tool.name}</h3>
           <span className=" text-xs font-medium text-muted-foreground">{props.tool.source}</span>
@@ -260,7 +260,7 @@ function McpToolRow(props: {
         </p>
         <div className="flex min-w-0 flex-wrap gap-2">
           <Badge className={sourceBadgeClass(props.tool.source)}>{props.tool.source}</Badge>
-          <Badge className="border-border/80 bg-transparent text-muted-foreground">
+          <Badge className="border-hair bg-transparent text-muted-foreground">
             {schemaPropertyCount(props.tool.parameters)} fields
           </Badge>
         </div>

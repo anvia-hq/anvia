@@ -12,38 +12,48 @@ afterEach(() => {
 });
 
 describe("Studio theme", () => {
-  it("defaults invalid or missing preferences to system", () => {
-    const getItem = vi.fn().mockReturnValueOnce(null).mockReturnValueOnce("sepia");
+  it("defaults invalid or missing preferences to dark", () => {
+    const getItem = vi.fn().mockReturnValue(null);
     vi.stubGlobal("window", { localStorage: { getItem } });
 
-    expect(readInitialStudioTheme()).toBe("system");
-    expect(readInitialStudioTheme()).toBe("system");
+    expect(readInitialStudioTheme()).toBe("dark");
+    getItem.mockReturnValue("sepia");
+    expect(readInitialStudioTheme()).toBe("dark");
   });
 
-  it("retains valid stored preferences and cycles all three modes", () => {
-    const getItem = vi.fn().mockReturnValueOnce("light").mockReturnValueOnce("dark");
+  it("retains valid preferences, migrates the legacy key, and toggles both modes", () => {
+    const getItem = vi.fn((key: string): string | null => (key === "anvia-theme" ? "light" : null));
     const setItem = vi.fn();
     vi.stubGlobal("window", { localStorage: { getItem, setItem } });
 
     expect(readInitialStudioTheme()).toBe("light");
+    getItem.mockImplementation((key: string) => (key === "anvia-studio-theme" ? "dark" : null));
     expect(readInitialStudioTheme()).toBe("dark");
-    expect(nextStudioTheme("system")).toBe("light");
     expect(nextStudioTheme("light")).toBe("dark");
-    expect(nextStudioTheme("dark")).toBe("system");
-    storeStudioTheme("system");
-    expect(setItem).toHaveBeenCalledWith("anvia-studio-theme", "system");
+    expect(nextStudioTheme("dark")).toBe("light");
+    storeStudioTheme("dark");
+    expect(setItem).toHaveBeenCalledWith("anvia-theme", "dark");
   });
 
-  it("resolves and applies the effective system theme", () => {
-    expect(resolveStudioTheme("system", true)).toBe("dark");
-    expect(resolveStudioTheme("system", false)).toBe("light");
-    expect(resolveStudioTheme("light", true)).toBe("light");
+  it("resolves and applies theme chrome", () => {
+    expect(resolveStudioTheme("dark")).toBe("dark");
+    expect(resolveStudioTheme("light")).toBe("light");
 
     const toggle = vi.fn();
+    const dataset: Record<string, string> = {};
     const style: { colorScheme?: string } = {};
-    vi.stubGlobal("document", { documentElement: { classList: { toggle }, style } });
+    const meta = { setAttribute: vi.fn() };
+    const favicon = { href: "" };
+    vi.stubGlobal("document", {
+      documentElement: { classList: { toggle }, dataset, style },
+      getElementById: vi.fn().mockReturnValue(null),
+      querySelector: vi.fn((selector: string) => (selector.startsWith("meta") ? meta : favicon)),
+    });
     applyStudioTheme("dark");
     expect(toggle).toHaveBeenCalledWith("dark", true);
+    expect(dataset.theme).toBe("dark");
     expect(style.colorScheme).toBe("dark");
+    expect(meta.setAttribute).toHaveBeenCalledWith("content", "#09090b");
+    expect(favicon.href).toBe("/ui/assets/favicon-dark.svg");
   });
 });

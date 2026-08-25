@@ -1,4 +1,4 @@
-import { ArrowSquareOut, GithubLogo, Laptop, List, Moon, Sun } from "@phosphor-icons/react";
+import { ArrowSquareOut, GithubLogo, List, Moon, Sun } from "@phosphor-icons/react";
 import { useState } from "react";
 import type { StudioTheme } from "../../app-theme";
 import { AnviaLensLogo } from "../../components/anvia-lens-logo";
@@ -105,14 +105,14 @@ export function StudioRail(props: StudioNavigationProps) {
     >
       <div className="flex shrink-0 justify-center p-2">
         <button
-          className="flex size-10 items-center justify-center rounded-lg outline-none transition-colors hover:bg-sidebar-accent focus-visible:bg-sidebar-accent"
+          className="flex size-10 items-center justify-center rounded-lg outline-none transition-colors hover:text-foreground focus-visible:bg-sidebar-accent"
           type="button"
           aria-label="Open Chat"
           title="Anvia Studio"
           onClick={() => props.onNavigate("playground")}
         >
-          <span className="grid size-8 place-items-center rounded-md border border-[#2BF563] bg-[#2BF563]">
-            <AnviaLensLogo markClassName="text-black" />
+          <span className="grid size-8 place-items-center rounded-md border border-primary bg-primary">
+            <AnviaLensLogo markClassName="text-primary-foreground" />
           </span>
         </button>
       </div>
@@ -157,7 +157,7 @@ export function StudioSidebar(props: StudioNavigationProps) {
       </div>
       <div className="shrink-0 p-2">
         <a
-          className="mb-2 flex items-center gap-2 rounded-lg border border-sidebar-border bg-sidebar-accent/40 p-3 transition-colors hover:bg-sidebar-accent"
+          className="mb-2 flex items-center gap-2 rounded-lg border border-sidebar-border bg-transparent p-3 transition-colors hover:border-foreground hover:text-foreground"
           href="https://github.com/anvia-hq/anvia"
           target="_blank"
           rel="noreferrer"
@@ -191,10 +191,9 @@ export function StudioHeader(props: {
       : props.activePage === "knowledge"
         ? (knowledgeTabs.find((tab) => tab.id === props.knowledgeTab)?.label ?? "Knowledge")
         : pageTitle(props.activePage, undefined);
-  const nextTheme =
-    props.theme === "system" ? "light" : props.theme === "light" ? "dark" : "system";
+  const nextTheme = props.theme === "light" ? "dark" : "light";
   const themeLabel = `Theme: ${props.theme}. Switch to ${nextTheme} theme`;
-  const themeIcon = props.theme === "system" ? Laptop : props.theme === "light" ? Sun : Moon;
+  const themeIcon = props.theme === "light" ? Sun : Moon;
 
   return (
     <header className="flex h-14 shrink-0 items-center gap-3 border-b bg-background px-4">
@@ -290,7 +289,7 @@ function StudioMobileNavigation(props: StudioNavigationProps) {
 function SidebarLink(props: { href: string; label: string }) {
   return (
     <a
-      className="flex h-8 items-center justify-between rounded-lg px-2 text-base font-[450] tracking-[-0.006em] text-sidebar-foreground/65 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+      className="flex h-8 items-center justify-between rounded-lg px-2 text-base font-[450] tracking-[-0.006em] text-muted-foreground transition-colors hover:bg-transparent hover:text-sidebar-accent-foreground"
       href={props.href}
       target="_blank"
       rel="noreferrer"

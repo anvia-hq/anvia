@@ -435,7 +435,7 @@ function SandboxRail(props: {
 }) {
   return (
     <StudioSurface className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)]">
-      <div className="border-b border-border/70 px-4 py-3">
+      <div className="border-b border-hair px-4 py-3">
         <span className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
           Workspaces
         </span>
@@ -484,16 +484,16 @@ function FileBrowser(props: {
   const breadcrumbs = useMemo(() => sandboxBreadcrumbs(props.currentPath), [props.currentPath]);
   return (
     <StudioSurface className="grid min-h-0 grid-rows-[auto_auto_minmax(0,1fr)]">
-      <div className="border-b border-border/70 px-4 py-3">
+      <div className="border-b border-hair px-4 py-3">
         <span className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
           Files
         </span>
         <p className="m-0 mt-1 text-xs text-muted-foreground">One level at a time</p>
       </div>
-      <div className="flex min-h-10 items-center gap-1 overflow-x-auto border-b border-border/70 px-3 py-1.5">
+      <div className="flex min-h-10 items-center gap-1 overflow-x-auto border-b border-hair px-3 py-1.5">
         {breadcrumbs.map((breadcrumb, index) => (
           <span className="flex items-center gap-1" key={breadcrumb.path}>
-            {index > 0 ? <span className="text-muted-foreground/60">/</span> : null}
+            {index > 0 ? <span className="text-dim">/</span> : null}
             <Button
               className="h-7 min-h-7 px-2 font-mono text-xs"
               size="sm"
@@ -573,7 +573,7 @@ function SandboxOverview(props: { sandbox: StudioSandboxSummary; error: string }
         />
       </div>
       {props.error.length > 0 ? (
-        <p className="m-0 mt-3 rounded-lg border border-destructive/25 bg-destructive/5 px-3 py-2 text-xs leading-5 text-destructive">
+        <p className="m-0 mt-3 rounded-lg border border-status-danger-ink bg-status-danger-fill px-3 py-2 text-xs leading-5 text-destructive">
           {props.error}
         </p>
       ) : null}
@@ -583,7 +583,7 @@ function SandboxOverview(props: { sandbox: StudioSandboxSummary; error: string }
 
 function MetadataList(props: { label: string; values: string[] }) {
   return (
-    <div className="rounded-lg border border-border/70 bg-background/45 p-3">
+    <div className="rounded-lg border border-hair bg-background p-3">
       <span className="font-semibold uppercase tracking-[0.12em] text-muted-foreground">
         {props.label}
       </span>
@@ -598,7 +598,7 @@ function FilePreviewPanel(props: { preview: FilePreview | undefined; sandboxRef:
   const file = props.preview?.file;
   return (
     <StudioSurface className="grid min-h-64 grid-rows-[auto_minmax(0,1fr)]">
-      <div className="flex min-h-12 items-center justify-between gap-3 border-b border-border/70 px-4 py-2">
+      <div className="flex min-h-12 items-center justify-between gap-3 border-b border-hair px-4 py-2">
         <div className="min-w-0">
           <span className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
             Preview
@@ -634,13 +634,13 @@ function FilePreviewPanel(props: { preview: FilePreview | undefined; sandboxRef:
           />
         ) : null}
         {props.preview?.kind === "text" ? (
-          <pre className="m-0 h-full min-h-48 w-full overflow-auto whitespace-pre-wrap break-words rounded-lg border border-border/70 bg-card/60 p-4 font-mono text-xs leading-5 text-foreground">
+          <pre className="m-0 h-full min-h-48 w-full overflow-auto whitespace-pre-wrap break-words rounded-lg border border-hair bg-card p-4 font-mono text-xs leading-5 text-foreground">
             {props.preview.text}
           </pre>
         ) : null}
         {props.preview?.kind === "image" ? (
           <img
-            className="max-h-96 max-w-full rounded-lg border border-border/70 object-contain"
+            className="max-h-96 max-w-full rounded-lg border border-hair object-contain"
             src={props.preview.url}
             alt={basename(props.preview.file.path)}
           />
@@ -699,7 +699,7 @@ function RuntimePanel(props: {
             <div className="grid gap-1">
               {props.ports.map((port) => (
                 <div
-                  className="grid grid-cols-[90px_minmax(0,1fr)] gap-3 rounded-md border border-border/60 px-3 py-2 font-mono text-xs"
+                  className="grid grid-cols-[90px_minmax(0,1fr)] gap-3 rounded-md border border-hair px-3 py-2 font-mono text-xs"
                   key={`${port.containerPort}:${port.hostPort}`}
                 >
                   <span className="text-foreground">
@@ -790,7 +790,7 @@ function RuntimeSection(props: { title: string; children: ReactNode }) {
 
 function RuntimeEmpty(props: { text: string }) {
   return (
-    <p className="m-0 rounded-md border border-dashed border-border/70 px-3 py-2 text-xs leading-5 text-muted-foreground">
+    <p className="m-0 rounded-md border border-dashed border-hair px-3 py-2 text-xs leading-5 text-muted-foreground">
       {props.text}
     </p>
   );
@@ -798,8 +798,8 @@ function RuntimeEmpty(props: { text: string }) {
 
 function LogBlock(props: { label: string; text: string; truncated: boolean }) {
   return (
-    <div className="overflow-hidden rounded-md border border-border/70 bg-background/55">
-      <div className="flex items-center justify-between border-b border-border/60 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+    <div className="overflow-hidden rounded-md border border-hair bg-background">
+      <div className="flex items-center justify-between border-b border-hair px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
         <span>{props.label}</span>
         {props.truncated ? <span>truncated</span> : null}
       </div>

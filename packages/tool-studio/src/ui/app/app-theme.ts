@@ -1,40 +1,50 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
-export type StudioTheme = "system" | "light" | "dark";
-export type ResolvedStudioTheme = "light" | "dark";
+export type StudioTheme = "light" | "dark";
+export type ResolvedStudioTheme = StudioTheme;
 
-const studioThemeStorageKey = "anvia-studio-theme";
-const darkModeQuery = "(prefers-color-scheme: dark)";
+const studioThemeStorageKey = "anvia-theme";
+const legacyStudioThemeStorageKey = "anvia-studio-theme";
 
 export function readInitialStudioTheme(): StudioTheme {
   if (typeof window === "undefined") {
-    return "system";
+    return "dark";
   }
   try {
     const stored = window.localStorage.getItem(studioThemeStorageKey);
-    return stored === "light" || stored === "dark" || stored === "system" ? stored : "system";
+    if (stored === "light" || stored === "dark") {
+      return stored;
+    }
+    const legacy = window.localStorage.getItem(legacyStudioThemeStorageKey);
+    return legacy === "light" || legacy === "dark" ? legacy : "dark";
   } catch {
-    return "system";
+    return "dark";
   }
 }
 
-export function resolveStudioTheme(
-  theme: StudioTheme,
-  prefersDark = systemPrefersDark(),
-): ResolvedStudioTheme {
-  return theme === "system" ? (prefersDark ? "dark" : "light") : theme;
+export function resolveStudioTheme(theme: StudioTheme): ResolvedStudioTheme {
+  return theme;
 }
 
 export function nextStudioTheme(theme: StudioTheme): StudioTheme {
-  return theme === "system" ? "light" : theme === "light" ? "dark" : "system";
+  return theme === "light" ? "dark" : "light";
 }
 
 export function applyStudioTheme(theme: ResolvedStudioTheme): void {
   if (typeof document === "undefined") {
     return;
   }
-  document.documentElement.classList.toggle("dark", theme === "dark");
-  document.documentElement.style.colorScheme = theme;
+  const root = document.documentElement;
+  root.classList.toggle("dark", theme === "dark");
+  root.dataset.theme = theme;
+  root.style.colorScheme = theme;
+  document
+    .querySelector<HTMLMetaElement>('meta[name="theme-color"]')
+    ?.setAttribute("content", theme === "dark" ? "#09090b" : "#f4f4f5");
+  const favicon = document.querySelector<HTMLLinkElement>("link[data-anvia-favicon]");
+  if (favicon !== null) {
+    favicon.href = studioAssetPath(`favicon-${theme}.svg`);
+  }
 }
 
 export function storeStudioTheme(theme: StudioTheme): void {
@@ -48,16 +58,22 @@ export function storeStudioTheme(theme: StudioTheme): void {
   }
 }
 
-function systemPrefersDark(): boolean {
+function studioAssetPath(asset: string): string {
+  const uiRoot = document.getElementById("anvia-ui");
+  const base = uiRoot?.dataset.uiCompatPath ?? "/ui";
+  return `${base.replace(/\/$/, "")}/assets/${asset}`;
+}
+
+function isEditableTarget(target: EventTarget | null): boolean {
   return (
-    typeof window !== "undefined" &&
-    typeof window.matchMedia === "function" &&
-    window.matchMedia(darkModeQuery).matches
+    target instanceof Element &&
+    (target.matches("input, textarea, select") ||
+      target.closest("[contenteditable]:not([contenteditable='false'])") !== null)
   );
 }
 
 export const initialStudioTheme = readInitialStudioTheme();
-applyStudioTheme(resolveStudioTheme(initialStudioTheme));
+applyStudioTheme(initialStudioTheme);
 
 export function useStudioTheme(): {
   theme: StudioTheme;
@@ -65,28 +81,35 @@ export function useStudioTheme(): {
   toggleTheme: () => void;
 } {
   const [theme, setTheme] = useState<StudioTheme>(() => initialStudioTheme);
-  const [prefersDark, setPrefersDark] = useState(systemPrefersDark);
-  const resolvedTheme = resolveStudioTheme(theme, prefersDark);
+  const toggleTheme = useCallback(() => setTheme((current) => nextStudioTheme(current)), []);
 
   useEffect(() => {
-    if (typeof window.matchMedia !== "function") {
-      return;
-    }
-    const media = window.matchMedia(darkModeQuery);
-    const update = (event: MediaQueryListEvent) => setPrefersDark(event.matches);
-    setPrefersDark(media.matches);
-    media.addEventListener("change", update);
-    return () => media.removeEventListener("change", update);
-  }, []);
-
-  useEffect(() => {
-    applyStudioTheme(resolvedTheme);
+    applyStudioTheme(theme);
     storeStudioTheme(theme);
-  }, [resolvedTheme, theme]);
+  }, [theme]);
+
+  useEffect(() => {
+    const toggleWithShortcut = (event: KeyboardEvent) => {
+      if (
+        event.defaultPrevented ||
+        event.repeat ||
+        event.key.toLowerCase() !== "d" ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        isEditableTarget(event.target)
+      ) {
+        return;
+      }
+      toggleTheme();
+    };
+    window.addEventListener("keydown", toggleWithShortcut);
+    return () => window.removeEventListener("keydown", toggleWithShortcut);
+  }, [toggleTheme]);
 
   return {
     theme,
-    resolvedTheme,
-    toggleTheme: () => setTheme((current) => nextStudioTheme(current)),
+    resolvedTheme: resolveStudioTheme(theme),
+    toggleTheme,
   };
 }

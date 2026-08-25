@@ -27,10 +27,10 @@ function PipelineStageNode(props: NodeProps<Node<PipelineNodeData>>) {
   return (
     <article
       className={[
-        "group relative min-h-[74px] w-[210px] rounded-xl border bg-card px-4 py-3 text-left shadow-[inset_0_1px_0_hsl(var(--foreground)/0.06)] transition duration-200",
-        props.selected ? "border-foreground" : "border-border/80",
+        "group relative min-h-[74px] w-[210px] rounded-none border bg-card px-4 py-3 text-left shadow-[inset_0_1px_0_var(--sb-inset-highlight)] transition duration-200",
+        props.selected ? "border-foreground" : "border-hair",
         status === "running" ? "translate-y-[-1px] border-foreground" : "",
-        status === "completed" ? "border-muted-foreground/70" : "",
+        status === "completed" ? "border-muted-foreground" : "",
         status === "failed" ? "border-destructive" : "",
       ].join(" ")}
     >
@@ -56,7 +56,7 @@ function PipelineStageNode(props: NodeProps<Node<PipelineNodeData>>) {
         </div>
         {status === undefined ? null : (
           <span
-            className="rounded-lg border border-border/70 bg-background/70 px-1.5 py-0.5 text-xs font-semibold uppercase tracking-[0.08em]"
+            className="rounded-lg border border-hair bg-background px-1.5 py-0.5 text-xs font-semibold uppercase tracking-[0.08em]"
             style={{ color: props.data.statusColor }}
           >
             {status}

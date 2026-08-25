@@ -86,7 +86,7 @@ describe("Studio Lens shell", () => {
     expect(sidebar).toContain("Status");
   });
 
-  it("renders Lens breadcrumbs and the tri-state theme control", () => {
+  it("renders Studio breadcrumbs and the dark-first theme control", () => {
     const html = renderToStaticMarkup(
       <StudioHeader
         activePage="playground"
@@ -94,7 +94,7 @@ describe("Studio Lens shell", () => {
         navigation={navigation}
         selectedAgentLabel="Support"
         sessionsEnabled
-        theme="system"
+        theme="dark"
         onNewSession={vi.fn()}
         onToggleTheme={vi.fn()}
       />,
@@ -103,7 +103,7 @@ describe("Studio Lens shell", () => {
     expect(html).toContain("Workspace");
     expect(html).toContain("Chat");
     expect(html).toContain("Support");
-    expect(html).toContain('aria-label="Theme: system. Switch to light theme"');
+    expect(html).toContain('aria-label="Theme: dark. Switch to light theme"');
     expect(html).toContain("New session");
   });
 
@@ -120,7 +120,7 @@ describe("Studio Lens shell", () => {
           navigation={{ ...navigation, onNavigate }}
           selectedAgentLabel="Support"
           sessionsEnabled
-          theme="system"
+          theme="dark"
           onNewSession={vi.fn()}
           onToggleTheme={vi.fn()}
         />,

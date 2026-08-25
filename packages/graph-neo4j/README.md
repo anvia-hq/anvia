@@ -3,14 +3,13 @@
 Schema-first local GraphRAG for Neo4j 2026.01 and newer.
 
 Provider-neutral schemas from `@anvia/graph` are accepted alongside the compatibility
-`defineNeo4jGraphSchema()` API. Registered graphs also expose `graph.retrieve()` and
-`graph.createSearchTool()` so application code can share the same retrieval shape with
-`@anvia/memgraph`.
+`defineNeo4jGraphSchema()` API. Registered graphs expose `graph.retrieve()`, and the shared
+`createGraphSearchTool()` factory gives Neo4j and Memgraph the same Agent tool API.
 
 ## Installation
 
 ```sh
-pnpm add @anvia/neo4j @anvia/core
+pnpm add @anvia/graph @anvia/neo4j @anvia/core
 ```
 
 ## Managed knowledge graph
@@ -18,12 +17,8 @@ pnpm add @anvia/neo4j @anvia/core
 ```ts
 import { Agent } from "@anvia/core/agent";
 import { embedDocuments } from "@anvia/core/embeddings";
-import {
-  Neo4jClient,
-  createNeo4jGraphSearchTool,
-  defineNeo4jGraphSchema,
-  extractGraphFacts,
-} from "@anvia/neo4j";
+import { createGraphSearchTool } from "@anvia/graph";
+import { Neo4jClient, defineNeo4jGraphSchema, extractGraphFacts } from "@anvia/neo4j";
 import { z } from "zod";
 
 const schema = defineNeo4jGraphSchema({
@@ -103,7 +98,7 @@ const write = await graph.replaceDocuments({
 });
 console.log(write);
 
-const searchGraph = createNeo4jGraphSearchTool({
+const searchGraph = createGraphSearchTool({
   name: "search_support_graph",
   description: "Search connected support incidents and products.",
   graph,

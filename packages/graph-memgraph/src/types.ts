@@ -4,7 +4,6 @@ import type {
   GraphDocument,
   GraphEntity,
   GraphEvidence,
-  GraphEvidenceOptions,
   GraphFacts,
   GraphMention,
   GraphNodeIdentity,
@@ -16,12 +15,10 @@ import type {
   GraphSchema,
   GraphSchemaLike,
   GraphSearchOptions,
-  GraphSearchTool,
   GraphTraversalOptions,
   GraphWriteResult,
 } from "@anvia/graph";
-import type { RetrySetting } from "@anvia/core";
-import type { EmbeddedDocument, EmbeddingModel } from "@anvia/core/embeddings";
+import type { EmbeddedDocument } from "@anvia/core/embeddings";
 import type { Driver } from "neo4j-driver";
 
 export type MemgraphVectorIndex = Readonly<{
@@ -109,17 +106,6 @@ export interface MemgraphKnowledgeGraphBaseLike<Schema extends GraphSchemaLike> 
   retrieve(options: GraphRetrieveOptions<Schema>): Promise<GraphContext>;
 }
 
-export type CreateMemgraphGraphSearchToolOptions<Schema extends GraphSchemaLike> = Readonly<{
-  name: string;
-  description: string;
-  graph: MemgraphKnowledgeGraphBaseLike<Schema>;
-  model: EmbeddingModel;
-  search: GraphSearchOptions;
-  traversal: GraphTraversalOptions<Schema>;
-  evidence: GraphEvidenceOptions;
-  retries?: RetrySetting | undefined;
-}>;
-
 export type {
   GraphChunk as MemgraphGraphChunk,
   GraphContext as MemgraphGraphContext,
@@ -138,5 +124,4 @@ export type {
   GraphTraversalOptions as MemgraphGraphTraversalOptions,
 };
 
-export type MemgraphGraphSearchTool = GraphSearchTool;
 export type MemgraphGraphWriteResult = GraphWriteResult;

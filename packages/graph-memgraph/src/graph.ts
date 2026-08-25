@@ -1,14 +1,11 @@
 import {
-  createGraphSearchTool,
   parseGraphProperties,
-  type CreateGraphSearchToolOptions,
   type GraphContext,
   type GraphExploreOptions,
   type GraphExploreResult,
   type GraphProperties,
   type GraphRetrieveOptions,
   type GraphSchemaLike,
-  type GraphSearchTool,
   type GraphWriteResult,
 } from "@anvia/graph";
 import {
@@ -117,7 +114,7 @@ export abstract class MemgraphKnowledgeGraphBase<
     }
   }
 
-  async retrieve(options: GraphRetrieveOptions<Schema>): Promise<GraphContext> {
+  async retrieve(options: GraphRetrieveOptions<Schema, Evidence>): Promise<GraphContext> {
     const { retrieveGraphContext } = await import("./retrieve.js");
     return retrieveGraphContext({ ...options, graph: this });
   }
@@ -125,10 +122,6 @@ export abstract class MemgraphKnowledgeGraphBase<
   async explore(options: GraphExploreOptions<Schema>): Promise<GraphExploreResult> {
     const { exploreGraph } = await import("./explore.js");
     return exploreGraph(this, options);
-  }
-
-  createSearchTool(options: Omit<CreateGraphSearchToolOptions<Schema>, "graph">): GraphSearchTool {
-    return createGraphSearchTool({ ...options, graph: this });
   }
 
   async query(

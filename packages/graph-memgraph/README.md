@@ -11,7 +11,7 @@ pnpm add @anvia/graph @anvia/memgraph @anvia/core
 ## Managed knowledge graph
 
 ```ts
-import { defineGraphSchema, extractGraphFacts } from "@anvia/graph";
+import { createGraphSearchTool, defineGraphSchema, extractGraphFacts } from "@anvia/graph";
 import { MemgraphClient } from "@anvia/memgraph";
 import { z } from "zod";
 
@@ -98,9 +98,10 @@ await graph.replaceDocuments({
   orphanEntities: "delete",
 });
 
-const searchGraph = graph.createSearchTool({
+const searchGraph = createGraphSearchTool({
   name: "search_support_graph",
   description: "Search connected support incidents and products.",
+  graph,
   model: embeddingModel,
   search: {
     type: "hybrid",

@@ -1,5 +1,6 @@
 import { Usage } from "@anvia/core";
 import type { EmbeddingModel } from "@anvia/core/embeddings";
+import { createGraphSearchTool } from "@anvia/graph";
 import type { Driver, ManagedTransaction } from "neo4j-driver";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
@@ -9,7 +10,6 @@ const extractMock = vi.hoisted(() => vi.fn());
 vi.mock("@anvia/core/extractor", () => ({ extract: extractMock }));
 
 import {
-  createNeo4jGraphSearchTool,
   defineNeo4jGraphSchema,
   extractGraphFacts,
   GraphFactConflictError,
@@ -275,6 +275,8 @@ describe("Neo4j schema and lifecycle", () => {
     expect(existing).toBeInstanceOf(Neo4jKnowledgeGraph);
     expect(existing).not.toHaveProperty("ensure");
     expect(existing).not.toHaveProperty("replaceDocuments");
+    expect(existing).not.toHaveProperty("createSearchTool");
+    expect(writable).not.toHaveProperty("createSearchTool");
     expect(Object.isFrozen(schema.nodes)).toBe(true);
     expect(Object.isFrozen(schema.nodes.Product?.identity)).toBe(true);
     expect(Object.isFrozen(writable.resources)).toBe(true);
@@ -1478,7 +1480,7 @@ describe("graph retrieval", () => {
         },
       },
     });
-    const tool = createNeo4jGraphSearchTool({
+    const tool = createGraphSearchTool({
       name: "search_graph",
       description: "Search the graph.",
       graph,

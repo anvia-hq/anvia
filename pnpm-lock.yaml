@@ -78,6 +78,9 @@ importers:
       '@anvia/gemini':
         specifier: workspace:*
         version: link:../packages/provider-gemini
+      '@anvia/graph':
+        specifier: workspace:*
+        version: link:../packages/graph
       '@anvia/grok':
         specifier: workspace:*
         version: link:../packages/provider-grok

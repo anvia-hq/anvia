@@ -161,12 +161,13 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@anvia/browser": "workspace:*",
     "@anvia/anthropic": "workspace:*",
-    "@anvia/client": "workspace:*",
+    "@anvia/browser": "workspace:*",
     "@anvia/chroma": "workspace:*",
+    "@anvia/client": "workspace:*",
     "@anvia/core": "workspace:*",
     "@anvia/gemini": "workspace:*",
+    "@anvia/graph": "workspace:*",
     "@anvia/grok": "workspace:*",
     "@anvia/langfuse": "workspace:*",
     "@anvia/lens": "workspace:*",

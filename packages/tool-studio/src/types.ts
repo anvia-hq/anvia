@@ -23,12 +23,14 @@ import type {
 } from "@anvia/core/memory";
 import type { ModelList } from "@anvia/core/model-listing";
 import type { Pipeline, PipelineGraph } from "@anvia/core/pipeline";
+import type { GraphExplorer } from "@anvia/graph";
 import type { Hono } from "hono";
 
 export type StudioCapability =
   | "agents"
   | "interactions"
   | "evals"
+  | "graphs"
   | "memory"
   | "knowledge"
   | "mcps"
@@ -194,6 +196,45 @@ export type StudioPipelineDetail = StudioPipelineConfig & {
   graph: PipelineGraph;
 };
 
+export type StudioGraphRegistration = {
+  id: string;
+  graph: GraphExplorer;
+  name?: string;
+  description?: string;
+};
+
+export type StudioGraphConfig = {
+  id: string;
+  name?: string;
+  description?: string;
+  nodeTypes: Array<{ name: string; description: string }>;
+  relationshipTypes: Array<{
+    name: string;
+    description: string;
+    from: string;
+    to: string;
+  }>;
+};
+
+export type StudioGraphExploreRequest =
+  | {
+      mode: "overview";
+      nodeTypes?: string[];
+      relationships?: string[];
+      maxNodes?: number;
+      maxRelationships?: number;
+    }
+  | {
+      mode: "expand";
+      nodeIds: string[];
+      nodeTypes?: string[];
+      relationships?: string[];
+      direction?: "outgoing" | "incoming" | "both";
+      maxDepth?: number;
+      maxNodes?: number;
+      maxRelationships?: number;
+    };
+
 export type StudioEvalSuite<
   // oxlint-disable-next-line typescript/no-explicit-any -- Studio accepts heterogeneous eval suites.
   Input = any,
@@ -274,6 +315,7 @@ export type StudioConfig = {
   agents: StudioAgentConfig[];
   models?: StudioModelsConfig;
   pipelines: StudioPipelineConfig[];
+  graphs: StudioGraphConfig[];
   evals: StudioEvalSuiteConfig[];
   chat: {
     quickPrompts: Record<string, string[]>;
@@ -1030,6 +1072,7 @@ export type StudioOptions = {
   ui?: boolean | StudioUiOptions;
   models?: StudioModelConfig;
   sandboxes?: readonly StudioSandboxRegistration[];
+  graphs?: readonly StudioGraphRegistration[];
 };
 
 export type StudioServeOptions = {

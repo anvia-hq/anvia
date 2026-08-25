@@ -895,6 +895,9 @@ importers:
       '@anvia/client':
         specifier: workspace:*
         version: link:../client
+      '@anvia/graph':
+        specifier: workspace:*
+        version: link:../graph
       '@anvia/react':
         specifier: workspace:*
         version: link:../react

@@ -157,10 +157,12 @@ export function StudioConsole() {
   const toolsEnabled = config?.capabilities.tools?.enabled === true;
   const sandboxesEnabled = config?.capabilities.sandboxes?.enabled === true;
   const pipelinesEnabled = config?.capabilities.pipelines?.enabled === true;
+  const graphsEnabled = config?.capabilities.graphs?.enabled === true;
   const memoryEnabled = config?.capabilities.memory?.enabled === true;
   const statusEnabled = config?.capabilities.status?.enabled === true;
   const agents = config?.agents ?? [];
   const pipelines = config?.pipelines ?? [];
+  const graphs = config?.graphs ?? [];
   const hasAgents = agents.length > 0;
   useEffect(() => {
     if (!sandboxesEnabled) {
@@ -224,6 +226,7 @@ export function StudioConsole() {
       toolsEnabled,
       sandboxesEnabled,
       mcpsEnabled,
+      graphsEnabled,
       pipelinesEnabled,
       memoryEnabled,
       statusEnabled,
@@ -236,6 +239,7 @@ export function StudioConsole() {
       toolsEnabled,
       sandboxesEnabled,
       mcpsEnabled,
+      graphsEnabled,
       pipelinesEnabled,
       memoryEnabled,
       statusEnabled,
@@ -513,6 +517,8 @@ export function StudioConsole() {
     browserWorkspaceOpen,
     decidingApprovals,
     deleteCandidate,
+    graphs,
+    graphsEnabled,
     hasAgents,
     hasMessages,
     isStreaming,

@@ -80,6 +80,9 @@ function pageLocationFromSegments(segments: string[]): PageLocation {
   if (first === "mcps") {
     return { page: "mcps" };
   }
+  if (first === "graphs") {
+    return { page: "graphs" };
+  }
   if (first === "pipelines") {
     return { page: "pipelines" };
   }

@@ -155,6 +155,23 @@ const graph = client.knowledgeGraph({
 await graph.validate();
 ```
 
+## Graph explorer
+
+Managed and existing graph registrations implement the shared bounded explorer contract:
+
+```ts
+const overview = await graph.explore({ mode: "overview", maxNodes: 100 });
+const neighborhood = await graph.explore({
+  mode: "expand",
+  nodeIds: [overview.nodes[0]!.id],
+  maxDepth: 1,
+});
+```
+
+The explorer returns Memgraph internal IDs as opaque strings, limits every query, and omits
+embeddings and other `__anvia_*` properties. Use stable graph identity properties for application
+logic; use the opaque IDs only to expand the current view.
+
 Existing registrations support `evidence: { type: "none" }`. Chunk evidence is available only for
 managed graphs.
 

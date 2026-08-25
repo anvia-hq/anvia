@@ -15,6 +15,7 @@ import {
 
 const baseAvailability: StudioPageAvailability = {
   hasAgents: true,
+  graphsEnabled: true,
   sessionsEnabled: true,
   tracesEnabled: true,
   toolsEnabled: true,
@@ -34,10 +35,10 @@ describe("Studio UI helpers", () => {
       ),
     ).toEqual(Array(4).fill("workspace"));
     expect(
-      ["agents", "tools", "sandboxes", "mcps", "knowledge", "memory", "status"].map((page) =>
-        navigationSection(page as Parameters<typeof navigationSection>[0]),
+      ["agents", "tools", "sandboxes", "mcps", "graphs", "knowledge", "memory", "status"].map(
+        (page) => navigationSection(page as Parameters<typeof navigationSection>[0]),
       ),
-    ).toEqual(Array(7).fill("inspect"));
+    ).toEqual(Array(8).fill("inspect"));
   });
 
   it("keeps pages enabled when their runtime capability is missing", () => {

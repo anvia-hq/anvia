@@ -25,6 +25,8 @@ export type StudioConsoleContextValue = {
   browserWorkspaceOpen: boolean;
   decidingApprovals: Set<string>;
   deleteCandidate: StudioSessionSummary | undefined;
+  graphs: StudioConfig["graphs"];
+  graphsEnabled: boolean;
   hasAgents: boolean;
   hasMessages: boolean;
   isStreaming: boolean;

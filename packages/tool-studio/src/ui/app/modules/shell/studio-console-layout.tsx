@@ -8,6 +8,7 @@ export function StudioConsoleLayout() {
   const studio = useStudioConsole();
   const navigation = {
     activePage: studio.activePage,
+    graphsEnabled: studio.graphsEnabled,
     hasAgents: studio.hasAgents,
     knowledgeEnabled: studio.knowledgeEnabled,
     mcpsEnabled: studio.mcpsEnabled,

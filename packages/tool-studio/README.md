@@ -1,6 +1,7 @@
 # @anvia/studio
 
-Studio UI and HTTP runtime for Anvia agents, pipelines, tools, MCPs, memory, status, and knowledge inspection.
+Studio UI and HTTP runtime for Anvia agents, pipelines, graphs, tools, MCPs, memory, status, and
+knowledge inspection.
 
 Use this package to serve local agents and pipelines over HTTP, inspect sessions, traces, tools, MCPs, Memory, Status, and Knowledge in the browser UI, and exercise tool approval workflows during development.
 
@@ -142,6 +143,7 @@ Studio exposes:
 - Realtime observability stream for session logs, pipeline logs, and completed traces
 - Eval suite runner for registered `runEvalSuite` configurations
 - Pipeline graph, logs, run history, and replay-from-history controls
+- Knowledge-graph explorer with type filters, search, node details, and bounded neighborhood expansion
 - Rich agent runtime details, direct tool invocation, static tool, dynamic tool, and MCP inspectors
 - Memory explorer for users, conversations, messages, and transcript steps backed by the session store
 - Status dashboard for storage adapters, record counts, and enabled capabilities
@@ -150,6 +152,27 @@ Studio exposes:
 Studio reads MCP provenance directly from `Agent.mcpServers`. Prefixes configured by an
 `McpClient` remain visible in both the MCP inspector and direct tool runner, while the remote tool
 name stays available on the typed MCP registration.
+
+### Graph explorer
+
+Register any graph that implements the provider-neutral `GraphExplorer` contract. Both
+`@anvia/neo4j` and `@anvia/memgraph` graph registrations can be passed directly:
+
+```ts
+const studio = new Studio([agent], {
+  graphs: [
+    {
+      id: "support",
+      name: "Support knowledge graph",
+      graph,
+    },
+  ],
+});
+```
+
+Open `/graphs` and select nodes to inspect their public properties or expand their one-hop
+neighborhood. Studio exposes only bounded overview and expansion requests; it does not accept raw
+Cypher. Adapter explorer responses also omit stored embeddings and reserved `__anvia_*` properties.
 
 ## Session Storage
 
@@ -174,7 +197,7 @@ SQLite storage uses dedicated `anvia_studio_*` tables so it can share an applica
 - `Studio`
 - `createInMemoryStudioStore`
 - `createSqliteSessionStore`
-- Studio session, trace, approval, pipeline, memory, status, knowledge, tool, MCP, and runtime types
+- Studio session, trace, approval, pipeline, graph, memory, status, knowledge, tool, MCP, and runtime types
 
 ## Development
 

@@ -1501,4 +1501,65 @@ describe("graph retrieval", () => {
     });
     expect((await tool.definition("")).name).toBe("search_graph");
   });
+
+  it("explores a bounded provider-neutral graph view", async () => {
+    const driver = fakeDriver({
+      executeQuery: async (query) => {
+        if (query.includes("RETURN elementId(node) AS id")) {
+          return {
+            records: [
+              record({
+                id: "node-1",
+                labels: ["SupportEntity", "Incident"],
+                properties: {
+                  id: "INC-1",
+                  title: "Checkout unavailable",
+                  __anvia_key: 'Incident:{"id":"INC-1"}',
+                  __anvia_embedding: [1, 0],
+                },
+              }),
+              record({
+                id: "node-2",
+                labels: ["SupportEntity", "Product"],
+                properties: { id: "checkout", name: "Checkout" },
+              }),
+            ],
+          };
+        }
+        if (query.includes("MATCH (from)-[relationship]->(to)")) {
+          return {
+            records: [
+              record({
+                id: "relationship-1",
+                type: "AFFECTS",
+                source: "node-1",
+                target: "node-2",
+                properties: { severity: "high", __anvia_graph: "support" },
+              }),
+            ],
+          };
+        }
+        return { records: [] };
+      },
+    });
+    const result = await managed(new Neo4jClient({ driver: driver.value })).explore({
+      mode: "overview",
+      maxNodes: 10,
+      maxRelationships: 10,
+    });
+    expect(result.nodes).toHaveLength(2);
+    expect(result.nodes[0]).toMatchObject({
+      id: "node-1",
+      type: "Incident",
+      identity: { id: "INC-1" },
+      properties: { id: "INC-1", title: "Checkout unavailable" },
+    });
+    expect(result.nodes[0]?.properties).not.toHaveProperty("__anvia_embedding");
+    expect(result.relationships[0]).toMatchObject({
+      type: "AFFECTS",
+      from: "node-1",
+      to: "node-2",
+      properties: { severity: "high" },
+    });
+  });
 });

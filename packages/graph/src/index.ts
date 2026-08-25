@@ -1,5 +1,11 @@
 export { extractGraphFacts, GraphFactConflictError } from "./extract.js";
 export {
+  resolveGraphExploreOptions,
+  type ResolvedGraphExploreExpandOptions,
+  type ResolvedGraphExploreOptions,
+  type ResolvedGraphExploreOverviewOptions,
+} from "./explore.js";
+export {
   assertGraphName,
   assertGraphPropertyName,
   defineGraphSchema,

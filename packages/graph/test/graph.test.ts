@@ -5,7 +5,12 @@ import { z } from "zod";
 const extractMock = vi.hoisted(() => vi.fn());
 vi.mock("@anvia/core/extractor", () => ({ extract: extractMock }));
 
-import { defineGraphSchema, extractGraphFacts, GraphFactConflictError } from "../src/index.js";
+import {
+  defineGraphSchema,
+  extractGraphFacts,
+  GraphFactConflictError,
+  resolveGraphExploreOptions,
+} from "../src/index.js";
 
 describe("provider-neutral graph primitives", () => {
   beforeEach(() => extractMock.mockReset());
@@ -86,5 +91,22 @@ describe("provider-neutral graph primitives", () => {
         ],
       }),
     ).rejects.toBeInstanceOf(GraphFactConflictError);
+  });
+
+  it("resolves bounded graph exploration options", () => {
+    expect(resolveGraphExploreOptions(schema, { mode: "overview" })).toEqual({
+      mode: "overview",
+      nodeTypes: ["Product"],
+      relationships: [],
+      maxNodes: 100,
+      maxRelationships: 200,
+    });
+    expect(() =>
+      resolveGraphExploreOptions(schema, {
+        mode: "expand",
+        nodeIds: ["one"],
+        maxDepth: 5,
+      }),
+    ).toThrow("between 1 and 4");
   });
 });

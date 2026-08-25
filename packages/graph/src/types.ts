@@ -184,6 +184,61 @@ export interface GraphContextRetriever<Schema extends GraphSchemaLike = GraphSch
   retrieve(options: GraphRetrieveOptions<Schema>): Promise<GraphContext>;
 }
 
+export type GraphExploreDirection = "outgoing" | "incoming" | "both";
+
+export type GraphExploreOverviewOptions<Schema extends GraphSchemaLike> = Readonly<{
+  mode: "overview";
+  nodeTypes?: readonly (keyof Schema["nodes"] & string)[] | undefined;
+  relationships?: readonly (keyof Schema["relationships"] & string)[] | undefined;
+  maxNodes?: number | undefined;
+  maxRelationships?: number | undefined;
+  abortSignal?: AbortSignal | undefined;
+}>;
+
+export type GraphExploreExpandOptions<Schema extends GraphSchemaLike> = Readonly<{
+  mode: "expand";
+  nodeIds: readonly string[];
+  nodeTypes?: readonly (keyof Schema["nodes"] & string)[] | undefined;
+  relationships?: readonly (keyof Schema["relationships"] & string)[] | undefined;
+  direction?: GraphExploreDirection | undefined;
+  maxDepth?: number | undefined;
+  maxNodes?: number | undefined;
+  maxRelationships?: number | undefined;
+  abortSignal?: AbortSignal | undefined;
+}>;
+
+export type GraphExploreOptions<Schema extends GraphSchemaLike> =
+  | GraphExploreOverviewOptions<Schema>
+  | GraphExploreExpandOptions<Schema>;
+
+export type GraphExploreNode = Readonly<{
+  id: string;
+  key?: string | undefined;
+  type: string;
+  identity: GraphNodeIdentity;
+  properties: GraphProperties;
+}>;
+
+export type GraphExploreRelationship = Readonly<{
+  id: string;
+  key?: string | undefined;
+  type: string;
+  from: string;
+  to: string;
+  properties: GraphProperties;
+}>;
+
+export type GraphExploreResult = Readonly<{
+  nodes: readonly GraphExploreNode[];
+  relationships: readonly GraphExploreRelationship[];
+  truncated: Readonly<{ nodes: boolean; relationships: boolean }>;
+}>;
+
+export interface GraphExplorer<Schema extends GraphSchemaLike = GraphSchemaLike> {
+  readonly schema: Schema;
+  explore(options: GraphExploreOptions<Schema>): Promise<GraphExploreResult>;
+}
+
 export type CreateGraphSearchToolOptions<Schema extends GraphSchemaLike> = Readonly<{
   name: string;
   description: string;

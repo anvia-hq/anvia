@@ -83,6 +83,8 @@ export function pageTitle(page: ActivePage, agentName: string | undefined): stri
       return "Sandboxes";
     case "mcps":
       return "MCPs";
+    case "graphs":
+      return "Graphs";
     case "pipelines":
       return "Pipelines";
     case "knowledge":

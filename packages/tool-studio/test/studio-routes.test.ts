@@ -85,6 +85,15 @@ describe("Studio UI routes", () => {
     });
     expect(sandboxShell.status).toBe(200);
     expect(await sandboxShell.text()).toContain('data-ui-path=""');
+
+    const graphRedirect = await app.request("http://studio.test/studio/graphs");
+    expect(graphRedirect.status).toBe(302);
+    expect(graphRedirect.headers.get("location")).toBe("/graphs");
+
+    const graphShell = await app.request("http://studio.test/graphs", {
+      headers: { accept: "text/html" },
+    });
+    expect(graphShell.status).toBe(200);
   });
 
   it("serves configured client scripts and bundled assets", async () => {

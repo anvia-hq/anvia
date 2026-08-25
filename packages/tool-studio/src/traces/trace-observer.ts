@@ -1,3 +1,4 @@
+import { AgentRunCancelledError } from "@anvia/core/agent";
 import type { JsonObject, JsonValue } from "@anvia/core/completion";
 import type {
   AgentGenerationEndArgs,
@@ -366,11 +367,12 @@ class ChildAgentToolTraceAccumulator {
     if (child.type === "error") {
       const metadata = this.childMetadata(agentId, agentName, childTurn);
       if (isRecord(child.usage)) metadata.usage = toJsonValue(child.usage);
+      const status = child.error instanceof AgentRunCancelledError ? "cancelled" : "error";
       this.completedObservations.push(
         traceObservation({
           kind: "tool",
           name: `${agentLabel(agentId, agentName)}.error`,
-          status: "error",
+          status,
           turn: this.parent.turn,
           startedAt: new Date(),
           error: serializeError(child.error),

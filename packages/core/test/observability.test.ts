@@ -8,6 +8,7 @@ import {
 import * as anvia from "./helpers/imports";
 import {
   Agent,
+  AgentRunCancelledError,
   type AgentGenerationEndArgs,
   type AgentGenerationErrorArgs,
   type AgentGenerationStartArgs,
@@ -940,6 +941,40 @@ describe("agent observability", () => {
       "lifecycle",
       "run observer",
     ]);
+  });
+
+  it("reports failures terminated by the run-error hook as cancelled", async () => {
+    const observer = new RecordingObserver();
+    const hook = createHook({
+      onRunError({ run }) {
+        return run.cancel("stop after model failure");
+      },
+    });
+    const agent = new Agent({
+      id: "test-agent",
+      model: new QueueModel([]),
+      observability: { observers: { test: observer }, primaryTrace: "test" },
+    });
+
+    let reportedError: unknown;
+    try {
+      await agent.generate({ prompt: "fail", ...withInternalAgentRunOptions({}, { hook }) });
+    } catch (error) {
+      reportedError = error;
+    }
+
+    expect(reportedError).toMatchObject({
+      name: "AgentRunCancelledError",
+      reason: "stop after model failure",
+    });
+    expect(reportedError).toBeInstanceOf(AgentRunCancelledError);
+    const runErrorEvent = observer.events.find(
+      (event) => (event as { type?: unknown }).type === "run_error",
+    ) as { args: AgentRunErrorArgs } | undefined;
+    expect(runErrorEvent?.args.status).toBe("cancelled");
+    expect(runErrorEvent?.args.error).toMatchObject({
+      reason: "stop after model failure",
+    });
   });
 });
 

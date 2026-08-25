@@ -117,6 +117,49 @@ class AbortableModel extends QueueModel {
   }
 }
 
+class AbortableStreamingModel implements StreamingCompletionModel {
+  readonly provider = "test";
+  readonly modelId = "test";
+  readonly capabilities = {
+    streaming: true,
+    tools: true,
+    toolChoice: true,
+    imageInput: true,
+    documentInput: true,
+    outputSchema: true,
+    reasoning: true,
+  };
+  readonly started: Promise<void>;
+  private markStarted: () => void = () => {};
+
+  constructor() {
+    this.started = new Promise<void>((resolve) => {
+      this.markStarted = resolve;
+    });
+  }
+
+  completion(): Promise<CompletionResponse> {
+    throw new Error("completion should not be called");
+  }
+
+  async *streamCompletion(
+    _request: CompletionRequest,
+    options?: ModelCallOptions,
+  ): AsyncIterable<CompletionModelStreamEvent> {
+    this.markStarted();
+    yield { type: "text_delta", delta: "partial" };
+    const signal = options?.abortSignal;
+    if (signal === undefined) throw new Error("Expected an abort signal");
+    await new Promise<void>((_resolve, reject) => {
+      if (signal.aborted) {
+        reject(signal.reason);
+        return;
+      }
+      signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+    });
+  }
+}
+
 type CompletionOutcome = { response: CompletionResponse } | { error: unknown };
 
 class FlakyQueueModel {
@@ -1280,6 +1323,38 @@ describe("Anvia studio", () => {
     await shutdown;
     expect(shutdownSettled).toBe(true);
 
+    const rejected = await studio.fetch(
+      new Request("http://runner.test/agents/support/runs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ type: "messages", messages: [Message.user("late")] }),
+      }),
+    );
+    expect(rejected.status).toBe(503);
+  });
+
+  it("drains an active streaming run before shutdown completes", async () => {
+    const model = new AbortableStreamingModel();
+    const agent = new Agent({ id: "support", model });
+    const studio = new Studio([agent]);
+    const response = await studio.fetch(
+      new Request("http://runner.test/agents/support/runs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          type: "messages",
+          messages: [Message.user("wait")],
+          stream: true,
+        }),
+      }),
+    );
+    const events = readJsonl(response);
+    await model.started;
+
+    const shutdown = studio.shutdown({ timeoutMs: 1_000 });
+    const [streamEvents] = await Promise.all([events, shutdown]);
+
+    expect(streamEvents).toContainEqual(expect.objectContaining({ type: "error" }));
     const rejected = await studio.fetch(
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",

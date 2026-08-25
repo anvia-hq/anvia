@@ -127,6 +127,8 @@ describe("provider-neutral graph primitives", () => {
       extractionModel: {} as never,
       embeddingModel,
       chunking: { strategy: "fixed", maxSize: 8 },
+      conflict: "keep-existing",
+      orphanEntities: "keep",
     });
 
     expect(result.chunks).toHaveLength(2);
@@ -139,7 +141,7 @@ describe("provider-neutral graph primitives", () => {
     ]);
     expect(embeddedTexts).toContain("Product\nid: one\nname: One");
     expect(replaceDocuments).toHaveBeenCalledWith(
-      expect.objectContaining({ conflict: "overwrite", orphanEntities: "delete" }),
+      expect.objectContaining({ conflict: "keep-existing", orphanEntities: "keep" }),
     );
   });
 

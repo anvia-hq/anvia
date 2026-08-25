@@ -50,8 +50,8 @@ export type IngestGraphDocumentsOptions<
 > = Omit<GraphPreparationOptions<Schema, ExtractionModel>, "graph"> &
   Readonly<{
     graph: GraphDocumentWriter<Schema>;
-    conflict?: GraphWriteConflict | undefined;
-    orphanEntities?: GraphOrphanEntityPolicy | undefined;
+    conflict: GraphWriteConflict;
+    orphanEntities: GraphOrphanEntityPolicy;
   }>;
 
 export type IngestGraphTextOptions<
@@ -111,8 +111,8 @@ export async function ingestGraphDocuments<
     entities: prepared.entities,
     relationships: prepared.relationships,
     mentions: prepared.mentions,
-    conflict: options.conflict ?? "overwrite",
-    orphanEntities: options.orphanEntities ?? "delete",
+    conflict: options.conflict,
+    orphanEntities: options.orphanEntities,
     abortSignal: options.abortSignal,
   });
   return { ...prepared, write };

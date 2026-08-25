@@ -86,8 +86,11 @@ describe("TraceBrowser rendering", () => {
     expect(detailHtml).toContain("Metadata");
     expect(detailHtml).toContain("Search spans");
     expect(detailHtml).toContain("Collapse all spans");
-    expect(detailHtml).toContain("Formatted");
+    expect(detailHtml).toContain("Structure");
+    expect(detailHtml).toContain("Raw");
+    expect(detailHtml).toContain("Table");
     expect(detailHtml).toContain("JSON");
+    expect(detailHtml).not.toContain("Formatted");
     expect(detailHtml).not.toContain('role="tree"');
     expect(detailHtml).not.toContain('role="treeitem"');
     expect(detailHtml).toContain('aria-current="true"');

@@ -12,13 +12,9 @@ import {
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import {
   firstDeltaMsFromObservations,
-  isNeutralTraceRow,
   observationUsageText,
-  plainTraceValue,
   selectedTraceDetail,
-  TraceJsonTree,
   type TraceObservationNode,
-  TraceRowIcon,
   TraceToneIcon,
   traceObservationLabel,
   traceObservationTree,
@@ -61,6 +57,7 @@ import {
 } from "../shared/format";
 import { isRecord } from "../shared/object";
 import type { TraceInspectorKey, TraceLoadState, TraceObservationItem } from "../shared/types";
+import { TracePayloadSection } from "./trace-payload-section";
 
 export function TraceBrowser(props: {
   agents: StudioConfig["agents"];
@@ -745,7 +742,6 @@ function TraceDetailPane(props: {
   onShowSessionTraces: (sessionId: string) => void;
 }) {
   const selected = selectedTraceDetail(props.trace, props.turns, props.activeKey);
-  const [payloadView, setPayloadView] = useState<"formatted" | "json">("formatted");
   return (
     <section
       className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-background"
@@ -773,7 +769,6 @@ function TraceDetailPane(props: {
                 <div className="text-xs text-muted-foreground">{selected.startedAt}</div>
               </div>
             </div>
-            <PayloadViewSwitch value={payloadView} onChange={setPayloadView} />
           </div>
           <div className="flex flex-wrap gap-2">
             <TraceMetric
@@ -816,25 +811,15 @@ function TraceDetailPane(props: {
       <div className="min-w-0 overflow-auto">
         <div className="grid min-w-0 content-start gap-6 p-6">
           {selected.input === undefined ? null : (
-            <TraceDataSection title="Input" value={selected.input} view={payloadView} />
+            <TracePayloadSection field="input" title="Input" value={selected.input} />
           )}
           {selected.output === undefined ? null : (
-            <TraceDataSection
-              title="Output"
-              value={selected.output}
-              tone="success"
-              view={payloadView}
-            />
+            <TracePayloadSection field="output" title="Output" value={selected.output} />
           )}
           {selected.error === undefined ? null : (
-            <TraceDataSection
-              title="Error"
-              value={selected.error}
-              tone="error"
-              view={payloadView}
-            />
+            <TracePayloadSection field="error" title="Error" value={selected.error} />
           )}
-          <TraceDataSection title="Metadata" value={selected.metadata} view={payloadView} />
+          <TracePayloadSection field="metadata" title="Metadata" value={selected.metadata} />
         </div>
       </div>
     </section>
@@ -849,146 +834,4 @@ function TraceMetric(props: { icon: ReactNode; label: string; value: string }) {
       <span className="max-w-44 truncate font-mono font-medium">{props.value}</span>
     </div>
   );
-}
-
-function PayloadViewSwitch(props: {
-  value: "formatted" | "json";
-  onChange: (value: "formatted" | "json") => void;
-}) {
-  return (
-    <fieldset
-      className="flex h-8 items-center rounded-md border bg-muted p-0.5"
-      aria-label="Payload view"
-    >
-      {(["formatted", "json"] as const).map((view) => (
-        <button
-          aria-pressed={props.value === view}
-          className={cn(
-            "h-6 rounded px-2 text-xs font-medium text-muted-foreground",
-            props.value === view && "bg-accent text-foreground",
-          )}
-          key={view}
-          type="button"
-          onClick={() => props.onChange(view)}
-        >
-          {view === "formatted" ? "Formatted" : "JSON"}
-        </button>
-      ))}
-    </fieldset>
-  );
-}
-
-function TraceDataSection(props: {
-  title: string;
-  value: unknown;
-  tone?: "success" | "error";
-  compact?: boolean;
-  view: "formatted" | "json";
-}) {
-  const rows = plainTraceValue(props.title, props.value);
-  return (
-    <section className="grid min-w-0 gap-3">
-      <div className="flex items-center gap-3">
-        <h3 className="m-0 text-sm font-semibold">{props.title}</h3>
-        <span className="h-px flex-1 bg-border" aria-hidden="true" />
-      </div>
-      {props.view === "json" ? (
-        <TraceJsonTree value={props.value} />
-      ) : (
-        <div className="grid min-w-0 gap-2">
-          {rows.map((item) => (
-            <article
-              className={cn(
-                "grid min-w-0 gap-2 rounded-lg border bg-muted px-4 py-3",
-                props.compact &&
-                  "grid-cols-[150px_minmax(0,1fr)] items-start gap-4 max-lg:grid-cols-1",
-              )}
-              key={`${item.label}-${item.text}`}
-            >
-              <span className="flex min-w-0 items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                <TraceRowIcon label={item.label} />
-                {item.label}
-              </span>
-              <TraceRowContent compact={props.compact} item={item} tone={props.tone} />
-            </article>
-          ))}
-        </div>
-      )}
-    </section>
-  );
-}
-
-function TraceRowContent(props: {
-  compact?: boolean | undefined;
-  item: { label: string; text: string };
-  tone?: "success" | "error" | undefined;
-}) {
-  const historyItems = conversationHistoryItems(props.item);
-  if (historyItems.length > 0) {
-    return (
-      <div className="grid min-w-0 gap-5">
-        {historyItems.map((item) => (
-          <div className="grid min-w-0 gap-2" key={`${item.index}-${item.role}-${item.text}`}>
-            <div className="flex min-w-0 items-center gap-2">
-              <span className=" text-xs font-semibold tabular-nums text-muted-foreground">
-                {item.index}
-              </span>
-              <Badge
-                className={cn(
-                  "px-1.5 py-0.5",
-                  item.role === "User" &&
-                    "border-hair bg-status-neutral-fill text-muted-foreground",
-                  item.role === "Assistant" && "border-hair bg-status-neutral-fill text-foreground",
-                  item.role === "Tool" &&
-                    "border-status-danger-ink bg-status-danger-fill text-destructive",
-                )}
-              >
-                {item.role}
-              </Badge>
-            </div>
-            <p className="m-0 whitespace-pre-wrap text-sm leading-6 text-foreground [overflow-wrap:anywhere]">
-              {item.text}
-            </p>
-          </div>
-        ))}
-      </div>
-    );
-  }
-
-  return (
-    <p
-      className={cn(
-        "m-0 whitespace-pre-wrap text-sm leading-6 text-foreground [overflow-wrap:anywhere]",
-        props.tone === "success" && !isNeutralTraceRow(props.item) && "text-foreground",
-        props.tone === "error" && "text-destructive",
-      )}
-    >
-      {props.item.text}
-    </p>
-  );
-}
-
-function conversationHistoryItems(row: {
-  label: string;
-  text: string;
-}): Array<{ index: string; role: string; text: string }> {
-  if (!row.label.startsWith("Conversation history")) {
-    return [];
-  }
-  return row.text
-    .split("\n\n")
-    .flatMap((block): Array<{ index: string; role: string; text: string }> => {
-      const [heading, ...content] = block.split("\n");
-      const match = /^(\d+)\.\s+(.+)$/.exec(heading ?? "");
-      if (match === null) {
-        return [];
-      }
-      return [
-        {
-          index: match[1] ?? "",
-          role: match[2] ?? "Message",
-          text: content.join("\n"),
-        },
-      ];
-    });
 }

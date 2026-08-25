@@ -70,6 +70,7 @@ describe("Studio UI routes", () => {
     );
     expect(shellHtml).toContain('<meta name="theme-color" content="#09090b">');
     expect(shellHtml).toContain('localStorage.getItem("anvia-theme")');
+    expect(shellHtml).toContain('t!=="dark"&&l==="light"');
 
     const rootShell = await app.request("http://studio.test/tracing/sessions/session_1");
     expect(rootShell.status).toBe(200);

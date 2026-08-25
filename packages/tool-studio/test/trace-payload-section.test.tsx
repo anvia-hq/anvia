@@ -56,6 +56,17 @@ describe("trace payload information structure", () => {
       value: { orderId: "A-1" },
     });
     expect(anvias.additional).toEqual({ messageId: "msg_1" });
+
+    const mixedNaming = analyzeTracePayload(
+      {
+        role: "assistant",
+        tool_calls: [{ function: { name: "snake_case", arguments: "{}" } }],
+        toolCalls: [{ name: "camelCase", input: {} }],
+      },
+      "output",
+    );
+    const toolKeys = mixedNaming.messages[0]?.toolCalls.map((tool) => tool.key) ?? [];
+    expect(new Set(toolKeys).size).toBe(toolKeys.length);
   });
 
   it("offers readable, structured, and raw views per payload field", () => {
@@ -151,6 +162,15 @@ describe("trace payload information structure", () => {
 
     act(() => button("JSON").click());
     expect(container.querySelector('button[aria-label="Copy Metadata JSON"]')).not.toBeNull();
+  });
+
+  it("reports zero fields for empty metadata", () => {
+    ({ container, root } = mount(
+      <TracePayloadSection field="metadata" title="Metadata" value={undefined} />,
+    ));
+
+    expect(container.querySelector("summary")?.textContent).toContain("0 fields");
+    expect(container.textContent).toContain("No data captured");
   });
 
   function button(name: string): HTMLButtonElement {

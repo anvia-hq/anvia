@@ -222,6 +222,7 @@
 @layer base {
   * {
     @apply border-border outline-ring;
+
     box-sizing: border-box;
     scrollbar-width: thin;
     scrollbar-color: var(--sb-scrollbar) transparent;

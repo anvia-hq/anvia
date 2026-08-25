@@ -16,7 +16,7 @@
         try {
           const stored = localStorage.getItem("anvia-theme");
           const legacy = localStorage.getItem("anvia-studio-theme");
-          if (stored === "light" || (stored === null && legacy === "light")) theme = "light";
+          if (stored === "light" || (stored !== "dark" && legacy === "light")) theme = "light";
         } catch {}
         const root = document.documentElement;
         root.classList.toggle("dark", theme === "dark");

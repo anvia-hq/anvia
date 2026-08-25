@@ -1734,10 +1734,11 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     try {
       await this.runRunErrorHook(error, usage, messages);
     } catch {
-      // Error hooks are diagnostic cleanup and must not replace the run failure.
+      // Thrown hook errors are diagnostic cleanup and must not replace the run failure.
     }
-    await this.runLifecycleError(error, runId, usage, messages);
-    return error;
+    const reportedError = this.cancellationError ?? error;
+    await this.runLifecycleError(reportedError, runId, usage, messages);
+    return reportedError;
   }
 
   private async runOutputGuardrailsForResponse(

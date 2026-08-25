@@ -77,5 +77,8 @@
   },
   "peerDependencies": {
     "@anvia/core": "workspace:*"
+  },
+  "engines": {
+    "node": ">=20.12.0"
   }
 }

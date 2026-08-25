@@ -1,5 +1,14 @@
 # @anvia/logger
 
+## 1.0.2
+
+### Patch Changes
+
+- c7c45a9: Report cancelled Agent runs explicitly and gracefully drain active Studio runs before observability
+  providers shut down on SIGINT or SIGTERM.
+- Updated dependencies [c7c45a9]
+  - @anvia/core@1.0.2
+
 ## 1.0.1
 
 ### Patch Changes

@@ -15,6 +15,8 @@ ingestGraphText({
   document: { id: "one", text: "Product One" },
   extractionModel: {} as never,
   embeddingModel: model,
+  conflict: "error",
+  orphanEntities: "delete",
 });
 
 ingestGraphText({
@@ -23,4 +25,6 @@ ingestGraphText({
   document: { id: "one", text: "Product One" },
   extractionModel: {} as never,
   embeddingModel: model,
+  conflict: "error",
+  orphanEntities: "delete",
 });

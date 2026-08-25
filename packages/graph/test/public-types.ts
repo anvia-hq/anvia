@@ -37,11 +37,23 @@ ingestGraphText({
   document: { id: "one", text: "Product One" },
   extractionModel: {} as never,
   embeddingModel: model,
+  conflict: "error",
+  orphanEntities: "delete",
 });
 
 ingestGraphText({
   // @ts-expect-error Read-only graph registrations do not implement document writes.
   graph: existing,
+  document: { id: "one", text: "Product One" },
+  extractionModel: {} as never,
+  embeddingModel: model,
+  conflict: "error",
+  orphanEntities: "delete",
+});
+
+// @ts-expect-error Graph ingestion requires explicit conflict and orphan policies.
+ingestGraphText({
+  graph: writer,
   document: { id: "one", text: "Product One" },
   extractionModel: {} as never,
   embeddingModel: model,

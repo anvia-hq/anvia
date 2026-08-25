@@ -1,5 +1,14 @@
 # @anvia/studio
 
+## 1.0.3
+
+### Patch Changes
+
+- 25bc1bf: Align Studio colors, interaction states, surfaces, syntax highlighting, and dark-first theme behavior
+  with the Anvia web design system.
+- c77a7a2: Align trace payload inspection with Lens using independent readable, structured, raw, and metadata
+  table views, including structured tool-call disclosures.
+
 ## 1.0.2
 
 ### Patch Changes

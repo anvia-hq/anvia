@@ -427,7 +427,8 @@ function PlaygroundSessionRow(props: {
       <Button
         className={cn(
           "h-9 min-h-9 w-full justify-start rounded-lg bg-transparent px-2.5 py-0.5 pr-9 text-base font-[450] tracking-[-0.006em] text-muted-foreground shadow-none transition duration-200 hover:bg-transparent hover:text-sidebar-accent-foreground active:translate-y-px",
-          props.active && "bg-sidebar-accent font-semibold text-sidebar-accent-foreground",
+          props.active &&
+            "bg-sidebar-accent font-semibold text-sidebar-accent-foreground hover:bg-sidebar-accent",
         )}
         type="button"
         variant="ghost"

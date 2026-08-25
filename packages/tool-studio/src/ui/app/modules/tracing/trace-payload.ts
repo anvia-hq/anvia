@@ -222,7 +222,7 @@ function parseMessage(
   );
   const toolCalls = [
     ...toolCallsFrom(value.tool_calls, `${key}:tool-call`),
-    ...toolCallsFrom(value.toolCalls, `${key}:tool-call`),
+    ...toolCallsFrom(value.toolCalls, `${key}:tool-calls`),
     ...toolCallsFromContent(value.content, `${key}:content-tool-call`),
     ...(isToolPayload(value) ? [parseTool(value, `${key}:tool`)] : []),
   ];

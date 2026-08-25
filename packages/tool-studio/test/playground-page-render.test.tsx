@@ -60,6 +60,7 @@ describe("PlaygroundPage run action", () => {
 
   it("renders session rows without chat icons", () => {
     const html = render({
+      selectedSessionId: "session-1",
       allSessions: [
         {
           id: "session-1",
@@ -75,6 +76,7 @@ describe("PlaygroundPage run action", () => {
 
     expect(sessionButton).toBeDefined();
     expect(sessionButton).not.toContain("<svg");
+    expect(sessionButton).toContain("hover:bg-sidebar-accent");
   });
 
   it("replaces the sessions sidebar with the clean browser workspace", () => {

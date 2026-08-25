@@ -57,6 +57,10 @@ describe("TraceBrowser rendering", () => {
     expect(html).toContain("code-string");
     expect(html).toContain("code-number");
     expect(html).toContain("code-literal");
+    expect(
+      [...container.querySelectorAll("span")].find((element) => element.textContent === "null")
+        ?.className,
+    ).toContain("code-comment");
 
     act(() => root.unmount());
   });

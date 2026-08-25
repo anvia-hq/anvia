@@ -84,7 +84,10 @@ export function TracePayloadSection(props: {
     );
 
   if (props.field === "metadata") {
-    const fieldCount = tooLarge ? 0 : flattenTracePayload(props.value).length;
+    const fieldCount =
+      tooLarge || props.value === null || props.value === undefined
+        ? 0
+        : flattenTracePayload(props.value).length;
     return (
       <details className="group grid min-w-0 gap-3">
         <summary className="flex cursor-pointer list-none items-center gap-2 rounded-sm py-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-3 [&::-webkit-details-marker]:hidden">

@@ -193,7 +193,7 @@ function JsonPrimitive(props: { value: unknown }) {
     return <span className="code-literal">{String(props.value)}</span>;
   }
   if (props.value === null) {
-    return <span className="code-literal">null</span>;
+    return <span className="code-comment">null</span>;
   }
   if (props.value === undefined) {
     return <span className="text-muted-foreground">undefined</span>;

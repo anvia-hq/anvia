@@ -213,7 +213,7 @@ function renderLegacyStudioUiShell(props: {
     `<title>${title}</title>`,
     '<meta name="theme-color" content="#09090b">',
     `<link data-anvia-favicon rel="icon" type="image/svg+xml" href="${escapeHtml(props.compatUiPath)}/assets/favicon-dark.svg">`,
-    '<script>(()=>{let m="dark";try{const t=localStorage.getItem("anvia-theme");const l=localStorage.getItem("anvia-studio-theme");if(t==="light"||(t===null&&l==="light"))m="light"}catch{}const r=document.documentElement;r.classList.toggle("dark",m==="dark");r.dataset.theme=m;r.style.colorScheme=m;document.querySelector(\'meta[name="theme-color"]\')?.setAttribute("content",m==="dark"?"#09090b":"#f4f4f5");const f=document.querySelector("link[data-anvia-favicon]");if(f)f.href=f.href.replace("favicon-dark.svg",`favicon-${m}.svg`)})();</script>',
+    '<script>(()=>{let m="dark";try{const t=localStorage.getItem("anvia-theme");const l=localStorage.getItem("anvia-studio-theme");if(t==="light"||(t!=="dark"&&l==="light"))m="light"}catch{}const r=document.documentElement;r.classList.toggle("dark",m==="dark");r.dataset.theme=m;r.style.colorScheme=m;document.querySelector(\'meta[name="theme-color"]\')?.setAttribute("content",m==="dark"?"#09090b":"#f4f4f5");const f=document.querySelector("link[data-anvia-favicon]");if(f)f.href=f.href.replace("favicon-dark.svg",`favicon-${m}.svg`)})();</script>',
     `<link rel="stylesheet" href="${escapeHtml(props.stylesheet)}">`,
     "</head>",
     "<body>",

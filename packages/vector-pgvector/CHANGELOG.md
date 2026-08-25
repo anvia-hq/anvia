@@ -1,5 +1,12 @@
 # @anvia/pgvector
 
+## 1.0.2
+
+### Patch Changes
+
+- Updated dependencies [c7c45a9]
+  - @anvia/core@1.0.2
+
 ## 1.0.1
 
 ### Patch Changes

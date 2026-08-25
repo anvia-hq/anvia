@@ -2,6 +2,17 @@
 
 Server response helpers for the Anvia client protocol and explicitly generic event streams.
 
+## Bun
+
+Bun 1.3.14 is the currently tested and supported runtime baseline:
+
+```sh
+bun add @anvia/server @anvia/client
+```
+
+Compatibility tests run these helpers through `Bun.serve`, covering framed JSONL and SSE,
+resumable replay, cancellation cleanup, and installation from packed package artifacts.
+
 ## Client protocol responses
 
 Adapt native runtime events at the server boundary, then frame them for the client:

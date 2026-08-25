@@ -22,6 +22,17 @@ keeping the matching `AgentContinuation` exclusively on the server.
 Agent interaction wire contracts come from the browser-safe `@anvia/core/agent/interactions`
 subpath; importing Client does not load the Agent runtime or its infrastructure dependencies.
 
+## Bun
+
+Bun 1.3.14 is the currently tested and supported runtime baseline:
+
+```sh
+bun add @anvia/client @anvia/core
+```
+
+Compatibility tests cover framed JSONL and SSE consumption, resumable client streams, fetch
+cancellation, and installation from packed package artifacts.
+
 ## Public API
 
 - `completionToClientStream({ events, ...options })` adapts native completion events.

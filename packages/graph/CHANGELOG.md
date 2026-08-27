@@ -1,5 +1,12 @@
 # @anvia/graph
 
+## 1.0.5
+
+### Patch Changes
+
+- Updated dependencies [7973ddc]
+  - @anvia/core@1.0.4
+
 ## 1.0.4
 
 ### Patch Changes

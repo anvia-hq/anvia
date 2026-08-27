@@ -1,5 +1,13 @@
 # @anvia/core
 
+## 1.0.4
+
+### Patch Changes
+
+- 7973ddc: Add constructor-level named Pipeline observability with run and stage lifecycles, primary trace
+  results, and automatic parent propagation into Agent stages. Add OpenTelemetry and Lens Pipeline
+  observers that export nested spans for composed, parallel, Agent, extraction, and custom stages.
+
 ## 1.0.3
 
 ### Patch Changes

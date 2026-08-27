@@ -500,6 +500,38 @@ const { runId, output } = await pipeline.run({
 });
 ```
 
+Pipelines use the same named observability configuration as Agents. Pipeline observers receive the
+root run and every composed, parallel, Agent, extraction, and custom stage. A primary stage trace is
+automatically propagated into an Agent stage so its generations and tools become children of that
+stage:
+
+```ts
+const pipeline = new Pipeline({
+  id: "support-flow",
+  inputSchema: z.string(),
+  observability: {
+    observers: { telemetry: pipelineObserver },
+    primaryTrace: "telemetry",
+  },
+}).agent({
+  id: "draft",
+  agent,
+  suspension: "reject",
+  request: ({ input }) => ({ prompt: input }),
+});
+
+const result = await pipeline.run({
+  input: "Customer cannot complete checkout.",
+  trace: { sessionId: "support-session" },
+});
+
+console.log(result.trace);
+```
+
+The `observer` passed to `pipeline.run()` remains a separate stage-event sink intended for Studio,
+logging, and other operational consumers. Its errors are isolated unless `failOnObserverError` is
+enabled.
+
 ## Documents
 
 Applications own file discovery, file reads, source metadata, and per-file error policy. Core only

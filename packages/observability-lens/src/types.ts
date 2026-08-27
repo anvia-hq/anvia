@@ -34,6 +34,8 @@ export type LensObserverOptions = Pick<
   "captureMode" | "captureMaxBytes" | "redactInputs" | "redactOutputs" | "redaction"
 >;
 
+export type LensPipelineObserverOptions = LensObserverOptions;
+
 export type LensEvalReporterOptions = {
   traceObserver?: string | undefined;
   publishInvalid?: boolean | undefined;

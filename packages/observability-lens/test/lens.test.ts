@@ -104,6 +104,13 @@ describe("Lens eval ergonomics", () => {
 
     const client = new LensClient({ optional: true, serviceName: "evals" });
     expect(client.enabled).toBe(false);
+    expect(
+      client.pipelineObserver().startRun({
+        runId: "pipeline-run",
+        pipelineId: "pipeline",
+        input: "hello",
+      }),
+    ).toBeUndefined();
     await expect(client.flush()).resolves.toBeUndefined();
     await expect(client.close()).resolves.toBeUndefined();
     await expect(client.close()).resolves.toBeUndefined();
@@ -128,18 +135,27 @@ describe("Lens eval ergonomics", () => {
     });
 
     const observer = client.observer();
+    const pipelineObserver = client.pipelineObserver();
     const reporter = client.evalReporter();
     const datasets = client.datasetClient();
     await client.close();
     await client.close();
     await client[Symbol.asyncDispose]();
     expect(() => client.observer()).toThrow("LensClient is closed");
+    expect(() => client.pipelineObserver()).toThrow("LensClient is closed");
     await expect(
       observer.startRun({
         runId: "closed",
         prompt: { role: "user", content: "closed" },
         history: [],
         maxTurns: 1,
+      }),
+    ).rejects.toThrow("LensClient is closed");
+    await expect(
+      pipelineObserver.startRun({
+        runId: "closed",
+        pipelineId: "closed",
+        input: "closed",
       }),
     ).rejects.toThrow("LensClient is closed");
     await expect(

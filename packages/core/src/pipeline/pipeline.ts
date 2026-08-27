@@ -6,6 +6,7 @@ import type { CompletionModel, JsonObject } from "../completion";
 import { type ExtractOptions, extract as extractData } from "../extractor";
 import { throwIfAborted } from "../internal/abort";
 import { mapWithConcurrency } from "../internal/concurrency";
+import type { AgentTraceOptions } from "../observability";
 import { PipelineAgentSuspensionError } from "./errors";
 import {
   appendComposedGraph,
@@ -16,6 +17,7 @@ import {
   withOutputNode,
   withTerminalPaths,
 } from "./graph";
+import { snapshotPipelineObservability, startPipelineRunObservers } from "./observability";
 import {
   childContext,
   combineAbortSignals,
@@ -38,6 +40,7 @@ import type {
   PipelineStageContext,
   PipelineStageMetadata,
   PipelineState,
+  PipelineTraceInfo,
 } from "./types";
 
 const internalPipelineOptions = Symbol("internal-pipeline-options");
@@ -88,6 +91,7 @@ type InternalPipelineOptions<Input, Output> = {
   [internalPipelineOptions]: {
     executor: PipelineExecutor<Input, Output>;
     state: PipelineState;
+    observability: PipelineOptions<Input>["observability"];
   };
 };
 
@@ -97,6 +101,7 @@ export class Pipeline<Input, Output = Input> {
   readonly name: string | undefined;
   readonly description: string | undefined;
   readonly metadata: JsonObject | undefined;
+  readonly observability: PipelineOptions<Input>["observability"];
 
   private readonly executor: PipelineExecutor<Input, Output>;
   private readonly state: PipelineState;
@@ -106,6 +111,7 @@ export class Pipeline<Input, Output = Input> {
     if (isInternalPipelineOptions(options)) {
       this.executor = options[internalPipelineOptions].executor;
       this.state = options[internalPipelineOptions].state;
+      this.observability = options[internalPipelineOptions].observability;
     } else {
       const id = normalizePipelineId(options.id);
       if (!isZodSchema(options.inputSchema)) {
@@ -122,6 +128,7 @@ export class Pipeline<Input, Output = Input> {
         description: options.description,
         metadata: options.metadata,
       });
+      this.observability = snapshotPipelineObservability(options.observability);
     }
 
     const graph = this.state.graph;
@@ -136,7 +143,7 @@ export class Pipeline<Input, Output = Input> {
     const executor = (async (input, context, pathPrefix) => {
       const value = await this.execute(input, context, pathPrefix);
       const path = [...pathPrefix, next.node.id];
-      return (await runNode(context, next.node, path, () =>
+      return (await runNode(context, next.node, path, value, () =>
         options.run(stageContext(value, context)),
       )) as Awaited<Next>;
     }) as PipelineExecutor<Input, Awaited<Next>>;
@@ -154,7 +161,7 @@ export class Pipeline<Input, Output = Input> {
     const executor = (async (input, context, pathPrefix) => {
       const value = await this.execute(input, context, pathPrefix);
       const path = [...pathPrefix, boundary.node.id];
-      return (await runNode(context, boundary.node, path, () =>
+      return (await runNode(context, boundary.node, path, value, () =>
         options.pipeline.execute(value, context, path),
       )) as Awaited<Next>;
     }) as PipelineExecutor<Input, Awaited<Next>>;
@@ -185,7 +192,7 @@ export class Pipeline<Input, Output = Input> {
     return this.derive<ParallelOutput<Branches>>(async (input, context, pathPrefix) => {
       const value = await this.execute(input, context, pathPrefix);
       const parallelPath = [...pathPrefix, parallel.node.id];
-      return runNode(context, parallel.node, parallelPath, async () => {
+      return runNode(context, parallel.node, parallelPath, value, async () => {
         const controller = new AbortController();
         const combined = combineAbortSignals(context.abortSignal, controller.signal);
         const branchContext = childContext(context, combined.signal);
@@ -194,7 +201,7 @@ export class Pipeline<Input, Output = Input> {
           const node = branchNodes.get(key) as PipelineGraphNode;
           const path = [...parallelPath, node.id];
           try {
-            const output = await runNode(branchContext, node, path, () =>
+            const output = await runNode(branchContext, node, path, value, () =>
               branch.execute(value, branchContext, path),
             );
             return [key, output] as const;
@@ -234,10 +241,15 @@ export class Pipeline<Input, Output = Input> {
     return this.derive<AgentOutput>(async (input, context, pathPrefix) => {
       const value = await this.execute(input, context, pathPrefix);
       const path = [...pathPrefix, next.node.id];
-      return runNode(context, next.node, path, async () => {
+      return runNode(context, next.node, path, value, async (stageTrace) => {
         const request = await options.request(stageContext(value, context));
         const response = await options.agent.generate({
           ...request,
+          trace: withPipelineParentTrace(
+            request.trace,
+            stageTrace,
+            options.agent.observability?.primaryTrace,
+          ),
           abortSignal: context.abortSignal,
         } as AgentRunOptions<AgentOutput, RawResponseOf<Model>>);
         if (response.type === "interaction") {
@@ -258,7 +270,7 @@ export class Pipeline<Input, Output = Input> {
     return this.derive<Extracted>(async (input, context, pathPrefix) => {
       const value = await this.execute(input, context, pathPrefix);
       const path = [...pathPrefix, next.node.id];
-      return runNode(context, next.node, path, async () => {
+      return runNode(context, next.node, path, value, async () => {
         const text = await options.text(stageContext(value, context));
         const result = await extractData({
           model: options.model,
@@ -278,6 +290,24 @@ export class Pipeline<Input, Output = Input> {
 
   async run(options: PipelineRunOptions<Input>): Promise<PipelineRunResult<Output>> {
     const runId = normalizeRunId(options.runId ?? globalThis.crypto.randomUUID());
+    const startedAt = Date.now();
+    const observability = await startPipelineRunObservers(
+      this.observability?.observers ?? {},
+      {
+        runId,
+        pipelineId: this.id,
+        pipelineName: this.name,
+        pipelineDescription: this.description,
+        pipelineMetadata: this.metadata,
+        runMetadata: options.metadata,
+        trace: options.trace,
+        input: options.input,
+      },
+      {
+        primaryTrace: this.observability?.primaryTrace,
+        errorPolicy: this.observability?.errorPolicy ?? "ignore",
+      },
+    );
     const context: PipelineRunContext = {
       runId,
       pipelineId: this.id,
@@ -285,11 +315,31 @@ export class Pipeline<Input, Output = Input> {
       abortSignal: options.abortSignal,
       observer: options.observer,
       failOnObserverError: options.failOnObserverError === true,
+      observability,
     };
-    throwIfAborted(context.abortSignal);
-    const output = await this.execute(options.input, context, []);
-    throwIfAborted(context.abortSignal);
-    return { runId, output };
+    try {
+      throwIfAborted(context.abortSignal);
+      const output = await this.execute(options.input, context, []);
+      throwIfAborted(context.abortSignal);
+      await observability.end({
+        runId,
+        pipelineId: this.id,
+        output,
+        durationMs: Date.now() - startedAt,
+      });
+      return observability.trace === undefined
+        ? { runId, output }
+        : { runId, output, trace: observability.trace };
+    } catch (error) {
+      await observability.error({
+        runId,
+        pipelineId: this.id,
+        status: context.abortSignal?.aborted === true ? "cancelled" : "failed",
+        error,
+        durationMs: Date.now() - startedAt,
+      });
+      throw error;
+    }
   }
 
   async runBatch(options: PipelineBatchOptions<Input>): Promise<Array<PipelineBatchItem<Output>>> {
@@ -301,6 +351,7 @@ export class Pipeline<Input, Output = Input> {
           input,
           runId,
           metadata: options.metadata,
+          trace: options.trace,
           abortSignal: options.abortSignal,
           observer: options.observer,
           failOnObserverError: options.failOnObserverError,
@@ -323,7 +374,7 @@ export class Pipeline<Input, Output = Input> {
     executor: PipelineExecutor<Input, DerivedOutput>,
     state: PipelineState,
   ): Pipeline<Input, DerivedOutput> {
-    return createDerivedPipeline(executor, state);
+    return createDerivedPipeline(executor, state, this.observability);
   }
 
   private async execute(
@@ -339,11 +390,29 @@ export class Pipeline<Input, Output = Input> {
 function createDerivedPipeline<Input, Output>(
   executor: PipelineExecutor<Input, Output>,
   state: PipelineState,
+  observability: PipelineOptions<Input>["observability"],
 ): Pipeline<Input, Output> {
   const options: InternalPipelineOptions<Input, Output> = {
-    [internalPipelineOptions]: { executor, state },
+    [internalPipelineOptions]: { executor, state, observability },
   };
   return new Pipeline<Input, Output>(options as unknown as PipelineOptions<Input, Output>);
+}
+
+function withPipelineParentTrace(
+  trace: AgentTraceOptions | undefined,
+  parent: PipelineTraceInfo | undefined,
+  agentPrimaryTrace: string | undefined,
+): AgentTraceOptions | undefined {
+  if (parent?.traceId === undefined) return trace;
+  if (parent.observer !== agentPrimaryTrace) return trace;
+  if (trace?.traceId !== undefined && trace.traceId !== parent.traceId) return trace;
+  return {
+    ...trace,
+    traceId: parent.traceId,
+    ...(trace?.parentObservationId !== undefined || parent.observationId === undefined
+      ? {}
+      : { parentObservationId: parent.observationId }),
+  };
 }
 
 function isInternalPipelineOptions<Input, Output>(

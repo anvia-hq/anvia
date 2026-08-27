@@ -1,20 +1,12 @@
 import type { ToolCallPart, Usage } from "@anvia/core/completion";
 import { EvalOutcome } from "@anvia/core/evals";
 import type { AgentGenerationStartArgs } from "@anvia/core/observability";
-import {
-  type Attributes,
-  type Context,
-  type Span,
-  SpanKind,
-  type SpanOptions,
-  SpanStatusCode,
-  type Tracer,
-  trace,
-} from "@opentelemetry/api";
+import { type Context, SpanKind, SpanStatusCode, trace } from "@opentelemetry/api";
 import { type Logger, SeverityNumber } from "@opentelemetry/api-logs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AssistantContent, Message } from "../../core/test/helpers/imports";
 import { createOtelEvalReporter, createOtelObserver } from "../src/index";
+import { FakeTracer } from "./helpers/fake-tracer";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -1231,6 +1223,7 @@ describe("otel", () => {
     const tracer = new FakeTracer();
     const tracing = createOtelObserver({ tracer: tracer.tracer });
     const incomingTraceId = "1234567890abcdef1234567890abcdef";
+    const parentObservationId = "1234567890abcdef";
 
     const joined = await tracing.startRun({
       runId: "run_1",
@@ -1238,7 +1231,7 @@ describe("otel", () => {
       prompt: userMessage("hello"),
       history: [],
       maxTurns: 1,
-      trace: { traceId: incomingTraceId },
+      trace: { traceId: incomingTraceId, parentObservationId },
     });
     const generated = await tracing.startRun({
       runId: "run_1",
@@ -1250,89 +1243,11 @@ describe("otel", () => {
     });
 
     expect(joined?.trace?.traceId).toBe(incomingTraceId);
-    expect(tracer.spans[0]?.parentSpanId).toBe("0000000000000001");
+    expect(tracer.spans[0]?.parentSpanId).toBe(parentObservationId);
     expect(generated?.trace?.traceId).not.toBe("invalid");
     expect(generated?.trace?.traceId).toBe(tracer.spans[1]?.spanContextValue.traceId);
   });
 });
-
-class FakeTracer {
-  readonly spans: FakeSpan[] = [];
-  private nextId = 2;
-  readonly tracer: Tracer = {
-    startSpan: (name: string, options: SpanOptions = {}, parentContext?: Context) => {
-      const parent = parentContext === undefined ? undefined : trace.getSpanContext(parentContext);
-      const span = new FakeSpan(name, options, {
-        traceId: parent?.traceId ?? this.nextTraceId(),
-        spanId: this.nextSpanId(),
-        traceFlags: parent?.traceFlags ?? 1,
-      });
-      span.parentSpanId = parent?.spanId;
-      this.spans.push(span);
-      return span.span;
-    },
-    startActiveSpan: () => {
-      throw new Error("startActiveSpan is not used by this adapter");
-    },
-  } as Tracer;
-
-  private nextTraceId(): string {
-    const value = this.nextId++;
-    return value.toString(16).padStart(32, "0");
-  }
-
-  private nextSpanId(): string {
-    const value = this.nextId++;
-    return value.toString(16).padStart(16, "0");
-  }
-}
-
-class FakeSpan {
-  attributes: Attributes = {};
-  events: Array<{ name: string; attributes?: unknown; timestamp?: unknown }> = [];
-  exceptions: unknown[] = [];
-  status: { code: SpanStatusCode; message?: string } | undefined;
-  ended = false;
-  parentSpanId: string | undefined;
-
-  constructor(
-    readonly name: string,
-    readonly options: SpanOptions,
-    readonly spanContextValue: ReturnType<Span["spanContext"]>,
-  ) {
-    Object.assign(this.attributes, options.attributes);
-  }
-
-  readonly span: Span = {
-    spanContext: () => this.spanContextValue,
-    setAttribute: (key, value) => {
-      this.attributes[key] = value;
-      return this.span;
-    },
-    setAttributes: (attributes) => {
-      this.attributes = { ...this.attributes, ...attributes };
-      return this.span;
-    },
-    addEvent: (name, attributes, timestamp) => {
-      this.events.push({ name, attributes, timestamp });
-      return this.span;
-    },
-    addLink: () => this.span,
-    addLinks: () => this.span,
-    setStatus: (status) => {
-      this.status = status;
-      return this.span;
-    },
-    updateName: () => this.span,
-    end: () => {
-      this.ended = true;
-    },
-    isRecording: () => true,
-    recordException: (exception) => {
-      this.exceptions.push(exception);
-    },
-  };
-}
 
 function generationStartArgs(): AgentGenerationStartArgs {
   return {

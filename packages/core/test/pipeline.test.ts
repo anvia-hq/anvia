@@ -1,5 +1,7 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
 import { z } from "zod";
+import type { AgentRunStartArgs } from "../src/observability";
+import type { PipelineObserver } from "../src/pipeline";
 import * as publicPipeline from "../src/pipeline";
 import {
   Agent,
@@ -54,6 +56,210 @@ describe("Pipeline", () => {
     expect(
       () => new Pipeline({ id: "invalid-schema", inputSchema: {} as z.ZodType<string> }),
     ).toThrow("Pipeline inputSchema must be a Zod schema");
+    expect(
+      () =>
+        new Pipeline({
+          id: "missing-primary",
+          inputSchema: z.string(),
+          observability: { observers: {}, primaryTrace: "lens" },
+        }),
+    ).toThrow('Pipeline primaryTrace "lens" must name a configured observer');
+  });
+
+  it("observes runs and stages and propagates the primary stage trace to Agents", async () => {
+    const events: string[] = [];
+    let agentStart: AgentRunStartArgs | undefined;
+    const pipelineObserver: PipelineObserver = {
+      startRun(args) {
+        events.push(`run:start:${args.pipelineId}:${String(args.input)}`);
+        return {
+          trace: { traceId: "pipeline-trace", observationId: "pipeline-root" },
+          startStage(stage) {
+            events.push(`stage:start:${stage.path.join("/")}:${String(stage.input)}`);
+            return {
+              trace: {
+                traceId: "pipeline-trace",
+                observationId: `stage-${stage.node.id}`,
+              },
+              end(end) {
+                events.push(`stage:end:${end.node.id}:${String(end.output)}`);
+              },
+              error(error) {
+                events.push(`stage:error:${error.node.id}`);
+              },
+            };
+          },
+          end(end) {
+            events.push(`run:end:${String(end.output)}`);
+          },
+          error(error) {
+            events.push(`run:error:${error.status}`);
+          },
+        };
+      },
+    };
+    const agent = new Agent({
+      id: "observed-agent",
+      model: new QueueModel([response([AssistantContent.text("answer")])]),
+      observability: {
+        observers: {
+          lens: {
+            startRun(args) {
+              agentStart = args;
+              return { end() {} };
+            },
+          },
+        },
+        primaryTrace: "lens",
+      },
+    });
+    const pipeline = new Pipeline({
+      id: "observed-pipeline",
+      inputSchema: z.string(),
+      observability: {
+        observers: { lens: pipelineObserver },
+        primaryTrace: "lens",
+        errorPolicy: "throw",
+      },
+    })
+      .step({ id: "normalize", run: ({ input }) => input.toUpperCase() })
+      .agent({
+        id: "answer",
+        agent,
+        suspension: "reject",
+        request: ({ input }) => ({ prompt: input }),
+      });
+
+    const result = await pipeline.run({ input: "hello", runId: "pipeline-run" });
+
+    expect(result).toEqual({
+      runId: "pipeline-run",
+      output: "answer",
+      trace: {
+        observer: "lens",
+        traceId: "pipeline-trace",
+        observationId: "pipeline-root",
+      },
+    });
+    expect(agentStart?.trace).toMatchObject({
+      traceId: "pipeline-trace",
+      parentObservationId: "stage-answer",
+    });
+    expect(events).toEqual([
+      "run:start:observed-pipeline:hello",
+      "stage:start:normalize:hello",
+      "stage:end:normalize:HELLO",
+      "stage:start:answer:HELLO",
+      "stage:end:answer:answer",
+      "run:end:answer",
+    ]);
+  });
+
+  it("reports input validation failures to run observability", async () => {
+    const errors: unknown[] = [];
+    const pipeline = new Pipeline({
+      id: "observed-validation",
+      inputSchema: z.string(),
+      observability: {
+        observers: {
+          test: {
+            startRun() {
+              return {
+                end() {},
+                error(args) {
+                  errors.push(args);
+                },
+              };
+            },
+          },
+        },
+      },
+    });
+
+    await expect(pipeline.run({ input: 42 as never, runId: "invalid-run" })).rejects.toThrow();
+    expect(errors).toEqual([
+      expect.objectContaining({
+        runId: "invalid-run",
+        pipelineId: "observed-validation",
+        status: "failed",
+      }),
+    ]);
+  });
+
+  it("isolates Pipeline observability failures unless strict delivery is requested", async () => {
+    const failingObserver: PipelineObserver = {
+      startRun() {
+        throw new Error("telemetry unavailable");
+      },
+    };
+    const relaxed = new Pipeline({
+      id: "relaxed-observability",
+      inputSchema: z.string(),
+      observability: { observers: { failing: failingObserver } },
+    });
+    const strict = new Pipeline({
+      id: "strict-observability",
+      inputSchema: z.string(),
+      observability: {
+        observers: { failing: failingObserver },
+        errorPolicy: "throw",
+      },
+    });
+
+    await expect(relaxed.run({ input: "hello" })).resolves.toMatchObject({ output: "hello" });
+    await expect(strict.run({ input: "hello" })).rejects.toMatchObject({
+      name: "PipelineObserverDispatchError",
+      phase: "startRun",
+    });
+  });
+
+  it("does not propagate a Pipeline trace into an Agent with a different primary observer", async () => {
+    let agentStart: AgentRunStartArgs | undefined;
+    const agent = new Agent({
+      id: "other-observer-agent",
+      model: new QueueModel([response([AssistantContent.text("answer")])]),
+      observability: {
+        observers: {
+          agentTelemetry: {
+            startRun(args) {
+              agentStart = args;
+              return { end() {} };
+            },
+          },
+        },
+        primaryTrace: "agentTelemetry",
+      },
+    });
+    const pipeline = new Pipeline({
+      id: "other-observer-pipeline",
+      inputSchema: z.string(),
+      observability: {
+        observers: {
+          pipelineTelemetry: {
+            startRun() {
+              return {
+                trace: { traceId: "pipeline-trace", observationId: "pipeline-root" },
+                startStage: () => ({
+                  trace: { traceId: "pipeline-trace", observationId: "pipeline-stage" },
+                  end() {},
+                }),
+                end() {},
+              };
+            },
+          },
+        },
+        primaryTrace: "pipelineTelemetry",
+      },
+    }).agent({
+      id: "answer",
+      agent,
+      suspension: "reject",
+      request: ({ input }) => ({ prompt: input }),
+    });
+
+    await pipeline.run({ input: "hello" });
+
+    expect(agentStart?.trace).toBeUndefined();
   });
 
   it("runs typed sync and async object stages", async () => {

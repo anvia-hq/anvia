@@ -13,6 +13,7 @@ export type {
   LensEvalReporter,
   LensEvalReporterOptions,
   LensObserverOptions,
+  LensPipelineObserverOptions,
   LensRedactionOptions,
   LensRedactorPattern,
 } from "./types.js";

@@ -3,7 +3,7 @@
 Native Anvia Lens tracing, evaluation reporting, and dataset access for Node.js applications.
 
 ```sh
-pnpm add @anvia/lens @anvia/core
+pnpm add @anvia/lens @anvia/core zod
 ```
 
 ## Client lifecycle

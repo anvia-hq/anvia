@@ -4,6 +4,7 @@ import type {
   PipelineObservabilityOptions,
   PipelineObserverErrorPolicy,
   PipelineObserverMap,
+  PipelineObserverTraceInfo,
   PipelineRunEndArgs,
   PipelineRunErrorArgs,
   PipelineRunObservation,
@@ -23,6 +24,17 @@ type NamedObserver<T> = {
 type ActiveNamedObserver<T> = NamedObserver<T> & {
   terminal: boolean;
 };
+
+function resolvePrimaryTrace<T extends { readonly trace?: PipelineObserverTraceInfo | undefined }>(
+  observers: readonly ActiveNamedObserver<T>[],
+  primaryTrace: string | undefined,
+): PipelineTraceInfo | undefined {
+  if (primaryTrace === undefined) return undefined;
+  const primary = observers.find((entry) => entry.name === primaryTrace);
+  return primary?.observer.trace === undefined
+    ? undefined
+    : Object.freeze({ observer: primary.name, ...primary.observer.trace });
+}
 
 export function snapshotPipelineObservability(
   observability: PipelineObservabilityOptions | undefined,
@@ -109,14 +121,7 @@ export class ActivePipelineRunObservers {
       readonly errorPolicy: PipelineObserverErrorPolicy;
     },
   ) {
-    const primary =
-      options.primaryTrace === undefined
-        ? undefined
-        : observers.find((entry) => entry.name === options.primaryTrace);
-    this.trace =
-      primary?.observer.trace === undefined
-        ? undefined
-        : Object.freeze({ observer: primary.name, ...primary.observer.trace });
+    this.trace = resolvePrimaryTrace(observers, options.primaryTrace);
   }
 
   async startStage(args: PipelineStageStartArgs): Promise<ActivePipelineStageObservers> {
@@ -172,14 +177,7 @@ export class ActivePipelineStageObservers {
       readonly errorPolicy: PipelineObserverErrorPolicy;
     },
   ) {
-    const primary =
-      options.primaryTrace === undefined
-        ? undefined
-        : observers.find((entry) => entry.name === options.primaryTrace);
-    this.trace =
-      primary?.observer.trace === undefined
-        ? undefined
-        : Object.freeze({ observer: primary.name, ...primary.observer.trace });
+    this.trace = resolvePrimaryTrace(observers, options.primaryTrace);
   }
 
   async end(args: PipelineStageEndArgs): Promise<void> {

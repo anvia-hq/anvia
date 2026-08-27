@@ -7,7 +7,7 @@ Use this package to emit Anvia agent observer events as standard OpenTelemetry s
 ## Installation
 
 ```sh
-pnpm add @anvia/otel @anvia/core @opentelemetry/api @opentelemetry/api-logs
+pnpm add @anvia/otel @anvia/core @opentelemetry/api @opentelemetry/api-logs zod
 ```
 
 In this monorepo, the package is available through the workspace:

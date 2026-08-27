@@ -502,8 +502,9 @@ const { runId, output } = await pipeline.run({
 
 Pipelines use the same named observability configuration as Agents. Pipeline observers receive the
 root run and every composed, parallel, Agent, extraction, and custom stage. A primary stage trace is
-automatically propagated into an Agent stage so its generations and tools become children of that
-stage:
+propagated into an Agent stage so its generations and tools become children of that stage. This
+requires the Pipeline and Agent `primaryTrace` names to match. When they differ, Anvia leaves the
+Agent trace unchanged without raising an error:
 
 ```ts
 const pipeline = new Pipeline({
@@ -531,6 +532,10 @@ console.log(result.trace);
 The `observer` passed to `pipeline.run()` remains a separate stage-event sink intended for Studio,
 logging, and other operational consumers. Its errors are isolated unless `failOnObserverError` is
 enabled.
+
+`observability.errorPolicy` controls named observer failures instead. It accepts `"ignore"` or
+`"throw"` and defaults to `"ignore"`. With `"throw"`, the run rejects with a
+`PipelineObserverDispatchError` containing the failed phase and per-observer failures.
 
 ## Documents
 

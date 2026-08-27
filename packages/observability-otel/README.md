@@ -48,6 +48,37 @@ if (result.type === "response") console.log(result.output);
 console.log(result.trace?.traceId);
 ```
 
+### Pipeline tracing
+
+Use `createOtelPipelineObserver()` in the Pipeline constructor. It creates a root span, nested spans
+for composed and parallel stages, and a primary trace context that Core propagates automatically to
+Agent stages:
+
+```ts
+import { Pipeline } from "@anvia/core/pipeline";
+import { createOtelPipelineObserver } from "@anvia/otel";
+import { z } from "zod";
+
+const pipeline = new Pipeline({
+  id: "support-flow",
+  inputSchema: z.string(),
+  observability: {
+    observers: {
+      otel: createOtelPipelineObserver({ serviceName: "support", captureMode: "safe" }),
+    },
+    primaryTrace: "otel",
+  },
+}).agent({
+  id: "answer",
+  agent,
+  suspension: "reject",
+  request: ({ input }) => ({ prompt: input }),
+});
+
+const result = await pipeline.run({ input: "How do I reset my password?" });
+console.log(result.trace?.traceId);
+```
+
 Initialize OpenTelemetry in your application before creating spans. For OTLP HTTP, configure `@opentelemetry/sdk-node` and `@opentelemetry/exporter-trace-otlp-http` in your app process.
 
 The application also owns graceful process shutdown. On `SIGINT` or `SIGTERM`, abort and await the
@@ -94,8 +125,10 @@ optional caller-calculated cost.
 ## Exports
 
 - `createOtelObserver`
+- `createOtelPipelineObserver`
 - `createOtelEvalReporter`
 - `OtelObserverOptions`
+- `OtelPipelineObserverOptions`
 - `OtelEvalReporterOptions`
 
 ## Development

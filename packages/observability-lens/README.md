@@ -15,7 +15,9 @@ I/O; exporters initialize lazily.
 ```ts
 import { Agent, type CompletionModel } from "@anvia/core";
 import { agentEvalTarget, contains, runEvalSuite } from "@anvia/core/evals";
+import { Pipeline } from "@anvia/core/pipeline";
 import { LensClient } from "@anvia/lens";
+import { z } from "zod";
 
 declare const model: CompletionModel;
 
@@ -35,6 +37,25 @@ const agent = new Agent({
     observers: { lens: lens.observer() },
     primaryTrace: "lens",
   },
+});
+
+const pipeline = new Pipeline({
+  id: "support-flow",
+  inputSchema: z.string(),
+  observability: {
+    observers: { lens: lens.pipelineObserver() },
+    primaryTrace: "lens",
+  },
+}).agent({
+  id: "answer",
+  agent,
+  suspension: "reject",
+  request: ({ input }) => ({ prompt: input }),
+});
+
+const pipelineResult = await pipeline.run({
+  input: "How long are refunds available?",
+  trace: { sessionId: "support-session" },
 });
 
 const suite = await runEvalSuite({
@@ -72,6 +93,12 @@ const observer = lens.observer({
   redactInputs: true,
   redactOutputs: true,
   redaction: { replacement: "[REDACTED]" },
+});
+
+const pipelineObserver = lens.pipelineObserver({
+  captureMode: "safe",
+  redactInputs: true,
+  redactOutputs: true,
 });
 
 const reporter = lens.evalReporter({

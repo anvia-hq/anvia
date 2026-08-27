@@ -75,7 +75,10 @@ class OtelAgentObserver implements AgentObserver {
   }
 
   startRun(args: AgentRunStartArgs): AgentRunObserver {
-    const parentContext = parentContextFromTraceId(args.trace?.traceId);
+    const parentContext = parentContextFromTraceId(
+      args.trace?.traceId,
+      args.trace?.parentObservationId,
+    );
     const root = this.tracer.startSpan(
       rootSpanName(args),
       {

@@ -1,6 +1,11 @@
 import type { EvalReporter } from "@anvia/core/evals";
 import type { AgentObserver, AgentRunStartArgs } from "@anvia/core/observability";
-import { createOtelEvalReporter, createOtelObserver } from "@anvia/otel";
+import type { PipelineObserver, PipelineRunStartArgs } from "@anvia/core/pipeline";
+import {
+  createOtelEvalReporter,
+  createOtelObserver,
+  createOtelPipelineObserver,
+} from "@anvia/otel";
 import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-http";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { resourceFromAttributes } from "@opentelemetry/resources";
@@ -18,6 +23,7 @@ import type {
   LensEvalReporter,
   LensEvalReporterOptions,
   LensObserverOptions,
+  LensPipelineObserverOptions,
 } from "./types.js";
 
 type LensResources = {
@@ -60,6 +66,27 @@ export class LensClient {
       async startRun(args: AgentRunStartArgs) {
         const resource = await client.resources();
         return createOtelObserver(client.otelObserverOptions(resource, options)).startRun(args);
+      },
+    };
+  }
+
+  pipelineObserver(options: LensPipelineObserverOptions = {}): PipelineObserver {
+    this.assertOpen();
+    if (!this.enabled) {
+      return {
+        startRun: () => {
+          this.assertOpen();
+          return undefined;
+        },
+      };
+    }
+    const client = this;
+    return {
+      async startRun(args: PipelineRunStartArgs) {
+        const resource = await client.resources();
+        return createOtelPipelineObserver(client.otelObserverOptions(resource, options)).startRun(
+          args,
+        );
       },
     };
   }

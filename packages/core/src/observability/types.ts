@@ -32,6 +32,7 @@ export type AgentTraceOptions = {
   readonly tags?: readonly string[] | undefined;
   readonly version?: string | undefined;
   readonly traceId?: string | undefined;
+  readonly parentObservationId?: string | undefined;
   readonly promptRef?: AgentRunPromptRef | undefined;
 };
 

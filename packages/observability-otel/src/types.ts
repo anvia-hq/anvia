@@ -12,6 +12,8 @@ export type OtelObserverOptions = {
   transformOutput?: ((value: unknown) => unknown) | undefined;
 };
 
+export type OtelPipelineObserverOptions = OtelObserverOptions;
+
 export type OtelEvalReporterOptions = {
   traceObserver?: string | undefined;
   logger?: Logger | undefined;

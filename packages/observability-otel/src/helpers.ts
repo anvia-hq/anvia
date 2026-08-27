@@ -233,7 +233,7 @@ function modelParameters(
   };
 }
 
-function metadataAttributes(
+export function metadataAttributes(
   prefix: string,
   metadata: Record<string, unknown> | undefined,
 ): Attributes {
@@ -256,13 +256,16 @@ export function compactAttributes(values: Record<string, Attributes[string]>): A
   );
 }
 
-export function parentContextFromTraceId(traceId: string | undefined): Context {
+export function parentContextFromTraceId(
+  traceId: string | undefined,
+  parentObservationId?: string | undefined,
+): Context {
   if (!isValidTraceId(traceId)) {
     return context.active();
   }
   return trace.setSpanContext(ROOT_CONTEXT, {
     traceId,
-    spanId: "0000000000000001",
+    spanId: isValidSpanId(parentObservationId) ? parentObservationId : "0000000000000001",
     traceFlags: TraceFlags.SAMPLED,
     isRemote: true,
   });
@@ -290,6 +293,10 @@ function isValidTraceId(traceId: string | undefined): traceId is string {
     /^[0-9a-f]{32}$/i.test(traceId) &&
     traceId !== "00000000000000000000000000000000"
   );
+}
+
+function isValidSpanId(spanId: string | undefined): spanId is string {
+  return spanId !== undefined && /^[0-9a-f]{16}$/i.test(spanId) && spanId !== "0000000000000000";
 }
 
 export function recordSpanError(span: Span, error: unknown): void {

@@ -6,55 +6,62 @@ import type {
   PipelineRunContext,
   PipelineRunEvent,
   PipelineStageContext,
+  PipelineTraceInfo,
 } from "./types";
 
 export async function runNode<Output>(
   context: PipelineRunContext,
   node: PipelineGraphNode,
   path: PipelineNodePath,
-  fn: () => Output | Promise<Output>,
+  input: unknown,
+  fn: (trace: PipelineTraceInfo | undefined) => Output | Promise<Output>,
 ): Promise<Awaited<Output>> {
   throwIfAborted(context.abortSignal);
   const eventNode = scopedNode(node, path);
   const startedAt = Date.now();
-  await emitEvent(context, {
-    type: "stage_started",
+  const eventBase = {
     runId: context.runId,
     pipelineId: context.pipelineId,
     path: [...path],
     node: eventNode,
-  });
+  };
+  const observers = await context.observability.startStage({ ...eventBase, input });
+  try {
+    await emitEvent(context, { type: "stage_started", ...eventBase });
+  } catch (error) {
+    await observers.error({ ...eventBase, error, durationMs: Date.now() - startedAt });
+    throw error;
+  }
 
   try {
-    const output = (await fn()) as Awaited<Output>;
+    const output = (await fn(observers.trace)) as Awaited<Output>;
     throwIfAborted(context.abortSignal);
+    const durationMs = Date.now() - startedAt;
     await emitEvent(context, {
       type: "stage_completed",
-      runId: context.runId,
-      pipelineId: context.pipelineId,
-      path: [...path],
-      node: eventNode,
-      durationMs: Date.now() - startedAt,
+      ...eventBase,
+      durationMs,
     });
+    await observers.end({ ...eventBase, output, durationMs });
     return output;
   } catch (error) {
+    const durationMs = Date.now() - startedAt;
     const failureEvent: PipelineRunEvent = {
       type: "stage_failed",
-      runId: context.runId,
-      pipelineId: context.pipelineId,
-      path: [...path],
-      node: eventNode,
-      durationMs: Date.now() - startedAt,
+      ...eventBase,
+      durationMs,
       error,
     };
     try {
       await emitEvent(context, failureEvent);
     } catch (observerError) {
+      await observers.error({ ...eventBase, error, durationMs });
       throw new AggregateError(
         [error, observerError],
         `Pipeline stage "${node.id}" and its observer both failed.`,
       );
     }
+    await observers.error({ ...eventBase, error, durationMs });
     throw error;
   }
 }

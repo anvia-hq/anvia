@@ -1,5 +1,12 @@
 import type { z } from "zod";
 import type { JsonObject } from "../completion";
+import type {
+  AgentObserverErrorPolicy,
+  AgentObserverTraceInfo,
+  AgentTraceInfo,
+  AgentTraceOptions,
+} from "../observability";
+import type { ActivePipelineRunObservers } from "./observability";
 import type { Pipeline } from "./pipeline";
 
 export type PipelineMetadata = {
@@ -15,6 +22,7 @@ export type PipelineOptions<Input, Parsed = Input> = {
   name?: string | undefined;
   description?: string | undefined;
   metadata?: JsonObject | undefined;
+  observability?: PipelineObservabilityOptions | undefined;
 };
 
 export type PipelineStageMetadata = {
@@ -93,10 +101,87 @@ export type PipelineRunObserver = {
   onEvent(event: PipelineRunEvent): void | Promise<void>;
 };
 
+export type PipelineTraceOptions = Omit<AgentTraceOptions, "promptRef">;
+export type PipelineTraceInfo = AgentTraceInfo;
+export type PipelineObserverTraceInfo = AgentObserverTraceInfo;
+export type PipelineObserverErrorPolicy = AgentObserverErrorPolicy;
+
+export type PipelineRunStartArgs = {
+  readonly runId: string;
+  readonly pipelineId: string;
+  readonly pipelineName?: string | undefined;
+  readonly pipelineDescription?: string | undefined;
+  readonly pipelineMetadata?: JsonObject | undefined;
+  readonly runMetadata?: JsonObject | undefined;
+  readonly trace?: PipelineTraceOptions | undefined;
+  readonly input: unknown;
+};
+
+export type PipelineRunEndArgs = {
+  readonly runId: string;
+  readonly pipelineId: string;
+  readonly output: unknown;
+  readonly durationMs: number;
+};
+
+export type PipelineRunErrorArgs = {
+  readonly runId: string;
+  readonly pipelineId: string;
+  readonly status: "failed" | "cancelled";
+  readonly error: unknown;
+  readonly durationMs: number;
+};
+
+export type PipelineStageStartArgs = Readonly<PipelineRunEventBase> & {
+  readonly input: unknown;
+};
+
+export type PipelineStageEndArgs = Readonly<PipelineRunEventBase> & {
+  readonly output: unknown;
+  readonly durationMs: number;
+};
+
+export type PipelineStageErrorArgs = Readonly<PipelineRunEventBase> & {
+  readonly error: unknown;
+  readonly durationMs: number;
+};
+
+export interface PipelineStageObservation {
+  readonly trace?: PipelineObserverTraceInfo | undefined;
+  end(args: PipelineStageEndArgs): void | Promise<void>;
+  error?(args: PipelineStageErrorArgs): void | Promise<void>;
+}
+
+export interface PipelineRunObservation {
+  readonly trace?: PipelineObserverTraceInfo | undefined;
+  startStage?(
+    args: PipelineStageStartArgs,
+  ): PipelineStageObservation | undefined | Promise<PipelineStageObservation | undefined>;
+  end(args: PipelineRunEndArgs): void | Promise<void>;
+  error?(args: PipelineRunErrorArgs): void | Promise<void>;
+}
+
+export interface PipelineObserver {
+  startRun(
+    args: PipelineRunStartArgs,
+  ): PipelineRunObservation | undefined | Promise<PipelineRunObservation | undefined>;
+}
+
+export type PipelineObserverMap = Readonly<Record<string, PipelineObserver>>;
+
+export type PipelineObservabilityOptions<
+  Observers extends PipelineObserverMap = PipelineObserverMap,
+> = {
+  readonly observers: Observers;
+  readonly primaryTrace?: Extract<keyof Observers, string> | undefined;
+  readonly errorPolicy?: PipelineObserverErrorPolicy | undefined;
+};
+
 export type PipelineRunOptions<Input> = {
   input: Input;
   runId?: string | undefined;
   metadata?: JsonObject | undefined;
+  trace?: PipelineTraceOptions | undefined;
   abortSignal?: AbortSignal | undefined;
   observer?: PipelineRunObserver | undefined;
   failOnObserverError?: boolean | undefined;
@@ -105,12 +190,14 @@ export type PipelineRunOptions<Input> = {
 export type PipelineRunResult<Output> = {
   runId: string;
   output: Awaited<Output>;
+  trace?: PipelineTraceInfo | undefined;
 };
 
 export type PipelineBatchOptions<Input> = {
   inputs: Iterable<Input>;
   concurrency: number;
   metadata?: JsonObject | undefined;
+  trace?: PipelineTraceOptions | undefined;
   abortSignal?: AbortSignal | undefined;
   observer?: PipelineRunObserver | undefined;
   failOnObserverError?: boolean | undefined;
@@ -121,6 +208,7 @@ export type PipelineBatchItem<Output> =
       status: "completed";
       runId: string;
       output: Awaited<Output>;
+      trace?: PipelineTraceInfo | undefined;
     }
   | {
       status: "failed";
@@ -142,6 +230,7 @@ export type PipelineRunContext = {
   abortSignal?: AbortSignal | undefined;
   observer?: PipelineRunObserver | undefined;
   failOnObserverError: boolean;
+  observability: ActivePipelineRunObservers;
 };
 
 export type PipelineExecutor<Input, Output> = (

@@ -649,6 +649,158 @@ Import `McpClient` and `McpClientGroup` from `@anvia/mcp`, connect them, and pas
 `servers` to `new Agent({ mcpServers })`. See the `@anvia/mcp` README for transport configuration,
 connection ownership, URL safety, and cleanup.
 
+## Evaluations
+
+Import evaluation APIs from `@anvia/core/evals`. A suite contains cases, a target, and one or more
+metrics. Required metric failures make a case fail; infrastructure or evaluation errors produce an
+`invalid` outcome.
+
+```ts
+import { contains, exactMatch, runEvalSuite } from "@anvia/core/evals";
+
+const result = await runEvalSuite({
+  name: "support answers",
+  cases: [
+    {
+      id: "refund-window",
+      input: "When can I request a refund?",
+      expected: "Refunds are available for 30 days.",
+    },
+  ],
+  target: async (input) => answerSupportQuestion(input),
+  metrics: [exactMatch(), contains({ expected: "30 days" })],
+});
+
+console.log(result.cases);
+console.log(result.results[0]?.scores.exact_match);
+```
+
+`runEvalSuite` infers the case input, target output, expected value, metric names, and score types.
+Metrics that implicitly read `case.expected`, `case.context`, or `case.retrievalContext` require
+those fields at compile time. Supplying an explicit metric value or selector removes the matching
+case requirement.
+
+### Built-in metrics
+
+Deterministic metrics do not call a model:
+
+- `exactMatch`, `contains`, `notContains`, `containsAll`, and `containsAny`
+- `matches`, `doesNotMatch`, `maxLength`, and `requiredFields`
+- `semanticSimilarity`, which uses an embedding model
+
+Judge metrics call a completion model and record their evaluation token usage:
+
+- `llmJudge` and `llmScore`
+- `answerRelevancy`, `promptAlignment`, `jsonCorrectness`, and `summarization`
+- `hallucination`, `faithfulness`, and `abstention`
+- `gEval`, `turnRelevancy`, and `knowledgeRetention`
+
+Numeric thresholds use values from `0` through `1`. `strictMode` requires a perfect higher-is-better
+score or a zero lower-is-better score. Judge metrics default to including a final explanation;
+setting `includeReason: false` saves that extra judge call when the explanation is unnecessary.
+
+### Typed custom metrics
+
+Use `createEvalTypes` to bind input, output, and expected types once when defining multiple custom
+metrics:
+
+```ts
+import { createEvalTypes, EvalOutcome } from "@anvia/core/evals";
+
+const supportEvals = createEvalTypes<string, { answer: string }, string>();
+
+const noHandoff = supportEvals.defineMetric({
+  name: "no_handoff",
+  dataType: "BOOLEAN",
+  evaluate: ({ output, signal }) =>
+    signal.aborted || output.answer.includes("contact support")
+      ? EvalOutcome.fail(false)
+      : EvalOutcome.pass(true),
+});
+```
+
+Custom metrics return `EvalOutcome.pass`, `EvalOutcome.fail`, or `EvalOutcome.invalid`. Thrown metric
+errors are converted to structured invalid outcomes containing the error kind and original error.
+
+### Execution controls
+
+Evaluation targets receive an optional third argument containing the case `AbortSignal`.
+
+```ts
+const result = await runEvalSuite({
+  // cases, target, and metrics...
+  name: "release gate",
+  cases,
+  target: async (input, testCase, context) =>
+    generateAnswer(input, { signal: context?.signal, metadata: testCase.metadata }),
+  metrics,
+  targetConcurrency: 4,
+  metricConcurrency: 2,
+  caseTimeoutMs: 30_000,
+  signal: deploymentSignal,
+  failFast: true,
+  caseIds: ["refund-window", "billing-owner"],
+  shard: { index: 0, count: 4 },
+  onProgress(event) {
+    console.log(event.type);
+  },
+});
+```
+
+- `concurrency` remains the shorthand for both target and metric concurrency.
+- `targetConcurrency` and `metricConcurrency` can limit them independently.
+- `caseTimeoutMs` covers the target and its metrics. Cooperative targets and metrics should observe
+  the supplied signal; the runner still stops awaiting work that ignores it.
+- Aborting the suite-level `signal` stops scheduling cases and rejects the run with the abort reason.
+- `caseIds`, `caseFilter`, and `shard` select cases before execution.
+- `failFast` throws `EvalFailFastError` after the first completed required failure or invalid case.
+- `onProgress` receives case, target, metric, and case-completion events.
+
+Use `selectEvalCaseIds(previousResult)` to select failed and invalid cases for a rerun.
+
+### Results, usage, and failures
+
+Every case result includes `targetStatus`, target and total durations, per-case usage and optional
+cost. Every metric result includes its duration, optional cost, outcome, and reporter errors. A
+successful target that returns `undefined` has `targetStatus: "succeeded"` and retains its `output`
+property, so it is distinct from a failed target.
+
+The suite aggregates metric totals, case totals, target and evaluation usage, costs, duration, and
+all reporter errors. Invalid outcomes may include these `kind` values: `target`, `metric`,
+`configuration`, `provider`, or `timeout`.
+
+### CI output and expectations
+
+`runEvalCli` prints a result and can set `process.exitCode`. Exit code `1` means a required metric
+failed; `2` means a required metric was invalid. Use `defineEvalExpectations` with a defined suite to
+type-check case and metric names.
+
+```ts
+import { defineEvalExpectations, defineEvalSuite, exactMatch, runEvalCli } from "@anvia/core/evals";
+
+const suite = defineEvalSuite({
+  name: "release gate",
+  cases: [{ id: "refund", input: "refund", expected: "30 days" }],
+  target: async () => "30 days",
+  metrics: [exactMatch({ name: "correct" })],
+});
+
+await runEvalCli({
+  ...suite,
+  expectations: defineEvalExpectations(suite, {
+    outcomes: { refund: { correct: "pass" } },
+  }),
+  exitCode: true,
+  maxValueLength: 2_000,
+  redact: (value, context) => (context.kind === "input" ? "[redacted]" : value),
+});
+```
+
+Use `formatEvalResult` for pure pretty or JSON formatting without writing to stdout. Both
+`formatEvalResult` and `runEvalCli` support value truncation and redaction. JSON output otherwise
+contains cases, outputs, metadata, and error details, so redact sensitive data before writing it to
+shared CI logs.
+
 ## Public Areas
 
 - `agent`: typed Agent runtime, retries, and stream events

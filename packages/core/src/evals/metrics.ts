@@ -3,7 +3,7 @@ import type { CompletionModel } from "../completion";
 import { cosineSimilarity, type EmbeddingModel, embedText } from "../embeddings";
 import { extract } from "../extractor";
 import type { ZodSchema } from "../schema";
-import { errorMessage, formatValue, stableComparable } from "./format";
+import { evalValuesEqual, formatValue } from "./format";
 import { EvalOutcome } from "./outcome";
 import { resolveActual, resolveActualText, resolveExpected, resolveJudgePrompt } from "./selectors";
 import type { EvalCaseRequirements, EvalMetric, SelectorOrValue, ValueSelector } from "./types";
@@ -42,7 +42,7 @@ export function exactMatch<Input, Output, Expected = unknown, const Name extends
       if (expected === undefined) {
         return EvalOutcome.invalid("No expected value provided for exact match.");
       }
-      const passed = stableComparable(actual) === stableComparable(expected);
+      const passed = evalValuesEqual(actual, expected);
       return passed
         ? EvalOutcome.pass(true)
         : EvalOutcome.fail(false, { comment: `Expected ${formatValue(expected)}.` });
@@ -103,8 +103,20 @@ export type NotContainsOptions<Input, Output, Expected = unknown> = ContainsOpti
 >;
 
 export function notContains<Input, Output, Expected = unknown, const Name extends string = string>(
+  options: NotContainsOptions<Input, Output, Expected> & {
+    expected: Exclude<NotContainsOptions<Input, Output, Expected>["expected"], undefined>;
+    name?: Name | undefined;
+  },
+): EvalMetric<Input, Output, boolean, Expected, Name>;
+export function notContains<Input, Output, Expected = unknown, const Name extends string = string>(
+  options?: Omit<NotContainsOptions<Input, Output, Expected>, "expected"> & {
+    expected?: undefined;
+    name?: Name | undefined;
+  },
+): EvalMetric<Input, Output, boolean, Expected, Name, { expected: string | RegExp }>;
+export function notContains<Input, Output, Expected = unknown, const Name extends string = string>(
   options: NotContainsOptions<Input, Output, Expected> & { name?: Name | undefined } = {},
-): EvalMetric<Input, Output, boolean, Expected, Name> {
+): EvalMetric<Input, Output, boolean, Expected, Name, EvalCaseRequirements> {
   return {
     name: (options.name ?? "not_contains") as Name,
     required: options.required ?? true,
@@ -144,8 +156,20 @@ export type ContainsAllOptions<Input, Output, Expected = unknown> = ContainsList
 >;
 
 export function containsAll<Input, Output, Expected = unknown, const Name extends string = string>(
+  options: ContainsAllOptions<Input, Output, Expected> & {
+    expected: Exclude<ContainsAllOptions<Input, Output, Expected>["expected"], undefined>;
+    name?: Name | undefined;
+  },
+): EvalMetric<Input, Output, boolean, Expected, Name>;
+export function containsAll<Input, Output, Expected = unknown, const Name extends string = string>(
+  options: Omit<ContainsAllOptions<Input, Output, Expected>, "expected"> & {
+    expected?: undefined;
+    name?: Name | undefined;
+  },
+): EvalMetric<Input, Output, boolean, Expected, Name, { expected: ReadonlyArray<string | RegExp> }>;
+export function containsAll<Input, Output, Expected = unknown, const Name extends string = string>(
   options: ContainsAllOptions<Input, Output, Expected> & { name?: Name | undefined },
-): EvalMetric<Input, Output, boolean, Expected, Name> {
+): EvalMetric<Input, Output, boolean, Expected, Name, EvalCaseRequirements> {
   return containsListMetric("contains_all", "all", options);
 }
 
@@ -156,8 +180,20 @@ export type ContainsAnyOptions<Input, Output, Expected = unknown> = ContainsList
 >;
 
 export function containsAny<Input, Output, Expected = unknown, const Name extends string = string>(
+  options: ContainsAnyOptions<Input, Output, Expected> & {
+    expected: Exclude<ContainsAnyOptions<Input, Output, Expected>["expected"], undefined>;
+    name?: Name | undefined;
+  },
+): EvalMetric<Input, Output, boolean, Expected, Name>;
+export function containsAny<Input, Output, Expected = unknown, const Name extends string = string>(
+  options: Omit<ContainsAnyOptions<Input, Output, Expected>, "expected"> & {
+    expected?: undefined;
+    name?: Name | undefined;
+  },
+): EvalMetric<Input, Output, boolean, Expected, Name, { expected: ReadonlyArray<string | RegExp> }>;
+export function containsAny<Input, Output, Expected = unknown, const Name extends string = string>(
   options: ContainsAnyOptions<Input, Output, Expected> & { name?: Name | undefined },
-): EvalMetric<Input, Output, boolean, Expected, Name> {
+): EvalMetric<Input, Output, boolean, Expected, Name, EvalCaseRequirements> {
   return containsListMetric("contains_any", "any", options);
 }
 
@@ -202,8 +238,20 @@ export type MatchesOptions<Input, Output, Expected = unknown> = {
 };
 
 export function matches<Input, Output, Expected = unknown, const Name extends string = string>(
+  options: MatchesOptions<Input, Output, Expected> & {
+    expected: Exclude<MatchesOptions<Input, Output, Expected>["expected"], undefined>;
+    name?: Name | undefined;
+  },
+): EvalMetric<Input, Output, boolean, Expected, Name>;
+export function matches<Input, Output, Expected = unknown, const Name extends string = string>(
+  options: Omit<MatchesOptions<Input, Output, Expected>, "expected"> & {
+    expected?: undefined;
+    name?: Name | undefined;
+  },
+): EvalMetric<Input, Output, boolean, Expected, Name, { expected: RegExp }>;
+export function matches<Input, Output, Expected = unknown, const Name extends string = string>(
   options: MatchesOptions<Input, Output, Expected> & { name?: Name | undefined },
-): EvalMetric<Input, Output, boolean, Expected, Name> {
+): EvalMetric<Input, Output, boolean, Expected, Name, EvalCaseRequirements> {
   return regexMetric("matches", false, options);
 }
 
@@ -214,8 +262,20 @@ export type DoesNotMatchOptions<Input, Output, Expected = unknown> = MatchesOpti
 >;
 
 export function doesNotMatch<Input, Output, Expected = unknown, const Name extends string = string>(
+  options: DoesNotMatchOptions<Input, Output, Expected> & {
+    expected: Exclude<DoesNotMatchOptions<Input, Output, Expected>["expected"], undefined>;
+    name?: Name | undefined;
+  },
+): EvalMetric<Input, Output, boolean, Expected, Name>;
+export function doesNotMatch<Input, Output, Expected = unknown, const Name extends string = string>(
+  options: Omit<DoesNotMatchOptions<Input, Output, Expected>, "expected"> & {
+    expected?: undefined;
+    name?: Name | undefined;
+  },
+): EvalMetric<Input, Output, boolean, Expected, Name, { expected: RegExp }>;
+export function doesNotMatch<Input, Output, Expected = unknown, const Name extends string = string>(
   options: DoesNotMatchOptions<Input, Output, Expected> & { name?: Name | undefined },
-): EvalMetric<Input, Output, boolean, Expected, Name> {
+): EvalMetric<Input, Output, boolean, Expected, Name, EvalCaseRequirements> {
   return regexMetric("does_not_match", true, options);
 }
 
@@ -382,12 +442,13 @@ export function semanticSimilarity<
 >(
   options: SemanticSimilarityOptions<Input, Output, Expected> & { name?: Name | undefined },
 ): EvalMetric<Input, Output, number, Expected, Name, EvalCaseRequirements> {
+  const threshold = unitInterval(options.threshold, "semanticSimilarity threshold");
   return {
     name: (options.name ?? "semantic_similarity") as Name,
     required: options.required ?? true,
     dataType: "NUMERIC",
     direction: "higher_is_better",
-    threshold: options.threshold,
+    threshold,
     async evaluate(args) {
       const actual = await resolveActualText(options.actual, args);
       const expected = await resolveExpected(options.expected, args);
@@ -402,9 +463,9 @@ export function semanticSimilarity<
         embedText({ model: options.model, text: expected }),
       ]);
       const score = cosineSimilarity(actualEmbedding.vector, expectedEmbedding.vector);
-      return score >= options.threshold
+      return score >= threshold
         ? EvalOutcome.pass(score)
-        : EvalOutcome.fail(score, { comment: `Similarity below threshold ${options.threshold}.` });
+        : EvalOutcome.fail(score, { comment: `Similarity below threshold ${threshold}.` });
     },
   };
 }
@@ -429,6 +490,7 @@ export function llmJudge<
 >(
   options: LlmJudgeOptions<Input, Output, SchemaOutput, Expected> & { name?: Name | undefined },
 ): EvalMetric<Input, Output, SchemaOutput, Expected, Name> {
+  const retries = extractionRetries(options.retries);
   return {
     name: (options.name ?? "llm_judge") as Name,
     required: options.required ?? true,
@@ -441,13 +503,13 @@ export function llmJudge<
             options.instructions ??
             "Judge the eval case by the requested schema. Submit the judgment using the schema.",
           text: await resolveJudgePrompt(options.prompt, args),
-          retries: evalExtractionRetries(options.retries),
+          retries,
         });
         return options.passes(result.output)
           ? EvalOutcome.pass(result.output, { usage: result.usage })
           : EvalOutcome.fail(result.output, { usage: result.usage });
       } catch (error) {
-        return EvalOutcome.invalid(errorMessage(error));
+        return EvalOutcome.fromError(error);
       }
     },
   };
@@ -473,13 +535,16 @@ export function llmScore<Input, Output, Expected = unknown, const Name extends s
   options: LlmScoreOptions<Input, Output, Expected> & { name?: Name | undefined },
 ): EvalMetric<Input, Output, LlmScoreMetricScore, Expected, Name> {
   const criteria = Array.isArray(options.criteria) ? options.criteria.join("\n") : options.criteria;
+  if (criteria.trim().length === 0) throw new TypeError("llmScore criteria must not be empty.");
+  const threshold = unitInterval(options.threshold, "llmScore threshold");
+  const retries = extractionRetries(options.retries);
   return {
     name: (options.name ?? "llm_score") as Name,
     required: options.required ?? true,
     dataType: "NUMERIC",
     projectScore: (score) => score.score,
     direction: "higher_is_better",
-    threshold: options.threshold,
+    threshold,
     async evaluate(args) {
       try {
         const result = await extract({
@@ -492,7 +557,7 @@ export function llmScore<Input, Output, Expected = unknown, const Name extends s
             options.instructions ??
             `Score the eval case against these criteria:\n${criteria}\n\nReturn a score between 0 and 1 and brief feedback.`,
           text: await resolveJudgePrompt(options.prompt, args),
-          retries: evalExtractionRetries(options.retries),
+          retries,
         });
         const score = result.output;
         if (score.score < 0 || score.score > 1) {
@@ -501,20 +566,30 @@ export function llmScore<Input, Output, Expected = unknown, const Name extends s
             usage: result.usage,
           });
         }
-        return score.score >= options.threshold
+        return score.score >= threshold
           ? EvalOutcome.pass(score, { comment: score.feedback, usage: result.usage })
           : EvalOutcome.fail(score, { comment: score.feedback, usage: result.usage });
       } catch (error) {
-        return EvalOutcome.invalid(errorMessage(error));
+        return EvalOutcome.fromError(error);
       }
     },
   };
 }
 
-function evalExtractionRetries(retries: number | undefined): { maxAttempts: number } | undefined {
-  const retryCount = Math.max(0, Math.trunc(retries ?? 0));
+function extractionRetries(retries: number | undefined): { maxAttempts: number } | undefined {
+  const retryCount = retries ?? 0;
+  if (!Number.isInteger(retryCount) || retryCount < 0) {
+    throw new RangeError("Eval metric retries must be a non-negative integer.");
+  }
   if (retryCount === 0) {
     return undefined;
   }
   return { maxAttempts: retryCount + 1 };
+}
+
+function unitInterval(value: number, label: string): number {
+  if (!Number.isFinite(value) || value < 0 || value > 1) {
+    throw new RangeError(`${label} must be between 0 and 1.`);
+  }
+  return value;
 }

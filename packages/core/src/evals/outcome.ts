@@ -1,5 +1,11 @@
 import type { Usage } from "../completion";
-import type { EvalMetadata } from "./types";
+import type { EvalInvalidKind, EvalMetadata } from "./types";
+
+type EvalOutcomeOptions = {
+  comment?: string | undefined;
+  metadata?: EvalMetadata | undefined;
+  usage?: Usage | undefined;
+};
 
 export type EvalOutcome<Score = unknown> =
   | {
@@ -19,6 +25,8 @@ export type EvalOutcome<Score = unknown> =
   | {
       outcome: "invalid";
       reason: string;
+      kind?: EvalInvalidKind | undefined;
+      error?: unknown;
       score?: Score | undefined;
       comment?: string | undefined;
       metadata?: EvalMetadata | undefined;
@@ -26,14 +34,7 @@ export type EvalOutcome<Score = unknown> =
     };
 
 export const EvalOutcome = {
-  pass<Score>(
-    score?: Score,
-    options: {
-      comment?: string | undefined;
-      metadata?: EvalMetadata | undefined;
-      usage?: Usage | undefined;
-    } = {},
-  ): EvalOutcome<Score> {
+  pass<Score>(score?: Score, options: EvalOutcomeOptions = {}): EvalOutcome<Score> {
     const outcome: EvalOutcome<Score> = {
       outcome: "pass" as const,
     };
@@ -52,14 +53,7 @@ export const EvalOutcome = {
     return outcome;
   },
 
-  fail<Score>(
-    score?: Score,
-    options: {
-      comment?: string | undefined;
-      metadata?: EvalMetadata | undefined;
-      usage?: Usage | undefined;
-    } = {},
-  ): EvalOutcome<Score> {
+  fail<Score>(score?: Score, options: EvalOutcomeOptions = {}): EvalOutcome<Score> {
     const outcome: EvalOutcome<Score> = {
       outcome: "fail" as const,
     };
@@ -80,11 +74,10 @@ export const EvalOutcome = {
 
   invalid<Score = never>(
     reason: string,
-    options: {
+    options: EvalOutcomeOptions & {
       score?: Score | undefined;
-      comment?: string | undefined;
-      metadata?: EvalMetadata | undefined;
-      usage?: Usage | undefined;
+      kind?: EvalInvalidKind | undefined;
+      error?: unknown;
     } = {},
   ): EvalOutcome<Score> {
     const outcome: EvalOutcome<Score> = {
@@ -94,15 +87,16 @@ export const EvalOutcome = {
     if (options.score !== undefined) {
       outcome.score = options.score;
     }
-    if (options.comment !== undefined) {
-      outcome.comment = options.comment;
-    }
-    if (options.metadata !== undefined) {
-      outcome.metadata = options.metadata;
-    }
-    if (options.usage !== undefined) {
-      outcome.usage = options.usage;
-    }
+    if (options.comment !== undefined) outcome.comment = options.comment;
+    if (options.metadata !== undefined) outcome.metadata = options.metadata;
+    if (options.usage !== undefined) outcome.usage = options.usage;
+    if (options.kind !== undefined) outcome.kind = options.kind;
+    if (options.error !== undefined) outcome.error = options.error;
     return outcome;
+  },
+
+  fromError(error: unknown, kind: EvalInvalidKind = "metric"): EvalOutcome<never> {
+    const reason = error instanceof Error ? error.message : String(error);
+    return EvalOutcome.invalid(reason, { kind, error });
   },
 };

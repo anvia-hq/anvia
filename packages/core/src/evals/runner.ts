@@ -1,4 +1,12 @@
 import { type Usage, Usage as UsageValue } from "../completion";
+import {
+  abortable,
+  type ConcurrencyLimiter,
+  createConcurrencyLimiter,
+  createEvalCaseSignal,
+  EvalAbortError,
+  EvalTimeoutError,
+} from "./execution";
 import { errorMessage } from "./format";
 import { EvalOutcome, type EvalOutcome as EvalOutcomeType } from "./outcome";
 import { defaultEvalTraceSelector } from "./reporting";
@@ -15,6 +23,7 @@ import type {
   EvalSuiteResult,
   EvalTotals,
   EvalTraceRef,
+  EvalProgressEvent,
   RunEvalSuiteOptions,
 } from "./types";
 
@@ -25,6 +34,16 @@ export class EvalReporterDispatchError extends AggregateError {
     super(errors, `Evaluation reporter ${phase} failed ${errors.length} time(s).`);
     this.name = "EvalReporterDispatchError";
     this.phase = phase;
+  }
+}
+
+export class EvalFailFastError extends Error {
+  constructor(
+    readonly caseId: string,
+    readonly outcome: "fail" | "invalid",
+  ) {
+    super(`Evaluation stopped after case ${caseId} produced a required ${outcome} outcome.`);
+    this.name = "EvalFailFastError";
   }
 }
 
@@ -51,13 +70,18 @@ export async function runEvalSuite<
   options: RunEvalSuiteOptions<Input, Output, Expected, Metrics>,
 ): Promise<EvalSuiteResult<Input, Output, Expected, Metrics>> {
   validateSuiteOptions(options);
+  const selectedCases = selectCases(options);
+  const selectedOptions = {
+    ...options,
+    cases: selectedCases,
+  } as unknown as RunEvalSuiteOptions<Input, Output, Expected, Metrics>;
   const startedAtMs = Date.now();
-  const run = resolveRun(options, startedAtMs);
+  const run = resolveRun(selectedOptions, startedAtMs);
   const reporters = options.reporters ?? [];
   const lifecycle = {
     run,
     suiteName: options.name,
-    caseCount: options.cases.length,
+    caseCount: selectedCases.length,
     metricNames: options.metrics.map((metric) => metric.name),
   } satisfies EvalRunStartArgs;
   let reporterErrors: unknown[];
@@ -80,8 +104,8 @@ export async function runEvalSuite<
   let results: Array<EvalCaseResult<Input, Output, Expected, Metrics>>;
   let aggregates: Awaited<ReturnType<typeof aggregateResult>>;
   try {
-    results = await runEvalCases(options, run);
-    aggregates = await aggregateResult(options, results);
+    results = await runEvalCases(selectedOptions, run);
+    aggregates = await aggregateResult(selectedOptions, results);
   } catch (error) {
     await notifyRunEnd(reporters, {
       ...lifecycle,
@@ -103,6 +127,11 @@ export async function runEvalSuite<
     durationMs: Date.now() - startedAtMs,
     reporterErrors,
   };
+  result.reporterErrors.push(
+    ...results.flatMap((caseResult) =>
+      caseResult.metrics.flatMap((metricResult) => metricResult.reporterErrors),
+    ),
+  );
   if (aggregates.cost !== undefined) {
     result.cost = aggregates.cost;
   }
@@ -133,13 +162,22 @@ async function runEvalCases<
   options: RunEvalSuiteOptions<Input, Output, Expected, Metrics>,
   run: EvalRunContext,
 ): Promise<Array<EvalCaseResult<Input, Output, Expected, Metrics>>> {
-  const concurrency = Math.max(1, Math.trunc(options.concurrency ?? 1));
+  const targetConcurrency = options.targetConcurrency ?? options.concurrency ?? 1;
+  const metricConcurrency = options.metricConcurrency ?? options.concurrency ?? 1;
+  const workerConcurrency = Math.max(targetConcurrency, metricConcurrency);
+  const targetLimit = createConcurrencyLimiter(targetConcurrency);
+  const metricLimit = createConcurrencyLimiter(metricConcurrency);
   const results = Array<EvalCaseResult<Input, Output, Expected, Metrics>>(options.cases.length);
   let nextIndex = 0;
+  let completedCases = 0;
   let failure: { error: unknown } | undefined;
 
   async function worker(): Promise<void> {
     while (failure === undefined && nextIndex < options.cases.length) {
+      if (isAborted(options.signal)) {
+        failure ??= { error: suiteAbortReason(options.signal) };
+        break;
+      }
       const index = nextIndex;
       nextIndex += 1;
       try {
@@ -147,7 +185,20 @@ async function runEvalCases<
           options,
           options.cases[index] as EvalCase<Input, Expected>,
           run,
+          targetLimit,
+          metricLimit,
+          () => completedCases,
         );
+        completedCases += 1;
+        if (isAborted(options.signal)) {
+          failure ??= { error: suiteAbortReason(options.signal) };
+        }
+        if (options.failFast === true && results[index]?.outcome !== "pass") {
+          const result = results[index];
+          if (result !== undefined && result.outcome !== "pass") {
+            failure ??= { error: new EvalFailFastError(result.case.id, result.outcome) };
+          }
+        }
       } catch (error) {
         failure ??= { error };
       }
@@ -155,7 +206,7 @@ async function runEvalCases<
   }
 
   await Promise.all(
-    Array.from({ length: Math.min(concurrency, options.cases.length) }, () => worker()),
+    Array.from({ length: Math.min(workerConcurrency, options.cases.length) }, () => worker()),
   );
   if (failure !== undefined) throw failure.error;
   return results;
@@ -170,62 +221,148 @@ async function runEvalCase<
   options: RunEvalSuiteOptions<Input, Output, Expected, Metrics>,
   testCase: EvalCase<Input, Expected>,
   run: EvalRunContext,
+  targetLimit: ConcurrencyLimiter,
+  metricLimit: ConcurrencyLimiter,
+  completedCases: () => number,
 ): Promise<EvalCaseResult<Input, Output, Expected, Metrics>> {
-  let output: Output | undefined;
-  let targetError: unknown;
+  const caseStartedAt = performance.now();
+  const caseSignal = createEvalCaseSignal(options.signal, options.caseTimeoutMs);
   try {
-    output = await options.target(testCase.input, testCase);
-  } catch (error) {
-    targetError = error;
-  }
-  const traceResult = await resolveTrace(options, testCase, output, targetError);
-
-  const metrics: EvalMetricResult[] = [];
-  for (const metric of options.metrics) {
-    const outcome =
-      targetError === undefined
-        ? await safeEvaluate(options.name, testCase, output as Output, metric)
-        : EvalOutcome.invalid(`Target failed: ${errorMessage(targetError)}`);
-    const reporterErrors = await reportOutcome({
-      run,
+    const progress = (event: EvalProgressEvent<Input, Output, Expected>) =>
+      notifyProgress(options, event);
+    await progress({
+      type: "case-start",
       suiteName: options.name,
-      testCase,
-      output,
-      targetError,
-      metric,
-      outcome,
-      trace: traceResult.trace,
-      traceError: traceResult.error,
-      reporters: options.reporters ?? [],
-      reporterErrorPolicy: options.reporterErrorPolicy ?? "collect",
+      case: testCase,
+      completedCases: completedCases(),
+      totalCases: options.cases.length,
     });
-    const metricResult: EvalMetricResult = {
-      metricName: metric.name,
-      required: metric.required ?? true,
-      outcome,
-      reporterErrors,
-    };
-    if (metric.direction !== undefined) metricResult.direction = metric.direction;
-    if (metric.threshold !== undefined) metricResult.threshold = metric.threshold;
-    metrics.push(metricResult);
-  }
+    let output: Output | undefined;
+    let targetError: unknown;
+    let targetStatus: "succeeded" | "failed" = "succeeded";
+    let targetDurationMs = 0;
+    try {
+      output = await targetLimit(async () => {
+        const targetStartedAt = performance.now();
+        try {
+          return await (caseSignal.signal.aborted
+            ? Promise.reject(caseSignal.signal.reason)
+            : abortable(
+                caseSignal.signal,
+                Promise.resolve(
+                  options.target(testCase.input, testCase, { signal: caseSignal.signal }),
+                ),
+              ));
+        } finally {
+          targetDurationMs = performance.now() - targetStartedAt;
+        }
+      });
+    } catch (error) {
+      if (options.signal?.aborted === true) {
+        throw options.signal.reason ?? new EvalAbortError();
+      }
+      targetStatus = "failed";
+      targetError = error;
+    }
+    await progress({
+      type: "target-complete",
+      suiteName: options.name,
+      case: testCase,
+      targetStatus,
+      output,
+      error: targetError,
+      durationMs: targetDurationMs,
+      completedCases: completedCases(),
+      totalCases: options.cases.length,
+    });
+    const traceResult = await resolveTrace(options, testCase, output, targetError, targetStatus);
 
-  const scores = Object.fromEntries(
-    metrics.map((metric) => [metric.metricName, metric.outcome]),
-  ) as EvalCaseResult<Input, Output, Expected, Metrics>["scores"];
-  const result: EvalCaseResult<Input, Output, Expected, Metrics> = {
-    case: testCase,
-    outcome: caseOutcome(targetError, metrics),
-    metrics: metrics as EvalCaseResult<Input, Output, Expected, Metrics>["metrics"],
-    scores,
-  };
-  if (output !== undefined) {
-    result.output = output;
+    const metrics = await Promise.all(
+      options.metrics.map((metric) =>
+        metricLimit(async () => {
+          const metricStartedAt = performance.now();
+          const outcome =
+            targetStatus === "succeeded"
+              ? await safeEvaluate(
+                  options.name,
+                  testCase,
+                  output as Output,
+                  metric,
+                  caseSignal.signal,
+                )
+              : EvalOutcome.invalid(`Target failed: ${errorMessage(targetError)}`, {
+                  kind: targetError instanceof EvalTimeoutError ? "timeout" : "target",
+                  error: targetError,
+                });
+          const durationMs = performance.now() - metricStartedAt;
+          const reporterErrors = await reportOutcome({
+            run,
+            suiteName: options.name,
+            testCase,
+            output,
+            targetError,
+            targetStatus,
+            metric,
+            outcome,
+            trace: traceResult.trace,
+            traceError: traceResult.error,
+            reporters: options.reporters ?? [],
+            reporterErrorPolicy: options.reporterErrorPolicy ?? "collect",
+          });
+          await progress({
+            type: "metric-complete",
+            suiteName: options.name,
+            case: testCase,
+            metricName: metric.name,
+            outcome,
+            durationMs,
+            completedCases: completedCases(),
+            totalCases: options.cases.length,
+          });
+          const metricResult: EvalMetricResult = {
+            metricName: metric.name,
+            required: metric.required ?? true,
+            outcome,
+            durationMs,
+            reporterErrors,
+          };
+          if (metric.direction !== undefined) metricResult.direction = metric.direction;
+          if (metric.threshold !== undefined) metricResult.threshold = metric.threshold;
+          return metricResult;
+        }),
+      ),
+    );
+
+    const scores = Object.fromEntries(
+      metrics.map((metric) => [metric.metricName, metric.outcome]),
+    ) as EvalCaseResult<Input, Output, Expected, Metrics>["scores"];
+    const result: EvalCaseResult<Input, Output, Expected, Metrics> = {
+      case: testCase,
+      outcome: caseOutcome(targetStatus, metrics),
+      targetStatus,
+      targetDurationMs,
+      durationMs: performance.now() - caseStartedAt,
+      metrics: metrics as EvalCaseResult<Input, Output, Expected, Metrics>["metrics"],
+      scores,
+      usage: emptyUsageSummary(),
+    };
+    if (targetStatus === "succeeded") {
+      result.output = output;
+    }
+    if (targetStatus === "failed") {
+      result.targetError = targetError;
+    }
+    await progress({
+      type: "case-complete",
+      suiteName: options.name,
+      result,
+      completedCases: completedCases() + 1,
+      totalCases: options.cases.length,
+    });
+    return result;
+  } finally {
+    caseSignal.dispose();
   }
-  if (targetError !== undefined) {
-    result.targetError = targetError;
-  }
-  return result;
 }
 
 async function resolveTrace<Input, Output, Expected>(
@@ -233,6 +370,7 @@ async function resolveTrace<Input, Output, Expected>(
   testCase: EvalCase<Input, Expected>,
   output: Output | undefined,
   targetError: unknown,
+  targetStatus: "succeeded" | "failed",
 ): Promise<{ trace?: EvalTraceRef | undefined; error?: unknown }> {
   try {
     const selector = options.trace ?? defaultEvalTraceSelector;
@@ -241,6 +379,7 @@ async function resolveTrace<Input, Output, Expected>(
       case: testCase,
       output,
       targetError,
+      targetStatus,
     });
     return trace === undefined ? {} : { trace };
   } catch (error) {
@@ -253,11 +392,21 @@ async function safeEvaluate<Input, Output, Expected>(
   testCase: EvalCase<Input, Expected>,
   output: Output,
   metric: EvalMetric<Input, Output, unknown, Expected>,
+  signal: AbortSignal,
 ): Promise<EvalOutcomeType> {
+  if (signal.aborted) {
+    return EvalOutcome.fromError(
+      signal.reason,
+      signal.reason instanceof EvalTimeoutError ? "timeout" : "metric",
+    );
+  }
   try {
-    return await metric.evaluate({ suiteName, case: testCase, output });
+    return await abortable(
+      signal,
+      Promise.resolve(metric.evaluate({ suiteName, case: testCase, output, signal })),
+    );
   } catch (error) {
-    return EvalOutcome.invalid(errorMessage(error));
+    return EvalOutcome.fromError(error, error instanceof EvalTimeoutError ? "timeout" : "metric");
   }
 }
 
@@ -267,6 +416,7 @@ async function reportOutcome<Input, Output, Expected>(args: {
   testCase: EvalCase<Input, Expected>;
   output: Output | undefined;
   targetError: unknown;
+  targetStatus: "succeeded" | "failed";
   metric: EvalMetric<Input, Output, unknown, Expected>;
   outcome: EvalOutcomeType;
   trace: EvalTraceRef | undefined;
@@ -286,6 +436,7 @@ async function reportOutcome<Input, Output, Expected>(args: {
         case: args.testCase,
         output: args.output,
         targetError: args.targetError,
+        targetStatus: args.targetStatus,
         trace: args.trace,
         metric: args.metric,
         outcome: args.outcome,
@@ -396,6 +547,14 @@ function emptyTotals(): EvalTotals {
   return { total: 0, passed: 0, failed: 0, invalid: 0 };
 }
 
+function emptyUsageSummary() {
+  return {
+    target: UsageValue.empty(),
+    evaluation: UsageValue.empty(),
+    total: UsageValue.empty(),
+  };
+}
+
 function statusKey(status: "pass" | "fail" | "invalid"): "passed" | "failed" | "invalid" {
   if (status === "pass") return "passed";
   if (status === "fail") return "failed";
@@ -403,10 +562,10 @@ function statusKey(status: "pass" | "fail" | "invalid"): "passed" | "failed" | "
 }
 
 function caseOutcome(
-  targetError: unknown,
+  targetStatus: "succeeded" | "failed",
   metrics: EvalMetricResult[],
 ): "pass" | "fail" | "invalid" {
-  if (targetError !== undefined) return "invalid";
+  if (targetStatus === "failed") return "invalid";
   const required = metrics.filter((metric) => metric.required);
   if (required.some((metric) => metric.outcome.outcome === "invalid")) return "invalid";
   if (required.some((metric) => metric.outcome.outcome === "fail")) return "fail";
@@ -433,20 +592,26 @@ async function aggregateResult<
   let evaluationCost = 0;
 
   for (const result of results) {
-    if (result.output !== undefined) {
-      const usage = await resolveTargetUsage(options, result.case, result.output);
+    let caseTargetUsage = UsageValue.empty();
+    let caseEvaluationUsage = UsageValue.empty();
+    let caseTargetCost = 0;
+    let caseEvaluationCost = 0;
+    if (result.targetStatus === "succeeded") {
+      const usage = await resolveTargetUsage(options, result.case, result.output as Output);
       if (usage !== undefined) {
+        caseTargetUsage = usage;
         targetUsage = UsageValue.add(targetUsage, usage);
         if (options.cost !== undefined) {
-          targetCost += await calculateCost(
+          caseTargetCost = await calculateCost(
             options.cost.calculate({
               kind: "target",
               suiteName: options.name,
               case: result.case,
-              output: result.output,
+              output: result.output as Output,
               usage,
             }),
           );
+          targetCost += caseTargetCost;
         }
       }
     }
@@ -454,24 +619,41 @@ async function aggregateResult<
       const usage = metricResult.outcome.usage;
       if (usage === undefined) continue;
       assertUsage(usage, `Evaluation usage for metric ${metricResult.metricName}`);
+      caseEvaluationUsage = UsageValue.add(caseEvaluationUsage, usage);
       evaluationUsage = UsageValue.add(evaluationUsage, usage);
-      if (options.cost !== undefined && result.output !== undefined) {
+      if (options.cost !== undefined && result.targetStatus === "succeeded") {
         const metric = options.metrics.find(
           (candidate) => candidate.name === metricResult.metricName,
         );
         if (metric !== undefined) {
-          evaluationCost += await calculateCost(
+          const metricCost = await calculateCost(
             options.cost.calculate({
               kind: "evaluation",
               suiteName: options.name,
               case: result.case,
-              output: result.output,
+              output: result.output as Output,
               metric,
               usage,
             }),
           );
+          metricResult.cost = metricCost;
+          caseEvaluationCost += metricCost;
+          evaluationCost += metricCost;
         }
       }
+    }
+    result.usage = {
+      target: caseTargetUsage,
+      evaluation: caseEvaluationUsage,
+      total: UsageValue.add(caseTargetUsage, caseEvaluationUsage),
+    };
+    if (options.cost !== undefined) {
+      result.cost = {
+        currency: options.cost.currency,
+        target: caseTargetCost,
+        evaluation: caseEvaluationCost,
+        total: caseTargetCost + caseEvaluationCost,
+      };
     }
   }
 
@@ -509,7 +691,12 @@ async function resolveTargetUsage<Input, Output, Expected>(
   const usage =
     options.targetUsage === undefined
       ? usageFromOutput(output)
-      : await options.targetUsage({ suiteName: options.name, case: testCase, output });
+      : await options.targetUsage({
+          suiteName: options.name,
+          case: testCase,
+          output,
+          signal: new AbortController().signal,
+        });
   if (usage !== undefined) assertUsage(usage, `Target usage for case ${testCase.id}`);
   return usage;
 }
@@ -539,6 +726,25 @@ async function calculateCost(value: number | Promise<number>): Promise<number> {
 function validateSuiteOptions<Input, Output, Expected>(
   options: RunEvalSuiteOptions<Input, Output, Expected>,
 ): void {
+  if (options.name.trim().length === 0) {
+    throw new TypeError("Evaluation suite name must not be empty");
+  }
+  if (options.cases.length === 0) {
+    throw new TypeError("Evaluation suite must contain at least one case");
+  }
+  if (options.metrics.length === 0) {
+    throw new TypeError("Evaluation suite must contain at least one metric");
+  }
+  for (const testCase of options.cases) {
+    if (testCase.id.trim().length === 0) {
+      throw new TypeError("Evaluation case id must not be empty");
+    }
+  }
+  for (const metric of options.metrics) {
+    if (metric.name.trim().length === 0) {
+      throw new TypeError("Evaluation metric name must not be empty");
+    }
+  }
   assertUnique(
     options.cases.map((testCase) => testCase.id),
     "Evaluation case id",
@@ -550,6 +756,33 @@ function validateSuiteOptions<Input, Output, Expected>(
   if (options.cost !== undefined && options.cost.currency.trim().length === 0) {
     throw new TypeError("Evaluation cost currency must not be empty");
   }
+  for (const [label, value] of [
+    ["concurrency", options.concurrency],
+    ["targetConcurrency", options.targetConcurrency],
+    ["metricConcurrency", options.metricConcurrency],
+  ] as const) {
+    if (value !== undefined && (!Number.isSafeInteger(value) || value < 1)) {
+      throw new RangeError(`Evaluation ${label} must be a positive integer`);
+    }
+  }
+  if (
+    options.caseTimeoutMs !== undefined &&
+    (!Number.isSafeInteger(options.caseTimeoutMs) || options.caseTimeoutMs < 1)
+  ) {
+    throw new RangeError("Evaluation caseTimeoutMs must be a positive integer");
+  }
+  if (options.shard !== undefined) {
+    if (!Number.isSafeInteger(options.shard.count) || options.shard.count < 1) {
+      throw new RangeError("Evaluation shard count must be a positive integer");
+    }
+    if (
+      !Number.isSafeInteger(options.shard.index) ||
+      options.shard.index < 0 ||
+      options.shard.index >= options.shard.count
+    ) {
+      throw new RangeError("Evaluation shard index must be between 0 and count - 1");
+    }
+  }
 }
 
 function assertUnique(values: string[], label: string): void {
@@ -558,4 +791,40 @@ function assertUnique(values: string[], label: string): void {
     if (seen.has(value)) throw new TypeError(`${label} must be unique: ${value}`);
     seen.add(value);
   }
+}
+
+function selectCases<Input, Output, Expected>(
+  options: RunEvalSuiteOptions<Input, Output, Expected>,
+): readonly EvalCase<Input, Expected>[] {
+  const requested = options.caseIds === undefined ? undefined : new Set(options.caseIds);
+  if (requested !== undefined) {
+    assertUnique([...options.caseIds!], "Evaluation selected case id");
+    const available = new Set(options.cases.map((testCase) => testCase.id));
+    for (const id of requested) {
+      if (!available.has(id))
+        throw new TypeError(`Evaluation selected case id was not found: ${id}`);
+    }
+  }
+  const filtered = options.cases.filter(
+    (testCase, index) =>
+      (requested === undefined || requested.has(testCase.id)) &&
+      (options.caseFilter === undefined || options.caseFilter(testCase, index)),
+  );
+  if (options.shard === undefined) return filtered;
+  return filtered.filter((_, index) => index % options.shard!.count === options.shard!.index);
+}
+
+async function notifyProgress<Input, Output, Expected>(
+  options: RunEvalSuiteOptions<Input, Output, Expected>,
+  event: EvalProgressEvent<Input, Output, Expected>,
+): Promise<void> {
+  await options.onProgress?.(event);
+}
+
+function isAborted(signal: AbortSignal | undefined): boolean {
+  return signal?.aborted === true;
+}
+
+function suiteAbortReason(signal: AbortSignal | undefined): unknown {
+  return signal?.reason ?? new EvalAbortError();
 }

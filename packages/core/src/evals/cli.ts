@@ -26,9 +26,47 @@ export type EvalOutputWriters = {
   stderr?(text: string): void;
 };
 
+export type EvalRedactionContext = {
+  kind:
+    | "input"
+    | "expected"
+    | "context"
+    | "retrievalContext"
+    | "output"
+    | "score"
+    | "comment"
+    | "metadata"
+    | "error";
+  caseId?: string | undefined;
+  metricName?: string | undefined;
+};
+
+export type EvalRedactor = (value: unknown, context: EvalRedactionContext) => unknown;
+
 export type PrintEvalResultOptions = {
   format?: EvalOutputFormat | undefined;
   output?: EvalOutputWriters | undefined;
+  maxValueLength?: number | undefined;
+  redact?: EvalRedactor | undefined;
+};
+
+type EvalSuiteShape = {
+  cases: readonly { id: string }[];
+  metrics: readonly { name: string }[];
+};
+
+export type EvalExpectedOutcomesFor<Suite extends EvalSuiteShape> = Partial<
+  Record<
+    Suite["cases"][number]["id"],
+    Partial<Record<Suite["metrics"][number]["name"], EvalOutcomeStatus>>
+  >
+>;
+
+export type EvalExpectationsFor<Suite extends EvalSuiteShape> = Omit<
+  EvalExpectations,
+  "outcomes"
+> & {
+  outcomes?: EvalExpectedOutcomesFor<Suite> | undefined;
 };
 
 export type RunEvalCliOptions<
@@ -47,6 +85,8 @@ export type RunEvalCliOptions<
   exitCode?: boolean | undefined;
   expectations?: EvalExpectations | undefined;
   output?: EvalOutputWriters | undefined;
+  maxValueLength?: number | undefined;
+  redact?: EvalRedactor | undefined;
 };
 
 export class EvalAssertionError extends Error {
@@ -59,6 +99,23 @@ export class EvalAssertionError extends Error {
   }
 }
 
+export function defineEvalExpectations<const Suite extends EvalSuiteShape>(
+  _suite: Suite,
+  expectations: EvalExpectationsFor<NoInfer<Suite>>,
+): EvalExpectationsFor<Suite> {
+  return expectations;
+}
+
+export function formatEvalResult(
+  result: EvalSuiteResult<unknown, unknown, unknown>,
+  options: Omit<PrintEvalResultOptions, "output"> = {},
+): string {
+  const format = options.format ?? "pretty";
+  if (format === "quiet") return "";
+  validatePrintOptions(options);
+  return format === "json" ? jsonResult(result, options) : prettyResult(result, options);
+}
+
 export function printEvalResult(
   result: EvalSuiteResult<unknown, unknown, unknown>,
   options: PrintEvalResultOptions = {},
@@ -66,7 +123,7 @@ export function printEvalResult(
   const format = options.format ?? "pretty";
   if (format === "quiet") return;
   const write = options.output?.stdout ?? ((text: string) => process.stdout.write(text));
-  write(`${format === "json" ? jsonResult(result) : prettyResult(result)}\n`);
+  write(`${formatEvalResult(result, options)}\n`);
 }
 
 export function evalExitCode(
@@ -117,11 +174,12 @@ export async function runEvalCli<
 >(
   options: RunEvalCliOptions<Input, Output, Expected, Metrics>,
 ): Promise<EvalSuiteResult<Input, Output, Expected, Metrics>> {
-  const { format, exitCode, expectations, output, ...suiteOptions } = options;
+  const { format, exitCode, expectations, output, maxValueLength, redact, ...suiteOptions } =
+    options;
   const result = await runEvalSuite(
     suiteOptions as RunEvalSuiteOptions<Input, Output, Expected, Metrics>,
   );
-  printEvalResult(result, { format, output });
+  printEvalResult(result, { format, output, maxValueLength, redact });
   const code = evalExitCode(result, expectations);
   const mismatches = expectationMismatches(result, expectations);
   if (mismatches.length > 0 && format !== "quiet") {
@@ -136,7 +194,10 @@ export async function runEvalCli<
   return result;
 }
 
-function prettyResult(result: EvalSuiteResult<unknown, unknown, unknown>): string {
+function prettyResult(
+  result: EvalSuiteResult<unknown, unknown, unknown>,
+  options: Omit<PrintEvalResultOptions, "output">,
+): string {
   const lines = [
     `${result.name} (${result.run.id})`,
     `Cases: ${totalsText(result.cases)}`,
@@ -144,14 +205,36 @@ function prettyResult(result: EvalSuiteResult<unknown, unknown, unknown>): strin
   ];
   for (const caseResult of result.results) {
     lines.push(``, `[${caseResult.outcome.toUpperCase()}] ${caseResult.case.id}`);
-    if (caseResult.output !== undefined) lines.push(`  output: ${displayValue(caseResult.output)}`);
-    if (caseResult.targetError !== undefined) {
-      lines.push(`  target error: ${errorText(caseResult.targetError)}`);
+    if (caseResult.targetStatus === "succeeded") {
+      lines.push(
+        `  output: ${displayValue(
+          redact(caseResult.output, options, { kind: "output", caseId: caseResult.case.id }),
+          options.maxValueLength,
+        )}`,
+      );
+    }
+    if (caseResult.targetStatus === "failed") {
+      lines.push(
+        `  target error: ${errorText(
+          redact(caseResult.targetError, options, { kind: "error", caseId: caseResult.case.id }),
+          options.maxValueLength,
+        )}`,
+      );
     }
     for (const metric of caseResult.metrics) {
       const parts = [`  - ${metric.metricName}: ${metric.outcome.outcome}`];
-      if (metric.outcome.score !== undefined)
-        parts.push(`score=${displayValue(metric.outcome.score)}`);
+      if (metric.outcome.score !== undefined) {
+        parts.push(
+          `score=${displayValue(
+            redact(metric.outcome.score, options, {
+              kind: "score",
+              caseId: caseResult.case.id,
+              metricName: metric.metricName,
+            }),
+            options.maxValueLength,
+          )}`,
+        );
+      }
       if (metric.threshold !== undefined) parts.push(`threshold=${metric.threshold}`);
       if (metric.direction !== undefined) parts.push(`direction=${metric.direction}`);
       if (!metric.required) parts.push("optional");
@@ -159,7 +242,18 @@ function prettyResult(result: EvalSuiteResult<unknown, unknown, unknown>): strin
       const explanation =
         metric.outcome.comment ??
         (metric.outcome.outcome === "invalid" ? metric.outcome.reason : undefined);
-      if (explanation !== undefined) lines.push(`    ${explanation}`);
+      if (explanation !== undefined) {
+        lines.push(
+          `    ${displayValue(
+            redact(explanation, options, {
+              kind: "comment",
+              caseId: caseResult.case.id,
+              metricName: metric.metricName,
+            }),
+            options.maxValueLength,
+          )}`,
+        );
+      }
     }
   }
   lines.push(
@@ -175,14 +269,18 @@ function prettyResult(result: EvalSuiteResult<unknown, unknown, unknown>): strin
   return lines.join("\n");
 }
 
-function jsonResult(result: EvalSuiteResult<unknown, unknown, unknown>): string {
+function jsonResult(
+  result: EvalSuiteResult<unknown, unknown, unknown>,
+  options: Omit<PrintEvalResultOptions, "output">,
+): string {
   return JSON.stringify(
-    result,
+    redactJsonResult(result, options),
     (_key, value: unknown) => {
       if (value instanceof Error) {
         return { name: value.name, message: value.message, stack: value.stack };
       }
       if (value instanceof RegExp) return String(value);
+      if (typeof value === "string") return truncate(value, options.maxValueLength);
       return value;
     },
     2,
@@ -308,15 +406,154 @@ function totalsText(totals: EvalTotals): string {
   return `${totals.total} total / ${totals.passed} pass / ${totals.failed} fail / ${totals.invalid} invalid`;
 }
 
-function displayValue(value: unknown): string {
-  if (typeof value === "string") return value;
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return String(value);
+function displayValue(value: unknown, maxValueLength?: number): string {
+  let text: string;
+  if (typeof value === "string") text = value;
+  else {
+    try {
+      text = JSON.stringify(value) ?? String(value);
+    } catch {
+      text = String(value);
+    }
   }
+  return truncate(text, maxValueLength);
 }
 
-function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : displayValue(error);
+function errorText(error: unknown, maxValueLength?: number): string {
+  return truncate(error instanceof Error ? error.message : displayValue(error), maxValueLength);
+}
+
+function truncate(value: string, maxValueLength: number | undefined): string {
+  return maxValueLength !== undefined && value.length > maxValueLength
+    ? `${value.slice(0, maxValueLength)}…`
+    : value;
+}
+
+function redact(
+  value: unknown,
+  options: Omit<PrintEvalResultOptions, "output">,
+  context: EvalRedactionContext,
+): unknown {
+  return options.redact === undefined ? value : options.redact(value, context);
+}
+
+function redactJsonResult(
+  result: EvalSuiteResult<unknown, unknown, unknown>,
+  options: Omit<PrintEvalResultOptions, "output">,
+): unknown {
+  return {
+    ...result,
+    run: {
+      ...result.run,
+      metadata:
+        result.run.metadata === undefined
+          ? undefined
+          : (redact(result.run.metadata, options, {
+              kind: "metadata",
+            }) as typeof result.run.metadata),
+    },
+    results: result.results.map((caseResult) => ({
+      ...caseResult,
+      case: {
+        ...caseResult.case,
+        input: redact(caseResult.case.input, options, {
+          kind: "input",
+          caseId: caseResult.case.id,
+        }),
+        expected: redact(caseResult.case.expected, options, {
+          kind: "expected",
+          caseId: caseResult.case.id,
+        }),
+        context: redact(caseResult.case.context, options, {
+          kind: "context",
+          caseId: caseResult.case.id,
+        }),
+        retrievalContext: redact(caseResult.case.retrievalContext, options, {
+          kind: "retrievalContext",
+          caseId: caseResult.case.id,
+        }),
+        metadata:
+          caseResult.case.metadata === undefined
+            ? undefined
+            : (redact(caseResult.case.metadata, options, {
+                kind: "metadata",
+                caseId: caseResult.case.id,
+              }) as typeof caseResult.case.metadata),
+      },
+      output:
+        caseResult.targetStatus === "succeeded"
+          ? redact(caseResult.output, options, { kind: "output", caseId: caseResult.case.id })
+          : undefined,
+      targetError:
+        caseResult.targetStatus === "failed"
+          ? redact(caseResult.targetError, options, {
+              kind: "error",
+              caseId: caseResult.case.id,
+            })
+          : undefined,
+      metrics: caseResult.metrics.map((metric) => ({
+        ...metric,
+        reporterErrors: metric.reporterErrors.map((error) =>
+          redact(error, options, {
+            kind: "error",
+            caseId: caseResult.case.id,
+            metricName: metric.metricName,
+          }),
+        ),
+        outcome: redactOutcome(metric.outcome, options, caseResult.case.id, metric.metricName),
+      })),
+      scores: Object.fromEntries(
+        caseResult.metrics.map((metric) => [
+          metric.metricName,
+          redactOutcome(metric.outcome, options, caseResult.case.id, metric.metricName),
+        ]),
+      ),
+    })),
+    reporterErrors: result.reporterErrors.map((error) => redact(error, options, { kind: "error" })),
+  };
+}
+
+function redactOutcome(
+  outcome: EvalSuiteResult<
+    unknown,
+    unknown,
+    unknown
+  >["results"][number]["metrics"][number]["outcome"],
+  options: Omit<PrintEvalResultOptions, "output">,
+  caseId: string,
+  metricName: string,
+): unknown {
+  return {
+    ...outcome,
+    ...(outcome.score === undefined
+      ? {}
+      : { score: redact(outcome.score, options, { kind: "score", caseId, metricName }) }),
+    ...(outcome.comment === undefined
+      ? {}
+      : { comment: redact(outcome.comment, options, { kind: "comment", caseId, metricName }) }),
+    ...(!("reason" in outcome) || outcome.reason === undefined
+      ? {}
+      : { reason: redact(outcome.reason, options, { kind: "comment", caseId, metricName }) }),
+    ...(outcome.metadata === undefined
+      ? {}
+      : {
+          metadata: redact(outcome.metadata, options, {
+            kind: "metadata",
+            caseId,
+            metricName,
+          }),
+        }),
+    ...(!("error" in outcome) || outcome.error === undefined
+      ? {}
+      : { error: redact(outcome.error, options, { kind: "error", caseId, metricName }) }),
+  };
+}
+
+function validatePrintOptions(options: Omit<PrintEvalResultOptions, "output">): void {
+  if (
+    options.maxValueLength !== undefined &&
+    (!Number.isSafeInteger(options.maxValueLength) || options.maxValueLength < 1)
+  ) {
+    throw new RangeError("Evaluation maxValueLength must be a positive integer.");
+  }
 }

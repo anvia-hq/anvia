@@ -5,6 +5,8 @@ import {
   answerRelevancy,
   type CompletionModel,
   contains,
+  containsAll,
+  createEvalTypes,
   defineEvalCases,
   defineEvalSuite,
   type EvalCasesForMetrics,
@@ -12,7 +14,10 @@ import {
   type EvalReporter,
   exactMatch,
   faithfulness,
+  gEval,
   hallucination,
+  matches,
+  notContains,
   runEvalSuite,
   selectPromptOutput,
 } from "./helpers/imports";
@@ -61,7 +66,7 @@ describe("eval type safety", () => {
   });
 
   it("binds custom metric input, output, and expected types once", () => {
-    const typedSuite = defineEvalSuite<string, PromptResult, string>();
+    const typedSuite = createEvalTypes<string, PromptResult, string>();
     const noLeak = typedSuite.defineMetric({
       name: "no_secret_leak",
       dataType: "BOOLEAN",
@@ -82,6 +87,34 @@ describe("eval type safety", () => {
       // @ts-expect-error BOOLEAN metrics must produce boolean scores.
       dataType: "BOOLEAN",
       evaluate: () => EvalOutcome.pass("good"),
+    });
+  });
+
+  it("applies implicit case requirements consistently through runEvalSuite", () => {
+    const cases = defineEvalCases([{ id: "case", input: "hello" }]);
+
+    runEvalSuite({
+      name: "missing expected",
+      // @ts-expect-error notContains() reads case.expected when no expected option is configured.
+      cases,
+      target: (input) => input,
+      metrics: [notContains()],
+    });
+
+    defineEvalSuite({
+      name: "missing lists",
+      // @ts-expect-error containsAll() reads case.expected when no expected option is configured.
+      cases,
+      target: (input) => input,
+      metrics: [containsAll({})],
+    });
+
+    defineEvalSuite({
+      name: "missing regex",
+      // @ts-expect-error matches() reads case.expected when no expected option is configured.
+      cases,
+      target: (input) => input,
+      metrics: [matches({})],
     });
   });
 
@@ -158,6 +191,42 @@ describe("eval type safety", () => {
       metrics: [
         hallucination({ model, context: ["Coverage lasts 30 days."] }),
         faithfulness({ model, retrievalContext: ["Coverage lasts 30 days."] }),
+      ],
+    });
+  });
+
+  it("derives G-Eval case requirements from selected parameters", () => {
+    const model = null as unknown as CompletionModel;
+    const cases = defineEvalCases([{ id: "correctness", input: "question" }]);
+
+    defineEvalSuite({
+      name: "missing G-Eval references",
+      // @ts-expect-error expectedOutput and context require matching case fields.
+      cases,
+      target: () => "answer",
+      metrics: [
+        gEval({
+          name: "correctness",
+          model,
+          evaluationParams: ["actualOutput", "expectedOutput", "context"],
+          criteria: "Be correct and grounded.",
+        }),
+      ],
+    });
+
+    defineEvalSuite({
+      name: "explicit G-Eval references",
+      cases,
+      target: () => "answer",
+      metrics: [
+        gEval({
+          name: "correctness",
+          model,
+          evaluationParams: ["actualOutput", "expectedOutput", "context"],
+          criteria: "Be correct and grounded.",
+          expected: () => "answer",
+          context: ["answer"],
+        }),
       ],
     });
   });

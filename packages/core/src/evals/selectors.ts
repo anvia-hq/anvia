@@ -1,5 +1,11 @@
 import { defaultOutputValue, formatValue } from "./format";
-import type { EvalMetricArgs, SelectorOrValue, ValueSelector } from "./types";
+import type {
+  EvalMetricArgs,
+  EvalOutcomeStatus,
+  EvalSuiteResult,
+  SelectorOrValue,
+  ValueSelector,
+} from "./types";
 
 export function selectPromptOutput(args: EvalMetricArgs<unknown, unknown, unknown>): string {
   if (
@@ -11,6 +17,16 @@ export function selectPromptOutput(args: EvalMetricArgs<unknown, unknown, unknow
     throw new TypeError("selectPromptOutput requires an output object with a string output field.");
   }
   return args.output.output;
+}
+
+export function selectEvalCaseIds(
+  result: EvalSuiteResult<unknown, unknown, unknown>,
+  outcomes: readonly EvalOutcomeStatus[] = ["fail", "invalid"],
+): string[] {
+  const selected = new Set(outcomes);
+  return result.results
+    .filter((caseResult) => selected.has(caseResult.outcome))
+    .map((caseResult) => caseResult.case.id);
 }
 
 export async function resolveActual<Input, Output, Expected>(
@@ -25,7 +41,14 @@ export async function resolveActualText<Input, Output, Expected>(
   args: EvalMetricArgs<Input, Output, Expected>,
 ): Promise<string> {
   const value = selector === undefined ? defaultOutputValue(args.output) : await selector(args);
-  return typeof value === "string" ? value : JSON.stringify(value);
+  if (typeof value === "string") return value;
+  try {
+    const serialized = JSON.stringify(value);
+    if (serialized !== undefined) return serialized;
+  } catch {
+    // The caller receives one consistent boundary error below.
+  }
+  throw new TypeError("Text metric actual value must be a string or JSON-serializable value.");
 }
 
 export async function resolveExpected<Input, Output, Expected, Value>(

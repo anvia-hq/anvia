@@ -561,6 +561,7 @@ describe("advanced eval metrics", () => {
 
     const missingContext = await runEvalSuite({
       name: "missing-context",
+      // @ts-expect-error this test exercises runtime validation for missing implicit contexts.
       cases: [{ id: "case", input: "Question" }],
       target: () => "Answer",
       metrics: [

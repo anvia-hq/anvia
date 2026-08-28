@@ -1,12 +1,13 @@
 export * from "./advanced-metrics";
 export * from "./agent-target";
 export * from "./cli";
+export { EvalAbortError, EvalTimeoutError } from "./execution";
 export { defineMetric } from "./metric";
 export * from "./metrics";
 export * from "./outcome";
 export { defaultEvalTraceSelector, projectEvalOutcome, resolveEvalTraceRef } from "./reporting";
-export { EvalReporterDispatchError, runEvalSuite } from "./runner";
-export { selectPromptOutput } from "./selectors";
+export { EvalFailFastError, EvalReporterDispatchError, runEvalSuite } from "./runner";
+export { selectEvalCaseIds, selectPromptOutput } from "./selectors";
 export * from "./suite";
 export type {
   AnyEvalMetric,
@@ -14,11 +15,13 @@ export type {
   EvalCase,
   EvalCaseRequirements,
   EvalCaseResult,
+  EvalCasesForMetrics,
   EvalCostCalculatorArgs,
   EvalCostOptions,
   EvalCostSummary,
   EvalDataType,
   EvalMetadata,
+  EvalInvalidKind,
   EvalMetric,
   EvalMetricArgs,
   EvalMetricDescriptor,
@@ -29,6 +32,7 @@ export type {
   EvalReportArgs,
   EvalReporter,
   EvalReporterErrorPolicy,
+  EvalProgressEvent,
   EvalRunContext,
   EvalRunEndArgs,
   EvalRunOptions,
@@ -38,12 +42,14 @@ export type {
   EvalScoreProjection,
   EvalSuiteResult,
   EvalTarget,
+  EvalTargetContext,
   EvalTargetUsageSelector,
   EvalTotals,
   EvalTraceCarrier,
   EvalTraceRef,
   EvalTraceSelector,
   EvalTraceSelectorArgs,
+  EvalShard,
   EvalTurn,
   EvalUsageSummary,
   RunEvalSuiteOptions,

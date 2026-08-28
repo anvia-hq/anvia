@@ -1,5 +1,14 @@
 # @anvia/lens
 
+## 1.0.6
+
+### Patch Changes
+
+- 344866a: Add trace-correlated runtime scoring with explicit end-user feedback provenance, and expose it
+  through both the OpenTelemetry scorer and `LensClient.score()`.
+- Updated dependencies [344866a]
+  - @anvia/otel@1.0.6
+
 ## 1.0.5
 
 ### Patch Changes

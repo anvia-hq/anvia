@@ -1,11 +1,12 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   resolve: {
     alias: {
-      "@anvia/core/tool": new URL("../core/src/tool/index.ts", import.meta.url).pathname,
-      "@anvia/core": new URL("../core/src/index.ts", import.meta.url).pathname,
-      "@anvia/sandbox": new URL("../tool-sandbox/src/index.ts", import.meta.url).pathname,
+      "@anvia/core/tool": fileURLToPath(new URL("../core/src/tool/index.ts", import.meta.url)),
+      "@anvia/core": fileURLToPath(new URL("../core/src/index.ts", import.meta.url)),
+      "@anvia/sandbox": fileURLToPath(new URL("../tool-sandbox/src/index.ts", import.meta.url)),
     },
   },
   test: {

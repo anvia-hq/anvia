@@ -1,6 +1,6 @@
 {
   "name": "@anvia/anthropic",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Anthropic provider adapter for Anvia.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",

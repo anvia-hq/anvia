@@ -1,6 +1,6 @@
 {
   "name": "@anvia/graph",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "Provider-neutral knowledge graph primitives for Anvia.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",

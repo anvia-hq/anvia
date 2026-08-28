@@ -1,6 +1,6 @@
 {
   "name": "@anvia/milvus",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Milvus vector store adapter for Anvia.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",

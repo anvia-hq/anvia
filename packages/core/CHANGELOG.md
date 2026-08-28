@@ -1,5 +1,14 @@
 # @anvia/core
 
+## 1.0.8
+
+### Patch Changes
+
+- 18344a2: Improve evaluation developer experience with structural exact matching, explicit target status,
+  structured invalid errors, per-case timing/usage/cost diagnostics, typed case requirements and CI
+  expectations, safe result formatting, progress events, timeouts, abort signals, independent target
+  and metric concurrency, filtering, sharding, fail-fast execution, and rerun case selection.
+
 ## 1.0.7
 
 ### Patch Changes

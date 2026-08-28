@@ -1,5 +1,13 @@
 # @anvia/react-ui
 
+## 1.0.5
+
+### Patch Changes
+
+- Updated dependencies [c7fb0f8]
+  - @anvia/client@1.0.5
+  - @anvia/react@1.0.5
+
 ## 1.0.4
 
 ### Patch Changes

@@ -100,7 +100,7 @@ function smokeTestSource() {
 import assert from "node:assert/strict";
 import { createHttpClientTransport } from "@anvia/client";
 import { Agent } from "@anvia/core";
-import { extractPdfText } from "@anvia/core/documents";
+import { chunkText } from "@anvia/core/documents";
 import { toReadableStream } from "@anvia/core/streaming";
 import { McpClient } from "@anvia/mcp";
 import { OpenAIClient } from "@anvia/openai";
@@ -108,7 +108,7 @@ import { createClientStreamResponse } from "@anvia/server";
 
 assert.equal(typeof Agent, "function");
 assert.equal(typeof createHttpClientTransport, "function");
-assert.equal(typeof extractPdfText, "function");
+assert.equal(typeof chunkText, "function");
 assert.equal(typeof toReadableStream, "function");
 assert.equal(typeof McpClient, "function");
 assert.equal(typeof createClientStreamResponse, "function");

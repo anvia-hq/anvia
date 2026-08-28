@@ -368,7 +368,7 @@ describe("public exports", () => {
     expect(imageGeneration).not.toHaveProperty("imageGenerationRequest");
     expect(imageGeneration).not.toHaveProperty("ImageGenerationRequestBuilder");
     expect(documents).toHaveProperty("chunkText");
-    expect(documents).toHaveProperty("extractPdfText");
+    expect(documents).not.toHaveProperty("extractPdfText");
     expect(documents).not.toHaveProperty("FileLoader");
     expect(documents).not.toHaveProperty("PdfFileLoader");
     expect(publicCore).not.toHaveProperty("chunkText");

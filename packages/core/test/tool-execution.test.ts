@@ -10,6 +10,8 @@ import {
   ToolJsonError,
   ToolNotFoundError,
   ToolOutput,
+  ToolResultSerializationError,
+  normalizeToolResultOutput,
 } from "./helpers/imports";
 
 const model: CompletionModel = {
@@ -249,6 +251,19 @@ describe("Agent tool execution", () => {
       type: "content",
       value: content,
     });
+  });
+
+  it("does not invoke accessors while classifying structured tool output", () => {
+    let getterCalls = 0;
+    const output = Object.defineProperty({ content: [] }, Symbol.for("anvia.tool-output.content"), {
+      get() {
+        getterCalls += 1;
+        throw new Error("marker getter should not run");
+      },
+    });
+
+    expect(() => normalizeToolResultOutput(output)).toThrow(ToolResultSerializationError);
+    expect(getterCalls).toBe(0);
   });
 
   it("rejects malformed rich tool result content", async () => {

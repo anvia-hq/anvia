@@ -121,11 +121,8 @@ export function toolResultContentToText(content: readonly ToolResultContentPart[
 }
 
 function isRichToolOutput(value: unknown): value is RichToolOutput {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    (value as { [richToolOutput]?: unknown })[richToolOutput] === true
-  );
+  if (typeof value !== "object" || value === null) return false;
+  return Object.getOwnPropertyDescriptor(value, richToolOutput)?.value === true;
 }
 
 export function parseToolArgs(args: string): JsonValue {

@@ -10,7 +10,7 @@ Requires Node.js 20 or newer, or Bun 1.3.14, and uses the official MCP TypeScrip
 ## Installation
 
 ```sh
-pnpm add @anvia/mcp @anvia/core
+pnpm add @anvia/mcp@rc @anvia/core@rc
 ```
 
 ### Bun
@@ -18,7 +18,7 @@ pnpm add @anvia/mcp @anvia/core
 Bun 1.3.14 is the currently tested and supported runtime baseline:
 
 ```sh
-bun add @anvia/mcp @anvia/core
+bun add @anvia/mcp@rc @anvia/core@rc
 ```
 
 Compatibility tests cover modern protocol negotiation, Streamable HTTP with chunked SSE responses,

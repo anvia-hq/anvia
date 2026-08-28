@@ -551,19 +551,12 @@ enabled.
 
 ## Documents
 
-Applications own file discovery, file reads, source metadata, and per-file error policy. Core only
-provides deterministic in-memory chunking and scoped PDF text extraction:
-
-PDF extraction uses the optional `pdfjs-dist` peer dependency. Install it in applications that call
-`extractPdfText`:
-
-```sh
-pnpm add pdfjs-dist
-```
+Applications own file discovery, file reads, document parsing, source metadata, and per-file error
+policy. Core only provides deterministic in-memory text chunking:
 
 ```ts
 import { readFile } from "node:fs/promises";
-import { chunkText, extractPdfText } from "@anvia/core/documents";
+import { chunkText } from "@anvia/core/documents";
 
 const text = await readFile("guide.txt", "utf8");
 const chunks = chunkText({
@@ -573,19 +566,12 @@ const chunks = chunkText({
   overlap: 100,
   separators: ["\n\n", "\n", " "],
 });
-
-const { pages } = await extractPdfText({
-  data: new Uint8Array(await readFile("guide.pdf")),
-  abortSignal,
-});
 ```
 
 Use `strategy: "fixed"` for deterministic sliding windows. Recursive chunking requires an explicit
 separator order and falls back to fixed-size splitting when none of those separators can divide an
 oversized section. Chunk offsets use JavaScript string indices and always identify the exact source
-slice. PDF pages are one-based, and the parser task is disposed before extraction settles.
-If parsing or abort handling fails together with parser cleanup, extraction rejects with an
-`AggregateError` containing the operation failure first and the cleanup failure second.
+slice.
 
 For the common vector ingestion path, embed and upsert raw text with one call:
 
@@ -676,7 +662,7 @@ connection ownership, URL safety, and cleanup.
 - `skills`: local skill loading
 - `observability`: observer interfaces for runs, generations, and tool calls
 - `evals`: evaluation helpers and reporters
-- `documents`: in-memory text chunking and PDF text extraction
+- `documents`: deterministic in-memory text chunking
 - `speech-generation`, `image-generation`, `transcription`: provider-neutral media interfaces
 
 ## Development

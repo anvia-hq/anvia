@@ -1,10 +1,6 @@
 import { readFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { chunkText, chunkTextDocuments, extractPdfText } from "../src/documents";
-
-const fixtureDir = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "loaders");
+import { chunkText, chunkTextDocuments } from "../src/documents";
 
 describe("chunkText", () => {
   it("creates deterministic fixed chunks with overlap and exact offsets", () => {
@@ -237,41 +233,7 @@ describe("chunkTextDocuments", () => {
   });
 });
 
-describe("extractPdfText", () => {
-  it("extracts one-based PDF pages without invented trailing newlines", async () => {
-    const data = new Uint8Array(await readFile(join(fixtureDir, "pages.pdf")));
-
-    await expect(extractPdfText({ data })).resolves.toEqual({
-      pages: [
-        { pageNumber: 1, text: "Page 1" },
-        { pageNumber: 2, text: "Page 2" },
-        { pageNumber: 3, text: "Page 3" },
-      ],
-    });
-  });
-
-  it("rejects malformed PDF bytes", async () => {
-    await expect(extractPdfText({ data: new Uint8Array([1, 2, 3]) })).rejects.toThrow();
-  });
-
-  it("propagates a signal aborted before parsing", async () => {
-    const controller = new AbortController();
-    const reason = new Error("stop parsing");
-    controller.abort(reason);
-
-    await expect(
-      extractPdfText({ data: new Uint8Array([1]), abortSignal: controller.signal }),
-    ).rejects.toBe(reason);
-  });
-
-  it("rejects invalid runtime inputs", async () => {
-    await expect(extractPdfText(null as never)).rejects.toThrow(TypeError);
-    await expect(extractPdfText({ data: new ArrayBuffer(1) } as never)).rejects.toThrow(TypeError);
-    await expect(
-      extractPdfText({ data: new Uint8Array([1]), abortSignal: {} as AbortSignal }),
-    ).rejects.toThrow(TypeError);
-  });
-
+describe("@anvia/core/documents", () => {
   it("publishes only the documents subpath", async () => {
     const packageJson = JSON.parse(
       await readFile(new URL("../package.json", import.meta.url), "utf8"),

@@ -1,5 +1,13 @@
 # @anvia/core
 
+## 1.0.6
+
+### Patch Changes
+
+- 32cffc0: Remove local PDF text extraction and the optional `pdfjs-dist` dependency from Core. PDF attachment
+  contracts remain available for provider adapters, while applications retain ownership of document
+  parsing before using Core text chunking.
+
 ## 1.0.5
 
 ### Patch Changes

@@ -16,7 +16,7 @@ pnpm add @anvia/openai @anvia/core
 Bun 1.3.14 is the currently tested and supported runtime baseline:
 
 ```sh
-bun add @anvia/openai @anvia/core
+bun add @anvia/openai@rc @anvia/core@rc
 ```
 
 Compatibility tests exercise the OpenAI SDK's JSON, streaming, abort, multipart, and binary media

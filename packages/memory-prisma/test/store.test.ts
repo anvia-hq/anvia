@@ -26,6 +26,7 @@ type SessionRow = {
   sessionId: string;
   userId?: string | undefined;
   metadata: JsonObject;
+  compactionState?: unknown;
 };
 
 type MessageRow = {
@@ -64,12 +65,14 @@ type UpsertArgs = {
     sessionId: string;
     userId: string | null;
     metadata: JsonObject;
+    compactionState?: unknown;
   };
   create: {
     scopeKey: string;
     sessionId: string;
     userId?: string | undefined;
     metadata: JsonObject;
+    compactionState?: unknown;
   };
 };
 
@@ -78,7 +81,9 @@ type DeleteManyArgs = {
 };
 
 type FindManyArgs = {
-  where: { memorySession: { scopeKey: string } } | { memorySessionId: string };
+  where:
+    | { memorySession: { scopeKey: string } }
+    | { memorySessionId: string; position?: { gte: number } };
 };
 
 type FindFirstArgs = {
@@ -109,6 +114,9 @@ class FakePrisma {
         existing.sessionId = args.update.sessionId;
         existing.userId = args.update.userId ?? undefined;
         existing.metadata = args.update.metadata;
+        if ("compactionState" in args.update) {
+          existing.compactionState = args.update.compactionState;
+        }
         return { id: existing.id };
       }
 
@@ -120,6 +128,9 @@ class FakePrisma {
       };
       if (args.create.userId !== undefined) {
         session.userId = args.create.userId;
+      }
+      if (args.create.compactionState !== undefined) {
+        session.compactionState = args.create.compactionState;
       }
       this.nextSessionId += 1;
       this.sessions.set(args.where.scopeKey, session);
@@ -160,14 +171,18 @@ class FakePrisma {
         }));
     },
     findUnique: async (rawArgs: unknown) => {
-      const args = rawArgs as { where: { id: string } };
-      const session = [...this.sessions.values()].find((item) => item.id === args.where.id);
+      const args = rawArgs as { where: { id?: string; scopeKey?: string } };
+      const session =
+        args.where.scopeKey === undefined
+          ? [...this.sessions.values()].find((item) => item.id === args.where.id)
+          : this.sessions.get(args.where.scopeKey);
       if (session === undefined) return null;
       return {
         id: session.id,
         sessionId: session.sessionId,
         userId: session.userId ?? null,
         metadata: session.metadata,
+        compactionState: session.compactionState ?? null,
         createdAt: new Date("2026-07-17T01:00:00.000Z"),
         updatedAt: new Date("2026-07-17T01:05:00.000Z"),
         _count: {
@@ -182,9 +197,10 @@ class FakePrisma {
     findMany: async (rawArgs: unknown) => {
       const args = rawArgs as FindManyArgs;
       if ("memorySessionId" in args.where) {
-        const { memorySessionId } = args.where;
+        const { memorySessionId, position } = args.where;
         return this.messages
           .filter((message) => message.memorySessionId === memorySessionId)
+          .filter((message) => position === undefined || message.position >= position.gte)
           .sort((left, right) => left.position - right.position)
           .map((message) => ({
             id: message.id,
@@ -444,10 +460,14 @@ describe("PrismaMemoryStore", () => {
     ).resolves.toEqual({ status: "committed" });
     expect(prisma.transactionOptions.at(-1)).toEqual({ isolationLevel: "Serializable" });
     await expect(store.load({ scope: context })).resolves.toEqual([
-      replacement,
+      Message.user("old"),
+      Message.assistant("old answer"),
       Message.user("recent"),
       Message.assistant("recent answer"),
     ]);
+    await expect(compaction.snapshot({ scope: context })).resolves.toMatchObject({
+      messages: [replacement, Message.user("recent"), Message.assistant("recent answer")],
+    });
 
     const conversations = await store.inspector?.listConversations({ limit: 1 });
     const conversation = conversations?.[0];
@@ -456,9 +476,15 @@ describe("PrismaMemoryStore", () => {
         ? undefined
         : await store.inspector?.getConversation({ ref: conversation.ref });
     expect(inspected).toMatchObject({
-      messageCount: 3,
+      messageCount: 4,
       messages: [
-        { position: 1, runId: "memory-compaction:2", turn: 0, message: replacement },
+        { position: 0, runId: "run-1", turn: 1, message: Message.user("old") },
+        {
+          position: 1,
+          runId: "run-1",
+          turn: 1,
+          message: Message.assistant("old answer"),
+        },
         { position: 2, runId: "run-2", turn: 1, message: Message.user("recent") },
         {
           position: 3,
@@ -470,7 +496,7 @@ describe("PrismaMemoryStore", () => {
     });
   });
 
-  it("throws when the transaction client omits messages.deleteMany", async () => {
+  it("compacts without a messages deleteMany delegate", async () => {
     const prisma = new FakePrisma();
     const context = { sessionId: "thread-missing-delete", userId: "user-1" };
     const seed = createTestMemoryStore(prisma.client);
@@ -485,34 +511,21 @@ describe("PrismaMemoryStore", () => {
       throw new Error("Expected Prisma compaction capability");
     }
 
-    const store = createTestMemoryStoreFromDelegates({
+    let delegates: PrismaMemoryDelegates;
+    delegates = {
       sessions: prisma.agentMemorySession,
-      messages: prisma.agentMemoryMessage,
+      messages: {
+        findMany: prisma.agentMemoryMessage.findMany,
+        findFirst: prisma.agentMemoryMessage.findFirst,
+        createMany: prisma.agentMemoryMessage.createMany,
+      },
       errors: prisma.agentMemoryError,
       transaction: async (operation, options) => {
         prisma.transactionOptions.push(options);
-        return operation({
-          sessions: prisma.agentMemorySession,
-          messages: {
-            findMany: prisma.agentMemoryMessage.findMany,
-            findFirst: prisma.agentMemoryMessage.findFirst,
-            createMany: prisma.agentMemoryMessage.createMany,
-          },
-          transaction: async (nested) =>
-            nested({
-              sessions: prisma.agentMemorySession,
-              messages: {
-                findMany: prisma.agentMemoryMessage.findMany,
-                findFirst: prisma.agentMemoryMessage.findFirst,
-                createMany: prisma.agentMemoryMessage.createMany,
-              },
-              transaction: async () => {
-                throw new Error("Nested transactions are not supported.");
-              },
-            }),
-        });
+        return operation(delegates);
       },
-    });
+    };
+    const store = createTestMemoryStoreFromDelegates(delegates);
     const compaction = store.compaction;
     if (compaction === undefined) {
       throw new Error("Expected Prisma compaction capability");
@@ -526,88 +539,28 @@ describe("PrismaMemoryStore", () => {
         replacement: memoryCompactionMessage("summary", 2),
         runId: "memory-compaction:missing-delete",
       }),
-    ).rejects.toThrow("messages deleteMany delegate");
+    ).resolves.toEqual({ status: "committed" });
+    await expect(store.load({ scope: context })).resolves.toEqual([
+      Message.user("old"),
+      Message.assistant("old answer"),
+      Message.user("recent"),
+    ]);
   });
 
-  it("rolls back prefix deletes when deleteMany reports a count mismatch", async () => {
+  it("omits compaction when custom sessions cannot read checkpoint state", () => {
     const prisma = new FakePrisma();
-    const context = { sessionId: "thread-delete-mismatch", userId: "user-1" };
-    const seed = createTestMemoryStore(prisma.client);
-    await seed.append({
-      scope: context,
-      runId: "run-1",
-      turn: 1,
-      messages: [Message.user("old"), Message.assistant("old answer"), Message.user("recent")],
-    });
-    const before = await seed.load({ scope: context });
-    const snapshot = await seed.compaction?.snapshot({ scope: context });
-    if (snapshot === undefined) {
-      throw new Error("Expected Prisma compaction capability");
-    }
-
-    const store = createTestMemoryStoreFromDelegates({
-      sessions: prisma.agentMemorySession,
-      messages: {
-        ...prisma.agentMemoryMessage,
-        deleteMany: async () => ({ count: 0 }),
+    let delegates: PrismaMemoryDelegates;
+    delegates = {
+      sessions: {
+        upsert: prisma.agentMemorySession.upsert,
+        deleteMany: prisma.agentMemorySession.deleteMany,
       },
+      messages: prisma.agentMemoryMessage,
       errors: prisma.agentMemoryError,
-      transaction: async (operation, options) => {
-        prisma.transactionOptions.push(options);
-        const sessions = new Map(
-          [...prisma.sessions.entries()].map(([key, session]) => [key, { ...session }]),
-        );
-        const messages = prisma.messages.map((message) => ({ ...message }));
-        try {
-          return await operation({
-            sessions: prisma.agentMemorySession,
-            messages: {
-              findMany: prisma.agentMemoryMessage.findMany,
-              findFirst: prisma.agentMemoryMessage.findFirst,
-              createMany: prisma.agentMemoryMessage.createMany,
-              deleteMany: async () => {
-                prisma.messages.length = 0;
-                return { count: 0 };
-              },
-            },
-            errors: prisma.agentMemoryError,
-            transaction: async (nested) =>
-              nested({
-                sessions: prisma.agentMemorySession,
-                messages: prisma.agentMemoryMessage,
-                errors: prisma.agentMemoryError,
-                transaction: async () => {
-                  throw new Error("Nested transactions are not supported.");
-                },
-              }),
-          });
-        } catch (error) {
-          prisma.sessions.clear();
-          for (const [key, session] of sessions) {
-            prisma.sessions.set(key, session);
-          }
-          prisma.messages.length = 0;
-          prisma.messages.push(...messages);
-          throw error;
-        }
-      },
-    });
-    const compaction = store.compaction;
-    if (compaction === undefined) {
-      throw new Error("Expected Prisma compaction capability");
-    }
+      transaction: async (operation) => operation(delegates),
+    };
 
-    await expect(
-      compaction.replacePrefix({
-        scope: context,
-        revision: snapshot.revision,
-        messageCount: 2,
-        replacement: memoryCompactionMessage("summary", 2),
-        runId: "memory-compaction:delete-mismatch",
-      }),
-    ).resolves.toEqual({ status: "conflict" });
-    await expect(seed.load({ scope: context })).resolves.toEqual(before);
-    expect(prisma.transactionOptions.at(-1)).toEqual({ isolationLevel: "Serializable" });
+    expect(createTestMemoryStoreFromDelegates(delegates).compaction).toBeUndefined();
   });
 
   it("inspects conventional Prisma sessions when read delegates are available", async () => {

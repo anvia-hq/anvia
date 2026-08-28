@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { JsonObject, MemoryStore, Message } from "@anvia/core";
+import type { JsonObject, MemoryCompactionMessage, MemoryStore, Message } from "@anvia/core";
 import type {
   MemoryAppendOptions,
   MemoryCompactionCapability,
@@ -13,7 +13,7 @@ import type {
   MemoryInspector,
   MemoryScope,
 } from "@anvia/core/memory";
-import { createMemoryScopeKey } from "@anvia/core/memory";
+import { createMemoryScopeKey, isMemoryCompactionMessage } from "@anvia/core/memory";
 import { type SqliteMemoryClient, sqliteMemoryExistingClient } from "./client.js";
 import { parseMemoryMessage, serializeUnknownError } from "./message.js";
 import type {
@@ -51,6 +51,17 @@ type SqliteForeignKeysRow = {
 
 type SessionIdRow = {
   id: string;
+};
+
+type CompactionSessionRow = SessionIdRow & {
+  compaction_state_json: string | null;
+};
+
+type StoredCompactionState = {
+  version: 1;
+  generation: number;
+  summary: MemoryCompactionMessage;
+  summarizedThroughPosition: number;
 };
 
 type PositionRow = {
@@ -118,6 +129,7 @@ export class SqliteMemoryStore implements MemoryStore {
   async ensure(): Promise<void> {
     const database = await this.owner.nativeClient();
     database.exec(sqliteMemorySchemaSql(this.tables));
+    ensureCompactionStateColumn(database, this.tables.sessions);
     await this.validateDatabase(database);
   }
 
@@ -256,18 +268,22 @@ export class SqliteMemoryStore implements MemoryStore {
   }
 
   private async loadCompactionSnapshot(context: MemoryScope): Promise<MemoryCompactionSnapshot> {
-    const rows = (await this.database())
+    const database = await this.database();
+    const session = database
       .prepare(
-        `SELECT m.id, m.position, m.message_json
-         FROM ${this.tables.messages} m
-         INNER JOIN ${this.tables.sessions} s ON s.id = m.memory_session_id
-         WHERE s.scope_key = $scopeKey
-         ORDER BY m.position ASC`,
+        `SELECT id, compaction_state_json
+         FROM ${this.tables.sessions}
+         WHERE scope_key = $scopeKey`,
       )
-      .all({ $scopeKey: this.scopeKey(context) }) as CompactionMessageRow[];
+      .get({ $scopeKey: this.scopeKey(context) }) as CompactionSessionRow | undefined;
+    if (session === undefined) {
+      return { revision: compactionRevision([], undefined), messages: [] };
+    }
+    const state = this.compactionStateFromJson(session.compaction_state_json);
+    const rows = this.compactionRows(database, session.id, state);
     return {
-      revision: compactionRevision(rows),
-      messages: rows.map((row) => this.messageFromJson(row.message_json)),
+      revision: compactionRevision(rows, state),
+      messages: projectedMessages(rows, state, (row) => this.messageFromJson(row.message_json)),
     };
   }
 
@@ -281,56 +297,51 @@ export class SqliteMemoryStore implements MemoryStore {
 
     try {
       db.exec("BEGIN IMMEDIATE");
-      const rows = db
+      const session = db
         .prepare(
-          `SELECT m.id, m.position, m.message_json
-           FROM ${this.tables.messages} m
-           INNER JOIN ${this.tables.sessions} s ON s.id = m.memory_session_id
-           WHERE s.scope_key = $scopeKey
-           ORDER BY m.position ASC`,
+          `SELECT id, compaction_state_json
+           FROM ${this.tables.sessions}
+           WHERE scope_key = $scopeKey`,
         )
-        .all({ $scopeKey: scopeKey }) as CompactionMessageRow[];
-      if (compactionRevision(rows) !== input.revision || input.messageCount > rows.length) {
+        .get({ $scopeKey: scopeKey }) as CompactionSessionRow | undefined;
+      if (session === undefined) {
         db.exec("ROLLBACK");
         return { status: "conflict" };
       }
-      const boundary = rows[input.messageCount - 1];
-      if (boundary === undefined) {
+      const state = this.compactionStateFromJson(session.compaction_state_json);
+      const rows = this.compactionRows(db, session.id, state);
+      const activeRows = activeCompactionRows(rows, state);
+      const physicalPrefixCount = input.messageCount - (state === undefined ? 0 : 1);
+      if (
+        compactionRevision(rows, state) !== input.revision ||
+        physicalPrefixCount < 0 ||
+        physicalPrefixCount > activeRows.length
+      ) {
         db.exec("ROLLBACK");
         return { status: "conflict" };
       }
-      const sessionId = this.upsertSession(db, input.scope, scopeKey);
-      const deleteMessage = db.prepare(`DELETE FROM ${this.tables.messages} WHERE id = $id`);
-      for (const row of rows.slice(0, input.messageCount)) {
-        deleteMessage.run({ $id: row.id });
+      const summarizedThroughPosition =
+        physicalPrefixCount === 0
+          ? state?.summarizedThroughPosition
+          : activeRows[physicalPrefixCount - 1]?.position;
+      if (summarizedThroughPosition === undefined) {
+        db.exec("ROLLBACK");
+        return { status: "conflict" };
       }
+      const nextState: StoredCompactionState = {
+        version: 1,
+        generation: (state?.generation ?? 0) + 1,
+        summary: input.replacement,
+        summarizedThroughPosition,
+      };
       db.prepare(
-        `INSERT INTO ${this.tables.messages} (
-          id,
-          memory_session_id,
-          run_id,
-          turn,
-          position,
-          role,
-          message_json,
-          created_at
-        ) VALUES (
-          $id,
-          $memorySessionId,
-          $runId,
-          0,
-          $position,
-          $role,
-          $messageJson,
-          $now
-        )`,
+        `UPDATE ${this.tables.sessions}
+         SET compaction_state_json = $compactionStateJson,
+             updated_at = $now
+         WHERE id = $id`,
       ).run({
-        $id: randomUUID(),
-        $memorySessionId: sessionId,
-        $runId: input.runId,
-        $position: boundary.position,
-        $role: input.replacement.role,
-        $messageJson: JSON.stringify(input.replacement),
+        $id: session.id,
+        $compactionStateJson: JSON.stringify(nextState),
         $now: new Date().toISOString(),
       });
       db.exec("COMMIT");
@@ -488,6 +499,33 @@ export class SqliteMemoryStore implements MemoryStore {
     return this.options.validateMessages ? parseMemoryMessage(value) : (value as Message);
   }
 
+  private compactionStateFromJson(raw: string | null): StoredCompactionState | undefined {
+    if (raw === null) return undefined;
+    return parseCompactionState(JSON.parse(raw) as unknown, (message) =>
+      this.options.validateMessages ? parseMemoryMessage(message) : (message as Message),
+    );
+  }
+
+  private compactionRows(
+    database: SqliteMemoryDatabaseLike,
+    sessionId: string,
+    state: StoredCompactionState | undefined,
+  ): CompactionMessageRow[] {
+    const boundaryClause = state === undefined ? "" : "AND position >= $boundary";
+    const statement = database.prepare(
+      `SELECT id, position, message_json
+       FROM ${this.tables.messages}
+       WHERE memory_session_id = $memorySessionId
+         ${boundaryClause}
+       ORDER BY position ASC`,
+    );
+    return statement.all(
+      state === undefined
+        ? { $memorySessionId: sessionId }
+        : { $memorySessionId: sessionId, $boundary: state.summarizedThroughPosition },
+    ) as CompactionMessageRow[];
+  }
+
   private validateInputMessages(messages: Message[]): void {
     if (this.options.validateMessages) {
       for (const message of messages) {
@@ -516,7 +554,8 @@ export class SqliteMemoryStore implements MemoryStore {
     database
       .prepare(
         `SELECT
-           s.id, s.scope_key, s.session_id, s.user_id, s.metadata_json, s.created_at, s.updated_at,
+           s.id, s.scope_key, s.session_id, s.user_id, s.metadata_json,
+           s.compaction_state_json, s.created_at, s.updated_at,
            m.id, m.memory_session_id, m.run_id, m.turn, m.position, m.role, m.message_json, m.created_at
          FROM ${this.tables.sessions} s
          LEFT JOIN ${this.tables.messages} m ON m.memory_session_id = s.id
@@ -573,6 +612,7 @@ function sqliteMemorySchemaSql(tables: ResolvedSqliteMemoryTables): string {
   session_id TEXT NOT NULL,
   user_id TEXT,
   metadata_json TEXT NOT NULL,
+  compaction_state_json TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -631,8 +671,73 @@ function quoteIdentifier(identifier: string): string {
   return `"${identifier.replaceAll('"', '""')}"`;
 }
 
-function compactionRevision(rows: CompactionMessageRow[]): string {
-  return JSON.stringify(rows.map((row) => row.id));
+function compactionRevision(
+  rows: CompactionMessageRow[],
+  state: StoredCompactionState | undefined,
+): string {
+  return JSON.stringify([state?.generation ?? 0, rows.map((row) => row.id)]);
+}
+
+function projectedMessages(
+  rows: CompactionMessageRow[],
+  state: StoredCompactionState | undefined,
+  message: (row: CompactionMessageRow) => Message,
+): Message[] {
+  if (state === undefined) return rows.map(message);
+  return [state.summary, ...activeCompactionRows(rows, state).map(message)];
+}
+
+function activeCompactionRows(
+  rows: CompactionMessageRow[],
+  state: StoredCompactionState | undefined,
+): CompactionMessageRow[] {
+  if (state === undefined) return rows;
+  const boundaryIndex = rows.findIndex((row) => row.position === state.summarizedThroughPosition);
+  if (boundaryIndex === -1) {
+    throw new Error("Sqlite memory compaction state boundary is invalid.");
+  }
+  return rows.slice(boundaryIndex + 1);
+}
+
+function parseCompactionState(
+  value: unknown,
+  parseMessage: (message: unknown) => Message,
+): StoredCompactionState {
+  if (typeof value !== "object" || value === null) {
+    throw new Error("Sqlite memory compaction state must be an object.");
+  }
+  const record = value as Record<string, unknown>;
+  if (
+    record.version !== 1 ||
+    !Number.isSafeInteger(record.generation) ||
+    (record.generation as number) < 1 ||
+    !Number.isSafeInteger(record.summarizedThroughPosition) ||
+    (record.summarizedThroughPosition as number) < 0
+  ) {
+    throw new Error("Sqlite memory compaction state is invalid.");
+  }
+  const summary = parseMessage(record.summary);
+  if (!isMemoryCompactionMessage(summary)) {
+    throw new Error("Sqlite memory compaction state summary is invalid.");
+  }
+  return {
+    version: 1,
+    generation: record.generation as number,
+    summarizedThroughPosition: record.summarizedThroughPosition as number,
+    summary: summary as MemoryCompactionMessage,
+  };
+}
+
+function ensureCompactionStateColumn(
+  database: SqliteMemoryDatabaseLike,
+  sessionsTable: string,
+): void {
+  const columns = database.prepare(`PRAGMA table_info(${sessionsTable})`).all() as Array<{
+    name: string;
+  }>;
+  if (!columns.some((column) => column.name === "compaction_state_json")) {
+    database.exec(`ALTER TABLE ${sessionsTable} ADD COLUMN compaction_state_json TEXT`);
+  }
 }
 
 function assertCompactionMessageCount(value: number): void {

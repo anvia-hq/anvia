@@ -392,9 +392,11 @@ new Agent({
 Without `session`, the same Agent is stateless. Pass `{ messages }` when the caller already owns a
 complete transcript; transcripts cannot be combined with persisted sessions.
 
-Compaction is an explicit Agent policy over a store capability. The adapter persists the summary as
-an ordinary system message with `metadata.anvia.memoryCompaction`, so `load()` and inspectors expose
-exactly what future runs receive:
+Compaction is an explicit Agent policy over a store capability. The store preserves the canonical
+message history for `load()` and inspectors, and persists one latest compaction checkpoint
+separately. Future model calls receive the checkpoint summary (a system message tagged with
+`metadata.anvia.memoryCompaction`) plus the unsummarized tail, not the individual messages already
+covered by that summary:
 
 ```ts
 import { createSummaryMemoryCompactor } from "@anvia/core/memory";
@@ -463,9 +465,10 @@ if (result.type === "compacted") {
 }
 ```
 
-The automatic trigger is a threshold, not a hard storage limit. Summary-provider retries belong to
-the compactor; full snapshot-to-replacement conflict retries are separately opt-in. A streamed
-`memory_compaction` event is emitted only after the store atomically commits the replacement.
+The automatic trigger is a threshold, not a hard storage limit. Omitting `compaction` keeps the
+full canonical history model-facing. Summary-provider retries belong to the compactor; full
+snapshot-to-checkpoint conflict retries are separately opt-in. A streamed `memory_compaction`
+event is emitted only after the store atomically commits the checkpoint.
 
 ## Structured Extraction
 

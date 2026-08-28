@@ -48,6 +48,7 @@ type FakePgState = {
       sessionId: string;
       userId: string | null;
       metadata: unknown;
+      compactionState: unknown;
       createdAt: string;
       updatedAt: string;
     }
@@ -118,6 +119,7 @@ class FakePgClient implements PostgresMemoryClientLike {
         sessionId: values[1] as string,
         userId: values[2] as string | null,
         metadata: JSON.parse(values[3] as string) as unknown,
+        compactionState: null,
         createdAt: "2026-07-17T01:00:00.000Z",
         updatedAt: "2026-07-17T01:05:00.000Z",
       };
@@ -127,6 +129,24 @@ class FakePgClient implements PostgresMemoryClientLike {
       this.state.nextSessionId += this.state.sessions.has(scopeKey) ? 0 : 1;
       this.state.sessions.set(scopeKey, current);
       return { rows: [current] };
+    }
+
+    if (text.includes("SELECT id, compaction_state") && text.includes("memory_sessions")) {
+      const session = this.state.sessions.get(values[0] as string);
+      return {
+        rows:
+          session === undefined
+            ? []
+            : [{ id: session.id, compaction_state: session.compactionState }],
+      };
+    }
+
+    if (text.startsWith("UPDATE") && text.includes("memory_sessions")) {
+      const session = [...this.state.sessions.values()].find((item) => item.id === values[0]);
+      if (session !== undefined) {
+        session.compactionState = JSON.parse(values[1] as string) as unknown;
+      }
+      return { rows: [] };
     }
 
     if (
@@ -164,19 +184,17 @@ class FakePgClient implements PostgresMemoryClientLike {
       return { rows: [] };
     }
 
-    if (text.includes("SELECT m.id, m.position, m.message")) {
-      const session = this.state.sessions.get(values[0] as string);
+    if (text.includes("SELECT id, position, message") && text.includes("memory_messages")) {
+      const boundary = values[1];
       return {
-        rows:
-          session === undefined
-            ? []
-            : [...(this.state.messages.get(session.id) ?? [])]
-                .sort((left, right) => left.position - right.position)
-                .map((row) => ({
-                  id: row.id,
-                  position: row.position,
-                  message: row.message,
-                })),
+        rows: [...(this.state.messages.get(values[0] as string) ?? [])]
+          .filter((row) => boundary === undefined || row.position >= Number(boundary))
+          .sort((left, right) => left.position - right.position)
+          .map((row) => ({
+            id: row.id,
+            position: row.position,
+            message: row.message,
+          })),
       };
     }
 
@@ -418,10 +436,14 @@ describe("PostgresMemoryStore", () => {
       }),
     ).resolves.toEqual({ status: "committed" });
     await expect(store.load({ scope: context })).resolves.toEqual([
-      replacement,
+      userMessage,
+      assistantMessage,
       userMessage,
       assistantMessage,
     ]);
+    await expect(store.compaction.snapshot({ scope: context })).resolves.toMatchObject({
+      messages: [replacement, userMessage, assistantMessage],
+    });
 
     const [conversation] = await store.inspector.listConversations({ limit: 1 });
     const inspected =
@@ -429,9 +451,10 @@ describe("PostgresMemoryStore", () => {
         ? undefined
         : await store.inspector.getConversation({ ref: conversation.ref });
     expect(inspected).toMatchObject({
-      messageCount: 3,
+      messageCount: 4,
       messages: [
-        { position: 1, runId: "memory-compaction:2", turn: 0, message: replacement },
+        { position: 0, runId: "run-1", turn: 1, message: userMessage },
+        { position: 1, runId: "run-1", turn: 1, message: assistantMessage },
         { position: 2, runId: "run-2", turn: 1, message: userMessage },
         { position: 3, runId: "run-2", turn: 2, message: assistantMessage },
       ],
@@ -506,6 +529,7 @@ describe("PostgresMemoryStore", () => {
 
     expect(client.queries[0]).toContain("CREATE EXTENSION IF NOT EXISTS pgcrypto");
     expect(client.queries[0]).toContain('"anvia_memory_sessions"');
+    expect(client.queries[0]).toContain("ADD COLUMN IF NOT EXISTS compaction_state jsonb");
   });
 
   it("rolls back failed transactional appends", async () => {

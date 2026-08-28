@@ -1,4 +1,4 @@
-import type { JsonObject, MemoryStore, Message } from "@anvia/core";
+import type { JsonObject, MemoryCompactionMessage, MemoryStore, Message } from "@anvia/core";
 import type {
   MemoryAppendOptions,
   MemoryCompactionCapability,
@@ -12,7 +12,7 @@ import type {
   MemoryInspector,
   MemoryScope,
 } from "@anvia/core/memory";
-import { createMemoryScopeKey } from "@anvia/core/memory";
+import { createMemoryScopeKey, isMemoryCompactionMessage } from "@anvia/core/memory";
 import type { PostgresMemoryClient } from "./client.js";
 import { parseMemoryMessage, serializeUnknownError } from "./message.js";
 import type {
@@ -37,6 +37,17 @@ type ResolvedPostgresMemoryTables = {
 
 type SessionRow = {
   id: string;
+};
+
+type CompactionSessionRow = SessionRow & {
+  compaction_state: unknown;
+};
+
+type StoredCompactionState = {
+  version: 1;
+  generation: number;
+  summary: MemoryCompactionMessage;
+  summarizedThroughPosition: number;
 };
 
 type PositionRow = {
@@ -81,9 +92,13 @@ CREATE TABLE IF NOT EXISTS ${tables.sessions} (
   session_id text NOT NULL,
   user_id text,
   metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  compaction_state jsonb,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
+
+ALTER TABLE ${tables.sessions}
+  ADD COLUMN IF NOT EXISTS compaction_state jsonb;
 
 CREATE TABLE IF NOT EXISTS ${tables.messages} (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -231,20 +246,31 @@ export class PostgresMemoryStore implements MemoryStore {
   }
 
   private async loadCompactionSnapshot(context: MemoryScope): Promise<MemoryCompactionSnapshot> {
-    const result = await (
-      await this.client()
-    ).query(
-      `SELECT m.id, m.position, m.message
-       FROM ${this.tables.messages} m
-       INNER JOIN ${this.tables.sessions} s ON s.id = m.memory_session_id
-       WHERE s.scope_key = $1
-       ORDER BY m.position ASC`,
-      [this.scopeKey(context)],
+    const client = await this.client();
+    const scopeKey = this.scopeKey(context);
+    const sessionResult = await client.query(
+      `SELECT id, compaction_state
+       FROM ${this.tables.sessions}
+       WHERE scope_key = $1`,
+      [scopeKey],
+    );
+    const session = sessionResult.rows[0] as CompactionSessionRow | undefined;
+    if (session === undefined) {
+      return { revision: compactionRevision([], undefined), messages: [] };
+    }
+    const state = this.compactionStateFromValue(session.compaction_state);
+    const result = await client.query(
+      `SELECT id, position, message
+       FROM ${this.tables.messages}
+       WHERE memory_session_id = $1
+         ${state === undefined ? "" : "AND position >= $2"}
+       ORDER BY position ASC`,
+      state === undefined ? [session.id] : [session.id, state.summarizedThroughPosition],
     );
     const rows = result.rows as CompactionMessageRow[];
     return {
-      revision: compactionRevision(rows),
-      messages: rows.map((row) => this.messageFromValue(row.message)),
+      revision: compactionRevision(rows, state),
+      messages: projectedMessages(rows, state, (row) => this.messageFromValue(row.message)),
     };
   }
 
@@ -259,37 +285,52 @@ export class PostgresMemoryStore implements MemoryStore {
       if (this.options.lock === "advisory") {
         await tx.query("SELECT pg_advisory_xact_lock(hashtext($1))", [scopeKey]);
       }
-      const result = await tx.query(
-        `SELECT m.id, m.position, m.message
-         FROM ${this.tables.messages} m
-         INNER JOIN ${this.tables.sessions} s ON s.id = m.memory_session_id
-         WHERE s.scope_key = $1
-         ORDER BY m.position ASC`,
+      const sessionResult = await tx.query(
+        `SELECT id, compaction_state
+         FROM ${this.tables.sessions}
+         WHERE scope_key = $1`,
         [scopeKey],
       );
+      const session = sessionResult.rows[0] as CompactionSessionRow | undefined;
+      if (session === undefined) return { status: "conflict" };
+      const state = this.compactionStateFromValue(session.compaction_state);
+      const result = await tx.query(
+        `SELECT id, position, message
+         FROM ${this.tables.messages}
+         WHERE memory_session_id = $1
+           ${state === undefined ? "" : "AND position >= $2"}
+         ORDER BY position ASC`,
+        state === undefined ? [session.id] : [session.id, state.summarizedThroughPosition],
+      );
       const rows = result.rows as CompactionMessageRow[];
-      if (compactionRevision(rows) !== input.revision || input.messageCount > rows.length) {
+      const activeRows = activeCompactionRows(rows, state);
+      const physicalPrefixCount = input.messageCount - (state === undefined ? 0 : 1);
+      if (
+        compactionRevision(rows, state) !== input.revision ||
+        physicalPrefixCount < 0 ||
+        physicalPrefixCount > activeRows.length
+      ) {
         return { status: "conflict" };
       }
-      const boundary = rows[input.messageCount - 1];
-      if (boundary === undefined) {
+      const summarizedThroughPosition =
+        physicalPrefixCount === 0
+          ? state?.summarizedThroughPosition
+          : Number(activeRows[physicalPrefixCount - 1]?.position);
+      if (summarizedThroughPosition === undefined || Number.isNaN(summarizedThroughPosition)) {
         return { status: "conflict" };
       }
-      const session = await this.upsertSession(tx, input.scope, scopeKey);
-      const compactedRows = rows.slice(0, input.messageCount);
-      await tx.query(`DELETE FROM ${this.tables.messages} WHERE id = ANY($1::uuid[])`, [
-        compactedRows.map((row) => row.id),
-      ]);
-      await this.insertMessages(
-        tx,
-        session.id,
-        {
-          scope: input.scope,
-          runId: input.runId,
-          turn: 0,
-          messages: [input.replacement],
-        },
-        Number(boundary.position),
+      const nextState: StoredCompactionState = {
+        version: 1,
+        generation: (state?.generation ?? 0) + 1,
+        summary: input.replacement,
+        summarizedThroughPosition,
+      };
+      await tx.query(
+        `UPDATE ${this.tables.sessions}
+         SET compaction_state = $2::jsonb,
+             updated_at = now()
+         WHERE id = $1`,
+        [session.id, JSON.stringify(nextState)],
       );
       return { status: "committed" };
     });
@@ -473,6 +514,14 @@ export class PostgresMemoryStore implements MemoryStore {
     return this.options.validateMessages ? parseMemoryMessage(parsed) : (parsed as Message);
   }
 
+  private compactionStateFromValue(value: unknown): StoredCompactionState | undefined {
+    if (value === null || value === undefined) return undefined;
+    const parsed = typeof value === "string" ? (JSON.parse(value) as unknown) : value;
+    return parseCompactionState(parsed, (message) =>
+      this.options.validateMessages ? parseMemoryMessage(message) : (message as Message),
+    );
+  }
+
   private validateInputMessages(messages: Message[]): void {
     if (this.options.validateMessages) {
       for (const message of messages) {
@@ -495,7 +544,8 @@ export class PostgresMemoryStore implements MemoryStore {
   private async validateClient(client: PostgresMemoryClientLike): Promise<void> {
     await client.query(
       `SELECT
-         s.id, s.scope_key, s.session_id, s.user_id, s.metadata, s.created_at, s.updated_at,
+         s.id, s.scope_key, s.session_id, s.user_id, s.metadata, s.compaction_state,
+         s.created_at, s.updated_at,
          m.id, m.memory_session_id, m.run_id, m.turn, m.position, m.role, m.message, m.created_at
        FROM ${this.tables.sessions} s
        LEFT JOIN ${this.tables.messages} m ON m.memory_session_id = s.id
@@ -518,8 +568,63 @@ function resolveOptions(options: PostgresMemoryStoreOptions): ResolvedPostgresMe
   };
 }
 
-function compactionRevision(rows: CompactionMessageRow[]): string {
-  return JSON.stringify(rows.map((row) => row.id));
+function compactionRevision(
+  rows: CompactionMessageRow[],
+  state: StoredCompactionState | undefined,
+): string {
+  return JSON.stringify([state?.generation ?? 0, rows.map((row) => row.id)]);
+}
+
+function projectedMessages(
+  rows: CompactionMessageRow[],
+  state: StoredCompactionState | undefined,
+  message: (row: CompactionMessageRow) => Message,
+): Message[] {
+  if (state === undefined) return rows.map(message);
+  return [state.summary, ...activeCompactionRows(rows, state).map(message)];
+}
+
+function activeCompactionRows(
+  rows: CompactionMessageRow[],
+  state: StoredCompactionState | undefined,
+): CompactionMessageRow[] {
+  if (state === undefined) return rows;
+  const boundaryIndex = rows.findIndex(
+    (row) => Number(row.position) === state.summarizedThroughPosition,
+  );
+  if (boundaryIndex === -1) {
+    throw new Error("Postgres memory compaction state boundary is invalid.");
+  }
+  return rows.slice(boundaryIndex + 1);
+}
+
+function parseCompactionState(
+  value: unknown,
+  parseMessage: (message: unknown) => Message,
+): StoredCompactionState {
+  if (typeof value !== "object" || value === null) {
+    throw new Error("Postgres memory compaction state must be an object.");
+  }
+  const record = value as Record<string, unknown>;
+  if (
+    record.version !== 1 ||
+    !Number.isSafeInteger(record.generation) ||
+    (record.generation as number) < 1 ||
+    !Number.isSafeInteger(record.summarizedThroughPosition) ||
+    (record.summarizedThroughPosition as number) < 0
+  ) {
+    throw new Error("Postgres memory compaction state is invalid.");
+  }
+  const summary = parseMessage(record.summary);
+  if (!isMemoryCompactionMessage(summary)) {
+    throw new Error("Postgres memory compaction state summary is invalid.");
+  }
+  return {
+    version: 1,
+    generation: record.generation as number,
+    summarizedThroughPosition: record.summarizedThroughPosition as number,
+    summary,
+  };
 }
 
 function assertCompactionMessageCount(value: number): void {

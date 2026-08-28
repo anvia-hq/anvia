@@ -169,10 +169,14 @@ describe("SqliteMemoryStore", () => {
       }),
     ).resolves.toEqual({ status: "committed" });
     await expect(store.load({ scope: context })).resolves.toEqual([
-      replacement,
+      userMessage,
+      assistantMessage,
       userMessage,
       assistantMessage,
     ]);
+    await expect(store.compaction.snapshot({ scope: context })).resolves.toMatchObject({
+      messages: [replacement, userMessage, assistantMessage],
+    });
 
     const [conversation] = await store.inspector.listConversations({ limit: 1 });
     const inspected =
@@ -180,13 +184,67 @@ describe("SqliteMemoryStore", () => {
         ? undefined
         : await store.inspector.getConversation({ ref: conversation.ref });
     expect(inspected).toMatchObject({
-      messageCount: 3,
+      messageCount: 4,
       messages: [
-        { position: 1, runId: "memory-compaction:2", turn: 0, message: replacement },
+        { position: 0, runId: "run-1", turn: 1, message: userMessage },
+        { position: 1, runId: "run-1", turn: 1, message: assistantMessage },
         { position: 2, runId: "run-2", turn: 1, message: userMessage },
         { position: 3, runId: "run-2", turn: 2, message: assistantMessage },
       ],
     });
+
+    await store.append({
+      scope: context,
+      runId: "run-3",
+      turn: 1,
+      messages: [userMessage, assistantMessage],
+    });
+    const repeated = await store.compaction.snapshot({ scope: context });
+    const updatedReplacement = memoryCompactionMessage("Updated conversation summary", 4);
+    await expect(
+      store.compaction.replacePrefix({
+        scope: context,
+        revision: repeated.revision,
+        messageCount: 3,
+        replacement: updatedReplacement,
+        runId: "memory-compaction:3",
+      }),
+    ).resolves.toEqual({ status: "committed" });
+    await expect(store.load({ scope: context })).resolves.toHaveLength(6);
+    await expect(store.compaction.snapshot({ scope: context })).resolves.toMatchObject({
+      messages: [updatedReplacement, userMessage, assistantMessage],
+    });
+  });
+
+  it("rejects a compaction checkpoint whose boundary is not in canonical history", async () => {
+    const store = await createTestMemoryStore();
+    const context = { sessionId: "thread-invalid-checkpoint", userId: "user-1" };
+    await store.append({
+      scope: context,
+      runId: "run-1",
+      turn: 1,
+      messages: [userMessage],
+    });
+    sqliteDatabase(store)
+      .prepare(
+        `UPDATE anvia_memory_sessions
+         SET compaction_state_json = $state
+         WHERE scope_key = $scopeKey`,
+      )
+      .run({
+        $scopeKey: createMemoryScopeKey({ scope: context }),
+        $state: JSON.stringify({
+          version: 1,
+          generation: 1,
+          summary: memoryCompactionMessage("Invalid boundary", 1),
+          summarizedThroughPosition: 999,
+        }),
+      });
+
+    await expect(store.compaction.snapshot({ scope: context })).rejects.toThrow(
+      "compaction state boundary is invalid",
+    );
+    await expect(store.load({ scope: context })).resolves.toEqual([userMessage]);
   });
 
   it("inspects persisted conversations by opaque row reference", async () => {

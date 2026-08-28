@@ -10,6 +10,7 @@ export const prismaMemorySchema = `model AgentMemorySession {
   sessionId String
   userId    String?
   metadata  Json
+  compactionState Json?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

@@ -12,6 +12,7 @@ import {
   isMemoryCompactionMessage,
   type MemoryAppendOptions,
   type MemoryCompactionCapability,
+  type MemoryCompactionMessage,
   MemoryCompactionConflictError,
   MemoryCompactionError,
   type MemoryCompactionReplacePrefixOptions,
@@ -86,7 +87,7 @@ class CompactingMemoryStore implements MemoryStore {
   readonly compaction: MemoryCompactionCapability = {
     snapshot: async () => ({
       revision: String(this.revision),
-      messages: [...this.messages],
+      messages: this.projectedMessages(),
     }),
     replacePrefix: async (input) => {
       this.replaceCalls.push(input);
@@ -97,18 +98,28 @@ class CompactingMemoryStore implements MemoryStore {
       if (input.revision !== String(this.revision)) {
         return { status: "conflict" };
       }
-      this.messages = [input.replacement, ...this.messages.slice(input.messageCount)];
+      const previousBoundary = this.checkpoint?.throughIndex ?? -1;
+      const physicalPrefixCount = input.messageCount - (this.checkpoint === undefined ? 0 : 1);
+      this.checkpoint = {
+        summary: input.replacement,
+        throughIndex: previousBoundary + physicalPrefixCount,
+      };
       this.revision += 1;
       this.afterCommit?.();
       return { status: "committed" };
     },
   };
   private revision = 1;
+  private checkpoint: { summary: MemoryCompactionMessage; throughIndex: number } | undefined;
+
+  private messages: MessageType[];
 
   constructor(
-    private messages: MessageType[],
+    messages: MessageType[],
     private conflictsRemaining = 0,
-  ) {}
+  ) {
+    this.messages = [...messages];
+  }
 
   async load(): Promise<MessageType[]> {
     return [...this.messages];
@@ -126,7 +137,21 @@ class CompactingMemoryStore implements MemoryStore {
   }
 
   snapshot(): MessageType[] {
+    return this.projectedMessages();
+  }
+
+  canonicalMessages(): MessageType[] {
     return [...this.messages];
+  }
+
+  private projectedMessages(): MessageType[] {
+    if (this.checkpoint === undefined) {
+      return [...this.messages];
+    }
+    return [
+      structuredClone(this.checkpoint.summary),
+      ...this.messages.slice(this.checkpoint.throughIndex + 1),
+    ];
   }
 }
 
@@ -232,6 +257,11 @@ describe("memory compaction", () => {
     expect(events).toContain("memory.compaction");
     expect(store.replaceCalls[0]).toMatchObject({ messageCount: 4 });
     expect(store.snapshot().filter(isMemoryCompactionMessage)).toHaveLength(1);
+    expect(store.canonicalMessages()).toEqual([
+      ...history,
+      Message.user("next"),
+      expect.objectContaining({ role: "assistant" }),
+    ]);
   });
 
   it("does not compact below the configured threshold", async () => {
@@ -295,9 +325,10 @@ describe("memory compaction", () => {
       Message.user("recent"),
       Message.assistant("recent answer"),
     ]);
+    const model = new QueueModel([response("done")]);
     const agent = new Agent({
       id: "test",
-      model: new QueueModel([]),
+      model,
       memory: {
         store,
         compaction: {
@@ -324,6 +355,25 @@ describe("memory compaction", () => {
       usage: Usage.empty(),
     });
     expect(store.snapshot()[0]).toSatisfy(isMemoryCompactionMessage);
+    expect(store.canonicalMessages()).toEqual([
+      Message.user("first"),
+      Message.assistant("first answer"),
+      Message.user("second"),
+      Message.assistant("second answer"),
+      Message.user("recent"),
+      Message.assistant("recent answer"),
+    ]);
+
+    await agent.generate({ prompt: "next", session: scope });
+
+    expect(model.requests[0]?.chatHistory).toEqual([
+      expect.objectContaining({ role: "system", content: "Earlier discussion." }),
+      Message.user("second"),
+      Message.assistant("second answer"),
+      Message.user("recent"),
+      Message.assistant("recent answer"),
+      Message.user("next"),
+    ]);
   });
 
   it("returns an explicit skipped result when manual compaction cannot preserve a newer turn", async () => {
@@ -785,24 +835,17 @@ describe("memory compaction", () => {
   });
 
   it("stores a cumulative compacted-message count across repeated compactions", async () => {
-    const priorCompaction = Message.system("Earlier summary.", {
-      metadata: {
-        anvia: {
-          memoryCompaction: {
-            version: 1,
-            compactedMessageCount: 4,
-          },
-        },
-      },
-    });
-    const store = new CompactingMemoryStore([
-      priorCompaction,
+    const canonical = [
+      Message.user("first"),
+      Message.assistant("first answer"),
       Message.user("middle"),
       Message.assistant("middle answer"),
       Message.user("recent"),
       Message.assistant("recent answer"),
-    ]);
-    const mainModel = new QueueModel([response("done")]);
+    ];
+    const store = new CompactingMemoryStore(canonical);
+    const mainModel = new QueueModel([response("first done"), response("second done")]);
+    let summaryNumber = 0;
     const agent = new Agent({
       id: "test",
       model: mainModel,
@@ -811,14 +854,20 @@ describe("memory compaction", () => {
         compaction: {
           trigger: { afterTokens: 5 },
           retention: { recentTokens: 1 },
-          compactor: async () => ({ summary: "Updated summary." }),
+          compactor: async () => ({ summary: `Updated summary ${++summaryNumber}.` }),
         },
       },
     });
 
-    const result = await agent.generate({ prompt: "next", session: scope });
+    const first = await agent.generate({ prompt: "next one", session: scope });
+    const second = await agent.generate({ prompt: "next two", session: scope });
 
-    expect(result.memoryCompaction).toMatchObject({
+    expect(first.memoryCompaction).toMatchObject({
+      originalMessageCount: 6,
+      compactedMessageCount: 4,
+      retainedMessageCount: 2,
+    });
+    expect(second.memoryCompaction).toMatchObject({
       originalMessageCount: 5,
       compactedMessageCount: 3,
       retainedMessageCount: 2,
@@ -834,6 +883,13 @@ describe("memory compaction", () => {
         },
       },
     });
+    expect(store.canonicalMessages()).toEqual([
+      ...canonical,
+      Message.user("next one"),
+      expect.objectContaining({ role: "assistant" }),
+      Message.user("next two"),
+      expect.objectContaining({ role: "assistant" }),
+    ]);
   });
 
   it("retries summary provider calls independently from the main agent model", async () => {

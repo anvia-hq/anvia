@@ -88,10 +88,13 @@ The store also exposes core's optional read-only memory inspector. When this age
 with `@anvia/studio`, existing Prisma conversations appear automatically on the Memory page. Studio
 does not copy the messages or require another schema migration.
 
-When the messages delegate supports `deleteMany`, the store also exposes
-`compaction.snapshot({ scope })` and atomic `compaction.replacePrefix({ ... })`. Compaction messages
-remain visible as ordinary ordered system messages. With narrower custom delegates the capability
-is absent, rather than pretending replacement is atomic.
+When the sessions delegate (including the delegate supplied inside transactions) supports
+`findUnique`, the store also exposes
+`compaction.snapshot({ scope })` and atomic `compaction.replacePrefix({ ... })`. `load()` and
+inspection return the full canonical history; the snapshot projects the session's latest checkpoint
+summary plus its unsummarized tail for model context. The generated session model includes nullable
+`compactionState`; add it through the application's normal Prisma migration workflow. With narrower
+custom delegates the capability is absent, rather than pretending checkpoint updates are atomic.
 
 ## Custom delegates
 

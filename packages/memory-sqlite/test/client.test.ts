@@ -131,6 +131,25 @@ describe("SqliteMemoryClient", () => {
     await client.close();
   });
 
+  it("upgrades existing session tables with compaction checkpoint storage", async () => {
+    const database = new DatabaseSync(":memory:");
+    database.exec(createSqliteMemorySchemaSql().replace("  compaction_state_json TEXT,\n", ""));
+    const client = new SqliteMemoryClient({ database });
+    const store = client.memoryStore();
+
+    await expect(store.validate()).rejects.toThrow("compaction_state_json");
+    await store.ensure();
+    expect(
+      database
+        .prepare("PRAGMA table_info('anvia_memory_sessions')")
+        .all()
+        .some((column) => (column as { name: string }).name === "compaction_state_json"),
+    ).toBe(true);
+
+    await client.close();
+    database.close();
+  });
+
   it("rejects removed construction and provisioning options at compile time", () => {
     if (Date.now() === Number.NEGATIVE_INFINITY) {
       // @ts-expect-error Native stores are created by SqliteMemoryClient.

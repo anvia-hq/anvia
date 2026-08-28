@@ -91,6 +91,7 @@ export interface MemoryInspector {
 export interface MemoryStore {
   readonly inspector?: MemoryInspector | undefined;
   readonly compaction?: MemoryCompactionCapability | undefined;
+  /** Loads the canonical, replayable conversation history. */
   load(options: MemoryLoadOptions): Promise<Message[]>;
   append(options: MemoryAppendOptions): Promise<void>;
   clear(options: MemoryClearOptions): Promise<void>;
@@ -113,6 +114,7 @@ export type MemoryCompactionMessage = Omit<SystemMessage, "metadata"> & {
 export type MemoryCompactionSnapshot = {
   /** Opaque store revision used to reject stale compaction replacements. */
   revision: string;
+  /** Current model-context projection: the latest summary checkpoint plus unsummarized messages. */
   messages: Message[];
 };
 
@@ -123,6 +125,7 @@ export type MemoryCompactionSnapshotOptions = {
 export type MemoryCompactionReplacePrefixOptions = {
   scope: MemoryScope;
   revision: string;
+  /** Number of projected messages covered by `replacement`, including any prior summary message. */
   messageCount: number;
   replacement: MemoryCompactionMessage;
   runId: string;
@@ -132,7 +135,12 @@ export type MemoryCompactionReplacePrefixResult = {
   status: "committed" | "conflict";
 };
 
-/** Optional atomic prefix-replacement capability used by automatic memory compaction. */
+/**
+ * Optional atomic context-projection capability used by memory compaction.
+ *
+ * Implementations must preserve canonical messages. `snapshot()` returns the current model-context
+ * projection, while `replacePrefix()` replaces only that projection's prefix with a summary.
+ */
 export interface MemoryCompactionCapability {
   snapshot(options: MemoryCompactionSnapshotOptions): Promise<MemoryCompactionSnapshot>;
   replacePrefix(

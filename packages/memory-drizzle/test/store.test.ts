@@ -194,10 +194,14 @@ describe("Drizzle memory public API", () => {
       }),
     ).resolves.toEqual({ status: "committed" });
     await expect(store.load({ scope: context })).resolves.toEqual([
-      replacement,
+      userMessage,
+      assistantMessage,
       userMessage,
       assistantMessage,
     ]);
+    await expect(store.compaction.snapshot({ scope: context })).resolves.toMatchObject({
+      messages: [replacement, userMessage, assistantMessage],
+    });
 
     const [conversation] = await store.inspector.listConversations({ limit: 1 });
     const inspected =
@@ -205,9 +209,10 @@ describe("Drizzle memory public API", () => {
         ? undefined
         : await store.inspector.getConversation({ ref: conversation.ref });
     expect(inspected).toMatchObject({
-      messageCount: 3,
+      messageCount: 4,
       messages: [
-        { position: 1, runId: "memory-compaction:2", turn: 0, message: replacement },
+        { position: 0, runId: "run-1", turn: 1, message: userMessage },
+        { position: 1, runId: "run-1", turn: 1, message: assistantMessage },
         { position: 2, runId: "run-2", turn: 1, message: userMessage },
         { position: 3, runId: "run-2", turn: 2, message: assistantMessage },
       ],
@@ -461,6 +466,7 @@ type SessionRow = {
   sessionId: string;
   userId: string | null;
   metadata: unknown;
+  compactionState: unknown;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -524,6 +530,14 @@ class FakeDrizzleDb {
   }
 
   selectRows(selection: unknown, fromTable: unknown, condition: unknown): unknown[] {
+    if (fromTable === agentMemorySessions && hasSelection(selection, "compactionState")) {
+      const scopeKey = String(extractParam(condition));
+      const session = this.sessions.get(scopeKey);
+      return session === undefined
+        ? []
+        : [{ id: session.id, compactionState: session.compactionState }];
+    }
+
     if (fromTable === agentMemorySessions && hasSelection(selection, "ref")) {
       const filter = extractParam(condition);
       const sessions = [...this.sessions.values()];
@@ -548,12 +562,11 @@ class FakeDrizzleDb {
     }
 
     if (hasSelection(selection, "id")) {
-      const scopeKey = String(extractParam(condition));
-      const session = this.sessions.get(scopeKey);
-      if (session === undefined) {
-        return [];
-      }
-      return [...(this.messages.get(session.id) ?? [])]
+      const [keyParam, boundary] = extractParams(condition);
+      const key = String(keyParam);
+      const sessionId = this.sessions.get(key)?.id ?? key;
+      return [...(this.messages.get(sessionId) ?? [])]
+        .filter((row) => boundary === undefined || row.position >= Number(boundary))
         .sort((left, right) => left.position - right.position)
         .map((row) => ({
           id: row.id,
@@ -602,6 +615,9 @@ class FakeDrizzleDb {
     const scopeKey = String(row.scopeKey);
     const existing = this.sessions.get(scopeKey);
     if (existing !== undefined) {
+      if ("compactionState" in row) {
+        existing.compactionState = row.compactionState;
+      }
       return existing;
     }
 
@@ -611,6 +627,7 @@ class FakeDrizzleDb {
       sessionId: String(row.sessionId),
       userId: row.userId === null ? null : String(row.userId),
       metadata: row.metadata,
+      compactionState: row.compactionState ?? null,
       createdAt: new Date("2026-07-17T01:00:00.000Z"),
       updatedAt: new Date("2026-07-17T01:05:00.000Z"),
     };

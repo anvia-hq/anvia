@@ -111,6 +111,30 @@ const reporter = lens.evalReporter({
 Lens eval reporters accept traces from the `"lens"` Agent observer registration by default. Set
 `traceObserver` to the Agent registration name when it differs.
 
+## Runtime scores and end-user feedback
+
+`score()` records a trace-correlated evaluation result through Lens's existing OTLP logs exporter:
+
+```ts
+await lens.score({
+  id: feedbackId,
+  traceId,
+  observationId,
+  responseId,
+  name: "user-feedback",
+  value: liked ? 1 : 0,
+  dataType: "BOOLEAN",
+  source: "end_user",
+  comment,
+  metadata: { channel: "thumbs", userIdHash },
+});
+```
+
+Use a stable `id` when a later vote should replace an earlier one. Omit it when each score should be
+stored as a separate event. `score()` queues the log in the owned provider; `flush()` or client
+disposal completes delivery. Comments are limited to 2,000 characters; validate metadata before
+recording it and avoid raw personal identifiers.
+
 ## Managed datasets
 
 ```ts

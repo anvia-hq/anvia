@@ -5,6 +5,8 @@ import {
   createOtelEvalReporter,
   createOtelObserver,
   createOtelPipelineObserver,
+  createOtelScorer,
+  type OtelScorer,
 } from "@anvia/otel";
 import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-http";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
@@ -24,6 +26,7 @@ import type {
   LensEvalReporterOptions,
   LensObserverOptions,
   LensPipelineObserverOptions,
+  LensScoreArgs,
 } from "./types.js";
 
 type LensResources = {
@@ -31,6 +34,7 @@ type LensResources = {
   readonly loggerProvider: LoggerProvider;
   readonly tracer: ReturnType<NodeTracerProvider["getTracer"]>;
   readonly logger: ReturnType<LoggerProvider["getLogger"]>;
+  readonly scorer: OtelScorer;
 };
 
 export class LensClient {
@@ -124,6 +128,12 @@ export class LensClient {
         await (await resolve()).onRunEnd?.(args);
       },
     };
+  }
+
+  async score(args: LensScoreArgs): Promise<void> {
+    this.assertOpen();
+    if (!this.enabled) return;
+    (await this.resources()).scorer.score(args);
   }
 
   datasetClient(options: LensDatasetClientOptions = {}): LensDatasetClient {
@@ -255,11 +265,13 @@ async function createLensResources(config: ResolvedLensConfig): Promise<LensReso
         }),
       ],
     });
+    const logger = loggerProvider.getLogger("@anvia/lens", "1.0.0");
     return {
       tracerProvider,
       loggerProvider,
       tracer: tracerProvider.getTracer("@anvia/lens", "1.0.0"),
-      logger: loggerProvider.getLogger("@anvia/lens", "1.0.0"),
+      logger,
+      scorer: createOtelScorer({ logger }),
     };
   } catch (error) {
     await Promise.allSettled([

@@ -122,14 +122,44 @@ Metric events include required status, score direction, threshold, and evaluator
 available. Run-finished events publish separate metric and case totals plus aggregate usage and
 optional caller-calculated cost.
 
+## Runtime scores
+
+Record trace-correlated runtime scores, including end-user feedback, without creating an eval suite:
+
+```ts
+import { createOtelScorer } from "@anvia/otel";
+
+const scorer = createOtelScorer();
+scorer.score({
+  id: feedbackId,
+  traceId,
+  observationId,
+  responseId,
+  name: "user-feedback",
+  value: liked ? 1 : 0,
+  dataType: "BOOLEAN",
+  source: "end_user",
+  comment,
+  metadata: { channel: "thumbs", userIdHash },
+});
+```
+
+The scorer emits `gen_ai.evaluation.result` through the OpenTelemetry logs API. Configure a logs
+provider/exporter or inject a `Logger`. A valid 32-character OpenTelemetry trace ID is required;
+the 16-character observation ID is optional. Comments are limited to 2,000 characters. Validate
+end-user metadata at the application boundary, and avoid sending raw personal identifiers.
+
 ## Exports
 
 - `createOtelObserver`
 - `createOtelPipelineObserver`
 - `createOtelEvalReporter`
+- `createOtelScorer`
 - `OtelObserverOptions`
 - `OtelPipelineObserverOptions`
 - `OtelEvalReporterOptions`
+- `OtelScoreArgs`
+- `OtelScorerOptions`
 
 ## Development
 

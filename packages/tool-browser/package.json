@@ -1,6 +1,6 @@
 {
   "name": "@anvia/browser",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "Visible Chromium runtime and semantic browser tools for Anvia agents.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",

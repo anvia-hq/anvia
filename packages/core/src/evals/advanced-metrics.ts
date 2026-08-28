@@ -130,7 +130,7 @@ export function answerRelevancy<
         usage,
       });
     } catch (error) {
-      return EvalOutcome.invalid(errorMessage(error));
+      return EvalOutcome.fromError(error);
     }
   });
 }
@@ -189,7 +189,7 @@ export function promptAlignment<
         usage,
       });
     } catch (error) {
-      return EvalOutcome.invalid(errorMessage(error));
+      return EvalOutcome.fromError(error);
     }
   });
 }
@@ -275,7 +275,7 @@ export function jsonCorrectness<
           usage,
         });
       } catch (error) {
-        return EvalOutcome.invalid(errorMessage(error));
+        return EvalOutcome.fromError(error);
       }
     },
   );
@@ -353,7 +353,7 @@ export function hallucination<
         usage,
       });
     } catch (error) {
-      return EvalOutcome.invalid(errorMessage(error));
+      return EvalOutcome.fromError(error);
     }
   });
 }
@@ -459,7 +459,7 @@ export function faithfulness<Input, Output, Expected = unknown, const Name exten
         usage,
       });
     } catch (error) {
-      return EvalOutcome.invalid(errorMessage(error));
+      return EvalOutcome.fromError(error);
     }
   });
 }
@@ -531,7 +531,7 @@ export function abstention<Input, Output, Expected = unknown, const Name extends
           ? EvalOutcome.pass(category, outcomeOptions)
           : EvalOutcome.fail(category, outcomeOptions);
       } catch (error) {
-        return EvalOutcome.invalid(errorMessage(error));
+        return EvalOutcome.fromError(error);
       }
     },
   };
@@ -727,7 +727,7 @@ export function summarization<
         usage,
       });
     } catch (error) {
-      return EvalOutcome.invalid(errorMessage(error));
+      return EvalOutcome.fromError(error);
     }
   });
 }
@@ -759,6 +759,57 @@ export type GEvalOptions<Input, Output, Expected = unknown> = Omit<
   retrievalContext?: SelectorOrValue<Input, Output, Expected, string[]> | undefined;
 };
 
+type GEvalCaseRequirements<
+  Params extends readonly GEvalParameter[],
+  ExpectedSelector,
+  ContextSelector,
+  RetrievalContextSelector,
+> = ("expectedOutput" extends Params[number]
+  ? [ExpectedSelector] extends [undefined]
+    ? { expected: unknown }
+    : Record<never, never>
+  : Record<never, never>) &
+  ("context" extends Params[number]
+    ? [ContextSelector] extends [undefined]
+      ? { context: string[] }
+      : Record<never, never>
+    : Record<never, never>) &
+  ("retrievalContext" extends Params[number]
+    ? [RetrievalContextSelector] extends [undefined]
+      ? { retrievalContext: string[] }
+      : Record<never, never>
+    : Record<never, never>);
+
+export function gEval<
+  Input,
+  Output,
+  Expected = unknown,
+  const Name extends string = string,
+  const Params extends readonly GEvalParameter[] = readonly GEvalParameter[],
+  ExpectedSelector extends ValueSelector<Input, Output, Expected, unknown> | undefined = undefined,
+  ContextSelector extends SelectorOrValue<Input, Output, Expected, string[]> | undefined =
+    undefined,
+  RetrievalContextSelector extends SelectorOrValue<Input, Output, Expected, string[]> | undefined =
+    undefined,
+>(
+  options: Omit<
+    GEvalOptions<Input, Output, Expected>,
+    "evaluationParams" | "expected" | "context" | "retrievalContext"
+  > & {
+    name: Name;
+    evaluationParams: Params;
+    expected?: ExpectedSelector;
+    context?: ContextSelector;
+    retrievalContext?: RetrievalContextSelector;
+  },
+): EvalMetric<
+  Input,
+  Output,
+  number,
+  Expected,
+  Name,
+  GEvalCaseRequirements<Params, ExpectedSelector, ContextSelector, RetrievalContextSelector>
+>;
 export function gEval<Input, Output, Expected = unknown, const Name extends string = string>(
   options: GEvalOptions<Input, Output, Expected> & { name: Name },
 ): EvalMetric<Input, Output, number, Expected, Name> {
@@ -855,7 +906,7 @@ export function gEval<Input, Output, Expected = unknown, const Name extends stri
         usage,
       });
     } catch (error) {
-      return EvalOutcome.invalid(errorMessage(error));
+      return EvalOutcome.fromError(error);
     }
   });
 }
@@ -934,7 +985,7 @@ export function turnRelevancy<
         usage,
       });
     } catch (error) {
-      return EvalOutcome.invalid(errorMessage(error));
+      return EvalOutcome.fromError(error);
     }
   });
 }
@@ -1029,7 +1080,7 @@ export function knowledgeRetention<
         usage,
       });
     } catch (error) {
-      return EvalOutcome.invalid(errorMessage(error));
+      return EvalOutcome.fromError(error);
     }
   });
 }

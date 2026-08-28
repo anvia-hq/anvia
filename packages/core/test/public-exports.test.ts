@@ -339,6 +339,13 @@ describe("public exports", () => {
     expect(embeddings).toHaveProperty("embedDocuments");
     expect(embeddings).not.toHaveProperty("embedHybridDocuments");
     expect(evals).toHaveProperty("runEvalSuite");
+    expect(evals).toHaveProperty("createEvalTypes");
+    expect(evals).toHaveProperty("defineEvalExpectations");
+    expect(evals).toHaveProperty("formatEvalResult");
+    expect(evals).toHaveProperty("selectEvalCaseIds");
+    expect(evals).toHaveProperty("EvalTimeoutError");
+    expect(evals).toHaveProperty("EvalAbortError");
+    expect(evals).toHaveProperty("EvalFailFastError");
     expect(evals).toHaveProperty("EvalOutcome");
     expect(evals).toHaveProperty("defaultEvalTraceSelector");
     expect(evals).toHaveProperty("projectEvalOutcome");

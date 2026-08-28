@@ -3,6 +3,7 @@ import type { EvalOutcome } from "./outcome";
 
 export type EvalMetadata = JsonObject;
 export type EvalReporterErrorPolicy = "collect" | "throw";
+export type EvalInvalidKind = "target" | "metric" | "configuration" | "provider" | "timeout";
 
 export type EvalRunOptions = {
   id?: string | undefined;
@@ -44,7 +45,12 @@ export type EvalTraceRef = {
 export type EvalTarget<Input, Output, Expected = unknown> = (
   input: Input,
   testCase: EvalCase<Input, Expected>,
+  context?: EvalTargetContext,
 ) => Output | Promise<Output>;
+
+export type EvalTargetContext = {
+  signal: AbortSignal;
+};
 
 export type EvalOutcomeStatus = "pass" | "fail" | "invalid";
 
@@ -99,6 +105,7 @@ export type EvalMetricArgs<Input, Output, Expected = unknown> = {
   suiteName: string;
   case: EvalCase<Input, Expected>;
   output: Output;
+  signal: AbortSignal;
 };
 
 export type EvalMetric<
@@ -130,6 +137,8 @@ export type EvalMetricResult<Score = unknown, Name extends string = string> = {
   direction?: EvalScoreDirection | undefined;
   threshold?: number | undefined;
   outcome: EvalOutcome<Score>;
+  durationMs: number;
+  cost?: number | undefined;
   reporterErrors: unknown[];
 };
 
@@ -159,10 +168,15 @@ export type EvalCaseResult<
 > = {
   case: EvalCase<Input, Expected>;
   outcome: EvalOutcomeStatus;
+  targetStatus: "succeeded" | "failed";
   output?: Output | undefined;
   targetError?: unknown;
+  targetDurationMs: number;
+  durationMs: number;
   metrics: Array<EvalMetricResultFor<Metrics[number]>>;
   scores: EvalScoreMap<Metrics>;
+  usage: EvalUsageSummary;
+  cost?: EvalCostSummary | undefined;
 };
 
 export type EvalSuiteResult<
@@ -195,6 +209,7 @@ export type EvalReportArgs<Input, Output, Score = unknown, Expected = unknown> =
   case: EvalCase<Input, Expected>;
   output?: Output | undefined;
   targetError?: unknown;
+  targetStatus?: "succeeded" | "failed" | undefined;
   trace?: EvalTraceRef | undefined;
   metric: EvalMetricDescriptor<Score>;
   outcome: EvalOutcome<Score>;
@@ -223,6 +238,7 @@ export type EvalTraceSelectorArgs<Input, Output, Expected = unknown> = {
   case: EvalCase<Input, Expected>;
   output?: Output | undefined;
   targetError?: unknown;
+  targetStatus?: "succeeded" | "failed" | undefined;
 };
 
 export type EvalTraceSelector<Input, Output, Expected = unknown> = (
@@ -261,6 +277,96 @@ export type EvalCostOptions<Input, Output, Expected = unknown> = {
   calculate(args: EvalCostCalculatorArgs<Input, Output, Expected>): number | Promise<number>;
 };
 
+type EvalCaseLike = EvalCase<unknown, unknown>;
+
+type EvalMetricRequirements<Metric> =
+  Metric extends EvalMetric<
+    infer _Input,
+    infer _Output,
+    infer _Score,
+    infer _Expected,
+    infer _Name,
+    infer Requirements
+  >
+    ? Requirements
+    : Record<never, never>;
+
+type RequiredExpected<Metrics extends readonly EvalMetric<never, never>[]> = Extract<
+  EvalMetricRequirements<Metrics[number]>,
+  { expected: unknown }
+>;
+
+type RequiredContext<Metrics extends readonly EvalMetric<never, never>[]> = Extract<
+  EvalMetricRequirements<Metrics[number]>,
+  { context: string[] }
+>;
+
+type RequiredRetrievalContext<Metrics extends readonly EvalMetric<never, never>[]> = Extract<
+  EvalMetricRequirements<Metrics[number]>,
+  { retrievalContext: string[] }
+>;
+
+type EvalCaseFieldsForMetrics<Metrics extends readonly EvalMetric<never, never>[]> = ([
+  RequiredExpected<Metrics>,
+] extends [never]
+  ? Record<never, never>
+  : { expected: RequiredExpected<Metrics>["expected"] }) &
+  ([RequiredContext<Metrics>] extends [never] ? Record<never, never> : { context: string[] }) &
+  ([RequiredRetrievalContext<Metrics>] extends [never]
+    ? Record<never, never>
+    : { retrievalContext: string[] });
+
+export type EvalCasesForMetrics<
+  Cases extends readonly EvalCaseLike[],
+  Metrics extends readonly EvalMetric<never, never>[],
+> = {
+  readonly [Index in keyof Cases]: Cases[Index] extends EvalCaseLike
+    ? Cases[Index] & EvalCaseFieldsForMetrics<Metrics>
+    : Cases[Index];
+};
+
+export type EvalShard = {
+  index: number;
+  count: number;
+};
+
+export type EvalProgressEvent<Input, Output, Expected = unknown> =
+  | {
+      type: "case-start";
+      suiteName: string;
+      case: EvalCase<Input, Expected>;
+      completedCases: number;
+      totalCases: number;
+    }
+  | {
+      type: "target-complete";
+      suiteName: string;
+      case: EvalCase<Input, Expected>;
+      targetStatus: "succeeded" | "failed";
+      output?: Output | undefined;
+      error?: unknown;
+      durationMs: number;
+      completedCases: number;
+      totalCases: number;
+    }
+  | {
+      type: "metric-complete";
+      suiteName: string;
+      case: EvalCase<Input, Expected>;
+      metricName: string;
+      outcome: EvalOutcome<unknown>;
+      durationMs: number;
+      completedCases: number;
+      totalCases: number;
+    }
+  | {
+      type: "case-complete";
+      suiteName: string;
+      result: EvalCaseResult<Input, Output, Expected>;
+      completedCases: number;
+      totalCases: number;
+    };
+
 export type RunEvalSuiteOptions<
   Input,
   Output,
@@ -275,10 +381,20 @@ export type RunEvalSuiteOptions<
 > = {
   name: string;
   run?: EvalRunOptions | undefined;
-  cases: readonly EvalCase<Input, Expected>[];
+  cases: readonly EvalCase<Input, Expected>[] &
+    EvalCasesForMetrics<readonly EvalCase<Input, Expected>[], Metrics>;
   target: EvalTarget<Input, Output, Expected>;
   metrics: Metrics;
   concurrency?: number | undefined;
+  targetConcurrency?: number | undefined;
+  metricConcurrency?: number | undefined;
+  caseTimeoutMs?: number | undefined;
+  signal?: AbortSignal | undefined;
+  failFast?: boolean | undefined;
+  caseIds?: readonly string[] | undefined;
+  caseFilter?(testCase: EvalCase<Input, Expected>, index: number): boolean;
+  shard?: EvalShard | undefined;
+  onProgress?(event: EvalProgressEvent<Input, Output, Expected>): void | Promise<void>;
   trace?: EvalTraceSelector<NoInfer<Input>, NoInfer<Output>, NoInfer<Expected>> | undefined;
   reporters?:
     | readonly EvalReporter<NoInfer<Input>, NoInfer<Output>, NoInfer<Expected>>[]

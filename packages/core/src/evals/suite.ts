@@ -1,4 +1,12 @@
-import type { EvalCase, EvalMetric, EvalTarget, RunEvalSuiteOptions } from "./types";
+import type {
+  EvalCase,
+  EvalCasesForMetrics,
+  EvalMetric,
+  EvalTarget,
+  RunEvalSuiteOptions,
+} from "./types";
+
+export type { EvalCasesForMetrics } from "./types";
 
 type EvalCaseLike = EvalCase<unknown, unknown>;
 
@@ -9,50 +17,6 @@ type EvalCaseExpected<Case> = Case extends { expected: infer Expected } ? Expect
 export type EvalCasesExpected<Cases extends readonly EvalCaseLike[]> = EvalCaseExpected<
   Cases[number]
 >;
-
-type EvalMetricRequirements<Metric> =
-  Metric extends EvalMetric<
-    infer _Input,
-    infer _Output,
-    infer _Score,
-    infer _Expected,
-    infer _Name,
-    infer Requirements
-  >
-    ? Requirements
-    : Record<never, never>;
-
-type RequiredExpected<Metrics extends readonly EvalMetric<never, never>[]> = Extract<
-  EvalMetricRequirements<Metrics[number]>,
-  { expected: unknown }
->;
-
-type RequiredContext<Metrics extends readonly EvalMetric<never, never>[]> = Extract<
-  EvalMetricRequirements<Metrics[number]>,
-  { context: string[] }
->;
-
-type RequiredRetrievalContext<Metrics extends readonly EvalMetric<never, never>[]> = Extract<
-  EvalMetricRequirements<Metrics[number]>,
-  { retrievalContext: string[] }
->;
-
-type EvalCaseFieldsForMetrics<Metrics extends readonly EvalMetric<never, never>[]> = ([
-  RequiredExpected<Metrics>,
-] extends [never]
-  ? Record<never, never>
-  : { expected: RequiredExpected<Metrics>["expected"] }) &
-  ([RequiredContext<Metrics>] extends [never] ? Record<never, never> : { context: string[] }) &
-  ([RequiredRetrievalContext<Metrics>] extends [never]
-    ? Record<never, never>
-    : { retrievalContext: string[] });
-
-export type EvalCasesForMetrics<
-  Cases extends readonly EvalCaseLike[],
-  Metrics extends readonly EvalMetric<never, never>[],
-> = {
-  readonly [Index in keyof Cases]: Cases[Index] & EvalCaseFieldsForMetrics<Metrics>;
-};
 
 export type DefinedEvalSuite<
   Cases extends readonly EvalCaseLike[],
@@ -66,9 +30,10 @@ export type DefinedEvalSuite<
   >[],
 > = Omit<
   RunEvalSuiteOptions<EvalCasesInput<Cases>, Output, EvalCasesExpected<Cases>, Metrics>,
-  "cases" | "target" | "metrics"
+  "caseIds" | "cases" | "target" | "metrics"
 > & {
   cases: Cases & EvalCasesForMetrics<NoInfer<Cases>, NoInfer<Metrics>>;
+  caseIds?: readonly Cases[number]["id"][] | undefined;
   target: EvalTarget<EvalCasesInput<Cases>, Output, EvalCasesExpected<Cases>>;
   metrics: Metrics;
 };
@@ -110,6 +75,19 @@ export function defineEvalCases<const Cases extends readonly EvalCaseLike[]>(cas
   return cases;
 }
 
+export function createEvalTypes<Input, Output, Expected = unknown>(): EvalMetricFactory<
+  Input,
+  Output,
+  Expected
+> {
+  return {
+    defineMetric(metric: EvalMetric<Input, Output>) {
+      return metric;
+    },
+  } as EvalMetricFactory<Input, Output, Expected>;
+}
+
+/** @deprecated Use createEvalTypes() when defining typed custom metrics. */
 export function defineEvalSuite<Input, Output, Expected = unknown>(): EvalMetricFactory<
   Input,
   Output,
@@ -141,9 +119,5 @@ export function defineEvalSuite(
   | DefinedEvalSuite<readonly EvalCaseLike[], unknown, readonly EvalMetric<unknown, unknown>[]>
   | EvalMetricFactory<unknown, unknown, unknown> {
   if (options !== undefined) return options;
-  return {
-    defineMetric(metric: EvalMetric<unknown, unknown>) {
-      return metric;
-    },
-  } as EvalMetricFactory<unknown, unknown, unknown>;
+  return createEvalTypes();
 }

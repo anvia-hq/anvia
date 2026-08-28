@@ -18,6 +18,7 @@ import {
   type EmbeddingModel,
   type EvalMetricArgs,
   EvalOutcome,
+  EvalFailFastError,
   exactMatch,
   llmJudge,
   llmScore,
@@ -28,6 +29,7 @@ import {
   requiredFields,
   resolveEvalTraceRef,
   runEvalSuite,
+  selectEvalCaseIds,
   semanticSimilarity,
   Usage,
 } from "./helpers/imports";
@@ -86,6 +88,56 @@ describe("evals", () => {
     expect(result.results[1]?.metrics[0]?.outcome.outcome).toBe("fail");
   });
 
+  it("compares structured exact-match values independently of object key order", async () => {
+    const result = await runEvalSuite({
+      name: "structured-exact-match",
+      cases: [{ id: "same-object", input: null, expected: { answer: "yes", confidence: 1 } }],
+      target: () => ({ confidence: 1, answer: "yes" }),
+      metrics: [exactMatch()],
+    });
+
+    expect(result.results[0]?.scores.exact_match?.outcome).toBe("pass");
+  });
+
+  it("preserves successful undefined outputs and their usage", async () => {
+    const result = await runEvalSuite({
+      name: "undefined-output",
+      cases: [{ id: "undefined", input: null }],
+      target: () => undefined,
+      metrics: [contains({ expected: "value" })],
+      targetUsage: () => usage(1, 0),
+    });
+    const caseResult = result.results[0];
+
+    expect(caseResult).toMatchObject({ targetStatus: "succeeded", output: undefined });
+    expect(caseResult !== undefined && "output" in caseResult).toBe(true);
+    expect(caseResult?.scores.contains).toMatchObject({
+      outcome: "invalid",
+      kind: "metric",
+      reason: "Text metric actual value must be a string or JSON-serializable value.",
+    });
+    expect(result.usage.target.totalTokens).toBe(1);
+  });
+
+  it("distinguishes a rejected undefined value from a successful undefined output", async () => {
+    const result = await runEvalSuite({
+      name: "undefined-target-error",
+      cases: [{ id: "undefined-error", input: null, expected: undefined }],
+      target: () => Promise.reject(undefined),
+      metrics: [exactMatch()],
+    });
+
+    expect(result.results[0]).toMatchObject({
+      targetStatus: "failed",
+      outcome: "invalid",
+    });
+    expect(result.results[0] !== undefined && "targetError" in result.results[0]).toBe(true);
+    expect(result.results[0]?.scores.exact_match).toMatchObject({
+      outcome: "invalid",
+      kind: "target",
+    });
+  });
+
   it("preserves result order with concurrent targets", async () => {
     const result = await runEvalSuite({
       name: "concurrent",
@@ -104,6 +156,45 @@ describe("evals", () => {
     expect(result.results.map((caseResult) => caseResult.case.id)).toEqual(["slow", "fast"]);
   });
 
+  it("limits target and metric concurrency independently", async () => {
+    let activeTargets = 0;
+    let activeMetrics = 0;
+    let maxTargets = 0;
+    let maxMetrics = 0;
+    await runEvalSuite({
+      name: "independent-concurrency",
+      cases: [
+        { id: "a", input: "a" },
+        { id: "b", input: "b" },
+        { id: "c", input: "c" },
+      ],
+      target: async (input) => {
+        activeTargets += 1;
+        maxTargets = Math.max(maxTargets, activeTargets);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        activeTargets -= 1;
+        return input;
+      },
+      metrics: [
+        {
+          name: "slow_metric",
+          evaluate: async () => {
+            activeMetrics += 1;
+            maxMetrics = Math.max(maxMetrics, activeMetrics);
+            await new Promise((resolve) => setTimeout(resolve, 5));
+            activeMetrics -= 1;
+            return EvalOutcome.pass(true);
+          },
+        },
+      ],
+      targetConcurrency: 2,
+      metricConcurrency: 1,
+    });
+
+    expect(maxTargets).toBe(2);
+    expect(maxMetrics).toBe(1);
+  });
+
   it("turns target errors into invalid metric results", async () => {
     const result = await runEvalSuite({
       name: "target-error",
@@ -116,10 +207,126 @@ describe("evals", () => {
 
     expect(result.metrics.invalid).toBe(2);
     expect(result.results[0]?.targetError).toBeInstanceOf(Error);
+    expect(result.results[0]?.targetStatus).toBe("failed");
     expect(result.results[0]?.metrics.map((metric) => metric.outcome.outcome)).toEqual([
       "invalid",
       "invalid",
     ]);
+  });
+
+  it("retains structured metric errors and per-case diagnostics", async () => {
+    const metricError = new Error("judge unavailable");
+    const result = await runEvalSuite({
+      name: "diagnostics",
+      cases: [{ id: "case", input: "x" }],
+      target: (input) => input,
+      metrics: [
+        {
+          name: "throws",
+          evaluate: () => {
+            throw metricError;
+          },
+        },
+      ],
+    });
+
+    expect(result.results[0]).toMatchObject({
+      targetStatus: "succeeded",
+      targetDurationMs: expect.any(Number),
+      durationMs: expect.any(Number),
+      usage: {
+        target: expect.any(Object),
+        evaluation: expect.any(Object),
+        total: expect.any(Object),
+      },
+    });
+    expect(result.results[0]?.metrics[0]).toMatchObject({
+      durationMs: expect.any(Number),
+      outcome: { outcome: "invalid", kind: "metric", error: metricError },
+    });
+  });
+
+  it("supports case timeouts, case selection, sharding, and progress events", async () => {
+    const progress: string[] = [];
+    const selected = await runEvalSuite({
+      name: "selected",
+      cases: [
+        { id: "a", input: "a", expected: "a" },
+        { id: "b", input: "b", expected: "b" },
+        { id: "c", input: "c", expected: "c" },
+      ],
+      caseIds: ["a", "c"],
+      shard: { index: 1, count: 2 },
+      target: (input) => input,
+      metrics: [exactMatch()],
+      onProgress: (event) => {
+        progress.push(event.type);
+      },
+    });
+
+    expect(selected.results.map((result) => result.case.id)).toEqual(["c"]);
+    expect(progress).toEqual(["case-start", "target-complete", "metric-complete", "case-complete"]);
+
+    const timedOut = await runEvalSuite({
+      name: "timeout",
+      cases: [{ id: "slow", input: "x", expected: "x" }],
+      target: async (_input, _case, context) =>
+        new Promise<string>((_resolve, reject) => {
+          const signal = context?.signal;
+          if (signal === undefined) throw new Error("Expected an eval target signal.");
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+        }),
+      metrics: [exactMatch()],
+      caseTimeoutMs: 5,
+    });
+
+    expect(timedOut.results[0]).toMatchObject({
+      targetStatus: "failed",
+      targetError: expect.objectContaining({ name: "EvalTimeoutError" }),
+    });
+  });
+
+  it("supports aborting runs, fail-fast gates, and rerun selection", async () => {
+    const controller = new AbortController();
+    controller.abort(new Error("cancelled by caller"));
+    await expect(
+      runEvalSuite({
+        name: "aborted",
+        cases: [{ id: "case", input: "x", expected: "x" }],
+        target: (input) => input,
+        metrics: [exactMatch()],
+        signal: controller.signal,
+      }),
+    ).rejects.toThrow("cancelled by caller");
+
+    const completed: string[] = [];
+    await expect(
+      runEvalSuite({
+        name: "fail-fast",
+        cases: [
+          { id: "first", input: "wrong", expected: "right" },
+          { id: "second", input: "right", expected: "right" },
+        ],
+        target: (input) => input,
+        metrics: [exactMatch()],
+        failFast: true,
+        onProgress: (event) => {
+          if (event.type === "case-complete") completed.push(event.result.case.id);
+        },
+      }),
+    ).rejects.toBeInstanceOf(EvalFailFastError);
+    expect(completed).toEqual(["first"]);
+
+    const previous = await runEvalSuite({
+      name: "rerun-source",
+      cases: [
+        { id: "pass", input: "yes", expected: "yes" },
+        { id: "fail", input: "no", expected: "yes" },
+      ],
+      target: (input) => input,
+      metrics: [exactMatch()],
+    });
+    expect(selectEvalCaseIds(previous)).toEqual(["fail"]);
   });
 
   it("supports exact and contains selector functions", async () => {
@@ -621,6 +828,9 @@ describe("evals", () => {
       evaluation: 0.01,
       total: 0.015,
     });
+    expect(result.results[0]?.usage.total.totalTokens).toBe(10);
+    expect(result.results[0]?.cost).toEqual(result.cost);
+    expect(result.results[0]?.metrics[0]?.cost).toBe(0.01);
   });
 
   it("rejects duplicate case ids and metric names before running targets", async () => {
@@ -635,6 +845,28 @@ describe("evals", () => {
         metrics: [exactMatch({ expected: "a" })],
       }),
     ).rejects.toThrow("Evaluation case id must be unique");
+  });
+
+  it("rejects invalid suite names, empty inputs, and concurrency values", async () => {
+    const base = {
+      name: "valid",
+      cases: [{ id: "case", input: "x", expected: "x" }],
+      target: (input: string) => input,
+      metrics: [exactMatch<string, string, string>()],
+    };
+
+    await expect(runEvalSuite({ ...base, name: " " })).rejects.toThrow(
+      "Evaluation suite name must not be empty",
+    );
+    await expect(runEvalSuite({ ...base, cases: [] })).rejects.toThrow(
+      "Evaluation suite must contain at least one case",
+    );
+    await expect(runEvalSuite({ ...base, metrics: [] })).rejects.toThrow(
+      "Evaluation suite must contain at least one metric",
+    );
+    await expect(runEvalSuite({ ...base, concurrency: Number.NaN })).rejects.toThrow(
+      "Evaluation concurrency must be a positive integer",
+    );
   });
 });
 
@@ -656,6 +888,7 @@ describe("defineMetric", () => {
       suiteName: "qa",
       case: { id: "c", input: "x" },
       output: "x",
+      signal: new AbortController().signal,
     };
     await expect(Promise.resolve(metric.evaluate(args))).resolves.toEqual({
       outcome: "pass",

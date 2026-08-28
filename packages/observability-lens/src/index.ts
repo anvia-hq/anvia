@@ -16,4 +16,5 @@ export type {
   LensPipelineObserverOptions,
   LensRedactionOptions,
   LensRedactorPattern,
+  LensScoreArgs,
 } from "./types.js";

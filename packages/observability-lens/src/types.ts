@@ -1,5 +1,6 @@
 import type { JsonValue } from "@anvia/core/completion";
 import type { EvalReporter } from "@anvia/core/evals";
+import type { OtelScoreArgs } from "@anvia/otel";
 
 export type LensCaptureMode = "safe" | "full";
 
@@ -35,6 +36,8 @@ export type LensObserverOptions = Pick<
 >;
 
 export type LensPipelineObserverOptions = LensObserverOptions;
+
+export type LensScoreArgs = OtelScoreArgs;
 
 export type LensEvalReporterOptions = {
   traceObserver?: string | undefined;

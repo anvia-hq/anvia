@@ -6,18 +6,10 @@ import {
   projectEvalOutcome,
   resolveEvalTraceRef,
 } from "@anvia/core/evals";
-import { type Context, ROOT_CONTEXT, TraceFlags, trace } from "@opentelemetry/api";
-import {
-  type AnyValue,
-  type AnyValueMap,
-  type LogAttributes,
-  type Logger,
-  logs,
-  SeverityNumber,
-} from "@opentelemetry/api-logs";
+import type { Context } from "@opentelemetry/api";
+import { type LogAttributes, type Logger, logs, SeverityNumber } from "@opentelemetry/api-logs";
+import { addMetadata, contextFromTraceRef, EVALUATION_EVENT_NAME } from "./evaluation-logging.js";
 import type { OtelEvalReporterOptions } from "./types.js";
-
-const EVALUATION_EVENT_NAME = "gen_ai.evaluation.result";
 
 export function createOtelEvalReporter<Input = unknown, Output = unknown, Expected = unknown>(
   options: OtelEvalReporterOptions = {},
@@ -280,54 +272,7 @@ function addRunAttributes(
   if (includeMetadata) addMetadata(attributes, "anvia.eval.run.metadata", run.metadata);
 }
 
-function contextFromTraceRef(ref: EvalReportArgs<unknown, unknown>["trace"]): Context | undefined {
-  if (ref === undefined || !isValidTraceId(ref.traceId) || !isValidSpanId(ref.observationId)) {
-    return undefined;
-  }
-  return trace.setSpanContext(ROOT_CONTEXT, {
-    traceId: ref.traceId,
-    spanId: ref.observationId,
-    traceFlags: TraceFlags.SAMPLED,
-    isRemote: true,
-  });
-}
-
-function addMetadata(
-  attributes: LogAttributes,
-  key: string,
-  metadata: Record<string, unknown> | undefined,
-): void {
-  if (metadata === undefined) return;
-  attributes[key] = toAnyValue(metadata);
-}
-
-function toAnyValue(value: unknown): AnyValue {
-  if (value === null || value === undefined) return value;
-  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-    return value;
-  }
-  if (Array.isArray(value)) return value.map(toAnyValue);
-  if (typeof value === "object") {
-    const result: AnyValueMap = {};
-    for (const [key, entry] of Object.entries(value)) result[key] = toAnyValue(entry);
-    return result;
-  }
-  return String(value);
-}
-
 function errorType(error: unknown): string {
   if (error instanceof Error && error.name.length > 0) return error.name;
   return "evaluation_invalid";
-}
-
-function isValidTraceId(value: string | undefined): value is string {
-  return (
-    value !== undefined &&
-    /^[0-9a-f]{32}$/i.test(value) &&
-    value !== "00000000000000000000000000000000"
-  );
-}
-
-function isValidSpanId(value: string | undefined): value is string {
-  return value !== undefined && /^[0-9a-f]{16}$/i.test(value) && value !== "0000000000000000";
 }

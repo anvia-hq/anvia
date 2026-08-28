@@ -1,3 +1,5 @@
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { defineEvalSuite, exactMatch, selectPromptOutput } from "@anvia/core/evals";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { resolveLensConfig } from "../src/config";
@@ -112,8 +114,80 @@ describe("Lens eval ergonomics", () => {
       }),
     ).toBeUndefined();
     await expect(client.flush()).resolves.toBeUndefined();
+    await expect(
+      client.score({
+        traceId: "1234567890abcdef1234567890abcdef",
+        name: "user-feedback",
+        value: 1,
+        dataType: "BOOLEAN",
+        source: "end_user",
+      }),
+    ).resolves.toBeUndefined();
     await expect(client.close()).resolves.toBeUndefined();
     await expect(client.close()).resolves.toBeUndefined();
+  });
+
+  it("exports runtime scores through the owned OTLP logs provider", async () => {
+    let resolveRequest!: (request: {
+      url: string | undefined;
+      authorization: string | undefined;
+      body: string;
+    }) => void;
+    const request = new Promise<{
+      url: string | undefined;
+      authorization: string | undefined;
+      body: string;
+    }>((resolve) => {
+      resolveRequest = resolve;
+    });
+    const server = createServer((incoming, response) => {
+      const chunks: Buffer[] = [];
+      incoming.on("data", (chunk: Buffer) => chunks.push(chunk));
+      incoming.on("end", () => {
+        resolveRequest({
+          url: incoming.url,
+          authorization: incoming.headers.authorization,
+          body: Buffer.concat(chunks).toString("utf8"),
+        });
+        response.writeHead(200, { "Content-Type": "application/json" });
+        response.end("{}");
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address() as AddressInfo;
+    const client = new LensClient({
+      baseUrl: `http://127.0.0.1:${address.port}`,
+      publicKey: "public",
+      secretKey: "secret",
+      serviceName: "score-test",
+    });
+
+    try {
+      await client.score({
+        id: "feedback-1",
+        traceId: "1234567890abcdef1234567890abcdef",
+        observationId: "1234567890abcdef",
+        name: "user-feedback",
+        value: 1,
+        dataType: "BOOLEAN",
+        source: "end_user",
+      });
+      await client.flush();
+      const exported = await request;
+
+      expect(exported.url).toBe("/api/public/otel/v1/logs");
+      expect(exported.authorization).toBe(
+        `Basic ${Buffer.from("public:secret").toString("base64")}`,
+      );
+      expect(exported.body).toContain('"eventName":"gen_ai.evaluation.result"');
+      expect(exported.body).toContain('"stringValue":"user-feedback"');
+      expect(exported.body).toContain('"stringValue":"end_user"');
+    } finally {
+      await client.close();
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
   });
 
   it("still rejects partially configured optional environments", () => {
@@ -143,6 +217,13 @@ describe("Lens eval ergonomics", () => {
     await client[Symbol.asyncDispose]();
     expect(() => client.observer()).toThrow("LensClient is closed");
     expect(() => client.pipelineObserver()).toThrow("LensClient is closed");
+    await expect(
+      client.score({
+        traceId: "1234567890abcdef1234567890abcdef",
+        name: "user-feedback",
+        value: 1,
+      }),
+    ).rejects.toThrow("LensClient is closed");
     await expect(
       observer.startRun({
         runId: "closed",

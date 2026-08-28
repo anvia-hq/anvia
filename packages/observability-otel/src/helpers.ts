@@ -287,7 +287,7 @@ export function agentLabel(agentId: string, agentName: string | undefined): stri
   return (agentName ?? agentId).replaceAll(/\s+/g, "_");
 }
 
-function isValidTraceId(traceId: string | undefined): traceId is string {
+export function isValidTraceId(traceId: string | undefined): traceId is string {
   return (
     traceId !== undefined &&
     /^[0-9a-f]{32}$/i.test(traceId) &&
@@ -295,7 +295,7 @@ function isValidTraceId(traceId: string | undefined): traceId is string {
   );
 }
 
-function isValidSpanId(spanId: string | undefined): spanId is string {
+export function isValidSpanId(spanId: string | undefined): spanId is string {
   return spanId !== undefined && /^[0-9a-f]{16}$/i.test(spanId) && spanId !== "0000000000000000";
 }
 

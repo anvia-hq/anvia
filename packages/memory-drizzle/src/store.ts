@@ -1,4 +1,4 @@
-import type { JsonObject, MemoryStore, Message } from "@anvia/core";
+import type { JsonObject, MemoryCompactionMessage, MemoryStore, Message } from "@anvia/core";
 import type {
   MemoryAppendOptions,
   MemoryCompactionCapability,
@@ -12,8 +12,8 @@ import type {
   MemoryInspector,
   MemoryScope,
 } from "@anvia/core/memory";
-import { createMemoryScopeKey } from "@anvia/core/memory";
-import { asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { createMemoryScopeKey, isMemoryCompactionMessage } from "@anvia/core/memory";
+import { and, asc, desc, eq, gte, sql } from "drizzle-orm";
 import { parseMemoryMessage, serializeUnknownError } from "./message.js";
 import { drizzleMemorySchema } from "./schema.js";
 import type {
@@ -57,6 +57,17 @@ type DrizzleDeleteBuilder = {
 
 type SessionRow = {
   id: string;
+};
+
+type CompactionSessionRow = SessionRow & {
+  compactionState: unknown;
+};
+
+type StoredCompactionState = {
+  version: 1;
+  generation: number;
+  summary: MemoryCompactionMessage;
+  summarizedThroughPosition: number;
 };
 
 type PositionRow = {
@@ -133,6 +144,7 @@ export class DrizzleMemoryStore implements MemoryStore {
       .select({
         sessionId: sessions.id,
         scopeKey: sessions.scopeKey,
+        compactionState: sessions.compactionState,
         messageId: messages.id,
         position: messages.position,
         message: messages.message,
@@ -225,6 +237,16 @@ export class DrizzleMemoryStore implements MemoryStore {
   private async loadCompactionSnapshot(context: MemoryScope): Promise<MemoryCompactionSnapshot> {
     const db = runtimeDatabase(this.db);
     const { agentMemorySessions: sessions, agentMemoryMessages: messages } = this.schema;
+    const sessionRows = (await db
+      .select({ id: sessions.id, compactionState: sessions.compactionState })
+      .from(sessions)
+      .where(eq(sessions.scopeKey, this.scopeKey(context)))
+      .limit(1)) as CompactionSessionRow[];
+    const session = sessionRows[0];
+    if (session === undefined) {
+      return { revision: compactionRevision([], undefined), messages: [] };
+    }
+    const state = this.compactionStateFromValue(session.compactionState);
     const rows = (await db
       .select({
         id: messages.id,
@@ -232,12 +254,18 @@ export class DrizzleMemoryStore implements MemoryStore {
         message: messages.message,
       })
       .from(messages)
-      .innerJoin(sessions, eq(messages.memorySessionId, sessions.id))
-      .where(eq(sessions.scopeKey, this.scopeKey(context)))
+      .where(
+        state === undefined
+          ? eq(messages.memorySessionId, session.id)
+          : and(
+              eq(messages.memorySessionId, session.id),
+              gte(messages.position, state.summarizedThroughPosition),
+            ),
+      )
       .orderBy(asc(messages.position))) as CompactionMessageRow[];
     return {
-      revision: compactionRevision(rows),
-      messages: rows.map((row) =>
+      revision: compactionRevision(rows, state),
+      messages: projectedMessages(rows, state, (row) =>
         this.options.validateMessages ? parseMemoryMessage(row.message) : (row.message as Message),
       ),
     };
@@ -253,6 +281,14 @@ export class DrizzleMemoryStore implements MemoryStore {
     return this.transaction(async (tx) => {
       await this.lock(tx, scopeKey);
       const { agentMemorySessions: sessions, agentMemoryMessages: messages } = this.schema;
+      const sessionRows = (await tx
+        .select({ id: sessions.id, compactionState: sessions.compactionState })
+        .from(sessions)
+        .where(eq(sessions.scopeKey, scopeKey))
+        .limit(1)) as CompactionSessionRow[];
+      const session = sessionRows[0];
+      if (session === undefined) return { status: "conflict" };
+      const state = this.compactionStateFromValue(session.compactionState);
       const rows = (await tx
         .select({
           id: messages.id,
@@ -260,30 +296,36 @@ export class DrizzleMemoryStore implements MemoryStore {
           message: messages.message,
         })
         .from(messages)
-        .innerJoin(sessions, eq(messages.memorySessionId, sessions.id))
-        .where(eq(sessions.scopeKey, scopeKey))
+        .where(
+          state === undefined
+            ? eq(messages.memorySessionId, session.id)
+            : and(
+                eq(messages.memorySessionId, session.id),
+                gte(messages.position, state.summarizedThroughPosition),
+              ),
+        )
         .orderBy(asc(messages.position))) as CompactionMessageRow[];
-      if (compactionRevision(rows) !== input.revision || input.messageCount > rows.length) {
+      const activeRows = activeCompactionRows(rows, state);
+      const physicalPrefixCount = input.messageCount - (state === undefined ? 0 : 1);
+      if (
+        compactionRevision(rows, state) !== input.revision ||
+        physicalPrefixCount < 0 ||
+        physicalPrefixCount > activeRows.length
+      ) {
         return { status: "conflict" };
       }
-      const boundary = rows[input.messageCount - 1];
-      if (boundary === undefined) {
+      const summarizedThroughPosition =
+        physicalPrefixCount === 0
+          ? state?.summarizedThroughPosition
+          : activeRows[physicalPrefixCount - 1]?.position;
+      if (summarizedThroughPosition === undefined) {
         return { status: "conflict" };
       }
-      const session = await this.upsertSession(tx, input.scope, scopeKey);
-      await tx.delete(messages).where(
-        inArray(
-          messages.id,
-          rows.slice(0, input.messageCount).map((row) => row.id),
-        ),
-      );
-      await tx.insert(messages).values({
-        memorySessionId: session.id,
-        runId: input.runId,
-        turn: 0,
-        position: boundary.position,
-        role: input.replacement.role,
-        message: input.replacement,
+      await this.upsertSession(tx, input.scope, scopeKey, {
+        version: 1,
+        generation: (state?.generation ?? 0) + 1,
+        summary: input.replacement,
+        summarizedThroughPosition,
       });
       return { status: "committed" };
     });
@@ -385,6 +427,7 @@ export class DrizzleMemoryStore implements MemoryStore {
     db: DrizzleRuntimeDatabase,
     context: MemoryScope,
     scopeKey: string,
+    compactionState?: StoredCompactionState,
   ): Promise<SessionRow> {
     const { agentMemorySessions: sessions } = this.schema;
     const rows = (await db
@@ -394,6 +437,7 @@ export class DrizzleMemoryStore implements MemoryStore {
         sessionId: context.sessionId,
         userId: context.userId ?? null,
         metadata: metadata(context),
+        ...(compactionState === undefined ? {} : { compactionState }),
       })
       .onConflictDoUpdate({
         target: sessions.scopeKey,
@@ -401,6 +445,7 @@ export class DrizzleMemoryStore implements MemoryStore {
           sessionId: context.sessionId,
           userId: context.userId ?? null,
           metadata: metadata(context),
+          ...(compactionState === undefined ? {} : { compactionState }),
           updatedAt: sql`now()`,
         },
       })
@@ -426,6 +471,13 @@ export class DrizzleMemoryStore implements MemoryStore {
         parseMemoryMessage(message);
       }
     }
+  }
+
+  private compactionStateFromValue(value: unknown): StoredCompactionState | undefined {
+    if (value === null || value === undefined) return undefined;
+    return parseCompactionState(value, (message) =>
+      this.options.validateMessages ? parseMemoryMessage(message) : (message as Message),
+    );
   }
 }
 
@@ -454,8 +506,61 @@ function metadata(context: MemoryScope): JsonObject {
   return context.metadata ?? {};
 }
 
-function compactionRevision(rows: CompactionMessageRow[]): string {
-  return JSON.stringify(rows.map((row) => row.id));
+function compactionRevision(
+  rows: CompactionMessageRow[],
+  state: StoredCompactionState | undefined,
+): string {
+  return JSON.stringify([state?.generation ?? 0, rows.map((row) => row.id)]);
+}
+
+function projectedMessages(
+  rows: CompactionMessageRow[],
+  state: StoredCompactionState | undefined,
+  message: (row: CompactionMessageRow) => Message,
+): Message[] {
+  if (state === undefined) return rows.map(message);
+  return [state.summary, ...activeCompactionRows(rows, state).map(message)];
+}
+
+function activeCompactionRows(
+  rows: CompactionMessageRow[],
+  state: StoredCompactionState | undefined,
+): CompactionMessageRow[] {
+  if (state === undefined) return rows;
+  const boundaryIndex = rows.findIndex((row) => row.position === state.summarizedThroughPosition);
+  if (boundaryIndex === -1) {
+    throw new Error("Drizzle memory compaction state boundary is invalid.");
+  }
+  return rows.slice(boundaryIndex + 1);
+}
+
+function parseCompactionState(
+  value: unknown,
+  parseMessage: (message: unknown) => Message,
+): StoredCompactionState {
+  if (typeof value !== "object" || value === null) {
+    throw new Error("Drizzle memory compaction state must be an object.");
+  }
+  const record = value as Record<string, unknown>;
+  if (
+    record.version !== 1 ||
+    !Number.isSafeInteger(record.generation) ||
+    (record.generation as number) < 1 ||
+    !Number.isSafeInteger(record.summarizedThroughPosition) ||
+    (record.summarizedThroughPosition as number) < 0
+  ) {
+    throw new Error("Drizzle memory compaction state is invalid.");
+  }
+  const summary = parseMessage(record.summary);
+  if (!isMemoryCompactionMessage(summary)) {
+    throw new Error("Drizzle memory compaction state summary is invalid.");
+  }
+  return {
+    version: 1,
+    generation: record.generation as number,
+    summarizedThroughPosition: record.summarizedThroughPosition as number,
+    summary,
+  };
 }
 
 function assertCompactionMessageCount(value: number): void {

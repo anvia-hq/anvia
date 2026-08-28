@@ -10,6 +10,14 @@ import type {
   MemoryErrorOptions,
   MemoryScope,
 } from "@anvia/core/memory";
+import {
+  activeStudioCompactionMessages,
+  parseStudioCompactionState,
+  projectStudioCompactionMessages,
+  studioCompactionRevision,
+  type StoredStudioCompactionState,
+  type StudioCompactionMessageRow,
+} from "./compaction-state";
 import { renumberTranscript, transcriptFromMessages } from "../runtime/transcript";
 import type {
   StudioPipelineLogAppendInput,
@@ -53,6 +61,11 @@ type SessionRow = {
   metadata_json: string | null;
   created_at: string;
   updated_at: string;
+};
+
+type CompactionSessionRow = {
+  id: string;
+  compaction_state_json: string | null;
 };
 
 type SessionSummaryRow = SessionRow & {
@@ -164,8 +177,13 @@ class SqliteSessionStore
   readonly kind = "sqlite";
   readonly compaction: MemoryCompactionCapability = {
     snapshot: ({ scope }) => {
-      const messages = this.listSessionMessages(scope.sessionId);
-      return Promise.resolve({ revision: memoryRevision(messages), messages });
+      const session = this.getCompactionSessionRow(scope.sessionId);
+      const state = parseStudioCompactionState(session?.compaction_state_json ?? null);
+      const rows = this.listCompactionMessages(scope.sessionId, state);
+      return Promise.resolve({
+        revision: studioCompactionRevision(rows, state),
+        messages: projectStudioCompactionMessages(rows, state),
+      });
     },
     replacePrefix: (options) => this.replaceCompactionPrefix(options),
   };
@@ -309,7 +327,8 @@ class SqliteSessionStore
       db.exec("BEGIN IMMEDIATE");
       db.prepare(
         `UPDATE anvia_studio_sessions
-         SET updated_at = $updatedAt
+         SET compaction_state_json = NULL,
+             updated_at = $updatedAt
          WHERE id = $id`,
       ).run({
         $id: scope.sessionId,
@@ -357,30 +376,44 @@ class SqliteSessionStore
     const db = this.database();
     try {
       db.exec("BEGIN IMMEDIATE");
-      const messages = this.listSessionMessages(input.scope.sessionId);
-      if (
-        memoryRevision(messages) !== input.revision ||
-        input.messageCount > messages.length ||
-        this.getSessionRow(input.scope.sessionId) === undefined
-      ) {
+      const session = this.getCompactionSessionRow(input.scope.sessionId);
+      const state = parseStudioCompactionState(session?.compaction_state_json ?? null);
+      const rows = this.listCompactionMessages(input.scope.sessionId, state);
+      if (session === undefined || studioCompactionRevision(rows, state) !== input.revision) {
         db.exec("ROLLBACK");
         return Promise.resolve({ status: "conflict" });
       }
-      db.prepare("DELETE FROM anvia_studio_session_messages WHERE session_id = $id").run({
-        $id: input.scope.sessionId,
-      });
+      const physicalPrefixCount = input.messageCount - (state === undefined ? 0 : 1);
+      const activeRows = activeStudioCompactionMessages(rows, state);
+      if (physicalPrefixCount < 0 || physicalPrefixCount > activeRows.length) {
+        db.exec("ROLLBACK");
+        return Promise.resolve({ status: "conflict" });
+      }
+      const summarizedThroughPosition =
+        physicalPrefixCount === 0
+          ? state?.summarizedThroughPosition
+          : activeRows[physicalPrefixCount - 1]?.position;
+      if (summarizedThroughPosition === undefined) {
+        db.exec("ROLLBACK");
+        return Promise.resolve({ status: "conflict" });
+      }
+      const nextState: StoredStudioCompactionState = {
+        version: 1,
+        generation: (state?.generation ?? 0) + 1,
+        summary: input.replacement,
+        summarizedThroughPosition,
+      };
       const updatedAt = new Date().toISOString();
-      this.insertMessages(
-        input.scope.sessionId,
-        [input.replacement, ...messages.slice(input.messageCount)],
-        0,
-        updatedAt,
-      );
       db.prepare(
         `UPDATE anvia_studio_sessions
-         SET updated_at = $updatedAt
+         SET compaction_state_json = $compactionState,
+             updated_at = $updatedAt
          WHERE id = $id`,
-      ).run({ $id: input.scope.sessionId, $updatedAt: updatedAt });
+      ).run({
+        $id: input.scope.sessionId,
+        $compactionState: JSON.stringify(nextState),
+        $updatedAt: updatedAt,
+      });
       db.exec("COMMIT");
       return Promise.resolve({ status: "committed" });
     } catch (error) {
@@ -937,6 +970,7 @@ class SqliteSessionStore
         agent_id TEXT NOT NULL,
         title TEXT,
         metadata_json TEXT,
+        compaction_state_json TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       ) STRICT;
@@ -1042,6 +1076,7 @@ class SqliteSessionStore
       CREATE INDEX IF NOT EXISTS anvia_studio_traces_session_started_idx
         ON anvia_studio_traces(session_id, started_at DESC);
     `);
+    ensureSessionCompactionStateColumn(db);
     ensureMessageMetadataColumn(db);
 
     this.db = db;
@@ -1056,6 +1091,16 @@ class SqliteSessionStore
          WHERE id = $id`,
       )
       .get({ $id: id }) as SessionRow | undefined;
+  }
+
+  private getCompactionSessionRow(id: string): CompactionSessionRow | undefined {
+    return this.database()
+      .prepare(
+        `SELECT id, compaction_state_json
+         FROM anvia_studio_sessions
+         WHERE id = $id`,
+      )
+      .get({ $id: id }) as CompactionSessionRow | undefined;
   }
 
   private getSessionRun(sessionId: string, runId: string): SessionRunRow | undefined {
@@ -1102,15 +1147,35 @@ class SqliteSessionStore
   }
 
   private listSessionMessages(sessionId: string): Message[] {
+    return this.listSessionMessageEntries(sessionId).map((entry) => entry.message);
+  }
+
+  private listCompactionMessages(
+    sessionId: string,
+    state: StoredStudioCompactionState | undefined,
+  ): StudioCompactionMessageRow[] {
+    return this.listSessionMessageEntries(sessionId, state?.summarizedThroughPosition);
+  }
+
+  private listSessionMessageEntries(
+    sessionId: string,
+    minimumIndex?: number,
+  ): StudioCompactionMessageRow[] {
     const db = this.database();
+    const boundaryClause = minimumIndex === undefined ? "" : "AND message_index >= $minimumIndex";
+    const parameters =
+      minimumIndex === undefined
+        ? { $sessionId: sessionId }
+        : { $sessionId: sessionId, $minimumIndex: minimumIndex };
     const messageRows = db
       .prepare(
         `SELECT session_id, message_index, role, message_id, metadata_json, created_at
          FROM anvia_studio_session_messages
          WHERE session_id = $sessionId
+           ${boundaryClause}
          ORDER BY message_index ASC`,
       )
-      .all({ $sessionId: sessionId }) as MessageRow[];
+      .all(parameters) as MessageRow[];
 
     if (messageRows.length === 0) {
       return [];
@@ -1121,9 +1186,10 @@ class SqliteSessionStore
         `SELECT session_id, message_index, part_index, type, part_json
          FROM anvia_studio_session_message_parts
          WHERE session_id = $sessionId
+           ${boundaryClause}
          ORDER BY message_index ASC, part_index ASC`,
       )
-      .all({ $sessionId: sessionId }) as MessagePartRow[];
+      .all(parameters) as MessagePartRow[];
     const partsByMessage = new Map<number, MessagePartRow[]>();
     for (const partRow of partRows) {
       const parts = partsByMessage.get(partRow.message_index) ?? [];
@@ -1131,9 +1197,10 @@ class SqliteSessionStore
       partsByMessage.set(partRow.message_index, parts);
     }
 
-    return messageRows.map((row) =>
-      messageFromRows(row, partsByMessage.get(row.message_index) ?? []),
-    );
+    return messageRows.map((row) => ({
+      position: row.message_index,
+      message: messageFromRows(row, partsByMessage.get(row.message_index) ?? []),
+    }));
   }
 
   private nextMessageIndex(sessionId: string): number {
@@ -1380,6 +1447,13 @@ function ensureMessageMetadataColumn(db: DatabaseSyncType): void {
   }
 }
 
+function ensureSessionCompactionStateColumn(db: DatabaseSyncType): void {
+  const columns = db.prepare("PRAGMA table_info('anvia_studio_sessions')").all() as TableInfoRow[];
+  if (!columns.some((column) => column.name === "compaction_state_json")) {
+    db.exec("ALTER TABLE anvia_studio_sessions ADD COLUMN compaction_state_json TEXT");
+  }
+}
+
 function loadDatabaseSync(): DatabaseSyncConstructor {
   if (DatabaseSync !== undefined) {
     return DatabaseSync;
@@ -1448,10 +1522,6 @@ function parseJsonValue<T>(value: string | null): T | undefined {
 function studioRunId(scope: MemoryScope): string | undefined {
   const value = scope.metadata?.studioRunId;
   return typeof value === "string" && value.length > 0 ? value : undefined;
-}
-
-function memoryRevision(messages: Message[]): string {
-  return JSON.stringify(messages);
 }
 
 function serializeJsonError(error: unknown): JsonValue {

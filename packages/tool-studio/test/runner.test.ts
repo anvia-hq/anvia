@@ -3318,6 +3318,14 @@ describe("Anvia studio", () => {
     );
 
     await expect(store.load({ scope: { sessionId: "compaction-session" } })).resolves.toEqual([
+      Message.user("first"),
+      Message.assistant("first answer"),
+      Message.user("recent"),
+      Message.assistant("recent answer"),
+      Message.user("next"),
+      expect.objectContaining(Message.assistant("done")),
+    ]);
+    expect(model.requests[0]?.chatHistory).toEqual([
       expect.objectContaining({
         role: "system",
         content: "Earlier discussion.",
@@ -3330,7 +3338,6 @@ describe("Anvia studio", () => {
       Message.user("recent"),
       Message.assistant("recent answer"),
       Message.user("next"),
-      expect.objectContaining(Message.assistant("done")),
     ]);
     const logs = await runner.fetch(
       new Request("http://runner.test/sessions/compaction-session/logs"),
@@ -3396,7 +3403,8 @@ describe("Anvia studio", () => {
     await expect(
       store.load({ scope: { sessionId: "failed-compaction-session" } }),
     ).resolves.toEqual([
-      expect.objectContaining({ role: "system", content: "Earlier discussion." }),
+      Message.user("first"),
+      Message.assistant("first answer"),
       Message.user("recent"),
       Message.assistant("recent answer"),
       Message.user("next"),
@@ -4524,6 +4532,12 @@ describe("Anvia studio", () => {
         runId: "compaction_1",
       }),
     ).resolves.toEqual({ status: "committed" });
+    await expect(store.load({ scope: { sessionId: "session_1" } })).resolves.toEqual([
+      Message.user([{ type: "text", text: "original" }]),
+    ]);
+    await expect(
+      store.compaction.snapshot({ scope: { sessionId: "session_1" } }),
+    ).resolves.toMatchObject({ messages: [replacement] });
   });
 
   it("uses the SQLite session store as a core memory store", async () => {
@@ -4598,7 +4612,7 @@ describe("Anvia studio", () => {
     });
   });
 
-  it("atomically replaces SQLite memory prefixes and exposes compaction messages", async () => {
+  it("atomically checkpoints SQLite memory prefixes without replacing canonical messages", async () => {
     const store = createSqliteSessionStore({ path: ":memory:" });
     store.createSession({ id: "session_1", agentId: "support" });
     const retained = [
@@ -4645,13 +4659,42 @@ describe("Anvia studio", () => {
       }),
     ).resolves.toEqual({ status: "conflict" });
     await expect(store.load({ scope: { sessionId: "session_1" } })).resolves.toEqual([
-      replacement,
+      Message.user([{ type: "text", text: "old" }]),
+      Message.assistant("old answer"),
       ...retained,
     ]);
     expect(await store.getSession("session_1")).toMatchObject({
-      messageCount: 3,
-      messages: [replacement, ...retained],
+      messageCount: 4,
+      messages: [
+        Message.user([{ type: "text", text: "old" }]),
+        Message.assistant("old answer"),
+        ...retained,
+      ],
     });
+    await expect(
+      store.compaction.snapshot({ scope: { sessionId: "session_1" } }),
+    ).resolves.toMatchObject({ messages: [replacement, ...retained] });
+
+    await store.append({
+      scope: { sessionId: "session_1" },
+      runId: "run_2",
+      turn: 1,
+      messages: [Message.user("after compaction")],
+    });
+    await expect(
+      store.compaction.snapshot({ scope: { sessionId: "session_1" } }),
+    ).resolves.toMatchObject({
+      messages: [
+        replacement,
+        ...retained,
+        Message.user([{ type: "text", text: "after compaction" }]),
+      ],
+    });
+
+    await store.clear({ scope: { sessionId: "session_1" } });
+    await expect(
+      store.compaction.snapshot({ scope: { sessionId: "session_1" } }),
+    ).resolves.toMatchObject({ messages: [] });
   });
 
   it("rejects non-JSON message metadata in the SQLite session store", async () => {
@@ -4834,6 +4877,10 @@ describe("Anvia studio", () => {
       .prepare("PRAGMA table_info('anvia_studio_session_messages')")
       .all() as Array<{ name: string }>;
     expect(columns.map((column) => column.name)).toContain("metadata_json");
+    const sessionColumns = migrated
+      .prepare("PRAGMA table_info('anvia_studio_sessions')")
+      .all() as Array<{ name: string }>;
+    expect(sessionColumns.map((column) => column.name)).toContain("compaction_state_json");
     migrated.close();
   });
 

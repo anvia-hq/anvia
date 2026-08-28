@@ -1,6 +1,13 @@
-import type { JsonObject, JsonValue, Message } from "@anvia/core";
+import type { JsonObject, JsonValue, MemoryCompactionMessage, Message } from "@anvia/core";
 import { sql } from "drizzle-orm";
 import { integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+
+type MemoryCompactionStateValue = {
+  version: 1;
+  generation: number;
+  summary: MemoryCompactionMessage;
+  summarizedThroughPosition: number;
+};
 
 export const agentMemorySessions = pgTable(
   "agent_memory_sessions",
@@ -13,6 +20,7 @@ export const agentMemorySessions = pgTable(
       .$type<JsonObject>()
       .notNull()
       .default(sql`'{}'::jsonb`),
+    compactionState: jsonb("compaction_state").$type<MemoryCompactionStateValue>(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

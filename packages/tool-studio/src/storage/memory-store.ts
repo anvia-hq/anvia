@@ -2,6 +2,7 @@ import type { JsonObject, JsonValue, Message } from "@anvia/core/completion";
 import type {
   MemoryAppendOptions,
   MemoryCompactionCapability,
+  MemoryCompactionMessage,
   MemoryCompactionReplacePrefixOptions,
   MemoryErrorOptions,
   MemoryScope,
@@ -36,8 +37,16 @@ import type {
 
 type MemorySessionRecord = StudioSessionSummary & {
   messages: Message[];
+  compactionState?: StudioCompactionState | undefined;
+  storeRevision: number;
   runs: Array<StudioSessionRunTranscriptInput & { createdAt: string; updatedAt: string }>;
   logs: StudioSessionLogEntry[];
+};
+
+type StudioCompactionState = {
+  generation: number;
+  summary: MemoryCompactionMessage;
+  summarizedThroughPosition: number;
 };
 
 export function createInMemoryStudioStore(): StudioSessionStore &
@@ -53,10 +62,11 @@ class InMemoryStudioStore
   readonly kind = "memory";
   readonly compaction: MemoryCompactionCapability = {
     snapshot: ({ scope }) => {
-      const messages = this.sessions.get(scope.sessionId)?.messages ?? [];
+      const session = this.sessions.get(scope.sessionId);
+      const messages = session?.messages ?? [];
       return Promise.resolve({
-        revision: memoryRevision(messages),
-        messages: cloneMessages(messages),
+        revision: String(session?.storeRevision ?? 0),
+        messages: projectedMessages(messages, session?.compactionState),
       });
     },
     replacePrefix: (options) => this.replaceCompactionPrefix(options),
@@ -83,6 +93,7 @@ class InMemoryStudioStore
       updatedAt: now,
       messageCount: 0,
       messages: [],
+      storeRevision: 0,
       runs: [],
       logs: [],
     };
@@ -119,6 +130,7 @@ class InMemoryStudioStore
     const session = this.sessions.get(input.scope.sessionId);
     if (session !== undefined) {
       session.messages.push(...cloneMessages(input.messages));
+      session.storeRevision += 1;
       session.messageCount = session.messages.length;
       session.updatedAt = new Date().toISOString();
     }
@@ -129,6 +141,8 @@ class InMemoryStudioStore
     const session = this.sessions.get(scope.sessionId);
     if (session !== undefined) {
       session.messages = [];
+      delete session.compactionState;
+      session.storeRevision += 1;
       session.runs = [];
       session.messageCount = 0;
       session.updatedAt = new Date().toISOString();
@@ -153,15 +167,23 @@ class InMemoryStudioStore
       throw new RangeError("messageCount must be a positive integer.");
     }
     const session = this.sessions.get(input.scope.sessionId);
-    if (
-      session === undefined ||
-      memoryRevision(session.messages) !== input.revision ||
-      input.messageCount > session.messages.length
-    ) {
+    if (session === undefined || String(session.storeRevision) !== input.revision) {
       return Promise.resolve({ status: "conflict" });
     }
-    session.messages.splice(0, input.messageCount, structuredClone(input.replacement));
-    session.messageCount = session.messages.length;
+    const physicalPrefixCount =
+      input.messageCount - (session.compactionState === undefined ? 0 : 1);
+    const activeMessageCount =
+      session.messages.length - (session.compactionState?.summarizedThroughPosition ?? -1) - 1;
+    if (physicalPrefixCount < 0 || physicalPrefixCount > activeMessageCount) {
+      return Promise.resolve({ status: "conflict" });
+    }
+    session.compactionState = {
+      generation: (session.compactionState?.generation ?? 0) + 1,
+      summary: structuredClone(input.replacement),
+      summarizedThroughPosition:
+        (session.compactionState?.summarizedThroughPosition ?? -1) + physicalPrefixCount,
+    };
+    session.storeRevision += 1;
     session.updatedAt = new Date().toISOString();
     return Promise.resolve({ status: "committed" });
   }
@@ -342,8 +364,15 @@ function studioRunId(scope: MemoryScope): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
-function memoryRevision(messages: Message[]): string {
-  return JSON.stringify(messages);
+function projectedMessages(
+  messages: Message[],
+  state: StudioCompactionState | undefined,
+): Message[] {
+  if (state === undefined) return cloneMessages(messages);
+  return [
+    structuredClone(state.summary),
+    ...cloneMessages(messages.slice(state.summarizedThroughPosition + 1)),
+  ];
 }
 
 function serializeJsonError(error: unknown): JsonValue {

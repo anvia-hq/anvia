@@ -76,8 +76,11 @@ Its optional read-only memory inspector lets `@anvia/studio` discover existing c
 ordered message records directly from these tables.
 
 The store exposes `compaction.snapshot({ scope })` and atomic
-`compaction.replacePrefix({ ... })`. Compaction messages remain visible as ordinary ordered system
-messages; this adapter never chooses retention, calls a model, or retries mutations.
+`compaction.replacePrefix({ ... })`. `load()` and inspection return the full canonical history;
+the snapshot projects the session's latest checkpoint summary plus its unsummarized tail for model
+context. The exported session table includes nullable `compactionState`; add the generated column
+through the application's normal migration workflow. This adapter never chooses retention, calls a
+model, or retries mutations.
 
 ## Development
 

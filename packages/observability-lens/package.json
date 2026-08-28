@@ -1,6 +1,6 @@
 {
   "name": "@anvia/lens",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "Native Anvia Lens tracing and evaluation adapter for Anvia.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",

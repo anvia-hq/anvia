@@ -1,5 +1,15 @@
 # @anvia/memory-postgres
 
+## 1.0.7
+
+### Patch Changes
+
+- 9e5e068: Preserve canonical memory messages during compaction and store the latest summary as a separate
+  model-context checkpoint. Memory loads and inspection now remain fully replayable, while compacted
+  model requests receive the summary plus only the unsummarized tail.
+- Updated dependencies [9e5e068]
+  - @anvia/core@1.0.7
+
 ## 1.0.6
 
 ### Patch Changes

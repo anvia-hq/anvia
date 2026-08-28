@@ -1,5 +1,20 @@
 # @anvia/studio
 
+## 1.0.9
+
+### Patch Changes
+
+- 9e5e068: Preserve canonical memory messages during compaction and store the latest summary as a separate
+  model-context checkpoint. Memory loads and inspection now remain fully replayable, while compacted
+  model requests receive the summary plus only the unsummarized tail.
+- Updated dependencies [9e5e068]
+  - @anvia/core@1.0.7
+  - @anvia/client@1.0.7
+  - @anvia/graph@1.0.8
+  - @anvia/react@1.0.7
+  - @anvia/react-ui@1.0.7
+  - @anvia/server@1.0.7
+
 ## 1.0.8
 
 ### Patch Changes

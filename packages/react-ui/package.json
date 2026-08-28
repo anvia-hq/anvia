@@ -1,6 +1,6 @@
 {
   "name": "@anvia/react-ui",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "Composable React UI primitives for Anvia chat and completion experiences.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",

@@ -1,5 +1,13 @@
 # @anvia/neo4j
 
+## 1.0.8
+
+### Patch Changes
+
+- Updated dependencies [9e5e068]
+  - @anvia/core@1.0.7
+  - @anvia/graph@1.0.8
+
 ## 1.0.7
 
 ### Patch Changes

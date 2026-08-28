@@ -1,6 +1,6 @@
 ---
-"@anvia/otel": minor
-"@anvia/lens": minor
+"@anvia/otel": patch
+"@anvia/lens": patch
 ---
 
 Add trace-correlated runtime scoring with explicit end-user feedback provenance, and expose it

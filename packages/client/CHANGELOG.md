@@ -1,5 +1,15 @@
 # @anvia/client
 
+## 1.0.5
+
+### Patch Changes
+
+- c7fb0f8: Declare and verify Bun 1.3.14 runtime compatibility for the built packages, public Core exports,
+  Client and Server streaming, OpenAI SDK transport and media paths, and MCP HTTP/SSE and stdio
+  transports. Make structured tool output branding stable across multiple Core module instances.
+- Updated dependencies [c7fb0f8]
+  - @anvia/core@1.0.5
+
 ## 1.0.4
 
 ### Patch Changes

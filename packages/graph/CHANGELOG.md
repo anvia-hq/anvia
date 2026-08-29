@@ -1,5 +1,13 @@
 # @anvia/graph
 
+## 1.0.10
+
+### Patch Changes
+
+- 0891239: Add configurable property-level graph extraction conflict resolution with structured warnings and
+  errors, durable ingestion receipts with optional graph-plus-vector orchestration, explorer source
+  provenance, and shared-resource tenant namespaces for managed Neo4j graphs and Qdrant stores.
+
 ## 1.0.9
 
 ### Patch Changes

@@ -1,15 +1,28 @@
-export { DockerBrowserClient } from "./docker-browser";
-export { BrowserError, type BrowserErrorCode } from "./errors";
+export { DockerBrowserClient } from "./docker-browser-client";
+export {
+  BrowserError,
+  type BrowserErrorCode,
+  type BrowserErrorOptions,
+  type BrowserErrorRecovery,
+} from "./errors";
 export { createBrowserTools } from "./tools";
 export type {
   AcquireBrowserHumanControlOptions,
+  BrowserActionOptions,
+  BrowserCapability,
+  BrowserCapabilitySnapshot,
+  BrowserCapabilityState,
   BrowserConnectOptions,
   BrowserControl,
+  BrowserControlAvailability,
   BrowserControlSnapshot,
   BrowserDesktopEndpoint,
   BrowserDesktopOptions,
   BrowserHumanControlLease,
+  BrowserLifecycleOptions,
   BrowserNavigationPolicy,
+  BrowserReadinessSnapshot,
+  BrowserSchedulingOptions,
   BrowserTab,
   BrowserToolLimits,
   BrowserToolName,

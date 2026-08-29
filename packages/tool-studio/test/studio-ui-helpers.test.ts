@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Message } from "../../core/test/helpers/imports";
-import { userMessageWithAttachments } from "../src/ui/app/app-helpers";
+import { controlsForSelectedModel, userMessageWithAttachments } from "../src/ui/app/app-helpers";
 import {
   fallbackActivePage,
   isActivePageEnabled,
@@ -116,5 +116,37 @@ describe("Studio UI helpers", () => {
         },
       ]),
     );
+  });
+
+  it("clears controls without a model while preserving them during model loading", () => {
+    const controls = { reasoningEffort: "high" };
+
+    expect(controlsForSelectedModel("", undefined, controls)).toEqual({});
+    expect(controlsForSelectedModel("test:reasoning", undefined, controls)).toBe(controls);
+    expect(
+      controlsForSelectedModel(
+        "test:reasoning",
+        {
+          id: "reasoning",
+          ref: "test:reasoning",
+          providerId: "test",
+          controls: {
+            reasoningEffort: {
+              type: "select",
+              label: "Reasoning effort",
+              options: ["low"],
+            },
+          },
+        },
+        controls,
+      ),
+    ).toEqual({});
+    expect(
+      controlsForSelectedModel(
+        "test:reasoning",
+        { id: "reasoning", ref: "test:reasoning", providerId: "test" },
+        JSON.parse('{"toString":"high"}') as Record<string, string>,
+      ),
+    ).toEqual({});
   });
 });

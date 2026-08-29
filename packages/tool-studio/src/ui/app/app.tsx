@@ -17,6 +17,7 @@ import type {
   StudioTraceSummary,
 } from "../../types";
 import {
+  controlsForSelectedModel,
   enrichTranscriptWithTraceIds,
   fileToAttachment,
   type PromptAttachment,
@@ -259,15 +260,10 @@ export function StudioConsole() {
   const [selectedControls, setSelectedControls] = useState<Record<string, string>>({});
   const selectedCatalogModel = selectedAgentModels.find((model) => model.ref === selectedModelRef);
   useEffect(() => {
-    if (selectedCatalogModel === undefined) return;
     setSelectedControls((current) =>
-      Object.fromEntries(
-        Object.entries(current).filter(([id, value]) =>
-          selectedCatalogModel.controls?.[id]?.options.includes(value),
-        ),
-      ),
+      controlsForSelectedModel(selectedModelRef, selectedCatalogModel, current),
     );
-  }, [selectedCatalogModel]);
+  }, [selectedCatalogModel, selectedModelRef]);
   const hasMessages = messages.length > 0;
   const openBrowserWorkspaceForTool = useCallback(
     (toolName: string) => {

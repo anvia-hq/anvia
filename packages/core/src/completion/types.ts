@@ -795,7 +795,11 @@ export function assertCompletionControlsSupported(
   const modelLabel = `${model.provider}:${model.modelId}`;
   for (const [controlId, value] of Object.entries(controls ?? {})) {
     if (value === undefined) continue;
-    const control = model.controls?.[controlId];
+    const modelControls = model.controls;
+    const control =
+      modelControls !== undefined && Object.hasOwn(modelControls, controlId)
+        ? modelControls[controlId]
+        : undefined;
     if (control === undefined) {
       throw new CompletionCapabilityError(
         `${modelLabel} does not support completion control "${controlId}".`,

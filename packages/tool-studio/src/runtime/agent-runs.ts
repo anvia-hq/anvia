@@ -279,11 +279,14 @@ function compatibleAgentControls(
   controls: Readonly<Record<string, string | undefined>> | undefined,
   model: CompletionModel,
 ): Readonly<Record<string, string>> | undefined {
+  const modelControls = model.controls;
   const compatible = Object.fromEntries(
     Object.entries(controls ?? {}).filter(
       (entry): entry is [string, string] =>
         typeof entry[1] === "string" &&
-        model.controls?.[entry[0]]?.options.includes(entry[1]) === true,
+        modelControls !== undefined &&
+        Object.hasOwn(modelControls, entry[0]) &&
+        modelControls[entry[0]]?.options.includes(entry[1]) === true,
     ),
   );
   return Object.keys(compatible).length === 0 ? undefined : compatible;

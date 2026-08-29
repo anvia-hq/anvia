@@ -120,6 +120,24 @@ export function modelRefAvailable(models: StudioModelSummary[], ref: string): bo
   return ref.length > 0 && models.some((model) => model.ref === ref);
 }
 
+export function controlsForSelectedModel(
+  selectedModelRef: string,
+  selectedModel: StudioModelSummary | undefined,
+  current: Record<string, string>,
+): Record<string, string> {
+  if (selectedModelRef.length === 0) return {};
+  if (selectedModel === undefined) return current;
+  const modelControls = selectedModel.controls;
+  return Object.fromEntries(
+    Object.entries(current).filter(
+      ([id, value]) =>
+        modelControls !== undefined &&
+        Object.hasOwn(modelControls, id) &&
+        modelControls[id]?.options.includes(value) === true,
+    ),
+  );
+}
+
 export function modelSelectLabel(model: StudioModelSummary): string {
   const provider = model.providerName ?? model.providerId;
   const name = model.name ?? model.id;

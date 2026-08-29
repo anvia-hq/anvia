@@ -255,6 +255,19 @@ describe("completion model capabilities", () => {
     expect(model.requests).toHaveLength(0);
   });
 
+  it.each(["toString", "__proto__"])(
+    "rejects inherited control id %s with a capability error",
+    async (controlId) => {
+      const model = new ControlledQueueModel();
+      const controls = JSON.parse(`{"${controlId}":"high"}`) as Record<string, string>;
+
+      await expect(generateCompletion({ model, prompt: "hello", controls })).rejects.toThrow(
+        CompletionCapabilityError,
+      );
+      expect(model.requests).toHaveLength(0);
+    },
+  );
+
   it("merges Agent control defaults with per-run overrides", async () => {
     const model = new ControlledQueueModel();
     const agent = new Agent({

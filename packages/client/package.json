@@ -1,6 +1,6 @@
 {
   "name": "@anvia/client",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "Framework-neutral client protocol, transports, and UI message state for Anvia.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",

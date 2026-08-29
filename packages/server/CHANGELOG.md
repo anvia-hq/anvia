@@ -1,5 +1,11 @@
 # @anvia/server
 
+## 1.0.9
+
+### Patch Changes
+
+- @anvia/client@1.0.9
+
 ## 1.0.8
 
 ### Patch Changes

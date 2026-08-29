@@ -1,5 +1,12 @@
 # @anvia/qdrant
 
+## 1.0.10
+
+### Patch Changes
+
+- Updated dependencies [68953da]
+  - @anvia/core@1.0.9
+
 ## 1.0.9
 
 ### Patch Changes

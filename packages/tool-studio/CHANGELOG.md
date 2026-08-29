@@ -1,5 +1,19 @@
 # @anvia/studio
 
+## 1.0.12
+
+### Patch Changes
+
+- 68953da: Add typed completion model controls with provider-neutral reasoning effort support, Agent defaults,
+  per-run overrides, Studio selectors and persistence, and normalized observability attributes.
+- Updated dependencies [68953da]
+  - @anvia/core@1.0.9
+  - @anvia/client@1.0.9
+  - @anvia/graph@1.0.11
+  - @anvia/react@1.0.9
+  - @anvia/react-ui@1.0.9
+  - @anvia/server@1.0.9
+
 ## 1.0.11
 
 ### Patch Changes

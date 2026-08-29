@@ -71,6 +71,60 @@ export type GraphFacts<Schema extends GraphSchemaLike = GraphSchemaLike> = Reado
   mentions: readonly GraphMention[];
 }>;
 
+export type GraphFactKind = "entity" | "relationship";
+
+export type GraphFactConflictCandidate = Readonly<{
+  chunkId: string;
+  properties: GraphProperties;
+  value: GraphPropertyValue | undefined;
+}>;
+
+export type GraphFactPropertyConflict = Readonly<{
+  code: "GRAPH_FACT_CONFLICT";
+  kind: GraphFactKind;
+  key: string;
+  type: string;
+  identity: GraphNodeIdentity;
+  property: string;
+  candidates: readonly GraphFactConflictCandidate[];
+  sourceChunkIds: readonly string[];
+}>;
+
+export type GraphFactPropertyConflictResolver = (
+  conflict: GraphFactPropertyConflict,
+) => GraphPropertyValue | undefined;
+
+export type GraphFactPropertyConflictStrategy =
+  | "reject"
+  | "prefer-first"
+  | "prefer-last"
+  | "prefer-defined"
+  | "prefer-longest"
+  | "union"
+  | "max"
+  | "min"
+  | GraphFactPropertyConflictResolver;
+
+export type GraphFactConflictPolicy = Readonly<{
+  default?: GraphFactPropertyConflictStrategy | undefined;
+  properties?: Readonly<Record<string, GraphFactPropertyConflictStrategy>> | undefined;
+  resolve?: GraphFactPropertyConflictResolver | undefined;
+}>;
+
+export type GraphFactConflictOptions = Readonly<{
+  entity?: GraphFactConflictPolicy | undefined;
+  relationship?: GraphFactConflictPolicy | undefined;
+}>;
+
+export type GraphFactConflictWarning = Omit<GraphFactPropertyConflict, "code"> &
+  Readonly<{
+    code: "GRAPH_FACT_CONFLICT_RESOLVED";
+    strategy: string;
+    resolvedValue: GraphPropertyValue | undefined;
+  }>;
+
+export type GraphExtractionWarning = GraphFactConflictWarning;
+
 export type GraphChunk<Metadata extends GraphProperties = GraphProperties> = Readonly<{
   id: string;
   documentId: string;
@@ -95,11 +149,13 @@ export type ExtractGraphFactsOptions<
   retries?: RetrySetting | undefined;
   concurrency?: number | undefined;
   abortSignal?: AbortSignal | undefined;
+  conflicts?: GraphFactConflictOptions | undefined;
 }>;
 
 export type ExtractGraphFactsResult<Schema extends GraphSchemaLike> = Readonly<{
   output: GraphFacts<Schema>;
   usage: Usage;
+  warnings: readonly GraphExtractionWarning[];
 }>;
 
 export type GraphVectorSearchOptions = Readonly<{
@@ -203,6 +259,7 @@ export type GraphExploreOverviewOptions<Schema extends GraphSchemaLike> = Readon
   mode: "overview";
   nodeTypes?: readonly (keyof Schema["nodes"] & string)[] | undefined;
   relationships?: readonly (keyof Schema["relationships"] & string)[] | undefined;
+  includeProvenance?: boolean | undefined;
   maxNodes?: number | undefined;
   maxRelationships?: number | undefined;
   abortSignal?: AbortSignal | undefined;
@@ -213,6 +270,7 @@ export type GraphExploreExpandOptions<Schema extends GraphSchemaLike> = Readonly
   nodeIds: readonly string[];
   nodeTypes?: readonly (keyof Schema["nodes"] & string)[] | undefined;
   relationships?: readonly (keyof Schema["relationships"] & string)[] | undefined;
+  includeProvenance?: boolean | undefined;
   direction?: GraphExploreDirection | undefined;
   maxDepth?: number | undefined;
   maxNodes?: number | undefined;
@@ -230,6 +288,7 @@ export type GraphExploreNode = Readonly<{
   type: string;
   identity: GraphNodeIdentity;
   properties: GraphProperties;
+  provenance?: GraphExploreProvenance | undefined;
 }>;
 
 export type GraphExploreRelationship = Readonly<{
@@ -239,6 +298,12 @@ export type GraphExploreRelationship = Readonly<{
   from: string;
   to: string;
   properties: GraphProperties;
+  provenance?: GraphExploreProvenance | undefined;
+}>;
+
+export type GraphExploreProvenance = Readonly<{
+  documentIds: readonly string[];
+  chunkIds: readonly string[];
 }>;
 
 export type GraphExploreResult = Readonly<{

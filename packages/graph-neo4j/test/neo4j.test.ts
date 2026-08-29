@@ -109,8 +109,8 @@ function existingVectorIndex(name: string) {
   };
 }
 
-function managed(client: Neo4jClient) {
-  return client.managedKnowledgeGraph({
+function managedOptions() {
+  return {
     name: "support",
     schema,
     resources: {
@@ -130,7 +130,11 @@ function managed(client: Neo4jClient) {
         },
       },
     },
-  });
+  } as const;
+}
+
+function managed(client: Neo4jClient) {
+  return client.managedKnowledgeGraph(managedOptions());
 }
 
 function replacement() {
@@ -467,6 +471,112 @@ describe("Neo4j schema and lifecycle", () => {
     expect(driver.executeQuery).not.toHaveBeenCalled();
   });
 
+  it("provisions reusable tenant-scoped constraints and vector indexes", async () => {
+    const driver = fakeDriver({
+      transactionRun: async (query) => {
+        if (query.includes("dbms.components")) {
+          return { records: [record({ version: "2026.01.0" })] };
+        }
+        if (query.startsWith("SHOW INDEXES")) {
+          return {
+            records: [
+              ["support_chunks_vector", "SupportChunk"],
+              ["support_entities_vector", "SupportEntity"],
+            ]
+              .map(([name, label]) =>
+                record({
+                  name,
+                  state: "ONLINE",
+                  type: "VECTOR",
+                  entityType: "NODE",
+                  labelsOrTypes: [label],
+                  properties: ["__anvia_embedding", "__anvia_namespace"],
+                  options: {
+                    indexConfig: {
+                      "vector.dimensions": 2,
+                      "vector.similarity_function": "cosine",
+                    },
+                  },
+                }),
+              )
+              .concat([
+                record({
+                  name: "support_chunks_text",
+                  state: "ONLINE",
+                  type: "FULLTEXT",
+                  entityType: "NODE",
+                  labelsOrTypes: ["SupportChunk"],
+                  properties: ["__anvia_text", "__anvia_namespace"],
+                  options: {},
+                }),
+                record({
+                  name: "support_entities_text",
+                  state: "ONLINE",
+                  type: "FULLTEXT",
+                  entityType: "NODE",
+                  labelsOrTypes: ["SupportEntity"],
+                  properties: ["name", "title", "__anvia_namespace"],
+                  options: {},
+                }),
+              ]),
+          };
+        }
+        if (query.startsWith("SHOW CONSTRAINTS")) {
+          return {
+            records: [
+              ["document", "SupportDocument", ["__anvia_namespace", "__anvia_id"]],
+              ["chunk", "SupportChunk", ["__anvia_namespace", "__anvia_id"]],
+              ["entity", "SupportEntity", ["__anvia_namespace", "__anvia_key"]],
+              ["entity_Product", "Product", ["__anvia_namespace", "id"]],
+              ["entity_Incident", "Incident", ["__anvia_namespace", "id"]],
+            ].map(([suffix, label, properties]) =>
+              record({
+                name: `anvia_support_${suffix}_identity`,
+                type: "UNIQUENESS",
+                entityType: "NODE",
+                labelsOrTypes: [label],
+                properties,
+              }),
+            ),
+          };
+        }
+        return { records: [] };
+      },
+    });
+    const client = new Neo4jClient({ driver: driver.value });
+    const tenant = client.tenant("user-a");
+    const graph = tenant.managedKnowledgeGraph(managedOptions());
+
+    expect(tenant.namespace).toMatch(/^[a-f0-9]{64}$/);
+    expect(tenant.namespace).toBe(
+      "fc95297aa4f56781f0decb7d4bf59b1447f09b3611039b80188b1c6beb03ee6a",
+    );
+    expect(client.tenant("user-a").namespace).toBe(tenant.namespace);
+    await graph.ensure({ indexTimeoutMs: 1_000 });
+
+    const statements = driver.run.mock.calls.map(([query]) => String(query));
+    expect(
+      statements
+        .filter((query) => query.startsWith("CREATE CONSTRAINT"))
+        .every((query) => query.includes("__anvia_namespace")),
+    ).toBe(true);
+    expect(
+      statements
+        .filter((query) => query.startsWith("CREATE VECTOR INDEX"))
+        .every((query) => query.includes("WITH [n.`__anvia_namespace`]")),
+    ).toBe(true);
+    expect(
+      statements
+        .filter((query) => query.startsWith("CREATE FULLTEXT INDEX"))
+        .every((query) => query.includes("n.`__anvia_namespace`")),
+    ).toBe(true);
+  });
+
+  it("rejects empty tenant identifiers", () => {
+    const client = new Neo4jClient({ driver: fakeDriver().value });
+    expect(() => client.tenant("  ")).toThrow("tenant id must be a non-empty string");
+  });
+
   it("rejects an online index whose definition does not match the registration", async () => {
     const driver = fakeDriver({
       transactionRun: async (query) => {
@@ -638,6 +748,89 @@ describe("extractGraphFacts", () => {
 });
 
 describe("managed graph writes", () => {
+  it("scopes writes, retrieval, and exploration to one tenant", async () => {
+    const driver = fakeDriver({
+      transactionRun: async (query) =>
+        query.includes("collect(c.") ? { records: [record({ chunkIds: [] })] } : { records: [] },
+    });
+    const client = new Neo4jClient({ driver: driver.value });
+    const tenant = client.tenant("user-a");
+    const graph = tenant.managedKnowledgeGraph(managedOptions());
+
+    await graph.replaceDocuments(replacement());
+    await graph.retrieve({
+      model: {
+        provider: "test",
+        modelId: "embedding",
+        dimensions: 2,
+        async embedTexts(texts) {
+          return texts.map((document) => ({ document, vector: [1, 0] }));
+        },
+      },
+      query: "checkout",
+      search: {
+        type: "hybrid",
+        seeds: ["entities"],
+        topK: 1,
+        candidatesPerSeed: 2,
+        rrfK: 60,
+      },
+      traversal: {
+        relationships: ["AFFECTS"],
+        direction: "both",
+        maxDepth: 1,
+        maxNodes: 1,
+        maxRelationships: 1,
+      },
+      evidence: { type: "none" },
+    });
+    await graph.explore({ mode: "overview", maxNodes: 1, maxRelationships: 1 });
+    await graph.explore({
+      mode: "expand",
+      nodeIds: ["4:node"],
+      relationships: ["AFFECTS"],
+      maxDepth: 1,
+      maxNodes: 2,
+      maxRelationships: 2,
+    });
+
+    const calls = driver.run.mock.calls.map(([query, parameters]) => ({
+      query: String(query),
+      parameters,
+    }));
+    for (const marker of ["MERGE (d:", "CREATE (c:", "MERGE (e:", "MERGE (a)-[r:"]) {
+      const call = calls.find(({ query }) => query.includes(marker));
+      expect(call?.query).toContain("__anvia_namespace");
+      expect(call?.parameters).toMatchObject({ namespace: tenant.namespace });
+    }
+    const search = calls.find(({ query }) => query.includes("SEARCH seed"));
+    expect(search?.query).toContain("WHERE seed.`__anvia_namespace` = $namespace");
+    expect(search?.parameters).toMatchObject({ namespace: tenant.namespace });
+    const fulltextSearch = calls.find(({ query }) => query.includes("fulltext.queryNodes"));
+    expect(fulltextSearch?.parameters).toMatchObject({
+      query: `(checkout) AND __anvia_namespace:${tenant.namespace}`,
+      namespace: tenant.namespace,
+    });
+    const overview = calls.find(({ query }) => query.includes("RETURN elementId(node) AS id"));
+    expect(overview?.query).toContain("node:`SupportEntity`");
+    expect(overview?.query).toContain("node.`__anvia_namespace` = $namespace");
+    expect(overview?.query).toContain("node.`__anvia_graph` = $graph");
+    expect(overview?.parameters).toMatchObject({
+      graph: "support",
+      namespace: tenant.namespace,
+    });
+    const explorerCalls = calls.filter(
+      ({ query }) => query.includes("elementId(node)") || query.includes("MATCH path ="),
+    );
+    expect(explorerCalls.length).toBeGreaterThan(2);
+    expect(
+      explorerCalls.every(
+        ({ query, parameters }) =>
+          query.includes("__anvia_namespace") && parameters.namespace === tenant.namespace,
+      ),
+    ).toBe(true);
+  });
+
   it("replaces document-scoped graph state in one transaction", async () => {
     const driver = fakeDriver({
       transactionRun: async (query) =>
@@ -658,6 +851,11 @@ describe("managed graph writes", () => {
     expect(
       driver.run.mock.calls.some(([query]) => String(query).includes("SET r = row.properties")),
     ).toBe(true);
+    const documentWrite = driver.run.mock.calls.find(([query]) =>
+      String(query).includes("MERGE (d:"),
+    );
+    expect(documentWrite?.[0]).toContain("SET d += row.properties");
+    expect(documentWrite?.[0]).not.toContain("__anvia_namespace");
     expect(driver.sessionClose).toHaveBeenCalledOnce();
   });
 
@@ -1291,7 +1489,8 @@ describe("graph retrieval", () => {
         return { records: [] };
       },
     });
-    const graph = managed(new Neo4jClient({ driver: driver.value }));
+    const tenant = new Neo4jClient({ driver: driver.value }).tenant("user-a");
+    const graph = tenant.managedKnowledgeGraph(managedOptions());
     const context = await retrieveGraphContext({
       graph,
       model,
@@ -1333,6 +1532,18 @@ describe("graph retrieval", () => {
     expect(
       driver.run.mock.calls.filter(([query]) => String(query).includes("AS chunkId")),
     ).toHaveLength(1);
+    const scopedCalls = driver.run.mock.calls.filter(([query]) =>
+      ["SEARCH seed", "RETURN {elementId", "MATCH path", "AS chunkId"].some((marker) =>
+        String(query).includes(marker),
+      ),
+    );
+    expect(scopedCalls).toHaveLength(4);
+    expect(
+      scopedCalls.every(
+        ([query, parameters]) =>
+          String(query).includes("__anvia_namespace") && parameters.namespace === tenant.namespace,
+      ),
+    ).toBe(true);
   });
 
   it("rejects invalid or missing managed evidence", async () => {
@@ -1518,6 +1729,8 @@ describe("graph retrieval", () => {
                   title: "Checkout unavailable",
                   __anvia_key: 'Incident:{"id":"INC-1"}',
                   __anvia_embedding: [1, 0],
+                  __anvia_source_document_ids: ["article-1"],
+                  __anvia_source_chunk_ids: ["article-1:0"],
                 },
               }),
               record({
@@ -1536,7 +1749,12 @@ describe("graph retrieval", () => {
                 type: "AFFECTS",
                 source: "node-1",
                 target: "node-2",
-                properties: { severity: "high", __anvia_graph: "support" },
+                properties: {
+                  severity: "high",
+                  __anvia_graph: "support",
+                  __anvia_source_document_ids: ["article-1"],
+                  __anvia_source_chunk_ids: ["article-1:0"],
+                },
               }),
             ],
           };
@@ -1546,6 +1764,7 @@ describe("graph retrieval", () => {
     });
     const result = await managed(new Neo4jClient({ driver: driver.value })).explore({
       mode: "overview",
+      includeProvenance: true,
       maxNodes: 10,
       maxRelationships: 10,
     });
@@ -1555,6 +1774,7 @@ describe("graph retrieval", () => {
       type: "Incident",
       identity: { id: "INC-1" },
       properties: { id: "INC-1", title: "Checkout unavailable" },
+      provenance: { documentIds: ["article-1"], chunkIds: ["article-1:0"] },
     });
     expect(result.nodes[0]?.properties).not.toHaveProperty("__anvia_embedding");
     expect(result.relationships[0]).toMatchObject({
@@ -1562,6 +1782,7 @@ describe("graph retrieval", () => {
       from: "node-1",
       to: "node-2",
       properties: { severity: "high" },
+      provenance: { documentIds: ["article-1"], chunkIds: ["article-1:0"] },
     });
   });
 });

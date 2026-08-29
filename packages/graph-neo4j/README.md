@@ -111,6 +111,37 @@ const searchGraph = createGraphSearchTool({
 const agent = new Agent({ id: "support", model: chatModel, tools: [searchGraph] });
 ```
 
+Call `ensure()` once during application startup or deployment initialization, then reuse the graph
+handle in jobs. It is idempotent, but calling it for every ingestion job adds version, schema, and
+index checks to the hot path. Call `validate()` for readiness checks that must never provision.
+
+## Tenant namespaces
+
+Reuse the same labels, indexes, and Qdrant collection across tenants without constructing resource
+names from user input:
+
+```ts
+const tenant = client.tenant(userId);
+const graph = tenant.managedKnowledgeGraph({ name: "support", schema, resources });
+
+const qdrantTenant = qdrant.tenant(userId);
+const vectors = qdrantTenant.vectorStore({
+  collectionName: "support_documents",
+  dimensions: 1536,
+});
+```
+
+Both adapters hash the tenant ID using the same deterministic namespace. Neo4j includes that
+namespace in managed uniqueness constraints, indexed vector filtering, writes, retrieval,
+traversal, evidence, deletion, and exploration. Do not mix namespaced and non-namespaced handles
+with the same Neo4j resource definitions; `validate()` reports the incompatible constraint or
+index so it can be migrated explicitly.
+
+Tenant handles scope Anvia's managed lifecycle, retrieval, and exploration APIs; they are not a
+database authorization boundary. `graph.query()` and `client.nativeDriver()` intentionally expose
+raw Cypher access. Use separate Neo4j credentials or databases when untrusted callers require a
+hard security boundary.
+
 The application owns file discovery, reading, model loading, retry policy, and Agent lifecycle.
 `ingestGraphText()` and `ingestGraphDocuments()` provide the convenient end-to-end path. Advanced
 callers can compose `prepareGraphDocuments()`, `extractGraphFacts()`, `embedDocuments()`, and
@@ -182,6 +213,21 @@ const neighborhood = await graph.explore({
   maxDepth: 1,
 });
 ```
+
+Pass `includeProvenance: true` to expose supported source document and chunk IDs on explorer nodes
+and relationships. This can drive article-to-entity UI links without a separate identity mapping
+table; Neo4j element IDs remain opaque expansion cursors.
+
+## Production ingestion workflow
+
+For a queue worker (including BullMQ), use stable document IDs, attach a monotonic revision, and
+call `ingestGraphTextToStores({ graph, vectorStore, ... })`. Persist its receipt as the job result.
+Retry extraction/provider failures as a whole. If `GraphIngestionStageError.stage === "vector"`,
+the graph transaction already committed; re-run the idempotent job with `conflict: "overwrite"`.
+Refresh by replacing the same document ID;
+delete from both stores and record each completed stage. Pass the queue cancellation signal through
+`abortSignal`, create tenant-scoped handles before processing user-owned jobs, and request explorer
+provenance for source attribution.
 
 The explorer returns Neo4j element IDs as opaque strings, limits every query, and omits embeddings
 and other `__anvia_*` properties. Use stable graph identity properties for application logic; use the

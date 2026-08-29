@@ -1,6 +1,12 @@
+import { createHash } from "node:crypto";
 import type { VectorMetadata } from "@anvia/core/embeddings";
 import { defaultQdrantClient } from "./helpers.js";
-import { QdrantHybridVectorStore, QdrantVectorStore } from "./store.js";
+import {
+  QdrantHybridVectorStore,
+  qdrantTenantScope,
+  QdrantVectorStore,
+  type QdrantTenantScope,
+} from "./store.js";
 import type {
   QdrantClientLike,
   QdrantDenseVectorStoreOptions,
@@ -29,6 +35,10 @@ export class QdrantVectorClient {
       ? new QdrantHybridVectorStore<T, Metadata>(this, options)
       : new QdrantVectorStore<T, Metadata>(this, options);
   }
+  tenant(tenantId: string): QdrantTenant {
+    this.assertOpen();
+    return new QdrantTenant(this, qdrantTenantScope(tenantNamespace(tenantId)));
+  }
   nativeClient(): Promise<QdrantClientLike> {
     this.assertOpen();
     const { client: _client, ...clientOptions } = this.options;
@@ -44,4 +54,35 @@ export class QdrantVectorClient {
   private assertOpen(): void {
     if (this.closed) throw new Error("QdrantVectorClient is closed.");
   }
+}
+
+export class QdrantTenant {
+  constructor(
+    private readonly owner: QdrantVectorClient,
+    private readonly scope: QdrantTenantScope,
+  ) {}
+
+  get namespace(): string {
+    return this.scope.namespace;
+  }
+
+  vectorStore<T, Metadata extends VectorMetadata = VectorMetadata>(
+    options: QdrantHybridVectorStoreOptions,
+  ): QdrantHybridVectorStore<T, Metadata>;
+  vectorStore<T, Metadata extends VectorMetadata = VectorMetadata>(
+    options: QdrantDenseVectorStoreOptions,
+  ): QdrantVectorStore<T, Metadata>;
+  vectorStore<T, Metadata extends VectorMetadata = VectorMetadata>(
+    options: QdrantVectorStoreOptions,
+  ): QdrantVectorStore<T, Metadata> | QdrantHybridVectorStore<T, Metadata> {
+    return options.mode === "hybrid"
+      ? new QdrantHybridVectorStore<T, Metadata>(this.owner, options, this.scope)
+      : new QdrantVectorStore<T, Metadata>(this.owner, options, this.scope);
+  }
+}
+
+function tenantNamespace(tenantId: string): string {
+  if (typeof tenantId !== "string" || tenantId.trim().length === 0)
+    throw new TypeError("Qdrant tenant id must be a non-empty string.");
+  return createHash("sha256").update(tenantId).digest("hex");
 }

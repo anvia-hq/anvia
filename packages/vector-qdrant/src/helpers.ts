@@ -11,6 +11,7 @@ import {
   defaultSparseVectorName,
   documentIdPayloadKey,
   documentPayloadKey,
+  namespacePayloadKey,
   type QdrantClientLike,
   type QdrantDistance,
   type QdrantMutationOptions,
@@ -57,6 +58,7 @@ export function qdrantPoints<T, Metadata extends VectorMetadata>(
     hybrid?: boolean | undefined;
     denseVectorName?: string | undefined;
     sparseVectorName?: string | undefined;
+    namespace?: string | undefined;
   } = {},
 ): Array<{
   id: string;
@@ -88,11 +90,12 @@ export function qdrantPoints<T, Metadata extends VectorMetadata>(
       [documentIdPayloadKey]: document.id,
       [documentPayloadKey]: serializeDocument(document.document),
     };
+    if (options.namespace !== undefined) payload[namespacePayloadKey] = options.namespace;
     Object.assign(payload, document.metadata);
 
     if (!hybrid) {
       return {
-        id: pointId(logicalId),
+        id: pointId(scopedLogicalId(logicalId, options.namespace)),
         vector: embedding.vector,
         payload,
       };
@@ -105,7 +108,7 @@ export function qdrantPoints<T, Metadata extends VectorMetadata>(
       );
     }
     return {
-      id: pointId(logicalId),
+      id: pointId(scopedLogicalId(logicalId, options.namespace)),
       vector: {
         [denseName]: embedding.vector,
         [sparseName]: {
@@ -248,15 +251,34 @@ export function qdrantMutationRequest(
   return request;
 }
 
-export function qdrantDocumentFilter(documentIds: string[]): Record<string, unknown> {
+export function qdrantDocumentFilter(
+  documentIds: string[],
+  namespace?: string | undefined,
+): Record<string, unknown> {
+  const must: Array<Record<string, unknown>> = [
+    {
+      key: documentIdPayloadKey,
+      match: { any: documentIds },
+    },
+  ];
+  if (namespace !== undefined) must.push(namespaceCondition(namespace));
   return {
-    must: [
-      {
-        key: documentIdPayloadKey,
-        match: { any: documentIds },
-      },
-    ],
+    must,
   };
+}
+
+export function qdrantScopedFilter(namespace: string | undefined, filter: unknown): unknown {
+  if (namespace === undefined) return filter;
+  const condition = namespaceCondition(namespace);
+  return filter === undefined ? { must: [condition] } : { must: [condition, filter] };
+}
+
+function namespaceCondition(namespace: string): Record<string, unknown> {
+  return { key: namespacePayloadKey, match: { value: namespace } };
+}
+
+function scopedLogicalId(logicalId: string, namespace: string | undefined): string {
+  return namespace === undefined ? logicalId : `${namespace}\u0000${logicalId}`;
 }
 
 export function validateQdrantCollection(

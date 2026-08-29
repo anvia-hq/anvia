@@ -3,6 +3,7 @@ import type { VectorFusion, VectorMetric } from "@anvia/core/vector-store";
 import type { QdrantClientParams } from "@qdrant/js-client-rest";
 export const documentIdPayloadKey = "__anvia_document_id";
 export const documentPayloadKey = "__anvia_document";
+export const namespacePayloadKey = "__anvia_namespace";
 export const reservedPayloadPrefix = "__anvia_";
 export const defaultDenseVectorName = "dense";
 export const defaultSparseVectorName = "sparse";

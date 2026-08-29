@@ -1,4 +1,4 @@
-export { QdrantVectorClient } from "./client.js";
+export { QdrantTenant, QdrantVectorClient } from "./client.js";
 export { filterToQdrantFilter } from "./filters.js";
 export { QdrantHybridVectorStore, QdrantVectorStore } from "./store.js";
 export type {

@@ -1,4 +1,4 @@
-import type { CompletionModel, RetrySetting, Usage } from "@anvia/core";
+import type { CompletionModel, JsonObject, RetrySetting, Usage } from "@anvia/core";
 import {
   chunkTextDocuments,
   type TextDocument,
@@ -14,6 +14,8 @@ import type {
   GraphDocument,
   GraphDocumentWriter,
   GraphEntity,
+  GraphExtractionWarning,
+  GraphFactConflictOptions,
   GraphMention,
   GraphOrphanEntityPolicy,
   GraphProperties,
@@ -37,6 +39,8 @@ type GraphPreparationOptions<
   retries?: RetrySetting | undefined;
   concurrency?: number | undefined;
   abortSignal?: AbortSignal | undefined;
+  factConflicts?: GraphFactConflictOptions | undefined;
+  revision?: string | undefined;
 }>;
 
 export type PrepareGraphDocumentsOptions<
@@ -71,10 +75,58 @@ export type PreparedGraphDocuments<Schema extends GraphSchemaLike> = Readonly<{
   relationships: readonly GraphRelationship<Schema>[];
   mentions: readonly GraphMention[];
   usage: Usage;
+  warnings: readonly GraphExtractionWarning[];
 }>;
 
 export type IngestGraphDocumentsResult<Schema extends GraphSchemaLike> =
-  PreparedGraphDocuments<Schema> & Readonly<{ write: GraphWriteResult }>;
+  PreparedGraphDocuments<Schema> &
+    Readonly<{ write: GraphWriteResult; receipt: GraphIngestionReceipt }>;
+
+export type GraphIngestionReceipt = Readonly<{
+  documentIds: readonly string[];
+  revision?: string | undefined;
+  entityKeys: readonly string[];
+  relationshipKeys: readonly string[];
+  vectorDocumentIds: readonly string[];
+  graphWrite: Readonly<{ status: "completed"; result: GraphWriteResult }>;
+  vectorWrite: Readonly<{ status: "not-requested" | "completed" | "failed" }>;
+  warnings: readonly GraphExtractionWarning[];
+}>;
+
+export type GraphVectorWriter = Readonly<{
+  upsert(options: {
+    documents: Array<EmbeddedDocument<TextDocument<TextDocumentMetadata>, TextDocumentMetadata>>;
+    providerOptions?: JsonObject | undefined;
+  }): Promise<void>;
+}>;
+
+export type IngestGraphDocumentsToStoresOptions<
+  Schema extends GraphSchemaLike,
+  ExtractionModel extends CompletionModel = CompletionModel,
+> = IngestGraphDocumentsOptions<Schema, ExtractionModel> &
+  Readonly<{
+    vectorStore: GraphVectorWriter;
+    vectorProviderOptions?: JsonObject | undefined;
+  }>;
+
+export type IngestGraphTextToStoresOptions<
+  Schema extends GraphSchemaLike,
+  ExtractionModel extends CompletionModel = CompletionModel,
+> = Omit<IngestGraphDocumentsToStoresOptions<Schema, ExtractionModel>, "documents"> &
+  Readonly<{ document: TextDocument<TextDocumentMetadata> }>;
+
+export class GraphIngestionStageError extends Error {
+  readonly code = "GRAPH_INGESTION_STAGE_FAILED" as const;
+  readonly stage = "vector" as const;
+
+  constructor(
+    readonly receipt: GraphIngestionReceipt,
+    cause: unknown,
+  ) {
+    super("Graph ingestion completed, but the vector write failed.", { cause });
+    this.name = "GraphIngestionStageError";
+  }
+}
 
 export async function ingestGraphText<
   Schema extends GraphSchemaLike,
@@ -93,6 +145,8 @@ export async function ingestGraphText<
     retries: options.retries,
     concurrency: options.concurrency,
     abortSignal: options.abortSignal,
+    factConflicts: options.factConflicts,
+    revision: options.revision,
     conflict: options.conflict,
     orphanEntities: options.orphanEntities,
   });
@@ -115,7 +169,44 @@ export async function ingestGraphDocuments<
     orphanEntities: options.orphanEntities,
     abortSignal: options.abortSignal,
   });
-  return { ...prepared, write };
+  return {
+    ...prepared,
+    write,
+    receipt: ingestionReceipt(prepared, write, options.revision, "not-requested"),
+  };
+}
+
+export async function ingestGraphTextToStores<
+  Schema extends GraphSchemaLike,
+  ExtractionModel extends CompletionModel,
+>(
+  options: IngestGraphTextToStoresOptions<Schema, ExtractionModel>,
+): Promise<IngestGraphDocumentsResult<Schema>> {
+  return ingestGraphDocumentsToStores({ ...options, documents: [options.document] });
+}
+
+export async function ingestGraphDocumentsToStores<
+  Schema extends GraphSchemaLike,
+  ExtractionModel extends CompletionModel,
+>(
+  options: IngestGraphDocumentsToStoresOptions<Schema, ExtractionModel>,
+): Promise<IngestGraphDocumentsResult<Schema>> {
+  const result = await ingestGraphDocuments(options);
+  try {
+    await options.vectorStore.upsert({
+      documents: [...result.vectorDocuments],
+      providerOptions: options.vectorProviderOptions,
+    });
+  } catch (error) {
+    throw new GraphIngestionStageError(
+      { ...result.receipt, vectorWrite: { status: "failed" } },
+      error,
+    );
+  }
+  return {
+    ...result,
+    receipt: { ...result.receipt, vectorWrite: { status: "completed" } },
+  };
 }
 
 export async function prepareGraphDocuments<
@@ -124,6 +215,9 @@ export async function prepareGraphDocuments<
 >(
   options: PrepareGraphDocumentsOptions<Schema, ExtractionModel>,
 ): Promise<PreparedGraphDocuments<Schema>> {
+  if (options.revision !== undefined && options.revision.trim().length === 0) {
+    throw new TypeError("Graph ingestion revision must be a non-empty string.");
+  }
   validatePortableMetadata(options.documents);
   const chunks = chunkTextDocuments({
     documents: options.documents,
@@ -139,6 +233,7 @@ export async function prepareGraphDocuments<
       retries: options.retries,
       concurrency: options.concurrency,
       abortSignal: options.abortSignal,
+      conflicts: options.factConflicts,
     }),
     embedDocuments({
       model: options.embeddingModel,
@@ -169,6 +264,25 @@ export async function prepareGraphDocuments<
     relationships: facts.output.relationships,
     mentions: facts.output.mentions,
     usage: facts.usage,
+    warnings: facts.warnings,
+  };
+}
+
+function ingestionReceipt<Schema extends GraphSchemaLike>(
+  prepared: PreparedGraphDocuments<Schema>,
+  write: GraphWriteResult,
+  revision: string | undefined,
+  vectorStatus: GraphIngestionReceipt["vectorWrite"]["status"],
+): GraphIngestionReceipt {
+  return {
+    documentIds: prepared.documents.map((document) => document.id),
+    ...(revision === undefined ? {} : { revision }),
+    entityKeys: prepared.entities.map((entity) => entity.id),
+    relationshipKeys: prepared.relationships.map((relationship) => relationship.key),
+    vectorDocumentIds: prepared.vectorDocuments.map((document) => document.id),
+    graphWrite: { status: "completed", result: write },
+    vectorWrite: { status: vectorStatus },
+    warnings: prepared.warnings,
   };
 }
 

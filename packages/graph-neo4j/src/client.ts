@@ -1,5 +1,11 @@
+import { createHash } from "node:crypto";
 import { auth, driver as createDriver, type Driver } from "neo4j-driver";
-import { ManagedNeo4jKnowledgeGraph, Neo4jKnowledgeGraph } from "./graph.js";
+import {
+  ManagedNeo4jKnowledgeGraph,
+  neo4jTenantScope,
+  Neo4jKnowledgeGraph,
+  type Neo4jTenantScope,
+} from "./graph.js";
 import type {
   ManagedNeo4jKnowledgeGraphOptions,
   Neo4jClientOptions,
@@ -44,6 +50,11 @@ export class Neo4jClient {
     return new ManagedNeo4jKnowledgeGraph(this, options);
   }
 
+  tenant(tenantId: string): Neo4jTenant {
+    this.assertOpen();
+    return new Neo4jTenant(this, neo4jTenantScope(tenantNamespace(tenantId)));
+  }
+
   knowledgeGraph<Schema extends Neo4jGraphSchema>(
     options: Neo4jKnowledgeGraphOptions<Schema>,
   ): Neo4jKnowledgeGraph<Schema> {
@@ -69,4 +80,28 @@ export class Neo4jClient {
   private assertOpen(): void {
     if (this.closed) throw new Error("Neo4jClient is closed.");
   }
+}
+
+export class Neo4jTenant {
+  constructor(
+    private readonly owner: Neo4jClient,
+    private readonly scope: Neo4jTenantScope,
+  ) {}
+
+  get namespace(): string {
+    return this.scope.namespace;
+  }
+
+  managedKnowledgeGraph<Schema extends Neo4jGraphSchema>(
+    options: ManagedNeo4jKnowledgeGraphOptions<Schema>,
+  ): ManagedNeo4jKnowledgeGraph<Schema> {
+    this.owner.nativeDriver();
+    return new ManagedNeo4jKnowledgeGraph(this.owner, options, this.scope);
+  }
+}
+
+function tenantNamespace(tenantId: string): string {
+  if (typeof tenantId !== "string" || tenantId.trim().length === 0)
+    throw new TypeError("Neo4j tenant id must be a non-empty string.");
+  return createHash("sha256").update(tenantId).digest("hex");
 }

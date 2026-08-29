@@ -110,6 +110,29 @@ describe("PlaygroundPage run action", () => {
     expect(html).toContain('aria-label="Sessions"');
     expect(html).not.toContain('aria-label="Browser workspace"');
   });
+
+  it("renders generic completion model controls with a provider default", () => {
+    const html = render({
+      selectedAgentModels: [
+        {
+          id: "reasoning-model",
+          ref: "test:reasoning-model",
+          providerId: "test",
+          controls: {
+            reasoningEffort: {
+              type: "select",
+              label: "Reasoning effort",
+              options: ["low", "high"],
+              defaultValue: "high",
+            },
+          },
+        },
+      ],
+      selectedModelRef: "test:reasoning-model",
+    });
+
+    expect(html).toContain('aria-label="Reasoning effort"');
+  });
 });
 
 function render(overrides: Partial<Parameters<typeof PlaygroundPage>[0]> = {}): string {
@@ -131,6 +154,7 @@ function render(overrides: Partial<Parameters<typeof PlaygroundPage>[0]> = {}): 
       selectedAgentId={agent.id}
       selectedAgentModels={[]}
       selectedAgentQuickPrompts={[]}
+      selectedControls={{}}
       selectedModelRef=""
       selectedSessionId=""
       sessionLogs={[]}
@@ -154,6 +178,7 @@ function render(overrides: Partial<Parameters<typeof PlaygroundPage>[0]> = {}): 
       onRunPrompt={vi.fn()}
       onStopPrompt={vi.fn()}
       onSelectAgent={vi.fn()}
+      onSelectControl={vi.fn()}
       onSelectModel={vi.fn()}
       onTranscriptScroll={vi.fn()}
       {...overrides}

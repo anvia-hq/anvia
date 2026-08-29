@@ -1,4 +1,6 @@
 import {
+  type CompletionModelControls,
+  defineCompletionModelControls,
   type ModelContextLimits,
   resolveModelContextLimits,
   type StreamingCompletionModel,
@@ -13,6 +15,7 @@ import type { SpeechGenerationModel } from "@anvia/core/speech-generation";
 import type { TranscriptionModel } from "@anvia/core/transcription";
 import OpenAI from "openai";
 import { GrokCompletionModel } from "./completion";
+import { type GrokControlsFor, grokControlsForModel } from "./controls";
 import { XAI_BASE_URL } from "./constants";
 import type { GrokHttpOptions } from "./http";
 import { GrokImageGenerationModel } from "./image-generation";
@@ -46,14 +49,20 @@ type GrokInjectedClientOptions = {
 
 export type GrokClientOptions = GrokManagedClientOptions | GrokInjectedClientOptions;
 
-export type GrokCompletionModelOptions = {
-  modelId: GrokCompletionModelId;
+export type GrokCompletionModelOptions<
+  ModelId extends GrokCompletionModelId = GrokCompletionModelId,
+  Controls extends CompletionModelControls = GrokControlsFor<ModelId>,
+> = {
+  modelId: ModelId;
   api: "responses" | "chat";
   contextLimits?: ModelContextLimits | undefined;
+  controls?: Controls | undefined;
 };
 
 export type GrokImageGenerationModelOptions = { modelId: GrokImageGenerationModelId };
-export type GrokCompletionModelHandle = StreamingCompletionModel<unknown>;
+export type GrokCompletionModelHandle<
+  Controls extends CompletionModelControls = CompletionModelControls,
+> = StreamingCompletionModel<unknown, Controls>;
 export type GrokImageGenerationModelHandle = ImageGenerationModel<unknown>;
 export type GrokSpeechGenerationModelHandle = SpeechGenerationModel<unknown>;
 export type GrokTranscriptionModelHandle = TranscriptionModel<unknown>;
@@ -103,8 +112,16 @@ export class GrokClient implements ModelListingClient {
     };
   }
 
-  completionModel(options: GrokCompletionModelOptions): GrokCompletionModelHandle {
+  completionModel<
+    const ModelId extends GrokCompletionModelId,
+    const Controls extends CompletionModelControls = GrokControlsFor<ModelId>,
+  >(options: GrokCompletionModelOptions<ModelId, Controls>): GrokCompletionModelHandle<Controls> {
     const modelId = requireModelId(options.modelId);
+    const controls = (
+      options.controls === undefined
+        ? grokControlsForModel(modelId)
+        : defineCompletionModelControls(options.controls)
+    ) as Controls | undefined;
     return new GrokCompletionModel(
       this.sdk,
       modelId,
@@ -114,6 +131,7 @@ export class GrokClient implements ModelListingClient {
         GROK_COMPLETION_MODEL_CONTEXT_LIMITS,
         options.contextLimits,
       ),
+      controls,
     );
   }
 

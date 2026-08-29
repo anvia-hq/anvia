@@ -9,6 +9,12 @@ export {
   type GeminiTranscriptionModelHandle,
   type GeminiTranscriptionModelOptions,
 } from "./client";
+export {
+  GEMINI_REASONING_EFFORTS,
+  type GeminiControlsFor,
+  type GeminiReasoningControls,
+  type GeminiReasoningEffort,
+} from "./controls";
 export type { GeminiEmbeddingModelOptions, GeminiEmbeddingTaskType } from "./embedding";
 export {
   GEMINI_2_5_FLASH_IMAGE,

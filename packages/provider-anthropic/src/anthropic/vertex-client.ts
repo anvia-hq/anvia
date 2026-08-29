@@ -3,11 +3,14 @@ import {
   type ClientOptions as AnthropicVertexSdkOptions,
 } from "@anthropic-ai/vertex-sdk";
 import {
+  type CompletionModelControls,
+  defineCompletionModelControls,
   type ModelContextLimits,
   resolveModelContextLimits,
   type StreamingCompletionModel,
 } from "@anvia/core/completion";
 import { AnthropicCompletionModel } from "./completion";
+import { anthropicControlsForModel, type AnthropicControlsFor } from "./controls";
 import {
   ANTHROPIC_COMPLETION_MODEL_CONTEXT_LIMITS,
   type AnthropicCompletionModelId,
@@ -27,12 +30,18 @@ export type AnthropicVertexClientOptions =
   | AnthropicVertexManagedClientOptions
   | AnthropicVertexInjectedClientOptions;
 
-export type AnthropicVertexCompletionModelOptions = {
-  modelId: AnthropicCompletionModelId;
+export type AnthropicVertexCompletionModelOptions<
+  ModelId extends AnthropicCompletionModelId = AnthropicCompletionModelId,
+  Controls extends CompletionModelControls = AnthropicControlsFor<ModelId>,
+> = {
+  modelId: ModelId;
   contextLimits?: ModelContextLimits | undefined;
+  controls?: Controls | undefined;
 };
 
-export type AnthropicVertexCompletionModelHandle = StreamingCompletionModel<unknown>;
+export type AnthropicVertexCompletionModelHandle<
+  Controls extends CompletionModelControls = CompletionModelControls,
+> = StreamingCompletionModel<unknown, Controls>;
 
 export class AnthropicVertexClient {
   private readonly sdk: AnthropicVertex;
@@ -50,10 +59,18 @@ export class AnthropicVertexClient {
     this.sdk = new AnthropicVertex({ ...clientOptions, maxRetries: 0 });
   }
 
-  completionModel(
-    options: AnthropicVertexCompletionModelOptions,
-  ): AnthropicVertexCompletionModelHandle {
+  completionModel<
+    const ModelId extends AnthropicCompletionModelId,
+    const Controls extends CompletionModelControls = AnthropicControlsFor<ModelId>,
+  >(
+    options: AnthropicVertexCompletionModelOptions<ModelId, Controls>,
+  ): AnthropicVertexCompletionModelHandle<Controls> {
     const modelId = requireModelId(options.modelId);
+    const controls = (
+      options.controls === undefined
+        ? anthropicControlsForModel(modelId)
+        : defineCompletionModelControls(options.controls)
+    ) as Controls | undefined;
     return new AnthropicCompletionModel(
       this.sdk,
       modelId,
@@ -62,6 +79,7 @@ export class AnthropicVertexClient {
         ANTHROPIC_COMPLETION_MODEL_CONTEXT_LIMITS,
         options.contextLimits,
       ),
+      controls,
     );
   }
 }

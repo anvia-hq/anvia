@@ -1,4 +1,5 @@
 import type { Mistral } from "@mistralai/mistralai";
+import type { NoCompletionModelControls } from "@anvia/core/completion";
 import { describe, expect, expectTypeOf, it } from "vitest";
 import {
   MistralClient,
@@ -23,7 +24,8 @@ describe("MistralClient", () => {
       client.completionModel({ modelId: "mistral-large-latest" }).modelId,
     ).toEqualTypeOf<string>();
     const completionId: MistralCompletionModelId = "custom-mistral-model";
-    client.completionModel({ modelId: completionId });
+    const completionModel = client.completionModel({ modelId: completionId });
+    expectTypeOf(completionModel.controls).toEqualTypeOf<NoCompletionModelControls | undefined>();
 
     client.embeddingModel({ modelId: "mistral-embed" });
     client.embeddingModel({ modelId: "custom-mistral-embedding" });

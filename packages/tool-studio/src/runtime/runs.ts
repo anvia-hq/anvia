@@ -846,13 +846,18 @@ function parseRunRequestBody(
     if (typeof body.interactionId !== "string" || body.interactionId.trim().length === 0) {
       return { error: errorResponse(c, 400, "bad_request", "interactionId must be a string") };
     }
-    if (body.messages !== undefined || body.sessionId !== undefined || body.model !== undefined) {
+    if (
+      body.messages !== undefined ||
+      body.sessionId !== undefined ||
+      body.model !== undefined ||
+      body.controls !== undefined
+    ) {
       return {
         error: errorResponse(
           c,
           400,
           "bad_request",
-          "Interaction responses cannot include messages, sessionId, or model",
+          "Interaction responses cannot include messages, sessionId, model, or controls",
         ),
       };
     }
@@ -970,6 +975,18 @@ function parseRunRequestOptions(
         ),
       };
     }
+  }
+
+  if (request.type === "messages" && "controls" in body) {
+    if (
+      !isObject(body.controls) ||
+      Object.values(body.controls).some((value) => typeof value !== "string")
+    ) {
+      return {
+        error: errorResponse(c, 400, "bad_request", "controls must be an object of string values"),
+      };
+    }
+    request.controls = body.controls as Record<string, string>;
   }
 
   if ("metadata" in body) {

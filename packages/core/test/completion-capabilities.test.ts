@@ -11,8 +11,10 @@ import {
   type CompletionRequest,
   type CompletionResponse,
   generateCompletion,
+  defineCompletionModelControls,
   type JsonObject,
   Message,
+  mergeCompletionControlValues,
   type StreamingCompletionModel,
   streamCompletion,
   Usage,
@@ -72,6 +74,91 @@ class StreamingQueueModel extends QueueModel implements StreamingCompletionModel
     };
   }
 }
+
+const controlledModelControls = defineCompletionModelControls({
+  reasoningEffort: {
+    type: "select",
+    label: "Reasoning effort",
+    options: ["low", "high"] as const,
+    defaultValue: "high",
+  },
+});
+
+class ControlledQueueModel extends QueueModel {
+  readonly controls = controlledModelControls;
+}
+
+class ControlledStreamingQueueModel extends StreamingQueueModel {
+  readonly controls = controlledModelControls;
+}
+
+describe("completion model control descriptors", () => {
+  it("validates and snapshots descriptors at the public configuration boundary", () => {
+    const options = ["low", "high"];
+    const input = {
+      reasoningEffort: {
+        type: "select" as const,
+        label: "Reasoning effort",
+        options,
+        defaultValue: "high",
+      },
+    };
+    const controls = defineCompletionModelControls(input);
+
+    options.push("max");
+    input.reasoningEffort.label = "Changed";
+
+    expect(controls.reasoningEffort).toEqual({
+      type: "select",
+      label: "Reasoning effort",
+      options: ["low", "high"],
+      defaultValue: "high",
+    });
+    expect(Object.isFrozen(controls)).toBe(true);
+    expect(Object.isFrozen(controls.reasoningEffort)).toBe(true);
+    expect(Object.isFrozen(controls.reasoningEffort.options)).toBe(true);
+  });
+
+  it.each([
+    [null, "Completion model controls must be an object."],
+    [{ effort: null }, 'Completion control "effort" must be an object.'],
+    [
+      { effort: { type: "select", label: "Effort", options: [] } },
+      'Completion control "effort" must declare at least one option.',
+    ],
+    [
+      { effort: { type: "select", label: "Effort", options: ["high", "high"] } },
+      'Completion control "effort" options must be unique.',
+    ],
+    [
+      {
+        effort: {
+          type: "select",
+          label: "Effort",
+          options: ["low", "high"],
+          defaultValue: "max",
+        },
+      },
+      'Completion control "effort" defaultValue must be one of its declared options.',
+    ],
+  ])("rejects malformed descriptor %#", (controls, message) => {
+    expect(() => defineCompletionModelControls(controls as never)).toThrow(message);
+  });
+
+  it("preserves defaults for non-string overrides and safely retains special control ids", () => {
+    expect(
+      mergeCompletionControlValues({ reasoningEffort: "high" }, {
+        reasoningEffort: undefined,
+      } as never),
+    ).toEqual({ reasoningEffort: "high" });
+
+    const special = JSON.parse('{"__proto__":"enabled"}') as Record<string, string>;
+    const merged = mergeCompletionControlValues(undefined, special as never);
+    expect(Object.prototype.hasOwnProperty.call(merged, "__proto__")).toBe(true);
+    expect(merged?.["__proto__"]).toBe("enabled");
+    expect(Object.getPrototypeOf(merged)).toBe(Object.prototype);
+  });
+});
 
 describe("completion model capabilities", () => {
   it("accepts supported text, tools, schema, and attachments", () => {
@@ -148,6 +235,74 @@ describe("completion model capabilities", () => {
         tools: [],
       }),
     ).not.toThrow();
+  });
+
+  it("validates model controls before provider calls", async () => {
+    const model = new ControlledQueueModel();
+
+    await expect(
+      generateCompletion({ model, prompt: "hello", controls: { other: "low" } as never }),
+    ).rejects.toThrow('test:test-model does not support completion control "other".');
+    await expect(
+      generateCompletion({
+        model,
+        prompt: "hello",
+        controls: { reasoningEffort: "medium" } as never,
+      }),
+    ).rejects.toThrow(
+      'test:test-model completion control "reasoningEffort" does not support value "medium".',
+    );
+    expect(model.requests).toHaveLength(0);
+  });
+
+  it("merges Agent control defaults with per-run overrides", async () => {
+    const model = new ControlledQueueModel();
+    const agent = new Agent({
+      id: "agent",
+      model,
+      controls: { reasoningEffort: "high" },
+    });
+
+    await agent.generate({ prompt: "default" });
+    await agent.generate({ prompt: "override", controls: { reasoningEffort: "low" } });
+
+    expect(model.requests.map((request) => request.controls)).toEqual([
+      { reasoningEffort: "high" },
+      { reasoningEffort: "low" },
+    ]);
+  });
+
+  it("rejects invalid Agent control defaults during construction", () => {
+    const model = new ControlledQueueModel();
+
+    expect(
+      () =>
+        new Agent({
+          id: "agent",
+          model,
+          controls: { reasoningEffort: "medium" } as never,
+        }),
+    ).toThrow(
+      'test:test-model completion control "reasoningEffort" does not support value "medium".',
+    );
+  });
+
+  it("applies Agent control defaults and overrides to streamed runs", async () => {
+    const model = new ControlledStreamingQueueModel();
+    const agent = new Agent({
+      id: "agent",
+      model,
+      controls: { reasoningEffort: "high" },
+    });
+
+    for await (const _event of agent.stream({
+      prompt: "override",
+      controls: { reasoningEffort: "low" },
+    })) {
+      // Consume the stream so the provider request runs.
+    }
+
+    expect(model.requests[0]?.controls).toEqual({ reasoningEffort: "low" });
   });
 
   it("Agent.generate enforces capabilities before model calls", async () => {

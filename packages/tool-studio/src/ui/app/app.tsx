@@ -20,6 +20,7 @@ import {
   enrichTranscriptWithTraceIds,
   fileToAttachment,
   type PromptAttachment,
+  sessionControls,
   sessionModelRef,
 } from "./app-helpers";
 import { useStudioTheme } from "./app-theme";
@@ -255,6 +256,18 @@ export function StudioConsole() {
     selectedAgentId: selectedAgentModelId,
     onError: setError,
   });
+  const [selectedControls, setSelectedControls] = useState<Record<string, string>>({});
+  const selectedCatalogModel = selectedAgentModels.find((model) => model.ref === selectedModelRef);
+  useEffect(() => {
+    if (selectedCatalogModel === undefined) return;
+    setSelectedControls((current) =>
+      Object.fromEntries(
+        Object.entries(current).filter(([id, value]) =>
+          selectedCatalogModel.controls?.[id]?.options.includes(value),
+        ),
+      ),
+    );
+  }, [selectedCatalogModel]);
   const hasMessages = messages.length > 0;
   const openBrowserWorkspaceForTool = useCallback(
     (toolName: string) => {
@@ -280,6 +293,7 @@ export function StudioConsole() {
       setTranscriptSequence(nextSequence(session.transcript));
       setSelectedAgentId(session.agentId);
       setSelectedModelRef(sessionModelRef(session));
+      setSelectedControls(sessionControls(session));
       setSessionTraceSummaries(traceSummaries);
       setMessages(enrichTranscriptWithTraceIds(session.transcript, traceSummaries));
       setAttachments([]);
@@ -319,6 +333,7 @@ export function StudioConsole() {
     loadSessionTraceSummaries: traces.loadSessionTraceSummaries,
     runState,
     selectedModelRef,
+    selectedControls,
     onError: setError,
     onSessionCreated: navigateSessionPath,
     onSessionDeleted: handleSessionDeleted,
@@ -342,6 +357,7 @@ export function StudioConsole() {
     selectedAgent,
     selectedAgentId,
     selectedModelRef,
+    selectedControls,
     sessions,
     sessionsEnabled,
     traces,
@@ -539,6 +555,7 @@ export function StudioConsole() {
     selectedAgentModels,
     selectedAgentQuickPrompts,
     selectedModelRef,
+    selectedControls,
     sessionTraceSummaries,
     sessions,
     sessionsEnabled,
@@ -562,6 +579,7 @@ export function StudioConsole() {
     setError,
     setKnowledgeTab,
     setSelectedModelRef,
+    setSelectedControls,
     setStatus,
     startNewChat,
     selectPlaygroundAgent,

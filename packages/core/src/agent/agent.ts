@@ -1,5 +1,12 @@
 import { isStreamingCompletionModel } from "../completion/generate-completion";
-import type { CompletionModel, JsonObject, ToolChoice } from "../completion/index";
+import {
+  assertCompletionControlsSupported,
+  type CompletionControlValues,
+  type CompletionModel,
+  type CompletionModelControlsOf,
+  type JsonObject,
+  type ToolChoice,
+} from "../completion/index";
 import type { GuardrailPolicy } from "../guardrails";
 import { AgentRun } from "../internal/agent-runtime/agent-run";
 import { AgentRunMemory } from "../internal/agent-runtime/memory";
@@ -59,6 +66,7 @@ export class Agent<
   readonly temperature: number | undefined;
   readonly maxTokens: number | undefined;
   readonly providerOptions: JsonObject | undefined;
+  readonly controls: CompletionControlValues<CompletionModelControlsOf<M>> | undefined;
   readonly retries: RetrySetting | undefined;
   readonly mcpServers: readonly McpServer[];
   readonly tools: readonly AnyTool[];
@@ -85,6 +93,8 @@ export class Agent<
       assertJsonObject(resolved.providerOptions, "Agent providerOptions");
     }
     this.providerOptions = cloneFrozenPlainData(resolved.providerOptions);
+    assertCompletionControlsSupported(this.model, resolved.controls);
+    this.controls = cloneFrozenPlainData(resolved.controls);
     this.retries = cloneFrozenPlainData(resolved.retries);
 
     const preparedTools = prepareAgentTools(resolved);
@@ -106,20 +116,22 @@ export class Agent<
     this.memory = snapshotAgentMemory(resolved.memory);
   }
 
-  generate(options: AgentRunOptions<Output, RawResponseOf<M>>): Promise<AgentOutcome<Output>> {
+  generate(
+    options: AgentRunOptions<Output, RawResponseOf<M>, CompletionModelControlsOf<M>>,
+  ): Promise<AgentOutcome<Output>> {
     return AgentRun.fromAgent(this, options).generate();
   }
 
   resume(
     continuation: AgentContinuation,
     response: AgentInteractionResponse,
-    settings: AgentRunSettings<Output, RawResponseOf<M>> = {},
+    settings: AgentRunSettings<Output, RawResponseOf<M>, CompletionModelControlsOf<M>> = {},
   ): Promise<AgentOutcome<Output>> {
     return this.generate({ continuation, response, ...settings });
   }
 
   stream(
-    options: AgentRunOptions<Output, RawResponseOf<M>>,
+    options: AgentRunOptions<Output, RawResponseOf<M>, CompletionModelControlsOf<M>>,
   ): AgentStream<Output, RawResponseOf<M>> {
     const run = AgentRun.fromAgent(this, options);
     if (!this.model.capabilities.streaming || !isStreamingCompletionModel(this.model)) {

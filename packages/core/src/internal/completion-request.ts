@@ -1,5 +1,7 @@
 import { parseMessage, parseMessages } from "../completion/message-schema";
 import type {
+  CompletionControlValues,
+  CompletionModelControls,
   CompletionRequest,
   CompletionTool,
   Document,
@@ -19,6 +21,7 @@ export type CompletionRequestOptions = {
   maxTokens?: number | undefined;
   toolChoice?: ToolChoice | undefined;
   outputSchema?: JsonObject | undefined;
+  controls?: CompletionControlValues<CompletionModelControls> | undefined;
   providerOptions?: JsonObject | undefined;
 };
 
@@ -44,6 +47,14 @@ export function createCompletionRequest(
   if (options.maxTokens !== undefined) request.maxTokens = options.maxTokens;
   if (options.toolChoice !== undefined) request.toolChoice = options.toolChoice;
   if (options.outputSchema !== undefined) request.outputSchema = options.outputSchema;
+  if (options.controls !== undefined) {
+    const controls = Object.fromEntries(
+      Object.entries(options.controls).filter(
+        (entry): entry is [string, string] => typeof entry[1] === "string",
+      ),
+    );
+    if (Object.keys(controls).length > 0) request.controls = Object.freeze(controls);
+  }
   if (options.providerOptions !== undefined) {
     assertJsonObject(options.providerOptions, "providerOptions");
     request.providerOptions = options.providerOptions;

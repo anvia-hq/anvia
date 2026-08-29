@@ -202,14 +202,27 @@ const result = await generateCompletion({
   prompt: "Summarize this incident.",
   retries: { maxAttempts: 3, initialDelayMs: 100, maxDelayMs: 1_000 },
   abortSignal: controller.signal,
-  providerOptions: { reasoning: { effort: "medium" } },
+  controls: { reasoningEffort: "medium" },
 });
 ```
 
-`providerOptions` contains a strict JSON object passed to an adapter. Runtime values such as
+Completion models can advertise typed, provider-neutral `controls`. Reasoning-capable adapters use
+the `reasoningEffort` select control, so supported values are inferred from the model returned by
+`completionModel()`. An Agent can set control defaults, and a generate or stream call can override
+them for that run:
+
+```ts
+const agent = new Agent({ model, controls: { reasoningEffort: "medium" } });
+await agent.generate({ prompt: "Solve this.", controls: { reasoningEffort: "high" } });
+```
+
+Omitting a control means “Default”: the Agent default applies when configured, otherwise the
+provider chooses. Invalid control names and values are rejected before the provider call.
+
+`providerOptions` remains the escape hatch for a strict JSON object passed to an adapter. Runtime values such as
 `undefined`, non-finite numbers, cycles, a top-level array, and class instances are rejected rather
 than coerced. Nested arrays are valid JSON. Canonical Anvia fields such as model, input,
-temperature, tools, dimensions, text, and voice take precedence over conflicting provider keys.
+temperature, tools, controls, dimensions, text, and voice take precedence over conflicting provider keys.
 Cancellation is forwarded to provider SDK calls and is never retried.
 
 ## Agents

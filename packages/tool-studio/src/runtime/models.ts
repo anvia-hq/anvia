@@ -1,4 +1,10 @@
-import type { CompletionModel, JsonObject, Message } from "@anvia/core/completion";
+import {
+  assertCompletionControlsSupported,
+  CompletionCapabilityError,
+  type CompletionModel,
+  type JsonObject,
+  type Message,
+} from "@anvia/core/completion";
 import type { Hono } from "hono";
 import type {
   AgentRunRequest,
@@ -19,6 +25,7 @@ import { serializeError } from "./errors";
 import { errorResponse } from "./http";
 
 export const STUDIO_MODEL_METADATA_KEY = "studioModel";
+export const STUDIO_CONTROLS_METADATA_KEY = "studioControls";
 
 type RuntimeProvider = StudioModelProvider & {
   staticModels: Map<string, StudioModelDefinition>;
@@ -103,7 +110,7 @@ export function studioModelsConfig(
 
   const providers = [...registry.providers.values()].map((provider): StudioModelProviderConfig => {
     const models = [...provider.staticModels.values()].map((model) =>
-      modelSummary(provider, model.id, model),
+      staticModelSummary(provider, model.id, model),
     );
     const config: StudioModelProviderConfig = {
       id: provider.id,
@@ -135,17 +142,18 @@ export function registerModelRoutes(
   props: { registry?: StudioModelRegistry | undefined; agentMap: Map<string, StudioAgent> },
 ): void {
   app.get("/models", async (c) => {
-    if (props.registry === undefined) {
+    const registry = props.registry;
+    if (registry === undefined) {
       return errorResponse(c, 404, "not_found", "Model registry not configured");
     }
     const providers = await Promise.all(
-      [...props.registry.providers.values()].map((provider) => providerCatalog(provider)),
+      [...registry.providers.values()].map((provider) => providerCatalog(registry, provider)),
     );
     const response: { providers: StudioModelProviderConfig[]; defaultModelRef?: string } = {
       providers,
     };
-    if (props.registry.defaultModelRef !== undefined) {
-      response.defaultModelRef = props.registry.defaultModelRef;
+    if (registry.defaultModelRef !== undefined) {
+      response.defaultModelRef = registry.defaultModelRef;
     }
     return c.json(response);
   });
@@ -158,7 +166,7 @@ export function registerModelRoutes(
     if (provider === undefined) {
       return errorResponse(c, 404, "not_found", "Model provider not found");
     }
-    return c.json(await providerCatalog(provider));
+    return c.json(await providerCatalog(props.registry, provider));
   });
 
   app.get("/agents/:agentId/models", async (c) => {
@@ -207,6 +215,15 @@ export function resolveStudioModel(
     registry.modelCache.set(selectedRef, model);
   }
 
+  try {
+    assertCompletionControlsSupported(model, input.request.controls);
+  } catch (error) {
+    if (error instanceof CompletionCapabilityError) {
+      throw new ModelSelectionError(error.message);
+    }
+    throw error;
+  }
+
   const metadata = provider.staticModels.get(modelId);
   return {
     ref: selectedRef,
@@ -218,6 +235,19 @@ export function resolveStudioModel(
 export function sessionModelRef(metadata: JsonObject | undefined): string | undefined {
   const value = metadata?.[STUDIO_MODEL_METADATA_KEY];
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+export function sessionControlValues(
+  metadata: JsonObject | undefined,
+): Readonly<Record<string, string>> | undefined {
+  const value = metadata?.[STUDIO_CONTROLS_METADATA_KEY];
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  const controls = Object.fromEntries(
+    Object.entries(value).filter(
+      (entry): entry is [string, string] => typeof entry[1] === "string",
+    ),
+  );
+  return Object.freeze(controls);
 }
 
 export function normalizeOptionalModelRef(ref: StudioModelRef | undefined): string | undefined {
@@ -251,7 +281,9 @@ async function agentModelsCatalog(
   agent: StudioAgent,
 ): Promise<StudioAgentModelsSummary> {
   const policy = registry.agentPolicies.get(agent.id);
-  const catalogs = await Promise.all([...registry.providers.values()].map(providerCatalog));
+  const catalogs = await Promise.all(
+    [...registry.providers.values()].map((provider) => providerCatalog(registry, provider)),
+  );
   const warnings = catalogs.flatMap((catalog) =>
     catalog.warning === undefined
       ? []
@@ -275,7 +307,7 @@ async function agentModelsCatalog(
         return provider === undefined
           ? []
           : [
-              modelSummary(provider, modelId, {
+              modelSummary(registry, provider, modelId, {
                 id: modelId,
               }),
             ];
@@ -287,17 +319,45 @@ async function agentModelsCatalog(
   const defaultModelRef = policy?.defaultModelRef ?? registry.defaultModelRef;
   const summary: StudioAgentModelsSummary = {
     agentId: agent.id,
-    models: [...models, ...exactPolicyModels],
+    models: [...models, ...exactPolicyModels].map((model) =>
+      withAgentControlDefaults(model, agent.agent.controls),
+    ),
   };
   if (defaultModelRef !== undefined) summary.defaultModelRef = defaultModelRef;
   if (warnings.length > 0) summary.warnings = warnings;
   return summary;
 }
 
-async function providerCatalog(provider: RuntimeProvider): Promise<StudioModelProviderConfig> {
+function withAgentControlDefaults(
+  model: StudioModelSummary,
+  defaults: Readonly<Record<string, string | undefined>> | undefined,
+): StudioModelSummary {
+  if (model.controls === undefined || defaults === undefined) return model;
+  let changed = false;
+  const controls = Object.fromEntries(
+    Object.entries(model.controls).map(([id, control]) => {
+      const defaultValue = defaults[id];
+      if (
+        typeof defaultValue !== "string" ||
+        !control.options.includes(defaultValue) ||
+        control.defaultValue === defaultValue
+      ) {
+        return [id, control];
+      }
+      changed = true;
+      return [id, { ...control, defaultValue }];
+    }),
+  );
+  return changed ? { ...model, controls } : model;
+}
+
+async function providerCatalog(
+  registry: StudioModelRegistry,
+  provider: RuntimeProvider,
+): Promise<StudioModelProviderConfig> {
   const models = new Map<string, StudioModelSummary>();
   for (const model of provider.staticModels.values()) {
-    models.set(model.id, modelSummary(provider, model.id, model));
+    models.set(model.id, modelSummary(registry, provider, model.id, model));
   }
 
   let warning: string | undefined;
@@ -317,7 +377,7 @@ async function providerCatalog(provider: RuntimeProvider): Promise<StudioModelPr
         if (model.contextLength !== undefined) metadata.contextLength = model.contextLength;
         Object.assign(metadata, staticModel?.metadata);
         definition.metadata = metadata;
-        models.set(model.id, modelSummary(provider, model.id, definition));
+        models.set(model.id, modelSummary(registry, provider, model.id, definition));
       }
     } catch (error) {
       const serialized = serializeError(error);
@@ -340,6 +400,18 @@ async function providerCatalog(provider: RuntimeProvider): Promise<StudioModelPr
 }
 
 function modelSummary(
+  registry: StudioModelRegistry,
+  provider: RuntimeProvider,
+  modelId: string,
+  model: StudioModelDefinition,
+): StudioModelSummary {
+  const summary = staticModelSummary(provider, modelId, model);
+  const controls = completionModelFor(registry, provider, modelId).controls;
+  if (controls !== undefined) summary.controls = controls;
+  return summary;
+}
+
+function staticModelSummary(
   provider: RuntimeProvider,
   modelId: string,
   model: StudioModelDefinition,
@@ -352,6 +424,20 @@ function modelSummary(
   };
   if (provider.name !== undefined) summary.providerName = provider.name;
   return summary;
+}
+
+function completionModelFor(
+  registry: StudioModelRegistry,
+  provider: RuntimeProvider,
+  modelId: string,
+): CompletionModel {
+  const ref = `${provider.id}:${modelId}`;
+  let model = registry.modelCache.get(ref);
+  if (model === undefined) {
+    model = provider.createCompletionModel({ modelId });
+    registry.modelCache.set(ref, model);
+  }
+  return model;
 }
 
 function ensureModelAllowed(registry: StudioModelRegistry, agentId: string, ref: string): void {

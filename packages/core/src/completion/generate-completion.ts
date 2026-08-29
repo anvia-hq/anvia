@@ -18,7 +18,9 @@ import {
 } from "./provider-output-error";
 import { CompletionStreamAccumulator } from "./stream-accumulator";
 import type {
+  CompletionControlValues,
   CompletionModel,
+  CompletionModelControlsOf,
   CompletionModelStreamEvent,
   CompletionRequest,
   CompletionResponse,
@@ -81,6 +83,7 @@ export type CompletionBaseOptions<Model extends CompletionModel = CompletionMode
     temperature?: number | undefined;
     maxTokens?: number | undefined;
     toolChoice?: ToolChoice | undefined;
+    controls?: CompletionControlValues<CompletionModelControlsOf<Model>> | undefined;
     providerOptions?: JsonObject | undefined;
     retries?: RetrySetting | undefined;
     abortSignal?: AbortSignal | undefined;
@@ -346,6 +349,7 @@ function requestFromOptions<Model extends CompletionModel, Output>(
     temperature: options.temperature,
     maxTokens: options.maxTokens,
     toolChoice: options.toolChoice,
+    controls: options.controls,
     providerOptions: options.providerOptions,
     outputSchema:
       "outputSchema" in options && options.outputSchema !== undefined

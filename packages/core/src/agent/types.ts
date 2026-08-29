@@ -1,5 +1,7 @@
 import type {
+  CompletionControlValues,
   CompletionModel,
+  CompletionModelControlsOf,
   Document,
   JsonObject,
   ProviderTool,
@@ -48,6 +50,7 @@ export type AgentOptions<
   temperature?: number | undefined;
   maxTokens?: number | undefined;
   providerOptions?: JsonObject | undefined;
+  controls?: CompletionControlValues<CompletionModelControlsOf<M>> | undefined;
   retries?: RetrySetting | undefined;
   toolChoice?: ToolChoice | undefined;
   maxTurns?: number | undefined;
@@ -91,6 +94,7 @@ export type ResolvedAgentOptions<
   temperature?: number | undefined;
   maxTokens?: number | undefined;
   providerOptions?: JsonObject | undefined;
+  controls?: CompletionControlValues<CompletionModelControlsOf<M>> | undefined;
   retries?: RetrySetting | undefined;
   tools?: readonly AnyTool[] | undefined;
   mcpServers?: readonly McpServer[] | undefined;

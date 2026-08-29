@@ -48,6 +48,7 @@ export function usePlaygroundRun(props: {
   selectedAgent: StudioConfig["agents"][number] | undefined;
   selectedAgentId: string;
   selectedModelRef: string;
+  selectedControls: Record<string, string>;
   sessions: StudioSessionsController;
   sessionsEnabled: boolean;
   traces: StudioTracesController;
@@ -79,6 +80,7 @@ export function usePlaygroundRun(props: {
     selectedAgent,
     selectedAgentId,
     selectedModelRef,
+    selectedControls,
     sessions,
     sessionsEnabled,
     traces,
@@ -207,6 +209,7 @@ export function usePlaygroundRun(props: {
       playgroundVisibleEventRef.current = Promise.resolve();
       const metadata: StudioAgentRunRequest["metadata"] = { source: "anvia-studio" };
       if (selectedModelRef.length > 0) metadata.studioModel = selectedModelRef;
+      metadata.studioControls = selectedControls;
       const runContext: PlaygroundRunRequestContext = {
         agentId,
         stream: true,
@@ -217,6 +220,7 @@ export function usePlaygroundRun(props: {
       if (selectedModelRef.length > 0) {
         runContext.model = studioModelRefFromKey(selectedModelRef);
       }
+      runContext.controls = selectedControls;
       playgroundRunRequestRef.current = runContext;
       const startedAt = Date.now();
       playgroundRunStartedAtRef.current = startedAt;
@@ -468,5 +472,6 @@ function runRequestFromContext(
   if (context.metadata !== undefined) request.metadata = context.metadata;
   if (context.sessionId !== undefined) request.sessionId = context.sessionId;
   if (context.model !== undefined) request.model = context.model;
+  if (context.controls !== undefined) request.controls = context.controls;
   return request;
 }

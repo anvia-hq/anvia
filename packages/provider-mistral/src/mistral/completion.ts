@@ -15,6 +15,7 @@ import {
   type JsonValue,
   type Message as MessageType,
   type ModelCallOptions,
+  type NoCompletionModelControls,
   type StreamingCompletionModel,
   type ToolChoice,
   type ToolDefinition,
@@ -31,7 +32,10 @@ import type { MistralCompletionModelId } from "./models";
 type MistralChatParams = Record<string, unknown>;
 type MistralChatMessage = Record<string, unknown>;
 
-export class MistralCompletionModel implements StreamingCompletionModel<unknown> {
+export class MistralCompletionModel implements StreamingCompletionModel<
+  unknown,
+  NoCompletionModelControls
+> {
   readonly provider = "mistral";
   readonly capabilities: CompletionModelCapabilities = {
     streaming: true,

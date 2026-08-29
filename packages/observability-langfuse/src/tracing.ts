@@ -742,6 +742,7 @@ class LangfuseRunObserver implements AgentRunObserver {
       safeInput.providerTools = args.request.providerTools;
       safeInput.outputSchema = args.request.outputSchema;
       safeInput.providerOptions = args.request.providerOptions;
+      safeInput.controls = args.request.controls;
     }
     const metadata: Record<string, unknown> = {
       turn: args.turn,
@@ -752,6 +753,7 @@ class LangfuseRunObserver implements AgentRunObserver {
       providerOptionKeys: isRecord(args.request.providerOptions)
         ? Object.keys(args.request.providerOptions)
         : [],
+      controlKeys: Object.keys(args.request.controls ?? {}),
     };
     if (this.captureMode === "full" && args.providerRequest !== undefined) {
       metadata.providerRequest = args.providerRequest;
@@ -1060,6 +1062,7 @@ class LangfuseToolObserver implements AgentToolObserver {
         input.providerTools = request.providerTools;
         input.outputSchema = request.outputSchema;
         input.providerOptions = request.providerOptions;
+        input.controls = request.controls;
       }
       const toolNames = Array.isArray(request.tools)
         ? request.tools
@@ -1086,6 +1089,7 @@ class LangfuseToolObserver implements AgentToolObserver {
               toolNames,
               providerToolNames,
               hasOutputSchema: request.outputSchema !== undefined,
+              controlKeys: isRecord(request.controls) ? Object.keys(request.controls) : [],
               modelInfo,
             }),
           ),

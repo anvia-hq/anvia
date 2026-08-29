@@ -4,6 +4,7 @@ import {
   assertCompletionRequestSupported,
   type CompletionFinishReason,
   type CompletionModelCapabilities,
+  type CompletionModelControls,
   type CompletionModelInfo,
   type CompletionModelStreamEvent,
   CompletionProviderOutputError,
@@ -56,7 +57,9 @@ type GeminiStreamChunkMapping = Readonly<{
   terminalError?: CompletionProviderOutputError | undefined;
 }>;
 
-export class GeminiCompletionModel implements StreamingCompletionModel<unknown> {
+export class GeminiCompletionModel<
+  Controls extends CompletionModelControls = CompletionModelControls,
+> implements StreamingCompletionModel<unknown, Controls> {
   readonly provider = "gemini";
   readonly capabilities: CompletionModelCapabilities = {
     streaming: true,
@@ -72,6 +75,7 @@ export class GeminiCompletionModel implements StreamingCompletionModel<unknown> 
     private readonly client: GoogleGenAI,
     readonly modelId: GeminiCompletionModelId,
     readonly contextLimits?: ModelContextLimits,
+    readonly controls?: Controls,
   ) {}
 
   private modelInfo(): CompletionModelInfo | undefined {
@@ -146,10 +150,27 @@ export function toGeminiGenerateContentParams(
   }
   const providerConfig = providerConfigValue === undefined ? {} : { ...providerConfigValue };
   delete providerConfig.tools;
-  const config = disableGeminiNativeRetries({
+  const configValues: GeminiConfig = {
     ...providerConfig,
     ...geminiConfig(request, messages),
-  });
+  };
+  const reasoningEffort = request.controls?.reasoningEffort;
+  if (reasoningEffort !== undefined) {
+    const thinkingConfig = isPlainObject(providerConfig.thinkingConfig)
+      ? { ...providerConfig.thinkingConfig }
+      : {};
+    if (modelId.startsWith("gemini-2.5")) {
+      delete thinkingConfig.thinkingLevel;
+      configValues.thinkingConfig = {
+        ...thinkingConfig,
+        thinkingBudget: gemini25ThinkingBudget(reasoningEffort),
+      };
+    } else {
+      delete thinkingConfig.thinkingBudget;
+      configValues.thinkingConfig = { ...thinkingConfig, thinkingLevel: reasoningEffort };
+    }
+  }
+  const config = disableGeminiNativeRetries(configValues);
   const params: GeminiGenerateParams = {
     ...providerTopLevel,
     model: modelId,
@@ -158,6 +179,13 @@ export function toGeminiGenerateContentParams(
   };
 
   return params;
+}
+
+function gemini25ThinkingBudget(reasoningEffort: string): number {
+  if (reasoningEffort === "low") return 1_024;
+  if (reasoningEffort === "medium") return 8_192;
+  if (reasoningEffort === "high") return 24_576;
+  throw new TypeError(`Unsupported Gemini 2.5 reasoning effort: ${reasoningEffort}`);
 }
 
 function applyAbortSignal(

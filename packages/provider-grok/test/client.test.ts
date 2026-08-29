@@ -29,6 +29,18 @@ describe("GrokClient", () => {
     ).toEqualTypeOf<string>();
     const completionId: GrokCompletionModelId = "custom-grok-model";
     client.completionModel({ modelId: completionId, api: "chat" });
+    const reasoningModel = client.completionModel({ modelId: "grok-4.6", api: "responses" });
+    expectTypeOf(reasoningModel.controls!.reasoningEffort.options).items.toEqualTypeOf<
+      "low" | "medium" | "high" | "xhigh"
+    >();
+    const grok45 = client.completionModel({ modelId: "grok-4.5", api: "responses" });
+    expectTypeOf(grok45.controls!.reasoningEffort.options).items.toEqualTypeOf<
+      "low" | "medium" | "high"
+    >();
+    const grok43 = client.completionModel({ modelId: "grok-4.3", api: "responses" });
+    expectTypeOf(grok43.controls!.reasoningEffort.options).items.toEqualTypeOf<
+      "none" | "low" | "medium" | "high"
+    >();
 
     expectTypeOf(
       client.imageGenerationModel({ modelId: "grok-imagine-image" }).modelId,
@@ -68,6 +80,24 @@ describe("GrokClient", () => {
 
     expect(model.provider).toBe("grok");
     expect(model.modelId).toBe("grok-chat-test");
+  });
+
+  it("advertises reasoning effort only for supported Grok models", () => {
+    const client = injectedClient(fakeSdk());
+    expect(
+      client.completionModel({ modelId: "grok-4.6", api: "responses" }).controls?.reasoningEffort
+        .options,
+    ).toEqual(["low", "medium", "high", "xhigh"]);
+    expect(
+      client.completionModel({ modelId: "grok-4.5", api: "responses" }).controls?.reasoningEffort,
+    ).toMatchObject({ options: ["low", "medium", "high"], defaultValue: "high" });
+    expect(
+      client.completionModel({ modelId: "grok-4.3", api: "responses" }).controls?.reasoningEffort,
+    ).toMatchObject({ options: ["none", "low", "medium", "high"] });
+    expect(
+      client.completionModel({ modelId: "grok-4.20-multi-agent-0309", api: "responses" }).controls
+        ?.reasoningEffort.options,
+    ).toEqual(["low", "medium", "high", "xhigh"]);
   });
 
   it("creates image generation models", () => {

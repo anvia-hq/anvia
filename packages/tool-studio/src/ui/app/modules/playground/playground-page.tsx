@@ -42,6 +42,9 @@ import type { RunState, TranscriptEntry } from "../shared/types";
 import type { BrowserWorkspace } from "./browser-workspace";
 import { SmoothedTranscript } from "./smoothed-transcript";
 
+const defaultControlValue = "__anvia_default__";
+const explicitControlValuePrefix = "__anvia_option__";
+
 export function PlaygroundPage(props: {
   agents: StudioConfig["agents"];
   allSessions: StudioSessionSummary[];
@@ -61,6 +64,7 @@ export function PlaygroundPage(props: {
   selectedAgentModels: StudioModelSummary[];
   selectedAgentQuickPrompts: string[];
   selectedModelRef: string;
+  selectedControls: Record<string, string>;
   selectedSessionId: string;
   sessionLogs: StudioSessionLogEntry[];
   sessionTraceSummaries: StudioTraceSummary[];
@@ -86,6 +90,7 @@ export function PlaygroundPage(props: {
   onStopPrompt: () => void;
   onSelectAgent: (agentId: string) => void;
   onSelectModel: (modelRef: string) => void;
+  onSelectControl: (id: string, value: string | undefined) => void;
   onTranscriptScroll: () => void;
 }) {
   const [browserPanelWidth, setBrowserPanelWidth] = useState(720);
@@ -241,6 +246,47 @@ export function PlaygroundPage(props: {
                   )}
                 </div>
                 <div className="flex min-w-0 items-center gap-2">
+                  {Object.entries(
+                    props.selectedAgentModels.find((model) => model.ref === props.selectedModelRef)
+                      ?.controls ?? {},
+                  ).map(([id, control]) => (
+                    <Select
+                      key={id}
+                      value={
+                        props.selectedControls[id] === undefined
+                          ? defaultControlValue
+                          : `${explicitControlValuePrefix}${props.selectedControls[id]}`
+                      }
+                      onValueChange={(value) =>
+                        props.onSelectControl(
+                          id,
+                          value === defaultControlValue
+                            ? undefined
+                            : value.slice(explicitControlValuePrefix.length),
+                        )
+                      }
+                      disabled={props.runState === "running"}
+                    >
+                      <SelectTrigger
+                        aria-label={control.label}
+                        title={control.description}
+                        className="flex h-8 min-h-8 w-auto max-w-44 gap-2 border-0 bg-transparent px-2 py-1 text-xs font-medium text-muted-foreground shadow-none hover:bg-transparent hover:text-foreground"
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent align="end">
+                        <SelectItem value={defaultControlValue}>
+                          {control.label}: Default
+                          {control.defaultValue === undefined ? "" : ` (${control.defaultValue})`}
+                        </SelectItem>
+                        {control.options.map((option) => (
+                          <SelectItem value={`${explicitControlValuePrefix}${option}`} key={option}>
+                            {control.label}: {option}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ))}
                   {props.selectedAgentModels.length === 0 ? null : (
                     <Select
                       value={props.selectedModelRef}

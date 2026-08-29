@@ -20,6 +20,18 @@ import {
 } from "../src/openai/chat-completion";
 
 describe("OpenAI chat-completions client path", () => {
+  it("maps canonical reasoning effort after raw provider options", () => {
+    expect(
+      toOpenAIChatCompletionParams("gpt-5", {
+        chatHistory: [Message.user("hello")],
+        documents: [],
+        tools: [],
+        controls: { reasoningEffort: "high" },
+        providerOptions: { reasoning_effort: "low" },
+      }),
+    ).toMatchObject({ reasoning_effort: "high" });
+  });
+
   it("exposes OpenAI chat-completions capability metadata", () => {
     const model = new OpenAIChatCompletionModel({} as never, "custom-chat-model");
 

@@ -6,6 +6,7 @@ import {
   assertCompletionRequestSupported,
   type CompletionFinishReason,
   type CompletionModelCapabilities,
+  type CompletionModelControls,
   type CompletionModelInfo,
   type CompletionModelStreamEvent,
   CompletionProviderOutputError,
@@ -56,7 +57,9 @@ type AnthropicStreamToolState = {
 
 const DEFAULT_MAX_TOKENS = 1024;
 
-export class AnthropicCompletionModel implements StreamingCompletionModel<unknown> {
+export class AnthropicCompletionModel<
+  Controls extends CompletionModelControls = CompletionModelControls,
+> implements StreamingCompletionModel<unknown, Controls> {
   readonly provider = "anthropic";
   readonly capabilities: CompletionModelCapabilities = {
     streaming: true,
@@ -71,6 +74,7 @@ export class AnthropicCompletionModel implements StreamingCompletionModel<unknow
     private readonly client: Anthropic | AnthropicVertex,
     readonly modelId: AnthropicCompletionModelId,
     readonly contextLimits?: ModelContextLimits,
+    readonly controls?: Controls,
   ) {}
 
   private modelInfo(): CompletionModelInfo | undefined {
@@ -542,6 +546,12 @@ export function toAnthropicMessagesParams(
     max_tokens: request.maxTokens ?? DEFAULT_MAX_TOKENS,
     messages: messages.flatMap(messageToAnthropicMessages),
   };
+
+  const reasoningEffort = request.controls?.reasoningEffort;
+  if (reasoningEffort !== undefined) {
+    const outputConfig = isPlainObject(params.output_config) ? params.output_config : {};
+    params.output_config = { ...outputConfig, effort: reasoningEffort };
+  }
 
   delete params.tools;
 

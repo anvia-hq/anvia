@@ -949,6 +949,8 @@ describe("langfuse", () => {
       "model.turn.1",
       expect.objectContaining({
         model: "test-model",
+        input: expect.objectContaining({ controls: { reasoningEffort: "high" } }),
+        modelParameters: expect.objectContaining({ reasoningEffort: "high" }),
         metadata: expect.objectContaining({
           turn: 1,
           documentCount: 0,
@@ -2919,6 +2921,7 @@ function generationStartArgs(): AgentGenerationStartArgs {
       chatHistory: [userMessage("hello")],
       documents: [],
       tools: [],
+      controls: { reasoningEffort: "high" },
       providerOptions: {},
     },
   };

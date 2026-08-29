@@ -1,4 +1,6 @@
 import {
+  type CompletionModelControls,
+  defineCompletionModelControls,
   type ModelContextLimits,
   resolveModelContextLimits,
   type StreamingCompletionModel,
@@ -13,6 +15,7 @@ import {
 import type { TranscriptionModel } from "@anvia/core/transcription";
 import { GoogleGenAI, type GoogleGenAIOptions } from "@google/genai";
 import { GeminiCompletionModel } from "./completion";
+import { geminiControlsForModel, type GeminiControlsFor } from "./controls";
 import { GeminiEmbeddingModel, type GeminiEmbeddingModelOptions } from "./embedding";
 import { GeminiImageGenerationModel, GeminiImagenGenerationModel } from "./image-generation";
 import type {
@@ -52,9 +55,13 @@ export type GeminiClientOptions =
   | VertexClientOptions
   | InjectedClientOptions;
 
-export type GeminiCompletionModelOptions = {
-  modelId: GeminiCompletionModelId;
+export type GeminiCompletionModelOptions<
+  ModelId extends GeminiCompletionModelId = GeminiCompletionModelId,
+  Controls extends CompletionModelControls = GeminiControlsFor<ModelId>,
+> = {
+  modelId: ModelId;
   contextLimits?: ModelContextLimits | undefined;
+  controls?: Controls | undefined;
 };
 
 export type GeminiImageGenerationModelOptions =
@@ -63,7 +70,9 @@ export type GeminiImageGenerationModelOptions =
 
 export type GeminiTranscriptionModelOptions = { modelId: GeminiTranscriptionModelId };
 
-export type GeminiCompletionModelHandle = StreamingCompletionModel<unknown>;
+export type GeminiCompletionModelHandle<
+  Controls extends CompletionModelControls = CompletionModelControls,
+> = StreamingCompletionModel<unknown, Controls>;
 export type GeminiEmbeddingModelHandle = EmbeddingModel;
 export type GeminiImageGenerationModelHandle = ImageGenerationModel<unknown>;
 export type GeminiTranscriptionModelHandle = TranscriptionModel<unknown>;
@@ -80,8 +89,18 @@ export class GeminiClient implements ModelListingClient {
     this.sdk = new GoogleGenAI(toGoogleGenAIOptions(options));
   }
 
-  completionModel(options: GeminiCompletionModelOptions): GeminiCompletionModelHandle {
+  completionModel<
+    const ModelId extends GeminiCompletionModelId,
+    const Controls extends CompletionModelControls = GeminiControlsFor<ModelId>,
+  >(
+    options: GeminiCompletionModelOptions<ModelId, Controls>,
+  ): GeminiCompletionModelHandle<Controls> {
     const modelId = requireModelId(options.modelId);
+    const controls = (
+      options.controls === undefined
+        ? geminiControlsForModel(modelId)
+        : defineCompletionModelControls(options.controls)
+    ) as Controls | undefined;
     return new GeminiCompletionModel(
       this.sdk,
       modelId,
@@ -90,6 +109,7 @@ export class GeminiClient implements ModelListingClient {
         GEMINI_COMPLETION_MODEL_CONTEXT_LIMITS,
         options.contextLimits,
       ),
+      controls,
     );
   }
 

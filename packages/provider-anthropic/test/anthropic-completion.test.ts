@@ -24,6 +24,39 @@ import {
 import { AnthropicClient } from "../src/index";
 
 describe("Anthropic Messages mapping", () => {
+  it("advertises and maps reasoning effort with canonical precedence", () => {
+    const model = new AnthropicClient({ client: {} as never }).completionModel({
+      modelId: "claude-sonnet-5",
+    });
+    expect(model.controls?.reasoningEffort.options).toEqual([
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+    ]);
+    expect(
+      toAnthropicMessagesParams("claude-sonnet-5", {
+        chatHistory: [Message.user("hello")],
+        documents: [],
+        tools: [],
+        controls: { reasoningEffort: "xhigh" },
+        providerOptions: { output_config: { effort: "low", format: "json" } },
+      }),
+    ).toMatchObject({ output_config: { effort: "xhigh", format: "json" } });
+  });
+
+  it("does not advertise xhigh for Claude Mythos Preview", () => {
+    const model = new AnthropicClient({ client: {} as never }).completionModel({
+      modelId: "claude-mythos-preview",
+    });
+
+    expect(model.controls?.reasoningEffort).toMatchObject({
+      options: ["low", "medium", "high", "max"],
+      defaultValue: "high",
+    });
+  });
+
   it("exposes Anthropic capability metadata", () => {
     const model = new AnthropicCompletionModel({} as never, "claude-test");
 

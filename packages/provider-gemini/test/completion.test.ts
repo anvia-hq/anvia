@@ -22,6 +22,50 @@ import {
 import { GeminiClient } from "../src/index";
 
 describe("Gemini completion mapping", () => {
+  it("advertises and maps thinking level with canonical precedence", () => {
+    const model = new GeminiClient({ client: {} as never }).completionModel({
+      modelId: "gemini-3.6-flash",
+    });
+    expect(model.controls?.reasoningEffort.options).toEqual(["minimal", "low", "medium", "high"]);
+    expect(model.controls?.reasoningEffort.defaultValue).toBe("medium");
+    const gemini3Params = toGeminiGenerateContentParams("gemini-3.6-flash", {
+      chatHistory: [Message.user("hello")],
+      documents: [],
+      tools: [],
+      controls: { reasoningEffort: "medium" },
+      providerOptions: {
+        config: {
+          thinkingConfig: {
+            thinkingBudget: 1_024,
+            thinkingLevel: "low",
+            includeThoughts: true,
+          },
+        },
+      },
+    });
+    expect((gemini3Params.config as Record<string, unknown>).thinkingConfig).toEqual({
+      thinkingLevel: "medium",
+      includeThoughts: true,
+    });
+    const gemini25Params = toGeminiGenerateContentParams("gemini-2.5-flash", {
+      chatHistory: [Message.user("hello")],
+      documents: [],
+      tools: [],
+      controls: { reasoningEffort: "high" },
+      providerOptions: {
+        config: { thinkingConfig: { thinkingLevel: "low", includeThoughts: true } },
+      },
+    });
+    expect((gemini25Params.config as Record<string, unknown>).thinkingConfig).toEqual({
+      thinkingBudget: 24_576,
+      includeThoughts: true,
+    });
+    expect(
+      new GeminiClient({ client: {} as never }).completionModel({ modelId: "gemini-3.7-flash" })
+        .controls?.reasoningEffort,
+    ).toMatchObject({ options: ["low", "medium", "high"], defaultValue: "medium" });
+  });
+
   it("exposes Gemini capability metadata", () => {
     const model = new GeminiCompletionModel({} as never, "gemini-test");
 

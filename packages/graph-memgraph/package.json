@@ -1,6 +1,6 @@
 {
   "name": "@anvia/memgraph",
-  "version": "1.0.9",
+  "version": "1.0.10",
   "description": "Schema-first Memgraph GraphRAG integration for Anvia.",
   "author": "anvia",
   "maintainer": "Indra Zulfi",

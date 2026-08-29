@@ -13,6 +13,7 @@ type ResolvedGraphExploreBase = Readonly<{
   relationships: readonly string[];
   maxNodes: number;
   maxRelationships: number;
+  includeProvenance: boolean;
   abortSignal?: AbortSignal | undefined;
 }>;
 
@@ -47,6 +48,7 @@ export function resolveGraphExploreOptions<Schema extends GraphSchemaLike>(
     relationships: string[];
     maxNodes: number;
     maxRelationships: number;
+    includeProvenance: boolean;
     abortSignal?: AbortSignal | undefined;
   } = {
     nodeTypes,
@@ -58,6 +60,7 @@ export function resolveGraphExploreOptions<Schema extends GraphSchemaLike>(
       maximumRelationships,
       "maxRelationships",
     ),
+    includeProvenance: options.includeProvenance ?? false,
   };
   if (options.abortSignal !== undefined) base.abortSignal = options.abortSignal;
   if (options.mode === "overview") {

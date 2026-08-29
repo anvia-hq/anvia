@@ -1,11 +1,13 @@
 import type { EmbeddingModel } from "@anvia/core/embeddings";
 import { ingestGraphText, type CreateGraphSearchToolOptions } from "@anvia/graph";
-import type {
-  ManagedNeo4jKnowledgeGraph,
-  Neo4jGraphSchema,
-  Neo4jKnowledgeGraph,
-  Neo4jPropertyValue,
-  RetrieveGraphContextOptions,
+import {
+  ManagedNeo4jKnowledgeGraph as ManagedNeo4jKnowledgeGraphValue,
+  type ManagedNeo4jKnowledgeGraph,
+  type Neo4jClient,
+  type Neo4jGraphSchema,
+  type Neo4jKnowledgeGraph,
+  type Neo4jPropertyValue,
+  type RetrieveGraphContextOptions,
 } from "../src/index.js";
 
 const strings: Neo4jPropertyValue = ["one", "two"];
@@ -20,6 +22,17 @@ void [strings, numbers, booleans, mixed];
 declare const model: EmbeddingModel;
 declare const existing: Neo4jKnowledgeGraph<Neo4jGraphSchema>;
 declare const managed: ManagedNeo4jKnowledgeGraph<Neo4jGraphSchema>;
+declare const client: Neo4jClient;
+declare const managedOptions: Parameters<Neo4jClient["managedKnowledgeGraph"]>[0];
+const tenantGraph = client.tenant("user-1").managedKnowledgeGraph(managedOptions);
+tenantGraph.explore({ mode: "overview", includeProvenance: true });
+client.managedKnowledgeGraph({
+  ...managedOptions,
+  // @ts-expect-error Namespaces are created only through client.tenant().
+  namespace: "raw-user-id",
+});
+// @ts-expect-error Raw namespaces cannot bypass client.tenant().
+new ManagedNeo4jKnowledgeGraphValue(client, managedOptions, "raw-user-id");
 declare const forged: {
   readonly schema: Neo4jGraphSchema;
   readonly evidenceCapability: "chunks";

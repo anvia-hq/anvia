@@ -2,6 +2,7 @@ import type { EmbeddingModel } from "@anvia/core/embeddings";
 import {
   createGraphSearchTool,
   ingestGraphText,
+  ingestGraphTextToStores,
   type GraphContextRetriever,
   type GraphDocumentWriter,
   type GraphSchemaLike,
@@ -11,6 +12,7 @@ declare const model: EmbeddingModel;
 declare const existing: GraphContextRetriever<GraphSchemaLike, "none">;
 declare const managed: GraphContextRetriever<GraphSchemaLike, "chunks">;
 declare const writer: GraphDocumentWriter<GraphSchemaLike>;
+declare const vectorStore: { upsert(options: { documents: unknown[] }): Promise<void> };
 
 const retrieval = {
   name: "search_graph",
@@ -37,7 +39,23 @@ ingestGraphText({
   document: { id: "one", text: "Product One" },
   extractionModel: {} as never,
   embeddingModel: model,
+  factConflicts: {
+    entity: {
+      properties: { summary: "prefer-longest", aliases: "union", confidence: "max" },
+    },
+  },
   conflict: "error",
+  orphanEntities: "delete",
+});
+
+ingestGraphTextToStores({
+  graph: writer,
+  vectorStore,
+  document: { id: "one", text: "Product One" },
+  revision: "revision-2",
+  extractionModel: {} as never,
+  embeddingModel: model,
+  conflict: "overwrite",
   orphanEntities: "delete",
 });
 

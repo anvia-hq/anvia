@@ -8,6 +8,13 @@ import {
   strictProperties,
   throwIfAborted,
 } from "./helpers.js";
+import {
+  managedPathPredicate,
+  managedScopeParameters,
+  managedScopePredicate,
+  tenantScopePredicate,
+  type Neo4jManagedScope,
+} from "./managed-scope.js";
 import type {
   Neo4jGraphContext,
   Neo4jGraphContextNode,
@@ -131,12 +138,22 @@ async function vectorSearch(
   abortSignal?: AbortSignal,
 ): Promise<SearchHit[]> {
   const labelExpression = labels.map(quoteIdentifier).join("|");
+  const vectorFilter =
+    graph instanceof ManagedNeo4jKnowledgeGraph && graph.namespace !== undefined
+      ? ` WHERE seed.${quoteIdentifier("__anvia_namespace")} = $namespace`
+      : "";
+  const postFilter = managedSearchPredicate(
+    graph,
+    "seed",
+    entryRelationshipType === "ANVIA_MENTIONS",
+  );
   const result = await graph.query(
     `CYPHER 25
 MATCH (seed:${labelExpression})
-SEARCH seed IN (VECTOR INDEX ${quoteIdentifier(indexName)} FOR $vector LIMIT $limit) SCORE AS score
+SEARCH seed IN (VECTOR INDEX ${quoteIdentifier(indexName)} FOR $vector${vectorFilter} LIMIT $limit) SCORE AS score
+${postFilter}
 RETURN elementId(seed) AS elementId, labels(seed) AS labels, properties(seed) AS properties, score`,
-    { vector, limit: int(limit) },
+    managedQueryParameters(graph, { vector, limit: int(limit) }),
     abortSignal,
   );
   return result.records.map((record) => ({ ...parseSearchHit(record), entryRelationshipType }));
@@ -152,8 +169,13 @@ async function fulltextSearch(
 ): Promise<SearchHit[]> {
   const result = await graph.query(
     `CALL db.index.fulltext.queryNodes($indexName, $query, {limit: $limit}) YIELD node AS seed, score
+${managedSearchPredicate(graph, "seed", entryRelationshipType === "ANVIA_MENTIONS")}
 RETURN elementId(seed) AS elementId, labels(seed) AS labels, properties(seed) AS properties, score`,
-    { indexName, query: escapeLucene(query), limit: int(limit) },
+    managedQueryParameters(graph, {
+      indexName,
+      query: scopedFulltextQuery(graph, query),
+      limit: int(limit),
+    }),
     abortSignal,
   );
   return result.records.map((record) => ({ ...parseSearchHit(record), entryRelationshipType }));
@@ -227,12 +249,13 @@ async function hydrateEvidence(
   const result = await graph.query(
     `MATCH (d:${quoteIdentifier(graph.resources.labels.document)})-[:${quoteIdentifier("ANVIA_HAS_CHUNK")}]->(c:${quoteIdentifier(graph.resources.labels.chunk)})
 WHERE c.${quoteIdentifier("__anvia_id")} IN $chunkIds
+  ${tenantNodeAndPredicate(graph, "d")}${tenantNodeAndPredicate(graph, "c")}
 RETURN c.${quoteIdentifier("__anvia_id")} AS chunkId,
        d.${quoteIdentifier("__anvia_id")} AS documentId,
        c.${quoteIdentifier("__anvia_index")} AS index,
        c.${quoteIdentifier("__anvia_text")} AS text,
        properties(c) AS properties`,
-    { chunkIds },
+    managedQueryParameters(graph, { chunkIds }),
     abortSignal,
   );
   const byId = new Map<string, Neo4jGraphEvidence>();
@@ -311,9 +334,11 @@ async function traverse<Schema extends Neo4jGraphSchema>(
   for (const [relationshipType, group] of entryGroups) {
     const entries = await graph.query(
       `MATCH (seed) WHERE elementId(seed) IN $seedIds
-MATCH (seed)-[:${quoteIdentifier(relationshipType)}]->(entry)
+  ${tenantNodePredicate(graph, "seed", "AND")}
+MATCH (seed)-[entryRelationship:${quoteIdentifier(relationshipType)}]->(entry)
+WHERE true${managedNodeAndPredicate(graph, "entry")}${tenantNodeAndPredicate(graph, "entryRelationship")}
 RETURN DISTINCT elementId(entry) AS elementId`,
-      { seedIds: group.map((seed) => seed.elementId) },
+      managedQueryParameters(graph, { seedIds: group.map((seed) => seed.elementId) }),
       abortSignal,
     );
     for (const record of entries.records) {
@@ -326,22 +351,24 @@ RETURN DISTINCT elementId(entry) AS elementId`,
   const pathLimit = Math.max(options.maxNodes, options.maxRelationships);
   const seedNodes = await graph.query(
     `MATCH (node) WHERE elementId(node) IN $seedIds
+  ${managedNodePredicate(graph, "node", "AND")}
 RETURN {elementId: elementId(node), labels: labels(node), properties: properties(node)} AS node`,
-    { seedIds: limitedSeedIds },
+    managedQueryParameters(graph, { seedIds: limitedSeedIds }),
     abortSignal,
   );
   const result = await graph.query(
     `MATCH (seed) WHERE elementId(seed) IN $seedIds
+  ${managedNodePredicate(graph, "seed", "AND")}
 MATCH path = ${pattern}
-WHERE all(rel IN relationships(path) WHERE type(rel) IN $relationshipTypes)
+WHERE all(rel IN relationships(path) WHERE type(rel) IN $relationshipTypes${managedRelationshipAndPredicate(graph, "rel")})${managedPathAndPredicate(graph)}
 RETURN [item IN nodes(path) | {elementId: elementId(item), labels: labels(item), properties: properties(item)}] AS nodes,
        [item IN relationships(path) | {elementId: elementId(item), type: type(item), properties: properties(item), from: elementId(startNode(item)), to: elementId(endNode(item))}] AS relationships
 LIMIT $pathLimit`,
-    {
+    managedQueryParameters(graph, {
       seedIds: limitedSeedIds,
       relationshipTypes: options.relationships,
       pathLimit: int(pathLimit),
-    },
+    }),
     abortSignal,
   );
   const nodes = new Map<string, Neo4jGraphContextNode>();
@@ -395,6 +422,63 @@ function traversalPattern(direction: "outgoing" | "incoming" | "both", maxDepth:
     return `(seed)<-[*1..${maxDepth}]-(node)`;
   }
   return `(seed)-[*1..${maxDepth}]-(node)`;
+}
+
+function managedQueryParameters(
+  graph: Neo4jKnowledgeGraphBase,
+  parameters: Record<string, unknown>,
+): Record<string, unknown> {
+  return managedScopeParameters(managedScope(graph), parameters);
+}
+
+function managedNodePredicate(
+  graph: Neo4jKnowledgeGraphBase,
+  variable: string,
+  prefix: "WHERE" | "AND",
+): string {
+  return managedScopePredicate(managedScope(graph), variable, prefix);
+}
+
+function managedSearchPredicate(
+  graph: Neo4jKnowledgeGraphBase,
+  variable: string,
+  chunkSeed: boolean,
+): string {
+  return chunkSeed && graph.namespace === undefined
+    ? ""
+    : managedNodePredicate(graph, variable, "WHERE");
+}
+
+function managedNodeAndPredicate(graph: Neo4jKnowledgeGraphBase, variable: string): string {
+  return managedScopePredicate(managedScope(graph), variable, " AND");
+}
+
+function managedRelationshipAndPredicate(graph: Neo4jKnowledgeGraphBase, variable: string): string {
+  return managedNodeAndPredicate(graph, variable);
+}
+
+function tenantNodePredicate(
+  graph: Neo4jKnowledgeGraphBase,
+  variable: string,
+  prefix: "WHERE" | "AND",
+): string {
+  const scope = managedScope(graph);
+  return scope === undefined ? "" : tenantScopePredicate(scope, variable, prefix);
+}
+
+function tenantNodeAndPredicate(graph: Neo4jKnowledgeGraphBase, variable: string): string {
+  const predicate = tenantNodePredicate(graph, variable, "AND");
+  return predicate.length === 0 ? "" : ` ${predicate}`;
+}
+
+function managedPathAndPredicate(graph: Neo4jKnowledgeGraphBase): string {
+  return managedPathPredicate(managedScope(graph), false);
+}
+
+function managedScope(graph: Neo4jKnowledgeGraphBase): Neo4jManagedScope | undefined {
+  return graph instanceof ManagedNeo4jKnowledgeGraph
+    ? { graph: graph.name, namespace: graph.namespace }
+    : undefined;
 }
 
 function contextNode(
@@ -577,6 +661,13 @@ function escapeLucene(value: string): string {
     escaped += specialCharacters.has(character) ? `\\${character}` : character;
   }
   return escaped;
+}
+
+function scopedFulltextQuery(graph: Neo4jKnowledgeGraphBase, value: string): string {
+  const query = escapeLucene(value);
+  return graph instanceof ManagedNeo4jKnowledgeGraph && graph.namespace !== undefined
+    ? `(${query}) AND __anvia_namespace:${escapeLucene(graph.namespace)}`
+    : query;
 }
 
 function groupBy<Value, Key>(

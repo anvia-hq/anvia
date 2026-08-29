@@ -7,7 +7,14 @@ import {
   type ResolvedGraphExploreExpandOptions,
 } from "@anvia/graph";
 import { int, type Record as Neo4jRecord } from "neo4j-driver";
-import { Neo4jKnowledgeGraphBase } from "./graph.js";
+import { ManagedNeo4jKnowledgeGraph, Neo4jKnowledgeGraphBase } from "./graph.js";
+import { quoteIdentifier } from "./helpers.js";
+import {
+  managedPathPredicate,
+  managedScopeParameters,
+  managedScopePredicate,
+  type Neo4jManagedScope,
+} from "./managed-scope.js";
 import { parseNeo4jProperties } from "./schema.js";
 import type { Neo4jGraphSchema, Neo4jNodeIdentity } from "./types.js";
 
@@ -23,13 +30,16 @@ export async function exploreGraph<Schema extends Neo4jGraphSchema>(
     resolved.mode === "overview"
       ? await overviewNodes(graph, resolved)
       : await expandedNodes(graph, resolved);
-  const nodes = uniqueNodes(records.map((record) => nodeFromRecord(record, graph.schema)));
+  const nodes = uniqueNodes(
+    records.map((record) => nodeFromRecord(record, graph.schema, resolved.includeProvenance)),
+  );
   const visibleNodes = nodes.slice(0, resolved.maxNodes);
   const relationships = await relationshipsBetween(
     graph,
     visibleNodes.map((node) => node.id),
     resolved.relationships,
     resolved.maxRelationships,
+    resolved.includeProvenance,
     resolved.abortSignal,
   );
   return {
@@ -47,12 +57,15 @@ async function overviewNodes(
   options: ReturnType<typeof resolveGraphExploreOptions> & { mode: "overview" },
 ): Promise<readonly Neo4jRecord[]> {
   const result = await graph.query(
-    `MATCH (node)
-WHERE any(type IN labels(node) WHERE type IN $nodeTypes)
+    `MATCH (node${managedEntityLabel(graph)})
+WHERE any(type IN labels(node) WHERE type IN $nodeTypes)${managedAndPredicate(graph, "node")}
 RETURN elementId(node) AS id, labels(node) AS labels, properties(node) AS properties
 ORDER BY elementId(node)
 LIMIT $nodeLimit`,
-    { nodeTypes: options.nodeTypes, nodeLimit: int(options.maxNodes + 1) },
+    managedParameters(graph, {
+      nodeTypes: options.nodeTypes,
+      nodeLimit: int(options.maxNodes + 1),
+    }),
     options.abortSignal,
   );
   return result.records;
@@ -63,11 +76,11 @@ async function expandedNodes(
   options: ResolvedGraphExploreExpandOptions,
 ): Promise<readonly Neo4jRecord[]> {
   const roots = await graph.query(
-    `MATCH (node)
+    `MATCH (node${managedEntityLabel(graph)})
 WHERE elementId(node) IN $nodeIds
-  AND any(type IN labels(node) WHERE type IN $nodeTypes)
+  AND any(type IN labels(node) WHERE type IN $nodeTypes)${managedAndPredicate(graph, "node")}
 RETURN elementId(node) AS id, labels(node) AS labels, properties(node) AS properties`,
-    { nodeIds: options.nodeIds, nodeTypes: options.nodeTypes },
+    managedParameters(graph, { nodeIds: options.nodeIds, nodeTypes: options.nodeTypes }),
     options.abortSignal,
   );
   if (options.relationships.length === 0) return roots.records;
@@ -75,18 +88,18 @@ RETURN elementId(node) AS id, labels(node) AS labels, properties(node) AS proper
   if (remainingNodeLimit <= 0) return roots.records;
   const pattern = traversalPattern(options.direction, options.maxDepth);
   const neighbors = await graph.query(
-    `MATCH (root) WHERE elementId(root) IN $nodeIds
+    `MATCH (root${managedEntityLabel(graph)}) WHERE elementId(root) IN $nodeIds${managedAndPredicate(graph, "root")}
 MATCH path = ${pattern}
 WHERE all(rel IN relationships(path) WHERE type(rel) IN $relationshipTypes)
-  AND any(type IN labels(node) WHERE type IN $nodeTypes)
+  AND any(type IN labels(node) WHERE type IN $nodeTypes)${managedAndPredicate(graph, "node")}${managedPathAndPredicate(graph)}
 RETURN elementId(node) AS id, labels(node) AS labels, properties(node) AS properties
 LIMIT $nodeLimit`,
-    {
+    managedParameters(graph, {
       nodeIds: options.nodeIds,
       nodeTypes: options.nodeTypes,
       relationshipTypes: options.relationships,
       nodeLimit: int(remainingNodeLimit),
-    },
+    }),
     options.abortSignal,
   );
   return [...roots.records, ...neighbors.records];
@@ -97,6 +110,7 @@ async function relationshipsBetween(
   nodeIds: readonly string[],
   relationshipTypes: readonly string[],
   maxRelationships: number,
+  includeProvenance: boolean,
   abortSignal?: AbortSignal,
 ): Promise<GraphExploreRelationship[]> {
   if (nodeIds.length === 0 || relationshipTypes.length === 0) return [];
@@ -104,7 +118,7 @@ async function relationshipsBetween(
     `MATCH (from)-[relationship]->(to)
 WHERE elementId(from) IN $nodeIds
   AND elementId(to) IN $nodeIds
-  AND type(relationship) IN $relationshipTypes
+  AND type(relationship) IN $relationshipTypes${managedAndPredicate(graph, "from")}${managedAndPredicate(graph, "to")}${managedAndPredicate(graph, "relationship")}
 RETURN elementId(relationship) AS id,
        type(relationship) AS type,
        elementId(from) AS source,
@@ -112,17 +126,21 @@ RETURN elementId(relationship) AS id,
        properties(relationship) AS properties
 ORDER BY elementId(relationship)
 LIMIT $relationshipLimit`,
-    {
+    managedParameters(graph, {
       nodeIds,
       relationshipTypes,
       relationshipLimit: int(maxRelationships + 1),
-    },
+    }),
     abortSignal,
   );
-  return result.records.map(relationshipFromRecord);
+  return result.records.map((record) => relationshipFromRecord(record, includeProvenance));
 }
 
-function nodeFromRecord(record: Neo4jRecord, schema: Neo4jGraphSchema): GraphExploreNode {
+function nodeFromRecord(
+  record: Neo4jRecord,
+  schema: Neo4jGraphSchema,
+  includeProvenance: boolean,
+): GraphExploreNode {
   const id = stringValue(record.get("id"), "Neo4j explorer node id");
   const labels = stringArray(record.get("labels"), "Neo4j explorer node labels");
   const raw = objectValue(record.get("properties"), "Neo4j explorer node properties");
@@ -135,6 +153,7 @@ function nodeFromRecord(record: Neo4jRecord, schema: Neo4jGraphSchema): GraphExp
     type: string;
     identity: Neo4jNodeIdentity;
     properties: typeof properties;
+    provenance?: { documentIds: string[]; chunkIds: string[] } | undefined;
   } = {
     id,
     type,
@@ -143,10 +162,14 @@ function nodeFromRecord(record: Neo4jRecord, schema: Neo4jGraphSchema): GraphExp
   };
   const key = raw.__anvia_key;
   if (typeof key === "string") node.key = key;
+  if (includeProvenance) node.provenance = provenanceProperties(raw);
   return node;
 }
 
-function relationshipFromRecord(record: Neo4jRecord): GraphExploreRelationship {
+function relationshipFromRecord(
+  record: Neo4jRecord,
+  includeProvenance: boolean,
+): GraphExploreRelationship {
   const raw = objectValue(record.get("properties"), "Neo4j explorer relationship properties");
   const relationship: {
     id: string;
@@ -155,6 +178,7 @@ function relationshipFromRecord(record: Neo4jRecord): GraphExploreRelationship {
     from: string;
     to: string;
     properties: ReturnType<typeof applicationProperties>;
+    provenance?: { documentIds: string[]; chunkIds: string[] } | undefined;
   } = {
     id: stringValue(record.get("id"), "Neo4j explorer relationship id"),
     type: stringValue(record.get("type"), "Neo4j explorer relationship type"),
@@ -164,7 +188,20 @@ function relationshipFromRecord(record: Neo4jRecord): GraphExploreRelationship {
   };
   const key = raw.__anvia_key;
   if (typeof key === "string") relationship.key = key;
+  if (includeProvenance) relationship.provenance = provenanceProperties(raw);
   return relationship;
+}
+
+function provenanceProperties(value: Record<string, unknown>) {
+  return {
+    documentIds: optionalStringArray(value.__anvia_source_document_ids),
+    chunkIds: optionalStringArray(value.__anvia_source_chunk_ids),
+  };
+}
+
+function optionalStringArray(value: unknown): string[] {
+  if (value === undefined) return [];
+  return stringArray(value, "Neo4j explorer provenance");
 }
 
 function identityProperties(
@@ -199,6 +236,33 @@ function traversalPattern(direction: "outgoing" | "incoming" | "both", maxDepth:
   if (direction === "outgoing") return `(root)-[*1..${maxDepth}]->(node)`;
   if (direction === "incoming") return `(root)<-[*1..${maxDepth}]-(node)`;
   return `(root)-[*1..${maxDepth}]-(node)`;
+}
+
+function managedEntityLabel(graph: Neo4jKnowledgeGraphBase): string {
+  return graph instanceof ManagedNeo4jKnowledgeGraph
+    ? `:${quoteIdentifier(graph.resources.labels.entity)}`
+    : "";
+}
+
+function managedParameters(
+  graph: Neo4jKnowledgeGraphBase,
+  parameters: Record<string, unknown>,
+): Record<string, unknown> {
+  return managedScopeParameters(managedScope(graph), parameters);
+}
+
+function managedAndPredicate(graph: Neo4jKnowledgeGraphBase, variable: string): string {
+  return managedScopePredicate(managedScope(graph), variable, " AND");
+}
+
+function managedPathAndPredicate(graph: Neo4jKnowledgeGraphBase): string {
+  return managedPathPredicate(managedScope(graph), true);
+}
+
+function managedScope(graph: Neo4jKnowledgeGraphBase): Neo4jManagedScope | undefined {
+  return graph instanceof ManagedNeo4jKnowledgeGraph
+    ? { graph: graph.name, namespace: graph.namespace }
+    : undefined;
 }
 
 function stringValue(value: unknown, label: string): string {

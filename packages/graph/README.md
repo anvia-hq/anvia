@@ -47,8 +47,25 @@ const ingestion = await ingestGraphText({
   },
   conflict: "error",
   orphanEntities: "delete",
+  factConflicts: {
+    entity: {
+      properties: {
+        summary: "prefer-longest",
+        aliases: "union",
+        confidence: "max",
+      },
+    },
+  },
 });
 ```
+
+Extraction conflicts and stored-graph write conflicts are separate policies. `factConflicts`
+resolves disagreements between chunks before persistence; `conflict` controls collisions with facts
+already stored by the graph adapter. Extraction rejects disagreements by default. Built-in
+property strategies include `prefer-first`, `prefer-last`, `prefer-defined`, `prefer-longest`,
+`union`, `max`, and `min`; a custom resolver receives structured candidate and source chunk data.
+Conflict errors and resolved warnings include the fact type, stable key, parsed identity, property,
+candidate values, and source chunk IDs. Resolved disagreements are returned in `warnings`.
 
 Use `ingestGraphDocuments()` for a batch. Both functions extract facts, embed chunks and entities,
 and atomically replace each source document in the managed graph. Existing graph registrations are
@@ -60,6 +77,12 @@ reuse the chunk embeddings without another model call:
 ```ts
 await vectorStore.upsert({ documents: ingestion.vectorDocuments });
 ```
+
+Every ingestion result includes a `receipt` with document, entity, relationship, and vector IDs,
+the graph write counts, warnings, an optional caller-supplied `revision`, and vector-stage status.
+Use `ingestGraphTextToStores()` or `ingestGraphDocumentsToStores()` to write the graph followed by
+the vector store. If the second stage fails, `GraphIngestionStageError` exposes a receipt with a
+completed graph stage and failed vector stage for queue reconciliation.
 
 The graph and vector writes are separate transactions. Applications that require cross-store
 reconciliation should persist their own ingestion status and retry the incomplete write. Advanced
@@ -105,6 +128,7 @@ Adapters implementing `GraphExplorer` expose a portable, bounded view for visual
 const overview = await graph.explore({
   mode: "overview",
   nodeTypes: ["Product"],
+  includeProvenance: true,
   maxNodes: 100,
   maxRelationships: 200,
 });
@@ -120,3 +144,6 @@ const neighborhood = await graph.explore({
 Explorer IDs are opaque and provider-specific. They are intended for follow-up expansion within the
 same graph, not persistence or cross-provider migration. Adapters cap overview and expansion requests,
 return truncation metadata, and omit reserved Anvia properties such as stored embeddings.
+
+When `includeProvenance` is true, supported adapters attach source `documentIds` and `chunkIds` to
+nodes and relationships.

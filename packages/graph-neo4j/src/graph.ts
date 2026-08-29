@@ -20,6 +20,14 @@ import {
   throwIfAborted,
 } from "./helpers.js";
 import {
+  managedScopeParameters,
+  namespaceMapEntry as scopeNamespaceMapEntry,
+  namespacePredicate as scopeNamespacePredicate,
+  tenantMapEntries as scopeTenantMapEntries,
+  tenantRelationshipProperties as scopeTenantRelationshipProperties,
+  tenantScopePredicate,
+} from "./managed-scope.js";
+import {
   assertName,
   assertPropertyName,
   parseNeo4jProperties,
@@ -46,6 +54,7 @@ import type {
 type SeedRegistration = Readonly<{
   labels: readonly string[];
   vectorIndex: Neo4jVectorIndex & Readonly<{ property: string }>;
+  vectorFilterProperties?: readonly string[] | undefined;
   fulltextIndex?: (Neo4jFulltextIndex & Readonly<{ properties: readonly string[] }>) | undefined;
   entryRelationshipType?: string | undefined;
 }>;
@@ -58,6 +67,17 @@ type ExpectedConstraint = Readonly<{
 
 type GraphTransaction = Pick<ManagedTransaction, "run">;
 
+const tenantScopeBrand: unique symbol = Symbol("Neo4jTenantScope");
+
+export type Neo4jTenantScope = Readonly<{
+  namespace: string;
+  [tenantScopeBrand]: true;
+}>;
+
+export function neo4jTenantScope(namespace: string): Neo4jTenantScope {
+  return Object.freeze({ namespace, [tenantScopeBrand]: true as const });
+}
+
 export abstract class Neo4jKnowledgeGraphBase<
   Schema extends Neo4jGraphSchema = Neo4jGraphSchema,
   Evidence extends Neo4jGraphEvidenceCapability = Neo4jGraphEvidenceCapability,
@@ -68,6 +88,7 @@ export abstract class Neo4jKnowledgeGraphBase<
   protected constructor(
     protected readonly owner: Neo4jClient,
     readonly schema: Schema,
+    readonly namespace?: string | undefined,
   ) {
     if (schema.kind !== "neo4j-graph-schema" && schema.kind !== "graph-schema") {
       throw new TypeError(
@@ -221,11 +242,17 @@ export class ManagedNeo4jKnowledgeGraph<
   readonly evidenceCapability = "chunks" as const;
   readonly seeds: Readonly<Record<string, SeedRegistration>>;
   readonly resources: ManagedNeo4jKnowledgeGraphOptions<Schema>["resources"];
-  private readonly name: string;
+  readonly name: string;
 
-  constructor(owner: Neo4jClient, options: ManagedNeo4jKnowledgeGraphOptions<Schema>) {
-    super(owner, options.schema);
+  constructor(
+    owner: Neo4jClient,
+    options: ManagedNeo4jKnowledgeGraphOptions<Schema>,
+    tenantScope?: Neo4jTenantScope,
+  ) {
+    const namespace = tenantScope?.namespace;
+    super(owner, options.schema, namespace);
     assertName(options.name, "Managed Neo4j graph name");
+    if (namespace !== undefined) assertName(namespace, "Managed Neo4j namespace");
     this.name = options.name;
     this.resources = validateManagedResources(options.resources);
     let chunks: SeedRegistration = {
@@ -234,6 +261,8 @@ export class ManagedNeo4jKnowledgeGraph<
         ...this.resources.indexes.chunks.vector,
         property: "__anvia_embedding",
       }),
+      vectorFilterProperties:
+        this.namespace === undefined ? undefined : Object.freeze(["__anvia_namespace"]),
       entryRelationshipType: "ANVIA_MENTIONS",
     };
     if (this.resources.indexes.chunks.fulltext !== undefined) {
@@ -241,7 +270,10 @@ export class ManagedNeo4jKnowledgeGraph<
         ...chunks,
         fulltextIndex: Object.freeze({
           ...this.resources.indexes.chunks.fulltext,
-          properties: Object.freeze(["__anvia_text"]),
+          properties: Object.freeze([
+            "__anvia_text",
+            ...(this.namespace === undefined ? [] : ["__anvia_namespace"]),
+          ]),
         }),
       };
     }
@@ -251,15 +283,18 @@ export class ManagedNeo4jKnowledgeGraph<
         ...this.resources.indexes.entities.vector,
         property: "__anvia_embedding",
       }),
+      vectorFilterProperties:
+        this.namespace === undefined ? undefined : Object.freeze(["__anvia_namespace"]),
     };
     if (this.resources.indexes.entities.fulltext !== undefined) {
       entities = {
         ...entities,
         fulltextIndex: Object.freeze({
           ...this.resources.indexes.entities.fulltext,
-          properties: Object.freeze(
-            Array.from(this.resources.indexes.entities.fulltext.properties ?? []),
-          ),
+          properties: Object.freeze([
+            ...(this.resources.indexes.entities.fulltext.properties ?? []),
+            ...(this.namespace === undefined ? [] : ["__anvia_namespace"]),
+          ]),
         }),
       };
     }
@@ -273,30 +308,43 @@ export class ManagedNeo4jKnowledgeGraph<
     positiveInteger(options.indexTimeoutMs, "Neo4j index timeout");
     throwIfAborted(options.abortSignal);
     const { labels, indexes } = this.resources;
+    const identityPrefix = this.namespace === undefined ? [] : ["__anvia_namespace"];
     const statements = [
-      uniquenessConstraint(constraintName(this.name, "document"), labels.document, ["__anvia_id"]),
-      uniquenessConstraint(constraintName(this.name, "chunk"), labels.chunk, ["__anvia_id"]),
-      uniquenessConstraint(constraintName(this.name, "entity"), labels.entity, ["__anvia_key"]),
+      uniquenessConstraint(constraintName(this.name, "document"), labels.document, [
+        ...identityPrefix,
+        "__anvia_id",
+      ]),
+      uniquenessConstraint(constraintName(this.name, "chunk"), labels.chunk, [
+        ...identityPrefix,
+        "__anvia_id",
+      ]),
+      uniquenessConstraint(constraintName(this.name, "entity"), labels.entity, [
+        ...identityPrefix,
+        "__anvia_key",
+      ]),
       ...Object.entries(this.schema.nodes).map(([type, definition]) =>
-        uniquenessConstraint(
-          constraintName(this.name, `entity_${type}`),
-          type,
-          definition.identity,
-        ),
+        uniquenessConstraint(constraintName(this.name, `entity_${type}`), type, [
+          ...identityPrefix,
+          ...definition.identity,
+        ]),
       ),
-      vectorIndex(indexes.chunks.vector, labels.chunk),
-      vectorIndex(indexes.entities.vector, labels.entity),
+      vectorIndex(indexes.chunks.vector, labels.chunk, this.namespace !== undefined),
+      vectorIndex(indexes.entities.vector, labels.entity, this.namespace !== undefined),
     ];
     if (indexes.chunks.fulltext !== undefined) {
-      statements.push(fulltextIndex(indexes.chunks.fulltext.name, labels.chunk, ["__anvia_text"]));
+      statements.push(
+        fulltextIndex(indexes.chunks.fulltext.name, labels.chunk, [
+          "__anvia_text",
+          ...(this.namespace === undefined ? [] : ["__anvia_namespace"]),
+        ]),
+      );
     }
     if (indexes.entities.fulltext !== undefined) {
       statements.push(
-        fulltextIndex(
-          indexes.entities.fulltext.name,
-          labels.entity,
-          indexes.entities.fulltext.properties ?? [],
-        ),
+        fulltextIndex(indexes.entities.fulltext.name, labels.entity, [
+          ...(indexes.entities.fulltext.properties ?? []),
+          ...(this.namespace === undefined ? [] : ["__anvia_namespace"]),
+        ]),
       );
     }
     for (const statement of statements)
@@ -355,30 +403,52 @@ export class ManagedNeo4jKnowledgeGraph<
       const before = await snapshotGraphState(
         transaction,
         this.name,
+        this.namespace,
         this.resources.labels,
         targets,
       );
       await removeDocuments(
         transaction,
         this.name,
+        this.namespace,
         this.resources.labels,
         documentIds,
         options.orphanEntities,
       );
-      await writeDocuments(transaction, this.resources.labels, options.documents);
-      await writeChunks(transaction, this.resources.labels, options.chunks);
+      await writeDocuments(
+        transaction,
+        this.name,
+        this.namespace,
+        this.resources.labels,
+        options.documents,
+      );
+      await writeChunks(
+        transaction,
+        this.name,
+        this.namespace,
+        this.resources.labels,
+        options.chunks,
+      );
       await writeEntities(
         transaction,
         this.name,
+        this.namespace,
         this.resources.labels.entity,
         options.entities,
         options.conflict,
         sourceDocuments,
       );
-      await writeMentions(transaction, this.resources.labels, options.mentions);
+      await writeMentions(
+        transaction,
+        this.name,
+        this.namespace,
+        this.resources.labels,
+        options.mentions,
+      );
       await writeRelationships(
         transaction,
         this.name,
+        this.namespace,
         this.resources.labels.entity,
         options.relationships,
         options.conflict,
@@ -387,6 +457,7 @@ export class ManagedNeo4jKnowledgeGraph<
       const after = await snapshotGraphState(
         transaction,
         this.name,
+        this.namespace,
         this.resources.labels,
         expandSnapshotTargets(targets, before),
       );
@@ -403,12 +474,14 @@ export class ManagedNeo4jKnowledgeGraph<
       const before = await snapshotGraphState(
         transaction,
         this.name,
+        this.namespace,
         this.resources.labels,
         targets,
       );
       await removeDocuments(
         transaction,
         this.name,
+        this.namespace,
         this.resources.labels,
         ids,
         options.orphanEntities,
@@ -416,6 +489,7 @@ export class ManagedNeo4jKnowledgeGraph<
       const after = await snapshotGraphState(
         transaction,
         this.name,
+        this.namespace,
         this.resources.labels,
         expandSnapshotTargets(targets, before),
       );
@@ -424,26 +498,27 @@ export class ManagedNeo4jKnowledgeGraph<
   }
 
   private expectedConstraints(): readonly ExpectedConstraint[] {
+    const identityPrefix = this.namespace === undefined ? [] : ["__anvia_namespace"];
     return [
       {
         name: constraintName(this.name, "document"),
         label: this.resources.labels.document,
-        properties: ["__anvia_id"],
+        properties: [...identityPrefix, "__anvia_id"],
       },
       {
         name: constraintName(this.name, "chunk"),
         label: this.resources.labels.chunk,
-        properties: ["__anvia_id"],
+        properties: [...identityPrefix, "__anvia_id"],
       },
       {
         name: constraintName(this.name, "entity"),
         label: this.resources.labels.entity,
-        properties: ["__anvia_key"],
+        properties: [...identityPrefix, "__anvia_key"],
       },
       ...Object.entries(this.schema.nodes).map(([type, definition]) => ({
         name: constraintName(this.name, `entity_${type}`),
         label: type,
-        properties: definition.identity,
+        properties: [...identityPrefix, ...definition.identity],
       })),
     ];
   }
@@ -606,7 +681,7 @@ function expectedIndexes(
       kind: "vector",
       name: seed.vectorIndex.name,
       labels: seed.labels,
-      properties: [seed.vectorIndex.property],
+      properties: [seed.vectorIndex.property, ...(seed.vectorFilterProperties ?? [])],
       dimensions: seed.vectorIndex.dimensions,
       similarity: seed.vectorIndex.similarity,
     });
@@ -740,8 +815,9 @@ function uniquenessConstraint(name: string, label: string, properties: readonly 
   return `CREATE CONSTRAINT ${quoteIdentifier(name)} IF NOT EXISTS FOR (n:${quoteIdentifier(label)}) REQUIRE ${expression} IS UNIQUE`;
 }
 
-function vectorIndex(index: Neo4jVectorIndex, label: string): string {
-  return `CREATE VECTOR INDEX ${quoteIdentifier(index.name)} IF NOT EXISTS FOR (n:${quoteIdentifier(label)}) ON (n.${quoteIdentifier("__anvia_embedding")}) OPTIONS {indexConfig: {\`vector.dimensions\`: ${index.dimensions}, \`vector.similarity_function\`: '${index.similarity}'}}`;
+function vectorIndex(index: Neo4jVectorIndex, label: string, namespaced: boolean): string {
+  const filterProperties = namespaced ? ` WITH [n.${quoteIdentifier("__anvia_namespace")}]` : "";
+  return `CREATE VECTOR INDEX ${quoteIdentifier(index.name)} IF NOT EXISTS FOR (n:${quoteIdentifier(label)}) ON (n.${quoteIdentifier("__anvia_embedding")})${filterProperties} OPTIONS {indexConfig: {\`vector.dimensions\`: ${index.dimensions}, \`vector.similarity_function\`: '${index.similarity}'}}`;
 }
 
 function fulltextIndex(name: string, label: string, properties: readonly string[]): string {
@@ -1085,34 +1161,41 @@ function expandSnapshotTargets(targets: SnapshotTargets, snapshot: GraphSnapshot
 async function snapshotGraphState(
   transaction: GraphTransaction,
   graphName: string,
+  namespace: string | undefined,
   labels: { document: string; chunk: string; entity: string },
   targets: SnapshotTargets,
 ): Promise<GraphSnapshot> {
   const documentsResult = await transaction.run(
     `MATCH (d:${quoteIdentifier(labels.document)})
-WHERE d.${quoteIdentifier("__anvia_id")} IN $documentIds
+WHERE d.${quoteIdentifier("__anvia_id")} IN $documentIds${tenantPredicate("d", namespace, " AND")}
 RETURN d.${quoteIdentifier("__anvia_id")} AS key, properties(d) AS properties`,
-    { documentIds: targets.documentIds },
+    managedParameters(graphName, namespace, { documentIds: targets.documentIds }),
   );
   const chunksResult = await transaction.run(
     `MATCH (c:${quoteIdentifier(labels.chunk)})
 OPTIONAL MATCH (d:${quoteIdentifier(labels.document)})-[:${quoteIdentifier("ANVIA_HAS_CHUNK")}]->(c)
-WITH c, d WHERE c.${quoteIdentifier("__anvia_id")} IN $chunkIds OR d.${quoteIdentifier("__anvia_id")} IN $documentIds
+WITH c, d WHERE (c.${quoteIdentifier("__anvia_id")} IN $chunkIds OR d.${quoteIdentifier("__anvia_id")} IN $documentIds)${tenantPredicate("c", namespace, " AND")}
 RETURN c.${quoteIdentifier("__anvia_id")} AS key, properties(c) AS properties`,
-    { chunkIds: targets.chunkIds, documentIds: targets.documentIds },
+    managedParameters(graphName, namespace, {
+      chunkIds: targets.chunkIds,
+      documentIds: targets.documentIds,
+    }),
   );
   const entitiesResult = await transaction.run(
     `MATCH (e:${quoteIdentifier(labels.entity)})
-WHERE e.${quoteIdentifier("__anvia_graph")} = $graph AND (
+WHERE e.${quoteIdentifier("__anvia_graph")} = $graph${namespacePredicate("e", namespace, " AND")} AND (
   e.${quoteIdentifier("__anvia_key")} IN $entityKeys OR
   any(id IN coalesce(e.${quoteIdentifier("__anvia_source_document_ids")}, []) WHERE id IN $documentIds)
 )
 RETURN e.${quoteIdentifier("__anvia_key")} AS key, labels(e) AS labels, properties(e) AS properties`,
-    { graph: graphName, entityKeys: targets.entityKeys, documentIds: targets.documentIds },
+    managedParameters(graphName, namespace, {
+      entityKeys: targets.entityKeys,
+      documentIds: targets.documentIds,
+    }),
   );
   const relationshipsResult = await transaction.run(
     `MATCH ()-[r]->()
-WHERE r.${quoteIdentifier("__anvia_graph")} = $graph AND (
+WHERE r.${quoteIdentifier("__anvia_graph")} = $graph${namespacePredicate("r", namespace, " AND")} AND (
   r.${quoteIdentifier("__anvia_key")} IN $relationshipKeys OR
   any(id IN coalesce(r.${quoteIdentifier("__anvia_source_document_ids")}, []) WHERE id IN $documentIds)
 )
@@ -1121,19 +1204,22 @@ RETURN r.${quoteIdentifier("__anvia_key")} AS key,
        startNode(r).${quoteIdentifier("__anvia_key")} AS source,
        endNode(r).${quoteIdentifier("__anvia_key")} AS target,
        properties(r) AS properties`,
-    {
-      graph: graphName,
+    managedParameters(graphName, namespace, {
       relationshipKeys: targets.relationshipKeys,
       documentIds: targets.documentIds,
-    },
+    }),
   );
   const mentionsResult = await transaction.run(
     `MATCH (c:${quoteIdentifier(labels.chunk)})-[:${quoteIdentifier("ANVIA_MENTIONS")}]->(e:${quoteIdentifier(labels.entity)})
 OPTIONAL MATCH (d:${quoteIdentifier(labels.document)})-[:${quoteIdentifier("ANVIA_HAS_CHUNK")}]->(c)
-WITH c, e, d WHERE d.${quoteIdentifier("__anvia_id")} IN $documentIds OR
+WITH c, e, d WHERE (d.${quoteIdentifier("__anvia_id")} IN $documentIds OR
   any(item IN $mentions WHERE item.chunkId = c.${quoteIdentifier("__anvia_id")} AND item.entityKey = e.${quoteIdentifier("__anvia_key")})
+)${tenantPredicate("c", namespace, " AND")}
 RETURN c.${quoteIdentifier("__anvia_id")} AS chunkId, e.${quoteIdentifier("__anvia_key")} AS entityKey`,
-    { documentIds: targets.documentIds, mentions: targets.mentions },
+    managedParameters(graphName, namespace, {
+      documentIds: targets.documentIds,
+      mentions: targets.mentions,
+    }),
   );
   return {
     documents: snapshotProperties(documentsResult.records, "document"),
@@ -1279,67 +1365,107 @@ function emptyWriteResult(): Neo4jGraphWriteResult {
   };
 }
 
+function managedParameters(
+  graph: string,
+  namespace: string | undefined,
+  parameters: Record<string, unknown>,
+): Record<string, unknown> {
+  return managedScopeParameters({ graph, namespace }, parameters);
+}
+
+function namespacePredicate(
+  variable: string,
+  namespace: string | undefined,
+  prefix: " AND" | " WHERE",
+): string {
+  return scopeNamespacePredicate({ graph: "", namespace }, variable, prefix);
+}
+
+function tenantPredicate(
+  variable: string,
+  namespace: string | undefined,
+  prefix: " AND" | " WHERE",
+): string {
+  return tenantScopePredicate({ graph: "", namespace }, variable, prefix);
+}
+
+function namespaceMapEntry(namespace: string | undefined): string {
+  return scopeNamespaceMapEntry({ graph: "", namespace });
+}
+
+function tenantMapEntries(namespace: string | undefined): string {
+  return scopeTenantMapEntries({ graph: "", namespace });
+}
+
+function tenantRelationshipProperties(namespace: string | undefined): string {
+  return scopeTenantRelationshipProperties({ graph: "", namespace });
+}
+
 async function removeDocuments(
   transaction: GraphTransaction,
   graphName: string,
+  namespace: string | undefined,
   labels: { document: string; chunk: string; entity: string },
   documentIds: readonly string[],
   orphanEntities: "delete" | "keep",
 ): Promise<void> {
   const chunks = await transaction.run(
-    `MATCH (d:${quoteIdentifier(labels.document)})-[:${quoteIdentifier("ANVIA_HAS_CHUNK")}]->(c:${quoteIdentifier(labels.chunk)}) WHERE d.${quoteIdentifier("__anvia_id")} IN $documentIds RETURN collect(c.${quoteIdentifier("__anvia_id")}) AS chunkIds`,
-    { documentIds },
+    `MATCH (d:${quoteIdentifier(labels.document)})-[:${quoteIdentifier("ANVIA_HAS_CHUNK")}]->(c:${quoteIdentifier(labels.chunk)}) WHERE d.${quoteIdentifier("__anvia_id")} IN $documentIds${tenantPredicate("d", namespace, " AND")} RETURN collect(c.${quoteIdentifier("__anvia_id")}) AS chunkIds`,
+    managedParameters(graphName, namespace, { documentIds }),
   );
   const chunkIdsValue = chunks.records[0]?.get("chunkIds");
   const chunkIds = requiredStringArray(chunkIdsValue, "Neo4j replacement chunk ids");
   await transaction.run(
-    `MATCH ()-[r]->() WHERE r.${quoteIdentifier("__anvia_graph")} = $graph AND any(id IN r.${quoteIdentifier("__anvia_source_document_ids")} WHERE id IN $documentIds)
+    `MATCH ()-[r]->() WHERE r.${quoteIdentifier("__anvia_graph")} = $graph${namespacePredicate("r", namespace, " AND")} AND any(id IN r.${quoteIdentifier("__anvia_source_document_ids")} WHERE id IN $documentIds)
 SET r.${quoteIdentifier("__anvia_source_document_ids")} = [id IN r.${quoteIdentifier("__anvia_source_document_ids")} WHERE NOT id IN $documentIds]
 SET r.${quoteIdentifier("__anvia_source_chunk_ids")} = [id IN coalesce(r.${quoteIdentifier("__anvia_source_chunk_ids")}, []) WHERE NOT id IN $chunkIds]
 WITH r WHERE size(r.${quoteIdentifier("__anvia_source_document_ids")}) = 0 DELETE r`,
-    { graph: graphName, documentIds, chunkIds },
+    managedParameters(graphName, namespace, { documentIds, chunkIds }),
   );
   await transaction.run(
-    `MATCH (d:${quoteIdentifier(labels.document)}) WHERE d.${quoteIdentifier("__anvia_id")} IN $documentIds
+    `MATCH (d:${quoteIdentifier(labels.document)}) WHERE d.${quoteIdentifier("__anvia_id")} IN $documentIds${tenantPredicate("d", namespace, " AND")}
 OPTIONAL MATCH (d)-[:${quoteIdentifier("ANVIA_HAS_CHUNK")}]->(c:${quoteIdentifier(labels.chunk)})
 DETACH DELETE c, d`,
-    { documentIds },
+    managedParameters(graphName, namespace, { documentIds }),
   );
   await transaction.run(
     `MATCH (e:${quoteIdentifier(labels.entity)})
-WHERE e.${quoteIdentifier("__anvia_graph")} = $graph AND
+WHERE e.${quoteIdentifier("__anvia_graph")} = $graph${namespacePredicate("e", namespace, " AND")} AND
       any(id IN coalesce(e.${quoteIdentifier("__anvia_source_document_ids")}, []) WHERE id IN $documentIds)
 SET e.${quoteIdentifier("__anvia_source_document_ids")} = [id IN e.${quoteIdentifier("__anvia_source_document_ids")} WHERE NOT id IN $documentIds],
     e.${quoteIdentifier("__anvia_source_chunk_ids")} = [id IN coalesce(e.${quoteIdentifier("__anvia_source_chunk_ids")}, []) WHERE NOT id IN $chunkIds]
 WITH e WHERE $deleteOrphans AND size(e.${quoteIdentifier("__anvia_source_document_ids")}) = 0
 DETACH DELETE e`,
-    {
-      graph: graphName,
+    managedParameters(graphName, namespace, {
       documentIds,
       chunkIds,
       deleteOrphans: orphanEntities === "delete",
-    },
+    }),
   );
 }
 
 async function writeDocuments(
   transaction: GraphTransaction,
+  graphName: string,
+  namespace: string | undefined,
   labels: { document: string },
   documents: readonly { id: string; properties?: Neo4jProperties | undefined }[],
 ): Promise<void> {
   await transaction.run(
-    `UNWIND $rows AS row MERGE (d:${quoteIdentifier(labels.document)} {${quoteIdentifier("__anvia_id")}: row.id}) SET d += row.properties`,
-    {
+    `UNWIND $rows AS row MERGE (d:${quoteIdentifier(labels.document)} {${quoteIdentifier("__anvia_id")}: row.id${namespaceMapEntry(namespace)}}) ${namespace === undefined ? "SET d += row.properties" : `SET d.${quoteIdentifier("__anvia_graph")} = $graph, d += row.properties`}`,
+    managedParameters(graphName, namespace, {
       rows: documents.map((document) => ({
         id: document.id,
         properties: document.properties ?? {},
       })),
-    },
+    }),
   );
 }
 
 async function writeChunks(
   transaction: GraphTransaction,
+  graphName: string,
+  namespace: string | undefined,
   labels: { document: string; chunk: string },
   chunks: ReplaceNeo4jDocumentsOptions<Neo4jGraphSchema>["chunks"],
 ): Promise<void> {
@@ -1354,10 +1480,11 @@ async function writeChunks(
   await transaction.run(
     `UNWIND $rows AS row
 MATCH (d:${quoteIdentifier(labels.document)} {${quoteIdentifier("__anvia_id")}: row.documentId})
-CREATE (c:${quoteIdentifier(labels.chunk)} {${quoteIdentifier("__anvia_id")}: row.id, ${quoteIdentifier("__anvia_document_id")}: row.documentId, ${quoteIdentifier("__anvia_index")}: row.index, ${quoteIdentifier("__anvia_text")}: row.text, ${quoteIdentifier("__anvia_embedding")}: row.embedding})
+${tenantPredicate("d", namespace, " WHERE")}
+CREATE (c:${quoteIdentifier(labels.chunk)} {${quoteIdentifier("__anvia_id")}: row.id, ${quoteIdentifier("__anvia_document_id")}: row.documentId, ${quoteIdentifier("__anvia_index")}: row.index, ${quoteIdentifier("__anvia_text")}: row.text, ${quoteIdentifier("__anvia_embedding")}: row.embedding${tenantMapEntries(namespace)}})
 SET c += row.metadata
-CREATE (d)-[:${quoteIdentifier("ANVIA_HAS_CHUNK")}]->(c)`,
-    { rows },
+CREATE (d)-[:${quoteIdentifier("ANVIA_HAS_CHUNK")}${tenantRelationshipProperties(namespace)}]->(c)`,
+    managedParameters(graphName, namespace, { rows }),
   );
   const pairs = [...rows]
     .sort(
@@ -1371,8 +1498,8 @@ CREATE (d)-[:${quoteIdentifier("ANVIA_HAS_CHUNK")}]->(c)`,
     });
   if (pairs.length > 0) {
     await transaction.run(
-      `UNWIND $rows AS row MATCH (a:${quoteIdentifier(labels.chunk)} {${quoteIdentifier("__anvia_id")}: row.from}), (b:${quoteIdentifier(labels.chunk)} {${quoteIdentifier("__anvia_id")}: row.to}) CREATE (a)-[:${quoteIdentifier("ANVIA_NEXT_CHUNK")}]->(b)`,
-      { rows: pairs },
+      `UNWIND $rows AS row MATCH (a:${quoteIdentifier(labels.chunk)} {${quoteIdentifier("__anvia_id")}: row.from${namespaceMapEntry(namespace)}}), (b:${quoteIdentifier(labels.chunk)} {${quoteIdentifier("__anvia_id")}: row.to${namespaceMapEntry(namespace)}}) CREATE (a)-[:${quoteIdentifier("ANVIA_NEXT_CHUNK")}${tenantRelationshipProperties(namespace)}]->(b)`,
+      managedParameters(graphName, namespace, { rows: pairs }),
     );
   }
 }
@@ -1380,6 +1507,7 @@ CREATE (d)-[:${quoteIdentifier("ANVIA_HAS_CHUNK")}]->(c)`,
 async function writeEntities<Schema extends Neo4jGraphSchema>(
   transaction: GraphTransaction,
   graphName: string,
+  namespace: string | undefined,
   entityLabel: string,
   entities: ReplaceNeo4jDocumentsOptions<Schema>["entities"],
   conflict: ReplaceNeo4jDocumentsOptions<Schema>["conflict"],
@@ -1394,31 +1522,35 @@ async function writeEntities<Schema extends Neo4jGraphSchema>(
       sourceDocumentIds: sourceDocuments(entity.document.sourceChunkIds),
       sourceChunkIds: entity.document.sourceChunkIds,
     }));
-    if (conflict === "error") await assertEntityConflicts(transaction, entityLabel, rows);
+    if (conflict === "error")
+      await assertEntityConflicts(transaction, graphName, namespace, entityLabel, rows);
     const propertySet = conflictPropertySet("e", conflict);
     const embedding = entityEmbeddingExpression(conflict);
     await transaction.run(
       `UNWIND $rows AS row
-MERGE (e:${quoteIdentifier(entityLabel)}:${quoteIdentifier(type)} {${quoteIdentifier("__anvia_key")}: row.key})
+MERGE (e:${quoteIdentifier(entityLabel)}:${quoteIdentifier(type)} {${quoteIdentifier("__anvia_key")}: row.key${namespaceMapEntry(namespace)}})
 ${propertySet}
 SET e.${quoteIdentifier("__anvia_key")} = row.key,
     e.${quoteIdentifier("__anvia_graph")} = $graph,
+    e.${quoteIdentifier("__anvia_namespace")} = coalesce($namespace, e.${quoteIdentifier("__anvia_namespace")}),
     e.${quoteIdentifier("__anvia_embedding")} = ${embedding},
     e.${quoteIdentifier("__anvia_source_document_ids")} = reduce(all = existingDocumentIds, id IN row.sourceDocumentIds | CASE WHEN id IN all THEN all ELSE all + id END),
     e.${quoteIdentifier("__anvia_source_chunk_ids")} = reduce(all = existingChunkIds, id IN row.sourceChunkIds | CASE WHEN id IN all THEN all ELSE all + id END)`,
-      { rows, graph: graphName },
+      managedParameters(graphName, namespace, { rows }),
     );
   }
 }
 
 async function assertEntityConflicts(
   transaction: GraphTransaction,
+  graphName: string,
+  namespace: string | undefined,
   entityLabel: string,
   rows: readonly { key: string; properties: Neo4jProperties }[],
 ): Promise<void> {
   const result = await transaction.run(
-    `UNWIND $keys AS key MATCH (e:${quoteIdentifier(entityLabel)} {${quoteIdentifier("__anvia_key")}: key}) RETURN key, properties(e) AS properties`,
-    { keys: rows.map((row) => row.key) },
+    `UNWIND $keys AS key MATCH (e:${quoteIdentifier(entityLabel)} {${quoteIdentifier("__anvia_key")}: key${namespaceMapEntry(namespace)}}) WHERE e.${quoteIdentifier("__anvia_graph")} = $graph RETURN key, properties(e) AS properties`,
+    managedParameters(graphName, namespace, { keys: rows.map((row) => row.key) }),
   );
   const incoming = new Map(rows.map((row) => [row.key, row.properties]));
   for (const record of result.records) {
@@ -1432,21 +1564,25 @@ async function assertEntityConflicts(
 
 async function writeMentions(
   transaction: GraphTransaction,
+  graphName: string,
+  namespace: string | undefined,
   labels: { chunk: string; entity: string },
   mentions: readonly { chunkId: string; entityKey: string }[],
 ): Promise<void> {
   if (mentions.length === 0) return;
   await transaction.run(
     `UNWIND $rows AS row
-MATCH (c:${quoteIdentifier(labels.chunk)} {${quoteIdentifier("__anvia_id")}: row.chunkId}), (e:${quoteIdentifier(labels.entity)} {${quoteIdentifier("__anvia_key")}: row.entityKey})
-MERGE (c)-[:${quoteIdentifier("ANVIA_MENTIONS")}]->(e)`,
-    { rows: mentions },
+MATCH (c:${quoteIdentifier(labels.chunk)} {${quoteIdentifier("__anvia_id")}: row.chunkId${namespaceMapEntry(namespace)}}), (e:${quoteIdentifier(labels.entity)} {${quoteIdentifier("__anvia_key")}: row.entityKey${namespaceMapEntry(namespace)}})
+${namespace === undefined ? "" : `WHERE c.${quoteIdentifier("__anvia_graph")} = $graph AND e.${quoteIdentifier("__anvia_graph")} = $graph`}
+MERGE (c)-[:${quoteIdentifier("ANVIA_MENTIONS")}${tenantRelationshipProperties(namespace)}]->(e)`,
+    managedParameters(graphName, namespace, { rows: mentions }),
   );
 }
 
 async function writeRelationships<Schema extends Neo4jGraphSchema>(
   transaction: GraphTransaction,
   graphName: string,
+  namespace: string | undefined,
   entityLabel: string,
   relationships: readonly import("./types.js").Neo4jGraphRelationship<Schema>[],
   conflict: ReplaceNeo4jDocumentsOptions<Schema>["conflict"],
@@ -1464,8 +1600,8 @@ async function writeRelationships<Schema extends Neo4jGraphSchema>(
     }));
     if (conflict === "error") {
       const existing = await transaction.run(
-        `UNWIND $keys AS key MATCH ()-[r:${quoteIdentifier(type)} {${quoteIdentifier("__anvia_key")}: key}]->() RETURN key, properties(r) AS properties`,
-        { keys: rows.map((row) => row.key) },
+        `UNWIND $keys AS key MATCH ()-[r:${quoteIdentifier(type)} {${quoteIdentifier("__anvia_key")}: key${namespaceMapEntry(namespace)}}]->() WHERE r.${quoteIdentifier("__anvia_graph")} = $graph RETURN key, properties(r) AS properties`,
+        managedParameters(graphName, namespace, { keys: rows.map((row) => row.key) }),
       );
       const incoming = new Map(rows.map((row) => [row.key, row.properties]));
       for (const record of existing.records) {
@@ -1481,14 +1617,16 @@ async function writeRelationships<Schema extends Neo4jGraphSchema>(
     const propertySet = conflictPropertySet("r", conflict);
     await transaction.run(
       `UNWIND $rows AS row
-MATCH (a:${quoteIdentifier(entityLabel)} {${quoteIdentifier("__anvia_key")}: row.from}), (b:${quoteIdentifier(entityLabel)} {${quoteIdentifier("__anvia_key")}: row.to})
-MERGE (a)-[r:${quoteIdentifier(type)} {${quoteIdentifier("__anvia_key")}: row.key}]->(b)
+MATCH (a:${quoteIdentifier(entityLabel)} {${quoteIdentifier("__anvia_key")}: row.from${namespaceMapEntry(namespace)}}), (b:${quoteIdentifier(entityLabel)} {${quoteIdentifier("__anvia_key")}: row.to${namespaceMapEntry(namespace)}})
+WHERE a.${quoteIdentifier("__anvia_graph")} = $graph AND b.${quoteIdentifier("__anvia_graph")} = $graph
+MERGE (a)-[r:${quoteIdentifier(type)} {${quoteIdentifier("__anvia_key")}: row.key${namespaceMapEntry(namespace)}}]->(b)
 ${propertySet}
 SET r.${quoteIdentifier("__anvia_key")} = row.key,
     r.${quoteIdentifier("__anvia_graph")} = $graph,
+    r.${quoteIdentifier("__anvia_namespace")} = coalesce($namespace, r.${quoteIdentifier("__anvia_namespace")}),
     r.${quoteIdentifier("__anvia_source_document_ids")} = reduce(all = existingDocumentIds, id IN row.sourceDocumentIds | CASE WHEN id IN all THEN all ELSE all + id END),
     r.${quoteIdentifier("__anvia_source_chunk_ids")} = reduce(all = existingChunkIds, id IN row.sourceChunkIds | CASE WHEN id IN all THEN all ELSE all + id END)`,
-      { rows, graph: graphName },
+      managedParameters(graphName, namespace, { rows }),
     );
   }
 }

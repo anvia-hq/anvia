@@ -1,15 +1,21 @@
 import { Usage } from "@anvia/core";
 import { extract } from "@anvia/core/extractor";
 import { z } from "zod";
-import { parseGraphProperties } from "./schema.js";
+import { parseGraphProperties, parseGraphPropertyValue } from "./schema.js";
 import type {
   ExtractGraphFactsOptions,
   ExtractGraphFactsResult,
   GraphEntity,
+  GraphExtractionWarning,
+  GraphFactConflictCandidate,
+  GraphFactConflictPolicy,
+  GraphFactPropertyConflict,
+  GraphFactPropertyConflictStrategy,
   GraphFacts,
   GraphMention,
   GraphNodeIdentity,
   GraphProperties,
+  GraphPropertyValue,
   GraphRelationship,
   GraphSchemaLike,
 } from "./types.js";
@@ -23,6 +29,22 @@ type RawRelationship = {
 };
 type RawChunkFacts = { entities: RawEntity[]; relationships: RawRelationship[] };
 type ChunkExtraction = { chunkId: string; output: RawChunkFacts; usage: Usage };
+type EntityCandidate = Readonly<{
+  key: string;
+  type: string;
+  identity: GraphNodeIdentity;
+  properties: GraphProperties;
+  chunkId: string;
+}>;
+type RelationshipCandidate = Readonly<{
+  key: string;
+  type: string;
+  from: string;
+  to: string;
+  identity: GraphNodeIdentity;
+  properties: GraphProperties;
+  chunkId: string;
+}>;
 
 export async function extractGraphFacts<
   Schema extends GraphSchemaLike,
@@ -58,7 +80,7 @@ export async function extractGraphFacts<
     },
   );
   return {
-    output: normalizeFacts(options.schema, extractions),
+    ...normalizeFacts(options.schema, extractions, options.conflicts),
     usage: extractions.reduce((usage, item) => Usage.add(usage, item.usage), Usage.empty()),
   };
 }
@@ -114,13 +136,14 @@ function graphInstructions(schema: GraphSchemaLike, extra: string | undefined): 
 function normalizeFacts<Schema extends GraphSchemaLike>(
   schema: Schema,
   extractions: readonly ChunkExtraction[],
-): GraphFacts<Schema> {
-  const entities = new Map<string, GraphEntity<Schema>>();
-  const relationships = new Map<string, GraphRelationship<Schema>>();
+  conflicts: ExtractGraphFactsOptions<Schema, import("@anvia/core").CompletionModel>["conflicts"],
+): Readonly<{ output: GraphFacts<Schema>; warnings: readonly GraphExtractionWarning[] }> {
+  const entityCandidates = new Map<string, EntityCandidate[]>();
+  const relationshipCandidates = new Map<string, RelationshipCandidate[]>();
   const mentions = new Map<string, GraphMention>();
 
   for (const extraction of extractions) {
-    const refs = new Map<string, GraphEntity<Schema>>();
+    const refs = new Map<string, EntityCandidate>();
     for (const raw of extraction.output.entities) {
       if (refs.has(raw.ref)) {
         throw new TypeError(`Duplicate entity ref ${raw.ref} in chunk ${extraction.chunkId}.`);
@@ -133,32 +156,15 @@ function normalizeFacts<Schema extends GraphSchemaLike>(
       );
       const identity = identityFromProperties(definition.identity, properties, raw.type);
       const key = `${raw.type}:${stableObject(identity)}`;
-      const current = entities.get(key);
-      const next = {
+      const candidate: EntityCandidate = {
         key,
         type: raw.type,
         identity,
         properties,
-        sourceChunkIds: [extraction.chunkId],
-      } as unknown as GraphEntity<Schema>;
-      if (current === undefined) {
-        entities.set(key, next);
-        refs.set(raw.ref, next);
-      } else {
-        assertSameProperties(
-          current.properties,
-          properties,
-          key,
-          current.sourceChunkIds,
-          extraction.chunkId,
-        );
-        const merged = {
-          ...current,
-          sourceChunkIds: [...current.sourceChunkIds, extraction.chunkId],
-        } as GraphEntity<Schema>;
-        entities.set(key, merged);
-        refs.set(raw.ref, merged);
-      }
+        chunkId: extraction.chunkId,
+      };
+      appendCandidate(entityCandidates, key, candidate);
+      refs.set(raw.ref, candidate);
       mentions.set(`${extraction.chunkId}\u0000${key}`, {
         chunkId: extraction.chunkId,
         entityKey: key,
@@ -188,36 +194,205 @@ function normalizeFacts<Schema extends GraphSchemaLike>(
       );
       const identity = identityFromProperties(definition.identity ?? [], properties, raw.type);
       const key = `${raw.type}:${from.key}->${to.key}:${stableObject(identity)}`;
-      const current = relationships.get(key);
-      const next = {
+      appendCandidate(relationshipCandidates, key, {
         key,
         type: raw.type,
         from: from.key,
         to: to.key,
+        identity,
         properties,
-        sourceChunkIds: [extraction.chunkId],
-      } as unknown as GraphRelationship<Schema>;
-      if (current === undefined) relationships.set(key, next);
-      else {
-        assertSameProperties(
-          current.properties,
-          properties,
-          key,
-          current.sourceChunkIds,
-          extraction.chunkId,
-        );
-        relationships.set(key, {
-          ...current,
-          sourceChunkIds: [...current.sourceChunkIds, extraction.chunkId],
-        } as GraphRelationship<Schema>);
-      }
+        chunkId: extraction.chunkId,
+      });
     }
   }
+  const warnings: GraphExtractionWarning[] = [];
+  const entities = [...entityCandidates.values()].map((candidates) => {
+    const first = requiredCandidate(candidates);
+    const definition = schema.nodes[first.type];
+    if (definition === undefined) throw new TypeError(`Unknown graph entity type: ${first.type}`);
+    const properties = parseGraphProperties(
+      definition.properties.parse(
+        resolveFactProperties(
+          "entity",
+          first.key,
+          first.type,
+          first.identity,
+          candidates,
+          conflicts?.entity,
+          warnings,
+        ),
+      ),
+      `entity ${first.type}`,
+    );
+    return {
+      key: first.key,
+      type: first.type,
+      identity: first.identity,
+      properties,
+      sourceChunkIds: uniqueChunkIds(candidates),
+    } as GraphEntity<Schema>;
+  });
+  const relationships = [...relationshipCandidates.values()].map((candidates) => {
+    const first = requiredCandidate(candidates);
+    const definition = schema.relationships[first.type];
+    if (definition === undefined) {
+      throw new TypeError(`Unknown graph relationship type: ${first.type}`);
+    }
+    const properties = parseGraphProperties(
+      definition.properties.parse(
+        resolveFactProperties(
+          "relationship",
+          first.key,
+          first.type,
+          first.identity,
+          candidates,
+          conflicts?.relationship,
+          warnings,
+        ),
+      ),
+      `relationship ${first.type}`,
+    );
+    return {
+      key: first.key,
+      type: first.type,
+      from: first.from,
+      to: first.to,
+      properties,
+      sourceChunkIds: uniqueChunkIds(candidates),
+    } as GraphRelationship<Schema>;
+  });
   return {
-    entities: [...entities.values()],
-    relationships: [...relationships.values()],
-    mentions: [...mentions.values()],
+    output: { entities, relationships, mentions: [...mentions.values()] },
+    warnings,
   };
+}
+
+function appendCandidate<Candidate>(
+  candidates: Map<string, Candidate[]>,
+  key: string,
+  candidate: Candidate,
+): void {
+  const current = candidates.get(key);
+  if (current === undefined) candidates.set(key, [candidate]);
+  else current.push(candidate);
+}
+
+function requiredCandidate<Candidate>(candidates: readonly Candidate[]): Candidate {
+  const candidate = candidates[0];
+  if (candidate === undefined) throw new TypeError("Graph fact candidate group cannot be empty.");
+  return candidate;
+}
+
+function uniqueChunkIds(candidates: readonly { chunkId: string }[]): readonly string[] {
+  return [...new Set(candidates.map((candidate) => candidate.chunkId))];
+}
+
+function resolveFactProperties(
+  kind: "entity" | "relationship",
+  key: string,
+  type: string,
+  identity: GraphNodeIdentity,
+  candidates: readonly { chunkId: string; properties: GraphProperties }[],
+  policy: GraphFactConflictPolicy | undefined,
+  warnings: GraphExtractionWarning[],
+): GraphProperties {
+  const propertyNames = [
+    ...new Set(candidates.flatMap((candidate) => Object.keys(candidate.properties))),
+  ].sort();
+  const properties: Record<string, GraphPropertyValue> = {};
+  for (const property of propertyNames) {
+    const propertyCandidates: GraphFactConflictCandidate[] = candidates.map((candidate) => ({
+      chunkId: candidate.chunkId,
+      properties: candidate.properties,
+      value: candidate.properties[property],
+    }));
+    const firstValue = propertyCandidates[0]?.value;
+    if (
+      propertyCandidates.every(
+        (candidate) => stableValue(candidate.value) === stableValue(firstValue),
+      )
+    ) {
+      if (firstValue !== undefined) properties[property] = firstValue;
+      continue;
+    }
+    const conflict: GraphFactPropertyConflict = {
+      code: "GRAPH_FACT_CONFLICT",
+      kind,
+      key,
+      type,
+      identity,
+      property,
+      candidates: propertyCandidates,
+      sourceChunkIds: uniqueChunkIds(propertyCandidates),
+    };
+    const strategy =
+      policy?.properties?.[property] ?? policy?.resolve ?? policy?.default ?? "reject";
+    if (strategy === "reject") throw new GraphFactConflictError(conflict);
+    const resolvedValue = validateResolvedValue(
+      resolvePropertyConflict(strategy, conflict),
+      conflict,
+    );
+    if (resolvedValue !== undefined) properties[property] = resolvedValue;
+    warnings.push({
+      ...conflict,
+      code: "GRAPH_FACT_CONFLICT_RESOLVED",
+      strategy: typeof strategy === "function" ? "custom" : strategy,
+      resolvedValue,
+    });
+  }
+  return properties;
+}
+
+function resolvePropertyConflict(
+  strategy: Exclude<GraphFactPropertyConflictStrategy, "reject">,
+  conflict: GraphFactPropertyConflict,
+): GraphPropertyValue | undefined {
+  if (typeof strategy === "function") {
+    return strategy(conflict);
+  }
+  const values = conflict.candidates.map((candidate) => candidate.value);
+  if (strategy === "prefer-first") return values[0];
+  if (strategy === "prefer-last") return values.at(-1);
+  if (strategy === "prefer-defined") return values.find((value) => value !== undefined);
+  if (strategy === "prefer-longest") {
+    const strings = definedValues(values, "string", conflict, strategy);
+    return strings.reduce((longest, value) => (value.length > longest.length ? value : longest));
+  }
+  if (strategy === "union") {
+    const arrays = values.filter((value) => value !== undefined);
+    if (!arrays.every(Array.isArray)) throw incompatibleStrategy(conflict, strategy);
+    return [...new Set(arrays.flat())] as string[] | number[] | boolean[];
+  }
+  const numbers = definedValues(values, "number", conflict, strategy);
+  return strategy === "max" ? Math.max(...numbers) : Math.min(...numbers);
+}
+
+function definedValues<Type extends "string" | "number">(
+  values: readonly (GraphPropertyValue | undefined)[],
+  type: Type,
+  conflict: GraphFactPropertyConflict,
+  strategy: string,
+): Type extends "string" ? string[] : number[] {
+  const defined = values.filter((value) => value !== undefined);
+  if (defined.length === 0 || !defined.every((value) => typeof value === type)) {
+    throw incompatibleStrategy(conflict, strategy);
+  }
+  return defined as Type extends "string" ? string[] : number[];
+}
+
+function validateResolvedValue(
+  value: GraphPropertyValue | undefined,
+  conflict: GraphFactPropertyConflict,
+): GraphPropertyValue | undefined {
+  return value === undefined
+    ? undefined
+    : parseGraphPropertyValue(value, `Resolved graph fact ${conflict.key}.${conflict.property}`);
+}
+
+function incompatibleStrategy(conflict: GraphFactPropertyConflict, strategy: string): TypeError {
+  return new TypeError(
+    `Graph fact conflict strategy ${strategy} is incompatible with ${conflict.key}.${conflict.property}.`,
+  );
 }
 
 function identityFromProperties(
@@ -245,27 +420,50 @@ function stableObject(value: Readonly<Record<string, unknown>>): string {
   );
 }
 
-function assertSameProperties(
-  left: GraphProperties,
-  right: GraphProperties,
-  key: string,
-  sourceChunkIds: readonly string[],
-  nextChunkId: string,
-): void {
-  if (stableObject(left) !== stableObject(right)) {
-    throw new GraphFactConflictError(key, [...sourceChunkIds, nextChunkId]);
-  }
+function stableValue(value: unknown): string {
+  return value === undefined ? "undefined" : stableObject({ value });
 }
 
 export class GraphFactConflictError extends Error {
+  readonly code = "GRAPH_FACT_CONFLICT" as const;
+  readonly kind: "entity" | "relationship";
+  readonly factKey: string;
+  readonly type: string;
+  readonly identity: GraphNodeIdentity;
+  readonly property: string;
+  readonly candidates: readonly GraphFactConflictCandidate[];
+  readonly sourceChunkIds: readonly string[];
+
+  constructor(conflict: GraphFactPropertyConflict);
+  constructor(factKey: string, sourceChunkIds: readonly string[]);
   constructor(
-    readonly factKey: string,
-    readonly sourceChunkIds: readonly string[],
+    conflictOrKey: GraphFactPropertyConflict | string,
+    legacyChunkIds: readonly string[] = [],
   ) {
+    const conflict =
+      typeof conflictOrKey === "string"
+        ? {
+            code: "GRAPH_FACT_CONFLICT" as const,
+            kind: "entity" as const,
+            key: conflictOrKey,
+            type: conflictOrKey.split(":", 1)[0] ?? "unknown",
+            identity: {},
+            property: "unknown",
+            candidates: [],
+            sourceChunkIds: legacyChunkIds,
+          }
+        : conflictOrKey;
     super(
-      `Conflicting graph fact ${factKey} was extracted from chunks ${sourceChunkIds.join(", ")}.`,
+      `Conflicting graph fact ${conflict.key}.${conflict.property} was extracted from chunks ${conflict.sourceChunkIds.join(", ")}.`,
     );
     this.name = "GraphFactConflictError";
+    this.kind = conflict.kind;
+    this.factKey = conflict.key;
+    this.type = conflict.type;
+    this.identity = conflict.identity;
+    this.property = conflict.property;
+    this.candidates = conflict.candidates;
+    this.sourceChunkIds = conflict.sourceChunkIds;
   }
 }
 

@@ -87,9 +87,105 @@ describe("QdrantVectorClient", () => {
     ]);
   });
 
+  it("isolates tenant handles within a shared collection", async () => {
+    const client = fixture();
+    const owner = new QdrantVectorClient({ client });
+    const tenantA = owner.tenant("user-a");
+    const tenantB = owner.tenant("user-b");
+    const storeA = tenantA.vectorStore<string>({ collectionName: "docs", dimensions: 2 });
+    const storeB = tenantB.vectorStore<string>({ collectionName: "docs", dimensions: 2 });
+
+    expect(tenantA.namespace).toMatch(/^[a-f0-9]{64}$/);
+    expect(tenantA.namespace).toBe(
+      "fc95297aa4f56781f0decb7d4bf59b1447f09b3611039b80188b1c6beb03ee6a",
+    );
+    expect(tenantB.namespace).not.toBe(tenantA.namespace);
+    expect(owner.tenant("user-a").namespace).toBe(tenantA.namespace);
+
+    await storeA.upsert({
+      documents: [{ id: "doc", document: "A", embeddings: [{ document: "A", vector: [1, 0] }] }],
+    });
+    await storeB.upsert({
+      documents: [{ id: "doc", document: "B", embeddings: [{ document: "B", vector: [1, 0] }] }],
+    });
+
+    const operations = (client.batchUpdate as ReturnType<typeof vi.fn>).mock.calls.map(
+      ([, request]) => request.operations,
+    );
+    expect(operations[0][0].delete.filter).toEqual({
+      must: [
+        { key: "__anvia_document_id", match: { any: ["doc"] } },
+        { key: "__anvia_namespace", match: { value: tenantA.namespace } },
+      ],
+    });
+    expect(operations[0][1].upsert.points[0].payload.__anvia_namespace).toBe(tenantA.namespace);
+    expect(operations[1][1].upsert.points[0].payload.__anvia_namespace).toBe(tenantB.namespace);
+    expect(operations[0][1].upsert.points[0].id).not.toBe(operations[1][1].upsert.points[0].id);
+
+    await storeA.search({
+      vector: [1, 0],
+      topK: 1,
+      filter: { type: "eq", key: "source", value: "test" },
+    });
+    expect(client.query).toHaveBeenLastCalledWith(
+      "docs",
+      expect.objectContaining({
+        filter: {
+          must: [
+            { key: "__anvia_namespace", match: { value: tenantA.namespace } },
+            { must: [{ key: "source", match: { value: "test" } }] },
+          ],
+        },
+      }),
+    );
+
+    await storeA.delete({ documentIds: ["doc"] });
+    expect(client.delete).toHaveBeenLastCalledWith(
+      "docs",
+      expect.objectContaining({
+        filter: {
+          must: [
+            { key: "__anvia_document_id", match: { any: ["doc"] } },
+            { key: "__anvia_namespace", match: { value: tenantA.namespace } },
+          ],
+        },
+      }),
+    );
+
+    await storeA.inspect({ limit: 10 });
+    expect(client.scroll).toHaveBeenLastCalledWith(
+      "docs",
+      expect.objectContaining({
+        filter: {
+          must: [{ key: "__anvia_namespace", match: { value: tenantA.namespace } }],
+        },
+      }),
+    );
+
+    await storeA.get({ documentIds: ["doc"] });
+    expect(client.scroll).toHaveBeenLastCalledWith(
+      "docs",
+      expect.objectContaining({
+        filter: {
+          must: [
+            { key: "__anvia_document_id", match: { any: ["doc"] } },
+            { key: "__anvia_namespace", match: { value: tenantA.namespace } },
+          ],
+        },
+      }),
+    );
+  });
+
+  it("rejects empty tenant identifiers", () => {
+    const owner = new QdrantVectorClient({ client: fixture() });
+    expect(() => owner.tenant("  ")).toThrow("tenant id must be a non-empty string");
+  });
+
   it("keeps hybrid search an explicit capability", async () => {
     const client = fixture(true);
-    const store = new QdrantVectorClient({ client }).vectorStore({
+    const owner = new QdrantVectorClient({ client });
+    const tenant = owner.tenant("user-a");
+    const store = tenant.vectorStore({
       collectionName: "docs",
       dimensions: 2,
       mode: "hybrid",
@@ -101,10 +197,17 @@ describe("QdrantVectorClient", () => {
       fusion: "rrf",
       topK: 2,
     });
-    expect(client.query).toHaveBeenCalledWith(
-      "docs",
-      expect.objectContaining({ prefetch: expect.any(Array), query: { fusion: "rrf" } }),
-    );
+    const request = (client.query as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1];
+    expect(request).toMatchObject({ prefetch: expect.any(Array), query: { fusion: "rrf" } });
+    expect(
+      request.prefetch.every(
+        (prefetch: { filter: unknown }) =>
+          JSON.stringify(prefetch.filter) ===
+          JSON.stringify({
+            must: [{ key: "__anvia_namespace", match: { value: tenant.namespace } }],
+          }),
+      ),
+    ).toBe(true);
   });
 
   it("normalizes Euclidean distance and translates minScore for Qdrant", async () => {

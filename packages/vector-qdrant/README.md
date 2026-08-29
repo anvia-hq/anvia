@@ -52,6 +52,21 @@ Constructing a client or store performs no I/O. `ensure()` creates or validates 
 `validate()` only validates it. `upsert()` replaces all points previously stored for each incoming
 document ID, preventing stale chunks. Raw `store.search()` accepts vectors and never embeds text.
 
+For shared collections, create tenant-scoped handles instead of generating one collection name per
+user:
+
+```ts
+const tenant = qdrant.tenant(userId);
+const store = tenant.vectorStore({ collectionName: "docs", dimensions: 1536 });
+```
+
+The tenant ID is deterministically hashed. The namespace is included in point identities and in
+every replacement, search, hybrid search, inspection, lookup, and deletion filter. Different
+tenant handles can therefore reuse one collection without colliding on logical document IDs.
+
+Tenant handles scope Anvia's vector-store operations; they are not an authorization boundary for
+code that can access the underlying Qdrant client or collection credentials.
+
 ## Hybrid usage
 
 `mode: "hybrid"` returns a hybrid-capable store. Dense stores do not expose `searchHybrid()`.

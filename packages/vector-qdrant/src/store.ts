@@ -21,6 +21,7 @@ import {
   qdrantMutationRequest,
   qdrantPoints,
   qdrantResultCount,
+  qdrantScopedFilter,
   validateQdrantCollection,
 } from "./helpers.js";
 import {
@@ -32,6 +33,17 @@ import {
   type QdrantVectorStoreOptions,
 } from "./types.js";
 
+const tenantScopeBrand: unique symbol = Symbol("QdrantTenantScope");
+
+export type QdrantTenantScope = Readonly<{
+  namespace: string;
+  [tenantScopeBrand]: true;
+}>;
+
+export function qdrantTenantScope(namespace: string): QdrantTenantScope {
+  return Object.freeze({ namespace, [tenantScopeBrand]: true as const });
+}
+
 export class QdrantVectorStore<
   T,
   Metadata extends VectorMetadata = VectorMetadata,
@@ -39,10 +51,13 @@ export class QdrantVectorStore<
   readonly mode: "dense" | "hybrid";
   readonly denseVectorName: string;
   readonly sparseVectorName: string;
+  readonly namespace?: string | undefined;
   constructor(
     protected readonly owner: QdrantVectorClient,
     readonly options: QdrantVectorStoreOptions,
+    tenantScope?: QdrantTenantScope,
   ) {
+    this.namespace = tenantScope?.namespace;
     assertDimensions(options.dimensions);
     this.mode = options.mode ?? "dense";
     this.denseVectorName = options.denseVectorName ?? defaultDenseVectorName;
@@ -85,9 +100,13 @@ export class QdrantVectorStore<
         hybrid: this.mode === "hybrid",
         denseVectorName: this.denseVectorName,
         sparseVectorName: this.sparseVectorName,
+        namespace: this.namespace,
       }),
     );
-    const filter = qdrantDocumentFilter(options.documents.map((document) => document.id));
+    const filter = qdrantDocumentFilter(
+      options.documents.map((document) => document.id),
+      this.namespace,
+    );
     const providerOptions = qdrantMutationRequest(
       (options.providerOptions ?? {}) as QdrantMutationOptions,
     );
@@ -107,7 +126,7 @@ export class QdrantVectorStore<
   async search(request: VectorSearchRequest): Promise<Array<VectorSearchResult<T, Metadata>>> {
     validateSearchRequest(request, this.options.dimensions);
     const client = await this.owner.nativeClient();
-    const filter = filterToQdrantFilter(request.filter);
+    const filter = qdrantScopedFilter(this.namespace, filterToQdrantFilter(request.filter));
     const metric = distanceName(this.options.metric);
     let candidateLimit = request.topK;
     for (;;) {
@@ -184,13 +203,13 @@ export class QdrantVectorStore<
             query: request.vector,
             using: this.denseVectorName,
             limit: prefetchLimit,
-            filter: filterToQdrantFilter(request.filter),
+            filter: qdrantScopedFilter(this.namespace, filterToQdrantFilter(request.filter)),
           },
           {
             query: request.sparseVector,
             using: this.sparseVectorName,
             limit: prefetchLimit,
-            filter: filterToQdrantFilter(request.filter),
+            filter: qdrantScopedFilter(this.namespace, filterToQdrantFilter(request.filter)),
           },
         ],
         query: { fusion: request.fusion ?? "rrf" },
@@ -219,7 +238,7 @@ export class QdrantVectorStore<
       this.options.collectionName,
       {
         ...request,
-        filter: filterToQdrantFilter(request.filter),
+        filter: qdrantScopedFilter(this.namespace, filterToQdrantFilter(request.filter)),
       },
     );
     throwIfAborted(request.abortSignal);
@@ -235,7 +254,7 @@ export class QdrantVectorStore<
     if (client.delete === undefined) throw new TypeError("Qdrant deletion requires delete(...).");
     await client.delete(this.options.collectionName, {
       ...qdrantMutationRequest(options.providerOptions ?? {}),
-      filter: qdrantDocumentFilter(ids),
+      filter: qdrantDocumentFilter(ids, this.namespace),
     });
   }
   async get(options: { documentIds: string[] }): Promise<Array<VectorInspectItem<T, Metadata>>> {
@@ -244,7 +263,7 @@ export class QdrantVectorStore<
     const page = await qdrantDocumentPage<T, Metadata>(
       await this.owner.nativeClient(),
       this.options.collectionName,
-      { limit: ids.length, filter: qdrantDocumentFilter(ids) },
+      { limit: ids.length, filter: qdrantDocumentFilter(ids, this.namespace) },
     );
     const byId = new Map(page.items.map((item) => [item.id, item]));
     return ids.flatMap((id) => {
@@ -298,8 +317,12 @@ export class QdrantHybridVectorStore<T, Metadata extends VectorMetadata = Vector
   implements HybridVectorStore<T, Metadata>
 {
   // oxlint-disable-next-line eslint/no-useless-constructor -- Narrows the public constructor to hybrid options.
-  constructor(owner: QdrantVectorClient, options: QdrantHybridVectorStoreOptions) {
-    super(owner, options);
+  constructor(
+    owner: QdrantVectorClient,
+    options: QdrantHybridVectorStoreOptions,
+    tenantScope?: QdrantTenantScope,
+  ) {
+    super(owner, options, tenantScope);
   }
 
   searchHybrid(

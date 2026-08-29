@@ -8,15 +8,19 @@ import type {
   DockerSandboxState,
   DockerSandboxWorkspace,
 } from "@anvia/sandbox";
+import type { BrowserError } from "./errors";
+
+export type BrowserLifecycleOptions = Readonly<{
+  timeoutMs?: number | undefined;
+  abortSignal?: AbortSignal | undefined;
+}>;
 
 export type DockerBrowserClientOptions = Readonly<{
   sandboxClient: DockerSandboxClient;
   image: string;
 }>;
 
-export type PullDockerBrowserImageOptions = Readonly<{
-  abortSignal?: AbortSignal;
-}>;
+export type PullDockerBrowserImageOptions = BrowserLifecycleOptions;
 
 export type BrowserViewport = Readonly<{
   width: number;
@@ -36,25 +40,77 @@ export type CreateDockerBrowserOptions = Readonly<{
   desktop: BrowserDesktopOptions;
   resources?: DockerSandboxResources;
   runtime?: DockerSandboxRuntimeLimits;
-  abortSignal?: AbortSignal;
+  timeoutMs?: number | undefined;
+  abortSignal?: AbortSignal | undefined;
 }>;
 
 export type ResumeDockerBrowserOptions = Readonly<{
   id: string;
-  abortSignal?: AbortSignal;
+  timeoutMs?: number | undefined;
+  abortSignal?: AbortSignal | undefined;
+}>;
+
+export type BrowserCapability = "runtime" | "browser" | "automation" | "desktop";
+
+export type BrowserCapabilityState =
+  | "unknown"
+  | "checking"
+  | "ready"
+  | "failed"
+  | "stopped"
+  | "destroyed";
+
+export type BrowserCapabilitySnapshot = Readonly<{
+  capability: BrowserCapability;
+  state: BrowserCapabilityState;
+  checkedAt?: string;
+  error?: BrowserError;
+}>;
+
+export type BrowserReadinessSnapshot = Readonly<{
+  state:
+    | "unknown"
+    | "checking"
+    | "partial"
+    | "ready"
+    | "degraded"
+    | "failed"
+    | "stopped"
+    | "destroyed";
+  capabilities: Readonly<Record<BrowserCapability, BrowserCapabilitySnapshot>>;
 }>;
 
 export type BrowserWaitUntilReadyOptions = Readonly<{
   timeoutMs: number;
-  abortSignal?: AbortSignal;
+  abortSignal?: AbortSignal | undefined;
+  capabilities?: readonly [BrowserCapability, ...BrowserCapability[]] | undefined;
 }>;
 
+export type BrowserSchedulingOptions =
+  | Readonly<{
+      mode: "serial";
+      maxQueuedActions?: number;
+    }>
+  | Readonly<{
+      mode: "per-tab";
+      maxConcurrentTabs?: number;
+      maxQueuedActions?: number;
+    }>;
+
 export type BrowserConnectOptions = Readonly<{
-  abortSignal?: AbortSignal;
+  timeoutMs?: number | undefined;
+  abortSignal?: AbortSignal | undefined;
+  scheduling?: BrowserSchedulingOptions | undefined;
 }>;
+
+export type BrowserControlAvailability = "available" | "degraded" | "disconnected" | "destroyed";
 
 export type BrowserControlSnapshot = Readonly<{
   mode: "agent" | "human";
+  state: "agent" | "agent-active" | "human-pending" | "human";
+  availability: BrowserControlAvailability;
+  activeAgentActions: number;
+  humanPending: boolean;
   ownerId?: string;
   expiresAt?: string;
 }>;
@@ -62,7 +118,8 @@ export type BrowserControlSnapshot = Readonly<{
 export type AcquireBrowserHumanControlOptions = Readonly<{
   ownerId: string;
   leaseTimeoutMs: number;
-  abortSignal?: AbortSignal;
+  timeoutMs?: number | undefined;
+  abortSignal?: AbortSignal | undefined;
 }>;
 
 export type RenewBrowserHumanControlOptions = Readonly<{
@@ -92,14 +149,21 @@ export type BrowserDesktopEndpoint = Readonly<{
 
 export interface DockerBrowser extends AsyncDisposable {
   readonly id: string;
+  /** Includes browser-handle lifecycle transitions such as `stopping` and `destroying`. */
   readonly state: DockerSandboxState;
   readonly desktop: BrowserDesktopEndpoint;
   readonly sandbox: DockerSandbox;
   inspector(options: DockerSandboxInspectionOptions): DockerSandboxInspector;
+  readiness(): BrowserReadinessSnapshot;
+  waitForCapabilities(options: BrowserWaitUntilReadyOptions): Promise<BrowserReadinessSnapshot>;
   waitUntilReady(options: BrowserWaitUntilReadyOptions): Promise<void>;
   connect(options?: BrowserConnectOptions): Promise<PlaywrightBrowserConnection>;
-  stop(options?: Readonly<{ abortSignal?: AbortSignal }>): Promise<void>;
-  destroy(): Promise<void>;
+  stop(options?: BrowserLifecycleOptions): Promise<void>;
+  /**
+   * Starts an irreversible terminal transition. A timeout or cancellation bounds this caller's
+   * wait; uncancellable sandbox cleanup remains owned and visible as `destroying` to later callers.
+   */
+  destroy(options?: BrowserLifecycleOptions): Promise<void>;
 }
 
 export type BrowserTab = Readonly<{
@@ -109,10 +173,12 @@ export type BrowserTab = Readonly<{
   selected: boolean;
 }>;
 
+export type BrowserActionOptions = BrowserLifecycleOptions;
+
 export interface PlaywrightBrowserConnection extends AsyncDisposable {
   readonly closed: boolean;
-  listTabs(): Promise<readonly BrowserTab[]>;
-  disconnect(): Promise<void>;
+  listTabs(options?: BrowserActionOptions): Promise<readonly BrowserTab[]>;
+  disconnect(options?: BrowserLifecycleOptions): Promise<void>;
 }
 
 export type BrowserToolName =

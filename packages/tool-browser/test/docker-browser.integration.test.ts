@@ -1,6 +1,6 @@
 import { DockerSandboxClient } from "@anvia/sandbox";
 import { describe, expect, it } from "vitest";
-import { DockerBrowserClient } from "../src/docker-browser";
+import { DockerBrowserClient } from "../src/docker-browser-client";
 import { createBrowserTools } from "../src/tools";
 
 const enabled = process.env.ANVIA_BROWSER_DOCKER_TESTS === "1";
@@ -26,7 +26,15 @@ describe.skipIf(!enabled)("Docker browser integration", () => {
 
     try {
       try {
-        await browser.waitUntilReady({ timeoutMs: 15_000 });
+        const desktop = await browser.waitForCapabilities({
+          capabilities: ["desktop"],
+          timeoutMs: 15_000,
+        });
+        expect(desktop.capabilities.desktop.state).toBe("ready");
+        await browser.waitForCapabilities({
+          capabilities: ["runtime", "browser", "automation"],
+          timeoutMs: 15_000,
+        });
       } catch (error) {
         const processes = await browser.sandbox.runtime.listProcesses();
         for (const process of processes) {
@@ -63,23 +71,31 @@ describe.skipIf(!enabled)("Docker browser integration", () => {
           ].join(""),
         ],
       });
-      await using connection = await browser.connect();
+      await using connection = await browser.connect({
+        timeoutMs: 15_000,
+        scheduling: { mode: "per-tab", maxConcurrentTabs: 4 },
+      });
       const tools = createBrowserTools({
         connection,
-        tools: ["browser_navigate", "browser_snapshot", "browser_screenshot"],
+        tools: ["browser_open_tab", "browser_navigate", "browser_snapshot", "browser_screenshot"],
         navigation: { mode: "origins", origins: ["http://127.0.0.1:8080"] },
       });
+      const openTab = tools.find((tool) => tool.name === "browser_open_tab");
       const navigate = tools.find((tool) => tool.name === "browser_navigate");
       const snapshot = tools.find((tool) => tool.name === "browser_snapshot");
       const screenshot = tools.find((tool) => tool.name === "browser_screenshot");
-      await navigate?.call({ url: "http://127.0.0.1:8080" });
-      await expect(snapshot?.call({})).resolves.toMatchObject({ truncated: false });
-      await expect(screenshot?.call({})).resolves.toMatchObject({
+      const opened = (await openTab?.call({})) as { tabId: string };
+      await navigate?.call({ tabId: opened.tabId, url: "http://127.0.0.1:8080" });
+      await expect(snapshot?.call({ tabId: opened.tabId })).resolves.toMatchObject({
+        tabId: opened.tabId,
+        truncated: false,
+      });
+      await expect(screenshot?.call({ tabId: opened.tabId })).resolves.toMatchObject({
         content: [expect.any(Object), { type: "file", mediaType: "image/png" }],
       });
       await connection.disconnect();
       await browser.waitUntilReady({ timeoutMs: 5_000 });
-      await using resumedConnection = await browser.connect();
+      await using resumedConnection = await browser.connect({ timeoutMs: 5_000 });
       await expect(resumedConnection.listTabs()).resolves.not.toHaveLength(0);
     } finally {
       await browser.destroy();

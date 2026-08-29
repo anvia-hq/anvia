@@ -1,7 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
-import { DockerBrowserClient } from "../src/docker-browser";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { DockerBrowserClient } from "../src/docker-browser-client";
 
 describe("DockerBrowserClient", () => {
+  afterEach(() => vi.useRealTimers());
+
   it("does no constructor I/O and pulls only when explicitly requested", async () => {
     const sandboxClient = fakeSandboxClient();
     const client = new DockerBrowserClient({
@@ -12,7 +14,9 @@ describe("DockerBrowserClient", () => {
     expect(sandboxClient.createSandbox).not.toHaveBeenCalled();
 
     await client.pullImage();
-    expect(sandboxClient.pullImage).toHaveBeenCalledWith({ image: "browser:test" });
+    expect(sandboxClient.pullImage).toHaveBeenCalledWith(
+      expect.objectContaining({ image: "browser:test", abortSignal: expect.any(AbortSignal) }),
+    );
   });
 
   it("provisions fixed loopback services and configures the password through stdin", async () => {
@@ -52,9 +56,9 @@ describe("DockerBrowserClient", () => {
         input: JSON.stringify({ password: "passw0rd", width: 1440, height: 900 }),
       }),
     );
-    expect(sandboxClient.runtime.startProcess).toHaveBeenCalledWith({
-      command: "/usr/local/bin/anvia-browser-start",
-    });
+    expect(sandboxClient.runtime.startProcess).toHaveBeenCalledWith(
+      expect.objectContaining({ command: "/usr/local/bin/anvia-browser-start" }),
+    );
     expect(browser.desktop).toMatchObject({ protocol: "novnc", containerPort: 6080 });
   });
 
@@ -80,11 +84,33 @@ describe("DockerBrowserClient", () => {
     vi.stubGlobal("fetch", fetch);
 
     try {
-      await browser.waitUntilReady({ timeoutMs: 1_000 });
-      expect(fetch).toHaveBeenCalledTimes(3);
+      await browser.waitUntilReady({ timeoutMs: 1_000, capabilities: ["desktop"] });
+      expect(fetch).toHaveBeenCalledTimes(2);
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+
+  it("reports timeout when an underlying lifecycle call completes late", async () => {
+    vi.useFakeTimers();
+    const sandboxClient = fakeSandboxClient();
+    let finishPull: (() => void) | undefined;
+    sandboxClient.pullImage.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finishPull = resolve;
+        }),
+    );
+    const client = new DockerBrowserClient({
+      sandboxClient: sandboxClient.client,
+      image: "browser:test",
+    });
+    const pulling = client.pullImage({ timeoutMs: 50 });
+    const rejected = expect(pulling).rejects.toMatchObject({ code: "lifecycle_timeout" });
+
+    await vi.advanceTimersByTimeAsync(50);
+    finishPull?.();
+    await rejected;
   });
 
   it("rejects VNC values that x11vnc would truncate", async () => {

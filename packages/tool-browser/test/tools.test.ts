@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { PlaywrightBrowserConnectionImpl } from "../src/connection";
+import { type AutomationBackend, PlaywrightBrowserConnectionImpl } from "../src/connection";
 import { BrowserControlState } from "../src/control";
 import { createBrowserTools } from "../src/tools";
 
@@ -24,7 +24,7 @@ describe("createBrowserTools", () => {
   });
 
   it("blocks non-HTTP navigation before Playwright receives it", async () => {
-    const { connection, page } = fakeConnection();
+    const { connection, command } = fakeConnection();
     const [navigate] = createBrowserTools({
       connection,
       tools: ["browser_navigate"],
@@ -33,11 +33,32 @@ describe("createBrowserTools", () => {
     await expect(navigate?.call({ url: "file:///etc/passwd" })).rejects.toMatchObject({
       code: "navigation_blocked",
     });
-    expect(page.goto).not.toHaveBeenCalled();
+    expect(command).not.toHaveBeenCalledWith(
+      expect.objectContaining({ method: "navigate" }),
+      expect.anything(),
+    );
   });
 
-  it("guards top-level navigation caused by any browser interaction", async () => {
-    const { connection, context } = fakeConnection();
+  it("reports navigation policy rejection from redirects as navigation_blocked", async () => {
+    const { connection, command } = fakeConnection();
+    const [navigate] = createBrowserTools({
+      connection,
+      tools: ["browser_navigate"],
+      navigation: { mode: "origins", origins: ["https://example.com"] },
+    });
+    await connection.listTabs();
+    command.mockRejectedValueOnce(new Error("page.goto: net::ERR_BLOCKED_BY_CLIENT"));
+
+    await expect(
+      navigate?.call({
+        tabId: "11111111-1111-4111-8111-111111111111",
+        url: "https://example.com/redirect",
+      }),
+    ).rejects.toMatchObject({ code: "navigation_blocked" });
+  });
+
+  it("installs the navigation policy before browser interaction", async () => {
+    const { connection, command } = fakeConnection();
     const [snapshot] = createBrowserTools({
       connection,
       tools: ["browser_snapshot"],
@@ -45,23 +66,11 @@ describe("createBrowserTools", () => {
     });
     await snapshot?.call({});
 
-    const handler = context.route.mock.calls[0]?.[1] as
-      | ((route: unknown) => Promise<void>)
-      | undefined;
-    expect(handler).toBeTypeOf("function");
-    const frame = { page: () => ({ mainFrame: () => frame }) };
-    const route = {
-      request: () => ({
-        isNavigationRequest: () => true,
-        frame: () => frame,
-        url: () => "http://127.0.0.1/private",
-      }),
-      abort: vi.fn(),
-      continue: vi.fn(),
-    };
-    await handler?.(route);
-    expect(route.abort).toHaveBeenCalledWith("blockedbyclient");
-    expect(route.continue).not.toHaveBeenCalled();
+    expect(command.mock.calls[0]?.[0]).toEqual({
+      method: "setNavigationPolicy",
+      params: { policy: { mode: "origins", origins: ["https://example.com"] } },
+    });
+    expect(command.mock.calls[0]?.[1]).toEqual(expect.anything());
   });
 
   it("returns native structured PNG output", async () => {
@@ -95,43 +104,39 @@ describe("createBrowserTools", () => {
 });
 
 function fakeConnection(control = new BrowserControlState()) {
-  const locator = {
-    ariaSnapshot: vi.fn(async () => "- document"),
-    click: vi.fn(),
-    fill: vi.fn(),
-  };
-  const page = {
-    title: vi.fn(async () => "Example"),
-    url: vi.fn(() => "https://example.com"),
-    isClosed: vi.fn(() => false),
-    locator: vi.fn(() => locator),
-    getByRole: vi.fn(() => locator),
-    getByText: vi.fn(() => locator),
-    getByLabel: vi.fn(() => locator),
-    getByPlaceholder: vi.fn(() => locator),
-    getByTestId: vi.fn(() => locator),
-    screenshot: vi.fn(async () => Buffer.from("png")),
-    goto: vi.fn(),
-    route: vi.fn(),
-    unroute: vi.fn(),
-    mainFrame: vi.fn(() => ({})),
-    keyboard: { press: vi.fn() },
-    close: vi.fn(),
-  };
-  const context = {
-    pages: vi.fn(() => [page]),
-    newPage: vi.fn(async () => page),
-    route: vi.fn(async (_pattern: string, _handler: unknown) => undefined),
-  };
-  const browser = {
-    contexts: vi.fn(() => [context]),
-    once: vi.fn(),
-    isConnected: vi.fn(() => true),
-    close: vi.fn(),
+  const tabId = "11111111-1111-4111-8111-111111111111";
+  const command = vi.fn(async (request: { method: string }, _options?: unknown) => {
+    switch (request.method) {
+      case "listTabs":
+        return [{ id: tabId, title: "Example", url: "https://example.com", selected: true }];
+      case "snapshot":
+        return {
+          tabId,
+          title: "Example",
+          url: "https://example.com",
+          snapshot: "- document",
+          truncated: false,
+        };
+      case "screenshot":
+        return {
+          metadata: { tabId, title: "Example", url: "https://example.com" },
+          pngBase64: Buffer.from("png").toString("base64"),
+        };
+      default:
+        return undefined;
+    }
+  });
+  const backend: AutomationBackend = {
+    closed: false,
+    command: async <T>(
+      request: Parameters<AutomationBackend["command"]>[0],
+      options: Parameters<AutomationBackend["command"]>[1],
+    ) => command(request, options) as Promise<T>,
+    disconnect: vi.fn(),
+    onDisconnected: vi.fn(() => () => undefined),
   };
   return {
-    page,
-    context,
-    connection: new PlaywrightBrowserConnectionImpl(browser as never, control),
+    command,
+    connection: new PlaywrightBrowserConnectionImpl({ backend, control }),
   };
 }

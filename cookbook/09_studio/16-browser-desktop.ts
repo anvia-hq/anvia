@@ -23,8 +23,14 @@ const browser = await browserClient.createBrowser({
 });
 
 try {
-  await browser.waitUntilReady({ timeoutMs: 30_000 });
-  const connection = await browser.connect();
+  await browser.waitForCapabilities({
+    capabilities: ["automation", "desktop"],
+    timeoutMs: 30_000,
+  });
+  const connection = await browser.connect({
+    timeoutMs: 30_000,
+    scheduling: { mode: "per-tab", maxConcurrentTabs: 8 },
+  });
   const browserTools = createBrowserTools({
     connection,
     tools: [

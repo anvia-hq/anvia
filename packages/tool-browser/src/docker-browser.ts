@@ -1,131 +1,76 @@
-import { fileURLToPath } from "node:url";
 import type {
   DockerSandbox,
-  DockerSandboxClient,
   DockerSandboxInspectionOptions,
   DockerSandboxInspector,
-  DockerSandboxPublishedPort,
   DockerSandboxState,
 } from "@anvia/sandbox";
 import { connectPlaywrightBrowser, type PlaywrightBrowserConnectionImpl } from "./connection";
 import { BrowserControlState } from "./control";
-import { BrowserError } from "./errors";
+import { BrowserError, cancellationError } from "./errors";
+import {
+  assertOptionsObject,
+  assertPositiveSafeInteger,
+  boundedSignal,
+  defaultLifecycleTimeoutMs,
+  validateLifecycleOptions,
+  waitForSharedLifecycle,
+} from "./lifecycle";
+import {
+  browserCapabilities,
+  cdpPort,
+  endpointFor,
+  normalizeReadinessError,
+  noVncPort,
+  probeBrowserCapability,
+} from "./readiness";
 import type {
+  BrowserCapability,
+  BrowserCapabilitySnapshot,
   BrowserConnectOptions,
   BrowserDesktopEndpoint,
+  BrowserLifecycleOptions,
+  BrowserReadinessSnapshot,
   BrowserWaitUntilReadyOptions,
-  CreateDockerBrowserOptions,
   DockerBrowser,
-  DockerBrowserClientOptions,
   PlaywrightBrowserConnection,
-  PullDockerBrowserImageOptions,
-  ResumeDockerBrowserOptions,
 } from "./types";
 
-const cdpPort = 9222;
-const noVncPort = 6080;
-const browserSchema = "1";
-const defaultSharedMemoryMb = 1024;
-const seccompProfilePath = fileURLToPath(
-  new URL("../security/seccomp_profile.json", import.meta.url),
-);
+const defaultConnectTimeoutMs = 30_000;
+const capabilities = browserCapabilities;
 
-export class DockerBrowserClient {
-  private readonly sandboxClient: DockerSandboxClient;
-  private readonly image: string;
+type OwnedOperation = {
+  controller: AbortController;
+  promise: Promise<unknown>;
+};
 
-  constructor(options: DockerBrowserClientOptions) {
-    if (!isRecord(options)) throw new TypeError("options must be an object.");
-    if (!isSandboxClient(options.sandboxClient)) {
-      throw new TypeError("sandboxClient must be a DockerSandboxClient.");
-    }
-    assertNonEmptyString(options.image, "image");
-    this.sandboxClient = options.sandboxClient;
-    this.image = options.image;
-  }
+type HandleState = "active" | "stopping" | "stopped" | "destroying" | "destroyed" | "error";
 
-  async pullImage(options: PullDockerBrowserImageOptions = {}): Promise<void> {
-    assertOptionsObject(options);
-    let pullOptions: Parameters<typeof this.sandboxClient.pullImage>[0] = { image: this.image };
-    if (options.abortSignal !== undefined) {
-      pullOptions = { ...pullOptions, abortSignal: options.abortSignal };
-    }
-    await this.sandboxClient.pullImage(pullOptions);
-  }
-
-  async createBrowser(options: CreateDockerBrowserOptions): Promise<DockerBrowser> {
-    validateCreateOptions(options);
-    options.abortSignal?.throwIfAborted();
-    const resources = {
-      ...options.resources,
-      sharedMemoryMb: options.resources?.sharedMemoryMb ?? defaultSharedMemoryMb,
-    };
-    let sandboxOptions: Parameters<typeof this.sandboxClient.createSandbox>[0] = {
-      image: this.image,
-      workdir: "/workspace",
-      workspace: options.workspace,
-      network: { mode: "bridge", ports: [cdpPort, noVncPort] },
-      user: "pwuser",
-      labels: {
-        "anvia.browser.schema": browserSchema,
-      },
-      resources,
-      security: {
-        noNewPrivileges: true,
-        dropCapabilities: ["ALL"],
-        addCapabilities: ["SYS_CHROOT"],
-        seccompProfile: { type: "path", path: seccompProfilePath },
-      },
-    };
-    if (options.id !== undefined) sandboxOptions = { ...sandboxOptions, id: options.id };
-    if (options.runtime !== undefined) {
-      sandboxOptions = { ...sandboxOptions, runtime: options.runtime };
-    }
-    if (options.abortSignal !== undefined) {
-      sandboxOptions = { ...sandboxOptions, abortSignal: options.abortSignal };
-    }
-    const sandbox = await this.sandboxClient.createSandbox(sandboxOptions);
-
-    try {
-      await configureBrowser(sandbox, options);
-      await startBrowserServices(sandbox, options.abortSignal);
-      return new DockerBrowserHandle(sandbox);
-    } catch (error) {
-      await sandbox.destroy().catch(() => undefined);
-      throw new BrowserError("Unable to configure the browser sandbox.", "startup_failed", {
-        cause: error,
-      });
-    }
-  }
-
-  async resumeBrowser(options: ResumeDockerBrowserOptions): Promise<DockerBrowser> {
-    assertOptionsObject(options);
-    assertNonEmptyString(options.id, "id");
-    options.abortSignal?.throwIfAborted();
-    const sandbox = await this.sandboxClient.resumeSandbox(options);
-    try {
-      await assertBrowserImage(sandbox, options.abortSignal);
-      await startBrowserServices(sandbox, options.abortSignal);
-      return new DockerBrowserHandle(sandbox);
-    } catch (error) {
-      await sandbox.stop().catch(() => undefined);
-      throw new BrowserError("Unable to resume browser services.", "startup_failed", {
-        cause: error,
-      });
-    }
-  }
-}
-
-class DockerBrowserHandle implements DockerBrowser {
+export class DockerBrowserHandle implements DockerBrowser {
   readonly id: string;
   readonly sandbox: DockerSandbox;
   readonly desktop: BrowserDesktopEndpoint;
   private readonly control = new BrowserControlState();
   private readonly connections = new Set<PlaywrightBrowserConnectionImpl>();
+  private readonly ownedOperations = new Set<OwnedOperation>();
+  private readonly capabilityStates = new Map<BrowserCapability, BrowserCapabilitySnapshot>(
+    capabilities.map((capability) => [capability, Object.freeze({ capability, state: "unknown" })]),
+  );
+  private readonly capabilityGenerations = new Map<BrowserCapability, number>(
+    capabilities.map((capability) => [capability, 0]),
+  );
+  private handleState: HandleState = "active";
+  private connectionPending = false;
+  private stopPromise: Promise<void> | undefined;
+  private destroyPromise: Promise<void> | undefined;
+  private readonly connectBrowser: typeof connectPlaywrightBrowser;
 
-  constructor(sandbox: DockerSandbox) {
+  constructor(
+    sandbox: DockerSandbox,
+    connectBrowser: typeof connectPlaywrightBrowser = connectPlaywrightBrowser,
+  ) {
     this.sandbox = sandbox;
     this.id = sandbox.id;
+    this.connectBrowser = connectBrowser;
     this.desktop = Object.freeze({
       protocol: "novnc",
       containerPort: noVncPort,
@@ -134,259 +79,420 @@ class DockerBrowserHandle implements DockerBrowser {
   }
 
   get state(): DockerSandboxState {
-    return this.sandbox.state;
+    return this.handleState === "active" ? this.sandbox.state : this.handleState;
   }
 
   inspector(options: DockerSandboxInspectionOptions): DockerSandboxInspector {
     return this.sandbox.inspector(options);
   }
 
-  async waitUntilReady(options: BrowserWaitUntilReadyOptions): Promise<void> {
-    assertOptionsObject(options);
-    assertPositiveSafeInteger(options.timeoutMs, "timeoutMs");
+  readiness(): BrowserReadinessSnapshot {
+    const terminal =
+      this.handleState === "destroyed" || this.handleState === "destroying"
+        ? "destroyed"
+        : this.handleState === "stopped" || this.handleState === "stopping"
+          ? "stopped"
+          : undefined;
+    const entries = Object.fromEntries(
+      capabilities.map((capability) => {
+        const current = this.capabilityStates.get(capability)!;
+        return [
+          capability,
+          terminal === undefined
+            ? current
+            : Object.freeze({ capability, state: terminal } satisfies BrowserCapabilitySnapshot),
+        ];
+      }),
+    ) as Record<BrowserCapability, BrowserCapabilitySnapshot>;
+    const values = Object.values(entries);
+    const state =
+      this.handleState === "error"
+        ? "failed"
+        : (terminal ??
+          (values.some((value) => value.state === "checking")
+            ? "checking"
+            : values.every((value) => value.state === "unknown")
+              ? "unknown"
+              : values.every((value) => value.state === "ready")
+                ? "ready"
+                : values.some((value) => value.state === "failed")
+                  ? values.some((value) => value.state === "ready")
+                    ? "degraded"
+                    : "failed"
+                  : "partial"));
+    return Object.freeze({ state, capabilities: Object.freeze(entries) });
+  }
+
+  async waitForCapabilities(
+    options: BrowserWaitUntilReadyOptions,
+  ): Promise<BrowserReadinessSnapshot> {
+    validateReadinessOptions(options);
     this.assertRunning();
-    const timeout = AbortSignal.timeout(options.timeoutMs);
-    const abortSignal =
-      options.abortSignal === undefined ? timeout : AbortSignal.any([options.abortSignal, timeout]);
-    try {
-      await Promise.all([
-        this.sandbox.runtime.waitForPort({
-          containerPort: cdpPort,
-          timeoutMs: options.timeoutMs,
-          abortSignal,
-        }),
-        this.sandbox.runtime.waitForPort({
-          containerPort: noVncPort,
-          timeoutMs: options.timeoutMs,
-          abortSignal,
-        }),
-      ]);
-      await Promise.all([
-        assertHttpReady(`${endpointFor(this.sandbox, cdpPort)}/json/version`, abortSignal),
-        assertHttpReady(`${endpointFor(this.sandbox, noVncPort)}/vnc.html`, abortSignal),
-      ]);
-    } catch (error) {
-      if (options.abortSignal?.aborted) options.abortSignal.throwIfAborted();
-      throw new BrowserError("Browser did not become ready before the timeout.", "not_ready", {
-        cause: error,
-      });
+    if (options.abortSignal?.aborted) {
+      throw cancellationError(options.abortSignal.reason, "readiness");
     }
+    const requested = options.capabilities ?? capabilities;
+    const ownedController = new AbortController();
+    const timeoutController = new AbortController();
+    const deadline = Date.now() + options.timeoutMs;
+    const timer = setTimeout(
+      () =>
+        timeoutController.abort(
+          new BrowserError("Browser readiness timed out.", "readiness_timeout", {
+            phase: "readiness",
+          }),
+        ),
+      options.timeoutMs,
+    );
+    timer.unref?.();
+    const signals = [ownedController.signal, timeoutController.signal];
+    if (options.abortSignal !== undefined) signals.push(options.abortSignal);
+    const abortSignal = AbortSignal.any(signals);
+    const previous = new Map(
+      requested.map((capability) => [capability, this.capabilityStates.get(capability)!]),
+    );
+    const generations = new Map(
+      requested.map((capability) => {
+        const generation = (this.capabilityGenerations.get(capability) ?? 0) + 1;
+        this.capabilityGenerations.set(capability, generation);
+        return [capability, generation] as const;
+      }),
+    );
+    for (const capability of requested) this.setCapability(capability, "checking");
+
+    const promise = Promise.allSettled(
+      requested.map(async (capability) => {
+        try {
+          await probeBrowserCapability({
+            capability,
+            sandbox: this.sandbox,
+            control: this.control,
+            connectBrowser: this.connectBrowser,
+            abortSignal,
+            deadline,
+          });
+          abortSignal.throwIfAborted();
+          if (this.capabilityGenerations.get(capability) === generations.get(capability)) {
+            this.setCapability(capability, "ready");
+          }
+        } catch (error) {
+          const normalized = normalizeReadinessError(error, capability, {
+            callerAborted: options.abortSignal?.aborted === true,
+            timedOut: timeoutController.signal.aborted,
+          });
+          if (this.capabilityGenerations.get(capability) === generations.get(capability)) {
+            if (options.abortSignal?.aborted) {
+              this.capabilityStates.set(capability, previous.get(capability)!);
+            } else {
+              this.setCapability(capability, "failed", normalized);
+            }
+          }
+          throw normalized;
+        }
+      }),
+    );
+    const owned = { controller: ownedController, promise };
+    this.ownedOperations.add(owned);
+    try {
+      const results = await promise;
+      if (options.abortSignal?.aborted) {
+        throw cancellationError(options.abortSignal.reason, "readiness");
+      }
+      const failures = results.filter(
+        (result): result is PromiseRejectedResult => result.status === "rejected",
+      );
+      this.updateControlAvailability();
+      if (failures.length > 0) throw failures[0]!.reason;
+      return this.readiness();
+    } finally {
+      clearTimeout(timer);
+      this.ownedOperations.delete(owned);
+    }
+  }
+
+  async waitUntilReady(options: BrowserWaitUntilReadyOptions): Promise<void> {
+    await this.waitForCapabilities(options);
   }
 
   async connect(options: BrowserConnectOptions = {}): Promise<PlaywrightBrowserConnection> {
     assertOptionsObject(options);
+    if (options.timeoutMs !== undefined) assertPositiveSafeInteger(options.timeoutMs, "timeoutMs");
     this.assertRunning();
-    try {
-      let connectOptions: Parameters<typeof connectPlaywrightBrowser>[0] = {
-        endpointUrl: endpointFor(this.sandbox, cdpPort),
-        control: this.control,
-      };
-      if (options.abortSignal !== undefined) {
-        connectOptions = { ...connectOptions, abortSignal: options.abortSignal };
+    if (options.abortSignal?.aborted) {
+      throw cancellationError(options.abortSignal.reason, "connect");
+    }
+    if (this.connectionPending || this.connections.size > 0) {
+      throw new BrowserError(
+        "Browser already has an active or pending automation connection.",
+        "agent_action_busy",
+        { phase: "connect" },
+      );
+    }
+    this.connectionPending = true;
+    const controller = new AbortController();
+    const signals = [controller.signal];
+    if (options.abortSignal !== undefined) signals.push(options.abortSignal);
+    const abortSignal = AbortSignal.any(signals);
+    let owned!: OwnedOperation;
+    const promise = (async () => {
+      // Register the operation before endpoint resolution or the connection factory can fail.
+      await Promise.resolve();
+      try {
+        abortSignal.throwIfAborted();
+        const connection = await this.connectBrowser({
+          endpointUrl: endpointFor(this.sandbox, cdpPort),
+          control: this.control,
+          timeoutMs: options.timeoutMs ?? defaultConnectTimeoutMs,
+          abortSignal,
+          scheduling: options.scheduling,
+          onClosed: (closedConnection) => this.connections.delete(closedConnection),
+        });
+        this.connections.add(connection);
+        const disconnectedDuringInitialization = connection.closed;
+        if (
+          disconnectedDuringInitialization ||
+          this.handleState !== "active" ||
+          this.state !== "running"
+        ) {
+          this.connections.delete(connection);
+          let cleanupError: unknown;
+          try {
+            await connection.disconnect();
+          } catch (caught) {
+            cleanupError = caught;
+          }
+          if (
+            disconnectedDuringInitialization &&
+            this.handleState === "active" &&
+            this.state === "running"
+          ) {
+            throw new BrowserError(
+              "Browser disconnected while automation was initializing.",
+              "connection_closed",
+              {
+                ...(cleanupError === undefined ? {} : { cause: cleanupError }),
+                phase: "connect",
+              },
+            );
+          }
+          const lifecycleError = this.lifecycleError(
+            "Browser stopped while the connection was initializing.",
+          );
+          throw cleanupError === undefined
+            ? lifecycleError
+            : new BrowserError(lifecycleError.message, lifecycleError.code, {
+                cause: cleanupError,
+                ...(lifecycleError.phase === undefined ? {} : { phase: lifecycleError.phase }),
+              });
+        }
+        return connection;
+      } catch (error) {
+        if (options.abortSignal?.aborted) {
+          throw cancellationError(options.abortSignal.reason, "connect");
+        }
+        if (controller.signal.aborted) throw controller.signal.reason;
+        if (error instanceof BrowserError) throw error;
+        throw new BrowserError("Unable to connect to Chromium over CDP.", "transport_failure", {
+          cause: error,
+          phase: "connect",
+        });
+      } finally {
+        this.connectionPending = false;
+        this.ownedOperations.delete(owned);
       }
-      const connection = await connectPlaywrightBrowser(connectOptions);
-      this.connections.add(connection);
-      return connection;
-    } catch (error) {
-      if (options.abortSignal?.aborted) options.abortSignal.throwIfAborted();
-      throw new BrowserError("Unable to connect to Chromium over CDP.", "not_ready", {
-        cause: error,
-      });
+    })();
+    owned = { controller, promise };
+    this.ownedOperations.add(owned);
+    return promise;
+  }
+
+  async stop(options: BrowserLifecycleOptions = {}): Promise<void> {
+    assertOptionsObject(options);
+    if (this.handleState === "stopped") return;
+    if (this.handleState === "destroyed" || this.handleState === "destroying") {
+      throw new BrowserError("Browser runtime is destroyed.", "runtime_destroyed");
+    }
+    validateLifecycleOptions(options, "stop-browser");
+    if (this.stopPromise !== undefined) {
+      return waitForSharedLifecycle(this.stopPromise, options, "stop-browser");
+    }
+    this.handleState = "stopping";
+    this.control.setAvailability("disconnected");
+    const promise = this.performStop(options);
+    this.stopPromise = promise;
+    try {
+      await promise;
+    } finally {
+      if (this.stopPromise === promise) this.stopPromise = undefined;
     }
   }
 
-  async stop(options: Readonly<{ abortSignal?: AbortSignal }> = {}): Promise<void> {
+  async destroy(options: BrowserLifecycleOptions = {}): Promise<void> {
     assertOptionsObject(options);
-    await this.disconnectAll();
-    await this.sandbox.stop(options);
-  }
-
-  async destroy(): Promise<void> {
-    this.control.destroy();
-    await this.disconnectAll();
-    await this.sandbox.destroy();
+    if (this.handleState === "destroyed") return;
+    validateLifecycleOptions(options, "destroy-browser");
+    if (this.destroyPromise === undefined) {
+      this.handleState = "destroying";
+      this.control.destroy();
+      const activeStop = this.stopPromise;
+      const promise = (async () => {
+        if (activeStop !== undefined) await activeStop.catch(() => undefined);
+        await this.performDestroy();
+      })();
+      this.destroyPromise = promise;
+      void promise.then(
+        () => {
+          if (this.destroyPromise === promise) this.destroyPromise = undefined;
+        },
+        () => {
+          if (this.destroyPromise === promise) this.destroyPromise = undefined;
+        },
+      );
+    }
+    return waitForSharedLifecycle(this.destroyPromise, options, "destroy-browser");
   }
 
   async [Symbol.asyncDispose](): Promise<void> {
     await this.destroy();
   }
 
+  private async performStop(options: BrowserLifecycleOptions): Promise<void> {
+    const bounded = boundedSignal(options, defaultLifecycleTimeoutMs, "stop-browser");
+    try {
+      await this.abortOwnedOperations(
+        new BrowserError("Browser runtime is stopping.", "connection_closed", {
+          phase: "stop-browser",
+        }),
+      );
+      const disconnectFailures = await this.disconnectAll({ abortSignal: bounded.signal });
+      await this.sandbox.stop({ abortSignal: bounded.signal });
+      if (this.handleState === "stopping") this.handleState = "stopped";
+      bounded.throwIfAborted();
+      if (disconnectFailures.length > 0) {
+        throw new BrowserError(
+          "Browser stopped, but one or more automation workers failed to disconnect.",
+          "transport_failure",
+          {
+            cause: new AggregateError(disconnectFailures, "Automation worker cleanup failed."),
+            phase: "stop-browser",
+            recovery: "restart",
+          },
+        );
+      }
+    } catch (error) {
+      if (this.handleState === "stopping") this.handleState = "error";
+      throw bounded.normalize(error, "Unable to stop browser runtime.", "transport_failure");
+    } finally {
+      bounded.dispose();
+    }
+  }
+
+  private async performDestroy(): Promise<void> {
+    try {
+      await this.abortOwnedOperations(
+        new BrowserError("Browser runtime was destroyed.", "runtime_destroyed", {
+          phase: "destroy-browser",
+        }),
+      );
+      const disconnectFailures = await this.disconnectAll({});
+      await this.sandbox.destroy();
+      this.handleState = "destroyed";
+      if (disconnectFailures.length > 0) {
+        throw new BrowserError(
+          "Browser was destroyed, but one or more automation workers failed to disconnect.",
+          "transport_failure",
+          {
+            cause: new AggregateError(disconnectFailures, "Automation worker cleanup failed."),
+            phase: "destroy-browser",
+            retryable: false,
+            recovery: "none",
+          },
+        );
+      }
+    } catch (error) {
+      if (this.handleState !== "destroyed") this.handleState = "error";
+      if (error instanceof BrowserError) throw error;
+      throw new BrowserError("Unable to destroy browser runtime.", "transport_failure", {
+        cause: error,
+        phase: "destroy-browser",
+        recovery: "retry",
+      });
+    }
+  }
+
   private assertRunning(): void {
-    if (this.state !== "running") {
+    if (this.handleState === "destroyed" || this.handleState === "destroying") {
+      throw new BrowserError("Browser runtime is destroyed.", "runtime_destroyed");
+    }
+    if (this.handleState !== "active" || this.state !== "running") {
       throw new BrowserError(`Browser is not running: ${this.state}`, "invalid_state");
     }
   }
 
-  private async disconnectAll(): Promise<void> {
+  private lifecycleError(message: string): BrowserError {
+    return this.handleState === "destroying" || this.handleState === "destroyed"
+      ? new BrowserError(message, "runtime_destroyed")
+      : new BrowserError(message, "connection_closed", { phase: "connect" });
+  }
+
+  private async abortOwnedOperations(error: BrowserError): Promise<void> {
+    const operations = [...this.ownedOperations];
+    for (const operation of operations) operation.controller.abort(error);
+    await Promise.allSettled(operations.map((operation) => operation.promise));
+  }
+
+  private async disconnectAll(options: BrowserLifecycleOptions): Promise<readonly unknown[]> {
     const connections = [...this.connections];
     this.connections.clear();
     const results = await Promise.allSettled(
-      connections.map((connection) => connection.disconnect()),
+      connections.map((connection) => connection.disconnect(options)),
     );
-    const failures = results
+    return results
       .filter((result): result is PromiseRejectedResult => result.status === "rejected")
       .map((result) => result.reason);
-    if (failures.length > 0) {
-      throw new AggregateError(failures, "Unable to disconnect browser automation clients.");
+  }
+
+  private setCapability(
+    capability: BrowserCapability,
+    state: BrowserCapabilitySnapshot["state"],
+    error?: BrowserError,
+  ): void {
+    this.capabilityStates.set(
+      capability,
+      Object.freeze({
+        capability,
+        state,
+        checkedAt: new Date().toISOString(),
+        ...(error === undefined ? {} : { error }),
+      }),
+    );
+  }
+
+  private updateControlAvailability(): void {
+    if (this.handleState !== "active" || this.state !== "running") {
+      this.control.setAvailability("disconnected");
+      return;
     }
+    const failed = capabilities.some(
+      (capability) => this.capabilityStates.get(capability)?.state === "failed",
+    );
+    this.control.setAvailability(failed ? "degraded" : "available");
   }
 }
 
-async function configureBrowser(
-  sandbox: DockerSandbox,
-  options: CreateDockerBrowserOptions,
-): Promise<void> {
-  let execOptions: Parameters<typeof sandbox.runtime.exec>[0] = {
-    command: "/usr/local/bin/anvia-browser-configure",
-    input: JSON.stringify({
-      password: options.desktop.password,
-      width: options.desktop.viewport.width,
-      height: options.desktop.viewport.height,
-    }),
-  };
-  if (options.abortSignal !== undefined) {
-    execOptions = { ...execOptions, abortSignal: options.abortSignal };
-  }
-  const result = await sandbox.runtime.exec(execOptions);
-  if (result.status !== "exited" || result.exitCode !== 0) {
-    throw new Error("Browser image rejected its runtime configuration.");
-  }
-}
-
-async function assertBrowserImage(
-  sandbox: DockerSandbox,
-  abortSignal?: AbortSignal,
-): Promise<void> {
-  let execOptions: Parameters<typeof sandbox.runtime.exec>[0] = {
-    command: "/usr/local/bin/anvia-browser-version",
-  };
-  if (abortSignal !== undefined) execOptions = { ...execOptions, abortSignal };
-  const result = await sandbox.runtime.exec(execOptions);
-  if (
-    result.status !== "exited" ||
-    result.exitCode !== 0 ||
-    new TextDecoder("utf-8", { fatal: true }).decode(result.stdout).trim() !== browserSchema
-  ) {
-    throw new Error("Sandbox does not contain a compatible Anvia browser image.");
-  }
-}
-
-async function startBrowserServices(
-  sandbox: DockerSandbox,
-  abortSignal?: AbortSignal,
-): Promise<void> {
-  let startOptions: Parameters<typeof sandbox.runtime.startProcess>[0] = {
-    command: "/usr/local/bin/anvia-browser-start",
-  };
-  if (abortSignal !== undefined) startOptions = { ...startOptions, abortSignal };
-  await sandbox.runtime.startProcess(startOptions);
-}
-
-async function assertHttpReady(url: string, abortSignal: AbortSignal): Promise<void> {
-  while (true) {
-    abortSignal.throwIfAborted();
-    try {
-      const response = await fetch(url, { signal: abortSignal, redirect: "error" });
-      if (response.ok) {
-        await response.body?.cancel();
-        return;
-      }
-      await response.body?.cancel();
-    } catch (error) {
-      if (abortSignal.aborted) throw abortSignal.reason ?? error;
-    }
-    await waitForRetry(abortSignal);
-  }
-}
-
-async function waitForRetry(abortSignal: AbortSignal): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
-    const timeout = setTimeout(finish, 50);
-    const abort = () => finish(abortSignal.reason ?? new DOMException("Aborted", "AbortError"));
-    abortSignal.addEventListener("abort", abort, { once: true });
-
-    function finish(error?: unknown): void {
-      clearTimeout(timeout);
-      abortSignal.removeEventListener("abort", abort);
-      if (error === undefined) resolve();
-      else reject(error);
-    }
-  });
-}
-
-function endpointFor(sandbox: DockerSandbox, containerPort: number): string {
-  const published = publishedPort(sandbox, containerPort);
-  return `http://${hostForUrl(published.host)}:${published.hostPort}`;
-}
-
-function publishedPort(sandbox: DockerSandbox, containerPort: number): DockerSandboxPublishedPort {
-  const port = sandbox.runtime.publishedPorts.find(
-    (candidate) => candidate.containerPort === containerPort && candidate.protocol === "tcp",
-  );
-  if (port === undefined) {
-    throw new BrowserError(`Browser port is not published: ${containerPort}`, "invalid_state");
-  }
-  return port;
-}
-
-function hostForUrl(host: string): string {
-  return host.includes(":") ? `[${host}]` : host;
-}
-
-function validateCreateOptions(options: CreateDockerBrowserOptions): void {
+function validateReadinessOptions(options: BrowserWaitUntilReadyOptions): void {
   assertOptionsObject(options);
-  if (options.id !== undefined) assertNonEmptyString(options.id, "id");
-  if (!isRecord(options.workspace)) throw new TypeError("workspace must be an object.");
-  if (!isRecord(options.network) || options.network.mode !== "bridge") {
-    throw new TypeError('network must be { mode: "bridge" }.');
+  assertPositiveSafeInteger(options.timeoutMs, "timeoutMs");
+  if (options.capabilities === undefined) return;
+  if (!Array.isArray(options.capabilities) || options.capabilities.length === 0) {
+    throw new TypeError("capabilities must be a non-empty array.");
   }
-  if (!isRecord(options.desktop) || options.desktop.protocol !== "novnc") {
-    throw new TypeError('desktop must use protocol: "novnc".');
+  const unique = new Set<BrowserCapability>();
+  for (const capability of options.capabilities) {
+    if (!capabilities.includes(capability)) {
+      throw new TypeError(`Unsupported browser capability: ${capability}`);
+    }
+    if (unique.has(capability)) throw new TypeError(`Duplicate browser capability: ${capability}`);
+    unique.add(capability);
   }
-  if (!/^[\x20-\x7e]{8}$/.test(options.desktop.password)) {
-    throw new TypeError("desktop.password must contain exactly 8 printable ASCII characters.");
-  }
-  if (!isRecord(options.desktop.viewport)) {
-    throw new TypeError("desktop.viewport must be an object.");
-  }
-  assertIntegerInRange(options.desktop.viewport.width, "desktop.viewport.width", 640, 3840);
-  assertIntegerInRange(options.desktop.viewport.height, "desktop.viewport.height", 480, 2160);
-  if (options.runtime?.maxProcesses !== undefined && options.runtime.maxProcesses < 1) {
-    throw new RangeError("runtime.maxProcesses must allow the browser service process.");
-  }
-}
-
-function assertIntegerInRange(value: number, name: string, min: number, max: number): void {
-  if (!Number.isSafeInteger(value) || value < min || value > max) {
-    throw new RangeError(`${name} must be a safe integer between ${min} and ${max}.`);
-  }
-}
-
-function assertPositiveSafeInteger(value: number, name: string): void {
-  if (!Number.isSafeInteger(value) || value <= 0) {
-    throw new RangeError(`${name} must be a positive safe integer.`);
-  }
-}
-
-function assertNonEmptyString(value: unknown, name: string): asserts value is string {
-  if (typeof value !== "string" || value.length === 0) {
-    throw new TypeError(`${name} must be a non-empty string.`);
-  }
-}
-
-function assertOptionsObject(value: unknown): asserts value is Record<string, unknown> {
-  if (!isRecord(value)) throw new TypeError("options must be an object.");
-}
-
-function isSandboxClient(value: unknown): value is DockerSandboxClient {
-  return (
-    isRecord(value) &&
-    typeof value.pullImage === "function" &&
-    typeof value.createSandbox === "function" &&
-    typeof value.resumeSandbox === "function"
-  );
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

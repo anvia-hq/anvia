@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { BrowserError } from "./errors";
+import { BrowserError, cancellationError } from "./errors";
 import type {
   AcquireBrowserHumanControlOptions,
   BrowserControl,
+  BrowserControlAvailability,
   BrowserControlSnapshot,
   BrowserHumanControlLease,
   RenewBrowserHumanControlOptions,
@@ -13,7 +14,11 @@ type PendingAcquire = {
   reject: (error: unknown) => void;
   abortSignal?: AbortSignal;
   abort?: () => void;
+  timer?: ReturnType<typeof setTimeout>;
 };
+
+const defaultAcquireTimeoutMs = 30_000;
+const maxTimerMs = 2_147_483_647;
 
 export class BrowserControlState implements BrowserControl {
   private activeAgentActions = 0;
@@ -21,16 +26,31 @@ export class BrowserControlState implements BrowserControl {
   private activeLease: BrowserHumanControlLeaseImpl | undefined;
   private humanPending = false;
   private destroyed = false;
+  private availability: BrowserControlAvailability = "available";
 
   snapshot(): BrowserControlSnapshot {
     const lease = this.activeLease;
-    return lease === undefined
-      ? Object.freeze({ mode: "agent" })
-      : Object.freeze({
-          mode: "human",
-          ownerId: lease.ownerId,
-          expiresAt: lease.expiresAt,
-        });
+    const state =
+      lease !== undefined
+        ? "human"
+        : this.humanPending
+          ? "human-pending"
+          : this.activeAgentActions > 0
+            ? "agent-active"
+            : "agent";
+    return Object.freeze({
+      mode: lease === undefined ? "agent" : "human",
+      state,
+      availability: this.availability,
+      activeAgentActions: this.activeAgentActions,
+      humanPending: this.humanPending,
+      ...(lease === undefined
+        ? {}
+        : {
+            ownerId: lease.ownerId,
+            expiresAt: lease.expiresAt,
+          }),
+    });
   }
 
   async acquireHumanControl(
@@ -38,9 +58,20 @@ export class BrowserControlState implements BrowserControl {
   ): Promise<BrowserHumanControlLease> {
     validateAcquireOptions(options);
     this.assertActive();
-    options.abortSignal?.throwIfAborted();
-    if (this.activeLease !== undefined || this.humanPending) {
-      throw new BrowserError("Browser human control is already acquired.", "human_controlled");
+    if (options.abortSignal?.aborted) {
+      throw cancellationError(options.abortSignal.reason, "human-control-acquire");
+    }
+    if (this.activeLease !== undefined) {
+      throw new BrowserError("Browser human control is already acquired.", "human_controlled", {
+        phase: "human-control-acquire",
+      });
+    }
+    if (this.humanPending) {
+      throw new BrowserError(
+        "Browser human control acquisition is already pending.",
+        "human_control_conflict",
+        { phase: "human-control-acquire" },
+      );
     }
     this.humanPending = true;
     try {
@@ -51,17 +82,31 @@ export class BrowserControlState implements BrowserControl {
             pending.abortSignal = options.abortSignal;
             pending.abort = () => {
               if (this.pendingAcquire !== pending) return;
-              this.pendingAcquire = undefined;
-              reject(options.abortSignal?.reason);
+              this.clearPendingAcquire(pending);
+              reject(cancellationError(options.abortSignal?.reason, "human-control-acquire"));
             };
             options.abortSignal.addEventListener("abort", pending.abort, { once: true });
           }
+          pending.timer = setTimeout(() => {
+            if (this.pendingAcquire !== pending) return;
+            this.clearPendingAcquire(pending);
+            reject(
+              new BrowserError(
+                "Timed out waiting to acquire browser human control.",
+                "human_control_conflict",
+                { phase: "human-control-acquire" },
+              ),
+            );
+          }, options.timeoutMs ?? defaultAcquireTimeoutMs);
+          pending.timer.unref?.();
           this.pendingAcquire = pending;
         });
       }
 
       this.assertActive();
-      options.abortSignal?.throwIfAborted();
+      if (options.abortSignal?.aborted) {
+        throw cancellationError(options.abortSignal.reason, "human-control-acquire");
+      }
       const lease = new BrowserHumanControlLeaseImpl({
         owner: this,
         ownerId: options.ownerId,
@@ -76,8 +121,17 @@ export class BrowserControlState implements BrowserControl {
 
   async runAgentAction<T>(operation: () => Promise<T>): Promise<T> {
     this.assertActive();
-    if (this.activeLease !== undefined || this.humanPending) {
-      throw new BrowserError("Browser is controlled by a human viewer.", "human_controlled");
+    if (this.activeLease !== undefined) {
+      throw new BrowserError("Browser is controlled by a human viewer.", "human_controlled", {
+        phase: "agent-action",
+      });
+    }
+    if (this.humanPending) {
+      throw new BrowserError(
+        "Browser human control acquisition is pending.",
+        "human_control_conflict",
+        { phase: "agent-action" },
+      );
     }
     this.activeAgentActions += 1;
     try {
@@ -113,25 +167,54 @@ export class BrowserControlState implements BrowserControl {
     if (this.pendingAcquire !== undefined) {
       const pending = this.pendingAcquire;
       this.pendingAcquire = undefined;
-      if (pending.abort !== undefined) {
-        pending.abortSignal?.removeEventListener("abort", pending.abort);
-      }
-      pending.reject(new BrowserError("Browser was destroyed.", "invalid_state"));
+      this.clearPendingAcquire(pending);
+      pending.reject(new BrowserError("Browser was destroyed.", "runtime_destroyed"));
     }
+    this.humanPending = false;
+    this.availability = "destroyed";
+  }
+
+  setAvailability(availability: BrowserControlAvailability): void {
+    if (this.destroyed) return;
+    if (availability === "destroyed") {
+      this.destroy();
+      return;
+    }
+    this.availability = availability;
+    if (availability !== "disconnected") return;
+    this.activeLease?.release();
+    if (this.pendingAcquire !== undefined) {
+      const pending = this.pendingAcquire;
+      this.clearPendingAcquire(pending);
+      pending.reject(
+        new BrowserError("Browser runtime is disconnected.", "connection_closed", {
+          phase: "human-control-acquire",
+        }),
+      );
+    }
+    this.humanPending = false;
   }
 
   private assertActive(): void {
-    if (this.destroyed) throw new BrowserError("Browser was destroyed.", "invalid_state");
+    if (this.destroyed) throw new BrowserError("Browser was destroyed.", "runtime_destroyed");
+    if (this.availability === "disconnected") {
+      throw new BrowserError("Browser runtime is disconnected.", "connection_closed");
+    }
   }
 
   private resolvePendingAcquire(): void {
     const pending: PendingAcquire | undefined = this.pendingAcquire;
     if (pending === undefined) return;
-    this.pendingAcquire = undefined;
+    this.clearPendingAcquire(pending);
+    pending.resolve();
+  }
+
+  private clearPendingAcquire(pending: PendingAcquire): void {
+    if (this.pendingAcquire === pending) this.pendingAcquire = undefined;
+    if (pending.timer !== undefined) clearTimeout(pending.timer);
     if (pending.abort !== undefined) {
       pending.abortSignal?.removeEventListener("abort", pending.abort);
     }
-    pending.resolve();
   }
 }
 
@@ -189,11 +272,12 @@ function validateAcquireOptions(options: AcquireBrowserHumanControlOptions): voi
     throw new TypeError("ownerId must be a non-empty string.");
   }
   assertPositiveSafeInteger(options.leaseTimeoutMs, "leaseTimeoutMs");
+  if (options.timeoutMs !== undefined) assertPositiveSafeInteger(options.timeoutMs, "timeoutMs");
 }
 
 function assertPositiveSafeInteger(value: number, name: string): void {
-  if (!Number.isSafeInteger(value) || value <= 0) {
-    throw new RangeError(`${name} must be a positive safe integer.`);
+  if (!Number.isSafeInteger(value) || value <= 0 || value > maxTimerMs) {
+    throw new RangeError(`${name} must be a positive integer no greater than ${maxTimerMs}.`);
   }
 }
 

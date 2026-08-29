@@ -46,6 +46,9 @@ const agent = new Agent({
   instructions: "Answer clearly and concisely.",
 });
 
+// The model-specific union is inferred: none | low | medium | high | xhigh | max.
+await agent.generate({ prompt: "Solve this.", controls: { reasoningEffort: "high" } });
+
 const result = await agent.generate({ prompt: "Summarize Anvia in one sentence." });
 if (result.type === "response") console.log(result.output);
 ```
@@ -66,6 +69,10 @@ const model = client.completionModel({ modelId: "openai/gpt-5.2", api: "chat" })
 ```
 
 The same client can create both `{ api: "responses" }` and `{ api: "chat" }` handles.
+Known reasoning models advertise a typed `reasoningEffort` control. For custom OpenAI-compatible
+model IDs, pass an explicit `controls` descriptor to `completionModel()` when the endpoint supports
+the same parameter. Canonical controls map to `reasoning.effort` for Responses and
+`reasoning_effort` for Chat Completions, taking precedence over conflicting `providerOptions`.
 
 ### Reasoning tool-call providers
 

@@ -4,6 +4,7 @@ import {
   assertCompletionRequestSupported,
   type CompletionFinishReason,
   type CompletionModelCapabilities,
+  type CompletionModelControls,
   type CompletionModelInfo,
   type CompletionModelStreamEvent,
   CompletionProviderOutputError,
@@ -46,7 +47,9 @@ import type { OpenAICompletionModelId } from "./models";
 type ResponsesCreateParams = Record<string, unknown>;
 type ResponsesInputItem = Record<string, unknown>;
 
-export class OpenAIResponsesCompletionModel implements StreamingCompletionModel<unknown> {
+export class OpenAIResponsesCompletionModel<
+  Controls extends CompletionModelControls = CompletionModelControls,
+> implements StreamingCompletionModel<unknown, Controls> {
   readonly provider = "openai";
   readonly capabilities: CompletionModelCapabilities = {
     streaming: true,
@@ -63,6 +66,7 @@ export class OpenAIResponsesCompletionModel implements StreamingCompletionModel<
     private readonly client: OpenAI,
     readonly modelId: OpenAICompletionModelId,
     readonly contextLimits?: ModelContextLimits,
+    readonly controls?: Controls,
   ) {}
 
   private modelInfo(): CompletionModelInfo | undefined {
@@ -133,11 +137,18 @@ export function toOpenAIResponsesParams(
     throw new TypeError("OpenAI Responses providerOptions must be a JSON object.");
   }
   const providerOptions = request.providerOptions ?? {};
+  const reasoning = isPlainObject(providerOptions.reasoning)
+    ? { ...providerOptions.reasoning }
+    : undefined;
+  const reasoningEffort = request.controls?.reasoningEffort;
   const params: ResponsesCreateParams = {
     ...providerOptions,
     model: modelId,
     input: requestMessages(request).flatMap(messageToResponsesInput),
   };
+  if (reasoningEffort !== undefined) {
+    params.reasoning = { ...reasoning, effort: reasoningEffort };
+  }
 
   delete params.tools;
 

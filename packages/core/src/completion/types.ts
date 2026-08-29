@@ -570,6 +570,7 @@ export type CompletionRequest = {
   temperature?: number;
   maxTokens?: number;
   toolChoice?: ToolChoice;
+  controls?: Readonly<Record<string, string>>;
   providerOptions?: JsonObject;
   outputSchema?: JsonObject;
 };
@@ -623,11 +624,40 @@ export type CompletionModelCapabilities = {
   providerTools?: boolean;
 };
 
-export interface CompletionModel<RawResponse = unknown> {
+export type CompletionModelSelectControl<Option extends string = string> = Readonly<{
+  type: "select";
+  label: string;
+  options: readonly Option[];
+  description?: string | undefined;
+  defaultValue?: Option | undefined;
+}>;
+
+export type CompletionModelControls = Readonly<
+  Record<string, CompletionModelSelectControl<string>>
+>;
+
+export type NoCompletionModelControls = Readonly<Record<string, never>>;
+
+export type CompletionControlValues<Controls extends CompletionModelControls> = Readonly<
+  Partial<{
+    [Key in keyof Controls]: Controls[Key] extends CompletionModelSelectControl<infer Option>
+      ? Option
+      : never;
+  }>
+>;
+
+export type CompletionModelControlsOf<Model> =
+  Model extends CompletionModel<unknown, infer Controls> ? Controls : CompletionModelControls;
+
+export interface CompletionModel<
+  RawResponse = unknown,
+  Controls extends CompletionModelControls = CompletionModelControls,
+> {
   readonly provider: string;
   readonly modelId: string;
   readonly contextLimits?: ModelContextLimits | undefined;
   readonly capabilities: CompletionModelCapabilities;
+  readonly controls?: Controls | undefined;
   traceRequest?(
     request: CompletionRequest,
     options?: { stream?: boolean | undefined },
@@ -704,7 +734,8 @@ export type CompletionStreamEvent<Output = string, RawResponse = unknown> =
 
 export interface StreamingCompletionModel<
   RawResponse = unknown,
-> extends CompletionModel<RawResponse> {
+  Controls extends CompletionModelControls = CompletionModelControls,
+> extends CompletionModel<RawResponse, Controls> {
   streamCompletion(
     request: CompletionRequest,
     options?: ModelCallOptions,
@@ -725,6 +756,8 @@ export function assertCompletionRequestSupported(
 ): void {
   const modelLabel = `${model.provider}:${model.modelId}`;
   const capabilities = model.capabilities;
+
+  assertCompletionControlsSupported(model, request.controls);
 
   if (options.streaming === true && !capabilities.streaming) {
     throw new CompletionCapabilityError(`${modelLabel} does not support streaming completions.`);
@@ -752,6 +785,27 @@ export function assertCompletionRequestSupported(
 
   if (!capabilities.documentInput && requestHasFileDocumentInput(request)) {
     throw new CompletionCapabilityError(`${modelLabel} does not support document file input.`);
+  }
+}
+
+export function assertCompletionControlsSupported(
+  model: CompletionModel,
+  controls: Readonly<Record<string, string | undefined>> | undefined,
+): void {
+  const modelLabel = `${model.provider}:${model.modelId}`;
+  for (const [controlId, value] of Object.entries(controls ?? {})) {
+    if (value === undefined) continue;
+    const control = model.controls?.[controlId];
+    if (control === undefined) {
+      throw new CompletionCapabilityError(
+        `${modelLabel} does not support completion control "${controlId}".`,
+      );
+    }
+    if (!control.options.includes(value)) {
+      throw new CompletionCapabilityError(
+        `${modelLabel} completion control "${controlId}" does not support value "${value}".`,
+      );
+    }
   }
 }
 

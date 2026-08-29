@@ -116,6 +116,7 @@ export function generationStartAttributes(
       "input",
       options,
     ),
+    "anvia.generation.controls": fullCapture(args.request.controls, "input", options),
     "anvia.generation.provider_request": fullCapture(args.providerRequest, "input", options),
     ...params,
   });
@@ -224,6 +225,7 @@ function modelParameters(
   return {
     "anvia.generation.temperature": request.temperature,
     "anvia.generation.max_tokens": request.maxTokens,
+    "anvia.generation.reasoning_effort": request.controls?.reasoningEffort,
     "anvia.generation.tool_choice":
       request.toolChoice === undefined
         ? undefined

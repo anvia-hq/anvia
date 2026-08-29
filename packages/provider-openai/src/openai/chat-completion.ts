@@ -4,6 +4,7 @@ import {
   assertCompletionRequestSupported,
   type CompletionFinishReason,
   type CompletionModelCapabilities,
+  type CompletionModelControls,
   type CompletionModelInfo,
   type CompletionModelStreamEvent,
   CompletionProviderOutputError,
@@ -55,7 +56,9 @@ type StreamedChatToolCall = {
   argumentsText: string;
 };
 
-export class OpenAIChatCompletionModel implements StreamingCompletionModel<unknown> {
+export class OpenAIChatCompletionModel<
+  Controls extends CompletionModelControls = CompletionModelControls,
+> implements StreamingCompletionModel<unknown, Controls> {
   readonly provider = "openai";
   readonly capabilities: CompletionModelCapabilities = {
     streaming: true,
@@ -71,6 +74,7 @@ export class OpenAIChatCompletionModel implements StreamingCompletionModel<unkno
     private readonly client: OpenAI,
     readonly modelId: OpenAICompletionModelId,
     readonly contextLimits?: ModelContextLimits,
+    readonly controls?: Controls,
   ) {}
 
   private modelInfo(): CompletionModelInfo | undefined {
@@ -154,6 +158,9 @@ export function toOpenAIChatCompletionParams(
     model: modelId,
     messages: requestMessages(request).flatMap(messageToChatMessages),
   };
+  if (request.controls?.reasoningEffort !== undefined) {
+    params.reasoning_effort = request.controls.reasoningEffort;
+  }
 
   delete params.tools;
 

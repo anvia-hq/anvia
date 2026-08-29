@@ -67,6 +67,7 @@ export function resolveAgentOptions<Output, M extends CompletionModel, ContextDo
     temperature: options.temperature,
     maxTokens: options.maxTokens,
     providerOptions: options.providerOptions,
+    controls: options.controls,
     retries: options.retries,
     tools: [...toolsByName.values()],
     mcpServers: [...(options.mcpServers ?? [])],

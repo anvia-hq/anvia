@@ -1,4 +1,5 @@
 import type {
+  CompletionModelControls,
   CompletionModelCapabilities,
   CompletionModelStreamEvent,
   CompletionRequest,
@@ -12,21 +13,25 @@ import { OpenAIClient } from "@anvia/openai";
 import type { OpenAI } from "openai";
 import type { GrokCompletionModelId } from "./models";
 
-export class GrokCompletionModel implements StreamingCompletionModel<unknown> {
+export class GrokCompletionModel<
+  Controls extends CompletionModelControls = CompletionModelControls,
+> implements StreamingCompletionModel<unknown, Controls> {
   readonly provider = "grok";
   readonly capabilities: CompletionModelCapabilities;
-  private readonly delegate: StreamingCompletionModel<unknown>;
+  private readonly delegate: StreamingCompletionModel<unknown, Controls>;
 
   constructor(
     client: OpenAI,
     readonly modelId: GrokCompletionModelId,
     api: "responses" | "chat",
     readonly contextLimits?: ModelContextLimits,
+    readonly controls?: Controls,
   ) {
     this.delegate = new OpenAIClient({ client }).completionModel({
       modelId,
       api,
       contextLimits,
+      controls,
     });
     this.capabilities = { ...this.delegate.capabilities };
     if (api === "responses") this.capabilities = { ...this.capabilities, providerTools: true };

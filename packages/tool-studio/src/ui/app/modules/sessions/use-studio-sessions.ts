@@ -6,7 +6,7 @@ import type {
   StudioTraceSummary,
 } from "../../../../types";
 import { responseErrorMessage } from "../../app-errors";
-import { studioModelMetadataKey } from "../../app-helpers";
+import { studioControlsMetadataKey, studioModelMetadataKey } from "../../app-helpers";
 import { errorMessage } from "../shared/format";
 import type { ActivePage, RunState, SessionLoadState } from "../shared/types";
 
@@ -17,6 +17,7 @@ export function useStudioSessions(props: {
   loadSessionTraceSummaries: (sessionId: string) => Promise<StudioTraceSummary[]>;
   runState: RunState;
   selectedModelRef: string;
+  selectedControls: Record<string, string>;
   onError: (message: string) => void;
   onSessionCreated: (sessionId: string) => void;
   onSessionDeleted: (sessionId: string, wasSelected: boolean) => void;
@@ -33,6 +34,7 @@ export function useStudioSessions(props: {
     loadSessionTraceSummaries,
     runState,
     selectedModelRef,
+    selectedControls,
     onError,
     onSessionCreated,
     onSessionDeleted,
@@ -101,8 +103,9 @@ export function useStudioSessions(props: {
       title: string,
       options: { updatePath?: boolean } = {},
     ): Promise<StudioSessionSummary> => {
-      const metadata: Record<string, string> = { source: "anvia-studio" };
+      const metadata: Record<string, unknown> = { source: "anvia-studio" };
       if (selectedModelRef.length > 0) metadata[studioModelMetadataKey] = selectedModelRef;
+      metadata[studioControlsMetadataKey] = selectedControls;
       const response = await fetch("/sessions", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -124,7 +127,7 @@ export function useStudioSessions(props: {
       await loadSessionLogs(session.id);
       return session;
     },
-    [currentAgentId, loadSessionLogs, onSessionCreated, selectedModelRef],
+    [currentAgentId, loadSessionLogs, onSessionCreated, selectedControls, selectedModelRef],
   );
 
   const loadSession = useCallback(

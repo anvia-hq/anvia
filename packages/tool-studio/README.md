@@ -120,15 +120,21 @@ new Studio([agent], {
 }).start();
 ```
 
-The playground message composer shows the allowed models for the selected agent. API callers can
-also select a model per run:
+The playground message composer shows the allowed models for the selected agent. It also renders
+generic selectors for controls advertised by each completion model and restores explicit choices
+from session metadata. “Default” omits the control, preserving Agent and provider defaults. API
+callers can select a model and controls per run:
 
 ```json
 {
+  "type": "messages",
   "messages": [{ "role": "user", "content": "Summarize this ticket" }],
   "model": {
     "providerId": "anthropic",
     "modelId": "claude-sonnet-4-20250514"
+  },
+  "controls": {
+    "reasoningEffort": "high"
   },
   "stream": true
 }

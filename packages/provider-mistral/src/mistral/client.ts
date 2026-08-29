@@ -1,5 +1,6 @@
 import {
   type ModelContextLimits,
+  type NoCompletionModelControls,
   resolveModelContextLimits,
   type StreamingCompletionModel,
 } from "@anvia/core/completion";
@@ -36,7 +37,10 @@ export type MistralCompletionModelOptions = {
 };
 
 export type MistralOcrModelOptions = { modelId: MistralOcrModelId };
-export type MistralCompletionModelHandle = StreamingCompletionModel<unknown>;
+export type MistralCompletionModelHandle = StreamingCompletionModel<
+  unknown,
+  NoCompletionModelControls
+>;
 export type MistralEmbeddingModelHandle = EmbeddingModel;
 export type MistralOcrModelHandle = Pick<MistralOcrModel, "provider" | "modelId" | "ocr">;
 

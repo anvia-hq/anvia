@@ -1,4 +1,5 @@
 import type {
+  CompletionControlValues,
   CompletionFinishReason,
   CompletionRequest,
   CompletionResponse,
@@ -14,6 +15,7 @@ import type {
   ToolResultOutput,
   Usage,
   UserMessage,
+  CompletionModelControls,
 } from "../completion/index";
 import type { GuardrailDecisionRecord, GuardrailPolicyInput } from "../guardrails";
 import type { MemoryCompactionInfo, MemoryScope } from "../memory";
@@ -60,7 +62,11 @@ export type AgentSteerInput =
   | { prompt: AgentPrompt; messages?: never }
   | { messages: readonly UserMessage[]; prompt?: never };
 
-export type AgentRunSettings<Output = string, RawResponse = unknown> = {
+export type AgentRunSettings<
+  Output = string,
+  RawResponse = unknown,
+  Controls extends CompletionModelControls = CompletionModelControls,
+> = {
   maxTurns?: number | undefined;
   retries?: RetrySetting | undefined;
   abortSignal?: AbortSignal | undefined;
@@ -69,10 +75,14 @@ export type AgentRunSettings<Output = string, RawResponse = unknown> = {
   toolConcurrency?: number | undefined;
   middlewares?: readonly AgentMiddleware[] | undefined;
   trace?: AgentTraceOptions | undefined;
+  controls?: CompletionControlValues<Controls> | undefined;
 };
 
-export type AgentRunOptions<Output = string, RawResponse = unknown> = AgentInput &
-  AgentRunSettings<Output, RawResponse>;
+export type AgentRunOptions<
+  Output = string,
+  RawResponse = unknown,
+  Controls extends CompletionModelControls = CompletionModelControls,
+> = AgentInput & AgentRunSettings<Output, RawResponse, Controls>;
 
 export type AgentMemoryCompactionOptions = {
   session: MemoryScope;

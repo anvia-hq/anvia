@@ -11,6 +11,7 @@ import type {
 import type { TranscriptEntry } from "./modules/shared/types";
 
 export const studioModelMetadataKey = "studioModel";
+export const studioControlsMetadataKey = "studioControls";
 export const supportedAttachmentTypes = ".png,.jpg,.jpeg,.webp,.gif,.pdf,.txt,.md,.csv,.json";
 
 export type PromptAttachment = {
@@ -103,6 +104,16 @@ export function enrichTranscriptWithTraceIds(
 export function sessionModelRef(session: StudioSession): string {
   const value = session.metadata?.[studioModelMetadataKey];
   return typeof value === "string" ? value : "";
+}
+
+export function sessionControls(session: StudioSession): Record<string, string> {
+  const value = session.metadata?.[studioControlsMetadataKey];
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value).filter(
+      (entry): entry is [string, string] => typeof entry[1] === "string",
+    ),
+  );
 }
 
 export function modelRefAvailable(models: StudioModelSummary[], ref: string): boolean {

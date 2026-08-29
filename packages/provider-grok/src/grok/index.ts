@@ -1,4 +1,10 @@
 export {
+  GROK_REASONING_EFFORTS,
+  type GrokControlsFor,
+  type GrokReasoningControls,
+  type GrokReasoningEffort,
+} from "./controls";
+export {
   GrokClient,
   type GrokClientOptions,
   type GrokCompletionModelHandle,

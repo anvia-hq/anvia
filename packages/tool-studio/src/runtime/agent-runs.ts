@@ -1,5 +1,10 @@
 import type { AgentOutcome, AgentRunSettings, AgentStream } from "@anvia/core/agent";
-import type { Message as CoreMessage, JsonObject, UserMessage } from "@anvia/core/completion";
+import type {
+  CompletionModel,
+  Message as CoreMessage,
+  JsonObject,
+  UserMessage,
+} from "@anvia/core/completion";
 import {
   type Agent,
   type InternalAgentRunOptions,
@@ -22,6 +27,8 @@ import {
   type createStudioModelRegistry,
   ModelSelectionError,
   resolveStudioModel,
+  sessionControlValues,
+  STUDIO_CONTROLS_METADATA_KEY,
   STUDIO_MODEL_METADATA_KEY,
   sessionModelRef,
 } from "./models";
@@ -188,34 +195,43 @@ async function prepareAgentRun(
     return session;
   }
 
-  const selectedModel = selectRunModel(c, props, agent, body, session);
+  const persistedControls = sessionControlValues(session?.metadata);
+  const runBody =
+    body.controls === undefined && persistedControls !== undefined
+      ? { ...body, controls: persistedControls }
+      : body;
+  const selectedModel = selectRunModel(c, props, agent, runBody, session);
   if (selectedModel instanceof Response) {
     return selectedModel;
   }
   const runAgent =
     selectedModel.model === undefined
       ? agent.agent
-      : cloneAgent(agent.agent, { model: selectedModel.model });
+      : cloneAgent(agent.agent, {
+          model: selectedModel.model,
+          controls: compatibleAgentControls(agent.agent.controls, selectedModel.model),
+        });
   const runId = globalThis.crypto.randomUUID();
   const runStartedAt = Date.now();
 
   await recordRunReceived({
     agentId,
-    body,
+    body: runBody,
     runId,
     selectedModel,
     session,
     store: props.stores.sessions,
   });
   await recordSelectedModelWarnings({
+    body: runBody,
     runId,
     selectedModel,
     session,
     store: props.stores.sessions,
   });
 
-  const memoryMetadata = runMemoryMetadata(agentId, body, selectedModel, runId);
-  const promptMessage = body.messages.at(-1) as UserMessage;
+  const memoryMetadata = runMemoryMetadata(agentId, runBody, selectedModel, runId);
+  const promptMessage = runBody.messages.at(-1) as UserMessage;
   const sessionStore = props.stores.sessions;
   const shouldPersistSessionMessages =
     session !== undefined &&
@@ -232,7 +248,7 @@ async function prepareAgentRun(
 
   const execution = createRunExecution({
     agentId,
-    body,
+    body: runBody,
     memoryMetadata,
     promptMessage,
     runAgent,
@@ -242,12 +258,12 @@ async function prepareAgentRun(
   return {
     agentId,
     agent,
-    body,
+    body: runBody,
     memoryMetadata,
     execution,
     failureMessages: undefined,
     memoryCompactionLogged: false,
-    options: createRunOptions(body, agentId, session, abortSignal),
+    options: createRunOptions(runBody, agentId, session, abortSignal),
     runAgent,
     runId,
     runStartedAt,
@@ -257,6 +273,20 @@ async function prepareAgentRun(
     sessionStore,
     shouldPersistSessionMessages,
   };
+}
+
+function compatibleAgentControls(
+  controls: Readonly<Record<string, string | undefined>> | undefined,
+  model: CompletionModel,
+): Readonly<Record<string, string>> | undefined {
+  const compatible = Object.fromEntries(
+    Object.entries(controls ?? {}).filter(
+      (entry): entry is [string, string] =>
+        typeof entry[1] === "string" &&
+        model.controls?.[entry[0]]?.options.includes(entry[1]) === true,
+    ),
+  );
+  return Object.keys(compatible).length === 0 ? undefined : compatible;
 }
 
 async function resolveRunSession(
@@ -325,11 +355,18 @@ async function recordRunReceived(props: {
   if (props.body.toolConcurrency !== undefined) {
     input.toolConcurrency = props.body.toolConcurrency;
   }
-  if (props.body.metadata !== undefined || props.selectedModel.ref !== undefined) {
+  if (
+    props.body.metadata !== undefined ||
+    props.selectedModel.ref !== undefined ||
+    props.body.controls !== undefined
+  ) {
     const metadata: JsonObject = {};
     Object.assign(metadata, props.body.metadata);
     if (props.selectedModel.ref !== undefined) {
       metadata[STUDIO_MODEL_METADATA_KEY] = props.selectedModel.ref;
+    }
+    if (props.body.controls !== undefined) {
+      metadata[STUDIO_CONTROLS_METADATA_KEY] = props.body.controls;
     }
     input.metadata = metadata;
   }
@@ -337,6 +374,7 @@ async function recordRunReceived(props: {
 }
 
 async function recordSelectedModelWarnings(props: {
+  body: Extract<AgentRunRequest, { type: "messages" }>;
   runId: string;
   selectedModel: SelectedModel;
   session: StudioSession | undefined;
@@ -357,10 +395,16 @@ async function recordSelectedModelWarnings(props: {
       metadata: warning,
     });
   }
-  if (sessionModelRef(props.session.metadata) !== props.selectedModel.ref) {
+  if (
+    sessionModelRef(props.session.metadata) !== props.selectedModel.ref ||
+    props.body.controls !== undefined
+  ) {
     const metadata: JsonObject = {};
     Object.assign(metadata, props.session.metadata);
     metadata[STUDIO_MODEL_METADATA_KEY] = props.selectedModel.ref;
+    if (props.body.controls !== undefined) {
+      metadata[STUDIO_CONTROLS_METADATA_KEY] = props.body.controls;
+    }
     await props.store?.updateSessionMetadata?.(props.session.id, metadata);
   }
 }
@@ -374,6 +418,7 @@ function runMemoryMetadata(
   const metadata: JsonObject = { agentId };
   Object.assign(metadata, body.metadata);
   if (selectedModel.ref !== undefined) metadata[STUDIO_MODEL_METADATA_KEY] = selectedModel.ref;
+  if (body.controls !== undefined) metadata[STUDIO_CONTROLS_METADATA_KEY] = body.controls;
   metadata.studioRunId = runId;
   return metadata;
 }
@@ -423,6 +468,7 @@ function createRunOptions(
   if (body.type === "messages" && body.toolConcurrency !== undefined) {
     options.toolConcurrency = body.toolConcurrency;
   }
+  if (body.type === "messages" && body.controls !== undefined) options.controls = body.controls;
   if (body.trace !== undefined) {
     options.trace = traceForRun(body.trace, agentId, session);
   } else if (session !== undefined) {

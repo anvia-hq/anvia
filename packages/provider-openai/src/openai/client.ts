@@ -1,4 +1,6 @@
 import {
+  type CompletionModelControls,
+  defineCompletionModelControls,
   type ModelContextLimits,
   resolveModelContextLimits,
   type StreamingCompletionModel,
@@ -14,6 +16,7 @@ import type { SpeechGenerationModel } from "@anvia/core/speech-generation";
 import type { TranscriptionModel } from "@anvia/core/transcription";
 import OpenAI from "openai";
 import { OpenAIChatCompletionModel } from "./chat-completion";
+import { type OpenAIControlsFor, openAIControlsForModel } from "./controls";
 import { OpenAIEmbeddingModel, type OpenAIEmbeddingModelOptions } from "./embedding";
 import { OpenAIImageGenerationModel } from "./image-generation";
 import type {
@@ -43,17 +46,23 @@ type OpenAIInjectedClientOptions = {
 
 export type OpenAIClientOptions = OpenAIManagedClientOptions | OpenAIInjectedClientOptions;
 
-export type OpenAICompletionModelOptions = {
-  modelId: OpenAICompletionModelId;
+export type OpenAICompletionModelOptions<
+  ModelId extends OpenAICompletionModelId = OpenAICompletionModelId,
+  Controls extends CompletionModelControls = OpenAIControlsFor<ModelId>,
+> = {
+  modelId: ModelId;
   api: "responses" | "chat";
   contextLimits?: ModelContextLimits | undefined;
+  controls?: Controls | undefined;
 };
 
 export type OpenAIImageGenerationModelOptions = { modelId: OpenAIImageGenerationModelId };
 export type OpenAISpeechGenerationModelOptions = { modelId: OpenAISpeechGenerationModelId };
 export type OpenAITranscriptionModelOptions = { modelId: OpenAITranscriptionModelId };
 
-export type OpenAICompletionModel = StreamingCompletionModel<unknown>;
+export type OpenAICompletionModel<
+  Controls extends CompletionModelControls = CompletionModelControls,
+> = StreamingCompletionModel<unknown, Controls>;
 export type OpenAIEmbeddingModelHandle = EmbeddingModel;
 export type OpenAIImageGenerationModelHandle = ImageGenerationModel<unknown>;
 export type OpenAISpeechGenerationModelHandle = SpeechGenerationModel<unknown>;
@@ -76,16 +85,24 @@ export class OpenAIClient implements ModelListingClient {
     });
   }
 
-  completionModel(options: OpenAICompletionModelOptions): OpenAICompletionModel {
+  completionModel<
+    const ModelId extends OpenAICompletionModelId,
+    const Controls extends CompletionModelControls = OpenAIControlsFor<ModelId>,
+  >(options: OpenAICompletionModelOptions<ModelId, Controls>): OpenAICompletionModel<Controls> {
     const modelId = requireModelId(options.modelId);
+    const controls = (
+      options.controls === undefined
+        ? openAIControlsForModel(modelId)
+        : defineCompletionModelControls(options.controls)
+    ) as Controls | undefined;
     const contextLimits = resolveModelContextLimits(
       modelId,
       OPENAI_COMPLETION_MODEL_CONTEXT_LIMITS,
       options.contextLimits,
     );
     return options.api === "chat"
-      ? new OpenAIChatCompletionModel(this.sdk, modelId, contextLimits)
-      : new OpenAIResponsesCompletionModel(this.sdk, modelId, contextLimits);
+      ? new OpenAIChatCompletionModel(this.sdk, modelId, contextLimits, controls)
+      : new OpenAIResponsesCompletionModel(this.sdk, modelId, contextLimits, controls);
   }
 
   embeddingModel(options: OpenAIEmbeddingModelOptions): OpenAIEmbeddingModelHandle {

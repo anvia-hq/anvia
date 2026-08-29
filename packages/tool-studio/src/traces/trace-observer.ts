@@ -552,6 +552,8 @@ function generationMetadata(
     historyCount: request.chatHistory.length,
     temperature: request.temperature,
     maxTokens: request.maxTokens,
+    controls: request.controls,
+    reasoningEffort: request.controls?.reasoningEffort,
     toolChoice: request.toolChoice,
     providerOptionKeys: isRecord(request.providerOptions)
       ? Object.keys(request.providerOptions).sort()
@@ -596,6 +598,8 @@ function completionRequestSummary(request: AgentGenerationStartArgs["request"]):
     toolNames: request.tools.map((tool) => tool.name),
     temperature: request.temperature,
     maxTokens: request.maxTokens,
+    controls: request.controls,
+    reasoningEffort: request.controls?.reasoningEffort,
     toolChoice: request.toolChoice,
     providerOptionKeys: isRecord(request.providerOptions)
       ? Object.keys(request.providerOptions).sort()

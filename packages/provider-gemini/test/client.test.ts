@@ -26,6 +26,18 @@ describe("GeminiClient", () => {
       client.completionModel({ modelId: "gemini-2.5-flash" }).modelId,
     ).toEqualTypeOf<string>();
     expectTypeOf("gemini-2.5-flash").toMatchTypeOf<GeminiCompletionModelId>();
+    const reasoningModel = client.completionModel({ modelId: "gemini-3.1-pro-preview" });
+    expectTypeOf(reasoningModel.controls!.reasoningEffort.options).items.toEqualTypeOf<
+      "low" | "medium" | "high"
+    >();
+    const flash37 = client.completionModel({ modelId: "gemini-3.7-flash" });
+    expectTypeOf(flash37.controls!.reasoningEffort.options).items.toEqualTypeOf<
+      "low" | "medium" | "high"
+    >();
+    const liteImage = client.completionModel({ modelId: "gemini-3.1-flash-lite-image" });
+    expectTypeOf(liteImage.controls!.reasoningEffort.options).items.toEqualTypeOf<
+      "minimal" | "high"
+    >();
     client.completionModel({ modelId: "custom-gemini-model" });
 
     client.embeddingModel({ modelId: "gemini-embedding-001" });

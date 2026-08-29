@@ -34,6 +34,8 @@ import { getAgentToolState } from "../../agent/tool-state";
 import { isStreamingCompletionModel } from "../../completion/generate-completion";
 import {
   assertCompletionRequestSupported,
+  type CompletionModelControls,
+  type CompletionModelControlsOf,
   type CompletionFinishReason,
   type CompletionModel,
   type CompletionRequest,
@@ -43,6 +45,7 @@ import {
   isJsonValue,
   type JsonObject,
   type Message as MessageType,
+  mergeCompletionControlValues,
   type ProviderToolCall,
   parseMessage,
   parseMessages,
@@ -129,7 +132,11 @@ import {
   type ToolResultEventPayload,
 } from "./tool-execution";
 
-type AgentRunCreateOptions<Output, RawResponse> = AgentRunSettings<Output, RawResponse> & {
+type AgentRunCreateOptions<
+  Output,
+  RawResponse,
+  Controls extends CompletionModelControls,
+> = AgentRunSettings<Output, RawResponse, Controls> & {
   memoryScope?: MemoryScope | undefined;
   continuationState?: AgentContinuationState | undefined;
   interactionResponse?: AgentInteractionResponse | undefined;
@@ -178,6 +185,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
   private traceOptions: AgentTraceOptions | undefined;
   private completionRetryOptions: ResolvedRetryOptions | undefined;
   private readonly requestMiddlewares: AgentMiddleware[];
+  private readonly controls: Readonly<Record<string, string>> | undefined;
   private readonly steeringMessages: QueuedSteering[] = [];
   private runState: "idle" | "running" | "closing" | "completed" | "errored" | "cancelled" = "idle";
   private readonly memoryRecorder: AgentRunMemory;
@@ -201,7 +209,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     private readonly agent: Agent<Output, M>,
     private promptMessage: MessageType,
     initialHistory: MessageType[] = [],
-    options: AgentRunCreateOptions<Output, RawResponseOf<M>> = {},
+    options: AgentRunCreateOptions<Output, RawResponseOf<M>, CompletionModelControlsOf<M>> = {},
   ) {
     this.chatHistory = initialHistory;
     this.maxTurnCount = assertNonnegativeSafeInteger(
@@ -238,6 +246,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         ? undefined
         : resolveRetryOptions(retrySetting);
     this.requestMiddlewares = [...(options.middlewares ?? [])];
+    this.controls = mergeCompletionControlValues(agent.controls, options.controls);
     this.memoryScope = options.memoryScope;
     this.memoryRecorder = new AgentRunMemory(agent, options.memoryScope, initialHistory);
     this.continuationState = options.continuationState;
@@ -259,7 +268,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
 
   static fromAgent<Output, M extends CompletionModel>(
     agent: Agent<Output, M>,
-    options: AgentRunOptions<Output, RawResponseOf<M>>,
+    options: AgentRunOptions<Output, RawResponseOf<M>, CompletionModelControlsOf<M>>,
   ): AgentRun<Output, M> {
     const normalized = normalizeAgentInput(agent.id, options);
     if (normalized.scope !== undefined && agent.memory === undefined) {
@@ -1114,6 +1123,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       maxTokens: this.agent.maxTokens,
       providerOptions: this.agent.providerOptions,
       toolChoice: this.agent.toolChoice,
+      controls: this.controls,
       outputSchema: getAgentProviderOutputSchema(this.agent),
     });
     return this.runCompletionRequestMiddlewares(request, turn);

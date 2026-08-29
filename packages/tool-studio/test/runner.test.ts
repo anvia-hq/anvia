@@ -9,6 +9,7 @@ import {
   type ModelCallOptions,
   type CompletionRequest,
   type CompletionResponse,
+  defineCompletionModelControls,
   type Message as CoreMessage,
   type JsonObject,
   type ProviderTool,
@@ -88,6 +89,17 @@ class QueueModel {
     }
     return response;
   }
+}
+
+class ControlledQueueModel extends QueueModel {
+  readonly controls = defineCompletionModelControls({
+    reasoningEffort: {
+      type: "select",
+      label: "Reasoning effort",
+      options: ["low", "high"] as const,
+      defaultValue: "high",
+    },
+  });
 }
 
 class AbortableModel extends QueueModel {
@@ -662,11 +674,12 @@ describe("Anvia studio", () => {
     });
   });
 
-  it("uses the selected provider model for runs and persists the session default", async () => {
+  it("restores persisted controls and clears an explicit control with Default", async () => {
     const baseModel = new QueueModel([]);
-    const selectedModel = new QueueModel([
+    const selectedModel = new ControlledQueueModel([
       response([AssistantContent.text("First answer")]),
       response([AssistantContent.text("Second answer")]),
+      response([AssistantContent.text("Third answer")]),
     ]);
     const agent = new Agent({ id: "support", model: baseModel });
     const runner = new Studio([agent], {
@@ -707,6 +720,7 @@ describe("Anvia studio", () => {
           sessionId: session.id,
           messages: [Message.user("first")],
           model: { providerId: "test", modelId: "secondary" },
+          controls: { reasoningEffort: "low" },
         }),
       }),
     );
@@ -723,15 +737,146 @@ describe("Anvia studio", () => {
       }),
     );
     expect(secondRun.status).toBe(200);
+
+    const thirdRun = await runner.fetch(
+      new Request("http://runner.test/agents/support/runs", {
+        method: "POST",
+        body: JSON.stringify({
+          type: "messages",
+          sessionId: session.id,
+          messages: [Message.user("third")],
+          controls: {},
+        }),
+      }),
+    );
+    expect(thirdRun.status).toBe(200);
     expect(baseModel.requests).toHaveLength(0);
-    expect(selectedModel.requests).toHaveLength(2);
+    expect(selectedModel.requests).toHaveLength(3);
+    expect(selectedModel.requests[0]?.controls).toEqual({ reasoningEffort: "low" });
+    expect(selectedModel.requests[1]?.controls).toEqual({ reasoningEffort: "low" });
+    expect(selectedModel.requests[2]?.controls).toBeUndefined();
 
     const loaded = await runner.fetch(new Request(`http://runner.test/sessions/${session.id}`));
     await expect(loaded.json()).resolves.toMatchObject({
       metadata: {
         studioModel: "test:secondary",
+        studioControls: {},
       },
     });
+  });
+
+  it("drops incompatible Agent control defaults when Studio switches models", async () => {
+    const baseModel = new ControlledQueueModel([]);
+    const selectedModel = new QueueModel([response([AssistantContent.text("answer")])]);
+    const runner = new Studio(
+      [
+        new Agent({
+          id: "support",
+          model: baseModel,
+          controls: { reasoningEffort: "high" },
+        }),
+      ],
+      {
+        models: {
+          providers: [
+            {
+              id: "test",
+              models: [{ id: "plain" }],
+              createCompletionModel: () => selectedModel,
+            },
+          ],
+        },
+      },
+    );
+
+    const run = await runner.fetch(
+      new Request("http://runner.test/agents/support/runs", {
+        method: "POST",
+        body: JSON.stringify({
+          type: "messages",
+          messages: [Message.user("hello")],
+          model: { providerId: "test", modelId: "plain" },
+        }),
+      }),
+    );
+
+    expect(run.status).toBe(200);
+    expect(selectedModel.requests[0]?.controls).toBeUndefined();
+  });
+
+  it("reports compatible Agent defaults in the agent model catalog", async () => {
+    const model = new ControlledQueueModel([]);
+    const runner = new Studio(
+      [
+        new Agent({
+          id: "support",
+          model,
+          controls: { reasoningEffort: "low" },
+        }),
+      ],
+      {
+        models: {
+          providers: [
+            {
+              id: "test",
+              models: [{ id: "controlled" }],
+              createCompletionModel: () => model,
+            },
+          ],
+        },
+      },
+    );
+
+    const response = await runner.fetch(new Request("http://runner.test/agents/support/models"));
+
+    await expect(response.json()).resolves.toMatchObject({
+      models: [
+        {
+          controls: {
+            reasoningEffort: { options: ["low", "high"], defaultValue: "low" },
+          },
+        },
+      ],
+    });
+  });
+
+  it("rejects invalid model controls before starting a Studio run", async () => {
+    const selectedModel = new ControlledQueueModel([]);
+    const runner = new Studio([new Agent({ id: "support", model: new QueueModel([]) })], {
+      models: {
+        providers: [
+          {
+            id: "test",
+            models: [{ id: "controlled" }],
+            createCompletionModel: () => selectedModel,
+          },
+        ],
+      },
+    });
+
+    const models = await runner.fetch(new Request("http://runner.test/agents/support/models"));
+    await expect(models.json()).resolves.toMatchObject({
+      models: [
+        {
+          ref: "test:controlled",
+          controls: { reasoningEffort: { options: ["low", "high"], defaultValue: "high" } },
+        },
+      ],
+    });
+
+    const run = await runner.fetch(
+      new Request("http://runner.test/agents/support/runs", {
+        method: "POST",
+        body: JSON.stringify({
+          type: "messages",
+          messages: [Message.user("hello")],
+          model: { providerId: "test", modelId: "controlled" },
+          controls: { reasoningEffort: "medium" },
+        }),
+      }),
+    );
+    expect(run.status).toBe(400);
+    expect(selectedModel.requests).toHaveLength(0);
   });
 
   it("rejects models outside the agent policy", async () => {

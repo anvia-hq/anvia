@@ -24,6 +24,9 @@ export function modelParameters(
   const params: Record<string, string | number> = {};
   if (request.temperature !== undefined) params.temperature = request.temperature;
   if (request.maxTokens !== undefined) params.maxTokens = request.maxTokens;
+  if (request.controls?.reasoningEffort !== undefined) {
+    params.reasoningEffort = request.controls.reasoningEffort;
+  }
   if (request.toolChoice !== undefined) {
     params.toolChoice =
       typeof request.toolChoice === "string" ? request.toolChoice : request.toolChoice.name;

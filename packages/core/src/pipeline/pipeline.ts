@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { Agent } from "../agent/agent";
 import { AgentRunBlockedError } from "../agent/errors";
 import type { AgentInput, AgentRunOptions, AgentRunSettings } from "../agent/run-types";
-import type { CompletionModel, JsonObject } from "../completion";
+import type { CompletionModel, CompletionModelControlsOf, JsonObject } from "../completion";
 import { type ExtractOptions, extract as extractData } from "../extractor";
 import { throwIfAborted } from "../internal/abort";
 import { mapWithConcurrency } from "../internal/concurrency";
@@ -49,7 +49,10 @@ type RawResponseOf<Model> =
   Model extends CompletionModel<infer RawResponse> ? RawResponse : unknown;
 
 type PipelineAgentRequest<Output, Model extends CompletionModel> = AgentInput &
-  Omit<AgentRunSettings<Output, RawResponseOf<Model>>, "abortSignal">;
+  Omit<
+    AgentRunSettings<Output, RawResponseOf<Model>, CompletionModelControlsOf<Model>>,
+    "abortSignal"
+  >;
 
 export type PipelineStepOptions<Input, Output> = PipelineStageMetadata & {
   run(context: PipelineStageContext<Input>): Output | Promise<Output>;
@@ -251,7 +254,7 @@ export class Pipeline<Input, Output = Input> {
             options.agent.observability?.primaryTrace,
           ),
           abortSignal: context.abortSignal,
-        } as AgentRunOptions<AgentOutput, RawResponseOf<Model>>);
+        } as AgentRunOptions<AgentOutput, RawResponseOf<Model>, CompletionModelControlsOf<Model>>);
         if (response.type === "interaction") {
           throw new PipelineAgentSuspensionError(response);
         }

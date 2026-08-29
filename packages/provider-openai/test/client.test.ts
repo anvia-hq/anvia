@@ -29,6 +29,38 @@ describe("OpenAIClient", () => {
       client.completionModel({ modelId: "gpt-5", api: "responses" }).modelId,
     ).toEqualTypeOf<string>();
     expectTypeOf("gpt-5").toMatchTypeOf<OpenAICompletionModelId>();
+    const reasoningModel = client.completionModel({ modelId: "gpt-5.1", api: "responses" });
+    expectTypeOf(reasoningModel.controls!.reasoningEffort.options).items.toEqualTypeOf<
+      "none" | "low" | "medium" | "high"
+    >();
+    const latestReasoningModel = client.completionModel({
+      modelId: "gpt-5.6",
+      api: "responses",
+    });
+    expectTypeOf(latestReasoningModel.controls!.reasoningEffort.options).items.toEqualTypeOf<
+      "none" | "low" | "medium" | "high" | "xhigh" | "max"
+    >();
+    const proReasoningModel = client.completionModel({
+      modelId: "gpt-5.4-pro",
+      api: "responses",
+    });
+    expectTypeOf(proReasoningModel.controls!.reasoningEffort.options).items.toEqualTypeOf<
+      "medium" | "high" | "xhigh"
+    >();
+    const compatibleModel = client.completionModel({
+      modelId: "custom-completion-model",
+      api: "chat",
+      controls: {
+        reasoningEffort: {
+          type: "select",
+          label: "Reasoning effort",
+          options: ["fast", "deep"] as const,
+        },
+      },
+    });
+    expectTypeOf(compatibleModel.controls!.reasoningEffort.options).items.toEqualTypeOf<
+      "fast" | "deep"
+    >();
     client.completionModel({ modelId: "custom-completion-model", api: "chat" });
 
     expectTypeOf(client.embeddingModel({ modelId: "text-embedding-3-small" })).toMatchTypeOf<{

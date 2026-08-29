@@ -423,6 +423,7 @@ describe("otel", () => {
       "anvia.generation.model_id": "test-model",
       "anvia.generation.tool_count": 0,
       "anvia.generation.has_output_schema": false,
+      "anvia.generation.reasoning_effort": "high",
       "anvia.generation.message_id": "msg-1",
       "anvia.generation.output_text": "Done",
       "anvia.generation.first_delta_ms": 12,
@@ -434,6 +435,7 @@ describe("otel", () => {
       instructions: "Answer clearly.",
       messages: [userMessage("hello")],
     });
+    expect(generationSpan?.attributes).not.toHaveProperty("anvia.generation.controls");
     expect(generationSpan?.status).toEqual({ code: SpanStatusCode.OK });
     expect(generationSpan?.ended).toBe(true);
 
@@ -649,6 +651,30 @@ describe("otel", () => {
     expect(JSON.parse(String(tracer.spans[1]?.attributes["anvia.generation.input"]))).toEqual({
       instructions: "<redacted> instructions",
       messages: [userMessage("<redacted> message")],
+    });
+  });
+
+  it("captures the generic control bag only in full capture mode", async () => {
+    const tracer = new FakeTracer();
+    const tracing = createOtelObserver({ tracer: tracer.tracer, captureMode: "full" });
+    const run = await tracing.startRun({
+      runId: "run_1",
+      prompt: userMessage("hello"),
+      history: [],
+      maxTurns: 1,
+    });
+
+    await run?.startGeneration?.({
+      ...generationStartArgs(),
+      request: {
+        ...generationStartArgs().request,
+        controls: { reasoningEffort: "high", responseStyle: "concise" },
+      },
+    });
+
+    expect(JSON.parse(String(tracer.spans[1]?.attributes["anvia.generation.controls"]))).toEqual({
+      reasoningEffort: "high",
+      responseStyle: "concise",
     });
   });
 
@@ -1258,6 +1284,7 @@ function generationStartArgs(): AgentGenerationStartArgs {
       chatHistory: [userMessage("hello")],
       documents: [],
       tools: [],
+      controls: { reasoningEffort: "high" },
       providerOptions: {},
     },
   };

@@ -54,6 +54,7 @@ export function PlaygroundRoute() {
       selectedAgentModels={studio.selectedAgentModels}
       selectedAgentQuickPrompts={studio.selectedAgentQuickPrompts}
       selectedModelRef={studio.selectedModelRef}
+      selectedControls={studio.selectedControls}
       selectedSessionId={studio.sessions.selectedSessionId}
       sessionLogs={studio.sessions.sessionLogs}
       sessionTraceSummaries={studio.sessionTraceSummaries}
@@ -77,6 +78,15 @@ export function PlaygroundRoute() {
       onStopPrompt={studio.stopPrompt}
       onSelectAgent={studio.selectPlaygroundAgent}
       onSelectModel={studio.setSelectedModelRef}
+      onSelectControl={(id, value) =>
+        studio.setSelectedControls(
+          value === undefined
+            ? Object.fromEntries(
+                Object.entries(studio.selectedControls).filter(([key]) => key !== id),
+              )
+            : { ...studio.selectedControls, [id]: value },
+        )
+      }
       onTranscriptScroll={studio.updateTranscriptStickiness}
     />
   );

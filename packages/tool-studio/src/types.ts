@@ -8,6 +8,7 @@ import type { AgentInteractionResponse } from "@anvia/core/agent/interactions";
 import type {
   CompletionModel,
   CompletionModelCapabilities,
+  CompletionModelControls,
   JsonObject,
   JsonValue,
   Message,
@@ -101,6 +102,7 @@ export type StudioModelSummary = StudioModelDefinition & {
   ref: string;
   providerId: string;
   providerName?: string;
+  controls?: CompletionModelControls;
 };
 
 export type StudioModelProviderConfig = {
@@ -1281,6 +1283,7 @@ export type AgentRunRequest =
       maxTurns?: number;
       toolConcurrency?: number;
       model?: StudioModelRef;
+      controls?: Readonly<Record<string, string>>;
       interactionId?: never;
       response?: never;
     })
@@ -1293,6 +1296,7 @@ export type AgentRunRequest =
       maxTurns?: never;
       toolConcurrency?: never;
       model?: never;
+      controls?: never;
     });
 
 export type AgentRunResponse =

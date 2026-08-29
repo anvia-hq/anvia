@@ -33,6 +33,14 @@ describe("Anthropic client", () => {
       anthropic.completionModel({ modelId: "claude-sonnet-4-20250514" }).modelId,
     ).toEqualTypeOf<string>();
     expectTypeOf("claude-sonnet-4-20250514").toMatchTypeOf<AnthropicCompletionModelId>();
+    const reasoningModel = anthropic.completionModel({ modelId: "claude-sonnet-4-6" });
+    expectTypeOf(reasoningModel.controls!.reasoningEffort.options).items.toEqualTypeOf<
+      "low" | "medium" | "high" | "max"
+    >();
+    const mythosPreview = anthropic.completionModel({ modelId: "claude-mythos-preview" });
+    expectTypeOf(mythosPreview.controls!.reasoningEffort.options).items.toEqualTypeOf<
+      "low" | "medium" | "high" | "max"
+    >();
     anthropic.completionModel({ modelId: "custom-messages-model" });
   });
 

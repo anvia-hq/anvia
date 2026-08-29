@@ -22,6 +22,41 @@ import {
 } from "../src/openai/responses";
 
 describe("OpenAI Responses mapping", () => {
+  it("advertises model reasoning efforts and gives canonical controls precedence", () => {
+    const client = new OpenAIClient({ client: {} as never });
+    const model = client.completionModel({
+      modelId: "gpt-5.1",
+      api: "responses",
+    });
+    expect(model.controls?.reasoningEffort.options).toEqual(["none", "low", "medium", "high"]);
+    expect(model.controls?.reasoningEffort.defaultValue).toBe("none");
+    expect(client.completionModel({ modelId: "gpt-5.6", api: "responses" }).controls).toMatchObject(
+      {
+        reasoningEffort: {
+          options: ["none", "low", "medium", "high", "xhigh", "max"],
+          defaultValue: "medium",
+        },
+      },
+    );
+    expect(
+      client.completionModel({ modelId: "gpt-5.4-pro", api: "responses" }).controls,
+    ).toMatchObject({
+      reasoningEffort: {
+        options: ["medium", "high", "xhigh"],
+        defaultValue: "high",
+      },
+    });
+    expect(
+      toOpenAIResponsesParams("gpt-5.1", {
+        chatHistory: [Message.user("hello")],
+        documents: [],
+        tools: [],
+        controls: { reasoningEffort: "high" },
+        providerOptions: { reasoning: { effort: "low", summary: "auto" } },
+      }),
+    ).toMatchObject({ reasoning: { effort: "high", summary: "auto" } });
+  });
+
   it("exposes Responses capability metadata", () => {
     const model = new OpenAIResponsesCompletionModel({} as never, "gpt-test");
 

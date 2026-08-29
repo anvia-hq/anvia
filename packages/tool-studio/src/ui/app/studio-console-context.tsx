@@ -47,6 +47,7 @@ export type StudioConsoleContextValue = {
   selectedAgentModels: StudioModelSummary[];
   selectedAgentQuickPrompts: string[];
   selectedModelRef: string;
+  selectedControls: Record<string, string>;
   sessionTraceSummaries: StudioTraceSummary[];
   sessions: StudioSessionsController;
   sessionsEnabled: boolean;
@@ -70,6 +71,7 @@ export type StudioConsoleContextValue = {
   setError: (message: string) => void;
   setKnowledgeTab: (tab: KnowledgeTab) => void;
   setSelectedModelRef: (modelRef: string) => void;
+  setSelectedControls: (controls: Record<string, string>) => void;
   setStatus: (status: string) => void;
   startNewChat: (options?: { updatePath?: boolean }) => void;
   selectPlaygroundAgent: (agentId: string) => void;

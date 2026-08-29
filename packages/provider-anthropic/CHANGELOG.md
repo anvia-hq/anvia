@@ -1,5 +1,14 @@
 # @anvia/anthropic
 
+## 1.0.9
+
+### Patch Changes
+
+- 68953da: Add typed completion model controls with provider-neutral reasoning effort support, Agent defaults,
+  per-run overrides, Studio selectors and persistence, and normalized observability attributes.
+- Updated dependencies [68953da]
+  - @anvia/core@1.0.9
+
 ## 1.0.8
 
 ### Patch Changes

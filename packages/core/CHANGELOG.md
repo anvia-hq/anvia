@@ -1,5 +1,12 @@
 # @anvia/core
 
+## 1.0.9
+
+### Patch Changes
+
+- 68953da: Add typed completion model controls with provider-neutral reasoning effort support, Agent defaults,
+  per-run overrides, Studio selectors and persistence, and normalized observability attributes.
+
 ## 1.0.8
 
 ### Patch Changes

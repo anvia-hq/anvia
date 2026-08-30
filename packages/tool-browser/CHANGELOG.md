@@ -1,5 +1,11 @@
 # @anvia/browser
 
+## 1.0.11
+
+### Patch Changes
+
+- ba5a6ac: Isolate automation-worker IPC from Node watch dependency messages and preserve bounded protocol and readiness failure diagnostics.
+
 ## 1.0.10
 
 ### Patch Changes

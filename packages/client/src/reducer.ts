@@ -224,7 +224,6 @@ export function applyClientStreamEvent<Metadata extends JsonObject, Data extends
         runId: event.runId,
         status: event.status,
       };
-      if (event.usage !== undefined) generation.usage = event.usage;
       if (event.contextUsage !== undefined) generation.contextUsage = event.contextUsage;
       if (event.trace !== undefined) generation.trace = event.trace;
       if (event.memoryCompaction !== undefined) {

@@ -74,6 +74,95 @@ function CompileToolPartBoundary() {
 void CompileToolPartBoundary;
 
 describe("message boundary", () => {
+  it("hydrates persisted generation usage, context usage, and sources", () => {
+    const usage = {
+      inputTokens: 12,
+      outputTokens: 4,
+      totalTokens: 16,
+      cachedInputTokens: 3,
+      cacheCreationInputTokens: 0,
+    };
+    const contextUsage = {
+      model: { modelId: "test-model", context: { contextWindow: 100 } },
+      usedTokens: 16,
+      remainingTokens: 84,
+      usedPercent: 16,
+      remainingPercent: 84,
+    };
+    const laterUsage = {
+      inputTokens: 20,
+      outputTokens: 5,
+      totalTokens: 25,
+      cachedInputTokens: 4,
+      cacheCreationInputTokens: 1,
+    };
+    const messages: CoreMessage[] = [
+      {
+        role: "assistant",
+        content: [{ type: "text", text: "Hydrated" }],
+        metadata: {
+          anvia: {
+            generation: {
+              provider: "test",
+              modelId: "test-model",
+              usage,
+              contextUsage,
+              sources: [{ type: "url", url: "https://example.test/source" }],
+            },
+          },
+        },
+      },
+      {
+        role: "assistant",
+        content: [{ type: "text", text: "Hydrated again" }],
+        metadata: {
+          anvia: {
+            generation: {
+              provider: "test",
+              modelId: "test-model",
+              usage: laterUsage,
+            },
+          },
+        },
+      },
+    ];
+
+    const ui = messagesToUIMessages(messages);
+
+    expect(ui[0]?.generation).toEqual({ usage, contextUsage });
+    expect(ui[1]?.generation).toEqual({ usage: laterUsage });
+    expect(ui[0]?.parts).toContainEqual(
+      expect.objectContaining({
+        type: "source",
+        source: { type: "url", url: "https://example.test/source" },
+      }),
+    );
+    expect(uiMessagesToMessages(ui)).toEqual(messages);
+  });
+
+  it("preserves malformed generation metadata without projecting it into UI runtime state", () => {
+    const messages = [
+      {
+        role: "assistant",
+        content: [{ type: "text", text: "Legacy" }],
+        metadata: {
+          anvia: {
+            generation: {
+              provider: "test",
+              model: "legacy-model-key",
+              usage: Usage.empty(),
+            },
+          },
+        },
+      },
+    ] satisfies CoreMessage[];
+
+    const ui = messagesToUIMessages(messages);
+
+    expect(ui[0]?.generation).toBeUndefined();
+    expect(uiMessagesToMessages(ui)).toEqual(messages);
+  });
+
   it("round-trips model IDs, metadata, reasoning, attachments, and tool results", () => {
     const messages = [
       {
@@ -1180,24 +1269,43 @@ describe("protocol and transport", () => {
     );
   });
 
-  it("keeps JSON object metadata lossless and stores generated state separately", () => {
+  it("keeps per-generation usage separate from aggregate run usage", () => {
+    const generationUsage = {
+      inputTokens: 3,
+      outputTokens: 2,
+      totalTokens: 5,
+      cachedInputTokens: 0,
+      cacheCreationInputTokens: 0,
+    };
+    const runUsage = {
+      inputTokens: 13,
+      outputTokens: 7,
+      totalTokens: 20,
+      cachedInputTokens: 2,
+      cacheCreationInputTokens: 1,
+    };
     const afterMessage = applyClientStreamEvent(
       [{ id: "assistant_1", role: "assistant", parts: [], metadata: { source: "user" } }],
       {
         type: "message_end",
         runId: "run_1",
         messageId: "assistant_1",
-        usage: Usage.empty(),
+        usage: generationUsage,
       },
     );
     const afterRun = applyClientStreamEvent(afterMessage, {
       type: "run_end",
       runId: "run_1",
       status: "completed",
+      usage: runUsage,
     });
 
     expect(afterRun[0]?.metadata).toEqual({ source: "user" });
-    expect(afterRun[0]?.generation).toMatchObject({ runId: "run_1", status: "completed" });
+    expect(afterRun[0]?.generation).toMatchObject({
+      runId: "run_1",
+      status: "completed",
+      usage: generationUsage,
+    });
   });
 
   it("rejects primitive UI metadata", () => {

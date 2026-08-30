@@ -16,9 +16,11 @@ import {
   assertAgentInteractionResponse,
   parseAgentInteractionResponse,
 } from "@anvia/core/agent/interactions";
+import type { Usage } from "@anvia/core/completion";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { contextUsageFromMessages, contextUsageUpdateFromEvent } from "./context-usage";
 import { clearChatResumeState, loadChatResumeState, saveChatResumeState } from "./resume";
+import { runUsageUpdateFromEvent } from "./run-usage";
 import type {
   AnyClientTransport,
   SendMessageInput,
@@ -39,6 +41,7 @@ export function useChat<Transport extends AnyClientTransport = ClientTransport>(
     ...(options.initialMessages ?? []),
   ]);
   const [events, setEvents] = useState<ClientStreamEvent<Metadata, Data>[]>([]);
+  const [runUsage, setRunUsage] = useState<Usage>();
   const [contextUsage, setContextUsage] = useState(() =>
     contextUsageFromMessages(options.initialMessages ?? []),
   );
@@ -128,8 +131,12 @@ export function useChat<Transport extends AnyClientTransport = ClientTransport>(
     (event: ClientStreamEvent<Metadata, Data>): Error | undefined => {
       setEvents((current) => [...current, event]);
       options.onEvent?.(event);
-      const nextContextUsage = contextUsageUpdateFromEvent(event);
-      if (nextContextUsage !== undefined) setContextUsage(nextContextUsage);
+      const contextUsageUpdate = contextUsageUpdateFromEvent(event);
+      if (contextUsageUpdate !== undefined) {
+        setContextUsage(contextUsageUpdate.contextUsage);
+      }
+      const nextRunUsage = runUsageUpdateFromEvent(event);
+      if (nextRunUsage !== undefined) setRunUsage(nextRunUsage);
       if (event.type === "interaction") {
         updateInteraction({ request: event.interaction, runId: event.runId, status: "pending" });
       }
@@ -169,6 +176,7 @@ export function useChat<Transport extends AnyClientTransport = ClientTransport>(
         setStreamId(runOptions.resume.streamId);
       }
       updateMessages(nextMessages);
+      setRunUsage(undefined);
       setContextUsage(contextUsageFromMessages(nextMessages));
       setEvents([]);
       setError(undefined);
@@ -343,6 +351,7 @@ export function useChat<Transport extends AnyClientTransport = ClientTransport>(
     abortRef.current = undefined;
     clearResumeState();
     updateMessages([]);
+    setRunUsage(undefined);
     setContextUsage(undefined);
     setEvents([]);
     interactionsRef.current = [];
@@ -357,6 +366,7 @@ export function useChat<Transport extends AnyClientTransport = ClientTransport>(
   return {
     messages,
     events,
+    runUsage,
     contextUsage,
     suggestions: options.suggestions ?? [],
     setMessages,

@@ -4,9 +4,11 @@ import type { ContextUsage } from "@anvia/core/completion";
 export function contextUsageUpdateFromEvent<
   Metadata extends ClientMetadata,
   Data extends ClientDataMap,
->(event: ClientStreamEvent<Metadata, Data>): ContextUsage | undefined {
+>(
+  event: ClientStreamEvent<Metadata, Data>,
+): { contextUsage: ContextUsage | undefined } | undefined {
   return event.type === "message_end" || event.type === "turn_end" || event.type === "run_end"
-    ? event.contextUsage
+    ? { contextUsage: event.contextUsage }
     : undefined;
 }
 
@@ -18,12 +20,14 @@ export function contextUsageFromMessages<
     const message = messages[index];
     if (message?.role !== "assistant") continue;
     if (message.generation?.contextUsage !== undefined) return message.generation.contextUsage;
-    if (!isRecord(message.metadata)) continue;
-    const anvia = message.metadata.anvia;
-    const generation = isRecord(anvia) ? anvia.generation : undefined;
-    if (isRecord(generation) && isContextUsage(generation.contextUsage)) {
-      return generation.contextUsage;
+    if (isRecord(message.metadata)) {
+      const anvia = message.metadata.anvia;
+      const generation = isRecord(anvia) ? anvia.generation : undefined;
+      if (isRecord(generation) && isContextUsage(generation.contextUsage)) {
+        return generation.contextUsage;
+      }
     }
+    return undefined;
   }
   return undefined;
 }

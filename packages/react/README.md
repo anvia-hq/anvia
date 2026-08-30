@@ -56,6 +56,8 @@ needs to name them.
 - exposes `ready | submitted | streaming | waiting | error` status;
 - keeps readonly `UIMessage[]` locally and sends core `Message[]` in `ClientStreamRequest`;
 - exposes canonical events through `onEvent` and the returned `events` array;
+- exposes aggregate usage for the latest run through `runUsage`, while each assistant message
+  retains its own provider-generation usage;
 - supports optional resumable streams and unified Agent interaction state.
 
 The default request is:
@@ -96,7 +98,7 @@ server.
 
 `useCompletion({ transport })` is a genuine single-turn controller. Call
 `complete({ prompt })`, or manage `input` and call `submit()`. Each call replaces the previous
-completion, events, and usage; it never exposes or accumulates chat messages.
+completion, events, and `usage`; it never exposes or accumulates chat messages.
 
 `useSmoothStreamText` and `useSmoothStreamItems` only smooth presentation. They do not change
 protocol events or message state.

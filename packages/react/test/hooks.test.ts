@@ -8,6 +8,7 @@ import {
   type ClientTransport,
   createDirectClientTransport,
 } from "@anvia/client";
+import type { Message } from "@anvia/core/completion";
 import type { MemoryCompactionMessage } from "@anvia/core/memory";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
@@ -61,6 +62,82 @@ function CompileTransportBoundary() {
 void CompileTransportBoundary;
 
 describe("public boundary", () => {
+  it("hydrates generation usage from memory into replayed UI messages", () => {
+    const usage = {
+      inputTokens: 8,
+      outputTokens: 2,
+      totalTokens: 10,
+      cachedInputTokens: 1,
+      cacheCreationInputTokens: 0,
+    };
+    const message = {
+      role: "assistant",
+      content: [{ type: "text", text: "Stored" }],
+      metadata: {
+        anvia: {
+          generation: { provider: "test", modelId: "test-model", usage },
+        },
+      },
+    } satisfies Message;
+
+    expect(publicReact.initialMessagesFromMemory([message])[0]?.generation?.usage).toEqual(usage);
+  });
+
+  it("does not reuse an older context usage when the latest stored generation omits it", () => {
+    const contextUsage = {
+      model: { modelId: "known-model", context: { contextWindow: 100 } },
+      usedTokens: 40,
+      remainingTokens: 60,
+      usedPercent: 40,
+      remainingPercent: 60,
+    };
+    const stored = publicReact.initialMessagesFromMemory([
+      {
+        role: "assistant",
+        content: [{ type: "text", text: "Known" }],
+        metadata: {
+          anvia: {
+            generation: {
+              provider: "test",
+              modelId: "known-model",
+              usage: {
+                inputTokens: 30,
+                outputTokens: 10,
+                totalTokens: 40,
+                cachedInputTokens: 0,
+                cacheCreationInputTokens: 0,
+              },
+              contextUsage,
+            },
+          },
+        },
+      },
+      {
+        role: "assistant",
+        content: [{ type: "text", text: "Unknown" }],
+        metadata: {
+          anvia: {
+            generation: {
+              provider: "test",
+              modelId: "unknown-model",
+              usage: {
+                inputTokens: 5,
+                outputTokens: 1,
+                totalTokens: 6,
+                cachedInputTokens: 0,
+                cacheCreationInputTokens: 0,
+              },
+            },
+          },
+        },
+      },
+    ]);
+    const transport = createDirectClientTransport({ handler: () => events([]) });
+    const { result } = renderHook(() => useChat({ transport, initialMessages: stored }));
+
+    expect(result.current.contextUsage).toBeUndefined();
+  });
+
   it("does not hide explicit memory compaction messages during hydration", () => {
     const compaction: MemoryCompactionMessage = {
       role: "system",
@@ -88,6 +165,48 @@ describe("public boundary", () => {
 });
 
 describe("useChat", () => {
+  it("clears stale context usage when the latest live generation omits it", async () => {
+    const contextUsage = {
+      model: { modelId: "known-model", context: { contextWindow: 100 } },
+      usedTokens: 40,
+      remainingTokens: 60,
+      usedPercent: 40,
+      remainingPercent: 60,
+    };
+    const transport = createDirectClientTransport({
+      handler: () =>
+        events([
+          { type: "run_start", runId: "run_1", source: "completion" },
+          {
+            type: "message_start",
+            runId: "run_1",
+            messageId: "assistant_2",
+            role: "assistant",
+          },
+          { type: "message_end", runId: "run_1", messageId: "assistant_2" },
+          { type: "run_end", runId: "run_1", status: "completed" },
+        ]),
+    });
+    const { result } = renderHook(() =>
+      useChat({
+        transport,
+        initialMessages: [
+          {
+            id: "assistant_1",
+            role: "assistant",
+            parts: [{ id: "text_1", type: "text", text: "Known" }],
+            generation: { contextUsage },
+          },
+        ],
+      }),
+    );
+    expect(result.current.contextUsage).toEqual(contextUsage);
+
+    await act(async () => result.current.sendMessage({ text: "Switch models" }));
+
+    expect(result.current.contextUsage).toBeUndefined();
+  });
+
   it("exposes memory compaction through events and onEvent without creating a message", async () => {
     const onEvent = vi.fn();
     const transport = createDirectClientTransport({
@@ -134,6 +253,20 @@ describe("useChat", () => {
 
   it("sends core messages and reduces the canonical framed stream", async () => {
     const requests: ClientStreamRequest[] = [];
+    const generationUsage = {
+      inputTokens: 3,
+      outputTokens: 2,
+      totalTokens: 5,
+      cachedInputTokens: 0,
+      cacheCreationInputTokens: 0,
+    };
+    const runUsage = {
+      inputTokens: 13,
+      outputTokens: 7,
+      totalTokens: 20,
+      cachedInputTokens: 2,
+      cacheCreationInputTokens: 1,
+    };
     const transport = createDirectClientTransport({
       handler: ({ request }) => {
         requests.push(request);
@@ -165,7 +298,19 @@ describe("useChat", () => {
             partId: "text_1",
             text: "Hello!",
           },
-          { type: "run_end", runId: "run_1", status: "completed", text: "Hello!" },
+          {
+            type: "message_end",
+            runId: "run_1",
+            messageId: "assistant_1",
+            usage: generationUsage,
+          },
+          {
+            type: "run_end",
+            runId: "run_1",
+            status: "completed",
+            text: "Hello!",
+            usage: runUsage,
+          },
         ]);
       },
     });
@@ -179,8 +324,13 @@ describe("useChat", () => {
     });
     expect("stream" in (requests[0] as unknown as Record<string, unknown>)).toBe(false);
     expect(result.current.text).toBe("Hello!");
+    expect(result.current.messages.at(-1)?.generation?.usage).toEqual(generationUsage);
+    expect(result.current.runUsage).toEqual(runUsage);
     expect(result.current.status).toBe("ready");
-    expect(result.current.events).toHaveLength(6);
+    expect(result.current.events).toHaveLength(7);
+
+    act(() => result.current.reset());
+    expect(result.current.runUsage).toBeUndefined();
   });
 
   it("uses submitted, streaming, and error as distinct states", async () => {
@@ -415,6 +565,13 @@ describe("useChat", () => {
 describe("useCompletion", () => {
   it("runs independent prompt-oriented requests over the client protocol", async () => {
     const requests: ClientCompletionRequest[] = [];
+    const usage = {
+      inputTokens: 5,
+      outputTokens: 1,
+      totalTokens: 6,
+      cachedInputTokens: 0,
+      cacheCreationInputTokens: 0,
+    };
     const transport = createDirectClientTransport<ClientCompletionRequest>({
       handler: ({ request }) => {
         requests.push(request);
@@ -427,7 +584,7 @@ describe("useCompletion", () => {
             partId: "text_1",
             delta: "Done",
           },
-          { type: "run_end", runId: "run_1", status: "completed", text: "Done" },
+          { type: "run_end", runId: "run_1", status: "completed", text: "Done", usage },
         ]);
       },
     });
@@ -437,16 +594,24 @@ describe("useCompletion", () => {
     expect(requests).toEqual([{ prompt: "Write" }]);
     expect(result.current.input).toBe("Write");
     expect(result.current.completion).toBe("Done");
+    expect(result.current.usage).toEqual(usage);
     expect(result.current.status).toBe("ready");
   });
 
   it("keeps error status when the stream reports a protocol error event", async () => {
     const onError = vi.fn();
+    const usage = {
+      inputTokens: 4,
+      outputTokens: 1,
+      totalTokens: 5,
+      cachedInputTokens: 0,
+      cacheCreationInputTokens: 0,
+    };
     const transport = createDirectClientTransport<ClientCompletionRequest>({
       handler: () =>
         events([
           { type: "run_start", runId: "run_1", source: "completion" },
-          { type: "error", runId: "run_1", error: { message: "Safe failure" } },
+          { type: "error", runId: "run_1", error: { message: "Safe failure" }, usage },
           { type: "run_end", runId: "run_1", status: "error" },
         ]),
     });
@@ -456,6 +621,7 @@ describe("useCompletion", () => {
 
     expect(result.current.status).toBe("error");
     expect(result.current.error?.message).toBe("Safe failure");
+    expect(result.current.usage).toEqual(usage);
     expect(onError).toHaveBeenCalledOnce();
   });
 });

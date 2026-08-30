@@ -10,9 +10,10 @@ import {
   normalizeClientError,
   type UIMessage,
 } from "@anvia/client";
-import type { ContextUsage } from "@anvia/core/completion";
+import type { ContextUsage, Usage } from "@anvia/core/completion";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { contextUsageUpdateFromEvent } from "./context-usage";
+import { runUsageUpdateFromEvent } from "./run-usage";
 import type { UseChatStatus } from "./types";
 
 export type UseCompletionStatus = UseChatStatus;
@@ -42,6 +43,7 @@ export type UseCompletionResult<
   status: UseCompletionStatus;
   error: Error | undefined;
   events: readonly ClientStreamEvent<Metadata, Data>[];
+  usage?: Usage | undefined;
   contextUsage: ContextUsage | undefined;
 };
 
@@ -52,6 +54,7 @@ export function useCompletion<
   const [input, setInput] = useState(options.initialInput ?? "");
   const [completion, setCompletion] = useState(options.initialCompletion ?? "");
   const [events, setEvents] = useState<ClientStreamEvent<Metadata, Data>[]>([]);
+  const [usage, setUsage] = useState<Usage>();
   const [contextUsage, setContextUsage] = useState<ContextUsage>();
   const [status, setStatus] = useState<UseCompletionStatus>("ready");
   const [error, setError] = useState<Error>();
@@ -78,6 +81,7 @@ export function useCompletion<
       messagesRef.current = [];
       setCompletion("");
       setEvents([]);
+      setUsage(undefined);
       setContextUsage(undefined);
       setError(undefined);
       setStatus("submitted");
@@ -95,8 +99,12 @@ export function useCompletion<
             const event = frame.event;
             setEvents((current) => [...current, event]);
             options.onEvent?.(event);
-            const nextContextUsage = contextUsageUpdateFromEvent(event);
-            if (nextContextUsage !== undefined) setContextUsage(nextContextUsage);
+            const contextUsageUpdate = contextUsageUpdateFromEvent(event);
+            if (contextUsageUpdate !== undefined) {
+              setContextUsage(contextUsageUpdate.contextUsage);
+            }
+            const nextUsage = runUsageUpdateFromEvent(event);
+            if (nextUsage !== undefined) setUsage(nextUsage);
             messagesRef.current = applyClientStreamEvent(messagesRef.current, event);
             setCompletion(assistantText(messagesRef.current));
             if (event.type === "error") {
@@ -142,6 +150,7 @@ export function useCompletion<
     setInput(options.initialInput ?? "");
     setCompletion(options.initialCompletion ?? "");
     setEvents([]);
+    setUsage(undefined);
     setContextUsage(undefined);
     setError(undefined);
     messagesRef.current = [];
@@ -158,6 +167,7 @@ export function useCompletion<
     status,
     error,
     events,
+    usage,
     contextUsage,
   };
 }

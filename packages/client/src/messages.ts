@@ -10,11 +10,12 @@ import type {
   ToolResultPart,
   UserContentPart,
 } from "@anvia/core/completion";
-import { isJsonValue } from "@anvia/core/completion";
+import { getAssistantGenerationMetadata, isJsonValue } from "@anvia/core/completion";
 import type {
   ClientDataMap,
   UIAttachment,
   UIMessage,
+  UIMessageGeneration,
   UIMessagePart,
   UIToolMessagePart,
 } from "./types";
@@ -160,17 +161,31 @@ export function messagesToUIMessages<Metadata extends JsonObject = JsonObject>(
     }
 
     if (message.role === "assistant") {
+      const generationMetadata = getAssistantGenerationMetadata(message);
       const content =
         typeof message.content === "string"
           ? ([{ type: "text", text: message.content }] satisfies AssistantContentPart[])
           : message.content;
       const parts: UIMessagePart[] = content.map(assistantContentToUIMessagePart);
+      for (const source of generationMetadata?.sources ?? []) {
+        parts.push({ id: createId("source"), type: "source", source });
+      }
       let uiMessage: UIMessage<Metadata> = {
         id: createId("msg"),
         role: "assistant",
         parts,
         ...metadataField(message.metadata),
       };
+      if (generationMetadata !== undefined) {
+        const generation: UIMessageGeneration = { usage: generationMetadata.usage };
+        if (generationMetadata.contextUsage !== undefined) {
+          generation.contextUsage = generationMetadata.contextUsage;
+        }
+        uiMessage = {
+          ...uiMessage,
+          generation,
+        };
+      }
       if (message.id !== undefined) uiMessage = { ...uiMessage, modelMessageId: message.id };
       const messageIndex = result.length;
       result.push(uiMessage);

@@ -59,7 +59,9 @@ intentionally exposes a safe error shape. Non-JSON outputs require an explicit `
 
 `UIMessage.metadata` remains application-owned and round-trips unchanged. Runtime details such as
 run ID, usage, context usage, status, and trace correlation are stored separately in
-`UIMessage.generation`.
+`UIMessage.generation`. Converting persisted core messages hydrates per-generation usage and context
+usage into that UI field and restores persisted sources as UI message parts while preserving the
+original metadata.
 
 Application-specific stream data is explicit and schema-validated:
 

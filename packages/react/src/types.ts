@@ -10,7 +10,7 @@ import type {
   UIMessage,
 } from "@anvia/client";
 import type { AgentInteractionResponse } from "@anvia/core/agent/interactions";
-import type { ContextUsage } from "@anvia/core/completion";
+import type { ContextUsage, Usage } from "@anvia/core/completion";
 
 export type AnyClientTransport = ClientTransport<
   ClientStreamRequest,
@@ -79,6 +79,7 @@ export type SetMessages<Metadata extends ClientMetadata, Data extends ClientData
 export type UseChatResult<Transport extends AnyClientTransport = ClientTransport> = {
   messages: readonly UIMessage<TransportMetadata<Transport>, TransportData<Transport>>[];
   events: readonly ClientStreamEvent<TransportMetadata<Transport>, TransportData<Transport>>[];
+  runUsage?: Usage | undefined;
   contextUsage: ContextUsage | undefined;
   suggestions: readonly ChatSuggestion<TransportMetadata<Transport>>[];
   setMessages: SetMessages<TransportMetadata<Transport>, TransportData<Transport>>;

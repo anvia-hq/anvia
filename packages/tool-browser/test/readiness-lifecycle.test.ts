@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { connectPlaywrightBrowser } from "../src/connection";
 import { DockerBrowserHandle } from "../src/docker-browser";
+import { BrowserError } from "../src/errors";
 
 describe("DockerBrowser capability readiness", () => {
   afterEach(() => {
@@ -85,6 +86,41 @@ describe("DockerBrowser capability readiness", () => {
         browser: { state: "failed" },
         desktop: { state: "ready" },
       },
+    });
+  });
+
+  it("preserves the final automation transport failure when readiness reaches its deadline", async () => {
+    vi.useFakeTimers();
+    const probeFailure = new BrowserError(
+      "Browser automation worker sent an invalid response.",
+      "transport_failure",
+      { cause: new TypeError("Invalid browser automation worker response."), phase: "connect" },
+    );
+    const connect = vi.fn(async () => {
+      throw probeFailure;
+    }) as unknown as typeof connectPlaywrightBrowser;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json({ webSocketDebuggerUrl: "ws://127.0.0.1/devtools" })),
+    );
+    const browser = new DockerBrowserHandle(fakeSandbox() as never, connect);
+    const waiting = browser.waitForCapabilities({
+      timeoutMs: 100,
+      capabilities: ["automation"],
+    });
+    const rejected = expect(waiting).rejects.toMatchObject({
+      code: "transport_failure",
+      capability: "automation",
+      phase: "readiness",
+      cause: probeFailure,
+    });
+
+    await vi.advanceTimersByTimeAsync(100);
+    await rejected;
+    expect(connect).toHaveBeenCalledTimes(2);
+    expect(browser.readiness().capabilities.automation).toMatchObject({
+      state: "failed",
+      error: { code: "transport_failure", cause: probeFailure },
     });
   });
 

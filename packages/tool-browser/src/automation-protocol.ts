@@ -76,6 +76,31 @@ export type AutomationScreenshotResult = Readonly<{
   pngBase64: string;
 }>;
 
+export type AutomationMessageSummary = Readonly<{
+  type: string;
+  ownPropertyNames: readonly string[];
+  ownPropertyCount: number;
+  kind: "response" | "cancelled" | "event" | "other" | undefined;
+  id: number | "non-number" | undefined;
+  ok: boolean | "non-boolean" | undefined;
+  constructorName: "Object" | "null-prototype" | "other" | undefined;
+  hasExpectedPrototype: boolean;
+  hasRequiredFields: boolean;
+}>;
+
+const safeSummaryPropertyNames = new Set([
+  "cmd",
+  "error",
+  "event",
+  "id",
+  "kind",
+  "ok",
+  "value",
+  "watch:import",
+  "watch:require",
+]);
+const maxSummaryPropertyNames = 12;
+
 export function isAutomationResponse(value: unknown): value is AutomationResponse {
   if (!isRecord(value)) return false;
   switch (value.kind) {
@@ -89,6 +114,48 @@ export function isAutomationResponse(value: unknown): value is AutomationRespons
     default:
       return false;
   }
+}
+
+export function summarizeAutomationMessage(value: unknown): AutomationMessageSummary {
+  const isObject = isRecord(value);
+  const prototype = isObject ? Object.getPrototypeOf(value) : undefined;
+  const propertyNames = isObject ? Object.getOwnPropertyNames(value) : [];
+  return Object.freeze({
+    type: value === null ? "null" : Array.isArray(value) ? "array" : typeof value,
+    ownPropertyNames: Object.freeze(
+      propertyNames
+        .slice(0, maxSummaryPropertyNames)
+        .map((name) => (safeSummaryPropertyNames.has(name) ? name : "<other>")),
+    ),
+    ownPropertyCount: propertyNames.length,
+    kind:
+      !isObject || value.kind === undefined
+        ? undefined
+        : value.kind === "response" || value.kind === "cancelled" || value.kind === "event"
+          ? value.kind
+          : "other",
+    id:
+      !isObject || value.id === undefined
+        ? undefined
+        : typeof value.id === "number"
+          ? value.id
+          : "non-number",
+    ok:
+      !isObject || value.ok === undefined
+        ? undefined
+        : typeof value.ok === "boolean"
+          ? value.ok
+          : "non-boolean",
+    constructorName: !isObject
+      ? undefined
+      : prototype === null
+        ? "null-prototype"
+        : prototype === Object.prototype
+          ? "Object"
+          : "other",
+    hasExpectedPrototype: isObject && prototype === Object.prototype,
+    hasRequiredFields: isAutomationResponse(value),
+  });
 }
 
 function isSerializedError(value: unknown): value is SerializedError {

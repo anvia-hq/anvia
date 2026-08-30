@@ -91,14 +91,20 @@ describe("DockerBrowser capability readiness", () => {
 
   it("preserves the final automation transport failure when readiness reaches its deadline", async () => {
     vi.useFakeTimers();
-    const probeFailure = new BrowserError(
+    const firstProbeFailure = new BrowserError(
       "Browser automation worker sent an invalid response.",
       "transport_failure",
       { cause: new TypeError("Invalid browser automation worker response."), phase: "connect" },
     );
-    const connect = vi.fn(async () => {
-      throw probeFailure;
-    }) as unknown as typeof connectPlaywrightBrowser;
+    const finalProbeFailure = new BrowserError(
+      "Browser automation worker sent a final invalid response.",
+      "transport_failure",
+      { phase: "connect" },
+    );
+    const connect = vi
+      .fn()
+      .mockRejectedValueOnce(firstProbeFailure)
+      .mockRejectedValueOnce(finalProbeFailure) as unknown as typeof connectPlaywrightBrowser;
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => Response.json({ webSocketDebuggerUrl: "ws://127.0.0.1/devtools" })),
@@ -112,7 +118,7 @@ describe("DockerBrowser capability readiness", () => {
       code: "transport_failure",
       capability: "automation",
       phase: "readiness",
-      cause: probeFailure,
+      cause: finalProbeFailure,
     });
 
     await vi.advanceTimersByTimeAsync(100);
@@ -120,7 +126,7 @@ describe("DockerBrowser capability readiness", () => {
     expect(connect).toHaveBeenCalledTimes(2);
     expect(browser.readiness().capabilities.automation).toMatchObject({
       state: "failed",
-      error: { code: "transport_failure", cause: probeFailure },
+      error: { code: "transport_failure", cause: finalProbeFailure },
     });
   });
 

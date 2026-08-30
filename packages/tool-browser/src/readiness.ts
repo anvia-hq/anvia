@@ -41,7 +41,7 @@ export async function probeBrowserCapability(options: {
       });
       await assertHttpReady(`${endpointFor(sandbox, noVncPort)}/vnc.html`, abortSignal);
       return;
-    case "automation":
+    case "automation": {
       await sandbox.runtime.waitForPort({
         containerPort: cdpPort,
         timeoutMs: remainingTime(deadline),
@@ -81,6 +81,7 @@ export async function probeBrowserCapability(options: {
           }
         }
       }
+    }
   }
 }
 

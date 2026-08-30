@@ -1,5 +1,6 @@
 import { EventEmitter } from "node:events";
-import { fork, type ChildProcess } from "node:child_process";
+import { fork, spawn, type ChildProcess } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AutomationRequest, AutomationResponse } from "../src/automation-protocol";
 import { type AutomationBackend, AutomationWorkerClient } from "../src/automation-client";
@@ -25,7 +26,7 @@ describe("AutomationWorkerClient connection lifecycle", () => {
     expect(child.kill).toHaveBeenCalledWith("SIGTERM");
     expect(client.closed).toBe(true);
     expect(child.listenerCount("message")).toBe(0);
-    expect(child.listenerCount("error")).toBe(1);
+    expect(child.listenerCount("error")).toBe(0);
     expect(child.listenerCount("exit")).toBe(0);
   });
 
@@ -209,9 +210,97 @@ describe("AutomationWorkerClient connection lifecycle", () => {
     });
     child.respond({ kind: "response", id: connectId, ok: "yes" });
 
-    await expect(connecting).rejects.toMatchObject({ code: "transport_failure" });
+    await expect(connecting).rejects.toMatchObject({
+      code: "transport_failure",
+      cause: {
+        code: "transport_failure",
+        cause: {
+          name: "TypeError",
+          responseSummary: {
+            type: "object",
+            ownPropertyNames: ["kind", "id", "ok"],
+            kind: "response",
+            id: 1,
+            ok: "non-boolean",
+            hasExpectedPrototype: true,
+            hasRequiredFields: false,
+          },
+        },
+      },
+    });
     expect(child.kill).toHaveBeenCalledWith("SIGTERM");
   });
+
+  it("rejects Node watch control messages without retaining dependency payloads", async () => {
+    const child = new FakeChild(() => undefined);
+    const connecting = AutomationWorkerClient.connect({
+      endpointUrl: "http://127.0.0.1:9222",
+      timeoutMs: 1_000,
+      workerFactory: () => child.asChildProcess(),
+    });
+    child.respond({ "watch:import": ["file:///private/application.ts"] });
+
+    let caught: unknown;
+    try {
+      await connecting;
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toMatchObject({
+      code: "transport_failure",
+      cause: {
+        cause: {
+          responseSummary: {
+            ownPropertyNames: ["watch:import"],
+            ownPropertyCount: 1,
+            hasRequiredFields: false,
+          },
+        },
+      },
+    });
+    expect(JSON.stringify(caught)).not.toContain("private");
+    expect(child.listenerCount("message")).toBe(0);
+    expect(child.listenerCount("error")).toBe(0);
+    expect(child.listenerCount("exit")).toBe(0);
+  });
+
+  it("reconnects successfully after a recoverable malformed worker response", async () => {
+    const failedChild = new FakeChild(() => undefined);
+    const failedConnection = AutomationWorkerClient.connect({
+      endpointUrl: "http://127.0.0.1:9222",
+      timeoutMs: 1_000,
+      workerFactory: () => failedChild.asChildProcess(),
+    });
+    failedChild.respond({ kind: "unexpected-worker-message" });
+    await expect(failedConnection).rejects.toMatchObject({
+      code: "transport_failure",
+      retryable: true,
+      recovery: "reconnect",
+    });
+
+    const healthyChild = new FakeChild((message) => healthyChild.respond(success(message.id)));
+    const connection = await AutomationWorkerClient.connect({
+      endpointUrl: "http://127.0.0.1:9222",
+      timeoutMs: 1_000,
+      workerFactory: () => healthyChild.asChildProcess(),
+    });
+    await connection.disconnect();
+
+    expect(failedChild.listenerCount("message")).toBe(0);
+    expect(healthyChild.listenerCount("message")).toBe(0);
+  });
+
+  it("isolates startup handshakes from Node watch IPC and cleans up repeated workers", async () => {
+    const result = await runWatchedAutomationFixture();
+
+    expect(result.stdout).toContain(
+      JSON.stringify({ automationWorkerRegression: true, cleaned: true }),
+    );
+    expect(result.stderr).not.toContain("Invalid browser automation worker response");
+    expect(result.exitCode === 0 || (result.exitCode === null && result.signal === "SIGINT")).toBe(
+      true,
+    );
+  }, 15_000);
 
   it("turns an unexpected post-connect worker crash into a connection event", async () => {
     const child = new FakeChild((message) => child.respond(success(message.id)));
@@ -369,4 +458,62 @@ class FakeChild extends EventEmitter {
   asChildProcess(): ChildProcess {
     return this as unknown as ChildProcess;
   }
+}
+
+async function runWatchedAutomationFixture(): Promise<{
+  stdout: string;
+  stderr: string;
+  exitCode: number | null;
+  signal: NodeJS.Signals | null;
+}> {
+  const fixture = fileURLToPath(
+    new URL("./fixtures/watched-automation-client.ts", import.meta.url),
+  );
+  const child = spawn(
+    process.execPath,
+    ["--import", "tsx", "--watch", "--watch-preserve-output", fixture],
+    {
+      cwd: process.cwd(),
+      env: { ...process.env, NO_COLOR: "1" },
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
+  let stdout = "";
+  let stderr = "";
+  let completed = false;
+  const marker = '"automationWorkerRegression":true';
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+  child.stdout.on("data", (chunk: string) => {
+    stdout = `${stdout}${chunk}`.slice(-32_768);
+    if (!completed && stdout.includes(marker)) {
+      completed = true;
+      child.kill("SIGINT");
+    }
+  });
+  child.stderr.on("data", (chunk: string) => {
+    stderr = `${stderr}${chunk}`.slice(-32_768);
+  });
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      reject(new Error("Watched automation regression fixture timed out."));
+    }, 10_000);
+    child.once("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    child.once("exit", (exitCode, signal) => {
+      clearTimeout(timer);
+      if (!completed) {
+        reject(
+          new Error(
+            `Watched automation regression fixture exited before completion: code=${exitCode ?? "null"} signal=${signal ?? "null"}\n${stderr}`,
+          ),
+        );
+        return;
+      }
+      resolve({ stdout, stderr, exitCode, signal });
+    });
+  });
 }

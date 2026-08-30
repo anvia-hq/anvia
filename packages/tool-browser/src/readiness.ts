@@ -48,6 +48,7 @@ export async function probeBrowserCapability(options: {
         abortSignal,
       });
       await assertCdpHttpReady(`${endpointFor(sandbox, cdpPort)}/json/version`, abortSignal);
+      let lastProbeFailure: unknown;
       for (let attempt = 0; ; attempt += 1) {
         abortSignal.throwIfAborted();
         try {
@@ -70,8 +71,14 @@ export async function probeBrowserCapability(options: {
           abortSignal.throwIfAborted();
           return;
         } catch (error) {
-          if (abortSignal.aborted) throw abortSignal.reason ?? error;
-          await waitForRetry(abortSignal, Math.min(500, 50 * 2 ** Math.min(attempt, 3)));
+          if (abortSignal.aborted) throw lastProbeFailure ?? error;
+          lastProbeFailure = error;
+          try {
+            await waitForRetry(abortSignal, Math.min(500, 50 * 2 ** Math.min(attempt, 3)));
+          } catch (retryError) {
+            if (abortSignal.aborted) throw lastProbeFailure;
+            throw retryError;
+          }
         }
       }
   }
@@ -95,6 +102,15 @@ export function normalizeReadinessError(
     });
   }
   if (state.timedOut) {
+    if (error instanceof BrowserError && error.code === "transport_failure") {
+      return new BrowserError(error.message, error.code, {
+        cause: error,
+        capability,
+        phase: "readiness",
+        recovery: error.recovery,
+        retryable: error.retryable,
+      });
+    }
     return new BrowserError(
       `Browser ${capability} capability did not become ready before the timeout.`,
       "readiness_timeout",

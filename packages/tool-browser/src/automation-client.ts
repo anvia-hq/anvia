@@ -1,6 +1,11 @@
 import { fork, type ChildProcess } from "node:child_process";
-import type { AutomationCommand, AutomationRequest, SerializedError } from "./automation-protocol";
-import { isAutomationResponse } from "./automation-protocol";
+import type {
+  AutomationCommand,
+  AutomationMessageSummary,
+  AutomationRequest,
+  SerializedError,
+} from "./automation-protocol";
+import { isAutomationResponse, summarizeAutomationMessage } from "./automation-protocol";
 import { BrowserError, cancellationError } from "./errors";
 import type { BrowserLifecycleOptions } from "./types";
 
@@ -316,7 +321,7 @@ export class AutomationWorkerClient implements AutomationBackend {
 
   private handleMessage(message: unknown): void {
     if (!isAutomationResponse(message)) {
-      throw new TypeError("Invalid browser automation worker response.");
+      throw new InvalidAutomationResponseError(summarizeAutomationMessage(message));
     }
     if (message.kind === "event") {
       if (!this.disconnecting) {
@@ -376,8 +381,10 @@ export class AutomationWorkerClient implements AutomationBackend {
 
   private cleanupChildListeners(): void {
     this.child.off("message", this.onMessage);
+    this.child.off("error", this.onError);
     this.child.off("exit", this.onExit);
     this.child.stderr?.off("data", this.onStderrData);
+    this.child.stderr?.off("error", this.onStderrError);
   }
 
   private rejectSend(phase: string, cause: unknown): void {
@@ -401,8 +408,11 @@ export class AutomationWorkerClient implements AutomationBackend {
   }
 }
 
-function spawnAutomationWorker(): ChildProcess {
-  return fork(automationWorkerUrl(), [], {
+export function spawnAutomationWorker(workerUrl = automationWorkerUrl()): ChildProcess {
+  const env = { ...process.env };
+  delete env.WATCH_REPORT_DEPENDENCIES;
+  return fork(workerUrl, [], {
+    env,
     execArgv: [],
     serialization: "advanced",
     stdio: ["ignore", "ignore", "pipe", "ipc"],
@@ -426,5 +436,11 @@ function deserializeError(value: SerializedError): Error {
 function assertPositiveSafeInteger(value: number, name: string): void {
   if (!Number.isSafeInteger(value) || value <= 0 || value > 2_147_483_647) {
     throw new RangeError(`${name} must be a positive integer no greater than 2147483647.`);
+  }
+}
+
+class InvalidAutomationResponseError extends TypeError {
+  constructor(readonly responseSummary: AutomationMessageSummary) {
+    super("Invalid browser automation worker response.");
   }
 }

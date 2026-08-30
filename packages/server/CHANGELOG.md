@@ -1,5 +1,12 @@
 # @anvia/server
 
+## 1.0.10
+
+### Patch Changes
+
+- Updated dependencies [c8bea68]
+  - @anvia/client@1.0.10
+
 ## 1.0.9
 
 ### Patch Changes

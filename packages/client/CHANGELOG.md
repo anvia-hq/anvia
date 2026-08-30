@@ -1,5 +1,14 @@
 # @anvia/client
 
+## 1.0.10
+
+### Patch Changes
+
+- c8bea68: Hydrate persisted assistant usage, context usage, and sources into replayed UI messages while keeping
+  per-generation usage separate from aggregate run usage. Keep latest-context state aligned when a
+  new response omits context information. Expose the latest aggregate run usage as
+  `useChat().runUsage` and completion usage as `useCompletion().usage`.
+
 ## 1.0.9
 
 ### Patch Changes

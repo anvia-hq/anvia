@@ -1,5 +1,13 @@
 # @anvia/react
 
+## 1.0.11
+
+### Patch Changes
+
+- 828dc20: Add renderer-agnostic graph explorer state and headless primitives for loading, expanding, searching,
+  selecting, refreshing, and rendering bounded `@anvia/graph` exploration results. Keep asynchronous
+  controller ownership in React and renderer composition in React UI.
+
 ## 1.0.10
 
 ### Patch Changes

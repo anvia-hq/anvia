@@ -15,10 +15,10 @@ export default defineConfig({
       "@anvia/react-ui/graph-explorer": fileURLToPath(
         new URL("../react-ui/src/graph-explorer/index.ts", import.meta.url),
       ),
-      "@anvia/react": fileURLToPath(new URL("../react/src/index.ts", import.meta.url)),
       "@anvia/react/graph-explorer": fileURLToPath(
         new URL("../react/src/graph-explorer/index.ts", import.meta.url),
       ),
+      "@anvia/react": fileURLToPath(new URL("../react/src/index.ts", import.meta.url)),
       "@anvia/core/agent/interactions": fileURLToPath(
         new URL("../core/src/agent/interactions/index.ts", import.meta.url),
       ),

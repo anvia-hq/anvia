@@ -1,9 +1,16 @@
 import { Background, BackgroundVariant, Controls, ReactFlow } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { ArrowClockwise, MagnifyingGlass, Plus } from "@phosphor-icons/react";
-import type { GraphExploreNode, GraphExploreResult } from "@anvia/graph";
+import type {
+  GraphExploreNode,
+  GraphExploreOptions,
+  GraphExploreResult,
+  GraphSchemaLike,
+} from "@anvia/graph";
+import { useGraphExplorer } from "@anvia/react/graph-explorer";
+import { graphExplorerNodeLabel, GraphExplorerProvider } from "@anvia/react-ui/graph-explorer";
 import { type CSSProperties, useCallback, useEffect, useMemo, useState } from "react";
-import type { StudioConfig, StudioGraphExploreRequest } from "../../../../types";
+import type { StudioConfig } from "../../../../types";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import {
@@ -22,13 +29,7 @@ import {
 import { errorMessage } from "../shared/format";
 import { JsonSyntax } from "../shared/renderers";
 import { requestJson } from "../shared/request";
-import { explorerNodeTypes, graphNodeLabel, toExplorerFlow } from "./graph-flow";
-
-const emptyResult: GraphExploreResult = {
-  nodes: [],
-  relationships: [],
-  truncated: { nodes: false, relationships: false },
-};
+import { explorerNodeTypes, toExplorerFlow } from "./graph-flow";
 
 export function GraphsPage(props: {
   graphs: StudioConfig["graphs"];
@@ -41,48 +42,54 @@ export function GraphsPage(props: {
   const [selectedGraphId, setSelectedGraphId] = useState(props.graphs[0]?.id ?? "");
   const [selectedNodeTypes, setSelectedNodeTypes] = useState<string[]>([]);
   const [selectedRelationships, setSelectedRelationships] = useState<string[]>([]);
-  const [result, setResult] = useState<GraphExploreResult>(emptyResult);
-  const [selectedNodeId, setSelectedNodeId] = useState<string>();
-  const [query, setQuery] = useState("");
-  const [loading, setLoading] = useState(false);
   const graph = props.graphs.find((item) => item.id === selectedGraphId) ?? props.graphs[0];
-  const selectedNode = result.nodes.find((node) => node.id === selectedNodeId);
-  const flow = useMemo(() => toExplorerFlow(result, query), [result, query]);
-
-  const explore = useCallback(
-    async (request: StudioGraphExploreRequest, merge: boolean, signal?: AbortSignal) => {
-      if (graph === undefined) return;
-      setLoading(true);
+  const loadGraph = useCallback(
+    async (request: GraphExploreOptions<GraphSchemaLike>) => {
+      if (graph === undefined) throw new Error("Graph explorer unavailable");
+      const { abortSignal, ...body } = request;
       onStatus("Loading graph");
       try {
         const next = await requestJson<GraphExploreResult>(
           `/graphs/${encodeURIComponent(graph.id)}/explore`,
           "Graph explorer",
-          signal,
+          abortSignal,
           "no-store",
           {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify(request),
+            body: JSON.stringify(body),
           },
         );
-        setResult((current) => (merge ? mergeResults(current, next) : next));
-        setSelectedNodeId((current) => {
-          if (merge && current !== undefined) return current;
-          return next.nodes[0]?.id;
-        });
-        onStatus("Connected");
+        if (abortSignal?.aborted !== true) onStatus("Connected");
+        return next;
       } catch (loadError) {
-        if (signal?.aborted === true) return;
-        const message = errorMessage(loadError);
-        onError(message);
-        onStatus("Graph error");
-      } finally {
-        if (signal?.aborted !== true) setLoading(false);
+        if (abortSignal?.aborted !== true) {
+          onError(errorMessage(loadError));
+          onStatus("Graph error");
+        }
+        throw loadError;
       }
     },
     [graph, onError, onStatus],
   );
+  const explorer = useGraphExplorer({ explore: loadGraph });
+  const result = useMemo<GraphExploreResult>(
+    () => ({
+      nodes: explorer.nodes,
+      relationships: explorer.relationships,
+      truncated: explorer.truncated,
+    }),
+    [explorer.nodes, explorer.relationships, explorer.truncated],
+  );
+  const flow = useMemo(
+    () => toExplorerFlow(result, explorer.matchedNodeIds),
+    [explorer.matchedNodeIds, result],
+  );
+  const loading = explorer.status === "loading";
+  const selectedNode = explorer.selectedNode;
+  const explore = explorer.explore;
+  const resetExplorer = explorer.reset;
+  const selectNode = explorer.selectNode;
 
   useEffect(() => {
     if (graph === undefined) return;
@@ -91,12 +98,13 @@ export function GraphsPage(props: {
     setSelectedGraphId(graph.id);
     setSelectedNodeTypes(nodeTypes);
     setSelectedRelationships(relationships);
-    setResult(emptyResult);
-    setSelectedNodeId(undefined);
-    const controller = new AbortController();
-    void explore({ mode: "overview", nodeTypes, relationships }, false, controller.signal);
-    return () => controller.abort();
-  }, [explore, graph]);
+    resetExplorer();
+    void explore({ mode: "overview", nodeTypes, relationships })
+      .then((next) => {
+        if (next !== undefined) selectNode(next.nodes[0]?.id);
+      })
+      .catch(() => undefined);
+  }, [explore, graph, resetExplorer, selectNode]);
 
   if (!props.enabled || props.graphs.length === 0) {
     return (
@@ -114,116 +122,116 @@ export function GraphsPage(props: {
   }
 
   function reloadOverview() {
-    void explore(
-      {
-        mode: "overview",
-        nodeTypes: selectedNodeTypes,
-        relationships: selectedRelationships,
-      },
-      false,
-    );
+    void explore({
+      mode: "overview",
+      nodeTypes: selectedNodeTypes,
+      relationships: selectedRelationships,
+    })
+      .then((next) => {
+        if (next !== undefined) selectNode(next.nodes[0]?.id);
+      })
+      .catch(() => undefined);
   }
 
   function expandSelected() {
     if (selectedNode === undefined) return;
-    void explore(
-      {
-        mode: "expand",
-        nodeIds: [selectedNode.id],
+    void explorer
+      .expandNode(selectedNode.id, {
         nodeTypes: selectedNodeTypes,
         relationships: selectedRelationships,
         direction: "both",
         maxDepth: 1,
-      },
-      true,
-    );
+      })
+      .catch(() => undefined);
   }
 
   return (
-    <StudioPageShell aria-label="Graphs">
-      <div className="grid min-h-0 min-w-0 pb-6 pr-6">
-        <StudioSurface className="grid grid-cols-[minmax(0,2fr)_340px] max-lg:grid-cols-1">
-          <div className="relative min-h-0 min-w-0 overflow-hidden border-r border-border/80 bg-card/25 max-lg:min-h-96 max-lg:border-b max-lg:border-r-0">
-            <div className="absolute left-4 top-4 z-10 flex max-w-[calc(100%-2rem)] items-center gap-2 rounded-xl border border-border/80 bg-background/90 p-2 shadow-sm backdrop-blur">
-              <div className="relative min-w-0 flex-1">
-                <MagnifyingGlass className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  aria-label="Search loaded nodes"
-                  className="w-64 pl-8"
-                  placeholder="Search loaded nodes"
-                  value={query}
-                  onChange={(event) => setQuery(event.currentTarget.value)}
-                />
+    <GraphExplorerProvider controller={explorer}>
+      <StudioPageShell aria-label="Graphs">
+        <div className="grid min-h-0 min-w-0 pb-6 pr-6">
+          <StudioSurface className="grid grid-cols-[minmax(0,2fr)_340px] max-lg:grid-cols-1">
+            <div className="relative min-h-0 min-w-0 overflow-hidden border-r border-border/80 bg-card/25 max-lg:min-h-96 max-lg:border-b max-lg:border-r-0">
+              <div className="absolute left-4 top-4 z-10 flex max-w-[calc(100%-2rem)] items-center gap-2 rounded-xl border border-border/80 bg-background/90 p-2 shadow-sm backdrop-blur">
+                <div className="relative min-w-0 flex-1">
+                  <MagnifyingGlass className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    aria-label="Search loaded nodes"
+                    className="w-64 pl-8"
+                    placeholder="Search loaded nodes"
+                    value={explorer.query}
+                    onChange={(event) => explorer.setQuery(event.currentTarget.value)}
+                  />
+                </div>
+                <StudioStatusBadge>{flow.nodes.length} nodes</StudioStatusBadge>
+                <StudioStatusBadge>{flow.edges.length} relations</StudioStatusBadge>
               </div>
-              <StudioStatusBadge>{flow.nodes.length} nodes</StudioStatusBadge>
-              <StudioStatusBadge>{flow.edges.length} relations</StudioStatusBadge>
+              {loading && result.nodes.length === 0 ? (
+                <div className="grid h-full min-h-96 place-items-center text-sm text-muted-foreground">
+                  Loading graph…
+                </div>
+              ) : null}
+              {!loading && result.nodes.length === 0 ? (
+                <StudioEmptyState
+                  className="h-full border-0"
+                  title="No nodes found"
+                  text="Try another graph or broaden the selected node and relationship types."
+                />
+              ) : null}
+              {result.nodes.length > 0 ? (
+                <ReactFlow
+                  key={`${graph?.id}:${result.nodes.length}:${result.relationships.length}`}
+                  nodes={flow.nodes}
+                  edges={flow.edges}
+                  className="graph-explorer-flow"
+                  colorMode={props.theme}
+                  nodeTypes={explorerNodeTypes}
+                  fitView
+                  fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
+                  minZoom={0.2}
+                  maxZoom={1.7}
+                  proOptions={{ hideAttribution: true }}
+                  defaultEdgeOptions={{ focusable: true }}
+                  style={
+                    {
+                      "--xy-edge-stroke": "var(--muted-foreground)",
+                      "--xy-edge-stroke-width": "1.4",
+                      "--xy-edge-stroke-selected": "var(--foreground)",
+                    } as CSSProperties
+                  }
+                  onNodeClick={(_, node) => explorer.selectNode(node.id)}
+                >
+                  <Background
+                    variant={BackgroundVariant.Dots}
+                    gap={16}
+                    size={1.5}
+                    color="var(--muted-foreground)"
+                    className="opacity-30"
+                  />
+                  <Controls showInteractive={false} />
+                </ReactFlow>
+              ) : null}
             </div>
-            {loading && result.nodes.length === 0 ? (
-              <div className="grid h-full min-h-96 place-items-center text-sm text-muted-foreground">
-                Loading graph…
-              </div>
-            ) : null}
-            {!loading && result.nodes.length === 0 ? (
-              <StudioEmptyState
-                className="h-full border-0"
-                title="No nodes found"
-                text="Try another graph or broaden the selected node and relationship types."
-              />
-            ) : null}
-            {result.nodes.length > 0 ? (
-              <ReactFlow
-                key={`${graph?.id}:${result.nodes.length}:${result.relationships.length}`}
-                nodes={flow.nodes}
-                edges={flow.edges}
-                className="graph-explorer-flow"
-                colorMode={props.theme}
-                nodeTypes={explorerNodeTypes}
-                fitView
-                fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
-                minZoom={0.2}
-                maxZoom={1.7}
-                proOptions={{ hideAttribution: true }}
-                defaultEdgeOptions={{ focusable: true }}
-                style={
-                  {
-                    "--xy-edge-stroke": "var(--muted-foreground)",
-                    "--xy-edge-stroke-width": "1.4",
-                    "--xy-edge-stroke-selected": "var(--foreground)",
-                  } as CSSProperties
-                }
-                onNodeClick={(_, node) => setSelectedNodeId(node.id)}
-              >
-                <Background
-                  variant={BackgroundVariant.Dots}
-                  gap={16}
-                  size={1.5}
-                  color="var(--muted-foreground)"
-                  className="opacity-30"
-                />
-                <Controls showInteractive={false} />
-              </ReactFlow>
-            ) : null}
-          </div>
-          <GraphInspector
-            graph={graph}
-            graphs={props.graphs}
-            loading={loading}
-            result={result}
-            selectedGraphId={selectedGraphId}
-            selectedNode={selectedNode}
-            selectedNodeTypes={selectedNodeTypes}
-            selectedRelationships={selectedRelationships}
-            onExpand={expandSelected}
-            onReload={reloadOverview}
-            onSelectGraph={setSelectedGraphId}
-            onToggleNodeType={(type) => setSelectedNodeTypes((types) => toggled(types, type))}
-            onToggleRelationship={(type) =>
-              setSelectedRelationships((types) => toggled(types, type))
-            }
-          />
-        </StudioSurface>
-      </div>
-    </StudioPageShell>
+            <GraphInspector
+              graph={graph}
+              graphs={props.graphs}
+              loading={loading}
+              result={result}
+              selectedGraphId={selectedGraphId}
+              selectedNode={selectedNode}
+              selectedNodeTypes={selectedNodeTypes}
+              selectedRelationships={selectedRelationships}
+              onExpand={expandSelected}
+              onReload={reloadOverview}
+              onSelectGraph={setSelectedGraphId}
+              onToggleNodeType={(type) => setSelectedNodeTypes((types) => toggled(types, type))}
+              onToggleRelationship={(type) =>
+                setSelectedRelationships((types) => toggled(types, type))
+              }
+            />
+          </StudioSurface>
+        </div>
+      </StudioPageShell>
+    </GraphExplorerProvider>
   );
 }
 
@@ -363,7 +371,9 @@ function NodeInspector(props: { node: GraphExploreNode }) {
   return (
     <section>
       <StudioStatusBadge>{props.node.type}</StudioStatusBadge>
-      <h2 className="mt-2 break-words text-base font-semibold">{graphNodeLabel(props.node)}</h2>
+      <h2 className="mt-2 break-words text-base font-semibold">
+        {graphExplorerNodeLabel(props.node)}
+      </h2>
       <p className="mt-1 break-all text-xs text-muted-foreground">ID {props.node.id}</p>
       <pre className="mt-4 overflow-x-auto rounded-xl border border-border/80 bg-card p-3 text-xs leading-5">
         <code>
@@ -377,21 +387,4 @@ function NodeInspector(props: { node: GraphExploreNode }) {
 function toggled(values: string[], value: string): string[] {
   if (values.includes(value)) return values.filter((item) => item !== value);
   return [...values, value];
-}
-
-function mergeResults(current: GraphExploreResult, next: GraphExploreResult): GraphExploreResult {
-  const nodes = new Map(current.nodes.map((node) => [node.id, node]));
-  const relationships = new Map(
-    current.relationships.map((relationship) => [relationship.id, relationship]),
-  );
-  for (const node of next.nodes) nodes.set(node.id, node);
-  for (const relationship of next.relationships) relationships.set(relationship.id, relationship);
-  return {
-    nodes: [...nodes.values()],
-    relationships: [...relationships.values()],
-    truncated: {
-      nodes: current.truncated.nodes || next.truncated.nodes,
-      relationships: current.truncated.relationships || next.truncated.relationships,
-    },
-  };
 }

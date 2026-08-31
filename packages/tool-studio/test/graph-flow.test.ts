@@ -1,6 +1,6 @@
 import type { GraphExploreResult } from "@anvia/graph";
 import { describe, expect, it } from "vitest";
-import { graphNodeLabel, toExplorerFlow } from "../src/ui/app/modules/graphs/graph-flow";
+import { toExplorerFlow } from "../src/ui/app/modules/graphs/graph-flow";
 
 const graph: GraphExploreResult = {
   nodes: [
@@ -24,16 +24,16 @@ const graph: GraphExploreResult = {
 
 describe("graph explorer flow", () => {
   it("creates deterministic nodes, relationship arrows, and useful labels", () => {
-    const flow = toExplorerFlow(graph, "");
+    const flow = toExplorerFlow(graph, new Set(["one", "two"]));
     expect(flow.nodes.map((node) => node.id)).toEqual(["one", "two"]);
+    expect(flow.nodes[0]?.data.label).toBe("Ada");
     expect(flow.edges).toEqual([
       expect.objectContaining({ id: "works", source: "one", target: "two", label: "WORKS_AT" }),
     ]);
-    expect(graphNodeLabel(graph.nodes[0]!)).toBe("Ada");
   });
 
-  it("searches properties and removes relationships with hidden endpoints", () => {
-    const flow = toExplorerFlow(graph, "engineer");
+  it("removes relationships with hidden endpoints", () => {
+    const flow = toExplorerFlow(graph, new Set(["one"]));
     expect(flow.nodes.map((node) => node.id)).toEqual(["one"]);
     expect(flow.edges).toEqual([]);
   });

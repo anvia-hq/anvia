@@ -1,6 +1,6 @@
 # @anvia/react-ui
 
-Composable React UI primitives for Anvia chat and completion experiences.
+Composable, headless React UI primitives for Anvia applications.
 
 ```tsx
 import { createHttpClientTransport } from "@anvia/client";
@@ -93,3 +93,51 @@ For app-owned text state, `StreamMarkdown` is available from `@anvia/react-ui/st
 context-free renderer: pass the already displayed text as `content` and set `live` only for its
 growing tail. Style `[data-state="revealing"]` in the owning application; `@anvia/cli` installs this
 animation with its `markdown`, `message`, `thread`, and `chat` items.
+
+## Graph explorer
+
+`@anvia/react/graph-explorer` owns graph exploration behavior without choosing a layout or rendering
+library. `@anvia/react-ui/graph-explorer` supplies optional headless composition primitives. Provide
+a browser-safe `explore` callback, normally backed by an application HTTP route, then render the
+controller's nodes and relationships with React Flow, Sigma.js, SVG, canvas, or any other renderer:
+
+```tsx
+import type { GraphExplorer } from "@anvia/graph";
+import { useGraphExplorer } from "@anvia/react/graph-explorer";
+import {
+  GraphExplorerNodePrimitive,
+  GraphExplorerPrimitive,
+  GraphExplorerProvider,
+} from "@anvia/react-ui/graph-explorer";
+
+export function KnowledgeGraph({ explore }: { explore: GraphExplorer["explore"] }) {
+  const controller = useGraphExplorer({ explore });
+  return (
+    <GraphExplorerProvider controller={controller}>
+      <GraphExplorerPrimitive.Root>
+        <GraphExplorerPrimitive.Search />
+        <GraphExplorerPrimitive.Viewport>
+          {controller.nodes.map((node) => (
+            <GraphExplorerNodePrimitive.Root key={node.id} nodeId={node.id} asChild>
+              {/* This can instead be an element supplied to a renderer such as React Flow. */}
+              <article>{node.type}</article>
+            </GraphExplorerNodePrimitive.Root>
+          ))}
+        </GraphExplorerPrimitive.Viewport>
+        <GraphExplorerPrimitive.Empty />
+        <GraphExplorerPrimitive.Status />
+      </GraphExplorerPrimitive.Root>
+    </GraphExplorerProvider>
+  );
+}
+```
+
+Call `controller.explore({ mode: "overview" })` to load an initial view. Overview results replace the
+current graph; expansion results merge by opaque node and relationship IDs. Starting a request
+aborts the previous request, while `refresh()` repeats the latest overview with a fresh signal.
+Expansions inherit filters and limits from the latest successful overview unless explicitly
+overridden. `matchedNodeIds` lets renderers dim, hide, or highlight local search results without
+prescribing one visual behavior. Validate data returned by an HTTP route before resolving the
+`explore` callback; the headless controller intentionally trusts its typed boundary. Renderers that
+do not expose React elements for individual nodes can consume the controller directly without the
+node primitives.

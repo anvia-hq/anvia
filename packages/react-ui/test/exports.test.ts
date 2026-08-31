@@ -15,6 +15,13 @@ import type {
   ThreadListController,
   ThreadListRecord,
 } from "../src";
+import {
+  GraphExplorerNodePrimitive,
+  GraphExplorerPrimitive,
+  type GraphExplorerController,
+  GraphExplorerProvider,
+  useGraphExplorerContext,
+} from "../src/graph-explorer";
 import { AttachmentPrimitive } from "../src/attachment";
 import type { ComposerSubmitMessage as ChatComposerSubmitMessage } from "../src/chat";
 import { ChatProvider, ComposerPrimitive, ThreadPrimitive } from "../src/chat";
@@ -44,6 +51,11 @@ describe("public entrypoints", () => {
     expect(MessagePrimitive.Entity).toBeTypeOf("object");
     expect(HumanInputPrimitive.Approvals).toBeTypeOf("object");
     expect(CompletionPrimitive.Root).toBeTypeOf("object");
+    expect(GraphExplorerPrimitive.Root).toBeTypeOf("object");
+    expect(GraphExplorerPrimitive.Viewport).toBeTypeOf("object");
+    expect(GraphExplorerNodePrimitive.Root).toBeTypeOf("object");
+    expect(GraphExplorerProvider).toBeTypeOf("function");
+    expect(useGraphExplorerContext).toBeTypeOf("function");
     expect(ImagePrimitive.Root).toBeTypeOf("object");
     expect(SelectionToolbarPrimitive.Root).toBeTypeOf("object");
     expect(ThreadListPrimitive.Root).toBeTypeOf("object");
@@ -90,6 +102,11 @@ describe("public entrypoints", () => {
       rect: DOMRect;
     }>();
     expectTypeOf<ThreadListRecord>().toMatchTypeOf<{ id: string; title?: string }>();
+    expectTypeOf<GraphExplorerController>().toMatchTypeOf<{
+      nodes: readonly { id: string }[];
+      query: string;
+      selectNode(nodeId: string | undefined): void;
+    }>();
     expectTypeOf<ThreadListController>().toMatchTypeOf<{
       threads: ThreadListRecord[];
       createThread(): Promise<void> | void;

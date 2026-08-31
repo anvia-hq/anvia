@@ -17,6 +17,7 @@ export default defineConfig({
       ),
       "@anvia/core/memory": fileURLToPath(new URL("../core/src/memory/index.ts", import.meta.url)),
       "@anvia/core": fileURLToPath(new URL("../core/src/index.ts", import.meta.url)),
+      "@anvia/graph": fileURLToPath(new URL("../graph/src/index.ts", import.meta.url)),
     },
   },
   test: {

@@ -694,6 +694,9 @@ importers:
       '@anvia/core':
         specifier: workspace:*
         version: link:../core
+      '@anvia/graph':
+        specifier: workspace:*
+        version: link:../graph
       '@testing-library/react':
         specifier: ^16.3.2
         version: 16.3.2(@testing-library/dom@10.4.1)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -779,6 +782,9 @@ importers:
       '@anvia/client':
         specifier: workspace:*
         version: link:../client
+      '@anvia/graph':
+        specifier: workspace:*
+        version: link:../graph
       '@anvia/react':
         specifier: workspace:*
         version: link:../react

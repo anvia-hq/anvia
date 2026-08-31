@@ -4,6 +4,20 @@ export type { ChatController, ChatProviderProps } from "./chat";
 export { ChatProvider, useChatContext, useHumanInput } from "./chat";
 export type { CompletionController, CompletionProviderProps } from "./completion";
 export { CompletionProvider, useCompletionContext } from "./completion";
+export type {
+  GraphExplorerController,
+  GraphExplorerExpandNodeOptions,
+  GraphExplorerNodeContextValue,
+  GraphExplorerProviderProps,
+  GraphExplorerStatus,
+} from "./graph-explorer";
+export {
+  GraphExplorerProvider,
+  InternalGraphExplorerNodeProvider,
+  useGraphExplorerContext,
+  useGraphExplorerNode,
+  useOptionalGraphExplorerNode,
+} from "./graph-explorer";
 export type { CompletionInputContextValue } from "./completion-input";
 export { InternalCompletionInputProvider, useCompletionInput } from "./completion-input";
 export type {

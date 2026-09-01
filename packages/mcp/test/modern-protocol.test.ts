@@ -39,6 +39,20 @@ class ProtocolTransport implements Transport {
       return;
     }
 
+    if (message.method === "initialize") {
+      const response: JSONRPCMessage = {
+        jsonrpc: "2.0",
+        id: message.id,
+        result: {
+          protocolVersion: "2025-11-25",
+          capabilities: { tools: {} },
+          serverInfo: { name: "legacy", version: "1.0.0" },
+        },
+      };
+      queueMicrotask(() => this.onmessage?.(response));
+      return;
+    }
+
     if (message.method === "tools/list") {
       const response: JSONRPCMessage = {
         jsonrpc: "2.0",
@@ -83,12 +97,34 @@ describe("modern MCP protocol", () => {
 
     expect(requestMethods(transport)).toEqual(["server/discover"]);
   });
+
+  it("connects to a 2025-era server when automatic fallback is configured", async () => {
+    const transport = new ProtocolTransport(false);
+    const client = customClient(transport, { mode: "auto" });
+
+    await expect(client.connect()).resolves.toMatchObject({
+      name: "modern",
+      serverInfo: { name: "legacy", version: "1.0.0" },
+    });
+
+    expect(requestMethods(transport)).toEqual([
+      "server/discover",
+      "initialize",
+      "notifications/initialized",
+      "tools/list",
+    ]);
+    await client.close();
+  });
 });
 
-function customClient(transport: Transport): McpClient {
+function customClient(
+  transport: Transport,
+  versionNegotiation?: { mode: "auto" } | undefined,
+): McpClient {
   return new McpClient({
     name: "modern",
     transport: { type: "custom", create: () => transport },
+    versionNegotiation,
   });
 }
 

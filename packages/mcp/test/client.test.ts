@@ -162,7 +162,7 @@ describe("McpClient", () => {
     });
   });
 
-  it("requires the latest modern MCP protocol", async () => {
+  it("pins the latest modern MCP protocol by default", async () => {
     const client = new McpClient({
       name: "modern",
       transport: { type: "stdio", command: "node", args: ["server.js"] },
@@ -172,6 +172,26 @@ describe("McpClient", () => {
 
     expect(sdk.clients[0]?.options).toEqual({
       versionNegotiation: { mode: { pin: "2026-07-28" } },
+    });
+  });
+
+  it("passes configured MCP protocol version negotiation to the SDK", async () => {
+    const client = new McpClient({
+      name: "compatible",
+      transport: { type: "stdio", command: "node", args: ["server.js"] },
+      versionNegotiation: {
+        mode: "auto",
+        probe: { timeoutMs: 2_000, maxRetries: 1 },
+      },
+    });
+
+    await client.connect();
+
+    expect(sdk.clients[0]?.options).toEqual({
+      versionNegotiation: {
+        mode: "auto",
+        probe: { timeoutMs: 2_000, maxRetries: 1 },
+      },
     });
   });
 

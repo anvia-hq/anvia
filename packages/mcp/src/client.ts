@@ -94,7 +94,7 @@ export class McpClient {
   }
 
   async #initialize(abortSignal: AbortSignal): Promise<McpServer> {
-    const client = createSdkClient();
+    const client = createSdkClient(this.#options.versionNegotiation);
     const resource: ClientResource = { client };
     this.#resource = resource;
 
@@ -270,13 +270,15 @@ function assertUniqueToolNames(tools: readonly { name: string }[], serverName: s
   }
 }
 
-function createSdkClient(): Client {
+function createSdkClient(
+  versionNegotiation: NonNullable<McpClientOptions["versionNegotiation"]> | undefined,
+): Client {
   const implementation = {
     name: "@anvia/mcp",
     version: getMcpClientVersion(),
   };
   return new Client(implementation, {
-    versionNegotiation: { mode: { pin: modernMcpProtocolVersion } },
+    versionNegotiation: versionNegotiation ?? { mode: { pin: modernMcpProtocolVersion } },
   });
 }
 

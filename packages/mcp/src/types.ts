@@ -4,6 +4,7 @@ import type {
   OAuthClientProvider,
   StreamableHTTPReconnectionOptions,
   Transport,
+  VersionNegotiationOptions,
 } from "@modelcontextprotocol/client";
 
 export type { McpServer, McpServerInfo, McpTool } from "@anvia/core/mcp";
@@ -45,6 +46,11 @@ export type McpClientTransport =
 export type McpClientOptions = {
   readonly name: string;
   readonly transport: McpClientTransport;
+  /**
+   * MCP protocol version negotiation. Defaults to pinning the modern `2026-07-28` revision without
+   * fallback. Use `mode: "auto"` to allow fallback or `mode: "legacy"` for 2025-era servers.
+   */
+  readonly versionNegotiation?: VersionNegotiationOptions | undefined;
   readonly tools?: {
     readonly prefix?: string | undefined;
   };

@@ -32,6 +32,8 @@ import { McpClient, McpClientGroup } from "@anvia/mcp";
 
 const filesystem = new McpClient({
   name: "filesystem",
+  // Probe for the modern protocol and fall back for 2025-era servers.
+  versionNegotiation: { mode: "auto" },
   transport: {
     type: "stdio",
     command: "npx",
@@ -61,9 +63,10 @@ try {
 Construction performs no I/O. `connect()` discovers every tool page once and returns a frozen
 registration snapshot. Reconnect and rebuild the Agent to adopt changed remote tools.
 
-`@anvia/mcp` requires the modern MCP `2026-07-28` protocol. Connections fail clearly when a server
-does not support that revision; the package never attempts or falls back to the legacy MCP
-handshake.
+By default, `@anvia/mcp` requires the modern MCP `2026-07-28` protocol. Connections fail clearly
+when a server does not support that revision. Set `versionNegotiation` to `{ mode: "auto" }` to probe
+for the modern protocol and fall back to the legacy handshake, or `{ mode: "legacy" }` when connecting
+to a known 2025-era server.
 
 Built-in Streamable HTTP connections enforce Anvia URL safety by default and do not accept a custom
 `fetch`. Static request headers are explicit transport configuration; arbitrary Fetch `RequestInit`

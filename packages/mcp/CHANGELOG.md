@@ -1,5 +1,13 @@
 # @anvia/mcp
 
+## 1.0.10
+
+### Patch Changes
+
+- 57cf393: Allow MCP clients to configure protocol version negotiation so they can connect to 2025-era servers
+  using automatic fallback or the legacy initialization handshake. Preserve the strict `2026-07-28`
+  pin as the default.
+
 ## 1.0.9
 
 ### Patch Changes

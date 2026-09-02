@@ -143,9 +143,9 @@ describe("Milvus metadata filter expression validation", () => {
       store.search({
         vector: [1, 0],
         topK: 1,
-        filter: { type: "eq", key: "user.name and true", value: "x" },
+        filter: { type: "eq", key: "user.and.name", value: "x" },
       }),
-    ).rejects.toThrow(/Invalid metadata filter key/);
+    ).rejects.toThrow(/reserved Milvus expression keyword/);
     expect(client.search).not.toHaveBeenCalled();
   });
 

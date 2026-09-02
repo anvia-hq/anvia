@@ -3,7 +3,6 @@
   "version": "1.0.9",
   "description": "Prisma-backed durable session memory store for Anvia.",
   "author": "anvia",
-  "maintainer": "Indra Zulfi",
   "license": "MIT",
   "repository": {
     "type": "git",

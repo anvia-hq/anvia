@@ -3,7 +3,6 @@
   "version": "1.0.11",
   "description": "Visible Chromium runtime and semantic browser tools for Anvia agents.",
   "author": "anvia",
-  "maintainer": "Indra Zulfi",
   "license": "MIT",
   "repository": {
     "type": "git",

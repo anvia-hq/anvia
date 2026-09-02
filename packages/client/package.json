@@ -3,7 +3,6 @@
   "version": "1.0.10",
   "description": "Framework-neutral client protocol, transports, and UI message state for Anvia.",
   "author": "anvia",
-  "maintainer": "Indra Zulfi",
   "license": "MIT",
   "repository": {
     "type": "git",

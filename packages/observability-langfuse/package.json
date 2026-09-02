@@ -3,7 +3,6 @@
   "version": "1.0.9",
   "description": "Langfuse tracing adapter for Anvia.",
   "author": "anvia",
-  "maintainer": "Indra Zulfi",
   "license": "MIT",
   "repository": {
     "type": "git",

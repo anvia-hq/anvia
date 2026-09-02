@@ -3,7 +3,6 @@
   "version": "1.0.2",
   "description": "Install editable Anvia UI components into React applications.",
   "author": "anvia",
-  "maintainer": "Indra Zulfi",
   "license": "MIT",
   "repository": {
     "type": "git",

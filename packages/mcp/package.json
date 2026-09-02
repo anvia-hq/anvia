@@ -3,7 +3,6 @@
   "version": "1.0.10",
   "description": "Model Context Protocol client integration for Anvia.",
   "author": "anvia",
-  "maintainer": "Indra Zulfi",
   "license": "MIT",
   "repository": {
     "type": "git",

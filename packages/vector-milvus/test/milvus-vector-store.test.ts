@@ -114,3 +114,74 @@ describe("MilvusVectorClient", () => {
     ).toEqual([2, 4]);
   });
 });
+
+describe("Milvus metadata filter expression validation", () => {
+  function storeFor(client: MilvusClientLike) {
+    return new MilvusVectorClient({ client }).vectorStore({
+      collectionName: "docs",
+      dimensions: 2,
+    });
+  }
+
+  it("rejects filter keys that inject Boolean expression operators", async () => {
+    const client = fixture();
+    const store = storeFor(client);
+    await expect(
+      store.search({
+        vector: [1, 0],
+        topK: 1,
+        filter: { type: "eq", key: "a == 1 or b != b", value: "x" },
+      }),
+    ).rejects.toThrow(/Invalid metadata filter key/);
+    expect(client.search).not.toHaveBeenCalled();
+  });
+
+  it("rejects nested filter keys that contain expression keywords", async () => {
+    const client = fixture();
+    const store = storeFor(client);
+    await expect(
+      store.search({
+        vector: [1, 0],
+        topK: 1,
+        filter: { type: "eq", key: "user.and.name", value: "x" },
+      }),
+    ).rejects.toThrow(/reserved Milvus expression keyword/);
+    expect(client.search).not.toHaveBeenCalled();
+  });
+
+  it("rejects non-finite numeric filter values", async () => {
+    const client = fixture();
+    const store = storeFor(client);
+    await expect(
+      store.search({
+        vector: [1, 0],
+        topK: 1,
+        filter: { type: "gt", key: "price", value: Number.NaN },
+      }),
+    ).rejects.toThrow(/Invalid metadata filter value/);
+    expect(client.search).not.toHaveBeenCalled();
+  });
+
+  it("still sends expressions for legitimate keys and values", async () => {
+    const client = fixture();
+    const store = storeFor(client);
+    await expect(
+      store.search({
+        vector: [1, 0],
+        topK: 1,
+        filter: {
+          type: "and",
+          filters: [
+            { type: "eq", key: "category", value: "cat" },
+            { type: "gt", key: "user.rating", value: 4.5 },
+          ],
+        },
+      }),
+    ).resolves.toHaveLength(1);
+    expect(client.search).toHaveBeenCalledWith(
+      expect.objectContaining({
+        filter: '(category == "cat") && (user.rating > 4.5)',
+      }),
+    );
+  });
+});

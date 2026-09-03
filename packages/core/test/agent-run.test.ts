@@ -2319,6 +2319,21 @@ describe("Agent execution", () => {
     const agent = new Agent({ id: "test-agent", model, tools: [addTool], maxTurns: 0 });
 
     await expect(agent.generate({ prompt: "loop" })).rejects.toBeInstanceOf(MaxTurnsError);
+    // With maxTurns: 0, exactly 1 completion request is dispatched before hitting the turn limit.
+    expect(model.requests).toHaveLength(1);
+  });
+
+  it("enforces exact maxTurns boundary on multi-turn generation", async () => {
+    const model = new QueueModel([
+      response([AssistantContent.toolCall("call_1", "add", { x: 1, y: 2 })]),
+      response([AssistantContent.toolCall("call_2", "add", { x: 3, y: 4 })]),
+      response([AssistantContent.toolCall("call_3", "add", { x: 5, y: 6 })]),
+    ]);
+    const agent = new Agent({ id: "test-agent", model, tools: [addTool], maxTurns: 1 });
+
+    await expect(agent.generate({ prompt: "loop" })).rejects.toBeInstanceOf(MaxTurnsError);
+    // With maxTurns: 1, exactly 2 completion requests (initial + 1 tool turn) are dispatched.
+    expect(model.requests).toHaveLength(2);
   });
 
   it("converts Zod output schemas into completion request JSON Schema", async () => {

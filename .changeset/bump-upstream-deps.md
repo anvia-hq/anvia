@@ -5,7 +5,7 @@
 "@anvia/core": patch
 "@anvia/gemini": patch
 "@anvia/graph": patch
-"@anvia/graph-memgraph": patch
+"@anvia/memgraph": patch
 "@anvia/grok": patch
 "@anvia/lancedb": patch
 "@anvia/langfuse": patch

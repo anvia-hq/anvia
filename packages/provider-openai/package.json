@@ -32,7 +32,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "openai": "^7.5.0"
+    "openai": "^7.10.0"
   },
   "devDependencies": {
     "@anvia/core": "workspace:*",

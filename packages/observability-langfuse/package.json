@@ -30,11 +30,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@langfuse/otel": "^5.10.1",
-    "@langfuse/tracing": "^5.10.1",
+    "@langfuse/otel": "^5.11.0",
+    "@langfuse/tracing": "^5.11.0",
     "@opentelemetry/api": "^1.9.1",
-    "@opentelemetry/resources": "^2.10.0",
-    "@opentelemetry/sdk-trace-node": "^2.10.0",
+    "@opentelemetry/resources": "^2.11.0",
+    "@opentelemetry/sdk-trace-node": "^2.11.0",
     "@opentelemetry/semantic-conventions": "^1.43.0"
   },
   "devDependencies": {

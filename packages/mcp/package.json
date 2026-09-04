@@ -33,7 +33,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/client": "^2.0.0",
-    "undici": "^8.10.0"
+    "undici": "^8.10.2"
   },
   "devDependencies": {
     "@anvia/core": "workspace:*",

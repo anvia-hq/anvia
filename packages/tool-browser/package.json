@@ -1,6 +1,6 @@
 {
   "name": "@anvia/browser",
-  "version": "1.0.12",
+  "version": "1.1.0",
   "description": "Visible Chromium runtime and semantic browser tools for Anvia agents.",
   "author": "anvia",
   "license": "MIT",

@@ -33,7 +33,7 @@
   },
   "dependencies": {
     "@opentelemetry/api": "^1.9.1",
-    "@opentelemetry/api-logs": "^0.221.0"
+    "@opentelemetry/api-logs": "^0.222.0"
   },
   "devDependencies": {
     "@anvia/core": "workspace:*",

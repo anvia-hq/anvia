@@ -19,6 +19,7 @@ import {
   defineGuardrailPolicy,
   defineOutputGuardrail,
   getAssistantGenerationMetadata,
+  MaxTurnsError,
   Message,
   type StreamingCompletionModel,
   ToolOutput,
@@ -841,7 +842,7 @@ describe("Agent streaming", () => {
         },
       ],
     ]);
-    const agent = new Agent({ id: "test-agent", model, tools: [addTool], maxTurns: 0 });
+    const agent = new Agent({ id: "test-agent", model, tools: [addTool], maxTurns: 1 });
     const iterator = agent.stream({ prompt: "loop" })[Symbol.asyncIterator]();
 
     const errorEvent = await nextAgentError(iterator);
@@ -1973,6 +1974,23 @@ describe("Agent streaming", () => {
 
     expect(lines[0]).toEqual({ type: "text_delta", delta: "a" });
     expect(lines[1]).toMatchObject({ type: "error", error: { message: "boom" } });
+  });
+
+  it("enforces exact maxTurns boundary on streaming execution", async () => {
+    const model = new StreamingQueueModel([
+      [streamFinal([AssistantContent.toolCall("call_1", "add", { x: 1, y: 2 })], "tool-calls")],
+      [streamFinal([AssistantContent.toolCall("call_2", "add", { x: 3, y: 4 })], "tool-calls")],
+    ]);
+    const agent = new Agent({ id: "test-agent", model, tools: [addTool], maxTurns: 0 });
+
+    const stream = agent.stream({ prompt: "loop" });
+    const events = await collect(stream);
+    const errorEvent = events.find((event) => event.type === "error");
+
+    expect(errorEvent).toBeDefined();
+    expect(errorEvent?.error).toBeInstanceOf(MaxTurnsError);
+    // With maxTurns: 0, exactly 1 turn should be dispatched before failing.
+    expect(model.requests).toHaveLength(1);
   });
 });
 

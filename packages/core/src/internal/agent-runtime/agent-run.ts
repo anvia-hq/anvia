@@ -438,7 +438,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
           throw error;
         }
       }
-      while (currentTurns <= this.maxTurnCount + 1) {
+      while (currentTurns <= this.maxTurnCount) {
         const prompt = newMessages.at(-1);
         if (prompt === undefined) {
           throw new Error("AgentRun requires at least one message");
@@ -756,7 +756,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
           throw error;
         }
       }
-      while (currentTurns <= this.maxTurnCount + 1) {
+      while (currentTurns <= this.maxTurnCount) {
         const prompt = newMessages.at(-1);
         if (prompt === undefined) {
           throw new Error("AgentRun requires at least one message");

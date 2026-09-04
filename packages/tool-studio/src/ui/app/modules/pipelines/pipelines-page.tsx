@@ -385,7 +385,7 @@ function PipelineInputPanel(props: {
           </p>
         </div>
         <Button
-          className="h-8 shrink-0 gap-1.5 rounded-lg border border-primary bg-primary px-3 text-xs font-semibold text-primary-foreground shadow-none hover:border-action-hover hover:bg-action-hover hover:text-primary-foreground disabled:border-border disabled:bg-muted disabled:text-muted-foreground [&_svg]:!size-3"
+          className="h-8 shrink-0 gap-1.5 rounded-lg border border-foreground bg-foreground px-3 text-xs font-semibold text-background shadow-none hover:border-foreground/90 hover:bg-foreground/90 hover:text-background disabled:border-border disabled:bg-muted disabled:text-muted-foreground [&_svg]:!size-3"
           disabled={props.runState === "running" || props.disabled}
           onClick={props.onRun}
           variant="ghost"

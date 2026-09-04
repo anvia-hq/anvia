@@ -1,5 +1,11 @@
 # @anvia/core
 
+## 1.0.10
+
+### Patch Changes
+
+- 2277090: Enforce exact `maxTurns` boundary in agent execution loop. The agent loop now stops after the configured turn limit rather than allowing extra completion attempts.
+
 ## 1.0.9
 
 ### Patch Changes

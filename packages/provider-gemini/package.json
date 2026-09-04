@@ -1,6 +1,6 @@
 {
   "name": "@anvia/gemini",
-  "version": "1.0.9",
+  "version": "1.0.10",
   "description": "Gemini provider adapter for Anvia.",
   "author": "anvia",
   "license": "MIT",

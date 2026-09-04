@@ -1,6 +1,6 @@
 {
   "name": "@anvia/react-ui",
-  "version": "1.0.11",
+  "version": "1.0.12",
   "description": "Composable, headless React UI primitives for Anvia applications.",
   "author": "anvia",
   "license": "MIT",

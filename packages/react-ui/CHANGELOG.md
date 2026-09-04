@@ -1,5 +1,13 @@
 # @anvia/react-ui
 
+## 1.0.12
+
+### Patch Changes
+
+- @anvia/client@1.0.11
+- @anvia/graph@1.0.12
+- @anvia/react@1.0.12
+
 ## 1.0.11
 
 ### Patch Changes

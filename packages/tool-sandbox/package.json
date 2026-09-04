@@ -1,6 +1,6 @@
 {
   "name": "@anvia/sandbox",
-  "version": "1.0.9",
+  "version": "1.0.10",
   "description": "Sandboxed workspace tools for Anvia agents.",
   "author": "anvia",
   "license": "MIT",

@@ -1,5 +1,14 @@
 # @anvia/react
 
+## 1.0.12
+
+### Patch Changes
+
+- Updated dependencies [2277090]
+  - @anvia/core@1.0.10
+  - @anvia/client@1.0.11
+  - @anvia/graph@1.0.12
+
 ## 1.0.11
 
 ### Patch Changes

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://docs.anvia.dev/logo.svg" alt="Anvia logo" width="180" />
+  <img src=".github/assets/anvia-wordmark.png" alt="Anvia wordmark" width="320" />
 </p>
 
 <p align="center">
@@ -125,10 +125,6 @@ pnpm cookbook:studio:01
 - [Package catalog](https://docs.anvia.dev/packages/catalog)
 - [Core package](https://docs.anvia.dev/packages/core)
 - [Contributing](CONTRIBUTING.md)
-
-## Project Activity
-
-![Repobeats analytics image](https://repobeats.axiom.co/api/embed/a63db5f32641718a48cb706d9957e94fa413871d.svg "Repobeats analytics image")
 
 ## License
 

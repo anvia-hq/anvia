@@ -1,0 +1,36 @@
+name: Pullfrog
+run-name: ${{ inputs.name || github.workflow }}
+on:
+  workflow_dispatch:
+    inputs:
+      prompt:
+        type: string
+        description: Agent prompt
+      name:
+        type: string
+        description: Run name
+
+permissions:
+  contents: read
+
+jobs:
+  pullfrog:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+      - name: Run agent
+        uses: pullfrog/pullfrog@v0
+        with:
+          prompt: ${{ inputs.prompt }}
+        env:
+          OPENAI_COMPATIBLE_BASE_URL: https://gateway.devscale.id/v1
+          OPENAI_COMPATIBLE_API_KEY: ${{ secrets.OPENAI_COMPATIBLE_API_KEY }}
+          OPENAI_COMPATIBLE_MODEL: gpt-5.6-sol
+          OPENAI_COMPATIBLE_CONTEXT: "1050000"
+          OPENAI_COMPATIBLE_MAX_OUTPUT: "131072"

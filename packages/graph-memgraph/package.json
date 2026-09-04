@@ -1,6 +1,6 @@
 {
   "name": "@anvia/memgraph",
-  "version": "1.0.11",
+  "version": "1.0.12",
   "description": "Schema-first Memgraph GraphRAG integration for Anvia.",
   "author": "anvia",
   "license": "MIT",

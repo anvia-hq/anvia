@@ -1,6 +1,6 @@
 {
   "name": "@anvia/graph",
-  "version": "1.0.11",
+  "version": "1.0.12",
   "description": "Provider-neutral knowledge graph primitives for Anvia.",
   "author": "anvia",
   "license": "MIT",

@@ -1,5 +1,12 @@
 # @anvia/client
 
+## 1.0.11
+
+### Patch Changes
+
+- Updated dependencies [2277090]
+  - @anvia/core@1.0.10
+
 ## 1.0.10
 
 ### Patch Changes

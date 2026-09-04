@@ -113,9 +113,7 @@ export function StudioRail(props: StudioNavigationProps) {
           title="Anvia Studio"
           onClick={() => props.onNavigate("playground")}
         >
-          <span className="grid size-8 place-items-center rounded-md border border-primary bg-primary">
-            <AnviaLensLogo markClassName="text-primary-foreground" />
-          </span>
+          <AnviaLensLogo />
         </button>
       </div>
       <span className="sr-only" aria-live="polite">

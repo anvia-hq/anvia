@@ -1,5 +1,11 @@
 # @anvia/cli
 
+## 1.1.1
+
+### Patch Changes
+
+- f48bb95: Bump upstream runtime dependencies to their latest versions and align zod to 4.5.4 across all packages and workspaces.
+
 ## 1.0.2
 
 ## 1.0.1

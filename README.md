@@ -3,41 +3,36 @@
 </p>
 
 <p align="center">
-  <strong>Build provider-agnostic AI agents and workflows in TypeScript.</strong>
+  <strong>Build with Anvia. Own everything.</strong>
+</p>
+
+<p align="center">
+  The complete agent stack, without giving up your stack.
 </p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/license-MIT-89c83f?style=flat-square" alt="MIT license" />
-  <img src="https://img.shields.io/badge/TypeScript-5.9-3178c6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript 5.9" />
   <img src="https://img.shields.io/badge/runtime-Node.js-3c873a?style=flat-square&logo=node.js&logoColor=white" alt="Node.js runtime" />
 </p>
 
-Anvia is a TypeScript runtime for agents, tools, structured extraction, retrieval, pipelines, and observability inside your application code.
+Anvia is an open, TypeScript agent stack that gives developers everything they need to build production agents — without taking ownership of their stack.
 
-It gives teams more structure than raw model calls without forcing a heavyweight orchestration stack. You bring the product, data, permissions, persistence, deployment, and side effects. Anvia gives you small, explicit AI runtime contracts that fit around them.
-
-The core design is dependency-injection oriented: your app creates provider models, typed tools, memory stores, vector indexes, observers, services, and transports, then passes the relevant objects into Anvia agents, runners, or adapters. Anvia runs the model/tool loop; your application keeps ownership of product architecture.
-
-## Release Channels
-
-Anvia packages version and publish independently. A package release does not force unrelated
-packages onto the same version.
-
-- Use `@latest` for stable releases.
-- Use `@rc` for package-specific release candidates.
-- Use `@preview` for commit-scoped previews of packages in the pending Changesets plan.
-
-See the [package release policy](docs/releases/v1.md) for versioning, publishing, and tag rules.
+Your application stays the system of record: it creates the provider models, typed tools, memory stores, and observers, and passes them into Anvia agents and runners. Anvia runs the model/tool loop — remove it and you keep your product.
 
 ## Why Anvia
 
-- Provider-neutral clients for OpenAI-compatible APIs, Anthropic, Gemini, and Mistral.
+- Provider-neutral clients for OpenAI-compatible APIs, Anthropic, Gemini, and Mistral — your agent architecture should not belong to your model provider.
 - Agent and tool APIs that keep application behavior explicit and typed.
+- Memory contracts for agent state and history, stored where you decide.
 - Embeddable runtime contracts that keep provider, memory, observability, storage, and service choices in application code.
 - Structured extraction and output schemas for turning model responses into usable data.
 - Pipeline primitives for composing functions, agents, extractors, batches, and parallel branches.
-- Retrieval adapters for in-memory search, local embeddings, ChromaDB, Qdrant, and pgvector.
-- Optional Studio, MCP, local skills, Langfuse, and OpenTelemetry integrations.
+- Retrieval adapters for in-memory search, local embeddings, ChromaDB, LanceDB, Milvus, pgvector, Pinecone, Qdrant, Redis, and Weaviate.
+- Browser automation and sandboxed execution, so agents can act on the world and run work in environments you control.
+- Evaluation primitives for scoring and regression-testing agent behavior on your infrastructure.
+- Optional Studio, Lens, MCP, local skills, Langfuse, and OpenTelemetry integrations.
+
+Anvia is an agent stack, not an agent platform. A platform asks you to build inside its system; a stack gives you components to build inside your own. If you are building an AI product you expect to own for years, ownership becomes part of the architecture.
 
 ## Quick Start
 
@@ -75,14 +70,18 @@ console.log(response.output);
 Use the same runtime shape with other providers:
 
 ```sh
-pnpm add @anvia/anthropic@rc @anvia/gemini@rc @anvia/mistral@rc
+pnpm add @anvia/anthropic@latest @anvia/gemini@latest @anvia/mistral@latest
 ```
 
 Anvia clients take explicit constructor values and do not read environment variables on their own, so credentials stay in your existing configuration layer.
 
 ## Studio
 
-Anvia includes `@anvia/studio`, a local browser UI for inspecting and running agents, tools, sessions, traces, pipelines, memory, status, and knowledge during development. Add one line to serve any agent in Studio:
+Anvia includes `@anvia/studio`, a local browser UI for inspecting and running agents, tools, sessions, traces, pipelines, memory, status, and knowledge during development.
+
+Studio connects to the actual agent instance your application creates. Your model, instructions, tools, middleware, memory, and policies remain application code — one agent, one source of truth. Inspect, test, intervene, and replay against the running agent, then ship it unchanged.
+
+Add one line to serve any agent in Studio:
 
 ```ts
 new Studio([agent]).start({ port: 4021 });
@@ -97,8 +96,13 @@ new Studio([agent]).start({ port: 4021 });
 | Extractors    | Schema-shaped data from text, tickets, documents, messages, and model responses.                          |
 | Pipelines     | Explicit multi-step workflows that combine functions, agents, extraction, branching, and batching.        |
 | Retrieval     | Embeddings, vector search, document context, metadata filters, and RAG workflows.                         |
+| Memory        | Agent memory using storage you control.                                                                   |
+| Browser       | Web interaction for agents, with the browser lifecycle owned by your application.                         |
+| Sandbox       | Give agents execution capabilities without giving up control of the environment.                          |
 | Observability | Run, generation, tool, usage, trace, and eval events for production visibility.                           |
+| Evaluation    | Score and regression-test agent behavior with evals that run on your infrastructure.                      |
 | Studio        | A local browser UI for inspecting agents, sessions, traces, pipelines, tools, approvals, and knowledge.   |
+| Lens          | Observe and evaluate production agents on infrastructure you control.                                     |
 
 ## Cookbook
 
@@ -129,3 +133,5 @@ pnpm cookbook:studio:01
 ## License
 
 MIT
+
+Anvia is free and open source. Build agents with your preferred model providers, keep your data in your own databases, run locally, self-host, and deploy without an Anvia account.

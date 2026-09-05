@@ -1874,6 +1874,36 @@ describe("Anvia studio", () => {
     });
   });
 
+  it("omits stack traces from tool run failures", async () => {
+    const agent = new Agent({
+      id: "support",
+      model: new QueueModel([]),
+      tools: [
+        createRefundTool(() => {
+          throw new Error("refund engine offline");
+        }),
+      ],
+    });
+    const runner = new Studio([agent]);
+
+    const res = await runner.fetch(
+      new Request("http://runner.test/agents/support/tools/issue_refund/runs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ args: { orderId: "ord_1", amount: 10 } }),
+      }),
+    );
+
+    expect(res.status).toBe(500);
+    const body = (await res.json()) as { status: string; error: Record<string, unknown> };
+    expect(body.status).toBe("error");
+    expect(body.error).toMatchObject({
+      name: expect.any(String),
+      message: expect.stringContaining("refund engine offline"),
+    });
+    expect(body.error).not.toHaveProperty("stack");
+  });
+
   it("exposes only explicitly registered sandbox inspectors", async () => {
     const inspector = {
       id: "workspace_1",

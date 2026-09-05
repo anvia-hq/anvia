@@ -1,5 +1,5 @@
 ---
-"@anvia/tool-studio": patch
+"@anvia/studio": patch
 ---
 
 Omit stack traces from tool run error responses. Tool failures reported by

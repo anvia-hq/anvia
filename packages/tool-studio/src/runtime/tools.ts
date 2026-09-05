@@ -5,8 +5,9 @@ import type {
   StudioToolRunRequest,
   StudioToolRunResponse,
 } from "../types";
+import { serializeError } from "./errors";
 import { errorResponse } from "./http";
-import { serializeUnknown, toJsonValue } from "./json";
+import { toJsonValue } from "./json";
 import { agentToolItems, approvalMetadata, mcpServerName } from "./tool-metadata";
 import { isJsonObject, isJsonValue } from "./type-guards";
 
@@ -72,7 +73,7 @@ export function registerToolRoutes(
           agentId,
           toolName,
           status: "error",
-          error: serializeUnknown(error),
+          error: serializeError(error),
           durationMs: ended - started,
           startedAt,
           endedAt: new Date(ended).toISOString(),

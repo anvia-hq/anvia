@@ -1,5 +1,5 @@
 ---
-"@anvia/sandbox": minor
+"@anvia/sandbox": patch
 ---
 
 Add a `containerRuntime` option to `DockerSandboxClient.createSandbox()` for running sandboxes on

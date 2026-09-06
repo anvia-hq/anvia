@@ -83,6 +83,7 @@ describe("OpenAI Responses mapping", () => {
       contextLimits: { contextWindow: 42_000, maxOutputTokens: 2_000 },
     });
     const unknown = client.completionModel({ modelId: "unknown", api: "responses" });
+    const astra = client.completionModel({ modelId: "gpt-6-astra", api: "responses" });
 
     expect(builtIn.contextLimits).toMatchObject({
       contextWindow: 1_050_000,
@@ -90,6 +91,10 @@ describe("OpenAI Responses mapping", () => {
     });
     expect(custom.contextLimits).toEqual({ contextWindow: 42_000, maxOutputTokens: 2_000 });
     expect(unknown.contextLimits).toBeUndefined();
+    expect(astra.contextLimits).toMatchObject({
+      contextWindow: 1_050_000,
+      maxOutputTokens: 128_000,
+    });
   });
 
   it("maps incomplete max-output responses to the normalized length reason", () => {

@@ -51,7 +51,7 @@ export type OpenAICompletionModelOptions<
   Controls extends CompletionModelControls = OpenAIControlsFor<ModelId>,
 > = {
   modelId: ModelId;
-  api: "responses" | "chat";
+  api?: "responses" | "chat" | undefined;
   contextLimits?: ModelContextLimits | undefined;
   controls?: Controls | undefined;
 };
@@ -100,9 +100,9 @@ export class OpenAIClient implements ModelListingClient {
       OPENAI_COMPLETION_MODEL_CONTEXT_LIMITS,
       options.contextLimits,
     );
-    return options.api === "chat"
-      ? new OpenAIChatCompletionModel(this.sdk, modelId, contextLimits, controls)
-      : new OpenAIResponsesCompletionModel(this.sdk, modelId, contextLimits, controls);
+    return options.api === "responses"
+      ? new OpenAIResponsesCompletionModel(this.sdk, modelId, contextLimits, controls)
+      : new OpenAIChatCompletionModel(this.sdk, modelId, contextLimits, controls);
   }
 
   embeddingModel(options: OpenAIEmbeddingModelOptions): OpenAIEmbeddingModelHandle {

@@ -41,7 +41,8 @@ if (result.type === "response") console.log(result.output);
 
 ## Completion APIs
 
-`GrokClient` targets `https://api.x.ai/v1` by default. Choose the protocol on each model handle:
+`GrokClient` targets `https://api.x.ai/v1` by default. Model handles default to the Chat
+Completions API; opt into Responses with `api: "responses"`:
 
 ```ts
 const client = new GrokClient({
@@ -49,10 +50,10 @@ const client = new GrokClient({
 });
 ```
 
-Use the Chat Completions adapter when a workflow specifically needs that surface:
+The Responses API remains available when a workflow specifically needs that surface:
 
 ```ts
-const chatModel = client.completionModel({ modelId: "grok-4.6", api: "chat" });
+const responsesModel = client.completionModel({ modelId: "grok-4.6", api: "responses" });
 ```
 
 Provider-specific xAI parameters can be passed through completion `providerOptions`.
@@ -72,7 +73,8 @@ const response = await model.completion({
 
 Grok's Responses API can execute web search, X search, code interpreter, collections search, and
 remote MCP tools on xAI's servers. Pass them through the same `.tools(...)` API as local executable
-tools:
+tools. Select Responses explicitly (`api: "responses"`); Chat Completions handles do not advertise
+provider tools:
 
 ```ts
 import { Agent } from "@anvia/core";

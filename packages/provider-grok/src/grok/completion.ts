@@ -23,7 +23,7 @@ export class GrokCompletionModel<
   constructor(
     client: OpenAI,
     readonly modelId: GrokCompletionModelId,
-    api: "responses" | "chat",
+    api?: "responses" | "chat" | undefined,
     readonly contextLimits?: ModelContextLimits,
     readonly controls?: Controls,
   ) {

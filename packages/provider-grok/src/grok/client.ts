@@ -54,7 +54,7 @@ export type GrokCompletionModelOptions<
   Controls extends CompletionModelControls = GrokControlsFor<ModelId>,
 > = {
   modelId: ModelId;
-  api: "responses" | "chat";
+  api?: "responses" | "chat" | undefined;
   contextLimits?: ModelContextLimits | undefined;
   controls?: Controls | undefined;
 };

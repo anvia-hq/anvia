@@ -55,7 +55,8 @@ if (result.type === "response") console.log(result.output);
 
 ## OpenAI-Compatible APIs
 
-`baseUrl` changes only the endpoint. Choose the protocol on each model handle explicitly:
+`baseUrl` changes only the endpoint. Model handles default to the Chat Completions API; opt into
+Responses with `api: "responses"` per handle:
 
 ```ts
 import { OpenAIClient } from "@anvia/openai";
@@ -68,7 +69,7 @@ const client = new OpenAIClient({
 const model = client.completionModel({ modelId: "openai/gpt-5.2", api: "chat" });
 ```
 
-The same client can create both `{ api: "responses" }` and `{ api: "chat" }` handles.
+The same client can create both `{ api: "chat" }` (the default) and `{ api: "responses" }` handles.
 Known reasoning models advertise a typed `reasoningEffort` control. For custom OpenAI-compatible
 model IDs, pass an explicit `controls` descriptor to `completionModel()` when the endpoint supports
 the same parameter. Canonical controls map to `reasoning.effort` for Responses and

@@ -21,6 +21,15 @@ describe("GrokClient", () => {
     );
   });
 
+  it("defaults to chat completions when api is omitted", () => {
+    const client = injectedClient(fakeSdk());
+
+    const defaulted = client.completionModel({ modelId: GROK_4_5 });
+    expect(defaulted.capabilities.providerTools).toBeUndefined();
+    const responses = client.completionModel({ modelId: GROK_4_5, api: "responses" });
+    expect(responses.capabilities.providerTools).toBe(true);
+  });
+
   it("types known Grok models while accepting custom model strings", () => {
     const client = injectedClient(fakeSdk());
 

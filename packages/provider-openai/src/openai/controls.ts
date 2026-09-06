@@ -22,7 +22,7 @@ export type OpenAIControlsFor<ModelId extends OpenAICompletionModelId> = ModelId
   ? ReasoningEffortControls<"high">
   : ModelId extends "gpt-5.2-pro" | "gpt-5.4-pro" | "gpt-5.5-pro"
     ? ReasoningEffortControls<"medium" | "high" | "xhigh">
-    : ModelId extends `gpt-5.6${string}`
+    : ModelId extends `gpt-5.6${string}` | `gpt-6${string}`
       ? ReasoningEffortControls<"none" | "low" | "medium" | "high" | "xhigh" | "max">
       : ModelId extends `gpt-5.${2 | 4 | 5}${string}`
         ? ReasoningEffortControls<"none" | "low" | "medium" | "high" | "xhigh">
@@ -66,7 +66,9 @@ export function openAIControlsForModel(modelId: string): OpenAIReasoningControls
   if (modelId === "gpt-5.2-pro" || modelId === "gpt-5.4-pro" || modelId === "gpt-5.5-pro") {
     return PRO_REASONING_CONTROLS;
   }
-  if (modelId.startsWith("gpt-5.6")) return GPT_5_6_REASONING_CONTROLS;
+  if (modelId.startsWith("gpt-5.6") || modelId.startsWith("gpt-6")) {
+    return GPT_5_6_REASONING_CONTROLS;
+  }
   if (modelId.startsWith("gpt-5.2") || modelId.startsWith("gpt-5.4")) {
     return LATE_GPT_5_DEFAULT_NONE_CONTROLS;
   }

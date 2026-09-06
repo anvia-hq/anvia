@@ -10,6 +10,8 @@ import {
   type OpenAISpeechGenerationModelId,
   type OpenAITranscriptionModelId,
 } from "../src/index";
+import { OpenAIChatCompletionModel } from "../src/openai/chat-completion";
+import { OpenAIResponsesCompletionModel } from "../src/openai/responses";
 
 describe("OpenAIClient", () => {
   it("rejects mixed injected and managed configuration", () => {
@@ -17,6 +19,17 @@ describe("OpenAIClient", () => {
     expectTypeOf(mixed).not.toMatchTypeOf<OpenAIClientOptions>();
     expect(() => new OpenAIClient(mixed as never)).toThrow(
       "OpenAIClient cannot combine client with apiKey",
+    );
+  });
+
+  it("defaults to chat completions when api is omitted", () => {
+    const client = new OpenAIClient({ client: {} as never });
+
+    expect(client.completionModel({ modelId: "custom-model" })).toBeInstanceOf(
+      OpenAIChatCompletionModel,
+    );
+    expect(client.completionModel({ modelId: "custom-model", api: "responses" })).toBeInstanceOf(
+      OpenAIResponsesCompletionModel,
     );
   });
 
@@ -38,6 +51,10 @@ describe("OpenAIClient", () => {
       api: "responses",
     });
     expectTypeOf(latestReasoningModel.controls!.reasoningEffort.options).items.toEqualTypeOf<
+      "none" | "low" | "medium" | "high" | "xhigh" | "max"
+    >();
+    const astraModel = client.completionModel({ modelId: "gpt-6-astra", api: "responses" });
+    expectTypeOf(astraModel.controls!.reasoningEffort.options).items.toEqualTypeOf<
       "none" | "low" | "medium" | "high" | "xhigh" | "max"
     >();
     const proReasoningModel = client.completionModel({

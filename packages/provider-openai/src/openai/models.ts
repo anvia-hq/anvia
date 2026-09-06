@@ -41,6 +41,7 @@ export type KnownOpenAICompletionModelId =
   | "gpt-5.6-luna"
   | "gpt-5.6-sol"
   | "gpt-5.6-terra"
+  | "gpt-6-astra"
   | "o1"
   | "o1-pro"
   | "o3"
@@ -111,6 +112,7 @@ export const OPENAI_COMPLETION_MODEL_CONTEXT_LIMITS: Readonly<Record<string, Mod
     "gpt-5.6-luna": CONTEXT_1M_128K,
     "gpt-5.6-sol": CONTEXT_1M_128K,
     "gpt-5.6-terra": CONTEXT_1M_128K,
+    "gpt-6-astra": CONTEXT_1M_128K,
     o1: CONTEXT_200K_100K,
     "o1-pro": CONTEXT_200K_100K,
     o3: CONTEXT_200K_100K,

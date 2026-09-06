@@ -61,6 +61,7 @@ const labels = {
   workspaceType: `${labelPrefix}workspace.type`,
   workspaceVolume: `${labelPrefix}workspace.volume`,
   networkMode: `${labelPrefix}network.mode`,
+  containerRuntime: `${labelPrefix}container-runtime`,
   commandTimeoutMs: `${labelPrefix}runtime.command-timeout-ms`,
   maxOutputBytes: `${labelPrefix}runtime.max-output-bytes`,
   maxFileBytes: `${labelPrefix}runtime.max-file-bytes`,
@@ -88,6 +89,7 @@ type SandboxConfiguration = {
   id: string;
   containerName: string;
   workdir: string;
+  containerRuntime: string;
   workspace: DockerSandboxWorkspace;
   volumeName: string;
   ownsVolume: boolean;
@@ -121,6 +123,7 @@ export class DockerSandboxClient {
     assertSandboxId(id);
     const containerName = containerNameFor(id);
     const workdir = options.workdir ?? defaultWorkdir;
+    const containerRuntime = options.containerRuntime ?? "default";
     const runtime = resolveRuntimeLimits(options.runtime);
     const workspace = copyWorkspace(options.workspace);
     const network = copyNetwork(options.network);
@@ -137,6 +140,7 @@ export class DockerSandboxClient {
     if (workspace.type === "docker-volume") {
       await this.assertVolumeExists(workspace.name, options.abortSignal);
     }
+    await this.assertRuntimeAvailable(containerRuntime, options.abortSignal);
 
     let containerCreated = false;
     let volumeCreated = false;
@@ -154,6 +158,7 @@ export class DockerSandboxClient {
           containerName,
           image: options.image,
           workdir,
+          containerRuntime,
           workspace,
           volumeName,
           env,
@@ -181,6 +186,7 @@ export class DockerSandboxClient {
         id,
         containerName,
         workdir,
+        containerRuntime,
         workspace,
         volumeName,
         ownsVolume,
@@ -304,6 +310,38 @@ export class DockerSandboxClient {
       result,
     );
   }
+  private async assertRuntimeAvailable(name: string, abortSignal?: AbortSignal): Promise<void> {
+    if (name === "default") return;
+    const result = await runDockerCli(["info", "--format", "{{json .Runtimes}}"], {
+      ...this.cliOptions(abortSignal),
+      maxOutputBytes: defaultMaxOutputBytes,
+    });
+    if (result.exitCode !== 0) {
+      throw new DockerSandboxError(
+        "Unable to inspect Docker runtimes.",
+        "docker_command_failed",
+        result,
+      );
+    }
+    let runtimes: unknown;
+    try {
+      runtimes = JSON.parse(decodeUtf8(result.stdout));
+    } catch (error) {
+      throw new DockerSandboxError(
+        "Docker returned invalid runtime metadata.",
+        "docker_command_failed",
+        undefined,
+        { cause: error },
+      );
+    }
+    if (!isRecord(runtimes) || !(name in runtimes)) {
+      throw new DockerSandboxError(
+        `Docker runtime is not registered in the daemon: ${JSON.stringify(name)}. ` +
+          `Install the runtime (for gVisor: runsc install) and restart the Docker daemon.`,
+        "runtime_not_found",
+      );
+    }
+  }
 
   private cliOptions(abortSignal?: AbortSignal) {
     return { dockerPath: this.dockerPath, signal: abortSignal };
@@ -346,6 +384,7 @@ class DockerSandboxHandle implements DockerSandbox {
       id: this.id,
       provider: "docker",
       workdir: this.configuration.workdir,
+      containerRuntime: this.configuration.containerRuntime,
     };
     if (options.files === true) {
       inspector = {
@@ -920,6 +959,7 @@ function createRunArgs(options: {
   containerName: string;
   image: string;
   workdir: string;
+  containerRuntime: string;
   workspace: DockerSandboxWorkspace;
   volumeName: string;
   env: Record<string, string>;
@@ -937,6 +977,7 @@ function createRunArgs(options: {
     [labels.workspaceType]: options.workspace.type,
     [labels.workspaceVolume]: options.volumeName,
     [labels.networkMode]: options.network.mode,
+    [labels.containerRuntime]: options.containerRuntime,
     [labels.commandTimeoutMs]: `${options.runtime.commandTimeoutMs}`,
     [labels.maxOutputBytes]: `${options.runtime.maxOutputBytes}`,
     [labels.maxFileBytes]: `${options.runtime.maxFileBytes}`,
@@ -952,6 +993,9 @@ function createRunArgs(options: {
     "-w",
     options.workdir,
   ];
+  if (options.containerRuntime !== "default") {
+    args.push("--runtime", options.containerRuntime);
+  }
   for (const [key, value] of Object.entries({ ...options.userLabels, ...runtimeLabels })) {
     args.push("--label", `${key}=${value}`);
   }
@@ -1032,6 +1076,9 @@ function validateCreateOptions(options: CreateDockerSandboxOptions): void {
     if (key.startsWith(labelPrefix)) throw new TypeError(`Docker label is reserved: ${key}`);
   }
   if (options.user !== undefined) assertNonEmptyString(options.user, "user");
+  if (options.containerRuntime !== undefined) {
+    assertNonEmptyString(options.containerRuntime, "containerRuntime");
+  }
   if (options.directories !== undefined && !Array.isArray(options.directories)) {
     throw new TypeError("directories must be an array.");
   }
@@ -1199,6 +1246,9 @@ function snapshotCreateOptions(options: CreateDockerSandboxOptions): CreateDocke
   };
   if (options.id !== undefined) snapshot = { ...snapshot, id: options.id };
   if (options.workdir !== undefined) snapshot = { ...snapshot, workdir: options.workdir };
+  if (options.containerRuntime !== undefined) {
+    snapshot = { ...snapshot, containerRuntime: options.containerRuntime };
+  }
   if (options.files !== undefined) snapshot = { ...snapshot, files: Object.freeze(files) };
   if (options.directories !== undefined) {
     snapshot = { ...snapshot, directories: Object.freeze([...options.directories]) };
@@ -1262,6 +1312,14 @@ function configurationFromInspection(
   const workspaceType = requiredLabel(containerLabels, labels.workspaceType);
   const volumeName = requiredLabel(containerLabels, labels.workspaceVolume);
   const networkMode = requiredLabel(containerLabels, labels.networkMode);
+  const labeledRuntime = containerLabels[labels.containerRuntime];
+  const hostRuntime = inspection.HostConfig?.Runtime;
+  const containerRuntime =
+    labeledRuntime !== undefined && labeledRuntime !== ""
+      ? labeledRuntime
+      : hostRuntime !== undefined && hostRuntime !== ""
+        ? hostRuntime
+        : "default";
   if (networkMode !== "none" && networkMode !== "bridge") invalidInspection("network mode");
   const workspace: DockerSandboxWorkspace =
     workspaceType === "ephemeral"
@@ -1278,6 +1336,7 @@ function configurationFromInspection(
   return {
     id,
     containerName,
+    containerRuntime,
     workdir,
     workspace,
     volumeName,
@@ -1292,6 +1351,7 @@ type DockerContainerInspection = {
   Config: { Labels?: Record<string, string>; WorkingDir?: string };
   HostConfig?: {
     PortBindings?: Record<string, Array<{ HostIp?: string; HostPort?: string }> | null>;
+    Runtime?: string;
   };
   State: { Running?: boolean; Paused?: boolean; Dead?: boolean; Status?: string };
   NetworkSettings?: {

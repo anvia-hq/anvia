@@ -37,6 +37,15 @@ explicit `dropCapabilities` and `addCapabilities` arrays, plus
 `seccompProfile: { type: "path", path }` with an absolute host path. These options are used by
 `@anvia/browser` to keep Chromium's own process sandbox enabled.
 
+`createSandbox()` accepts `containerRuntime` — the runtime name registered in the Docker daemon (for
+example `runsc` for gVisor). The runtime must already be registered (`runsc install` followed by a
+daemon restart); creation fails with a `runtime_not_found` error otherwise. `resumeSandbox()` keeps
+the container's original runtime. Under gVisor, workspace files persist through
+`stop()`/`resumeSandbox()` because they live on a Docker volume, but changes to the container's
+writable rootfs outside the workspace do not survive a resume, and `security.seccompProfile` is not
+enforced the way it is on the default runtime because the gVisor sentry mediates application
+syscalls itself.
+
 Studio does not discover sandboxes through tool metadata. Register a read-only inspector explicitly:
 
 ```ts

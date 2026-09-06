@@ -47,6 +47,11 @@ export type CreateDockerSandboxOptions = Readonly<{
   workdir?: string;
   workspace: DockerSandboxWorkspace;
   network: DockerSandboxNetwork;
+  /** Docker runtime used to run the container, as registered in the daemon
+   *  (for example "runsc" for gVisor). The runtime must already be registered;
+   *  createSandbox() fails with `runtime_not_found` otherwise. Omitted means
+   *  the daemon default. resumeSandbox() keeps the container's runtime. */
+  containerRuntime?: string;
   files?: Readonly<Record<string, string | Uint8Array>>;
   directories?: readonly string[];
   env?: Readonly<Record<string, string>>;
@@ -236,6 +241,7 @@ export type DockerSandboxInspector = Readonly<{
   id: string;
   provider: "docker";
   workdir: string;
+  containerRuntime: string;
   listFiles?: DockerSandboxRuntime["listFiles"];
   readFile?: DockerSandboxRuntime["readFile"];
   publishedPorts?: readonly DockerSandboxPublishedPort[];

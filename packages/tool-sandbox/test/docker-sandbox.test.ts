@@ -95,4 +95,16 @@ describe("DockerSandboxClient validation", () => {
       }),
     ).rejects.toThrow("addCapabilities contains a duplicate");
   });
+
+  it("rejects an empty container runtime before Docker I/O", async () => {
+    const client = new DockerSandboxClient({ dockerPath: "/definitely/missing/docker" });
+    await expect(
+      client.createSandbox({
+        image: "node:22-bookworm",
+        workspace: { type: "ephemeral" },
+        network: { mode: "none" },
+        containerRuntime: "",
+      }),
+    ).rejects.toThrow("containerRuntime");
+  });
 });

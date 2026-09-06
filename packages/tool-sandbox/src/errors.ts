@@ -2,6 +2,7 @@ export type DockerSandboxErrorCode =
   | "docker_unavailable"
   | "docker_command_failed"
   | "image_not_found"
+  | "runtime_not_found"
   | "volume_not_found"
   | "sandbox_not_found"
   | "invalid_state"

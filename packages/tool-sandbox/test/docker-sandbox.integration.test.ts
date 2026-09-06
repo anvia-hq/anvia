@@ -140,4 +140,18 @@ describe.skipIf(!runDockerTests)("Docker sandbox integration", () => {
     );
     await expect(sandbox.runtime.listProcesses()).resolves.toEqual([]);
   }, 120_000);
+
+  it("rejects creation when the container runtime is not registered", async () => {
+    const client = new DockerSandboxClient();
+    await client.pullImage({ image: "debian:bookworm-slim" });
+    await expect(
+      client.createSandbox({
+        id: `vitest-runtime-missing-${Date.now()}`,
+        image: "debian:bookworm-slim",
+        workspace: { type: "ephemeral" },
+        network: { mode: "none" },
+        containerRuntime: "anvia-unregistered-runtime",
+      }),
+    ).rejects.toMatchObject({ code: "runtime_not_found" });
+  }, 60_000);
 });

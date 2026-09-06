@@ -55,7 +55,7 @@ describe("OpenAIClient", () => {
     >();
     const astraModel = client.completionModel({ modelId: "gpt-6-astra", api: "responses" });
     expectTypeOf(astraModel.controls!.reasoningEffort.options).items.toEqualTypeOf<
-      "none" | "low" | "medium" | "high" | "xhigh" | "max"
+      "low" | "medium" | "high" | "xhigh" | "max"
     >();
     const proReasoningModel = client.completionModel({
       modelId: "gpt-5.4-pro",

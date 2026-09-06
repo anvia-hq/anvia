@@ -1,5 +1,21 @@
 # @anvia/studio
 
+## 1.1.2
+
+### Patch Changes
+
+- 52d8a3c: Omit stack traces from tool run error responses. Tool failures reported by
+  `POST /agents/:agentId/tools/:toolName/runs` now serialize errors with the same
+  safe serializer used by agent and pipeline run failures, keeping the error name
+  and message while dropping stack traces.
+- Updated dependencies [f998fd6]
+  - @anvia/core@1.1.2
+  - @anvia/graph@1.1.2
+  - @anvia/client@1.1.2
+  - @anvia/react@1.1.2
+  - @anvia/react-ui@1.1.2
+  - @anvia/server@1.1.2
+
 ## 1.1.1
 
 ### Patch Changes

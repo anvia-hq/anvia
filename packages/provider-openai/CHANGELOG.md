@@ -1,5 +1,14 @@
 # @anvia/openai
 
+## 1.1.2
+
+### Patch Changes
+
+- b91bbb9: `completionModel()` now defaults to the Chat Completions API. `api` is optional and falls back to `"chat"`; pass `api: "responses"` explicitly to keep using the Responses API. Grok server-side provider tools are only advertised on Responses handles.
+- b91bbb9: Add `gpt-6-astra` to the known OpenAI completion model list with context limits and reasoning-effort controls.
+- Updated dependencies [f998fd6]
+  - @anvia/core@1.1.2
+
 ## 1.1.1
 
 ### Patch Changes

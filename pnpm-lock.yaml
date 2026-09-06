@@ -218,9 +218,6 @@ importers:
       yaml:
         specifier: ^2.9.0
         version: 2.9.0
-      zod:
-        specifier: ^4.5.4
-        version: 4.5.4
     devDependencies:
       '@types/node':
         specifier: ^24.9.1
@@ -234,6 +231,9 @@ importers:
       vitest:
         specifier: ^4.0.8
         version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@24.12.2)(@vitest/coverage-v8@4.1.5)(happy-dom@20.9.0)(vite@8.2.2(@types/node@24.12.2)(esbuild@0.28.2)(jiti@2.6.1)(tsx@4.23.12)(yaml@2.9.0))
+      zod:
+        specifier: ^4.5.4
+        version: 4.5.4
 
   packages/embedding-transformers:
     dependencies:
@@ -258,10 +258,6 @@ importers:
         version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@24.12.2)(@vitest/coverage-v8@4.1.5)(happy-dom@20.9.0)(vite@8.2.2(@types/node@24.12.2)(esbuild@0.28.2)(jiti@2.6.1)(tsx@4.23.12)(yaml@2.9.0))
 
   packages/graph:
-    dependencies:
-      zod:
-        specifier: ^4.5.4
-        version: 4.5.4
     devDependencies:
       '@anvia/core':
         specifier: workspace:*
@@ -278,6 +274,9 @@ importers:
       vitest:
         specifier: ^4.0.8
         version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@24.12.2)(happy-dom@20.9.0)(vite@8.2.2(@types/node@24.12.2)(esbuild@0.28.2)(jiti@2.6.1)(tsx@4.23.12)(yaml@2.9.0))
+      zod:
+        specifier: ^4.5.4
+        version: 4.5.4
 
   packages/graph-memgraph:
     dependencies:
@@ -315,9 +314,6 @@ importers:
       neo4j-driver:
         specifier: ^6.2.0
         version: 6.2.0
-      zod:
-        specifier: ^4.5.4
-        version: 4.5.4
     devDependencies:
       '@anvia/core':
         specifier: workspace:*
@@ -334,6 +330,9 @@ importers:
       vitest:
         specifier: ^4.0.8
         version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@24.12.2)(@vitest/coverage-v8@4.1.5)(happy-dom@20.9.0)(vite@8.2.2(@types/node@24.12.2)(esbuild@0.28.2)(jiti@2.6.1)(tsx@4.23.12)(yaml@2.9.0))
+      zod:
+        specifier: ^4.5.4
+        version: 4.5.4
 
   packages/logger:
     dependencies:

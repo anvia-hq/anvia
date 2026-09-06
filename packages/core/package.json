@@ -115,13 +115,16 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "yaml": "^2.9.0",
-    "zod": "^4.5.4"
+    "yaml": "^2.9.0"
+  },
+  "peerDependencies": {
+    "zod": "^4.4.0"
   },
   "devDependencies": {
     "@types/node": "^24.9.1",
     "tsup": "^8.5.0",
     "typescript": "^5.9.3",
-    "vitest": "^4.0.8"
+    "vitest": "^4.0.8",
+    "zod": "^4.5.4"
   }
 }

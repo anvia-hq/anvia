@@ -88,3 +88,65 @@ export type LensDatasetClient = {
     options: LensDatasetGetOptions,
   ): Promise<LensDataset<Input, Expected>>;
 };
+
+export type LensPromptRef = {
+  readonly name: string;
+  readonly version: number;
+};
+
+export type LensPromptJson =
+  | null
+  | string
+  | number
+  | boolean
+  | readonly LensPromptJson[]
+  | { readonly [key: string]: LensPromptJson };
+
+export type LensChatMessage = {
+  readonly role: "system" | "user" | "assistant" | "tool";
+  readonly content: string;
+  readonly name?: string;
+};
+
+type LensPromptSnapshot = LensPromptRef & {
+  readonly ref: LensPromptRef;
+  readonly config: { readonly [key: string]: LensPromptJson };
+  readonly labels: readonly string[];
+  readonly selector: { readonly label: string } | { readonly version: number };
+  readonly variables: readonly string[];
+};
+
+export type LensTextPrompt = LensPromptSnapshot & {
+  readonly type: "text";
+  readonly template: string;
+  readonly messages: null;
+  readonly compile: (variables?: Readonly<Record<string, string>>) => string;
+};
+
+export type LensChatPrompt = LensPromptSnapshot & {
+  readonly type: "chat";
+  readonly template: null;
+  readonly messages: readonly LensChatMessage[];
+  readonly compile: (variables?: Readonly<Record<string, string>>) => LensChatMessage[];
+};
+
+export type LensPrompt = LensTextPrompt | LensChatPrompt;
+
+export type LensPromptClientOptions = {
+  baseUrl?: string | undefined;
+  publicKey?: string | undefined;
+  secretKey?: string | undefined;
+  cacheTtlMs?: number | undefined;
+  timeoutMs?: number | undefined;
+};
+
+export type LensPromptGetOptions = {
+  name: string;
+  cache?: "default" | "reload" | "no-store" | undefined;
+  signal?: AbortSignal | undefined;
+} & ({ label?: string | undefined; version?: never } | { label?: never; version: number });
+
+export type LensPromptClient = {
+  getPrompt(options: LensPromptGetOptions): Promise<LensPrompt>;
+  clearCache(): void;
+};

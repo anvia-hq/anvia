@@ -177,6 +177,52 @@ const addTool = createTool({
 });
 
 describe("agent observability", () => {
+  it("scopes prompt overrides to one generation and keeps identity out of provider requests", async () => {
+    const observer = new RecordingObserver();
+    const defaultRef = { name: "support", version: 4 };
+    const overrideRef = { name: "planner", version: 9 };
+    const seen: Array<AgentRunPromptRef | undefined> = [];
+    const model = new QueueModel([
+      response([AssistantContent.toolCall("call_1", "add", { x: 1, y: 2 })]),
+      response([AssistantContent.toolCall("call_2", "add", { x: 2, y: 3 })]),
+      response([AssistantContent.text("done")]),
+    ]);
+    const agent = new Agent({
+      id: "multi-prompt",
+      model,
+      tools: [addTool],
+      observability: { observers: { test: observer } },
+    });
+    await agent.generate({
+      prompt: "hello",
+      trace: { promptRef: defaultRef },
+      middlewares: [
+        {
+          onCompletionRequest: ({ request, promptRef }) => {
+            seen.push(promptRef);
+            expect(request).not.toHaveProperty("promptRef");
+            if (seen.length === 1) return { request, promptRef: overrideRef };
+            if (seen.length === 2) return { request, promptRef: null };
+            return undefined;
+          },
+        },
+      ],
+    });
+    expect(seen).toEqual([defaultRef, defaultRef, defaultRef]);
+    const generations = observer.events.filter(
+      (event) =>
+        typeof event === "object" &&
+        event !== null &&
+        "type" in event &&
+        event.type === "generation_start",
+    );
+    expect(generations).toMatchObject([
+      { args: { promptRef: overrideRef } },
+      { args: { promptRef: undefined } },
+      { args: { promptRef: defaultRef } },
+    ]);
+  });
+
   it("records one run and one generation for text-only send", async () => {
     const observer = new RecordingObserver();
     const model = new QueueModel([response([AssistantContent.text("done")])]);
@@ -225,6 +271,7 @@ describe("agent observability", () => {
       expect.objectContaining({
         type: "generation_start",
         args: expect.objectContaining({
+          promptRef: { name: "support.system", version: 3 },
           modelInfo: {
             provider: "test",
             modelId: "test",

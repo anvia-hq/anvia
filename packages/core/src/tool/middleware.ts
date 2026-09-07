@@ -5,16 +5,21 @@ import type {
   ToolResultContentPart,
 } from "../completion";
 import type { MaybePromise } from "../internal/type-utils";
+import type { AgentRunPromptRef } from "../observability/types";
 
 export type CompletionRequestMiddlewareArgs = {
   turn: number;
   request: CompletionRequest;
   originalRequest: CompletionRequest;
+  /** Current generation identity, defaulting to the run's trace.promptRef each turn. */
+  promptRef?: AgentRunPromptRef | undefined;
 };
 
 export type CompletionRequestMiddlewareResult =
   | {
       request: CompletionRequest;
+      /** Override this generation's identity; null explicitly clears the run default. */
+      promptRef?: AgentRunPromptRef | null | undefined;
     }
   | undefined;
 

@@ -93,6 +93,7 @@ export type AgentGenerationModelInfo = {
 export type AgentGenerationStartArgs = {
   readonly turn: number;
   readonly request: DeepReadonly<CompletionRequest>;
+  readonly promptRef?: DeepReadonly<AgentRunPromptRef> | undefined;
   readonly providerRequest?: DeepReadonly<JsonObject> | undefined;
   readonly modelInfo?: DeepReadonly<AgentGenerationModelInfo> | undefined;
 };

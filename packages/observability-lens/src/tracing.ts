@@ -16,6 +16,7 @@ import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base";
 import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
 import { type ResolvedLensConfig, resolveLensConfig } from "./config.js";
 import { createLensDatasetClient } from "./dataset-client.js";
+import { createLensPromptClient } from "./prompt-client.js";
 import { createLensRedactor } from "./redaction.js";
 import type {
   LensClientOptions,
@@ -26,6 +27,8 @@ import type {
   LensEvalReporterOptions,
   LensObserverOptions,
   LensPipelineObserverOptions,
+  LensPromptClient,
+  LensPromptClientOptions,
   LensScoreArgs,
 } from "./types.js";
 
@@ -44,6 +47,7 @@ export class LensClient {
   private initialization: Promise<LensResources> | undefined;
   private closePromise: Promise<void> | undefined;
   private closed = false;
+  private readonly promptAbort = new AbortController();
 
   constructor(private readonly options: LensClientOptions = {}) {
     if (options.optional === true && !hasLensConnectionEnvironment(options)) {
@@ -150,6 +154,17 @@ export class LensClient {
     };
   }
 
+  promptClient(options: LensPromptClientOptions = {}): LensPromptClient {
+    this.assertOpen();
+    if (this.config === undefined) {
+      throw new Error("LensClient is disabled because no connection is configured.");
+    }
+    return createLensPromptClient(this.config, options, {
+      assertOpen: () => this.assertOpen(),
+      signal: this.promptAbort.signal,
+    });
+  }
+
   async flush(): Promise<void> {
     this.assertOpen();
     const resource =
@@ -204,6 +219,7 @@ export class LensClient {
 
   private async closeResources(): Promise<void> {
     this.closed = true;
+    this.promptAbort.abort();
     const pending =
       this.resource === undefined ? this.initialization : Promise.resolve(this.resource);
     if (pending === undefined) return;

@@ -183,6 +183,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
   private guardrailDecisions: GuardrailDecisionRecord[] = [];
   private readonly concurrency: number;
   private traceOptions: AgentTraceOptions | undefined;
+  private generationPromptRef: AgentTraceOptions["promptRef"];
   private completionRetryOptions: ResolvedRetryOptions | undefined;
   private readonly requestMiddlewares: AgentMiddleware[];
   private readonly controls: Readonly<Record<string, string>> | undefined;
@@ -792,6 +793,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
           turn: currentTurns,
           request,
           modelInfo: generationStartArgs.modelInfo,
+          promptRef: generationStartArgs.promptRef,
         };
         const bufferResponseEvents =
           this.shouldBufferStreamResponseEvents() || this.agent.outputSchema !== undefined;
@@ -1447,6 +1449,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     let args: AgentGenerationStartArgs & { modelInfo: AgentGenerationModelInfo } = {
       turn,
       request,
+      promptRef: this.generationPromptRef,
       modelInfo: {
         provider: this.agent.model.provider,
         modelId: this.agent.model.modelId,
@@ -2125,12 +2128,17 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     turn: number,
   ): Promise<CompletionRequest> {
     let current = request;
+    this.generationPromptRef = this.traceOptions?.promptRef;
     for (const middleware of this.activeMiddlewares()) {
       const replacement = await middleware.onCompletionRequest?.({
         turn,
         request: current,
         originalRequest: request,
+        promptRef: this.generationPromptRef,
       });
+      if (replacement?.promptRef !== undefined) {
+        this.generationPromptRef = replacement.promptRef ?? undefined;
+      }
       if (replacement?.request !== undefined) {
         current = replacement.request;
         if (current.providerOptions !== undefined) {

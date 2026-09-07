@@ -101,7 +101,7 @@ export type PipelineRunObserver = {
   onEvent(event: PipelineRunEvent): void | Promise<void>;
 };
 
-export type PipelineTraceOptions = Omit<AgentTraceOptions, "promptRef">;
+export type PipelineTraceOptions = AgentTraceOptions;
 export type PipelineTraceInfo = AgentTraceInfo;
 export type PipelineObserverTraceInfo = AgentObserverTraceInfo;
 export type PipelineObserverErrorPolicy = AgentObserverErrorPolicy;

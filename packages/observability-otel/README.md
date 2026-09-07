@@ -90,6 +90,22 @@ Existing `@anvia/otel` integrations retain full capture when the option is omitt
 `captureMaxBytes` to set a per-value limit and `transformInput` / `transformOutput` to redact or
 reshape payloads before export. Runtime observer events are emitted as OpenTelemetry span events.
 
+### Prompt identity
+
+Agent `trace.promptRef: { name, version }` identifies the root and defaults each generation's
+identity. Core completion-request middleware can return `{ request, promptRef: anotherRef }` to
+override one generation or `{ request, promptRef: null }` to leave it unattributed. Omission keeps
+the current identity; the next turn starts from the run default. Generation observer events carry
+their own `promptRef`, so the adapter does not copy the root identity onto unrelated generations.
+
+Pipeline `trace.promptRef` identifies only the pipeline root. Set each Agent stage's
+`request.trace.promptRef` explicitly for multi-prompt pipelines.
+
+Root and generation spans emit `anvia.prompt.name` and numeric `anvia.prompt.version` when supplied.
+These identity attributes remain available in `captureMode: "safe"`; they do not enable capture of
+prompt bodies, variables, or provider request payloads. Prefer the prompt registry's resolved
+numeric version rather than a selector label.
+
 ## Eval reporting
 
 ```ts
@@ -121,6 +137,12 @@ reported by default and can be disabled with `publishInvalid: false`.
 Metric events include required status, score direction, threshold, and evaluator token usage when
 available. Run-finished events publish separate metric and case totals plus aggregate usage and
 optional caller-calculated cost.
+
+Set `run: { promptRef: { name: "support", version: 7 } }` on `runEvalSuite()` for evaluation-run
+attribution. Lifecycle and metric logs emit `anvia.eval.run.prompt.name` and
+`anvia.eval.run.prompt.version`. The version is serialized as a string for ingestion; absent
+versions are omitted. Identity is independent of metadata and payload capture options. This does
+not set prompt identity on the target Agent or judge generations; configure those separately.
 
 ## Runtime scores
 

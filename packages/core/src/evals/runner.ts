@@ -471,6 +471,7 @@ function resolveRun<Input, Output, Expected>(
   };
   if (options.run?.datasetName !== undefined) run.datasetName = options.run.datasetName;
   if (options.run?.datasetVersion !== undefined) run.datasetVersion = options.run.datasetVersion;
+  if (options.run?.promptRef !== undefined) run.promptRef = options.run.promptRef;
   if (options.run?.metadata !== undefined) run.metadata = options.run.metadata;
   return run;
 }

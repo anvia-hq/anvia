@@ -4,6 +4,30 @@ import { createOtelPipelineObserver } from "../src/index";
 import { FakeTracer } from "./helpers/fake-tracer";
 
 describe("OpenTelemetry Pipeline observer", () => {
+  it("captures pipeline identity in safe mode without stamping child stages", async () => {
+    const tracer = new FakeTracer();
+    const tracing = createOtelPipelineObserver({ tracer: tracer.tracer, captureMode: "safe" });
+    const run = await tracing.startRun({
+      runId: "pipeline-run",
+      pipelineId: "research",
+      input: "private input",
+      trace: { promptRef: { name: "research", version: 8 } },
+    });
+    await run?.startStage?.({
+      runId: "pipeline-run",
+      pipelineId: "research",
+      path: ["child"],
+      node: { id: "child", path: ["child"], kind: "agent", label: "Child" },
+      input: "private input",
+    });
+    expect(tracer.spans[0]?.attributes).toMatchObject({
+      "anvia.prompt.name": "research",
+      "anvia.prompt.version": 8,
+    });
+    expect(tracer.spans[0]?.attributes).not.toHaveProperty("anvia.pipeline.input");
+    expect(tracer.spans[1]?.attributes).not.toHaveProperty("anvia.prompt.name");
+  });
+
   it("maps Pipeline runs and nested stages to parented OpenTelemetry spans", async () => {
     const tracer = new FakeTracer();
     const tracing = createOtelPipelineObserver({

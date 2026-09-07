@@ -1,5 +1,6 @@
 import type { JsonValue } from "@anvia/core/completion";
 import type { ResolvedLensConfig } from "./config.js";
+import { isRecord } from "./type-guards.js";
 import type {
   LensDataset,
   LensDatasetClient,
@@ -229,10 +230,6 @@ function stringArray(value: unknown, response: Response, label: string): string[
     throw invalidResponse(response, `Lens returned invalid ${label}`);
   }
   return value;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isJsonRecord(value: unknown): value is Record<string, JsonValue> {

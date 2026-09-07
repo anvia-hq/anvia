@@ -1,6 +1,6 @@
 # @anvia/lens
 
-Native Anvia Lens tracing, evaluation reporting, and dataset access for Node.js applications.
+Native Anvia Lens tracing, evaluation reporting, dataset access, and versioned prompts for Node.js applications.
 
 ```sh
 pnpm add @anvia/lens @anvia/core zod
@@ -79,7 +79,7 @@ the root observation as `cancelled` before Lens flushes it.
 
 Set `optional: true` to obtain a disabled client when all Lens connection environment variables
 are absent. `lens.enabled` reports the state. The disabled observer and reporter are safe no-ops;
-dataset access still rejects because it requires a configured connection. Partial configuration is
+dataset and prompt access still reject because they require a configured connection. Partial configuration is
 always an error.
 
 ## Capture and evaluation policy
@@ -151,6 +151,47 @@ omitted. Draft and archived versions are not exposed by the public API.
 Configuration can also come from `ANVIA_LENS_BASE_URL`, `ANVIA_LENS_PUBLIC_KEY`,
 `ANVIA_LENS_SECRET_KEY`, `ANVIA_LENS_SERVICE_NAME`, `ANVIA_LENS_ENVIRONMENT`, and
 `ANVIA_LENS_RELEASE`.
+
+## Versioned prompts
+
+```ts
+const prompts = lens.promptClient({ cacheTtlMs: 60_000, timeoutMs: 5_000 });
+const prompt = await prompts.getPrompt({ name: "support/answer" });
+
+if (prompt.type === "text") {
+  const result = await agent.generate({
+    prompt: prompt.compile({ question: "How do refunds work?" }),
+    trace: { promptRef: prompt.ref },
+  });
+}
+
+const pinned = await prompts.getPrompt({ name: "support/answer", version: 2 });
+const staging = await prompts.getPrompt({ name: "support/answer", label: "staging" });
+```
+
+Omitting the selector resolves `production`, never the newest version. Specify a label **or** a
+positive safe integer version, not both. Committing a version does not deploy it: move the label
+in Lens to deploy or roll back. Runtime credentials retrieve prompts but cannot mutate them.
+
+Resolved snapshots are deeply immutable and expose `ref`, `config`, `labels`, `selector`, and
+`variables`. Compilation is synchronous: `{{question}}` substitutes a named string, surrounding
+whitespace is tolerated, and `\{{question}}` produces literal `{{question}}`. Missing or non-string
+values throw `LensPromptCompilationError`; extra variables are ignored. Substitutions are not
+recursive. Config is returned unchanged, not interpolated. Chat compilation returns a fresh array
+of registry messages with roles and names preserved; these are not cast to Core completion messages.
+
+Each prompt client owns a bounded cache. The default TTL is 60 seconds, including pinned versions;
+expired entries refresh before returning, without stale fallback. Identical concurrent requests
+share retrieval. `cache: "reload"` fetches and replaces a snapshot; `cache: "no-store"` bypasses cache
+reads and writes. `prompts.clearCache()` invalidates cached snapshots. Retrieval accepts an optional
+`signal`; one caller aborting does not cancel other callers sharing retrieval. Failed responses
+are not cached. `LensPromptError` exposes `code` and, for HTTP errors, `status`.
+
+Fetching or compiling never sets a global current prompt. Pass `trace.promptRef` explicitly for
+Agent runs or pipeline roots, and `run: { promptRef: prompt.ref }` to `runEvalSuite` for evaluation
+identity. Pipeline attribution does not stamp unrelated child agents. Per-generation middleware can
+override `promptRef` or clear it with `null`; see Core's middleware documentation. Safe capture retains
+prompt identity without newly capturing template bodies or compilation variables.
 
 ## Development
 

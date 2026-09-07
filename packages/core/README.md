@@ -355,6 +355,39 @@ Pass `abortSignal` on a run to cancel the active provider call, tools, and neste
 Run observers receive terminal errors with `status: "cancelled"` for cancellation and
 `status: "failed"` for other failures.
 
+### Prompt attribution
+
+Set `trace.promptRef` on `generate()` or `stream()` to identify the prompt used by a run and
+default its generation attribution. The core `AgentRunPromptRef` contract is
+`{ readonly name: string; readonly version?: number }`; use the registry's resolved numeric version
+when available, not the requested label. This identity does not contain templates or variables.
+
+For runs that change prompts between turns, completion-request middleware is the explicit
+generation override boundary:
+
+```ts
+await agent.generate({
+  prompt: "Summarize the ticket",
+  trace: { promptRef: { name: "support", version: 7 } },
+  middlewares: [
+    {
+      onCompletionRequest: ({ request, turn }) => {
+        if (turn === 0) {
+          return { request, promptRef: { name: "planner", version: 3 } };
+        }
+        return { request, promptRef: null };
+      },
+    },
+  ],
+});
+```
+
+The middleware receives the current `promptRef`. Returning a reference overrides that generation;
+`null` clears it, while omission preserves it. Each turn starts again with the run default, and
+later middleware sees earlier overrides. Set attribution alongside any request changes that select
+another prompt: attribution itself does not change the model input. It is a runtime side channel,
+not a provider request field or global current-prompt setting.
+
 ## Memory
 
 Configure durable conversation memory on the Agent, then run through a session:
@@ -565,6 +598,11 @@ enabled.
 `"throw"` and defaults to `"ignore"`. With `"throw"`, the run rejects with a
 `PipelineObserverDispatchError` containing the failed phase and per-observer failures.
 
+Pipeline run and batch options also accept `trace.promptRef`. This identifies the pipeline root;
+it does not stamp every stage or Agent with that prompt. Select each Agent's relevant prompt with
+`request: ({ input }) => ({ prompt: input, trace: { promptRef } })`, especially when a pipeline uses
+multiple prompts. Trace parent propagation and prompt identity are independent.
+
 ## Documents
 
 Applications own file discovery, file reads, document parsing, source metadata, and per-file error
@@ -692,6 +730,11 @@ console.log(result.results[0]?.scores.exact_match);
 Metrics that implicitly read `case.expected`, `case.context`, or `case.retrievalContext` require
 those fields at compile time. Supplying an explicit metric value or selector removes the matching
 case requirement.
+
+Set `run: { promptRef: { name: "support", version: 7 } }` on `runEvalSuite()` to attribute the
+evaluation run. The reference is preserved in `result.run` and the reporter's run-start, per-metric,
+and run-end contexts. It does not automatically attribute the target Agent or judge generations;
+configure those runs' `trace.promptRef` separately when relevant.
 
 ### Built-in metrics
 

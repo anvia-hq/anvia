@@ -21,6 +21,7 @@ import type { GuardrailDecisionRecord, GuardrailPolicyInput } from "../guardrail
 import type { MemoryCompactionInfo, MemoryScope } from "../memory";
 import type {
   AgentGenerationModelInfo,
+  AgentRunPromptRef,
   AgentTraceInfo,
   AgentTraceOptions,
 } from "../observability/types";
@@ -196,6 +197,7 @@ type AgentChildStreamEventBase<Output = string, RawResponse = unknown> =
       turn: number;
       request: CompletionRequest;
       modelInfo: AgentGenerationModelInfo;
+      promptRef?: AgentRunPromptRef | undefined;
     }
   | {
       type: "text_delta";

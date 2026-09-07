@@ -69,6 +69,33 @@ class KeywordEmbeddingModel implements EmbeddingModel {
 }
 
 describe("evals", () => {
+  it("preserves resolved prompt identity throughout evaluation reporting", async () => {
+    const promptRef = { name: "support", version: 7 };
+    const observed: unknown[] = [];
+    const result = await runEvalSuite({
+      name: "prompt-eval",
+      run: { promptRef },
+      cases: [{ id: "case", input: "yes", expected: "yes" }],
+      target: (input) => input,
+      metrics: [exactMatch()],
+      reporters: [
+        {
+          onRunStart: ({ run }) => {
+            observed.push(run.promptRef);
+          },
+          report: ({ run }) => {
+            observed.push(run?.promptRef);
+          },
+          onRunEnd: ({ run }) => {
+            observed.push(run.promptRef);
+          },
+        },
+      ],
+    });
+    expect(result.run.promptRef).toEqual(promptRef);
+    expect(observed).toEqual([promptRef, promptRef, promptRef]);
+  });
+
   it("runs deterministic metrics and counts outcomes", async () => {
     const result = await runEvalSuite({
       name: "deterministic",

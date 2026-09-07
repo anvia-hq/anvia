@@ -1,4 +1,5 @@
 import type { JsonObject, Usage } from "../completion";
+import type { AgentRunPromptRef } from "../observability/types";
 import type { EvalOutcome } from "./outcome";
 
 export type EvalMetadata = JsonObject;
@@ -9,6 +10,7 @@ export type EvalRunOptions = {
   id?: string | undefined;
   datasetName?: string | undefined;
   datasetVersion?: string | undefined;
+  promptRef?: AgentRunPromptRef | undefined;
   metadata?: EvalMetadata | undefined;
 };
 
@@ -17,6 +19,7 @@ export type EvalRunContext = {
   startedAt: string;
   datasetName?: string | undefined;
   datasetVersion?: string | undefined;
+  promptRef?: AgentRunPromptRef | undefined;
   metadata?: EvalMetadata | undefined;
 };
 

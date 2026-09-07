@@ -159,6 +159,8 @@ function pipelineRunStartAttributes(
     "anvia.trace.session_id": args.trace?.sessionId,
     "anvia.trace.tags": args.trace?.tags === undefined ? undefined : [...args.trace.tags],
     "anvia.trace.version": args.trace?.version,
+    "anvia.prompt.name": args.trace?.promptRef?.name,
+    "anvia.prompt.version": args.trace?.promptRef?.version,
     ...metadataAttributes("anvia.pipeline.metadata", args.pipelineMetadata),
     ...metadataAttributes("anvia.run.metadata", args.runMetadata),
     ...metadataAttributes("anvia.trace.metadata", args.trace?.metadata),

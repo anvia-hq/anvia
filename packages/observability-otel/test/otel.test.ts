@@ -175,6 +175,7 @@ describe("OpenTelemetry eval reporter", () => {
       startedAt: "2026-08-07T00:00:00.000Z",
       datasetName: "support-cases",
       datasetVersion: "v2",
+      promptRef: { name: "support", version: 7 },
       metadata: { commitSha: "abc123" },
     };
 
@@ -200,6 +201,12 @@ describe("OpenTelemetry eval reporter", () => {
       "anvia.eval.run.started",
       "anvia.eval.run.finished",
     ]);
+    for (const [record] of emit.mock.calls) {
+      expect(record.attributes).toMatchObject({
+        "anvia.eval.run.prompt.name": "support",
+        "anvia.eval.run.prompt.version": "7",
+      });
+    }
     expect(emit.mock.calls[1]?.[0]).toMatchObject({
       severityNumber: SeverityNumber.INFO,
       attributes: {
@@ -472,8 +479,12 @@ describe("otel", () => {
       prompt: userMessage("private prompt"),
       history: [userMessage("private history")],
       maxTurns: 1,
+      trace: { promptRef: { name: "support", version: 7 } },
     });
-    const generation = await run?.startGeneration?.(generationStartArgs());
+    const generation = await run?.startGeneration?.({
+      ...generationStartArgs(),
+      promptRef: { name: "planner", version: 11 },
+    });
     await generation?.end({
       turn: 1,
       response: {
@@ -518,6 +529,14 @@ describe("otel", () => {
     expect(tracer.spans[1]?.attributes).not.toHaveProperty("anvia.generation.output");
     expect(tracer.spans[2]?.attributes).not.toHaveProperty("anvia.tool.args");
     expect(tracer.spans[2]?.attributes).not.toHaveProperty("anvia.tool.result");
+    expect(tracer.spans[0]?.attributes).toMatchObject({
+      "anvia.prompt.name": "support",
+      "anvia.prompt.version": 7,
+    });
+    expect(tracer.spans[1]?.attributes).toMatchObject({
+      "anvia.prompt.name": "planner",
+      "anvia.prompt.version": 11,
+    });
   });
 
   it("never exceeds small capture byte limits", async () => {

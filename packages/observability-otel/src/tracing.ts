@@ -231,6 +231,16 @@ class OtelToolObserver implements AgentToolObserver {
         turn: childTurn,
         request: child.request as AgentGenerationStartArgs["request"],
       };
+      if (isRecord(child.promptRef) && typeof child.promptRef.name === "string") {
+        generationArgs = {
+          ...generationArgs,
+          promptRef: {
+            name: child.promptRef.name,
+            version:
+              typeof child.promptRef.version === "number" ? child.promptRef.version : undefined,
+          },
+        };
+      }
       if (isRecord(child.modelInfo)) {
         generationArgs = {
           ...generationArgs,

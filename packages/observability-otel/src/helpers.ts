@@ -95,6 +95,8 @@ export function generationStartAttributes(
   const params = modelParameters(args.request);
   return compactAttributes({
     "anvia.generation.turn": args.turn,
+    "anvia.prompt.name": args.promptRef?.name,
+    "anvia.prompt.version": args.promptRef?.version,
     "anvia.generation.input": capturedJson(
       {
         instructions: args.request.instructions,

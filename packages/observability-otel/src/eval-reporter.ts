@@ -265,6 +265,12 @@ function addRunAttributes(
 ): void {
   attributes["anvia.eval.run.id"] = run.id;
   attributes["anvia.eval.run.started_at"] = run.startedAt;
+  if (run.promptRef !== undefined) {
+    attributes["anvia.eval.run.prompt.name"] = run.promptRef.name;
+    if (run.promptRef.version !== undefined) {
+      attributes["anvia.eval.run.prompt.version"] = String(run.promptRef.version);
+    }
+  }
   if (run.datasetName !== undefined) attributes["anvia.eval.run.dataset.name"] = run.datasetName;
   if (run.datasetVersion !== undefined) {
     attributes["anvia.eval.run.dataset.version"] = run.datasetVersion;

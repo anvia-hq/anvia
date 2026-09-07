@@ -1,6 +1,6 @@
 {
   "name": "@anvia/mcp",
-  "version": "1.1.2",
+  "version": "2.0.0",
   "description": "Model Context Protocol client integration for Anvia.",
   "author": "anvia",
   "license": "MIT",

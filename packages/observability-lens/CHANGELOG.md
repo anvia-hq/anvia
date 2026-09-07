@@ -1,5 +1,17 @@
 # @anvia/lens
 
+## 2.0.0
+
+### Minor Changes
+
+- 1c0275a: Add first-class Lens prompt retrieval with immutable text/chat snapshots, strict synchronous compilation, bounded caching, fresh reload semantics, and typed errors. Carry explicit prompt identity through Agent generations, pipeline roots, and evaluation runs, including per-generation overrides and safe OpenTelemetry attribution.
+
+### Patch Changes
+
+- Updated dependencies [1c0275a]
+  - @anvia/core@1.2.0
+  - @anvia/otel@2.0.0
+
 ## 1.1.2
 
 ### Patch Changes

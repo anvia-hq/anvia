@@ -1,5 +1,17 @@
 # @anvia/studio
 
+## 2.0.0
+
+### Patch Changes
+
+- Updated dependencies [1c0275a]
+  - @anvia/core@1.2.0
+  - @anvia/client@2.0.0
+  - @anvia/graph@2.0.0
+  - @anvia/react@2.0.0
+  - @anvia/react-ui@2.0.0
+  - @anvia/server@2.0.0
+
 ## 1.1.2
 
 ### Patch Changes

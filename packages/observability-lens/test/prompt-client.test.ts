@@ -266,6 +266,42 @@ describe("Lens prompt client", () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
+  it.each(["default", "reload"] as const)(
+    "reload bypasses an older %s request and prevents late cache overwrites",
+    async (olderMode) => {
+      let releaseOlder: (value: Response) => void = () => {};
+      let releaseReload: (value: Response) => void = () => {};
+      const fetchMock = vi
+        .fn()
+        .mockImplementationOnce(
+          () =>
+            new Promise<Response>((resolve) => {
+              releaseOlder = resolve;
+            }),
+        )
+        .mockImplementationOnce(
+          () =>
+            new Promise<Response>((resolve) => {
+              releaseReload = resolve;
+            }),
+        );
+      vi.stubGlobal("fetch", fetchMock);
+      lens = createClient();
+      const client = lens.promptClient();
+      const older = client.getPrompt({ name: "race", cache: olderMode });
+      const newer = client.getPrompt({ name: "race", cache: "reload" });
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      const joined = client.getPrompt({ name: "race" });
+      releaseReload(response(textPrompt({ name: "race", version: 2 })));
+      const refreshed = await newer;
+      expect(await joined).toBe(refreshed);
+      releaseOlder(response(textPrompt({ name: "race", version: 1 })));
+      expect((await older).version).toBe(1);
+      expect(await client.getPrompt({ name: "race" })).toBe(refreshed);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    },
+  );
+
   it("clearCache forces a refetch and discards in-flight results", async () => {
     let release: (value: Response) => void = () => {};
     const fetchMock = vi

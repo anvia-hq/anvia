@@ -119,7 +119,7 @@ export function createLensPromptClient(
       // Expired entries are never a fallback: a failed refresh must surface its error.
       if (cached !== undefined && cached.expires <= Date.now()) stores.cache.delete(key);
       const generation = epoch;
-      const existing = mode === "no-store" ? undefined : stores.pending.get(key);
+      const existing = mode === "default" ? stores.pending.get(key) : undefined;
       const entry =
         existing ??
         createPendingEntry(
@@ -177,10 +177,12 @@ function createPendingEntry(
     selector,
   )
     .then((prompt) => {
-      // A clearCache during flight invalidates the result; no-store never writes.
+      // Only the current request may write: reload supersedes older retrievals,
+      // and clearCache invalidates in-flight results. No-store never writes.
       if (
         mode !== "no-store" &&
         generation === currentEpoch() &&
+        stores.pending.get(key) === entry &&
         !requestSignal.aborted &&
         stores.cacheTtlMs > 0
       ) {

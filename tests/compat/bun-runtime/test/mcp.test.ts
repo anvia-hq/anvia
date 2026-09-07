@@ -1,4 +1,7 @@
 import { afterAll, describe, expect, it } from "bun:test";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { normalizeToolResultOutput } from "@anvia/core/tool";
 import { McpClient } from "@anvia/mcp";
@@ -141,7 +144,133 @@ describe("@anvia/mcp under Bun", () => {
     expect(requests).toHaveLength(0);
     await client.close();
   });
+
+  it("passes stdio environment variables through to the MCP subprocess", async () => {
+    const fixturePath = fileURLToPath(
+      new URL("./fixtures/mcp-stdio-env-server.mjs", import.meta.url),
+    );
+    const client = new McpClient({
+      name: "bun-stdio-env",
+      transport: {
+        type: "stdio",
+        command: process.execPath,
+        args: [fixturePath],
+        env: { FIXTURE_TOKEN: "bun-env-ok" },
+      },
+    });
+
+    try {
+      const registration = await client.connect();
+      expect(registration.instructions).toBe("token:bun-env-ok");
+    } finally {
+      await client.close();
+    }
+  });
+
+  it("closes cleanly while a stdio tool call is in flight", async () => {
+    const fixturePath = fileURLToPath(
+      new URL("./fixtures/mcp-stdio-slow-server.mjs", import.meta.url),
+    );
+    const workDir = mkdtempSync(join(tmpdir(), "anvia-mcp-slow-"));
+    const receiptPath = join(workDir, "receipt.json");
+    const exitMarkerPath = join(workDir, "exited");
+    const client = new McpClient({
+      name: "bun-stdio-slow",
+      transport: {
+        type: "stdio",
+        command: process.execPath,
+        args: [fixturePath],
+        env: { MCP_SLOW_RECEIPT: receiptPath, MCP_SLOW_EXIT: exitMarkerPath },
+      },
+    });
+
+    try {
+      const registration = await client.connect();
+      const tool = registration.tools[0];
+      if (tool === undefined) throw new Error("Expected the slow MCP fixture tool");
+
+      const pending = Promise.resolve(tool.call({ text: "slow" }));
+
+      // The receipt proves the fixture received the call and is parked in its
+      // delayed reply, so close() below really races an in-flight request.
+      await waitForReceipt(receiptPath);
+      const { pid } = JSON.parse(readFileSync(receiptPath, "utf8")) as { pid: number };
+
+      // Either close outcome is SDK-defined while a call is in flight; the
+      // contract is that close settles instead of hanging.
+      const closed = within(
+        client.close().then(
+          () => "resolved" as const,
+          () => "rejected" as const,
+        ),
+      );
+      await expect(
+        within(
+          pending.then(
+            () => "settled",
+            () => "settled",
+          ),
+        ),
+      ).resolves.toBe("settled");
+      expect(["resolved", "rejected"]).toContain(await closed);
+
+      // The child must not outlive the client: closing the transport has to
+      // terminate the fixture (SIGTERM marker or dead pid), never leak it
+      // until the fixture's own 10s reply timer fires.
+      const exitEvidence = await waitForExit(pid, exitMarkerPath);
+      expect(["signaled", "dead"]).toContain(exitEvidence);
+    } finally {
+      rmSync(workDir, { recursive: true, force: true });
+    }
+  }, 12_000);
 });
+
+// Watchdog, not a delay: the awaited signal is the close/settle event itself.
+// The timer only bounds a leaked-subprocess hang that has no deterministic signal.
+async function within<T>(promise: Promise<T>, timeoutMs = 3_000): Promise<T> {
+  let timeout: Timer | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(() => reject(new Error("Timed out waiting for close")), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout !== undefined) clearTimeout(timeout);
+  }
+}
+
+// Polls for the fixture's receipt file: proof the subprocess received the tool
+// call. The awaited signal is the file; the deadline only bounds a broken fixture.
+async function waitForReceipt(path: string, timeoutMs = 3_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (existsSync(path)) return;
+    await Bun.sleep(10);
+  }
+  throw new Error("Fixture never acknowledged the tool call");
+}
+
+// Waits for fixture termination after close(): either the SIGTERM marker it
+// writes on signal receipt or a dead pid. The deadline bounds a leaked child.
+async function waitForExit(
+  pid: number,
+  exitMarkerPath: string,
+  timeoutMs = 8_000,
+): Promise<"signaled" | "dead"> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (existsSync(exitMarkerPath)) return "signaled";
+    try {
+      process.kill(pid, 0);
+    } catch {
+      return "dead";
+    }
+    await Bun.sleep(20);
+  }
+  throw new Error(`Fixture subprocess (pid ${pid}) outlived client close`);
+}
 
 function resultFor(message: RpcRequest): Record<string, unknown> {
   if (message.method === "server/discover") {

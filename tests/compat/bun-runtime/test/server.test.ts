@@ -1,9 +1,15 @@
 import { afterAll, describe, expect, it } from "bun:test";
 import type { ClientStream, ClientStreamEvent, ClientStreamRequest } from "@anvia/client";
 import { createHttpClientTransport, parseClientStreamRequest } from "@anvia/client";
-import { fetchEventStream } from "@anvia/client/transport";
+import {
+  EventStreamHttpError,
+  fetchEventStream,
+  readJsonlStream,
+  readSseStream,
+} from "@anvia/client/transport";
 import {
   type ClientResumableEvent,
+  type ResumableStreamEnvelope,
   createClientStreamResponse,
   createEventStreamResponse,
   createMemoryResumableStreamStore,
@@ -19,6 +25,8 @@ const requests: Array<{
 }> = [];
 const resumableStore = createMemoryResumableStreamStore<ClientResumableEvent>();
 let observeCancellation: (() => void) | undefined;
+const eventStore = createMemoryResumableStreamStore<GenericEvent>();
+let releaseLiveProducer: (() => void) | undefined;
 
 const server = Bun.serve({
   hostname: "127.0.0.1",
@@ -28,6 +36,17 @@ const server = Bun.serve({
     if (url.pathname === "/cancel") {
       return createEventStreamResponse({
         events: cancellableEvents(() => observeCancellation?.()),
+      });
+    }
+
+    if (url.pathname === "/http-error") {
+      return new Response("upstream unavailable", { status: 503 });
+    }
+
+    if (url.pathname === "/resumable-error") {
+      return createEventStreamResponse({
+        events: failingEvents(),
+        resumable: { id: "bun-error-stream", store: eventStore },
       });
     }
 
@@ -52,6 +71,20 @@ const server = Bun.serve({
           { type: "run_end", runId: "resume-run", status: "completed" },
         ]),
         resumable: { streamId: "bun-resumable", store: resumableStore },
+      });
+    }
+
+    if (url.pathname === "/resumable-live") {
+      if (body.resume !== undefined) {
+        return resumeClientStreamResponse({
+          streamId: body.resume.streamId,
+          after: body.resume.after,
+          store: resumableStore,
+        });
+      }
+      return createClientStreamResponse({
+        events: liveEvents(),
+        resumable: { streamId: "bun-live", store: resumableStore },
       });
     }
 
@@ -167,7 +200,164 @@ describe("@anvia/client and @anvia/server under Bun", () => {
       observeCancellation = undefined;
     }
   });
+
+  it("decodes JSONL records split at every byte boundary", async () => {
+    const text = '{"index":0,"text":"café"}\r\n{"index":1,"text":"naïve"}\r\n{"index":2}';
+
+    const events = await collect(readJsonlStream<Record<string, unknown>>(byteStream(text)));
+
+    expect(events).toEqual([{ index: 0, text: "café" }, { index: 1, text: "naïve" }, { index: 2 }]);
+  });
+
+  it("decodes SSE comments, multi-line data, and an unterminated final record", async () => {
+    const text = [
+      ": heartbeat",
+      'data: {"index":0}',
+      "",
+      'data: {"items":["a",',
+      'data: "b"]}',
+      "",
+      'data: {"index":2}',
+    ].join("\r\n");
+
+    const events = await collect(readSseStream<Record<string, unknown>>(byteStream(text)));
+
+    expect(events).toEqual([{ index: 0 }, { items: ["a", "b"] }, { index: 2 }]);
+  });
+
+  it("surfaces EventStreamHttpError with status and body for non-OK responses", async () => {
+    const failure = fetchEventStream<GenericEvent>({
+      input: new URL("/http-error", server.url),
+    })[Symbol.asyncIterator]();
+
+    await expect(failure.next()).rejects.toBeInstanceOf(EventStreamHttpError);
+    await failure.return?.();
+
+    const probe = fetchEventStream<GenericEvent>({ input: new URL("/http-error", server.url) });
+    const error = await probe[Symbol.asyncIterator]()
+      .next()
+      .catch((caught: unknown) => caught as EventStreamHttpError);
+    expect(error).toBeInstanceOf(EventStreamHttpError);
+    expect((error as EventStreamHttpError).response.status).toBe(503);
+    expect((error as EventStreamHttpError).body).toBe("upstream unavailable");
+  });
+
+  it("reports a missing resumable stream with an empty replay", async () => {
+    const transport = createHttpClientTransport({
+      endpoint: new URL("/resumable", server.url),
+    });
+    const frames = await collect(
+      transport.send({
+        request: { type: "messages", messages: [], resume: { streamId: "bun-missing", after: 0 } },
+      }),
+    );
+
+    expect(frames.map((frame) => frame.type)).toEqual(["stream_start", "stream_end"]);
+    expect(frames[0]).toMatchObject({ streamId: "bun-missing", resumable: true });
+    expect(frames[1]).toMatchObject({ streamId: "bun-missing", eventId: 0, status: "missing" });
+  });
+
+  it("appends an error event and closes the resumable stream when the producer throws", async () => {
+    const events = await collect(
+      fetchEventStream<ResumableStreamEnvelope<GenericEvent>>({
+        input: new URL("/resumable-error", server.url),
+      }),
+    );
+
+    expect(events.map((event) => event.type)).toEqual([
+      "stream_start",
+      "stream_event",
+      "stream_event",
+      "stream_end",
+    ]);
+    expect(events[2]).toMatchObject({
+      eventId: 2,
+      event: { type: "error", error: { name: "Error", message: "producer failed" } },
+    });
+    expect(events[3]).toMatchObject({ streamId: "bun-error-stream", eventId: 2, status: "error" });
+  });
+
+  it("replays into a live resumable stream after a mid-stream disconnect", async () => {
+    const first = createHttpClientTransport({ endpoint: new URL("/resumable-live", server.url) });
+    const firstIterator = first
+      .send({ request: { type: "messages", messages: [] } })
+      [Symbol.asyncIterator]();
+
+    try {
+      await firstIterator.next();
+      await firstIterator.next();
+      await firstIterator.return?.();
+
+      const resumed = createHttpClientTransport({
+        endpoint: new URL("/resumable-live", server.url),
+      });
+      const resumedPromise = collect(
+        resumed.send({
+          request: { type: "messages", messages: [], resume: { streamId: "bun-live", after: 1 } },
+        }),
+      );
+      releaseLiveProducer?.();
+
+      const frames = await resumedPromise;
+      expect(frames.map((frame) => frame.type)).toEqual([
+        "stream_start",
+        "stream_event",
+        "stream_end",
+      ]);
+      expect(frames[1]).toMatchObject({
+        eventId: 2,
+        event: { type: "run_end", runId: "live-run", status: "completed" },
+      });
+      expect(frames[2]).toMatchObject({ streamId: "bun-live", eventId: 2, status: "completed" });
+    } finally {
+      releaseLiveProducer?.();
+      await firstIterator.return?.();
+      releaseLiveProducer = undefined;
+    }
+  });
 });
+
+function byteStream(text: string): ReadableStream<Uint8Array> {
+  const bytes = new TextEncoder().encode(text);
+  let offset = 0;
+  return new ReadableStream<Uint8Array>({
+    pull(controller) {
+      if (offset >= bytes.length) {
+        controller.close();
+        return;
+      }
+      controller.enqueue(bytes.subarray(offset, offset + 1));
+      offset += 1;
+    },
+  });
+}
+
+function failingEvents(): AsyncIterable<GenericEvent> {
+  return {
+    async *[Symbol.asyncIterator]() {
+      yield { kind: "first" };
+      throw new Error("producer failed");
+    },
+  };
+}
+
+function liveEvents(): ClientStream {
+  return {
+    async *[Symbol.asyncIterator]() {
+      const start: ClientStreamEvent = {
+        type: "run_start",
+        runId: "live-run",
+        source: "completion",
+      };
+      const end: ClientStreamEvent = { type: "run_end", runId: "live-run", status: "completed" };
+      yield start;
+      await new Promise<void>((resolve) => {
+        releaseLiveProducer = resolve;
+      });
+      yield end;
+    },
+  };
+}
 
 function clientEvents(events: readonly ClientStreamEvent[]): ClientStream {
   return values(events);

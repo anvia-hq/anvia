@@ -74,7 +74,136 @@ describe("@anvia/core under Bun", () => {
       ),
     ).resolves.toEqual({ type: "text", value: "stdout:\nruntime:bun\n" });
   });
+  it("emits an error frame when the event iterator throws", async () => {
+    const events = (async function* () {
+      yield { type: "text_delta", delta: "one" };
+      throw new Error("iterator failed");
+    })();
+
+    const body = await new Response(toReadableStream(events)).text();
+    const lines = body.split("\n").filter((line) => line.length > 0);
+
+    expect(lines).toHaveLength(2);
+    const firstLine = lines[0];
+    const errorLine = lines[1];
+    if (firstLine === undefined || errorLine === undefined) {
+      throw new Error("Expected an event line and an error line");
+    }
+    expect(JSON.parse(firstLine)).toEqual({ type: "text_delta", delta: "one" });
+    expect(JSON.parse(errorLine)).toMatchObject({
+      type: "error",
+      error: { name: "Error", message: "iterator failed" },
+    });
+  });
+
+  it("propagates consumer cancellation to the event iterator", async () => {
+    let finalized = false;
+    const events = (async function* () {
+      try {
+        let index = 0;
+        while (true) {
+          yield { type: "text_delta", delta: `tick-${index}` };
+          index += 1;
+        }
+      } finally {
+        finalized = true;
+      }
+    })();
+
+    const reader = toReadableStream(events).getReader();
+    expect((await reader.read()).done).toBe(false);
+    await reader.cancel();
+
+    expect(finalized).toBe(true);
+  });
+
+  it("rejects when a skill script exceeds its timeout under Bun", async () => {
+    const directory = await createSkillDirectory(
+      "bun-timeout",
+      "slow.sh",
+      "#!/bin/sh\nwhile true; do :; done\n",
+    );
+    const skillSet = await loadSkills(skill.local(directory));
+    const agent = new Agent({
+      id: "bun-timeout",
+      model: createCompletionModel(),
+      tools: skillSet.tools,
+    });
+
+    await expect(
+      agent.callTool(
+        "run_skill_script",
+        JSON.stringify({
+          skillName: "bun-timeout",
+          scriptPath: "slow.sh",
+          timeoutMs: 100,
+        }),
+      ),
+    ).rejects.toThrow("Skill script timed out after 100ms");
+  });
+
+  it("reports non-zero skill script exits with captured stderr", async () => {
+    const directory = await createSkillDirectory(
+      "bun-fail",
+      "fail.sh",
+      '#!/bin/sh\necho "starting"\necho "broken" >&2\nexit 3\n',
+    );
+    const skillSet = await loadSkills(skill.local(directory));
+    const agent = new Agent({
+      id: "bun-fail",
+      model: createCompletionModel(),
+      tools: skillSet.tools,
+    });
+
+    await expect(
+      agent.callTool(
+        "run_skill_script",
+        JSON.stringify({ skillName: "bun-fail", scriptPath: "fail.sh" }),
+      ),
+    ).rejects.toThrow("Skill script exited with code 3: stdout:\nstarting\n\n\nstderr:\nbroken\n");
+  });
+
+  it("truncates oversized skill script output", async () => {
+    const directory = await createSkillDirectory(
+      "bun-truncate",
+      "flood.sh",
+      "#!/bin/sh\nawk 'BEGIN { for (i = 0; i < 25000; i++) printf \"-\" }'\n",
+    );
+    const skillSet = await loadSkills(skill.local(directory));
+    const agent = new Agent({
+      id: "bun-truncate",
+      model: createCompletionModel(),
+      tools: skillSet.tools,
+    });
+
+    await expect(
+      agent.callTool(
+        "run_skill_script",
+        JSON.stringify({ skillName: "bun-truncate", scriptPath: "flood.sh" }),
+      ),
+    ).resolves.toEqual({ type: "text", value: `stdout:\n${"-".repeat(20_000)}\n[truncated]` });
+  });
 });
+
+async function createSkillDirectory(
+  name: string,
+  scriptName: string,
+  script: string,
+): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), "anvia-bun-core-"));
+  tempDirectories.push(root);
+  const directory = join(root, name);
+  const scriptsDirectory = join(directory, "scripts");
+  await mkdir(scriptsDirectory, { recursive: true });
+  await writeFile(
+    join(directory, "SKILL.md"),
+    `---\nname: ${name}\ndescription: Bun compatibility fixture.\n---\nRun the fixture.\n`,
+  );
+  const scriptPath = join(scriptsDirectory, scriptName);
+  await writeFile(scriptPath, script);
+  await chmod(scriptPath, 0o755);
+  return directory;
+}
 
 function createCompletionModel() {
   return {

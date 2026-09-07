@@ -1,3 +1,4 @@
+import { createRequire } from "node:module";
 import { spawn } from "node:child_process";
 import { mkdtemp, mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -6,6 +7,8 @@ import { fileURLToPath } from "node:url";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(scriptDirectory, "../../../..");
+const require = createRequire(import.meta.url);
+const tscEntrypoint = require.resolve("typescript/bin/tsc");
 const temporaryRoot = await mkdtemp(join(tmpdir(), "anvia-bun-packed-"));
 const packsDirectory = join(temporaryRoot, "packs");
 const consumerDirectory = join(temporaryRoot, "consumer");
@@ -57,6 +60,15 @@ try {
   await writeFile(join(consumerDirectory, "smoke.mjs"), smokeTestSource());
 
   await run("bun", ["install", "--ignore-scripts"], { cwd: consumerDirectory });
+  await writeFile(
+    join(consumerDirectory, "tsconfig.json"),
+    `${JSON.stringify(consumerTsconfig(), undefined, 2)}\n`,
+  );
+  await writeFile(join(consumerDirectory, "consumer.ts"), consumerSource());
+  await run(process.execPath, [tscEntrypoint, "-p", join(consumerDirectory, "tsconfig.json")], {
+    cwd: consumerDirectory,
+  });
+  console.log("Packed TypeScript consumer compiles against installed declarations.");
   await run("bun", ["run", "./smoke.mjs"], { cwd: consumerDirectory });
 } finally {
   await rm(temporaryRoot, { force: true, recursive: true });
@@ -98,13 +110,18 @@ function run(command, args, options) {
 function smokeTestSource() {
   return `
 import assert from "node:assert/strict";
-import { createHttpClientTransport } from "@anvia/client";
+import { createHttpClientTransport, parseClientStreamRequest } from "@anvia/client";
 import { Agent } from "@anvia/core";
 import { chunkText } from "@anvia/core/documents";
 import { toReadableStream } from "@anvia/core/streaming";
 import { McpClient } from "@anvia/mcp";
 import { OpenAIClient } from "@anvia/openai";
-import { createClientStreamResponse } from "@anvia/server";
+import {
+  createClientStreamResponse,
+  createMemoryResumableStreamStore,
+  createResumableStream,
+  resumeClientStreamResponse,
+} from "@anvia/server";
 
 assert.equal(typeof Agent, "function");
 assert.equal(typeof createHttpClientTransport, "function");
@@ -146,6 +163,146 @@ assert.deepEqual(
   ["stream_start", "stream_event", "stream_event", "stream_end"],
 );
 
+const packedServer = Bun.serve({
+  hostname: "127.0.0.1",
+  port: 0,
+  async fetch() {
+    return createClientStreamResponse({
+      events: (async function* () {
+        yield { type: "run_start", runId: "packed-live", source: "completion" };
+        yield { type: "run_end", runId: "packed-live", status: "completed" };
+      })(),
+      streamId: "packed-http",
+    });
+  },
+});
+const packedHttpTransport = createHttpClientTransport({
+  endpoint: new URL("/", packedServer.url),
+});
+const packedHttpFrames = [];
+for await (const frame of packedHttpTransport.send({
+  request: { type: "messages", messages: [] },
+})) {
+  packedHttpFrames.push(frame);
+}
+packedServer.stop(true);
+assert.deepEqual(
+  packedHttpFrames.map((frame) => frame.type),
+  ["stream_start", "stream_event", "stream_event", "stream_end"],
+);
+assert.deepEqual(packedHttpFrames[2].event, {
+  type: "run_end",
+  runId: "packed-live",
+  status: "completed",
+});
+
+const packedStore = createMemoryResumableStreamStore();
+const packedProducer = (async function* () {
+  yield { kind: "one" };
+  yield { kind: "two" };
+})();
+const packedReplay = [];
+for await (const envelope of createResumableStream({
+  id: "packed-resumable",
+  store: packedStore,
+  events: packedProducer,
+})) {
+  packedReplay.push(envelope);
+}
+assert.deepEqual(
+  packedReplay.map((envelope) => envelope.type),
+  ["stream_start", "stream_event", "stream_event", "stream_end"],
+);
+assert.equal(packedReplay[3].status, "completed");
+
+let releasePackedProducer;
+const packedResumeStore = createMemoryResumableStreamStore();
+const packedResumeServer = Bun.serve({
+  hostname: "127.0.0.1",
+  port: 0,
+  async fetch(request) {
+    const body = parseClientStreamRequest(await request.json());
+    if (body.resume !== undefined) {
+      return resumeClientStreamResponse({
+        streamId: body.resume.streamId,
+        after: body.resume.after,
+        store: packedResumeStore,
+      });
+    }
+    return createClientStreamResponse({
+      events: gatedProducer(),
+      resumable: { streamId: "packed-resume", store: packedResumeStore },
+    });
+  },
+});
+function gatedProducer() {
+  return {
+    async *[Symbol.asyncIterator]() {
+      yield { type: "run_start", runId: "packed-resume", source: "completion" };
+      await new Promise((resolve) => {
+        releasePackedProducer = resolve;
+      });
+      yield { type: "run_end", runId: "packed-resume", status: "completed" };
+    },
+  };
+}
+const firstIterator = createHttpClientTransport({
+  endpoint: new URL("/resume", packedResumeServer.url),
+})
+  .send({ request: { type: "messages", messages: [] } })
+  [Symbol.asyncIterator]();
+const firstStart = await firstIterator.next();
+const firstEvent = await firstIterator.next();
+assert.equal(firstStart.value.type, "stream_start");
+assert.equal(firstEvent.value.event.type, "run_start");
+assert.equal(firstEvent.value.eventId, 1);
+// Sever the first consumer while the producer is parked on its gate; packed
+// server drain must keep producing into the store without a reader attached.
+await firstIterator.return?.();
+const resumeTransport = createHttpClientTransport({
+  endpoint: new URL("/resume", packedResumeServer.url),
+});
+const resumePromise = (async () => {
+  const frames = [];
+  for await (const frame of resumeTransport.send({
+    request: {
+      type: "messages",
+      messages: [],
+      resume: { streamId: "packed-resume", after: 1 },
+    },
+  })) {
+    frames.push(frame);
+  }
+  return frames;
+})();
+releasePackedProducer?.();
+const resumedFrames = await bounded(resumePromise, "packed resumable reconnect");
+packedResumeServer.stop(true);
+assert.deepEqual(
+  resumedFrames.map((frame) => frame.type),
+  ["stream_start", "stream_event", "stream_end"],
+);
+assert.equal(resumedFrames[0].streamId, "packed-resume");
+assert.equal(resumedFrames[0].resumable, true);
+assert.equal(resumedFrames[1].eventId, 2);
+assert.deepEqual(resumedFrames[1].event, {
+  type: "run_end",
+  runId: "packed-resume",
+  status: "completed",
+});
+assert.equal(resumedFrames[2].streamId, "packed-resume");
+assert.equal(resumedFrames[2].eventId, 2);
+assert.equal(resumedFrames[2].status, "completed");
+
+function bounded(promise, label) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      setTimeout(() => reject(new Error("Timed out waiting for " + label)), 10_000);
+    }),
+  ]);
+}
+
 const model = new OpenAIClient({
   client: {
     chat: {
@@ -172,5 +329,91 @@ assert.equal(result.output, "packed packages work");
 assert.equal(result.usage.totalTokens, 4);
 
 console.log("Packed Core, Client, Server, OpenAI, and MCP artifacts work under Bun.");
+`;
+}
+
+function consumerTsconfig() {
+  return {
+    compilerOptions: {
+      target: "ES2022",
+      lib: ["ES2022", "DOM"],
+      module: "ESNext",
+      moduleResolution: "bundler",
+      strict: true,
+      noEmit: true,
+      skipLibCheck: true,
+      types: [],
+    },
+    include: ["consumer.ts"],
+  };
+}
+
+// Type-only consumer: every entrypoint is referenced by name so its installed
+// declaration file must resolve, and the calls mirror the runtime smoke so the
+// signatures have to accept the same usage a real consumer would write.
+function consumerSource() {
+  return `
+import { Agent } from "@anvia/core";
+import { createHttpClientTransport, parseClientStreamRequest } from "@anvia/client";
+import { readJsonlStream } from "@anvia/client/transport";
+import { chunkText } from "@anvia/core/documents";
+import { toReadableStream } from "@anvia/core/streaming";
+import { McpClient } from "@anvia/mcp";
+import { OpenAIClient } from "@anvia/openai";
+import {
+  createClientStreamResponse,
+  createMemoryResumableStreamStore,
+  createResumableStream,
+  resumeClientStreamResponse,
+} from "@anvia/server";
+
+const agentCtor: typeof Agent = Agent;
+const transportFactory: typeof createHttpClientTransport = createHttpClientTransport;
+const jsonlReader: typeof readJsonlStream = readJsonlStream;
+const requestParser: typeof parseClientStreamRequest = parseClientStreamRequest;
+const chunker: typeof chunkText = chunkText;
+const streamAdapter: typeof toReadableStream = toReadableStream;
+const mcpClientCtor: typeof McpClient = McpClient;
+const openaiClientCtor: typeof OpenAIClient = OpenAIClient;
+const clientStreamResponse: typeof createClientStreamResponse = createClientStreamResponse;
+const memoryStoreFactory: typeof createMemoryResumableStreamStore = createMemoryResumableStreamStore;
+const resumableFactory: typeof createResumableStream = createResumableStream;
+const resumeResponse: typeof resumeClientStreamResponse = resumeClientStreamResponse;
+
+const mcpClient = new McpClient({
+  name: "packed-typed",
+  transport: {
+    type: "custom",
+    create() {
+      throw new Error("Not connected during the type-only consumer check");
+    },
+  },
+});
+const mcpName: string = mcpClient.name;
+
+const stream = toReadableStream(
+  (async function* () {
+    yield { type: "text_delta", delta: "typed consumer" };
+  })(),
+);
+const store = createMemoryResumableStreamStore();
+
+console.log(
+  agentCtor.name.length,
+  transportFactory.name.length,
+  requestParser.name.length,
+  jsonlReader.name.length,
+  chunker.name.length,
+  streamAdapter.name.length,
+  mcpClientCtor.name.length,
+  openaiClientCtor.name.length,
+  clientStreamResponse.name.length,
+  resumeResponse.name.length,
+  memoryStoreFactory.name.length,
+  resumableFactory.name.length,
+  mcpName.length,
+  stream !== undefined,
+  store !== undefined,
+);
 `;
 }

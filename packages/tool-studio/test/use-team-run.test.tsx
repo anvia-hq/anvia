@@ -11,8 +11,8 @@ let stream: ReadableStreamDefaultController<Uint8Array>;
 let signal: AbortSignal;
 let fetchMock: ReturnType<typeof vi.fn<typeof fetch>>;
 const encode = (event: unknown) => new TextEncoder().encode(`${JSON.stringify(event)}\n`);
-function Harness() {
-  const controller = useTeamRun("team/one");
+function Harness({ teamId = "team/one" }: { teamId?: string }) {
+  const controller = useTeamRun(teamId);
   useEffect(() => {
     run = controller;
   }, [controller]);
@@ -26,7 +26,8 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   container = document.createElement("div");
   root = createRoot(container);
-  fetchMock = vi.fn<typeof fetch>(async (_input, init) => {
+  fetchMock = vi.fn<typeof fetch>(async (input, init) => {
+    if (String(input).endsWith("/cancel")) return new Response("{}");
     signal = init!.signal!;
     return new Response(
       new ReadableStream<Uint8Array>({
@@ -142,6 +143,71 @@ describe("useTeamRun", () => {
     await act(async () => resolveApproval(new Response("{}")));
     expect(run.state.interactions.a?.status).toBe("answered");
     expect(run.state.status).toBe("completed");
+  });
+
+  it.each(["stop", "unmount", "team change"])(
+    "requests independent server cancellation on %s without waiting for its response",
+    async (action) => {
+      await act(async () => {
+        void run.start("work");
+      });
+      const streamSignal = signal;
+      let resolveCancel!: (response: Response) => void;
+      fetchMock.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveCancel = resolve;
+          }),
+      );
+      await act(async () => {
+        if (action === "stop") {
+          run.stop();
+          run.stop();
+        } else if (action === "unmount") root.unmount();
+        else root.render(<Harness teamId="other-team" />);
+      });
+      expect(streamSignal.aborted).toBe(true);
+      const cancellations = fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/cancel"));
+      expect(cancellations).toHaveLength(1);
+      const [url, request] = cancellations[0]!;
+      expect(url).toBe("/teams/team%2Fone/runs/studio%2Fcontrol/cancel");
+      expect(request).toMatchObject({ method: "POST", body: "{}", keepalive: true });
+      expect(request?.signal).not.toBe(streamSignal);
+      expect(request?.signal?.aborted).toBe(false);
+      if (action === "stop") expect(run.state.status).toBe("cancelled");
+      await act(async () => resolveCancel(new Response("{}")));
+    },
+  );
+
+  it("aborts promptly before a run ID is available", async () => {
+    fetchMock.mockImplementationOnce(
+      (_input, init) =>
+        new Promise((_resolve, reject) => {
+          signal = init!.signal!;
+          signal.addEventListener(
+            "abort",
+            () => reject(new DOMException("Aborted", "AbortError")),
+            { once: true },
+          );
+        }),
+    );
+    await act(async () => {
+      void run.start("work");
+    });
+    await act(async () => run.stop());
+    expect(signal.aborted).toBe(true);
+    expect(run.state.status).toBe("cancelled");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("still aborts locally when the cancellation request fails", async () => {
+    await act(async () => {
+      void run.start("work");
+    });
+    fetchMock.mockRejectedValueOnce(new TypeError("Network unavailable"));
+    await act(async () => run.stop());
+    expect(signal.aborted).toBe(true);
+    expect(run.state.status).toBe("cancelled");
   });
 
   it("aborts on stop and unmount and reports a truncated stream", async () => {

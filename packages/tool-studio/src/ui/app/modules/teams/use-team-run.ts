@@ -9,10 +9,28 @@ import { initialTeamState, teamReducer } from "./team-state";
 
 type ActiveTeamRun = {
   controller: AbortController;
+  base: string;
   runId: string | undefined;
   pending: Set<string>;
   epoch: number;
 };
+
+function cancelTeamRun(run: ActiveTeamRun | undefined) {
+  if (!run || run.controller.signal.aborted) return;
+  if (run.runId) {
+    // Keep server cancellation independent of stream teardown, including page navigation.
+    void fetch(`${run.base}/${encodeURIComponent(run.runId)}/cancel`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+      keepalive: true,
+      signal: AbortSignal.timeout(5_000),
+    }).catch(() => {
+      // Teardown cannot wait for the server; disconnect remains the fallback on network failure.
+    });
+  }
+  run.controller.abort();
+}
 
 export function useTeamRun(teamId: string) {
   const [state, dispatch] = useReducer(teamReducer, initialTeamState);
@@ -23,7 +41,7 @@ export function useTeamRun(teamId: string) {
   const base = `/teams/${encodeURIComponent(teamId)}/runs`;
   useEffect(
     () => () => {
-      active.current?.controller.abort();
+      cancelTeamRun(active.current);
       active.current = undefined;
       epoch.current++;
     },
@@ -34,6 +52,7 @@ export function useTeamRun(teamId: string) {
     if (active.current) return;
     const run: ActiveTeamRun = {
       controller: new AbortController(),
+      base,
       runId: undefined,
       pending: new Set(),
       epoch: ++epoch.current,
@@ -104,7 +123,7 @@ export function useTeamRun(teamId: string) {
   }
 
   function stop() {
-    active.current?.controller.abort();
+    cancelTeamRun(active.current);
     dispatch({ type: "stop" });
   }
   return {

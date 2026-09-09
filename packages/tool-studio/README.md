@@ -25,8 +25,8 @@ recursive children; selecting an instance reveals its output, tool activity, run
 usage. The Messages panel shows sender, recipient, and delivery status (the latest 500 messages).
 Approvals and questions appear as independent cards labeled with the requesting member.
 
-Team tasks are local to the current page. Leaving the page cancels active work; completed tasks
-remain visible until you choose **New task**. They do not appear in saved agent sessions.
+Team tasks are local to the current page. Stopping or leaving a task requests server cancellation
+independently of closing its stream. Completed tasks remain visible until you choose **New task**. They do not appear in saved agent sessions.
 
 `GET /teams` and `/config` expose team IDs, registered member definitions, and limits.
 `GET /teams/:teamId` returns one definition. Duplicate team IDs are rejected; agent and team

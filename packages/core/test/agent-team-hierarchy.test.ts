@@ -160,6 +160,24 @@ describe("AgentTeam hierarchy", () => {
       status: "idle",
     });
     expect(result.usage.totalTokens).toBe(7);
+    for (const member of result.members) {
+      const queued = events.findIndex(
+        (event) => event.type === "agent_queued" && event.instanceId === member.instanceId,
+      );
+      const started = events.findIndex(
+        (event) => event.type === "agent_started" && event.instanceId === member.instanceId,
+      );
+      expect(queued).toBeGreaterThan(-1);
+      expect(queued).toBeLessThan(started);
+      expect(events[queued]).toMatchObject({
+        member: {
+          instanceId: member.instanceId,
+          parentInstanceId: member.parentInstanceId,
+          depth: member.depth,
+          status: "queued",
+        },
+      });
+    }
     expect(
       events.flatMap((event) =>
         event.type === "message_queued"

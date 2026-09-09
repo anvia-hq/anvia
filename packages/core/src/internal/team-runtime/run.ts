@@ -163,6 +163,7 @@ export class TeamRun<Output = unknown> {
       messages: [{ role: "user", content: prompt }],
       submitted: false,
     });
+    this.memberEvent(member, "agent_queued");
     this.launch(member);
     return { instanceId: member.instanceId, status: "queued" as const };
   }
@@ -612,7 +613,13 @@ export class TeamRun<Output = unknown> {
 
   private memberEvent(
     member: TeamMember,
-    type: "agent_started" | "agent_waiting" | "agent_idle" | "agent_failed" | "agent_cancelled",
+    type:
+      | "agent_queued"
+      | "agent_started"
+      | "agent_waiting"
+      | "agent_idle"
+      | "agent_failed"
+      | "agent_cancelled",
   ) {
     this.emit({ type, ...this.identity(member), member: memberSummary(member) });
   }

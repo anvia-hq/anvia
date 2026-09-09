@@ -12,6 +12,7 @@ import type {
   StudioTraceStore,
   StudioUiOptions,
 } from "../types";
+import type { AgentTeam } from "@anvia/core/agent";
 
 export type ResolvedStores = {
   sessions?: StudioSessionStore;
@@ -26,6 +27,7 @@ export type StudioRuntimeOptions = {
   description?: string;
   version?: string;
   agents: StudioAgent[];
+  teams?: readonly AgentTeam<unknown>[];
   pipelines: StudioPipeline[];
   evals: StudioEvalSuite[];
   models?: StudioModelConfig;

@@ -110,7 +110,13 @@ type TeamEventIdentity = { teamRunId: string; instanceId: string; runId?: string
 
 export type AgentTeamEvent<Output = string> =
   | (TeamEventIdentity & {
-      type: "agent_started" | "agent_waiting" | "agent_idle" | "agent_failed" | "agent_cancelled";
+      type:
+        | "agent_queued"
+        | "agent_started"
+        | "agent_waiting"
+        | "agent_idle"
+        | "agent_failed"
+        | "agent_cancelled";
       member: AgentTeamMemberSummary;
     })
   | (TeamEventIdentity & {

@@ -5,6 +5,48 @@ knowledge inspection.
 
 Use this package to serve local agents and pipelines over HTTP, inspect sessions, traces, tools, MCPs, Memory, Status, and Knowledge in the browser UI, and exercise tool approval workflows during development.
 
+## Agent teams
+
+Register existing team definitions alongside agents and pipelines:
+
+```ts
+import { Agent, AgentTeam } from "@anvia/core/agent";
+import { Studio } from "@anvia/studio";
+
+const researcher = new Agent({ id: "researcher", model });
+const team = new AgentTeam({ id: "research-team", model, members: [researcher] });
+await new Studio([researcher, team]).serve({ port: 4021 });
+```
+
+`GET /teams` and `/config` expose team IDs, registered member definitions, and limits.
+`GET /teams/:teamId` returns one definition. Duplicate team IDs are rejected; agent and team
+IDs occupy separate namespaces. Members are not automatically registered as standalone agents.
+
+| Endpoint                                                      | Request                                  | Behavior                                 |
+| ------------------------------------------------------------- | ---------------------------------------- | ---------------------------------------- |
+| `POST /teams/:teamId/runs`                                    | `{ prompt }` or `{ messages }`           | Start an attributed JSONL event stream   |
+| `POST /teams/:teamId/runs/:runId/steer`                       | `{ prompt }` or user-only `{ messages }` | Queue user input for the coordinator     |
+| `POST /teams/:teamId/runs/:runId/cancel`                      | `{}`                                     | Cancel the entire team                   |
+| `POST /teams/:teamId/runs/:runId/interactions/:interactionId` | `AgentInteractionResponse`               | Resolve one pending approval or question |
+
+The stream begins with `{ type: "team_run_started", teamId, runId }`; the same Studio control
+ID is available in the `x-anvia-team-run-id` response header. Subsequent events follow
+`AgentTeamEvent`, with core's separate `teamRunId`, instance IDs, parent IDs, and depth.
+Internal agent continuation events are omitted; attributed `interaction` events contain everything
+needed for the application's approval/question UI. Terminal failures emit an `error` event.
+Team requests accept at most 1 MiB of JSON and 256 messages; oversized bodies or message counts return 413.
+`StudioTeamRunRequest`, `StudioTeamRunEvent`, and `StudioTeamConfig` are exported for clients.
+
+Runs and pending interactions are scoped to the team and Studio run ID. Invalid replies leave
+the interaction pending; repeated replies are rejected. Several members may request approval
+simultaneously, and only the HTTP application can answer them. Apply authentication/authorization
+middleware to these routes when exposing Studio remotely, as with other Studio execution routes.
+
+Disconnecting the stream or shutting down Studio cancels the team and its pending interactions.
+Completed runs leave the live registry; later control requests return 404. Core's configured event
+buffer limit bounds unread events. Team runs currently use ephemeral conversations and are not
+stored in Studio's agent session history; this API does not provide reconnection or durable resume.
+
 ## Installation
 
 ```sh

@@ -1,5 +1,6 @@
 import type { JsonObject } from "@anvia/core/completion";
 import { Agent, getAgentToolState } from "@anvia/core/internal/agent";
+import { AgentTeam } from "@anvia/core/agent";
 import { Pipeline } from "@anvia/core/pipeline";
 import { serve, type WebSocketServerLike } from "@hono/node-server";
 import type { Hono } from "hono";
@@ -59,6 +60,7 @@ import { registerStatusRoutes } from "./status";
 import { toolRequiresApproval } from "./tool-metadata";
 import { registerToolRoutes } from "./tools";
 import { registerTraceRoutes } from "./trace-routes";
+import { registerTeamRoutes } from "./teams";
 
 type StudioApp = AnviaStudio & {
   readonly sessionStore?: StudioSessionStore;
@@ -308,6 +310,7 @@ function studioOptionsFromTargets(
   );
   const runtimeOptions: StudioRuntimeOptions = {
     agents: inferStudioAgents(agents, options.quickPrompts ?? {}),
+    teams: targets.filter((target): target is AgentTeam<unknown> => target instanceof AgentTeam),
     pipelines: inferStudioPipelines(pipelines),
     evals: options.evals ?? [],
     graphs: options.graphs === undefined ? [] : [...options.graphs],
@@ -485,6 +488,7 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
     continuationRegistry,
     runLifecycle,
   });
+  registerTeamRoutes(app, options.teams ?? [], runLifecycle);
 
   if (memorySources.size > 0 || stores.sessions !== undefined) {
     registerMemoryRoutes(app, {

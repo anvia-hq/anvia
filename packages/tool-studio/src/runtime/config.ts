@@ -15,6 +15,7 @@ import type {
 import { staticContextDocuments, vectorContexts } from "./agent-context";
 import { evalConfig } from "./eval-config";
 import { serializeUnknown } from "./json";
+import { teamConfig } from "./teams";
 import { agentHasKnowledge } from "./knowledge";
 import { createStudioModelRegistry, studioModelsConfig } from "./models";
 import type { ResolvedStores, StudioRuntimeOptions } from "./options";
@@ -126,6 +127,7 @@ export function buildConfig(
   const config: StudioConfig = {
     id: runnerId(options),
     agents: agents.map(agentConfig),
+    teams: (options.teams ?? []).map(teamConfig),
     pipelines: pipelines.map(pipelineConfig),
     graphs: options.graphs.map(graphConfig),
     evals: options.evals.map(evalConfig),

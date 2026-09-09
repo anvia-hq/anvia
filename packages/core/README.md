@@ -210,7 +210,8 @@ const outcome = await stream.result;
 ```
 
 `events` is an attributed union of agent events, member state changes, queued/delivered messages,
-interactions, and the terminal team outcome. `textStream` yields coordinator text only, including
+interactions, and the terminal team outcome. New members emit `agent_queued` before acquiring a
+concurrency slot. `textStream` yields coordinator text only, including
 provisional turns before its final answer. `text` resolves to the final text. Choose one event or text
 consumer; final promises can be read alongside it. Reading only a final promise consumes the run
 without buffering unused events. Non-streaming models also work and emit complete response text

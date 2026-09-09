@@ -1,9 +1,11 @@
 import type {
   Agent,
+  AgentTeam,
   AgentInteractionOutcome,
   AgentOutcome,
   AgentStreamEvent,
 } from "@anvia/core/agent";
+import type { StudioTeamConfig } from "./team-types";
 import type { AgentInteractionResponse } from "@anvia/core/agent/interactions";
 import type {
   CompletionModel,
@@ -142,8 +144,11 @@ export type StudioAgent = {
 };
 
 // Studio accepts arbitrary pipelines and validates run inputs at the HTTP boundary.
-// oxlint-disable-next-line typescript/no-explicit-any -- Input/output types remain user-defined outside Studio.
-export type StudioTarget = Agent | Pipeline<any, any>;
+export type StudioTarget =
+  | Agent
+  | AgentTeam<unknown>
+  // oxlint-disable-next-line typescript/no-explicit-any -- Input/output types remain user-defined outside Studio.
+  | Pipeline<any, any>;
 
 export type StudioAgentConfig = {
   id: string;
@@ -315,6 +320,7 @@ export type StudioConfig = {
   description?: string;
   version?: string;
   agents: StudioAgentConfig[];
+  teams?: StudioTeamConfig[];
   models?: StudioModelsConfig;
   pipelines: StudioPipelineConfig[];
   graphs: StudioGraphConfig[];

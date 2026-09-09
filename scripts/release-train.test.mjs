@@ -132,6 +132,59 @@ test("compatible workspace peers prevent automatic major bumps for minor release
   }
 });
 
+for (const scenario of [
+  {
+    name: "0.x minor boundary",
+    current: "0.2.3",
+    next: "0.3.0",
+    dependentNext: "3.0.0",
+    prerelease: false,
+  },
+  {
+    name: "prerelease tuple boundary",
+    current: "1.2.3-rc.0",
+    next: "1.3.0-rc.1",
+    dependentNext: "3.0.0-rc.0",
+    prerelease: true,
+  },
+]) {
+  test(`workspace peers release unchanged dependents across the ${scenario.name}`, () => {
+    const fixture = createReleaseFixture();
+    try {
+      initializeGitFixture(fixture);
+      const dependencyPath = path.join(fixture, "packages", "a", "package.json");
+      writeJson(dependencyPath, { ...readJson(dependencyPath), version: scenario.current });
+      const dependentPath = path.join(fixture, "packages", "b", "package.json");
+      writeJson(dependentPath, {
+        ...readJson(dependentPath),
+        peerDependencies: { "@fixture/a": "workspace:^" },
+      });
+      if (scenario.prerelease) {
+        writeJson(path.join(fixture, ".changeset", "pre.json"), {
+          mode: "pre",
+          tag: "rc",
+          changesets: [],
+          initialVersions: { "@fixture/a": "1.2.2", "@fixture/b": "2.4.0" },
+        });
+      }
+      // Only A changes: B must be released solely because its peer range is exceeded.
+      writeChangeset(fixture, "a-minor", "minor", "Add an API to A.", ["a"]);
+      const output = path.join(fixture, "plan.json");
+      runCommand("pnpm", ["changeset", "status", "--output", output], fixture);
+      const { releases } = readJson(output);
+      assert.equal(releases.find(({ name }) => name === "@fixture/a").newVersion, scenario.next);
+      const dependent = releases.find(({ name }) => name === "@fixture/b");
+      assert.ok(dependent, "Out-of-range peers must receive an implicit release");
+      assert.deepEqual(dependent.changesets, []);
+      assert.equal(dependent.type, "major");
+      assert.equal(dependent.oldVersion, "2.4.0");
+      assert.equal(dependent.newVersion, scenario.dependentNext);
+    } finally {
+      rmSync(fixture, { recursive: true, force: true });
+    }
+  });
+}
+
 test("preview versions use each package release plan version", () => {
   assert.equal(
     createPreviewVersion("1.4.2", "20260814T120102.sha-abcdef0"),

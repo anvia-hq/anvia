@@ -101,10 +101,15 @@ export class SqliteMemoryClient implements AsyncDisposable {
     if (path !== ":memory:") {
       mkdirSync(dirname(resolve(path)), { recursive: true });
     }
-    const database = new (databaseSync())(path, { enableForeignKeyConstraints: true });
-    // bun:sqlite has no enableForeignKeyConstraints option, so the store's
-    // foreign-key validation would fail on it. Enforce the pragma directly;
-    // on node:sqlite it is already on, making this a no-op.
+    const database = isBunDriver()
+      ? // bun:sqlite rejects node-only open options such as
+        // enableForeignKeyConstraints with SQLITE_MISUSE, and it has no
+        // equivalent, so open with defaults instead.
+        new (databaseSync())(path)
+      : new (databaseSync())(path, { enableForeignKeyConstraints: true });
+    // bun:sqlite defaults to foreign keys OFF and has no open-time option, so
+    // the store's foreign-key validation would fail on it. Enforce the pragma
+    // directly; node:sqlite is already ON, making this a no-op there.
     database.exec("PRAGMA foreign_keys = ON");
     return database;
   }
@@ -141,7 +146,7 @@ function databaseSync(): SyncDatabaseConstructor {
 }
 
 function loadBunSqlite(require: NodeJS.Require): { Database: SyncDatabaseConstructor } | undefined {
-  if (process.versions.bun === undefined) {
+  if (!isBunDriver()) {
     return undefined;
   }
   try {
@@ -150,4 +155,8 @@ function loadBunSqlite(require: NodeJS.Require): { Database: SyncDatabaseConstru
     // Fall through to node:sqlite and surface its loading error instead.
     return undefined;
   }
+}
+
+function isBunDriver(): boolean {
+  return process.versions.bun !== undefined;
 }

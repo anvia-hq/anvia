@@ -61,7 +61,6 @@ export function useTeamRun(teamId: string) {
     setBusy(new Set());
     setControlError("");
     dispatch({ type: "start", prompt });
-    let terminal = false;
     try {
       const response = await fetch(base, {
         method: "POST",
@@ -75,11 +74,14 @@ export function useTeamRun(teamId: string) {
       for await (const event of readJsonlStream<StudioTeamRunEvent>(response.body)) {
         if (active.current !== run || run.controller.signal.aborted) break;
         if (event.type === "team_run_started") run.runId = event.runId;
-        terminal ||=
+        const terminal =
           event.type === "response" || event.type === "blocked" || event.type === "error";
+        // Finish before rendering the result; closing the response body may still be pending.
+        if (terminal) active.current = undefined;
         dispatch({ type: "event", event });
+        if (terminal) return;
       }
-      if (!terminal && !run.controller.signal.aborted)
+      if (!run.controller.signal.aborted)
         throw new Error("Team stream ended before a result arrived");
     } catch (error) {
       if (active.current === run)
@@ -123,6 +125,7 @@ export function useTeamRun(teamId: string) {
   }
 
   function stop() {
+    if (!active.current) return;
     cancelTeamRun(active.current);
     dispatch({ type: "stop" });
   }

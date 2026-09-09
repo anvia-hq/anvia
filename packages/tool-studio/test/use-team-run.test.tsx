@@ -10,6 +10,7 @@ let run: ReturnType<typeof useTeamRun>;
 let stream: ReadableStreamDefaultController<Uint8Array>;
 let signal: AbortSignal;
 let fetchMock: ReturnType<typeof vi.fn<typeof fetch>>;
+let cancelStream: ReturnType<typeof vi.fn<() => Promise<void>>>;
 const encode = (event: unknown) => new TextEncoder().encode(`${JSON.stringify(event)}\n`);
 function Harness({ teamId = "team/one" }: { teamId?: string }) {
   const controller = useTeamRun(teamId);
@@ -26,11 +27,13 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   container = document.createElement("div");
   root = createRoot(container);
+  cancelStream = vi.fn(async () => {});
   fetchMock = vi.fn<typeof fetch>(async (input, init) => {
     if (String(input).endsWith("/cancel")) return new Response("{}");
     signal = init!.signal!;
     return new Response(
       new ReadableStream<Uint8Array>({
+        cancel: () => cancelStream(),
         start(controller) {
           stream = controller;
           signal.addEventListener(
@@ -52,6 +55,52 @@ afterEach(() => {
 });
 
 describe("useTeamRun", () => {
+  it.each([
+    { event: { type: "response", members: [], text: "done" }, status: "completed" },
+    { event: { type: "blocked", members: [], text: "blocked" }, status: "blocked" },
+    { event: { type: "error", error: "Team failed" }, status: "failed" },
+  ])(
+    "preserves $status through stale stop calls and delayed stream cleanup",
+    async ({ event, status }) => {
+      let finishCleanup!: () => void;
+      cancelStream.mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            finishCleanup = resolve;
+          }),
+      );
+      let firstRun!: Promise<void>;
+      await act(async () => {
+        firstRun = run.start("work");
+      });
+      const staleStop = run.stop;
+      const firstSignal = signal;
+      await emit(event);
+      await act(async () => staleStop());
+      expect(run.state.status).toBe(status);
+      if (status === "failed") expect(run.state.error).toBe("Team failed");
+      expect(firstSignal.aborted).toBe(false);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(cancelStream).toHaveBeenCalledTimes(1);
+
+      // Starting another task must not wait for the old response body to finish closing.
+      await act(async () => {
+        run.reset();
+        void run.start("next task");
+      });
+      expect(run.state.status).toBe("running");
+      expect(run.state.conversation).toEqual([{ type: "prompt", text: "next task" }]);
+      await act(async () => {
+        finishCleanup();
+        await firstRun;
+      });
+      expect(run.state.status).toBe("running");
+      await act(async () => run.stop());
+      expect(signal.aborted).toBe(true);
+      expect(run.state.status).toBe("cancelled");
+    },
+  );
+
   it("uses the Studio control ID, keeps invalid answers retryable, and resolves concurrent cards independently", async () => {
     await act(async () => {
       void run.start("work");
@@ -139,7 +188,6 @@ describe("useTeamRun", () => {
       void run.respond("a", { type: "tool-approval", approved: true });
     });
     await emit({ type: "response", members: [], text: "done" });
-    await act(async () => stream.close());
     await act(async () => resolveApproval(new Response("{}")));
     expect(run.state.interactions.a?.status).toBe("answered");
     expect(run.state.status).toBe("completed");

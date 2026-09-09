@@ -324,6 +324,83 @@ describe("AgentTeam hierarchy", () => {
     },
   );
 
+  it("reports an idle subtree's cancellation once to its surviving parent", async () => {
+    const leaf = new Agent({ id: "leaf", model: model(() => say("leaf done")) });
+    const middle = new Agent({
+      id: "middle",
+      model: script(call("spawn_leaf", { prompt: "work" }), say("early"), say("middle done")),
+    });
+    const worker = new Agent({
+      id: "worker",
+      model: script(call("spawn_middle", { prompt: "work" }), say("early"), say("worker done")),
+    });
+    let workerId = "";
+    const { result, events } = await collect(
+      new AgentTeam({
+        id: "lead",
+        members: [worker, middle, leaf],
+        spawning: [
+          { from: worker, to: [middle] },
+          { from: middle, to: [leaf] },
+        ],
+        limits: { maxConcurrentAgents: 1 },
+        model: script(
+          call("spawn_worker", { prompt: "work" }),
+          (request) => {
+            workerId = instanceFrom(request);
+            return call("wait_for_agent", { instanceId: workerId });
+          },
+          () => call("cancel_agent", { instanceId: workerId }),
+          (request) => {
+            expect(history(request)).toContain("cancelled");
+            return call("cancel_agent", { instanceId: workerId });
+          },
+          say("done"),
+        ),
+      }),
+    );
+    expect(result.members).toMatchObject([
+      { agentId: "worker", status: "cancelled" },
+      { agentId: "middle", status: "cancelled" },
+      { agentId: "leaf", status: "cancelled" },
+    ]);
+    const firstCancellation = events.findIndex((event) => event.type === "agent_cancelled");
+    expect(firstCancellation).toBeGreaterThan(-1);
+    expect(
+      events
+        .slice(0, firstCancellation)
+        .flatMap((event) => (event.type === "agent_idle" ? [event.member.agentId] : [])),
+    ).toEqual(["leaf", "middle", "worker"]);
+    const cancelledOutcomes = events.flatMap((event) =>
+      event.type === "message_queued" && JSON.parse(event.message.content).status === "cancelled"
+        ? [event.message]
+        : [],
+    );
+    expect(cancelledOutcomes).toMatchObject([
+      {
+        fromInstanceId: workerId,
+        toInstanceId: result.members[0]!.parentInstanceId,
+      },
+    ]);
+    expect(
+      events.filter(
+        (event) =>
+          event.type === "message_delivered" && event.message.id === cancelledOutcomes[0]!.id,
+      ),
+    ).toHaveLength(1);
+    expect(
+      events.slice(firstCancellation).filter((event) => event.type === "agent_cancelled"),
+    ).toHaveLength(3);
+    const subtreeIds = new Set(result.members.map((member) => member.instanceId));
+    expect(
+      events
+        .slice(firstCancellation)
+        .some(
+          (event) => event.type === "message_queued" && subtreeIds.has(event.message.toInstanceId),
+        ),
+    ).toBe(false);
+  });
+
   it("denies sibling cancellation and cousin or ancestor access even when their IDs are known", async () => {
     let firstParentId = "";
     let firstLeafId = "";

@@ -659,6 +659,8 @@ export class TeamRun<Output = unknown> {
 
   private stopDescendants(parent: TeamMember, reason: string): void {
     // Instances are inserted after their parents; this also reaches idle descendants without recursion.
+    // The subtree root is already terminal, and each descendant's parent is stopped first.
+    // Only the subtree root reports cancellation to a surviving parent; descendant reports are suppressed.
     const stopped = new Set([parent.instanceId]);
     for (const member of this.instances.values()) {
       if (member.parentInstanceId !== undefined && stopped.has(member.parentInstanceId)) {

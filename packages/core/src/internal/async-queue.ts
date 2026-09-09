@@ -3,10 +3,12 @@ type AsyncQueueWaiter<T> = {
   reject: (error: unknown) => void;
 };
 
+type QueueCloseOptions = { discardPending?: boolean };
+
 export type AsyncQueue<T> = AsyncIterable<T> & {
   enqueue(value: T): void;
-  close(): void;
-  throw(error: unknown): void;
+  close(options?: QueueCloseOptions): void;
+  throw(error: unknown, options?: QueueCloseOptions): void;
 };
 
 export function createAsyncQueue<T>(): AsyncQueue<T> {
@@ -49,11 +51,13 @@ export function createAsyncQueue<T>(): AsyncQueue<T> {
       values.push(value);
       flush();
     },
-    close(): void {
+    close(options?: QueueCloseOptions): void {
+      if (options?.discardPending) values.length = 0;
       closed = true;
       flush();
     },
-    throw(thrown: unknown): void {
+    throw(thrown: unknown, options?: QueueCloseOptions): void {
+      if (options?.discardPending) values.length = 0;
       closed = true;
       error = thrown;
       flush();

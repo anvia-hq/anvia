@@ -64,6 +64,22 @@ describe("createAsyncQueue", () => {
     await expect(iterator.next()).resolves.toEqual({ value: 1, done: false });
     await expect(iterator.next()).rejects.toThrow(error);
   });
+
+  it("can discard unread values when failing", async () => {
+    const queue = createAsyncQueue<number>();
+    const error = new Error("overflow");
+    queue.enqueue(1);
+    queue.enqueue(2);
+    queue.throw(error, { discardPending: true });
+    await expect(queue[Symbol.asyncIterator]().next()).rejects.toBe(error);
+  });
+
+  it("can release unread values when a consumer closes", async () => {
+    const queue = createAsyncQueue<number>();
+    queue.enqueue(1);
+    queue.close({ discardPending: true });
+    await expect(collect(queue)).resolves.toEqual([]);
+  });
 });
 
 async function collect<T>(iterable: AsyncIterable<T>): Promise<T[]> {

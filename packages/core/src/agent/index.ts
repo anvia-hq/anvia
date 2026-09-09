@@ -1,6 +1,7 @@
 export type { ModelCallOptions } from "../model-call-options";
 export type { RetryContext, RetryOptions, RetrySetting } from "../retry";
 export { Agent } from "./agent";
+export * from "./team";
 export type { AgentStructuredOutputFormat, AgentStructuredOutputPhase } from "./errors";
 export {
   AgentRunBlockedError,

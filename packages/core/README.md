@@ -73,6 +73,158 @@ const result = await agent.generate({ prompt: "What is happening with order A123
 if (result.type === "response") console.log(result.output);
 ```
 
+## Agent teams
+
+`AgentTeam` coordinates ordinary `Agent` definitions and gives each spawned instance its own
+conversation and inbox. The coordinator chooses when to spawn members and can create multiple
+instances of the same definition. Tools keep the usual `tools: []` shape; members receive only their
+own configured tools and the runtime's communication tools.
+
+```ts
+import { Agent, AgentTeam } from "@anvia/core/agent";
+
+// model, readFileTool, and searchTool are application-owned objects.
+const researcher = new Agent({
+  id: "researcher",
+  model,
+  description: "Research a specific question and report evidence.",
+  instructions: "Ask your parent for clarification when needed.",
+  tools: [readFileTool, searchTool],
+});
+
+const reviewer = new Agent({
+  id: "reviewer",
+  model,
+  description: "Review findings for errors and unsupported claims.",
+  tools: [readFileTool],
+});
+
+const team = new AgentTeam({
+  id: "research-team",
+  model,
+  instructions: [
+    "Delegate research to researcher instances.",
+    "Send their findings to a reviewer and incorporate its feedback.",
+    "Answer the user after the work is complete.",
+  ].join("\n"),
+  members: [researcher, reviewer],
+  limits: {
+    maxConcurrentAgents: 4,
+    maxAgentInstances: 12,
+    maxTotalTurns: 100,
+    maxBufferedEvents: 1024,
+  },
+});
+
+const result = await team.generate({ prompt: "Investigate the proposed architecture." });
+if (result.type === "response") console.log(result.output);
+console.log(result.teamRunId, result.usage, result.members);
+```
+
+The coordinator supports normal Agent configuration, including `outputSchema`, context, tools,
+guardrails, middleware, and lifecycle callbacks. Its schema determines the team's output type.
+Each member preserves its own configuration. Run-level options apply to the coordinator; the
+abort signal, interaction resolver, and team limits apply to the whole execution.
+
+The runtime adds these model-callable tools:
+
+| Tool                | Available to  | Input                         |
+| ------------------- | ------------- | ----------------------------- |
+| `spawn_<member.id>` | Coordinator   | `{ prompt, name? }`           |
+| `send_message`      | All instances | `{ to, content, replyTo? }`   |
+| `wait_for_agent`    | All instances | `{ instanceId?, timeoutMs? }` |
+| `list_agents`       | All instances | `{}`                          |
+| `cancel_agent`      | Coordinator   | `{ instanceId, reason? }`     |
+
+Spawning returns an `instanceId` immediately. A definition's `agentId` stays the same across its
+instances; each assignment or resumed interaction has a distinct `runId`. Member IDs must contain
+1–58 letters, digits, underscores, or hyphens so generated tool names are valid. Configured tools
+must not use reserved coordination names.
+
+Routing is between a parent and its children. A member can use `to: "parent"`; the coordinator
+addresses children by instance ID. Sibling messaging and recursive spawning are not supported.
+`send_message` returns a queued receipt, not a reply. Messages arrive at safe turn/tool boundaries,
+are explicitly attributed to their sender, and cannot satisfy a tool approval. Sending to an idle
+member starts a follow-up run with its retained conversation. Failed or cancelled members cannot
+receive follow-ups. Each inbox accepts at most 128 pending inputs.
+
+`wait_for_agent` wakes on a relevant message, outcome, cancellation, or timeout (default 30 seconds,
+maximum 5 minutes). Waiting agents and agents awaiting application input release their concurrency
+slot. The coordinator also waits automatically before finalizing while members are active, and
+receives their outcomes as attributed messages. A member failure is reported to the coordinator;
+a coordinator error or team cancellation rejects the execution. Guardrail blocking remains a
+`blocked` outcome.
+
+The limits above are the defaults. Concurrent and total instance limits include the coordinator.
+The instance limit counts all instances created during this execution, including completed or
+cancelled ones. The turn budget covers all instances and follow-ups; provider retries remain
+governed by normal retry settings. Reaching the turn budget fails the team. Reaching the instance
+limit rejects the spawn tool call so the coordinator can use existing members. Tools within one
+instance execute sequentially; different instances can execute concurrently.
+
+### Team streaming and steering
+
+```ts
+const stream = team.stream({ prompt: "Investigate the proposed architecture." });
+
+// Call from the application's user-input handler while the team is running:
+// stream.steer({ prompt: "Also consider deployment complexity." });
+// stream.cancel("User cancelled.");
+
+for await (const event of stream.events) {
+  if (event.type === "agent_event" && event.event.type === "text_delta") {
+    console.log(event.instanceId, event.event.delta);
+  }
+}
+const outcome = await stream.result;
+```
+
+`events` is an attributed union of agent events, member state changes, queued/delivered messages,
+interactions, and the terminal team outcome. `textStream` yields coordinator text only, including
+provisional turns before its final answer. `text` resolves to the final text. Choose one event or text
+consumer; final promises can be read alongside it. Reading only a final promise consumes the run
+without buffering unused events. Non-streaming models also work and emit complete response text
+instead of provider deltas. Closing the event iterator cancels unfinished work.
+
+Streaming buffers at most `limits.maxBufferedEvents` unread events (default 1,024). If a consumer
+falls behind and fills that buffer, the team cancels its running work, discards unread events, and
+rejects both the iterator and final promises with `AgentTeamLimitError` whose `limit` is
+`"maxBufferedEvents"`. This bounds queued event count, not the byte size of individual events.
+Increase the limit when your application needs to tolerate longer pauses between reads.
+Result-only consumption does not buffer events and is unaffected by this limit.
+
+### Team approvals and questions
+
+Only the application resolves interactions. A coordinator or reviewer cannot approve another
+member's protected tool through a message. Existing tool `requiresApproval` and question tools use
+the same interaction contracts as `Agent`:
+
+```ts
+import type { AgentTeamInteraction } from "@anvia/core/agent";
+import type { AgentInteractionResponse } from "@anvia/core/agent/interactions";
+
+// Implement this with your application's authenticated approval/question UI.
+declare function askUser(request: AgentTeamInteraction): Promise<AgentInteractionResponse>;
+
+const result = await team.generate({
+  prompt: "Investigate and propose changes.",
+  resolveInteraction: (request) => askUser(request),
+});
+```
+
+The resolver receives `teamRunId`, `instanceId`, `runId`, the interaction request, and an abort
+signal. A missing, throwing, or invalid resolver fails the team with `AgentTeamInteractionError`
+before the protected action executes. Approval denial follows the ordinary Agent behavior: the
+tool is skipped and its member can continue. Other members may continue while an interaction is
+pending. The application must decide who may approve; agent-generated content is not authorization.
+
+Teams currently live in one process for one execution. Each `generate` or `stream` call creates
+fresh instances. Pass `messages` instead of `prompt` to supply coordinator history. Member
+conversations are retained only within that execution; team session persistence and durable
+checkpoint/resume are not provided. Cancellation signals reach running models, tools, and
+resolvers; work owned by the application must honor its signal to stop external activity.
+Team events are an SDK contract; Studio and transport adapters do not yet have a dedicated team UI.
+
 ## Direct Completions
 
 Use `generateCompletion` for one provider call without Agent turns, memory, or local tool

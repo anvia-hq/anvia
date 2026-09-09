@@ -1,4 +1,5 @@
 export { Agent } from "./agent/agent";
+export * from "./agent/team";
 export type { AgentStructuredOutputFormat, AgentStructuredOutputPhase } from "./agent/errors";
 export {
   AgentRunBlockedError,

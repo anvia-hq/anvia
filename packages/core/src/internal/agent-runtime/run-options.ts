@@ -9,6 +9,8 @@ export type InternalAgentRunOptions = {
   onFailure?: ((failure: { error: unknown; messages: readonly Message[] }) => void) | undefined;
   onMemoryCompaction?: ((compaction: MemoryCompactionInfo) => void | Promise<void>) | undefined;
   runId?: string | undefined;
+  beforeFinish?: (() => void | Promise<void>) | undefined;
+  onSteeringApplied?: ((id: string) => void) | undefined;
 };
 
 type AgentRunOptionsWithInternal = {

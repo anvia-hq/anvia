@@ -192,6 +192,8 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
   private readonly memoryRecorder: AgentRunMemory;
   private readonly memoryScope: MemoryScope | undefined;
   private readonly onInternalFailure: InternalAgentRunOptions["onFailure"];
+  private readonly beforeFinish: InternalAgentRunOptions["beforeFinish"];
+  private readonly onSteeringApplied: InternalAgentRunOptions["onSteeringApplied"];
   private readonly onInternalMemoryCompaction: InternalAgentRunOptions["onMemoryCompaction"];
   private memoryCompaction: MemoryCompactionInfo | undefined;
   private readonly requestedRunId: string | undefined;
@@ -220,6 +222,8 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     const internalOptions = getInternalAgentRunOptions(options);
     this.activeHook = internalOptions?.hook;
     this.onInternalFailure = internalOptions?.onFailure;
+    this.beforeFinish = internalOptions?.beforeFinish;
+    this.onSteeringApplied = internalOptions?.onSteeringApplied;
     this.onInternalMemoryCompaction = internalOptions?.onMemoryCompaction;
     this.requestedRunId = normalizeRequestedRunId(internalOptions?.runId);
     this.activeLifecycle = composeAgentLifecycle(agent.lifecycle, options.lifecycle) as
@@ -488,6 +492,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         const assistantMessage = this.generatedAssistantMessage(response, request);
         newMessages.push(assistantMessage);
         if (toolCalls.length === 0) {
+          await this.beforeFinish?.();
           if (this.steeringMessages.length > 0) {
             await this.memoryRecorder.commitMessages(
               runId,
@@ -869,6 +874,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         newMessages.push(assistantMessage);
 
         if (toolCalls.length === 0) {
+          await this.beforeFinish?.();
           let emittedTurnEnd = false;
           if (!bufferOutputDeltas) {
             if (bufferResponseEvents) {
@@ -2229,6 +2235,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     const messages = receipts.flatMap((receipt) => receipt.messages);
     newMessages.push(...messages);
     await this.memoryRecorder.commitMessages(runId, turn, messages, pendingTurnMessages);
+    for (const receipt of receipts) this.onSteeringApplied?.(receipt.id);
     return receipts;
   }
 

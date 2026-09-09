@@ -73,6 +73,7 @@ export class TeamStream<Output> implements AgentTeamStream<Output> {
           throw this.bufferError ?? error;
         },
       );
+      // Observe failures for iterator-only consumers. queue.throw records the error and returns.
       this.promise.then(
         () => this.queue.close(),
         (error: unknown) => this.queue.throw(error),

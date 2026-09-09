@@ -750,4 +750,89 @@ describe("AgentTeam", () => {
     });
     expect(await stream.result).toMatchObject({ output: "second answer" });
   });
+
+  it.each([false, true])(
+    "delivers a child follow-up once when its final drain has passed (streaming=%s)",
+    async (streaming) => {
+      const Model = streaming ? StreamingScriptModel : ScriptModel;
+      let notifyClosing!: () => void;
+      const closing = new Promise<void>((resolve) => {
+        notifyClosing = resolve;
+      });
+      let releaseClosing!: () => void;
+      const released = new Promise<void>((resolve) => {
+        releaseClosing = resolve;
+      });
+      const workerModel = new Model([
+        say("first finding"),
+        (request) => {
+          expect(
+            request.chatHistory.filter(
+              (message) => message.role === "user" && message.content === "initial task",
+            ),
+          ).toHaveLength(1);
+          expect(
+            request.chatHistory.filter(
+              (message) =>
+                message.role === "user" &&
+                typeof message.content === "string" &&
+                message.content.includes("closing follow-up"),
+            ),
+          ).toHaveLength(1);
+          return say("second finding");
+        },
+      ]);
+      const worker = new Agent({
+        id: "worker",
+        model: workerModel,
+        lifecycle: {
+          async onFinish(event) {
+            if (event.status === "completed" && event.output === "first finding") {
+              // onFinish runs after the final steering drain but before the member task settles.
+              notifyClosing();
+              await released;
+            }
+          },
+        },
+      });
+      let childId = "";
+      const model = new Model([
+        call("spawn_worker", { prompt: "initial task" }),
+        async (request) => {
+          childId = instanceFrom(request);
+          await closing;
+          return call("send_message", { to: childId, content: "closing follow-up" });
+        },
+        (request) => {
+          expect(history(request)).toContain("queued");
+          releaseClosing();
+          return call("wait_for_agent", { instanceId: childId });
+        },
+        say("provisional"),
+        say("done"),
+      ]);
+      const stream = new AgentTeam({
+        id: "lead",
+        model,
+        members: [worker],
+        limits: { maxConcurrentAgents: 2 },
+      }).stream({ prompt: "start" });
+      const starts: string[] = [];
+      let delivered = 0;
+      for await (const event of stream) {
+        if (event.type === "agent_started" && event.member.agentId === "worker")
+          starts.push(event.runId!);
+        if (event.type === "message_delivered" && event.message.content === "closing follow-up")
+          delivered++;
+      }
+      expect(delivered).toBe(1);
+      expect(starts).toHaveLength(2);
+      expect(new Set(starts).size).toBe(2);
+      expect(workerModel.requests).toHaveLength(2);
+      expect(await stream.result).toMatchObject({
+        type: "response",
+        members: [{ status: "idle", outcome: { output: "second finding" } }],
+      });
+    },
+  );
 });

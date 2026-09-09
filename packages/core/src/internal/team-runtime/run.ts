@@ -329,6 +329,7 @@ export class TeamRun<Output = unknown> {
         member.receipts.set(receipt.id, input);
         input.submitted = true;
       } catch (error) {
+        // Closing runs reject steering; leave this input pending for the next assignment.
         if (error instanceof AgentStreamClosedError) return;
         throw error;
       }

@@ -49,6 +49,88 @@ class BurstModel implements StreamingCompletionModel {
 }
 
 describe("AgentTeam stream buffering", () => {
+  it.each(["events", "textStream"] as const)(
+    "handles %s closure without observing either final promise",
+    async (channel) => {
+      class PendingModel extends BurstModel {
+        override async *streamCompletion(
+          _request: CompletionRequest,
+          options?: ModelCallOptions,
+        ): AsyncIterable<CompletionModelStreamEvent> {
+          const signal = options?.abortSignal;
+          if (signal === undefined) throw new Error("Expected a cancellation signal");
+          yield { type: "text_delta", delta: "partial" };
+          await new Promise<void>((resolve) => {
+            if (signal.aborted) resolve();
+            else signal.addEventListener("abort", () => resolve(), { once: true });
+          });
+          throw signal.reason;
+        }
+      }
+      const unhandled: unknown[] = [];
+      const failures: unknown[] = [];
+      const onUnhandled = (error: unknown) => {
+        unhandled.push(error);
+      };
+      process.on("unhandledRejection", onUnhandled);
+      try {
+        const model = new PendingModel(0);
+        const stream = new AgentTeam({
+          id: "lead",
+          model,
+          members: [],
+          lifecycle: {
+            onError: ({ error }) => {
+              failures.push(error);
+            },
+          },
+        }).stream({ prompt: "start" });
+        for await (const _event of stream[channel]) {
+          break;
+        }
+        // Let Node report any ignored rejected promises; never read stream.result or stream.text.
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        expect(failures).toHaveLength(1);
+        expect(failures[0]).toMatchObject({
+          message: expect.stringContaining("Agent run cancelled:"),
+        });
+        expect(unhandled).toEqual([]);
+      } finally {
+        process.off("unhandledRejection", onUnhandled);
+      }
+    },
+  );
+
+  it("handles provider failure when only the event iterator is consumed", async () => {
+    const failure = new Error("provider failed");
+    class FailingModel extends BurstModel {
+      override async *streamCompletion(): AsyncIterable<CompletionModelStreamEvent> {
+        yield { type: "text_delta", delta: "partial" };
+        throw failure;
+      }
+    }
+    const unhandled: unknown[] = [];
+    const onUnhandled = (error: unknown) => {
+      unhandled.push(error);
+    };
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      const stream = new AgentTeam({ id: "lead", model: new FailingModel(0), members: [] }).stream({
+        prompt: "start",
+      });
+      await expect(
+        (async () => {
+          for await (const _event of stream.events) {
+          }
+        })(),
+      ).rejects.toBe(failure);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
+  });
+
   it.each([8, 32])("cancels a stalled stream at the configured capacity (%s)", async (capacity) => {
     const model = new BurstModel(10_000);
     const team = new AgentTeam({

@@ -1,4 +1,4 @@
-import { Outlet } from "@tanstack/react-router";
+import { Outlet, useParams } from "@tanstack/react-router";
 import { Suspense } from "react";
 import { DeleteSessionDialog } from "../../app-pages";
 import { useStudioConsole } from "../../studio-console-context";
@@ -6,6 +6,7 @@ import { StudioHeader, StudioRail, StudioSidebar } from "./studio-shell";
 
 export function StudioConsoleLayout() {
   const studio = useStudioConsole();
+  const { teamId } = useParams({ strict: false });
   const navigation = {
     activePage: studio.activePage,
     graphsEnabled: studio.graphsEnabled,
@@ -30,16 +31,19 @@ export function StudioConsoleLayout() {
       <StudioRail {...navigation} />
       <StudioSidebar {...navigation} />
 
-      <main className="grid h-[100dvh] min-w-0 flex-1 grid-rows-[56px_minmax(0,1fr)] overflow-hidden bg-background">
+      <main className="grid h-[100dvh] min-w-0 flex-1 grid-cols-1 grid-rows-[56px_minmax(0,1fr)] overflow-hidden bg-background">
         <StudioHeader
           activePage={studio.activePage}
           knowledgeTab={studio.knowledgeTab}
           navigation={navigation}
           selectedAgentLabel={
-            studio.activePage === "sandboxes"
-              ? "Sandboxes"
-              : (studio.selectedAgent?.name ?? studio.selectedAgent?.id ?? "Agent")
+            teamId
+              ? teamId
+              : studio.activePage === "sandboxes"
+                ? "Sandboxes"
+                : (studio.selectedAgent?.name ?? studio.selectedAgent?.id ?? "Agent")
           }
+          showNewSession={!teamId}
           sessionsEnabled={studio.sessionsEnabled}
           theme={studio.theme}
           onNewSession={() => studio.startNewChat()}

@@ -175,6 +175,7 @@ export function StudioSidebar(props: StudioNavigationProps) {
 }
 
 export function StudioHeader(props: {
+  showNewSession?: boolean;
   activePage: ActivePage;
   knowledgeTab: KnowledgeTab;
   navigation: StudioNavigationProps;
@@ -223,9 +224,11 @@ export function StudioHeader(props: {
       >
         <StudioIcon icon={themeIcon} aria-hidden="true" />
       </Button>
-      <Button type="button" disabled={!props.sessionsEnabled} onClick={props.onNewSession}>
-        New session
-      </Button>
+      {props.showNewSession !== false && (
+        <Button type="button" disabled={!props.sessionsEnabled} onClick={props.onNewSession}>
+          New session
+        </Button>
+      )}
     </header>
   );
 }

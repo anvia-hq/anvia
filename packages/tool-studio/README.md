@@ -18,6 +18,16 @@ const team = new AgentTeam({ id: "research-team", model, members: [researcher] }
 await new Studio([researcher, team]).serve({ port: 4021 });
 ```
 
+Select a team from the playground's agent/team selector. A Studio configured with only teams
+opens its first team automatically. Submit a task to the coordinator, send follow-ups while it
+runs, or stop the whole team. The Members panel shows queued and active instances, including
+recursive children; selecting an instance reveals its output, tool activity, run messages, and
+usage. The Messages panel shows sender, recipient, and delivery status (the latest 500 messages).
+Approvals and questions appear as independent cards labeled with the requesting member.
+
+Team tasks are local to the current page. Stopping or leaving a task requests server cancellation
+independently of closing its stream. Completed tasks remain visible until you choose **New task**. They do not appear in saved agent sessions.
+
 `GET /teams` and `/config` expose team IDs, registered member definitions, and limits.
 `GET /teams/:teamId` returns one definition. Duplicate team IDs are rejected; agent and team
 IDs occupy separate namespaces. Members are not automatically registered as standalone agents.

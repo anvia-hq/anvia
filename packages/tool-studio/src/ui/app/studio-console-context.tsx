@@ -19,6 +19,7 @@ type StudioTracesController = ReturnType<typeof useTraces>;
 export type StudioConsoleContextValue = {
   activePage: ActivePage;
   agents: StudioConfig["agents"];
+  teams?: StudioConfig["teams"];
   answeringQuestions: Set<string>;
   attachments: PromptAttachment[];
   browserWorkspace: BrowserWorkspace | undefined;

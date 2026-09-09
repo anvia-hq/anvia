@@ -11,6 +11,7 @@ import {
   type CSSProperties,
   type KeyboardEvent,
   type RefObject,
+  type ReactNode,
   useState,
 } from "react";
 import type {
@@ -47,6 +48,7 @@ const explicitControlValuePrefix = "__anvia_option__";
 
 export function PlaygroundPage(props: {
   agents: StudioConfig["agents"];
+  targetSelector?: ReactNode;
   allSessions: StudioSessionSummary[];
   answeringQuestions: Set<string>;
   attachments: PromptAttachment[];
@@ -308,27 +310,28 @@ export function PlaygroundPage(props: {
                       </SelectContent>
                     </Select>
                   )}
-                  {props.agents.length > 1 ? (
-                    <Select
-                      value={props.selectedAgent?.id ?? props.selectedAgentId}
-                      onValueChange={props.onSelectAgent}
-                      disabled={props.runState === "running"}
-                    >
-                      <SelectTrigger
-                        aria-label="Select agent"
-                        className="flex h-8 min-h-8 w-auto max-w-64 gap-2 border-0 bg-transparent px-2 py-1 text-xs font-medium text-muted-foreground shadow-none hover:bg-transparent hover:text-foreground"
+                  {props.targetSelector ??
+                    (props.agents.length > 1 ? (
+                      <Select
+                        value={props.selectedAgent?.id ?? props.selectedAgentId}
+                        onValueChange={props.onSelectAgent}
+                        disabled={props.runState === "running"}
                       >
-                        <SelectValue placeholder="Agent" />
-                      </SelectTrigger>
-                      <SelectContent align="end">
-                        {props.agents.map((agent) => (
-                          <SelectItem value={agent.id} key={agent.id}>
-                            {agent.name ?? agent.id}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  ) : null}
+                        <SelectTrigger
+                          aria-label="Select agent"
+                          className="flex h-8 min-h-8 w-auto max-w-64 gap-2 border-0 bg-transparent px-2 py-1 text-xs font-medium text-muted-foreground shadow-none hover:bg-transparent hover:text-foreground"
+                        >
+                          <SelectValue placeholder="Agent" />
+                        </SelectTrigger>
+                        <SelectContent align="end">
+                          {props.agents.map((agent) => (
+                            <SelectItem value={agent.id} key={agent.id}>
+                              {agent.name ?? agent.id}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : null)}
                   <Button
                     aria-label={
                       props.isStreaming

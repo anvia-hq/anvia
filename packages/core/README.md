@@ -254,7 +254,7 @@ fresh instances. Pass `messages` instead of `prompt` to supply coordinator histo
 conversations are retained only within that execution; team session persistence and durable
 checkpoint/resume are not provided. Cancellation signals reach running models, tools, and
 resolvers; work owned by the application must honor its signal to stop external activity.
-Team events are an SDK contract; Studio and transport adapters do not yet have a dedicated team UI.
+Studio provides a team playground with member activity, messages, and approval/question controls.
 
 ## Direct Completions
 

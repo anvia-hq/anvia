@@ -1,3 +1,4 @@
+import { TeamPlaygroundRoute } from "./routes/team-playground-route";
 import { createRootRoute, createRoute, createRouter, Navigate } from "@tanstack/react-router";
 import { StudioConsoleLayout } from "./modules/shell/studio-console-layout";
 import { AgentsRoute } from "./routes/agents-route";
@@ -27,6 +28,12 @@ const playgroundRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "playground",
   component: PlaygroundRoute,
+});
+
+const teamPlaygroundRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "playground/teams/$teamId",
+  component: TeamPlaygroundRoute,
 });
 
 const playgroundSessionRoute = createRoute({
@@ -129,6 +136,7 @@ const routeTree = rootRoute.addChildren([
   indexRoute,
   playgroundRoute,
   playgroundSessionRoute,
+  teamPlaygroundRoute,
   tracingRoute,
   tracingTraceRoute,
   tracingSessionRoute,

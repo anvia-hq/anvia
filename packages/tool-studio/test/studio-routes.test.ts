@@ -96,6 +96,21 @@ describe("Studio UI routes", () => {
     expect(graphShell.status).toBe(200);
   });
 
+  it("serves direct team links and preserves encoded IDs and queries in compatibility redirects", async () => {
+    const app = new Hono();
+    registerStudioUi(app, resolveStudioUiOptions({ path: "/studio", clientScript: "// test" }));
+    const shell = await app.request("http://studio.test/playground/teams/research%2Freview");
+    expect(shell.status).toBe(200);
+    expect(await shell.text()).toContain('id="anvia-ui"');
+    const redirect = await app.request(
+      "http://studio.test/studio/playground/teams/research%2Freview?panel=messages",
+    );
+    expect(redirect.status).toBe(302);
+    expect(redirect.headers.get("location")).toBe(
+      "/playground/teams/research%2Freview?panel=messages",
+    );
+  });
+
   it("serves configured client scripts and bundled assets", async () => {
     const app = new Hono();
     registerStudioUi(
@@ -146,6 +161,7 @@ describe("Studio UI routes", () => {
 
     expect((await app.request("http://studio.test/")).status).toBe(404);
     expect((await app.request("http://studio.test/tracing")).status).toBe(404);
+    expect((await app.request("http://studio.test/playground/teams/research")).status).toBe(404);
     expect((await app.request("http://studio.test/studio/assets/client.js")).status).toBe(404);
 
     const legacy = await app.request(

@@ -523,6 +523,7 @@ export function StudioConsole() {
   const contextValue = {
     activePage,
     agents,
+    teams: config?.teams,
     answeringQuestions,
     attachments,
     browserWorkspace,

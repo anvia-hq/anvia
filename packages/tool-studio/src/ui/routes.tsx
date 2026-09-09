@@ -56,6 +56,9 @@ export function registerStudioUi(app: Hono, options: ResolvedStudioUiOptions): v
   app.get(`${options.path}/playground/:sessionId`, (c) =>
     redirectWithQuery(c, `/playground/${encodeURIComponent(c.req.param("sessionId"))}`),
   );
+  app.get(`${options.path}/playground/teams/:teamId`, (c) =>
+    redirectWithQuery(c, `/playground/teams/${encodeURIComponent(c.req.param("teamId"))}`),
+  );
   app.get(`${options.path}/tracing`, (c) => redirectWithQuery(c, "/tracing"));
   app.get(`${options.path}/tracing/:traceId`, (c) =>
     redirectWithQuery(c, `/tracing/${encodeURIComponent(c.req.param("traceId"))}`),
@@ -83,6 +86,7 @@ export function registerStudioUi(app: Hono, options: ResolvedStudioUiOptions): v
   if (options.rootRoutes) {
     app.get("/playground", async (c) => c.html(await renderShell()));
     app.get("/playground/:sessionId", async (c) => c.html(await renderShell()));
+    app.get("/playground/teams/:teamId", async (c) => c.html(await renderShell()));
     app.get("/tracing", async (c) => c.html(await renderShell()));
     app.get("/tracing/:traceId", async (c) => c.html(await renderShell()));
     app.get("/tracing/sessions/:sessionId", async (c) => c.html(await renderShell()));

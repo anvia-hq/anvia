@@ -1,4 +1,5 @@
-import { useParams } from "@tanstack/react-router";
+import { PlaygroundTargetSelect } from "../modules/playground/playground-target-select";
+import { Navigate, useNavigate, useParams } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
 import { PlaygroundPage } from "../modules/playground/playground-page";
 import { errorMessage } from "../modules/shared/format";
@@ -6,6 +7,7 @@ import { useActivatedRoute } from "./route-helpers";
 
 export function PlaygroundRoute() {
   const studio = useActivatedRoute("playground");
+  const navigate = useNavigate();
   const params = useParams({ strict: false }) as { sessionId?: string };
   const sessionId = params.sessionId;
   const handledSessionIdRef = useRef<string | undefined | null>(null);
@@ -35,9 +37,29 @@ export function PlaygroundRoute() {
     }
   }, [sessionId, studio]);
 
+  if (!sessionId && !studio.agents.length && studio.teams?.[0]) {
+    return (
+      <Navigate to="/playground/teams/$teamId" params={{ teamId: studio.teams[0].id }} replace />
+    );
+  }
+
   return (
     <PlaygroundPage
       agents={studio.agents}
+      targetSelector={
+        studio.teams?.length ? (
+          <PlaygroundTargetSelect
+            agents={studio.agents}
+            teams={studio.teams}
+            value={`agent:${studio.selectedAgentId}`}
+            disabled={studio.runState === "running"}
+            onSelect={(kind, id) => {
+              if (kind === "agent") studio.selectPlaygroundAgent(id);
+              else void navigate({ to: "/playground/teams/$teamId", params: { teamId: id } });
+            }}
+          />
+        ) : undefined
+      }
       allSessions={studio.sessions.allSessions}
       answeringQuestions={studio.answeringQuestions}
       attachments={studio.attachments}

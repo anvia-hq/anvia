@@ -14,12 +14,12 @@ function readPackageManifest(relativePath: string): PackageManifest {
 }
 
 describe("Studio Core peer dependency boundaries", () => {
-  it("keeps Core as a synchronized workspace peer of React", () => {
+  it("keeps Core as a compatible workspace peer of React", () => {
     const packageManifest = readPackageManifest("../../react/package.json");
 
     expect(packageManifest.dependencies?.["@anvia/core"]).toBeUndefined();
     expect(packageManifest.devDependencies?.["@anvia/core"]).toBe("workspace:*");
-    expect(packageManifest.peerDependencies?.["@anvia/core"]).toBe("workspace:*");
+    expect(packageManifest.peerDependencies?.["@anvia/core"]).toBe("workspace:^");
   });
 
   it("keeps Client as the Server protocol peer", () => {
@@ -27,7 +27,7 @@ describe("Studio Core peer dependency boundaries", () => {
 
     expect(packageManifest.dependencies?.["@anvia/client"]).toBeUndefined();
     expect(packageManifest.devDependencies?.["@anvia/client"]).toBe("workspace:*");
-    expect(packageManifest.peerDependencies?.["@anvia/client"]).toBe("workspace:*");
+    expect(packageManifest.peerDependencies?.["@anvia/client"]).toBe("workspace:^");
     expect(packageManifest.peerDependencies?.["@anvia/core"]).toBeUndefined();
   });
 });

@@ -3,6 +3,7 @@ import type { CompletionModel } from "../../completion";
 import { assertPositiveSafeInteger } from "../../internal/agent-runtime/run-validation";
 import { TeamRun } from "../../internal/team-runtime/run";
 import { TeamStream } from "../../internal/team-runtime/stream";
+import { TeamPolicy } from "../../internal/team-runtime/policy";
 import type {
   AgentTeamLimits,
   AgentTeamMember,
@@ -21,6 +22,7 @@ export class AgentTeam<
   readonly members: readonly AgentTeamMember[];
   readonly limits: Readonly<Required<AgentTeamLimits>>;
   private readonly coordinator: Agent<Output, M, ContextDocument>;
+  private readonly policy: TeamPolicy;
 
   constructor(options: AgentTeamOptions<Output, M, ContextDocument>) {
     this.coordinator = new Agent(options);
@@ -51,7 +53,9 @@ export class AgentTeam<
       }
     }
     this.members = Object.freeze([...options.members]);
+    this.policy = new TeamPolicy(this.members, options.communication, options.spawning);
     this.limits = Object.freeze({
+      maxDepth: assertPositiveSafeInteger(options.limits?.maxDepth ?? 3, "maxDepth"),
       maxConcurrentAgents: assertPositiveSafeInteger(
         options.limits?.maxConcurrentAgents ?? 4,
         "maxConcurrentAgents",
@@ -101,7 +105,7 @@ export class AgentTeam<
         // The scheduler runs heterogeneous definitions. Public inputs are checked against M above.
         new TeamRun(
           this.coordinator,
-          this.members,
+          this.policy,
           this.limits,
           { ...options } as AgentTeamRunOptions<unknown>,
           streaming,

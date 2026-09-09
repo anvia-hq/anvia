@@ -14,6 +14,8 @@ const specialist = new Agent({
   instructions: [
     "Focus on the specialty and task assigned in your prompt.",
     "If an essential fact is missing, send_message to parent and wait_for_agent.",
+    "Use list_agents to find sibling specialists and exchange relevant findings directly.",
+    "For a complex subproblem, spawn a specialist; spawn a reviewer to check your findings.",
     "Keep findings concise and label assumptions.",
   ].join("\n"),
 });
@@ -31,11 +33,13 @@ const team = new AgentTeam({
   instructions: [
     "Spawn two specialist instances: one for reliability and one for operational complexity.",
     "Send each the relevant user facts. Answer their clarification questions through send_message.",
-    "Wait for both findings, then spawn a reviewer with the combined findings.",
+    "Specialists may delegate subproblems and request reviews; wait for their findings.",
     "Use the review to produce a concise recommendation.",
   ].join("\n"),
   members: [specialist, reviewer],
-  limits: { maxConcurrentAgents: 3, maxAgentInstances: 5, maxTotalTurns: 30 },
+  communication: { siblings: true },
+  spawning: [{ from: specialist, to: [specialist, reviewer] }],
+  limits: { maxDepth: 3, maxConcurrentAgents: 3, maxAgentInstances: 8, maxTotalTurns: 50 },
 });
 
 const stream = team.stream({
@@ -49,7 +53,15 @@ const stream = team.stream({
 
 for await (const event of stream.events) {
   if (event.type === "agent_started") {
-    console.log("started", event.member.agentId, event.instanceId);
+    console.log(
+      "started",
+      event.member.agentId,
+      event.instanceId,
+      "depth",
+      event.member.depth,
+      "parent",
+      event.member.parentInstanceId,
+    );
   } else if (event.type === "message_delivered") {
     console.log("message", event.message.fromInstanceId, "->", event.message.toInstanceId);
   }

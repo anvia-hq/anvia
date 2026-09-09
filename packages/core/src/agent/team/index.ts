@@ -11,5 +11,6 @@ export type {
   AgentTeamOptions,
   AgentTeamOutcome,
   AgentTeamRunOptions,
+  AgentTeamSpawnRule,
   AgentTeamStream,
 } from "./types";

@@ -109,6 +109,7 @@ const team = new AgentTeam({
   ].join("\n"),
   members: [researcher, reviewer],
   limits: {
+    maxDepth: 3,
     maxConcurrentAgents: 4,
     maxAgentInstances: 12,
     maxTotalTurns: 100,
@@ -128,21 +129,47 @@ abort signal, interaction resolver, and team limits apply to the whole execution
 
 The runtime adds these model-callable tools:
 
-| Tool                | Available to  | Input                         |
-| ------------------- | ------------- | ----------------------------- |
-| `spawn_<member.id>` | Coordinator   | `{ prompt, name? }`           |
-| `send_message`      | All instances | `{ to, content, replyTo? }`   |
-| `wait_for_agent`    | All instances | `{ instanceId?, timeoutMs? }` |
-| `list_agents`       | All instances | `{}`                          |
-| `cancel_agent`      | Coordinator   | `{ instanceId, reason? }`     |
+| Tool                | Available to                      | Input                         |
+| ------------------- | --------------------------------- | ----------------------------- |
+| `spawn_<member.id>` | Coordinator and permitted parents | `{ prompt, name? }`           |
+| `send_message`      | All instances                     | `{ to, content, replyTo? }`   |
+| `wait_for_agent`    | All instances                     | `{ instanceId?, timeoutMs? }` |
+| `list_agents`       | All instances                     | `{}`                          |
+| `cancel_agent`      | Instances with spawn permissions  | `{ instanceId, reason? }`     |
 
 Spawning returns an `instanceId` immediately. A definition's `agentId` stays the same across its
 instances; each assignment or resumed interaction has a distinct `runId`. Member IDs must contain
 1–58 letters, digits, underscores, or hyphens so generated tool names are valid. Configured tools
 must not use reserved coordination names.
 
-Routing is between a parent and its children. A member can use `to: "parent"`; the coordinator
-addresses children by instance ID. Sibling messaging and recursive spawning are not supported.
+Routing is between a parent and its children by default. A member can use `to: "parent"`;
+parents address children by instance ID. Enable sibling communication and recursive spawning
+with explicit permissions:
+
+```ts
+const team = new AgentTeam({
+  id: "research-team",
+  model,
+  members: [researcher, reviewer],
+  communication: { siblings: true },
+  spawning: [{ from: researcher, to: [researcher, reviewer] }],
+  limits: { maxDepth: 3, maxConcurrentAgents: 4, maxAgentInstances: 12, maxTotalTurns: 100 },
+});
+```
+
+`members` is the definition catalog available to the coordinator. A spawn rule allows every
+instance of `from` to create only the definitions in `to`, using their generated spawn tools.
+Use the same Agent objects registered in `members`; duplicate rules or targets are rejected.
+Rules and communication options are snapshotted at construction. Without rules, only the
+coordinator can spawn. A self-reference enables recursion; each child has its own conversation
+and its definition's tools, without inheriting the parent's tools.
+
+With `communication.siblings: true`, instances sharing the same parent instance can discover,
+message, and wait for one another. Cousins and other branches remain inaccessible. `list_agents`
+includes self, parent, direct children, and enabled siblings, with `parentInstanceId` and `depth`.
+Sibling access does not grant cancellation or approval authority. Only a parent can cancel its
+direct child; cancellation also stops that child's entire subtree, including idle descendants.
+
 `send_message` returns a queued receipt, not a reply. Messages arrive at safe turn/tool boundaries,
 are explicitly attributed to their sender, and cannot satisfy a tool approval. Sending to an idle
 member starts a follow-up run with its retained conversation. Failed or cancelled members cannot
@@ -150,16 +177,19 @@ receive follow-ups. Each inbox accepts at most 128 pending inputs.
 
 `wait_for_agent` wakes on a relevant message, outcome, cancellation, or timeout (default 30 seconds,
 maximum 5 minutes). Waiting agents and agents awaiting application input release their concurrency
-slot. The coordinator also waits automatically before finalizing while members are active, and
-receives their outcomes as attributed messages. A member failure is reported to the coordinator;
-a coordinator error or team cancellation rejects the execution. Guardrail blocking remains a
-`blocked` outcome.
+slot. Every parent waits automatically for its own children before finalizing and receives their
+outcomes as attributed messages. A member failure is reported to its immediate parent; failure or
+blocking cancels its descendants. A coordinator error or team cancellation rejects the execution.
+Guardrail blocking remains a `blocked` outcome. The final `members` array includes all descendants,
+with `parentInstanceId` and `depth` to reconstruct the tree.
 
-The limits above are the defaults. Concurrent and total instance limits include the coordinator.
+The limits in the first example are the defaults. `maxDepth` is a positive integer; the coordinator
+is depth 0 and direct children are depth 1. Concurrent and total instance limits include the coordinator.
 The instance limit counts all instances created during this execution, including completed or
 cancelled ones. The turn budget covers all instances and follow-ups; provider retries remain
 governed by normal retry settings. Reaching the turn budget fails the team. Reaching the instance
-limit rejects the spawn tool call so the coordinator can use existing members. Tools within one
+or depth limit rejects the spawn tool call so the parent can use existing members. All budgets are
+shared across the whole tree; spawning does not reset them. Tools within one
 instance execute sequentially; different instances can execute concurrently.
 
 ### Team streaming and steering

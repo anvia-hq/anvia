@@ -35,6 +35,7 @@ import {
   type TeamMember,
 } from "./member";
 import { TEAM_INSTRUCTIONS, teamTools } from "./tools";
+import type { TeamPolicy } from "./policy";
 
 export class TeamRun<Output = unknown> {
   readonly id = globalThis.crypto.randomUUID();
@@ -51,7 +52,7 @@ export class TeamRun<Output = unknown> {
 
   constructor(
     leader: AgentTeamMember,
-    private readonly catalog: readonly AgentTeamMember[],
+    private readonly policy: TeamPolicy,
     private readonly limits: Required<AgentTeamLimits>,
     private readonly options: AgentTeamRunOptions<unknown>,
     private readonly streaming: boolean,
@@ -150,14 +151,13 @@ export class TeamRun<Output = unknown> {
 
   spawn(parent: TeamMember, definition: AgentTeamMember, prompt: string, name?: string) {
     this.assertOpen();
-    if (parent !== this.leader) throw new Error("Only the coordinator can spawn members.");
+    throwIfAborted(parent.controller.signal);
+    if (!this.policy.spawnTargets(parent).includes(definition))
+      throw new Error(`Agent "${parent.definition.id}" cannot spawn "${definition.id}".`);
+    if (parent.depth >= this.limits.maxDepth) throw new AgentTeamLimitError("maxDepth");
     if (this.instances.size >= this.limits.maxAgentInstances)
       throw new AgentTeamLimitError("maxAgentInstances");
-    const member = this.createMember(
-      definition,
-      name ?? definition.name ?? definition.id,
-      parent.instanceId,
-    );
+    const member = this.createMember(definition, name ?? definition.name ?? definition.id, parent);
     member.inputs.push({
       id: globalThis.crypto.randomUUID(),
       messages: [{ role: "user", content: prompt }],
@@ -198,27 +198,28 @@ export class TeamRun<Output = unknown> {
 
   visibleMembers(caller: TeamMember) {
     return [...this.instances.values()]
-      .filter(
-        (member) =>
-          member === caller ||
-          member.instanceId === caller.parentInstanceId ||
-          member.parentInstanceId === caller.instanceId,
-      )
+      .filter((member) => this.policy.canAccess(caller, member))
       .map((member) => ({
         instanceId: member.instanceId,
         agentId: member.agent.id,
         name: member.name,
         status: member.status,
+        depth: member.depth,
+        ...(member.parentInstanceId === undefined
+          ? {}
+          : { parentInstanceId: member.parentInstanceId }),
       }));
   }
 
-  cancelMember(caller: TeamMember, instanceId: string, reason = "Cancelled by coordinator.") {
+  cancelMember(caller: TeamMember, instanceId: string, reason = "Cancelled by parent.") {
     this.assertOpen();
+    throwIfAborted(caller.controller.signal);
     const member = this.recipient(caller, instanceId);
     if (member.parentInstanceId !== caller.instanceId)
       throw new Error("Only a parent can cancel its child.");
     if (member.status === "cancelled") return { instanceId, status: "cancelled" as const };
     this.stopMember(member, reason);
+    this.stopDescendants(member, reason);
     if (member.task === undefined) this.reportOutcome(member);
     return { instanceId, status: "cancelled" as const };
   }
@@ -251,14 +252,13 @@ export class TeamRun<Output = unknown> {
     });
   }
 
-  private createMember(
-    agent: AgentTeamMember,
-    name: string,
-    parentInstanceId?: string,
-  ): TeamMember {
+  private createMember(agent: AgentTeamMember, name: string, parent?: TeamMember): TeamMember {
+    const parentInstanceId = parent?.instanceId;
     const member: TeamMember = {
       instanceId: globalThis.crypto.randomUUID(),
       agent,
+      definition: agent,
+      depth: parent === undefined ? 0 : parent.depth + 1,
       name,
       ...(parentInstanceId === undefined ? {} : { parentInstanceId }),
       status: "queued",
@@ -279,7 +279,10 @@ export class TeamRun<Output = unknown> {
       ]
         .filter(Boolean)
         .join("\n\n"),
-      tools: [...(resolved.tools ?? []), ...teamTools(this, member, this.catalog)],
+      tools: [
+        ...(resolved.tools ?? []),
+        ...teamTools(this, member, this.policy.spawnTargets(member)),
+      ],
     });
     this.instances.set(member.instanceId, member);
     return member;
@@ -291,10 +294,11 @@ export class TeamRun<Output = unknown> {
     if (
       recipient === undefined ||
       recipient === sender ||
-      (recipient.instanceId !== sender.parentInstanceId &&
-        recipient.parentInstanceId !== sender.instanceId)
+      !this.policy.canAccess(sender, recipient)
     ) {
-      throw new Error(`Agent instance "${to}" is not an accessible parent or child.`);
+      throw new Error(
+        `Agent instance "${to}" is not an accessible parent or child, or enabled sibling.`,
+      );
     }
     return recipient;
   }
@@ -359,6 +363,7 @@ export class TeamRun<Output = unknown> {
           member.status = "failed";
           this.memberEvent(member, "agent_failed");
         }
+        this.stopDescendants(member, "Parent failed or was cancelled.");
         if (!this.closed && !this.controller.signal.aborted && member !== this.leader) {
           try {
             this.reportOutcome(member);
@@ -449,7 +454,7 @@ export class TeamRun<Output = unknown> {
                 firstInputs = [];
               },
             },
-            beforeFinish: () => (member === this.leader ? this.waitForChildren(member) : undefined),
+            beforeFinish: () => this.waitForChildren(member),
             onSteeringApplied: (id) => {
               const input = member.receipts.get(id);
               if (input !== undefined) {
@@ -508,7 +513,10 @@ export class TeamRun<Output = unknown> {
       }
       member.outcome = outcome;
       member.status = outcome.type === "blocked" ? "failed" : "idle";
-      if (outcome.type === "blocked") member.inputs.length = 0;
+      if (outcome.type === "blocked") {
+        member.inputs.length = 0;
+        this.stopDescendants(member, "Parent was blocked.");
+      }
       this.memberEvent(member, outcome.type === "blocked" ? "agent_failed" : "agent_idle");
       if (member !== this.leader) this.reportOutcome(member);
       return;
@@ -537,6 +545,8 @@ export class TeamRun<Output = unknown> {
   }
 
   private reportOutcome(member: TeamMember): void {
+    const parent = this.instances.get(member.parentInstanceId!);
+    if (parent === undefined || parent.status === "failed" || parent.status === "cancelled") return;
     const content = JSON.stringify({
       type: "agent-outcome",
       instanceId: member.instanceId,
@@ -547,23 +557,25 @@ export class TeamRun<Output = unknown> {
         ? {}
         : { error: member.error instanceof Error ? member.error.message : String(member.error) }),
     });
-    this.queueMessage(member, this.leader, { content }, "outcome");
+    this.queueMessage(member, parent, { content }, "outcome");
   }
 
   private async waitForChildren(member: TeamMember): Promise<void> {
-    if (!this.childrenBusy() || member.inputs.length > 0) return;
+    if (!this.childrenBusy(member) || member.inputs.length > 0) return;
     await this.yieldSlot(member, "waiting", async () => {
-      while (this.childrenBusy() && member.inputs.length === 0) {
+      while (this.childrenBusy(member) && member.inputs.length === 0) {
         const version = this.changes.version;
         await this.changes.wait(version, member.controller.signal);
       }
     });
   }
 
-  private childrenBusy(): boolean {
+  // Without a parent, final team settlement checks all descendants, including revived assignments.
+  private childrenBusy(parent?: TeamMember): boolean {
     return [...this.instances.values()].some(
       (member) =>
         member !== this.leader &&
+        (parent === undefined || member.parentInstanceId === parent.instanceId) &&
         (["queued", "running", "waiting", "awaiting_interaction"].includes(member.status) ||
           member.inputs.length > 0),
     );
@@ -642,6 +654,17 @@ export class TeamRun<Output = unknown> {
     for (const member of this.instances.values()) {
       if (["queued", "running", "waiting", "awaiting_interaction"].includes(member.status))
         this.stopMember(member, "Agent team closed.");
+    }
+  }
+
+  private stopDescendants(parent: TeamMember, reason: string): void {
+    // Instances are inserted after their parents; this also reaches idle descendants without recursion.
+    const stopped = new Set([parent.instanceId]);
+    for (const member of this.instances.values()) {
+      if (member.parentInstanceId !== undefined && stopped.has(member.parentInstanceId)) {
+        stopped.add(member.instanceId);
+        this.stopMember(member, reason);
+      }
     }
   }
 

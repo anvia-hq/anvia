@@ -20,6 +20,8 @@ export type TeamInput = {
 export type TeamMember = {
   instanceId: string;
   parentInstanceId?: string;
+  depth: number;
+  definition: Agent<unknown>;
   name: string;
   agent: Agent<unknown>;
   status: AgentTeamMemberStatus;
@@ -42,6 +44,7 @@ export function memberSummary(member: TeamMember): AgentTeamMemberSummary {
     instanceId: member.instanceId,
     agentId: member.agent.id,
     name: member.name,
+    depth: member.depth,
     status: member.status,
     usage: lifecycleSnapshot(member.usage),
     ...(member.parentInstanceId === undefined ? {} : { parentInstanceId: member.parentInstanceId }),

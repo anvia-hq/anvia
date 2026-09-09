@@ -15,10 +15,18 @@ import type { CompletionModel, CompletionModelControlsOf, Message, Usage } from 
 /** An Agent definition; individual members may have different output schemas. */
 export type AgentTeamMember = Agent<unknown>;
 
+/** Allow instances of one registered definition to spawn the listed definitions. */
+export type AgentTeamSpawnRule = {
+  from: AgentTeamMember;
+  to: readonly AgentTeamMember[];
+};
+
 type RawResponseOf<Model> =
   Model extends CompletionModel<infer RawResponse> ? RawResponse : unknown;
 
 export type AgentTeamLimits = {
+  /** Maximum instance depth, with the coordinator at 0. Defaults to 3. */
+  maxDepth?: number;
   maxConcurrentAgents?: number;
   maxAgentInstances?: number;
   maxTotalTurns?: number;
@@ -32,6 +40,10 @@ export type AgentTeamOptions<
   ContextDocument = unknown,
 > = AgentOptions<Output, M, ContextDocument> & {
   members: readonly AgentTeamMember[];
+  /** Allow messaging and waiting between instances with the same parent. Defaults to false. */
+  communication?: { siblings?: boolean };
+  /** Additional spawn permissions for members. The coordinator can spawn every member. */
+  spawning?: readonly AgentTeamSpawnRule[];
   limits?: AgentTeamLimits;
 };
 
@@ -70,6 +82,7 @@ export type AgentTeamMemberSummary = Readonly<{
   agentId: string;
   name: string;
   parentInstanceId?: string;
+  depth: number;
   status: AgentTeamMemberStatus;
   usage: Usage;
   outcome?: AgentResponse<unknown> | AgentBlockedOutcome;

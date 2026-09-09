@@ -1,5 +1,30 @@
 # @anvia/studio
 
+## 1.2.0
+
+### Minor Changes
+
+- 0a91dca: Add a team playground with live instance trees, coordinator follow-ups, member conversations and tool activity, inter-agent messages, and attributed approval and question controls. Stopping or leaving a task explicitly requests server cancellation independently of stream cleanup.
+
+  Preserve terminal team outcomes during stream cleanup and allow a new task to start immediately after a result arrives.
+
+- e13fa7c: Register AgentTeam targets in Studio and expose attributed JSONL team runs, coordinator
+  steering, cancellation, and application-only interaction responses scoped to each active run.
+  Cancel disconnected runs and clean up pending interactions on completion or shutdown.
+  Emit AgentTeam agent_queued events when instances are spawned, before they acquire a concurrency slot.
+
+### Patch Changes
+
+- 0d9bce0: Declare compatible workspace peer ranges so additive internal dependency releases do not force major releases of dependents.
+- 75a1432: Default buttons across Studio now use the foreground color instead of the brand green, with a dimmed foreground hover.
+- 75a1432: Studio sidebar now shows the Anvia lens mark inside its own rounded background chip, with more padding between the mark and the chip edge.
+- Updated dependencies [0d9bce0]
+  - @anvia/client@1.1.3
+  - @anvia/graph@1.1.3
+  - @anvia/react@1.1.3
+  - @anvia/react-ui@1.1.3
+  - @anvia/server@1.1.3
+
 ## 1.1.2
 
 ### Patch Changes

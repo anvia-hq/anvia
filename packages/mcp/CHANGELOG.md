@@ -1,5 +1,11 @@
 # @anvia/mcp
 
+## 1.1.3
+
+### Patch Changes
+
+- 0d9bce0: Declare compatible workspace peer ranges so additive internal dependency releases do not force major releases of dependents.
+
 ## 1.1.2
 
 ### Patch Changes

@@ -1,5 +1,13 @@
 # @anvia/memgraph
 
+## 1.1.3
+
+### Patch Changes
+
+- 0d9bce0: Declare compatible workspace peer ranges so additive internal dependency releases do not force major releases of dependents.
+- Updated dependencies [0d9bce0]
+  - @anvia/graph@1.1.3
+
 ## 1.1.2
 
 ### Patch Changes

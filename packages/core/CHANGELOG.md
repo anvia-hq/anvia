@@ -1,5 +1,32 @@
 # @anvia/core
 
+## 1.2.0
+
+### Minor Changes
+
+- d748c6a: Add AgentTeam for coordinator-led collaboration between ordinary Agent definitions.
+  Teams support dynamic instances, attributed parent-child messages, retained conversation
+  follow-ups, application-owned approvals, streaming, steering, cancellation, and shared
+  concurrency, instance, and turn limits.
+  Require full Agent definitions at the type boundary and bound unread stream events with
+  configurable overflow cancellation.
+- c855a16: Add opt-in sibling communication and per-definition recursive spawning to AgentTeam.
+  Share depth, concurrency, instance, and turn limits across the tree, route outcomes to
+  immediate parents, and cascade cancellation and parent failure to descendants.
+  Expose parent IDs and depth in member listings and summaries.
+- e13fa7c: Register AgentTeam targets in Studio and expose attributed JSONL team runs, coordinator
+  steering, cancellation, and application-only interaction responses scoped to each active run.
+  Cancel disconnected runs and clean up pending interactions on completion or shutdown.
+  Emit AgentTeam agent_queued events when instances are spawned, before they acquire a concurrency slot.
+
+### Patch Changes
+
+- e9fa1e8: Preserve source-module boundaries in the ESM build and import Zod's JSON Schema converter directly so bundlers can remove unrelated schema initialization from lightweight consumers such as `createTool`. Public exports, type declarations, and runtime behavior are unchanged.
+- 3d14e41: Omit stack traces from `toReadableStream` error events. Error JSON lines emitted
+  when the wrapped async iterable throws now carry only the error name and message,
+  matching the safe serializers already used by `@anvia/server` and Studio run
+  failure responses.
+
 ## 1.1.2
 
 ### Patch Changes

@@ -148,7 +148,7 @@ export class SqliteMemoryStore implements MemoryStore {
       )
       .all({
         $scopeKey: this.scopeKey(scope),
-      }) as MessageRow[];
+      }) as unknown as MessageRow[];
 
     return rows.map((row) => this.messageFromJson(row.message_json));
   }
@@ -171,7 +171,7 @@ export class SqliteMemoryStore implements MemoryStore {
            FROM ${this.tables.messages}
            WHERE memory_session_id = $memorySessionId`,
         )
-        .get({ $memorySessionId: sessionId }) as PositionRow | undefined;
+        .get({ $memorySessionId: sessionId }) as unknown as PositionRow | null | undefined;
       const start = (last?.position ?? -1) + 1;
       const insertMessage = db.prepare(
         `INSERT INTO ${this.tables.messages} (
@@ -275,8 +275,8 @@ export class SqliteMemoryStore implements MemoryStore {
          FROM ${this.tables.sessions}
          WHERE scope_key = $scopeKey`,
       )
-      .get({ $scopeKey: this.scopeKey(context) }) as CompactionSessionRow | undefined;
-    if (session === undefined) {
+      .get({ $scopeKey: this.scopeKey(context) }) as unknown as CompactionSessionRow | null;
+    if (session === null) {
       return { revision: compactionRevision([], undefined), messages: [] };
     }
     const state = this.compactionStateFromJson(session.compaction_state_json);
@@ -303,8 +303,8 @@ export class SqliteMemoryStore implements MemoryStore {
            FROM ${this.tables.sessions}
            WHERE scope_key = $scopeKey`,
         )
-        .get({ $scopeKey: scopeKey }) as CompactionSessionRow | undefined;
-      if (session === undefined) {
+        .get({ $scopeKey: scopeKey }) as unknown as CompactionSessionRow | null;
+      if (session === null) {
         db.exec("ROLLBACK");
         return { status: "conflict" };
       }
@@ -374,7 +374,7 @@ export class SqliteMemoryStore implements MemoryStore {
     );
     const parameters: Record<string, string | number> = { $limit: options.limit };
     if (options.userId !== undefined) parameters.$userId = options.userId;
-    const rows = statement.all(parameters) as InspectionSessionRow[];
+    const rows = statement.all(parameters) as unknown as InspectionSessionRow[];
     return rows.map((row) => this.inspectionSummary(row));
   }
 
@@ -395,8 +395,8 @@ export class SqliteMemoryStore implements MemoryStore {
          WHERE s.id = $ref
          GROUP BY s.id`,
       )
-      .get({ $ref: ref }) as InspectionSessionRow | undefined;
-    if (row === undefined) return undefined;
+      .get({ $ref: ref }) as unknown as InspectionSessionRow | undefined;
+    if (row == null) return undefined;
 
     const messages = database
       .prepare(
@@ -405,7 +405,7 @@ export class SqliteMemoryStore implements MemoryStore {
          WHERE memory_session_id = $ref
          ORDER BY position ASC`,
       )
-      .all({ $ref: ref }) as InspectionMessageRow[];
+      .all({ $ref: ref }) as unknown as InspectionMessageRow[];
 
     return {
       ...this.inspectionSummary(row),
@@ -443,10 +443,12 @@ export class SqliteMemoryStore implements MemoryStore {
   ): string {
     const existing = db
       .prepare(`SELECT id FROM ${this.tables.sessions} WHERE scope_key = $scopeKey`)
-      .get({ $scopeKey: scopeKey }) as SessionIdRow | undefined;
+      .get({ $scopeKey: scopeKey }) as unknown as SessionIdRow | undefined;
     const now = new Date().toISOString();
 
-    if (existing !== undefined) {
+    // bun:sqlite returns null for a missing row while node:sqlite returns
+    // undefined, so both no-row sentinels must be treated as absent.
+    if (existing != null) {
       db.prepare(
         `UPDATE ${this.tables.sessions}
          SET session_id = $sessionId,
@@ -523,7 +525,7 @@ export class SqliteMemoryStore implements MemoryStore {
       state === undefined
         ? { $memorySessionId: sessionId }
         : { $memorySessionId: sessionId, $boundary: state.summarizedThroughPosition },
-    ) as CompactionMessageRow[];
+    ) as unknown as CompactionMessageRow[];
   }
 
   private validateInputMessages(messages: Message[]): void {
@@ -542,7 +544,7 @@ export class SqliteMemoryStore implements MemoryStore {
   }
 
   private async validateDatabase(database: SqliteMemoryDatabaseLike): Promise<void> {
-    const foreignKeys = database.prepare("PRAGMA foreign_keys").get() as
+    const foreignKeys = database.prepare("PRAGMA foreign_keys").get() as unknown as
       | SqliteForeignKeysRow
       | undefined;
     if (foreignKeys?.foreign_keys !== 1) {
@@ -593,7 +595,7 @@ export class SqliteMemoryStore implements MemoryStore {
     const namedIndex = database
       .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = $name")
       .get({ $name: this.tables.messagesPositionIndexName });
-    if (namedIndex === undefined) {
+    if (namedIndex == null) {
       throw new Error(
         `Sqlite memory messages position index is missing: ${this.tables.messagesPositionIndexName}`,
       );

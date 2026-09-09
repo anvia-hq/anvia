@@ -7,6 +7,7 @@ import {
   createEventStreamResponse,
   createJsonlStream,
   createMemoryResumableStreamStore,
+  errorEvent,
   resumeClientStreamResponse,
   resumeEventStreamResponse,
 } from "../src";
@@ -25,6 +26,34 @@ describe("public boundary", () => {
     expect(publicServer).not.toHaveProperty("createEventStream");
     expect(publicServer).not.toHaveProperty("createUIStreamResponse");
     expect(publicServer).not.toHaveProperty("resumeEventStream");
+  });
+});
+
+describe("error events", () => {
+  it("keeps well-known diagnostic fields that live on the Error prototype", () => {
+    // Runtime-specific subclasses (for example bun:sqlite's SqliteError under
+    // JavaScriptCore) can define message and code on the prototype, where
+    // JSON.stringify would drop them and mask the failure cause.
+    const error = Object.create(Object.getPrototypeOf(new Error("masked"))) as Error & {
+      code?: unknown;
+    };
+    Object.defineProperty(error, "message", { value: "SQLITE_CONSTRAINT", enumerable: false });
+    Object.defineProperty(error, "code", { value: "SQLITE_CONSTRAINT", enumerable: false });
+    Object.defineProperty(error, "name", { value: "SqliteError", enumerable: false });
+
+    expect(errorEvent(error)).toEqual({
+      type: "error",
+      error: { name: "SqliteError", message: "SQLITE_CONSTRAINT", code: "SQLITE_CONSTRAINT" },
+    });
+  });
+
+  it("degrades non-JSON-safe thrown values to a message payload", () => {
+    expect(errorEvent(42n)).toEqual({ type: "error", error: { message: "42" } });
+    expect(errorEvent(undefined)).toEqual({ type: "error", error: { message: "undefined" } });
+    expect(errorEvent({ code: 409, retryable: false })).toEqual({
+      type: "error",
+      error: { code: 409, retryable: false },
+    });
   });
 });
 

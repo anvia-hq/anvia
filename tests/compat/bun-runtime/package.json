@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "pretest:bun": "pnpm --filter @anvia/core build && pnpm --filter @anvia/client build && pnpm --filter @anvia/server build && pnpm --filter @anvia/openai build && pnpm --filter @anvia/anthropic build && pnpm --filter @anvia/gemini build && pnpm --filter @anvia/mistral build && pnpm --filter @anvia/mcp build",
+    "pretest:bun": "pnpm --filter @anvia/core build && pnpm --filter @anvia/client build && pnpm --filter @anvia/server build && pnpm --filter @anvia/openai build && pnpm --filter @anvia/anthropic build && pnpm --filter @anvia/gemini build && pnpm --filter @anvia/mistral build && pnpm --filter @anvia/mcp build && pnpm --filter @anvia/memory-sqlite build",
     "test:bun": "bun test ./test && node ./scripts/test-packed-artifacts.mjs",
     "typecheck": "tsc --noEmit"
   },
@@ -15,6 +15,7 @@
     "@anvia/core": "workspace:*",
     "@anvia/gemini": "workspace:*",
     "@anvia/mcp": "workspace:*",
+    "@anvia/memory-sqlite": "workspace:*",
     "@anvia/mistral": "workspace:*",
     "@anvia/openai": "workspace:*",
     "@anvia/server": "workspace:*",

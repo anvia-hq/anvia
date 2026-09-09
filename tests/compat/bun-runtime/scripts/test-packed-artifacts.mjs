@@ -12,6 +12,7 @@ const tscEntrypoint = require.resolve("typescript/bin/tsc");
 const temporaryRoot = await mkdtemp(join(tmpdir(), "anvia-bun-packed-"));
 const packsDirectory = join(temporaryRoot, "packs");
 const consumerDirectory = join(temporaryRoot, "consumer");
+const smokeSource = smokeTestSource();
 
 try {
   await mkdir(packsDirectory);
@@ -31,6 +32,9 @@ try {
   await run("pnpm", ["pack", "--pack-destination", packsDirectory], {
     cwd: join(repositoryRoot, "packages/mcp"),
   });
+  await run("pnpm", ["pack", "--pack-destination", packsDirectory], {
+    cwd: join(repositoryRoot, "packages/memory-sqlite"),
+  });
 
   const archives = await readdir(packsDirectory);
   const coreArchive = requireArchive(archives, "anvia-core-");
@@ -38,6 +42,7 @@ try {
   const serverArchive = requireArchive(archives, "anvia-server-");
   const openaiArchive = requireArchive(archives, "anvia-openai-");
   const mcpArchive = requireArchive(archives, "anvia-mcp-");
+  const memorySqliteArchive = requireArchive(archives, "anvia-memory-sqlite-");
   await writeFile(
     join(consumerDirectory, "package.json"),
     JSON.stringify(
@@ -49,6 +54,7 @@ try {
           "@anvia/client": `file:${join(packsDirectory, clientArchive)}`,
           "@anvia/core": `file:${join(packsDirectory, coreArchive)}`,
           "@anvia/mcp": `file:${join(packsDirectory, mcpArchive)}`,
+          "@anvia/memory-sqlite": `file:${join(packsDirectory, memorySqliteArchive)}`,
           "@anvia/openai": `file:${join(packsDirectory, openaiArchive)}`,
           "@anvia/server": `file:${join(packsDirectory, serverArchive)}`,
         },
@@ -57,7 +63,7 @@ try {
       2,
     ),
   );
-  await writeFile(join(consumerDirectory, "smoke.mjs"), smokeTestSource());
+  await writeFile(join(consumerDirectory, "smoke.mjs"), smokeSource);
 
   await run("bun", ["install", "--ignore-scripts"], { cwd: consumerDirectory });
   await writeFile(
@@ -109,12 +115,16 @@ function run(command, args, options) {
 
 function smokeTestSource() {
   return `
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import assert from "node:assert/strict";
 import { createHttpClientTransport, parseClientStreamRequest } from "@anvia/client";
 import { Agent } from "@anvia/core";
 import { chunkText } from "@anvia/core/documents";
 import { toReadableStream } from "@anvia/core/streaming";
 import { McpClient } from "@anvia/mcp";
+import { SqliteMemoryClient } from "@anvia/memory-sqlite";
 import { OpenAIClient } from "@anvia/openai";
 import {
   createClientStreamResponse,
@@ -214,6 +224,33 @@ assert.deepEqual(
   ["stream_start", "stream_event", "stream_event", "stream_end"],
 );
 assert.equal(packedReplay[3].status, "completed");
+
+const packedMemoryRoot = await mkdtemp(join(tmpdir(), "anvia-bun-packed-memory-"));
+const packedMemoryClient = new SqliteMemoryClient({
+  path: join(packedMemoryRoot, "memory.sqlite"),
+});
+const packedMemoryStore = packedMemoryClient.memoryStore();
+await packedMemoryStore.ensure();
+const packedMemoryScope = { sessionId: "packed-memory-thread", userId: "packed-user" };
+await packedMemoryStore.append({
+  scope: packedMemoryScope,
+  runId: "packed-run",
+  turn: 0,
+  messages: [
+    { role: "user", content: [{ type: "text", text: "remember this" }] },
+    { role: "assistant", content: [{ type: "text", text: "stored" }] },
+  ],
+});
+const packedLoaded = await packedMemoryStore.load({ scope: packedMemoryScope });
+assert.equal(packedLoaded.length, 2);
+assert.equal(packedLoaded[0].role, "user");
+assert.equal(packedLoaded[1].role, "assistant");
+const [packedConversation] = await packedMemoryStore.inspector.listConversations({ limit: 1 });
+assert.equal(packedConversation.sessionId, "packed-memory-thread");
+assert.equal(packedConversation.messageCount, 2);
+await packedMemoryClient.close();
+await rm(packedMemoryRoot, { recursive: true, force: true });
+console.log("Packed memory-sqlite round-trips under Bun.");
 
 let releasePackedProducer;
 const packedResumeStore = createMemoryResumableStreamStore();
@@ -359,6 +396,7 @@ import { readJsonlStream } from "@anvia/client/transport";
 import { chunkText } from "@anvia/core/documents";
 import { toReadableStream } from "@anvia/core/streaming";
 import { McpClient } from "@anvia/mcp";
+import { SqliteMemoryClient } from "@anvia/memory-sqlite";
 import { OpenAIClient } from "@anvia/openai";
 import {
   createClientStreamResponse,
@@ -398,6 +436,10 @@ const stream = toReadableStream(
 );
 const store = createMemoryResumableStreamStore();
 
+const memoryClientCtor: typeof SqliteMemoryClient = SqliteMemoryClient;
+const typedMemoryClient = new SqliteMemoryClient({ path: ":memory:" });
+const typedMemoryStore = typedMemoryClient.memoryStore();
+
 console.log(
   agentCtor.name.length,
   transportFactory.name.length,
@@ -411,9 +453,11 @@ console.log(
   resumeResponse.name.length,
   memoryStoreFactory.name.length,
   resumableFactory.name.length,
+  memoryClientCtor.name.length,
   mcpName.length,
   stream !== undefined,
   store !== undefined,
+  typedMemoryStore !== undefined,
 );
 `;
 }

@@ -1979,6 +1979,45 @@ describe("Agent streaming", () => {
     });
   });
 
+  it("keeps well-known Error diagnostic fields through readable error lines", async () => {
+    async function* events() {
+      yield { type: "text_delta", delta: "a" };
+      // Runtime-specific subclasses (for example bun:sqlite's SqliteError under
+      // JavaScriptCore) can define code on the prototype, where JSON.stringify
+      // would drop it and mask the failure cause.
+      const error = Object.create(new Error("prototype message")) as Error & { code?: unknown };
+      Object.defineProperty(error, "message", { value: "SQLITE_BUSY", enumerable: false });
+      Object.defineProperty(error, "code", { value: "SQLITE_BUSY", enumerable: false });
+      throw error;
+    }
+
+    const text = await readAll(toReadableStream(events()));
+    const lines = text
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+
+    expect(lines[1]).toEqual({
+      type: "error",
+      error: { name: "Error", message: "SQLITE_BUSY", code: "SQLITE_BUSY" },
+    });
+  });
+
+  it("degrades non-JSON-safe thrown values through readable error lines", async () => {
+    async function* events() {
+      yield { type: "text_delta", delta: "a" };
+      throw 42n;
+    }
+
+    const text = await readAll(toReadableStream(events()));
+    const lines = text
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+
+    expect(lines[1]).toEqual({ type: "error", error: { message: "42" } });
+  });
+
   it("enforces exact maxTurns boundary on streaming execution", async () => {
     const model = new StreamingQueueModel([
       [streamFinal([AssistantContent.toolCall("call_1", "add", { x: 1, y: 2 })], "tool-calls")],

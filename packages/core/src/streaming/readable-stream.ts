@@ -1,3 +1,5 @@
+import { isJsonValue } from "../completion/json";
+
 export type ReadableStreamOptions = {
   format?: "jsonl";
 };
@@ -34,11 +36,29 @@ export function toReadableStream<T>(
 
 function serializeError(error: unknown): unknown {
   if (error instanceof Error) {
-    return {
+    const serialized: { name: string; message: string; code?: unknown; details?: unknown } = {
       name: error.name,
       message: error.message,
     };
+    // Runtime-specific Error subclasses (for example bun:sqlite's SqliteError)
+    // can keep diagnostic fields such as `code` on the prototype, where
+    // JSON.stringify drops them. Copy well-known diagnostic fields explicitly.
+    const code = (error as { code?: unknown }).code;
+    if (code !== undefined) {
+      serialized.code = code;
+    }
+    const details = (error as { details?: unknown }).details;
+    if (details !== undefined) {
+      serialized.details = details;
+    }
+    return serialized;
   }
 
-  return error;
+  if (isJsonValue(error)) {
+    return error;
+  }
+
+  // A thrown non-Error that is not JSON-safe would serialize as `{}` or lose
+  // its diagnostics entirely; degrade to a string payload instead.
+  return { message: String(error) };
 }

@@ -38,6 +38,10 @@ caller-owned and must have SQLite foreign-key enforcement enabled; `ensure()` an
 reject incompatible injected connections. The client also supports `await using` through
 `Symbol.asyncDispose`.
 
+On Node.js the client uses the built-in `node:sqlite` driver. On Bun it loads `bun:sqlite`
+automatically; the injected-database contract stays structural, so either driver (or a compatible
+custom implementation) can be supplied through `{ database }`.
+
 The store exposes Studio inspection and atomic compaction. `load()` and Studio inspection always
 return the full canonical message history. Compaction stores one latest checkpoint in the session
 row; `compaction.snapshot()` projects its tagged system summary plus the unsummarized tail for model

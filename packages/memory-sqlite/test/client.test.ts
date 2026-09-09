@@ -3,6 +3,7 @@ import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import type { Message } from "@anvia/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as memorySqlite from "../src/index.js";
 import { createSqliteMemorySchemaSql, SqliteMemoryClient } from "../src/index.js";
@@ -15,6 +16,7 @@ void removedStoreFactory;
 void removedScopeKeyFactory;
 
 const tempDirs: string[] = [];
+const databases = new Set<DatabaseSync>();
 
 afterEach(async () => {
   await Promise.all(tempDirs.map((directory) => rm(directory, { recursive: true, force: true })));
@@ -164,6 +166,70 @@ describe("SqliteMemoryClient", () => {
         scope: {},
       });
     }
+  });
+
+  it("accepts bun:sqlite-shaped drivers that return null for missing rows", async () => {
+    const database = new DatabaseSync(":memory:");
+    databases.add(database);
+    const client = new SqliteMemoryClient({ database });
+    const store = client.memoryStore();
+    await store.ensure();
+
+    // bun:sqlite's Statement.get() returns null instead of undefined when a
+    // query matches no rows; the store must treat both sentinels as absent.
+    const originalPrepare = database.prepare.bind(database);
+    const nullReturningPrepare: typeof database.prepare = ((sql: string) => {
+      const statement = originalPrepare(sql);
+      return new Proxy(statement, {
+        get(target, property) {
+          const value = Reflect.get(target, property, target);
+          if (property === "get") {
+            const boundGet = (target as { get: (...getArgs: unknown[]) => unknown }).get;
+            return (...args: unknown[]) => {
+              const row = boundGet.apply(target, args);
+              return row === undefined ? null : row;
+            };
+          }
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      }) as typeof statement;
+    }) as typeof database.prepare;
+    database.prepare = nullReturningPrepare;
+
+    const context = { sessionId: "bun-shape" };
+    await expect(
+      store.append({
+        scope: context,
+        runId: "run-1",
+        turn: 0,
+        messages: [
+          { role: "user", content: [{ type: "text", text: "remember this" }] } satisfies Message,
+        ],
+      }),
+    ).resolves.toBeUndefined();
+    await expect(store.load({ scope: context })).resolves.toHaveLength(1);
+    await expect(store.compaction.snapshot({ scope: { sessionId: "missing" } })).resolves.toEqual({
+      revision: JSON.stringify([0, []]),
+      messages: [],
+    });
+    await expect(
+      store.compaction.replacePrefix({
+        scope: { sessionId: "missing" },
+        revision: JSON.stringify([0, []]),
+        messageCount: 1,
+        replacement: {
+          role: "system",
+          content: "Summary",
+          metadata: { anvia: { memoryCompaction: { version: 1, compactedMessageCount: 1 } } },
+        },
+        runId: "memory-compaction:1",
+      }),
+    ).resolves.toEqual({ status: "conflict" });
+    await expect(store.inspector.getConversation({ ref: "missing" })).resolves.toBeUndefined();
+
+    await client.close();
+    database.close();
+    databases.delete(database);
   });
 });
 

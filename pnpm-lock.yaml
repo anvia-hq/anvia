@@ -1224,6 +1224,9 @@ importers:
       '@anvia/mcp':
         specifier: workspace:*
         version: link:../../../packages/mcp
+      '@anvia/memory-sqlite':
+        specifier: workspace:*
+        version: link:../../../packages/memory-sqlite
       '@anvia/mistral':
         specifier: workspace:*
         version: link:../../../packages/provider-mistral

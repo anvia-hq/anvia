@@ -1,7 +1,6 @@
 import { existsSync, mkdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
-import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
 import { SqliteMemoryStore, sqliteMemoryStoreFactory } from "./store.js";
 import type {
   SqliteMemoryClientOptions,
@@ -9,9 +8,12 @@ import type {
   SqliteMemoryStoreOptions,
 } from "./types.js";
 
-type DatabaseSyncConstructor = typeof DatabaseSyncType;
+type SyncDatabaseConstructor = new (
+  path: string,
+  options?: { enableForeignKeyConstraints?: boolean },
+) => SqliteMemoryDatabaseLike;
 
-let DatabaseSync: DatabaseSyncConstructor | undefined;
+let DatabaseSync: SyncDatabaseConstructor | undefined;
 
 export const sqliteMemoryExistingClient = Symbol("SqliteMemoryClient.existingClient");
 
@@ -99,7 +101,12 @@ export class SqliteMemoryClient implements AsyncDisposable {
     if (path !== ":memory:") {
       mkdirSync(dirname(resolve(path)), { recursive: true });
     }
-    return new (databaseSync())(path, { enableForeignKeyConstraints: true });
+    const database = new (databaseSync())(path, { enableForeignKeyConstraints: true });
+    // bun:sqlite has no enableForeignKeyConstraints option, so the store's
+    // foreign-key validation would fail on it. Enforce the pragma directly;
+    // on node:sqlite it is already on, making this a no-op.
+    database.exec("PRAGMA foreign_keys = ON");
+    return database;
   }
 
   private assertOpen(): void {
@@ -109,19 +116,38 @@ export class SqliteMemoryClient implements AsyncDisposable {
   }
 }
 
-function databaseSync(): DatabaseSyncConstructor {
+function databaseSync(): SyncDatabaseConstructor {
   if (DatabaseSync !== undefined) {
     return DatabaseSync;
   }
 
   const require = createRequire(import.meta.url);
+  const bun = loadBunSqlite(require);
+  if (bun !== undefined) {
+    DatabaseSync = bun.Database;
+    return DatabaseSync;
+  }
+
   try {
-    const sqlite = require("node:sqlite") as { DatabaseSync: DatabaseSyncConstructor };
+    const sqlite = require("node:sqlite") as { DatabaseSync: SyncDatabaseConstructor };
     DatabaseSync = sqlite.DatabaseSync;
     return DatabaseSync;
   } catch (error) {
-    throw new Error("@anvia/memory-sqlite requires a Node.js runtime with node:sqlite support.", {
-      cause: error,
-    });
+    throw new Error(
+      "@anvia/memory-sqlite requires a runtime with node:sqlite or bun:sqlite support.",
+      { cause: error },
+    );
+  }
+}
+
+function loadBunSqlite(require: NodeJS.Require): { Database: SyncDatabaseConstructor } | undefined {
+  if (process.versions.bun === undefined) {
+    return undefined;
+  }
+  try {
+    return require("bun:sqlite") as { Database: SyncDatabaseConstructor };
+  } catch {
+    // Fall through to node:sqlite and surface its loading error instead.
+    return undefined;
   }
 }

@@ -1,7 +1,19 @@
-import type { DatabaseSync } from "node:sqlite";
 import type { MemoryScopeKeyResolver } from "@anvia/core/memory";
 
-export type SqliteMemoryDatabaseLike = DatabaseSync;
+/**
+ * Structural surface of the synchronous SQLite drivers this package supports
+ * (node:sqlite `DatabaseSync` and bun:sqlite `Database`). It is structural so
+ * either driver, or a compatible custom implementation, can be injected.
+ */
+export type SqliteMemoryDatabaseLike = {
+  exec(sql: string): unknown;
+  prepare(sql: string): {
+    all(parameters?: Record<string, unknown>): unknown[];
+    get(parameters?: Record<string, unknown>): unknown;
+    run(parameters?: Record<string, unknown>): unknown;
+  };
+  close(): void;
+};
 
 export type SqliteMemoryClientOptions =
   | {

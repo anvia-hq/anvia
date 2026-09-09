@@ -46,7 +46,7 @@
     "vitest": "^4.0.8"
   },
   "peerDependencies": {
-    "@anvia/core": "workspace:*"
+    "@anvia/core": "workspace:^"
   },
   "engines": {
     "node": ">=20.12.0"

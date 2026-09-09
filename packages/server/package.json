@@ -39,6 +39,6 @@
     "vitest": "^4.0.8"
   },
   "peerDependencies": {
-    "@anvia/client": "workspace:*"
+    "@anvia/client": "workspace:^"
   }
 }

@@ -35,9 +35,9 @@
     "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {
-    "@anvia/client": "workspace:*",
-    "@anvia/core": "workspace:*",
-    "@anvia/graph": "workspace:*",
+    "@anvia/client": "workspace:^",
+    "@anvia/core": "workspace:^",
+    "@anvia/graph": "workspace:^",
     "react": ">=18"
   },
   "peerDependenciesMeta": {

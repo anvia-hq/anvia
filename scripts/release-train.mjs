@@ -66,9 +66,10 @@ export function assertWorkspaceInternalDependencies(packages) {
   for (const { packageJson } of packages) {
     for (const field of DEPENDENCY_FIELDS) {
       for (const [name, range] of Object.entries(packageJson[field] ?? {})) {
-        if (packageNames.has(name) && range !== "workspace:*") {
+        const expected = field === "peerDependencies" ? "workspace:^" : "workspace:*";
+        if (packageNames.has(name) && range !== expected) {
           throw new Error(
-            `${packageJson.name} ${field}.${name} must use workspace:* (received ${range}).`,
+            `${packageJson.name} ${field}.${name} must use ${expected} (received ${range}).`,
           );
         }
       }
@@ -205,6 +206,7 @@ export function run(command, args, root = process.cwd()) {
 function findPackageDirs(dir) {
   const directories = [];
   for (const entry of readdirSync(dir).sort()) {
+    if (entry === "node_modules") continue;
     const entryPath = path.join(dir, entry);
     if (!statSync(entryPath).isDirectory()) {
       continue;

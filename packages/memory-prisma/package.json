@@ -40,7 +40,7 @@
     "vitest": "^4.0.8"
   },
   "peerDependencies": {
-    "@anvia/core": "workspace:*",
+    "@anvia/core": "workspace:^",
     "@prisma/client": ">=7.10.0 <8.0.0"
   }
 }

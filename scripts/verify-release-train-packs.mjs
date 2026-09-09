@@ -44,10 +44,11 @@ export function assertPackedInternalVersions(manifest, packagesByName) {
       if (internalPackage === undefined) {
         continue;
       }
-      const expected = internalPackage.packageJson.version;
+      const version = internalPackage.packageJson.version;
+      const expected = field === "peerDependencies" ? `^${version}` : version;
       if (range !== expected) {
         throw new Error(
-          `${manifest.name} packed ${field}.${name} as ${range}; expected exact ${expected}.`,
+          `${manifest.name} packed ${field}.${name} as ${range}; expected ${expected}.`,
         );
       }
     }

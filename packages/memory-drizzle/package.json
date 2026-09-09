@@ -41,7 +41,7 @@
     "vitest": "^4.0.8"
   },
   "peerDependencies": {
-    "@anvia/core": "workspace:*",
+    "@anvia/core": "workspace:^",
     "drizzle-orm": ">=0.45.2 <1.0.0"
   }
 }

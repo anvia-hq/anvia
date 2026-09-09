@@ -178,8 +178,8 @@ If a generator rewrites files unexpectedly, inspect the diff before continuing.
 ## Dependencies
 
 - Use package-scoped `pnpm --filter ... add ...` commands for dependency changes.
-- Keep local workspace dependencies using `workspace:*` where the repo already
-  does.
+- Use `workspace:^` for internal peer dependencies and `workspace:*` for other
+  local workspace dependencies. Peer ranges must allow compatible minor releases.
 - Keep related schema/SDK dependencies aligned across packages and examples,
   especially `zod`.
 - After dependency changes, run relevant package checks and usually:

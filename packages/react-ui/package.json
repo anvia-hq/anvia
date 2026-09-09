@@ -91,9 +91,9 @@
     "remark-gfm": "^4.0.1"
   },
   "peerDependencies": {
-    "@anvia/client": "workspace:*",
-    "@anvia/graph": "workspace:*",
-    "@anvia/react": "workspace:*",
+    "@anvia/client": "workspace:^",
+    "@anvia/graph": "workspace:^",
+    "@anvia/react": "workspace:^",
     "react": ">=18",
     "react-dom": ">=18"
   },

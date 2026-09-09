@@ -42,7 +42,7 @@
     "zod": "^4.5.4"
   },
   "peerDependencies": {
-    "@anvia/core": "workspace:*",
+    "@anvia/core": "workspace:^",
     "zod": "^4.4.0"
   }
 }

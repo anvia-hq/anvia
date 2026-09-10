@@ -460,9 +460,22 @@ const store = createMemoryResumableStreamStore();
 const memoryClientCtor: typeof SqliteMemoryClient = SqliteMemoryClient;
 const typedMemoryClient = new SqliteMemoryClient({ path: ":memory:" });
 const typedMemoryStore = typedMemoryClient.memoryStore();
-// Type-only injection proof: a real bun:sqlite Database must be assignable to
-// the structural driver surface without any consumer-side cast.
-declare const typedBunDatabase: import("bun:sqlite").Database;
+// Type-only injection proof without referencing bun:sqlite types (the packed
+// consumer typechecks with no ambient type packages): the structural driver
+// surface must accept a database that supplies the documented surface, so
+// adding a required cast here would regress the public injection contract.
+declare const typedBunDatabase: {
+  exec(sql: string): unknown;
+  prepare(sql: string): {
+    all(): unknown[];
+    all(parameters: Record<string, bigint | null | number | string | Uint8Array>): unknown[];
+    get(): unknown;
+    get(parameters: Record<string, bigint | null | number | string | Uint8Array>): unknown;
+    run(): unknown;
+    run(parameters: Record<string, bigint | null | number | string | Uint8Array>): unknown;
+  };
+  close(): void;
+};
 const typedInjectedClient = new SqliteMemoryClient({ database: typedBunDatabase });
 
 console.log(

@@ -13,3 +13,18 @@ pnpm dlx @anvia/cli add chat
 
 Available items: `chat`, `thread`, `message`, `composer`, `attachment`, `markdown`, and
 `tool-fallback`.
+
+## Updating installed components
+
+`update` compares the Anvia components in your project against the current registry:
+
+```sh
+pnpm dlx @anvia/cli update            # check every item (preview only, writes nothing)
+pnpm dlx @anvia/cli update composer   # check a single item
+pnpm dlx @anvia/cli update --overwrite
+```
+
+Without `--overwrite`, `update` is a preview: it reports each file as `up-to-date`,
+`modified` (the installed copy differs from the registry), or `missing`. Pass `--overwrite`
+to write the registry content over out-of-date and missing files. Locally edited copies are
+overwritten, so commit or stash your changes first.

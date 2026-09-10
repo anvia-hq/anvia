@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createDockerSandboxTools } from "../src/tools";
-import type { DockerSandboxRuntime } from "../src/types";
+import { Writable } from "../src/internal/type-utils";
+import type { DockerSandboxCommandPolicy, DockerSandboxRuntime } from "../src/types";
 
 describe("createDockerSandboxTools", () => {
   it("requires an explicit, ordered, non-empty tool selection", () => {
@@ -138,16 +139,14 @@ describe("createDockerSandboxTools", () => {
     async (toolName) => {
       for (const allowShellInterpreters of [undefined, false, true]) {
         const sandbox = createRuntime();
+        const commands: Writable<DockerSandboxCommandPolicy> = { mode: "allow", values: ["sh"] };
+        if (allowShellInterpreters !== undefined) {
+          commands.allowShellInterpreters = allowShellInterpreters;
+        }
         const [tool] = createDockerSandboxTools({
           sandbox,
           tools: [toolName],
-          exec: {
-            commands: {
-              mode: "allow",
-              values: ["sh"],
-              ...(allowShellInterpreters === undefined ? {} : { allowShellInterpreters }),
-            },
-          },
+          exec: { commands },
         });
         if (tool === undefined) throw new Error(`Expected ${toolName} tool.`);
         const input = { command: "sh", args: ["-c", "echo hello"] };

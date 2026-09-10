@@ -6,7 +6,8 @@ import type {
 } from "@anvia/sandbox";
 import { connectPlaywrightBrowser, type PlaywrightBrowserConnectionImpl } from "./connection";
 import { BrowserControlState } from "./control";
-import { BrowserError, cancellationError } from "./errors";
+import { BrowserError, cancellationError, type BrowserErrorOptions } from "./errors";
+import { Writable } from "./internal/type-utils";
 import {
   assertOptionsObject,
   assertPositiveSafeInteger,
@@ -266,24 +267,22 @@ export class DockerBrowserHandle implements DockerBrowser {
             this.handleState === "active" &&
             this.state === "running"
           ) {
+            const disconnectOptions: Writable<BrowserErrorOptions> = {};
+            if (cleanupError !== undefined) disconnectOptions.cause = cleanupError;
+            disconnectOptions.phase = "connect";
             throw new BrowserError(
               "Browser disconnected while automation was initializing.",
               "connection_closed",
-              {
-                ...(cleanupError === undefined ? {} : { cause: cleanupError }),
-                phase: "connect",
-              },
+              disconnectOptions,
             );
           }
           const lifecycleError = this.lifecycleError(
             "Browser stopped while the connection was initializing.",
           );
-          throw cleanupError === undefined
-            ? lifecycleError
-            : new BrowserError(lifecycleError.message, lifecycleError.code, {
-                cause: cleanupError,
-                ...(lifecycleError.phase === undefined ? {} : { phase: lifecycleError.phase }),
-              });
+          if (cleanupError === undefined) throw lifecycleError;
+          const cleanupOptions: Writable<BrowserErrorOptions> = { cause: cleanupError };
+          if (lifecycleError.phase !== undefined) cleanupOptions.phase = lifecycleError.phase;
+          throw new BrowserError(lifecycleError.message, lifecycleError.code, cleanupOptions);
         }
         return connection;
       } catch (error) {
@@ -457,15 +456,13 @@ export class DockerBrowserHandle implements DockerBrowser {
     state: BrowserCapabilitySnapshot["state"],
     error?: BrowserError,
   ): void {
-    this.capabilityStates.set(
+    const snapshot: Writable<BrowserCapabilitySnapshot> = {
       capability,
-      Object.freeze({
-        capability,
-        state,
-        checkedAt: new Date().toISOString(),
-        ...(error === undefined ? {} : { error }),
-      }),
-    );
+      state,
+      checkedAt: new Date().toISOString(),
+    };
+    if (error !== undefined) snapshot.error = error;
+    this.capabilityStates.set(capability, Object.freeze(snapshot));
   }
 
   private updateControlAvailability(): void {

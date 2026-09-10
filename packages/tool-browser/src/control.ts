@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { BrowserError, cancellationError } from "./errors";
+import { Writable } from "./internal/type-utils";
 import type {
   AcquireBrowserHumanControlOptions,
   BrowserControl,
@@ -38,19 +39,18 @@ export class BrowserControlState implements BrowserControl {
           : this.activeAgentActions > 0
             ? "agent-active"
             : "agent";
-    return Object.freeze({
+    const snapshot: Writable<BrowserControlSnapshot> = {
       mode: lease === undefined ? "agent" : "human",
       state,
       availability: this.availability,
       activeAgentActions: this.activeAgentActions,
       humanPending: this.humanPending,
-      ...(lease === undefined
-        ? {}
-        : {
-            ownerId: lease.ownerId,
-            expiresAt: lease.expiresAt,
-          }),
-    });
+    };
+    if (lease !== undefined) {
+      snapshot.ownerId = lease.ownerId;
+      snapshot.expiresAt = lease.expiresAt;
+    }
+    return Object.freeze(snapshot);
   }
 
   async acquireHumanControl(

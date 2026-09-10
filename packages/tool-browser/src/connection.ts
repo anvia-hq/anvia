@@ -35,18 +35,20 @@ export async function connectPlaywrightBrowser(options: {
   const timeoutMs = options.timeoutMs ?? defaultConnectionTimeoutMs;
   assertPositiveSafeInteger(timeoutMs, "timeoutMs");
   options.abortSignal?.throwIfAborted();
-  const backend = await AutomationWorkerClient.connect({
+  const connectOptions: Parameters<typeof AutomationWorkerClient.connect>[0] = {
     endpointUrl: options.endpointUrl,
     timeoutMs,
-    ...(options.abortSignal === undefined ? {} : { abortSignal: options.abortSignal }),
-    ...(options.workerFactory === undefined ? {} : { workerFactory: options.workerFactory }),
-  });
-  return new PlaywrightBrowserConnectionImpl({
+  };
+  if (options.abortSignal !== undefined) connectOptions.abortSignal = options.abortSignal;
+  if (options.workerFactory !== undefined) connectOptions.workerFactory = options.workerFactory;
+  const backend = await AutomationWorkerClient.connect(connectOptions);
+  const connectionOptions: ConstructorParameters<typeof PlaywrightBrowserConnectionImpl>[0] = {
     backend,
     control: options.control,
     scheduling: options.scheduling,
-    ...(options.onClosed === undefined ? {} : { onClosed: options.onClosed }),
-  });
+  };
+  if (options.onClosed !== undefined) connectionOptions.onClosed = options.onClosed;
+  return new PlaywrightBrowserConnectionImpl(connectionOptions);
 }
 
 export class PlaywrightBrowserConnectionImpl implements PlaywrightBrowserConnection {

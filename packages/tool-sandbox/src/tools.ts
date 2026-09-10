@@ -7,10 +7,12 @@ import type {
   DockerSandboxCommandPolicy,
   DockerSandboxExecOptions,
   DockerSandboxExecResult,
+  DockerSandboxListProcessesOptions,
   DockerSandboxProcessInfo,
   DockerSandboxRuntime,
   DockerSandboxToolName,
 } from "./types";
+import { Writable } from "./internal/type-utils";
 import { shellInterpreters } from "./types";
 
 const allToolNames = [
@@ -309,13 +311,13 @@ function createListProcessesTool(sandbox: DockerSandboxRuntime): AnyTool {
     description: "List processes managed by this live sandbox handle.",
     inputSchema: emptyInput,
     outputSchema: listProcessesOutput,
-    execute: async (_, context) => ({
-      processes: (
-        await sandbox.listProcesses(
-          context.abortSignal === undefined ? {} : { abortSignal: context.abortSignal },
-        )
-      ).map(serializeProcessInfo),
-    }),
+    execute: async (_, context) => {
+      const listOptions: Writable<DockerSandboxListProcessesOptions> = {};
+      if (context.abortSignal !== undefined) listOptions.abortSignal = context.abortSignal;
+      return {
+        processes: (await sandbox.listProcesses(listOptions)).map(serializeProcessInfo),
+      };
+    },
   });
 }
 
@@ -493,6 +495,18 @@ function validateFactoryOptions(options: CreateDockerSandboxToolsOptions): void 
   }
 }
 
+function snapshotCommandPolicy(policy: DockerSandboxCommandPolicy): DockerSandboxCommandPolicy {
+  const values = Object.freeze([...policy.values]);
+  if (policy.mode === "allow" && policy.allowShellInterpreters !== undefined) {
+    return Object.freeze({
+      mode: policy.mode,
+      values,
+      allowShellInterpreters: policy.allowShellInterpreters,
+    });
+  }
+  return Object.freeze({ mode: policy.mode, values });
+}
+
 function snapshotFactoryOptions(
   options: CreateDockerSandboxToolsOptions,
 ): CreateDockerSandboxToolsOptions {
@@ -503,14 +517,7 @@ function snapshotFactoryOptions(
   const commands =
     options.exec?.commands === undefined
       ? undefined
-      : Object.freeze({
-          mode: options.exec.commands.mode,
-          values: Object.freeze([...options.exec.commands.values]),
-          ...(options.exec.commands.mode === "allow" &&
-          options.exec.commands.allowShellInterpreters !== undefined
-            ? { allowShellInterpreters: options.exec.commands.allowShellInterpreters }
-            : {}),
-        });
+      : Object.freeze(snapshotCommandPolicy(options.exec.commands));
   let snapshot: CreateDockerSandboxToolsOptions = {
     sandbox: options.sandbox,
     tools: toolNames,

@@ -33,9 +33,11 @@ export function createMcpTool(options: {
       return parseMcpToolArguments(args);
     },
     async call(args, context) {
+      const callOptions: { signal?: AbortSignal } = {};
+      if (context?.abortSignal !== undefined) callOptions.signal = context.abortSignal;
       const result = await client.callTool(
         createCallToolParams(definition.name, args),
-        context?.abortSignal === undefined ? {} : { signal: context.abortSignal },
+        callOptions,
       );
       return ToolOutput.content(mapMcpToolResult(result));
     },

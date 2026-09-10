@@ -66,9 +66,9 @@ export class ResourceScheduler {
         operation,
         resolve,
         reject,
-        ...(abortSignal === undefined ? {} : { abortSignal }),
       };
       if (abortSignal !== undefined) {
+        task.abortSignal = abortSignal;
         task.abort = () => {
           const current = this.resources.get(key);
           const index = current?.tasks.indexOf(task as Task<unknown>) ?? -1;
@@ -201,9 +201,9 @@ export class AsyncMutex {
       const waiter: MutexWaiter = {
         resolve,
         reject,
-        ...(abortSignal === undefined ? {} : { abortSignal }),
       };
       if (abortSignal !== undefined) {
+        waiter.abortSignal = abortSignal;
         waiter.abort = () => {
           const index = this.waiters.indexOf(waiter);
           if (index === -1) return;

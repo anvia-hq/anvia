@@ -5,6 +5,7 @@ import path from "node:path";
 import { assertDockerCli, decodeUtf8, runDockerCli } from "./docker-cli";
 import { DockerProcessManager } from "./docker-process";
 import { DockerSandboxError } from "./errors";
+import { Writable } from "./internal/type-utils";
 import { containerPath, normalizeSandboxPath, parentSandboxPath } from "./path";
 import { createTextFilePage } from "./text-file";
 import type {
@@ -920,9 +921,17 @@ async function applyInitialContent(
 ): Promise<void> {
   for (const directory of options.directories ?? []) {
     const marker = path.posix.join(normalizeSandboxPath(directory), ".anvia-keep");
-    const abort = options.abortSignal === undefined ? {} : { abortSignal: options.abortSignal };
-    await runtime.writeFile({ path: marker, data: new Uint8Array(), ...abort });
-    const removed = await runtime.exec({ command: "rm", args: [marker], ...abort });
+    const markerWriteOptions: Writable<DockerSandboxWriteFileOptions> = {
+      path: marker,
+      data: new Uint8Array(),
+    };
+    const markerExecOptions: Writable<DockerSandboxExecOptions> = { command: "rm", args: [marker] };
+    if (options.abortSignal !== undefined) {
+      markerWriteOptions.abortSignal = options.abortSignal;
+      markerExecOptions.abortSignal = options.abortSignal;
+    }
+    await runtime.writeFile(markerWriteOptions);
+    const removed = await runtime.exec(markerExecOptions);
     if (removed.status !== "exited" || removed.exitCode !== 0) {
       throw new DockerSandboxError(
         `Unable to create initial sandbox directory: ${directory}`,

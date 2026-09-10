@@ -5,7 +5,7 @@ import type { StudioTeamRunEvent } from "../../../../team-types";
 import { responseErrorMessage } from "../../app-errors";
 import { errorMessage } from "../shared/format";
 import { requestJson } from "../shared/request";
-import { initialTeamState, teamReducer } from "./team-state";
+import { initialTeamState, teamReducer, type TeamAction } from "./team-state";
 
 type ActiveTeamRun = {
   controller: AbortController;
@@ -84,11 +84,11 @@ export function useTeamRun(teamId: string) {
       if (!run.controller.signal.aborted)
         throw new Error("Team stream ended before a result arrived");
     } catch (error) {
-      if (active.current === run)
-        dispatch({
-          type: "stop",
-          ...(run.controller.signal.aborted ? {} : { error: errorMessage(error) }),
-        });
+      if (active.current === run) {
+        const action: TeamAction = { type: "stop" };
+        if (!run.controller.signal.aborted) action.error = errorMessage(error);
+        dispatch(action);
+      }
     } finally {
       if (active.current === run) active.current = undefined;
     }

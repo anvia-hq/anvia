@@ -224,8 +224,8 @@ function parseMessage(
     ...toolCallsFrom(value.tool_calls, `${key}:tool-call`),
     ...toolCallsFrom(value.toolCalls, `${key}:tool-calls`),
     ...toolCallsFromContent(value.content, `${key}:content-tool-call`),
-    ...(isToolPayload(value) ? [parseTool(value, `${key}:tool`)] : []),
   ];
+  if (isToolPayload(value)) toolCalls.push(parseTool(value, `${key}:tool`));
   return { key, role, content, toolCalls };
 }
 

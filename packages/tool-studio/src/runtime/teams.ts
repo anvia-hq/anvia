@@ -15,11 +15,12 @@ import type { StudioRunLifecycle } from "./run-lifecycle";
 export function teamConfig(team: AgentTeam<unknown>): StudioTeamConfig {
   return {
     id: team.id,
-    members: team.members.map((member) => ({
-      id: member.id,
-      ...(member.name === undefined ? {} : { name: member.name }),
-      ...(member.description === undefined ? {} : { description: member.description }),
-    })),
+    members: team.members.map((member) => {
+      const view: { id: string; name?: string; description?: string } = { id: member.id };
+      if (member.name !== undefined) view.name = member.name;
+      if (member.description !== undefined) view.description = member.description;
+      return view;
+    }),
     limits: team.limits,
   };
 }
@@ -146,10 +147,11 @@ export function registerTeamRoutes(
               done: false,
               value: toJsonValue({
                 ...event,
-                members: event.members.map((member) => ({
-                  ...member,
-                  ...(member.error === undefined ? {} : { error: serializeError(member.error) }),
-                })),
+                members: event.members.map((member) => {
+                  const view = { ...member };
+                  if (member.error !== undefined) view.error = serializeError(member.error);
+                  return view;
+                }),
               }),
             };
           return { done: false, value: toJsonValue(event) };

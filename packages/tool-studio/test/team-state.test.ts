@@ -7,16 +7,20 @@ import {
   type TeamState,
 } from "../src/ui/app/modules/teams/team-state";
 import type { StudioTeamRunEvent } from "../src/team-types";
+import { type Writable } from "../src/internal/type-utils";
 
-const member = (instanceId: string, parentInstanceId?: string): AgentTeamMemberSummary => ({
-  instanceId,
-  agentId: "worker",
-  name: "Worker",
-  status: "queued",
-  usage: Usage.empty(),
-  depth: parentInstanceId ? 1 : 0,
-  ...(parentInstanceId ? { parentInstanceId } : {}),
-});
+const member = (instanceId: string, parentInstanceId?: string): AgentTeamMemberSummary => {
+  const summary: Writable<AgentTeamMemberSummary> = {
+    instanceId,
+    agentId: "worker",
+    name: "Worker",
+    status: "queued",
+    usage: Usage.empty(),
+    depth: parentInstanceId ? 1 : 0,
+  };
+  if (parentInstanceId) summary.parentInstanceId = parentInstanceId;
+  return summary;
+};
 const apply = (state: TeamState, event: StudioTeamRunEvent) =>
   teamReducer(state, { type: "event", event });
 const identity = { teamRunId: "core-id", instanceId: "root", runId: "assignment-1" };

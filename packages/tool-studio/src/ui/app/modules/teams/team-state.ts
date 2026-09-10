@@ -69,21 +69,23 @@ export function teamReducer(state: TeamState, action: TeamAction): TeamState {
         ...state,
         conversation: [...state.conversation, { type: "prompt", text: action.prompt }],
       };
-    case "stop":
-      return {
+    case "stop": {
+      const next: TeamState = {
         ...state,
         status: action.error ? "failed" : "cancelled",
-        ...(action.error ? { error: action.error } : {}),
-        interactions: closeInteractions(state),
-        members: Object.fromEntries(
-          Object.entries(state.members).map(([id, member]) => [
-            id,
-            ["queued", "running", "waiting", "awaiting_interaction"].includes(member.status)
-              ? { ...member, status: "cancelled" }
-              : member,
-          ]),
-        ),
       };
+      if (action.error) next.error = action.error;
+      next.interactions = closeInteractions(state);
+      next.members = Object.fromEntries(
+        Object.entries(state.members).map(([id, member]) => [
+          id,
+          ["queued", "running", "waiting", "awaiting_interaction"].includes(member.status)
+            ? { ...member, status: "cancelled" }
+            : member,
+        ]),
+      );
+      return next;
+    }
     case "answered": {
       const item = state.interactions[action.id];
       return item !== undefined
@@ -111,14 +113,16 @@ export function teamReducer(state: TeamState, action: TeamAction): TeamState {
       },
       interactions: closeInteractions(state),
     };
-  if ("member" in event)
-    return {
+  if ("member" in event) {
+    const next: TeamState = {
       ...state,
       members: { ...state.members, [event.instanceId]: event.member },
-      ...(event.type === "agent_cancelled" || event.type === "agent_failed"
-        ? { interactions: closeInteractions(state, event.instanceId) }
-        : {}),
     };
+    if (event.type === "agent_cancelled" || event.type === "agent_failed") {
+      next.interactions = closeInteractions(state, event.instanceId);
+    }
+    return next;
+  }
   if (event.type === "interaction")
     return {
       ...state,

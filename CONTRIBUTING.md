@@ -75,6 +75,27 @@ Before requesting review, make sure:
 - Use Oxlint and Oxfmt through the existing scripts rather than invoking them ad hoc.
 - Avoid unrelated refactors in bug-fix pull requests.
 
+### JSDoc Convention
+
+Public exports in `packages/*` carry JSDoc so that editor hover documentation
+stays useful. `packages/core/src/completion/types.ts` is the reference example.
+
+Rules:
+
+- Document every exported symbol with one concise line focused on intent, not
+  on restating the name.
+- Document a property only when it carries non-obvious information:
+  - a non-obvious default (use a `@default` tag rather than prose),
+  - conditional behavior ("Present only when...", "Rejected by models without..."),
+  - a non-obvious unit, subset relation, or invariant,
+  - a deprecation (use `@deprecated` with a concrete migration snippet).
+- Discriminated unions get a bullet list on the type explaining each variant.
+- Leave obviously named properties undocumented. Never restate the name.
+- Never guess semantics in a comment. Verify the behavior in code, or omit the
+  comment and leave a question for review.
+- Private helpers (`src/internal/**`, non-exported functions) stay undocumented
+  unless the implementation trick is genuinely non-obvious.
+
 ## Tests
 
 Tests live beside the package they cover, usually under `test/`. Use focused tests for narrow fixes and broader coverage when changing shared runtime behavior.

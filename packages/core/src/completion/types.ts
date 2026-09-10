@@ -2,28 +2,41 @@ import type { ModelCallOptions } from "../model-call-options";
 import { isJsonValue } from "./json";
 
 export type JsonPrimitive = string | number | boolean | null;
+/** Any JSON-compatible value: primitives, objects, or readonly arrays of JSON values. */
 export type JsonValue = JsonPrimitive | JsonObject | readonly JsonValue[];
 export type JsonObject = { [key: string]: JsonValue };
 
+/** A retrievable text document passed to a completion as grounding context. */
 export type Document = {
   id: string;
   text: string;
+  /** String metadata rendered as a `<metadata ... />` header above the text when documents are serialized into prompts. */
   additionalProps?: Record<string, string>;
 };
 
+/**
+ * A text segment, optionally carrying a provider reasoning signature.
+ */
 export type TextPart = Readonly<{
   type: "text";
   text: string;
+  /** Provider signature preserved so reasoning can be replayed on later turns. */
   signature?: string;
 }>;
 
+/** Image input fidelity hint forwarded to providers that support it. */
 export type ImageDetail = "auto" | "low" | "high";
 
+/**
+ * File payload for image/file parts: a remote URL, base64 data, or literal text
+ * interpreted as a document.
+ */
 export type FileData =
   | Readonly<{ type: "url"; url: string }>
   | Readonly<{ type: "data"; data: string }>
   | Readonly<{ type: "text"; text: string }>;
 
+/** Image input with an optional media type override and detail hint. */
 export type ImagePart = Readonly<{
   type: "image";
   image: Exclude<FileData, Readonly<{ type: "text"; text: string }>>;
@@ -31,6 +44,7 @@ export type ImagePart = Readonly<{
   detail?: ImageDetail;
 }>;
 
+/** Document/file input part; non-text data is rejected by models without `documentInput`. */
 export type FilePart = Readonly<{
   type: "file";
   data: FileData;
@@ -38,6 +52,7 @@ export type FilePart = Readonly<{
   filename?: string;
 }>;
 
+/** Model reasoning content, replayable across turns to preserve thinking state. */
 export type ReasoningPart = Readonly<{
   type: "reasoning";
   text: string;
@@ -45,6 +60,13 @@ export type ReasoningPart = Readonly<{
   details?: readonly ReasoningDetail[];
 }>;
 
+/**
+ * Reasoning detail variants:
+ *
+ * - `text` / `summary`: displayable reasoning text
+ * - `encrypted` / `redacted`: opaque payloads that can only be echoed back to
+ *   the provider; their content is not readable by the application
+ */
 export type ReasoningDetail =
   | Readonly<{
       type: "text";
@@ -66,6 +88,7 @@ export type ReasoningDetail =
 
 export type ReasoningContentType = ReasoningDetail["type"];
 
+/** A tool call requested by the model; `signature` preserves provider replay state. */
 export type ToolCallPart = Readonly<{
   type: "tool-call";
   toolCallId: string;
@@ -75,8 +98,18 @@ export type ToolCallPart = Readonly<{
   signature?: string;
 }>;
 
+/** The content variants allowed inside a tool result payload. */
 export type ToolResultContentPart = TextPart | FilePart;
 
+/**
+ * Outcome of one tool execution, as recorded in tool messages:
+ *
+ * - `text` / `json`: successful result as plain text or JSON
+ * - `content`: successful result as mixed content parts
+ * - `execution-denied`: the call was blocked (e.g. by a required approval)
+ * - `error-text` / `error-json`: failure surfaced to the model so the run can
+ *   continue instead of aborting
+ */
 export type ToolResultOutput =
   | Readonly<{ type: "text"; value: string }>
   | Readonly<{ type: "json"; value: JsonValue }>
@@ -85,6 +118,7 @@ export type ToolResultOutput =
   | Readonly<{ type: "error-text"; value: string }>
   | Readonly<{ type: "error-json"; value: JsonValue }>;
 
+/** Tool result reported back to the model, matched to its call via `toolCallId`. */
 export type ToolResultPart = Readonly<{
   type: "tool-result";
   toolCallId: string;
@@ -93,6 +127,7 @@ export type ToolResultPart = Readonly<{
   output: ToolResultOutput;
 }>;
 
+/** Human decision on a tool call that required approval before execution. */
 export type ToolApprovalResponsePart = Readonly<{
   type: "tool-approval-response";
   interactionId: string;
@@ -103,11 +138,13 @@ export type ToolApprovalResponsePart = Readonly<{
   reason?: string;
 }>;
 
+/** Answer to one question asked by a tool suspended on a human interaction. */
 export type ToolQuestionAnswer = Readonly<{
   questionId: string;
   value: string;
 }>;
 
+/** Answers to tool questions, delivered back through the suspended run. */
 export type ToolQuestionResponsePart = Readonly<{
   type: "tool-question-response";
   interactionId: string;
@@ -117,9 +154,12 @@ export type ToolQuestionResponsePart = Readonly<{
   answers: readonly ToolQuestionAnswer[];
 }>;
 
+/** A tool or human-interaction response delivered inside a `role: "tool"` message. */
 export type ToolInteractionResponsePart = ToolApprovalResponsePart | ToolQuestionResponsePart;
 
+/** Content parts allowed in user messages. */
 export type UserContentPart = TextPart | ImagePart | FilePart;
+/** Content parts allowed in assistant messages, including replayed reasoning and tool calls. */
 export type AssistantContentPart = TextPart | ImagePart | FilePart | ReasoningPart | ToolCallPart;
 
 export type SystemMessage<Metadata extends JsonObject = JsonObject> = Readonly<{
@@ -147,12 +187,20 @@ export type ToolMessage<Metadata extends JsonObject = JsonObject> = Readonly<{
   metadata?: Metadata;
 }>;
 
+/**
+ * A conversation message from the system, user, assistant, or tool role.
+ *
+ * Framework-generated metadata (provider, model, usage of the generation that
+ * produced an assistant message) is stored under the `anvia` key of `metadata`;
+ * read it back with {@link getAssistantGenerationMetadata}.
+ */
 export type Message<Metadata extends JsonObject = JsonObject> =
   | SystemMessage<Metadata>
   | UserMessage<Metadata>
   | AssistantMessage<Metadata>
   | ToolMessage<Metadata>;
 
+/** Joins the human-readable text of a reasoning part or its details. */
 export function reasoningDisplayText(
   reasoning: ReasoningPart | readonly ReasoningDetail[],
 ): string {
@@ -170,6 +218,10 @@ export function reasoningDisplayText(
     .join("");
 }
 
+/**
+ * How the model may call tools: freely, mandatorily, never, or a named function.
+ * Requires the model's `toolChoice` capability.
+ */
 export type ToolChoice =
   | "auto"
   | "required"
@@ -179,6 +231,7 @@ export type ToolChoice =
       name: string;
     };
 
+/** JSON Schema-shaped tool description sent to the model (a local tool's public face). */
 export type ToolDefinition = {
   name: string;
   description: string;
@@ -200,6 +253,7 @@ export type ProviderTool = {
 
 export type CompletionTool = ToolDefinition | ProviderTool;
 
+/** Narrows an unknown value to a well-formed {@link ProviderTool}. */
 export function isProviderTool(value: unknown): value is ProviderTool {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return false;
@@ -219,6 +273,7 @@ export function isProviderTool(value: unknown): value is ProviderTool {
   );
 }
 
+/** A grounding source (e.g. web result) returned by the provider, with optional text offsets. */
 export type CompletionSource = {
   type: "url";
   url: string;
@@ -228,6 +283,7 @@ export type CompletionSource = {
   endIndex?: number;
 };
 
+/** A tool call executed on the provider side, surfaced for observability. */
 export type ProviderToolCall = {
   id: string;
   name: string;
@@ -243,6 +299,13 @@ export type ProviderToolCall = {
  */
 export type UsageDetails = Record<string, number>;
 
+/**
+ * Token usage for one or more generations.
+ *
+ * `cachedInputTokens` counts input tokens served from the provider's prompt
+ * cache; `cacheCreationInputTokens` counts input tokens billed for writing to
+ * that cache. Both are subsets of `inputTokens`.
+ */
 export type Usage = {
   inputTokens: number;
   outputTokens: number;
@@ -252,17 +315,20 @@ export type Usage = {
   details?: UsageDetails;
 };
 
+/** Model context window bounds; unset input/output caps fall back to the window. */
 export type ModelContextLimits = {
   contextWindow: number;
   maxInputTokens?: number;
   maxOutputTokens?: number;
 };
 
+/** Identifies a model together with its context limits. */
 export type CompletionModelInfo = {
   modelId: string;
   context: ModelContextLimits;
 };
 
+/** Snapshot of how much of a model's context window a request consumed. */
 export type ContextUsage = {
   model: CompletionModelInfo;
   usedTokens: number;
@@ -271,6 +337,7 @@ export type ContextUsage = {
   remainingPercent: number;
 };
 
+/** Computes context usage, or undefined when the model or usage data is unusable. */
 export function calculateContextUsage(
   usage: Usage,
   model: CompletionModelInfo | undefined,
@@ -297,6 +364,7 @@ export function calculateContextUsage(
   };
 }
 
+/** Attaches context usage to a response when model limits are known. */
 export function withContextUsage<RawResponse>(
   response: CompletionResponse<RawResponse>,
   model: CompletionModelInfo | undefined,
@@ -305,6 +373,7 @@ export function withContextUsage<RawResponse>(
   return contextUsage === undefined ? response : { ...response, contextUsage };
 }
 
+/** Resolves a model's context limits: explicit override wins over catalog lookup. */
 export function resolveModelContextLimits(
   modelId: string,
   catalog: Readonly<Record<string, ModelContextLimits>>,
@@ -313,6 +382,7 @@ export function resolveModelContextLimits(
   return override ?? catalog[modelId];
 }
 
+/** Provider/model/usage metadata embedded in assistant message metadata by the runtime. */
 export type AssistantGenerationMetadata = {
   provider: string;
   modelId: string;
@@ -324,7 +394,11 @@ export type AssistantGenerationMetadata = {
   providerToolCalls?: ProviderToolCall[];
 };
 
+/**
+ * Helpers for constructing and combining token usage.
+ */
 export const Usage = {
+  /** Returns an all-zero usage value. */
   empty(): Usage {
     return {
       inputTokens: 0,
@@ -334,6 +408,10 @@ export const Usage = {
       cacheCreationInputTokens: 0,
     };
   },
+  /**
+   * Sums two usage values bucket by bucket. `details` are merged only when
+   * both sides carry them; if either side omits them, the result omits them.
+   */
   add(left: Usage, right: Usage): Usage {
     const result: Usage = {
       inputTokens: left.inputTokens + right.inputTokens,
@@ -348,6 +426,7 @@ export const Usage = {
     }
     return result;
   },
+  /** Returns true when every bucket, including `details`, is zero. */
   isEmpty(usage: Usage): boolean {
     return (
       isEmptyUsage(usage) &&
@@ -383,6 +462,10 @@ function isEmptyUsage(usage: Usage): boolean {
   );
 }
 
+/**
+ * Reads the generation metadata the runtime embeds in assistant messages, when
+ * present and structurally valid.
+ */
 export function getAssistantGenerationMetadata(
   message: Message,
 ): AssistantGenerationMetadata | undefined {
@@ -561,6 +644,7 @@ function isProviderToolCallArray(value: JsonValue | undefined): value is Provide
   );
 }
 
+/** Provider-agnostic completion request assembled by the runtime for adapters. */
 export type CompletionRequest = {
   instructions?: string;
   chatHistory: Message[];
@@ -570,28 +654,48 @@ export type CompletionRequest = {
   temperature?: number;
   maxTokens?: number;
   toolChoice?: ToolChoice;
+  /** Values for the model's declared completion controls; validated before sending. */
   controls?: Readonly<Record<string, string>>;
+  /** Provider-specific passthrough options; never validated by the core runtime. */
   providerOptions?: JsonObject;
+  /** JSON Schema the output must conform to; requires the `outputSchema` capability. */
   outputSchema?: JsonObject;
 };
 
+/** Normalized finish reasons:
+ *
+ * - `stop`: the model finished naturally
+ * - `length`: an output token limit was hit
+ * - `content-filter`: output was blocked by a safety filter
+ * - `tool-calls`: the model stopped to request tool calls
+ * - `other`: any provider-specific reason
+ */
 export type CompletionFinishReason = "stop" | "length" | "content-filter" | "tool-calls" | "other";
 
+/** A provider's raw completion response: normalized parts plus usage and metadata. */
 export type CompletionResponse<RawResponse = unknown> = {
   choice: AssistantContentPart[];
   usage: Usage;
   finishReason?: CompletionFinishReason;
   providerFinishReason?: string;
   contextUsage?: ContextUsage;
+  /** The provider SDK's original response object, unmodified. */
   rawResponse: RawResponse;
   messageId?: string;
   sources?: CompletionSource[];
   providerToolCalls?: ProviderToolCall[];
 };
 
+/** Final result of a completion: typed output, plain text, full content, and usage. */
 export type CompletionResult<Output = string, RawResponse = unknown> = {
+  /**
+   * The typed output. When an output schema was requested this is the parsed,
+   * validated object; otherwise it is the plain text.
+   */
   output: Output;
+  /** The generated text, joined from the response's text parts. */
   text: string;
+  /** Every content part the model produced, including reasoning and tool calls. */
   content: readonly AssistantContentPart[];
   usage: Usage;
   finishReason?: CompletionFinishReason;
@@ -613,6 +717,7 @@ function isCompletionFinishReason(value: JsonValue | undefined): value is Comple
   );
 }
 
+/** Feature flags a model declares; requests are validated against these at runtime. */
 export type CompletionModelCapabilities = {
   streaming: boolean;
   tools: boolean;
@@ -624,6 +729,7 @@ export type CompletionModelCapabilities = {
   providerTools?: boolean;
 };
 
+/** A selectable model control exposed to applications (e.g. "reasoning effort"). */
 export type CompletionModelSelectControl<Option extends string = string> = Readonly<{
   type: "select";
   label: string;
@@ -632,12 +738,15 @@ export type CompletionModelSelectControl<Option extends string = string> = Reado
   defaultValue?: Option | undefined;
 }>;
 
+/** Named set of controls a model supports, keyed by control id. */
 export type CompletionModelControls = Readonly<
   Record<string, CompletionModelSelectControl<string>>
 >;
 
+/** Marker type for models that accept no completion controls. */
 export type NoCompletionModelControls = Readonly<Record<string, never>>;
 
+/** The option values a model's controls accept, keyed by control id. */
 export type CompletionControlValues<Controls extends CompletionModelControls> = Readonly<
   Partial<{
     [Key in keyof Controls]: Controls[Key] extends CompletionModelSelectControl<infer Option>
@@ -646,9 +755,14 @@ export type CompletionControlValues<Controls extends CompletionModelControls> = 
   }>
 >;
 
+/** Extracts a model's control types, defaulting to the open controls record. */
 export type CompletionModelControlsOf<Model> =
   Model extends CompletionModel<unknown, infer Controls> ? Controls : CompletionModelControls;
 
+/**
+ * The provider-agnostic model contract every adapter implements: non-streaming
+ * completions plus capability, context, and control metadata.
+ */
 export interface CompletionModel<
   RawResponse = unknown,
   Controls extends CompletionModelControls = CompletionModelControls,
@@ -658,6 +772,11 @@ export interface CompletionModel<
   readonly contextLimits?: ModelContextLimits | undefined;
   readonly capabilities: CompletionModelCapabilities;
   readonly controls?: Controls | undefined;
+  /**
+   * Returns a JSON-safe representation of the outgoing request for
+   * observability traces, or undefined to omit the trace payload. Errors
+   * thrown here are swallowed by the runtime and recorded as a trace error.
+   */
   traceRequest?(
     request: CompletionRequest,
     options?: { stream?: boolean | undefined },
@@ -668,8 +787,21 @@ export interface CompletionModel<
   ): Promise<CompletionResponse<RawResponse>>;
 }
 
+/** How a `tool_call_delta` updates arguments: append to, or replace, accumulated JSON. */
 export type ToolCallArgumentsMode = "append" | "replace";
 
+/**
+ * Incremental completion stream content:
+ *
+ * - `text_delta` / `reasoning_delta`: incremental text or reasoning content
+ * - `tool_call_delta`: partial tool call input; argument fragments accumulate
+ *   according to `argumentsMode` (`append` continues the JSON string, `replace`
+ *   restarts it)
+ * - `tool_call`: a complete tool call
+ * - `source`: a grounding source discovered during generation
+ * - `provider_tool_call`: progress on a provider-executed tool
+ * - `message_id`: the id of the message being generated
+ */
 export type CompletionStreamPart =
   | {
       type: "text_delta";
@@ -680,6 +812,7 @@ export type CompletionStreamPart =
       delta: string;
       id?: string;
       contentType?: ReasoningContentType;
+      /** Provider signature preserved for reasoning replay. */
       signature?: string;
     }
   | {
@@ -708,6 +841,7 @@ export type CompletionStreamPart =
       id: string;
     };
 
+/** Raw model stream events: stream parts, the final response, or a terminal error. */
 export type CompletionModelStreamEvent<RawResponse = unknown> =
   | CompletionStreamPart
   | {
@@ -720,6 +854,7 @@ export type CompletionModelStreamEvent<RawResponse = unknown> =
       usage?: Usage;
     };
 
+/** High-level stream events: stream parts, the final typed result, or a terminal error. */
 export type CompletionStreamEvent<Output = string, RawResponse = unknown> =
   | CompletionStreamPart
   | {
@@ -732,6 +867,7 @@ export type CompletionStreamEvent<Output = string, RawResponse = unknown> =
       usage: Usage;
     };
 
+/** A completion model that can additionally stream events as they are produced. */
 export interface StreamingCompletionModel<
   RawResponse = unknown,
   Controls extends CompletionModelControls = CompletionModelControls,
@@ -742,6 +878,7 @@ export interface StreamingCompletionModel<
   ): AsyncIterable<CompletionModelStreamEvent<RawResponse>>;
 }
 
+/** Thrown when a request uses a capability the target model does not declare. */
 export class CompletionCapabilityError extends Error {
   constructor(message: string) {
     super(message);
@@ -749,6 +886,7 @@ export class CompletionCapabilityError extends Error {
   }
 }
 
+/** Validates a request against a model's declared capabilities; throws {@link CompletionCapabilityError}. */
 export function assertCompletionRequestSupported(
   model: CompletionModel,
   request: CompletionRequest,
@@ -788,6 +926,7 @@ export function assertCompletionRequestSupported(
   }
 }
 
+/** Validates control values against a model's controls; throws {@link CompletionCapabilityError}. */
 export function assertCompletionControlsSupported(
   model: CompletionModel,
   controls: Readonly<Record<string, string | undefined>> | undefined,
@@ -813,6 +952,7 @@ export function assertCompletionControlsSupported(
   }
 }
 
+/** Joins the text parts of assistant content with newlines. */
 export function textFromAssistantContent(content: readonly AssistantContentPart[]): string {
   return content.flatMap((item) => (item.type === "text" ? [item.text] : [])).join("\n");
 }

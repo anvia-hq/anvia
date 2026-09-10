@@ -2,6 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "bun:test";
+import type { Database } from "bun:sqlite";
 import type { MemoryCompactionMessage, Message } from "@anvia/core";
 import {
   createSqliteMemorySchemaSql,
@@ -34,9 +35,7 @@ describe("@anvia/memory-sqlite under Bun", () => {
   });
 
   it("accepts an injected bun:sqlite Database without casts", async () => {
-    const { Database: BunDatabase } = (await import("bun:sqlite")) as {
-      Database: new (path: string) => SqliteMemoryDatabaseLike;
-    };
+    const { Database: BunDatabase } = await import("bun:sqlite");
     const root = await mkdtemp(join(tmpdir(), "anvia-bun-memory-sqlite-"));
     tempDirectories.push(root);
     const path = join(root, "injected.sqlite");
@@ -46,15 +45,16 @@ describe("@anvia/memory-sqlite under Bun", () => {
       content: [{ type: "text", text: "remember this" }],
     };
 
-    // Compile-time proof of the public injection contract: a real bun:sqlite
-    // Database must be assignable to the structural driver surface, so this
-    // annotation fails to typecheck if the bindings union regresses.
-    const injected: SqliteMemoryDatabaseLike = new BunDatabase(path);
-    // Injected databases stay caller-owned, so foreign-key enforcement is the
-    // caller's responsibility (the same contract node:sqlite consumers follow
-    // through enableForeignKeyConstraints).
+    // Strict compile-time proof against Bun's real declarations (bun-types is
+    // ambient in this workspace): the assignment below fails to typecheck if
+    // the package's driver surface ever diverges from bun:sqlite again.
+    const realBunDatabase: Database = BunDatabase.open(path);
+    const injected: SqliteMemoryDatabaseLike = realBunDatabase;
+    // The client constructor must accept the real driver type directly too.
+    const client = new SqliteMemoryClient({ database: realBunDatabase });
+    // Keep the interface-typed alias in use so the assignability proof is not
+    // dead code, and reassert the caller-owned pragma duty.
     injected.exec("PRAGMA foreign_keys = ON");
-    const client = new SqliteMemoryClient({ database: injected });
     const store = client.memoryStore();
     await store.ensure();
 

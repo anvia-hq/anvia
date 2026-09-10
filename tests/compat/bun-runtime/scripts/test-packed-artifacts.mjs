@@ -460,10 +460,11 @@ const store = createMemoryResumableStreamStore();
 const memoryClientCtor: typeof SqliteMemoryClient = SqliteMemoryClient;
 const typedMemoryClient = new SqliteMemoryClient({ path: ":memory:" });
 const typedMemoryStore = typedMemoryClient.memoryStore();
-// Type-only injection proof without referencing bun:sqlite types (the packed
-// consumer typechecks with no ambient type packages): the structural driver
-// surface must accept a database that supplies the documented surface, so
-// adding a required cast here would regress the public injection contract.
+// Type-only injection proof without ambient bun:sqlite types (the packed
+// consumer typechecks with types: []). The real Database-vs-driver-surface
+// assignability proof lives in test/memory-sqlite.test.ts, which compiles
+// against bun-types; this keeps a documented driver-shaped value accepted
+// without a cast so a widened requirement cannot slip in unnoticed.
 declare const typedBunDatabase: {
   exec(sql: string): unknown;
   prepare(sql: string): {

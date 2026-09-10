@@ -6,6 +6,7 @@ import type {
 import type { AgentOutcome, AgentSteerInput } from "../../agent/run-types";
 import type { Message, UserMessage } from "../../completion";
 import { parseMessage, parseMessages, Usage } from "../../completion";
+import { omitUndefined } from "../record";
 import type { AgentRun } from "../agent-runtime/agent-run";
 import type { Agent } from "../../agent/agent";
 import { lifecycleSnapshot } from "../../agent/lifecycle";
@@ -47,9 +48,11 @@ export function memberSummary(member: TeamMember): AgentTeamMemberSummary {
     depth: member.depth,
     status: member.status,
     usage: lifecycleSnapshot(member.usage),
-    ...(member.parentInstanceId === undefined ? {} : { parentInstanceId: member.parentInstanceId }),
-    ...(member.outcome === undefined ? {} : { outcome: lifecycleSnapshot(member.outcome) }),
-    ...(member.error === undefined ? {} : { error: member.error }),
+    ...omitUndefined({
+      parentInstanceId: member.parentInstanceId,
+      outcome: member.outcome === undefined ? undefined : lifecycleSnapshot(member.outcome),
+      error: member.error,
+    }),
   };
 }
 

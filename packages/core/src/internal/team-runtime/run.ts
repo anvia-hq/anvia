@@ -26,6 +26,7 @@ import { parseMessages, Usage, type CompletionResponse } from "../../completion"
 import { throwIfAborted } from "../abort";
 import { AgentRun } from "../agent-runtime/agent-run";
 import { withInternalAgentRunOptions } from "../agent-runtime/run-options";
+import { omitUndefined } from "../record";
 import { abortable, TeamChanges, TeamSlots } from "./coordination";
 import {
   agentMessageInput,
@@ -191,7 +192,7 @@ export class TeamRun<Output = unknown> {
       toInstanceId: recipient.instanceId,
       content: input.content,
       createdAt: new Date().toISOString(),
-      ...(input.replyTo === undefined ? {} : { replyTo: input.replyTo }),
+      ...omitUndefined({ replyTo: input.replyTo }),
     };
     this.enqueue(recipient, agentMessageInput(message), notificationType);
     return { messageId: message.id, status: "queued" as const };
@@ -206,9 +207,7 @@ export class TeamRun<Output = unknown> {
         name: member.name,
         status: member.status,
         depth: member.depth,
-        ...(member.parentInstanceId === undefined
-          ? {}
-          : { parentInstanceId: member.parentInstanceId }),
+        ...omitUndefined({ parentInstanceId: member.parentInstanceId }),
       }));
   }
 
@@ -261,7 +260,7 @@ export class TeamRun<Output = unknown> {
       definition: agent,
       depth: parent === undefined ? 0 : parent.depth + 1,
       name,
-      ...(parentInstanceId === undefined ? {} : { parentInstanceId }),
+      ...omitUndefined({ parentInstanceId }),
       status: "queued",
       history: [],
       inputs: [],
@@ -548,16 +547,17 @@ export class TeamRun<Output = unknown> {
   private reportOutcome(member: TeamMember): void {
     const parent = this.instances.get(member.parentInstanceId!);
     if (parent === undefined || parent.status === "failed" || parent.status === "cancelled") return;
-    const content = JSON.stringify({
+    const payload: Record<string, unknown> = {
       type: "agent-outcome",
       instanceId: member.instanceId,
       status: member.status,
-      ...(member.outcome?.type === "response" ? { output: member.outcome.output } : {}),
-      ...(member.outcome?.type === "blocked" ? { reason: member.outcome.reason } : {}),
-      ...(member.error === undefined
-        ? {}
-        : { error: member.error instanceof Error ? member.error.message : String(member.error) }),
-    });
+    };
+    if (member.outcome?.type === "response") payload.output = member.outcome.output;
+    if (member.outcome?.type === "blocked") payload.reason = member.outcome.reason;
+    if (member.error !== undefined) {
+      payload.error = member.error instanceof Error ? member.error.message : String(member.error);
+    }
+    const content = JSON.stringify(payload);
     this.queueMessage(member, parent, { content }, "outcome");
   }
 
@@ -604,11 +604,12 @@ export class TeamRun<Output = unknown> {
   }
 
   private identity(member: TeamMember) {
-    return {
+    const identity: { teamRunId: string; instanceId: string; runId?: string } = {
       teamRunId: this.id,
       instanceId: member.instanceId,
-      ...(member.runId === undefined ? {} : { runId: member.runId }),
     };
+    if (member.runId !== undefined) identity.runId = member.runId;
+    return identity;
   }
 
   private memberEvent(

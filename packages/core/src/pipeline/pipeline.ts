@@ -409,13 +409,11 @@ function withPipelineParentTrace(
   if (parent?.traceId === undefined) return trace;
   if (parent.observer !== agentPrimaryTrace) return trace;
   if (trace?.traceId !== undefined && trace.traceId !== parent.traceId) return trace;
-  return {
-    ...trace,
-    traceId: parent.traceId,
-    ...(trace?.parentObservationId !== undefined || parent.observationId === undefined
-      ? {}
-      : { parentObservationId: parent.observationId }),
-  };
+  const resolved = { ...trace, traceId: parent.traceId };
+  if (trace?.parentObservationId === undefined && parent.observationId !== undefined) {
+    resolved.parentObservationId = parent.observationId;
+  }
+  return resolved;
 }
 
 function isInternalPipelineOptions<Input, Output>(

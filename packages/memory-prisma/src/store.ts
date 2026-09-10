@@ -206,11 +206,14 @@ export class PrismaMemoryStore implements MemoryStore {
       return { revision: compactionRevision([], undefined), messages: [] };
     }
     const state = this.compactionStateFromValue(session.compactionState);
+    const where: { memorySessionId: string; position?: { gte: number } } = {
+      memorySessionId: session.id,
+    };
+    if (state !== undefined) {
+      where.position = { gte: state.summarizedThroughPosition };
+    }
     const rows = (await this.delegates.messages.findMany({
-      where: {
-        memorySessionId: session.id,
-        ...(state === undefined ? {} : { position: { gte: state.summarizedThroughPosition } }),
-      },
+      where,
       orderBy: { position: "asc" },
       select: { id: true, memorySessionId: true, position: true, message: true },
     })) as PrismaCompactionMessageRow[];
@@ -241,11 +244,14 @@ export class PrismaMemoryStore implements MemoryStore {
       })) as PrismaCompactionSessionRow | null;
       if (session === null) return { status: "conflict" };
       const state = this.compactionStateFromValue(session.compactionState);
+      const where: { memorySessionId: string; position?: { gte: number } } = {
+        memorySessionId: session.id,
+      };
+      if (state !== undefined) {
+        where.position = { gte: state.summarizedThroughPosition };
+      }
       const rows = (await tx.messages.findMany({
-        where: {
-          memorySessionId: session.id,
-          ...(state === undefined ? {} : { position: { gte: state.summarizedThroughPosition } }),
-        },
+        where,
         orderBy: { position: "asc" },
         select: { id: true, memorySessionId: true, position: true, message: true },
       })) as PrismaCompactionMessageRow[];
@@ -363,18 +369,27 @@ async function upsertSession(
   scopeKey: string,
   compactionState?: StoredCompactionState,
 ): Promise<{ id: string }> {
+  const update: {
+    sessionId: string;
+    userId: string | null;
+    metadata: JsonObject;
+    compactionState?: StoredCompactionState;
+  } = {
+    sessionId: context.sessionId,
+    userId: context.userId ?? null,
+    metadata: metadata(context),
+  };
+  if (compactionState !== undefined) {
+    update.compactionState = compactionState;
+  }
+  const create = sessionCreateData(context, scopeKey);
+  if (compactionState !== undefined) {
+    create.compactionState = compactionState;
+  }
   return delegates.sessions.upsert({
     where: { scopeKey },
-    update: {
-      sessionId: context.sessionId,
-      userId: context.userId ?? null,
-      metadata: metadata(context),
-      ...(compactionState === undefined ? {} : { compactionState }),
-    },
-    create: {
-      ...sessionCreateData(context, scopeKey),
-      ...(compactionState === undefined ? {} : { compactionState }),
-    },
+    update,
+    create,
     select: { id: true },
   });
 }
@@ -382,7 +397,13 @@ async function upsertSession(
 function sessionCreateData(
   context: MemoryScope,
   scopeKey: string,
-): { scopeKey: string; sessionId: string; userId?: string; metadata: JsonObject } {
+): {
+  scopeKey: string;
+  sessionId: string;
+  userId?: string;
+  metadata: JsonObject;
+  compactionState?: StoredCompactionState;
+} {
   const data: { scopeKey: string; sessionId: string; userId?: string; metadata: JsonObject } = {
     scopeKey,
     sessionId: context.sessionId,

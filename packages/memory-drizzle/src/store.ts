@@ -14,6 +14,7 @@ import type {
 } from "@anvia/core/memory";
 import { createMemoryScopeKey, isMemoryCompactionMessage } from "@anvia/core/memory";
 import { and, asc, desc, eq, gte, sql } from "drizzle-orm";
+import type { PgUpdateSetSource } from "drizzle-orm/pg-core";
 import { parseMemoryMessage, serializeUnknownError } from "./message.js";
 import { drizzleMemorySchema } from "./schema.js";
 import type {
@@ -430,24 +431,30 @@ export class DrizzleMemoryStore implements MemoryStore {
     compactionState?: StoredCompactionState,
   ): Promise<SessionRow> {
     const { agentMemorySessions: sessions } = this.schema;
+    const values: typeof sessions.$inferInsert = {
+      scopeKey,
+      sessionId: context.sessionId,
+      userId: context.userId ?? null,
+      metadata: metadata(context),
+    };
+    if (compactionState !== undefined) {
+      values.compactionState = compactionState;
+    }
+    const set: PgUpdateSetSource<typeof sessions> = {
+      sessionId: context.sessionId,
+      userId: context.userId ?? null,
+      metadata: metadata(context),
+    };
+    if (compactionState !== undefined) {
+      set.compactionState = compactionState;
+    }
+    set.updatedAt = sql`now()`;
     const rows = (await db
       .insert(sessions)
-      .values({
-        scopeKey,
-        sessionId: context.sessionId,
-        userId: context.userId ?? null,
-        metadata: metadata(context),
-        ...(compactionState === undefined ? {} : { compactionState }),
-      })
+      .values(values)
       .onConflictDoUpdate({
         target: sessions.scopeKey,
-        set: {
-          sessionId: context.sessionId,
-          userId: context.userId ?? null,
-          metadata: metadata(context),
-          ...(compactionState === undefined ? {} : { compactionState }),
-          updatedAt: sql`now()`,
-        },
+        set,
       })
       .returning({ id: sessions.id })) as SessionRow[];
 

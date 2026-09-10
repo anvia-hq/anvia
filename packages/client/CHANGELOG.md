@@ -1,5 +1,13 @@
 # @anvia/client
 
+## 1.2.0
+
+### Minor Changes
+
+- 13e7346: Export the `isJsonValue` JSON-safety guard from the package entrypoint so server
+  and application stream serializers can validate payloads with the same rules the
+  client protocol uses.
+
 ## 1.1.3
 
 ### Patch Changes

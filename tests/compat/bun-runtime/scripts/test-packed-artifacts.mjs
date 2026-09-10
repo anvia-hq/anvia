@@ -250,6 +250,26 @@ assert.equal(packedConversation.sessionId, "packed-memory-thread");
 assert.equal(packedConversation.messageCount, 2);
 await packedMemoryClient.close();
 await rm(packedMemoryRoot, { recursive: true, force: true });
+
+const packedInjectedRoot = await mkdtemp(join(tmpdir(), "anvia-bun-packed-memory-injected-"));
+const { Database: PackedBunDatabase } = require("bun:sqlite");
+const packedInjectedClient = new SqliteMemoryClient({
+  database: new PackedBunDatabase(join(packedInjectedRoot, "injected.sqlite")),
+});
+const packedInjectedStore = packedInjectedClient.memoryStore();
+await packedInjectedStore.ensure();
+const packedInjectedScope = { sessionId: "packed-injected-thread" };
+await packedInjectedStore.append({
+  scope: packedInjectedScope,
+  runId: "packed-run",
+  turn: 0,
+  messages: [{ role: "user", content: [{ type: "text", text: "injected works" }] }],
+});
+const packedInjectedLoaded = await packedInjectedStore.load({ scope: packedInjectedScope });
+assert.equal(packedInjectedLoaded.length, 1);
+assert.equal(packedInjectedLoaded[0].role, "user");
+await packedInjectedClient.close();
+await rm(packedInjectedRoot, { recursive: true, force: true });
 console.log("Packed memory-sqlite round-trips under Bun.");
 
 let releasePackedProducer;
@@ -439,6 +459,10 @@ const store = createMemoryResumableStreamStore();
 const memoryClientCtor: typeof SqliteMemoryClient = SqliteMemoryClient;
 const typedMemoryClient = new SqliteMemoryClient({ path: ":memory:" });
 const typedMemoryStore = typedMemoryClient.memoryStore();
+// Type-only injection proof: a real bun:sqlite Database must be assignable to
+// the structural driver surface without any consumer-side cast.
+declare const typedBunDatabase: import("bun:sqlite").Database;
+const typedInjectedClient = new SqliteMemoryClient({ database: typedBunDatabase });
 
 console.log(
   agentCtor.name.length,
@@ -458,6 +482,7 @@ console.log(
   stream !== undefined,
   store !== undefined,
   typedMemoryStore !== undefined,
+  typedInjectedClient !== undefined,
 );
 `;
 }

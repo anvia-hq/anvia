@@ -3,7 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "bun:test";
 import type { MemoryCompactionMessage, Message } from "@anvia/core";
-import { createSqliteMemorySchemaSql, SqliteMemoryClient } from "@anvia/memory-sqlite";
+import {
+  createSqliteMemorySchemaSql,
+  type SqliteMemoryDatabaseLike,
+  SqliteMemoryClient,
+} from "@anvia/memory-sqlite";
 
 const tempDirectories: string[] = [];
 
@@ -26,6 +30,37 @@ describe("@anvia/memory-sqlite under Bun", () => {
     await expect(store.validate()).resolves.toBeUndefined();
     const database = await client.nativeClient();
     expect(database.prepare("PRAGMA foreign_keys").get()).toMatchObject({ foreign_keys: 1 });
+    await client.close();
+  });
+
+  it("accepts an injected bun:sqlite Database without casts", async () => {
+    const { Database: BunDatabase } = (await import("bun:sqlite")) as {
+      Database: new (path: string) => SqliteMemoryDatabaseLike;
+    };
+    const root = await mkdtemp(join(tmpdir(), "anvia-bun-memory-sqlite-"));
+    tempDirectories.push(root);
+    const path = join(root, "injected.sqlite");
+    const context = { sessionId: "bun-injected", userId: "bun-user" };
+    const userMessage: Message = {
+      role: "user",
+      content: [{ type: "text", text: "remember this" }],
+    };
+
+    // Compile-time proof of the public injection contract: a real bun:sqlite
+    // Database must be assignable to the structural driver surface, so this
+    // annotation fails to typecheck if the bindings union regresses.
+    const injected: SqliteMemoryDatabaseLike = new BunDatabase(path);
+    const client = new SqliteMemoryClient({ database: injected });
+    const store = client.memoryStore();
+    await store.ensure();
+
+    await store.append({
+      scope: context,
+      runId: "run-1",
+      turn: 0,
+      messages: [userMessage],
+    });
+    await expect(store.load({ scope: context })).resolves.toEqual([userMessage]);
     await client.close();
   });
 

@@ -50,6 +50,10 @@ describe("@anvia/memory-sqlite under Bun", () => {
     // Database must be assignable to the structural driver surface, so this
     // annotation fails to typecheck if the bindings union regresses.
     const injected: SqliteMemoryDatabaseLike = new BunDatabase(path);
+    // Injected databases stay caller-owned, so foreign-key enforcement is the
+    // caller's responsibility (the same contract node:sqlite consumers follow
+    // through enableForeignKeyConstraints).
+    injected.exec("PRAGMA foreign_keys = ON");
     const client = new SqliteMemoryClient({ database: injected });
     const store = client.memoryStore();
     await store.ensure();

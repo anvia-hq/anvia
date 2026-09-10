@@ -253,9 +253,10 @@ await rm(packedMemoryRoot, { recursive: true, force: true });
 
 const packedInjectedRoot = await mkdtemp(join(tmpdir(), "anvia-bun-packed-memory-injected-"));
 const { Database: PackedBunDatabase } = require("bun:sqlite");
-const packedInjectedClient = new SqliteMemoryClient({
-  database: new PackedBunDatabase(join(packedInjectedRoot, "injected.sqlite")),
-});
+// Injected databases stay caller-owned, so the caller enables foreign keys.
+const packedInjectedDatabase = new PackedBunDatabase(join(packedInjectedRoot, "injected.sqlite"));
+packedInjectedDatabase.exec("PRAGMA foreign_keys = ON");
+const packedInjectedClient = new SqliteMemoryClient({ database: packedInjectedDatabase });
 const packedInjectedStore = packedInjectedClient.memoryStore();
 await packedInjectedStore.ensure();
 const packedInjectedScope = { sessionId: "packed-injected-thread" };

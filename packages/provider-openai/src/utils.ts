@@ -69,3 +69,5 @@ export function parseToolArguments(toolCallId: string, text: string, usage?: Usa
 export function schemaName(schema: JsonObject): string {
   return typeof schema.title === "string" ? schema.title : "response_schema";
 }
+
+export type Writable<T> = { -readonly [K in keyof T]: T[K] };

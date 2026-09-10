@@ -274,9 +274,15 @@ function ingestionReceipt<Schema extends GraphSchemaLike>(
   revision: string | undefined,
   vectorStatus: GraphIngestionReceipt["vectorWrite"]["status"],
 ): GraphIngestionReceipt {
-  return {
+  const head: {
+    documentIds: readonly string[];
+    revision?: string | undefined;
+  } = {
     documentIds: prepared.documents.map((document) => document.id),
-    ...(revision === undefined ? {} : { revision }),
+  };
+  if (revision !== undefined) head.revision = revision;
+  return {
+    ...head,
     entityKeys: prepared.entities.map((entity) => entity.id),
     relationshipKeys: prepared.relationships.map((relationship) => relationship.key),
     vectorDocumentIds: prepared.vectorDocuments.map((document) => document.id),

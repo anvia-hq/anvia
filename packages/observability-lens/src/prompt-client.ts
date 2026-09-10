@@ -1,6 +1,7 @@
 import type { JsonValue } from "@anvia/core/completion";
 import type { ResolvedLensConfig } from "./config.js";
 import { isRecord } from "./type-guards.js";
+import type { Writable } from "./type-utils.js";
 import type {
   LensChatMessage,
   LensPrompt,
@@ -353,11 +354,12 @@ function parsePrompt(
     ) {
       throw invalid();
     }
-    return Object.freeze({
+    const parsed: Writable<LensChatMessage> = {
       role: message.role,
       content: message.content,
-      ...(message.name === undefined ? {} : { name: message.name }),
-    });
+    };
+    if (message.name !== undefined) parsed.name = message.name;
+    return Object.freeze(parsed);
   });
   const parts = messages.map((message) => parseTemplate(message.content, variables));
   return Object.freeze({

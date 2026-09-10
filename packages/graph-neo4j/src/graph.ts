@@ -266,14 +266,13 @@ export class ManagedNeo4jKnowledgeGraph<
       entryRelationshipType: "ANVIA_MENTIONS",
     };
     if (this.resources.indexes.chunks.fulltext !== undefined) {
+      const chunkFulltextProperties = ["__anvia_text"];
+      if (this.namespace !== undefined) chunkFulltextProperties.push("__anvia_namespace");
       chunks = {
         ...chunks,
         fulltextIndex: Object.freeze({
           ...this.resources.indexes.chunks.fulltext,
-          properties: Object.freeze([
-            "__anvia_text",
-            ...(this.namespace === undefined ? [] : ["__anvia_namespace"]),
-          ]),
+          properties: Object.freeze(chunkFulltextProperties),
         }),
       };
     }
@@ -287,14 +286,15 @@ export class ManagedNeo4jKnowledgeGraph<
         this.namespace === undefined ? undefined : Object.freeze(["__anvia_namespace"]),
     };
     if (this.resources.indexes.entities.fulltext !== undefined) {
+      const entityFulltextProperties = [
+        ...(this.resources.indexes.entities.fulltext.properties ?? []),
+      ];
+      if (this.namespace !== undefined) entityFulltextProperties.push("__anvia_namespace");
       entities = {
         ...entities,
         fulltextIndex: Object.freeze({
           ...this.resources.indexes.entities.fulltext,
-          properties: Object.freeze([
-            ...(this.resources.indexes.entities.fulltext.properties ?? []),
-            ...(this.namespace === undefined ? [] : ["__anvia_namespace"]),
-          ]),
+          properties: Object.freeze(entityFulltextProperties),
         }),
       };
     }
@@ -332,19 +332,17 @@ export class ManagedNeo4jKnowledgeGraph<
       vectorIndex(indexes.entities.vector, labels.entity, this.namespace !== undefined),
     ];
     if (indexes.chunks.fulltext !== undefined) {
+      const chunkIndexProperties = ["__anvia_text"];
+      if (this.namespace !== undefined) chunkIndexProperties.push("__anvia_namespace");
       statements.push(
-        fulltextIndex(indexes.chunks.fulltext.name, labels.chunk, [
-          "__anvia_text",
-          ...(this.namespace === undefined ? [] : ["__anvia_namespace"]),
-        ]),
+        fulltextIndex(indexes.chunks.fulltext.name, labels.chunk, chunkIndexProperties),
       );
     }
     if (indexes.entities.fulltext !== undefined) {
+      const entityIndexProperties = [...(indexes.entities.fulltext.properties ?? [])];
+      if (this.namespace !== undefined) entityIndexProperties.push("__anvia_namespace");
       statements.push(
-        fulltextIndex(indexes.entities.fulltext.name, labels.entity, [
-          ...(indexes.entities.fulltext.properties ?? []),
-          ...(this.namespace === undefined ? [] : ["__anvia_namespace"]),
-        ]),
+        fulltextIndex(indexes.entities.fulltext.name, labels.entity, entityIndexProperties),
       );
     }
     for (const statement of statements)

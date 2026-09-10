@@ -1,9 +1,11 @@
 import {
   defineCompletionModelControls,
+  type CompletionModelSelectControl,
   type NoCompletionModelControls,
   type ReasoningEffortControls,
 } from "@anvia/core/completion";
 import type { OpenAICompletionModelId } from "./models";
+import type { Writable } from "../utils";
 
 export const OPENAI_REASONING_EFFORTS = [
   "none",
@@ -89,13 +91,14 @@ function reasoningControls<const Efforts extends readonly OpenAIReasoningEffort[
   efforts: Efforts,
   defaultValue?: Efforts[number],
 ): ReasoningEffortControls<Efforts[number]> {
+  const effortControl: Writable<CompletionModelSelectControl<Efforts[number]>> = {
+    type: "select",
+    label: "Reasoning effort",
+    description: "Controls how much reasoning the model applies before responding.",
+    options: efforts,
+  };
+  if (defaultValue !== undefined) effortControl.defaultValue = defaultValue;
   return defineCompletionModelControls({
-    reasoningEffort: {
-      type: "select",
-      label: "Reasoning effort",
-      description: "Controls how much reasoning the model applies before responding.",
-      options: efforts,
-      ...(defaultValue === undefined ? {} : { defaultValue }),
-    },
+    reasoningEffort: effortControl,
   });
 }

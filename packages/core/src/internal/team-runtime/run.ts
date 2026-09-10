@@ -17,6 +17,7 @@ import type {
   AgentTeamEvent,
   AgentTeamLimits,
   AgentTeamMember,
+  AgentTeamMemberSummary,
   AgentTeamMessage,
   AgentTeamOutcome,
   AgentTeamRunOptions,
@@ -26,7 +27,7 @@ import { parseMessages, Usage, type CompletionResponse } from "../../completion"
 import { throwIfAborted } from "../abort";
 import { AgentRun } from "../agent-runtime/agent-run";
 import { withInternalAgentRunOptions } from "../agent-runtime/run-options";
-import { omitUndefined } from "../record";
+import type { Writable } from "../type-utils";
 import { abortable, TeamChanges, TeamSlots } from "./coordination";
 import {
   agentMessageInput,
@@ -185,15 +186,15 @@ export class TeamRun<Output = unknown> {
     input: { content: string; replyTo?: string | undefined },
     notificationType: "message" | "outcome" = "message",
   ) {
-    const message: AgentTeamMessage = {
+    const message: Writable<AgentTeamMessage> = {
       id: globalThis.crypto.randomUUID(),
       teamRunId: this.id,
       fromInstanceId: sender.instanceId,
       toInstanceId: recipient.instanceId,
       content: input.content,
       createdAt: new Date().toISOString(),
-      ...omitUndefined({ replyTo: input.replyTo }),
     };
+    if (input.replyTo !== undefined) message.replyTo = input.replyTo;
     this.enqueue(recipient, agentMessageInput(message), notificationType);
     return { messageId: message.id, status: "queued" as const };
   }
@@ -201,14 +202,19 @@ export class TeamRun<Output = unknown> {
   visibleMembers(caller: TeamMember) {
     return [...this.instances.values()]
       .filter((member) => this.policy.canAccess(caller, member))
-      .map((member) => ({
-        instanceId: member.instanceId,
-        agentId: member.agent.id,
-        name: member.name,
-        status: member.status,
-        depth: member.depth,
-        ...omitUndefined({ parentInstanceId: member.parentInstanceId }),
-      }));
+      .map((member) => {
+        const summary: Writable<Omit<AgentTeamMemberSummary, "usage" | "outcome" | "error">> = {
+          instanceId: member.instanceId,
+          agentId: member.agent.id,
+          name: member.name,
+          status: member.status,
+          depth: member.depth,
+        };
+        if (member.parentInstanceId !== undefined) {
+          summary.parentInstanceId = member.parentInstanceId;
+        }
+        return summary;
+      });
   }
 
   cancelMember(caller: TeamMember, instanceId: string, reason = "Cancelled by parent.") {
@@ -260,7 +266,6 @@ export class TeamRun<Output = unknown> {
       definition: agent,
       depth: parent === undefined ? 0 : parent.depth + 1,
       name,
-      ...omitUndefined({ parentInstanceId }),
       status: "queued",
       history: [],
       inputs: [],
@@ -269,6 +274,7 @@ export class TeamRun<Output = unknown> {
       usage: Usage.empty(),
       notifications: [],
     };
+    if (parentInstanceId !== undefined) member.parentInstanceId = parentInstanceId;
     const resolved = getResolvedAgentOptions(member.agent);
     member.agent = createResolvedAgent({
       ...resolved,

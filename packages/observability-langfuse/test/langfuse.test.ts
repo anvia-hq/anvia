@@ -1637,6 +1637,35 @@ describe("langfuse", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it("rejects non-finite numeric score values", async () => {
+    const tracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk" });
+
+    await expect(
+      tracing.score({
+        traceId: "trace-1",
+        name: "quality",
+        value: Number.NaN,
+        dataType: "NUMERIC",
+      }),
+    ).rejects.toThrow(/finite/);
+    await expect(
+      tracing.score({
+        traceId: "trace-1",
+        name: "quality",
+        value: Number.POSITIVE_INFINITY,
+        dataType: "NUMERIC",
+      }),
+    ).rejects.toThrow(/finite/);
+    await expect(
+      tracing.score({
+        traceId: "trace-1",
+        name: "quality",
+        value: Number.NaN,
+      }),
+    ).rejects.toThrow(/finite/);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it("sends configId and accepts scoreConfigId as an alias", async () => {
     const tracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk" });
 

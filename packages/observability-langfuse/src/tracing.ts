@@ -520,6 +520,9 @@ function scoreMaxAttempts(retries: { maxAttempts: number } | undefined): number 
 }
 
 function assertScoreValue(value: number | string, dataType: LangfuseScoreArgs["dataType"]): void {
+  if (typeof value === "number" && !Number.isFinite(value)) {
+    throw new TypeError(`Langfuse score value must be finite`);
+  }
   if (dataType === "NUMERIC") {
     if (typeof value !== "number") {
       throw new TypeError(`Langfuse score dataType=NUMERIC requires a number value`);

@@ -2,18 +2,27 @@
 import {
   addRegistryItem,
   closestRegistryItemName,
+  initSkills,
   initializeProject,
   isRegistryItemName,
+  isSkillsTarget,
   registryItemNames,
+  skillNames,
   updateInstalledItems,
+  updateSkills,
+  type SkillsTarget,
+  type SkillsTargetResult,
+  type SkillsWriteResult,
 } from "./index";
 
 function main(args: string[]): void {
   const [command, ...commandArgs] = args;
   const cwd = optionValue(commandArgs, "--cwd");
+  const dir = optionValue(commandArgs, "--dir");
   const positional = commandArgs.filter(
     (value, index) =>
-      !value.startsWith("--") && (index === 0 || commandArgs[index - 1] !== "--cwd"),
+      !value.startsWith("--") &&
+      (index === 0 || (commandArgs[index - 1] !== "--cwd" && commandArgs[index - 1] !== "--dir")),
   );
 
   if (command === "init") {
@@ -97,10 +106,138 @@ function main(args: string[]): void {
     return;
   }
 
+  if (command === "skills") {
+    const action = positional[0];
+    if (positional.length > 1 || (action !== "init" && action !== "update" && action !== "list")) {
+      throw new Error("Choose a skills action: init, update, list.");
+    }
+    const skillsOptions: Parameters<typeof initSkills>[0] = {
+      force: commandArgs.includes("--force"),
+    };
+    if (cwd !== undefined) skillsOptions.cwd = cwd;
+    if (dir !== undefined) skillsOptions.dir = dir;
+    const targets = parseSkillsTargets(commandArgs);
+    if (targets.length > 0) skillsOptions.targets = targets;
+    if (action === "list") {
+      const names = skillNames();
+      for (const name of names) console.log(`skills/${name}`);
+      console.log(
+        `${names.length} skills available. Run \`anvia skills init\` to copy them into your project.`,
+      );
+      return;
+    }
+    if (action === "init") {
+      const result = initSkills(skillsOptions);
+      const changed = reportSkills(result, "init");
+      printAdapterTargets(result.targets, changed);
+      console.log("Anvia skills are ready. Wire them into an agent:");
+      console.log("");
+      console.log('  import { loadSkills, skill } from "@anvia/core/skills";');
+      console.log('  const skills = await loadSkills(skill.local("./skills"));');
+      return;
+    }
+    const result = updateSkills(skillsOptions);
+    const changed = reportSkills(result, "update");
+    printAdapterTargets(result.targets, changed);
+    return;
+  }
+
   console.log(`Usage:
   anvia init [next|vite] [--cwd <path>] [--force]
   anvia add <${registryItemNames.join("|")}> [--cwd <path>] [--overwrite]
-  anvia update [${registryItemNames.join("|")}] [--cwd <path>] [--overwrite]`);
+  anvia update [${registryItemNames.join("|")}] [--cwd <path>] [--overwrite]
+  anvia skills <init|update|list> [--claude] [--codex] [--cursor] [--agents] [--dir <path>] [--force] [--cwd <path>]`);
+}
+
+function parseSkillsTargets(args: string[]): SkillsTarget[] {
+  const targets: SkillsTarget[] = [];
+  for (const [flag, target] of [
+    ["--claude", "claude"],
+    ["--codex", "codex"],
+    ["--cursor", "cursor"],
+    ["--agents", "agents"],
+  ] as const) {
+    if (args.includes(flag) && isSkillsTarget(target)) targets.push(target);
+  }
+  return targets;
+}
+
+function printAdapterTargets(targets: SkillsTargetResult[], anviaChanged: number): void {
+  let changed = anviaChanged;
+  for (const target of targets) {
+    if (target.target === "anvia") continue;
+    const written = target.created.length + target.updated.length;
+    changed += written;
+    if (target.target === "agents" || target.target === "codex") {
+      if (target.created.length > 0) console.log("Created AGENTS.md (Anvia skills section).");
+      else if (target.updated.length > 0) console.log("Updated AGENTS.md (Anvia skills section).");
+      else console.log("AGENTS.md: up to date.");
+      continue;
+    }
+    const label = target.target === "claude" ? ".claude/skills" : ".cursor/rules";
+    if (written === 0) {
+      console.log(
+        target.skipped > 0
+          ? `${label}: skipped ${target.skipped} modified ${target.skipped === 1 ? "file" : "files"} (use --force to overwrite).`
+          : `${label}: up to date.`,
+      );
+      continue;
+    }
+    console.log(`${label}: synced ${written} ${written === 1 ? "file" : "files"}.`);
+  }
+  if (changed === 0) {
+    console.log("No skill files changed.");
+  }
+}
+
+function reportSkills(result: SkillsWriteResult, mode: "init" | "update"): number {
+  const createdPaths = new Set(result.created);
+  const updatedPaths = new Set(result.updated);
+  const isWritten = (path: string): boolean => createdPaths.has(path) || updatedPaths.has(path);
+  let changeCount = 0;
+  for (const skill of result.report) {
+    const createdCount = skill.files.filter((file) => createdPaths.has(file.path)).length;
+    const updatedCount = skill.files.filter((file) => updatedPaths.has(file.path)).length;
+    const changedCount = createdCount + updatedCount;
+    const skippedCount = skill.files.filter(
+      (file) => file.status === "modified" && !isWritten(file.path),
+    ).length;
+    const skipNote =
+      skippedCount > 0
+        ? `  skipped ${skippedCount} modified ${skippedCount === 1 ? "file" : "files"} (use --force to overwrite).`
+        : undefined;
+    changeCount += changedCount;
+    if (changedCount === 0) {
+      if (!skill.installed) {
+        console.log(`skills/${skill.name}: not installed. Run \`anvia skills init\` first.`);
+        continue;
+      }
+      if (skipNote !== undefined) {
+        console.log(`skills/${skill.name}: ${skipNote.trimStart()}`);
+        continue;
+      }
+      console.log(`skills/${skill.name}: up to date.`);
+      continue;
+    }
+    if (mode === "init") {
+      if (createdCount > 0) {
+        const updatedNote = updatedCount > 0 ? `, updated ${updatedCount}` : "";
+        console.log(
+          `Created skills/${skill.name} (${createdCount} ${createdCount === 1 ? "file" : "files"}${updatedNote}).`,
+        );
+      } else {
+        console.log(
+          `Updated skills/${skill.name} (${updatedCount} ${updatedCount === 1 ? "file" : "files"}).`,
+        );
+      }
+      if (skipNote !== undefined) console.log(skipNote);
+      continue;
+    }
+    console.log(
+      `skills/${skill.name}: updated ${changedCount} ${changedCount === 1 ? "file" : "files"}.`,
+    );
+  }
+  return changeCount;
 }
 
 function optionValue(args: string[], name: string): string | undefined {

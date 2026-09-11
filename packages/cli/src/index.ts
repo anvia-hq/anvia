@@ -1,5 +1,15 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
@@ -222,6 +232,308 @@ export function closestRegistryItemName(value: string): RegistryItemName | undef
   return bestDistance <= 2 ? best : undefined;
 }
 
+export type SkillFileStatus = "up-to-date" | "modified" | "missing";
+
+export type InstalledSkillFile = {
+  relativePath: string;
+  path: string;
+  status: SkillFileStatus;
+};
+
+export type InstalledSkillReport = {
+  name: string;
+  installed: boolean;
+  complete: boolean;
+  files: InstalledSkillFile[];
+};
+
+export const skillsTargetNames = ["anvia", "claude", "codex", "cursor", "agents"] as const;
+
+export type SkillsTarget = (typeof skillsTargetNames)[number];
+
+export function isSkillsTarget(value: string): value is SkillsTarget {
+  return (skillsTargetNames as readonly string[]).includes(value);
+}
+
+export type SkillsTargetResult = {
+  target: SkillsTarget;
+  created: string[];
+  updated: string[];
+  skipped: number;
+};
+
+export type SkillsWriteResult = {
+  report: InstalledSkillReport[];
+  created: string[];
+  updated: string[];
+  targets: SkillsTargetResult[];
+};
+
+export type SkillsOptions = {
+  cwd?: string;
+  dir?: string;
+  skillsDirectory?: string;
+  targets?: readonly SkillsTarget[];
+};
+
+export function skillNames(options: { skillsDirectory?: string } = {}): string[] {
+  const directory = options.skillsDirectory ?? bundledSkillsDirectory();
+  return readdirSync(directory, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
+}
+
+export function inspectInstalledSkills(options: SkillsOptions = {}): InstalledSkillReport[] {
+  const skillsDirectory = options.skillsDirectory ?? bundledSkillsDirectory();
+  const target = skillsTargetDirectory(options);
+  return skillNames({ skillsDirectory }).map((name) => {
+    const files = collectSkillFiles(join(skillsDirectory, name)).map((relativePath) => {
+      const path = join(target, name, relativePath);
+      let status: SkillFileStatus = "missing";
+      if (existsSync(path)) {
+        const installed = readFileSync(path, "utf8");
+        const source = readFileSync(join(skillsDirectory, name, relativePath), "utf8");
+        status = installed === source ? "up-to-date" : "modified";
+      }
+      return { relativePath, path, status };
+    });
+    return {
+      name,
+      installed: files.some((file) => file.status !== "missing"),
+      complete: files.every((file) => file.status !== "missing"),
+      files,
+    };
+  });
+}
+
+export function initSkills(options: SkillsOptions & { force?: boolean } = {}): SkillsWriteResult {
+  return writeSkills({ ...options, mode: "init" });
+}
+
+export function updateSkills(options: SkillsOptions & { force?: boolean } = {}): SkillsWriteResult {
+  return writeSkills({ ...options, mode: "update" });
+}
+
+function writeSkills(
+  options: SkillsOptions & { force?: boolean; mode: "init" | "update" },
+): SkillsWriteResult {
+  const skillsDirectory = options.skillsDirectory ?? bundledSkillsDirectory();
+  const cwd = options.cwd ?? process.cwd();
+  const force = options.force === true;
+  const targets = new Set<SkillsTarget>(options.targets ?? ["anvia"]);
+  // The ./skills copy is the canonical content every pointer-based adapter
+  // references, so it is always written; the target flags add adapters on top.
+  targets.add("anvia");
+  const results: SkillsTargetResult[] = [];
+
+  const anvia = syncSkillTree({
+    skillsDirectory,
+    targetRoot: skillsTargetDirectory(options),
+    force,
+    mode: options.mode,
+  });
+  results.push({ target: "anvia", ...anvia });
+
+  if (targets.has("claude")) {
+    const claude = syncSkillTree({
+      skillsDirectory,
+      targetRoot: join(cwd, ".claude", "skills"),
+      force,
+      mode: options.mode,
+    });
+    results.push({ target: "claude", ...claude });
+  }
+  if (targets.has("cursor")) {
+    const cursor = syncCursorRules({
+      skillsDirectory,
+      rulesDirectory: join(cwd, ".cursor", "rules"),
+      force,
+      mode: options.mode,
+    });
+    results.push({ target: "cursor", ...cursor });
+  }
+  if (targets.has("agents") || targets.has("codex")) {
+    const doc = syncAgentsDoc({
+      agentsPath: join(cwd, "AGENTS.md"),
+      skillsDirectory,
+    });
+    const target: SkillsTarget = targets.has("agents") ? "agents" : "codex";
+    results.push({ target, ...doc });
+  }
+
+  return {
+    report: inspectInstalledSkills(options),
+    created: anvia.created,
+    updated: anvia.updated,
+    targets: results,
+  };
+}
+
+function syncSkillTree(options: {
+  skillsDirectory: string;
+  targetRoot: string;
+  force: boolean;
+  mode: "init" | "update";
+}): { created: string[]; updated: string[]; skipped: number } {
+  const created: string[] = [];
+  const updated: string[] = [];
+  let skipped = 0;
+  for (const name of skillNames({ skillsDirectory: options.skillsDirectory })) {
+    const sourceRoot = join(options.skillsDirectory, name);
+    const targetRoot = join(options.targetRoot, name);
+    const sourceFiles = collectSkillFiles(sourceRoot);
+    if (
+      options.mode === "update" &&
+      !sourceFiles.some((file) => existsSync(join(targetRoot, file)))
+    ) {
+      continue;
+    }
+    for (const relativePath of sourceFiles) {
+      const sourcePath = join(sourceRoot, relativePath);
+      const targetPath = join(targetRoot, relativePath);
+      const content = readFileSync(sourcePath, "utf8");
+      if (!existsSync(targetPath)) {
+        if (options.mode === "update" && !options.force) continue;
+        mkdirSync(dirname(targetPath), { recursive: true });
+        writeFileSync(targetPath, content);
+        chmodSync(targetPath, statSync(sourcePath).mode & 0o777);
+        created.push(targetPath);
+        continue;
+      }
+      if (readFileSync(targetPath, "utf8") === content) continue;
+      if (!options.force) {
+        skipped += 1;
+        continue;
+      }
+      writeFileSync(targetPath, content);
+      chmodSync(targetPath, statSync(sourcePath).mode & 0o777);
+      updated.push(targetPath);
+    }
+  }
+  return { created, updated, skipped };
+}
+
+function syncCursorRules(options: {
+  skillsDirectory: string;
+  rulesDirectory: string;
+  force: boolean;
+  mode: "init" | "update";
+}): { created: string[]; updated: string[]; skipped: number } {
+  const created: string[] = [];
+  const updated: string[] = [];
+  let skipped = 0;
+  for (const name of skillNames({ skillsDirectory: options.skillsDirectory })) {
+    // Skill directory names already carry their `anvia-` prefix (except the
+    // release-notes demo), so the rule file is simply `<name>.mdc`.
+    const targetPath = join(options.rulesDirectory, `${name}.mdc`);
+    const content = cursorRuleContent(options.skillsDirectory, name);
+    if (!existsSync(targetPath)) {
+      if (options.mode === "update" && !options.force) continue;
+      mkdirSync(dirname(targetPath), { recursive: true });
+      writeFileSync(targetPath, content);
+      created.push(targetPath);
+      continue;
+    }
+    if (readFileSync(targetPath, "utf8") === content) continue;
+    if (!options.force) {
+      skipped += 1;
+      continue;
+    }
+    writeFileSync(targetPath, content);
+    updated.push(targetPath);
+  }
+  return { created, updated, skipped };
+}
+
+function syncAgentsDoc(options: { agentsPath: string; skillsDirectory: string }): {
+  created: string[];
+  updated: string[];
+  skipped: number;
+} {
+  const section = agentsSkillsSection(options.skillsDirectory);
+  if (!existsSync(options.agentsPath)) {
+    mkdirSync(dirname(options.agentsPath), { recursive: true });
+    writeFileSync(options.agentsPath, `# AGENTS.md\n\n${section}\n`);
+    return { created: [options.agentsPath], updated: [], skipped: 0 };
+  }
+  const existing = readFileSync(options.agentsPath, "utf8");
+  const startIndex = existing.indexOf(agentsSectionStart);
+  const endIndex = existing.indexOf(agentsSectionEnd);
+  let next: string;
+  if (startIndex === -1 || endIndex === -1) {
+    next = `${existing.replace(/\n+$/, "")}\n\n${section}\n`;
+  } else {
+    next =
+      existing.slice(0, startIndex) + section + existing.slice(endIndex + agentsSectionEnd.length);
+  }
+  if (next === existing) return { created: [], updated: [], skipped: 0 };
+  writeFileSync(options.agentsPath, next);
+  return { created: [], updated: [options.agentsPath], skipped: 0 };
+}
+
+const agentsSectionStart = "<!-- anvia-skills:start -->";
+const agentsSectionEnd = "<!-- anvia-skills:end -->";
+
+function agentsSkillsSection(skillsDirectory: string): string {
+  const lines = skillNames({ skillsDirectory }).map(
+    (name) => `- \`skills/${name}/SKILL.md\` — ${skillDescription(skillsDirectory, name)}`,
+  );
+  return [
+    agentsSectionStart,
+    "## Anvia Agent Skills",
+    "",
+    "This project keeps Anvia Agent Skills in `skills/`. When a task matches a skill, read",
+    "its `SKILL.md` first and follow it, including the `references/` files and `scripts/`",
+    "it points to. Run skill scripts with `sh` when they help verify the work.",
+    "",
+    ...lines,
+    agentsSectionEnd,
+  ].join("\n");
+}
+
+function cursorRuleContent(skillsDirectory: string, name: string): string {
+  const description = skillDescription(skillsDirectory, name).replace(/"/g, '\\"');
+  return [
+    "---",
+    `description: "${description}"`,
+    "alwaysApply: false",
+    "---",
+    "",
+    `When a task matches this skill, read \`skills/${name}/SKILL.md\` at the project root and`,
+    "follow it, including the `references/` files and `scripts/` it points to. Run skill",
+    "scripts with `sh` when they help verify the work.",
+    "",
+  ].join("\n");
+}
+
+function skillDescription(skillsDirectory: string, name: string): string {
+  const source = readFileSync(join(skillsDirectory, name, "SKILL.md"), "utf8");
+  return (/^description:\s*(.+)$/m.exec(source)?.[1] ?? "").trim();
+}
+
+function skillsTargetDirectory(options: { cwd?: string; dir?: string } = {}): string {
+  const cwd = options.cwd ?? process.cwd();
+  return join(cwd, options.dir ?? "skills");
+}
+
+function collectSkillFiles(root: string): string[] {
+  const files: string[] = [];
+  const visit = (directory: string, prefix: string): void => {
+    for (const entry of readdirSync(directory, { withFileTypes: true }).sort((left, right) =>
+      left.name.localeCompare(right.name),
+    )) {
+      if (entry.isDirectory()) {
+        visit(join(directory, entry.name), `${prefix}${entry.name}/`);
+      } else if (entry.isFile()) {
+        files.push(`${prefix}${entry.name}`);
+      }
+    }
+  };
+  visit(root, "");
+  return files;
+}
+
 function componentsDirectory(options: { cwd?: string } = {}): string {
   const cwd = options.cwd ?? process.cwd();
   const manifestPath = join(cwd, "components.json");
@@ -339,6 +651,10 @@ function runShadcn(args: string[]): void {
 
 function bundledRegistryDirectory(): string {
   return fileURLToPath(new URL("./registry/", import.meta.url));
+}
+
+function bundledSkillsDirectory(): string {
+  return fileURLToPath(new URL("./skills/", import.meta.url));
 }
 
 function currentPackageVersion(): string {

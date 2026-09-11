@@ -2,7 +2,7 @@ import { Agent } from "@anvia/core/agent";
 import { loadSkills, skill } from "@anvia/core/skills";
 import { OpenAIClient } from "@anvia/openai";
 
-const skills = await loadSkills(skill.local(new URL("../skills", import.meta.url).pathname));
+const skills = await loadSkills(skill.local(new URL("../../skills", import.meta.url).pathname));
 
 const client = new OpenAIClient({
   baseUrl: process.env.OPENAI_BASEURL,

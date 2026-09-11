@@ -163,8 +163,13 @@ Other maintenance:
 - `bin/check-upstream-deps.sh`: reports npm updates for external runtime
   dependencies declared by `packages/*`. It supports `--filter`, `--json`,
   `--all`/`--dev`, and `--fail-on-update`.
-- `cookbook/skills/release-notes/scripts/draft.sh`: demo skill script
+- `skills/release-notes/scripts/draft.sh`: demo skill script
   used by cookbook content.
+- `skills/`: Agent Skills (`anvia-agent`, `anvia-chat`, `anvia-channels`,
+  `anvia-mcp`, `anvia-pipeline`, `anvia-rag`, `anvia-studio`, `anvia-evals`,
+  plus the `release-notes` demo). Each skill is `SKILL.md` +
+  `references/` + `scripts/`, loaded via `skill.local`. The `@anvia/cli` build
+  bundles this folder; `pnpm dlx @anvia/cli skills init` scaffolds it into an app.
 
 ## Generated Files
 

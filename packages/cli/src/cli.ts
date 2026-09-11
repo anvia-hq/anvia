@@ -58,32 +58,42 @@ function main(args: string[]): void {
     const options: Parameters<typeof updateInstalledItems>[0] = { overwrite };
     if (cwd !== undefined) options.cwd = cwd;
     if (items.length > 0) options.items = items;
-    const { report } = updateInstalledItems(options);
+    const { report, updated } = updateInstalledItems(options);
+    const updatedPaths = new Set(updated);
+    if (overwrite === true) {
+      for (const item of report) {
+        if (!item.installed) {
+          console.log(`Anvia ${item.name}: not installed. Use \`anvia add ${item.name}\` first.`);
+          continue;
+        }
+        const changed = item.files.some(
+          (file) => file.status !== "up-to-date" && updatedPaths.has(file.path),
+        );
+        console.log(`Anvia ${item.name}: ${changed ? "updated" : "up to date"}.`);
+      }
+      console.log(
+        updated.length === 0
+          ? "All installed Anvia components are up to date."
+          : `Updated ${updated.length} ${updated.length === 1 ? "file" : "files"}.`,
+      );
+      return;
+    }
     let changeCount = 0;
     for (const item of report) {
-      if (!item.installed && overwrite !== true) {
+      if (!item.installed) {
         console.log(`Anvia ${item.name}: not installed.`);
         continue;
       }
       for (const file of item.files) {
-        const label = overwrite === true && file.status !== "up-to-date" ? "updated" : file.status;
-        if (label !== "up-to-date") changeCount += 1;
-        console.log(`Anvia ${item.name}: ${label} ${file.path}`);
+        if (file.status !== "up-to-date") changeCount += 1;
+        console.log(`Anvia ${item.name}: ${file.status} ${file.path}`);
       }
     }
-    if (overwrite === true) {
-      console.log(
-        changeCount === 0
-          ? "All installed Anvia components are up to date."
-          : `Updated ${changeCount} ${changeCount === 1 ? "file" : "files"}.`,
-      );
-    } else {
-      console.log(
-        changeCount === 0
-          ? "Everything is up to date."
-          : `Found ${changeCount} out-of-date ${changeCount === 1 ? "file" : "files"}. Re-run with --overwrite to apply.`,
-      );
-    }
+    console.log(
+      changeCount === 0
+        ? "Everything is up to date."
+        : `Found ${changeCount} out-of-date ${changeCount === 1 ? "file" : "files"}. Re-run with --overwrite to apply.`,
+    );
     return;
   }
 

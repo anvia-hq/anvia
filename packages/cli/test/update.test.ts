@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -12,7 +12,9 @@ import {
 
 const registryDirectory = join(import.meta.dirname, "../registry");
 
-function createProject(options: { components?: boolean } = {}): string {
+function createProject(
+  options: { components?: boolean; paths?: Record<string, string[]> } = {},
+): string {
   const cwd = mkdtempSync(join(tmpdir(), "anvia-update-"));
   writeFileSync(
     join(cwd, "components.json"),
@@ -21,7 +23,11 @@ function createProject(options: { components?: boolean } = {}): string {
   writeFileSync(
     join(cwd, "tsconfig.json"),
     `${JSON.stringify(
-      { compilerOptions: { paths: { "@/components/*": ["./src/components/*"] } } },
+      {
+        compilerOptions: {
+          paths: options.paths ?? { "@/components/*": ["./src/components/*"] },
+        },
+      },
       null,
       2,
     )}\n`,
@@ -71,6 +77,14 @@ describe("inspectInstalledItems", () => {
     rmSync(cwd, { recursive: true, force: true });
   });
 
+  it("resolves the standard shadcn alias shape via a wildcard prefix", () => {
+    const cwd = createProject({ paths: { "@/*": ["./src/*"] } });
+    const report = inspectInstalledItems({ cwd, registryDirectory });
+    expect(report.every((item) => !item.installed)).toBe(true);
+    expect(report[0]?.files[0]?.path).toBe(join(cwd, "src/components/anvia", "attachment.tsx"));
+    rmSync(cwd, { recursive: true, force: true });
+  });
+
   it("detects up-to-date, modified, and missing files", () => {
     const cwd = createProject();
     writeFileSync(installedPath(cwd, "attachment.tsx"), registryContent("attachment.tsx"));
@@ -110,6 +124,42 @@ describe("updateInstalledItems", () => {
     });
     expect(updated).toEqual([]);
     expect(readFileSync(installedPath(cwd, "markdown.tsx"), "utf8")).toBe("// old\n");
+    rmSync(cwd, { recursive: true, force: true });
+  });
+
+  it("does not install uninstalled items, even with overwrite", () => {
+    const cwd = createProject();
+    const { updated } = updateInstalledItems({ cwd, registryDirectory, overwrite: true });
+    expect(updated).toEqual([]);
+    rmSync(cwd, { recursive: true, force: true });
+  });
+
+  it("restores missing files of installed items only", () => {
+    const cwd = createProject();
+    // attachment.tsx makes composer installed (attachment + composer) but leaves markdown
+    // uninstalled, so update must restore composer.tsx while never creating markdown.tsx.
+    writeFileSync(installedPath(cwd, "attachment.tsx"), registryContent("attachment.tsx"));
+    const { updated } = updateInstalledItems({
+      cwd,
+      items: ["composer", "markdown"],
+      overwrite: true,
+      registryDirectory,
+    });
+    expect(updated).toEqual([installedPath(cwd, "composer.tsx")]);
+    expect(existsSync(installedPath(cwd, "markdown.tsx"))).toBe(false);
+    rmSync(cwd, { recursive: true, force: true });
+  });
+
+  it("writes shared files once across overlapping items", () => {
+    const cwd = createProject();
+    writeFileSync(installedPath(cwd, "attachment.tsx"), "// locally edited\n");
+    const { updated } = updateInstalledItems({
+      cwd,
+      items: ["composer", "message", "thread"],
+      overwrite: true,
+      registryDirectory,
+    });
+    expect(updated.filter((path) => path.endsWith("attachment.tsx"))).toHaveLength(1);
     rmSync(cwd, { recursive: true, force: true });
   });
 

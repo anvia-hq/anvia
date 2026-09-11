@@ -192,13 +192,18 @@ export function updateInstalledItems(
   const report = inspectInstalledItems(options);
   const updated: string[] = [];
   if (options.overwrite === true) {
+    const actionable = new Map<string, string>();
     for (const item of report) {
+      if (!item.installed) continue;
       for (const file of item.files) {
-        if (file.status === "up-to-date") continue;
-        mkdirSync(dirname(file.path), { recursive: true });
-        writeFileSync(file.path, registryFileContent(registry, file.filename));
-        updated.push(file.path);
+        if (file.status === "up-to-date" || actionable.has(file.path)) continue;
+        actionable.set(file.path, registryFileContent(registry, file.filename));
       }
+    }
+    for (const [path, content] of actionable) {
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(path, content);
+      updated.push(path);
     }
   }
   return { report, updated };
@@ -244,14 +249,30 @@ function resolveAliasDirectory(cwd: string, alias: string): string {
     }
     const paths = config.compilerOptions?.paths;
     if (paths === undefined) continue;
-    const key = Object.keys(paths).find((candidate) => candidate.replace(/\/\*$/, "") === alias);
-    const target = key === undefined ? undefined : paths[key]?.[0];
+    const target = resolveAliasTarget(alias, paths);
     if (target === undefined) continue;
-    return join(cwd, config.compilerOptions?.baseUrl ?? ".", target.replace(/\/\*$/, ""));
+    return join(cwd, config.compilerOptions?.baseUrl ?? ".", target);
   }
   throw new Error(
     `Cannot resolve the components alias "${alias}" from tsconfig.json or jsconfig.json in ${cwd}.`,
   );
+}
+
+function resolveAliasTarget(alias: string, paths: Record<string, string[]>): string | undefined {
+  for (const [key, targets] of Object.entries(paths)) {
+    const target = targets[0];
+    if (target === undefined) continue;
+    if (key.endsWith("/*")) {
+      const prefix = key.slice(0, -2);
+      if (alias === prefix) return target.replace(/\/\*$/, "");
+      if (alias.startsWith(`${prefix}/`)) {
+        return join(target.replace(/\/\*$/, ""), alias.slice(prefix.length + 1));
+      }
+    } else if (key === alias) {
+      return target;
+    }
+  }
+  return undefined;
 }
 
 function stripJsonComments(source: string): string {

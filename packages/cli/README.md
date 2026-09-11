@@ -26,5 +26,6 @@ pnpm dlx @anvia/cli update --overwrite
 
 Without `--overwrite`, `update` is a preview: it reports each file as `up-to-date`,
 `modified` (the installed copy differs from the registry), or `missing`. Pass `--overwrite`
-to write the registry content over out-of-date and missing files. Locally edited copies are
+to write the registry content over out-of-date and missing files of installed components.
+`update` never installs new items — use `add` for that. Locally edited copies are
 overwritten, so commit or stash your changes first.

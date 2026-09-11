@@ -20,7 +20,7 @@ export type ToolApprovalRunContext = {
 export type ToolApprovalContext<Args = unknown> = {
   toolName: string;
   args: Args;
-  /** The raw, unparsed argument string exactly as produced by the model. */
+  /** The serialized argument string passed to hooks and approval checks. */
   rawArgs: string;
   toolCallId: string;
   callId?: string;

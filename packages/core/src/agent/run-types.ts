@@ -299,8 +299,10 @@ type AgentChildStreamEventBase<Output = string, RawResponse = unknown> =
   | AgentErrorStreamEvent;
 
 /**
- * Events of a single agent run, each tagged with the turn that produced it.
- * The stream always ends with an {@link AgentOutcome} or an
+ * Events of a single agent run: turn-tagged progress events (deltas, tool
+ * calls and results, guardrail decisions), plus run-level events such as
+ * steering confirmations, memory compaction, and interaction responses. The
+ * stream always ends with an {@link AgentOutcome} or an
  * {@link AgentErrorStreamEvent}.
  */
 export type AgentChildStreamEvent<Output = string, RawResponse = unknown> =
@@ -318,7 +320,10 @@ type AgentToolStreamEvent = {
   event: AgentChildStreamEvent<unknown, unknown>;
 };
 
-/** An event from a child agent run surfaced inside a parent run's stream. */
+/**
+ * The complete event family for an agent run: the run's own child stream
+ * events, plus events from child agent runs invoked through agent tools.
+ */
 export type AgentStreamEvent<Output = string, RawResponse = unknown> =
   | AgentChildStreamEvent<Output, RawResponse>
   | AgentToolStreamEvent;

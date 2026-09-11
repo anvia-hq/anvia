@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   addRegistryItem,
   closestRegistryItemName,
@@ -131,10 +133,20 @@ function main(args: string[]): void {
       const changed = reportSkills(result, "init");
       printAdapterTargets(result.targets, changed);
       const canonicalDir = dir ?? "skills";
-      console.log("Anvia skills are ready. Wire them into an agent:");
-      console.log("");
-      console.log('  import { loadSkills, skill } from "@anvia/core/skills";');
-      console.log(`  const skills = await loadSkills(skill.local("./${canonicalDir}"));`);
+      console.log(
+        `Anvia skills are ready in ./${canonicalDir} — Anvia knowledge for your coding agent.`,
+      );
+      console.log(
+        `Your agent reads ./${canonicalDir}/<skill>/SKILL.md directly, or through the adapters above.`,
+      );
+      if (projectUsesAnviaCore(cwd ?? process.cwd())) {
+        console.log(
+          "Building an app that embeds an Anvia Agent? Load the same folder in code with:",
+        );
+        console.log("");
+        console.log('  import { loadSkills, skill } from "@anvia/core/skills";');
+        console.log(`  const skills = await loadSkills(skill.local("./${canonicalDir}"));`);
+      }
       return;
     }
     const result = updateSkills(skillsOptions);
@@ -161,6 +173,26 @@ function parseSkillsTargets(args: string[]): SkillsTarget[] {
     if (args.includes(flag) && isSkillsTarget(target)) targets.push(target);
   }
   return targets;
+}
+
+// The `loadSkills(skill.local(...))` snippet only applies to apps that embed an
+// Anvia Agent; plain coding agents read the SKILL.md files without any Anvia
+// dependency.
+function projectUsesAnviaCore(cwd: string): boolean {
+  try {
+    const manifest = JSON.parse(readFileSync(join(cwd, "package.json"), "utf8")) as {
+      dependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
+      peerDependencies?: Record<string, string>;
+    };
+    return (
+      manifest.dependencies?.["@anvia/core"] !== undefined ||
+      manifest.devDependencies?.["@anvia/core"] !== undefined ||
+      manifest.peerDependencies?.["@anvia/core"] !== undefined
+    );
+  } catch {
+    return false;
+  }
 }
 
 function printAdapterTargets(targets: SkillsTargetResult[], anviaChanged: number): void {

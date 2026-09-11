@@ -32,8 +32,9 @@ overwritten, so commit or stash your changes first.
 
 ## Agent Skills
 
-Scaffold the Anvia Agent Skills into an application so agents can load them with
-`loadSkills(skill.local("./skills"))`:
+Scaffold the Anvia Agent Skills — curated, API-verified knowledge for building with
+Anvia (agents, chat, RAG, MCP, pipelines, Studio, evals, channels) — so your coding
+agent writes correct Anvia code:
 
 ```sh
 pnpm dlx @anvia/cli skills list                          # show the available skills

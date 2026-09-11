@@ -3,7 +3,10 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export function bundledSkillsDirectory(): string {
-  return fileURLToPath(new URL("../skills/", import.meta.url));
+  // Resolved at runtime from the bundled dist/*.js output, where
+  // copy-skills.mjs places the assets in dist/skills/. Keep this relative to
+  // the bundle (./skills/), not to this source file's location.
+  return fileURLToPath(new URL("./skills/", import.meta.url));
 }
 
 export function skillNames(options: { skillsDirectory?: string } = {}): string[] {

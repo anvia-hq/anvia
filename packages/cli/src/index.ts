@@ -321,6 +321,9 @@ function writeSkills(
   const skillsDirectory = options.skillsDirectory ?? bundledSkillsDirectory();
   const cwd = options.cwd ?? process.cwd();
   const force = options.force === true;
+  // Generated pointers (AGENTS.md section, Cursor rules) and the printed loader
+  // snippet must reference the directory the canonical copy actually lands in.
+  const canonicalDir = options.dir ?? "skills";
   const targets = new Set<SkillsTarget>(options.targets ?? ["anvia"]);
   // The ./skills copy is the canonical content every pointer-based adapter
   // references, so it is always written; the target flags add adapters on top.
@@ -348,6 +351,7 @@ function writeSkills(
     const cursor = syncCursorRules({
       skillsDirectory,
       rulesDirectory: join(cwd, ".cursor", "rules"),
+      canonicalDir,
       force,
       mode: options.mode,
     });
@@ -357,6 +361,7 @@ function writeSkills(
     const doc = syncAgentsDoc({
       agentsPath: join(cwd, "AGENTS.md"),
       skillsDirectory,
+      canonicalDir,
     });
     const target: SkillsTarget = targets.has("agents") ? "agents" : "codex";
     results.push({ target, ...doc });
@@ -417,6 +422,7 @@ function syncSkillTree(options: {
 function syncCursorRules(options: {
   skillsDirectory: string;
   rulesDirectory: string;
+  canonicalDir: string;
   force: boolean;
   mode: "init" | "update";
 }): { created: string[]; updated: string[]; skipped: number } {
@@ -427,7 +433,7 @@ function syncCursorRules(options: {
     // Skill directory names already carry their `anvia-` prefix (except the
     // release-notes demo), so the rule file is simply `<name>.mdc`.
     const targetPath = join(options.rulesDirectory, `${name}.mdc`);
-    const content = cursorRuleContent(options.skillsDirectory, name);
+    const content = cursorRuleContent(options.skillsDirectory, name, options.canonicalDir);
     if (!existsSync(targetPath)) {
       if (options.mode === "update" && !options.force) continue;
       mkdirSync(dirname(targetPath), { recursive: true });
@@ -446,12 +452,16 @@ function syncCursorRules(options: {
   return { created, updated, skipped };
 }
 
-function syncAgentsDoc(options: { agentsPath: string; skillsDirectory: string }): {
+function syncAgentsDoc(options: {
+  agentsPath: string;
+  skillsDirectory: string;
+  canonicalDir: string;
+}): {
   created: string[];
   updated: string[];
   skipped: number;
 } {
-  const section = agentsSkillsSection(options.skillsDirectory);
+  const section = agentsSkillsSection(options.skillsDirectory, options.canonicalDir);
   if (!existsSync(options.agentsPath)) {
     mkdirSync(dirname(options.agentsPath), { recursive: true });
     writeFileSync(options.agentsPath, `# AGENTS.md\n\n${section}\n`);
@@ -475,15 +485,15 @@ function syncAgentsDoc(options: { agentsPath: string; skillsDirectory: string })
 const agentsSectionStart = "<!-- anvia-skills:start -->";
 const agentsSectionEnd = "<!-- anvia-skills:end -->";
 
-function agentsSkillsSection(skillsDirectory: string): string {
+function agentsSkillsSection(skillsDirectory: string, canonicalDir: string): string {
   const lines = skillNames({ skillsDirectory }).map(
-    (name) => `- \`skills/${name}/SKILL.md\` — ${skillDescription(skillsDirectory, name)}`,
+    (name) => `- \`${canonicalDir}/${name}/SKILL.md\` — ${skillDescription(skillsDirectory, name)}`,
   );
   return [
     agentsSectionStart,
     "## Anvia Agent Skills",
     "",
-    "This project keeps Anvia Agent Skills in `skills/`. When a task matches a skill, read",
+    `This project keeps Anvia Agent Skills in \`${canonicalDir}/\`. When a task matches a skill, read`,
     "its `SKILL.md` first and follow it, including the `references/` files and `scripts/`",
     "it points to. Run skill scripts with `sh` when they help verify the work.",
     "",
@@ -492,7 +502,7 @@ function agentsSkillsSection(skillsDirectory: string): string {
   ].join("\n");
 }
 
-function cursorRuleContent(skillsDirectory: string, name: string): string {
+function cursorRuleContent(skillsDirectory: string, name: string, canonicalDir: string): string {
   const description = skillDescription(skillsDirectory, name).replace(/"/g, '\\"');
   return [
     "---",
@@ -500,7 +510,7 @@ function cursorRuleContent(skillsDirectory: string, name: string): string {
     "alwaysApply: false",
     "---",
     "",
-    `When a task matches this skill, read \`skills/${name}/SKILL.md\` at the project root and`,
+    `When a task matches this skill, read \`${canonicalDir}/${name}/SKILL.md\` at the project root and`,
     "follow it, including the `references/` files and `scripts/` it points to. Run skill",
     "scripts with `sh` when they help verify the work.",
     "",

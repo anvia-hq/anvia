@@ -220,4 +220,40 @@ describe("adapter targets", () => {
     expect(existsSync(join(cwd, "AGENTS.md"))).toBe(false);
     rmSync(cwd, { recursive: true, force: true });
   });
+
+  it("points generated adapters and the loader at a custom --dir", () => {
+    const cwd = createProject();
+    const result = initSkills({
+      cwd,
+      dir: "agents",
+      targets: ["cursor", "agents"],
+      skillsDirectory,
+    });
+    expect(existsSync(join(cwd, "agents", "anvia-agent", "SKILL.md"))).toBe(true);
+    expect(existsSync(skillPath(cwd, "anvia-agent", "SKILL.md"))).toBe(false);
+    const doc = readFileSync(join(cwd, "AGENTS.md"), "utf8");
+    expect(doc).toContain("`agents/anvia-agent/SKILL.md`");
+    expect(doc).toContain("keeps Anvia Agent Skills in `agents/`");
+    expect(doc).not.toContain("`skills/anvia-agent");
+    const rule = readFileSync(join(cwd, ".cursor", "rules", "anvia-rag.mdc"), "utf8");
+    expect(rule).toContain("`agents/anvia-rag/SKILL.md`");
+    expect(rule).not.toContain("`skills/anvia-rag");
+    expect(result.targets.find((target) => target.target === "cursor")?.created.length).toBe(9);
+    // Re-running with the same directory stays up to date; switching directories
+    // refreshes the generated pointers instead of leaving stale links.
+    const again = initSkills({
+      cwd,
+      dir: "agents",
+      targets: ["cursor", "agents"],
+      skillsDirectory,
+    });
+    const cursorAgain = again.targets.find((target) => target.target === "cursor");
+    expect(cursorAgain?.created.length).toBe(0);
+    expect(cursorAgain?.updated.length).toBe(0);
+    expect(again.targets.find((target) => target.target === "agents")?.updated.length).toBe(0);
+    const switched = initSkills({ cwd, targets: ["cursor", "agents"], skillsDirectory });
+    expect(switched.targets.find((target) => target.target === "agents")?.updated.length).toBe(1);
+    expect(readFileSync(join(cwd, "AGENTS.md"), "utf8")).toContain("`skills/anvia-agent/SKILL.md`");
+    rmSync(cwd, { recursive: true, force: true });
+  });
 });

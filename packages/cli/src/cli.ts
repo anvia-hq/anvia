@@ -130,10 +130,11 @@ function main(args: string[]): void {
       const result = initSkills(skillsOptions);
       const changed = reportSkills(result, "init");
       printAdapterTargets(result.targets, changed);
+      const canonicalDir = dir ?? "skills";
       console.log("Anvia skills are ready. Wire them into an agent:");
       console.log("");
       console.log('  import { loadSkills, skill } from "@anvia/core/skills";');
-      console.log('  const skills = await loadSkills(skill.local("./skills"));');
+      console.log(`  const skills = await loadSkills(skill.local("./${canonicalDir}"));`);
       return;
     }
     const result = updateSkills(skillsOptions);

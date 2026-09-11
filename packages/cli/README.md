@@ -46,7 +46,8 @@ pnpm dlx @anvia/cli skills update --force
 
 `skills init` always writes the canonical skills into `./skills` (override with
 `--dir <path>`) — one folder per skill (`SKILL.md` + `references/` + `scripts/`), with
-the executable bit preserved on skill scripts — and prints the wiring snippet. The
+the executable bit preserved on skill scripts — and prints the wiring snippet. Generated
+adapters and the snippet always reference the effective directory. The
 target flags add adapters on top:
 
 - `--claude` copies the skills into `.claude/skills/`, where Claude Code loads them natively.

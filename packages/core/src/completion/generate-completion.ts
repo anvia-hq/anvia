@@ -10,7 +10,15 @@ import {
   retryOptionsForFailure,
   waitForRetry,
 } from "../retry";
-import { toProviderJsonSchema, type ZodSchema } from "../schema/zod-schema";
+import {
+  toProviderJsonSchemaFromStandardSchema,
+  tryToProviderJsonSchemaFromStandardSchema,
+} from "../schema/standard-json-schema";
+import {
+  formatStandardSchemaIssues,
+  type StandardSchemaV1,
+  validateStandardSchema,
+} from "../schema/standard-schema";
 import { isJsonValue } from "./json";
 import {
   assertCompletionResponseIntegrity,
@@ -95,7 +103,7 @@ export type GenerateCompletionOptions<Model extends CompletionModel = Completion
 export type GenerateStructuredCompletionOptions<
   Output,
   Model extends CompletionModel = CompletionModel,
-> = CompletionBaseOptions<Model> & { outputSchema: ZodSchema<Output> };
+> = CompletionBaseOptions<Model> & { outputSchema: StandardSchemaV1<unknown, Output> };
 
 export type StreamCompletionOptions<
   Model extends StreamingCompletionModel = StreamingCompletionModel,
@@ -119,7 +127,7 @@ export async function generateCompletion<Output, Model extends CompletionModel>(
   options: GenerateCompletionOptions<Model> | GenerateStructuredCompletionOptions<Output, Model>,
 ): Promise<CompletionResult<Output | string, RawResponseOf<Model>>> {
   throwIfAborted(options.abortSignal);
-  const request = requestFromOptions(options);
+  const request = await requestFromOptions(options);
   assertCompletionRequestSupported(options.model, request);
   const retries = resolveOptionalRetries(options.retries);
   const response = await sendCompletion(options.model, request, retries, options.abortSignal);
@@ -136,15 +144,24 @@ export function streamCompletion<Output, Model extends StreamingCompletionModel>
   options: StreamCompletionOptions<Model> | StreamStructuredCompletionOptions<Output, Model>,
 ): AsyncIterable<CompletionStreamEvent<Output | string, RawResponseOf<Model>>> {
   throwIfAborted(options.abortSignal);
-  const request = requestFromOptions(options);
   if (!isStreamingCompletionModel(options.model) || !options.model.capabilities.streaming) {
     throw new Error("This completion model does not support streaming");
   }
-  assertCompletionRequestSupported(options.model, request, { streaming: true });
+  const { request, pendingSchema } = requestFromOptionsSync(options);
+  // Schemas whose JSON Schema conversion is deferred still count as an output
+  // schema for capability validation.
+  assertCompletionRequestSupported(
+    options.model,
+    pendingSchema === undefined
+      ? request
+      : { ...request, outputSchema: request.outputSchema ?? {} },
+    { streaming: true },
+  );
   const retries = resolveOptionalRetries(options.retries);
   return streamCompletionWithRetries(
     options.model,
     request,
+    pendingSchema,
     retries,
     options.abortSignal,
     structuredOutputSchema(options),
@@ -195,11 +212,19 @@ function resolveOptionalRetries(
 
 async function* streamCompletionWithRetries<Output, Model extends StreamingCompletionModel>(
   model: Model,
-  request: CompletionRequest,
+  initialRequest: CompletionRequest,
+  pendingSchema: StandardSchemaV1<unknown, Output> | undefined,
   retries: ResolvedRetryOptions | undefined,
   abortSignal: AbortSignal | undefined,
-  outputSchema: ZodSchema<Output> | undefined,
+  outputSchema: StandardSchemaV1<unknown, Output> | undefined,
 ): AsyncIterable<CompletionStreamEvent<Output | string, RawResponseOf<Model>>> {
+  let request = initialRequest;
+  if (pendingSchema !== undefined) {
+    request = {
+      ...request,
+      outputSchema: await toProviderJsonSchemaFromStandardSchema(pendingSchema),
+    };
+  }
   let attempt = 1;
   let swallowedUsage = Usage.empty();
   const callOptions = modelCallOptions(abortSignal);
@@ -338,11 +363,36 @@ async function* streamCompletionWithRetries<Output, Model extends StreamingCompl
   }
 }
 
-function requestFromOptions<Model extends CompletionModel, Output>(
+async function requestFromOptions<Model extends CompletionModel, Output>(
   options: GenerateCompletionOptions<Model> | GenerateStructuredCompletionOptions<Output, Model>,
-): CompletionRequest {
+): Promise<CompletionRequest> {
+  const { request, pendingSchema } = requestFromOptionsSync(options);
+  if (pendingSchema === undefined) return request;
+  return {
+    ...request,
+    outputSchema: await toProviderJsonSchemaFromStandardSchema(pendingSchema),
+  };
+}
+
+function requestFromOptionsSync<Model extends CompletionModel, Output>(
+  options: GenerateCompletionOptions<Model> | GenerateStructuredCompletionOptions<Output, Model>,
+): {
+  request: CompletionRequest;
+  pendingSchema: StandardSchemaV1<unknown, Output> | undefined;
+} {
   const input = inputFromOptions(options);
-  return createCompletionRequest(input, {
+  const schema = structuredOutputSchema(options);
+  let outputSchema: JsonObject | undefined;
+  let pendingSchema: StandardSchemaV1<unknown, Output> | undefined;
+  if (schema !== undefined) {
+    const converted = tryToProviderJsonSchemaFromStandardSchema(schema);
+    if (converted.jsonSchema !== undefined) {
+      outputSchema = converted.jsonSchema;
+    } else {
+      pendingSchema = schema;
+    }
+  }
+  const request = createCompletionRequest(input, {
     instructions: options.instructions,
     documents: options.documents,
     tools: options.tools,
@@ -351,11 +401,9 @@ function requestFromOptions<Model extends CompletionModel, Output>(
     toolChoice: options.toolChoice,
     controls: options.controls,
     providerOptions: options.providerOptions,
-    outputSchema:
-      "outputSchema" in options && options.outputSchema !== undefined
-        ? toProviderJsonSchema(options.outputSchema)
-        : undefined,
+    outputSchema,
   });
+  return { request, pendingSchema };
 }
 
 function inputFromOptions(options: CompletionInput): string | readonly MessageType[] {
@@ -379,14 +427,14 @@ function inputFromOptions(options: CompletionInput): string | readonly MessageTy
 }
 
 function structuredOutputSchema<Output>(options: {
-  outputSchema?: ZodSchema<Output> | undefined;
-}): ZodSchema<Output> | undefined {
+  outputSchema?: StandardSchemaV1<unknown, Output> | undefined;
+}): StandardSchemaV1<unknown, Output> | undefined {
   return options.outputSchema;
 }
 
 function resultFromResponse<Output, RawResponse>(
   response: CompletionResponse<RawResponse>,
-  outputSchema: ZodSchema<Output> | undefined,
+  outputSchema: StandardSchemaV1<unknown, Output> | undefined,
 ): CompletionResult<Output | string, RawResponse> {
   const text = textFromAssistantContent(response.choice);
   const result: CompletionResult<Output | string, RawResponse> = {
@@ -411,7 +459,7 @@ function resultFromResponse<Output, RawResponse>(
 
 function parseCompletionOutput<Output, RawResponse>(
   text: string,
-  schema: ZodSchema<Output>,
+  schema: StandardSchemaV1<unknown, Output>,
   response: CompletionResponse<RawResponse>,
 ): Output {
   if (response.finishReason === "content-filter") {
@@ -448,8 +496,9 @@ function parseCompletionOutput<Output, RawResponse>(
       cause: error,
     });
   }
+  let validation: ReturnType<typeof validateStandardSchema<Output>>;
   try {
-    return schema.parse(json);
+    validation = validateStandardSchema(schema, json);
   } catch (error) {
     throw new CompletionStructuredOutputError({
       phase: "schema",
@@ -460,6 +509,17 @@ function parseCompletionOutput<Output, RawResponse>(
       cause: error,
     });
   }
+  if (!validation.success) {
+    throw new CompletionStructuredOutputError({
+      phase: "schema",
+      outputLength: text.length,
+      usage: response.usage,
+      finishReason: response.finishReason,
+      providerFinishReason: response.providerFinishReason,
+      cause: new Error(formatStandardSchemaIssues(validation.issues)),
+    });
+  }
+  return validation.value;
 }
 
 function modelCallOptions(abortSignal: AbortSignal | undefined): ModelCallOptions | undefined {

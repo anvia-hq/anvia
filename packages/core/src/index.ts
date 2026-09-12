@@ -208,7 +208,8 @@ export {
 } from "./memory";
 export type { ModelCallOptions } from "./model-call-options";
 export type { RetryContext, RetryOptions, RetrySetting } from "./retry";
-export type { ZodSchema } from "./schema";
+export { isStandardSchema } from "./schema";
+export type { StandardJSONSchemaV1, StandardSchemaV1, ZodSchema } from "./schema";
 export { loadSkills, SkillValidationError, skill } from "./skills";
 export type {
   GenerateSpeechOptions,

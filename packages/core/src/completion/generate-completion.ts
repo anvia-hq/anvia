@@ -103,7 +103,7 @@ export type GenerateCompletionOptions<Model extends CompletionModel = Completion
 export type GenerateStructuredCompletionOptions<
   Output,
   Model extends CompletionModel = CompletionModel,
-> = CompletionBaseOptions<Model> & { outputSchema: StandardSchemaV1<Output> };
+> = CompletionBaseOptions<Model> & { outputSchema: StandardSchemaV1<unknown, Output> };
 
 export type StreamCompletionOptions<
   Model extends StreamingCompletionModel = StreamingCompletionModel,
@@ -213,10 +213,10 @@ function resolveOptionalRetries(
 async function* streamCompletionWithRetries<Output, Model extends StreamingCompletionModel>(
   model: Model,
   initialRequest: CompletionRequest,
-  pendingSchema: StandardSchemaV1<Output> | undefined,
+  pendingSchema: StandardSchemaV1<unknown, Output> | undefined,
   retries: ResolvedRetryOptions | undefined,
   abortSignal: AbortSignal | undefined,
-  outputSchema: StandardSchemaV1<Output> | undefined,
+  outputSchema: StandardSchemaV1<unknown, Output> | undefined,
 ): AsyncIterable<CompletionStreamEvent<Output | string, RawResponseOf<Model>>> {
   let request = initialRequest;
   if (pendingSchema !== undefined) {
@@ -378,12 +378,12 @@ function requestFromOptionsSync<Model extends CompletionModel, Output>(
   options: GenerateCompletionOptions<Model> | GenerateStructuredCompletionOptions<Output, Model>,
 ): {
   request: CompletionRequest;
-  pendingSchema: StandardSchemaV1<Output> | undefined;
+  pendingSchema: StandardSchemaV1<unknown, Output> | undefined;
 } {
   const input = inputFromOptions(options);
   const schema = structuredOutputSchema(options);
   let outputSchema: JsonObject | undefined;
-  let pendingSchema: StandardSchemaV1<Output> | undefined;
+  let pendingSchema: StandardSchemaV1<unknown, Output> | undefined;
   if (schema !== undefined) {
     const converted = tryToProviderJsonSchemaFromStandardSchema(schema);
     if (converted.jsonSchema !== undefined) {
@@ -427,14 +427,14 @@ function inputFromOptions(options: CompletionInput): string | readonly MessageTy
 }
 
 function structuredOutputSchema<Output>(options: {
-  outputSchema?: StandardSchemaV1<Output> | undefined;
-}): StandardSchemaV1<Output> | undefined {
+  outputSchema?: StandardSchemaV1<unknown, Output> | undefined;
+}): StandardSchemaV1<unknown, Output> | undefined {
   return options.outputSchema;
 }
 
 function resultFromResponse<Output, RawResponse>(
   response: CompletionResponse<RawResponse>,
-  outputSchema: StandardSchemaV1<Output> | undefined,
+  outputSchema: StandardSchemaV1<unknown, Output> | undefined,
 ): CompletionResult<Output | string, RawResponse> {
   const text = textFromAssistantContent(response.choice);
   const result: CompletionResult<Output | string, RawResponse> = {
@@ -459,7 +459,7 @@ function resultFromResponse<Output, RawResponse>(
 
 function parseCompletionOutput<Output, RawResponse>(
   text: string,
-  schema: StandardSchemaV1<Output>,
+  schema: StandardSchemaV1<unknown, Output>,
   response: CompletionResponse<RawResponse>,
 ): Output {
   if (response.finishReason === "content-filter") {

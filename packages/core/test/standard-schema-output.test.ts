@@ -1,5 +1,6 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
 import * as v from "valibot";
+import { z } from "zod";
 import type { StandardJSONSchemaV1, StandardSchemaV1 } from "../src/schema";
 import {
   AssistantContent,
@@ -213,7 +214,7 @@ describe("Standard Schema structured output", () => {
     expect(model.requests).toHaveLength(0);
   });
 
-  it("uses the Standard JSON Schema interface when a schema provides it", async () => {
+  it("uses the Standard JSON Schema input representation when a schema provides it", async () => {
     const model = new QueueModel(['{"title":"Typed"}']);
     const targets: string[] = [];
     const schema = {
@@ -222,10 +223,12 @@ describe("Standard Schema structured output", () => {
         vendor: "acme-json",
         validate: (value: unknown) => ({ value: value as { title: string } }),
         jsonSchema: {
-          input: () => {
-            throw new Error("Input JSON Schema conversion is not used for completion output.");
+          output: () => {
+            throw new Error(
+              "Providers receive the validation input, so output conversion must not be used.",
+            );
           },
-          output: (options: { target: string }) => {
+          input: (options: { target: string }) => {
             targets.push(options.target);
             return {
               $schema: "https://json-schema.org/draft/2020-12/schema",
@@ -251,6 +254,44 @@ describe("Standard Schema structured output", () => {
     });
   });
 
+  it("sends the input schema to the provider for transformed Valibot schemas", async () => {
+    const model = new QueueModel(['{"count":"42"}']);
+
+    const result = await generateCompletion({
+      model,
+      prompt: "Extract a ticket.",
+      outputSchema: v.object({
+        count: v.pipe(v.string(), v.transform(Number), v.number()),
+      }),
+    });
+
+    expectTypeOf(result.output).toEqualTypeOf<{ count: number }>();
+    expect(result.output).toEqual({ count: 42 });
+    // The provider must be asked for the validation input (string), not the
+    // transformed output (number), or the response would fail validation.
+    expect(model.requests[0]?.outputSchema).toMatchObject({
+      type: "object",
+      properties: { count: { type: "string" } },
+    });
+  });
+
+  it("sends the input schema to the provider for transformed Zod schemas", async () => {
+    const model = new QueueModel(['{"length":"hello"}']);
+
+    const result = await generateCompletion({
+      model,
+      prompt: "Extract a ticket.",
+      outputSchema: z.object({ length: z.string().transform((value) => value.length) }),
+    });
+
+    expectTypeOf(result.output).toEqualTypeOf<{ length: number }>();
+    expect(result.output).toEqual({ length: 5 });
+    expect(model.requests[0]?.outputSchema).toMatchObject({
+      type: "object",
+      properties: { length: { type: "string" } },
+    });
+  });
+
   it("reports asynchronous schema validation as a schema failure", async () => {
     const model = new QueueModel(['{"title":"Typed"}']);
     const asyncSchema = {
@@ -259,10 +300,12 @@ describe("Standard Schema structured output", () => {
         vendor: "acme-async",
         validate: async (value: unknown) => ({ value: value as { title: string } }),
         jsonSchema: {
-          input: () => {
-            throw new Error("Input JSON Schema conversion is not used for completion output.");
+          output: () => {
+            throw new Error(
+              "Providers receive the validation input, so output conversion must not be used.",
+            );
           },
-          output: () => ({ type: "object", properties: { title: { type: "string" } } }),
+          input: () => ({ type: "object", properties: { title: { type: "string" } } }),
         },
       },
     } as unknown as StandardSchemaV1<{ title: string }>;

@@ -9,6 +9,14 @@ supported when they implement the Standard JSON Schema interface (`~standard.jso
 conversion support is resolved by `~standard.vendor`. Schemas without conversion support fail
 before any model call with a descriptive error.
 
+Transformed schemas whose validation input and output differ (for example `string -> number`) are
+supported. Providers receive the schema's input representation — the raw response is what
+`~standard.validate` accepts — while the validated, possibly transformed value becomes the
+completion output. Generic and Valibot conversion always describe the input side; Zod conversion
+prefers the output side when representable (keeping strict-object refinements such as
+`additionalProperties: false` for provider strict modes) and falls back to the input side for
+transformed schemas, which previously failed conversion.
+
 Output validation now runs through the schema's `~standard.validate`, so schemas that validate
 asynchronously are rejected with a `CompletionStructuredOutputError` in the `schema` phase instead
 of being limited to Zod.

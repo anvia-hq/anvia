@@ -320,6 +320,14 @@ const result = await generateCompletion({
 console.log(result.output.priority); // fully typed
 ```
 
+`outputSchema` accepts any [Standard Schema](https://standardschema.dev) — Zod, Valibot, ArkType, and
+other implementing libraries. Zod uses its built-in JSON Schema conversion. Valibot requires the
+optional converter `@valibot/to-json-schema` (install it alongside `valibot`); unsupported Valibot
+actions surface as conversion errors before any model call. Other libraries must either implement
+the Standard JSON Schema interface (`~standard.jsonSchema`) or convert to a supported library.
+Schema validation of the provider output is synchronous; asynchronous schemas are rejected with a
+`CompletionStructuredOutputError` in the `schema` phase.
+
 `CompletionResult` consistently contains `output`, the original `text`, normalized `content`,
 `usage`, and `rawResponse`, plus optional message, context, source, provider-tool, and finish-reason
 metadata. First-party adapters normalize provider termination into `finishReason` (`stop`, `length`,

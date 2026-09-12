@@ -66,4 +66,48 @@ describe("StudioTraceObserver", () => {
       ]),
     );
   });
+
+  it("omits stack traces from persisted error payloads", async () => {
+    let savedTrace: StudioTrace | undefined;
+    const store: StudioTraceStore = {
+      listSessionTraces: () => [],
+      getTrace: () => undefined,
+      saveTrace(trace) {
+        savedTrace = trace;
+        return trace;
+      },
+    };
+    const observer = new StudioTraceObserver({ store });
+    const run = observer.startRun({
+      runId: "run_error",
+      prompt: Message.user("boom"),
+      history: [],
+      maxTurns: 1,
+      trace: { sessionId: "session_1" },
+    });
+    const toolArgs: AgentToolStartArgs = {
+      turn: 1,
+      toolCall: AssistantContent.toolCall("call_tool", "explode", { prompt: "boom" }),
+      toolName: "explode",
+      args: '{"prompt":"boom"}',
+      internalCallId: "internal_tool",
+      toolCallId: "call_tool",
+    };
+    const tool = await run.startTool?.(toolArgs);
+
+    await tool?.error?.({ ...toolArgs, error: new Error("tool boom") });
+    await run.error?.({
+      status: "failed",
+      error: new Error("run boom"),
+      usage: Usage.empty(),
+      messages: [Message.user("boom")],
+    });
+
+    expect(savedTrace?.error).toEqual({ name: "Error", message: "run boom" });
+    const toolErrorObservation = savedTrace?.observations.find(
+      (observation) => observation.kind === "tool" && observation.name === "explode",
+    );
+    expect(toolErrorObservation?.error).toEqual({ name: "Error", message: "tool boom" });
+    expect(JSON.stringify(savedTrace)).not.toContain('"stack"');
+  });
 });

@@ -17,11 +17,8 @@ import type {
   AgentToolStreamEventArgs,
   AgentToolSuspendedArgs,
 } from "@anvia/core/observability";
-import {
-  compactJsonObject,
-  serializeUnknown as serializeError,
-  toJsonValue,
-} from "../runtime/json";
+import { serializeError } from "../runtime/errors";
+import { compactJsonObject, toJsonValue } from "../runtime/json";
 import type {
   StudioTrace,
   StudioTraceObservation,

@@ -328,10 +328,12 @@ unsupported Valibot actions surface as conversion errors before any model call. 
 must either implement the Standard JSON Schema interface (`~standard.jsonSchema`) or convert to a
 supported library. Providers receive the schema's input representation — the raw response is what
 `~standard.validate` accepts — while the validated, possibly transformed value becomes
-`result.output`. For Zod, the output representation is preferred when representable because it
-carries strict-object refinements (`additionalProperties: false`) that provider strict modes such
-as OpenAI structured outputs require. Schema validation of the provider output is synchronous;
-asynchronous schemas are rejected with a `CompletionStructuredOutputError` in the `schema` phase.
+`result.output`. For Zod, the output representation is used only when it describes the same
+accepted values as the input side, so its strict-object refinements (`additionalProperties:
+false`, required by provider strict modes such as OpenAI structured outputs) are preserved;
+otherwise the input representation is sent. Schema validation of the provider output is
+synchronous; asynchronous schemas are rejected with a `CompletionStructuredOutputError` in the
+`schema` phase.
 
 `CompletionResult` consistently contains `output`, the original `text`, normalized `content`,
 `usage`, and `rawResponse`, plus optional message, context, source, provider-tool, and finish-reason

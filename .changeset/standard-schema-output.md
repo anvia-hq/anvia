@@ -13,9 +13,10 @@ Transformed schemas whose validation input and output differ (for example `strin
 supported. Providers receive the schema's input representation — the raw response is what
 `~standard.validate` accepts — while the validated, possibly transformed value becomes the
 completion output. Generic and Valibot conversion always describe the input side; Zod conversion
-prefers the output side when representable (keeping strict-object refinements such as
-`additionalProperties: false` for provider strict modes) and falls back to the input side for
-transformed schemas, which previously failed conversion.
+uses the output side only when it describes the same accepted values as the input side (keeping
+strict-object refinements such as `additionalProperties: false` for provider strict modes) and
+falls back to the input side otherwise, including transformed and piped schemas which previously
+failed conversion.
 
 Output validation now runs through the schema's `~standard.validate`, so schemas that validate
 asynchronously are rejected with a `CompletionStructuredOutputError` in the `schema` phase instead

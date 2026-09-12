@@ -1,5 +1,5 @@
 import type { z } from "zod";
-import type { JsonObject } from "../completion/index";
+import type { JsonObject, JsonValue } from "../completion/index";
 import type { StandardJSONSchemaV1, StandardSchemaV1 } from "./standard-schema";
 import { toProviderJsonSchema } from "./zod-schema";
 
@@ -48,14 +48,67 @@ export function tryToProviderJsonSchemaFromStandardSchema(
 }
 
 function toProviderZodJsonSchema(schema: z.ZodType): JsonObject {
+  let outputJsonSchema: JsonObject;
   try {
-    return toProviderJsonSchema(schema, { io: "output" });
+    outputJsonSchema = toProviderJsonSchema(schema, { io: "output" });
   } catch {
     // Transformed schemas are unrepresentable on the output side. Describe the
     // validation input instead so the provider emits values the schema
     // accepts, and the transformed output becomes the completion result.
     return toProviderJsonSchema(schema, { io: "input" });
   }
+  let inputJsonSchema: JsonObject;
+  try {
+    inputJsonSchema = toProviderJsonSchema(schema, { io: "input" });
+  } catch {
+    // The input side is not representable while the output side is; the
+    // output side remains the best available description.
+    return outputJsonSchema;
+  }
+  // The provider response is fed to `~standard.validate` as its input, so the
+  // output representation may only be used when it describes the same accepted
+  // values as the input side. Ignoring additionalProperties keeps zod's
+  // strict-object refinements (which provider strict modes such as OpenAI
+  // structured outputs require) while still detecting schemas whose input and
+  // output values genuinely differ, like `z.string().pipe(z.coerce.number())`.
+  return jsonSchemaMatchesInputShape(inputJsonSchema, outputJsonSchema)
+    ? outputJsonSchema
+    : inputJsonSchema;
+}
+
+/** Checks whether the output-side schema shape equals the input-side shape, ignoring strictness. */
+function jsonSchemaMatchesInputShape(input: JsonValue, output: JsonValue): boolean {
+  if (Array.isArray(input) || Array.isArray(output)) {
+    return (
+      Array.isArray(input) &&
+      Array.isArray(output) &&
+      input.length === output.length &&
+      input.every((item, index) => jsonSchemaMatchesInputShape(item, output[index]))
+    );
+  }
+  if (
+    typeof input === "object" &&
+    input !== null &&
+    typeof output === "object" &&
+    output !== null
+  ) {
+    const inputKeys = Object.keys(input).sort();
+    const outputKeys = Object.keys(output)
+      .filter((key) => key !== "additionalProperties")
+      .sort();
+    return (
+      inputKeys.length === outputKeys.length &&
+      inputKeys.every((key, index) => {
+        const outputKey = outputKeys[index];
+        if (outputKey === undefined || key !== outputKey) return false;
+        // Keys come from Object.keys, so the indexed values exist by construction.
+        const inputValue = (input as Record<string, JsonValue>)[key] as JsonValue;
+        const outputValue = (output as Record<string, JsonValue>)[outputKey] as JsonValue;
+        return jsonSchemaMatchesInputShape(inputValue, outputValue);
+      })
+    );
+  }
+  return input === output;
 }
 
 /**

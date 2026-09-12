@@ -292,6 +292,44 @@ describe("Standard Schema structured output", () => {
     });
   });
 
+  it("sends the input schema to the provider for representable Zod pipes", async () => {
+    const model = new QueueModel(['{"count":"42"}']);
+
+    const result = await generateCompletion({
+      model,
+      prompt: "Extract a ticket.",
+      outputSchema: z.object({ count: z.string().pipe(z.coerce.number()) }),
+    });
+
+    expectTypeOf(result.output).toEqualTypeOf<{ count: number }>();
+    expect(result.output).toEqual({ count: 42 });
+    // The output side would describe a number while validation expects the
+    // string input, so the provider must receive the input representation.
+    expect(model.requests[0]?.outputSchema).toMatchObject({
+      type: "object",
+      properties: { count: { type: "string" } },
+    });
+  });
+
+  it("keeps strict-object refinements for Zod schemas without input differences", async () => {
+    const model = new QueueModel(['{"title":"Typed"}']);
+
+    await generateCompletion({
+      model,
+      prompt: "Extract a ticket.",
+      outputSchema: z.object({ title: z.string() }),
+    });
+
+    // Pure strictness refinements do not describe different accepted values,
+    // so the output representation (and its refinements) is preserved.
+    expect(model.requests[0]?.outputSchema).toEqual({
+      type: "object",
+      properties: { title: { type: "string" } },
+      required: ["title"],
+      additionalProperties: false,
+    });
+  });
+
   it("reports asynchronous schema validation as a schema failure", async () => {
     const model = new QueueModel(['{"title":"Typed"}']);
     const asyncSchema = {

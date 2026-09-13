@@ -331,9 +331,10 @@ supported library. Providers receive the schema's input representation — the r
 `result.output`. For Zod, the output representation is used only when it describes the same
 accepted values as the input side, so its strict-object refinements (`additionalProperties:
 false`, required by provider strict modes such as OpenAI structured outputs) are preserved;
-otherwise the input representation is sent. Schema validation of the provider output is
-synchronous; asynchronous schemas are rejected with a `CompletionStructuredOutputError` in the
-`schema` phase.
+otherwise the input representation is sent. Object nodes without an explicit
+`additionalProperties` are completed with `false` in every provider payload for the same reason.
+Schema validation of the provider output is synchronous; asynchronous schemas are rejected with a
+`CompletionStructuredOutputError` in the `schema` phase.
 
 `CompletionResult` consistently contains `output`, the original `text`, normalized `content`,
 `usage`, and `rawResponse`, plus optional message, context, source, provider-tool, and finish-reason

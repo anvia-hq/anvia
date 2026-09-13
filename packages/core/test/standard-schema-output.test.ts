@@ -251,6 +251,7 @@ describe("Standard Schema structured output", () => {
     expect(model.requests[0]?.outputSchema).toEqual({
       type: "object",
       properties: { title: { type: "string" } },
+      additionalProperties: false,
     });
   });
 
@@ -269,9 +270,11 @@ describe("Standard Schema structured output", () => {
     expect(result.output).toEqual({ count: 42 });
     // The provider must be asked for the validation input (string), not the
     // transformed output (number), or the response would fail validation.
-    expect(model.requests[0]?.outputSchema).toMatchObject({
+    expect(model.requests[0]?.outputSchema).toEqual({
       type: "object",
       properties: { count: { type: "string" } },
+      required: ["count"],
+      additionalProperties: false,
     });
   });
 
@@ -304,10 +307,13 @@ describe("Standard Schema structured output", () => {
     expectTypeOf(result.output).toEqualTypeOf<{ count: number }>();
     expect(result.output).toEqual({ count: 42 });
     // The output side would describe a number while validation expects the
-    // string input, so the provider must receive the input representation.
-    expect(model.requests[0]?.outputSchema).toMatchObject({
+    // string input, so the provider must receive the input representation,
+    // completed with strict-object refinements for provider strict modes.
+    expect(model.requests[0]?.outputSchema).toEqual({
       type: "object",
       properties: { count: { type: "string" } },
+      required: ["count"],
+      additionalProperties: false,
     });
   });
 

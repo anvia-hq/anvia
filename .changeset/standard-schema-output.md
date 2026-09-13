@@ -16,7 +16,9 @@ completion output. Generic and Valibot conversion always describe the input side
 uses the output side only when it describes the same accepted values as the input side (keeping
 strict-object refinements such as `additionalProperties: false` for provider strict modes) and
 falls back to the input side otherwise, including transformed and piped schemas which previously
-failed conversion.
+failed conversion. Object nodes without an explicit `additionalProperties` are completed with
+`false` in every provider payload so payloads remain eligible for provider strict modes such as
+OpenAI structured outputs.
 
 Output validation now runs through the schema's `~standard.validate`, so schemas that validate
 asynchronously are rejected with a `CompletionStructuredOutputError` in the `schema` phase instead

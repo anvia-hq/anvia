@@ -19,7 +19,9 @@ export type StandardSchemaJsonSchemaConversion =
  * Providers receive the schema's input representation: the raw provider
  * response is what `~standard.validate` receives as its validation input,
  * while the validated (possibly transformed) value becomes the completion
- * output.
+ * output. Object nodes are completed with `additionalProperties: false` so
+ * payloads remain eligible for provider strict modes such as OpenAI
+ * structured outputs.
  */
 export function tryToProviderJsonSchemaFromStandardSchema(
   schema: StandardSchemaV1,
@@ -30,7 +32,9 @@ export function tryToProviderJsonSchemaFromStandardSchema(
   // carries zod's strict-object refinements (additionalProperties: false)
   // that provider strict modes such as OpenAI structured outputs require.
   if (props.vendor === "zod") {
-    return { jsonSchema: toProviderZodJsonSchema(schema as z.ZodType) };
+    const jsonSchema = toProviderZodJsonSchema(schema as z.ZodType);
+    completeStrictObjectRefinements(jsonSchema);
+    return { jsonSchema };
   }
   // Generic support for any library implementing the Standard JSON Schema spec.
   const jsonSchema = (
@@ -170,6 +174,27 @@ async function valibotToProviderJsonSchema(schema: StandardSchemaV1): Promise<Js
 
 function toProviderJsonSchemaShape(jsonSchema: Record<string, unknown>): JsonObject {
   const { $schema: _schema, ...providerSchema } = jsonSchema;
+  completeStrictObjectRefinements(providerSchema);
   // JSON Schema documents are JSON values by construction.
   return providerSchema as JsonObject;
+}
+
+/**
+ * Adds `additionalProperties: false` to object nodes that do not declare it.
+ * Restricting the provider to declared properties is validation-safe because
+ * schema libraries strip or accept unknown input keys, and provider strict
+ * modes such as OpenAI structured outputs require the refinement. Explicit
+ * values (for example permissive objects) are left untouched.
+ */
+function completeStrictObjectRefinements(jsonSchema: unknown): void {
+  if (Array.isArray(jsonSchema)) {
+    for (const item of jsonSchema) completeStrictObjectRefinements(item);
+    return;
+  }
+  if (typeof jsonSchema !== "object" || jsonSchema === null) return;
+  const node = jsonSchema as Record<string, unknown>;
+  if (node.type === "object" && node.additionalProperties === undefined) {
+    node.additionalProperties = false;
+  }
+  for (const value of Object.values(node)) completeStrictObjectRefinements(value);
 }

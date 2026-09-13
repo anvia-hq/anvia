@@ -72,12 +72,64 @@ const logger = createConsoleLogger({
 });
 ```
 
+### Writing to a file
+
+Pass `filePath` to write newline-delimited JSON to a file:
+
+```ts
+import { createPinoLogger } from "@anvia/logger";
+
+const logger = createPinoLogger({
+  name: "support-app",
+  level: "info",
+  filePath: "logs/support-app.log",
+});
+
+logger.info("handled request", { requestId: "req_1" });
+await logger.flush();
+```
+
+`filePath` creates missing parent directories (`mkdir`, default `true`), appends to an existing
+file (`append`, default `true`), and writes each record synchronously (`sync`, default `true`) so
+records are not lost on an abrupt `process.exit()`. Buffered writes are faster; set `sync: false`
+and await `flush()` before shutting down:
+
+```ts
+const logger = createPinoLogger({ filePath: "logs/app.log", sync: false });
+
+// ... log records ...
+
+await logger.flush();
+```
+
+Every logger created by this package is a `FlushableLogger`, including child loggers: `flush()`
+writes any buffered records and `fsync`s file destinations. `createConsoleLogger` writes
+synchronously, so its `flush()` resolves immediately.
+
+Durability and failure modes depend on the destination:
+
+- `filePath` is the only destination where `flush()` is a full guarantee. A file that cannot be
+  opened throws from `createPinoLogger` when `sync` is `true` (the default), and rejects the
+  `flush()` promise when `sync` is `false`. With `append: false` the file is truncated when the
+  logger is created, not when the first record is written.
+- A caller-supplied `destination` is flushed through its own `flushSync` or `flush` method when it
+  has one, which covers Pino destinations. A plain writable such as `fs.createWriteStream` exposes
+  no flush API, so `flush()` resolves without a durability guarantee; prefer `filePath` when records
+  must survive an abrupt exit.
+- `pinoOptions.transport` delegates to Pino's own `flush`. Pino's transport worker is unref'd, so
+  call `flush()` during shutdown rather than in the same tick that the logger is created.
+
+`filePath`, `destination`, and `pinoOptions.transport` are mutually exclusive, and `sync`, `mkdir`,
+and `append` require `filePath`. Combining them throws, because Pino silently ignores a destination
+stream when a transport is configured.
+
 ## Exports
 
 - `createConsoleLogger`
 - `createPinoLogger`
 - `createLoggerObserver`
 - `Logger`
+- `FlushableLogger`
 - `LoggerOptions`
 - `LogContext`
 - `LogLevel`

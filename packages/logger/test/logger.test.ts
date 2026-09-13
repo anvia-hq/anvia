@@ -1,6 +1,10 @@
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { AgentStructuredOutputError, CompletionProviderOutputError, Usage } from "@anvia/core";
 import type { AgentRunObserver, AgentToolObserver } from "@anvia/core/observability";
-import { describe, expect, it } from "vitest";
+import pino from "pino";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createConsoleLogger, createLoggerObserver, createPinoLogger, type Logger } from "../src";
 
 describe("createConsoleLogger", () => {
@@ -45,9 +49,25 @@ describe("createConsoleLogger", () => {
       msg: "child log",
     });
   });
+
+  it("resolves flush immediately because output is not buffered", async () => {
+    const logger = createConsoleLogger({ writer: () => {} });
+
+    await expect(logger.flush()).resolves.toBeUndefined();
+  });
 });
 
 describe("createPinoLogger", () => {
+  let directory: string;
+
+  beforeEach(async () => {
+    directory = await mkdtemp(join(tmpdir(), "anvia-logger-"));
+  });
+
+  afterEach(async () => {
+    await rm(directory, { recursive: true, force: true });
+  });
+
   it("adapts Pino to the Anvia logger interface", () => {
     const lines: unknown[] = [];
     const logger = createPinoLogger({
@@ -69,6 +89,134 @@ describe("createPinoLogger", () => {
       msg: "hello",
       value: 1,
     });
+  });
+
+  it("writes records to a file and flushes them", async () => {
+    const filePath = join(directory, "app.log");
+    const logger = createPinoLogger({ name: "test-app", level: "info", filePath });
+
+    logger.info("file log", { value: 1 });
+    // Flushing through the child also asserts that `child()` stays flushable.
+    const child = logger.child({ requestId: "req_1" });
+    child.warn("child log");
+    await child.flush();
+
+    const lines = (await readFile(filePath, "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toMatchObject({ level: 30, name: "test-app", msg: "file log", value: 1 });
+    expect(lines[1]).toMatchObject({
+      level: 40,
+      name: "test-app",
+      requestId: "req_1",
+      msg: "child log",
+    });
+  });
+
+  it("writes to the file before flush because sync defaults to true", async () => {
+    const filePath = join(directory, "durable.log");
+    const logger = createPinoLogger({ filePath });
+
+    logger.info("durable log");
+
+    // No flush: the default `sync: true` must already have reached the file.
+    expect(JSON.parse((await readFile(filePath, "utf8")).trim())).toMatchObject({
+      msg: "durable log",
+    });
+  });
+
+  it("flushes a caller-supplied Pino destination", async () => {
+    const filePath = join(directory, "supplied.log");
+    const logger = createPinoLogger({
+      destination: pino.destination({ dest: filePath, sync: false }),
+    });
+
+    logger.info("supplied destination");
+    await logger.flush();
+
+    expect(JSON.parse((await readFile(filePath, "utf8")).trim())).toMatchObject({
+      msg: "supplied destination",
+    });
+  });
+
+  it("rejects flush when a buffered file destination cannot be opened", async () => {
+    const logger = createPinoLogger({
+      filePath: join(directory, "missing", "app.log"),
+      mkdir: false,
+      sync: false,
+    });
+
+    logger.info("never written");
+
+    await expect(logger.flush()).rejects.toThrow(/ENOENT/);
+  });
+
+  it("creates missing parent directories for a file destination", async () => {
+    const filePath = join(directory, "nested", "deeper", "app.log");
+    const logger = createPinoLogger({ filePath });
+
+    logger.info("nested log");
+    await logger.flush();
+
+    expect(JSON.parse((await readFile(filePath, "utf8")).trim())).toMatchObject({
+      msg: "nested log",
+    });
+  });
+
+  it("flushes a buffered destination when sync is false", async () => {
+    const filePath = join(directory, "buffered.log");
+    const logger = createPinoLogger({ filePath, sync: false });
+
+    logger.info("buffered log");
+    await logger.flush();
+
+    expect(JSON.parse((await readFile(filePath, "utf8")).trim())).toMatchObject({
+      msg: "buffered log",
+    });
+  });
+
+  it("appends by default and truncates when append is false", async () => {
+    const filePath = join(directory, "append.log");
+
+    const first = createPinoLogger({ filePath });
+    first.info("first");
+    await first.flush();
+
+    const second = createPinoLogger({ filePath });
+    second.info("second");
+    await second.flush();
+
+    expect((await readFile(filePath, "utf8")).trim().split("\n")).toHaveLength(2);
+
+    const third = createPinoLogger({ filePath, append: false });
+    third.info("third");
+    await third.flush();
+
+    const truncated = (await readFile(filePath, "utf8")).trim().split("\n");
+    expect(truncated).toHaveLength(1);
+    expect(JSON.parse(truncated[0] ?? "{}")).toMatchObject({ msg: "third" });
+  });
+
+  it("rejects conflicting or misplaced output options", () => {
+    expect(() =>
+      createPinoLogger({ filePath: "app.log", destination: { write: () => {} } }),
+    ).toThrow(/filePath or destination/);
+    expect(() =>
+      createPinoLogger({
+        filePath: "app.log",
+        pinoOptions: { transport: { target: "pino/file" } },
+      }),
+    ).toThrow(/filePath or pinoOptions.transport/);
+    expect(() =>
+      createPinoLogger({
+        destination: { write: () => {} },
+        pinoOptions: { transport: { target: "pino/file" } },
+      }),
+    ).toThrow(/destination or pinoOptions.transport/);
+    expect(() => createPinoLogger({ sync: false })).toThrow(/filePath/);
   });
 });
 

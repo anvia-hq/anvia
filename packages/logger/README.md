@@ -103,8 +103,9 @@ await logger.flush();
 ```
 
 Every logger created by this package is a `FlushableLogger`, including child loggers: `flush()`
-writes any buffered records and `fsync`s file destinations. `createConsoleLogger` writes
-synchronously, so its `flush()` resolves immediately.
+waits for writes that are already in flight, writes any remaining buffered records, and `fsync`s
+file destinations. `createConsoleLogger` writes synchronously, so its `flush()` resolves
+immediately.
 
 Durability and failure modes depend on the destination:
 

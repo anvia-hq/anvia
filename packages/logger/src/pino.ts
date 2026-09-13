@@ -86,10 +86,14 @@ type StreamListener = (error?: Error) => void;
 type FlushableStream = DestinationStream & {
   destroyed?: boolean | undefined;
   fd?: number | undefined;
+  /** SonicBoom holds this while an asynchronous write, or the file open, is in flight. */
+  _writing?: boolean | undefined;
   flush?: ((callback: StreamListener) => void) | undefined;
   flushSync?: (() => void) | undefined;
-  once?: ((event: "ready" | "error", listener: StreamListener) => unknown) | undefined;
-  removeListener?: ((event: "ready" | "error", listener: StreamListener) => unknown) | undefined;
+  once?: ((event: "drain" | "error" | "ready", listener: StreamListener) => unknown) | undefined;
+  removeListener?:
+    | ((event: "drain" | "error" | "ready", listener: StreamListener) => unknown)
+    | undefined;
 };
 
 class PinoLogger implements Logger {
@@ -168,9 +172,10 @@ function flushPinoInstance(logger: PinoLoggerInstance): Promise<void> {
  *
  * Pino's callback-style `flush` returns immediately when the destination has no
  * minimum buffered length, so a synchronous flush is preferred: it writes all
- * pending buffers. Pino's `flushSync` throws before a file descriptor is open,
- * so a destination that is still opening is awaited first instead of dropping
- * the flush.
+ * pending buffers and fsyncs the file. Pino's `flushSync` throws before a file
+ * descriptor is open and skips the buffer of an asynchronous write that is
+ * still in flight, so the destination is first awaited until it is ready and
+ * its writes have settled.
  */
 function flushStream(stream: FlushableStream): Promise<void> {
   if (stream.destroyed === true) {
@@ -179,9 +184,11 @@ function flushStream(stream: FlushableStream): Promise<void> {
 
   const flushSync = stream.flushSync;
   if (flushSync !== undefined) {
-    return waitUntilReady(stream).then(() => {
-      flushSync.call(stream);
-    });
+    return waitUntilReady(stream)
+      .then(() => waitUntilWritesSettle(stream))
+      .then(() => {
+        flushSync.call(stream);
+      });
   }
 
   const flush = stream.flush;
@@ -204,26 +211,54 @@ function flushStream(stream: FlushableStream): Promise<void> {
 }
 
 function waitUntilReady(stream: FlushableStream): Promise<void> {
-  const { fd, once, removeListener } = stream;
-  if (fd === undefined || fd >= 0 || once === undefined) {
+  const { fd } = stream;
+  if (fd === undefined || fd >= 0) {
+    return Promise.resolve();
+  }
+
+  return waitForEvent(stream, "ready", "Log destination failed before it was ready.");
+}
+
+/**
+ * Wait for writes that are already in flight.
+ *
+ * SonicBoom starts the next write only once the previous one settles, and emits
+ * `drain` when its queue empties, so a set `_writing` means a write issued
+ * before this call has not completed yet.
+ */
+function waitUntilWritesSettle(stream: FlushableStream): Promise<void> {
+  if (stream._writing !== true) {
+    return Promise.resolve();
+  }
+
+  return waitForEvent(stream, "drain", "Log destination failed while flushing.");
+}
+
+function waitForEvent(
+  stream: FlushableStream,
+  event: "drain" | "ready",
+  failureMessage: string,
+): Promise<void> {
+  const { once, removeListener } = stream;
+  if (once === undefined) {
     return Promise.resolve();
   }
 
   return new Promise<void>((resolve, reject) => {
     const detach = () => {
-      removeListener?.call(stream, "ready", onReady);
+      removeListener?.call(stream, event, onEvent);
       removeListener?.call(stream, "error", onError);
     };
-    const onReady: StreamListener = () => {
+    const onEvent: StreamListener = () => {
       detach();
       resolve();
     };
     const onError: StreamListener = (error) => {
       detach();
-      reject(error ?? new Error("Log destination failed before it was ready."));
+      reject(error ?? new Error(failureMessage));
     };
 
-    once.call(stream, "ready", onReady);
+    once.call(stream, event, onEvent);
     once.call(stream, "error", onError);
   });
 }

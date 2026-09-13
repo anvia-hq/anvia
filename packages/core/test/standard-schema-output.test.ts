@@ -255,6 +255,57 @@ describe("Standard Schema structured output", () => {
     });
   });
 
+  it("completes schema positions without rewriting literal values", async () => {
+    const model = new QueueModel(['{"title":"Typed"}']);
+    const schema = {
+      "~standard": {
+        version: 1,
+        vendor: "acme-json",
+        validate: (value: unknown) => ({ value: value as { title: string } }),
+        jsonSchema: {
+          output: () => {
+            throw new Error(
+              "Providers receive the validation input, so output conversion must not be used.",
+            );
+          },
+          input: () => ({
+            type: "object",
+            properties: {
+              title: { type: "string" },
+              config: { const: { type: "object", detail: "kept" } },
+              choices: { enum: [{ type: "object" }] },
+              nested: { type: "object" },
+              combined: { anyOf: [{ type: "object" }, { type: "null" }] },
+            },
+            required: ["title", "config", "choices", "nested", "combined"],
+            $defs: { Extra: { type: "object" } },
+          }),
+        },
+      },
+    } as unknown as StandardSchemaV1<{ title: string }> & StandardJSONSchemaV1<{ title: string }>;
+
+    await generateCompletion({ model, prompt: "extract", outputSchema: schema });
+
+    // Strict-object refinements are added at schema positions only; literal
+    // values under const and enum must stay untouched or const matching and
+    // enum membership would silently change.
+    expect(model.requests[0]?.outputSchema).toEqual({
+      type: "object",
+      properties: {
+        title: { type: "string" },
+        config: { const: { type: "object", detail: "kept" } },
+        choices: { enum: [{ type: "object" }] },
+        nested: { type: "object", additionalProperties: false },
+        combined: {
+          anyOf: [{ type: "object", additionalProperties: false }, { type: "null" }],
+        },
+      },
+      required: ["title", "config", "choices", "nested", "combined"],
+      $defs: { Extra: { type: "object", additionalProperties: false } },
+      additionalProperties: false,
+    });
+  });
+
   it("sends the input schema to the provider for transformed Valibot schemas", async () => {
     const model = new QueueModel(['{"count":"42"}']);
 

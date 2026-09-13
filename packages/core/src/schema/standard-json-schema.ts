@@ -180,21 +180,67 @@ function toProviderJsonSchemaShape(jsonSchema: Record<string, unknown>): JsonObj
 }
 
 /**
- * Adds `additionalProperties: false` to object nodes that do not declare it.
- * Restricting the provider to declared properties is validation-safe because
- * schema libraries strip or accept unknown input keys, and provider strict
- * modes such as OpenAI structured outputs require the refinement. Explicit
- * values (for example permissive objects) are left untouched.
+ * Adds `additionalProperties: false` to object schema nodes that do not declare
+ * it. Restricting the provider to declared properties is validation-safe
+ * because schema libraries strip or accept unknown input keys, and provider
+ * strict modes such as OpenAI structured outputs require the refinement.
+ * Explicit values (for example permissive objects) are left untouched.
+ *
+ * Recursion follows schema-bearing keywords only, so literal values under
+ * `const`, `enum`, `default`, `examples`, or extension keywords — which may
+ * legitimately be objects with a `type` field — are never rewritten.
  */
 function completeStrictObjectRefinements(jsonSchema: unknown): void {
-  if (Array.isArray(jsonSchema)) {
-    for (const item of jsonSchema) completeStrictObjectRefinements(item);
+  completeSchemaNode(jsonSchema);
+}
+
+const SCHEMA_POSITIONS: ReadonlySet<string> = new Set([
+  "additionalItems",
+  "additionalProperties",
+  "allOf",
+  "anyOf",
+  "contains",
+  "else",
+  "if",
+  "items",
+  "not",
+  "oneOf",
+  "prefixItems",
+  "propertyNames",
+  "then",
+  "unevaluatedItems",
+  "unevaluatedProperties",
+]);
+
+const SCHEMA_MAP_POSITIONS: ReadonlySet<string> = new Set([
+  "$defs",
+  "definitions",
+  "dependencies",
+  "patternProperties",
+  "properties",
+]);
+
+function completeSchemaNode(node: unknown): void {
+  if (Array.isArray(node)) {
+    // Lists of schemas, like prefixItems and draft-07 items.
+    for (const item of node) completeSchemaNode(item);
     return;
   }
-  if (typeof jsonSchema !== "object" || jsonSchema === null) return;
-  const node = jsonSchema as Record<string, unknown>;
-  if (node.type === "object" && node.additionalProperties === undefined) {
-    node.additionalProperties = false;
+  if (typeof node !== "object" || node === null) return;
+  const schema = node as Record<string, unknown>;
+  if (schema.type === "object" && schema.additionalProperties === undefined) {
+    schema.additionalProperties = false;
   }
-  for (const value of Object.values(node)) completeStrictObjectRefinements(value);
+  for (const [key, value] of Object.entries(schema)) {
+    if (SCHEMA_POSITIONS.has(key)) {
+      completeSchemaNode(value);
+    } else if (
+      SCHEMA_MAP_POSITIONS.has(key) &&
+      typeof value === "object" &&
+      value !== null &&
+      !Array.isArray(value)
+    ) {
+      for (const child of Object.values(value)) completeSchemaNode(child);
+    }
+  }
 }

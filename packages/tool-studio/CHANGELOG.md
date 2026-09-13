@@ -1,5 +1,14 @@
 # @anvia/studio
 
+## 1.2.2
+
+### Patch Changes
+
+- 21d8c70: Stop persisting stack traces in Studio trace error payloads. Trace observations and run errors were serialized with `serializeUnknown`, which keeps `error.stack`; they now use the stack-free `serializeError` helper, so persisted traces and trace API responses contain only the error name and message.
+  - @anvia/client@1.2.0
+  - @anvia/graph@1.1.3
+  - @anvia/react@1.1.3
+
 ## 1.2.1
 
 ### Patch Changes

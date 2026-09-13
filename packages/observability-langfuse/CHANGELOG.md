@@ -1,5 +1,11 @@
 # @anvia/langfuse
 
+## 1.1.4
+
+### Patch Changes
+
+- 7d20ebd: Reject non-finite numeric score values (`NaN`, `Infinity`) in `LangfuseClient.score()` instead of serializing them as `null` in the score request body, matching the existing OpenTelemetry score validation.
+
 ## 1.1.3
 
 ### Patch Changes

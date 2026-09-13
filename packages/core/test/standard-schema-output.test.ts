@@ -102,16 +102,14 @@ describe("Standard Schema structured output", () => {
     expectTypeOf(result.output).toEqualTypeOf<{ title: string; priority: "low" | "high" }>();
     expect(result.output).toEqual({ title: "Typed", priority: "high" });
     expect(model.requests).toHaveLength(1);
-    const providerSchema = model.requests[0]?.outputSchema;
-    expect(providerSchema).toBeDefined();
-    expect(providerSchema).not.toHaveProperty("$schema");
-    expect(providerSchema).toMatchObject({
+    expect(model.requests[0]?.outputSchema).toEqual({
       type: "object",
       properties: {
         title: { type: "string" },
         priority: { type: "string", enum: ["low", "high"] },
       },
       required: ["title", "priority"],
+      additionalProperties: false,
     });
   });
 
@@ -184,7 +182,15 @@ describe("Standard Schema structured output", () => {
       output: { title: "Typed", priority: "high" },
       text: typedJson,
     });
-    expect(model.requests[0]?.outputSchema).toBeDefined();
+    expect(model.requests[0]?.outputSchema).toEqual({
+      type: "object",
+      properties: {
+        title: { type: "string" },
+        priority: { type: "string", enum: ["low", "high"] },
+      },
+      required: ["title", "priority"],
+      additionalProperties: false,
+    });
   });
 
   it("enforces output schema capabilities before streaming with deferred conversions", () => {
@@ -356,9 +362,11 @@ describe("Standard Schema structured output", () => {
 
     expectTypeOf(result.output).toEqualTypeOf<{ length: number }>();
     expect(result.output).toEqual({ length: 5 });
-    expect(model.requests[0]?.outputSchema).toMatchObject({
+    expect(model.requests[0]?.outputSchema).toEqual({
       type: "object",
       properties: { length: { type: "string" } },
+      required: ["length"],
+      additionalProperties: false,
     });
   });
 

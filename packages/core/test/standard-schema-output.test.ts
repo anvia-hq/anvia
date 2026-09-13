@@ -276,8 +276,15 @@ describe("Standard Schema structured output", () => {
               choices: { enum: [{ type: "object" }] },
               nested: { type: "object" },
               combined: { anyOf: [{ type: "object" }, { type: "null" }] },
+              payload: {
+                contentEncoding: "base64",
+                contentSchema: { type: "object" },
+              },
             },
-            required: ["title", "config", "choices", "nested", "combined"],
+            required: ["title", "config", "choices", "nested", "combined", "payload"],
+            dependentSchemas: {
+              config: { properties: { detail: { type: "string" } } },
+            },
             $defs: { Extra: { type: "object" } },
           }),
         },
@@ -299,8 +306,17 @@ describe("Standard Schema structured output", () => {
         combined: {
           anyOf: [{ type: "object", additionalProperties: false }, { type: "null" }],
         },
+        payload: {
+          contentEncoding: "base64",
+          contentSchema: { type: "object", additionalProperties: false },
+        },
       },
-      required: ["title", "config", "choices", "nested", "combined"],
+      required: ["title", "config", "choices", "nested", "combined", "payload"],
+      dependentSchemas: {
+        config: {
+          properties: { detail: { type: "string" } },
+        },
+      },
       $defs: { Extra: { type: "object", additionalProperties: false } },
       additionalProperties: false,
     });

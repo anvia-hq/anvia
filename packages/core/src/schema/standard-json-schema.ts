@@ -194,12 +194,16 @@ function completeStrictObjectRefinements(jsonSchema: unknown): void {
   completeSchemaNode(jsonSchema);
 }
 
+// Schema-bearing keywords of the drafts the converters are requested to
+// produce (draft-07, draft-2020-12), so literal values under const, enum,
+// annotations, and extension keywords are never rewritten.
 const SCHEMA_POSITIONS: ReadonlySet<string> = new Set([
   "additionalItems",
   "additionalProperties",
   "allOf",
   "anyOf",
   "contains",
+  "contentSchema",
   "else",
   "if",
   "items",
@@ -216,6 +220,7 @@ const SCHEMA_MAP_POSITIONS: ReadonlySet<string> = new Set([
   "$defs",
   "definitions",
   "dependencies",
+  "dependentSchemas",
   "patternProperties",
   "properties",
 ]);

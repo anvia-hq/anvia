@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
+import { initPrisma8Memory } from "./cli-v8.js";
 import {
   appendEndMarker,
   appendSchemaBlock,
@@ -13,6 +14,9 @@ import {
 type CliOptions = {
   command?: string | undefined;
   schema?: string | undefined;
+  prismaVersion: "7" | "8";
+  contract?: string | undefined;
+  appendToContract: boolean;
   write: boolean;
   appendToSchema: boolean;
   force: boolean;
@@ -54,7 +58,11 @@ export async function runCli(
   }
 
   try {
-    initPrismaMemory(options, cwd, io);
+    if (options.prismaVersion === "8") {
+      initPrisma8Memory(options, cwd, io);
+    } else {
+      initPrismaMemory(options, cwd, io);
+    }
     return 0;
   } catch (error) {
     io.error(error instanceof Error ? error.message : String(error));
@@ -94,8 +102,10 @@ function initPrismaMemory(options: CliOptions, cwd: string, io: CliIo): void {
 
   io.log("");
   io.log("Next:");
-  io.log("  npx prisma validate");
-  io.log("  npx prisma migrate dev --name add_anvia_memory");
+  const config = prisma7ConfigName(cwd);
+  const configFlag = config === undefined ? "" : ` --config ${config}`;
+  io.log(`  npx prisma@7.10.0 validate${configFlag}`);
+  io.log(`  npx prisma@7.10.0 migrate dev --name add_anvia_memory${configFlag}`);
 }
 
 function writeGeneratedSchemaFile(
@@ -247,6 +257,7 @@ function resolveSchemaPath(cwd: string, explicitSchema: string | undefined): str
 
 function schemaPathFromPrismaConfig(cwd: string): string | undefined {
   for (const filename of [
+    ...prisma7ConfigNames,
     "prisma.config.ts",
     "prisma.config.mts",
     "prisma.config.js",
@@ -268,12 +279,25 @@ function schemaPathFromPrismaConfig(cwd: string): string | undefined {
   return undefined;
 }
 
+const prisma7ConfigNames = [
+  "prisma7.config.ts",
+  "prisma7.config.mts",
+  "prisma7.config.js",
+  "prisma7.config.mjs",
+];
+
+function prisma7ConfigName(cwd: string): string | undefined {
+  return prisma7ConfigNames.find((filename) => existsSync(resolve(cwd, filename)));
+}
+
 function normalizeSchemaPath(path: string): string {
   return path.endsWith(".prisma") ? path : join(path, "schema.prisma");
 }
 
 function parseArgs(argv: string[]): CliOptions {
   const options: CliOptions = {
+    prismaVersion: "7",
+    appendToContract: false,
     write: false,
     appendToSchema: false,
     force: false,
@@ -293,6 +317,19 @@ function parseArgs(argv: string[]): CliOptions {
       options.appendToSchema = true;
     } else if (arg === "--force") {
       options.force = true;
+    } else if (arg === "--append-to-contract") {
+      options.appendToContract = true;
+    } else if (arg === "--prisma-version") {
+      const value = args[index + 1];
+      if (value !== "7" && value !== "8") throw new Error("--prisma-version must be 7 or 8.");
+      options.prismaVersion = value;
+      index += 1;
+    } else if (arg === "--contract") {
+      const value = args[index + 1];
+      if (value === undefined || value.startsWith("-"))
+        throw new Error("--contract requires a path.");
+      options.contract = value;
+      index += 1;
     } else if (arg === "--schema") {
       const value = args[index + 1];
       if (value === undefined || value.startsWith("-")) {
@@ -305,6 +342,17 @@ function parseArgs(argv: string[]): CliOptions {
     }
   }
 
+  if (options.prismaVersion === "8" && (options.schema !== undefined || options.appendToSchema)) {
+    throw new Error(
+      "Prisma 8 uses --contract and --append-to-contract, not --schema or --append-to-schema.",
+    );
+  }
+  if (
+    options.prismaVersion === "7" &&
+    (options.contract !== undefined || options.appendToContract)
+  ) {
+    throw new Error("--contract and --append-to-contract require --prisma-version 8.");
+  }
   return options;
 }
 
@@ -312,6 +360,9 @@ function helpText(): string {
   return `Usage: anvia-memory-prisma init [options]
 
 Options:
+  --prisma-version <7|8> Prisma major version (default: 7)
+  --contract <path>     Prisma 8 PSL contract path (required for version 8)
+  --append-to-contract  Append to an existing Prisma 8 contract
   --schema <path>       Path to schema.prisma or a Prisma schema directory
   --write               Write planned schema changes
   --append-to-schema    Append to schema.prisma instead of creating prisma/models/anvia-memory.prisma

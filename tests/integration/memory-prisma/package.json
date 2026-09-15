@@ -1,0 +1,30 @@
+{
+  "name": "memory-prisma-integration",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "generate": "tsx scripts/generate.ts",
+    "pretypecheck": "pnpm generate",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "pretest": "pnpm generate",
+    "test:postgres": "pnpm generate && vitest run"
+  },
+  "dependencies": {
+    "@anvia/core": "workspace:*",
+    "@anvia/memory-prisma": "workspace:*"
+  },
+  "devDependencies": {
+    "@prisma/adapter-pg": "7.10.0",
+    "@prisma/client": "7.10.0",
+    "@prisma/orm-postgres": "8.0.0-rc.11",
+    "@types/pg": "8.20.4",
+    "pg": "8.22.0",
+    "prisma": "8.0.0-rc.15",
+    "prisma7": "npm:prisma@7.10.0",
+    "tsx": "4.23.12",
+    "typescript": "5.9.3",
+    "vitest": "4.1.11"
+  }
+}

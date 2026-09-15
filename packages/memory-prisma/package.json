@@ -25,15 +25,20 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./v8": {
+      "types": "./dist/v8.d.ts",
+      "import": "./dist/v8.js"
     }
   },
   "scripts": {
-    "build": "tsup src/index.ts src/cli.ts --format esm --dts --sourcemap --clean",
+    "build": "tsup src/index.ts src/v8.ts src/cli.ts --format esm --dts --sourcemap --clean",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@anvia/core": "workspace:*",
+    "@prisma/orm-postgres": "8.0.0-rc.11",
     "@types/node": "^24.9.1",
     "tsup": "^8.5.0",
     "typescript": "^5.9.3",
@@ -41,6 +46,15 @@
   },
   "peerDependencies": {
     "@anvia/core": "workspace:^",
-    "@prisma/client": ">=7.10.0 <8.0.0"
+    "@prisma/client": ">=7.10.0 <8.0.0",
+    "@prisma/orm-postgres": "8.0.0-rc.11"
+  },
+  "peerDependenciesMeta": {
+    "@prisma/client": {
+      "optional": true
+    },
+    "@prisma/orm-postgres": {
+      "optional": true
+    }
   }
 }

@@ -99,3 +99,38 @@ jobs:
 
       - name: Typecheck Bun compatibility workspace
         run: pnpm --filter bun-runtime-compat typecheck
+
+  prisma-memory:
+    name: Prisma 7 and 8 memory (PostgreSQL)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      ANVIA_PRISMA_TEST_URL: postgresql://postgres@127.0.0.1:5432/postgres
+      TZ: Asia/Jakarta
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.0.4
+          run_install: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @anvia/core build
+      - run: pnpm --filter @anvia/memory-prisma build
+      - run: pnpm --filter memory-prisma-integration test:postgres
+      - run: pnpm --filter memory-prisma-integration exec tsc --noEmit

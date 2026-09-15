@@ -4,8 +4,11 @@ packages:
   - "tests/*/*"
 allowBuilds:
   "@google/genai": true
+  "@prisma/engines": true
   esbuild: true
+  msgpackr-extract: true
   onnxruntime-node: true
+  prisma: true
   protobufjs: true
   sharp: true
   workerd: true

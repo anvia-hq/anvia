@@ -73,7 +73,7 @@ describe("memory-prisma init CLI", () => {
     expect(existsSync(join(cwd, "prisma/models/anvia-memory.prisma"))).toBe(false);
     expect(messages(events)).toContain("Would create prisma/models/anvia-memory.prisma");
     expect(messages(events)).toContain("model AgentMemorySession");
-    expect(messages(events)).toContain("npx prisma migrate dev --name add_anvia_memory");
+    expect(messages(events)).toContain("npx prisma@7.10.0 migrate dev --name add_anvia_memory");
   });
 
   it("writes a multi-file Prisma schema when --write is passed", async () => {
@@ -240,6 +240,21 @@ describe("memory-prisma init CLI", () => {
     expect(code).toBe(0);
     expect(existsSync(join(cwd, "db/models/anvia-memory.prisma"))).toBe(true);
   });
+
+  it("prefers Prisma 7 config when both major versions are installed", async () => {
+    const cwd = createPrismaProject();
+    writeFileSync(
+      join(cwd, "prisma7.config.ts"),
+      'export default { schema: "prisma/schema.prisma" };',
+    );
+    writeFileSync(
+      join(cwd, "prisma.config.ts"),
+      'export default { orm: { contract: "v8/contract.prisma" } };',
+    );
+    const events: Event[] = [];
+    expect(await runCli(["init"], cwd, io(events))).toBe(0);
+    expect(messages(events)).toContain("npx prisma@7.10.0 validate --config prisma7.config.ts");
+  });
 });
 
 function createPrismaProject(): string {
@@ -250,6 +265,83 @@ function createPrismaProject(): string {
   writeFileSync(join(prismaDir, "schema.prisma"), baseSchema());
   return cwd;
 }
+
+describe("Prisma 8 init", () => {
+  const args = ["init", "--prisma-version", "8", "--contract", "db/contract.prisma"];
+
+  it("prints a single compatible contract without touching Prisma 7", async () => {
+    const cwd = createPrismaProject();
+    const before = readFileSync(join(cwd, "prisma/schema.prisma"), "utf8");
+    const events: Event[] = [];
+    expect(await runCli(args, cwd, io(events))).toBe(0);
+    expect(existsSync(join(cwd, "db"))).toBe(false);
+    expect(readFileSync(join(cwd, "prisma/schema.prisma"), "utf8")).toBe(before);
+    expect(messages(events)).toContain('@@map("AgentMemorySession")');
+    expect(messages(events)).toContain("Jsonb");
+    expect(messages(events)).toContain("TimestampString(3)");
+    expect(messages(events)).toContain("prisma contract emit");
+  });
+
+  it("requires explicit append and force before replacing a generated block", async () => {
+    const cwd = createPrismaProject();
+    const path = join(cwd, "db/contract.prisma");
+    expect(await runCli([...args, "--write"], cwd, io([]))).toBe(0);
+    const original = readFileSync(path, "utf8");
+    const prefix = "model User {\n  id String @id\n}\n\n";
+    const suffix = "\n// keep this text exactly\n";
+    writeFileSync(path, prefix + original + suffix);
+    expect(await runCli([...args, "--write", "--force"], cwd, io([]))).toBe(1);
+    expect(await runCli([...args, "--write", "--append-to-contract"], cwd, io([]))).toBe(1);
+    expect(readFileSync(path, "utf8")).toBe(prefix + original + suffix);
+    writeFileSync(path, prefix + original.replace("cuid(2)", "cuid(1)") + suffix);
+    expect(await runCli([...args, "--write", "--append-to-contract", "--force"], cwd, io([]))).toBe(
+      0,
+    );
+    expect(readFileSync(path, "utf8")).toBe(prefix + original + suffix);
+  });
+
+  it("appends to user contracts only with the explicit flag", async () => {
+    const cwd = createPrismaProject();
+    mkdirSync(join(cwd, "db"));
+    const path = join(cwd, "db/contract.prisma");
+    const original = "model User {\n  id String @id\n}\n";
+    writeFileSync(path, original);
+    expect(await runCli([...args, "--write", "--force"], cwd, io([]))).toBe(1);
+    expect(readFileSync(path, "utf8")).toBe(original);
+    expect(await runCli([...args, "--write", "--append-to-contract"], cwd, io([]))).toBe(0);
+    expect(readFileSync(path, "utf8")).toContain(original);
+  });
+
+  it.each([
+    "model AgentMemorySession {\n id String @id\n}",
+    "// BEGIN ANVIA MEMORY PRISMA 8 MODELS\n",
+    "// END ANVIA MEMORY PRISMA 8 MODELS\n// BEGIN ANVIA MEMORY PRISMA 8 MODELS",
+    "// BEGIN ANVIA MEMORY PRISMA 8 MODELS\n// END ANVIA MEMORY PRISMA 8 MODELS\n// END ANVIA MEMORY PRISMA 8 MODELS",
+  ])("refuses conflicting models or malformed markers: %s", async (original) => {
+    const cwd = createPrismaProject();
+    mkdirSync(join(cwd, "db"));
+    const path = join(cwd, "db/contract.prisma");
+    writeFileSync(path, original);
+    expect(await runCli([...args, "--write", "--append-to-contract", "--force"], cwd, io([]))).toBe(
+      1,
+    );
+    expect(readFileSync(path, "utf8")).toBe(original);
+  });
+
+  it.each([
+    ["init", "--prisma-version", "9"],
+    ["init", "--prisma-version", "8"],
+    ["init", "--contract", "contract.prisma"],
+    [...args, "--schema", "schema.prisma"],
+    [...args, "--append-to-schema"],
+    [...args, "--append-to-contract"],
+    ["init", "--prisma-version", "8", "--contract", "contract.ts"],
+  ])("rejects incompatible or missing arguments: %j", async (...argv) => {
+    const cwd = createPrismaProject();
+    expect(await runCli([...argv, "--write"], cwd, io([]))).toBe(1);
+    expect(existsSync(join(cwd, "db"))).toBe(false);
+  });
+});
 
 function baseSchema(): string {
   return `generator client {

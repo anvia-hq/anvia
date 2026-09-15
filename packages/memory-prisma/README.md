@@ -226,8 +226,10 @@ to separate the CLIs and configs. Anvia's default `init` recognizes `prisma7.con
 3. Preserve the existing PostgreSQL types: text IDs, `Jsonb` fields, nullable
    `compactionState`, and `TimestampString(3)` for `createdAt` and `updatedAt`.
    Use `@default(cuid(2))` for new IDs and keep existing IDs unchanged. Retain
-   `@default(now())` on `createdAt`. Anvia explicitly writes UTC `updatedAt` values
-   on every session upsert. If your existing tables were customized, match their storage
+   `@default(now())` on `createdAt` for schema compatibility. Anvia explicitly supplies
+   UTC `createdAt` values for new sessions, messages, and errors, and UTC `updatedAt`
+   values on every session upsert, independently of PostgreSQL's session timezone.
+   Existing creation timestamps are preserved. If your tables were customized, match their storage
    mapping before use; the generated block targets the standard Anvia schema.
 4. Emit the reviewed contract. While Prisma 7 owns migrations, create the Prisma 8 client
    with `verifyMarker: false`; its marker has not been established by Prisma 8 migrations.

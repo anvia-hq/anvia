@@ -101,11 +101,10 @@ export function prisma8Delegates(options: PrismaMemoryStoreOptions): PrismaMemor
       sessions: {
         async upsert(input) {
           const args = input as UpsertArgs;
-          // timestamp(3) has no zone. Prisma 7 stores UTC in these columns.
-          const updatedAt = new Date().toISOString().slice(0, -1);
+          const updatedAt = utcNow();
           const row = await sessions.select("id").upsert({
             conflictOn: args.where,
-            create: { ...args.create, updatedAt },
+            create: { ...args.create, createdAt: updatedAt, updatedAt },
             update: { ...args.update, updatedAt },
           });
           if (typeof row.id !== "string")
@@ -136,7 +135,9 @@ export function prisma8Delegates(options: PrismaMemoryStoreOptions): PrismaMemor
           return { position: row.position as number };
         },
         async createMany(input) {
-          return { count: await messages.createAndCount((input as { data: Row[] }).data) };
+          const createdAt = utcNow();
+          const data = (input as { data: Row[] }).data.map((row) => ({ ...row, createdAt }));
+          return { count: await messages.createAndCount(data) };
         },
       },
       errors:
@@ -144,7 +145,7 @@ export function prisma8Delegates(options: PrismaMemoryStoreOptions): PrismaMemor
           ? undefined
           : {
               async create(input) {
-                return errors.create((input as { data: Row }).data);
+                return errors.create({ ...(input as { data: Row }).data, createdAt: utcNow() });
               },
             },
       // The shared store never opens nested transactions. All delegates rebound
@@ -248,6 +249,12 @@ function normalizeRow(row: Row): Row {
     delete result.messages;
   }
   return result;
+}
+
+function utcNow(): string {
+  // Existing Prisma 7 tables use timestamp(3) without a zone. Supply UTC on
+  // every create instead of letting PostgreSQL cast now() in its session zone.
+  return new Date().toISOString().slice(0, -1);
 }
 
 function utcTimestamp(value: unknown): string {

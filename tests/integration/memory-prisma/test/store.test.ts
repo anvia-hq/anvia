@@ -130,6 +130,79 @@ for (const schemaOwner of [7, 8]) {
       });
     });
 
+    it.each(["Asia/Jakarta", "America/New_York"])(
+      "creates UTC timestamps when the PostgreSQL session timezone is %s",
+      async (timezone) => {
+        const connection = new Client({ connectionString: url });
+        await connection.connect();
+        await connection.query("SELECT set_config('TimeZone', $1, false)", [timezone]);
+        expect((await connection.query("SHOW TimeZone")).rows[0].TimeZone).toBe(timezone);
+        const zonedClient = postgres<Contract>({
+          contractJson,
+          pg: connection,
+          verifyMarker: false,
+        });
+        const store = new Store8({ client: zonedClient });
+        try {
+          const context = scope();
+          const failedContext = scope();
+          const before = Date.now();
+          await store.append({
+            scope: context,
+            runId: "timezone",
+            turn: 1,
+            messages: [user("hello"), assistant("world")],
+          });
+          await store.recordError({
+            scope: failedContext,
+            runId: "timezone-error",
+            error: new Error("failed"),
+            messages: [user("try")],
+          });
+          const after = Date.now();
+          const session = await client7.agentMemorySession.findFirstOrThrow({
+            where: { sessionId: context.sessionId },
+            include: { messages: true },
+          });
+          const failedSession = await client7.agentMemorySession.findFirstOrThrow({
+            where: { sessionId: failedContext.sessionId },
+            include: { errors: true },
+          });
+          const conversation = await store.inspector!.getConversation({ ref: session.id });
+          const timestamps = [
+            session.createdAt,
+            session.updatedAt,
+            ...session.messages.map((message) => message.createdAt),
+            failedSession.createdAt,
+            failedSession.updatedAt,
+            ...failedSession.errors.map((error) => error.createdAt),
+            new Date(conversation!.createdAt),
+            new Date(conversation!.updatedAt),
+            ...conversation!.messages.map((message) => new Date(message.createdAt)),
+          ];
+          for (const timestamp of timestamps) {
+            expect(timestamp.getTime()).toBeGreaterThanOrEqual(before);
+            expect(timestamp.getTime()).toBeLessThanOrEqual(after);
+          }
+          await store.append({
+            scope: context,
+            runId: "timezone-update",
+            turn: 2,
+            messages: [user("again")],
+          });
+          const updated = await client7.agentMemorySession.findUniqueOrThrow({
+            where: { id: session.id },
+          });
+          expect(updated.createdAt).toEqual(session.createdAt);
+          expect(updated.updatedAt.getTime()).toBeGreaterThanOrEqual(session.updatedAt.getTime());
+          expect(updated.updatedAt.getTime()).toBeLessThanOrEqual(Date.now());
+        } finally {
+          await zonedClient.close();
+          await connection.end();
+        }
+      },
+    );
+
     it("stores errors and cascades deletion without leaking another scope", async () => {
       const context = scope();
       await store8.recordError({

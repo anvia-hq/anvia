@@ -1,7 +1,8 @@
 import { generatedSchemaHeader } from "./schema.js";
 
 // Preserve Prisma 7's text IDs, jsonb, and timestamp(3) columns. TimestampString
-// avoids imposing a Temporal implementation on the caller. Values represent UTC.
+// avoids imposing a Temporal implementation on the caller. The adapter explicitly
+// supplies UTC timestamps on writes rather than relying on the database defaults.
 export const prisma8MemorySchema = `model AgentMemorySession {
   id              String @id @default(cuid(2))
   scopeKey        String @unique

@@ -1,5 +1,5 @@
 import { resolveLogLevel, shouldLog } from "./levels";
-import type { LogContext, Logger, LoggerOptions, LogLevel } from "./types";
+import type { FlushableLogger, LogContext, Logger, LoggerOptions, LogLevel } from "./types";
 
 type ConsoleWriter = (line: string) => void;
 
@@ -8,7 +8,7 @@ export type ConsoleLoggerOptions = LoggerOptions & {
   timestamp?: (() => Date) | undefined;
 };
 
-export function createConsoleLogger(options: ConsoleLoggerOptions = {}): Logger {
+export function createConsoleLogger(options: ConsoleLoggerOptions = {}): FlushableLogger {
   return new ConsoleLogger({
     bindings: createInitialBindings(options),
     level: resolveLogLevel(options.level),
@@ -51,11 +51,16 @@ class ConsoleLogger implements Logger {
     this.write("fatal", message, context);
   }
 
-  child(bindings: LogContext): Logger {
+  child(bindings: LogContext): FlushableLogger {
     return new ConsoleLogger({
       ...this.state,
       bindings: { ...this.state.bindings, ...bindings },
     });
+  }
+
+  /** Console output is written synchronously, so there is never anything buffered. */
+  flush(): Promise<void> {
+    return Promise.resolve();
   }
 
   private write(level: Exclude<LogLevel, "silent">, message: string, context?: LogContext): void {

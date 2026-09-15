@@ -235,7 +235,7 @@ URLs, environment variables, or logs.
 
 ## Playwright and Node compatibility
 
-The host package and browser image pin `playwright-core` 1.62.1 together. Playwright requires matching
+The host package and browser image pin `playwright-core` 1.63.0 together. Playwright requires matching
 browser/package releases for its bundled browser and declares Node `>=20`; its current system matrix is
 the latest Node 22, 24, or 26. Anvia CI uses Node 24, and the isolation regression test also runs on the
 active host Node version. The package keeps its existing Node `>=20.12` engine for source compatibility,

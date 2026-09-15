@@ -32,8 +32,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.123.0",
-    "@anthropic-ai/vertex-sdk": "^0.19.6"
+    "@anthropic-ai/sdk": "^0.125.0",
+    "@anthropic-ai/vertex-sdk": "^0.19.8"
   },
   "devDependencies": {
     "@anvia/core": "workspace:*",

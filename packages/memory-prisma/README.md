@@ -209,6 +209,26 @@ Enable `resolveJsonModule` and an import-attribute-compatible module setting suc
 `module: "ESNext"` with `moduleResolution: "Bundler"`. Include the generated declarations
 in your TypeScript project. Re-run `contract emit` after contract changes.
 
+### Prisma CLI dependency warnings
+
+Prisma CLI `8.0.0-rc.15` includes Composer `0.20.0`, whose Alchemy dependency can
+resolve Effect packages newer than Composer's pinned `4.0.0-rc.112`. If pnpm reports
+Effect or Vitest peer conflicts from that dependency, follow
+[Prisma's version-alignment guidance](https://github.com/prisma/composer/blob/main/docs/guides/deploying.md).
+For this tested CLI version, add these scoped overrides to your `pnpm-workspace.yaml`
+and reinstall:
+
+```yaml
+packages: [] # For a standalone app; preserve existing workspace package globs.
+overrides:
+  "alchemy@2.0.0-beta.74>@effect/sql-d1": 4.0.0-rc.112
+  "alchemy@2.0.0-beta.74>@effect/sql-sqlite-do": 4.0.0-rc.112
+  "alchemy@2.0.0-beta.74>@effect/vitest": 4.0.0-rc.112
+```
+
+These pins apply to CLI tooling, not the memory-store runtime. Reassess them when
+upgrading Prisma CLI or Composer; do not carry them forward to unrelated versions.
+
 ### Existing Prisma 7 memory tables
 
 Both clients can use the same PostgreSQL tables. Keep Prisma 7 in charge of migrations

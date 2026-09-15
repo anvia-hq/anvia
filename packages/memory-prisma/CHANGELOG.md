@@ -1,5 +1,11 @@
 # @anvia/memory-prisma
 
+## 1.2.1
+
+### Patch Changes
+
+- 31af2a0: Fix the memory schema CLI silently exiting when invoked through package-manager symlinks. Support Prisma 7 and Prisma 8 initialization from paths containing spaces or URL-special characters.
+
 ## 1.2.0
 
 ### Minor Changes

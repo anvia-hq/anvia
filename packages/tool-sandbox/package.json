@@ -34,8 +34,8 @@
     "typecheck": "pnpm run build:deps && tsc --noEmit"
   },
   "dependencies": {
-    "@clack/prompts": "^1.7.0",
-    "zod": "^4.5.4"
+    "@clack/prompts": "^1.8.1",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@anvia/core": "workspace:*",

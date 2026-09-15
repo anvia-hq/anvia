@@ -16,6 +16,9 @@
     "access": "public"
   },
   "type": "module",
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -30,7 +33,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@pinecone-database/pinecone": "^8.2.0"
+    "@pinecone-database/pinecone": "^9.0.0"
   },
   "devDependencies": {
     "@anvia/core": "workspace:*",

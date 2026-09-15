@@ -35,8 +35,8 @@
   },
   "dependencies": {
     "@anvia/sandbox": "workspace:*",
-    "playwright-core": "1.62.1",
-    "zod": "^4.5.4"
+    "playwright-core": "1.63.0",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@anvia/core": "workspace:*",

@@ -9,6 +9,7 @@ import type {
   BrowserTarget,
   SerializedError,
 } from "./automation-protocol";
+import { isPrivateOrReservedHost } from "./internal/ip-check";
 import type { BrowserNavigationPolicy, BrowserTab } from "./types";
 
 type ActiveOperation = {
@@ -281,6 +282,10 @@ function isNavigationAllowed(value: string, policy: BrowserNavigationPolicy): bo
   }
   if (url.protocol !== "http:" && url.protocol !== "https:") return false;
   if (url.username.length > 0 || url.password.length > 0) return false;
+
+  // Block private/reserved IPs regardless of policy (SSRF defense-in-depth)
+  if (isPrivateOrReservedHost(url.hostname)) return false;
+
   return policy.mode === "allow-all-http" || policy.origins.includes(url.origin);
 }
 

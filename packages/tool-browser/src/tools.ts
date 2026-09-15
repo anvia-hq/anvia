@@ -7,6 +7,7 @@ import type {
 } from "./automation-protocol";
 import { asConnection } from "./connection";
 import { BrowserError } from "./errors";
+import { isPrivateOrReservedHost } from "./internal/ip-check";
 import type { BrowserNavigationPolicy, BrowserToolName, CreateBrowserToolsOptions } from "./types";
 
 const targetSchema = z.discriminatedUnion("by", [
@@ -306,6 +307,12 @@ function isNavigationAllowed(value: string, policy: BrowserNavigationPolicy): bo
   } catch {
     return false;
   }
+
+  // Block private/internal IPs regardless of policy to prevent SSRF
+  if (isPrivateOrReservedHost(url.hostname)) {
+    return false;
+  }
+
   return policy.mode === "allow-all-http" || policy.origins.includes(url.origin);
 }
 

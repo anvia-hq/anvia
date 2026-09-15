@@ -1,5 +1,11 @@
 # @anvia/react-ui
 
+## 1.1.4
+
+### Patch Changes
+
+- 8a873c8: Update upstream runtime dependencies and align SDK, React, and schema dependencies across the workspace. Update the browser image and host Playwright pins together to 1.63.0. Schema peers now require Zod ^4.6.5 and, for core's optional Valibot adapter, @valibot/to-json-schema ^1.8.0.
+
 ## 1.1.3
 
 ### Patch Changes

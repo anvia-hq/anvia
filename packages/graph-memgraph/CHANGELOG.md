@@ -1,5 +1,12 @@
 # @anvia/memgraph
 
+## 1.1.4
+
+### Patch Changes
+
+- Updated dependencies [8a873c8]
+  - @anvia/graph@1.1.4
+
 ## 1.1.3
 
 ### Patch Changes

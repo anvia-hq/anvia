@@ -1,5 +1,23 @@
 # @anvia/studio
 
+## 1.2.4
+
+### Patch Changes
+
+- 8b65a6c: Keep playground composer selectors compact with single-line model names and control values, preserving full labels in dropdown menus and allowing toolbar controls to wrap on narrow screens.
+- 8b65a6c: Show response actions and metrics only on the final assistant response of each completed exchange, hiding them on intermediate turns and while streaming.
+
+  Apply the same final-response visibility to the shared Message.Actions group.
+
+  Keep fallback run metrics aligned with user exchanges even when an earlier exchange has no final assistant reply.
+
+- 8b65a6c: Use high-contrast theme colors for the Studio logo so its tile stays white instead of dim gray in dark mode.
+- Updated dependencies [8b65a6c]
+  - @anvia/react-ui@1.1.5
+  - @anvia/client@1.2.0
+  - @anvia/graph@1.1.4
+  - @anvia/react@1.1.3
+
 ## 1.2.3
 
 ### Patch Changes

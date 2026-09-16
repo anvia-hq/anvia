@@ -1,5 +1,11 @@
 # @anvia/core
 
+## 1.3.2
+
+### Patch Changes
+
+- 8b65a6c: Clarify the default think tool description to encourage step-by-step task planning and reassessment as new information becomes available.
+
 ## 1.3.1
 
 ### Patch Changes

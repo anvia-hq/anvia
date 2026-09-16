@@ -2,6 +2,7 @@ import { useSmoothStreamItems } from "@anvia/react";
 import { lazy, Suspense, useMemo } from "react";
 import type { StudioSessionLogEntry, StudioTraceSummary } from "../../../../types";
 import type { TranscriptEntry } from "../shared/types";
+import { finalResponseEntryIds } from "./final-response";
 import { assistantResponseMetricsByEntryId } from "./response-metrics";
 import { hasTerminalTranscriptError, transcriptStreamAdapter } from "./transcript-stream";
 
@@ -45,6 +46,7 @@ export function SmoothedTranscript(props: {
       }),
     [props.messages, props.sessionLogs, props.sessionTraceSummaries],
   );
+  const finalEntryIds = finalResponseEntryIds(props.messages, props.isStreaming);
   return (
     <Suspense fallback={null}>
       {smoothed.items.map((displayEntry) => {
@@ -55,6 +57,7 @@ export function SmoothedTranscript(props: {
             entry={sourceEntry}
             displayText={transcriptStreamAdapter.getText(displayEntry)}
             live={smoothed.liveItemKey === String(displayEntry.entryId)}
+            isFinalResponse={finalEntryIds.has(displayEntry.entryId)}
             metrics={responseMetricsByEntryId.get(displayEntry.entryId)}
             decidingApprovals={props.decidingApprovals}
             answeringQuestions={props.answeringQuestions}

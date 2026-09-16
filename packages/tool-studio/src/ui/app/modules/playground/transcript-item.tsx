@@ -15,6 +15,7 @@ export const TranscriptItem = memo(function TranscriptItem(props: {
   entry: TranscriptEntry;
   displayText?: string | undefined;
   live?: boolean | undefined;
+  isFinalResponse?: boolean | undefined;
   metrics?: AssistantResponseMetrics | undefined;
   decidingApprovals: Set<string>;
   answeringQuestions: Set<string>;
@@ -59,9 +60,16 @@ export const TranscriptItem = memo(function TranscriptItem(props: {
   const isPending =
     props.entry.role === "assistant" && "tone" in props.entry && props.entry.tone === "pending";
   const showAssistantActions =
-    props.entry.role === "assistant" && !isPending && props.entry.text.trim().length > 0;
+    props.isFinalResponse === true &&
+    !props.live &&
+    props.entry.role === "assistant" &&
+    !isPending &&
+    props.entry.text.trim().length > 0;
   const persistedDurationMs = props.entry.durationMs ?? props.metrics?.durationMs;
-  const showAssistantFooter = showAssistantActions || persistedDurationMs !== undefined;
+  const showAssistantFooter =
+    props.isFinalResponse === true &&
+    !props.live &&
+    (showAssistantActions || persistedDurationMs !== undefined);
 
   if (props.entry.role === "user") {
     return (

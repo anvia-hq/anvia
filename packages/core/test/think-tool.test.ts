@@ -8,7 +8,7 @@ describe("createThinkTool", () => {
     await expect(Promise.resolve(tool.definition(""))).resolves.toEqual({
       name: "think",
       description:
-        "Use this tool to record a thought while reasoning through a complex task. It does not retrieve information, store memory, or change external state.",
+        "Use this tool as a scratchpad to think through complex tasks step by step. Break the task into smaller steps, assess available information, and decide what to do next. Revisit your plan as new information becomes available. It does not retrieve information, store memory, or change external state.",
       parameters: {
         type: "object",
         properties: {

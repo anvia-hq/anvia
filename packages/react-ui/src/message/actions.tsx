@@ -6,6 +6,21 @@ import { type PrimitiveProps, renderPrimitive } from "../primitives";
 
 const MessageActions = forwardRef<HTMLDivElement, PrimitiveProps<"div">>(
   function MessageActions(props, ref) {
+    const chat = useChatContext();
+    const { message } = useMessage();
+    const index = chat.messages.findIndex((item) => item.id === message.id);
+    if (message.role !== "assistant" || index < 0 || messageText(message).trim().length === 0) {
+      return null;
+    }
+    const following = chat.messages.slice(index + 1);
+    const nextUserIndex = following.findIndex((item) => item.role === "user");
+    const exchangeRemainder = nextUserIndex < 0 ? following : following.slice(0, nextUserIndex);
+    if (
+      exchangeRemainder.some((item) => item.role === "assistant") ||
+      (nextUserIndex < 0 && (chat.status === "submitted" || chat.status === "streaming"))
+    ) {
+      return null;
+    }
     return renderPrimitive(
       "div",
       {

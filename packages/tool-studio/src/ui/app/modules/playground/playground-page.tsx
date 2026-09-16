@@ -97,6 +97,9 @@ export function PlaygroundPage(props: {
 }) {
   const [browserPanelWidth, setBrowserPanelWidth] = useState(720);
   const activeBrowserWorkspace = props.browserWorkspaceOpen ? props.browserWorkspace : undefined;
+  const selectedModel = props.selectedAgentModels.find(
+    (model) => model.ref === props.selectedModelRef,
+  );
   const browserPanelStyle =
     activeBrowserWorkspace === undefined
       ? undefined
@@ -213,8 +216,8 @@ export function PlaygroundPage(props: {
                   ))}
                 </div>
               )}
-              <div className="flex min-w-0 items-center justify-between gap-2">
-                <div className="flex min-w-0 items-center gap-2">
+              <div className="flex min-w-0 items-end justify-between gap-2">
+                <div className="flex shrink-0 items-center gap-2">
                   <input
                     ref={props.attachmentInputRef}
                     className="hidden"
@@ -247,11 +250,8 @@ export function PlaygroundPage(props: {
                     </Button>
                   )}
                 </div>
-                <div className="flex min-w-0 items-center gap-2">
-                  {Object.entries(
-                    props.selectedAgentModels.find((model) => model.ref === props.selectedModelRef)
-                      ?.controls ?? {},
-                  ).map(([id, control]) => (
+                <div className="flex min-w-0 flex-wrap items-center justify-end gap-1">
+                  {Object.entries(selectedModel?.controls ?? {}).map(([id, control]) => (
                     <Select
                       key={id}
                       value={
@@ -271,10 +271,12 @@ export function PlaygroundPage(props: {
                     >
                       <SelectTrigger
                         aria-label={control.label}
-                        title={control.description}
-                        className="flex h-8 min-h-8 w-auto max-w-44 gap-2 border-0 bg-transparent px-2 py-1 text-xs font-medium text-muted-foreground shadow-none hover:bg-transparent hover:text-foreground"
+                        title={`${control.label}${control.description ? `: ${control.description}` : ""}`}
+                        className="flex h-8 min-h-8 w-auto min-w-0 max-w-44 gap-1.5 border-0 bg-transparent px-2 py-1 text-xs font-medium text-muted-foreground shadow-none hover:bg-muted hover:text-foreground [&_svg]:shrink-0"
                       >
-                        <SelectValue />
+                        <SelectValue className="min-w-0 truncate text-left">
+                          {props.selectedControls[id] ?? control.defaultValue ?? "Default"}
+                        </SelectValue>
                       </SelectTrigger>
                       <SelectContent align="end">
                         <SelectItem value={defaultControlValue}>
@@ -297,9 +299,14 @@ export function PlaygroundPage(props: {
                     >
                       <SelectTrigger
                         aria-label="Select model"
-                        className="flex h-8 min-h-8 w-auto max-w-44 gap-2 border-0 bg-transparent px-2 py-1 text-xs font-medium text-muted-foreground shadow-none hover:bg-transparent hover:text-foreground sm:max-w-72"
+                        title={
+                          selectedModel === undefined ? undefined : modelSelectLabel(selectedModel)
+                        }
+                        className="flex h-8 min-h-8 w-auto min-w-0 max-w-44 gap-1.5 border-0 bg-transparent px-2 py-1 text-xs font-medium text-muted-foreground shadow-none hover:bg-muted hover:text-foreground [&_svg]:shrink-0 sm:max-w-56"
                       >
-                        <SelectValue placeholder="Model" />
+                        <SelectValue className="min-w-0 truncate text-left" placeholder="Model">
+                          {selectedModel?.name ?? selectedModel?.id}
+                        </SelectValue>
                       </SelectTrigger>
                       <SelectContent align="end">
                         {props.selectedAgentModels.map((model) => (
@@ -319,9 +326,9 @@ export function PlaygroundPage(props: {
                       >
                         <SelectTrigger
                           aria-label="Select agent"
-                          className="flex h-8 min-h-8 w-auto max-w-64 gap-2 border-0 bg-transparent px-2 py-1 text-xs font-medium text-muted-foreground shadow-none hover:bg-transparent hover:text-foreground"
+                          className="flex h-8 min-h-8 w-auto min-w-0 max-w-64 gap-1.5 border-0 bg-transparent px-2 py-1 text-xs font-medium text-muted-foreground shadow-none hover:bg-muted hover:text-foreground [&_svg]:shrink-0"
                         >
-                          <SelectValue placeholder="Agent" />
+                          <SelectValue className="min-w-0 truncate text-left" placeholder="Agent" />
                         </SelectTrigger>
                         <SelectContent align="end">
                           {props.agents.map((agent) => (
@@ -340,7 +347,7 @@ export function PlaygroundPage(props: {
                           ? "Running"
                           : "Send message"
                     }
-                    className="size-9 min-h-9 rounded-lg"
+                    className="size-9 min-h-9 shrink-0 rounded-lg"
                     size="icon"
                     type={props.isStreaming ? "button" : "submit"}
                     disabled={

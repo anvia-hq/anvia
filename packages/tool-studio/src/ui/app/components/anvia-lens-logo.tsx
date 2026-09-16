@@ -1,6 +1,6 @@
 export function AnviaLensLogo({ markClassName }: { markClassName?: string }) {
   return (
-    <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-foreground text-background">
+    <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[var(--ops-strong)] text-[var(--ops-strong-text)]">
       <svg
         aria-hidden="true"
         className={`h-5 w-auto shrink-0 ${markClassName ?? ""}`}

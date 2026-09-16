@@ -28,6 +28,7 @@ describe("TranscriptItem response actions", () => {
   it("renders assistant copy, metrics, and trace icon actions", () => {
     const html = render(
       <TranscriptItem
+        isFinalResponse
         entry={{
           entryId: 1,
           kind: "message",
@@ -67,9 +68,39 @@ describe("TranscriptItem response actions", () => {
     expect(html).not.toContain("animate-spin");
   });
 
+  it.each([
+    { isFinalResponse: false, live: false },
+    { isFinalResponse: true, live: true },
+  ])("hides actions for intermediate or streaming responses: %j", (state) => {
+    const html = render(
+      <TranscriptItem
+        {...state}
+        entry={{
+          entryId: 1,
+          kind: "message",
+          role: "assistant",
+          text: "Checking now",
+          traceId: "trace_1",
+        }}
+        metrics={{ durationMs: 100, usage: { totalTokens: 10 } }}
+        decidingApprovals={new Set()}
+        answeringQuestions={new Set()}
+        onApprovalDecision={vi.fn()}
+        onQuestionAnswer={vi.fn()}
+        onOpenTrace={vi.fn()}
+      />,
+    );
+    expect(container.textContent).toContain("Checking now");
+    expect(html).not.toContain('aria-label="Copy response"');
+    expect(html).not.toContain('aria-label="Response metrics"');
+    expect(html).not.toContain('aria-label="Open trace trace_1"');
+    expect(html).not.toContain("Finished");
+  });
+
   it("renders a persisted timer without response text or actions", () => {
     const html = render(
       <TranscriptItem
+        isFinalResponse
         entry={{
           entryId: 1,
           kind: "message",
@@ -93,6 +124,7 @@ describe("TranscriptItem response actions", () => {
   it("renders a single pending thinking status", () => {
     const html = render(
       <TranscriptItem
+        isFinalResponse
         entry={{
           entryId: 1,
           kind: "message",
@@ -118,6 +150,7 @@ describe("TranscriptItem response actions", () => {
   it("renders a compact tool disclosure with a framed action icon", () => {
     const html = render(
       <TranscriptItem
+        isFinalResponse
         entry={{
           entryId: 4,
           kind: "tool",
@@ -158,6 +191,7 @@ describe("TranscriptItem response actions", () => {
   it("renders expanded tool call payloads without frames", () => {
     const html = render(
       <TranscriptItem
+        isFinalResponse
         entry={{
           entryId: 5,
           kind: "tool",
@@ -189,6 +223,7 @@ describe("TranscriptItem response actions", () => {
   ] as const)("renders terminal %s approvals without a running status", (status, label) => {
     const html = render(
       <TranscriptItem
+        isFinalResponse
         entry={{
           entryId: 6,
           kind: "tool",
@@ -214,6 +249,7 @@ describe("TranscriptItem response actions", () => {
   it("does not advertise disclosure for a payload-less tool call", () => {
     const html = render(
       <TranscriptItem
+        isFinalResponse
         entry={{ entryId: 7, kind: "tool", toolName: "lookup" }}
         decidingApprovals={new Set()}
         answeringQuestions={new Set()}
@@ -234,6 +270,7 @@ describe("TranscriptItem response actions", () => {
   it("shows running only for the live tool call", () => {
     const html = render(
       <TranscriptItem
+        isFinalResponse
         entry={{ entryId: 8, kind: "tool", toolName: "browser_navigate" }}
         live
         decidingApprovals={new Set()}

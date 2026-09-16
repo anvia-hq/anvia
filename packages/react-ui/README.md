@@ -141,3 +141,5 @@ prescribing one visual behavior. Validate data returned by an HTTP route before 
 `explore` callback; the headless controller intentionally trusts its typed boundary. Renderers that
 do not expose React elements for individual nodes can consume the controller directly without the
 node primitives.
+
+`MessagePrimitive.Actions` displays its action group only for the final assistant message in each user exchange, after streaming completes. Earlier completed replies retain their actions. Use `MessagePrimitive.Copy` or `MessagePrimitive.Regenerate` directly when composing custom action visibility.

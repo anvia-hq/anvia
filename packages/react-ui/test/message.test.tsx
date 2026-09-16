@@ -25,6 +25,39 @@ afterEach(() => {
 });
 
 describe("Message primitives", () => {
+  it("shows action groups only for final replies and hides the active streaming reply", () => {
+    const messages = [
+      textMessage("user_1", "user", "First"),
+      textMessage("turn_1", "assistant", "Checking"),
+      textMessage("final_1", "assistant", "First answer"),
+      textMessage("user_2", "user", "Second"),
+      textMessage("turn_2", "assistant", "Checking again"),
+      textMessage("final_2", "assistant", "Second answer"),
+    ];
+    const thread = (status: "streaming" | "ready") => (
+      <ChatProvider controller={createChatController({ messages, status })}>
+        <Thread.Root>
+          <Thread.Messages>
+            {(message) => (
+              <Message.Root>
+                <Message.Actions>{`Actions ${message.id}`}</Message.Actions>
+              </Message.Root>
+            )}
+          </Thread.Messages>
+        </Thread.Root>
+      </ChatProvider>
+    );
+    const { rerender } = render(thread("streaming"));
+    expect(screen.getByText("Actions final_1")).toBeTruthy();
+    expect(screen.queryByText("Actions final_2")).toBeNull();
+    expect(screen.queryByText("Actions turn_1")).toBeNull();
+    expect(screen.queryByText("Actions turn_2")).toBeNull();
+    expect(screen.queryByText("Actions user_1")).toBeNull();
+    rerender(thread("ready"));
+    expect(screen.getByText("Actions final_2")).toBeTruthy();
+    expect(screen.queryByText("Actions turn_2")).toBeNull();
+  });
+
   it("renders chat messages and all supported message part kinds", () => {
     const messages: UIMessage[] = [
       {

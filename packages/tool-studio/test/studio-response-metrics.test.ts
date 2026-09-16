@@ -4,6 +4,24 @@ import { assistantResponseMetricsByEntryId } from "../src/ui/app/modules/playgro
 import type { TranscriptEntry } from "../src/ui/app/modules/shared/types";
 
 describe("assistant response metrics", () => {
+  it("does not assign run metrics to intermediate assistant turns", () => {
+    const metrics = assistantResponseMetricsByEntryId({
+      entries: [
+        { entryId: 1, kind: "message", role: "user", text: "Search" },
+        { entryId: 2, kind: "message", role: "assistant", text: "Searching" },
+        { entryId: 3, kind: "tool", toolName: "search", args: "{}", result: "Found" },
+        { entryId: 4, kind: "message", role: "assistant", text: "Answer" },
+        { entryId: 5, kind: "message", role: "user", text: "Next" },
+        { entryId: 6, kind: "message", role: "assistant", text: "Second answer" },
+      ],
+      traceSummaries: [],
+      logs: [completedRunLog("run_1", 1, 30, 1200), completedRunLog("run_2", 2, 8, 500)],
+    });
+    expect(metrics.has(2)).toBe(false);
+    expect(metrics.get(4)?.usage?.totalTokens).toBe(30);
+    expect(metrics.get(6)?.usage?.totalTokens).toBe(8);
+  });
+
   it("prefers trace summary metrics and falls back to completed run logs by response order", () => {
     const metrics = assistantResponseMetricsByEntryId({
       entries: [

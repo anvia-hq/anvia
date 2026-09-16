@@ -1,6 +1,7 @@
 import type { StudioSessionLogEntry, StudioTraceSummary } from "../../../../types";
 import { isRecord } from "../shared/object";
 import type { TranscriptEntry } from "../shared/types";
+import { finalResponseEntryIds } from "./final-response";
 
 export type ResponseUsageMetrics = {
   inputTokens?: number;
@@ -40,9 +41,10 @@ export function assistantResponseMetricsByEntryId(props: {
     .sort((left, right) => left.sequence - right.sequence)
     .map(metricsFromTerminalRunLog);
 
+  const finalEntryIds = finalResponseEntryIds(props.entries, false);
   let terminalRunIndex = 0;
   for (const entry of props.entries) {
-    if (!isTerminalAssistantMessage(entry)) {
+    if (!finalEntryIds.has(entry.entryId) || !isTerminalAssistantMessage(entry)) {
       continue;
     }
 

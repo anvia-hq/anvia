@@ -22,6 +22,32 @@ describe("assistant response metrics", () => {
     expect(metrics.get(6)?.usage?.totalTokens).toBe(8);
   });
 
+  it.each([
+    { entryId: 2, kind: "tool", toolName: "search", args: "{}", result: "Found" },
+    { entryId: 2, kind: "reasoning", text: "Considering the result" },
+    { entryId: 2, kind: "message", role: "assistant", text: "" },
+  ] satisfies TranscriptEntry[])(
+    "keeps fallback metrics aligned after a $kind-only exchange",
+    (entry) => {
+      const metrics = assistantResponseMetricsByEntryId({
+        entries: [
+          { entryId: 1, kind: "message", role: "user", text: "First" },
+          entry,
+          { entryId: 3, kind: "message", role: "user", text: "Second" },
+          { entryId: 4, kind: "message", role: "assistant", text: "Second answer" },
+        ],
+        traceSummaries: [],
+        logs: [completedRunLog("run_1", 1, 99, 9900), completedRunLog("run_2", 2, 8, 500)],
+      });
+
+      expect([...metrics.keys()]).toEqual([4]);
+      expect(metrics.get(4)).toEqual({
+        durationMs: 500,
+        usage: { inputTokens: 3, outputTokens: 5, totalTokens: 8 },
+      });
+    },
+  );
+
   it("prefers trace summary metrics and falls back to completed run logs by response order", () => {
     const metrics = assistantResponseMetricsByEntryId({
       entries: [

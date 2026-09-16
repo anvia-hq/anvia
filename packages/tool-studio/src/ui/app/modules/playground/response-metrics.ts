@@ -42,14 +42,18 @@ export function assistantResponseMetricsByEntryId(props: {
     .map(metricsFromTerminalRunLog);
 
   const finalEntryIds = finalResponseEntryIds(props.entries, false);
-  let terminalRunIndex = 0;
+  let terminalRunIndex = -1;
   for (const entry of props.entries) {
+    // Reserve a fallback log for every exchange, including those without a final reply.
+    // Transcripts without an initial user message still start at the first run.
+    if ((entry.kind === "message" && entry.role === "user") || terminalRunIndex < 0) {
+      terminalRunIndex += 1;
+    }
     if (!finalEntryIds.has(entry.entryId) || !isTerminalAssistantMessage(entry)) {
       continue;
     }
 
     const fallbackMetrics = terminalRunMetrics[terminalRunIndex];
-    terminalRunIndex += 1;
     const observedMetrics =
       entry.traceId === undefined
         ? fallbackMetrics

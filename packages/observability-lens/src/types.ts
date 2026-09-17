@@ -1,23 +1,13 @@
 import type { JsonValue } from "@anvia/core/completion";
+import type { RedactionOptions, RedactionPattern } from "@anvia/core/redaction";
 import type { EvalReporter } from "@anvia/core/evals";
 import type { OtelScoreArgs } from "@anvia/otel";
 
 export type LensCaptureMode = "safe" | "full";
 
-export type LensRedactorPattern = {
-  name: string;
-  regex: RegExp;
-  /**
-   * Optional filter for matches `regex` cannot fully qualify, such as card numbers that need a
-   * checksum. Matches rejected by this predicate are kept verbatim.
-   */
-  validate?: ((match: string) => boolean) | undefined;
-};
+export type LensRedactorPattern = RedactionPattern;
 
-export type LensRedactionOptions = {
-  patterns?: LensRedactorPattern[] | undefined;
-  replacement?: string | undefined;
-};
+export type LensRedactionOptions = RedactionOptions;
 
 export type LensClientOptions = {
   baseUrl?: string | undefined;

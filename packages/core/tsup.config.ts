@@ -24,6 +24,7 @@ export default {
       "src/model-listing/index.ts",
       "src/observability/index.ts",
       "src/pipeline/index.ts",
+      "src/redaction/index.ts",
       "src/skills/index.ts",
       "src/streaming/index.ts",
       "src/tool/index.ts",

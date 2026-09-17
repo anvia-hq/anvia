@@ -84,6 +84,10 @@
       "types": "./dist/pipeline/index.d.ts",
       "import": "./dist/pipeline/index.js"
     },
+    "./redaction": {
+      "types": "./dist/redaction/index.d.ts",
+      "import": "./dist/redaction/index.js"
+    },
     "./skills": {
       "types": "./dist/skills/index.d.ts",
       "import": "./dist/skills/index.js"

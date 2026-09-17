@@ -4025,7 +4025,15 @@ describe("PII redaction", () => {
   it("patternNames returns the configured pattern names", async () => {
     const { createPiiRedactor } = await import("../src/redaction");
     const r = createPiiRedactor();
-    expect(r.patternNames()).toEqual(["email", "creditCard", "ipv4", "phone", "jwt", "apiKey"]);
+    expect(r.patternNames()).toEqual([
+      "email",
+      "creditCard",
+      "ipv4",
+      "phone",
+      "jwt",
+      "apiKey",
+      "bearer",
+    ]);
   });
 
   it("custom patterns replace the default set", async () => {

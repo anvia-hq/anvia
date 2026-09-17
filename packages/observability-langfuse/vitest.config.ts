@@ -11,6 +11,9 @@ export default defineConfig({
       "@anvia/core/observability": fileURLToPath(
         new URL("../core/src/observability/index.ts", import.meta.url),
       ),
+      "@anvia/core/redaction": fileURLToPath(
+        new URL("../core/src/redaction/index.ts", import.meta.url),
+      ),
       "@anvia/core": fileURLToPath(new URL("../core/src/index.ts", import.meta.url)),
     },
   },

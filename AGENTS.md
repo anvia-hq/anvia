@@ -101,7 +101,7 @@ behavior belongs in `packages/tool-studio`.
 
 - `packages/core`: core runtime for agents, completion, tools, hooks, request
   runtime, streaming, UI messages, extractors, pipelines, evals, embeddings,
-  loaders, MCP, memory, model listing, observability, skills, transcription,
+  loaders, MCP, memory, model listing, observability, redaction, skills, transcription,
   audio/image generation, and vector-store contracts.
 - `packages/mcp`: MCP clients, transports, tool discovery, result mapping, and URL safety.
 - `packages/provider-openai`, `packages/provider-anthropic`,

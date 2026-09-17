@@ -1072,6 +1072,7 @@ shared CI logs.
 - `skills`: local skill loading
 - `observability`: observer interfaces for runs, generations, and tool calls
 - `evals`: evaluation helpers and reporters
+- `redaction`: PII patterns and deep value redaction shared by observability adapters
 - `documents`: deterministic in-memory text chunking
 - `speech-generation`, `image-generation`, `transcription`: provider-neutral media interfaces
 

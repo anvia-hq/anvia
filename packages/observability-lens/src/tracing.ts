@@ -235,8 +235,10 @@ export class LensClient {
     const redactor = createLensRedactor(overrides.redaction ?? this.options.redaction);
     const redactInputs = overrides.redactInputs ?? this.options.redactInputs;
     const redactOutputs = overrides.redactOutputs ?? this.options.redactOutputs;
-    const redactErrors = overrides.redactErrors ?? this.options.redactErrors;
-    const redactMetadata = overrides.redactMetadata ?? this.options.redactMetadata;
+    // Error text is captured output and metadata is captured input, so each surface follows the
+    // directional flag unless it is set explicitly.
+    const redactErrors = overrides.redactErrors ?? this.options.redactErrors ?? redactOutputs;
+    const redactMetadata = overrides.redactMetadata ?? this.options.redactMetadata ?? redactInputs;
     // Redaction runs on values the observer would otherwise capture verbatim, so each transform
     // falls back to the original value when the redactor returns an unexpected shape.
     const redactMessage = (message: string): string => {

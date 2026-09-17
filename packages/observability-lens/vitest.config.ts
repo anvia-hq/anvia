@@ -8,6 +8,9 @@ export default defineConfig({
       "@anvia/core/observability": fileURLToPath(
         new URL("../core/src/observability/index.ts", import.meta.url),
       ),
+      "@anvia/core/redaction": fileURLToPath(
+        new URL("../core/src/redaction/index.ts", import.meta.url),
+      ),
       "@anvia/otel": fileURLToPath(new URL("../observability-otel/src/index.ts", import.meta.url)),
     },
   },

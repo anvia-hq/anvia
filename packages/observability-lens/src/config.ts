@@ -13,9 +13,8 @@ export type ResolvedLensConfig = {
 };
 
 export function resolveLensConfig(options: LensClientOptions = {}): ResolvedLensConfig {
-  const baseUrl = required("baseUrl", options.baseUrl, process.env.ANVIA_LENS_BASE_URL).replace(
-    /\/+$/,
-    "",
+  const baseUrl = normalizeLensBaseUrl(
+    required("baseUrl", options.baseUrl, process.env.ANVIA_LENS_BASE_URL),
   );
   const publicKey = required("publicKey", options.publicKey, process.env.ANVIA_LENS_PUBLIC_KEY);
   const secretKey = required("secretKey", options.secretKey, process.env.ANVIA_LENS_SECRET_KEY);
@@ -63,6 +62,29 @@ function required(
     );
   }
   return value;
+}
+
+/**
+ * Lens endpoints are composed by string concatenation, so a malformed base URL would otherwise fail
+ * lazily (and for OTLP exports, silently). Reject it wherever a base URL enters the client.
+ */
+export function normalizeLensBaseUrl(value: string): string {
+  const normalized = value.trim().replace(/\/+$/, "");
+  let parsed: URL;
+  try {
+    parsed = new URL(normalized);
+  } catch {
+    throw invalidBaseUrl(value);
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") throw invalidBaseUrl(value);
+  if (parsed.search.length > 0 || parsed.hash.length > 0) throw invalidBaseUrl(value);
+  return normalized;
+}
+
+function invalidBaseUrl(value: string): TypeError {
+  return new TypeError(
+    `Anvia Lens baseUrl must be an absolute http(s) URL without query or fragment; received ${JSON.stringify(value)}`,
+  );
 }
 
 function first(...values: Array<string | undefined>): string | undefined {

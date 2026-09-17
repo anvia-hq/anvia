@@ -207,6 +207,9 @@ describe("Lens prompt client", () => {
     expect(() => lens?.promptClient({ timeoutMs: 0 })).toThrow("timeoutMs");
     expect(() => lens?.promptClient({ timeoutMs: 1.5 })).toThrow("timeoutMs");
     expect(() => lens?.promptClient({ cacheTtlMs: -1 })).toThrow("cacheTtlMs");
+    expect(() => lens?.promptClient({ baseUrl: "lens.internal" })).toThrow(
+      /baseUrl must be an absolute http\(s\) URL/,
+    );
   });
 
   it("serves cache hits within the TTL and refetches after expiry", async () => {

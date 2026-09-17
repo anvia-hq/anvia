@@ -40,6 +40,11 @@ type LensResources = {
   readonly scorer: OtelScorer;
 };
 
+type LensCaptureOverrides = Pick<
+  LensClientOptions,
+  "captureMaxBytes" | "redactInputs" | "redactOutputs" | "redaction"
+>;
+
 export class LensClient {
   readonly enabled: boolean;
   private readonly config: ResolvedLensConfig | undefined;
@@ -114,9 +119,12 @@ export class LensClient {
     const resolve = async () => {
       this.assertOpen();
       reporter ??= createOtelEvalReporter<Input, Output, Expected>({
-        ...options,
         traceObserver: options.traceObserver ?? "lens",
+        publishInvalid: options.publishInvalid,
         includeMetadata: options.includeMetadata ?? false,
+        includePayloads: options.includePayloads,
+        onMissingTrace: options.onMissingTrace,
+        ...this.captureOptions(options),
         logger: (await this.resources()).logger,
       });
       return reporter;
@@ -203,18 +211,29 @@ export class LensClient {
     return this.initialization;
   }
 
-  private otelObserverOptions(resource: LensResources, overrides: LensObserverOptions) {
+  private captureOptions(overrides: LensCaptureOverrides): {
+    captureMaxBytes: number;
+    transformInput: ((value: unknown) => unknown) | undefined;
+    transformOutput: ((value: unknown) => unknown) | undefined;
+  } {
     const config = this.config as ResolvedLensConfig;
     const redactor = createLensRedactor(overrides.redaction ?? this.options.redaction);
     const redactInputs = overrides.redactInputs ?? this.options.redactInputs;
     const redactOutputs = overrides.redactOutputs ?? this.options.redactOutputs;
     return {
-      tracer: resource.tracer,
-      captureMode: overrides.captureMode ?? config.captureMode,
       captureMaxBytes: overrides.captureMaxBytes ?? config.captureMaxBytes,
       transformInput: redactInputs ? redactor.redact : undefined,
       transformOutput: redactOutputs ? redactor.redact : undefined,
-    } as const;
+    };
+  }
+
+  private otelObserverOptions(resource: LensResources, overrides: LensObserverOptions) {
+    const config = this.config as ResolvedLensConfig;
+    return {
+      tracer: resource.tracer,
+      captureMode: overrides.captureMode ?? config.captureMode,
+      ...this.captureOptions(overrides),
+    };
   }
 
   private async closeResources(): Promise<void> {

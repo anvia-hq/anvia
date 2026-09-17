@@ -56,6 +56,27 @@ describe("resolveLensConfig", () => {
       }),
     ).toThrow(/captureMode must be "safe" or "full"/);
   });
+
+  it("rejects base URLs that cannot form endpoint paths", () => {
+    const credentials = { publicKey: "public", secretKey: "secret", serviceName: "test" };
+
+    for (const baseUrl of [
+      "lens.internal",
+      "ftp://lens.test",
+      "https://lens.test?tenant=acme",
+      "https://lens.test#ingest",
+    ]) {
+      expect(() => resolveLensConfig({ ...credentials, baseUrl })).toThrow(
+        /baseUrl must be an absolute http\(s\) URL without query or fragment/,
+      );
+    }
+    expect(resolveLensConfig({ ...credentials, baseUrl: " http://localhost:3001/ " }).baseUrl).toBe(
+      "http://localhost:3001",
+    );
+    expect(
+      resolveLensConfig({ ...credentials, baseUrl: "https://lens.test/self-hosted/" }).baseUrl,
+    ).toBe("https://lens.test/self-hosted");
+  });
 });
 
 describe("createLensRedactor", () => {
@@ -128,35 +149,9 @@ describe("Lens eval ergonomics", () => {
   });
 
   it("exports runtime scores through the owned OTLP logs provider", async () => {
-    let resolveRequest!: (request: {
-      url: string | undefined;
-      authorization: string | undefined;
-      body: string;
-    }) => void;
-    const request = new Promise<{
-      url: string | undefined;
-      authorization: string | undefined;
-      body: string;
-    }>((resolve) => {
-      resolveRequest = resolve;
-    });
-    const server = createServer((incoming, response) => {
-      const chunks: Buffer[] = [];
-      incoming.on("data", (chunk: Buffer) => chunks.push(chunk));
-      incoming.on("end", () => {
-        resolveRequest({
-          url: incoming.url,
-          authorization: incoming.headers.authorization,
-          body: Buffer.concat(chunks).toString("utf8"),
-        });
-        response.writeHead(200, { "Content-Type": "application/json" });
-        response.end("{}");
-      });
-    });
-    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-    const address = server.address() as AddressInfo;
+    const server = await startOtlpServer();
     const client = new LensClient({
-      baseUrl: `http://127.0.0.1:${address.port}`,
+      baseUrl: server.baseUrl,
       publicKey: "public",
       secretKey: "secret",
       serviceName: "score-test",
@@ -173,20 +168,98 @@ describe("Lens eval ergonomics", () => {
         source: "end_user",
       });
       await client.flush();
-      const exported = await request;
+      const exported = server.requests()[0];
 
-      expect(exported.url).toBe("/api/public/otel/v1/logs");
-      expect(exported.authorization).toBe(
+      expect(exported?.url).toBe("/api/public/otel/v1/logs");
+      expect(exported?.authorization).toBe(
         `Basic ${Buffer.from("public:secret").toString("base64")}`,
       );
-      expect(exported.body).toContain('"eventName":"gen_ai.evaluation.result"');
-      expect(exported.body).toContain('"stringValue":"user-feedback"');
-      expect(exported.body).toContain('"stringValue":"end_user"');
+      expect(exported?.body).toContain('"eventName":"gen_ai.evaluation.result"');
+      expect(exported?.body).toContain('"stringValue":"user-feedback"');
+      expect(exported?.body).toContain('"stringValue":"end_user"');
     } finally {
       await client.close();
-      await new Promise<void>((resolve, reject) =>
-        server.close((error) => (error ? reject(error) : resolve())),
-      );
+      await server.close();
+    }
+  });
+
+  it("redacts eval payloads with the client capture policy", async () => {
+    const server = await startOtlpServer();
+    const client = new LensClient({
+      baseUrl: server.baseUrl,
+      publicKey: "public",
+      secretKey: "secret",
+      serviceName: "reporter-redaction",
+      captureMode: "full",
+      redactInputs: true,
+      redactOutputs: true,
+    });
+
+    try {
+      await client
+        .evalReporter({ includePayloads: true })
+        .report(evalPayloadArgs({ email: "person@example.com" }));
+      await client.flush();
+
+      expect(server.bodies()).toContain('"anvia.eval.payload.status"');
+      expect(server.bodies()).toContain('"captured"');
+      expect(server.bodies()).toContain("<redacted>");
+      expect(server.bodies()).not.toContain("person@example.com");
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
+  it("lets reporter payload options override the client capture policy", async () => {
+    const server = await startOtlpServer();
+    const client = new LensClient({
+      baseUrl: server.baseUrl,
+      publicKey: "public",
+      secretKey: "secret",
+      serviceName: "reporter-override",
+      captureMode: "full",
+      redactInputs: true,
+      redactOutputs: true,
+    });
+
+    try {
+      await client
+        .evalReporter({ includePayloads: true, redactInputs: false, redactOutputs: false })
+        .report(evalPayloadArgs({ email: "person@example.com" }));
+      await client.flush();
+
+      expect(server.bodies()).toContain("person@example.com");
+      expect(server.bodies()).not.toContain("<redacted>");
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
+  it("bounds eval payloads by captureMaxBytes", async () => {
+    const server = await startOtlpServer();
+    const client = new LensClient({
+      baseUrl: server.baseUrl,
+      publicKey: "public",
+      secretKey: "secret",
+      serviceName: "reporter-payload-bound",
+      captureMode: "full",
+      captureMaxBytes: 256,
+    });
+
+    try {
+      const reporter = client.evalReporter({ includePayloads: true });
+      await reporter.report(evalPayloadArgs({ note: `OVERSIZE-${"x".repeat(512)}` }));
+      await reporter.report(evalPayloadArgs({ note: "small" }));
+      await client.flush();
+
+      expect(server.bodies()).toContain('"size_limit"');
+      expect(server.bodies()).not.toContain("OVERSIZE-");
+      expect(server.bodies()).toContain('"captured"');
+    } finally {
+      await client.close();
+      await server.close();
     }
   });
 
@@ -278,5 +351,60 @@ function runEndArgs() {
     status: "completed" as const,
     completedAt: "2026-08-07T00:00:01.000Z",
     durationMs: 1_000,
+  };
+}
+
+function evalPayloadArgs(input: unknown) {
+  return {
+    suiteName: "reporter-suite",
+    case: { id: "case-1", input },
+    output: { echo: input },
+    metric: { name: "reporter-metric" },
+    outcome: { outcome: "pass" as const, score: true },
+    trace: {
+      observer: "lens",
+      traceId: "1234567890abcdef1234567890abcdef",
+      observationId: "1234567890abcdef",
+    },
+  };
+}
+
+type CapturedOtlpRequest = {
+  url: string;
+  authorization: string | undefined;
+  body: string;
+};
+
+async function startOtlpServer(): Promise<{
+  baseUrl: string;
+  bodies(): string;
+  requests(): readonly CapturedOtlpRequest[];
+  close(): Promise<void>;
+}> {
+  const received: CapturedOtlpRequest[] = [];
+  const server = createServer((incoming, response) => {
+    const chunks: Buffer[] = [];
+    incoming.on("data", (chunk: Buffer) => chunks.push(chunk));
+    incoming.on("end", () => {
+      received.push({
+        url: incoming.url ?? "",
+        authorization: incoming.headers.authorization,
+        body: Buffer.concat(chunks).toString("utf8"),
+      });
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end("{}");
+    });
+  });
+  const listening = new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  await listening;
+  const address = server.address() as AddressInfo;
+  return {
+    baseUrl: `http://127.0.0.1:${address.port}`,
+    bodies: () => received.map((request) => request.body).join("\n"),
+    requests: () => received,
+    close: () =>
+      new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      }),
   };
 }

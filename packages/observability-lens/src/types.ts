@@ -39,7 +39,10 @@ export type LensPipelineObserverOptions = LensObserverOptions;
 
 export type LensScoreArgs = OtelScoreArgs;
 
-export type LensEvalReporterOptions = {
+export type LensEvalReporterOptions = Pick<
+  LensClientOptions,
+  "captureMaxBytes" | "redactInputs" | "redactOutputs" | "redaction"
+> & {
   traceObserver?: string | undefined;
   publishInvalid?: boolean | undefined;
   includeMetadata?: boolean | undefined;

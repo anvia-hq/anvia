@@ -140,6 +140,9 @@ describe("Lens dataset client", () => {
     expect(() => lens?.datasetClient({ pageSize: 0 })).toThrow(
       "pageSize must be an integer between 1 and 100",
     );
+    expect(() => lens?.datasetClient({ baseUrl: "lens.internal" })).toThrow(
+      /baseUrl must be an absolute http\(s\) URL/,
+    );
   });
 });
 

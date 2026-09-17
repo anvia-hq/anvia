@@ -108,6 +108,12 @@ const reporter = lens.evalReporter({
 });
 ```
 
+Client-level `redactInputs`, `redactOutputs`, `redaction`, and `captureMaxBytes` apply to eval
+reporters as well as observers; the same fields on `evalReporter()` override them per reporter.
+Payloads are redacted before serialization and dropped from the record with
+`anvia.eval.payload.status: "size_limit"` when they exceed `captureMaxBytes` (262,144 bytes by
+default).
+
 Lens eval reporters accept traces from the `"lens"` Agent observer registration by default. Set
 `traceObserver` to the Agent registration name when it differs.
 
@@ -151,6 +157,11 @@ omitted. Draft and archived versions are not exposed by the public API.
 Configuration can also come from `ANVIA_LENS_BASE_URL`, `ANVIA_LENS_PUBLIC_KEY`,
 `ANVIA_LENS_SECRET_KEY`, `ANVIA_LENS_SERVICE_NAME`, `ANVIA_LENS_ENVIRONMENT`, and
 `ANVIA_LENS_RELEASE`.
+
+Base URLs must be absolute `http` or `https` URLs without query or fragment; a trailing slash is
+ignored. `LensClient` validates the URL when constructed, and `promptClient({ baseUrl })` /
+`datasetClient({ baseUrl })` validate their overrides, so a malformed endpoint fails immediately
+instead of during the first request or export.
 
 ## Versioned prompts
 

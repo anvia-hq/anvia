@@ -1,5 +1,5 @@
 import type { JsonValue } from "@anvia/core/completion";
-import type { ResolvedLensConfig } from "./config.js";
+import { normalizeLensBaseUrl, type ResolvedLensConfig } from "./config.js";
 import { isRecord } from "./type-guards.js";
 import type {
   LensDataset,
@@ -28,7 +28,7 @@ export function createLensDatasetClient(
   tracingConfig: ResolvedLensConfig,
   options: LensDatasetClientOptions = {},
 ): LensDatasetClient {
-  const baseUrl = (options.baseUrl ?? tracingConfig.baseUrl).replace(/\/+$/, "");
+  const baseUrl = normalizeLensBaseUrl(options.baseUrl ?? tracingConfig.baseUrl);
   const publicKey = options.publicKey ?? tracingConfig.publicKey;
   const secretKey = options.secretKey ?? tracingConfig.secretKey;
   const timeoutMs = options.timeoutMs ?? tracingConfig.timeoutMs;

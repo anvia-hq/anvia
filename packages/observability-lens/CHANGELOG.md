@@ -1,5 +1,61 @@
 # @anvia/lens
 
+## 1.2.0
+
+### Minor Changes
+
+- b43ad50: Apply the client capture policy to eval reporters and validate Lens base URLs eagerly.
+
+  `lens.evalReporter()` now inherits the client-level `redactInputs`, `redactOutputs`, `redaction`,
+  and `captureMaxBytes` settings, and accepts those fields as per-reporter overrides. Eval payloads
+  are redacted before serialization and bounded by `captureMaxBytes`; payloads over the limit are
+  recorded as `anvia.eval.payload.status: "size_limit"` instead of being exported. Byte limits that are
+  not integers of at least 96 bytes are rejected when the observer or reporter is created, since
+  OpenTelemetry treats those values as unbounded.
+
+  `baseUrl` must now be an absolute `http`/`https` URL without query or fragment, including a trailing
+  empty `?` or `#`. Malformed values throw a `TypeError` when the client, prompt client, or dataset
+  client is created rather than failing on the first request or, for OTLP exports, silently at export
+  time.
+
+- 2845d6a: Redact error text and metadata surfaces.
+
+  `@anvia/otel` gains `transformError` and `transformMetadata` hooks. Error messages, span status
+  messages, and recorded exception messages and stack traces run through `transformError`; trace
+  metadata, run event attributes, tool metadata, score metadata, and evaluation metadata run through
+  `transformMetadata`. A `transformMetadata` that does not return a record drops the surface instead
+  of exporting it unredacted. Both hooks default to the previous pass-through behavior.
+
+  `@anvia/lens` exposes `redactErrors` and `redactMetadata` for those surfaces, on the client and per
+  observer or reporter, so redaction no longer stops at captured bodies. Error text is captured output
+  and metadata is captured input, so `redactErrors` follows `redactOutputs` and `redactMetadata`
+  follows `redactInputs` unless either is set explicitly.
+
+- 2845d6a: Share one PII redactor across the observability adapters.
+
+  `@anvia/core/redaction` now owns the redaction implementation and its default patterns, and
+  `@anvia/lens` and `@anvia/langfuse` re-export it through their existing `createLensRedactor` and
+  `createPiiRedactor` APIs. A pattern or traversal fix only has to land once instead of twice.
+
+  Behavior that comes with the shared implementation:
+
+  - Card matches no longer consume a trailing separator, so `card 4111-1111-1111-1111 today` keeps its
+    spacing.
+  - Card matches require an issuer prefix and a valid Luhn checksum, and phone matches are skipped when
+    they are part of a longer grouped digit run, so `1234 5678 9012 3456` survives untouched.
+  - Numeric values are inspected only by patterns that opt in (`numeric: true`, the card pattern), and
+    a matched number becomes the replacement text.
+  - Values nested deeper than 16 levels become `<max-depth>` instead of being exported unredacted, and
+    circular references become `<circular>`.
+  - Every adapter gains the `bearer` pattern and the wider `sk-`/`pk-`/`api-`/`key-`/`token-` key
+    prefixes. `@anvia/langfuse` replacement text stays `[REDACTED]` and `@anvia/lens` stays
+    `<redacted>`.
+
+### Patch Changes
+
+- Updated dependencies [2845d6a]
+  - @anvia/otel@1.2.0
+
 ## 1.1.3
 
 ### Patch Changes

@@ -379,6 +379,37 @@ describe("Lens eval ergonomics", () => {
     }
   });
 
+  it("redacts score metadata with the client capture policy", async () => {
+    const server = await startOtlpServer();
+    const client = new LensClient({
+      baseUrl: server.baseUrl,
+      publicKey: "public",
+      secretKey: "secret",
+      serviceName: "score-redaction",
+      redactMetadata: true,
+    });
+
+    try {
+      await client.score({
+        id: "feedback-1",
+        traceId: "1234567890abcdef1234567890abcdef",
+        name: "user-feedback",
+        value: 1,
+        dataType: "BOOLEAN",
+        metadata: { channel: "thumbs", email: "person@example.com" },
+      });
+      await client.flush();
+
+      const body = server.bodies();
+      expect(body).toContain("anvia.eval.score.metadata");
+      expect(body).toContain("<redacted>");
+      expect(body).not.toContain("person@example.com");
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
   it("follows output redaction for errors and input redaction for metadata", async () => {
     const server = await startOtlpServer();
     const client = new LensClient({

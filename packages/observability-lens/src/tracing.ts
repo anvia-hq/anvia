@@ -211,8 +211,9 @@ export class LensClient {
       );
     }
     if (this.resource !== undefined) return Promise.resolve(this.resource);
+    const capture = this.captureOptions({});
     this.initialization ??= Promise.resolve()
-      .then(() => createLensResources(this.config as ResolvedLensConfig))
+      .then(() => createLensResources(this.config as ResolvedLensConfig, capture.transformMetadata))
       .then((resource) => {
         this.resource = resource;
         return resource;
@@ -297,7 +298,10 @@ export class LensClient {
   }
 }
 
-async function createLensResources(config: ResolvedLensConfig): Promise<LensResources> {
+async function createLensResources(
+  config: ResolvedLensConfig,
+  transformMetadata: ((metadata: Record<string, unknown>) => Record<string, unknown>) | undefined,
+): Promise<LensResources> {
   const authorization = `Basic ${Buffer.from(`${config.publicKey}:${config.secretKey}`).toString("base64")}`;
   const headers = { Authorization: authorization };
   const resource = resourceFromAttributes({
@@ -340,7 +344,7 @@ async function createLensResources(config: ResolvedLensConfig): Promise<LensReso
       loggerProvider,
       tracer: tracerProvider.getTracer("@anvia/lens", "1.0.0"),
       logger,
-      scorer: createOtelScorer({ logger }),
+      scorer: createOtelScorer({ logger, transformMetadata }),
     };
   } catch (error) {
     await Promise.allSettled([

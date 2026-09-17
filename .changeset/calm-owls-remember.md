@@ -1,5 +1,5 @@
 ---
-"@anvia/core": major
+"@anvia/core": minor
 ---
 
 Add deterministic `recentTurns` memory-compaction retention and retain deprecated `recentTokens`

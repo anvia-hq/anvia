@@ -78,9 +78,11 @@ export function createRedactor(options: RedactionOptions = {}): Redactor {
       if (numericOnly && !pattern.numeric) continue;
       text = text.replace(pattern.regex, (...args: unknown[]) => {
         const match = String(args[0]);
-        // Capture groups shift the callback arguments; offset and input are always the last two.
-        const offset = Number(args[args.length - 2]);
-        const source = String(args[args.length - 1]);
+        // Capture groups shift the callback arguments. Regexes with named groups append the groups
+        // object after the input, so offset and input are the last two or three values.
+        const hasGroups = typeof args[args.length - 1] === "object";
+        const offset = Number(args[args.length - (hasGroups ? 3 : 2)]);
+        const source = String(args[args.length - (hasGroups ? 2 : 1)]);
         return pattern.validate === undefined || pattern.validate(match, offset, source)
           ? replacement
           : match;
@@ -116,7 +118,8 @@ export function createRedactor(options: RedactionOptions = {}): Redactor {
       const result: Record<string, unknown> = {};
       for (const [key, entry] of Object.entries(record)) {
         // Encoded bodies are already opaque; scanning them only risks corrupting the payload.
-        if (key === "data" && isEncodedValue(record)) {
+        // Structured data still needs traversal, so only encoded strings are preserved verbatim.
+        if (key === "data" && typeof entry === "string" && isEncodedValue(record)) {
           result[key] = entry;
           continue;
         }

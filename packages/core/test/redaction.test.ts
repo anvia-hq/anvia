@@ -74,11 +74,13 @@ describe("createRedactor", () => {
     expect(
       createRedactor().redact([
         { type: "image", data: "alice@example.com" },
+        { type: "image", data: { email: "alice@example.com" } },
         { url: "data:image/png;base64,alice@example.com" },
         binary,
       ]),
     ).toEqual([
       { type: "image", data: "alice@example.com" },
+      { type: "image", data: { email: "<redacted>" } },
       { url: "data:image/png;base64,alice@example.com" },
       binary,
     ]);
@@ -127,6 +129,25 @@ describe("createRedactor", () => {
     expect(createRedactor().patternNames()).toEqual(
       DEFAULT_PATTERNS.map((pattern) => pattern.name),
     );
+  });
+
+  it("supports custom patterns with named capture groups", () => {
+    const seen: Array<{ match: string; offset: number; input: string }> = [];
+    const redactor = createRedactor({
+      patterns: [
+        {
+          name: "tag",
+          regex: /\btag=(?<value>[a-z0-9]+)\b/g,
+          validate: (match, offset, input) => {
+            seen.push({ match, offset, input });
+            return true;
+          },
+        },
+      ],
+    });
+
+    expect(redactor.redactString("prefix tag=abc suffix")).toBe("prefix <redacted> suffix");
+    expect(seen).toEqual([{ match: "tag=abc", offset: 7, input: "prefix tag=abc suffix" }]);
   });
 
   it("redacts message content, including tool-call inputs", () => {

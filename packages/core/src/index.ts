@@ -174,6 +174,7 @@ export type {
   MemoryCompactionMessage,
   MemoryCompactionMetadata,
   MemoryCompactionOptions,
+  MemoryCompactionRetention,
   MemoryCompactionReplacePrefixOptions,
   MemoryCompactionReplacePrefixResult,
   MemoryCompactionResult,

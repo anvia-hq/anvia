@@ -1,5 +1,5 @@
 import type { Message } from "../completion/types";
-import { assertPositiveInteger } from "./assert";
+import { assertNonnegativeInteger, assertPositiveInteger } from "./assert";
 import type {
   MemoryCompactionConflictRetryOptions,
   MemoryCompactor,
@@ -13,7 +13,9 @@ type ResolvedMemoryOptions = {
   compaction?:
     | {
         trigger: { afterTokens: number };
-        retention: { recentTokens: number };
+        retention:
+          | { recentTurns: number; recentTokens?: undefined }
+          | { recentTokens: number; recentTurns?: undefined };
         tokenCounter: MemoryTokenCounter;
         compactor: MemoryCompactor;
         conflictRetries: false | MemoryCompactionConflictRetryOptions;
@@ -28,10 +30,25 @@ export function resolveMemoryOptions(options: MemoryOptions = {}): ResolvedMemor
   if (options.compaction !== undefined) {
     const afterTokens = options.compaction.trigger.afterTokens;
     assertPositiveInteger(afterTokens, "compaction.trigger.afterTokens");
-    const recentTokens = options.compaction.retention?.recentTokens ?? Math.floor(afterTokens / 4);
-    assertPositiveInteger(recentTokens, "compaction.retention.recentTokens");
-    if (recentTokens >= afterTokens) {
-      throw new RangeError("compaction.retention.recentTokens must be less than afterTokens.");
+    const configuredRetention = options.compaction.retention;
+    const recentTurns = configuredRetention?.recentTurns;
+    const recentTokens = configuredRetention?.recentTokens;
+    if (recentTurns !== undefined && recentTokens !== undefined) {
+      throw new TypeError(
+        "compaction.retention must specify either recentTurns or recentTokens, not both.",
+      );
+    }
+    let retention: NonNullable<ResolvedMemoryOptions["compaction"]>["retention"];
+    if (recentTokens !== undefined) {
+      assertPositiveInteger(recentTokens, "compaction.retention.recentTokens");
+      if (recentTokens >= afterTokens) {
+        throw new RangeError("compaction.retention.recentTokens must be less than afterTokens.");
+      }
+      retention = { recentTokens };
+    } else {
+      const resolvedRecentTurns = recentTurns ?? 1;
+      assertNonnegativeInteger(resolvedRecentTurns, "compaction.retention.recentTurns");
+      retention = { recentTurns: resolvedRecentTurns };
     }
     const tokenCounter = options.compaction.tokenCounter ?? estimateMemoryTokens;
     if (typeof tokenCounter !== "function") {
@@ -48,9 +65,7 @@ export function resolveMemoryOptions(options: MemoryOptions = {}): ResolvedMemor
       trigger: {
         afterTokens,
       },
-      retention: {
-        recentTokens,
-      },
+      retention,
       tokenCounter,
       compactor: options.compaction.compactor,
       conflictRetries,

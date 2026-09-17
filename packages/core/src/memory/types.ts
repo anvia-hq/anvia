@@ -204,16 +204,34 @@ export type MemoryCompactionConflictRetryOptions = {
   maxAttempts: number;
 };
 
+export type MemoryCompactionRetention =
+  | {
+      /**
+       * Number of complete, user-led turns to keep unsummarized. A `user` message starts a turn;
+       * following assistant, tool, and system messages stay with it until the next user message.
+       *
+       * @default 1
+       */
+      recentTurns?: number | undefined;
+      recentTokens?: never;
+    }
+  | {
+      /**
+       * Messages within this token budget of the end stay unsummarized.
+       *
+       * @deprecated Use `recentTurns`. Token retention remains available for compatibility.
+       */
+      recentTokens: number;
+      recentTurns?: never;
+    };
+
 /** When and how session memory is compacted. */
 export type MemoryCompactionOptions = {
   trigger: {
     /** Compaction runs when the projected context exceeds this token count. */
     afterTokens: number;
   };
-  retention?: {
-    /** Messages within this token budget of the end stay unsummarized. */
-    recentTokens?: number | undefined;
-  };
+  retention?: MemoryCompactionRetention | undefined;
   /** Overrides the default approximate counter; use a model counter for exact budgets. */
   tokenCounter?: MemoryTokenCounter | undefined;
   compactor: MemoryCompactor;

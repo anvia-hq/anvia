@@ -222,7 +222,7 @@ export class AgentRunMemory {
         snapshot.messages,
         incomingMessages,
         options.trigger.afterTokens,
-        options.retention.recentTokens,
+        options.retention,
         options.tokenCounter,
         force,
       );
@@ -323,7 +323,9 @@ async function selectCompactionPrefix(
   messages: readonly MessageType[],
   incomingMessages: readonly MessageType[],
   afterTokens: number,
-  recentTokens: number,
+  retention:
+    | { recentTurns: number; recentTokens?: undefined }
+    | { recentTokens: number; recentTurns?: undefined },
   tokenCounter: MemoryTokenCounter,
   force: boolean,
 ): Promise<CompactionSelection> {
@@ -342,34 +344,50 @@ async function selectCompactionPrefix(
   const userMessageIndexes = messages.flatMap((message, index) =>
     message.role === "user" ? [index] : [],
   );
-  if (userMessageIndexes.length <= 1) {
-    return none;
-  }
-
-  // Retain complete user-led turns. The newest turn is always kept even when it alone exceeds the
-  // retention budget. Find the earliest newer turn whose tail fits with logarithmic counter calls.
-  const tailTokenCounts = new Map<number, number>();
-  const countTail = async (messageIndex: number): Promise<number> => {
-    const cached = tailTokenCounts.get(messageIndex);
-    if (cached !== undefined) return cached;
-    const count = await countTokens(tokenCounter, messages.slice(messageIndex));
-    tailTokenCounts.set(messageIndex, count);
-    return count;
-  };
-  let lower = 0;
-  let upper = userMessageIndexes.length - 1;
-  let retainedBoundary = upper;
-  while (lower <= upper) {
-    const middle = Math.floor((lower + upper) / 2);
-    const candidate = userMessageIndexes[middle] ?? 0;
-    if ((await countTail(candidate)) <= recentTokens) {
-      retainedBoundary = middle;
-      upper = middle - 1;
-    } else {
-      lower = middle + 1;
+  let compactedMessageCount: number;
+  let retainedTokenCount: number;
+  if (retention.recentTurns !== undefined) {
+    if (userMessageIndexes.length <= retention.recentTurns) {
+      return none;
     }
+    compactedMessageCount =
+      retention.recentTurns === 0
+        ? messages.length
+        : (userMessageIndexes[userMessageIndexes.length - retention.recentTurns] ?? 0);
+    retainedTokenCount = await countTokens(tokenCounter, messages.slice(compactedMessageCount));
+  } else {
+    if (userMessageIndexes.length <= 1) {
+      return none;
+    }
+
+    // Legacy token retention still keeps complete user-led turns. The newest turn is always kept
+    // even when it alone exceeds the budget. Find the earliest fitting tail logarithmically.
+    const tailTokenCounts = new Map<number, number>();
+    const countTail = async (messageIndex: number): Promise<number> => {
+      const cached = tailTokenCounts.get(messageIndex);
+      if (cached !== undefined) return cached;
+      const count = await countTokens(tokenCounter, messages.slice(messageIndex));
+      tailTokenCounts.set(messageIndex, count);
+      return count;
+    };
+    let lower = 0;
+    let upper = userMessageIndexes.length - 1;
+    let retainedBoundary = upper;
+    while (lower <= upper) {
+      const middle = Math.floor((lower + upper) / 2);
+      const candidate = userMessageIndexes[middle] ?? 0;
+      if ((await countTail(candidate)) <= retention.recentTokens) {
+        retainedBoundary = middle;
+        upper = middle - 1;
+      } else {
+        lower = middle + 1;
+      }
+    }
+    compactedMessageCount = userMessageIndexes[retainedBoundary] ?? 0;
+    retainedTokenCount =
+      tailTokenCounts.get(compactedMessageCount) ??
+      (await countTokens(tokenCounter, messages.slice(compactedMessageCount)));
   }
-  const compactedMessageCount = userMessageIndexes[retainedBoundary] ?? 0;
   if (compactedMessageCount === 0) {
     return none;
   }
@@ -377,9 +395,6 @@ async function selectCompactionPrefix(
     tokenCounter,
     messages.slice(0, compactedMessageCount),
   );
-  const retainedTokenCount =
-    tailTokenCounts.get(compactedMessageCount) ??
-    (await countTokens(tokenCounter, messages.slice(compactedMessageCount)));
   return {
     compactedMessageCount,
     originalTokenCount,

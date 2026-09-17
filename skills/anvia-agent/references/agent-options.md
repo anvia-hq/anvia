@@ -40,8 +40,10 @@ await agent.generate({ prompt: "Remember my project is named Anvia.", session })
 await agent.generate({ prompt: "What is my project named?", session });
 ```
 
-Compaction (`afterTokens` / `recentTokens` + token counter + compactor) is opt-in
-for long sessions — add it when context growth is the problem, not upfront.
+Compaction (`afterTokens` / `recentTurns` + token counter + compactor) is opt-in
+for long sessions — add it when context growth is the problem, not upfront. `recentTurns` counts
+complete user-led turns (including their assistant and tool activity) and defaults to `1`;
+`recentTokens` remains available as a deprecated compatibility option.
 `agent.compactMemory({ session })` forces that compaction on demand.
 
 ## Multi-agent

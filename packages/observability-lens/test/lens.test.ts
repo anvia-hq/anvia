@@ -65,6 +65,8 @@ describe("resolveLensConfig", () => {
       "ftp://lens.test",
       "https://lens.test?tenant=acme",
       "https://lens.test#ingest",
+      "https://lens.test?",
+      "https://lens.test#",
     ]) {
       expect(() => resolveLensConfig({ ...credentials, baseUrl })).toThrow(
         /baseUrl must be an absolute http\(s\) URL without query or fragment/,
@@ -180,6 +182,27 @@ describe("Lens eval ergonomics", () => {
     } finally {
       await client.close();
       await server.close();
+    }
+  });
+
+  it("rejects capture byte limits that would disable bounding", () => {
+    const client = new LensClient({
+      baseUrl: "https://lens.test",
+      publicKey: "public",
+      secretKey: "secret",
+      serviceName: "capture-validation",
+    });
+
+    for (const captureMaxBytes of [0, -1, 95, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => client.observer({ captureMaxBytes })).toThrow(
+        /captureMaxBytes must be an integer of at least 96 bytes/,
+      );
+      expect(() => client.pipelineObserver({ captureMaxBytes })).toThrow(
+        /captureMaxBytes must be an integer of at least 96 bytes/,
+      );
+      expect(() => client.evalReporter({ captureMaxBytes })).toThrow(
+        /captureMaxBytes must be an integer of at least 96 bytes/,
+      );
     }
   });
 

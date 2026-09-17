@@ -24,13 +24,10 @@ export function resolveLensConfig(options: LensClientOptions = {}): ResolvedLens
     process.env.ANVIA_LENS_SERVICE_NAME,
   );
   const timeoutMs = options.timeoutMs ?? 30_000;
-  const captureMaxBytes = options.captureMaxBytes ?? 262_144;
+  const captureMaxBytes = assertCaptureMaxBytes(options.captureMaxBytes ?? 262_144);
   const captureMode = options.captureMode ?? "safe";
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
     throw new TypeError("Anvia Lens timeoutMs must be a positive number");
-  }
-  if (!Number.isInteger(captureMaxBytes) || captureMaxBytes < 96) {
-    throw new TypeError("Anvia Lens captureMaxBytes must be an integer of at least 96 bytes");
   }
   if (captureMode !== "safe" && captureMode !== "full") {
     throw new TypeError('Anvia Lens captureMode must be "safe" or "full"');
@@ -65,11 +62,25 @@ function required(
 }
 
 /**
+ * Reject capture byte limits that OpenTelemetry would treat as "no limit", so an invalid override
+ * cannot silently defeat the capture policy.
+ */
+export function assertCaptureMaxBytes(value: number): number {
+  if (!Number.isInteger(value) || value < 96) {
+    throw new TypeError("Anvia Lens captureMaxBytes must be an integer of at least 96 bytes");
+  }
+  return value;
+}
+
+/**
  * Lens endpoints are composed by string concatenation, so a malformed base URL would otherwise fail
  * lazily (and for OTLP exports, silently). Reject it wherever a base URL enters the client.
  */
 export function normalizeLensBaseUrl(value: string): string {
   const normalized = value.trim().replace(/\/+$/, "");
+  // WHATWG URL reports a terminal "?" or "#" as an empty query/fragment, but it still delimits the
+  // composed endpoint, so reject either delimiter before parsing.
+  if (normalized.includes("?") || normalized.includes("#")) throw invalidBaseUrl(value);
   let parsed: URL;
   try {
     parsed = new URL(normalized);
@@ -77,7 +88,6 @@ export function normalizeLensBaseUrl(value: string): string {
     throw invalidBaseUrl(value);
   }
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") throw invalidBaseUrl(value);
-  if (parsed.search.length > 0 || parsed.hash.length > 0) throw invalidBaseUrl(value);
   return normalized;
 }
 

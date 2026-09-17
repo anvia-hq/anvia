@@ -112,7 +112,8 @@ Client-level `redactInputs`, `redactOutputs`, `redaction`, and `captureMaxBytes`
 reporters as well as observers; the same fields on `evalReporter()` override them per reporter.
 Payloads are redacted before serialization and dropped from the record with
 `anvia.eval.payload.status: "size_limit"` when they exceed `captureMaxBytes` (262,144 bytes by
-default).
+default). Byte limits that are not integers of at least 96 bytes are rejected when the observer or
+reporter is created, because OpenTelemetry treats such values as unbounded.
 
 Lens eval reporters accept traces from the `"lens"` Agent observer registration by default. Set
 `traceObserver` to the Agent registration name when it differs.

@@ -14,7 +14,7 @@ import { resourceFromAttributes } from "@opentelemetry/resources";
 import { BatchLogRecordProcessor, LoggerProvider } from "@opentelemetry/sdk-logs";
 import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base";
 import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
-import { type ResolvedLensConfig, resolveLensConfig } from "./config.js";
+import { assertCaptureMaxBytes, type ResolvedLensConfig, resolveLensConfig } from "./config.js";
 import { createLensDatasetClient } from "./dataset-client.js";
 import { createLensPromptClient } from "./prompt-client.js";
 import { createLensRedactor } from "./redaction.js";
@@ -75,10 +75,13 @@ export class LensClient {
       };
     }
     const client = this;
+    const { captureMode, capture } = this.observerOptions(options);
     return {
       async startRun(args: AgentRunStartArgs) {
         const resource = await client.resources();
-        return createOtelObserver(client.otelObserverOptions(resource, options)).startRun(args);
+        return createOtelObserver({ tracer: resource.tracer, captureMode, ...capture }).startRun(
+          args,
+        );
       },
     };
   }
@@ -94,12 +97,15 @@ export class LensClient {
       };
     }
     const client = this;
+    const { captureMode, capture } = this.observerOptions(options);
     return {
       async startRun(args: PipelineRunStartArgs) {
         const resource = await client.resources();
-        return createOtelPipelineObserver(client.otelObserverOptions(resource, options)).startRun(
-          args,
-        );
+        return createOtelPipelineObserver({
+          tracer: resource.tracer,
+          captureMode,
+          ...capture,
+        }).startRun(args);
       },
     };
   }
@@ -115,6 +121,7 @@ export class LensClient {
         },
       };
     }
+    const capture = this.captureOptions(options);
     let reporter: EvalReporter<Input, Output, Expected> | undefined;
     const resolve = async () => {
       this.assertOpen();
@@ -124,7 +131,7 @@ export class LensClient {
         includeMetadata: options.includeMetadata ?? false,
         includePayloads: options.includePayloads,
         onMissingTrace: options.onMissingTrace,
-        ...this.captureOptions(options),
+        ...capture,
         logger: (await this.resources()).logger,
       });
       return reporter;
@@ -221,18 +228,21 @@ export class LensClient {
     const redactInputs = overrides.redactInputs ?? this.options.redactInputs;
     const redactOutputs = overrides.redactOutputs ?? this.options.redactOutputs;
     return {
-      captureMaxBytes: overrides.captureMaxBytes ?? config.captureMaxBytes,
+      captureMaxBytes: assertCaptureMaxBytes(overrides.captureMaxBytes ?? config.captureMaxBytes),
       transformInput: redactInputs ? redactor.redact : undefined,
       transformOutput: redactOutputs ? redactor.redact : undefined,
     };
   }
 
-  private otelObserverOptions(resource: LensResources, overrides: LensObserverOptions) {
+  /**
+   * Resolved once per observer so invalid overrides throw where the observer is wired up instead of
+   * being swallowed by the observer error policy on every run.
+   */
+  private observerOptions(overrides: LensObserverOptions) {
     const config = this.config as ResolvedLensConfig;
     return {
-      tracer: resource.tracer,
       captureMode: overrides.captureMode ?? config.captureMode,
-      ...this.captureOptions(overrides),
+      capture: this.captureOptions(overrides),
     };
   }
 

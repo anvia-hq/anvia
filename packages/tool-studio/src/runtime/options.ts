@@ -3,6 +3,8 @@ import type {
   StudioEvalSuite,
   StudioGraphRegistration,
   StudioModelConfig,
+  StudioMachineMonitorOptions,
+  StudioMachineMonitorStore,
   StudioPipeline,
   StudioPipelineLogStore,
   StudioPipelineRunStore,
@@ -19,6 +21,7 @@ export type ResolvedStores = {
   traces?: StudioTraceStore;
   pipelineLogs?: StudioPipelineLogStore;
   pipelineRuns?: StudioPipelineRunStore;
+  machineMonitor?: StudioMachineMonitorStore;
 };
 
 export type StudioRuntimeOptions = {
@@ -31,6 +34,7 @@ export type StudioRuntimeOptions = {
   pipelines: StudioPipeline[];
   evals: StudioEvalSuite[];
   models?: StudioModelConfig;
+  machineMonitor?: StudioMachineMonitorOptions | false;
   stores?: StudioStores;
   ui?: boolean | StudioUiOptions;
   sandboxes?: readonly StudioSandboxRegistration[];

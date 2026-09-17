@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
-import type { StudioStatusSummary } from "../../../../types";
+import type {
+  StudioMachineMonitorHistory,
+  StudioMachineMonitorRange,
+  StudioStatusSummary,
+} from "../../../../types";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import {
@@ -11,11 +15,16 @@ import {
 } from "../../components/ui/studio";
 import { formatRelativeTime } from "../shared/format";
 import { JsonSyntax } from "../shared/renderers";
+import { MachineMonitorPanel } from "./machine-monitor-panel";
 
 export function StatusPage(props: { enabled: boolean }) {
   const [summary, setSummary] = useState<StudioStatusSummary | undefined>();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [history, setHistory] = useState<StudioMachineMonitorHistory | undefined>();
+  const [historyRange, setHistoryRange] = useState<StudioMachineMonitorRange>("7d");
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState("");
 
   const loadStatus = useCallback(async () => {
     if (!props.enabled) {
@@ -32,7 +41,6 @@ export function StatusPage(props: { enabled: boolean }) {
       setSummary((await response.json()) as StudioStatusSummary);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : String(loadError));
-      setSummary(undefined);
     } finally {
       setLoading(false);
     }
@@ -40,7 +48,33 @@ export function StatusPage(props: { enabled: boolean }) {
 
   useEffect(() => {
     void loadStatus();
+    const interval = window.setInterval(() => void loadStatus(), 15_000);
+    return () => window.clearInterval(interval);
   }, [loadStatus]);
+
+  const loadHistory = useCallback(async () => {
+    if (!props.enabled) return;
+    setHistoryLoading(true);
+    setHistoryError("");
+    try {
+      const response = await fetch(`/status/history?range=${historyRange}`);
+      if (!response.ok) {
+        throw new Error(`History failed with HTTP ${response.status}`);
+      }
+      setHistory((await response.json()) as StudioMachineMonitorHistory);
+    } catch (loadError) {
+      setHistoryError(loadError instanceof Error ? loadError.message : String(loadError));
+      setHistory(undefined);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [historyRange, props.enabled]);
+
+  useEffect(() => {
+    void loadHistory();
+    const interval = window.setInterval(() => void loadHistory(), 60_000);
+    return () => window.clearInterval(interval);
+  }, [loadHistory]);
 
   return (
     <StudioPageShell className="grid-rows-[auto_minmax(0,1fr)]" aria-label="Status">
@@ -57,7 +91,10 @@ export function StatusPage(props: { enabled: boolean }) {
               type="button"
               variant="secondary"
               disabled={loading}
-              onClick={() => void loadStatus()}
+              onClick={() => {
+                void loadStatus();
+                void loadHistory();
+              }}
             >
               Refresh
             </Button>
@@ -73,17 +110,34 @@ export function StatusPage(props: { enabled: boolean }) {
           />
         ) : loading && summary === undefined ? (
           <StudioEmptyState title="Loading status" text="Reading runtime status." />
-        ) : error.length > 0 ? (
+        ) : error.length > 0 && summary === undefined ? (
           <StudioEmptyState title="Status error" text={error} />
         ) : summary === undefined ? null : (
-          <StatusDashboard summary={summary} />
+          <StatusDashboard
+            summary={summary}
+            history={history}
+            historyRange={historyRange}
+            historyLoading={historyLoading}
+            historyError={historyError}
+            onHistoryRangeChange={(range) => {
+              setHistory(undefined);
+              setHistoryRange(range);
+            }}
+          />
         )}
       </StudioPageContent>
     </StudioPageShell>
   );
 }
 
-function StatusDashboard(props: { summary: StudioStatusSummary }) {
+function StatusDashboard(props: {
+  summary: StudioStatusSummary;
+  history: StudioMachineMonitorHistory | undefined;
+  historyRange: StudioMachineMonitorRange;
+  historyLoading: boolean;
+  historyError: string;
+  onHistoryRangeChange: (range: StudioMachineMonitorRange) => void;
+}) {
   const capabilityEntries = Object.entries(props.summary.capabilities);
   const enabledCapabilityCount = capabilityEntries.filter(
     ([, capability]) => capability?.enabled === true,
@@ -91,6 +145,14 @@ function StatusDashboard(props: { summary: StudioStatusSummary }) {
 
   return (
     <div className="grid h-full min-h-0 gap-5 border-t border-hair pt-4">
+      <MachineMonitorPanel
+        summary={props.summary.machine}
+        history={props.history}
+        range={props.historyRange}
+        loading={props.historyLoading}
+        error={props.historyError}
+        onRangeChange={props.onHistoryRangeChange}
+      />
       <section className="grid gap-5 xl:grid-cols-[minmax(280px,0.58fr)_minmax(0,1.42fr)]">
         <RuntimeSummary summary={props.summary} enabledCapabilityCount={enabledCapabilityCount} />
         <div className="grid gap-5 lg:grid-cols-2">

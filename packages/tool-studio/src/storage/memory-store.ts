@@ -19,6 +19,10 @@ import type {
   StudioPipelineRunRecord,
   StudioPipelineRunSaveInput,
   StudioPipelineRunStore,
+  StudioMachineMonitorDeleteOptions,
+  StudioMachineMonitorSample,
+  StudioMachineMonitorSampleListOptions,
+  StudioMachineMonitorStore,
   StudioSession,
   StudioSessionCreateInput,
   StudioSessionListOptions,
@@ -52,12 +56,18 @@ type StudioCompactionState = {
 export function createInMemoryStudioStore(): StudioSessionStore &
   StudioTraceStore &
   StudioPipelineLogStore &
-  StudioPipelineRunStore {
+  StudioPipelineRunStore &
+  StudioMachineMonitorStore {
   return new InMemoryStudioStore();
 }
 
 class InMemoryStudioStore
-  implements StudioSessionStore, StudioTraceStore, StudioPipelineLogStore, StudioPipelineRunStore
+  implements
+    StudioSessionStore,
+    StudioTraceStore,
+    StudioPipelineLogStore,
+    StudioPipelineRunStore,
+    StudioMachineMonitorStore
 {
   readonly kind = "memory";
   readonly compaction: MemoryCompactionCapability = {
@@ -75,6 +85,52 @@ class InMemoryStudioStore
   private readonly traces = new Map<string, StudioTrace>();
   private readonly pipelineLogs = new Map<string, StudioPipelineLogEntry[]>();
   private readonly pipelineRuns = new Map<string, StudioPipelineRunRecord>();
+  private readonly machineMonitorSamples = new Map<string, StudioMachineMonitorSample[]>();
+
+  appendMachineMonitorSample(sample: StudioMachineMonitorSample): void {
+    const samples = this.machineMonitorSamples.get(sample.sourceId) ?? [];
+    const existing = samples.findIndex((entry) => entry.timestamp === sample.timestamp);
+    const snapshot = structuredClone(sample);
+    if (existing === -1) {
+      samples.push(snapshot);
+      samples.sort((left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp));
+    } else {
+      samples[existing] = snapshot;
+    }
+    this.machineMonitorSamples.set(sample.sourceId, samples);
+  }
+
+  listMachineMonitorSamples(
+    options: StudioMachineMonitorSampleListOptions,
+  ): StudioMachineMonitorSample[] {
+    const from = Date.parse(options.from);
+    const to = Date.parse(options.to);
+    const buckets = new Map<number, StudioMachineMonitorSample[]>();
+    for (const sample of this.machineMonitorSamples.get(options.sourceId) ?? []) {
+      const timestamp = Date.parse(sample.timestamp);
+      if (timestamp < from || timestamp > to) continue;
+      const bucket = Math.floor(timestamp / options.bucketMs) * options.bucketMs;
+      const samples = buckets.get(bucket) ?? [];
+      samples.push(sample);
+      buckets.set(bucket, samples);
+    }
+    return [...buckets.entries()]
+      .sort(([left], [right]) => left - right)
+      .slice(0, options.limit)
+      .map(([timestamp, samples]) => averageMachineSamples(options.sourceId, timestamp, samples));
+  }
+
+  deleteMachineMonitorSamples(options: StudioMachineMonitorDeleteOptions): number {
+    const before = Date.parse(options.before);
+    const samples = this.machineMonitorSamples.get(options.sourceId) ?? [];
+    const retained = samples.filter((sample) => Date.parse(sample.timestamp) >= before);
+    if (retained.length === 0) {
+      this.machineMonitorSamples.delete(options.sourceId);
+    } else {
+      this.machineMonitorSamples.set(options.sourceId, retained);
+    }
+    return samples.length - retained.length;
+  }
 
   listSessions(options: StudioSessionListOptions): StudioSessionSummary[] {
     return [...this.sessions.values()]
@@ -383,4 +439,25 @@ function serializeJsonError(error: unknown): JsonValue {
     };
   }
   return isJsonValue(error) ? error : String(error);
+}
+
+function averageMachineSamples(
+  sourceId: string,
+  timestamp: number,
+  samples: StudioMachineMonitorSample[],
+): StudioMachineMonitorSample {
+  const average = (select: (sample: StudioMachineMonitorSample) => number) =>
+    samples.reduce((sum, sample) => sum + select(sample), 0) / samples.length;
+  return {
+    sourceId,
+    timestamp: new Date(timestamp).toISOString(),
+    cpuPercent: average((sample) => sample.cpuPercent),
+    memoryUsedBytes: average((sample) => sample.memoryUsedBytes),
+    memoryTotalBytes: average((sample) => sample.memoryTotalBytes),
+    processRssBytes: average((sample) => sample.processRssBytes),
+    loadAverage1m: average((sample) => sample.loadAverage1m),
+    loadAverage5m: average((sample) => sample.loadAverage5m),
+    loadAverage15m: average((sample) => sample.loadAverage15m),
+    uptimeSeconds: average((sample) => sample.uptimeSeconds),
+  };
 }

@@ -1043,6 +1043,7 @@ export type StudioStatusSummary = {
     traces?: string;
     pipelineLogs?: string;
     pipelineRuns?: string;
+    machineMonitor?: string;
   };
   counts: {
     agents: number;
@@ -1053,7 +1054,74 @@ export type StudioStatusSummary = {
     pipelineRuns?: number;
   };
   capabilities: Partial<Record<StudioCapability, StudioCapabilityConfig>>;
+  machine?: StudioMachineMonitorSummary;
   generatedAt: string;
+};
+
+export type StudioMachineMonitorRange = "7d" | "30d";
+
+export type StudioMachineMonitorSample = {
+  sourceId: string;
+  timestamp: string;
+  cpuPercent: number;
+  memoryUsedBytes: number;
+  memoryTotalBytes: number;
+  processRssBytes: number;
+  loadAverage1m: number;
+  loadAverage5m: number;
+  loadAverage15m: number;
+  uptimeSeconds: number;
+};
+
+export type StudioMachineMonitorSummary = {
+  sourceId: string;
+  retentionDays: 7 | 30;
+  sampleIntervalSeconds: number;
+  availableRanges: StudioMachineMonitorRange[];
+  current: StudioMachineMonitorSample;
+};
+
+export type StudioMachineMonitorHistory = {
+  sourceId: string;
+  range: StudioMachineMonitorRange;
+  from: string;
+  to: string;
+  bucketSeconds: number;
+  retentionDays: 7 | 30;
+  samples: StudioMachineMonitorSample[];
+};
+
+export type StudioMachineMonitorSampleListOptions = {
+  sourceId: string;
+  from: string;
+  to: string;
+  bucketMs: number;
+  limit: number;
+};
+
+export type StudioMachineMonitorDeleteOptions = {
+  sourceId: string;
+  before: string;
+};
+
+export type StudioMachineMonitorStore = {
+  readonly kind?: string;
+  appendMachineMonitorSample(sample: StudioMachineMonitorSample): void | Promise<void>;
+  listMachineMonitorSamples(
+    options: StudioMachineMonitorSampleListOptions,
+  ): StudioMachineMonitorSample[] | Promise<StudioMachineMonitorSample[]>;
+  deleteMachineMonitorSamples(options: StudioMachineMonitorDeleteOptions): number | Promise<number>;
+};
+
+export type StudioMachineMonitorOptions = {
+  /** Stable identifier used to keep histories from different runtimes separate. */
+  sourceId?: string;
+  /** Raw sample cadence. Defaults to 60 seconds. */
+  sampleIntervalMs?: number;
+  /** Retention window. Defaults to 30 days. */
+  retentionDays?: 7 | 30;
+  /** Maximum history points returned to the UI. Defaults to 720. */
+  maxHistoryPoints?: number;
 };
 
 export type StudioStores = {
@@ -1061,6 +1129,7 @@ export type StudioStores = {
   traces?: StudioTraceStore;
   pipelineLogs?: StudioPipelineLogStore | false;
   pipelineRuns?: StudioPipelineRunStore | false;
+  machineMonitor?: StudioMachineMonitorStore | false;
 };
 
 export type StudioUiOptions = {
@@ -1077,6 +1146,7 @@ export type StudioOptions = {
   evals?: Array<StudioEvalSuite<any, any, any>>;
   quickPrompts?: Record<string, string[]>;
   stores?: StudioStores;
+  machineMonitor?: StudioMachineMonitorOptions | false;
   ui?: boolean | StudioUiOptions;
   models?: StudioModelConfig;
   sandboxes?: readonly StudioSandboxRegistration[];

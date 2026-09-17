@@ -316,6 +316,7 @@ function studioOptionsFromTargets(
     graphs: options.graphs === undefined ? [] : [...options.graphs],
   };
   if (options.models !== undefined) runtimeOptions.models = options.models;
+  if (options.machineMonitor !== undefined) runtimeOptions.machineMonitor = options.machineMonitor;
   if (options.stores !== undefined) runtimeOptions.stores = options.stores;
   if (options.ui !== undefined) runtimeOptions.ui = options.ui;
   if (options.sandboxes !== undefined) {
@@ -430,7 +431,7 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
   app.get("/config", (c) =>
     c.json(buildConfig(options, agents, pipelines, stores, sandboxRegistry.size)),
   );
-  registerStatusRoutes(app, {
+  const closeStatusRoutes = registerStatusRoutes(app, {
     options,
     agents,
     pipelines,
@@ -520,6 +521,7 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
     if (closing) return;
     closing = true;
     continuationRegistry.clear();
+    closeStatusRoutes();
     closeSandboxViews();
     runLifecycle.close();
   };

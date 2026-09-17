@@ -28,6 +28,10 @@ import type {
   StudioPipelineRunRecord,
   StudioPipelineRunSaveInput,
   StudioPipelineRunStore,
+  StudioMachineMonitorDeleteOptions,
+  StudioMachineMonitorSample,
+  StudioMachineMonitorSampleListOptions,
+  StudioMachineMonitorStore,
   StudioSession,
   StudioSessionCreateInput,
   StudioSessionListOptions,
@@ -165,14 +169,36 @@ type PipelineRunRow = {
   duration_ms: number | null;
 };
 
+type MachineMonitorRow = {
+  source_id: string;
+  bucket_ms: number;
+  cpu_percent: number;
+  memory_used_bytes: number;
+  memory_total_bytes: number;
+  process_rss_bytes: number;
+  load_average_1m: number;
+  load_average_5m: number;
+  load_average_15m: number;
+  uptime_seconds: number;
+};
+
 export function createSqliteSessionStore(
   options: SqliteSessionStoreOptions = {},
-): StudioSessionStore & StudioTraceStore & StudioPipelineLogStore & StudioPipelineRunStore {
+): StudioSessionStore &
+  StudioTraceStore &
+  StudioPipelineLogStore &
+  StudioPipelineRunStore &
+  StudioMachineMonitorStore {
   return new SqliteSessionStore(options.path ?? ":memory:");
 }
 
 class SqliteSessionStore
-  implements StudioSessionStore, StudioTraceStore, StudioPipelineLogStore, StudioPipelineRunStore
+  implements
+    StudioSessionStore,
+    StudioTraceStore,
+    StudioPipelineLogStore,
+    StudioPipelineRunStore,
+    StudioMachineMonitorStore
 {
   readonly kind = "sqlite";
   readonly compaction: MemoryCompactionCapability = {
@@ -190,6 +216,113 @@ class SqliteSessionStore
   private db: DatabaseSyncType | undefined;
 
   constructor(private readonly path: string) {}
+
+  appendMachineMonitorSample(sample: StudioMachineMonitorSample): void {
+    this.database()
+      .prepare(
+        `INSERT INTO anvia_studio_machine_monitor_samples (
+          source_id,
+          timestamp,
+          cpu_percent,
+          memory_used_bytes,
+          memory_total_bytes,
+          process_rss_bytes,
+          load_average_1m,
+          load_average_5m,
+          load_average_15m,
+          uptime_seconds
+        ) VALUES (
+          $sourceId,
+          $timestamp,
+          $cpuPercent,
+          $memoryUsedBytes,
+          $memoryTotalBytes,
+          $processRssBytes,
+          $loadAverage1m,
+          $loadAverage5m,
+          $loadAverage15m,
+          $uptimeSeconds
+        )
+        ON CONFLICT(source_id, timestamp) DO UPDATE SET
+          cpu_percent = excluded.cpu_percent,
+          memory_used_bytes = excluded.memory_used_bytes,
+          memory_total_bytes = excluded.memory_total_bytes,
+          process_rss_bytes = excluded.process_rss_bytes,
+          load_average_1m = excluded.load_average_1m,
+          load_average_5m = excluded.load_average_5m,
+          load_average_15m = excluded.load_average_15m,
+          uptime_seconds = excluded.uptime_seconds`,
+      )
+      .run({
+        $sourceId: sample.sourceId,
+        $timestamp: sample.timestamp,
+        $cpuPercent: sample.cpuPercent,
+        $memoryUsedBytes: sample.memoryUsedBytes,
+        $memoryTotalBytes: sample.memoryTotalBytes,
+        $processRssBytes: sample.processRssBytes,
+        $loadAverage1m: sample.loadAverage1m,
+        $loadAverage5m: sample.loadAverage5m,
+        $loadAverage15m: sample.loadAverage15m,
+        $uptimeSeconds: sample.uptimeSeconds,
+      });
+  }
+
+  listMachineMonitorSamples(
+    options: StudioMachineMonitorSampleListOptions,
+  ): StudioMachineMonitorSample[] {
+    const rows = this.database()
+      .prepare(
+        `SELECT source_id,
+                CAST((unixepoch(timestamp) * 1000) / $bucketMs AS INTEGER) * $bucketMs AS bucket_ms,
+                AVG(cpu_percent) AS cpu_percent,
+                AVG(memory_used_bytes) AS memory_used_bytes,
+                AVG(memory_total_bytes) AS memory_total_bytes,
+                AVG(process_rss_bytes) AS process_rss_bytes,
+                AVG(load_average_1m) AS load_average_1m,
+                AVG(load_average_5m) AS load_average_5m,
+                AVG(load_average_15m) AS load_average_15m,
+                AVG(uptime_seconds) AS uptime_seconds
+         FROM anvia_studio_machine_monitor_samples
+         WHERE source_id = $sourceId
+           AND timestamp >= $from
+           AND timestamp <= $to
+         GROUP BY source_id, bucket_ms
+         ORDER BY bucket_ms ASC
+         LIMIT $limit`,
+      )
+      .all({
+        $sourceId: options.sourceId,
+        $from: options.from,
+        $to: options.to,
+        $bucketMs: options.bucketMs,
+        $limit: options.limit,
+      }) as MachineMonitorRow[];
+    return rows.map((row) => ({
+      sourceId: row.source_id,
+      timestamp: new Date(row.bucket_ms).toISOString(),
+      cpuPercent: row.cpu_percent,
+      memoryUsedBytes: row.memory_used_bytes,
+      memoryTotalBytes: row.memory_total_bytes,
+      processRssBytes: row.process_rss_bytes,
+      loadAverage1m: row.load_average_1m,
+      loadAverage5m: row.load_average_5m,
+      loadAverage15m: row.load_average_15m,
+      uptimeSeconds: row.uptime_seconds,
+    }));
+  }
+
+  deleteMachineMonitorSamples(options: StudioMachineMonitorDeleteOptions): number {
+    const result = this.database()
+      .prepare(
+        `DELETE FROM anvia_studio_machine_monitor_samples
+         WHERE source_id = $sourceId AND timestamp < $before`,
+      )
+      .run({
+        $sourceId: options.sourceId,
+        $before: options.before,
+      });
+    return Number(result.changes);
+  }
 
   listSessions(options: StudioSessionListOptions): StudioSessionSummary[] {
     const db = this.database();
@@ -1075,6 +1208,21 @@ class SqliteSessionStore
       ) STRICT;
       CREATE INDEX IF NOT EXISTS anvia_studio_traces_session_started_idx
         ON anvia_studio_traces(session_id, started_at DESC);
+      CREATE TABLE IF NOT EXISTS anvia_studio_machine_monitor_samples (
+        source_id TEXT NOT NULL,
+        timestamp TEXT NOT NULL,
+        cpu_percent REAL NOT NULL,
+        memory_used_bytes REAL NOT NULL,
+        memory_total_bytes REAL NOT NULL,
+        process_rss_bytes REAL NOT NULL,
+        load_average_1m REAL NOT NULL,
+        load_average_5m REAL NOT NULL,
+        load_average_15m REAL NOT NULL,
+        uptime_seconds REAL NOT NULL,
+        PRIMARY KEY(source_id, timestamp)
+      ) STRICT;
+      CREATE INDEX IF NOT EXISTS anvia_studio_machine_monitor_source_timestamp_idx
+        ON anvia_studio_machine_monitor_samples(source_id, timestamp ASC);
     `);
     ensureSessionCompactionStateColumn(db);
     ensureMessageMetadataColumn(db);

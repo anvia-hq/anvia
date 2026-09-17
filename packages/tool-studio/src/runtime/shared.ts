@@ -4,6 +4,7 @@ import type {
   StudioPipeline,
   StudioPipelineLogStore,
   StudioPipelineRunStore,
+  StudioMachineMonitorStore,
   StudioSessionStore,
   StudioTraceStore,
 } from "../types";
@@ -17,18 +18,38 @@ export function resolveStores(options: StudioRuntimeOptions): ResolvedStores {
   const traces = resolveTraceStore(options, sessions, defaultStore);
   const pipelineLogs = resolvePipelineLogStore(options, sessions, defaultStore);
   const pipelineRuns = resolvePipelineRunStore(options, sessions, pipelineLogs, defaultStore);
+  const machineMonitor = resolveMachineMonitorStore(options, sessions, defaultStore);
   const stores: ResolvedStores = {};
   if (sessions !== undefined) stores.sessions = sessions;
   if (traces !== undefined) stores.traces = traces;
   if (pipelineLogs !== undefined) stores.pipelineLogs = pipelineLogs;
   if (pipelineRuns !== undefined) stores.pipelineRuns = pipelineRuns;
+  if (machineMonitor !== undefined) stores.machineMonitor = machineMonitor;
   return stores;
+}
+
+function resolveMachineMonitorStore(
+  options: StudioRuntimeOptions,
+  sessionStore: StudioSessionStore | undefined,
+  defaultStore: StudioMachineMonitorStore,
+): StudioMachineMonitorStore | undefined {
+  if (options.machineMonitor === false || options.stores?.machineMonitor === false) {
+    return undefined;
+  }
+  if (options.stores?.machineMonitor !== undefined) {
+    return options.stores.machineMonitor;
+  }
+  if (sessionStore !== undefined && isMachineMonitorStore(sessionStore)) {
+    return sessionStore;
+  }
+  return defaultStore;
 }
 
 function defaultStudioStore(): StudioSessionStore &
   StudioTraceStore &
   StudioPipelineLogStore &
-  StudioPipelineRunStore {
+  StudioPipelineRunStore &
+  StudioMachineMonitorStore {
   return createInMemoryStudioStore();
 }
 
@@ -107,6 +128,17 @@ function isTraceStore(store: StudioSessionStore): store is StudioSessionStore & 
     typeof candidate.listSessionTraces === "function" &&
     typeof candidate.getTrace === "function" &&
     typeof candidate.saveTrace === "function"
+  );
+}
+
+function isMachineMonitorStore(
+  store: StudioSessionStore,
+): store is StudioSessionStore & StudioMachineMonitorStore {
+  const candidate = store as Partial<StudioMachineMonitorStore>;
+  return (
+    typeof candidate.appendMachineMonitorSample === "function" &&
+    typeof candidate.listMachineMonitorSamples === "function" &&
+    typeof candidate.deleteMachineMonitorSamples === "function"
   );
 }
 

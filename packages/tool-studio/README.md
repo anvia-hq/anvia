@@ -250,6 +250,45 @@ new Studio([agent], {
 
 SQLite storage uses dedicated `anvia_studio_*` tables so it can share an application database without writing into product tables.
 
+## Machine monitor history
+
+The Status page samples machine CPU, system memory, Studio process RSS, load average, and uptime.
+Current readings are always shown when the monitor is enabled. The history selector offers 7-day
+and 30-day views when the default 30-day retention is active; a 7-day retention configuration
+offers only the 7-day view.
+
+Machine history follows the same store resolution as the rest of Studio. The default in-memory
+store is useful for local, process-lifetime inspection. Configure the SQLite session store to keep
+samples across application restarts:
+
+```ts
+new Studio([agent], {
+  stores: {
+    sessions: createSqliteSessionStore({ path: ".anvia/studio.sqlite" }),
+  },
+  machineMonitor: {
+    sourceId: "support-runtime-1",
+    retentionDays: 30,
+    sampleIntervalMs: 60_000,
+    maxHistoryPoints: 720,
+  },
+}).start();
+```
+
+`sourceId` scopes every write and query so runtimes sharing a database do not mix samples. It
+should be stable and unique for each runtime; by default Studio uses `<hostname>:<runner-id>`.
+`retentionDays` accepts `7` or `30` and defaults to `30`. `sampleIntervalMs` defaults to 60 seconds
+and has a one-second minimum. `maxHistoryPoints` defaults to 720 and bounds every chart response.
+
+Raw samples are timestamped as UTC ISO 8601 strings. Studio removes expired rows at startup and
+after each sample. At the defaults, a source stores at most about 43,200 raw rows for 30 days. The
+history API (`GET /status/history?range=7d|30d`) averages samples into time buckets (15 minutes for
+7 days and one hour for 30 days at the default point limit), keeping chart payloads bounded.
+
+The SQLite store creates `anvia_studio_machine_monitor_samples` automatically on first use. No
+manual migration is required. Set `machineMonitor: false` to disable collection, or provide a
+separate store through `stores.machineMonitor` when sessions use another adapter.
+
 ## Exports
 
 - `Studio`

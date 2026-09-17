@@ -88,7 +88,12 @@ active Agent run before awaiting the OpenTelemetry SDK's `shutdown()`. Core mark
 Set `captureMode: "safe"` to record operational attributes without prompt or response bodies.
 Existing `@anvia/otel` integrations retain full capture when the option is omitted. Use
 `captureMaxBytes` to set a per-value limit and `transformInput` / `transformOutput` to redact or
-reshape payloads before export. Runtime observer events are emitted as OpenTelemetry span events.
+reshape payloads before export. Error text (`anvia.run.error`, `anvia.tool.error`, span status
+messages, and exception events) and metadata (`trace.metadata`, run event attributes, tool, score,
+and evaluation metadata) are captured regardless of capture mode, so they have their own
+`transformError` and `transformMetadata` hooks; a `transformMetadata` that does not return a record
+drops the surface instead of exporting it unredacted. Runtime observer events are emitted as
+OpenTelemetry span events.
 
 ### Prompt identity
 

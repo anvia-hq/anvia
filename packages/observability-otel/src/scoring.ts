@@ -11,12 +11,16 @@ export function createOtelScorer(options: OtelScorerOptions = {}): OtelScorer {
   return {
     score(args) {
       validateScore(args);
-      emitScore(logger, args);
+      emitScore(logger, args, options.transformMetadata);
     },
   };
 }
 
-function emitScore(logger: Logger, args: OtelScoreArgs): void {
+function emitScore(
+  logger: Logger,
+  args: OtelScoreArgs,
+  transformMetadata: OtelScorerOptions["transformMetadata"],
+): void {
   const outcome = args.outcome ?? inferOutcome(args);
   const attributes: LogAttributes = {
     "anvia.eval.id": args.id ?? globalThis.crypto.randomUUID(),
@@ -37,7 +41,7 @@ function emitScore(logger: Logger, args: OtelScoreArgs): void {
   if (args.comment !== undefined) attributes["gen_ai.evaluation.explanation"] = args.comment;
   if (args.configId !== undefined) attributes["anvia.eval.config_id"] = args.configId;
   if (args.source !== undefined) attributes["anvia.eval.source"] = args.source;
-  addMetadata(attributes, "anvia.eval.score.metadata", args.metadata);
+  addMetadata(attributes, "anvia.eval.score.metadata", args.metadata, transformMetadata);
 
   const record: Parameters<Logger["emit"]>[0] = {
     eventName: EVALUATION_EVENT_NAME,

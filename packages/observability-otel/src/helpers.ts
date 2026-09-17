@@ -47,14 +47,17 @@ export function runStartAttributes(
     "anvia.trace.version": args.trace?.version,
     "anvia.prompt.name": args.promptRef?.name ?? args.trace?.promptRef?.name,
     "anvia.prompt.version": args.promptRef?.version ?? args.trace?.promptRef?.version,
-    ...metadataAttributes("anvia.trace.metadata", args.trace?.metadata),
+    ...metadataAttributes("anvia.trace.metadata", args.trace?.metadata, options),
   });
 }
 
-export function runEventAttributes(args: AgentRunEventArgs): Attributes {
+export function runEventAttributes(
+  args: AgentRunEventArgs,
+  options: OtelObserverOptions = {},
+): Attributes {
   return compactAttributes({
     "anvia.event.level": args.level,
-    ...metadataAttributes("anvia.event.attributes", args.attributes),
+    ...metadataAttributes("anvia.event.attributes", args.attributes, options),
   });
 }
 
@@ -82,7 +85,7 @@ export function runErrorAttributes(
 ): Attributes {
   return compactAttributes({
     "anvia.run.status": args.status,
-    "anvia.run.error": errorMessage(args.error),
+    "anvia.run.error": transformedErrorMessage(args.error, options),
     "anvia.run.messages": capturedJson(args.messages, "output", options),
     ...usageAttributes(args.usage),
   });
@@ -171,7 +174,11 @@ export function toolStartAttributes(
     "anvia.tool.args": capturedString(args.args, "input", options),
     "anvia.tool.call": capturedJson(args.toolCall, "input", options),
     "anvia.tool.definition": fullCapture(args.toolDefinition, "input", options),
-    "anvia.tool.metadata": fullCapture(args.toolMetadata, "input", options),
+    "anvia.tool.metadata": fullCapture(
+      transformMetadataRecord(args.toolMetadata, options),
+      "input",
+      options,
+    ),
     "anvia.tool.internal_call_id": args.internalCallId,
     "anvia.tool.call_id": args.toolCallId,
   });
@@ -191,11 +198,14 @@ export function toolEndAttributes(
   });
 }
 
-export function toolErrorAttributes(args: AgentToolErrorArgs): Attributes {
+export function toolErrorAttributes(
+  args: AgentToolErrorArgs,
+  options: OtelObserverOptions = {},
+): Attributes {
   return compactAttributes({
     "anvia.tool.name": args.toolName,
     "anvia.tool.turn": args.turn,
-    "anvia.tool.error": errorMessage(args.error),
+    "anvia.tool.error": transformedErrorMessage(args.error, options),
     "anvia.tool.internal_call_id": args.internalCallId,
     "anvia.tool.call_id": args.toolCallId,
   });
@@ -240,15 +250,33 @@ function modelParameters(
 export function metadataAttributes(
   prefix: string,
   metadata: Record<string, unknown> | undefined,
+  options: OtelObserverOptions = {},
 ): Attributes {
   const attributes: Attributes = {};
-  for (const [key, value] of Object.entries(metadata ?? {})) {
+  const transformed = transformMetadataRecord(metadata, options);
+  if (transformed === undefined) return attributes;
+  for (const [key, value] of Object.entries(transformed)) {
     const serialized = serializeMetadataValue(value);
     if (serialized !== undefined) {
       attributes[`${prefix}.${key}`] = serialized;
     }
   }
   return attributes;
+}
+
+/**
+ * A transform that does not return a record would ship unredacted metadata, so the surface is
+ * dropped instead of falling back to the original value.
+ */
+function transformMetadataRecord(
+  metadata: Record<string, unknown> | undefined,
+  options: OtelObserverOptions,
+): Record<string, unknown> | undefined {
+  if (metadata === undefined) return undefined;
+  const transform = options.transformMetadata;
+  if (transform === undefined) return metadata;
+  const transformed = transform(metadata);
+  return isRecord(transformed) ? transformed : undefined;
 }
 
 export function compactAttributes(values: Record<string, Attributes[string]>): Attributes {
@@ -303,11 +331,25 @@ export function isValidSpanId(spanId: string | undefined): spanId is string {
   return spanId !== undefined && /^[0-9a-f]{16}$/i.test(spanId) && spanId !== "0000000000000000";
 }
 
-export function recordSpanError(span: Span, error: unknown): void {
-  span.recordException(error instanceof Error ? error : errorMessage(error));
+export function recordSpanError(
+  span: Span,
+  error: unknown,
+  options: OtelObserverOptions = {},
+): void {
+  const message = transformedErrorMessage(error, options);
+  if (error instanceof Error) {
+    const exception: { name: string; message: string; stack?: string } = {
+      name: error.name,
+      message,
+    };
+    if (error.stack !== undefined) exception.stack = transformedErrorMessage(error.stack, options);
+    span.recordException(exception);
+  } else {
+    span.recordException(message);
+  }
   span.setStatus({
     code: SpanStatusCode.ERROR,
-    message: errorMessage(error),
+    message,
   });
 }
 
@@ -394,6 +436,14 @@ export function emptyToUndefined(value: string | undefined): string | undefined 
   return value === undefined || value.length === 0 ? undefined : value;
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+/**
+ * Error text is captured regardless of capture mode, so it needs the same redaction treatment as
+ * other payload surfaces before it reaches span attributes and exception events.
+ */
+function transformedErrorMessage(error: unknown, options: OtelObserverOptions): string {
+  const message = error instanceof Error ? error.message : String(error);
+  const transform = options.transformError;
+  if (transform === undefined) return message;
+  const transformed = transform(message);
+  return typeof transformed === "string" ? transformed : message;
 }

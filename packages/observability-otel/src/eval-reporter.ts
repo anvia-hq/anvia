@@ -20,11 +20,12 @@ export function createOtelEvalReporter<Input = unknown, Output = unknown, Expect
   const publishInvalid = options.publishInvalid ?? true;
   const includeMetadata = options.includeMetadata ?? true;
   const includePayloads = options.includePayloads ?? false;
+  const transformMetadata = options.transformMetadata;
   const traceObserver = options.traceObserver ?? "otel";
 
   return {
     onRunStart(args) {
-      emitRunStarted(logger, args, includeMetadata);
+      emitRunStarted(logger, args, includeMetadata, transformMetadata);
     },
     report(args) {
       if (args.outcome.outcome === "invalid" && !publishInvalid) return;
@@ -59,10 +60,11 @@ export function createOtelEvalReporter<Input = unknown, Output = unknown, Expect
         captureMaxBytes: options.captureMaxBytes,
         transformInput: options.transformInput,
         transformOutput: options.transformOutput,
+        transformMetadata,
       });
     },
     onRunEnd(args) {
-      emitRunFinished(logger, args, includeMetadata);
+      emitRunFinished(logger, args, includeMetadata, transformMetadata);
     },
   };
 }
@@ -75,9 +77,14 @@ function emitEvaluation<Input, Output, Score, Expected>(
   includeMetadata: boolean,
   payloadOptions: Pick<
     OtelEvalReporterOptions,
-    "includePayloads" | "captureMaxBytes" | "transformInput" | "transformOutput"
+    | "includePayloads"
+    | "captureMaxBytes"
+    | "transformInput"
+    | "transformOutput"
+    | "transformMetadata"
   >,
 ): void {
+  const { transformMetadata } = payloadOptions;
   const projection = projectEvalOutcome(
     args.outcome,
     args.metric.dataType,
@@ -91,7 +98,9 @@ function emitEvaluation<Input, Output, Score, Expected>(
     "anvia.eval.case.id": args.case.id,
     "anvia.eval.outcome": projection.outcome,
   };
-  if (args.run !== undefined) addRunAttributes(attributes, args.run, includeMetadata);
+  if (args.run !== undefined) {
+    addRunAttributes(attributes, args.run, includeMetadata, transformMetadata);
+  }
   if (projection.numericValue !== undefined) {
     attributes["gen_ai.evaluation.score.value"] = projection.numericValue;
   }
@@ -131,9 +140,14 @@ function emitEvaluation<Input, Output, Score, Expected>(
     attributes["error.type"] = errorType(args.targetError);
   }
   if (includeMetadata) {
-    addMetadata(attributes, "anvia.eval.case.metadata", args.case.metadata);
-    addMetadata(attributes, "anvia.eval.metric.metadata", args.metric.metadata);
-    addMetadata(attributes, "anvia.eval.outcome.metadata", args.outcome.metadata);
+    addMetadata(attributes, "anvia.eval.case.metadata", args.case.metadata, transformMetadata);
+    addMetadata(attributes, "anvia.eval.metric.metadata", args.metric.metadata, transformMetadata);
+    addMetadata(
+      attributes,
+      "anvia.eval.outcome.metadata",
+      args.outcome.metadata,
+      transformMetadata,
+    );
   }
   if (payloadOptions.includePayloads) {
     addEvaluationPayload(attributes, args, payloadOptions);
@@ -191,7 +205,12 @@ function identity(value: unknown): unknown {
   return value;
 }
 
-function emitRunStarted(logger: Logger, args: EvalRunStartArgs, includeMetadata: boolean): void {
+function emitRunStarted(
+  logger: Logger,
+  args: EvalRunStartArgs,
+  includeMetadata: boolean,
+  transformMetadata: OtelEvalReporterOptions["transformMetadata"],
+): void {
   const attributes: LogAttributes = {
     "anvia.eval.run.id": args.run.id,
     "anvia.eval.run.status": "running",
@@ -200,7 +219,7 @@ function emitRunStarted(logger: Logger, args: EvalRunStartArgs, includeMetadata:
     "anvia.eval.run.case_count": args.caseCount,
     "anvia.eval.run.metric_names": args.metricNames,
   };
-  addRunAttributes(attributes, args.run, includeMetadata);
+  addRunAttributes(attributes, args.run, includeMetadata, transformMetadata);
   logger.emit({
     eventName: "anvia.eval.run.started",
     severityNumber: SeverityNumber.INFO,
@@ -209,7 +228,12 @@ function emitRunStarted(logger: Logger, args: EvalRunStartArgs, includeMetadata:
   });
 }
 
-function emitRunFinished(logger: Logger, args: EvalRunEndArgs, includeMetadata: boolean): void {
+function emitRunFinished(
+  logger: Logger,
+  args: EvalRunEndArgs,
+  includeMetadata: boolean,
+  transformMetadata: OtelEvalReporterOptions["transformMetadata"],
+): void {
   const attributes: LogAttributes = {
     "anvia.eval.run.id": args.run.id,
     "anvia.eval.run.status": args.status,
@@ -238,7 +262,7 @@ function emitRunFinished(logger: Logger, args: EvalRunEndArgs, includeMetadata: 
     attributes["anvia.eval.run.cost.total"] = args.cost.total;
   }
   if (args.status === "failed") attributes["error.type"] = errorType(args.error);
-  addRunAttributes(attributes, args.run, includeMetadata);
+  addRunAttributes(attributes, args.run, includeMetadata, transformMetadata);
   logger.emit({
     eventName: "anvia.eval.run.finished",
     severityNumber: args.status === "failed" ? SeverityNumber.ERROR : SeverityNumber.INFO,
@@ -262,6 +286,7 @@ function addRunAttributes(
   attributes: LogAttributes,
   run: EvalRunStartArgs["run"],
   includeMetadata: boolean,
+  transformMetadata: OtelEvalReporterOptions["transformMetadata"],
 ): void {
   attributes["anvia.eval.run.id"] = run.id;
   attributes["anvia.eval.run.started_at"] = run.startedAt;
@@ -275,7 +300,8 @@ function addRunAttributes(
   if (run.datasetVersion !== undefined) {
     attributes["anvia.eval.run.dataset.version"] = run.datasetVersion;
   }
-  if (includeMetadata) addMetadata(attributes, "anvia.eval.run.metadata", run.metadata);
+  if (includeMetadata)
+    addMetadata(attributes, "anvia.eval.run.metadata", run.metadata, transformMetadata);
 }
 
 function errorType(error: unknown): string {

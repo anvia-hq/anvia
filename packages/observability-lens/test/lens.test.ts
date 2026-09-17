@@ -90,6 +90,61 @@ describe("createLensRedactor", () => {
     expect(source.email).toBe("person@example.com");
   });
 
+  it("validates card numbers instead of redacting every long digit run", () => {
+    expect(
+      createLensRedactor().redact({
+        card: "4111 1111 1111 1111",
+        order: "1234 5678 9012 3456",
+      }),
+    ).toEqual({ card: "<redacted>", order: "1234 5678 9012 3456" });
+  });
+
+  it("redacts matching numeric values and keeps unrelated numbers typed", () => {
+    expect(
+      createLensRedactor().redact({
+        card: 4111111111111111,
+        tokens: 1234,
+        ratio: 1.5,
+        email: "person@example.com",
+      }),
+    ).toEqual({
+      card: "<redacted>",
+      tokens: 1234,
+      ratio: 1.5,
+      email: "<redacted>",
+    });
+  });
+
+  it("bounds deep payloads instead of walking arbitrary model output", () => {
+    const deep: Record<string, unknown> = { email: "person@example.com" };
+    let cursor = deep;
+    for (let depth = 0; depth < 20; depth += 1) {
+      const next: Record<string, unknown> = { email: "person@example.com" };
+      cursor.nested = next;
+      cursor = next;
+    }
+
+    const serialized = JSON.stringify(createLensRedactor().redact({ deep }));
+    expect(serialized).toContain("<max-depth>");
+    expect(serialized).not.toContain("person@example.com");
+  });
+
+  it("leaves encoded data URLs intact", () => {
+    expect(
+      createLensRedactor().redact({ image: "data:image/png;base64,cGVyc29uQGV4YW1wbGUuY29t" }),
+    ).toEqual({ image: "data:image/png;base64,cGVyc29uQGV4YW1wbGUuY29t" });
+  });
+
+  it("redacts tokens and phone numbers in addition to addresses", () => {
+    expect(
+      createLensRedactor().redact({
+        jwt: "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.signature",
+        phone: "+1 555 010 9999",
+        ip: "203.0.113.7",
+      }),
+    ).toEqual({ jwt: "<redacted>", phone: "<redacted>", ip: "<redacted>" });
+  });
+
   it("redacts shared objects normally while preserving circular-reference markers", () => {
     const shared = { email: "person@example.com" };
     const circular: Record<string, unknown> = {};
@@ -280,6 +335,94 @@ describe("Lens eval ergonomics", () => {
       expect(server.bodies()).toContain('"size_limit"');
       expect(server.bodies()).not.toContain("OVERSIZE-");
       expect(server.bodies()).toContain('"captured"');
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
+  it("redacts error text and metadata without touching unredacted surfaces", async () => {
+    const server = await startOtlpServer();
+    const client = new LensClient({
+      baseUrl: server.baseUrl,
+      publicKey: "public",
+      secretKey: "secret",
+      serviceName: "reporter-errors",
+      redactErrors: true,
+    });
+
+    try {
+      const run = await client.observer().startRun({
+        runId: "run-1",
+        prompt: { role: "user", content: "hello" },
+        history: [],
+        maxTurns: 1,
+        trace: { metadata: { email: "person@example.com" } },
+      });
+      run?.error?.({
+        status: "failed",
+        error: new Error("provider rejected person@example.com"),
+        messages: [],
+        usage: {
+          inputTokens: 0,
+          outputTokens: 0,
+          totalTokens: 0,
+          cachedInputTokens: 0,
+          cacheCreationInputTokens: 0,
+        },
+      });
+      await client.flush();
+
+      const body = server.bodies();
+      expect(body).toContain("provider rejected <redacted>");
+      expect(body).not.toContain("provider rejected person@example.com");
+      // Metadata stays untouched because it is opted into separately from error redaction.
+      expect(body).toContain("anvia.trace.metadata.email");
+      expect(body).toContain("person@example.com");
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
+  it("redacts trace and event metadata when enabled", async () => {
+    const server = await startOtlpServer();
+    const client = new LensClient({
+      baseUrl: server.baseUrl,
+      publicKey: "public",
+      secretKey: "secret",
+      serviceName: "reporter-metadata",
+      redactMetadata: true,
+      redactErrors: true,
+    });
+
+    try {
+      const run = await client.observer().startRun({
+        runId: "run-1",
+        prompt: { role: "user", content: "hello" },
+        history: [],
+        maxTurns: 1,
+        trace: { metadata: { email: "person@example.com" } },
+      });
+      run?.event?.({ name: "retrieval.done", attributes: { email: "person@example.com" } });
+      run?.error?.({
+        status: "failed",
+        error: new Error("provider rejected person@example.com"),
+        messages: [],
+        usage: {
+          inputTokens: 0,
+          outputTokens: 0,
+          totalTokens: 0,
+          cachedInputTokens: 0,
+          cacheCreationInputTokens: 0,
+        },
+      });
+      await client.flush();
+
+      const body = server.bodies();
+      expect(body).toContain("anvia.trace.metadata.email");
+      expect(body).toContain("anvia.event.attributes.email");
+      expect(body).not.toContain("person@example.com");
     } finally {
       await client.close();
       await server.close();

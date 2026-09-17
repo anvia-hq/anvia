@@ -64,6 +64,72 @@ describe("OpenTelemetry eval reporter", () => {
     });
   });
 
+  it("redacts evaluation metadata through the metadata transform", async () => {
+    const emit = vi.fn<Logger["emit"]>();
+    const redactMetadata = (metadata: Record<string, unknown>): Record<string, unknown> =>
+      Object.fromEntries(
+        Object.entries(metadata).map(([key, value]) => [
+          key,
+          typeof value === "string" ? value.replaceAll("secret", "<redacted>") : value,
+        ]),
+      );
+    const reporter = createOtelEvalReporter({
+      logger: fakeLogger(emit),
+      includeMetadata: true,
+      transformMetadata: redactMetadata,
+    });
+
+    await reporter.report({
+      suiteName: "quality",
+      case: { id: "case-1", input: "q", metadata: { note: "secret case" } },
+      metric: {
+        name: "quality",
+        evaluate: () => EvalOutcome.pass(true),
+        metadata: { note: "secret metric" },
+      },
+      outcome: { ...EvalOutcome.pass(true), metadata: { note: "secret outcome" } },
+    });
+
+    const attributes = emit.mock.calls[0]?.[0].attributes;
+    expect(attributes?.["anvia.eval.case.metadata"]).toEqual({ note: "<redacted> case" });
+    expect(attributes?.["anvia.eval.metric.metadata"]).toEqual({ note: "<redacted> metric" });
+    expect(attributes?.["anvia.eval.outcome.metadata"]).toEqual({ note: "<redacted> outcome" });
+  });
+
+  it("redacts run lifecycle metadata and drops metadata a transform cannot return", async () => {
+    const emit = vi.fn<Logger["emit"]>();
+    const reporter = createOtelEvalReporter({
+      logger: fakeLogger(emit),
+      includeMetadata: true,
+      transformMetadata: (metadata) => ({ ...metadata, note: "<redacted>" }),
+    });
+    await reporter.onRunStart?.({
+      run: { id: "run-1", startedAt: "2026-08-07T00:00:00.000Z", metadata: { note: "secret run" } },
+      suiteName: "quality",
+      caseCount: 1,
+      metricNames: ["quality"],
+    });
+    expect(emit.mock.calls[0]?.[0].attributes?.["anvia.eval.run.metadata"]).toEqual({
+      note: "<redacted>",
+    });
+
+    const broken = createOtelEvalReporter({
+      logger: fakeLogger(emit),
+      includeMetadata: true,
+      // A JavaScript caller can violate the declared return type; the guard must not ship raw data.
+      transformMetadata: (() => undefined) as unknown as (
+        metadata: Record<string, unknown>,
+      ) => Record<string, unknown>,
+    });
+    await broken.onRunStart?.({
+      run: { id: "run-2", startedAt: "2026-08-07T00:00:00.000Z", metadata: { note: "secret run" } },
+      suiteName: "quality",
+      caseCount: 1,
+      metricNames: ["quality"],
+    });
+    expect(emit.mock.calls[1]?.[0].attributes).not.toHaveProperty("anvia.eval.run.metadata");
+  });
+
   it("omits oversized evaluation payloads without emitting partial JSON", async () => {
     const emit = vi.fn<Logger["emit"]>();
     const reporter = createOtelEvalReporter({
@@ -767,6 +833,93 @@ describe("otel", () => {
     expect(tracer.spans[0]?.attributes["anvia.trace.metadata.circular"]).toBe(
       "<failed to serialize>",
     );
+  });
+
+  it("redacts error text, status messages, and exception events", async () => {
+    const tracer = new FakeTracer();
+    const tracing = createOtelObserver({
+      tracer: tracer.tracer,
+      transformError: (message) => message.replaceAll("sk-live-1", "<redacted>"),
+    });
+    const run = await tracing.startRun({
+      runId: "run_1",
+      agentName: "support",
+      prompt: userMessage("hello"),
+      history: [],
+      maxTurns: 1,
+    });
+
+    const tool = await run?.startTool?.({
+      turn: 1,
+      toolName: "get_ticket",
+      args: "{}",
+      toolCall: toolCall(),
+      internalCallId: "internal-1",
+    });
+    await tool?.error?.({
+      turn: 1,
+      toolName: "get_ticket",
+      args: "{}",
+      toolCall: toolCall(),
+      internalCallId: "internal-1",
+      error: new Error("tool failed with sk-live-1"),
+    });
+    await run?.error?.({
+      status: "failed",
+      error: new Error("run failed with sk-live-1"),
+      usage: usage(0, 0),
+      messages: [],
+    });
+
+    expect(tracer.spans[0]?.attributes["anvia.run.error"]).toBe("run failed with <redacted>");
+    expect(tracer.spans[0]?.status).toEqual({
+      code: SpanStatusCode.ERROR,
+      message: "run failed with <redacted>",
+    });
+    expect(tracer.spans[1]?.attributes["anvia.tool.error"]).toBe("tool failed with <redacted>");
+    const exception = tracer.spans[0]?.exceptions[0];
+    expect(exception).toMatchObject({ name: "Error", message: "run failed with <redacted>" });
+    const stack =
+      typeof exception === "object" && exception !== null && "stack" in exception
+        ? exception.stack
+        : undefined;
+    expect(typeof stack).toBe("string");
+    expect(String(stack)).not.toContain("sk-live-1");
+  });
+
+  it("redacts trace, event, and tool metadata", async () => {
+    const tracer = new FakeTracer();
+    const tracing = createOtelObserver({
+      tracer: tracer.tracer,
+      captureMode: "full",
+      transformMetadata: (metadata) => ({ ...metadata, note: "<redacted>" }),
+    });
+    const run = await tracing.startRun({
+      runId: "run_1",
+      prompt: userMessage("hello"),
+      history: [],
+      maxTurns: 1,
+      trace: { metadata: { note: "secret note", tenant: "acme" } },
+    });
+    await run?.event?.({ name: "retrieval.done", attributes: { note: "secret note" } });
+    await run?.startTool?.({
+      turn: 1,
+      toolName: "get_ticket",
+      args: "{}",
+      toolCall: toolCall(),
+      internalCallId: "internal-1",
+      toolMetadata: { note: "secret note", tenant: "acme" },
+    });
+
+    expect(tracer.spans[0]?.attributes["anvia.trace.metadata.note"]).toBe("<redacted>");
+    expect(tracer.spans[0]?.attributes["anvia.trace.metadata.tenant"]).toBe("acme");
+    expect(tracer.spans[0]?.events[0]?.attributes).toEqual({
+      "anvia.event.attributes.note": "<redacted>",
+    });
+    expect(JSON.parse(String(tracer.spans[1]?.attributes["anvia.tool.metadata"]))).toEqual({
+      note: "<redacted>",
+      tenant: "acme",
+    });
   });
 
   it("records run, generation, and tool errors", async () => {

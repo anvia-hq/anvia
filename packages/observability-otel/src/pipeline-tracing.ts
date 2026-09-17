@@ -101,7 +101,7 @@ class OtelPipelineRunObserver implements PipelineRunObservation {
   }
 
   error(args: PipelineRunErrorArgs): void {
-    recordSpanError(this.root, args.error);
+    recordSpanError(this.root, args.error, this.options);
     this.root.setAttributes({
       "anvia.run.status": args.status,
       "anvia.run.duration_ms": args.durationMs,
@@ -132,7 +132,7 @@ class OtelPipelineStageObserver implements PipelineStageObservation {
   }
 
   error(args: PipelineStageErrorArgs): void {
-    recordSpanError(this.span, args.error);
+    recordSpanError(this.span, args.error, this.options);
     this.span.setAttribute("anvia.pipeline.stage.duration_ms", args.durationMs);
     this.finish();
   }
@@ -161,9 +161,9 @@ function pipelineRunStartAttributes(
     "anvia.trace.version": args.trace?.version,
     "anvia.prompt.name": args.trace?.promptRef?.name,
     "anvia.prompt.version": args.trace?.promptRef?.version,
-    ...metadataAttributes("anvia.pipeline.metadata", args.pipelineMetadata),
-    ...metadataAttributes("anvia.run.metadata", args.runMetadata),
-    ...metadataAttributes("anvia.trace.metadata", args.trace?.metadata),
+    ...metadataAttributes("anvia.pipeline.metadata", args.pipelineMetadata, options),
+    ...metadataAttributes("anvia.run.metadata", args.runMetadata, options),
+    ...metadataAttributes("anvia.trace.metadata", args.trace?.metadata, options),
   });
 }
 
@@ -193,7 +193,7 @@ function pipelineStageStartAttributes(
     "anvia.pipeline.stage.agent_name": args.node.agentName,
     "anvia.pipeline.stage.pipeline_id": args.node.pipelineId,
     "anvia.pipeline.stage.branch_key": args.node.branchKey,
-    ...metadataAttributes("anvia.pipeline.stage.metadata", args.node.metadata),
+    ...metadataAttributes("anvia.pipeline.stage.metadata", args.node.metadata, options),
   });
 }
 

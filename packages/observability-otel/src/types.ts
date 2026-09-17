@@ -11,6 +11,8 @@ export type OtelObserverOptions = {
   captureMaxBytes?: number | undefined;
   transformInput?: ((value: unknown) => unknown) | undefined;
   transformOutput?: ((value: unknown) => unknown) | undefined;
+  transformError?: ((message: string) => string) | undefined;
+  transformMetadata?: ((metadata: Record<string, unknown>) => Record<string, unknown>) | undefined;
 };
 
 export type OtelPipelineObserverOptions = OtelObserverOptions;
@@ -26,6 +28,7 @@ export type OtelEvalReporterOptions = {
   captureMaxBytes?: number | undefined;
   transformInput?: ((value: unknown) => unknown) | undefined;
   transformOutput?: ((value: unknown) => unknown) | undefined;
+  transformMetadata?: ((metadata: Record<string, unknown>) => Record<string, unknown>) | undefined;
   onMissingTrace?: "emit" | "ignore" | "warn" | "throw" | undefined;
 };
 
@@ -54,6 +57,7 @@ export type OtelScorerOptions = {
   logger?: Logger | undefined;
   loggerName?: string | undefined;
   loggerVersion?: string | undefined;
+  transformMetadata?: ((metadata: Record<string, unknown>) => Record<string, unknown>) | undefined;
 };
 
 export type OtelScorer = {

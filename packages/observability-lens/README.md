@@ -108,12 +108,29 @@ const reporter = lens.evalReporter({
 });
 ```
 
-Client-level `redactInputs`, `redactOutputs`, `redaction`, and `captureMaxBytes` apply to eval
-reporters as well as observers; the same fields on `evalReporter()` override them per reporter.
+Client-level `redactInputs`, `redactOutputs`, `redactErrors`, `redactMetadata`, `redaction`, and
+`captureMaxBytes` apply to eval reporters as well as observers; the same fields on `evalReporter()`
+override them per reporter. Each surface is opt-in and independent:
+
+- `redactInputs` / `redactOutputs` cover captured prompt, tool, and response bodies, which
+  `captureMode: "safe"` omits entirely.
+- `redactErrors` covers `anvia.run.error`, `anvia.tool.error`, span status messages, and exception
+  events, which are recorded regardless of capture mode.
+- `redactMetadata` covers trace, run-event, tool, score, and evaluation metadata.
+
 Payloads are redacted before serialization and dropped from the record with
 `anvia.eval.payload.status: "size_limit"` when they exceed `captureMaxBytes` (262,144 bytes by
 default). Byte limits that are not integers of at least 96 bytes are rejected when the observer or
 reporter is created, because OpenTelemetry treats such values as unbounded.
+
+Redaction walks nested arrays and objects up to 16 levels, replacing matches in strings and in
+numbers whose text matches a pattern. Circular references become `<circular>` and deeper values
+become `<max-depth>`. Default patterns cover email, cards, IPv4 addresses, phone numbers, JWTs,
+bearer tokens, and `sk-`/`pk-` style keys; card matches additionally require a known issuer prefix
+and a valid Luhn checksum, and phone matches require a `+` country code or a parenthesized area code
+so grouped identifiers survive. Encoded `data:` URLs are left untouched. Pass
+`redaction: { patterns, replacement }` to extend or replace the set, and `passesLuhn` is exported
+for custom card patterns.
 
 Lens eval reporters accept traces from the `"lens"` Agent observer registration by default. Set
 `traceObserver` to the Agent registration name when it differs.

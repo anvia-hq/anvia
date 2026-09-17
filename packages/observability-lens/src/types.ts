@@ -7,6 +7,11 @@ export type LensCaptureMode = "safe" | "full";
 export type LensRedactorPattern = {
   name: string;
   regex: RegExp;
+  /**
+   * Optional filter for matches `regex` cannot fully qualify, such as card numbers that need a
+   * checksum. Matches rejected by this predicate are kept verbatim.
+   */
+  validate?: ((match: string) => boolean) | undefined;
 };
 
 export type LensRedactionOptions = {
@@ -26,13 +31,21 @@ export type LensClientOptions = {
   captureMaxBytes?: number | undefined;
   redactInputs?: boolean | undefined;
   redactOutputs?: boolean | undefined;
+  redactErrors?: boolean | undefined;
+  redactMetadata?: boolean | undefined;
   redaction?: LensRedactionOptions | undefined;
   optional?: boolean | undefined;
 };
 
 export type LensObserverOptions = Pick<
   LensClientOptions,
-  "captureMode" | "captureMaxBytes" | "redactInputs" | "redactOutputs" | "redaction"
+  | "captureMode"
+  | "captureMaxBytes"
+  | "redactInputs"
+  | "redactOutputs"
+  | "redactErrors"
+  | "redactMetadata"
+  | "redaction"
 >;
 
 export type LensPipelineObserverOptions = LensObserverOptions;
@@ -41,7 +54,12 @@ export type LensScoreArgs = OtelScoreArgs;
 
 export type LensEvalReporterOptions = Pick<
   LensClientOptions,
-  "captureMaxBytes" | "redactInputs" | "redactOutputs" | "redaction"
+  | "captureMaxBytes"
+  | "redactInputs"
+  | "redactOutputs"
+  | "redactErrors"
+  | "redactMetadata"
+  | "redaction"
 > & {
   traceObserver?: string | undefined;
   publishInvalid?: boolean | undefined;

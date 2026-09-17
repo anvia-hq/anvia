@@ -1,8 +1,9 @@
 export { resolveLensConfig } from "./config.js";
 export { LensDatasetError } from "./dataset-client.js";
 export { LensPromptCompilationError, LensPromptError } from "./prompt-client.js";
-export { createLensRedactor, DEFAULT_PATTERNS } from "./redaction.js";
+export { createLensRedactor, DEFAULT_PATTERNS, passesLuhn } from "./redaction.js";
 export { LensClient } from "./tracing.js";
+export type { LensRedactor } from "./redaction.js";
 export type {
   LensCaptureMode,
   LensChatMessage,

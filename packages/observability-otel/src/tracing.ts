@@ -140,13 +140,17 @@ class OtelRunObserver implements AgentRunObserver {
   }
 
   error(args: AgentRunErrorArgs): void {
-    recordSpanError(this.root, args.error);
+    recordSpanError(this.root, args.error, this.options);
     this.root.setAttributes(runErrorAttributes(args, this.options));
     this.root.end();
   }
 
   event(args: AgentRunEventArgs): void {
-    this.root.addEvent(args.name, runEventAttributes(args), eventTimestamp(args.timestamp));
+    this.root.addEvent(
+      args.name,
+      runEventAttributes(args, this.options),
+      eventTimestamp(args.timestamp),
+    );
   }
 }
 
@@ -170,7 +174,7 @@ class OtelGenerationObserver implements AgentGenerationObserver {
   }
 
   error(args: AgentGenerationErrorArgs): void {
-    recordSpanError(this.generation, args.error);
+    recordSpanError(this.generation, args.error, this.options);
     this.generation.setAttributes({
       "anvia.generation.turn": args.turn,
     });
@@ -379,7 +383,7 @@ class OtelToolObserver implements AgentToolObserver {
       if (isRecord(child.usage)) {
         agent.setAttributes(compactAttributes(usageAttributesFromRecord(child.usage)));
       }
-      recordSpanError(agent, child.error);
+      recordSpanError(agent, child.error, this.options);
       agent.end();
       this.childAgents.delete(agentId);
     }
@@ -405,8 +409,8 @@ class OtelToolObserver implements AgentToolObserver {
 
   error(args: AgentToolErrorArgs): void {
     this.endOpenChildren();
-    recordSpanError(this.tool, args.error);
-    this.tool.setAttributes(toolErrorAttributes(args));
+    recordSpanError(this.tool, args.error, this.options);
+    this.tool.setAttributes(toolErrorAttributes(args, this.options));
     this.tool.end();
   }
 

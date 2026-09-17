@@ -1,6 +1,6 @@
 import { type Context, ROOT_CONTEXT, TraceFlags, trace } from "@opentelemetry/api";
 import type { AnyValue, AnyValueMap, LogAttributes } from "@opentelemetry/api-logs";
-import { isValidSpanId, isValidTraceId } from "./helpers.js";
+import { isValidSpanId, isValidTraceId, isRecord } from "./helpers.js";
 
 export const EVALUATION_EVENT_NAME = "gen_ai.evaluation.result";
 
@@ -25,9 +25,13 @@ export function addMetadata(
   attributes: LogAttributes,
   key: string,
   metadata: Record<string, unknown> | undefined,
+  transform?: ((metadata: Record<string, unknown>) => Record<string, unknown>) | undefined,
 ): void {
   if (metadata === undefined) return;
-  attributes[key] = toAnyValue(metadata);
+  const transformed = transform === undefined ? metadata : transform(metadata);
+  // A transform that does not return a record would silently ship unredacted metadata, so drop it.
+  if (!isRecord(transformed)) return;
+  attributes[key] = toAnyValue(transformed);
 }
 
 function toAnyValue(value: unknown): AnyValue {

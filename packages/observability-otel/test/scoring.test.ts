@@ -48,6 +48,28 @@ describe("OpenTelemetry scorer", () => {
     expect(trace.getSpanContext(record.context!)).toMatchObject({ traceId, spanId: observationId });
   });
 
+  it("redacts score metadata through the metadata transform", () => {
+    const emit = vi.fn<Logger["emit"]>();
+    const scorer = createOtelScorer({
+      logger: fakeLogger(emit),
+      transformMetadata: (metadata) => ({ ...metadata, userIdHash: "<redacted>" }),
+    });
+
+    scorer.score({
+      traceId: "1234567890abcdef1234567890abcdef",
+      name: "user-feedback",
+      value: 1,
+      dataType: "BOOLEAN",
+      metadata: { channel: "thumbs", userIdHash: "sha256:abc" },
+    });
+
+    const record = emit.mock.calls[0]?.[0] as Parameters<Logger["emit"]>[0];
+    expect(record.attributes?.["anvia.eval.score.metadata"]).toEqual({
+      channel: "thumbs",
+      userIdHash: "<redacted>",
+    });
+  });
+
   it("emits a trace-correlated categorical score without requiring an observation", () => {
     const emit = vi.fn<Logger["emit"]>();
     const scorer = createOtelScorer({ logger: fakeLogger(emit) });

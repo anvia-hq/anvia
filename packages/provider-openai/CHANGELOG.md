@@ -1,5 +1,11 @@
 # @anvia/openai
 
+## 1.1.5
+
+### Patch Changes
+
+- 4f25382: Support Azure AI Foundry Responses streams that omit the function name from the terminal tool-argument event.
+
 ## 1.1.4
 
 ### Patch Changes

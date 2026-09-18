@@ -9,7 +9,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.125.0",
+    "@anthropic-ai/sdk": "^0.126.0",
     "@anvia/anthropic": "workspace:*",
     "@anvia/client": "workspace:*",
     "@anvia/core": "workspace:*",
@@ -19,7 +19,7 @@
     "@anvia/mistral": "workspace:*",
     "@anvia/openai": "workspace:*",
     "@anvia/server": "workspace:*",
-    "@google/genai": "^2.22.0",
+    "@google/genai": "^2.23.0",
     "@mistralai/mistralai": "^2.7.0"
   },
   "devDependencies": {

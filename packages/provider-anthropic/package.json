@@ -32,15 +32,15 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.125.0",
-    "@anthropic-ai/vertex-sdk": "^0.19.8"
+    "@anthropic-ai/sdk": "^0.126.0",
+    "@anthropic-ai/vertex-sdk": "^0.19.9"
   },
   "devDependencies": {
     "@anvia/core": "workspace:*",
     "@types/node": "^24.9.1",
     "tsup": "^8.5.0",
     "typescript": "^5.9.3",
-    "vitest": "^4.0.8"
+    "vitest": "^4.1.11"
   },
   "peerDependencies": {
     "@anvia/core": "workspace:^"

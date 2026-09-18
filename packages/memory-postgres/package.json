@@ -38,7 +38,7 @@
     "@types/pg": "^8.15.6",
     "tsup": "^8.5.0",
     "typescript": "^5.9.3",
-    "vitest": "^4.0.8"
+    "vitest": "^4.1.11"
   },
   "peerDependencies": {
     "@anvia/core": "workspace:^"

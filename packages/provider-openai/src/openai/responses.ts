@@ -498,11 +498,13 @@ class OpenAIResponsesStreamState {
   private terminal = false;
 
   mapEvent(event: unknown): CompletionModelStreamEvent | undefined {
+    let eventForMapping = event;
     let mapped: CompletionModelStreamEvent | undefined;
     try {
-      mapped = fromOpenAIStreamEvent(event);
+      eventForMapping = this.resolveFunctionCallArgumentsDoneName(event);
+      mapped = fromOpenAIStreamEvent(eventForMapping);
     } catch (error) {
-      if (this.deferTerminalToolArgumentsError(event, error)) return undefined;
+      if (this.deferTerminalToolArgumentsError(eventForMapping, error)) return undefined;
       throw error;
     }
     if (!isPlainObject(event) || typeof event.type !== "string") return mapped;
@@ -544,6 +546,19 @@ class OpenAIResponsesStreamState {
     }
 
     return mapped;
+  }
+
+  private resolveFunctionCallArgumentsDoneName(event: unknown): unknown {
+    if (
+      !isPlainObject(event) ||
+      event.type !== "response.function_call_arguments.done" ||
+      event.name !== undefined
+    ) {
+      return event;
+    }
+    const id = requiredToolCallString(event.item_id);
+    const name = this.toolCalls.get(id)?.name;
+    return name === undefined ? event : { ...event, name };
   }
 
   assertComplete(): void {

@@ -369,7 +369,9 @@ function io(events: Event[]) {
 }
 
 function messages(events: Event[]): string {
-  return events.map((event) => event.message).join("\n");
+  // The CLI prints paths with the host OS separator (node:path join/relative);
+  // normalize so path assertions pass on both POSIX and Windows.
+  return events.map((event) => event.message.replaceAll("\\", "/")).join("\n");
 }
 
 function count(value: string, pattern: string): number {

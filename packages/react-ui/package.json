@@ -86,7 +86,7 @@
     "@tiptap/pm": "^3.31.3",
     "@tiptap/react": "^3.31.3",
     "@tiptap/suggestion": "^3.31.3",
-    "marked": "^18.0.13",
+    "marked": "^18.0.14",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1"
   },

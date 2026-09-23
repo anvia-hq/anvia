@@ -32,7 +32,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@google/genai": "^2.23.0"
+    "@google/genai": "^2.24.0"
   },
   "devDependencies": {
     "@anvia/core": "workspace:*",

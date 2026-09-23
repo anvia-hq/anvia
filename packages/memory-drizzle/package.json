@@ -35,13 +35,13 @@
   "devDependencies": {
     "@anvia/core": "workspace:*",
     "@types/node": "^24.9.1",
-    "drizzle-orm": "^0.45.2",
+    "drizzle-orm": "^0.45.3",
     "tsup": "^8.5.0",
     "typescript": "^5.9.3",
     "vitest": "^4.1.11"
   },
   "peerDependencies": {
     "@anvia/core": "workspace:^",
-    "drizzle-orm": ">=0.45.2 <1.0.0"
+    "drizzle-orm": ">=0.45.3 <1.0.0"
   }
 }

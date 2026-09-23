@@ -33,7 +33,7 @@
   },
   "dependencies": {
     "@anvia/openai": "workspace:*",
-    "openai": "^7.18.0"
+    "openai": "^7.23.0"
   },
   "devDependencies": {
     "@anvia/core": "workspace:*",

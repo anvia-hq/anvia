@@ -732,15 +732,19 @@ class DockerSandboxRuntimeImpl {
             "1",
             "-maxdepth",
             "1",
-            "-printf",
-            "%p\t%y\t%s\n",
+            "-exec",
+            "stat",
+            "-c",
+            "%n\t%f\t%s",
+            "{}",
+            "+",
           ],
         },
         abortSignal,
       );
       if (result.status !== "exited" || result.exitCode !== 0) {
         throw new DockerSandboxError(
-          "Unable to list sandbox files.",
+          dockerExecFailureMessage("Unable to list sandbox files", result),
           "docker_command_failed",
           result,
         );
@@ -1459,8 +1463,11 @@ async function assertCopiedRegularFile(
       "invalid_path",
     );
   }
-  const resolvedTarget = await realpath(target);
-  const relativeTarget = path.relative(temporaryDirectory, resolvedTarget);
+  const [resolvedDirectory, resolvedTarget] = await Promise.all([
+    realpath(temporaryDirectory),
+    realpath(target),
+  ]);
+  const relativeTarget = path.relative(resolvedDirectory, resolvedTarget);
   if (
     relativeTarget === "" ||
     relativeTarget === ".." ||
@@ -1491,13 +1498,14 @@ async function removeVolume(dockerPath: string, volumeName: string): Promise<voi
 }
 
 function parseFindEntry(line: string, workdir: string): DockerSandboxFileEntry {
-  const [absolutePath, rawType, rawSize] = line.split("\t");
-  if (absolutePath === undefined || rawType === undefined || rawSize === undefined) {
+  const [absolutePath, rawMode, rawSize] = line.split("\t");
+  const mode = rawMode === undefined ? Number.NaN : Number.parseInt(rawMode, 16);
+  if (absolutePath === undefined || rawSize === undefined || !Number.isSafeInteger(mode)) {
     throw new DockerSandboxError("Docker returned invalid file metadata.", "docker_command_failed");
   }
   const relativePath = path.posix.relative(workdir, absolutePath);
   const size = Number(rawSize);
-  const type = mapFindType(rawType);
+  const type = mapFileMode(mode);
   let entry: DockerSandboxFileEntry = {
     path: normalizeSandboxPath(relativePath),
     type,
@@ -1508,11 +1516,23 @@ function parseFindEntry(line: string, workdir: string): DockerSandboxFileEntry {
   return entry;
 }
 
-function mapFindType(value: string): DockerSandboxFileType {
-  if (value === "f") return "file";
-  if (value === "d") return "directory";
-  if (value === "l") return "symlink";
+function mapFileMode(mode: number): DockerSandboxFileType {
+  const type = mode & 0o170000;
+  if (type === 0o100000) return "file";
+  if (type === 0o040000) return "directory";
+  if (type === 0o120000) return "symlink";
   return "other";
+}
+
+function dockerExecFailureMessage(prefix: string, result: DockerSandboxExecResult): string {
+  const detail = (safeDecode(result.stderr).trim() || safeDecode(result.stdout).trim()).slice(
+    0,
+    500,
+  );
+  if (detail.length > 0) return `${prefix}: ${detail}`;
+  return result.status === "exited"
+    ? `${prefix}: command exited with code ${result.exitCode}.`
+    : `${prefix}: command timed out.`;
 }
 
 function toExecResult(result: Awaited<ReturnType<typeof runDockerCli>>): DockerSandboxExecResult {

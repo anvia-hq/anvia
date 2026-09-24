@@ -56,6 +56,55 @@ describe("createDockerSandboxTools", () => {
     });
   });
 
+  it("runs a natural command line through the sandbox shell", async () => {
+    const sandbox = createRuntime();
+    const [tool] = createDockerSandboxTools({
+      sandbox,
+      tools: ["exec_command"],
+    });
+    if (tool === undefined) throw new Error("Expected exec_command tool.");
+    const command = "uv run --with pandas python - <<'PY'\nprint('ready')\nPY";
+
+    await expect(tool.call({ command, timeoutMs: 30_000 })).resolves.toMatchObject({
+      status: "exited",
+    });
+    expect(sandbox.exec).toHaveBeenCalledWith({
+      command: "sh",
+      args: ["-c", command],
+      timeoutMs: 30_000,
+    });
+  });
+
+  it("applies command policy to the shell used for natural command lines", async () => {
+    const sandbox = createRuntime();
+    const [blocked] = createDockerSandboxTools({
+      sandbox,
+      tools: ["exec_command"],
+      exec: { commands: { mode: "allow", values: ["uv"] } },
+    });
+    if (blocked === undefined) throw new Error("Expected exec_command tool.");
+
+    await expect(blocked.call({ command: "uv run report.py" })).rejects.toMatchObject({
+      code: "tool_policy",
+    });
+    expect(sandbox.exec).not.toHaveBeenCalled();
+
+    const [allowed] = createDockerSandboxTools({
+      sandbox,
+      tools: ["exec_command"],
+      exec: {
+        commands: { mode: "allow", values: ["sh"], allowShellInterpreters: true },
+      },
+    });
+    if (allowed === undefined) throw new Error("Expected exec_command tool.");
+
+    await expect(allowed.call({ command: "uv run report.py" })).resolves.toBeDefined();
+    expect(sandbox.exec).toHaveBeenCalledWith({
+      command: "sh",
+      args: ["-c", "uv run report.py"],
+    });
+  });
+
   it("enforces discriminated command and timeout policies", async () => {
     const [tool] = createDockerSandboxTools({
       sandbox: createRuntime(),

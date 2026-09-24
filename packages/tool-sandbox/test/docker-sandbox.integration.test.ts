@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DockerSandboxClient } from "../src/docker-sandbox";
+import { createDockerSandboxTools } from "../src/tools";
 
 const runDockerTests = process.env.ANVIA_SANDBOX_DOCKER_TESTS === "1";
 const decoder = new TextDecoder("utf-8", { fatal: true });
@@ -50,6 +51,38 @@ describe.skipIf(!runDockerTests)("Docker sandbox integration", () => {
     }
     expect(sandbox.state).toBe("destroyed");
     await expect(client.resumeSandbox({ id })).rejects.toMatchObject({ code: "sandbox_not_found" });
+  }, 120_000);
+
+  it("lists files in images that provide BusyBox utilities", async () => {
+    const client = new DockerSandboxClient();
+    const image = "ghcr.io/astral-sh/uv:alpine";
+    await client.pullImage({ image });
+    await using sandbox = await client.createSandbox({
+      id: `vitest-busybox-${Date.now()}`,
+      image,
+      workspace: { type: "ephemeral" },
+      network: { mode: "none" },
+      files: { "report.txt": "ready" },
+      directories: ["results"],
+    });
+
+    await expect(sandbox.runtime.listFiles({ path: "." })).resolves.toEqual(
+      expect.arrayContaining([
+        { path: "report.txt", type: "file", size: 5 },
+        { path: "results", type: "directory" },
+      ]),
+    );
+
+    const [execTool] = createDockerSandboxTools({
+      sandbox: sandbox.runtime,
+      tools: ["exec_command"],
+    });
+    if (execTool === undefined) throw new Error("Expected exec_command tool.");
+    await expect(execTool.call({ command: "uv --version && echo ready" })).resolves.toMatchObject({
+      status: "exited",
+      exitCode: 0,
+      stdout: expect.stringContaining("ready"),
+    });
   }, 120_000);
 
   it("streams byte output, reports timeout, and manages a published port", async () => {

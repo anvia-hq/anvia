@@ -30,8 +30,16 @@ const allToolNames = [
 ] as const satisfies readonly DockerSandboxToolName[];
 
 const execCommandInput = z.object({
-  command: z.string().min(1),
-  args: z.array(z.string()).optional(),
+  command: z
+    .string()
+    .min(1)
+    .describe(
+      "Command to run. Complete shell command lines are supported; use args for exact argv execution.",
+    ),
+  args: z
+    .array(z.string())
+    .describe("Optional exact arguments. Omit when command contains the complete command line.")
+    .optional(),
   cwd: z
     .string()
     .describe("Workspace-relative directory or an absolute directory inside the sandbox workdir.")
@@ -198,17 +206,17 @@ export function createDockerSandboxTools(
 function createExecCommandTool(options: CreateDockerSandboxToolsOptions): AnyTool {
   return createTool({
     name: "exec_command",
-    description: "Run one executable inside the sandbox with structured arguments.",
+    description: "Run a command inside the sandbox, including natural shell command lines.",
     inputSchema: execCommandInput,
     outputSchema: execResultOutput,
     execute: async ({ command, args, cwd, env, timeoutMs, input }, context) => {
-      assertCommandAllowed(command, options.exec?.commands);
+      const invocation = resolveExecInvocation(command, args, options.exec?.commands);
       const effectiveTimeoutMs = timeoutMs ?? options.exec?.defaultTimeoutMs;
       assertTimeoutAllowed(effectiveTimeoutMs, options.exec?.maxTimeoutMs);
       let execOptions: DockerSandboxExecOptions = {
-        command,
+        command: invocation.command,
       };
-      if (args !== undefined) execOptions = { ...execOptions, args };
+      if (invocation.args !== undefined) execOptions = { ...execOptions, args: invocation.args };
       if (cwd !== undefined) {
         execOptions = { ...execOptions, cwd: normalizeToolPath(options.sandbox, cwd, true) };
       }
@@ -619,6 +627,23 @@ function assertCommandAllowed(
       );
     }
   }
+}
+
+function resolveExecInvocation(
+  command: string,
+  args: readonly string[] | undefined,
+  policy: DockerSandboxCommandPolicy | undefined,
+): Pick<DockerSandboxExecOptions, "command" | "args"> {
+  if (args === undefined && requiresShell(command)) {
+    assertCommandAllowed("sh", policy);
+    return { command: "sh", args: ["-c", command] };
+  }
+  assertCommandAllowed(command, policy);
+  return args === undefined ? { command } : { command, args };
+}
+
+function requiresShell(command: string): boolean {
+  return /[\s|&;<>()$`'"*?[\]{}!#~=]/u.test(command);
 }
 
 function assertTimeoutAllowed(timeoutMs: number | undefined, maxTimeoutMs: number | undefined) {

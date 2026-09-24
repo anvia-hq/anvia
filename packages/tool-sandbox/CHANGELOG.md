@@ -1,5 +1,12 @@
 # @anvia/sandbox
 
+## 1.1.5
+
+### Patch Changes
+
+- c3b25dd: Fix the package-manager-symlinked CLI entry point and accept safe workspace-absolute paths in
+  sandbox tool calls.
+
 ## 1.1.4
 
 ### Patch Changes

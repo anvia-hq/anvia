@@ -1,5 +1,11 @@
 # @anvia/openai
 
+## 1.1.7
+
+### Patch Changes
+
+- a8a830b: Update the OpenAI SDK to ^7.23.0.
+
 ## 1.1.6
 
 ### Patch Changes

@@ -1,5 +1,11 @@
 # @anvia/anthropic
 
+## 1.1.6
+
+### Patch Changes
+
+- a8a830b: Update `@anthropic-ai/sdk` to ^0.128.0 and `@anthropic-ai/vertex-sdk` to ^0.19.11.
+
 ## 1.1.5
 
 ### Patch Changes

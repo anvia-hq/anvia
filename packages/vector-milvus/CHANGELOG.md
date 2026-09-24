@@ -1,5 +1,11 @@
 # @anvia/milvus
 
+## 1.1.4
+
+### Patch Changes
+
+- a8a830b: Update `@zilliz/milvus2-sdk-node` to ^3.0.6.
+
 ## 1.1.3
 
 ### Patch Changes

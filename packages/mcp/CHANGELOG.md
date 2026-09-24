@@ -1,5 +1,11 @@
 # @anvia/mcp
 
+## 1.2.1
+
+### Patch Changes
+
+- a8a830b: Update `undici` to ^8.11.0.
+
 ## 1.2.0
 
 ### Minor Changes

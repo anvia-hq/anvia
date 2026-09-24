@@ -1,5 +1,11 @@
 # @anvia/react-ui
 
+## 1.1.6
+
+### Patch Changes
+
+- a8a830b: Update `marked` to ^18.0.14 for upstream Markdown parsing fixes.
+
 ## 1.1.5
 
 ### Patch Changes

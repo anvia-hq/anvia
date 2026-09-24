@@ -1,5 +1,11 @@
 # @anvia/gemini
 
+## 1.1.6
+
+### Patch Changes
+
+- a8a830b: Update `@google/genai` to ^2.24.0.
+
 ## 1.1.5
 
 ### Patch Changes

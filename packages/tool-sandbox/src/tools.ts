@@ -2,6 +2,7 @@ import { type AnyTool, createTool } from "@anvia/core/tool";
 import { z } from "zod";
 import { decodeUtf8 } from "./docker-cli";
 import { DockerSandboxError } from "./errors";
+import { normalizeSandboxPath } from "./path";
 import type {
   CreateDockerSandboxToolsOptions,
   DockerSandboxCommandPolicy,
@@ -31,7 +32,10 @@ const allToolNames = [
 const execCommandInput = z.object({
   command: z.string().min(1),
   args: z.array(z.string()).optional(),
-  cwd: z.string().optional(),
+  cwd: z
+    .string()
+    .describe("Workspace-relative directory or an absolute directory inside the sandbox workdir.")
+    .optional(),
   env: z.record(z.string(), z.string()).optional(),
   timeoutMs: z.number().int().positive().max(300_000).optional(),
   input: z.string().optional(),
@@ -58,7 +62,10 @@ const execResultOutput = z.discriminatedUnion("status", [
 ]);
 
 const readFileInput = z.object({
-  path: z.string().min(1),
+  path: z
+    .string()
+    .min(1)
+    .describe("Workspace-relative path or an absolute path inside the sandbox workdir."),
   startLine: z.number().int().positive().optional(),
   lineCount: z.number().int().positive().max(10_000).optional(),
 });
@@ -73,7 +80,10 @@ const readFileOutput = z.object({
 });
 
 const writeFileInput = z.object({
-  path: z.string().min(1),
+  path: z
+    .string()
+    .min(1)
+    .describe("Workspace-relative path or an absolute path inside the sandbox workdir."),
   content: z.string(),
 });
 
@@ -82,7 +92,12 @@ const writeFileOutput = z.object({
   bytesWritten: z.number().int().nonnegative(),
 });
 
-const listFilesInput = z.object({ path: z.string().optional() });
+const listFilesInput = z.object({
+  path: z
+    .string()
+    .describe("Workspace-relative directory or an absolute directory inside the sandbox workdir.")
+    .optional(),
+});
 const fileEntryOutput = z.object({
   path: z.string(),
   type: z.enum(["file", "directory", "symlink", "other"]),
@@ -105,7 +120,10 @@ const listPortsOutput = z.object({ ports: z.array(publishedPortOutput) });
 const startProcessInput = z.object({
   command: z.string().min(1),
   args: z.array(z.string()).optional(),
-  cwd: z.string().optional(),
+  cwd: z
+    .string()
+    .describe("Workspace-relative directory or an absolute directory inside the sandbox workdir.")
+    .optional(),
   env: z.record(z.string(), z.string()).optional(),
 });
 const processInfoOutput = z.object({
@@ -191,7 +209,9 @@ function createExecCommandTool(options: CreateDockerSandboxToolsOptions): AnyToo
         command,
       };
       if (args !== undefined) execOptions = { ...execOptions, args };
-      if (cwd !== undefined) execOptions = { ...execOptions, cwd };
+      if (cwd !== undefined) {
+        execOptions = { ...execOptions, cwd: normalizeToolPath(options.sandbox, cwd, true) };
+      }
       if (env !== undefined) execOptions = { ...execOptions, env };
       if (effectiveTimeoutMs !== undefined) {
         execOptions = { ...execOptions, timeoutMs: effectiveTimeoutMs };
@@ -220,7 +240,7 @@ function createReadFileTool(options: CreateDockerSandboxToolsOptions): AnyTool {
         );
       }
       let readOptions: Parameters<typeof options.sandbox.readTextFilePage>[0] = {
-        path,
+        path: normalizeToolPath(options.sandbox, path),
         startLine: startLine ?? 1,
         lineCount: effectiveLineCount,
         maxBytes: limits.maxBytes,
@@ -245,15 +265,16 @@ function createWriteFileTool(options: CreateDockerSandboxToolsOptions): AnyTool 
       if (maxBytes !== undefined && bytesWritten > maxBytes) {
         throw toolPolicyError(`File content exceeds policy (${bytesWritten} > ${maxBytes}).`);
       }
+      const normalizedPath = normalizeToolPath(options.sandbox, path);
       let writeOptions: Parameters<typeof options.sandbox.writeTextFile>[0] = {
-        path,
+        path: normalizedPath,
         text: content,
       };
       if (context.abortSignal !== undefined) {
         writeOptions = { ...writeOptions, abortSignal: context.abortSignal };
       }
       await options.sandbox.writeTextFile(writeOptions);
-      return { path, bytesWritten };
+      return { path: normalizedPath, bytesWritten };
     },
   });
 }
@@ -265,12 +286,13 @@ function createListFilesTool(sandbox: DockerSandboxRuntime): AnyTool {
     inputSchema: listFilesInput,
     outputSchema: listFilesOutput,
     execute: async ({ path }, context) => {
+      const normalizedPath = path === undefined ? "." : normalizeToolPath(sandbox, path, true);
       let listOptions: Parameters<typeof sandbox.listFiles>[0] = {};
-      if (path !== undefined) listOptions = { ...listOptions, path };
+      if (path !== undefined) listOptions = { ...listOptions, path: normalizedPath };
       if (context.abortSignal !== undefined) {
         listOptions = { ...listOptions, abortSignal: context.abortSignal };
       }
-      return { path: path ?? ".", entries: [...(await sandbox.listFiles(listOptions))] };
+      return { path: normalizedPath, entries: [...(await sandbox.listFiles(listOptions))] };
     },
   });
 }
@@ -295,7 +317,9 @@ function createStartProcessTool(options: CreateDockerSandboxToolsOptions): AnyTo
       assertCommandAllowed(command, options.exec?.commands);
       let startOptions: Parameters<typeof options.sandbox.startProcess>[0] = { command };
       if (args !== undefined) startOptions = { ...startOptions, args };
-      if (cwd !== undefined) startOptions = { ...startOptions, cwd };
+      if (cwd !== undefined) {
+        startOptions = { ...startOptions, cwd: normalizeToolPath(options.sandbox, cwd, true) };
+      }
       if (env !== undefined) startOptions = { ...startOptions, env };
       if (context.abortSignal !== undefined) {
         startOptions = { ...startOptions, abortSignal: context.abortSignal };
@@ -427,6 +451,14 @@ function serializeProcessInfo(
   if (process.exitCode !== undefined) serialized = { ...serialized, exitCode: process.exitCode };
   if (process.endedAt !== undefined) serialized = { ...serialized, endedAt: process.endedAt };
   return serialized;
+}
+
+function normalizeToolPath(
+  sandbox: DockerSandboxRuntime,
+  input: string,
+  allowRoot = false,
+): string {
+  return normalizeSandboxPath(input, { allowRoot, workdir: sandbox.workdir });
 }
 
 function validateFactoryOptions(options: CreateDockerSandboxToolsOptions): void {

@@ -1,8 +1,14 @@
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { runCli, type SandboxImageCliDependencies, type SandboxImageCliIo } from "../src/cli";
+import {
+  isCliEntryPoint,
+  runCli,
+  type SandboxImageCliDependencies,
+  type SandboxImageCliIo,
+} from "../src/cli";
 
 const temporaryDirectories: string[] = [];
 
@@ -13,6 +19,16 @@ afterEach(async () => {
 });
 
 describe("anvia-sandbox CLI", () => {
+  it("recognizes execution through a package-manager bin symlink", async () => {
+    const directory = await temporaryDirectory();
+    const moduleUrl = new URL("../src/cli.ts", import.meta.url);
+    const binPath = path.join(directory, "anvia-sandbox");
+    await symlink(fileURLToPath(moduleUrl), binPath);
+
+    expect(isCliEntryPoint(moduleUrl.href, binPath)).toBe(true);
+    expect(isCliEntryPoint(moduleUrl.href, path.join(directory, "missing"))).toBe(false);
+  });
+
   it("prints help and rejects unknown input", async () => {
     const help = captureIo();
     await expect(runCli(["--help"], process.cwd(), help.io)).resolves.toBe(0);

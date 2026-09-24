@@ -267,6 +267,41 @@ describe("createDockerSandboxTools", () => {
     );
   });
 
+  it("accepts workspace-absolute paths and passes canonical relative paths to the runtime", async () => {
+    const sandbox = createRuntime();
+    const tools = toolMap(
+      createDockerSandboxTools({
+        sandbox,
+        tools: ["exec_command", "read_file", "write_file", "list_files", "start_process"],
+      }),
+    );
+
+    await tools.exec_command?.call({ command: "node", cwd: "/workspace/app" });
+    await tools.read_file?.call({ path: "/workspace/app/input.txt" });
+    await expect(
+      tools.write_file?.call({ path: "/workspace/app/output.txt", content: "hello" }),
+    ).resolves.toMatchObject({ path: "app/output.txt" });
+    await expect(tools.list_files?.call({ path: "/workspace/app" })).resolves.toMatchObject({
+      path: "app",
+    });
+    await tools.start_process?.call({ command: "node", cwd: "/workspace/app" });
+
+    expect(sandbox.exec).toHaveBeenCalledWith({ command: "node", cwd: "app" });
+    expect(sandbox.readTextFilePage).toHaveBeenCalledWith(
+      expect.objectContaining({ path: "app/input.txt" }),
+    );
+    expect(sandbox.writeTextFile).toHaveBeenCalledWith({
+      path: "app/output.txt",
+      text: "hello",
+    });
+    expect(sandbox.listFiles).toHaveBeenCalledWith({ path: "app" });
+    expect(sandbox.startProcess).toHaveBeenCalledWith({ command: "node", cwd: "app" });
+
+    await expect(tools.read_file?.call({ path: "/etc/passwd" })).rejects.toMatchObject({
+      code: "invalid_path",
+    });
+  });
+
   it("delegates process and port tools with structured results", async () => {
     const sandbox = createRuntime();
     const tools = toolMap(

@@ -1,7 +1,10 @@
 import path from "node:path";
 import { DockerSandboxError } from "./errors";
 
-export function normalizeSandboxPath(input: string, options: { allowRoot?: boolean } = {}): string {
+export function normalizeSandboxPath(
+  input: string,
+  options: { allowRoot?: boolean; workdir?: string } = {},
+): string {
   if (input.length === 0) {
     throw new DockerSandboxError("Sandbox path cannot be empty.", "invalid_path");
   }
@@ -10,10 +13,14 @@ export function normalizeSandboxPath(input: string, options: { allowRoot?: boole
     throw new DockerSandboxError("Sandbox path cannot contain null bytes.", "invalid_path");
   }
 
-  const normalized = path.posix.normalize(input.replaceAll("\\", "/"));
+  let normalized = path.posix.normalize(input.replaceAll("\\", "/"));
 
   if (path.posix.isAbsolute(normalized)) {
-    throw new DockerSandboxError(`Sandbox path must be relative: ${input}`, "invalid_path");
+    const workdir = options.workdir;
+    if (workdir === undefined || !path.posix.isAbsolute(workdir)) {
+      throw new DockerSandboxError(`Sandbox path must be relative: ${input}`, "invalid_path");
+    }
+    normalized = path.posix.relative(path.posix.normalize(workdir), normalized) || ".";
   }
 
   if (normalized === ".." || normalized.startsWith("../")) {

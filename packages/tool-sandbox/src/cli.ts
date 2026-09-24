@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { realpathSync } from "node:fs";
 import { lstat, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -693,8 +694,16 @@ Examples:
   pnpm dlx @anvia/sandbox create-image --name browser --runtime bun --feature playwright`;
 }
 
-const invokedPath = process.argv[1] === undefined ? undefined : path.resolve(process.argv[1]);
-if (invokedPath !== undefined && invokedPath === fileURLToPath(import.meta.url)) {
+export function isCliEntryPoint(moduleUrl: string, invokedPath: string | undefined): boolean {
+  if (invokedPath === undefined) return false;
+  try {
+    return realpathSync(path.resolve(invokedPath)) === realpathSync(fileURLToPath(moduleUrl));
+  } catch {
+    return false;
+  }
+}
+
+if (isCliEntryPoint(import.meta.url, process.argv[1])) {
   runCli().then((code) => {
     process.exitCode = code;
   });

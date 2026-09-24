@@ -32,6 +32,11 @@ Networking is explicit. Use `{ mode: "none" }` or `{ mode: "bridge", ports: [...
 bind only to `127.0.0.1`. Runtime methods use object arguments, propagate abort signals, and expose
 command and process output as bytes. Tool wrappers decode UTF-8 strictly and return structured values.
 
+File paths and command working directories passed to agent tools may be workspace-relative (for
+example `notes/result.txt`) or absolute paths inside the sandbox workdir (for example
+`/workspace/notes/result.txt` with the default workdir). Paths outside the sandbox workdir are
+rejected.
+
 With `exec.commands.mode: "allow"`, both `exec_command` and `start_process` reject known shell
 executables by default, including path-qualified names such as `/bin/sh`. To permit an allowlisted
 shell, set `exec.commands.allowShellInterpreters` to the boolean `true`. Omitted or `false` keeps the

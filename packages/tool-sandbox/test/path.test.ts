@@ -13,6 +13,18 @@ describe("sandbox path handling", () => {
     expect(containerPath("/workspace", ".")).toBe("/workspace");
   });
 
+  it("normalizes absolute paths inside a declared workdir", () => {
+    expect(normalizeSandboxPath("/workspace/src/index.ts", { workdir: "/workspace" })).toBe(
+      "src/index.ts",
+    );
+    expect(normalizeSandboxPath("/workspace", { allowRoot: true, workdir: "/workspace" })).toBe(
+      ".",
+    );
+    expect(() =>
+      normalizeSandboxPath("/workspace-other/secret", { workdir: "/workspace" }),
+    ).toThrow("cannot leave the workspace");
+  });
+
   it("rejects unsafe paths", () => {
     expect(() => normalizeSandboxPath("")).toThrow(DockerSandboxError);
     expect(() => normalizeSandboxPath("/etc/passwd")).toThrow(DockerSandboxError);

@@ -105,6 +105,22 @@ describe("createDockerSandboxTools", () => {
     });
   });
 
+  it("rejects natural command lines with block-mode command policies", async () => {
+    const sandbox = createRuntime();
+    const [tool] = createDockerSandboxTools({
+      sandbox,
+      tools: ["exec_command"],
+      exec: { commands: { mode: "block", values: ["rm"] } },
+    });
+    if (tool === undefined) throw new Error("Expected exec_command tool.");
+
+    await expect(tool.call({ command: "rm -rf output" })).rejects.toMatchObject({
+      code: "tool_policy",
+      message: expect.stringContaining("block-mode"),
+    });
+    expect(sandbox.exec).not.toHaveBeenCalled();
+  });
+
   it("enforces discriminated command and timeout policies", async () => {
     const [tool] = createDockerSandboxTools({
       sandbox: createRuntime(),

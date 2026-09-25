@@ -635,6 +635,11 @@ function resolveExecInvocation(
   policy: DockerSandboxCommandPolicy | undefined,
 ): Pick<DockerSandboxExecOptions, "command" | "args"> {
   if (args === undefined && requiresShell(command)) {
+    if (policy?.mode === "block") {
+      throw toolPolicyError(
+        "Natural command lines cannot be used with block-mode command policies. Use command and args instead.",
+      );
+    }
     assertCommandAllowed("sh", policy);
     return { command: "sh", args: ["-c", command] };
   }

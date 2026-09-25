@@ -1,5 +1,12 @@
 # @anvia/sandbox
 
+## 1.1.6
+
+### Patch Changes
+
+- efa3ea0: Accept natural shell command lines in `exec_command`, support file listing in Alpine and other
+  BusyBox-based images, and prevent false file-boundary errors from macOS temporary path aliases.
+
 ## 1.1.5
 
 ### Patch Changes

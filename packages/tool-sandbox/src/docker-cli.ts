@@ -118,11 +118,37 @@ export async function assertDockerCli(args: string[], options: DockerCliOptions)
 
   if (result.exitCode !== 0) {
     throw new DockerSandboxError(
-      `Docker command failed: docker ${args.join(" ")}`,
+      `Docker command failed: docker ${redactCliArgs(args).join(" ")}`,
       "docker_command_failed",
       result,
     );
   }
+}
+
+/** Flags whose following value is a `KEY=VALUE` assignment that may carry a secret. */
+const envValueFlags = new Set(["--env", "-e"]);
+
+/**
+ * Replace secret values in a Docker argv before it is embedded in an error message, so
+ * environment values passed with `--env`/`-e` never reach logs or traces. The variable
+ * name is kept visible to keep the failure diagnosable.
+ */
+function redactCliArgs(args: string[]): string[] {
+  return args.map((arg, index) => {
+    const flag = args[index - 1];
+    if (flag !== undefined && envValueFlags.has(flag)) return redactEnvAssignment(arg);
+    for (const envFlag of envValueFlags) {
+      const prefix = `${envFlag}=`;
+      if (arg.startsWith(prefix))
+        return `${prefix}${redactEnvAssignment(arg.slice(prefix.length))}`;
+    }
+    return arg;
+  });
+}
+
+function redactEnvAssignment(value: string): string {
+  const separator = value.indexOf("=");
+  return separator === -1 ? value : `${value.slice(0, separator + 1)}<redacted>`;
 }
 
 function createOutputCollector(maxBytes: number, onChunk?: (chunk: Uint8Array) => void) {

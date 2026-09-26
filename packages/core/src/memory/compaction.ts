@@ -29,6 +29,9 @@ Return only the concise memory summary.`;
 /** Cap inline file text so compaction prompts stay bounded. */
 const MAX_FILE_TEXT_CHARS = 2_000;
 
+/** Cap a single tool result so one large output cannot blow up the compaction prompt. */
+const MAX_TOOL_OUTPUT_CHARS = 2_000;
+
 export function createSummaryMemoryCompactor(
   options: CreateSummaryMemoryCompactorOptions,
 ): MemoryCompactor {
@@ -193,17 +196,20 @@ function serializeToolContent(content: ToolResultPart | ToolInteractionResponseP
 
 function serializeToolOutput(output: ToolResultOutput): string {
   if (output.type === "text" || output.type === "error-text") {
-    return output.value;
+    return truncateForSummary(output.value, MAX_TOOL_OUTPUT_CHARS);
   }
   if (output.type === "json" || output.type === "error-json") {
-    return safeJson(output.value);
+    return truncateForSummary(safeJson(output.value), MAX_TOOL_OUTPUT_CHARS);
   }
   if (output.type === "execution-denied") {
     return output.reason ?? "Tool execution was denied.";
   }
-  return output.value
-    .map((part) => (part.type === "text" ? part.text : fileDescriptor(part)))
-    .join("\n");
+  return truncateForSummary(
+    output.value
+      .map((part) => (part.type === "text" ? part.text : fileDescriptor(part)))
+      .join("\n"),
+    MAX_TOOL_OUTPUT_CHARS,
+  );
 }
 
 function imageDescriptor(content: ImagePart): string {

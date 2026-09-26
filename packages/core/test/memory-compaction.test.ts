@@ -1256,6 +1256,88 @@ describe("memory compaction", () => {
     expect(transcriptEntries[0]?.content).toContain('"role":"system"');
   });
 
+  it("truncates long tool-result text in the summary prompt", async () => {
+    const longToolResult = "T".repeat(2_500);
+    const history = [
+      Message.user("first"),
+      Message.assistant([AssistantContent.toolCall("call-1", "lookup", { id: "A-1" })]),
+      Message.toolResult("call-1", longToolResult),
+      Message.assistant("resolved"),
+      Message.user("recent"),
+      Message.assistant("recent answer"),
+    ];
+    const store = new CompactingMemoryStore(history);
+    const summaryModel = new QueueModel([response("summary")]);
+    const mainModel = new QueueModel([response("done")]);
+    const agent = new Agent({
+      id: "test",
+      model: mainModel,
+      memory: {
+        store,
+        compaction: {
+          trigger: { afterTokens: 6 },
+          retention: { recentTokens: 1 },
+          compactor: createSummaryMemoryCompactor({ model: summaryModel }),
+        },
+      },
+    });
+
+    await agent.generate({ prompt: "next", session: scope });
+
+    const summaryPrompt = summaryModel.requests[0]?.chatHistory[0];
+    const serialized =
+      summaryPrompt?.role !== "user"
+        ? ""
+        : typeof summaryPrompt.content === "string"
+          ? summaryPrompt.content
+          : summaryPrompt.content[0]?.type === "text"
+            ? summaryPrompt.content[0].text
+            : "";
+    expect(serialized).toContain("[truncated 500 chars]");
+    expect(serialized).not.toContain(longToolResult);
+  });
+
+  it("truncates large tool-result JSON in the summary prompt", async () => {
+    const longJsonValue = { rows: Array.from({ length: 1_000 }, (_, index) => `row-${index}`) };
+    const history = [
+      Message.user("first"),
+      Message.assistant([AssistantContent.toolCall("call-1", "lookup", { id: "A-1" })]),
+      Message.toolResult("call-1", longJsonValue),
+      Message.assistant("resolved"),
+      Message.user("recent"),
+      Message.assistant("recent answer"),
+    ];
+    const store = new CompactingMemoryStore(history);
+    const summaryModel = new QueueModel([response("summary")]);
+    const mainModel = new QueueModel([response("done")]);
+    const agent = new Agent({
+      id: "test",
+      model: mainModel,
+      memory: {
+        store,
+        compaction: {
+          trigger: { afterTokens: 6 },
+          retention: { recentTokens: 1 },
+          compactor: createSummaryMemoryCompactor({ model: summaryModel }),
+        },
+      },
+    });
+
+    await agent.generate({ prompt: "next", session: scope });
+
+    const summaryPrompt = summaryModel.requests[0]?.chatHistory[0];
+    const serialized =
+      summaryPrompt?.role !== "user"
+        ? ""
+        : typeof summaryPrompt.content === "string"
+          ? summaryPrompt.content
+          : summaryPrompt.content[0]?.type === "text"
+            ? summaryPrompt.content[0].text
+            : "";
+    expect(serialized).toContain("[truncated");
+    expect(serialized).not.toContain("row-999");
+  });
+
   it("rejects automatic compaction for stores without the capability", () => {
     const store: MemoryStore = {
       load: async () => [],

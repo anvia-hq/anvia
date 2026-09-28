@@ -1,5 +1,11 @@
 # @anvia/studio
 
+## 1.3.1
+
+### Patch Changes
+
+- 8edf7f2: Update `@tanstack/react-router` to 1.170.40, `@xyflow/react` to ^12.12.0, `hono` to ^4.13.10, and `ws` to ^8.22.0.
+
 ## 1.3.0
 
 ### Minor Changes

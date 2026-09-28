@@ -1,5 +1,11 @@
 # @anvia/mcp
 
+## 1.2.2
+
+### Patch Changes
+
+- 8edf7f2: Update `@modelcontextprotocol/client` to ^2.1.0 and `undici` to ^8.11.2.
+
 ## 1.2.1
 
 ### Patch Changes

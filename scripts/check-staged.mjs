@@ -18,14 +18,23 @@ if (files.length === 0) {
   process.exit(0);
 }
 
-const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
+const isWindows = process.platform === "win32";
+const pnpm = isWindows ? "pnpm.cmd" : "pnpm";
 const checks = [
   ["oxfmt", "--check", "--no-error-on-unmatched-pattern", "--", ...files],
   ["oxlint", "--no-error-on-unmatched-pattern", "--", ...files],
 ];
 
 for (const args of checks) {
-  const result = spawnSync(pnpm, ["exec", ...args], { stdio: "inherit" });
+  const result = spawnSync(pnpm, ["exec", ...args], {
+    stdio: "inherit",
+    shell: isWindows,
+  });
+
+  if (result.error !== undefined) {
+    process.stderr.write(`${result.error.message}\n`);
+    process.exit(1);
+  }
 
   if (result.status !== 0) {
     process.exit(result.status ?? 1);

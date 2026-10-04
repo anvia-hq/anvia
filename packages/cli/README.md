@@ -1,63 +1,106 @@
 # @anvia/cli
 
-Install editable, app-owned UI components on top of the headless `@anvia/react-ui` primitives.
+Install Anvia Agent Skills for a coding agent and editable React UI components for an application.
+Requires Node.js 20.18.1 or newer.
+
+The grouped UI commands and `--apply` below are pending the next CLI release. Published CLI
+1.3.0 uses the root `init`, `add`, and `update` commands and the legacy update flags.
+
+## Commands
 
 ```sh
-pnpm dlx @anvia/cli init vite
-pnpm dlx @anvia/cli add chat
+anvia ui init [next|vite]
+anvia ui add <item>
+anvia ui update [items...]          # preview only
+anvia ui update [items...] --apply
+
+anvia skills list
+anvia skills init
+anvia skills update                # preview only
+anvia skills update --apply
 ```
 
-`init` configures shadcn in an existing Next.js or Vite application. It does not create an app.
-`add` writes components below the `components` alias from `components.json` (normally
-`src/components/anvia`) and installs the matching `@anvia/react-ui` release.
+UI commands belong under `ui`; agent knowledge belongs under `skills`. Both update commands
+preview changes without writing files. `--apply` explicitly writes them, replacing differing
+files rather than merging local changes. Review the preview before applying it.
+
+Run `anvia --help`, `anvia ui --help`, or `anvia skills --help` for options. Unknown commands
+and options fail with exit code 1. There is no `--dry-run` flag; updates already preview by default.
+
+Compatibility aliases remain supported:
+
+| Legacy                        | Preferred                     |
+| ----------------------------- | ----------------------------- |
+| `anvia init`                  | `anvia ui init`               |
+| `anvia add`                   | `anvia ui add`                |
+| `anvia update`                | `anvia ui update`             |
+| `anvia update --overwrite`    | `anvia ui update --apply`     |
+| `anvia skills update --force` | `anvia skills update --apply` |
+
+`ui init --force`, `ui add --overwrite`, and `skills init --force` retain their existing meanings.
+
+## Editable UI components
+
+`ui init` configures shadcn in an existing Next.js or Vite app; it does not create an app.
+`ui add` writes below the components alias in `components.json` (normally
+`src/components/anvia`) and installs the React UI version recorded with the bundled registry.
+The CLI and React UI release independently.
 
 Available items: `chat`, `thread`, `message`, `composer`, `attachment`, `markdown`, and
-`tool-fallback`.
-
-## Updating installed components
-
-`update` compares the Anvia components in your project against the current registry:
+`tool-fallback`. Larger items include their shared component dependencies.
 
 ```sh
-pnpm dlx @anvia/cli update            # check every item (preview only, writes nothing)
-pnpm dlx @anvia/cli update composer   # check a single item
-pnpm dlx @anvia/cli update --overwrite
+anvia ui init vite --cwd ./my-app
+anvia ui add chat --cwd ./my-app
+anvia ui update composer --cwd ./my-app
+anvia ui update composer --cwd ./my-app --apply
 ```
 
-Without `--overwrite`, `update` is a preview: it reports each file as `up-to-date`,
-`modified` (the installed copy differs from the registry), or `missing`. Pass `--overwrite`
-to write the registry content over out-of-date and missing files of installed components.
-`update` never installs new items — use `add` for that. Locally edited copies are
-overwritten, so commit or stash your changes first.
+Updates compare installed files against the bundled registry and report `up-to-date`, `modified`,
+or `missing`. An item counts as installed if any file in its dependency set exists. Shared files
+can therefore make larger items count as incomplete installations. Name the items you intend to
+update; an unrestricted applied update can fill those larger compositions. Shared paths are
+written once. Updates do not run shadcn, upgrade dependencies, refresh CSS, or delete obsolete files.
 
 ## Agent Skills
 
-Scaffold the Anvia Agent Skills — curated, API-verified knowledge for building with
-Anvia (agents, chat, RAG, MCP, pipelines, Studio, evals, channels) — so your coding
-agent writes correct Anvia code:
+Skills bundle API-verified knowledge for agents, chat, RAG, MCP, pipelines, Studio, evals,
+and channels. Installation copies `SKILL.md`, `references/`, and `scripts/`; it does not run scripts.
 
 ```sh
-pnpm dlx @anvia/cli skills list                          # show the available skills
-pnpm dlx @anvia/cli skills init                          # copy every skill into ./skills
-pnpm dlx @anvia/cli skills init --claude --agents        # also wire Claude Code and AGENTS.md
-pnpm dlx @anvia/cli skills init --codex --cursor         # --codex is an AGENTS.md alias
-pnpm dlx @anvia/cli skills update                        # compare installed skills (preview only)
-pnpm dlx @anvia/cli skills update --force
+anvia skills list
+anvia skills init --claude --codex --cursor
+anvia skills update --claude --codex --cursor
+anvia skills update --claude --codex --cursor --apply
 ```
 
-`skills init` always writes the canonical skills into `./skills` (override with
-`--dir <path>`) — one folder per skill (`SKILL.md` + `references/` + `scripts/`), with
-the executable bit preserved on skill scripts — and prints the wiring snippet. Generated
-adapters and the snippet always reference the effective directory. The
-target flags add adapters on top:
+`skills init` always creates the canonical `./skills/<name>/` trees (override with `--dir <path>`),
+copying the bundled file permissions. Differing existing files are preserved unless `--force`
+is supplied. Target flags add integrations:
 
-- `--claude` copies the skills into `.claude/skills/`, where Claude Code loads them natively.
-- `--cursor` writes one on-demand Cursor rule per skill into `.cursor/rules/` that points
-  at the matching `skills/<name>/SKILL.md`.
-- `--agents` (and its alias `--codex`) maintains an `AGENTS.md` section, between
-  `anvia-skills` markers, listing every skill with its description. Existing
-  `AGENTS.md` content outside the markers is never touched.
+- `--claude`: self-contained copies in `.claude/skills/`.
+- `--cursor`: on-demand `.cursor/rules/<name>.mdc` pointers into the canonical directory.
+- `--agents` or `--codex`: an Anvia section in `AGENTS.md`, preserving instructions outside its markers.
 
-Skills you have locally edited are left alone unless you pass `--force`. `skills update`
-refreshes installed skills and adapters in place and never reinstalls skills that were
-removed from the project. Both commands accept `--cwd <path>`.
+Repeat target flags and directory options during updates. All selected targets, including
+AGENTS.md, are read-only during preview and list paths that would change. Applied updates replace
+differing files and restore missing files inside installed skill trees. Fully removed skills are
+not reinstalled by updates; use `skills init` to restore them. Cursor rules and AGENTS.md pointers
+are generated for every bundled skill and can reference a removed canonical directory.
+
+Both UI and skill commands accept `--cwd <path>` except `skills list`, which only lists bundled names.
+The public update APIs also accept `apply: true`, retaining `overwrite` and `force` compatibility options.
+Skill target reports include `pending` paths during preview; `created` and `updated` contain actual writes.
+
+## Try the development build
+
+From the Anvia repository root:
+
+```sh
+pnpm install --frozen-lockfile
+pnpm --filter @anvia/cli... build
+node packages/cli/dist/cli.js --help
+node packages/cli/dist/cli.js skills update --cwd /path/to/project --codex
+```
+
+The examples above use `anvia` as shorthand for the installed binary or this built entrypoint.

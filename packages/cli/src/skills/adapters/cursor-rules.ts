@@ -19,6 +19,7 @@ export type CursorRulesSyncOptions = {
 export function syncCursorRules(options: CursorRulesSyncOptions): SkillsSyncOutcome {
   const created: string[] = [];
   const updated: string[] = [];
+  const pending: string[] = [];
   let skipped = 0;
 
   for (const name of skillNames({ skillsDirectory: options.skillsDirectory })) {
@@ -29,6 +30,7 @@ export function syncCursorRules(options: CursorRulesSyncOptions): SkillsSyncOutc
 
     if (!existsSync(targetPath)) {
       if (options.mode === "update" && !options.force) {
+        pending.push(targetPath);
         continue;
       }
 
@@ -44,6 +46,9 @@ export function syncCursorRules(options: CursorRulesSyncOptions): SkillsSyncOutc
 
     if (!options.force) {
       skipped += 1;
+      if (options.mode === "update") {
+        pending.push(targetPath);
+      }
       continue;
     }
 
@@ -51,7 +56,7 @@ export function syncCursorRules(options: CursorRulesSyncOptions): SkillsSyncOutc
     updated.push(targetPath);
   }
 
-  return { created, updated, skipped };
+  return { created, updated, skipped, pending };
 }
 
 export function cursorRuleContent(

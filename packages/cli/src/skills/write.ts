@@ -52,16 +52,18 @@ export function initSkills(options: SkillsOptions & { force?: boolean } = {}): S
   return writeSkills({ ...options, mode: "init" });
 }
 
-export function updateSkills(options: SkillsOptions & { force?: boolean } = {}): SkillsWriteResult {
+export function updateSkills(
+  options: SkillsOptions & { apply?: boolean; force?: boolean } = {},
+): SkillsWriteResult {
   return writeSkills({ ...options, mode: "update" });
 }
 
 function writeSkills(
-  options: SkillsOptions & { force?: boolean; mode: SkillsWriteMode },
+  options: SkillsOptions & { apply?: boolean; force?: boolean; mode: SkillsWriteMode },
 ): SkillsWriteResult {
   const skillsDirectory = options.skillsDirectory ?? bundledSkillsDirectory();
   const cwd = options.cwd ?? process.cwd();
-  const force = options.force === true;
+  const force = options.force === true || (options.mode === "update" && options.apply === true);
 
   // Generated pointers (AGENTS.md section, Cursor rules) must reference the
   // directory the canonical copy actually lands in.
@@ -102,6 +104,7 @@ function writeSkills(
   if (targets.has("agents") || targets.has("codex")) {
     const doc = syncAgentsDoc({
       agentsPath: join(cwd, "AGENTS.md"),
+      preview: options.mode === "update" && !force,
       skillsDirectory,
       canonicalDir,
     });

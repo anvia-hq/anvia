@@ -131,3 +131,23 @@ function reportChangedSkillInit(
     console.log(skipNote);
   }
 }
+
+export function reportSkillsPreview(result: SkillsWriteResult): void {
+  for (const skill of result.report) {
+    if (!skill.installed) {
+      console.log(`skills/${skill.name}: not installed. Run \`anvia skills init\` first.`);
+    }
+  }
+  const paths = new Set<string>();
+  for (const target of result.targets) {
+    for (const path of target.pending ?? []) {
+      paths.add(path);
+      console.log(`${target.target}: would update ${path}`);
+    }
+  }
+  console.log(
+    paths.size === 0
+      ? "No updates found for the selected skill targets."
+      : `Found ${paths.size} out-of-date ${paths.size === 1 ? "file" : "files"}. Re-run with --apply to apply.`,
+  );
+}

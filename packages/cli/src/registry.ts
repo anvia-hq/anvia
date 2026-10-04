@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const registryItemNames = [
@@ -82,8 +82,8 @@ export function createRegistryItem(
   name: RegistryItemName,
   options: { packageVersion?: string; registryDirectory?: string } = {},
 ): AnviaRegistryItem {
-  const packageVersion = options.packageVersion ?? currentPackageVersion();
   const registryDirectory = options.registryDirectory ?? bundledRegistryDirectory();
+  const packageVersion = options.packageVersion ?? registryPackageVersion();
 
   const files = itemFiles[name].map((filename) => ({
     content: readFileSync(join(registryDirectory, filename), "utf8"),
@@ -207,6 +207,7 @@ export function updateInstalledItems(
   options: {
     cwd?: string;
     items?: readonly RegistryItemName[];
+    apply?: boolean;
     overwrite?: boolean;
     registryDirectory?: string;
   } = {},
@@ -215,7 +216,7 @@ export function updateInstalledItems(
   const report = inspectInstalledItems(options);
   const updated: string[] = [];
 
-  if (options.overwrite === true) {
+  if (options.apply === true || options.overwrite === true) {
     const actionable = new Map<string, string>();
 
     for (const item of report) {
@@ -423,12 +424,12 @@ function bundledRegistryDirectory(): string {
   return fileURLToPath(new URL("./registry/", import.meta.url));
 }
 
-function currentPackageVersion(): string {
-  const manifestPath = fileURLToPath(new URL("../package.json", import.meta.url));
+function registryPackageVersion(): string {
+  const manifestPath = join(bundledRegistryDirectory(), "react-ui.json");
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as { version?: unknown };
 
   if (typeof manifest.version !== "string") {
-    throw new Error(`Missing package version in ${basename(manifestPath)}.`);
+    throw new Error(`Missing React UI version in ${manifestPath}.`);
   }
 
   return manifest.version;

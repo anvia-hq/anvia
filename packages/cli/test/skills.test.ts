@@ -1,4 +1,12 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -264,5 +272,70 @@ describe("adapter targets", () => {
     expect(switched.targets.find((target) => target.target === "agents")?.updated.length).toBe(1);
     expect(readFileSync(join(cwd, "AGENTS.md"), "utf8")).toContain("`skills/anvia-agent/SKILL.md`");
     rmSync(cwd, { recursive: true, force: true });
+  });
+});
+
+describe("skills update previews", () => {
+  it.each(["agents", "codex"] as const)(
+    "never creates AGENTS.md for the %s target during preview",
+    (target) => {
+      const cwd = createProject();
+      try {
+        const result = updateSkills({
+          cwd,
+          targets: [target, "cursor", "claude"],
+          skillsDirectory,
+        });
+        expect(readdirSync(cwd)).toEqual([]);
+        expect(result.targets.find((entry) => entry.target === target)?.pending).toEqual([
+          join(cwd, "AGENTS.md"),
+        ]);
+        expect(
+          result.targets.every((entry) => entry.created.length === 0 && entry.updated.length === 0),
+        ).toBe(true);
+      } finally {
+        rmSync(cwd, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it("previews modified and missing files across all adapters, then applies the same changes", () => {
+    const cwd = createProject();
+    const targets = ["claude", "cursor", "agents"] as const;
+    try {
+      initSkills({ cwd, dir: "knowledge", targets, skillsDirectory });
+      const canonical = skillPath(cwd, "anvia-agent", "SKILL.md", "knowledge");
+      const claude = join(cwd, ".claude/skills/anvia-agent/SKILL.md");
+      const cursor = join(cwd, ".cursor/rules/anvia-agent.mdc");
+      const agents = join(cwd, "AGENTS.md");
+      for (const path of [canonical, claude, agents]) writeFileSync(path, "# local instructions\n");
+      rmSync(cursor);
+      const result = updateSkills({ cwd, dir: "knowledge", targets, skillsDirectory });
+      expect(result.targets.flatMap((entry) => entry.pending ?? []).sort()).toEqual(
+        [canonical, claude, cursor, agents].sort(),
+      );
+      for (const path of [canonical, claude, agents])
+        expect(readFileSync(path, "utf8")).toBe("# local instructions\n");
+      expect(existsSync(cursor)).toBe(false);
+      expect(
+        result.targets.every((entry) => entry.created.length === 0 && entry.updated.length === 0),
+      ).toBe(true);
+      const applied = updateSkills({
+        cwd,
+        dir: "knowledge",
+        targets,
+        skillsDirectory,
+        apply: true,
+      });
+      expect(
+        applied.targets.flatMap((entry) => [...entry.created, ...entry.updated]).sort(),
+      ).toEqual([canonical, claude, cursor, agents].sort());
+      expect(readFileSync(canonical, "utf8")).toBe(skillSource("anvia-agent", "SKILL.md"));
+      expect(readFileSync(claude, "utf8")).toBe(skillSource("anvia-agent", "SKILL.md"));
+      expect(readFileSync(agents, "utf8")).toContain("# local instructions");
+      expect(readFileSync(agents, "utf8")).toContain("knowledge/anvia-agent/SKILL.md");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
   });
 });

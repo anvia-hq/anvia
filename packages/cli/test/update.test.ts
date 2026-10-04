@@ -163,19 +163,22 @@ describe("updateInstalledItems", () => {
     rmSync(cwd, { recursive: true, force: true });
   });
 
-  it("overwrites out-of-date and missing files, then reports up to date", () => {
-    const cwd = createProject();
-    writeFileSync(installedPath(cwd, "markdown.tsx"), "// old\n");
-    const { updated } = updateInstalledItems({
-      cwd,
-      items: ["markdown"],
-      overwrite: true,
-      registryDirectory,
-    });
-    expect(updated).toEqual([installedPath(cwd, "markdown.tsx")]);
-    const item = itemReport(cwd, "markdown");
-    expect(item.files.every((file) => file.status === "up-to-date")).toBe(true);
-    expect(item.complete).toBe(true);
-    rmSync(cwd, { recursive: true, force: true });
-  });
+  it.each(["apply", "overwrite"] as const)(
+    "writes updates using %s, then reports up to date",
+    (flag) => {
+      const cwd = createProject();
+      writeFileSync(installedPath(cwd, "markdown.tsx"), "// old\n");
+      const { updated } = updateInstalledItems({
+        cwd,
+        items: ["markdown"],
+        [flag]: true,
+        registryDirectory,
+      });
+      expect(updated).toEqual([installedPath(cwd, "markdown.tsx")]);
+      const item = itemReport(cwd, "markdown");
+      expect(item.files.every((file) => file.status === "up-to-date")).toBe(true);
+      expect(item.complete).toBe(true);
+      rmSync(cwd, { recursive: true, force: true });
+    },
+  );
 });

@@ -22,6 +22,8 @@ export function isSkillsTarget(value: string): value is SkillsTarget {
 }
 
 export type SkillsTargetResult = {
+  /** Paths that would change during an update preview. */
+  pending?: string[];
   target: SkillsTarget;
   created: string[];
   updated: string[];
@@ -45,6 +47,7 @@ export type SkillsOptions = {
 export type SkillsWriteMode = "init" | "update";
 
 export type SkillsSyncOutcome = {
+  pending: string[];
   created: string[];
   updated: string[];
   skipped: number;

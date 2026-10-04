@@ -18,6 +18,7 @@ export type SkillTreeSyncOptions = {
 export function syncSkillTree(options: SkillTreeSyncOptions): SkillsSyncOutcome {
   const created: string[] = [];
   const updated: string[] = [];
+  const pending: string[] = [];
   let skipped = 0;
 
   for (const name of skillNames({ skillsDirectory: options.skillsDirectory })) {
@@ -38,11 +39,14 @@ export function syncSkillTree(options: SkillTreeSyncOptions): SkillsSyncOutcome 
         updated.push(join(targetRoot, relativePath));
       } else if (outcome === "skipped") {
         skipped += 1;
+        if (options.mode === "update") {
+          pending.push(join(targetRoot, relativePath));
+        }
       }
     }
   }
 
-  return { created, updated, skipped };
+  return { created, updated, skipped, pending };
 }
 
 function isSkillInstalled(targetRoot: string, sourceFiles: string[]): boolean {

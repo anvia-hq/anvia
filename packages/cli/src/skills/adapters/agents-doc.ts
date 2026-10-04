@@ -11,6 +11,7 @@ export type AgentsDocSyncOptions = {
   agentsPath: string;
   skillsDirectory: string;
   canonicalDir: string;
+  preview?: boolean;
 };
 
 /**
@@ -21,10 +22,13 @@ export function syncAgentsDoc(options: AgentsDocSyncOptions): SkillsSyncOutcome 
   const section = agentsSkillsSection(options.skillsDirectory, options.canonicalDir);
 
   if (!existsSync(options.agentsPath)) {
+    if (options.preview === true) {
+      return { created: [], updated: [], skipped: 0, pending: [options.agentsPath] };
+    }
     mkdirSync(dirname(options.agentsPath), { recursive: true });
     writeFileSync(options.agentsPath, `# AGENTS.md\n\n${section}\n`);
 
-    return { created: [options.agentsPath], updated: [], skipped: 0 };
+    return { created: [options.agentsPath], updated: [], skipped: 0, pending: [] };
   }
 
   const existing = readFileSync(options.agentsPath, "utf8");
@@ -41,12 +45,16 @@ export function syncAgentsDoc(options: AgentsDocSyncOptions): SkillsSyncOutcome 
   }
 
   if (next === existing) {
-    return { created: [], updated: [], skipped: 0 };
+    return { created: [], updated: [], skipped: 0, pending: [] };
+  }
+
+  if (options.preview === true) {
+    return { created: [], updated: [], skipped: 0, pending: [options.agentsPath] };
   }
 
   writeFileSync(options.agentsPath, next);
 
-  return { created: [], updated: [options.agentsPath], skipped: 0 };
+  return { created: [], updated: [options.agentsPath], skipped: 0, pending: [] };
 }
 
 export function agentsSkillsSection(skillsDirectory: string, canonicalDir: string): string {

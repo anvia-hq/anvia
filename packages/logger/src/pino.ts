@@ -33,6 +33,8 @@ export type PinoLoggerOptions = LoggerOptions & {
   append?: boolean | undefined;
 };
 
+const fileOpenErrors = new WeakMap<DestinationStream, Error>();
+
 export function createPinoLogger(options: PinoLoggerOptions = {}): FlushableLogger {
   const pinoOptions: PinoBaseOptions = {
     ...options.pinoOptions,
@@ -73,12 +75,29 @@ function resolveDestination(options: PinoLoggerOptions): DestinationStream | und
     throw new Error("@anvia/logger: pass either filePath or pinoOptions.transport, not both.");
   }
 
-  return pino.destination({
+  const destination = pino.destination({
     dest: options.filePath,
     sync: options.sync ?? true,
     mkdir: options.mkdir ?? true,
     append: options.append ?? true,
   });
+
+  if (options.sync === false) {
+    const onReady = () => destination.removeListener("error", onOpenError);
+    const onOpenError = (error: Error) => {
+      destination.removeListener("ready", onReady);
+      fileOpenErrors.set(destination, error);
+      // SonicBoom's destroy() waits for `ready` when the file never opened.
+      // No descriptor exists to close: mark this owned stream as destroyed and
+      // emit close so Pino unregisters its exit-time flush handler.
+      (destination as FlushableStream).destroyed = true;
+      destination.emit("close");
+    };
+    destination.once("ready", onReady);
+    destination.once("error", onOpenError);
+  }
+
+  return destination;
 }
 
 type StreamListener = (error?: Error) => void;
@@ -178,6 +197,11 @@ function flushPinoInstance(logger: PinoLoggerInstance): Promise<void> {
  * its writes have settled.
  */
 function flushStream(stream: FlushableStream): Promise<void> {
+  const openError = fileOpenErrors.get(stream);
+  if (openError !== undefined) {
+    return Promise.reject(openError);
+  }
+
   if (stream.destroyed === true) {
     return Promise.resolve();
   }

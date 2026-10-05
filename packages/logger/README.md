@@ -111,7 +111,9 @@ Durability and failure modes depend on the destination:
 
 - `filePath` is the only destination where `flush()` is a full guarantee. A file that cannot be
   opened throws from `createPinoLogger` when `sync` is `true` (the default), and rejects the
-  `flush()` promise when `sync` is `false`. With `append: false` the file is truncated when the
+  `flush()` promise when `sync` is `false`. Failed asynchronous opens are retained for later
+  `flush()` calls (including child loggers), and the failed destination is retired so shutdown
+  does not attempt to flush an unopened file. With `append: false` the file is truncated when the
   logger is created, not when the first record is written.
 - A caller-supplied `destination` is flushed through its own `flushSync` or `flush` method when it
   has one, which covers Pino destinations. A plain writable such as `fs.createWriteStream` exposes

@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -153,6 +154,48 @@ describe("createPinoLogger", () => {
 
     await expect(logger.flush()).rejects.toThrow(/ENOENT/);
   });
+
+  it.each(["immediate", "repeated", "delayed"])(
+    "exits cleanly after a failed file open with %s flush",
+    (timing) => {
+      const result = spawnSync(
+        process.execPath,
+        [
+          "--import",
+          "tsx",
+          "--input-type=module",
+          "--eval",
+          `
+            import assert from "node:assert/strict";
+            import { setTimeout } from "node:timers/promises";
+            import { createPinoLogger } from ${JSON.stringify(new URL("../src/pino.ts", import.meta.url).href)};
+
+            const logger = createPinoLogger({
+              filePath: process.argv[1],
+              mkdir: false,
+              sync: false,
+            });
+            logger.info("never written");
+            if (process.argv[2] === "delayed") await setTimeout(100);
+            await assert.rejects(logger.flush(), { code: "ENOENT" });
+            if (process.argv[2] === "repeated") {
+              await assert.rejects(logger.child({ requestId: "req_1" }).flush(), { code: "ENOENT" });
+            }
+            process.stdout.write("flush rejected as expected\\n");
+            process.exit(0);
+          `,
+          join(directory, "missing", "app.log"),
+          timing,
+        ],
+        { encoding: "utf8", timeout: 5_000 },
+      );
+
+      expect(result.error).toBeUndefined();
+      expect(result.stderr).toBe("");
+      expect(result.status).toBe(0);
+      expect(result.stdout).toBe("flush rejected as expected\n");
+    },
+  );
 
   it("creates missing parent directories for a file destination", async () => {
     const filePath = join(directory, "nested", "deeper", "app.log");

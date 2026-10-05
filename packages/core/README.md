@@ -333,6 +333,16 @@ accepted values as the input side, so its strict-object refinements (`additional
 false`, required by provider strict modes such as OpenAI structured outputs) are preserved;
 otherwise the input representation is sent. Object nodes without an explicit
 `additionalProperties` are completed with `false` in every provider payload for the same reason.
+Core copies converter data before refinement, so cached and deeply frozen schemas remain reusable.
+Refinement follows schema-bearing keywords only. Literal objects under `const`, `enum`, `default`,
+`examples`, and extensions retain their values, even when the converter shares them with schema nodes.
+Explicit `additionalProperties` values remain intact, with schema-valued entries refined recursively.
+
+Converter output must have a plain or null-prototype record root and contain finite JSON data.
+Core copies own enumerable record data and dense array elements. It ignores non-enumerable metadata
+and removes root `$schema` without reading its value. Nested `$schema` values remain intact.
+Cycles, accessors in copied positions, sparse arrays, custom instances, and unsupported JSON values
+cause a `TypeError` before a model call. Core does not stringify-coerce converter data.
 Schema validation of the provider output is synchronous; asynchronous schemas are rejected with a
 `CompletionStructuredOutputError` in the `schema` phase.
 

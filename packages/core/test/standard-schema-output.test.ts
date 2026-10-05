@@ -89,6 +89,30 @@ async function collect<T>(events: AsyncIterable<T>): Promise<T[]> {
   return collected;
 }
 
+function converterSchema(data: unknown): StandardSchemaV1 {
+  return {
+    "~standard": {
+      version: 1,
+      vendor: "cached-json",
+      validate: (value: unknown) => ({ value }),
+      jsonSchema: {
+        input: () => data,
+        output: () => {
+          throw new Error("Output conversion must not be used.");
+        },
+      },
+    },
+  } as StandardSchemaV1;
+}
+
+function deepFreeze<T>(value: T): T {
+  if (value !== null && typeof value === "object") {
+    for (const child of Object.values(value)) deepFreeze(child);
+    Object.freeze(value);
+  }
+  return value;
+}
+
 describe("Standard Schema structured output", () => {
   it("accepts Valibot schemas and converts them to a provider JSON schema", async () => {
     const model = new QueueModel([typedJson]);
@@ -409,6 +433,271 @@ describe("Standard Schema structured output", () => {
       required: ["title"],
       additionalProperties: false,
     });
+  });
+
+  it("owns cached nested converter data across repeated direct and streamed calls", async () => {
+    const data = {
+      $schema: "https://json-schema.org/draft/2020-12/schema",
+      type: "object",
+      properties: { nested: { type: "object", properties: { title: { type: "string" } } } },
+    };
+    const schema = converterSchema(data);
+    const model = new QueueModel(["{}", "{}"]);
+    await generateCompletion({ model, prompt: "extract", outputSchema: schema });
+    await generateCompletion({ model, prompt: "extract", outputSchema: schema });
+    const streamed = new StreamingQueueModel({}, ["{}"]);
+    const events = await collect(
+      streamCompletion({ model: streamed, prompt: "extract", outputSchema: schema }),
+    );
+    expect(events.at(-1)).toMatchObject({ type: "final", result: { output: {} } });
+    for (const request of [...model.requests, ...streamed.requests]) {
+      expect(request.outputSchema).toEqual({
+        type: "object",
+        properties: {
+          nested: {
+            type: "object",
+            properties: { title: { type: "string" } },
+            additionalProperties: false,
+          },
+        },
+        additionalProperties: false,
+      });
+    }
+    expect(data).toEqual({
+      $schema: "https://json-schema.org/draft/2020-12/schema",
+      type: "object",
+      properties: { nested: { type: "object", properties: { title: { type: "string" } } } },
+    });
+    expect(model.requests[0]?.outputSchema?.properties).not.toBe(data.properties);
+  });
+
+  it("converts deeply frozen data and separates aliased schema and literal occurrences", async () => {
+    const shared = { type: "object" };
+    const data = deepFreeze({
+      type: "object",
+      properties: { nested: shared },
+      const: shared,
+      enum: [shared],
+      default: shared,
+      examples: [shared],
+      "x-extension": shared,
+    });
+    const model = new QueueModel(["{}"]);
+    const result = await generateCompletion({
+      model,
+      prompt: "extract",
+      outputSchema: converterSchema(data),
+    });
+    expect(result.output).toEqual({});
+    expect(model.requests[0]?.outputSchema).toEqual({
+      type: "object",
+      properties: { nested: { type: "object", additionalProperties: false } },
+      const: { type: "object" },
+      enum: [{ type: "object" }],
+      default: { type: "object" },
+      examples: [{ type: "object" }],
+      "x-extension": { type: "object" },
+      additionalProperties: false,
+    });
+    expect(data).toEqual({
+      type: "object",
+      properties: { nested: { type: "object" } },
+      const: { type: "object" },
+      enum: [{ type: "object" }],
+      default: { type: "object" },
+      examples: [{ type: "object" }],
+      "x-extension": { type: "object" },
+    });
+    const providerLiteral = model.requests[0]?.outputSchema?.const as Record<string, unknown>;
+    providerLiteral.type = "string";
+    expect(shared).toEqual({ type: "object" });
+    expect(model.requests[0]?.outputSchema?.default).toEqual({ type: "object" });
+  });
+
+  it.each([
+    "$defs",
+    "definitions",
+    "dependencies",
+    "dependentSchemas",
+    "patternProperties",
+    "properties",
+  ])("refines object nodes in the %s schema map", async (keyword) => {
+    const data = deepFreeze({ [keyword]: { child: { type: "object" } } });
+    const model = new QueueModel(["{}"]);
+    await generateCompletion({ model, prompt: "extract", outputSchema: converterSchema(data) });
+    expect(model.requests[0]?.outputSchema).toEqual({
+      [keyword]: { child: { type: "object", additionalProperties: false } },
+    });
+    expect(data).toEqual({ [keyword]: { child: { type: "object" } } });
+  });
+
+  it.each([
+    "additionalItems",
+    "additionalProperties",
+    "contains",
+    "contentSchema",
+    "else",
+    "if",
+    "items",
+    "not",
+    "propertyNames",
+    "then",
+    "unevaluatedItems",
+    "unevaluatedProperties",
+  ])("refines object schemas at %s without altering the original", async (keyword) => {
+    const data = deepFreeze({ [keyword]: { type: "object" } });
+    const model = new QueueModel(["{}"]);
+    await generateCompletion({ model, prompt: "extract", outputSchema: converterSchema(data) });
+    expect(model.requests[0]?.outputSchema).toEqual({
+      [keyword]: { type: "object", additionalProperties: false },
+    });
+    expect(data).toEqual({ [keyword]: { type: "object" } });
+  });
+
+  it.each(["allOf", "anyOf", "oneOf", "prefixItems", "items"])(
+    "refines composition and tuple schemas in %s while preserving boolean schemas",
+    async (keyword) => {
+      const model = new QueueModel(["{}"]);
+      await generateCompletion({
+        model,
+        prompt: "extract",
+        outputSchema: converterSchema(
+          deepFreeze({
+            [keyword]: [{ type: "object" }, true, false],
+          }),
+        ),
+      });
+      expect(model.requests[0]?.outputSchema).toEqual({
+        [keyword]: [{ type: "object", additionalProperties: false }, true, false],
+      });
+    },
+  );
+
+  it("preserves explicit permissive and schema-valued additionalProperties", async () => {
+    const data = deepFreeze({
+      type: "object",
+      additionalProperties: true,
+      properties: {
+        closed: { type: "object", additionalProperties: false },
+        mapped: { type: "object", additionalProperties: { type: "object" } },
+      },
+    });
+    const model = new QueueModel(["{}"]);
+    await generateCompletion({ model, prompt: "extract", outputSchema: converterSchema(data) });
+    expect(model.requests[0]?.outputSchema).toEqual({
+      type: "object",
+      additionalProperties: true,
+      properties: {
+        closed: { type: "object", additionalProperties: false },
+        mapped: {
+          type: "object",
+          additionalProperties: { type: "object", additionalProperties: false },
+        },
+      },
+    });
+    expect(data.properties.mapped.additionalProperties).toEqual({ type: "object" });
+  });
+
+  it("copies null-prototype records and dangerous keys without reading discarded metadata", async () => {
+    let reads = 0;
+    const data = Object.assign(Object.create(null), {
+      type: "object",
+      "x-data": JSON.parse('{"__proto__":{"type":"object"},"constructor":{"type":"object"}}'),
+    });
+    Object.defineProperty(data, "$schema", {
+      enumerable: true,
+      get: () => {
+        reads++;
+        throw new Error("discarded");
+      },
+    });
+    Object.defineProperty(data, "private", {
+      get: () => {
+        reads++;
+        throw new Error("private");
+      },
+    });
+    const model = new QueueModel(["{}"]);
+    const result = await generateCompletion({
+      model,
+      prompt: "extract",
+      outputSchema: converterSchema(data),
+    });
+    expect(result.output).toEqual({});
+    expect(model.requests[0]?.outputSchema).toEqual({
+      type: "object",
+      "x-data": JSON.parse('{"__proto__":{"type":"object"},"constructor":{"type":"object"}}'),
+      additionalProperties: false,
+    });
+    expect(reads).toBe(0);
+    expect(Object.hasOwn(model.requests[0]?.outputSchema?.["x-data"] as object, "__proto__")).toBe(
+      true,
+    );
+  });
+
+  it.each([
+    ["boolean root", () => true],
+    ["array root", () => []],
+    ["null root", () => null],
+    ["undefined", () => ({ default: undefined })],
+    ["nonfinite number", () => ({ default: Infinity })],
+    ["NaN", () => ({ default: NaN })],
+    ["bigint", () => ({ default: 1n })],
+    ["symbol", () => ({ default: Symbol("invalid") })],
+    ["function", () => ({ default: () => 1 })],
+    ["custom instance", () => ({ default: new Date() })],
+    ["sparse array", () => ({ examples: Array(2) })],
+    [
+      "cycle",
+      () => {
+        const data: Record<string, unknown> = {};
+        data.self = data;
+        return data;
+      },
+    ],
+  ])(
+    "rejects %s converter data before direct or streamed provider calls",
+    async (_name, makeData) => {
+      const schema = converterSchema(makeData());
+      const model = new QueueModel(["{}"]);
+      await expect(
+        generateCompletion({ model, prompt: "extract", outputSchema: schema }),
+      ).rejects.toThrow(TypeError);
+      const streamed = new StreamingQueueModel({}, ["{}"]);
+      await expect(
+        (async () =>
+          collect(
+            streamCompletion({ model: streamed, prompt: "extract", outputSchema: schema }),
+          ))(),
+      ).rejects.toThrow(TypeError);
+      expect(model.requests).toHaveLength(0);
+      expect(streamed.requests).toHaveLength(0);
+    },
+  );
+
+  it("rejects enumerable record and array accessors without evaluating them", async () => {
+    let reads = 0;
+    const accessor = {
+      get type() {
+        reads++;
+        return "object";
+      },
+    };
+    const array = ["safe"];
+    Object.defineProperty(array, "0", {
+      get: () => {
+        reads++;
+        return "unsafe";
+      },
+    });
+    for (const data of [accessor, { examples: array }]) {
+      const model = new QueueModel(["{}"]);
+      await expect(
+        generateCompletion({ model, prompt: "extract", outputSchema: converterSchema(data) }),
+      ).rejects.toThrow(TypeError);
+      expect(model.requests).toHaveLength(0);
+    }
+    expect(reads).toBe(0);
   });
 
   it("reports asynchronous schema validation as a schema failure", async () => {

@@ -12,6 +12,8 @@ import {
   type CompletionRequest,
   type CompletionResponse,
   generateCompletion,
+  type CompletionModelStreamEvent,
+  streamCompletion,
 } from "./helpers/imports";
 
 class QueueModel implements CompletionModel {
@@ -44,7 +46,37 @@ class QueueModel implements CompletionModel {
   }
 }
 
+class StreamingQueueModel extends QueueModel {
+  constructor() {
+    super();
+    this.capabilities.streaming = true;
+  }
+
+  async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionModelStreamEvent> {
+    yield { type: "final", response: await this.completion(request) };
+  }
+}
+
 describe("Standard Schema output without the Valibot converter installed", () => {
+  it("reports deferred converter failures before streaming and permits another load attempt", async () => {
+    const model = new StreamingQueueModel();
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await expect(
+        (async () => {
+          for await (const event of streamCompletion({
+            model,
+            prompt: "extract",
+            outputSchema: v.object({ title: v.string() }),
+          })) {
+            void event;
+          }
+        })(),
+      ).rejects.toThrow(
+        'The structured output schema is a Valibot schema, but "@valibot/to-json-schema" is not installed.',
+      );
+    }
+    expect(model.requests).toHaveLength(0);
+  });
   it("explains that @valibot/to-json-schema must be installed", async () => {
     const model = new QueueModel();
 

@@ -922,6 +922,26 @@ Import `McpClient` and `McpClientGroup` from `@anvia/mcp`, connect them, and pas
 `servers` to `new Agent({ mcpServers })`. See the `@anvia/mcp` README for transport configuration,
 connection ownership, URL safety, and cleanup.
 
+## Skill script cancellation
+
+The built-in `run_skill_script` tool uses the invocation's `ToolCallContext.abortSignal`.
+A pre-aborted signal prevents process creation. Cancellation rejects with `AbortError` and retains
+its reason as the cause. Normal execution preserves the existing stdout and stderr formatting,
+nonzero-exit errors, and timeout diagnostic.
+
+Cancellation and timeout send `SIGTERM` to the direct child, then `SIGKILL` after 250 ms if the child
+has not exited. The runner waits for confirmed direct-child exit before rejecting. If exit remains
+unconfirmed after 1,250 ms, it reports `Skill script termination could not be confirmed` instead.
+These intervals depend on event-loop scheduling and operating-system signal support.
+
+Normal completion waits for output pipes to close. Cancellation and timeout destroy the runner's
+pipes after direct-child exit, so inherited descendant pipes cannot delay settlement. The runner
+does not terminate descendants or provide a sandbox. Each invocation removes its abort listener
+and clears its owned timers on settlement. Agent runs keep their existing cancellation errors.
+Closing a stream consumer aborts the run's existing cancellation signal before failure cleanup,
+so active tools receive cancellation when the consumer returns from a yielded event.
+Use `stream.cancel()` to cancel a pending pull blocked on a tool.
+
 ## Evaluations
 
 Import evaluation APIs from `@anvia/core/evals`. A suite contains cases, a target, and one or more

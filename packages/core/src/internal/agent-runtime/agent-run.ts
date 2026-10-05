@@ -1025,7 +1025,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         const cancellation =
           this.cancellationError ??
           new AgentRunCancelledError([...this.chatHistory, ...newMessages], "Agent stream closed.");
-        this.cancellationError = cancellation;
+        this.setCancellationError(cancellation);
         await settleFailureCleanup([() => this.closeActiveGeneration(cancellation)]);
         await this.reportRunFailure(cancellation, runId, usage, newMessages, runObservers);
         this.runState = "cancelled";

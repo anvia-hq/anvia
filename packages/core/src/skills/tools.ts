@@ -2,12 +2,15 @@ import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
 import { z } from "zod";
+import { abortError, throwIfAborted } from "../internal/abort";
 import { type AnyTool, createTool } from "../tool";
 import { markSkillTool } from "../tool/skill-tool-marker";
 import type { Skill } from "./types";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const MAX_OUTPUT_CHARS = 20_000;
+const TERMINATION_GRACE_MS = 250;
+const TERMINATION_WATCHDOG_MS = 1_250;
 
 export function createSkillTools(skills: Skill[]): AnyTool[] {
   const registry = new SkillRegistry(skills);
@@ -59,8 +62,8 @@ export function createSkillTools(skills: Skill[]): AnyTool[] {
           timeoutMs: z.number().int().positive().optional().describe("Execution timeout in ms."),
         }),
         outputSchema: z.string(),
-        execute: ({ skillName, scriptPath, args = [], timeoutMs = DEFAULT_TIMEOUT_MS }) =>
-          registry.runScript(skillName, scriptPath, args, timeoutMs),
+        execute: ({ skillName, scriptPath, args = [], timeoutMs = DEFAULT_TIMEOUT_MS }, context) =>
+          registry.runScript(skillName, scriptPath, args, timeoutMs, context.abortSignal),
       }),
     ),
   ];
@@ -106,13 +109,14 @@ class SkillRegistry {
     scriptPath: string,
     args: string[],
     timeoutMs: number,
+    abortSignal?: AbortSignal,
   ): Promise<string> {
     const skill = this.get(skillName);
     const script = this.resolveContainedPath(skill, "scripts", scriptPath);
     if (!skill.scripts.includes(scriptPath)) {
       throw new Error(`Skill script not found: ${skillName}/${scriptPath}`);
     }
-    return runExecutable(script, args, skill.directory, timeoutMs);
+    return runExecutable(script, args, skill.directory, timeoutMs, abortSignal);
   }
 
   private resolveContainedPath(
@@ -140,8 +144,10 @@ function runExecutable(
   args: string[],
   cwd: string,
   timeoutMs: number,
+  abortSignal?: AbortSignal,
 ): Promise<string> {
   return new Promise((resolvePromise, reject) => {
+    throwIfAborted(abortSignal);
     const child = spawn(command, args, {
       cwd,
       shell: false,
@@ -150,43 +156,103 @@ function runExecutable(
 
     let stdout = "";
     let stderr = "";
-    let timedOut = false;
+    let exited = false;
+    let settled = false;
+    let firstCause: Error | undefined;
+    let escalation: ReturnType<typeof setTimeout> | undefined;
+    let watchdog: ReturnType<typeof setTimeout> | undefined;
     const timeout = setTimeout(() => {
-      timedOut = true;
-      child.kill();
+      beginTermination(new Error(`Skill script timed out after ${timeoutMs}ms`));
     }, timeoutMs);
+
+    function settle(error?: Error, output = ""): void {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      clearTimeout(escalation);
+      clearTimeout(watchdog);
+      abortSignal?.removeEventListener("abort", onAbort);
+      child.removeListener("error", onError);
+      child.removeListener("exit", onExit);
+      child.removeListener("close", onClose);
+      child.stdout.removeListener("data", onStdout);
+      child.stderr.removeListener("data", onStderr);
+      if (error !== undefined) reject(error);
+      else resolvePromise(output);
+    }
+
+    function finishTermination(): void {
+      // Descendants can hold inherited pipes after the direct child has exited.
+      child.stdout.destroy();
+      child.stderr.destroy();
+      settle(firstCause);
+    }
+
+    function beginTermination(cause: Error): void {
+      if (settled || firstCause !== undefined) return;
+      firstCause = cause;
+      clearTimeout(timeout);
+      if (exited) {
+        finishTermination();
+        return;
+      }
+      escalation = setTimeout(() => {
+        if (!exited) child.kill("SIGKILL");
+      }, TERMINATION_GRACE_MS);
+      watchdog = setTimeout(() => {
+        child.stdout.destroy();
+        child.stderr.destroy();
+        settle(new Error("Skill script termination could not be confirmed", { cause: firstCause }));
+      }, TERMINATION_WATCHDOG_MS);
+      child.kill("SIGTERM");
+    }
+
+    function onAbort(): void {
+      beginTermination(abortError(abortSignal?.reason));
+    }
+
+    function onError(error: Error): void {
+      if (child.pid === undefined) settle(error);
+      else beginTermination(error);
+    }
+
+    function onExit(): void {
+      exited = true;
+      if (firstCause !== undefined) finishTermination();
+    }
+
+    function onClose(code: number | null, signal: NodeJS.Signals | null): void {
+      if (firstCause !== undefined) {
+        if (exited) finishTermination();
+        return;
+      }
+      const output = formatProcessOutput(stdout, stderr);
+      if (code !== 0) {
+        settle(new Error(`Skill script exited with code ${code ?? "unknown"}: ${output}`));
+      } else if (signal !== null) {
+        settle(new Error(`Skill script exited with signal ${signal}: ${output}`));
+      } else {
+        settle(undefined, output);
+      }
+    }
+
+    function onStdout(chunk: string): void {
+      stdout = appendLimited(stdout, chunk);
+    }
+
+    function onStderr(chunk: string): void {
+      stderr = appendLimited(stderr, chunk);
+    }
 
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => {
-      stdout = appendLimited(stdout, chunk);
-    });
-    child.stderr.on("data", (chunk) => {
-      stderr = appendLimited(stderr, chunk);
-    });
-    child.on("error", (error) => {
-      clearTimeout(timeout);
-      reject(error);
-    });
-    child.on("close", (code, signal) => {
-      clearTimeout(timeout);
-      if (timedOut) {
-        reject(new Error(`Skill script timed out after ${timeoutMs}ms`));
-        return;
-      }
-
-      const output = formatProcessOutput(stdout, stderr);
-      if (code !== 0) {
-        reject(new Error(`Skill script exited with code ${code ?? "unknown"}: ${output}`));
-        return;
-      }
-      if (signal !== null) {
-        reject(new Error(`Skill script exited with signal ${signal}: ${output}`));
-        return;
-      }
-
-      resolvePromise(output);
-    });
+    child.stdout.on("data", onStdout);
+    child.stderr.on("data", onStderr);
+    child.on("error", onError);
+    child.on("exit", onExit);
+    child.on("close", onClose);
+    abortSignal?.addEventListener("abort", onAbort, { once: true });
+    if (abortSignal?.aborted === true) onAbort();
   });
 }
 

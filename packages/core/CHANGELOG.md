@@ -1,5 +1,24 @@
 # @anvia/core
 
+## 1.6.0
+
+### Minor Changes
+
+- 329b71f: Add opt-in Anvia terminal-error serialization to `toReadableStream`. Preserve safe diagnostics and valid usage without exposing stack, cause, arbitrary details, or raw provider payloads. Keep generic JSONL serialization unchanged by default, and finish terminal or cancelled iterators once.
+
+  Omit terminal usage when any token counter or usage detail is negative or non-finite.
+
+### Patch Changes
+
+- 2d11164: Forward evaluation case cancellation through agent generation, approval resumes, embeddings, and judge retries. Preserve original invocation abort reasons, including explicit null. Keep shared G-Eval preparation alive for independent waiters, cancel it when the last waiter leaves, and preserve successful setup deduplication and usage attribution.
+
+  Preserve explicit null abort reasons through suite cancellation and retain shared preparation usage for the first valid scoring outcome when earlier scorers cancel or fail.
+
+- e814af3: Cancel built-in skill scripts with their tool invocation. Wait for direct-child exit, escalate ignored termination signals, and clean up abort listeners and timers without changing normal output or timeout diagnostics. Closing an agent stream consumer now aborts the existing run signal before failure cleanup so active tools receive cancellation.
+- 8d8a403: Preserve terminal metadata, including context usage and source or provider-tool updates, when a completion stream ends with an empty terminal choice. Accumulated content and message ID fallback remain available without replacing terminal metadata.
+- 872b87f: Validate dense and sparse embedding counts for each provider batch before flattening or document regrouping. Reject malformed successful batches without retrying, and preserve accepted batch containers while concurrent siblings finish.
+- fdb9ec3: Copy Standard Schema converter data before provider strict-object refinement. Cached and frozen schemas remain reusable, and aliased literal values remain unchanged. Reject cyclic or unsupported converter data with a TypeError before calling a model.
+
 ## 1.5.1
 
 ### Patch Changes

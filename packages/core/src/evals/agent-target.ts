@@ -7,6 +7,7 @@ import type {
   AgentRunOptions,
   AgentRunSettings,
 } from "../agent/run-types";
+import { abortable, composeEvalSignals } from "./execution";
 import type { EvalCase, EvalTarget } from "./types";
 
 type EvaluableAgent<Output> = {
@@ -76,41 +77,68 @@ export function agentEvalTarget<
 >(
   options: AgentEvalTargetOptions<Input, AgentOutput, Output, Expected>,
 ): EvalTarget<Input, Output, Expected> {
-  return async (input, testCase) => {
+  return async (input, testCase, context) => {
+    context?.signal.throwIfAborted();
     const maxResponses = options.interactions?.maxResponses ?? 10;
     if (!Number.isSafeInteger(maxResponses) || maxResponses < 1) {
       throw new TypeError("Agent eval interactions.maxResponses must be a positive integer.");
     }
-    const request = await options.request({ input, testCase });
-    const runSettings = agentRunSettings(request);
-    let response = await options.agent.generate(request);
-    let phase = 0;
-    while (response.type === "interaction") {
-      if (options.interactions === undefined) {
-        throw new AgentEvalSuspensionError(response);
-      }
-      if (phase >= maxResponses) {
-        throw new AgentEvalSuspensionError(
-          response,
-          `Agent eval target exceeded the interaction response limit of ${maxResponses}.`,
+    const request = await abortable(
+      context?.signal,
+      Promise.resolve(options.request({ input, testCase })),
+    );
+    context?.signal.throwIfAborted();
+    const invocation = composeEvalSignals(context?.signal, request.abortSignal);
+    const { signal } = invocation;
+    try {
+      signal?.throwIfAborted();
+      const ownedRequest = { ...request, abortSignal: signal };
+      const runSettings = agentRunSettings(ownedRequest);
+      let response = await abortable(signal, options.agent.generate(ownedRequest));
+      signal?.throwIfAborted();
+      let phase = 0;
+      while (response.type === "interaction") {
+        if (options.interactions === undefined) {
+          throw new AgentEvalSuspensionError(response);
+        }
+        if (phase >= maxResponses) {
+          throw new AgentEvalSuspensionError(
+            response,
+            `Agent eval target exceeded the interaction response limit of ${maxResponses}.`,
+          );
+        }
+        phase += 1;
+        const interactionResponse = await abortable(
+          signal,
+          Promise.resolve(
+            options.interactions.respond({
+              interaction: response.interaction,
+              testCase,
+              phase,
+            }),
+          ),
         );
+        signal?.throwIfAborted();
+        response = await abortable(
+          signal,
+          options.agent.generate({
+            continuation: response.continuation,
+            response: interactionResponse,
+            ...runSettings,
+          }),
+        );
+        signal?.throwIfAborted();
       }
-      phase += 1;
-      const interactionResponse = await options.interactions.respond({
-        interaction: response.interaction,
-        testCase,
-        phase,
-      });
-      response = await options.agent.generate({
-        continuation: response.continuation,
-        response: interactionResponse,
-        ...runSettings,
-      });
+      if (response.type === "blocked") throw new AgentRunBlockedError(response);
+      const output =
+        options.output === undefined
+          ? (response as Output)
+          : await abortable(signal, Promise.resolve(options.output({ response, testCase })));
+      signal?.throwIfAborted();
+      return output;
+    } finally {
+      invocation.dispose();
     }
-    if (response.type === "blocked") throw new AgentRunBlockedError(response);
-    return options.output === undefined
-      ? (response as Output)
-      : await options.output({ response, testCase });
   };
 }
 

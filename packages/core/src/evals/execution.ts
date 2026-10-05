@@ -38,10 +38,50 @@ export function createEvalCaseSignal(
   };
 }
 
-export function abortable<T>(signal: AbortSignal, operation: Promise<T>): Promise<T> {
-  if (signal.aborted) return Promise.reject(abortReason(signal));
+export type EvalInvocationSignal = {
+  signal: AbortSignal | undefined;
+  dispose(): void;
+};
+
+export function composeEvalSignals(
+  caseSignal: AbortSignal | undefined,
+  requestSignal: AbortSignal | undefined,
+): EvalInvocationSignal {
+  const signals = [...new Set([caseSignal, requestSignal])].filter(
+    (signal): signal is AbortSignal => signal !== undefined,
+  );
+  if (signals.length < 2) return { signal: signals[0], dispose() {} };
+  const aborted = signals.find((signal) => signal.aborted);
+  if (aborted !== undefined) return { signal: aborted, dispose() {} };
+
+  const controller = new AbortController();
+  const links = new Map<AbortSignal, () => void>();
+  const dispose = () => {
+    for (const [signal, listener] of links) signal.removeEventListener("abort", listener);
+    links.clear();
+  };
+  for (const signal of signals) {
+    const listener = () => {
+      controller.abort(abortReason(signal));
+      dispose();
+    };
+    links.set(signal, listener);
+    signal.addEventListener("abort", listener, { once: true });
+  }
+  return { signal: controller.signal, dispose };
+}
+
+export function abortable<T>(signal: AbortSignal | undefined, operation: Promise<T>): Promise<T> {
+  if (signal === undefined) return operation;
+  if (signal.aborted) {
+    void operation.catch(() => {});
+    return Promise.reject(abortReason(signal));
+  }
   return new Promise<T>((resolve, reject) => {
-    const onAbort = () => reject(abortReason(signal));
+    const onAbort = () => {
+      signal.removeEventListener("abort", onAbort);
+      reject(abortReason(signal));
+    };
     signal.addEventListener("abort", onAbort, { once: true });
     operation.then(
       (value) => {

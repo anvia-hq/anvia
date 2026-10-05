@@ -370,6 +370,14 @@ high-level stream emits at most one terminal `error` event and then closes. Prov
 use the lower-level `CompletionModelStreamEvent`, whose terminal event is `{ type: "final",
 response }`; `streamCompletion` normalizes it to `{ type: "final", result }`.
 
+The terminal response owns completion metadata, including `contextUsage`, finish reasons, and
+`rawResponse`. An empty terminal choice uses accumulated content without replacing that metadata.
+A nonempty terminal choice must agree with streamed content. A terminal message ID takes precedence.
+If absent, the streamed ID supplies the fallback. Sources merge by URL and text offsets, and
+provider-tool calls merge by ID. Terminal duplicates replace streamed entries without duplication.
+Retry usage includes failed attempts, but context usage and the raw response remain those of the
+successful terminal response.
+
 Client requests carry core `Message[]`, so an endpoint can validate and pass them directly:
 
 ```ts

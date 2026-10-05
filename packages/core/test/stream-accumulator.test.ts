@@ -1,9 +1,159 @@
 import { describe, expect, it } from "vitest";
-import { Usage } from "../src/completion";
+import { type CompletionResponse, Usage } from "../src/completion";
 import { CompletionStreamAccumulator } from "../src/completion/stream-accumulator";
 import { AssistantContent } from "./helpers/imports";
 
 describe("CompletionStreamAccumulator", () => {
+  it.each(["empty", "matching", "final-only"])(
+    "preserves terminal metadata with a %s text choice",
+    (mode) => {
+      const accumulator = new CompletionStreamAccumulator();
+      const rawResponse = { id: "terminal" };
+      const contextUsage = {
+        model: { modelId: "test", context: { contextWindow: 10 } },
+        usedTokens: 2,
+        remainingTokens: 8,
+        usedPercent: 20,
+        remainingPercent: 80,
+      };
+      const terminal: CompletionResponse = {
+        choice: mode === "empty" ? [] : [AssistantContent.text("ok")],
+        usage: { ...Usage.empty(), inputTokens: 2, outputTokens: 1, totalTokens: 3 },
+        rawResponse,
+        contextUsage,
+        finishReason: "stop",
+        providerFinishReason: "end",
+      };
+      if (mode !== "final-only") {
+        accumulator.accept({ type: "text_delta", delta: "o" });
+        accumulator.accept({ type: "text_delta", delta: "k" });
+      }
+      accumulator.accept({ type: "final", response: terminal });
+
+      const result = accumulator.response();
+      expect(result).toEqual({ ...terminal, choice: [AssistantContent.text("ok")] });
+      expect(result.rawResponse).toBe(rawResponse);
+      expect(result.contextUsage).toEqual({
+        model: { modelId: "test", context: { contextWindow: 10 } },
+        usedTokens: 2,
+        remainingTokens: 8,
+        usedPercent: 20,
+        remainingPercent: 80,
+      });
+    },
+  );
+
+  it("preserves terminal context when tool arguments are assembled from fragments", () => {
+    const accumulator = new CompletionStreamAccumulator();
+    accumulator.accept({
+      type: "tool_call_delta",
+      id: "t",
+      name: "lookup",
+      argumentsDelta: '{"q":',
+    });
+    accumulator.accept({ type: "tool_call_delta", id: "t", argumentsDelta: "1}" });
+    accumulator.accept({
+      type: "final",
+      response: {
+        choice: [],
+        usage: Usage.empty(),
+        rawResponse: {},
+        contextUsage: {
+          model: { modelId: "test", context: { contextWindow: 10 } },
+          usedTokens: 2,
+          remainingTokens: 8,
+          usedPercent: 20,
+          remainingPercent: 80,
+        },
+      },
+    });
+
+    expect(accumulator.response()).toMatchObject({
+      choice: [AssistantContent.toolCall("t", "lookup", { q: 1 })],
+      contextUsage: {
+        model: { modelId: "test", context: { contextWindow: 10 } },
+        usedTokens: 2,
+        remainingTokens: 8,
+        usedPercent: 20,
+        remainingPercent: 80,
+      },
+    });
+  });
+
+  it.each([false, true])("merges terminal artifacts with a nonempty choice of %s", (nonempty) => {
+    const accumulator = new CompletionStreamAccumulator();
+    accumulator.accept({ type: "text_delta", delta: "ok" });
+    accumulator.accept({
+      type: "source",
+      source: { type: "url", url: "https://example.test", title: "old" },
+    });
+    accumulator.accept({
+      type: "source",
+      source: { type: "url", url: "https://stream.test", title: "stream-only" },
+    });
+    accumulator.accept({
+      type: "provider_tool_call",
+      toolCall: { id: "p", name: "search", status: "running" },
+    });
+    accumulator.accept({
+      type: "provider_tool_call",
+      toolCall: { id: "s", name: "search", status: "stream-only" },
+    });
+    accumulator.accept({
+      type: "final",
+      response: {
+        choice: nonempty ? [AssistantContent.text("ok")] : [],
+        usage: Usage.empty(),
+        rawResponse: {},
+        sources: [
+          { type: "url", url: "https://example.test", title: "new" },
+          { type: "url", url: "https://final.test", title: "final-only" },
+        ],
+        providerToolCalls: [
+          { id: "p", name: "search", status: "done" },
+          { id: "f", name: "search", status: "final-only" },
+        ],
+      },
+    });
+
+    expect(accumulator.response()).toEqual({
+      choice: [AssistantContent.text("ok")],
+      usage: Usage.empty(),
+      rawResponse: {},
+      sources: [
+        { type: "url", url: "https://example.test", title: "new" },
+        { type: "url", url: "https://stream.test", title: "stream-only" },
+        { type: "url", url: "https://final.test", title: "final-only" },
+      ],
+      providerToolCalls: [
+        { id: "p", name: "search", status: "done" },
+        { id: "s", name: "search", status: "stream-only" },
+        { id: "f", name: "search", status: "final-only" },
+      ],
+    });
+  });
+
+  it.each([undefined, "f"])("resolves message IDs with terminal ID %s", (messageId) => {
+    const accumulator = new CompletionStreamAccumulator();
+    accumulator.accept({ type: "message_id", id: "s" });
+    accumulator.accept({ type: "text_delta", delta: "ok" });
+    accumulator.accept({
+      type: "final",
+      response: {
+        choice: [],
+        usage: Usage.empty(),
+        rawResponse: {},
+        ...(messageId === undefined ? {} : { messageId }),
+      },
+    });
+
+    const result = accumulator.response();
+    expect(result.choice).toEqual([AssistantContent.text("ok")]);
+    expect(result.messageId).toBe(messageId ?? "s");
+    expect(result).not.toHaveProperty("contextUsage");
+    expect(result).not.toHaveProperty("finishReason");
+  });
+
   it("returns completed tool call stream events", () => {
     const accumulator = new CompletionStreamAccumulator();
     const toolCall = AssistantContent.toolCall("toolu_1", "Write", {

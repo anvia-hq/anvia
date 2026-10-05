@@ -213,6 +213,67 @@ describe("direct completion retries", () => {
     expect(model.requests[1]).toBe(model.requests[0]);
   });
 
+  it("retains successful terminal context and raw identity while adding failed retry usage", async () => {
+    const rawResponse = { id: "terminal" };
+    const contextUsage = {
+      model: { modelId: "test", context: { contextWindow: 10 } },
+      usedTokens: 2,
+      remainingTokens: 8,
+      usedPercent: 20,
+      remainingPercent: 80,
+    };
+    const model = new StreamQueueModel([
+      [
+        {
+          type: "error",
+          error: Object.assign(new Error("unavailable"), { status: 503 }),
+          usage: usage(2, 1),
+        },
+      ],
+      [
+        { type: "text_delta", delta: "ok" },
+        {
+          type: "final",
+          response: {
+            choice: [],
+            usage: usage(2, 5),
+            rawResponse,
+            contextUsage,
+            finishReason: "stop",
+          },
+        },
+      ],
+    ]);
+
+    const events = await collect(
+      streamCompletion({
+        model,
+        prompt: "hello",
+        retries: { maxAttempts: 2, initialDelayMs: 0, maxDelayMs: 0 },
+      }),
+    );
+
+    expect(events).toEqual([
+      { type: "text_delta", delta: "ok" },
+      {
+        type: "final",
+        result: {
+          output: "ok",
+          text: "ok",
+          content: [AssistantContent.text("ok")],
+          usage: usage(4, 6),
+          rawResponse,
+          contextUsage,
+          finishReason: "stop",
+        },
+      },
+    ]);
+    const last = events.at(-1);
+    expect(last?.type === "final" && last.result.rawResponse).toBe(rawResponse);
+    expect(model.requests).toHaveLength(2);
+    expect(model.requests[1]).toBe(model.requests[0]);
+  });
+
   it("preserves zero-total failed usage across a stream retry", async () => {
     const failedUsage = { ...Usage.empty(), cachedInputTokens: 3 };
     const error = new CompletionProviderOutputError({

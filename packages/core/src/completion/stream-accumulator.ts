@@ -384,19 +384,9 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
   ): CompletionResponse<RawResponse> {
     if (finalResponse.choice.length === 0) {
       const mergedResponse: CompletionResponse<RawResponse> = {
-        ...accumulatedResponse,
-        usage: finalResponse.usage,
-        rawResponse: finalResponse.rawResponse,
+        ...finalResponse,
+        choice: accumulatedResponse.choice,
       };
-      if (finalResponse.finishReason !== undefined) {
-        mergedResponse.finishReason = finalResponse.finishReason;
-      }
-      if (finalResponse.providerFinishReason !== undefined) {
-        mergedResponse.providerFinishReason = finalResponse.providerFinishReason;
-      }
-      if (finalResponse.messageId !== undefined) {
-        mergedResponse.messageId = finalResponse.messageId;
-      }
       return this.withAccumulatedArtifacts(mergedResponse, accumulatedResponse);
     }
 

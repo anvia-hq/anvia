@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="440" height="160" viewBox="0 0 440 160" fill="none" role="img" aria-labelledby="title description">
+  <title id="title">Anvia Lens</title>
+  <desc id="description">Self-hosted observability and evaluation for AI agents. Explore the repository.</desc>
+  <rect x="0.5" y="0.5" width="439" height="159" rx="16" fill="#111813" stroke="#334336"/>
+  <rect x="24" y="24" width="36" height="36" rx="10" fill="#23351C"/>
+  <g stroke="#A3D867" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="41" cy="41" r="8"/>
+    <path d="m47 47 5 5M36 42h3l2-5 2 8 2-4h2"/>
+  </g>
+  <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+    <text x="72" y="49" fill="#F4F7F1" font-size="23" font-weight="600">Anvia Lens</text>
+    <text x="24" y="88" fill="#C0CBBE" font-size="16">Self-hosted observability and evaluation</text>
+    <text x="24" y="110" fill="#C0CBBE" font-size="16">for AI agents.</text>
+    <text x="24" y="140" fill="#A3D867" font-size="13" font-weight="600">Explore repository</text>
+  </g>
+  <path d="M393 134h19m-6-6 6 6-6 6" stroke="#A3D867" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

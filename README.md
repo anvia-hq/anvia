@@ -19,6 +19,15 @@ Anvia is an open, TypeScript agent stack that gives developers everything they n
 
 Your application stays the system of record: it creates the provider models, typed tools, memory stores, and observers, and passes them into Anvia agents and runners. Anvia runs the model/tool loop — remove it and you keep your product.
 
+<p align="center">
+  <a href="https://github.com/anvia-hq/lens">
+    <img src=".github/assets/lens-banner.svg" alt="Anvia Lens — self-hosted observability and evaluation for AI agents. Explore the repository." width="400" />
+  </a>
+  <a href="https://github.com/anvia-hq/channels">
+    <img src=".github/assets/channels-banner.svg" alt="Anvia Channels — connect agents to Discord, Slack, and Telegram. Explore the repository." width="400" />
+  </a>
+</p>
+
 ## Why Anvia
 
 - Provider-neutral clients for OpenAI-compatible APIs, Anthropic, Gemini, and Mistral — your agent architecture should not belong to your model provider.

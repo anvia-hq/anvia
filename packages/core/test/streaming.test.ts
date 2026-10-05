@@ -2018,6 +2018,231 @@ describe("Agent streaming", () => {
     expect(lines[1]).toEqual({ type: "error", error: { message: "42" } });
   });
 
+  it("normalizes yielded and thrown terminal errors only in opt-in Anvia mode", async () => {
+    const error = new Error("boom");
+    async function* yielded() {
+      yield { type: "error", error };
+      yield { type: "text_delta", delta: "too late" };
+    }
+    const thrown: AsyncIterable<never> = {
+      [Symbol.asyncIterator]() {
+        return {
+          async next() {
+            throw error;
+          },
+        };
+      },
+    };
+    const expected = '{"type":"error","error":{"name":"Error","message":"boom"}}\n';
+    expect(await readAll(toReadableStream(yielded(), { errorSerialization: "anvia" }))).toBe(
+      expected,
+    );
+    expect(await readAll(toReadableStream(thrown, { errorSerialization: "anvia" }))).toBe(expected);
+    expect(await readAll(toReadableStream(yielded()))).toBe(
+      '{"type":"error","error":{}}\n{"type":"text_delta","delta":"too late"}\n',
+    );
+    expect(error.message).toBe("boom");
+  });
+
+  it("preserves valid terminal usage and excludes extra terminal fields", async () => {
+    const usage = {
+      inputTokens: 1,
+      outputTokens: 2,
+      totalTokens: 3,
+      cachedInputTokens: 0,
+      cacheCreationInputTokens: 0,
+      details: { reasoning: 1, total: 3 },
+    };
+    const event = { type: "error", error: new Error("boom"), usage, rawResponse: "SECRET" };
+    const text = await readAll(
+      toReadableStream(
+        (async function* () {
+          yield event;
+        })(),
+        { errorSerialization: "anvia" },
+      ),
+    );
+    expect(JSON.parse(text)).toEqual({
+      type: "error",
+      error: { name: "Error", message: "boom" },
+      usage: {
+        inputTokens: 1,
+        outputTokens: 2,
+        totalTokens: 3,
+        cachedInputTokens: 0,
+        cacheCreationInputTokens: 0,
+        details: { reasoning: 1, total: 3 },
+      },
+    });
+    expect(event.usage).toBe(usage);
+    expect(event.error.message).toBe("boom");
+  });
+
+  it.each(["down", 42n, null, true, 7])(
+    "normalizes primitive error %s consistently",
+    async (error) => {
+      async function* yielded() {
+        yield { type: "error", error };
+      }
+      const thrown: AsyncIterable<never> = {
+        [Symbol.asyncIterator]() {
+          return {
+            async next() {
+              throw error;
+            },
+          };
+        },
+      };
+      const expected = { type: "error", error: error === 42n ? { message: "42" } : error };
+      expect(
+        JSON.parse(await readAll(toReadableStream(yielded(), { errorSerialization: "anvia" }))),
+      ).toEqual(expected);
+      expect(
+        JSON.parse(await readAll(toReadableStream(thrown, { errorSerialization: "anvia" }))),
+      ).toEqual(expected);
+    },
+  );
+
+  it("reads prototype diagnostics without invoking accessors or coercion", async () => {
+    let reads = 0;
+    const error = Object.create({ name: "SqliteError", code: "SQLITE_BUSY" });
+    Object.defineProperty(error, "message", { value: "busy" });
+    Object.defineProperty(error, "stack", {
+      get() {
+        reads++;
+        throw new Error("SECRET");
+      },
+    });
+    error.cause = "SECRET";
+    error.details = error;
+    error.toJSON = () => {
+      reads++;
+      throw new Error("SECRET");
+    };
+    error.toString = error.toJSON;
+    const text = await readAll(
+      toReadableStream(
+        (async function* () {
+          yield { type: "error", error };
+        })(),
+        { errorSerialization: "anvia" },
+      ),
+    );
+    expect(text).toBe(
+      '{"type":"error","error":{"name":"SqliteError","message":"busy","code":"SQLITE_BUSY"}}\n',
+    );
+    expect(reads).toBe(0);
+  });
+
+  it("degrades hostile diagnostics and invalid usage without a second failure", async () => {
+    const error = new Proxy(
+      {},
+      {
+        getOwnPropertyDescriptor: () => {
+          throw new Error("SECRET");
+        },
+      },
+    );
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    const accessorUsage = Object.defineProperty({ ...Usage.empty() }, "details", {
+      get() {
+        throw new Error("SECRET");
+      },
+    });
+    for (const usage of [
+      { ...Usage.empty(), totalTokens: 42n },
+      { ...Usage.empty(), details: circular },
+      accessorUsage,
+    ]) {
+      const text = await readAll(
+        toReadableStream(
+          (async function* () {
+            yield { type: "error", error, usage };
+          })(),
+          { errorSerialization: "anvia" },
+        ),
+      );
+      expect(text).toBe('{"type":"error","error":{"message":"Unknown error"}}\n');
+    }
+  });
+
+  it("keeps generic nested values unchanged in both serialization modes", async () => {
+    async function* events() {
+      yield { nested: { error: new Error("inner"), values: [1, "two", null] } };
+    }
+    const expected = '{"nested":{"error":{},"values":[1,"two",null]}}\n';
+    expect(await readAll(toReadableStream(events()))).toBe(expected);
+    expect(await readAll(toReadableStream(events(), { errorSerialization: "anvia" }))).toBe(
+      expected,
+    );
+  });
+
+  it("finishes a failed iterator once even when cleanup throws", async () => {
+    let cleanup = 0;
+    const events: AsyncIterable<never> = {
+      [Symbol.asyncIterator]() {
+        return {
+          async next() {
+            throw new Error("boom");
+          },
+          async return() {
+            cleanup++;
+            throw new Error("cleanup SECRET");
+          },
+        };
+      },
+    };
+    expect(await readAll(toReadableStream(events, { errorSerialization: "anvia" }))).toBe(
+      '{"type":"error","error":{"name":"Error","message":"boom"}}\n',
+    );
+    expect(cleanup).toBe(1);
+  });
+
+  it.each([false, true])(
+    "suppresses pending iterator settlement after cancellation, reject=%s",
+    async (reject) => {
+      let nextCalls = 0;
+      let cleanup = 0;
+      let settle: (() => void) | undefined;
+      const events: AsyncIterable<{ type: string; delta: string }> = {
+        [Symbol.asyncIterator]() {
+          return {
+            async next() {
+              nextCalls++;
+              if (nextCalls === 1)
+                return { done: false, value: { type: "text_delta", delta: "one" } };
+              return new Promise<IteratorResult<{ type: string; delta: string }>>(
+                (resolve, fail) => {
+                  settle = () =>
+                    reject
+                      ? fail(new Error("late SECRET"))
+                      : resolve({ done: false, value: { type: "text_delta", delta: "too late" } });
+                },
+              );
+            },
+            async return() {
+              cleanup++;
+              return { done: true, value: undefined };
+            },
+          };
+        },
+      };
+      const reader = toReadableStream(events, { errorSerialization: "anvia" }).getReader();
+      expect(new TextDecoder().decode((await reader.read()).value)).toBe(
+        '{"type":"text_delta","delta":"one"}\n',
+      );
+      const pending = reader.read();
+      await Promise.resolve();
+      await reader.cancel();
+      settle?.();
+      expect(await pending).toEqual({ done: true, value: undefined });
+      expect(await reader.read()).toEqual({ done: true, value: undefined });
+      expect(cleanup).toBe(1);
+      expect(nextCalls).toBe(2);
+    },
+  );
+
   it("enforces exact maxTurns boundary on streaming execution", async () => {
     const model = new StreamingQueueModel([
       [streamFinal([AssistantContent.toolCall("call_1", "add", { x: 1, y: 2 })], "tool-calls")],

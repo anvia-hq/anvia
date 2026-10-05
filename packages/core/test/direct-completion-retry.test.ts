@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+import { toReadableStream } from "../src/streaming";
 import {
   AssistantContent,
   type CompletionModel,
@@ -239,6 +240,39 @@ describe("direct completion retries", () => {
         usage: expect.objectContaining({ cachedInputTokens: 3, outputTokens: 1, totalTokens: 1 }),
       },
     });
+  });
+
+  it("serializes provider-output diagnostics and original error usage at the wire boundary", async () => {
+    const failedUsage = usage(1, 2);
+    const error = Object.assign(
+      new CompletionProviderOutputError({ kind: "incomplete-stream", usage: failedUsage }),
+      { rawResponse: "SECRET", cause: "SECRET", details: { payload: "SECRET" } },
+    );
+    const model = new StreamQueueModel([[{ type: "error", error, usage: failedUsage }]]);
+    const text = await new Response(
+      toReadableStream(streamCompletion({ model, prompt: "hello", retries: false }), {
+        errorSerialization: "anvia",
+      }),
+    ).text();
+
+    expect(JSON.parse(text)).toEqual({
+      type: "error",
+      error: {
+        name: "CompletionProviderOutputError",
+        message: "Completion provider stream ended without a terminal response.",
+        code: "ANVIA_COMPLETION_PROVIDER_OUTPUT",
+        kind: "incomplete-stream",
+      },
+      usage: {
+        inputTokens: 1,
+        outputTokens: 2,
+        totalTokens: 3,
+        cachedInputTokens: 0,
+        cacheCreationInputTokens: 0,
+      },
+    });
+    expect(text).not.toContain("SECRET");
+    expect(error.details).toEqual({ payload: "SECRET" });
   });
 
   it("emits a dedicated error for a length-terminated structured stream", async () => {

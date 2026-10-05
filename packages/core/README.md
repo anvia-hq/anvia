@@ -424,6 +424,40 @@ than coerced. Nested arrays are valid JSON. Canonical Anvia fields such as model
 temperature, tools, controls, dimensions, text, and voice take precedence over conflicting provider keys.
 Cancellation is forwarded to provider SDK calls and is never retried.
 
+## Terminal error JSONL serialization
+
+`toReadableStream` from `@anvia/core/streaming` converts an async iterable to JSONL.
+By default, yielded values use ordinary `JSON.stringify`, so a yielded `Error` becomes `{}`.
+The existing generic serialization and thrown-error behavior remain the default.
+
+```ts
+import { toReadableStream } from "@anvia/core/streaming";
+
+const body = toReadableStream(events, { errorSerialization: "anvia" });
+```
+
+The opt-in `"anvia"` policy projects top-level `type: "error"` events and iterator failures
+into a fresh terminal envelope containing `type`, `error`, and optional `usage`.
+It preserves string `name` and `message` diagnostics and finite scalar `code` values,
+including data properties inherited from an error prototype. Recognized completion-provider-output
+errors also retain their `kind`, `toolCallId`, and normalized `finishReason`.
+It omits stack, cause, arbitrary details, raw provider payloads, and extra envelope fields.
+It does not call diagnostic getters, `toJSON`, or object coercion methods.
+
+Strings, finite numbers, booleans, and `null` remain primitive error values.
+A BigInt becomes a message object, so `42n` becomes `{ message: "42" }`.
+Other values without supported diagnostics become `{ message: "Unknown error" }`.
+Valid usage preserves all five token counters and optional finite numeric `details` fields.
+Invalid or inaccessible usage is omitted without replacing the error diagnostic.
+
+An opt-in terminal error emits one line, closes the stream, and requests iterator cleanup once.
+Cancellation suppresses pending iterator results and requests cleanup once.
+A noncooperative iterator can still retain its own pending work or delay cleanup.
+Nested data and successful events retain their ordinary JSON serialization.
+In-process events and errors are not mutated.
+
+This policy minimizes exposed fields. It does not redact secrets from allowed messages or diagnostics.
+
 ## Agents
 
 Agents own their default retry policy. A run with no `retries` value inherits the Agent setting;

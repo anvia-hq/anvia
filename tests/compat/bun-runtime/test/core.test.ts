@@ -42,6 +42,40 @@ describe("@anvia/core under Bun", () => {
     expect(body).toBe('{"type":"text_delta","delta":"one"}\n{"type":"text_delta","delta":"two"}\n');
   });
 
+  it("normalizes opt-in terminal JSONL errors without losing prototype diagnostics under Bun", async () => {
+    const error = Object.create({ name: "SqliteError", code: "SQLITE_BUSY" });
+    Object.defineProperty(error, "message", { value: "busy" });
+    error.cause = "SECRET";
+    error.details = error;
+    error.toJSON = () => {
+      throw new Error("SECRET");
+    };
+    async function* yielded() {
+      yield { type: "error", error, usage: { ...Usage.empty(), totalTokens: 3 } };
+      yield { type: "text_delta", delta: "too late" };
+    }
+    const thrown: AsyncIterable<never> = {
+      [Symbol.asyncIterator]() {
+        return {
+          async next() {
+            throw error;
+          },
+        };
+      },
+    };
+    const body = await new Response(
+      toReadableStream(yielded(), { errorSerialization: "anvia" }),
+    ).text();
+    expect(body).toBe(
+      '{"type":"error","error":{"name":"SqliteError","message":"busy","code":"SQLITE_BUSY"},"usage":{"inputTokens":0,"outputTokens":0,"totalTokens":3,"cachedInputTokens":0,"cacheCreationInputTokens":0}}\n',
+    );
+    expect(
+      await new Response(toReadableStream(thrown, { errorSerialization: "anvia" })).text(),
+    ).toBe(
+      '{"type":"error","error":{"name":"SqliteError","message":"busy","code":"SQLITE_BUSY"}}\n',
+    );
+  });
+
   it("loads a local skill and executes its script with Node-compatible APIs", async () => {
     const root = await mkdtemp(join(tmpdir(), "anvia-bun-core-"));
     tempDirectories.push(root);

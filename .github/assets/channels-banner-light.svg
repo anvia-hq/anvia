@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="380" height="92" viewBox="0 0 380 92" fill="none" role="img" aria-labelledby="title description">
+  <title id="title">Anvia Channels</title>
+  <desc id="description">Connect your agents to Discord, Slack, and Telegram.</desc>
+  <rect x="6.5" y="4.5" width="367" height="83" rx="3" fill="#FAFAFA" stroke="#D4D4D8"/>
+  <path d="M413.396 0.00500488C413.396 0.00800488 413.398 0.0110016 413.401 0.0110016H480.757C498.365 0.0110016 512.639 14.285 512.639 31.892V355.175C512.639 372.783 498.365 387.057 480.757 387.057H420.666C403.058 387.057 388.784 372.783 388.784 355.175V318.558C388.784 300.951 374.511 286.677 356.903 286.677H186.809C169.202 286.677 154.928 300.951 154.928 318.558V355.177C154.928 372.785 140.654 387.059 123.046 387.059H48.6818C31.0748 387.059 16.8008 372.785 16.8008 355.177V123.049C16.8008 105.442 31.0748 91.168 48.6818 91.168H90.3268C107.934 91.168 122.208 76.894 122.208 59.287V31.881C122.208 14.274 136.482 0 154.09 0H413.39C413.393 0 413.396 0.00200488 413.396 0.00500488ZM154.928 174.806C154.928 192.414 169.202 206.688 186.809 206.688H356.903C374.511 206.688 388.784 192.414 388.784 174.806V124.015C388.784 106.408 374.511 92.134 356.903 92.134H186.809C169.202 92.134 154.928 106.408 154.928 124.015V174.806Z" transform="translate(25 34) scale(0.055)" fill="#18181B"/>
+  <path d="M72 28v36" stroke="#D4D4D8"/>
+  <g font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+    <text x="90" y="41" fill="#18181B" font-size="18" font-weight="600">Anvia Channels</text>
+    <text x="90" y="63" fill="#52525B" font-size="12.5">Discord, Slack, and Telegram</text>
+  </g>
+  <path d="M339 30h9v9m-9 0 9-9" stroke="#52525B" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

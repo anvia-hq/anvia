@@ -20,12 +20,8 @@ Anvia is an open, TypeScript agent stack that gives developers everything they n
 Your application stays the system of record: it creates the provider models, typed tools, memory stores, and observers, and passes them into Anvia agents and runners. Anvia runs the model/tool loop — remove it and you keep your product.
 
 <p align="center">
-  <a href="https://github.com/anvia-hq/lens">
-    <img src=".github/assets/lens-banner.svg" alt="Anvia Lens — self-hosted observability and evaluation for AI agents. Explore the repository." width="400" />
-  </a>
-  <a href="https://github.com/anvia-hq/channels">
-    <img src=".github/assets/channels-banner.svg" alt="Anvia Channels — connect agents to Discord, Slack, and Telegram. Explore the repository." width="400" />
-  </a>
+  <a href="https://github.com/anvia-hq/lens"><picture><source media="(prefers-color-scheme: dark)" srcset=".github/assets/lens-banner.svg" /><img src=".github/assets/lens-banner-light.svg" alt="Anvia Lens — self-hosted observability and evaluation for AI agents." width="380" /></picture></a>
+  <a href="https://github.com/anvia-hq/channels"><picture><source media="(prefers-color-scheme: dark)" srcset=".github/assets/channels-banner.svg" /><img src=".github/assets/channels-banner-light.svg" alt="Anvia Channels — connect agents to Discord, Slack, and Telegram." width="380" /></picture></a>
 </p>
 
 ## Why Anvia

@@ -1,17 +1,12 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="440" height="160" viewBox="0 0 440 160" fill="none" role="img" aria-labelledby="title description">
+<svg xmlns="http://www.w3.org/2000/svg" width="380" height="92" viewBox="0 0 380 92" fill="none" role="img" aria-labelledby="title description">
   <title id="title">Anvia Lens</title>
-  <desc id="description">Self-hosted observability and evaluation for AI agents. Explore the repository.</desc>
-  <rect x="0.5" y="0.5" width="439" height="159" rx="16" fill="#111813" stroke="#334336"/>
-  <rect x="24" y="24" width="36" height="36" rx="10" fill="#23351C"/>
-  <g stroke="#A3D867" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-    <circle cx="41" cy="41" r="8"/>
-    <path d="m47 47 5 5M36 42h3l2-5 2 8 2-4h2"/>
+  <desc id="description">Self-hosted observability and evaluation for AI agents.</desc>
+  <rect x="6.5" y="4.5" width="367" height="83" rx="3" fill="#09090B" stroke="#27272A"/>
+  <path d="M413.396 0.00500488C413.396 0.00800488 413.398 0.0110016 413.401 0.0110016H480.757C498.365 0.0110016 512.639 14.285 512.639 31.892V355.175C512.639 372.783 498.365 387.057 480.757 387.057H420.666C403.058 387.057 388.784 372.783 388.784 355.175V318.558C388.784 300.951 374.511 286.677 356.903 286.677H186.809C169.202 286.677 154.928 300.951 154.928 318.558V355.177C154.928 372.785 140.654 387.059 123.046 387.059H48.6818C31.0748 387.059 16.8008 372.785 16.8008 355.177V123.049C16.8008 105.442 31.0748 91.168 48.6818 91.168H90.3268C107.934 91.168 122.208 76.894 122.208 59.287V31.881C122.208 14.274 136.482 0 154.09 0H413.39C413.393 0 413.396 0.00200488 413.396 0.00500488ZM154.928 174.806C154.928 192.414 169.202 206.688 186.809 206.688H356.903C374.511 206.688 388.784 192.414 388.784 174.806V124.015C388.784 106.408 374.511 92.134 356.903 92.134H186.809C169.202 92.134 154.928 106.408 154.928 124.015V174.806Z" transform="translate(25 34) scale(0.055)" fill="#F4F4F5"/>
+  <path d="M72 28v36" stroke="#27272A"/>
+  <g font-family="Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+    <text x="90" y="41" fill="#F4F4F5" font-size="18" font-weight="600">Anvia Lens</text>
+    <text x="90" y="63" fill="#A1A1AA" font-size="12.5">Traces, evaluations, and datasets</text>
   </g>
-  <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
-    <text x="72" y="49" fill="#F4F7F1" font-size="23" font-weight="600">Anvia Lens</text>
-    <text x="24" y="88" fill="#C0CBBE" font-size="16">Self-hosted observability and evaluation</text>
-    <text x="24" y="110" fill="#C0CBBE" font-size="16">for AI agents.</text>
-    <text x="24" y="140" fill="#A3D867" font-size="13" font-weight="600">Explore repository</text>
-  </g>
-  <path d="M393 134h19m-6-6 6 6-6 6" stroke="#A3D867" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M339 30h9v9m-9 0 9-9" stroke="#A1A1AA" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

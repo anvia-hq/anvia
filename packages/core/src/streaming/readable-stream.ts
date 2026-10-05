@@ -162,7 +162,7 @@ function projectUsage(value: unknown): Usage | undefined {
     "cacheCreationInputTokens",
   ] as const) {
     const count = readDataProperty(value, key);
-    if (typeof count !== "number" || !Number.isFinite(count)) return undefined;
+    if (typeof count !== "number" || !Number.isFinite(count) || count < 0) return undefined;
     usage[key] = count;
   }
   try {
@@ -181,7 +181,8 @@ function projectUsage(value: unknown): Usage | undefined {
             field === undefined ||
             !("value" in field) ||
             typeof field.value !== "number" ||
-            !Number.isFinite(field.value)
+            !Number.isFinite(field.value) ||
+            field.value < 0
           ) {
             return undefined;
           }

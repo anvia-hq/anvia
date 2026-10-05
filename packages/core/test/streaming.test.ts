@@ -2078,6 +2078,34 @@ describe("Agent streaming", () => {
     expect(event.error.message).toBe("boom");
   });
 
+  it.each([
+    "inputTokens",
+    "outputTokens",
+    "totalTokens",
+    "cachedInputTokens",
+    "cacheCreationInputTokens",
+    "details",
+  ])("omits terminal usage with invalid %s counts", async (key) => {
+    for (const count of [-1, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      const invalidUsage = {
+        ...Usage.empty(),
+        [key]: key === "details" ? { reasoning: count } : count,
+      };
+      const text = await readAll(
+        toReadableStream(
+          (async function* () {
+            yield { type: "error", error: new Error("boom"), usage: invalidUsage };
+          })(),
+          { errorSerialization: "anvia" },
+        ),
+      );
+      expect(JSON.parse(text)).toEqual({
+        type: "error",
+        error: { name: "Error", message: "boom" },
+      });
+    }
+  });
+
   it.each(["down", 42n, null, true, 7])(
     "normalizes primitive error %s consistently",
     async (error) => {

@@ -404,6 +404,134 @@ describe("embedding document batch controls", () => {
     },
   );
 
+  it.each([
+    ["dense", true],
+    ["sparse", true],
+    ["dense", false],
+    ["sparse", false],
+  ] as const)(
+    "keeps the opposite channel independent with %s malformed=%s and drains fixture work",
+    async (channel, malformed) => {
+      let release!: () => void;
+      const pending = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const calls = { dense: [] as string[][], sparse: [] as string[][] };
+      const active = { dense: 0, sparse: 0 };
+      const work: Promise<unknown>[] = [];
+      const opposite = channel === "dense" ? "sparse" : "dense";
+      const provide = async (current: "dense" | "sparse", texts: string[]) => {
+        calls[current].push([...texts]);
+        active[current] += 1;
+        try {
+          if (current === opposite) await pending;
+          return malformed && current === channel ? texts.slice(0, 1) : texts;
+        } finally {
+          active[current] -= 1;
+        }
+      };
+      const dense: EmbeddingModel = {
+        provider: "test",
+        modelId: "delayed-dense",
+        maxBatchSize: 2,
+        embedTexts(texts) {
+          const result = provide("dense", texts).then((documents) =>
+            documents.map((document) => ({ document, vector: [1] })),
+          );
+          work.push(result);
+          return result;
+        },
+      };
+      const sparse: SparseEmbeddingModel = {
+        provider: "test",
+        modelId: "delayed-sparse",
+        maxBatchSize: 2,
+        embedTexts(texts) {
+          const result = provide("sparse", texts).then((documents) =>
+            documents.map((document) => ({ document, vector: { indices: [0], values: [1] } })),
+          );
+          work.push(result);
+          return result;
+        },
+        async embedQuery(document) {
+          return { document, vector: { indices: [0], values: [1] } };
+        },
+      };
+      const result = embedDocuments({
+        models: { dense, sparse },
+        documents: [{ chunks: ["a", "b", "c", "d"], source: "x" }],
+        content: (document) => document.chunks,
+        metadata: (document) => ({ source: document.source }),
+        concurrency: 1,
+      });
+      let settled = false;
+      const observed = result.then(
+        (value) => {
+          settled = true;
+          return { value, error: undefined };
+        },
+        (error: Error) => {
+          settled = true;
+          return { value: undefined, error };
+        },
+      );
+      try {
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        expect(calls[opposite]).toEqual([["a", "b"]]);
+        expect(active[opposite]).toBe(1);
+        if (malformed) {
+          const outcome = await observed;
+          expect(outcome.error?.message).toBe(
+            `${channel === "dense" ? "Embedding" : "Sparse embedding"} model returned 1 embeddings for 2 texts`,
+          );
+          expect(outcome.value).toBeUndefined();
+          expect(calls[channel]).toEqual([["a", "b"]]);
+          expect(active[channel]).toBe(0);
+          expect(active[opposite]).toBe(1);
+        } else {
+          expect(settled).toBe(false);
+          expect(calls[channel]).toEqual([
+            ["a", "b"],
+            ["c", "d"],
+          ]);
+          release();
+          const outcome = await observed;
+          expect(outcome.error).toBeUndefined();
+          expect(outcome.value?.documents).toEqual([
+            {
+              id: "doc0",
+              document: { chunks: ["a", "b", "c", "d"], source: "x" },
+              metadata: { source: "x" },
+              embeddings: [
+                { document: "a", vector: [1] },
+                { document: "b", vector: [1] },
+                { document: "c", vector: [1] },
+                { document: "d", vector: [1] },
+              ],
+              sparseEmbeddings: [
+                { document: "a", vector: { indices: [0], values: [1] } },
+                { document: "b", vector: { indices: [0], values: [1] } },
+                { document: "c", vector: { indices: [0], values: [1] } },
+                { document: "d", vector: { indices: [0], values: [1] } },
+              ],
+            },
+          ]);
+        }
+      } finally {
+        release();
+        await observed;
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        await Promise.all(work);
+      }
+      expect(calls[opposite]).toEqual([
+        ["a", "b"],
+        ["c", "d"],
+      ]);
+      expect(active).toEqual({ dense: 0, sparse: 0 });
+      expect(work).toHaveLength(malformed ? 3 : 4);
+    },
+  );
+
   it("preserves chunk alignment and source metadata for hybrid documents", async () => {
     const { documents } = await embedDocuments({
       models: { dense: new KeywordModel(), sparse: new SparseModel() },

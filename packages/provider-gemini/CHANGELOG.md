@@ -1,5 +1,11 @@
 # @anvia/gemini
 
+## 1.1.7
+
+### Patch Changes
+
+- a32e40c: Refresh package READMEs with concise product overviews, current quickstarts, and links to detailed guides. Publish the updated documentation on npm.
+
 ## 1.1.6
 
 ### Patch Changes

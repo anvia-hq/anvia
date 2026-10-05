@@ -1,6 +1,6 @@
 {
   "name": "@anvia/cli",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "Install Anvia Agent Skills and editable React UI components.",
   "author": "anvia",
   "license": "MIT",

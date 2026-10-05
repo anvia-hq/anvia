@@ -1,5 +1,11 @@
 # @anvia/core
 
+## 1.6.1
+
+### Patch Changes
+
+- a32e40c: Refresh package READMEs with concise product overviews, current quickstarts, and links to detailed guides. Publish the updated documentation on npm.
+
 ## 1.6.0
 
 ### Minor Changes

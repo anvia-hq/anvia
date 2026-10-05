@@ -1,5 +1,11 @@
 # @anvia/server
 
+## 1.1.5
+
+### Patch Changes
+
+- a32e40c: Refresh package READMEs with concise product overviews, current quickstarts, and links to detailed guides. Publish the updated documentation on npm.
+
 ## 1.1.4
 
 ### Patch Changes

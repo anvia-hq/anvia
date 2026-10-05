@@ -1,5 +1,11 @@
 # @anvia/qdrant
 
+## 1.1.4
+
+### Patch Changes
+
+- a32e40c: Refresh package READMEs with concise product overviews, current quickstarts, and links to detailed guides. Publish the updated documentation on npm.
+
 ## 1.1.3
 
 ### Patch Changes

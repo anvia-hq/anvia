@@ -1,5 +1,13 @@
 # @anvia/browser
 
+## 1.1.9
+
+### Patch Changes
+
+- a32e40c: Refresh package READMEs with concise product overviews, current quickstarts, and links to detailed guides. Publish the updated documentation on npm.
+- Updated dependencies [a32e40c]
+  - @anvia/sandbox@1.1.8
+
 ## 1.1.8
 
 ### Patch Changes

@@ -1,5 +1,11 @@
 # @anvia/langfuse
 
+## 1.2.1
+
+### Patch Changes
+
+- a32e40c: Refresh package READMEs with concise product overviews, current quickstarts, and links to detailed guides. Publish the updated documentation on npm.
+
 ## 1.2.0
 
 ### Minor Changes

@@ -130,6 +130,70 @@ function listenerBalance(signal: AbortSignal) {
 }
 
 describe("agent eval cancellation", () => {
+  it.each([
+    { source: "case", preAborted: false },
+    { source: "request", preAborted: false },
+    { source: "case", preAborted: true },
+    { source: "request", preAborted: true },
+  ] as const)(
+    "preserves null and Error reasons for $source cancellation with preAborted=$preAborted",
+    async ({ source, preAborted }) => {
+      for (const reason of [null, new Error("original-stop")]) {
+        const caseController = new AbortController();
+        const requestController = new AbortController();
+        const caseBalance = listenerBalance(caseController.signal);
+        const requestBalance = listenerBalance(requestController.signal);
+        const selected = source === "case" ? caseController : requestController;
+        const started = deferred<void>();
+        let effective: AbortSignal | undefined;
+        let calls = 0;
+        let active = 0;
+        const target = agentEvalTarget<string>({
+          agent: {
+            generate(settings) {
+              calls += 1;
+              active += 1;
+              const signal = settings.abortSignal!;
+              effective = signal;
+              return new Promise((_resolve, reject) => {
+                const onAbort = () => {
+                  signal.removeEventListener("abort", onAbort);
+                  active -= 1;
+                  reject(signal.reason);
+                };
+                signal.addEventListener("abort", onAbort, { once: true });
+                started.resolve();
+              });
+            },
+          },
+          request: () => ({ prompt: "hello", abortSignal: requestController.signal }),
+        });
+        if (preAborted) selected.abort(reason);
+        const operation = target("hello", testCase, { signal: caseController.signal });
+        const rejection = expect(operation).rejects.toBe(reason);
+        if (!preAborted) {
+          await started.promise;
+          selected.abort(reason);
+        }
+        await rejection;
+        expect(selected.signal.reason).toBe(reason);
+        expect(calls).toBe(preAborted ? 0 : 1);
+        expect(active).toBe(0);
+        if (effective !== undefined) expect(effective.reason).toBe(reason);
+        expect(caseBalance()).toBe(0);
+        expect(requestBalance()).toBe(0);
+        expect(
+          (
+            await agentEvalTarget<string>({
+              agent: { generate: async () => response() },
+              request: () => ({ prompt: "hello" }),
+            })("hello", testCase)
+          ).output,
+        ).toBe("ok");
+      }
+    },
+  );
+
   it("times out cooperative generation with a timeout error and no active operation", async () => {
     const fixture = modelFixture();
     const result = await runEvalSuite({

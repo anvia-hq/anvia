@@ -1040,8 +1040,9 @@ Use `selectEvalCaseIds(previousResult)` to select failed and invalid cases for a
 
 `agentEvalTarget` forwards the case signal to initial generation and approval resumes. If the
 request also supplies `abortSignal`, either signal cancels that target invocation. The composed
-signal preserves the first observed abort reason. The target copies request settings and removes
-its composition listeners when it settles. Direct two-argument target calls remain supported.
+signal preserves the first observed abort reason, including an explicit `null`. The target copies
+request settings and removes its composition listeners when it settles. Direct two-argument target
+calls remain supported.
 
 Cancellation rejects pending request, interaction responder, and output callbacks without starting
 later phases. The callbacks keep their existing signatures. Their application-owned computation
@@ -1057,6 +1058,10 @@ leaves, pending preparation is detached and cancelled. Rejected or empty prepara
 and stale results cannot replace a newer preparation. Successful steps are cached with detached
 arrays. Setup usage belongs once to the first live case that accepts the steps. Supplied
 `evaluationSteps` need no preparation request.
+
+If the accepting case is cancelled or fails during scoring, its setup usage may be lost from the
+returned outcomes. That usage is not reassigned to a later case. After these failures, aggregate
+evaluation usage is not a complete provider billing ledger.
 
 ### Results, usage, and failures
 

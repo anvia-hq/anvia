@@ -116,5 +116,5 @@ export function createConcurrencyLimiter(concurrency: number): ConcurrencyLimite
 }
 
 function abortReason(signal: AbortSignal): unknown {
-  return signal.reason ?? new EvalAbortError();
+  return signal.reason === undefined ? new EvalAbortError() : signal.reason;
 }

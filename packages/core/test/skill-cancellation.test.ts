@@ -30,6 +30,21 @@ function alive(pid: number): boolean {
   }
 }
 
+async function running(pid: number): Promise<boolean> {
+  if (!alive(pid)) return false;
+  if (process.platform !== "linux") return true;
+  try {
+    // Orphaned descendants can remain as zombies until PID 1 reaps them.
+    // The command name may contain parentheses, so read state after the last one.
+    const stat = await readFile(`/proc/${pid}/stat`, "utf8");
+    const state = stat.slice(stat.lastIndexOf(")") + 2, stat.lastIndexOf(")") + 3);
+    return state !== "Z" && state !== "X";
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
+}
+
 async function waitForPid(path: string): Promise<number> {
   for (let attempt = 0; attempt < 400; attempt++) {
     try {
@@ -136,17 +151,24 @@ setInterval(() => {}, 1000);`,
 
 afterEach(async () => {
   vi.restoreAllMocks();
-  for (const pid of pids) {
-    if (alive(pid)) process.kill(pid, "SIGKILL");
+  try {
+    for (const pid of pids) {
+      try {
+        if (await running(pid)) process.kill(pid, "SIGKILL");
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+      }
+    }
+    for (const pid of pids) {
+      for (let attempt = 0; (await running(pid)) && attempt < 200; attempt++) await delay(5);
+      expect(await running(pid)).toBe(false);
+    }
+  } finally {
+    pids.clear();
+    await Promise.all(
+      directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })),
+    );
   }
-  for (const pid of pids) {
-    for (let attempt = 0; alive(pid) && attempt < 200; attempt++) await delay(5);
-    expect(alive(pid)).toBe(false);
-  }
-  pids.clear();
-  await Promise.all(
-    directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })),
-  );
 });
 
 describe.skipIf(process.platform === "win32")("skill direct-child cancellation", () => {

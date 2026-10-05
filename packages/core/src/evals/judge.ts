@@ -1,6 +1,7 @@
 import type { CompletionModel, JsonObject, Usage } from "../completion";
 import { Usage as UsageValue } from "../completion";
 import { extract } from "../extractor";
+import { throwIfAborted } from "../internal/abort";
 import type { ZodSchema } from "../schema";
 import type { EvalMetadata } from "./types";
 
@@ -15,8 +16,11 @@ export async function runJudge<T>(args: {
   instructions: string;
   prompt: string;
   retries: number;
+  abortSignal?: AbortSignal | undefined;
 }): Promise<JudgeResult<T>> {
+  throwIfAborted(args.abortSignal);
   const result = await extract({
+    abortSignal: args.abortSignal,
     model: args.model,
     outputSchema: args.schema,
     instructions: args.instructions,
@@ -24,6 +28,7 @@ export async function runJudge<T>(args: {
     temperature: 0,
     retries: args.retries <= 0 ? undefined : { maxAttempts: Math.trunc(args.retries) + 1 },
   });
+  throwIfAborted(args.abortSignal);
   return { data: result.output, usage: result.usage };
 }
 

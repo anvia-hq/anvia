@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { CompletionModel, JsonObject, JsonValue, Message, Usage } from "../completion";
 import { isJsonValue, Usage as UsageValue } from "../completion";
+import { throwIfAborted } from "../internal/abort";
 import { mapWithConcurrency } from "../internal/concurrency";
 import type { ZodSchema } from "../schema";
 import { errorMessage, formatValue } from "./format";
@@ -89,6 +90,7 @@ export function answerRelevancy<
         instructions:
           "Break the answer into concise, independently assessable statements. Return every substantive statement using the schema.",
         prompt: `Answer:\n${actual}`,
+        abortSignal: args.signal,
         retries: config.retries,
       });
       const statements = statementResult.data.statements;
@@ -101,6 +103,7 @@ export function answerRelevancy<
           instructions:
             "Classify each answer statement for relevance to the user input. Use yes for relevant, no for irrelevant, and idk only when relevance is genuinely indeterminate. Preserve order and return one verdict per statement.",
           prompt: jsonPrompt({ input, statements }),
+          abortSignal: args.signal,
           retries: config.retries,
         });
         verdicts = verdictResult.data.verdicts;
@@ -117,6 +120,7 @@ export function answerRelevancy<
         includeReason: config.includeReason,
         retries: config.retries,
         metric: "answer relevancy",
+        abortSignal: args.signal,
         score,
         evidence: { input, verdicts: serializedVerdicts },
       });
@@ -165,6 +169,7 @@ export function promptAlignment<
         instructions:
           "Determine whether the answer follows each prompt instruction. Preserve order and return exactly one yes or no verdict per instruction.",
         prompt: jsonPrompt({ input, actual, instructions: options.promptInstructions }),
+        abortSignal: args.signal,
         retries: config.retries,
       });
       const verdicts = verdictResult.data.verdicts;
@@ -176,6 +181,7 @@ export function promptAlignment<
         includeReason: config.includeReason,
         retries: config.retries,
         metric: "prompt alignment",
+        abortSignal: args.signal,
         score,
         evidence: { verdicts },
       });
@@ -260,6 +266,7 @@ export function jsonCorrectness<
               instructions:
                 "Briefly explain why the generated JSON does not match the expected schema. Focus on actionable syntax, field, and type problems.",
               prompt: jsonPrompt({ actual, validationError }),
+              abortSignal: args.signal,
               retries,
             });
             comment = reasonResult.data.reason;
@@ -330,6 +337,7 @@ export function hallucination<
         instructions:
           "Compare the answer with each trusted context. Use yes when the answer is factually aligned with that context and no when it contradicts it. Preserve order and return one verdict per context.",
         prompt: jsonPrompt({ actual, context }),
+        abortSignal: args.signal,
         retries: config.retries,
       });
       const verdicts = verdictResult.data.verdicts;
@@ -340,6 +348,7 @@ export function hallucination<
         includeReason: config.includeReason,
         retries: config.retries,
         metric: "hallucination",
+        abortSignal: args.signal,
         score,
         evidence: { verdicts },
       });
@@ -406,6 +415,7 @@ export function faithfulness<Input, Output, Expected = unknown, const Name exten
           schema: factsSchema,
           instructions: truthsExtractionInstructions(truthsExtractionLimit),
           prompt: jsonPrompt({ retrievalContext }),
+          abortSignal: args.signal,
           retries: config.retries,
         }),
         runJudge({
@@ -414,6 +424,7 @@ export function faithfulness<Input, Output, Expected = unknown, const Name exten
           instructions:
             "Extract every concise factual claim made by the answer. Return claims in the facts array and omit opinions or purely stylistic text.",
           prompt: `Answer:\n${actual}`,
+          abortSignal: args.signal,
           retries: config.retries,
         }),
       ]);
@@ -428,6 +439,7 @@ export function faithfulness<Input, Output, Expected = unknown, const Name exten
           instructions:
             "Determine whether each answer claim is supported by the supplied truths. Use yes for supported, no for contradicted or unsupported, and idk for genuinely ambiguous support. Preserve order and return one verdict per claim.",
           prompt: jsonPrompt({ truths, claims }),
+          abortSignal: args.signal,
           retries: config.retries,
         });
         verdicts = verdictResult.data.verdicts;
@@ -446,6 +458,7 @@ export function faithfulness<Input, Output, Expected = unknown, const Name exten
         includeReason: config.includeReason,
         retries: config.retries,
         metric: "faithfulness",
+        abortSignal: args.signal,
         score,
         evidence: { verdicts: serializedVerdicts, penalizeAmbiguousClaims },
       });
@@ -491,6 +504,7 @@ export function abstention<Input, Output, Expected = unknown, const Name extends
     dataType: "CATEGORICAL",
     async evaluate(args) {
       try {
+        throwIfAborted(args.signal);
         const actual = await resolveActualText(options.actual, args);
         const shouldAbstain = await resolveExpected(options.shouldAbstain, args);
         if (typeof shouldAbstain !== "boolean") {
@@ -503,6 +517,7 @@ export function abstention<Input, Output, Expected = unknown, const Name extends
           );
         }
         const judgment = await runJudge({
+          abortSignal: args.signal,
           model: options.model,
           schema: abstentionJudgmentSchema,
           instructions:
@@ -510,6 +525,7 @@ export function abstention<Input, Output, Expected = unknown, const Name extends
           prompt: jsonPrompt({ actual, context }),
           retries,
         });
+        throwIfAborted(args.signal);
         const category = abstentionCategory(
           shouldAbstain,
           judgment.data.behavior,
@@ -604,6 +620,7 @@ export function summarization<
               schema: questionsSchema,
               instructions: `Generate exactly ${questionCount} important yes-or-no assessment questions whose answers capture the source text's essential information.`,
               prompt: `Source text:\n${input}`,
+              abortSignal: args.signal,
               retries: config.retries,
             })
           : Promise.resolve({
@@ -616,6 +633,7 @@ export function summarization<
           schema: factsSchema,
           instructions: truthsExtractionInstructions(truthsExtractionLimit),
           prompt: `Source text:\n${input}`,
+          abortSignal: args.signal,
           retries: config.retries,
         }),
         runJudge({
@@ -624,6 +642,7 @@ export function summarization<
           instructions:
             "Extract every concise factual claim made by the summary. Return claims in the facts array.",
           prompt: `Summary:\n${actual}`,
+          abortSignal: args.signal,
           retries: config.retries,
         }),
         questionPromise,
@@ -640,6 +659,7 @@ export function summarization<
         instructions:
           "Answer each assessment question using only the supplied text. Return one yes or no answer per question in the same order.",
         prompt: jsonPrompt({ questions, text: input }),
+        abortSignal: args.signal,
         retries: config.retries,
       });
       const summaryAnswerPromise = runJudge({
@@ -648,6 +668,7 @@ export function summarization<
         instructions:
           "Answer each assessment question using only the supplied text. Return one yes or no answer per question in the same order.",
         prompt: jsonPrompt({ questions, text: actual }),
+        abortSignal: args.signal,
         retries: config.retries,
       });
       const alignmentPromise: Promise<JudgeResult<{ verdicts: Verdict[] }>> =
@@ -659,6 +680,7 @@ export function summarization<
               instructions:
                 "Determine whether each summary claim is supported by the source truths. Use yes for supported, no for contradicted, and idk for unsupported filler or ambiguity. Preserve order.",
               prompt: jsonPrompt({ truths, claims }),
+              abortSignal: args.signal,
               retries: config.retries,
             });
       const [sourceAnswerResult, summaryAnswerResult, alignmentResult] = await Promise.all([
@@ -694,6 +716,7 @@ export function summarization<
         includeReason: config.includeReason,
         retries: config.retries,
         metric: "summarization",
+        abortSignal: args.signal,
         score,
         evidence: {
           alignmentVerdicts: serializedAlignmentVerdicts,
@@ -757,6 +780,18 @@ export type GEvalOptions<Input, Output, Expected = unknown> = Omit<
   expected?: ValueSelector<Input, Output, Expected, unknown> | undefined;
   context?: SelectorOrValue<Input, Output, Expected, string[]> | undefined;
   retrievalContext?: SelectorOrValue<Input, Output, Expected, string[]> | undefined;
+};
+
+type PreparedSteps = {
+  steps: string[];
+  usage: Usage;
+  usageClaimed: boolean;
+};
+
+type PreparationEpoch = {
+  controller: AbortController;
+  promise: Promise<PreparedSteps>;
+  waiters: Set<object>;
 };
 
 type GEvalCaseRequirements<
@@ -832,38 +867,107 @@ export function gEval<Input, Output, Expected = unknown, const Name extends stri
     rubric.length === 0
       ? ([0, 10] as const)
       : ([rubric[0]?.scoreRange[0] ?? 0, rubric.at(-1)?.scoreRange[1] ?? 10] as const);
-  let generatedStepsPromise: Promise<JudgeResult<{ steps: string[] }>> | undefined;
-  let generatedUsageClaimed = false;
+  let pendingPreparation: PreparationEpoch | undefined;
+  let preparedSteps: PreparedSteps | undefined;
 
-  async function resolveSteps(): Promise<{ steps: string[]; usage: Usage }> {
+  function acceptSteps(result: PreparedSteps, signal: AbortSignal) {
+    throwIfAborted(signal);
+    const usage = result.usageClaimed ? UsageValue.empty() : result.usage;
+    result.usageClaimed = true;
+    return { steps: [...result.steps], usage };
+  }
+
+  async function resolveSteps(signal: AbortSignal): Promise<{ steps: string[]; usage: Usage }> {
+    throwIfAborted(signal);
     if (options.evaluationSteps !== undefined) {
-      return { steps: options.evaluationSteps, usage: UsageValue.empty() };
+      return { steps: [...options.evaluationSteps], usage: UsageValue.empty() };
     }
-    if (generatedStepsPromise === undefined) {
-      generatedStepsPromise = runJudge({
-        model: options.model,
-        schema: z.object({ steps: z.array(z.string()) }),
-        instructions:
-          "Generate three or four concise evaluation steps from the criteria. Explain how the selected parameters should be judged in relation to one another.",
-        prompt: jsonPrompt({ criteria: options.criteria, parameters: options.evaluationParams }),
-        retries: config.retries,
-      }).catch((error) => {
-        generatedStepsPromise = undefined;
-        throw error;
-      });
+    if (preparedSteps !== undefined) return acceptSteps(preparedSteps, signal);
+    if (pendingPreparation === undefined) {
+      const controller = new AbortController();
+      const epoch: PreparationEpoch = {
+        controller,
+        waiters: new Set(),
+        promise: Promise.resolve()
+          .then(() =>
+            runJudge({
+              model: options.model,
+              schema: z.object({ steps: z.array(z.string()) }),
+              instructions:
+                "Generate three or four concise evaluation steps from the criteria. Explain how the selected parameters should be judged in relation to one another.",
+              prompt: jsonPrompt({
+                criteria: options.criteria,
+                parameters: options.evaluationParams,
+              }),
+              retries: config.retries,
+              abortSignal: controller.signal,
+            }),
+          )
+          .then((result) => {
+            if (result.data.steps.length === 0) {
+              throw new Error("G-Eval generated no evaluation steps.");
+            }
+            const prepared = {
+              steps: [...result.data.steps],
+              usage: result.usage,
+              usageClaimed: false,
+            };
+            if (pendingPreparation === epoch) {
+              preparedSteps = prepared;
+              pendingPreparation = undefined;
+            }
+            return prepared;
+          })
+          .catch((error: unknown) => {
+            if (pendingPreparation === epoch) pendingPreparation = undefined;
+            throw error;
+          }),
+      };
+      pendingPreparation = epoch;
     }
-    const result = await generatedStepsPromise;
-    if (result.data.steps.length === 0) throw new Error("G-Eval generated no evaluation steps.");
-    const usage = generatedUsageClaimed ? UsageValue.empty() : result.usage;
-    generatedUsageClaimed = true;
-    return { steps: result.data.steps, usage };
+    const epoch = pendingPreparation;
+    const token = {};
+    epoch.waiters.add(token);
+    return new Promise((resolve, reject) => {
+      const release = () => {
+        if (!epoch.waiters.delete(token)) return;
+        signal.removeEventListener("abort", onAbort);
+        if (pendingPreparation === epoch && epoch.waiters.size === 0) {
+          pendingPreparation = undefined;
+          epoch.controller.abort(signal.reason);
+        }
+      };
+      const onAbort = () => {
+        release();
+        reject(signal.reason);
+      };
+      signal.addEventListener("abort", onAbort, { once: true });
+      epoch.promise.then(
+        (result) => {
+          if (!epoch.waiters.has(token)) return;
+          try {
+            const accepted = acceptSteps(result, signal);
+            release();
+            resolve(accepted);
+          } catch (error) {
+            release();
+            reject(error);
+          }
+        },
+        (error: unknown) => {
+          release();
+          reject(error);
+        },
+      );
+    });
   }
 
   return numericMetric(config.name, config, "higher_is_better", async (args) => {
     try {
       const parameters = await resolveGEvalParameters(options, args);
-      const stepsResult = await resolveSteps();
+      const stepsResult = await resolveSteps(args.signal);
       const scoreResult = await runJudge({
+        abortSignal: args.signal,
         model: options.model,
         schema: z.object({ score: z.number(), reason: z.string() }),
         instructions: config.strictMode
@@ -956,6 +1060,7 @@ export function turnRelevancy<
           instructions:
             "Judge whether the final assistant reply is relevant to the preceding conversation. Return yes for relevant and no for irrelevant, with a concise reason.",
           prompt: jsonPrompt({ turns: window }),
+          abortSignal: args.signal,
           retries: config.retries,
         }),
       );
@@ -972,6 +1077,7 @@ export function turnRelevancy<
         includeReason: config.includeReason,
         retries: config.retries,
         metric: "turn relevancy",
+        abortSignal: args.signal,
         score,
         evidence: { verdicts },
       });
@@ -1022,6 +1128,7 @@ export function knowledgeRetention<
             previousTurns: turns.slice(0, entry.index),
             userMessage: entry.turn.content,
           }),
+          abortSignal: args.signal,
           retries: config.retries,
         }),
       );
@@ -1046,6 +1153,7 @@ export function knowledgeRetention<
           instructions:
             "Determine whether the assistant reply forgets, contradicts, or unnecessarily asks again for information already supplied by the user. Set attrition true only when knowledge was lost.",
           prompt: jsonPrompt({ knownFacts: entry.facts, assistantReply: entry.turn.content }),
+          abortSignal: args.signal,
           retries: config.retries,
         }),
       );
@@ -1063,6 +1171,7 @@ export function knowledgeRetention<
         includeReason: config.includeReason,
         retries: config.retries,
         metric: "knowledge retention",
+        abortSignal: args.signal,
         score,
         evidence: { verdicts },
       });
@@ -1098,7 +1207,16 @@ function numericMetric<Input, Output, Expected, const Name extends string>(
     threshold:
       config.strictMode === true ? (direction === "higher_is_better" ? 1 : 0) : config.threshold,
     dataType: "NUMERIC",
-    evaluate,
+    async evaluate(args) {
+      try {
+        throwIfAborted(args.signal);
+        const outcome = await evaluate(args);
+        throwIfAborted(args.signal);
+        return outcome;
+      } catch (error) {
+        return EvalOutcome.fromError(error);
+      }
+    },
   };
 }
 
@@ -1191,13 +1309,16 @@ async function maybeReason(args: {
   metric: string;
   score: number;
   evidence: JsonObject;
+  abortSignal: AbortSignal;
 }): Promise<{ reason?: string | undefined; usage: Usage }> {
+  throwIfAborted(args.abortSignal);
   if (!args.includeReason) return { usage: UsageValue.empty() };
   const result = await runJudge({
     model: args.model,
     schema: reasonSchema,
     instructions: `Write a concise final explanation for the ${args.metric} score. Ground it only in the supplied evidence and do not repeat the numeric score.`,
     prompt: jsonPrompt({ score: args.score, evidence: args.evidence }),
+    abortSignal: args.abortSignal,
     retries: args.retries,
   });
   return { reason: result.data.reason, usage: result.usage };

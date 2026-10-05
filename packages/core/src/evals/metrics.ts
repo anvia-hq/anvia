@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { CompletionModel } from "../completion";
 import { cosineSimilarity, type EmbeddingModel, embedText } from "../embeddings";
 import { extract } from "../extractor";
+import { throwIfAborted } from "../internal/abort";
 import type { ZodSchema } from "../schema";
 import { evalValuesEqual, formatValue } from "./format";
 import { EvalOutcome } from "./outcome";
@@ -450,7 +451,9 @@ export function semanticSimilarity<
     direction: "higher_is_better",
     threshold,
     async evaluate(args) {
+      throwIfAborted(args.signal);
       const actual = await resolveActualText(options.actual, args);
+      throwIfAborted(args.signal);
       const expected = await resolveExpected(options.expected, args);
       if (expected === undefined) {
         return EvalOutcome.invalid("No expected value provided for semantic similarity.");
@@ -458,10 +461,12 @@ export function semanticSimilarity<
       if (typeof expected !== "string") {
         return EvalOutcome.invalid("Semantic similarity expected value must be a string.");
       }
+      throwIfAborted(args.signal);
       const [{ embedding: actualEmbedding }, { embedding: expectedEmbedding }] = await Promise.all([
-        embedText({ model: options.model, text: actual }),
-        embedText({ model: options.model, text: expected }),
+        embedText({ model: options.model, text: actual, abortSignal: args.signal }),
+        embedText({ model: options.model, text: expected, abortSignal: args.signal }),
       ]);
+      throwIfAborted(args.signal);
       const score = cosineSimilarity(actualEmbedding.vector, expectedEmbedding.vector);
       return score >= threshold
         ? EvalOutcome.pass(score)
@@ -496,15 +501,18 @@ export function llmJudge<
     required: options.required ?? true,
     async evaluate(args) {
       try {
+        throwIfAborted(args.signal);
         const result = await extract({
           model: options.model,
           outputSchema: options.schema,
+          abortSignal: args.signal,
           instructions:
             options.instructions ??
             "Judge the eval case by the requested schema. Submit the judgment using the schema.",
           text: await resolveJudgePrompt(options.prompt, args),
           retries,
         });
+        throwIfAborted(args.signal);
         return options.passes(result.output)
           ? EvalOutcome.pass(result.output, { usage: result.usage })
           : EvalOutcome.fail(result.output, { usage: result.usage });
@@ -547,18 +555,21 @@ export function llmScore<Input, Output, Expected = unknown, const Name extends s
     threshold,
     async evaluate(args) {
       try {
+        throwIfAborted(args.signal);
         const result = await extract({
           model: options.model,
           outputSchema: z.object({
             score: z.number(),
             feedback: z.string(),
           }),
+          abortSignal: args.signal,
           instructions:
             options.instructions ??
             `Score the eval case against these criteria:\n${criteria}\n\nReturn a score between 0 and 1 and brief feedback.`,
           text: await resolveJudgePrompt(options.prompt, args),
           retries,
         });
+        throwIfAborted(args.signal);
         const score = result.output;
         if (score.score < 0 || score.score > 1) {
           return EvalOutcome.invalid(`Score ${score.score} outside valid range [0, 1].`, {

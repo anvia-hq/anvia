@@ -194,6 +194,52 @@ describe("agent eval cancellation", () => {
     },
   );
 
+  it.each([true, false])("preserves suite abort reasons with preAborted=%s", async (preAborted) => {
+    for (const reason of [null, new Error("suite-stop")]) {
+      const controller = new AbortController();
+      const balance = listenerBalance(controller.signal);
+      const started = deferred<void>();
+      let effective: AbortSignal | undefined;
+      let active = 0;
+      if (preAborted) controller.abort(reason);
+      const operation = runEvalSuite({
+        name: "suite-reason",
+        cases: [testCase],
+        metrics: [exactMatch()],
+        signal: controller.signal,
+        target: agentEvalTarget<string>({
+          agent: {
+            generate(settings) {
+              const signal = settings.abortSignal!;
+              effective = signal;
+              active++;
+              return new Promise((_resolve, reject) => {
+                const onAbort = () => {
+                  signal.removeEventListener("abort", onAbort);
+                  active--;
+                  reject(signal.reason);
+                };
+                signal.addEventListener("abort", onAbort, { once: true });
+                started.resolve();
+              });
+            },
+          },
+          request: ({ input }) => ({ prompt: input }),
+        }),
+      });
+      const rejection = expect(operation).rejects.toBe(reason);
+      if (!preAborted) {
+        await started.promise;
+        controller.abort(reason);
+      }
+      await rejection;
+      if (preAborted) expect(effective).toBeUndefined();
+      else expect(effective?.reason).toBe(reason);
+      expect(active).toBe(0);
+      expect(balance()).toBe(0);
+    }
+  });
+
   it("times out cooperative generation with a timeout error and no active operation", async () => {
     const fixture = modelFixture();
     const result = await runEvalSuite({

@@ -22,7 +22,8 @@ export function createEvalCaseSignal(
   timeoutMs: number | undefined,
 ): EvalCaseSignal {
   const controller = new AbortController();
-  const abortFromParent = () => controller.abort(parent?.reason ?? new EvalAbortError());
+  const abortFromParent = () =>
+    controller.abort(parent === undefined ? new EvalAbortError() : abortReason(parent));
   if (parent?.aborted === true) abortFromParent();
   else parent?.addEventListener("abort", abortFromParent, { once: true });
   const timeout =

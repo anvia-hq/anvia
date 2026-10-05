@@ -433,6 +433,59 @@ describe("evaluation metric cancellation", () => {
     expect(balanceB()).toBe(0);
   });
 
+  it.each(["cancel", "reject", "invalid-score"] as const)(
+    "retains setup usage for a successful waiter after the first scorer's %s",
+    async (failure) => {
+      const firstScore = deferred<CompletionResponse>();
+      const scoringStarted = deferred<void>();
+      const survivorScore = deferred<CompletionResponse>();
+      const survivorStarted = deferred<void>();
+      let preparations = 0;
+      let scores = 0;
+      const model = new JudgeModel(async (request) => {
+        if (JSON.stringify(request).includes("Generate three or four")) {
+          preparations++;
+          return judgeResponse({ steps: ["Compare"] });
+        }
+        scores++;
+        if (scores === 1) {
+          scoringStarted.resolve();
+          return firstScore.promise;
+        }
+        if (scores === 2) {
+          survivorStarted.resolve();
+          return survivorScore.promise;
+        }
+        return judgeResponse({ score: 10, reason: "Correct" });
+      });
+      const metric = gEval({
+        name: "quality",
+        model,
+        criteria: "Compare the answer",
+        evaluationParams: ["actualOutput"],
+        retries: 0,
+      });
+      const controller = new AbortController();
+      const first = metric.evaluate(metricArgs(controller.signal, "first"));
+      await scoringStarted.promise;
+      const survivor = metric.evaluate(metricArgs(new AbortController().signal, "survivor"));
+      await survivorStarted.promise;
+      if (failure === "cancel") {
+        controller.abort("cancel scoring");
+        firstScore.resolve(judgeResponse({ score: 10, reason: "Late" }));
+      } else if (failure === "reject") firstScore.reject(new Error("scoring failed"));
+      else firstScore.resolve(judgeResponse({ score: 11, reason: "Out of range" }));
+      expect(await first).toMatchObject({ outcome: "invalid" });
+      survivorScore.resolve(judgeResponse({ score: 10, reason: "Correct" }));
+      expect(await survivor).toMatchObject({ outcome: "pass", usage: { totalTokens: 4 } });
+      expect(await metric.evaluate(metricArgs(new AbortController().signal))).toMatchObject({
+        outcome: "pass",
+        usage: { totalTokens: 2 },
+      });
+      expect(preparations).toBe(1);
+    },
+  );
+
   it("deduplicates two live cases and leaves one setup usage charge", async () => {
     const fixture = preparationModel();
     const metric = gMetric(fixture.model);

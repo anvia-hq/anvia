@@ -872,15 +872,15 @@ export function gEval<Input, Output, Expected = unknown, const Name extends stri
 
   function acceptSteps(result: PreparedSteps, signal: AbortSignal) {
     throwIfAborted(signal);
-    const usage = result.usageClaimed ? UsageValue.empty() : result.usage;
-    result.usageClaimed = true;
-    return { steps: [...result.steps], usage };
+    return { steps: [...result.steps], preparation: result };
   }
 
-  async function resolveSteps(signal: AbortSignal): Promise<{ steps: string[]; usage: Usage }> {
+  async function resolveSteps(
+    signal: AbortSignal,
+  ): Promise<{ steps: string[]; preparation?: PreparedSteps }> {
     throwIfAborted(signal);
     if (options.evaluationSteps !== undefined) {
-      return { steps: [...options.evaluationSteps], usage: UsageValue.empty() };
+      return { steps: [...options.evaluationSteps] };
     }
     if (preparedSteps !== undefined) return acceptSteps(preparedSteps, signal);
     if (pendingPreparation === undefined) {
@@ -991,8 +991,14 @@ export function gEval<Input, Output, Expected = unknown, const Name extends stri
       const score = config.strictMode
         ? rawScore
         : (rawScore - scoreRange[0]) / (scoreRange[1] - scoreRange[0]);
-      const usage = addUsage(stepsResult.usage, scoreResult.usage);
-      return higherOutcome({
+      throwIfAborted(args.signal);
+      const preparation = stepsResult.preparation;
+      const setupUsage =
+        preparation === undefined || preparation.usageClaimed
+          ? UsageValue.empty()
+          : preparation.usage;
+      const usage = addUsage(setupUsage, scoreResult.usage);
+      const outcome = higherOutcome({
         score,
         threshold: config.threshold,
         strictMode: config.strictMode,
@@ -1009,6 +1015,8 @@ export function gEval<Input, Output, Expected = unknown, const Name extends stri
         },
         usage,
       });
+      if (preparation !== undefined) preparation.usageClaimed = true;
+      return outcome;
     } catch (error) {
       return EvalOutcome.fromError(error);
     }

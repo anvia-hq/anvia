@@ -1029,7 +1029,8 @@ const result = await runEvalSuite({
 - `targetConcurrency` and `metricConcurrency` can limit them independently.
 - `caseTimeoutMs` covers the target and its metrics. Cooperative targets and metrics should observe
   the supplied signal; the runner still stops awaiting work that ignores it.
-- Aborting the suite-level `signal` stops scheduling cases and rejects the run with the abort reason.
+- Aborting the suite-level `signal` stops scheduling cases and rejects the run with the abort reason,
+  preserving explicit `null` through case signals and final rejection.
 - `caseIds`, `caseFilter`, and `shard` select cases before execution.
 - `failFast` throws `EvalFailFastError` after the first completed required failure or invalid case.
 - `onProgress` receives case, target, metric, and case-completion events.
@@ -1056,12 +1057,12 @@ noncooperative operation has stopped.
 separate signal, so cancelling one waiter does not cancel other live cases. When the last waiter
 leaves, pending preparation is detached and cancelled. Rejected or empty preparation can be retried,
 and stale results cannot replace a newer preparation. Successful steps are cached with detached
-arrays. Setup usage belongs once to the first live case that accepts the steps. Supplied
-`evaluationSteps` need no preparation request.
+arrays. Setup usage is attached once to the first case that completes scoring with a valid outcome.
+A case cancelled or failing during scoring leaves that usage available to another successful scorer,
+including a concurrent waiter. Supplied `evaluationSteps` need no preparation request.
 
-If the accepting case is cancelled or fails during scoring, its setup usage may be lost from the
-returned outcomes. That usage is not reassigned to a later case. After these failures, aggregate
-evaluation usage is not a complete provider billing ledger.
+If no case completes scoring, setup usage remains unclaimed. Aggregate evaluation usage is not a
+complete provider billing ledger.
 
 ### Results, usage, and failures
 

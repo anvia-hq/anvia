@@ -259,7 +259,7 @@ async function runEvalCase<
       });
     } catch (error) {
       if (options.signal?.aborted === true) {
-        throw options.signal.reason ?? new EvalAbortError();
+        throw suiteAbortReason(options.signal);
       }
       targetStatus = "failed";
       targetError = error;
@@ -827,5 +827,5 @@ function isAborted(signal: AbortSignal | undefined): boolean {
 }
 
 function suiteAbortReason(signal: AbortSignal | undefined): unknown {
-  return signal?.reason ?? new EvalAbortError();
+  return signal?.reason === undefined ? new EvalAbortError() : signal.reason;
 }

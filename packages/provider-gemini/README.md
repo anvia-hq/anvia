@@ -1,129 +1,52 @@
 # @anvia/gemini
 
-Gemini and Vertex AI provider adapter for Anvia.
+Run Anvia agents and retrieval workflows with Gemini. Connect through the Gemini
+API or Vertex AI using the same provider-neutral agent interfaces.
 
-Use this package when you want Anvia agents, extractors, pipelines, embeddings, image generation, or transcription to run on Google's Gemini APIs.
-
-## Installation
+## Install
 
 ```sh
 pnpm add @anvia/gemini @anvia/core
 ```
 
-In this monorepo, the package is available through the workspace:
+## Quickstart
 
-```sh
-pnpm --filter @anvia/gemini build
-```
-
-## Usage
+Set `GEMINI_API_KEY` before running this example.
 
 ```ts
 import { Agent } from "@anvia/core";
 import { GeminiClient } from "@anvia/gemini";
 
 const client = new GeminiClient({
-  apiKey,
+  apiKey: process.env.GEMINI_API_KEY!,
 });
-
-const model = client.completionModel({ modelId: "gemini-3.7-flash" });
-
 const agent = new Agent({
   id: "assistant",
-  model: model,
+  model: client.completionModel({ modelId: "gemini-3.7-flash" }),
   instructions: "Answer clearly and concisely.",
 });
 
-const result = await agent.generate({ prompt: "Summarize Anvia in one sentence." });
-if (result.type === "response") console.log(result.output);
-```
-
-## Vertex AI
-
-Use the exclusive Vertex AI configuration with a Google Cloud project and location:
-
-```ts
-import { GeminiClient } from "@anvia/gemini";
-
-const client = new GeminiClient({
-  vertexAi: {
-    projectId: "my-gcp-project",
-    location: "us-central1",
-  },
+const result = await agent.generate({
+  prompt: "What should I check before launching a new product?",
 });
 
-const model = client.completionModel({ modelId: "gemini-3.7-flash" });
+if (result.type === "response") {
+  console.log(result.output);
+}
 ```
 
-The Google SDK uses Application Default Credentials. For a service-account JSON file, set
-`GOOGLE_APPLICATION_CREDENTIALS` before starting the application:
+## What you can build
 
-```sh
-export GOOGLE_APPLICATION_CREDENTIALS="/absolute/path/service-account.json"
-```
+- Streaming completions, tools, structured output, and typed reasoning controls.
+- Embeddings with configurable task type and dimensions.
+- Image generation through Gemini native models or Imagen.
+- Transcription, model listing, and Vertex AI authentication.
 
-Trusted credential objects can also be passed explicitly:
+For Vertex AI, pass `vertexAi: { projectId, location }` instead of `apiKey`.
+The usage guide includes authentication and image API selection.
 
-```ts
-const client = new GeminiClient({
-  vertexAi: {
-    projectId: "my-gcp-project",
-    location: "us-central1",
-    googleAuthOptions: {
-      credentials: serviceAccountJson,
-    },
-  },
-});
-```
+## Learn more
 
-Validate externally supplied credential configurations before using them. Never commit credential
-JSON or service-account keys.
-
-## Embeddings
-
-```ts
-const embeddings = client.embeddingModel({ modelId: "gemini-embedding-2" });
-const vectors = await embeddings.embedTexts(["Anvia is a TypeScript AI runtime."]);
-```
-
-## Image Generation
-
-Choose the image API explicitly. Gemini native image models use `generateContent`; Imagen uses
-`generateImages`.
-
-```ts
-import { GEMINI_2_5_FLASH_IMAGE, IMAGEN_4_GENERATE, GeminiClient } from "@anvia/gemini";
-
-const client = new GeminiClient({ apiKey });
-
-const nativeImageModel = client.imageGenerationModel({
-  api: "generateContent",
-  modelId: GEMINI_2_5_FLASH_IMAGE,
-});
-const imagenModel = client.imageGenerationModel({
-  api: "generateImages",
-  modelId: IMAGEN_4_GENERATE,
-});
-```
-
-## Exports
-
-- `GeminiClient`
-- structural completion, embedding, image, and transcription handle types
-- Gemini model-ID types
-- `GEMINI_2_5_FLASH_IMAGE`
-- `GEMINI_3_1_FLASH_IMAGE`
-- `GEMINI_3_1_FLASH_LITE_IMAGE`
-- `GEMINI_3_PRO_IMAGE`
-- `IMAGEN_4_GENERATE`
-- `gemini`
-
-## Development
-
-```sh
-pnpm --filter @anvia/gemini typecheck
-pnpm --filter @anvia/gemini test
-pnpm --filter @anvia/gemini build
-```
-
-Package-local `typecheck` and `build` scripts build `@anvia/core` first so core subpath types are available in a fresh worktree.
+- [Usage guide](https://github.com/anvia-hq/anvia/blob/main/docs/packages/provider-gemini.md)
+- [Anvia overview](https://github.com/anvia-hq/anvia/blob/main/README.md)
+- [Contributing](https://github.com/anvia-hq/anvia/blob/main/CONTRIBUTING.md)

@@ -1,94 +1,52 @@
 # @anvia/mistral
 
-Mistral completion and embedding provider adapter for Anvia.
+Run Anvia agents, extraction workflows, and semantic search on Mistral. Add OCR
+when your application needs to turn document URLs or uploaded files into Markdown.
 
-Use this package when you want Anvia agents, extractors, pipelines, embeddings, or model listing to run on Mistral APIs.
-
-## Installation
+## Install
 
 ```sh
 pnpm add @anvia/mistral @anvia/core
 ```
 
-In this monorepo, the package is available through the workspace:
+## Quickstart
 
-```sh
-pnpm --filter @anvia/mistral build
-```
-
-## Usage
+Set `MISTRAL_API_KEY` before running this example.
 
 ```ts
 import { Agent } from "@anvia/core";
 import { MistralClient } from "@anvia/mistral";
 
-const client = new MistralClient({ apiKey: process.env.MISTRAL_API_KEY });
-const model = client.completionModel({ modelId: "mistral-medium-3-5" });
-
+const client = new MistralClient({
+  apiKey: process.env.MISTRAL_API_KEY!,
+});
 const agent = new Agent({
-  id: "support",
-  model: model,
+  id: "assistant",
+  model: client.completionModel({ modelId: "mistral-medium-3-5" }),
   instructions: "Answer clearly and concisely.",
 });
 
-const result = await agent.generate({ prompt: "What should I check before launch?" });
-if (result.type === "response") console.log(result.output);
-```
-
-## Embeddings
-
-```ts
-const embeddings = client.embeddingModel({ modelId: "mistral-embed" });
-const vectors = await embeddings.embedTexts(["Refunds take five business days."]);
-```
-
-## OCR
-
-```ts
-const ocr = client.ocrModel({ modelId: "mistral-ocr-latest" });
-const result = await ocr.ocr({
-  source: {
-    type: "document_url",
-    url: "https://example.com/invoice.pdf",
-    documentName: "invoice.pdf",
-  },
+const result = await agent.generate({
+  prompt: "What should I check before launching a new product?",
 });
 
-console.log(result.markdown);
+if (result.type === "response") {
+  console.log(result.output);
+}
 ```
 
-## Model Listing
+## What you can build
 
-```ts
-const models = await client.listModels();
-```
+- Streaming completions, tools, tool choice, and structured output.
+- Embedding models for semantic search.
+- OCR models with page-level output and combined Markdown.
+- Model listing and custom endpoints through `baseUrl`.
 
-## Capabilities
+Chat image inputs, binary document inputs, transcription, and media generation are
+not implemented. Use the OCR model for document processing.
 
-The v1 adapter supports text completions, streaming, tools, tool choice, structured output, Mistral embeddings, OCR, and model listing. Chat image inputs, chat document file inputs, transcription, audio generation, and image generation are not implemented yet.
+## Learn more
 
-## Exports
-
-- `MistralClient`
-- structural completion, embedding, and OCR handle types
-- Mistral completion, embedding, and OCR model-ID types
-- `MistralClientOptions`
-- `MistralEmbeddingModelOptions`
-- `MistralOcrRequest`
-- `MistralOcrResponse`
-- `MistralOcrSource`
-- `MistralOcrPage`
-- `MistralOcrUploadedFile`
-- `MISTRAL_OCR_LATEST`
-- `mistralMessageHelpers`
-- `mistral`
-
-## Development
-
-```sh
-pnpm --filter @anvia/mistral typecheck
-pnpm --filter @anvia/mistral test
-pnpm --filter @anvia/mistral build
-```
-
-Package-local `typecheck` and `build` scripts build `@anvia/core` first so core subpath types are available in a fresh worktree.
+- [Usage guide](https://github.com/anvia-hq/anvia/blob/main/docs/packages/provider-mistral.md)
+- [Anvia overview](https://github.com/anvia-hq/anvia/blob/main/README.md)
+- [Contributing](https://github.com/anvia-hq/anvia/blob/main/CONTRIBUTING.md)

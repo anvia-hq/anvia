@@ -1,6 +1,16 @@
-# `@anvia/sandbox`
+# @anvia/sandbox
 
-Docker-backed sandbox ownership and tools for Anvia applications.
+Give agents a workspace where they can run commands and work with files. Docker-backed sandboxes keep execution infrastructure explicit and under your application’s control.
+
+## Installation
+
+```sh
+pnpm add @anvia/sandbox @anvia/core
+```
+
+## Quick start
+
+Requires Node.js 20.12 or later and an accessible Docker daemon. Pull an image before creating a sandbox.
 
 ```ts
 import { createDockerSandboxTools, DockerSandboxClient } from "@anvia/sandbox";
@@ -18,67 +28,21 @@ const tools = createDockerSandboxTools({
   sandbox: sandbox.runtime,
   tools: ["exec_command", "read_file", "write_file", "list_files"],
 });
+// Pass tools to new Agent({ id, model, tools }).
 ```
 
-`DockerSandboxClient` performs explicit infrastructure operations. Its constructor performs no I/O,
-and `createSandbox()` and `resumeSandbox()` never pull images. `DockerSandbox` owns the container and,
-for an ephemeral workspace, its Docker volume. Dispose it asynchronously or call `destroy()`.
+## What you get
 
-`stop()` preserves the container and workspace. `resumeSandbox({ id })` creates a fresh live handle for
-that container; workspace files persist, while the in-memory managed-process registry starts empty. A
-caller-owned `{ type: "docker-volume", name }` workspace is never deleted by the sandbox.
+- Command execution, file access, and managed processes.
+- Ephemeral workspaces or caller-owned Docker volumes.
+- Explicit networking, resource limits, and command policies.
+- Stop/resume lifecycle and automatic disposal.
+- Read-only sandbox inspection in Anvia Studio.
 
-Networking is explicit. Use `{ mode: "none" }` or `{ mode: "bridge", ports: [...] }`; published ports
-bind only to `127.0.0.1`. Runtime methods use object arguments, propagate abort signals, and expose
-command and process output as bytes. Tool wrappers decode UTF-8 strictly and return structured values.
+`await using` destroys the owned container and ephemeral volume at scope exit. Keep the scope open while agents use its tools. Command policies filter executable names; they do not restrict what an allowed interpreter can execute.
 
-`exec_command` accepts a complete shell command line in `command`, including pipes, redirects, and
-multiline scripts. For exact argv execution without shell parsing, provide the executable in
-`command` and its arguments in `args`. Command policies apply to the implicit `sh` executable when a
-shell command line is used. Natural command lines are rejected with block-mode command policies
-because arbitrary shell syntax cannot be checked safely against an executable block list; use exact
-`command` and `args` input in that configuration.
+## Learn more
 
-File paths and command working directories passed to agent tools may be workspace-relative (for
-example `notes/result.txt`) or absolute paths inside the sandbox workdir (for example
-`/workspace/notes/result.txt` with the default workdir). Paths outside the sandbox workdir are
-rejected.
-
-With `exec.commands.mode: "allow"`, both `exec_command` and `start_process` reject known shell
-executables by default, including path-qualified names such as `/bin/sh`. To permit an allowlisted
-shell, set `exec.commands.allowShellInterpreters` to the boolean `true`. Omitted or `false` keeps the
-guard enabled; non-boolean values such as `"false"` are rejected when creating tools. This guard
-checks executable names only: allowlisted runtimes such as Node.js or Python can still launch other
-commands, so the command policy does not restrict what those programs can execute.
-
-`resources.sharedMemoryMb` maps to a private Docker `/dev/shm` size. A security configuration may use
-explicit `dropCapabilities` and `addCapabilities` arrays, plus
-`seccompProfile: { type: "path", path }` with an absolute host path. These options are used by
-`@anvia/browser` to keep Chromium's own process sandbox enabled.
-
-`createSandbox()` accepts `containerRuntime` — the runtime name registered in the Docker daemon (for
-example `runsc` for gVisor). The runtime must already be registered (`runsc install` followed by a
-daemon restart); creation fails with a `runtime_not_found` error otherwise. `resumeSandbox()` keeps
-the container's original runtime. Under gVisor, workspace files persist through
-`stop()`/`resumeSandbox()` because they live on a Docker volume, but changes to the container's
-writable rootfs outside the workspace do not survive a resume, and `security.seccompProfile` is not
-enforced the way it is on the default runtime because the gVisor sentry mediates application
-syscalls itself.
-
-Studio does not discover sandboxes through tool metadata. Register a read-only inspector explicitly:
-
-```ts
-const studio = new Studio([agent], {
-  sandboxes: [
-    {
-      inspector: sandbox.inspector({ files: true, ports: true, processes: true }),
-      agentIds: [agent.id],
-      toolNames: tools.map((tool) => tool.name),
-    },
-  ],
-});
-```
-
-The `anvia-sandbox create-image` CLI only builds images. It does not create, resume, stop, or destroy
-sandboxes. Its `playwright` feature remains a general code-sandbox image; the visible Chromium/CDP/
-noVNC appliance is source-controlled and owned by `@anvia/browser`.
+- [Usage guide](https://github.com/anvia-hq/anvia/blob/main/docs/packages/tool-sandbox.md)
+- [Anvia](https://github.com/anvia-hq/anvia/blob/main/README.md)
+- [Contributing](https://github.com/anvia-hq/anvia/blob/main/CONTRIBUTING.md)

@@ -1,83 +1,56 @@
 # @anvia/client
 
-Framework-neutral client protocol, transports, message conversion, and stream state for Anvia.
+Connect any frontend to Anvia with a framework-neutral streaming protocol. This package provides
+HTTP and direct transports, runtime validation, and UI message state for text, tools, and interactions.
 
-`@anvia/core` owns native completion and Agent events. `@anvia/client` owns the public wire boundary:
-
-```ts
-import { completionToClientStream, parseClientStreamRequest } from "@anvia/client";
-import { streamCompletion } from "@anvia/core";
-
-const request = parseClientStreamRequest(await httpRequest.json());
-if (request.type !== "messages") throw new Error("This endpoint does not resume interactions.");
-const events = completionToClientStream({
-  events: streamCompletion({ model, messages: request.messages }),
-});
-```
-
-The request carries core `Message[]`; client-side `UIMessage[]` never crosses the server boundary.
-The response uses `ClientStreamEvent` records inside an always-framed `anvia.client.v3` stream.
-Agent endpoints accept either a `messages` request or an `interaction_response` request, while
-keeping the matching `AgentContinuation` exclusively on the server.
-Agent interaction wire contracts come from the browser-safe `@anvia/core/agent/interactions`
-subpath; importing Client does not load the Agent runtime or its infrastructure dependencies.
-
-## Bun
-
-Bun 1.3.14 is the currently tested and supported runtime baseline:
+## Install
 
 ```sh
-bun add @anvia/client @anvia/core
+pnpm add @anvia/client @anvia/core
 ```
 
-Compatibility tests cover framed JSONL and SSE consumption, resumable client streams, fetch
-cancellation, and installation from packed package artifacts.
+## Quickstart
 
-## Public API
-
-- `completionToClientStream({ events, ...options })` adapts native completion events.
-- `agentToClientStream({ events, ...options })` adapts native Agent events, including nested-agent
-  scope.
-- `parseClientStreamRequest`, `parseClientStreamEvent`, and `parseClientStreamFrame` validate public
-  input at runtime.
-- `createHttpClientTransport(options)` consumes framed JSONL or SSE responses and validates the
-  protocol header, frame order, stream identity, and event IDs.
-- `createDirectClientTransport({ handler })` provides the same framed contract without HTTP.
-- `messagesToUIMessages` and `uiMessagesToMessages` explicitly convert server messages and UI
-  state.
-- `applyClientStreamEvent(messages, event)` applies canonical events to `UIMessage[]` state.
-- `parseUIMessage` and `parseUIMessages` validate externally loaded UI state.
-
-Tool-call start, delta, and end events are automatic when the provider exposes streamed arguments.
-`UIToolMessagePart` states are exact: `input-streaming` carries raw partial text,
-`input-available` carries parsed JSON input, and terminal `output-available` or `error` parts retain
-that input with their result. `uiMessagesToMessages()` rejects partial calls instead of replaying
-incomplete JSON or inventing empty arguments.
-Errors are masked by default. Use `mapError` only at the server adapter boundary when an application
-intentionally exposes a safe error shape. Non-JSON outputs require an explicit `mapOutput`; returning
-`undefined` intentionally omits the output, while returning `null` exposes JSON `null`.
-
-`UIMessage.metadata` remains application-owned and round-trips unchanged. Runtime details such as
-run ID, usage, context usage, status, and trace correlation are stored separately in
-`UIMessage.generation`. Converting persisted core messages hydrates per-generation usage and context
-usage into that UI field and restores persisted sources as UI message parts while preserving the
-original metadata.
-
-Application-specific stream data is explicit and schema-validated:
+Consume a chat endpoint that returns an Anvia client stream, such as one created with
+`@anvia/server`:
 
 ```ts
-type AppData = {
-  citation_preview: { title: string; url: string };
-};
+import {
+  applyClientStreamEvent,
+  createHttpClientTransport,
+  messagesToUIMessages,
+  type UIMessage,
+} from "@anvia/client";
+import type { Message } from "@anvia/core/completion";
 
-const transport = createHttpClientTransport<ClientStreamRequest, AppData>({
-  endpoint: "/api/chat",
-  dataSchemas: {
-    citation_preview: citationPreviewSchema,
-  },
-});
+const transport = createHttpClientTransport({ endpoint: "/api/chat" });
+const messages: Message[] = [{ role: "user", content: "Hello!" }];
+let uiMessages: readonly UIMessage[] = messagesToUIMessages(messages);
+
+for await (const frame of transport.send({ request: { type: "messages", messages } })) {
+  if (frame.type === "stream_event") {
+    uiMessages = applyClientStreamEvent(uiMessages, frame.event);
+    console.log(uiMessages);
+  }
+}
 ```
 
-Low-level generic JSONL/SSE readers and event transports are available from
-`@anvia/client/transport`. They do not imply the Anvia client protocol; use them only for endpoints
-that intentionally expose a different event contract.
+The transport validates framing, event order, and stream identity. Send Core `Message[]` to the
+server; keep `UIMessage[]` as presentation state in your application.
+
+## Capabilities
+
+- HTTP transport for JSONL or SSE, plus direct transport for in-process integrations.
+- Adapters for native completion and Agent events at the server boundary.
+- Validated requests, events, frames, and persisted UI messages.
+- Message conversion and reduction, including streamed tool arguments and generation usage.
+- Typed custom stream data, Agent interactions, and HTTP resume cursors.
+
+For React, `@anvia/react` manages this state through `useChat` and `useCompletion`. Generic JSONL/SSE
+readers are also available from `@anvia/client/transport` for other event contracts.
+
+## Learn more
+
+- [Client protocol guide](https://github.com/anvia-hq/anvia/blob/main/docs/packages/client.md)
+- [Server response helpers](https://github.com/anvia-hq/anvia/tree/main/packages/server#readme)
+- [React hooks](https://github.com/anvia-hq/anvia/tree/main/packages/react#readme)

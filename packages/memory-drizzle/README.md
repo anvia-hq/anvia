@@ -1,91 +1,51 @@
 # @anvia/memory-drizzle
 
-Drizzle-backed durable session memory store for Anvia.
-
-Use this package when an application already uses Drizzle with PostgreSQL and wants Anvia session
-memory to live in the same database and migration workflow.
+Agent memory for applications using Drizzle and PostgreSQL. Store conversations alongside your application data, with schema and migrations under your control.
 
 ## Installation
 
 ```sh
-pnpm add @anvia/memory-drizzle @anvia/core drizzle-orm
+pnpm add @anvia/memory-drizzle @anvia/core @anvia/openai drizzle-orm
 ```
 
-## Generate Drizzle schema exports
+## Quick start
 
-Run the init command from the application root:
-
-```sh
-npx @anvia/memory-drizzle init
-```
-
-The command is a dry run by default. To write the generated schema export file:
-
-```sh
-npx @anvia/memory-drizzle init --write
-```
-
-The CLI resolves a schema file from a literal `schema` path in `drizzle.config.*`, then falls back
-to `src/db/schema.ts`. By default it creates `anvia-memory.ts` beside that schema. Ensure the
-generated file is included by the `schema` setting in your Drizzle config.
-
-To add the exports directly to an existing schema file instead, pass the explicit append flag:
-
-```sh
-npx @anvia/memory-drizzle init --write --append-to-schema
-```
-
-The append path prints a warning before writing because it modifies the existing TypeScript file.
-Use `--schema <path>` when the CLI cannot infer your schema location.
-
-After writing schema changes, run your normal Drizzle migration workflow:
-
-```sh
-npx drizzle-kit generate
-npx drizzle-kit migrate
-```
-
-## Usage
+Add the exported memory tables through your Drizzle migration workflow first; the [setup guide](https://github.com/anvia-hq/anvia/blob/main/docs/packages/memory-drizzle.md#generate-drizzle-schema-exports) includes the schema CLI. This example uses your existing Drizzle connection from `./db`.
 
 ```ts
-import { DrizzleMemoryStore, drizzleMemorySchema } from "@anvia/memory-drizzle";
+import { Agent } from "@anvia/core";
+import { DrizzleMemoryStore } from "@anvia/memory-drizzle";
+import { OpenAIClient } from "@anvia/openai";
+import { db } from "./db";
 
-export const schema = {
-  ...drizzleMemorySchema,
-};
+const store = new DrizzleMemoryStore({ db });
+await store.validate();
 
-const memory = new DrizzleMemoryStore({
-  db,
-  schema: drizzleMemorySchema,
-  scopeKey: { metadataKeys: ["tenantId"] },
+const openai = new OpenAIClient({ apiKey: process.env.OPENAI_API_KEY! });
+const agent = new Agent({
+  id: "support",
+  model: openai.completionModel({ modelId: "gpt-5", api: "responses" }),
+  memory: { store, savePolicy: "turn" },
 });
 
-await memory.validate();
+const result = await agent.generate({
+  prompt: "Remember that my order number is 1234.",
+  session: { sessionId: "support-123", userId: "user-456" },
+});
+if (result.type === "response") console.log(result.output);
 ```
 
-This adapter exports the table definitions so users can add the memory schema to
-their Drizzle schema instead of copying table shapes by hand.
+## What you get
 
-The Drizzle database and its shutdown lifecycle remain caller-owned. `validate()` performs a
-non-mutating read-path check; schema creation remains in the application's Drizzle migrations.
-The database must support `transaction()` because writes and compaction are atomic. The default
-`lock: "advisory"` mode also requires `execute()`; use `lock: "none"` only when the database
-provides equivalent write serialization.
+- Exported Drizzle tables and a schema scaffolding CLI.
+- Durable conversations with optional tenant-scoped keys.
+- Studio memory inspection and atomic compaction checkpoints.
+- Application-owned connections and migrations.
 
-Its optional read-only memory inspector lets `@anvia/studio` discover existing conversations and
-ordered message records directly from these tables.
+The database must support transactions. The default advisory locking also requires `execute()`. The store never creates tables or closes your connection.
 
-The store exposes `compaction.snapshot({ scope })` and atomic
-`compaction.replacePrefix({ ... })`. `load()` and inspection return the full canonical history;
-the snapshot projects the session's latest checkpoint summary plus its unsummarized tail for model
-context. The exported session table includes nullable `compactionState`; add the generated column
-through the application's normal migration workflow. This adapter never chooses retention, calls a
-model, or retries mutations.
+## Learn more
 
-## Development
-
-```sh
-pnpm --filter @anvia/memory-drizzle typecheck
-pnpm --filter @anvia/memory-drizzle test
-pnpm --filter @anvia/memory-drizzle build
-```
+- [Usage guide](https://github.com/anvia-hq/anvia/blob/main/docs/packages/memory-drizzle.md)
+- [Anvia](https://github.com/anvia-hq/anvia/blob/main/README.md)
+- [Contributing](https://github.com/anvia-hq/anvia/blob/main/CONTRIBUTING.md)

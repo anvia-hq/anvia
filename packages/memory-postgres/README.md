@@ -1,43 +1,51 @@
 # @anvia/memory-postgres
 
-Postgres-backed durable session memory for Anvia agents.
+Durable agent conversations in PostgreSQL. Keep session history in your own database and reuse it across requests and application restarts.
+
+## Installation
+
+```sh
+pnpm add @anvia/memory-postgres @anvia/core @anvia/openai
+```
+
+## Quick start
+
+Set `DATABASE_URL` and `OPENAI_API_KEY`. Start with an accessible PostgreSQL database.
 
 ```ts
 import { Agent } from "@anvia/core";
 import { PostgresMemoryClient } from "@anvia/memory-postgres";
+import { OpenAIClient } from "@anvia/openai";
 
-await using postgres = new PostgresMemoryClient({
-  connectionString: process.env.DATABASE_URL!,
-});
+await using database = new PostgresMemoryClient({ connectionString: process.env.DATABASE_URL! });
+const store = database.memoryStore();
+await store.ensure();
 
-const store = postgres.memoryStore({
-  scopeKey: { metadataKeys: ["tenantId"] },
-  lock: "advisory",
-});
-
-await store.validate();
-
+const openai = new OpenAIClient({ apiKey: process.env.OPENAI_API_KEY! });
 const agent = new Agent({
   id: "support",
-  model,
+  model: openai.completionModel({ modelId: "gpt-5", api: "responses" }),
   memory: { store, savePolicy: "turn" },
 });
+
+const result = await agent.generate({
+  prompt: "Remember that my order number is 1234.",
+  session: { sessionId: "support-123", userId: "user-456" },
+});
+if (result.type === "response") console.log(result.output);
 ```
 
-Construction and `memoryStore()` perform no I/O. Call `ensure()` to create missing tables and
-validate them, or `validate()` when application migrations own the schema. Ordinary memory and
-compaction operations never provision resources.
+## What you get
 
-`PostgresMemoryClient` closes pools it creates. A pool or client supplied with `{ client }` remains
-caller-owned. The client also exposes `close()` and supports `await using`.
+- Persistent session history with optional tenant-scoped keys.
+- Read-only memory inspection in Anvia Studio.
+- Atomic compaction checkpoints while retaining canonical message history.
+- Caller-owned pools or managed connections with explicit cleanup.
 
-The store exposes Studio inspection and atomic compaction. `load()` and Studio inspection always
-return the full canonical message history. Compaction stores one latest checkpoint in the session
-row; `compaction.snapshot()` projects its tagged system summary plus the unsummarized tail for model
-context. The adapter never chooses retention, calls a model, or retries mutations.
+`ensure()` provisions missing tables; use `validate()` when application migrations own the schema. Reuse the same session identifiers to continue a conversation. Keep the client open for the lifetime of your application; `await using` closes owned resources at scope exit. Injected connections remain caller-owned.
 
-The session schema includes nullable `compaction_state`. `ensure()` adds the column to an existing
-managed schema; `validate()` requires it without mutating application-owned schema.
+## Learn more
 
-Use `createPostgresMemorySchemaSql({ ... })` to include the default or customized schema in an
-application migration.
+- [Usage guide](https://github.com/anvia-hq/anvia/blob/main/docs/packages/memory-postgres.md)
+- [Anvia](https://github.com/anvia-hq/anvia/blob/main/README.md)
+- [Contributing](https://github.com/anvia-hq/anvia/blob/main/CONTRIBUTING.md)

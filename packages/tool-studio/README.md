@@ -1,317 +1,46 @@
 # @anvia/studio
 
-Studio UI and HTTP runtime for Anvia agents, pipelines, graphs, tools, MCPs, memory, status, and
-knowledge inspection.
-
-Use this package to serve local agents and pipelines over HTTP, inspect sessions, traces, tools, MCPs, Memory, Status, and Knowledge in the browser UI, and exercise tool approval workflows during development.
-
-## Agent teams
-
-Register existing team definitions alongside agents and pipelines:
-
-```ts
-import { Agent, AgentTeam } from "@anvia/core/agent";
-import { Studio } from "@anvia/studio";
-
-const researcher = new Agent({ id: "researcher", model });
-const team = new AgentTeam({ id: "research-team", model, members: [researcher] });
-await new Studio([researcher, team]).serve({ port: 4021 });
-```
-
-Select a team from the playground's agent/team selector. A Studio configured with only teams
-opens its first team automatically. Submit a task to the coordinator, send follow-ups while it
-runs, or stop the whole team. The Members panel shows queued and active instances, including
-recursive children; selecting an instance reveals its output, tool activity, run messages, and
-usage. The Messages panel shows sender, recipient, and delivery status (the latest 500 messages).
-Approvals and questions appear as independent cards labeled with the requesting member.
-
-Team tasks are local to the current page. Stopping or leaving a task requests server cancellation
-independently of closing its stream. Completed tasks remain visible until you choose **New task**. They do not appear in saved agent sessions.
-
-`GET /teams` and `/config` expose team IDs, registered member definitions, and limits.
-`GET /teams/:teamId` returns one definition. Duplicate team IDs are rejected; agent and team
-IDs occupy separate namespaces. Members are not automatically registered as standalone agents.
-
-| Endpoint                                                      | Request                                  | Behavior                                 |
-| ------------------------------------------------------------- | ---------------------------------------- | ---------------------------------------- |
-| `POST /teams/:teamId/runs`                                    | `{ prompt }` or `{ messages }`           | Start an attributed JSONL event stream   |
-| `POST /teams/:teamId/runs/:runId/steer`                       | `{ prompt }` or user-only `{ messages }` | Queue user input for the coordinator     |
-| `POST /teams/:teamId/runs/:runId/cancel`                      | `{}`                                     | Cancel the entire team                   |
-| `POST /teams/:teamId/runs/:runId/interactions/:interactionId` | `AgentInteractionResponse`               | Resolve one pending approval or question |
-
-The stream begins with `{ type: "team_run_started", teamId, runId }`; the same Studio control
-ID is available in the `x-anvia-team-run-id` response header. Subsequent events follow
-`AgentTeamEvent`, with core's separate `teamRunId`, instance IDs, parent IDs, and depth.
-Internal agent continuation events are omitted; attributed `interaction` events contain everything
-needed for the application's approval/question UI. Terminal failures emit an `error` event.
-Team requests accept at most 1 MiB of JSON and 256 messages; oversized bodies or message counts return 413.
-`StudioTeamRunRequest`, `StudioTeamRunEvent`, and `StudioTeamConfig` are exported for clients.
-
-Runs and pending interactions are scoped to the team and Studio run ID. Invalid replies leave
-the interaction pending; repeated replies are rejected. Several members may request approval
-simultaneously, and only the HTTP application can answer them. Apply authentication/authorization
-middleware to these routes when exposing Studio remotely, as with other Studio execution routes.
-
-Disconnecting the stream or shutting down Studio cancels the team and its pending interactions.
-Completed runs leave the live registry; later control requests return 404. Core's configured event
-buffer limit bounds unread events. Team runs currently use ephemeral conversations and are not
-stored in Studio's agent session history; this API does not provide reconnection or durable resume.
+A local workspace for building and inspecting Anvia agents. Chat with the agents your application actually runs, follow tool calls and traces, and inspect their memory without creating a separate demo implementation.
 
 ## Installation
 
 ```sh
-pnpm add @anvia/studio @anvia/core
+pnpm add @anvia/studio @anvia/core @anvia/openai
 ```
 
-In this monorepo, the package is available through the workspace:
+## Quick start
 
-```sh
-pnpm --filter @anvia/studio build
-```
-
-## Usage
+Set `OPENAI_API_KEY`, start the server, then open [localhost:4021/ui/playground](http://localhost:4021/ui/playground).
 
 ```ts
 import { Agent } from "@anvia/core";
 import { OpenAIClient } from "@anvia/openai";
 import { Studio } from "@anvia/studio";
 
-const client = new OpenAIClient({
-  apiKey,
-});
-
+const openai = new OpenAIClient({ apiKey: process.env.OPENAI_API_KEY! });
 const agent = new Agent({
   id: "support",
-  model: client.completionModel({ modelId: "gpt-5", api: "responses" }),
   name: "Support",
-  description: "Answers support questions.",
-  instructions: "Answer support questions clearly.",
-});
-
-await new Studio([agent]).serve({
-  port: 4021,
-});
-```
-
-Then open:
-
-```txt
-http://localhost:4021/ui/playground
-```
-
-## Graceful shutdown
-
-`serve()` handles both `SIGINT` and `SIGTERM`. Studio stops accepting work, aborts active Agent and
-Pipeline runs, waits for their cancellation observers, and then runs `onShutdown`. Use that callback
-to close observability clients or other caller-owned resources:
-
-```ts
-await new Studio([agent]).serve({
-  port: 4021,
-  shutdownTimeoutMs: 30_000,
-  onShutdown: async () => {
-    await Promise.all([lens.close(), langfuse.close(), otelSdk.shutdown()]);
-  },
-});
-```
-
-`shutdown()` provides the same draining behavior for application-managed lifecycles. `close()`
-remains synchronous for compatibility: it aborts active work but does not wait for cleanup.
-
-## Multi-Provider Models
-
-Studio can expose a shared model catalog and let each agent choose from registered providers:
-
-```ts
-import { Agent } from "@anvia/core";
-import { AnthropicClient } from "@anvia/anthropic";
-import { OpenAIClient } from "@anvia/openai";
-import { Studio } from "@anvia/studio";
-
-const openai = new OpenAIClient({ apiKey: process.env.OPENAI_API_KEY });
-const anthropic = new AnthropicClient({ apiKey: process.env.ANTHROPIC_API_KEY });
-
-const agent = new Agent({
-  id: "support",
   model: openai.completionModel({ modelId: "gpt-5", api: "responses" }),
-  name: "Support",
   instructions: "Answer support questions clearly.",
 });
 
-new Studio([agent], {
-  models: {
-    providers: [
-      {
-        id: "openai",
-        name: "OpenAI",
-        defaultModelId: "gpt-5",
-        createCompletionModel: ({ modelId }) =>
-          openai.completionModel({ modelId, api: "responses" }),
-        listModels: () => openai.listModels(),
-        models: [
-          {
-            id: "gpt-5",
-            modalities: { input: ["text", "image", "document"], output: ["text"] },
-          },
-        ],
-      },
-      {
-        id: "anthropic",
-        name: "Anthropic",
-        defaultModelId: "claude-sonnet-4-20250514",
-        createCompletionModel: ({ modelId }) => anthropic.completionModel({ modelId }),
-      },
-    ],
-    agents: {
-      support: {
-        defaultModelRef: { providerId: "openai", modelId: "gpt-5" },
-        allowed: ["openai:*", { providerId: "anthropic", modelId: "claude-sonnet-4-20250514" }],
-      },
-    },
-  },
-}).start();
+await new Studio([agent]).serve({ port: 4021 });
 ```
 
-The playground message composer shows the allowed models for the selected agent. It also renders
-generic selectors for controls advertised by each completion model and restores explicit choices
-from session metadata. “Default” omits the control, preserving Agent and provider defaults. API
-callers can select a model and controls per run:
+## What you get
 
-```json
-{
-  "type": "messages",
-  "messages": [{ "role": "user", "content": "Summarize this ticket" }],
-  "model": {
-    "providerId": "anthropic",
-    "modelId": "claude-sonnet-4-20250514"
-  },
-  "controls": {
-    "reasoningEffort": "high"
-  },
-  "stream": true
-}
-```
+- Chat playground with model selection, approvals, and saved sessions.
+- Agent teams with member activity and human interactions.
+- Traces, tool and MCP inspectors, memory, and retrieval views.
+- Pipeline execution, history, graphs, and evaluation runs.
+- Knowledge-graph exploration and browser sandbox viewing with human takeover.
+- Optional SQLite session storage and graceful server shutdown.
 
-## Browser UI
+Session storage is in memory by default; configure SQLite to persist it across restarts. Studio is intended for local development. Add application authentication and authorization when exposing it remotely.
 
-Studio exposes:
+## Learn more
 
-- Chat playground and persisted sessions
-- Trace browser and session logs
-- Realtime observability stream for session logs, pipeline logs, and completed traces
-- Eval suite runner for registered `runEvalSuite` configurations
-- Pipeline graph, logs, run history, and replay-from-history controls
-- Knowledge-graph explorer with type filters, search, node details, and bounded neighborhood expansion
-- Rich agent runtime details, direct tool invocation, static tool, dynamic tool, and MCP inspectors
-- Memory explorer for users, conversations, messages, and transcript steps backed by the session store
-- Status dashboard for storage adapters, record counts, and enabled capabilities
-- Knowledge tabs for static context, dynamic context, dynamic tools, and retrieval log
-
-Studio reads MCP provenance directly from `Agent.mcpServers`. Prefixes configured by an
-`McpClient` remain visible in both the MCP inspector and direct tool runner, while the remote tool
-name stays available on the typed MCP registration.
-
-### Graph explorer
-
-Register any graph that implements the provider-neutral `GraphExplorer` contract. Both
-`@anvia/neo4j` and `@anvia/memgraph` graph registrations can be passed directly:
-
-```ts
-const studio = new Studio([agent], {
-  graphs: [
-    {
-      id: "support",
-      name: "Support knowledge graph",
-      graph,
-    },
-  ],
-});
-```
-
-Open `/graphs` and select nodes to inspect their public properties or expand their one-hop
-neighborhood. Studio exposes only bounded overview and expansion requests; it does not accept raw
-Cypher. Adapter explorer responses also omit stored embeddings and reserved `__anvia_*` properties.
-
-## Session Storage
-
-Studio uses an in-memory store by default. Sessions, traces, and pipeline run history are available while the process is running, but they do not create local files unless you pass an explicit SQLite store. If you omit the port, Studio uses `RUNNER_PORT` and then falls back to `4021`.
-
-Pass `createSqliteSessionStore` to persist Studio data in SQLite:
-
-```ts
-import { Studio, createSqliteSessionStore } from "@anvia/studio";
-
-new Studio([agent], {
-  stores: {
-    sessions: createSqliteSessionStore({ path: ".anvia/studio.sqlite" }),
-  },
-}).start();
-```
-
-The store is caller-owned, so release it when the application shuts down. `close()` releases the SQLite handle and the store reopens lazily on the next call:
-
-```ts
-const store = createSqliteSessionStore({ path: ".anvia/studio.sqlite" });
-
-await new Studio([agent], { stores: { sessions: store } }).serve({
-  onShutdown: () => store.close(),
-});
-```
-
-Closing matters on Windows, where an open handle keeps the database file locked and blocks removing or moving its directory. If schema setup fails while opening the database, the store closes the handle before reporting the error, so deleting or recreating the file works as the error message suggests.
-
-SQLite storage uses dedicated `anvia_studio_*` tables so it can share an application database without writing into product tables.
-
-## Exports
-
-- `Studio`
-- `createInMemoryStudioStore`
-- `createSqliteSessionStore`
-- Studio session, trace, approval, pipeline, graph, memory, status, knowledge, tool, MCP, and runtime types
-
-## Development
-
-```sh
-pnpm --filter @anvia/studio typecheck
-pnpm --filter @anvia/studio test
-pnpm --filter @anvia/studio build
-```
-
-## Browser sandbox views
-
-Sandbox registrations may include explicit noVNC views. Studio resolves the upstream only through the
-inspector's loopback-published port and exposes an authorized, same-origin WebSocket bridge. Studio's
-programmatic noVNC client renders the desktop directly, so the stock noVNC splash, toolbar, and password
-prompt are not part of the UI.
-
-```ts
-const studio = new Studio([agent], {
-  sandboxes: [
-    {
-      inspector: browser.inspector({ files: true, ports: true, processes: true }),
-      views: [
-        {
-          id: "desktop",
-          label: "Browser",
-          source: browser.desktop,
-          access: { mode: "local" },
-          authentication: { type: "password", password },
-        },
-      ],
-    },
-  ],
-});
-```
-
-Local mode requires a loopback connection and a same-origin browser request. Remotely reachable Studio
-instances must instead provide `{ mode: "authorize", authorize }`; the application callback runs for
-the viewer connection, WebSocket upgrade, and every takeover operation. Studio does not provide or infer
-an application authentication system. View credentials are omitted from sandbox discovery metadata and
-URLs and returned only by the authorized, non-cacheable viewer-connection endpoint.
-
-When a registered agent emits a matching browser tool call, Playground replaces its Sessions sidebar
-with a larger resizable desktop panel. The embedded desktop remains view-only until the user explicitly
-takes control. That lease blocks Anvia browser tools, is renewed by the UI, and expires when abandoned.
-It is a coordination boundary rather than a replacement for application authorization. The Sandboxes
-page continues to expose the registered view as inspectable runtime metadata. Closing the Playground
-panel restores Sessions without forgetting the current browser; use **Open browser** to show it again.
+- [Usage guide](https://github.com/anvia-hq/anvia/blob/main/docs/packages/tool-studio.md)
+- [Anvia](https://github.com/anvia-hq/anvia/blob/main/README.md)
+- [Contributing](https://github.com/anvia-hq/anvia/blob/main/CONTRIBUTING.md)

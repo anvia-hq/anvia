@@ -1,55 +1,60 @@
 # @anvia/server
 
-Server response helpers for the Anvia client protocol and explicitly generic event streams.
+Serve Anvia completions and Agent runs over HTTP. These framework-neutral response helpers turn
+async events into streaming `Response` objects for Anvia clients, with JSONL, SSE, and replay support.
 
-## Bun
-
-Bun 1.3.14 is the currently tested and supported runtime baseline:
+## Install
 
 ```sh
-bun add @anvia/server @anvia/client
+pnpm add @anvia/server @anvia/client @anvia/core @anvia/openai
 ```
 
-Compatibility tests run these helpers through `Bun.serve`, covering framed JSONL and SSE,
-resumable replay, cancellation cleanup, and installation from packed package artifacts.
+The quickstart uses OpenAI; choose another provider adapter if needed.
 
-## Client protocol responses
+## Quickstart
 
-Adapt native runtime events at the server boundary, then frame them for the client:
+Set `OPENAI_API_KEY` on your server and mount this handler in a framework that accepts Web
+`Request` and `Response` objects:
 
 ```ts
 import { completionToClientStream, parseClientStreamRequest } from "@anvia/client";
 import { streamCompletion } from "@anvia/core";
+import { OpenAIClient } from "@anvia/openai";
 import { createClientStreamResponse } from "@anvia/server";
 
-const body = parseClientStreamRequest(await request.json());
-if (body.type !== "messages") throw new Error("This completion endpoint accepts messages only.");
-const events = completionToClientStream({
-  events: streamCompletion({ model, messages: body.messages }),
+const apiKey = process.env.OPENAI_API_KEY;
+if (!apiKey) throw new Error("Set OPENAI_API_KEY.");
+const model = new OpenAIClient({ apiKey }).completionModel({
+  modelId: "gpt-5",
+  api: "responses",
 });
 
-return createClientStreamResponse({ events }); // JSONL by default
+export async function POST(request: Request): Promise<Response> {
+  const body = parseClientStreamRequest(await request.json());
+  if (body.type !== "messages") {
+    return new Response("This endpoint accepts messages only.", { status: 400 });
+  }
+  const events = completionToClientStream({
+    events: streamCompletion({ model, messages: body.messages, abortSignal: request.signal }),
+  });
+  return createClientStreamResponse({ events });
+}
 ```
 
-`createClientStreamResponse({ events, ...options })` always emits `stream_start`, ordered
-`stream_event` frames, and `stream_end`, and sets
-`x-anvia-stream-protocol: anvia.client.v3`. Use `format: "sse"` for SSE framing.
+Connect with `createHttpClientTransport` from `@anvia/client`, or use it with the `@anvia/react`
+hooks. Add `format: "sse"` to the response options for SSE instead of the default JSONL.
 
-For resumable streams, pass `{ resumable: { streamId, store } }` when creating the response and
-call `resumeClientStreamResponse({ streamId, after, store })` for a resume request.
+## Capabilities
 
-## Generic event responses
+- Framed client responses with protocol headers and ordered event IDs.
+- Resumable streams backed by a store you provide, with an in-memory store for local use.
+- Separate generic event responses for application-defined protocols.
+- Lower-level JSONL and SSE stream helpers.
 
-`createEventStreamResponse({ events, ...options })` and `resumeEventStreamResponse(options)` are
-separate, generic helpers. They serialize the event type supplied by the application and do not
-claim that it is the Anvia client protocol.
+Your application owns routing, authentication, request error handling, and durable storage.
 
-The lower-level exports are:
+## Learn more
 
-- `createJsonlStream({ events, ...options })`
-- `createSseStream({ events, ...options })`
-- `createResumableStream({ events, ...options })`
-- `resumeStreamEvents(options)`
-- `createMemoryResumableStreamStore()`
-
-There are no compatibility aliases for the removed ambiguous response APIs.
+- [Server streaming guide](https://github.com/anvia-hq/anvia/blob/main/docs/packages/server.md)
+- [Client protocol](https://github.com/anvia-hq/anvia/tree/main/packages/client#readme)
+- [React hooks](https://github.com/anvia-hq/anvia/tree/main/packages/react#readme)

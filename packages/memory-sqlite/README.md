@@ -1,53 +1,51 @@
 # @anvia/memory-sqlite
 
-SQLite-backed durable session memory for Anvia agents.
+Durable agent conversations in a local SQLite database. Add persistent memory without running a separate database service.
+
+## Installation
+
+```sh
+pnpm add @anvia/memory-sqlite @anvia/core @anvia/openai
+```
+
+## Quick start
+
+Set `OPENAI_API_KEY`. Use a Node.js runtime with `node:sqlite` support, or Bun.
 
 ```ts
 import { Agent } from "@anvia/core";
 import { SqliteMemoryClient } from "@anvia/memory-sqlite";
+import { OpenAIClient } from "@anvia/openai";
 
-const sqlite = new SqliteMemoryClient({
-  path: "data/anvia-memory.sqlite",
-});
-
-const store = sqlite.memoryStore({
-  scopeKey: { metadataKeys: ["tenantId"] },
-});
-
+await using database = new SqliteMemoryClient({ path: "data/anvia-memory.sqlite" });
+const store = database.memoryStore();
 await store.ensure();
 
+const openai = new OpenAIClient({ apiKey: process.env.OPENAI_API_KEY! });
 const agent = new Agent({
   id: "support",
-  model,
+  model: openai.completionModel({ modelId: "gpt-5", api: "responses" }),
   memory: { store, savePolicy: "turn" },
 });
 
-try {
-  // Use the Agent across requests.
-} finally {
-  await sqlite.close();
-}
+const result = await agent.generate({
+  prompt: "Remember that my order number is 1234.",
+  session: { sessionId: "support-123", userId: "user-456" },
+});
+if (result.type === "response") console.log(result.output);
 ```
 
-Construction and `memoryStore()` perform no I/O. Call `ensure()` to create missing tables and
-validate them, or `validate()` to require an existing compatible schema without provisioning.
-Ordinary memory and compaction operations never create resources.
+## What you get
 
-`SqliteMemoryClient` closes databases it creates. A database supplied with `{ database }` remains
-caller-owned and must have SQLite foreign-key enforcement enabled; `ensure()` and `validate()`
-reject incompatible injected connections. The client also supports `await using` through
-`Symbol.asyncDispose`.
+- Persistent session history with optional tenant-scoped keys.
+- Read-only memory inspection in Anvia Studio.
+- Atomic compaction checkpoints while retaining canonical message history.
+- Built-in Node.js and Bun drivers, plus caller-owned database support.
 
-On Node.js the client uses the built-in `node:sqlite` driver. On Bun it loads `bun:sqlite`
-automatically; the injected-database contract stays structural, so either driver (or a compatible
-custom implementation) can be supplied through `{ database }`.
+`ensure()` provisions missing tables; use `validate()` when application migrations own the schema. Reuse the same session identifiers to continue a conversation. Keep the client open for the lifetime of your application; `await using` closes owned resources at scope exit. Injected connections remain caller-owned.
 
-The store exposes Studio inspection and atomic compaction. `load()` and Studio inspection always
-return the full canonical message history. Compaction stores one latest checkpoint in the session
-row; `compaction.snapshot()` projects its tagged system summary plus the unsummarized tail for model
-context. The adapter never chooses retention, calls a model, or retries mutations.
+## Learn more
 
-The session schema includes nullable `compaction_state_json`. `ensure()` adds the column to an
-existing managed schema; `validate()` requires it without mutating application-owned schema.
-
-Use `createSqliteMemorySchemaSql({ ... })` when schema SQL belongs in an application migration.
+- [Usage guide](https://github.com/anvia-hq/anvia/blob/main/docs/packages/memory-sqlite.md)
+- [Anvia](https://github.com/anvia-hq/anvia/blob/main/README.md)
+- [Contributing](https://github.com/anvia-hq/anvia/blob/main/CONTRIBUTING.md)

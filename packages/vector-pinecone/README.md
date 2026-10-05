@@ -1,18 +1,72 @@
 # @anvia/pinecone
 
-Pinecone vector-store adapter for Anvia.
+Store and search Anvia documents in Pinecone. Pair the store with your choice of
+embedding model to add semantic retrieval to agents and applications.
 
-## Runtime and SDK compatibility
+## Install
 
-This package uses Pinecone SDK 9 and requires Node.js 22 or later. The SDK targets
-Pinecone API version `2026-07`.
+```sh
+pnpm add @anvia/pinecone @anvia/core @anvia/openai
+```
 
-`PineconeVectorClient` supports classic vector operations, including upsert, query,
-and delete. When provisioning a missing index with `store.ensure()`, use a supported
-serverless or BYOC `spec`. SDK 9 no longer supports creating legacy pod indexes,
-legacy metadata-indexing schemas, or `sourceCollection`/`sourceBackupId` creation
-options. Existing pod indexes remain manageable.
+`@anvia/openai` supplies the embedding model in this example; other embedding adapters work too.
 
-See the [upstream migration notes](https://github.com/pinecone-io/pinecone-ts-client/releases/tag/v9.0.0)
-for details. External Anvia installation and Pinecone provisioning documentation
-should reflect the Node.js 22 minimum and these provisioning restrictions.
+## Quickstart
+
+Use Node.js 22 or later and set `PINECONE_API_KEY` and `OPENAI_API_KEY`.
+Choose a serverless region available to your Pinecone account.
+
+```ts
+import { embedDocuments } from "@anvia/core/embeddings";
+import { retrieveDocuments } from "@anvia/core/vector-store";
+import { OpenAIClient } from "@anvia/openai";
+import { PineconeVectorClient } from "@anvia/pinecone";
+
+const openai = new OpenAIClient({ apiKey: process.env.OPENAI_API_KEY! });
+const model = openai.embeddingModel({ modelId: "text-embedding-3-small" });
+const client = new PineconeVectorClient({ apiKey: process.env.PINECONE_API_KEY! });
+const store = client.vectorStore<{ id: string; text: string }>({
+  indexName: "support-docs",
+  spec: { serverless: { cloud: "aws", region: "us-east-1" } },
+  dimensions: 1536,
+  metric: "cosine",
+});
+
+try {
+  await store.ensure();
+  const { documents } = await embedDocuments({
+    model,
+    documents: [{ id: "password-reset", text: "Reset links expire after 30 minutes." }],
+    id: (document) => document.id,
+    content: (document) => document.text,
+  });
+  await store.upsert({ documents });
+
+  const results = await retrieveDocuments({
+    store,
+    model,
+    query: "How long does a reset link last?",
+    topK: 3,
+  });
+  console.log(results);
+} finally {
+  await client.close();
+}
+```
+
+## Store capabilities
+
+- Explicit provisioning with `ensure()` and readiness checks with `validate()`.
+- Document replacement, vector search, and metadata filtering.
+- Bring your own embedding model; `store.search()` accepts vectors directly.
+
+Set `namespace` to organize vectors within an index. New indexes need a serverless or BYOC
+`spec`; the adapter uses Pinecone SDK 9. Indexing may take time before new writes appear in search.
+
+Pass `client` to use a preconfigured native SDK client. Injected clients remain caller-owned.
+
+## Learn more
+
+- [Usage guide](https://github.com/anvia-hq/anvia/blob/main/docs/packages/vector-pinecone.md)
+- [Anvia overview](https://github.com/anvia-hq/anvia/blob/main/README.md)
+- [Contributing](https://github.com/anvia-hq/anvia/blob/main/CONTRIBUTING.md)

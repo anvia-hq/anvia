@@ -1,104 +1,63 @@
 # @anvia/mcp
 
-Model Context Protocol client integration for Anvia agents.
+Connect Anvia agents to Model Context Protocol servers. Discover remote tools once, register them
+with an Agent, and keep connection lifecycle and credentials under your application's control.
 
-This package owns MCP connections, transports, tool discovery, and cleanup. `@anvia/core` keeps only
-the lightweight MCP registration contracts consumed by `Agent`.
-
-Requires Node.js 20 or newer, or Bun 1.3.14, and uses the official MCP TypeScript SDK v2 client.
-
-## Installation
+## Install
 
 ```sh
-pnpm add @anvia/mcp@rc @anvia/core@rc
+pnpm add @anvia/mcp @anvia/core @anvia/openai
 ```
 
-### Bun
+Requires Node.js 20 or newer, or Bun 1.3.14. The quickstart uses OpenAI as the agent's model provider.
 
-Bun 1.3.14 is the currently tested and supported runtime baseline:
+## Quickstart
 
-```sh
-bun add @anvia/mcp@rc @anvia/core@rc
-```
-
-Compatibility tests cover modern protocol negotiation, Streamable HTTP with chunked SSE responses,
-stdio subprocesses, URL-safety enforcement, and installation from packed package artifacts.
-
-## Usage
+Set `OPENAI_API_KEY`, replace the MCP endpoint with your server URL, and connect its tools:
 
 ```ts
 import { Agent } from "@anvia/core/agent";
 import { McpClient, McpClientGroup } from "@anvia/mcp";
+import { OpenAIClient } from "@anvia/openai";
 
-const filesystem = new McpClient({
-  name: "filesystem",
-  // Probe for the modern protocol and fall back for 2025-era servers.
+const apiKey = process.env.OPENAI_API_KEY;
+if (!apiKey) throw new Error("Set OPENAI_API_KEY.");
+const model = new OpenAIClient({ apiKey }).completionModel({
+  modelId: "gpt-5",
+  api: "responses",
+});
+const client = new McpClient({
+  name: "knowledge",
   versionNegotiation: { mode: "auto" },
-  transport: {
-    type: "stdio",
-    command: "npx",
-    args: ["-y", "@modelcontextprotocol/server-filesystem", "./workspace"],
-  },
+  transport: { type: "streamableHttp", url: "https://mcp.example.com/mcp" },
 });
-const github = new McpClient({
-  name: "github",
-  transport: {
-    type: "streamableHttp",
-    url: "https://mcp.example.com/mcp",
-    headers: { authorization: `Bearer ${process.env.MCP_TOKEN}` },
-  },
-  tools: { prefix: "github_" },
-});
-
-const mcp = await McpClientGroup.connect({ clients: [filesystem, github] });
-const agent = new Agent({ id: "assistant", model, mcpServers: mcp.servers });
+const mcp = await McpClientGroup.connect({ clients: [client] });
 
 try {
-  await agent.generate({ prompt: "Find the issue and update it." });
+  const agent = new Agent({ id: "assistant", model, mcpServers: mcp.servers });
+  const result = await agent.generate({ prompt: "Find the onboarding guide." });
+  if (result.type === "response") console.log(result.output);
 } finally {
   await mcp.close();
 }
 ```
 
-Construction performs no I/O. `connect()` discovers every tool page once and returns a frozen
-registration snapshot. Reconnect and rebuild the Agent to adopt changed remote tools.
+Connections discover tools and return immutable registration snapshots. Reconnect and rebuild the
+Agent to pick up changed remote tool definitions. Agents do not close caller-owned connections.
 
-By default, `@anvia/mcp` requires the modern MCP `2026-07-28` protocol. Connections fail clearly
-when a server does not support that revision. Set `versionNegotiation` to `{ mode: "auto" }` to probe
-for the modern protocol and fall back to the legacy handshake, or `{ mode: "legacy" }` when connecting
-to a known 2025-era server.
+## Capabilities
 
-Built-in Streamable HTTP connections enforce Anvia URL safety by default and do not accept a custom
-`fetch`. Static request headers are explicit transport configuration; arbitrary Fetch `RequestInit`
-fields are not exposed because the MCP transport owns its HTTP method, body, abort signal, session,
-and protocol headers. Configured headers are sent only to the exact MCP endpoint, are not attached to
-OAuth requests, and cause endpoint redirects to fail instead of forwarding credentials. A static
-`authorization` header cannot be combined with `authProvider`.
+- Stdio and Streamable HTTP transports through the official MCP client SDK.
+- Protocol negotiation, paginated tool discovery, and tool prefixes.
+- Group connection management with cleanup when initialization fails.
+- HTTP URL safety, bounded response buffering, and explicit authentication configuration.
 
-For an intentionally local or private-network server, set `ssrfProtection: "disabled"` on that
-transport. This disables hostname and DNS restrictions for the complete transport, including
-redirects and OAuth discovery, while still requiring HTTP(S). Use it only when the application owns
-and trusts that network boundary. MCP server instructions remain inspectable metadata and are not
-added to Agent instructions.
+The example uses automatic protocol negotiation for compatibility with older servers. HTTP URL
+safety is enabled by default; consult the guide when intentionally connecting to a trusted local
+or private-network server.
 
-Streamable HTTP responses are bounded per JSON-RPC message. `maxBufferSize` caps the JSON body of a
-regular response and each SSE event of an event stream at 10 MiB by default, matching the stdio
-transport, so an untrusted server cannot stream unbounded data into the process.
+## Learn more
 
-## Exports
-
-- `McpClient`
-- `McpClientGroup`
-- `McpClientOptions`
-- `McpClientTransport`
-- `McpServer`
-- `McpTool`
-- `isMcpTool`
-
-## Development
-
-```sh
-pnpm --filter @anvia/mcp typecheck
-pnpm --filter @anvia/mcp test
-pnpm --filter @anvia/mcp build
-```
+- [MCP connection guide](https://github.com/anvia-hq/anvia/blob/main/docs/packages/mcp.md)
+- [Core agents](https://github.com/anvia-hq/anvia/tree/main/packages/core#readme)
+- [MCP Agent Skill](https://github.com/anvia-hq/anvia/tree/main/skills/anvia-mcp)

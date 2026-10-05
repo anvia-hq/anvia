@@ -1,6 +1,20 @@
 # @anvia/react-ui
 
-Composable, headless React UI primitives for Anvia applications.
+Compose AI chat interfaces with headless React primitives. Bring your own design system for threads,
+messages, rich composition, attachments, approvals, and questions.
+
+## Install
+
+```sh
+pnpm add @anvia/react-ui @anvia/react @anvia/client @anvia/core react react-dom
+```
+
+Requires React and React DOM 18 or newer. For editable, styled components, use
+`pnpm dlx @anvia/cli ui add chat` in an application configured with shadcn.
+
+## Quickstart
+
+Connect a chat controller to your application's Anvia streaming endpoint:
 
 ```tsx
 import { createHttpClientTransport } from "@anvia/client";
@@ -12,24 +26,15 @@ import {
   ThreadPrimitive,
 } from "@anvia/react-ui";
 
-export function SupportChat() {
-  const chat = useChat({
-    transport: createHttpClientTransport({ endpoint: "/api/chat" }),
-  });
-  const triggers = [
-    {
-      id: "people",
-      char: "@",
-      items: [{ id: "user_ada", label: "Ada Lovelace", data: { type: "user" } }],
-    },
-  ];
+const transport = createHttpClientTransport({ endpoint: "/api/chat" });
 
+export function SupportChat() {
+  const chat = useChat({ transport });
   return (
     <ChatProvider controller={chat}>
       <ThreadPrimitive.Root>
         <ThreadPrimitive.Viewport>
           <ThreadPrimitive.Empty>Start a conversation.</ThreadPrimitive.Empty>
-          <ThreadPrimitive.Suggestions />
           <ThreadPrimitive.Messages>
             <MessagePrimitive.Root>
               <MessagePrimitive.Content>
@@ -39,13 +44,9 @@ export function SupportChat() {
             </MessagePrimitive.Root>
           </ThreadPrimitive.Messages>
           <ThreadPrimitive.Error />
-          <ThreadPrimitive.ScrollToBottom>Jump to latest</ThreadPrimitive.ScrollToBottom>
         </ThreadPrimitive.Viewport>
-        <ComposerPrimitive.Root triggers={triggers}>
-          <ComposerPrimitive.Attachments />
-          <ComposerPrimitive.AddAttachment>Attach</ComposerPrimitive.AddAttachment>
-          <ComposerPrimitive.Input maxRows={6} placeholder="Send a message..." />
-          <ComposerPrimitive.TriggerMenu />
+        <ComposerPrimitive.Root>
+          <ComposerPrimitive.Input placeholder="Send a message..." />
           <ComposerPrimitive.Stop>Stop</ComposerPrimitive.Stop>
           <ComposerPrimitive.Submit>Send</ComposerPrimitive.Submit>
         </ComposerPrimitive.Root>
@@ -55,91 +56,20 @@ export function SupportChat() {
 }
 ```
 
-The primitives are headless: pass `className` or `asChild` for design-system integration. Their
-small semantic DOM contract consists of ARIA attributes, `data-state`, and `data-role`; there is no
-package stylesheet. For editable, styled application components, run
-`pnpm dlx @anvia/cli add chat`.
+Style primitives with `className`, or use `asChild` to compose your own elements. The package ships
+semantic attributes and behavior; it has no package stylesheet.
 
-Control `ComposerPrimitive.Root` with `input`/`attachments` props when needed, and use
-`submitMessage` for custom composer payloads. Use `keepMounted` on optional collections when empty
-wrappers are useful for layout.
+## Capabilities
 
-`ComposerPrimitive.Input` is a Tiptap-backed rich composer. Configure `ComposerPrimitive.Root` with `triggers` to
-support inline `@`, `/`, `$`, or other entity chips; selected entities are submitted under
-`metadata.composer.entities`. Entity `data` must be finite strict JSON; class instances, sparse or
-custom-prototype arrays, accessors, symbols, cycles, `undefined`, and non-finite numbers are
-rejected. Use `ComposerPrimitive.TextareaInput` when you need the previous native textarea behavior.
+- Threads, message parts, Markdown, attachments, and message actions.
+- Rich text composition with inline entity triggers and an optional native textarea.
+- Approval and question controls, completion UI, thread lists, and context meters.
+- Images, selection toolbars, and optional streaming presentation smoothing.
+- Graph exploration primitives through `@anvia/react-ui/graph-explorer`; install `@anvia/graph`
+  when using that integration.
 
-Streaming smoothing is opt-in and display-only. Keep `useChat` as the owner of transport and
-`UIMessage[]` state. Keep the lifecycle mounted after streaming stops so its buffered tail drains;
-`MessagePrimitive.Parts` also keeps later tool parts behind text that has not been revealed yet:
+## Learn more
 
-```tsx
-<MessagePrimitive.Parts
-  stream={{
-    isStreaming:
-      chat.status === "streaming" &&
-      message.role === "assistant" &&
-      chat.messages.at(-1)?.id === message.id,
-    resetKey: message.id,
-    flushImmediately: chat.status === "error",
-  }}
->
-  {(part) => (part.type === "text" ? <MessagePrimitive.Markdown /> : <MessagePrimitive.Part />)}
-</MessagePrimitive.Parts>
-```
-
-For app-owned text state, `StreamMarkdown` is available from `@anvia/react-ui/stream`. It is a
-context-free renderer: pass the already displayed text as `content` and set `live` only for its
-growing tail. Style `[data-state="revealing"]` in the owning application; `@anvia/cli` installs this
-animation with its `markdown`, `message`, `thread`, and `chat` items.
-
-## Graph explorer
-
-`@anvia/react/graph-explorer` owns graph exploration behavior without choosing a layout or rendering
-library. `@anvia/react-ui/graph-explorer` supplies optional headless composition primitives. Provide
-a browser-safe `explore` callback, normally backed by an application HTTP route, then render the
-controller's nodes and relationships with React Flow, Sigma.js, SVG, canvas, or any other renderer:
-
-```tsx
-import type { GraphExplorer } from "@anvia/graph";
-import { useGraphExplorer } from "@anvia/react/graph-explorer";
-import {
-  GraphExplorerNodePrimitive,
-  GraphExplorerPrimitive,
-  GraphExplorerProvider,
-} from "@anvia/react-ui/graph-explorer";
-
-export function KnowledgeGraph({ explore }: { explore: GraphExplorer["explore"] }) {
-  const controller = useGraphExplorer({ explore });
-  return (
-    <GraphExplorerProvider controller={controller}>
-      <GraphExplorerPrimitive.Root>
-        <GraphExplorerPrimitive.Search />
-        <GraphExplorerPrimitive.Viewport>
-          {controller.nodes.map((node) => (
-            <GraphExplorerNodePrimitive.Root key={node.id} nodeId={node.id} asChild>
-              {/* This can instead be an element supplied to a renderer such as React Flow. */}
-              <article>{node.type}</article>
-            </GraphExplorerNodePrimitive.Root>
-          ))}
-        </GraphExplorerPrimitive.Viewport>
-        <GraphExplorerPrimitive.Empty />
-        <GraphExplorerPrimitive.Status />
-      </GraphExplorerPrimitive.Root>
-    </GraphExplorerProvider>
-  );
-}
-```
-
-Call `controller.explore({ mode: "overview" })` to load an initial view. Overview results replace the
-current graph; expansion results merge by opaque node and relationship IDs. Starting a request
-aborts the previous request, while `refresh()` repeats the latest overview with a fresh signal.
-Expansions inherit filters and limits from the latest successful overview unless explicitly
-overridden. `matchedNodeIds` lets renderers dim, hide, or highlight local search results without
-prescribing one visual behavior. Validate data returned by an HTTP route before resolving the
-`explore` callback; the headless controller intentionally trusts its typed boundary. Renderers that
-do not expose React elements for individual nodes can consume the controller directly without the
-node primitives.
-
-`MessagePrimitive.Actions` displays its action group only for the final assistant message in each user exchange, after streaming completes. Earlier completed replies retain their actions. Use `MessagePrimitive.Copy` or `MessagePrimitive.Regenerate` directly when composing custom action visibility.
+- [UI composition guide](https://github.com/anvia-hq/anvia/blob/main/docs/packages/react-ui.md)
+- [React controllers](https://github.com/anvia-hq/anvia/tree/main/packages/react#readme)
+- [Editable components CLI](https://github.com/anvia-hq/anvia/tree/main/packages/cli#readme)

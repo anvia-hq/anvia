@@ -1,0 +1,84 @@
+# @anvia/mistral
+
+Mistral completion and embedding provider adapter for Anvia.
+
+Use this package when you want Anvia agents, extractors, pipelines, embeddings, or model listing to run on Mistral APIs.
+
+## Installation
+
+```sh
+pnpm add @anvia/mistral @anvia/core
+```
+
+In this monorepo, the package is available through the workspace:
+
+```sh
+pnpm --filter @anvia/mistral build
+```
+
+## Usage
+
+```ts
+import { Agent } from "@anvia/core";
+import { MistralClient } from "@anvia/mistral";
+
+const client = new MistralClient({ apiKey: process.env.MISTRAL_API_KEY });
+const model = client.completionModel({ modelId: "mistral-medium-3-5" });
+
+const agent = new Agent({
+  id: "support",
+  model: model,
+  instructions: "Answer clearly and concisely.",
+});
+
+const result = await agent.generate({ prompt: "What should I check before launch?" });
+if (result.type === "response") console.log(result.output);
+```
+
+## Embeddings
+
+```ts
+const embeddings = client.embeddingModel({ modelId: "mistral-embed" });
+const vectors = await embeddings.embedTexts(["Refunds take five business days."]);
+```
+
+## OCR
+
+```ts
+const ocr = client.ocrModel({ modelId: "mistral-ocr-latest" });
+const result = await ocr.ocr({
+  source: {
+    type: "document_url",
+    url: "https://example.com/invoice.pdf",
+    documentName: "invoice.pdf",
+  },
+});
+
+console.log(result.markdown);
+```
+
+## Model Listing
+
+```ts
+const models = await client.listModels();
+```
+
+## Capabilities
+
+The v1 adapter supports text completions, streaming, tools, tool choice, structured output, Mistral embeddings, OCR, and model listing. Chat image inputs, chat document file inputs, transcription, audio generation, and image generation are not implemented yet.
+
+## Exports
+
+- `MistralClient`
+- structural completion, embedding, and OCR handle types
+- Mistral completion, embedding, and OCR model-ID types
+- `MistralClientOptions`
+- `MistralEmbeddingModelOptions`
+- `MistralOcrRequest`
+- `MistralOcrResponse`
+- `MistralOcrSource`
+- `MistralOcrPage`
+- `MistralOcrUploadedFile`
+- `MISTRAL_OCR_LATEST`
+- `mistralMessageHelpers`
+- `mistral`

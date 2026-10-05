@@ -1,124 +1,52 @@
 # @anvia/anthropic
 
-Anthropic provider adapter for Anvia.
+Run Anvia agents on Claude through Anthropic, Vertex AI, or an Anthropic-compatible
+endpoint. Keep your tools and agent workflow while changing the model provider.
 
-Use this package when you want Anvia agents, extractors, or pipelines to run on Claude models through Anthropic's SDK, or through an Anthropic-compatible API endpoint.
-
-## Installation
+## Install
 
 ```sh
 pnpm add @anvia/anthropic @anvia/core
 ```
 
-In this monorepo, the package is available through the workspace:
+## Quickstart
 
-```sh
-pnpm --filter @anvia/anthropic build
-```
-
-## Usage
+Set `ANTHROPIC_API_KEY` before running this example.
 
 ```ts
 import { Agent } from "@anvia/core";
 import { AnthropicClient } from "@anvia/anthropic";
 
 const client = new AnthropicClient({
-  apiKey,
+  apiKey: process.env.ANTHROPIC_API_KEY!,
 });
-
-const model = client.completionModel({ modelId: "claude-opus-5" });
-
 const agent = new Agent({
   id: "assistant",
-  model: model,
+  model: client.completionModel({ modelId: "claude-opus-5" }),
   instructions: "Answer clearly and concisely.",
 });
 
-const result = await agent.generate({ prompt: "Summarize Anvia in one sentence." });
-if (result.type === "response") console.log(result.output);
-```
-
-## Anthropic-Compatible APIs
-
-For APIs that expose an Anthropic-compatible surface, pass a custom `baseUrl`:
-
-```ts
-import { AnthropicClient } from "@anvia/anthropic";
-
-const client = new AnthropicClient({
-  apiKey,
-  baseUrl,
+const result = await agent.generate({
+  prompt: "What should I check before launching a new product?",
 });
 
-const model = client.completionModel({ modelId: "provider/model-name" });
+if (result.type === "response") {
+  console.log(result.output);
+}
 ```
 
-## Vertex AI
+## What you can build
 
-Use Anthropic's official Vertex SDK through `AnthropicVertexClient`:
+- Streaming completions, tool calls, image inputs, and document inputs.
+- Typed reasoning controls for supported Claude models.
+- `AnthropicVertexClient` for Google Cloud authentication and routing.
+- Custom endpoints through `baseUrl`; model listing on `AnthropicClient`.
 
-```ts
-import { AnthropicVertexClient } from "@anvia/anthropic";
+For Vertex AI, use `AnthropicVertexClient` with your Google Cloud project and region.
+The usage guide covers Application Default Credentials and custom authentication.
 
-const client = new AnthropicVertexClient({
-  projectId: "my-gcp-project",
-  region: "global",
-});
+## Learn more
 
-const model = client.completionModel({ modelId: "claude-sonnet-5" });
-```
-
-The client follows the standard Google authentication flow. It reads
-`ANTHROPIC_VERTEX_PROJECT_ID` and `CLOUD_ML_REGION` when project and region are omitted, and supports
-Application Default Credentials such as `GOOGLE_APPLICATION_CREDENTIALS`:
-
-```sh
-export ANTHROPIC_VERTEX_PROJECT_ID="my-gcp-project"
-export CLOUD_ML_REGION="global"
-export GOOGLE_APPLICATION_CREDENTIALS="/absolute/path/service-account.json"
-```
-
-For custom authentication, pass the official SDK's `googleAuth`, `authClient`, or `accessToken`
-options:
-
-```sh
-pnpm add google-auth-library
-```
-
-```ts
-import { GoogleAuth } from "google-auth-library";
-
-const client = new AnthropicVertexClient({
-  projectId: "my-gcp-project",
-  region: "global",
-  googleAuth: new GoogleAuth({
-    credentials: serviceAccountJson,
-    scopes: "https://www.googleapis.com/auth/cloud-platform",
-  }),
-});
-```
-
-You can also pass a preconfigured `authClient`, including impersonated credentials. Validate
-externally supplied credential configurations before using them, and never commit credential JSON
-or service-account keys.
-
-Vertex AI does not expose Anthropic's Models API, so `AnthropicVertexClient` intentionally does not
-provide `listModels()`.
-
-## Exports
-
-- `AnthropicClient`
-- `AnthropicVertexClient`
-- structural Anthropic and Vertex completion handle types
-- `AnthropicCompletionModelId`
-- `anthropic`
-
-## Development
-
-```sh
-pnpm --filter @anvia/anthropic typecheck
-pnpm --filter @anvia/anthropic test
-pnpm --filter @anvia/anthropic build
-```
-
-Package-local `typecheck` and `build` scripts build `@anvia/core` first so core subpath types are available in a fresh worktree.
+- [Usage guide](https://github.com/anvia-hq/anvia/blob/main/docs/packages/provider-anthropic.md)
+- [Anvia overview](https://github.com/anvia-hq/anvia/blob/main/README.md)
+- [Contributing](https://github.com/anvia-hq/anvia/blob/main/CONTRIBUTING.md)

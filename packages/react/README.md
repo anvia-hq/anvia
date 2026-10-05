@@ -1,9 +1,22 @@
 # @anvia/react
 
-React controllers for the explicit `@anvia/client` stream protocol.
+Build streaming chat and completion experiences with React hooks. Anvia manages message state,
+request status, cancellation, usage, and Agent interactions while you choose the UI and transport.
+
+## Install
+
+```sh
+pnpm add @anvia/react @anvia/client @anvia/core react
+```
+
+Requires React 18 or newer.
+
+## Quickstart
+
+Point the transport at an application endpoint that returns an Anvia client stream:
 
 ```tsx
-import { createHttpClientTransport, type UIMessage } from "@anvia/client";
+import { createHttpClientTransport } from "@anvia/client";
 import { useChat } from "@anvia/react";
 
 const transport = createHttpClientTransport({ endpoint: "/api/chat" });
@@ -18,7 +31,7 @@ export function Chat() {
         void chat.sendMessage({ text: "Hello" });
       }}
     >
-      {chat.messages.map((message: UIMessage) => (
+      {chat.messages.map((message) => (
         <div key={message.id}>
           {message.parts
             .filter((part) => part.type === "text")
@@ -26,79 +39,27 @@ export function Chat() {
             .join("")}
         </div>
       ))}
-      <button disabled={chat.status === "submitted" || chat.status === "streaming"}>Send</button>
+      <button disabled={chat.status !== "ready"}>Send hello</button>
+      {chat.error && <p role="alert">{chat.error.message}</p>}
     </form>
   );
 }
 ```
 
-`useChat` and `useCompletion` require an explicit transport boundary:
+Use `@anvia/server` to create the matching response on your server. Provider credentials and Agent
+continuations stay on the server.
 
-```ts
-const transport = createHttpClientTransport({ endpoint: "/api/chat" });
-useChat({ transport });
+## Hooks and helpers
 
-useChat({
-  transport: createDirectClientTransport({
-    handler: ({ request, abortSignal }) => handleChat({ request, abortSignal }),
-  }),
-});
-```
+- `useChat`: conversation state, streaming, cancellation, usage, approvals, questions, and resume.
+- `useCompletion`: single-turn text generation with its own input and completion state.
+- `useSmoothStreamText` and `useSmoothStreamItems`: optional presentation smoothing.
+- `initialMessagesFromMemory`: convert stored Core messages into initial UI state.
+- `useGraphExplorer` from `@anvia/react/graph-explorer`: search and expand graph data with your own
+  renderer; install `@anvia/graph` when using this optional integration.
 
-Import transports, protocol types, `UIMessage`, and conversion helpers from `@anvia/client`.
-`@anvia/react` deliberately does not re-export them.
-Import Agent interaction types directly from `@anvia/core/agent/interactions` when an application
-needs to name them.
+## Learn more
 
-`useChat`:
-
-- consumes only framed `ClientStreamFrame` values;
-- exposes `ready | submitted | streaming | waiting | error` status;
-- keeps readonly `UIMessage[]` locally and sends core `Message[]` in `ClientStreamRequest`;
-- exposes canonical events through `onEvent` and the returned `events` array;
-- exposes aggregate usage for the latest run through `runUsage`, while each assistant message
-  retains its own provider-generation usage;
-- supports optional resumable streams and unified Agent interaction state.
-
-The default request is:
-
-```ts
-type ClientStreamRequest =
-  | {
-      type: "messages";
-      messages: readonly Message[];
-      metadata?: JsonObject;
-      resume?: { streamId: string; after: number };
-    }
-  | {
-      type: "interaction_response";
-      interactionId: string;
-      response: AgentInteractionResponse;
-      metadata?: JsonObject;
-      resume?: { streamId: string; after: number };
-    };
-```
-
-When `chat.status === "waiting"`, render `chat.interactions.pending` and resume through the same
-transport boundary:
-
-```ts
-await chat.respondToInteraction({
-  interactionId,
-  response: { type: "tool-approval", approved: true },
-});
-```
-
-The browser never receives an `AgentContinuation`; the server retains and atomically claims it by
-interaction ID.
-
-For resumable chat, pair `useChat({ transport, resume: { key } })` with
-`createClientStreamResponse({ events, resumable })` and `resumeClientStreamResponse(...)` on the
-server.
-
-`useCompletion({ transport })` is a genuine single-turn controller. Call
-`complete({ prompt })`, or manage `input` and call `submit()`. Each call replaces the previous
-completion, events, and `usage`; it never exposes or accumulates chat messages.
-
-`useSmoothStreamText` and `useSmoothStreamItems` only smooth presentation. They do not change
-protocol events or message state.
+- [React guide](https://github.com/anvia-hq/anvia/blob/main/docs/packages/react.md)
+- [Headless UI components](https://github.com/anvia-hq/anvia/tree/main/packages/react-ui#readme)
+- [Server response helpers](https://github.com/anvia-hq/anvia/tree/main/packages/server#readme)

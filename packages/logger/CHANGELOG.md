@@ -1,5 +1,11 @@
 # @anvia/logger
 
+## 1.1.5
+
+### Patch Changes
+
+- 50d6365: Clean up failed asynchronous file destinations so Pino does not throw during process shutdown. Preserve the original file-open error for subsequent flush calls, including child loggers.
+
 ## 1.1.4
 
 ### Patch Changes

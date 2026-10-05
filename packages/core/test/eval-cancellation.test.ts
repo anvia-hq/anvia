@@ -8,9 +8,12 @@ import {
   type AgentRunOptions,
   type CompletionModel,
   type CompletionResponse,
+  type EmbeddingModel,
   createTool,
   exactMatch,
+  gEval,
   runEvalSuite,
+  semanticSimilarity,
   Usage,
 } from "./helpers/imports";
 import { abortable, EvalTimeoutError } from "../src/evals/execution";
@@ -477,6 +480,154 @@ describe("agent eval cancellation", () => {
       expect(caseBalance()).toBe(0);
       expect(requestBalance()).toBe(0);
     }
+  });
+});
+
+describe("integrated target and metric cancellation", () => {
+  it("times out embeddings after a successful approval resume", async () => {
+    const fixture = approvalFixture();
+    const requestController = new AbortController();
+    const requestBalance = listenerBalance(requestController.signal);
+    let active = 0;
+    let calls = 0;
+    let stopped = 0;
+    const model: EmbeddingModel = {
+      provider: "test",
+      modelId: "integrated-embedding",
+      embedTexts(_texts, options) {
+        calls += 1;
+        active += 1;
+        return new Promise((_resolve, reject) => {
+          const signal = options?.abortSignal;
+          const onAbort = () => {
+            signal?.removeEventListener("abort", onAbort);
+            active -= 1;
+            stopped += 1;
+            reject(signal?.reason);
+          };
+          if (signal?.aborted) onAbort();
+          else signal?.addEventListener("abort", onAbort, { once: true });
+        });
+      },
+    };
+    const result = await runEvalSuite({
+      name: "approval-embedding-timeout",
+      cases: [{ id: "case", input: "hello", expected: "done" }],
+      target: agentEvalTarget<string, string, string>({
+        agent: fixture.agent,
+        request: () => ({ prompt: "hello", maxTurns: 2, abortSignal: requestController.signal }),
+        interactions: { respond: () => ({ type: "tool-approval", approved: true }) },
+        output: ({ response }) => response.output,
+      }),
+      metrics: [semanticSimilarity({ model, threshold: 0.5 })],
+      caseTimeoutMs: 50,
+    });
+    expect(result.results[0]?.targetStatus).toBe("succeeded");
+    expect(result.results[0]?.output).toBe("done");
+    expect(result.results[0]?.metrics[0]?.outcome).toMatchObject({
+      outcome: "invalid",
+      kind: "timeout",
+    });
+    expect({ calls, active, stopped }).toEqual({ calls: 2, active: 0, stopped: 2 });
+    expect(fixture.signals).toHaveLength(2);
+    expect(requestBalance()).toBe(0);
+  });
+
+  it("stops shared preparation on suite abort after both agent targets finish", async () => {
+    const suiteController = new AbortController();
+    const requestController = new AbortController();
+    const suiteBalance = listenerBalance(suiteController.signal);
+    const requestBalance = listenerBalance(requestController.signal);
+    const started = deferred<void>();
+    const reason = new Error("integrated-preparation-stop");
+    let active = 0;
+    let setupCalls = 0;
+    let scoreCalls = 0;
+    let stopped = 0;
+    let blockPreparation = true;
+    const agentFixture = modelFixture([
+      [AssistantContent.text("done")],
+      [AssistantContent.text("done")],
+      [AssistantContent.text("done")],
+      [AssistantContent.text("done")],
+    ]);
+    const model: CompletionModel = {
+      ...agentFixture.model,
+      completion(request, options) {
+        if (JSON.stringify(request).includes("Generate three or four")) {
+          setupCalls += 1;
+          if (!blockPreparation) {
+            return Promise.resolve({
+              ...completion([AssistantContent.toolCall("setup", "submit", { steps: ["Compare"] })]),
+              usage: { ...Usage.empty(), totalTokens: 2, inputTokens: 1, outputTokens: 1 },
+            });
+          }
+          active += 1;
+          started.resolve();
+          return new Promise((_resolve, reject) => {
+            const signal = options?.abortSignal;
+            const onAbort = () => {
+              signal?.removeEventListener("abort", onAbort);
+              active -= 1;
+              stopped += 1;
+              reject(signal?.reason);
+            };
+            if (signal?.aborted) onAbort();
+            else signal?.addEventListener("abort", onAbort, { once: true });
+          });
+        }
+        scoreCalls += 1;
+        return Promise.resolve({
+          ...completion([
+            AssistantContent.toolCall("score", "submit", { score: 10, reason: "Correct" }),
+          ]),
+          usage: { ...Usage.empty(), totalTokens: 2, inputTokens: 1, outputTokens: 1 },
+        });
+      },
+    };
+    const metric = gEval({
+      name: "quality",
+      model,
+      criteria: "Compare the answer",
+      evaluationParams: ["actualOutput"],
+    });
+    const target = agentEvalTarget<string, string, string>({
+      agent: new Agent({ id: "integrated-preparation", model: agentFixture.model }),
+      request: () => ({ prompt: "hello", abortSignal: requestController.signal }),
+      output: ({ response }) => response.output,
+    });
+    const suite = {
+      name: "shared-preparation",
+      cases: [
+        { id: "a", input: "hello" },
+        { id: "b", input: "hello" },
+      ],
+      target,
+      metrics: [metric],
+      concurrency: 2,
+    };
+    const operation = runEvalSuite({ ...suite, signal: suiteController.signal });
+    const rejection = expect(operation).rejects.toBe(reason);
+    await started.promise;
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    suiteController.abort(reason);
+    await rejection;
+    expect({ setupCalls, scoreCalls, active, stopped }).toEqual({
+      setupCalls: 1,
+      scoreCalls: 0,
+      active: 0,
+      stopped: 1,
+    });
+    expect(suiteBalance()).toBe(0);
+    expect(requestBalance()).toBe(0);
+    blockPreparation = false;
+    const control = await runEvalSuite(suite);
+    expect(control.results.map((result) => result.scores.quality?.score)).toEqual([1, 1]);
+    expect(control.results.map((result) => result.metrics[0]?.outcome.usage?.totalTokens)).toEqual([
+      4, 2,
+    ]);
+    expect({ setupCalls, scoreCalls, active }).toEqual({ setupCalls: 2, scoreCalls: 2, active: 0 });
+    expect(requestBalance()).toBe(0);
   });
 });
 

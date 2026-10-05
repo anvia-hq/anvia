@@ -1036,6 +1036,28 @@ const result = await runEvalSuite({
 
 Use `selectEvalCaseIds(previousResult)` to select failed and invalid cases for a rerun.
 
+### Cancellation ownership
+
+`agentEvalTarget` forwards the case signal to initial generation and approval resumes. If the
+request also supplies `abortSignal`, either signal cancels that target invocation. The composed
+signal preserves the first observed abort reason. The target copies request settings and removes
+its composition listeners when it settles. Direct two-argument target calls remain supported.
+
+Cancellation rejects pending request, interaction responder, and output callbacks without starting
+later phases. The callbacks keep their existing signatures. Their application-owned computation
+cannot be forcibly stopped, and its eventual rejection is still observed.
+
+Built-in embedding and judge metrics forward the case signal to provider work and retry delays.
+Providers must cooperate with cancellation. A settled suite does not by itself prove that a
+noncooperative operation has stopped.
+
+`gEval` deduplicates concurrent preparation within each metric instance. Preparation owns a
+separate signal, so cancelling one waiter does not cancel other live cases. When the last waiter
+leaves, pending preparation is detached and cancelled. Rejected or empty preparation can be retried,
+and stale results cannot replace a newer preparation. Successful steps are cached with detached
+arrays. Setup usage belongs once to the first live case that accepts the steps. Supplied
+`evaluationSteps` need no preparation request.
+
 ### Results, usage, and failures
 
 Every case result includes `targetStatus`, target and total durations, per-case usage and optional

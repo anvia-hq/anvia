@@ -10,7 +10,7 @@ Add a changeset for any user-facing package change:
 - `minor`: new backwards-compatible APIs, features, options, exports, or capabilities.
 - `major`: breaking API, behavior, package export, runtime, or type changes.
 
-Do not add a changeset for docs-only changes, CI changes, examples-only changes, or changes to private workspaces.
+Do not add a changeset for repository-only documentation, CI changes, examples-only changes, or changes to private workspaces. Package README updates intended for npm need a patch changeset: npm displays the README from a published release, so merging documentation alone does not refresh the package page.
 
 ## Create A Changeset
 

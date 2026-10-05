@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createVectorContext,
   createVectorSearchTool,
+  type Embedding,
   type EmbeddingModel,
+  type EmbeddingOperationOptions,
   embedDocuments,
   embedSparseQuery,
   embedSparseTexts,
@@ -15,6 +17,7 @@ import {
   ingestVectorText,
   isVectorContext,
   retrieveDocuments,
+  type SparseEmbedding,
   type SparseEmbeddingModel,
   type VectorSearchRequest,
   type VectorStoreUpsertOptions,
@@ -206,6 +209,211 @@ describe("embedding helpers", () => {
         content: () => [],
       }),
     ).rejects.toThrow("at least one text chunk");
+  });
+});
+
+describe.each(["dense", "sparse"] as const)("%s batch cardinality", (channel) => {
+  const vector = (document: string): Embedding | SparseEmbedding =>
+    channel === "dense"
+      ? { document, vector: [1] }
+      : { document, vector: { indices: [0], values: [1] } };
+  const diagnostic = (count: number) =>
+    `${channel === "dense" ? "Embedding" : "Sparse embedding"} model returned ${count} embeddings for 2 texts`;
+
+  function fixture(
+    provide: (texts: string[], attempt: number) => Promise<Array<Embedding | SparseEmbedding>>,
+  ) {
+    let attempts = 0;
+    const common = { provider: "test", modelId: "batch-count", maxBatchSize: 2 };
+    const dense: EmbeddingModel = {
+      ...common,
+      async embedTexts(texts) {
+        return (await provide(texts, ++attempts)) as Embedding[];
+      },
+    };
+    const sparse: SparseEmbeddingModel = {
+      ...common,
+      async embedTexts(texts) {
+        return (await provide(texts, ++attempts)) as SparseEmbedding[];
+      },
+      async embedQuery(query) {
+        return { document: query, vector: { indices: [0], values: [1] } };
+      },
+    };
+    return {
+      attempts: () => attempts,
+      run: (texts: string[], options: EmbeddingOperationOptions & { concurrency?: number } = {}) =>
+        channel === "dense"
+          ? embedTexts({ model: dense, texts, ...options })
+          : embedSparseTexts({ model: sparse, texts, ...options }),
+      documents: () =>
+        channel === "dense"
+          ? embedDocuments({ model: dense, documents: ["a", "b"], content: (text) => text })
+          : embedDocuments({
+              models: { dense: new KeywordModel(), sparse },
+              documents: ["a", "b"],
+              content: (text) => text,
+            }),
+    };
+  }
+
+  it.each([1, 3])("rejects a batch count of %i before compensating batches run", async (count) => {
+    const provider = fixture(async (_, attempt) =>
+      Array.from({ length: attempt === 1 ? count : 4 - count }, () => vector("wrong")),
+    );
+    await expect(provider.run(["a", "b", "c", "d"])).rejects.toThrow(diagnostic(count));
+    expect(provider.attempts()).toBe(1);
+    await expect(provider.documents()).rejects.toThrow(diagnostic(4 - count));
+  });
+
+  it("does not retry malformed successful batches under an always-retry policy", async () => {
+    const provider = fixture(async () => [vector("a")]);
+    await expect(
+      provider.run(["a", "b", "c", "d"], {
+        retries: { maxAttempts: 3, initialDelayMs: 0, shouldRetry: () => true },
+      }),
+    ).rejects.toThrow(diagnostic(1));
+    expect(provider.attempts()).toBe(1);
+  });
+
+  it("captures the requested count before the provider mutates its input batch", async () => {
+    const provider = fixture(async (texts) => {
+      texts.pop();
+      return texts.map(vector);
+    });
+    await expect(provider.run(["a", "b"])).rejects.toThrow(diagnostic(1));
+    expect(provider.attempts()).toBe(1);
+  });
+
+  it.each(["pop", "push", "replace"] as const)(
+    "owns accepted batch containers when a provider uses %s while a sibling is pending",
+    async (mutation) => {
+      const retained = [vector("a"), vector("b")];
+      const original = [...retained];
+      let finish!: (value: Array<Embedding | SparseEmbedding>) => void;
+      let started!: () => void;
+      const siblingStarted = new Promise<void>((resolve) => {
+        started = resolve;
+      });
+      const provider = fixture(async (_, attempt) => {
+        if (attempt === 1) return retained;
+        started();
+        return new Promise((resolve) => {
+          finish = resolve;
+        });
+      });
+      const result = provider.run(["a", "b", "c", "d"], { concurrency: 2 });
+      await siblingStarted;
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      if (mutation === "pop") retained.pop();
+      if (mutation === "push") retained.push(vector("extra"));
+      if (mutation === "replace") retained[0] = vector("replacement");
+      finish([vector("c"), vector("d")]);
+      const { embeddings } = await result;
+      expect(embeddings.map((item) => item.document)).toEqual(["a", "b", "c", "d"]);
+      expect(embeddings[0]).toBe(original[0]);
+      expect(embeddings[1]).toBe(original[1]);
+      expect(provider.attempts()).toBe(2);
+    },
+  );
+
+  it("preserves order when batches finish in reverse", async () => {
+    let finishFirst!: (value: Array<Embedding | SparseEmbedding>) => void;
+    let secondFinished!: () => void;
+    const second = new Promise<void>((resolve) => {
+      secondFinished = resolve;
+    });
+    const provider = fixture(async (texts, attempt) => {
+      if (attempt === 1) {
+        return new Promise((resolve) => {
+          finishFirst = resolve;
+        });
+      }
+      secondFinished();
+      return texts.map(vector);
+    });
+    const result = provider.run(["a", "b", "c", "d"], { concurrency: 2 });
+    await second;
+    finishFirst([vector("a"), vector("b")]);
+    expect((await result).embeddings.map((item) => item.document)).toEqual(["a", "b", "c", "d"]);
+    expect(provider.attempts()).toBe(2);
+  });
+
+  it("returns empty and singleton controls without extra calls", async () => {
+    const provider = fixture(async (texts) => texts.map(vector));
+    await expect(provider.run([])).resolves.toEqual({ embeddings: [] });
+    expect(provider.attempts()).toBe(0);
+    await expect(provider.run(["a"])).resolves.toEqual({
+      embeddings:
+        channel === "dense"
+          ? [{ document: "a", vector: [1] }]
+          : [{ document: "a", vector: { indices: [0], values: [1] } }],
+    });
+    expect(provider.attempts()).toBe(1);
+  });
+
+  it("preserves shape error precedence over cardinality", async () => {
+    const provider = fixture(async () => [
+      channel === "dense"
+        ? { document: "a", vector: [Number.NaN] }
+        : { document: "a", vector: { indices: [0, 0], values: [1, 1] } },
+    ]);
+    await expect(provider.run(["a", "b"])).rejects.toThrow(
+      channel === "dense" ? "non-finite vector" : "duplicate indices",
+    );
+    expect(provider.attempts()).toBe(1);
+  });
+});
+
+describe("embedding document batch controls", () => {
+  it.each(["dense", "sparse"] as const)(
+    "rejects a malformed %s hybrid channel",
+    async (channel) => {
+      const dense: EmbeddingModel = {
+        provider: "test",
+        modelId: "dense",
+        async embedTexts(texts) {
+          return (channel === "dense" ? texts.slice(0, 1) : texts).map((document) => ({
+            document,
+            vector: [1],
+          }));
+        },
+      };
+      const sparse: SparseEmbeddingModel = {
+        provider: "test",
+        modelId: "sparse",
+        async embedTexts(texts) {
+          return (channel === "sparse" ? texts.slice(0, 1) : texts).map((document) => ({
+            document,
+            vector: { indices: [0], values: [1] },
+          }));
+        },
+        async embedQuery(query) {
+          return { document: query, vector: { indices: [0], values: [1] } };
+        },
+      };
+      await expect(
+        embedDocuments({
+          models: { dense, sparse },
+          documents: ["a", "b"],
+          content: (text) => text,
+        }),
+      ).rejects.toThrow(
+        `${channel === "dense" ? "Embedding" : "Sparse embedding"} model returned 1 embeddings for 2 texts`,
+      );
+    },
+  );
+
+  it("preserves chunk alignment and source metadata for hybrid documents", async () => {
+    const { documents } = await embedDocuments({
+      models: { dense: new KeywordModel(), sparse: new SparseModel() },
+      documents: [{ chunks: ["a", "b"], source: "x" }],
+      content: (document) => document.chunks,
+      metadata: (document) => ({ source: document.source }),
+    });
+    expect(documents[0]?.embeddings.map((item) => item.document)).toEqual(["a", "b"]);
+    expect(documents[0]?.sparseEmbeddings?.map((item) => item.document)).toEqual(["a", "b"]);
+    expect(documents[0]?.metadata).toEqual({ source: "x" });
   });
 });
 

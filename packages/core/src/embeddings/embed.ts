@@ -41,11 +41,6 @@ export async function embedTexts(options: EmbedTextsOptions): Promise<EmbedTexts
     embedDenseBatch(options.model, batch, options),
   );
   const embeddings = results.flat();
-  if (embeddings.length !== options.texts.length) {
-    throw new Error(
-      `Embedding model returned ${embeddings.length} embeddings for ${options.texts.length} texts`,
-    );
-  }
   return { embeddings };
 }
 
@@ -59,11 +54,6 @@ export async function embedSparseTexts(
     embedSparseBatch(options.model, batch, options),
   );
   const embeddings = results.flat();
-  if (embeddings.length !== options.texts.length) {
-    throw new Error(
-      `Sparse embedding model returned ${embeddings.length} embeddings for ${options.texts.length} texts`,
-    );
-  }
   return { embeddings };
 }
 
@@ -108,7 +98,6 @@ export async function embedDocuments<T, Metadata extends VectorMetadata = Vector
         batch.map((item) => item.text),
         options,
       );
-      assertBatchLength("Embedding", embeddings.length, batch.length);
       return batch.map((item, index) => ({
         documentIndex: item.documentIndex,
         embedding: embeddings[index] as Embedding,
@@ -131,7 +120,6 @@ export async function embedDocuments<T, Metadata extends VectorMetadata = Vector
           batch.map((item) => item.text),
           options,
         );
-        assertBatchLength("Embedding", embeddings.length, batch.length);
         return batch.map((item, index) => ({
           documentIndex: item.documentIndex,
           embedding: embeddings[index] as Embedding,
@@ -147,7 +135,6 @@ export async function embedDocuments<T, Metadata extends VectorMetadata = Vector
           batch.map((item) => item.text),
           options,
         );
-        assertBatchLength("Sparse embedding", embeddings.length, batch.length);
         return batch.map((item, index) => ({
           documentIndex: item.documentIndex,
           embedding: embeddings[index] as SparseEmbedding,
@@ -177,6 +164,7 @@ async function embedDenseBatch(
   options: EmbeddingOperationOptions,
 ): Promise<Embedding[]> {
   throwIfAborted(options.abortSignal);
+  const expected = texts.length;
   const embeddings = await runWithRetries(
     () => model.embedTexts(texts, modelCallOptions(options.abortSignal)),
     resolveRetries(options),
@@ -186,7 +174,8 @@ async function embedDenseBatch(
   for (const [index, embedding] of embeddings.entries()) {
     validateDenseEmbedding(embedding, model.dimensions, index);
   }
-  return embeddings;
+  assertBatchLength("Embedding", embeddings.length, expected);
+  return embeddings.slice();
 }
 
 async function embedSparseBatch(
@@ -195,6 +184,7 @@ async function embedSparseBatch(
   options: EmbeddingOperationOptions,
 ): Promise<SparseEmbedding[]> {
   throwIfAborted(options.abortSignal);
+  const expected = texts.length;
   const embeddings = await runWithRetries(
     () => model.embedTexts(texts, modelCallOptions(options.abortSignal)),
     resolveRetries(options),
@@ -202,7 +192,8 @@ async function embedSparseBatch(
   );
   throwIfAborted(options.abortSignal);
   for (const [index, embedding] of embeddings.entries()) validateSparseEmbedding(embedding, index);
-  return embeddings;
+  assertBatchLength("Sparse embedding", embeddings.length, expected);
+  return embeddings.slice();
 }
 
 function prepareDocuments<T, Metadata extends VectorMetadata>(

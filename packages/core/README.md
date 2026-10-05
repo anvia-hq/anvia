@@ -875,6 +875,14 @@ await ingestVectorText({
 source document is embedded as one chunk. Chunk embeddings remain grouped under the source document
 ID so re-ingestion replaces its complete vector representation instead of leaving stale chunks.
 
+`embedTexts()`, `embedSparseTexts()`, and `embedDocuments()` require exactly one embedding per
+requested text in every provider batch. Short and long batches reject before results are flattened
+or grouped, even when their total counts would match. Successful batches retain input batch order.
+Malformed successful responses are not retried, including with a custom retry policy. After a
+provider call completes, cancellation takes precedence over vector-shape errors, which take
+precedence over batch-count errors. Concurrent calls wait for already-started batches to settle;
+this validation does not cancel sibling provider calls.
+
 ## Media
 
 Media helpers follow the same one-object API and share `providerOptions`, `retries`, and

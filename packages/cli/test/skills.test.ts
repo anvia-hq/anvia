@@ -19,6 +19,7 @@ const expectedSkills = [
   "anvia-agent",
   "anvia-channels",
   "anvia-chat",
+  "anvia-durable",
   "anvia-evals",
   "anvia-mcp",
   "anvia-pipeline",
@@ -66,6 +67,10 @@ describe("initSkills", () => {
     expect(report.every((skill) => skill.installed && skill.complete)).toBe(true);
     expect(existsSync(skillPath(cwd, "anvia-agent", "SKILL.md"))).toBe(true);
     expectExecutableScript(skillPath(cwd, "anvia-agent", "scripts/check-agent.sh"));
+    expectExecutableScript(skillPath(cwd, "anvia-durable", "scripts/check-durable.sh"));
+    expect(
+      readFileSync(skillPath(cwd, "anvia-durable", "references/tasks-and-subagents.md"), "utf8"),
+    ).toBe(skillSource("anvia-durable", "references/tasks-and-subagents.md"));
     expect(existsSync(join(cwd, "skills", "README.md"))).toBe(false);
     expect(readFileSync(skillPath(cwd, "anvia-rag", "SKILL.md"), "utf8")).toBe(
       skillSource("anvia-rag", "SKILL.md"),
@@ -217,7 +222,9 @@ describe("adapter targets", () => {
     expect(content).toContain('description: "Build Anvia agents');
     expect(content).toContain("alwaysApply: false");
     expect(content).toContain("`skills/anvia-agent/SKILL.md`");
-    expect(result.targets.find((target) => target.target === "cursor")?.created.length).toBe(9);
+    expect(result.targets.find((target) => target.target === "cursor")?.created.length).toBe(
+      expectedSkills.length,
+    );
     writeFileSync(rule, '---\ndescription: "locally edited"\n---\n');
     const blocked = initSkills({ cwd, targets: ["cursor"], skillsDirectory });
     const cursorBlocked = blocked.targets.find((target) => target.target === "cursor");
@@ -255,7 +262,9 @@ describe("adapter targets", () => {
     const rule = readFileSync(join(cwd, ".cursor", "rules", "anvia-rag.mdc"), "utf8");
     expect(rule).toContain("`agents/anvia-rag/SKILL.md`");
     expect(rule).not.toContain("`skills/anvia-rag");
-    expect(result.targets.find((target) => target.target === "cursor")?.created.length).toBe(9);
+    expect(result.targets.find((target) => target.target === "cursor")?.created.length).toBe(
+      expectedSkills.length,
+    );
     // Re-running with the same directory stays up to date; switching directories
     // refreshes the generated pointers instead of leaving stale links.
     const again = initSkills({

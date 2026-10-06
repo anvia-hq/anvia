@@ -15,7 +15,7 @@ pnpm dlx @anvia/cli skills init --codex
 
 This creates local `skills/` trees and adds references to `AGENTS.md`. Choose `--claude`, `--cursor`,
 or multiple target flags to integrate with other coding agents. Skills cover agents, chat, RAG, MCP,
-pipelines, Studio, evaluations, and channels.
+pipelines, Studio, evaluations, channels, and experimental durable workflows.
 
 ## Add UI components
 

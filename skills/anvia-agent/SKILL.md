@@ -9,6 +9,10 @@ Use this skill when the user wants to build or change an Anvia agent: defining
 tools, configuring the `Agent`, handling approvals and streaming, adding memory,
 composing specialists, or wiring a provider model.
 
+For work that must survive process restarts, use the `anvia-durable` skill for runtime
+submission, owned subagents, and recovery policies. Ordinary streaming, teams, and memory
+do not provide durable execution checkpoints.
+
 ## Process
 
 1. Define tools first (`references/tools.md`) — zod schemas, approvals.

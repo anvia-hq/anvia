@@ -29,6 +29,7 @@ describe.runIf(existsSync(distCli))("built CLI skills assets", () => {
     const skillLines = result.stdout.split("\n").filter((line) => line.startsWith("skills/"));
 
     expect(skillLines).toContain("skills/anvia-agent");
+    expect(skillLines).toContain("skills/anvia-durable");
     expect(skillLines.length).toBeGreaterThan(0);
     expect(result.stdout).toContain("skills available");
   });

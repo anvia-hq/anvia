@@ -16,6 +16,10 @@ with one bounded agent or extractor stage inside.
 - The common failure is an agent with rising `maxTurns` doing a fixed sequence
   — rewrite that as a pipeline with one `.agent()` stage instead.
 
+If the stages must survive process restarts, use the `anvia-durable` skill to choose a
+static agent DAG or versioned custom tasks. Calling a core Pipeline inside a task does
+not checkpoint its individual stages.
+
 ## Process
 
 1. Model the flow as stages (`references/steps-compose.md`) — step, compose,

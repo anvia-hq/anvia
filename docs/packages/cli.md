@@ -67,7 +67,7 @@ written once. Updates do not run shadcn, upgrade dependencies, refresh CSS, or d
 ## Agent Skills
 
 Skills bundle API-verified knowledge for agents, chat, RAG, MCP, pipelines, Studio, evals,
-and channels. Installation copies `SKILL.md`, `references/`, and `scripts/`; it does not run scripts.
+channels, and experimental durable workflows (`anvia-durable`). Installation copies `SKILL.md`, `references/`, and `scripts/`; it does not run scripts.
 
 ```sh
 anvia skills list

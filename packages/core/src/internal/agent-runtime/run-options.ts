@@ -6,7 +6,7 @@ import type { AgentRunExecution } from "./execution";
 const internalAgentRunOptions = Symbol("internalAgentRunOptions");
 
 export type InternalAgentRunOptions = {
-  /** Persistence boundaries for non-streaming execution. */
+  /** Persistence boundaries for model and tool execution. */
   execution?: AgentRunExecution | undefined;
   hook?: AgentHook | undefined;
   onFailure?: ((failure: { error: unknown; messages: readonly Message[] }) => void) | undefined;

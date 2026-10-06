@@ -90,7 +90,7 @@ const info = await backupSqlite("./durable.sqlite", "./backup-2026-10-06.sqlite"
 await restoreSqlite("./backup-2026-10-06.sqlite", "./restored.sqlite");
 ```
 
-Backups are offline maintenance operations. They require an existing schema-3 database and
+Backups are offline maintenance operations. They accept an existing schema-3 or schema-4 database and
 acquire its exclusive runtime ownership for the copy. Maintenance uses SQLite's backup API,
 which includes committed WAL state and preserves row identities used by pagination. The copy
 is integrity checked, sealed with creation time/schema metadata, checkpointed, closed, synced,
@@ -126,10 +126,11 @@ Choose a backup interval based on acceptable recovery-point loss, and measure re
 5. Expand traffic only after fault recovery, backup restoration, and sustained-load checks meet
    your service targets. Document the responsible operator and rollback trigger.
 
-Schema 3 upgrades schemas 1/2 on acquisition. This maintenance API intentionally backs up only
-schema 3: take an infrastructure-level consistent offline snapshot before upgrading an older
-schema. Older engines reject schema 3; an application downgrade is safe only when its schema and
-saved definitions remain compatible. Otherwise restore the prior backup to a new file and audit
+Schema 4 upgrades schemas 1–3 on acquisition. This maintenance API intentionally backs up only
+schemas 3/4: take an infrastructure-level consistent offline snapshot before upgrading an older
+schema. The current backup helper upgrades schema 3 to 4 when acquiring ownership. Older
+engines reject schema 4; an application downgrade is safe only when its schema and saved
+definitions remain compatible. Otherwise restore the prior backup to a new file and audit
 post-backup external effects before resuming. There is no automatic downgrade migration.
 
 Unit tests cover injected journal failures, process kills, bounded task load, cancellation,

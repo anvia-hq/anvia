@@ -67,6 +67,8 @@ fail provider output validation.
 For recoverable execution, register a supported agent with the experimental
 [`@anvia/durable`](../durable/README.md) runtime. Durable tools receive an optional stable
 `ToolCallContext.operationId` for external idempotency. Direct execution does not supply it.
+Durable registrations can opt into persisted streaming with `stream: true`; core execution
+protocol version 2 checkpoints validated streamed completions alongside tool results.
 
 ## Learn more
 

@@ -3,7 +3,12 @@ export { createResolvedAgent, getResolvedAgentOptions } from "../agent/resolved-
 export { getAgentToolState } from "../agent/tool-state";
 export type { ResolvedAgentOptions } from "../agent/types";
 export { AGENT_RUN_EXECUTION_VERSION } from "./agent-runtime/execution";
-export type { AgentRunExecution, AgentToolExecutionResult } from "./agent-runtime/execution";
+export type {
+  AgentRunExecution,
+  AgentToolExecutionResult,
+  AgentCompletionStreamEvent,
+  AgentCompletionStream,
+} from "./agent-runtime/execution";
 export { createHook } from "../hooks/control";
 export type { AgentHook } from "../hooks/types";
 export {

@@ -8,6 +8,7 @@ import {
   hasToolResult,
   lookup,
   makeAgent,
+  makeStreamingAgent,
   toolResponse,
 } from "../../durable/test/helpers.js";
 
@@ -18,10 +19,10 @@ const submission = {
   requestId: "one",
   prompt: "hello",
 };
-async function setup(agent = makeAgent(async () => done())) {
+async function setup(agent = makeAgent(async () => done()), stream = false) {
   const runtime = await DurableRuntime.open({
     store: new SqliteDurableStore(":memory:"),
-    agents: [{ agent, version: "1" }],
+    agents: [{ agent, version: "1", ...(stream ? { stream: true } : {}) }],
   });
   runtimes.push(runtime);
   const authorize = vi.fn((_request, resource) => resource.sessionId === "allowed");
@@ -253,4 +254,29 @@ describe("durable graph HTTP bridge", () => {
     expect((await client.graphSnapshot(graph.id)).status).toBe("cancelled");
     await expect(client.retry(graph.nodes[0]!.runId)).rejects.toMatchObject({ status: 409 });
   });
+});
+
+it("delivers persisted token events and reconnects by cursor over the durable HTTP bridge", async () => {
+  const agent = makeStreamingAgent(async function* () {
+    yield { type: "text_delta", delta: "do" };
+    yield { type: "text_delta", delta: "ne" };
+    yield { type: "final", response: done() };
+  });
+  const completion = vi.spyOn(agent.model, "completion");
+  const { client, runtime } = await setup(agent, true);
+  const initial = await client.submit(submission);
+  await (await runtime.getRun(initial.run.id)).result();
+  const saved = [];
+  for await (const event of client.stream(initial.run.id)) saved.push(event);
+  const deltas = saved.filter((event) => event.type === "model_delta");
+  expect(deltas).toMatchObject([
+    { data: { event: { type: "text_delta", delta: "do", turn: 1 } } },
+    { data: { event: { type: "text_delta", delta: "ne", turn: 1 } } },
+  ]);
+  const reconnected = [];
+  for await (const event of client.stream(initial.run.id, { after: deltas[0]!.sequence }))
+    reconnected.push(event);
+  expect(reconnected.filter((event) => event.type === "model_delta")).toEqual([deltas[1]]);
+  expect((await client.snapshot(initial.run.id)).run.stream).toBe(true);
+  expect(completion).not.toHaveBeenCalled();
 });

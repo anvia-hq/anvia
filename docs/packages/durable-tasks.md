@@ -136,7 +136,7 @@ interaction and call `respond()` or `resolveTool()`. Cancelling the task tree al
 owned agent runs; cancelling an agent run settles its corresponding child task. Once the
 child's outcome is decided, the owned run cannot be retried independently.
 
-Use the existing run stream for model/tool progress: the task-tree stream contains task
+Use the owned run stream for model/tool progress and opt-in persisted token deltas: the task-tree stream contains task
 submission and status changes, not every agent journal event. These generated run sessions
 are reserved. The HTTP authorization callback maps owned agent runs to their parent task
 session and includes `taskId`, `rootTaskId`, `taskName`, `runId`, and `agentId`.
@@ -235,12 +235,12 @@ Migration and activation commit together. Restore compatible code and call `retr
 already blocked task. Migrations must preserve the meaning of saved effects and child keys;
 there is no implicit rewriting of journals, children, or consumed outcomes.
 
-SQLite schema 3 adds custom tasks and scheduling indexes. Acquisition upgrades schema 1 or
-2 while retaining existing runs and static graphs. Older engines reject schema 3; downgrades
+SQLite schema 4 adds persisted streaming attempts to the task-aware store. Acquisition upgrades
+schemas 1–3 while retaining existing runs, graphs, and tasks. Older engines reject schema 4; downgrades
 are unsupported. Custom stores must implement the new task transaction, listing, scheduling,
 and event methods as well as the existing store contract.
 
-Persisted token streaming, distributed workers, Postgres, automatic retention, execution deadlines,
+Distributed workers, Postgres, automatic retention, execution deadlines,
 Studio UI, and general migration tooling remain future work. Offline backup/restore and
 operational controls are described in the [operations guide](./durable-operations.md). This package is not yet
 being presented as production-ready.

@@ -13,7 +13,8 @@ An agent definition is registered with an explicit version. Submitting a string 
 atomically stores a queued request and a submission event before starting work. Session
 history is captured when that request reaches the head of its session queue. Repeated submission IDs return the original run; conflicting inputs fail.
 
-The runtime uses core's non-streaming execution boundaries. Before a model request or an
+The runtime uses core's model and tool execution boundaries. Agent registrations use
+`generate()` by default; `stream: true` selects `agent.stream()` with the same checkpoint guarantees. Before a model request or an
 approved tool call, it commits an operation intent. After the operation returns, it commits
 the normalized result and event together. Tool checkpoint errors propagate out of the agent
 loop; they are not converted into ordinary tool errors for the model to ignore.
@@ -274,7 +275,7 @@ Existing `/runs/:id` routes authorize graph children against the graph's owning 
 not their generated execution session. Graph listing requires owning-session access.
 
 SQLite schema version 2 added graph records and dependency-aware scheduling. The current
-schema version 3 adds custom tasks; version 1 and 2 stores upgrade on ownership acquisition,
+schema version 4 adds persisted streaming attempts; version 1–3 stores upgrade on ownership acquisition,
 preserving existing runs. Older engines reject the upgraded database.
 Downgrading the database is unsupported.
 
@@ -286,11 +287,22 @@ conditional DAG edges, durable core Pipeline execution, and a Studio graph UI re
 
 `run.stream()` yields persisted `submitted`, `status`, `model_started`, `model_completed`,
 `tool_started`, and `tool_completed` events. Model completion events include the normalized
-response. These are durable progress events, not `AgentStreamEvent` token deltas.
+response. With `stream: true` on the agent registration, the iterator also yields
+`model_attempt_started`, `model_delta`, and `model_attempt_failed`. These carry an
+`operationId` and unique `attemptId`; each delta wraps a normalized core generation `event`.
+The validated response in `model_completed` carries that attempt ID and remains the checkpoint.
+
+See [streaming model output](../../packages/durable/README.md#streaming-model-output) for
+configuration and recovery semantics. Replace partial output when a new attempt starts for
+an operation, and discard it on attempt failure or cancellation. A restarted model request
+starts a new stream; it does not continue previous partial tokens. Committed model/tool results
+are reused without appending duplicate delta events. The streaming option is captured at
+submission for root runs, graph nodes, and owned agents.
 
 Snapshots atomically include the run, its saved operations (including intermediate model
 and tool results), and an event cursor. For reconnection, restore the snapshot and then
-subscribe after its cursor:
+subscribe after its cursor. Snapshots omit partial token text: for a streaming UI, replay
+from zero or resume after the last event cursor already rendered instead:
 
 ```ts
 const run = await runtime.getRun(runId);
@@ -420,9 +432,9 @@ Durable progress is not the existing token-delta chat protocol.
   persistence boundaries. Durable session history replaces the agent's memory store here.
 - Observability callbacks may run again during reconstruction; they must be safe to repeat.
   They are not the authoritative execution journal.
-- Token streaming, pipeline/team recovery, compaction, Studio integration,
+- Pipeline/team recovery, compaction, Studio integration,
   Postgres, retention, general migration tooling, and distributed worker deployment are follow-up work.
-  Database records are experimental; the task-aware engine upgrades schema 1 or 2 to 3 on acquisition.
+  Database records are experimental; the task-aware engine upgrades schema 1–3 to 4 on acquisition. Older engines reject schema 4.
 
 ## Operational readiness
 

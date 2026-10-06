@@ -1,4 +1,5 @@
 import { AGENT_RUN_EXECUTION_VERSION, getResolvedAgentOptions } from "@anvia/core/internal/agent";
+import { isStreamingCompletionModel } from "@anvia/core/completion";
 import { modelRetrySchema } from "./schema.js";
 import { nonblank } from "./json.js";
 import type { DurableAgentRegistration } from "./types.js";
@@ -6,11 +7,18 @@ import type { DurableAgentRegistration } from "./types.js";
 export function registrations(
   values: readonly DurableAgentRegistration[],
 ): Map<string, DurableAgentRegistration> {
-  if (AGENT_RUN_EXECUTION_VERSION !== 1) throw new Error("Unsupported core execution protocol.");
+  if (AGENT_RUN_EXECUTION_VERSION !== 2) throw new Error("Unsupported core execution protocol.");
   const result = new Map<string, DurableAgentRegistration>();
   for (const registration of values) {
     nonblank(registration.version, "Agent version");
     const { agent } = registration;
+    if (registration.stream !== undefined && typeof registration.stream !== "boolean")
+      throw new TypeError("Durable stream option must be a boolean.");
+    if (
+      registration.stream === true &&
+      (!agent.model.capabilities.streaming || !isStreamingCompletionModel(agent.model))
+    )
+      throw new TypeError("Durable streaming requires a streaming-capable model.");
     const options = getResolvedAgentOptions(agent);
     if (result.has(agent.id)) throw new TypeError(`Duplicate durable agent: ${agent.id}`);
     // These callbacks can perform effects or change requests during reconstruction.
@@ -37,6 +45,7 @@ export function registrations(
     result.set(agent.id, {
       agent,
       version: registration.version,
+      ...(registration.stream === undefined ? {} : { stream: registration.stream }),
       toolRecovery: { ...registration.toolRecovery },
       ...(registration.modelRetry === undefined
         ? {}

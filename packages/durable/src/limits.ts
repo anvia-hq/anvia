@@ -36,6 +36,10 @@ export function limitedTransaction(
   const terminal = (status: string) => ["completed", "failed", "cancelled"].includes(status);
   return {
     ...tx,
+    appendEvent(id, type, data) {
+      if (type === "model_delta") payload(data);
+      tx.appendEvent(id, type, data);
+    },
     putRun(run) {
       const previous = tx.getRun(run.id);
       if (

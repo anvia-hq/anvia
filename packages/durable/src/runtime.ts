@@ -553,16 +553,18 @@ export class DurableRuntime {
           "The saved agent version is not registered. Restore it before retrying.",
         );
       }
-      const outcome = await registration.agent.generate(
-        withInternalAgentRunOptions(
-          {
-            ...run.input,
-            abortSignal: signal,
-            retries: false,
-          },
-          { runId: id, execution: createExecution(this.store, run, registration, signal) },
-        ),
+      const options = withInternalAgentRunOptions(
+        {
+          ...run.input,
+          abortSignal: signal,
+          retries: false as const,
+        },
+        { runId: id, execution: createExecution(this.store, run, registration, signal) },
       );
+      const outcome =
+        run.stream === true
+          ? await registration.agent.stream(options).result
+          : await registration.agent.generate(options);
       signal.throwIfAborted();
       this.store.transaction((tx) => {
         const current = requireRun(tx, id);

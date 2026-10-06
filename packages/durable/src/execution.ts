@@ -1,5 +1,14 @@
-import { Usage, type CompletionResponse, type JsonValue } from "@anvia/core/completion";
-import type { AgentRunExecution, AgentToolExecutionResult } from "@anvia/core/internal/agent";
+import {
+  Usage,
+  type CompletionRequest,
+  type CompletionResponse,
+  type JsonValue,
+} from "@anvia/core/completion";
+import type {
+  AgentCompletionStreamEvent,
+  AgentRunExecution,
+  AgentToolExecutionResult,
+} from "@anvia/core/internal/agent";
 import { DurableModelError, DurableRecoveryError, DurableStorageError } from "./errors.js";
 import { errorMessage, json, sameJson } from "./json.js";
 import type {
@@ -76,47 +85,122 @@ export function createExecution(
       tx.appendEvent(run.id, operation.kind === "model" ? "model_completed" : "tool_completed", {
         operationId: operation.key,
         result,
+        ...(operation.attemptId === undefined ? {} : { attemptId: operation.attemptId }),
       });
     });
   }
 
+  function modelOperation(turn: number, request: CompletionRequest): DurableOperation {
+    modelPhase = turn;
+    return start(
+      `${prefix}model:${turn}`,
+      "model",
+      json({
+        provider: registration.agent.model.provider,
+        modelId: registration.agent.model.modelId,
+        request,
+      }),
+      "safe",
+    );
+  }
+
+  function beginAttempt(operation: DurableOperation, streaming = false): void {
+    if (run.modelRetry !== undefined && (operation.attempts ?? 0) >= run.modelRetry.maxAttempts) {
+      throw new DurableModelError(
+        operation.key,
+        operation.attempts!,
+        new Error("Durable model attempt budget exhausted; retry explicitly to reset it."),
+      );
+    }
+    operation.attempts = (operation.attempts ?? 0) + 1;
+    if (streaming) operation.attemptId = globalThis.crypto.randomUUID();
+    store.transaction((tx) => {
+      tx.putOperation(run.id, operation);
+      if (streaming)
+        tx.appendEvent(run.id, "model_attempt_started", {
+          operationId: operation.key,
+          attemptId: operation.attemptId!,
+          attempt: operation.attempts!,
+        });
+    });
+  }
+
+  function saveResponse(
+    operation: DurableOperation,
+    response: CompletionResponse,
+  ): CompletionResponse {
+    // SDK response objects can contain classes, cycles, or credentials. Persist normalized fields only.
+    const { rawResponse: _raw, ...normalized } = response;
+    const saved = json({ ...normalized, rawResponse: null });
+    complete(operation, saved, response.usage);
+    return saved as unknown as CompletionResponse;
+  }
+
   return {
     async completion(turn, request, execute) {
-      modelPhase = turn;
-      const operation = start(
-        `${prefix}model:${turn}`,
-        "model",
-        json({
-          provider: registration.agent.model.provider,
-          modelId: registration.agent.model.modelId,
-          request,
-        }),
-        "safe",
-      );
+      const operation = modelOperation(turn, request);
       if (operation.status === "completed")
         return operation.result as unknown as CompletionResponse;
-      if (run.modelRetry !== undefined && (operation.attempts ?? 0) >= run.modelRetry.maxAttempts) {
-        throw new DurableModelError(
-          operation.key,
-          operation.attempts!,
-          new Error("Durable model attempt budget exhausted; retry explicitly to reset it."),
-        );
-      }
-      const attempts = (operation.attempts ?? 0) + 1;
-      operation.attempts = attempts;
-      store.transaction((tx) => tx.putOperation(run.id, operation));
+      beginAttempt(operation);
       let response: CompletionResponse;
       try {
         response = await execute();
       } catch (error) {
         check();
-        throw new DurableModelError(operation.key, attempts, error);
+        throw new DurableModelError(operation.key, operation.attempts!, error);
       }
-      // SDK response objects can contain classes, cycles, or credentials. Persist normalized fields only.
-      const { rawResponse: _raw, ...normalized } = response;
-      const saved = json({ ...normalized, rawResponse: null });
-      complete(operation, saved, response.usage);
-      return saved as unknown as CompletionResponse;
+      return saveResponse(operation, response);
+    },
+    async *streamCompletion(turn, request, execute) {
+      const operation = modelOperation(turn, request);
+      if (operation.status === "completed")
+        return operation.result as unknown as CompletionResponse;
+      beginAttempt(operation, true);
+      const stream: AsyncIterator<AgentCompletionStreamEvent, CompletionResponse> = execute();
+      let finished = false;
+      try {
+        while (true) {
+          check();
+          let next: IteratorResult<AgentCompletionStreamEvent, CompletionResponse>;
+          try {
+            next = await stream.next();
+          } catch (error) {
+            check();
+            throw new DurableModelError(operation.key, operation.attempts!, error);
+          }
+          check();
+          if (next.done) {
+            finished = true;
+            return saveResponse(operation, next.value);
+          }
+          store.transaction((tx) => {
+            if (tx.getRun(run.id)?.status !== "running")
+              throw new Error("Durable run is no longer running.");
+            tx.appendEvent(
+              run.id,
+              "model_delta",
+              json({
+                operationId: operation.key,
+                attemptId: operation.attemptId,
+                event: next.value,
+              }),
+            );
+          });
+          yield next.value;
+        }
+      } catch (error) {
+        check();
+        store.transaction((tx) =>
+          tx.appendEvent(run.id, "model_attempt_failed", {
+            operationId: operation.key,
+            attemptId: operation.attemptId!,
+            error: errorMessage(error),
+          }),
+        );
+        throw error;
+      } finally {
+        if (!finished) await stream.return?.();
+      }
     },
     async tool(call, execute) {
       const key = `${prefix}tool:${modelPhase === 0 ? "resume" : modelPhase}:${call.toolCall.toolCallId}`;

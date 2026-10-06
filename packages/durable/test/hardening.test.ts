@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, existsSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { DatabaseSync } from "node:sqlite";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import { z } from "zod";
@@ -392,4 +393,42 @@ it("finishes copying a committed owned-agent output after restart with lower quo
   ).toEqual({ status: "completed", output: "x".repeat(2000) });
   expect(model).toHaveBeenCalledTimes(1);
   expect(recovery.health().ready).toBe(true);
+});
+
+it("restores schema-3 backups and upgrades their runs without changing completed outcomes", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "durable-backup-legacy-"));
+  dirs.push(dir);
+  const path = join(dir, "live.sqlite");
+  const archive = join(dir, "backup.sqlite");
+  const restored = join(dir, "restored.sqlite");
+  const model = vi.fn(async () => done());
+  const agent = makeAgent(model);
+  const runtime = await DurableRuntime.open({
+    store: new SqliteDurableStore(path),
+    agents: [{ agent, version: "1" }],
+  });
+  runtimes.push(runtime);
+  const run = await runtime.submit(submission);
+  await run.result();
+  await runtime.close();
+  const legacy = new DatabaseSync(path);
+  legacy.exec("UPDATE anvia_durable_owner SET version = 3");
+  legacy.close();
+  expect((await backupSqlite(path, archive)).schemaVersion).toBe(4);
+  // Reproduce a sealed pre-streaming backup: these records contain no streaming fields.
+  const backup = new DatabaseSync(archive);
+  backup.exec("UPDATE anvia_durable_owner SET version = 3");
+  backup
+    .prepare("UPDATE anvia_durable_backup SET metadata = ?")
+    .run(JSON.stringify({ createdAt: new Date().toISOString(), schemaVersion: 3 }));
+  backup.close();
+  expect((await restoreSqlite(archive, restored)).schemaVersion).toBe(3);
+  const reopened = await DurableRuntime.open({
+    store: new SqliteDurableStore(restored),
+    agents: [{ agent, version: "1" }],
+  });
+  runtimes.push(reopened);
+  await reopened.resume();
+  expect(await (await reopened.getRun(run.id)).result()).toMatchObject({ output: "done" });
+  expect(model).toHaveBeenCalledTimes(1);
 });

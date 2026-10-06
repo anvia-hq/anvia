@@ -4,6 +4,7 @@ import {
   type CompletionModel,
   type CompletionRequest,
   type CompletionResponse,
+  type StreamingCompletionModel,
 } from "@anvia/core/completion";
 import type { AnyTool } from "@anvia/core/tool";
 
@@ -43,6 +44,23 @@ export function makeAgent(
 
 export function toolResponse(): CompletionResponse {
   return response([{ type: "tool-call", toolCallId: "call-1", toolName: "lookup", input: {} }]);
+}
+
+export function makeStreamingAgent(
+  streamCompletion: StreamingCompletionModel["streamCompletion"],
+  tools: AnyTool[] = [],
+): Agent {
+  return new Agent({
+    id: "researcher",
+    tools,
+    model: {
+      provider: "test",
+      modelId: "test",
+      capabilities: { ...capabilities, streaming: true },
+      completion: async () => done(),
+      streamCompletion,
+    },
+  });
 }
 
 export const done = () => response([{ type: "text", text: "done" }]);

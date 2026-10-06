@@ -40,7 +40,7 @@ or a memory adapter becomes durable by being called inside another function.
    read [operations-and-http.md](references/operations-and-http.md).
 
 Use the installed package's public types to verify the examples against its version.
-These references describe the current schema-3 package, including operational controls and
+These references describe the current schema-4 package, including operational controls and
 custom-task HTTP APIs. An older npm release may not contain them; do not invent compatibility
 wrappers or silently remove guarantees. Use the matching workspace build or package release.
 
@@ -62,8 +62,9 @@ wrappers or silently remove guarantees. Use the matching workspace build or pack
 - The currently unsupported agent options are memory, lifecycle callbacks, middleware,
   guardrails, context sources, MCP servers, provider tools, and dynamic tool indexes. Do not
   bypass registration checks by hiding those integrations inside unchecked callbacks.
-- Streams expose committed progress, not token deltas. Aborting a subscription does not cancel
-  execution. Approvals and recovery blocks require explicit authorized decisions.
+- Streams expose committed progress and, with registration `stream: true`, persisted generation
+  deltas grouped by unique attempt IDs. Partial output is provisional; replace it on a new attempt.
+  Aborting a subscription does not cancel execution. Approvals and recovery blocks require explicit authorized decisions.
 
 ## Verify and deliver
 

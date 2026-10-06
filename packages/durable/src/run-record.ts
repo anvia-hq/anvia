@@ -20,6 +20,7 @@ export function createRunRecord(
     usage: Usage.empty(),
     history: [],
     responses: {},
+    ...(registration.stream === undefined ? {} : { stream: registration.stream }),
     ...(registration.modelRetry === undefined
       ? {}
       : { modelRetry: { ...registration.modelRetry } }),

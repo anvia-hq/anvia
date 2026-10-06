@@ -108,6 +108,7 @@ const runSchema = z
     blockedOperation: id.optional(),
     modelRetry: modelRetrySchema.optional(),
     nextAttemptAt: z.iso.datetime().optional(),
+    stream: z.boolean().optional(),
   })
   .strict();
 
@@ -140,6 +141,7 @@ const operationSchema = z
     recovery: z.enum(["safe", "idempotent", "manual"]),
     result: jsonValue.optional(),
     attempts: count.optional(),
+    attemptId: id.optional(),
   })
   .strict();
 
@@ -174,6 +176,9 @@ export const eventTypeSchema = z.enum([
   "submitted",
   "status",
   "model_started",
+  "model_attempt_started",
+  "model_delta",
+  "model_attempt_failed",
   "model_completed",
   "tool_started",
   "tool_completed",

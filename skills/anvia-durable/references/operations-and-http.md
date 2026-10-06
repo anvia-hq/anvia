@@ -141,9 +141,9 @@ Preserve saved effect keys, child keys, and their meaning. Migrations do not rew
 consumed child outcomes. A missing/older definition or missing migration blocks activation.
 An already blocked task requires explicit retry after compatible code is restored.
 
-SQLite schema 3 upgrades schemas 1/2 on acquisition. Older engines reject schema 3. There is no
+SQLite schema 4 upgrades schemas 1–3 on acquisition. Older engines reject schema 4. There is no
 automatic downgrade. Back up compatible state and retain application artifacts before an upgrade.
-Maintenance helpers currently accept schema 3 only; use an infrastructure-level consistent offline
+Maintenance helpers accept schemas 3/4; backup acquisition upgrades schema 3 to 4; use an infrastructure-level consistent offline
 snapshot before upgrading an older schema.
 
 ```ts

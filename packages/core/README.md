@@ -59,6 +59,10 @@ response, a guardrail block, and an interaction that needs application input.
 Use `@anvia/client`, `@anvia/server`, and `@anvia/react` to deliver agent output to an application UI.
 Use provider, memory, vector-store, and observability adapters for the infrastructure you choose.
 
+For recoverable execution, register a supported agent with the experimental
+[`@anvia/durable`](../durable/README.md) runtime. Durable tools receive an optional stable
+`ToolCallContext.operationId` for external idempotency. Direct execution does not supply it.
+
 ## Learn more
 
 - [Core guide and API examples](https://github.com/anvia-hq/anvia/blob/main/docs/packages/core.md)

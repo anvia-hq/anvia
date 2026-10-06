@@ -102,6 +102,7 @@ new Studio([agent]).start({ port: 4021 });
 | Pipelines     | Explicit multi-step workflows that combine functions, agents, extraction, branching, and batching.        |
 | Retrieval     | Embeddings, vector search, document context, metadata filters, and RAG workflows.                         |
 | Memory        | Agent memory using storage you control.                                                                   |
+| Durable       | Experimental SQLite-backed agent recovery, persisted approvals, and reconnectable progress.               |
 | Browser       | Web interaction for agents, with the browser lifecycle owned by your application.                         |
 | Sandbox       | Give agents execution capabilities without giving up control of the environment.                          |
 | Observability | Run, generation, tool, usage, trace, and eval events for production visibility.                           |
@@ -133,6 +134,7 @@ pnpm cookbook:studio:01
 - [Core concepts](https://docs.anvia.dev/guide/core-concepts)
 - [Package catalog](https://docs.anvia.dev/packages/catalog)
 - [Core package](https://docs.anvia.dev/packages/core)
+- [Durable execution](packages/durable/README.md)
 - [Contributing](CONTRIBUTING.md)
 
 ## License

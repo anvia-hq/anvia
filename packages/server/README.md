@@ -58,3 +58,22 @@ Your application owns routing, authentication, request error handling, and durab
 - [Server streaming guide](https://github.com/anvia-hq/anvia/blob/main/docs/packages/server.md)
 - [Client protocol](https://github.com/anvia-hq/anvia/tree/main/packages/client#readme)
 - [React hooks](https://github.com/anvia-hq/anvia/tree/main/packages/react#readme)
+
+## Durable execution routes
+
+The optional `@anvia/server/durable` entrypoint exports `createDurableHandler` for
+`@anvia/durable` runtimes. It provides submission, session-scoped run listing, snapshots,
+SSE events with persisted IDs, approval responses, retry, cancellation, and reconciliation.
+An `authorize(request, resource)` callback is required for all reads and writes. The host
+owns runtime startup (`resume`) and shutdown (`close`). Client disconnects detach observers.
+
+Install `@anvia/durable` when using this subpath. See the
+[durable HTTP guide](../../docs/packages/durable.md#http-server-and-client).
+
+Generic `SseStreamOptions` also supports `eventId(event)` for native SSE IDs and
+`onCancel()` to interrupt a pending producer read before its iterator is returned.
+
+Durable graph routes under `/durable/graphs` expose submission, paginated discovery, topology
+snapshots, task SSE events, and cancellation. Graph-wide operations authorize every task;
+individual child-run routes authorize against the graph's owning session. See the
+[task graph guide](../../docs/packages/durable.md#task-dependencies-and-exposed-graphs).

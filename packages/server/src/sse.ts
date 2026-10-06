@@ -8,6 +8,7 @@ export function createSseStream<TEvent>(
   const encoder = new TextEncoder();
   const iterator = options.events[Symbol.asyncIterator]();
   const serialize = options.serialize ?? serializeJson;
+  let cancelled = false;
 
   return new ReadableStream<Uint8Array>({
     start(controller) {
@@ -18,21 +19,25 @@ export function createSseStream<TEvent>(
     async pull(controller) {
       try {
         const next = await iterator.next();
+        if (cancelled) return;
         if (next.done === true) {
           controller.close();
           return;
         }
 
         controller.enqueue(
-          encoder.encode(formatSseEvent(next.value, serialize, options.eventName)),
+          encoder.encode(formatSseEvent(next.value, serialize, options.eventName, options.eventId)),
         );
       } catch (error) {
+        if (cancelled) return;
         const event = errorEvent(error);
         controller.enqueue(encoder.encode(formatSseEvent(event, serialize, options.eventName)));
         controller.close();
       }
     },
     async cancel() {
+      cancelled = true;
+      await options.onCancel?.();
       await iterator.return?.();
     },
   });
@@ -42,9 +47,15 @@ function formatSseEvent<TEvent>(
   event: TEvent | EventStreamErrorEvent,
   serialize: (event: TEvent | EventStreamErrorEvent) => string,
   eventName: SseStreamOptions<TEvent>["eventName"],
+  eventId?: SseStreamOptions<TEvent>["eventId"],
 ): string {
   const name = typeof eventName === "function" ? eventName(event) : eventName;
   const lines: string[] = [];
+  const id = eventId?.(event);
+  if (id !== undefined) {
+    validateSseEventName(id);
+    lines.push(`id: ${id}`);
+  }
 
   if (name !== undefined && name.length > 0) {
     validateSseEventName(name);

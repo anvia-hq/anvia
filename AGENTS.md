@@ -108,6 +108,8 @@ behavior belongs in `packages/tool-studio`.
   Its build bundles the `skills/` folder.
 - `packages/client`: framework-neutral client protocol, transports, and UI
   message state for Anvia.
+- `packages/durable`: experimental durable agent execution, SQLite checkpoints,
+  recovery policies, persisted interactions, and reconnectable progress events.
 - `packages/mcp`: MCP clients, transports, tool discovery, result mapping, and URL safety.
 - `packages/provider-openai`, `packages/provider-anthropic`,
   `packages/provider-gemini`, `packages/provider-grok`,

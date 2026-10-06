@@ -8,6 +8,7 @@ These guides contain the longer API examples, configuration details, and operati
 | `@anvia/cli`             | [README](../../packages/cli/README.md)                    | [Guide](./cli.md)                    |
 | `@anvia/client`          | [README](../../packages/client/README.md)                 | [Guide](./client.md)                 |
 | `@anvia/core`            | [README](../../packages/core/README.md)                   | [Guide](./core.md)                   |
+| `@anvia/durable`         | [README](../../packages/durable/README.md)                | [Guide](./durable.md)                |
 | `@anvia/transformers`    | [README](../../packages/embedding-transformers/README.md) | [Guide](./embedding-transformers.md) |
 | `@anvia/graph`           | [README](../../packages/graph/README.md)                  | [Guide](./graph.md)                  |
 | `@anvia/memgraph`        | [README](../../packages/graph-memgraph/README.md)         | [Guide](./graph-memgraph.md)         |

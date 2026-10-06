@@ -32,6 +32,9 @@ export type JsonlStreamOptions<TEvent> = {
 };
 
 export type SseStreamOptions<TEvent> = {
+  eventId?: (event: TEvent | EventStreamErrorEvent) => string | undefined;
+  /** Interrupt a pending producer read before returning its iterator on disconnect. */
+  onCancel?: () => void | Promise<void>;
   eventName?: string | ((event: TEvent | EventStreamErrorEvent) => string | undefined);
   serialize?: (event: TEvent | EventStreamErrorEvent) => string;
   retry?: number;

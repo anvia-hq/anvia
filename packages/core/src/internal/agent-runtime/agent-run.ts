@@ -188,6 +188,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
   private readonly requestMiddlewares: AgentMiddleware[];
   private readonly controls: Readonly<Record<string, string>> | undefined;
   private readonly steeringMessages: QueuedSteering[] = [];
+  private readonly execution: InternalAgentRunOptions["execution"];
   private runState: "idle" | "running" | "closing" | "completed" | "errored" | "cancelled" = "idle";
   private readonly memoryRecorder: AgentRunMemory;
   private readonly memoryScope: MemoryScope | undefined;
@@ -220,6 +221,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       "maxTurns",
     );
     const internalOptions = getInternalAgentRunOptions(options);
+    this.execution = internalOptions?.execution;
     this.activeHook = internalOptions?.hook;
     this.onInternalFailure = internalOptions?.onFailure;
     this.beforeFinish = internalOptions?.beforeFinish;
@@ -1034,7 +1036,18 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     }
   }
 
-  private async runCompletion(
+  private runCompletion(
+    request: CompletionRequest,
+    turn: number,
+    runObservers: ActiveAgentRunObservers,
+  ): Promise<CompletionResponse> {
+    const execute = () => this.runUncachedCompletion(request, turn, runObservers);
+    return this.execution === undefined
+      ? execute()
+      : this.execution.completion(turn, request, execute);
+  }
+
+  private async runUncachedCompletion(
     request: CompletionRequest,
     turn: number,
     runObservers: ActiveAgentRunObservers,
@@ -1540,6 +1553,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       this.requestMiddlewares,
       this.abortController.signal,
       (reason) => this.cancelled(newMessages, reason),
+      this.execution,
     );
   }
 

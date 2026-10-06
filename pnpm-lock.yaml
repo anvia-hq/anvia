@@ -203,6 +203,9 @@ importers:
       '@anvia/core':
         specifier: workspace:*
         version: link:../core
+      '@anvia/durable':
+        specifier: workspace:*
+        version: link:../durable
       '@types/node':
         specifier: ^24.9.1
         version: 24.12.2
@@ -237,6 +240,30 @@ importers:
       valibot:
         specifier: ^1.5.0
         version: 1.5.0(typescript@5.9.3)
+      vitest:
+        specifier: ^4.1.11
+        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@24.12.2)(@vitest/coverage-v8@4.1.11)(happy-dom@20.9.0)(vite@8.2.2(@types/node@24.12.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.1))
+      zod:
+        specifier: ^4.6.5
+        version: 4.6.5
+
+  packages/durable:
+    devDependencies:
+      '@anvia/core':
+        specifier: workspace:*
+        version: link:../core
+      '@types/node':
+        specifier: ^24.12.2
+        version: 24.12.2
+      tsup:
+        specifier: ^8.5.1
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.26)(tsx@4.23.12)(typescript@5.9.3)(yaml@2.9.1)
+      tsx:
+        specifier: ^4.23.12
+        version: 4.23.12
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
       vitest:
         specifier: ^4.1.11
         version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@24.12.2)(@vitest/coverage-v8@4.1.11)(happy-dom@20.9.0)(vite@8.2.2(@types/node@24.12.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.1))
@@ -838,6 +865,9 @@ importers:
       '@anvia/client':
         specifier: workspace:*
         version: link:../client
+      '@anvia/durable':
+        specifier: workspace:*
+        version: link:../durable
       '@types/node':
         specifier: ^24.9.1
         version: 24.12.2

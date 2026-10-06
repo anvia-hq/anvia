@@ -46,6 +46,7 @@ import type {
 import { isQuestionTool } from "../../tool/question-tool";
 import { isSkillTool } from "../../tool/skill-tool-marker";
 import { throwIfAborted } from "../abort";
+import type { AgentRunExecution, AgentToolExecutionResult } from "./execution";
 import { mapWithConcurrency } from "../concurrency";
 import type { ToolApprovalRequest } from "./approval-request";
 import { assertToolApprovalRequirement, toolMayRequireApproval } from "./approval-requirement";
@@ -135,6 +136,7 @@ export class ToolCallExecutor {
     private readonly requestMiddlewares: readonly AgentMiddleware[],
     private readonly abortSignal: AbortSignal,
     private readonly cancel: (reason: string) => Error,
+    private readonly execution?: AgentRunExecution,
   ) {}
 
   async execute(
@@ -702,7 +704,7 @@ export class ToolCallExecutor {
     }
   }
 
-  private async runApprovedToolCall(
+  private runApprovedToolCall(
     prepared: PreparedToolCall,
     toolCall: ToolCallPart,
     hookArgs: ToolHookArgs,
@@ -714,8 +716,38 @@ export class ToolCallExecutor {
     | { output: NormalizedToolOutput; failed: false }
     | { output: NormalizedToolOutput; failed: true; error: unknown }
   > {
+    const execute = (context?: Pick<ToolCallContext, "operationId">) =>
+      this.runUncachedToolCall(
+        prepared,
+        toolCall,
+        hookArgs,
+        effectiveArgs,
+        toolObservation,
+        observation,
+        onStreamEvent,
+        context,
+      );
+    return this.execution === undefined
+      ? execute()
+      : this.execution.tool(
+          { turn: observation?.turn ?? 0, toolCall, args: effectiveArgs },
+          execute,
+        );
+  }
+
+  private async runUncachedToolCall(
+    prepared: PreparedToolCall,
+    toolCall: ToolCallPart,
+    hookArgs: ToolHookArgs,
+    effectiveArgs: string,
+    toolObservation: ToolObserverScope,
+    observation: ToolExecutionObservation | undefined,
+    onStreamEvent: ((event: AgentToolEventPayload) => void) | undefined,
+    context: Pick<ToolCallContext, "operationId"> | undefined,
+  ): Promise<AgentToolExecutionResult> {
     try {
       const toolContext: ToolCallContext = {
+        ...context,
         abortSignal: this.abortSignal,
         emitStreamEvent: async (event) => {
           let streamEventArgs: AgentToolStreamEventArgs = {

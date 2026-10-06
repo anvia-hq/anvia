@@ -4,6 +4,10 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   resolve: {
     alias: {
+      "@anvia/client/durable": fileURLToPath(new URL("../client/src/durable.ts", import.meta.url)),
+      "@anvia/core/internal/agent": fileURLToPath(
+        new URL("../core/src/internal/agent.ts", import.meta.url),
+      ),
       "@anvia/client": fileURLToPath(new URL("../client/src/index.ts", import.meta.url)),
       "@anvia/core/agent/interactions": fileURLToPath(
         new URL("../core/src/agent/interactions/index.ts", import.meta.url),

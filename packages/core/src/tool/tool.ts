@@ -57,6 +57,8 @@ export type ToolCallStreamEvent = {
 
 /** Execution context handed to a tool when the run invokes it. */
 export type ToolCallContext = {
+  /** Stable external-operation identity supplied by a durable execution runtime. */
+  operationId?: string | undefined;
   /** Emits a child-agent event into the parent run's stream. */
   emitStreamEvent?(event: ToolCallStreamEvent): void | Promise<void>;
   /** Aborted when the run is cancelled or the stream consumer leaves. */

@@ -54,3 +54,22 @@ readers are also available from `@anvia/client/transport` for other event contra
 - [Client protocol guide](https://github.com/anvia-hq/anvia/blob/main/docs/packages/client.md)
 - [Server response helpers](https://github.com/anvia-hq/anvia/tree/main/packages/server#readme)
 - [React hooks](https://github.com/anvia-hq/anvia/tree/main/packages/react#readme)
+
+## Durable HTTP client
+
+The optional `@anvia/client/durable` entrypoint exports `DurableClient` and
+`DurableHttpError`. Install `@anvia/durable` to use it. It supports submit, list, snapshot,
+SSE observation, approval responses, retry, cancellation, and tool reconciliation.
+
+Construct it with an absolute `endpoint`, optional `fetch`, `credentials`, and static or
+per-request `headers`. Restore UI state from `snapshot(runId)`, then observe
+`stream(runId, { after: snapshot.cursor })`. Incoming records and event ordering are
+validated. Reconnection is explicit; aborting observation does not cancel execution.
+These committed progress events are separate from token-delta chat streams.
+
+See the [durable HTTP guide](../../docs/packages/durable.md#http-server-and-client).
+
+`DurableClient` also exposes `submitGraph`, `listGraphs`, `graphSnapshot`, `streamGraph`, and
+`cancelGraph`. Graph snapshots contain renderable nodes/edges and explicit waiting reasons.
+Use each node's `runId` with the existing response/retry/reconciliation methods. Graph streams
+carry `graphId` and `taskId`; refresh the snapshot to obtain the latest graph-wide state.

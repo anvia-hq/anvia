@@ -22,16 +22,21 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./durable": {
+      "types": "./dist/durable.d.ts",
+      "import": "./dist/durable.js"
     }
   },
   "scripts": {
-    "build": "tsup src/index.ts --format esm --dts --sourcemap --clean",
+    "build": "tsup src/index.ts src/durable.ts --format esm --dts --sourcemap --clean",
     "coverage": "vitest run --coverage",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@anvia/client": "workspace:*",
+    "@anvia/durable": "workspace:*",
     "@types/node": "^24.9.1",
     "@vitest/coverage-v8": "4.1.11",
     "tsup": "^8.5.0",
@@ -39,6 +44,12 @@
     "vitest": "^4.1.11"
   },
   "peerDependencies": {
-    "@anvia/client": "workspace:^"
+    "@anvia/client": "workspace:^",
+    "@anvia/durable": "workspace:^"
+  },
+  "peerDependenciesMeta": {
+    "@anvia/durable": {
+      "optional": true
+    }
   }
 }

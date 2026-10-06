@@ -59,6 +59,11 @@ response, a guardrail block, and an interaction that needs application input.
 Use `@anvia/client`, `@anvia/server`, and `@anvia/react` to deliver agent output to an application UI.
 Use provider, memory, vector-store, and observability adapters for the infrastructure you choose.
 
+Streaming completions preserve empty or encrypted reasoning supplied only in the final provider
+response, including Azure Responses streams. Final encrypted details can also enrich matching
+streamed reasoning for replay on subsequent turns. Conflicting text, reasoning, and tool calls still
+fail provider output validation.
+
 For recoverable execution, register a supported agent with the experimental
 [`@anvia/durable`](../durable/README.md) runtime. Durable tools receive an optional stable
 `ToolCallContext.operationId` for external idempotency. Direct execution does not supply it.

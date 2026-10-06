@@ -9,6 +9,7 @@ import type {
   JsonValue,
   ProviderToolCall,
   ReasoningDetail,
+  ReasoningPart,
   ToolCallPart,
 } from "./types";
 import { Usage } from "./types";
@@ -394,7 +395,10 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
       (content) => content.type !== "tool-call",
     );
     const finalNonTool = finalResponse.choice.filter((content) => content.type !== "tool-call");
-    if (accumulatedNonTool.length > 0 && !nonToolPartsEqual(accumulatedNonTool, finalNonTool)) {
+    if (
+      accumulatedNonTool.length > 0 &&
+      !nonToolPartsMatchFinal(accumulatedNonTool, finalNonTool)
+    ) {
       throw new CompletionProviderOutputError({
         kind: "invalid-stream-event",
         usage: finalResponse.usage,
@@ -757,19 +761,43 @@ function jsonValuesEqual(left: JsonValue, right: JsonValue): boolean {
   return true;
 }
 
-function nonToolPartsEqual(
+function nonToolPartsMatchFinal(
   accumulated: readonly AssistantContentPart[],
   final: readonly AssistantContentPart[],
 ): boolean {
-  if (accumulated.length !== final.length) return false;
   if (!isJsonValue(accumulated) || !isJsonValue(final)) return false;
   const unmatched = [...final];
   for (const part of accumulated) {
-    const index = unmatched.findIndex((candidate) => jsonValuesEqual(part, candidate));
+    let index = unmatched.findIndex((candidate) => jsonValuesEqual(part, candidate));
+    if (index < 0 && part.type === "reasoning") {
+      index = unmatched.findIndex(
+        (candidate) => candidate.type === "reasoning" && reasoningMatchesFinal(part, candidate),
+      );
+    }
     if (index < 0) return false;
     unmatched.splice(index, 1);
   }
-  return true;
+  // Responses may expose replayable reasoning only in the terminal snapshot.
+  // It has no displayable delta, so it must not change text/tool validation.
+  return unmatched.every(
+    (part) =>
+      part.type === "reasoning" &&
+      part.text === "" &&
+      (part.details === undefined || part.details.every((detail) => detail.type === "encrypted")),
+  );
+}
+
+function reasoningMatchesFinal(accumulated: ReasoningPart, final: ReasoningPart): boolean {
+  // Only allow final-only encryption to enrich an otherwise identical part.
+  // Already streamed encryption, summaries, IDs and signatures must still agree.
+  if (accumulated.details?.some((detail) => detail.type === "encrypted")) return false;
+  if (!final.details?.some((detail) => detail.type === "encrypted")) return false;
+  const { details, ...base } = final;
+  const streamedDetails = details.filter((detail) => detail.type !== "encrypted");
+  const comparable = streamedDetails.length === 0 ? base : { ...base, details: streamedDetails };
+  return (
+    isJsonValue(accumulated) && isJsonValue(comparable) && jsonValuesEqual(accumulated, comparable)
+  );
 }
 
 function isJsonArray(value: JsonValue): value is readonly JsonValue[] {

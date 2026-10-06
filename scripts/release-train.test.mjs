@@ -17,6 +17,8 @@ import { releasesReadyForTags } from "./publish-release-state.mjs";
 import { releasePresentation } from "./release-notification.mjs";
 import {
   assertIndependentVersioning,
+  assertNoMajorReleases,
+  assertNoMajorVersionChanges,
   assertNoPendingChangesets,
   assertPrereleaseState,
   assertReleasableChangesets,
@@ -25,12 +27,14 @@ import {
   createPreviewVersion,
   findPublicPackages,
   readPendingChangesets,
+  readReleasePlan,
 } from "./release-train.mjs";
 
 const repositoryRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const rcScript = path.join(repositoryRoot, "scripts", "version-release-candidate.mjs");
 const previewScript = path.join(repositoryRoot, "scripts", "prepare-preview-release.mjs");
 const validatorScript = path.join(repositoryRoot, "scripts", "validate-release-train.mjs");
+const versionScript = path.join(repositoryRoot, "scripts", "version-packages.mjs");
 
 test("repository config versions every public package independently", () => {
   const packages = findPublicPackages(repositoryRoot);
@@ -128,6 +132,182 @@ test("compatible workspace peers prevent automatic major bumps for minor release
     // A real breaking dependency release must still be visible in the plan.
     writeChangeset(fixture, "a-minor", "major", "Change A's contract.", ["a"]);
     assert.equal(plan().find(({ name }) => name === "@fixture/b").type, "major");
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
+test("supported 0.x peer lines keep dependents and their consumers on existing majors", () => {
+  const fixture = createReleaseFixture();
+  try {
+    initializeGitFixture(fixture);
+    writeJson(path.join(fixture, "packages", "a", "package.json"), {
+      name: "@fixture/a",
+      version: "0.1.1",
+    });
+    writeJson(path.join(fixture, "packages", "b", "package.json"), {
+      name: "@fixture/b",
+      version: "1.3.0",
+      peerDependencies: { "@fixture/a": "workspace:^0.1.1 || ^0.2.0" },
+      peerDependenciesMeta: { "@fixture/a": { optional: true } },
+      devDependencies: { "@fixture/a": "workspace:*" },
+    });
+    mkdirSync(path.join(fixture, "packages", "c"));
+    writeJson(path.join(fixture, "packages", "c", "package.json"), {
+      name: "@fixture/c",
+      version: "1.1.4",
+      peerDependencies: { "@fixture/b": "workspace:^" },
+    });
+    writeChangeset(fixture, "a-minor", "minor", "Add durable streaming.", ["a"]);
+    writeChangeset(fixture, "b-peers", "patch", "Accept supported durable lines.", ["b"]);
+    assert.doesNotThrow(() => assertWorkspaceInternalDependencies(findPublicPackages(fixture)));
+    const { releases } = readReleasePlan(fixture);
+    assert.equal(releases.find(({ name }) => name === "@fixture/a").newVersion, "0.2.0");
+    assert.equal(releases.find(({ name }) => name === "@fixture/b").newVersion, "1.3.1");
+    assert.equal(
+      releases.some(({ name, type }) => name === "@fixture/c" && type !== "none"),
+      false,
+    );
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
+test("major changesets and numeric major increases are prohibited for every package", () => {
+  assert.throws(
+    () =>
+      assertReleasableChangesets([
+        { id: "breaking", releases: [{ name: "@fixture/a", bump: "major" }] },
+      ]),
+    /Major releases are prohibited.*@fixture\/a/,
+  );
+  assert.throws(
+    () =>
+      assertNoMajorReleases([
+        { name: "@fixture/a", type: "patch", oldVersion: "1.3.0", newVersion: "2.0.0" },
+      ]),
+    /Major releases are prohibited/,
+  );
+  assert.doesNotThrow(() =>
+    assertNoMajorReleases([
+      { name: "@fixture/a", type: "minor", oldVersion: "0.1.1", newVersion: "0.2.0" },
+      { name: "@fixture/b", type: "minor", oldVersion: "1.3.0", newVersion: "1.4.0-rc.0" },
+    ]),
+  );
+});
+
+test("release-plan validation works in detached CI checkouts without a local main branch", () => {
+  const fixture = createReleaseFixture();
+  try {
+    initializeGitFixture(fixture);
+    runCommand("git", ["update-ref", "refs/remotes/origin/main", "HEAD"], fixture);
+    runCommand("git", ["checkout", "--detach"], fixture);
+    runCommand("git", ["branch", "-D", "main"], fixture);
+    const configPath = path.join(fixture, ".changeset", "config.json");
+    writeJson(configPath, { ...readJson(configPath), baseBranch: "origin/main" });
+    writeChangeset(fixture, "a-fix", "patch", "Fix package A.", ["a"]);
+    assert.equal(
+      readReleasePlan(fixture).releases.find(({ name }) => name === "@fixture/a").newVersion,
+      "1.0.3",
+    );
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
+test("stable, RC, preview, and validation commands reject implicit major cascades", () => {
+  const fixture = createReleaseFixture();
+  try {
+    initializeGitFixture(fixture);
+    const dependencyPath = path.join(fixture, "packages", "a", "package.json");
+    writeJson(dependencyPath, { ...readJson(dependencyPath), version: "0.1.1" });
+    const dependentPath = path.join(fixture, "packages", "b", "package.json");
+    writeJson(dependentPath, {
+      ...readJson(dependentPath),
+      peerDependencies: { "@fixture/a": "workspace:^" },
+    });
+    writeChangeset(fixture, "a-minor", "minor", "Add an API to A.", ["a"]);
+    const before = [dependencyPath, dependentPath].map((file) => readFileSync(file, "utf8"));
+    for (const args of [
+      [versionScript],
+      [rcScript, "enter"],
+      [previewScript, "--dry-run"],
+      [validatorScript],
+    ]) {
+      const result = spawnSync(process.execPath, args, {
+        cwd: fixture,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          CI: "true",
+          GITHUB_BASE_REF: "",
+          PREVIEW_BUILD_ID: "20260814T120102.sha-abcdef0",
+        },
+      });
+      assert.notEqual(result.status, 0, args.join(" "));
+      assert.match(result.stderr, /Major releases are prohibited.*@fixture\/b/);
+      assert.deepEqual(
+        [dependencyPath, dependentPath].map((file) => readFileSync(file, "utf8")),
+        before,
+      );
+      assert.equal(existsSync(path.join(fixture, ".changeset", "pre.json")), false);
+      assert.equal(existsSync(path.join(fixture, ".changeset", "a-minor.md")), true);
+    }
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
+test("versioned release PRs cannot hide major bumps by consuming changesets", () => {
+  const fixture = createReleaseFixture();
+  try {
+    initializeGitFixture(fixture);
+    const manifestPath = path.join(fixture, "packages", "a", "package.json");
+    writeJson(manifestPath, { ...readJson(manifestPath), version: "2.0.0" });
+    assert.throws(
+      () => assertNoMajorVersionChanges(fixture, "main"),
+      /Major releases are prohibited.*@fixture\/a/,
+    );
+    const result = spawnSync(process.execPath, [validatorScript, "--base-ref", "main"], {
+      cwd: fixture,
+      encoding: "utf8",
+      env: { ...process.env, CI: "true" },
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /Major releases are prohibited/);
+    writeJson(manifestPath, { ...readJson(manifestPath), version: "1.1.0" });
+    assert.doesNotThrow(() => assertNoMajorVersionChanges(fixture, "main"));
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
+test("RC entry rolls back a rejected peer cascade and accepts declared prerelease compatibility", () => {
+  const fixture = createReleaseFixture();
+  try {
+    initializeGitFixture(fixture);
+    const manifestPath = path.join(fixture, "packages", "b", "package.json");
+    const manifest = {
+      ...readJson(manifestPath),
+      peerDependencies: { "@fixture/a": "workspace:^" },
+    };
+    writeJson(manifestPath, manifest);
+    writeChangeset(fixture, "a-minor", "minor", "Add an API to A.", ["a"]);
+    assert.doesNotThrow(() => readReleasePlan(fixture));
+    const rejected = spawnRcScript(fixture, "enter");
+    assert.notEqual(rejected.status, 0);
+    assert.match(rejected.stderr, /Major releases are prohibited.*@fixture\/b/);
+    assert.equal(existsSync(path.join(fixture, ".changeset", "pre.json")), false);
+    assertPackageVersion(fixture, "a", "1.0.2");
+    assertPackageVersion(fixture, "b", "2.4.0");
+    assert.equal(existsSync(path.join(fixture, ".changeset", "a-minor.md")), true);
+
+    manifest.peerDependencies["@fixture/a"] = "workspace:^1.0.2 || ^1.1.0-0";
+    writeJson(manifestPath, manifest);
+    writeChangeset(fixture, "b-peers", "patch", "Accept tested prerelease peers.", ["b"]);
+    runRcScript(fixture, "enter");
+    assertPackageVersion(fixture, "a", "1.1.0-rc.0");
+    assertPackageVersion(fixture, "b", "2.4.1-rc.0");
   } finally {
     rmSync(fixture, { recursive: true, force: true });
   }
@@ -244,6 +424,7 @@ test("tag recovery includes only current-commit retries", () => {
 test("release candidate preparation versions only changed packages", () => {
   const fixture = createReleaseFixture();
   try {
+    initializeGitFixture(fixture);
     writeChangeset(fixture, "a-fix", "patch", "Fix package A.", ["a"]);
     runRcScript(fixture, "enter");
     assertPackageVersion(fixture, "a", "1.0.3-rc.0");
@@ -296,6 +477,14 @@ test("manual RC publishing and OIDC setup remain explicit in the workflow", () =
     "utf8",
   );
   const publishJob = workflow.slice(workflow.indexOf("\n  publish:"));
+  const prepareJob = workflow.slice(
+    workflow.indexOf("\n  prepare:"),
+    workflow.indexOf("\n  publish:"),
+  );
+  assert.ok(
+    prepareJob.indexOf("- name: Install dependencies") <
+      prepareJob.indexOf("- name: Validate preview release state"),
+  );
   const installDependencies = publishJob.indexOf("- name: Install dependencies");
   const publishPackages = publishJob.indexOf("- name: Publish packages");
 
@@ -415,7 +604,7 @@ function spawnPrereleaseValidator(root) {
   return spawnSync(process.execPath, [validatorScript, "--prerelease", "rc"], {
     cwd: root,
     encoding: "utf8",
-    env: { ...process.env, CI: "true" },
+    env: { ...process.env, CI: "true", GITHUB_BASE_REF: "" },
   });
 }
 
@@ -423,7 +612,7 @@ function spawnStableValidator(root) {
   return spawnSync(process.execPath, [validatorScript, "--stable"], {
     cwd: root,
     encoding: "utf8",
-    env: { ...process.env, CI: "true" },
+    env: { ...process.env, CI: "true", GITHUB_BASE_REF: "" },
   });
 }
 

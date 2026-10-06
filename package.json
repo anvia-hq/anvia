@@ -158,7 +158,7 @@
     "cookbook:multimodal:03": "pnpm --filter cookbook multimodal:03",
     "changeset": "changeset",
     "github-releases": "node scripts/create-github-releases.mjs",
-    "version-packages": "changeset version",
+    "version-packages": "node scripts/version-packages.mjs",
     "releases:validate": "node scripts/validate-release-train.mjs",
     "releases:verify-packs": "node scripts/verify-release-train-packs.mjs",
     "rc:enter": "node scripts/version-release-candidate.mjs enter",

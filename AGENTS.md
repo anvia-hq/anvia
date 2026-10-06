@@ -202,7 +202,8 @@ If a generator rewrites files unexpectedly, inspect the diff before continuing.
 
 - Use package-scoped `pnpm --filter ... add ...` commands for dependency changes.
 - Use `workspace:^` for internal peer dependencies and `workspace:*` for other
-  local workspace dependencies. Peer ranges must allow compatible minor releases.
+  local workspace dependencies. For supported pre-1.0 minor lines, use an explicit workspace
+  caret union (for example `workspace:^0.1.1 || ^0.2.0`). Peer ranges must allow compatible minor releases.
 - Keep related schema/SDK dependencies aligned across packages and examples,
   especially `zod`.
 - After dependency changes, run relevant package checks and usually:
@@ -218,6 +219,10 @@ pnpm test
 Changesets are configured in `.changeset/config.json`. Public packages version independently;
 Changesets may also bump required dependents when an internal dependency changes. The ignored
 workspace is `cookbook`.
+
+Major releases are prohibited for every package, including automatic peer-dependent bumps.
+Use only patch or minor changesets. Run `pnpm releases:validate` before handing off a change;
+the guarded `pnpm version-packages` command rejects any release plan containing a major bump.
 
 For public package behavior changes, add or update a changeset unless the user
 or maintainer explicitly says not to. Avoid versioning, publishing, creating

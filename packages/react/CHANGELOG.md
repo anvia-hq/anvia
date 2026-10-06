@@ -1,11 +1,5 @@
 # @anvia/react
 
-## 2.0.0
-
-### Patch Changes
-
-- @anvia/client@2.0.0
-
 ## 1.1.4
 
 ### Patch Changes

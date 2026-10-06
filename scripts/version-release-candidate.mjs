@@ -1,3 +1,5 @@
+import { unlinkSync } from "node:fs";
+import path from "node:path";
 import {
   assertIndependentVersioning,
   assertNoPendingChangesets,
@@ -8,6 +10,7 @@ import {
   findPublicPackages,
   readPendingChangesets,
   readPrereleaseState,
+  readReleasePlan,
   run,
 } from "./release-train.mjs";
 
@@ -25,7 +28,15 @@ if (action === "enter") {
   }
 
   assertReleasableChangesets(readPendingChangesets(root), publicPackageNames);
+  readReleasePlan(root);
   run("pnpm", ["changeset", "pre", "enter", "rc"], root);
+  try {
+    readReleasePlan(root);
+  } catch (error) {
+    // Entry owns this new file; a rejected prerelease plan must restore the previous mode.
+    unlinkSync(path.join(root, ".changeset", "pre.json"));
+    throw error;
+  }
   run("pnpm", ["changeset", "version"], root);
   const prereleases = validatePrerelease();
   console.info(
@@ -34,6 +45,7 @@ if (action === "enter") {
 } else if (action === "next") {
   assertPrereleaseState(root, "rc", packages);
   assertReleasableChangesets(readPendingChangesets(root), publicPackageNames);
+  readReleasePlan(root);
   run("pnpm", ["changeset", "version"], root);
   const prereleases = validatePrerelease();
   console.info(
@@ -43,6 +55,7 @@ if (action === "enter") {
   assertPrereleaseState(root, "rc", packages);
   assertNoPendingChangesets(root);
   run("pnpm", ["changeset", "pre", "exit"], root);
+  readReleasePlan(root);
   run("pnpm", ["changeset", "version"], root);
   const stableReleases = assertStableReleaseState(root, findPublicPackages(root));
   console.info(

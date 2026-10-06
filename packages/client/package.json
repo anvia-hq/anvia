@@ -1,6 +1,6 @@
 {
   "name": "@anvia/client",
-  "version": "2.0.0",
+  "version": "1.3.0",
   "description": "Framework-neutral client protocol, transports, and UI message state for Anvia.",
   "author": "anvia",
   "license": "MIT",
@@ -48,7 +48,7 @@
   },
   "peerDependencies": {
     "@anvia/core": "workspace:^",
-    "@anvia/durable": "workspace:^"
+    "@anvia/durable": "workspace:^0.1.1 || ^0.2.0"
   },
   "peerDependenciesMeta": {
     "@anvia/durable": {

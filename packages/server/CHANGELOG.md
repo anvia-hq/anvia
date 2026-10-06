@@ -1,13 +1,5 @@
 # @anvia/server
 
-## 2.0.0
-
-### Patch Changes
-
-- Updated dependencies [8875630]
-  - @anvia/durable@0.2.0
-  - @anvia/client@2.0.0
-
 ## 1.2.0
 
 ### Minor Changes

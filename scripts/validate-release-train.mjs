@@ -1,5 +1,6 @@
 import {
   assertIndependentVersioning,
+  assertNoMajorVersionChanges,
   assertNoPendingChangesets,
   assertPrereleaseState,
   assertReleasableChangesets,
@@ -7,6 +8,7 @@ import {
   assertWorkspaceInternalDependencies,
   findPublicPackages,
   readPendingChangesets,
+  readReleasePlan,
 } from "./release-train.mjs";
 
 const root = process.cwd();
@@ -20,6 +22,10 @@ if (prereleaseTag !== undefined && stable) {
 
 assertIndependentVersioning(root, packages);
 assertWorkspaceInternalDependencies(packages);
+const baseRef =
+  readOption("--base-ref") ??
+  (process.env.GITHUB_BASE_REF ? `origin/${process.env.GITHUB_BASE_REF}` : undefined);
+if (baseRef !== undefined) assertNoMajorVersionChanges(root, baseRef);
 
 if (!stable && prereleaseTag === undefined) {
   const pending = readPendingChangesets(root);
@@ -28,6 +34,7 @@ if (!stable && prereleaseTag === undefined) {
       pending,
       new Set(packages.map(({ packageJson }) => packageJson.name)),
     );
+    readReleasePlan(root);
   }
 }
 

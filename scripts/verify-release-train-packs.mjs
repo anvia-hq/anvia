@@ -9,6 +9,7 @@ const representativePackages = new Set([
   "@anvia/azure",
   "@anvia/core",
   "@anvia/cli",
+  "@anvia/client",
   "@anvia/grok",
   "@anvia/lens",
   "@anvia/mcp",
@@ -19,6 +20,7 @@ const representativePackages = new Set([
   "@anvia/pgvector",
   "@anvia/react",
   "@anvia/react-ui",
+  "@anvia/server",
   "@anvia/studio",
 ]);
 const packages = findPublicPackages(root);
@@ -46,7 +48,13 @@ export function assertPackedInternalVersions(manifest, packagesByName) {
         continue;
       }
       const version = internalPackage.packageJson.version;
-      const expected = field === "peerDependencies" ? `^${version}` : version;
+      const sourceRange = packagesByName.get(manifest.name)?.packageJson[field]?.[name];
+      const expected =
+        field === "peerDependencies"
+          ? sourceRange === "workspace:^"
+            ? `^${version}`
+            : sourceRange?.replace(/^workspace:/, "")
+          : version;
       if (range !== expected) {
         throw new Error(
           `${manifest.name} packed ${field}.${name} as ${range}; expected ${expected}.`,

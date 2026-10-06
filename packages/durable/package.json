@@ -1,6 +1,6 @@
 {
   "name": "@anvia/durable",
-  "version": "0.2.0",
+  "version": "0.1.1",
   "description": "Durable agent execution with persisted model and tool checkpoints for Anvia.",
   "author": "anvia",
   "license": "MIT",

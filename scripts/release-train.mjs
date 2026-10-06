@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 export const DEPENDENCY_FIELDS = [
@@ -67,7 +68,12 @@ export function assertWorkspaceInternalDependencies(packages) {
     for (const field of DEPENDENCY_FIELDS) {
       for (const [name, range] of Object.entries(packageJson[field] ?? {})) {
         const expected = field === "peerDependencies" ? "workspace:^" : "workspace:*";
-        if (packageNames.has(name) && range !== expected) {
+        const compatiblePeer =
+          field === "peerDependencies" &&
+          /^workspace:\^\d+\.\d+\.\d+(?:-[\w.-]+)?(?: \|\| \^\d+\.\d+\.\d+(?:-[\w.-]+)?)*$/.test(
+            range,
+          );
+        if (packageNames.has(name) && range !== expected && !compatiblePeer) {
           throw new Error(
             `${packageJson.name} ${field}.${name} must use ${expected} (received ${range}).`,
           );
@@ -182,6 +188,15 @@ export function assertReleasableChangesets(changesets, allowedPackages) {
     throw new Error("At least one changeset is required for a release.");
   }
 
+  const majors = changesets.flatMap(({ id, releases }) =>
+    releases.filter(({ bump }) => bump === "major").map(({ name }) => `${id}: ${name}`),
+  );
+  if (majors.length > 0) {
+    throw new Error(
+      `Major releases are prohibited: ${majors.join(", ")}. Use patch or minor changesets.`,
+    );
+  }
+
   if (allowedPackages !== undefined) {
     const unknown = changesets.flatMap(({ id, releases }) =>
       releases.filter(({ name }) => !allowedPackages.has(name)).map(({ name }) => `${id}: ${name}`),
@@ -190,6 +205,71 @@ export function assertReleasableChangesets(changesets, allowedPackages) {
       throw new Error(`Changesets may only target public packages: ${unknown.join(", ")}`);
     }
   }
+}
+
+export function assertNoMajorReleases(releases) {
+  const majors = releases.filter(
+    ({ type, oldVersion, newVersion }) =>
+      type === "major" || Number(newVersion.split(".")[0]) > Number(oldVersion.split(".")[0]),
+  );
+  if (majors.length > 0) {
+    throw new Error(
+      `Major releases are prohibited: ${majors
+        .map(({ name, oldVersion, newVersion }) => `${name} ${oldVersion} -> ${newVersion}`)
+        .join(", ")}. Check changesets and peer compatibility ranges.`,
+    );
+  }
+}
+
+export function readReleasePlan(root = process.cwd()) {
+  const tempDir = mkdtempSync(path.join(os.tmpdir(), "anvia-release-plan-"));
+  const outputPath = path.join(tempDir, "status.json");
+  try {
+    const result = spawnSync("pnpm", ["changeset", "status", "--output", outputPath], {
+      cwd: root,
+      encoding: "utf8",
+      env: process.env,
+    });
+    if (result.status !== 0) {
+      throw new Error(`Unable to calculate releases: ${result.stderr || result.stdout}`);
+    }
+    const plan = readJson(outputPath);
+    assertNoMajorReleases(plan.releases);
+    return plan;
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
+export function assertNoMajorVersionChanges(root, baseRef) {
+  const base = spawnSync("git", ["merge-base", "HEAD", baseRef], { cwd: root, encoding: "utf8" });
+  if (base.status !== 0) throw new Error(`Unable to compare release versions with ${baseRef}.`);
+  const releases = [];
+  for (const { dir, packageJson } of findPublicPackages(root)) {
+    const manifestPath = path
+      .relative(root, path.join(dir, "package.json"))
+      .split(path.sep)
+      .join("/");
+    const previous = spawnSync("git", ["show", `${base.stdout.trim()}:${manifestPath}`], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    if (previous.status !== 0) {
+      // A newly introduced package has no previous version to compare.
+      const exists = spawnSync("git", ["cat-file", "-e", `${base.stdout.trim()}:${manifestPath}`], {
+        cwd: root,
+      });
+      if (exists.status === 0)
+        throw new Error(`Unable to read previous manifest for ${packageJson.name}.`);
+      continue;
+    }
+    releases.push({
+      name: packageJson.name,
+      oldVersion: JSON.parse(previous.stdout).version,
+      newVersion: packageJson.version,
+    });
+  }
+  assertNoMajorReleases(releases);
 }
 
 export function run(command, args, root = process.cwd()) {

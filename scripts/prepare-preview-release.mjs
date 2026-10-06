@@ -1,11 +1,11 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import os from "node:os";
+import { writeFileSync } from "node:fs";
 import path from "node:path";
 import {
   assertPreviewAllowed,
   createPreviewVersion,
   findPublicPackages,
+  readReleasePlan,
 } from "./release-train.mjs";
 
 const root = process.cwd();
@@ -15,7 +15,7 @@ assertPreviewAllowed(root);
 
 const packages = findPublicPackages(root);
 const packagesByName = new Map(packages.map((pkg) => [pkg.packageJson.name, pkg]));
-const releasePlan = readReleasePlan();
+const releasePlan = readReleasePlan(root);
 const releases = releasePlan.releases.filter((release) => release.type !== "none");
 const unknownReleases = releases.filter((release) => !packagesByName.has(release.name));
 
@@ -46,24 +46,6 @@ for (const release of releases) {
 
 if (dryRun) {
   console.info("Dry run complete. No package files were changed.");
-}
-
-function readReleasePlan() {
-  const tempDir = mkdtempSync(path.join(os.tmpdir(), "anvia-preview-plan-"));
-  const outputPath = path.join(tempDir, "status.json");
-  try {
-    const result = spawnSync("pnpm", ["changeset", "status", "--output", outputPath], {
-      cwd: root,
-      encoding: "utf8",
-      env: process.env,
-    });
-    if (result.status !== 0) {
-      throw new Error(`Unable to calculate preview releases: ${result.stderr || result.stdout}`);
-    }
-    return JSON.parse(readFileSync(outputPath, "utf8"));
-  } finally {
-    rmSync(tempDir, { recursive: true, force: true });
-  }
 }
 
 function createBuildId() {

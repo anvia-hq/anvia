@@ -136,18 +136,6 @@ jobs:
             exit 1
           fi
 
-      - name: Validate release candidate
-        if: steps.release.outputs.channel == 'rc'
-        run: node scripts/validate-release-train.mjs --prerelease rc
-
-      - name: Validate preview release state
-        if: steps.release.outputs.channel == 'preview'
-        run: node scripts/validate-release-train.mjs
-
-      - name: Validate stable release state
-        if: steps.release.outputs.channel == 'stable'
-        run: node scripts/validate-release-train.mjs --stable
-
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
@@ -163,6 +151,18 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Validate release candidate
+        if: steps.release.outputs.channel == 'rc'
+        run: node scripts/validate-release-train.mjs --prerelease rc
+
+      - name: Validate preview release state
+        if: steps.release.outputs.channel == 'preview'
+        run: node scripts/validate-release-train.mjs
+
+      - name: Validate stable release state
+        if: steps.release.outputs.channel == 'stable'
+        run: node scripts/validate-release-train.mjs --stable
 
       - name: Prepare preview package versions
         if: steps.release.outputs.channel == 'preview'

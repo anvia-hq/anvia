@@ -126,7 +126,8 @@ modelRetry: { maxAttempts: 3, initialDelayMs: 1000, maxDelayMs: 30_000 }
 
 The policy is captured at submission. Each model operation has a persisted attempt budget;
 crashes consume an attempt. Backoff waits release capacity and survive restart. This retries
-completion-attempt errors, including permanent provider/validation/observer failures: it has
-no transient classifier or jitter. Tool failures and storage failures use different recovery
+model execution/validation errors, including permanent provider failures: it has
+no transient classifier or jitter. Observer/local post-processing failures do not trigger provider
+retries. Tool failures and storage failures use different recovery
 paths. An explicit `run.retry()` resets unfinished model-attempt counters, not completed results.
 Do not use an unbounded application retry loop around an uncertain external operation.

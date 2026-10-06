@@ -75,6 +75,9 @@ A `model_delta` has an `event` containing a normalized core generation event, su
 `{ type: "text_delta", turn: 1, delta: "Hello" }`, reasoning, or tool-call progress.
 Deltas are persisted before subscribers can read them. `model_completed` carries the same
 attempt ID and the validated normalized response; only this response is a model checkpoint.
+The response commits before local completion observers run. A later observer failure fails
+the run while retaining that checkpoint. `model_attempt_failed.failureKind` distinguishes
+`model` execution/validation errors from `local` observer or persistence failures.
 
 Partial output is provisional. On a new `model_attempt_started` for the same operation,
 replace the previous attempt's partial output. Discard partial output on
@@ -143,9 +146,10 @@ Opt into persisted model backoff on a registration:
 } }
 ```
 
-The policy applies to core completion-attempt errors, including provider errors, completion
-validation, and completion observers. Attempt counts include interrupted
-requests; retry deadlines survive restart. Tool recovery policies remain separate.
+The policy applies to model execution and completion-validation errors. Observer failures and
+local response processing, checkpoint, and quota failures do not trigger another provider request.
+Attempt counts include interrupted requests; retry deadlines survive restart. Tool recovery
+policies remain separate.
 
 `@anvia/server/durable` provides an authorized Fetch handler, and `@anvia/client/durable`
 provides a browser-safe HTTP/SSE client. Reconnect using an atomic snapshot and its event

@@ -509,3 +509,98 @@ it("preserves persisted deltas and attempt identities through backup and restore
   expect(await events(await reopened.getRun(run.id))).toEqual(saved);
   expect(stream).toHaveBeenCalledTimes(1);
 });
+
+it("keeps a committed streamed response when generation observers fail without retrying the provider", async () => {
+  const model = streamingAgent(textStream);
+  const end = vi.fn<() => void>(() => {
+    throw new Error("observer completion failed");
+  });
+  const agent = new Agent({
+    id: model.agent.id,
+    model: model.agent.model,
+    observability: {
+      errorPolicy: "throw",
+      observers: { test: { startRun: () => ({ startGeneration: () => ({ end }), end() {} }) } },
+    },
+  });
+  const runtime = await open(agent, ":memory:", {
+    modelRetry: { maxAttempts: 3, initialDelayMs: 1, maxDelayMs: 1 },
+  });
+  const run = await runtime.submit(submission);
+  await expect(run.result()).rejects.toThrow("generation.end");
+  expect(model.stream).toHaveBeenCalledTimes(1);
+  expect((await run.snapshot()).operations[0]?.status).toBe("completed");
+  expect((await run.snapshot()).run.usage.totalTokens).toBe(3);
+  expect((await events(run)).filter((event) => event.type === "model_attempt_failed")).toHaveLength(
+    0,
+  );
+  end.mockImplementation(() => {});
+  await run.retry();
+  expect(await run.result()).toMatchObject({ output: "done" });
+  expect(model.stream).toHaveBeenCalledTimes(1);
+});
+
+it("does not classify streamed observer updates as retryable provider failures", async () => {
+  const model = streamingAgent(textStream);
+  const agent = new Agent({
+    id: model.agent.id,
+    model: model.agent.model,
+    observability: {
+      errorPolicy: "throw",
+      observers: {
+        test: {
+          startRun: () => ({
+            startGeneration: () => ({
+              update() {
+                throw new Error("observer update failed");
+              },
+              end() {},
+            }),
+            end() {},
+          }),
+        },
+      },
+    },
+  });
+  const runtime = await open(agent, ":memory:", {
+    modelRetry: { maxAttempts: 3, initialDelayMs: 1, maxDelayMs: 1 },
+  });
+  const run = await runtime.submit(submission);
+  await expect(run.result()).rejects.toThrow("generation.update");
+  expect(model.stream).toHaveBeenCalledTimes(1);
+  expect(
+    (await events(run)).filter((event) => event.type === "model_attempt_failed"),
+  ).toMatchObject([{ data: { failureKind: "local" } }]);
+});
+
+it("also excludes observer completion errors from non-streaming model retries", async () => {
+  const completion = vi.fn(async () => done());
+  const model = makeAgent(completion);
+  const agent = new Agent({
+    id: model.id,
+    model: model.model,
+    observability: {
+      errorPolicy: "throw",
+      observers: {
+        test: {
+          startRun: () => ({
+            startGeneration: () => ({
+              end() {
+                throw new Error("observer completion failed");
+              },
+            }),
+            end() {},
+          }),
+        },
+      },
+    },
+  });
+  const runtime = await open(agent, ":memory:", {
+    stream: false,
+    modelRetry: { maxAttempts: 3, initialDelayMs: 1, maxDelayMs: 1 },
+  });
+  const run = await runtime.submit(submission);
+  await expect(run.result()).rejects.toThrow("generation.end");
+  expect(completion).toHaveBeenCalledTimes(1);
+  expect(runtime.health().ready).toBe(true);
+});

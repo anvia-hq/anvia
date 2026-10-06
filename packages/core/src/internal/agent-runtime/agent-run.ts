@@ -823,10 +823,8 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
           providerErrorUsage: Usage.empty(),
         };
         let response: CompletionResponse;
-        let executed = false;
         const completionRunObservers = runObservers;
         const execute = () => {
-          executed = true;
           return this.runUncachedStreamingCompletion({
             request,
             turn: currentTurns,
@@ -853,10 +851,22 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
           } finally {
             usage = Usage.add(usage, completionState.providerErrorUsage);
           }
-          if (!executed) {
-            // A restored response skips provider work but still closes the observation opened above.
-            this.activeGeneration = undefined;
-            await generationObservers.end({ turn: currentTurns, response });
+          // Local observation and post-processing must not make a committed model response retryable.
+          let endArgs: AgentGenerationEndArgs = {
+            turn: currentTurns,
+            response: completionState.response ?? response,
+          };
+          if (completionState.firstDeltaMs !== undefined)
+            endArgs = { ...endArgs, firstDeltaMs: completionState.firstDeltaMs };
+          this.activeGeneration = undefined;
+          await generationObservers.end(endArgs);
+          response = await this.runCompletionResponseMiddlewares(request, response, currentTurns);
+          try {
+            assertCompletionResponseIntegrity({ response });
+          } catch (error) {
+            const providerOutputUsage = completionProviderOutputErrorUsage(error);
+            if (providerOutputUsage !== undefined) usage = Usage.add(usage, providerOutputUsage);
+            throw error;
           }
         } catch (error) {
           await settleFailureCleanup([
@@ -1162,32 +1172,6 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
   private async *runUncachedStreamingCompletion(
     args: StreamingCompletionArgs,
   ): AgentCompletionStream {
-    yield* this.streamCompletion(args);
-    let response = args.state.response;
-    if (response === undefined) throw new Error("Streaming completion ended without a response.");
-    let endArgs: AgentGenerationEndArgs = { turn: args.turn, response };
-    if (args.state.firstDeltaMs !== undefined)
-      endArgs = { ...endArgs, firstDeltaMs: args.state.firstDeltaMs };
-    this.activeGeneration = undefined;
-    await args.generationObservers.end(endArgs);
-    response = await this.runCompletionResponseMiddlewares(args.request, response, args.turn);
-    try {
-      assertCompletionResponseIntegrity({ response });
-    } catch (error) {
-      const providerOutputUsage = completionProviderOutputErrorUsage(error);
-      if (providerOutputUsage !== undefined)
-        args.state.providerErrorUsage = Usage.add(
-          args.state.providerErrorUsage,
-          providerOutputUsage,
-        );
-      throw error;
-    }
-    return response;
-  }
-
-  private async *streamCompletion(
-    args: StreamingCompletionArgs,
-  ): AsyncIterable<AgentCompletionStreamEvent> {
     const model = this.agent.model;
     if (!isStreamingCompletionModel(model)) {
       throw new TypeError("Streaming completion requires a streaming-capable model.");
@@ -1269,7 +1253,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
           ? response
           : { ...response, usage: cumulativeStructuredUsage };
         args.state.providerErrorUsage = Usage.empty();
-        return;
+        return args.state.response;
       } catch (error) {
         if (!recordedErrorUsage) {
           const attemptUsage = completionProviderOutputErrorUsage(error);

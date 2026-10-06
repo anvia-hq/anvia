@@ -146,9 +146,9 @@ Approvals and `needs_attention` block their session queue while releasing global
 capacity. Cancelling an active run keeps its slot occupied until its callbacks settle.
 
 `modelRetry` is opt-in and copied into the submission. It retries **errors thrown within the core completion attempt**, including permanent provider
-errors, capability/response/structured-output validation errors, and completion-observer
-errors, up to a bounded attempt budget. It does not retry checkpoint, model-turn-budget, or
-tool failures. There is no transient-error classifier in this version. Each model operation
+errors and capability/response/structured-output validation errors, up to a bounded attempt
+budget. It does not retry observer, local post-processing, checkpoint, quota, model-turn-budget,
+or tool failures. There is no transient-error classifier in this version. Each model operation
 has its own attempt count, persisted before entering core completion; crashes consume an
 attempt. A counted attempt may fail validation before contacting the provider.
 The initial request counts toward `maxAttempts`. Recovery refuses an exhausted operation
@@ -291,6 +291,9 @@ response. With `stream: true` on the agent registration, the iterator also yield
 `model_attempt_started`, `model_delta`, and `model_attempt_failed`. These carry an
 `operationId` and unique `attemptId`; each delta wraps a normalized core generation `event`.
 The validated response in `model_completed` carries that attempt ID and remains the checkpoint.
+Streaming completion observers run after that response is committed, so their failure does
+not discard the model result or automatically invoke the provider again. An attempt failure's
+`failureKind` distinguishes `model` execution/validation from `local` failures.
 
 See [streaming model output](../../packages/durable/README.md#streaming-model-output) for
 configuration and recovery semantics. Replace partial output when a new attempt starts for

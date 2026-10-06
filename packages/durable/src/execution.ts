@@ -9,6 +9,7 @@ import type {
   AgentRunExecution,
   AgentToolExecutionResult,
 } from "@anvia/core/internal/agent";
+import { AgentObserverDispatchError } from "@anvia/core/observability";
 import { DurableModelError, DurableRecoveryError, DurableStorageError } from "./errors.js";
 import { errorMessage, json, sameJson } from "./json.js";
 import type {
@@ -147,6 +148,7 @@ export function createExecution(
         response = await execute();
       } catch (error) {
         check();
+        if (error instanceof AgentObserverDispatchError) throw error;
         throw new DurableModelError(operation.key, operation.attempts!, error);
       }
       return saveResponse(operation, response);
@@ -158,6 +160,7 @@ export function createExecution(
       beginAttempt(operation, true);
       const stream: AsyncIterator<AgentCompletionStreamEvent, CompletionResponse> = execute();
       let finished = false;
+      let failed = false;
       try {
         while (true) {
           check();
@@ -166,6 +169,7 @@ export function createExecution(
             next = await stream.next();
           } catch (error) {
             check();
+            if (error instanceof AgentObserverDispatchError) throw error;
             throw new DurableModelError(operation.key, operation.attempts!, error);
           }
           check();
@@ -189,17 +193,19 @@ export function createExecution(
           yield next.value;
         }
       } catch (error) {
+        failed = true;
         check();
         store.transaction((tx) =>
           tx.appendEvent(run.id, "model_attempt_failed", {
             operationId: operation.key,
             attemptId: operation.attemptId!,
+            failureKind: error instanceof DurableModelError ? "model" : "local",
             error: errorMessage(error),
           }),
         );
         throw error;
       } finally {
-        if (!finished) await stream.return?.();
+        if (!finished) await closeCompletionStream(stream, failed);
       }
     },
     async tool(call, execute) {
@@ -230,6 +236,18 @@ export function createExecution(
       }
     },
   };
+}
+
+async function closeCompletionStream(
+  stream: AsyncIterator<AgentCompletionStreamEvent, CompletionResponse>,
+  failed: boolean,
+): Promise<void> {
+  try {
+    await stream.return?.();
+  } catch (error) {
+    // Cleanup may fail independently, but must preserve an existing execution failure.
+    if (!failed) throw error;
+  }
 }
 
 function restoreToolResult(value: JsonValue): AgentToolExecutionResult {

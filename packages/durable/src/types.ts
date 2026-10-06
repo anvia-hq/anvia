@@ -11,7 +11,7 @@ import type { JsonValue, Message, Usage } from "@anvia/core/completion";
 
 export type ToolRecovery = "safe" | "idempotent" | "manual";
 
-/** Opt-in retries for core completion-attempt errors, including validation and observers. */
+/** Opt-in retries for model execution/validation errors; observer and journal failures are excluded. */
 export type DurableModelRetry = {
   maxAttempts: number;
   initialDelayMs: number;

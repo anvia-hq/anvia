@@ -19,6 +19,9 @@ export default defineConfig({
       "@anvia/core/guardrails": fileURLToPath(
         new URL("../core/src/guardrails/index.ts", import.meta.url),
       ),
+      "@anvia/core/observability": fileURLToPath(
+        new URL("../core/src/observability/index.ts", import.meta.url),
+      ),
       "@anvia/core": fileURLToPath(new URL("../core/src/index.ts", import.meta.url)),
     },
   },

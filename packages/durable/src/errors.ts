@@ -32,3 +32,8 @@ export class DurableModelError extends Error {
     super(cause instanceof Error ? cause.message : String(cause), { cause });
   }
 }
+
+/** Fatal journal failure; application retries cannot repair a poisoned runtime. */
+export class DurableStorageError extends Error {}
+
+export class DurableLimitError extends Error {}

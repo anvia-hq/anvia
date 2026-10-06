@@ -152,3 +152,5 @@ export function parseDurableGraphEvent(value: unknown): DurableGraphEvent {
   );
   return { ...parseDurableEvent(event), graphId, taskId };
 }
+
+export * from "./task-protocol.js";

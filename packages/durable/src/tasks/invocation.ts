@@ -1,11 +1,14 @@
 import type { JsonValue } from "@anvia/core/completion";
-import { DurableConflictError, DurableRecoveryError } from "../errors.js";
+import {
+  DurableConflictError,
+  DurableRecoveryError,
+  DurableStorageError,
+  DurableLimitError,
+} from "../errors.js";
 import { json, sameJson } from "../json.js";
 import type { DurableStore, DurableTransaction, ToolRecovery } from "../types.js";
 import { createTask, requireTask, taskKey } from "./state.js";
 import type { RegisteredTask, TaskContext, TaskRecord } from "./types.js";
-
-export class TaskPersistenceError extends Error {}
 
 export function taskInvocation(
   store: DurableStore,
@@ -23,42 +26,11 @@ export function taskInvocation(
   let open = true;
   let fatal: unknown;
   const transaction = <T>(callback: (tx: DurableTransaction) => T): T => {
-    // Callback validation errors are ordinary task errors; store admission/commit failures are fatal.
-    let callbackError: unknown;
-    let callbackFailed = false;
     try {
-      return store.transaction((tx) => {
-        const guarded = new Proxy(tx, {
-          get(target, key) {
-            const method: unknown = Reflect.get(target, key);
-            if (typeof method !== "function") return method;
-            return (...args: unknown[]) => {
-              try {
-                return Reflect.apply(method, target, args);
-              } catch (error) {
-                fatal = new TaskPersistenceError(
-                  "Task persistence failed; close and reopen the runtime.",
-                  { cause: error },
-                );
-                throw fatal;
-              }
-            };
-          },
-        });
-        try {
-          return callback(guarded);
-        } catch (error) {
-          callbackFailed = true;
-          callbackError = error;
-          throw error;
-        }
-      });
+      return store.transaction(callback);
     } catch (error) {
-      if (!callbackFailed || error !== callbackError)
-        fatal = new TaskPersistenceError("Task persistence failed; close and reopen the runtime.", {
-          cause: error,
-        });
-      throw fatal ?? error;
+      if (error instanceof DurableStorageError) fatal = error;
+      throw error;
     }
   };
   const effects = new Set<Promise<JsonValue>>();
@@ -117,10 +89,19 @@ export function taskInvocation(
         );
       }
       assertActive();
-      transaction((tx) => {
-        const operation = tx.getOperation(task.id, key)!;
-        tx.putOperation(task.id, { ...operation, status: "completed", result });
-      });
+      try {
+        transaction((tx) => {
+          const operation = tx.getOperation(task.id, key)!;
+          tx.putOperation(task.id, { ...operation, status: "completed", result });
+        });
+      } catch (error) {
+        if (error instanceof DurableLimitError)
+          throw new DurableRecoveryError(
+            "Effect result exceeds the payload limit; reconcile its external result.",
+            key,
+          );
+        throw error;
+      }
       return result as T;
     } catch (error) {
       if (error instanceof DurableRecoveryError) fatal ??= error;

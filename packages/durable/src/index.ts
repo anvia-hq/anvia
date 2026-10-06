@@ -22,11 +22,14 @@ export {
   DurableRunError,
   DurableNotFoundError,
   DurableConflictError,
+  DurableStorageError,
+  DurableLimitError,
 } from "./errors.js";
 export type {
   DurableAgentRegistration,
   DurableListOptions,
   DurableRunPage,
+  DurableRunScope,
   DurableRunSummary,
   DurableSubmitOptions,
   DurableModelRetry,
@@ -53,3 +56,6 @@ export type {
   DurableGraphListOptions,
   DurableGraphRecord,
 } from "./graph-types.js";
+
+export type { DurableLimits } from "./limits.js";
+export type { DurableMetrics } from "./metrics.js";

@@ -58,5 +58,6 @@ export function nonblank(value: unknown, label: string): asserts value is string
 }
 
 export function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  const message = error instanceof Error ? error.message : String(error);
+  return message.length <= 4096 ? message : `${message.slice(0, 4096)}…`;
 }

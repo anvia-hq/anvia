@@ -1,3 +1,5 @@
+import type { DurableLimits } from "./limits.js";
+import type { DurableMetrics } from "./metrics.js";
 import type {
   DurableGraphRecord,
   DurableGraphListOptions,
@@ -133,6 +135,8 @@ export type DurableSnapshot = {
 
 /** Synchronous, atomic transaction. Never perform external work inside its callback. */
 export interface DurableTransaction extends TaskTransaction {
+  pendingCounts(): { runs: number; tasks: number };
+  operationCount(id: string): number;
   getGraph(id: string): DurableGraphRecord | undefined;
   findGraphRequest(sessionId: string, requestId: string): DurableGraphRecord | undefined;
   putGraph(graph: DurableGraphRecord): void;
@@ -151,6 +155,7 @@ export interface DurableTransaction extends TaskTransaction {
 
 /** A store is exclusively owned by one open runtime. All returned values must be detached copies. */
 export interface DurableStore {
+  metrics(): DurableMetrics;
   listTasks(options: TaskListOptions): TaskPage;
   scheduleTasks(excluded: readonly string[], limit: number): string[];
   unsettledTaskRoots(after: number): { ids: string[]; cursor?: number };
@@ -175,10 +180,24 @@ export interface DurableStore {
 
 export type DurableRuntimeOptions = {
   store: DurableStore;
+  limits?: Partial<DurableLimits>;
+  /** Called once after a fatal storage/scheduler failure; never includes task payloads automatically. */
+  onFatalError?: (error: unknown) => void;
   agents?: readonly DurableAgentRegistration[];
   tasks?: readonly { readonly registration: RegisteredTask }[];
   /** Independent capacity for custom task phases. Waiting phases release their slot. */
   maxConcurrentTasks?: number;
   /** Maximum simultaneous executions across sessions. Defaults to 4. */
   maxConcurrentRuns?: number;
+};
+
+/** Lightweight owner metadata for application authorization. */
+export type DurableRunScope = {
+  runId: string;
+  agentId: string;
+  sessionId: string;
+  graphId?: string;
+  taskId?: string;
+  rootTaskId?: string;
+  taskName?: string;
 };

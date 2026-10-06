@@ -12,7 +12,7 @@ static local tools, and committed progress events. It does not stream individual
 pnpm add @anvia/durable @anvia/core @anvia/openai zod
 ```
 
-SQLite requires Node.js 22.13 or newer. Use the accompanying core release with the
+SQLite requires Node.js 22.16 or newer. Use the accompanying core release with the
 durable execution protocol; older core versions are rejected when importing this package.
 
 ## Quickstart
@@ -143,9 +143,19 @@ signal, and journal external effects with explicit recovery policies. Waiting ph
 capacity; cancelling a tree fences new work and waits for owned callbacks to settle.
 
 `task.graph()` exposes the complete bounded ownership tree and current waits. `task.stream()`
-emits committed tree changes. These APIs are currently in process; the HTTP/client integration
-continues to expose agent runs and static agent graphs. See the
+emits committed tree changes. The HTTP/client integration also exposes custom-task submission,
+signals, reconciliation, cancellation, snapshots, and graph/event reads. See the
 [custom task guide](../../docs/packages/durable-tasks.md) for contracts, examples, and limits.
+
+## Operational controls
+
+Use `runtime.health()` for readiness, `runtime.metrics()` for aggregate status counts, and
+`onFatalError` to notify your supervisor. Storage failures stop both schedulers and reject
+new work. Configurable pending-work, payload, and operation limits bound admission.
+
+`@anvia/durable/maintenance` provides offline `backupSqlite` and `restoreSqlite`; both write
+new files only. See the [operations guide](../../docs/packages/durable-operations.md) for
+restore, upgrade, rollback, and rollout procedures. The package remains experimental.
 
 ## Learn more
 

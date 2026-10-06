@@ -1,4 +1,11 @@
-import { DurableConflictError, DurableNotFoundError, type DurableRuntime } from "@anvia/durable";
+import { handleDurableTaskRequest } from "./durable-task";
+import {
+  DurableConflictError,
+  DurableNotFoundError,
+  DurableLimitError,
+  DurableStorageError,
+  type DurableRuntime,
+} from "@anvia/durable";
 import {
   parseDurableListOptions,
   parseDurableResolution,
@@ -22,7 +29,9 @@ export type DurableHttpAction =
   | "respond"
   | "resolve-tool"
   | "retry"
-  | "cancel";
+  | "cancel"
+  | "signal"
+  | "resolve-effect";
 export type DurableAuthorization = {
   action: DurableHttpAction;
   sessionId: string;
@@ -30,6 +39,8 @@ export type DurableAuthorization = {
   agentId?: string;
   graphId?: string;
   taskId?: string;
+  rootTaskId?: string;
+  taskName?: string;
 };
 export type DurableHandlerOptions = {
   runtime: DurableRuntime;
@@ -58,6 +69,8 @@ export function createDurableHandler(
   return async (request) => {
     try {
       const url = new URL(request.url);
+      const taskResponse = await handleDurableTaskRequest(options, request, basePath, maxBodyBytes);
+      if (taskResponse !== undefined) return taskResponse;
       const graphResponse = await handleDurableGraphRequest(
         options,
         request,
@@ -78,7 +91,13 @@ export function createDurableHandler(
           if (filter.sessionId === undefined) throw new TypeError("Listing requires sessionId.");
           if (!(await options.authorize(request, { action: "list", sessionId: filter.sessionId })))
             return denied();
-          return json(await runtime.listRuns(filter));
+          const page = await runtime.listRuns(filter);
+          for (const run of page.runs)
+            if (
+              !(await options.authorize(request, { action: "list", ...runtime.runScope(run.id) }))
+            )
+              return denied();
+          return json(page);
         }
         if (request.method === "POST") {
           const { enqueue, ...submission } = parseDurableSubmission(
@@ -111,20 +130,7 @@ export function createDurableHandler(
       if (request.method !== method) return json({ error: "Method not allowed" }, 405);
       const run = await runtime.getRun(id);
       const snapshot = await run.snapshot();
-      const graph =
-        snapshot.run.graphId === undefined
-          ? undefined
-          : runtime.graphSnapshot(snapshot.run.graphId);
-      if (
-        !(await options.authorize(request, {
-          action,
-          sessionId: graph?.sessionId ?? snapshot.run.sessionId,
-          ...(graph === undefined ? {} : { graphId: graph.id, taskId: snapshot.run.taskId! }),
-          runId: id,
-          agentId: snapshot.run.agentId,
-        }))
-      )
-        return denied();
+      if (!(await options.authorize(request, { action, ...runtime.runScope(id) }))) return denied();
       if (action === "inspect") return json(snapshot);
       if (action === "events")
         return durableEventsResponse(request, snapshot.cursor, (options) => run.stream(options));
@@ -144,6 +150,9 @@ export function createDurableHandler(
       if (error instanceof HttpInputError) return json({ error: error.message }, error.status);
       if (error instanceof DurableNotFoundError)
         return json({ error: "Durable resource not found" }, 404);
+      if (error instanceof DurableLimitError) return json({ error: error.message }, 429);
+      if (error instanceof DurableStorageError)
+        return json({ error: "Durable runtime unavailable" }, 503);
       if (error instanceof DurableConflictError) return json({ error: error.message }, 409);
       if (error instanceof TypeError || error instanceof SyntaxError || error instanceof URIError)
         return json({ error: "Invalid durable request" }, 400);

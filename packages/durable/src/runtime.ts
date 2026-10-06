@@ -1,3 +1,7 @@
+import { parseTaskSubmission, type TaskSubmission } from "./task-protocol.js";
+import { durableLimits, type DurableLimits } from "./limits.js";
+import { guardStore } from "./storage-guard.js";
+import { taskListSchema } from "./tasks/schema.js";
 import { DurableTaskGraph } from "./task-graph.js";
 import { TaskScheduler } from "./tasks/scheduler.js";
 import { DurableTaskHandle } from "./tasks/handle.js";
@@ -24,6 +28,8 @@ import {
   DurableModelError,
   DurableNotFoundError,
   DurableRecoveryError,
+  DurableStorageError,
+  DurableLimitError,
 } from "./errors.js";
 import { createExecution } from "./execution.js";
 import { errorMessage, json, nonblank, sameJson } from "./json.js";
@@ -41,6 +47,7 @@ import type {
   DurableStore,
   DurableSubmission,
   DurableTransaction,
+  DurableRunScope,
 } from "./types.js";
 
 export class DurableRuntime {
@@ -50,27 +57,29 @@ export class DurableRuntime {
     { sessionId: string; controller: AbortController; task: Promise<void> }
   >();
   private closing = false;
+  private closed = false;
+  private readonly store: DurableStore;
   private closePromise: Promise<void> | undefined;
   private failure: unknown;
   private wakeTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly tasks: TaskScheduler;
 
   private constructor(
-    private readonly store: DurableStore,
+    store: DurableStore,
     agents: Map<string, DurableAgentRegistration>,
     private readonly maxConcurrentRuns: number,
     definitions: ReadonlyMap<string, RegisteredTask>,
     maxConcurrentTasks: number,
+    limits: DurableLimits,
+    private readonly onFatalError?: (error: unknown) => void,
   ) {
     this.agents = agents;
+    this.store = guardStore(store, (error) => this.fail(error), limits);
     this.tasks = new TaskScheduler(
-      store,
+      this.store,
       definitions,
       maxConcurrentTasks,
-      (error) => {
-        this.failure = error;
-        for (const active of this.active.values()) active.controller.abort(error);
-      },
+      (error) => this.fail(error),
       agents,
       (id) => this.active.has(id),
       (root) => {
@@ -107,6 +116,7 @@ export class DurableRuntime {
       definitions.set(registration.name, registration);
     }
     const agents = registrations(options.agents ?? []);
+    const limits = durableLimits(options.limits);
     options.store.acquire();
     return new DurableRuntime(
       options.store,
@@ -114,6 +124,8 @@ export class DurableRuntime {
       maxConcurrentRuns,
       definitions,
       maxConcurrentTasks,
+      limits,
+      options.onFatalError,
     );
   }
 
@@ -132,6 +144,46 @@ export class DurableRuntime {
     return new DurableTaskHandle<R>(id, this.tasks, this.store, () => this.assertOpen());
   }
 
+  async submitRegisteredTask(input: TaskSubmission): Promise<DurableTaskHandle> {
+    this.assertOpen();
+    const submission = parseTaskSubmission(input);
+    const id = this.tasks.submit(
+      submission.name,
+      submission.version,
+      submission.input,
+      submission.sessionId,
+      submission.requestId,
+    );
+    return new DurableTaskHandle(id, this.tasks, this.store, () => this.assertOpen());
+  }
+
+  /** Owning scope for authorization without loading operation journals or graph results. */
+  runScope(runId: string): DurableRunScope {
+    this.assertOpen();
+    return this.store.transaction((tx) => {
+      const run = requireRun(tx, runId);
+      const base = { runId, agentId: run.agentId, sessionId: run.sessionId };
+      if (run.graphId !== undefined)
+        return {
+          ...base,
+          sessionId: requireGraph(tx, run.graphId).submission.sessionId,
+          graphId: run.graphId,
+          taskId: run.taskId!,
+        };
+      if (!run.sessionId.startsWith(TASK_SESSION_PREFIX)) return base;
+      const task = tx.getTask(run.sessionId.slice(TASK_SESSION_PREFIX.length));
+      if (task === undefined || task.agentRunId !== runId)
+        throw new DurableNotFoundError("Owned task is missing.");
+      return {
+        ...base,
+        sessionId: task.sessionId,
+        taskId: task.id,
+        rootTaskId: task.rootId,
+        taskName: task.name,
+      };
+    });
+  }
+
   async getTask(id: string): Promise<DurableTaskHandle> {
     this.assertOpen();
     this.tasks.snapshot(id);
@@ -140,7 +192,7 @@ export class DurableRuntime {
 
   async listTasks(options: TaskListOptions = {}) {
     this.assertOpen();
-    return this.store.listTasks(options);
+    return this.store.listTasks(taskListSchema.parse(options));
   }
 
   async taskGraph(id: string) {
@@ -218,6 +270,7 @@ export class DurableRuntime {
 
   graphEvents(id: string, after: number) {
     this.assertOpen();
+    if (!Number.isSafeInteger(after) || after < 0) throw new TypeError("Invalid event cursor.");
     return this.store.graphEvents(id, after, 100);
   }
 
@@ -272,7 +325,13 @@ export class DurableRuntime {
     this.closePromise = Promise.all([
       this.tasks.close(),
       ...[...this.active.values()].map(({ task }) => task),
-    ]).then(() => this.store.close());
+    ]).then(() => {
+      try {
+        this.store.close();
+      } finally {
+        this.closed = true;
+      }
+    });
     return this.closePromise;
   }
 
@@ -287,6 +346,7 @@ export class DurableRuntime {
 
   events(id: string, after: number) {
     this.assertOpen();
+    if (!Number.isSafeInteger(after) || after < 0) throw new TypeError("Invalid event cursor.");
     return this.store.events(id, after, 100);
   }
 
@@ -416,9 +476,7 @@ export class DurableRuntime {
           try {
             this.pump();
           } catch (error) {
-            this.failure = error;
-            this.tasks.stop(error);
-            for (const active of this.active.values()) active.controller.abort(error);
+            this.fail(error);
           }
         },
         Math.max(1, Math.min(2_147_483_647, Date.parse(candidates.nextAttemptAt) - Date.now())),
@@ -434,6 +492,14 @@ export class DurableRuntime {
     const controller = new AbortController();
     const task = Promise.resolve()
       .then(() => this.execute(id, controller.signal))
+      .catch((error: unknown) => {
+        if (!(error instanceof DurableLimitError)) throw error;
+        this.store.transaction((tx) => {
+          const run = requireRun(tx, id);
+          run.error = error.message;
+          setStatus(tx, run, "needs_attention");
+        });
+      })
       .finally(() => {
         this.active.delete(id);
         if (
@@ -446,9 +512,7 @@ export class DurableRuntime {
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
-        this.failure = error;
-        this.tasks.stop(error);
-        for (const active of this.active.values()) active.controller.abort(error);
+        this.fail(error);
       });
     this.active.set(id, { sessionId, controller, task });
   }
@@ -506,6 +570,7 @@ export class DurableRuntime {
         setStatus(tx, current, outcome.type === "interaction" ? "waiting" : "completed");
       });
     } catch (error) {
+      if (error instanceof DurableStorageError) throw error;
       if (signal.aborted) return;
       this.store.transaction((tx) => {
         const current = requireRun(tx, id);
@@ -534,12 +599,42 @@ export class DurableRuntime {
     }
   }
 
+  metrics() {
+    this.assertOpen();
+    return this.store.metrics();
+  }
+
+  /** Does not touch storage, so supervisors can inspect a failed owner. */
+  health() {
+    return {
+      status: this.closed
+        ? ("closed" as const)
+        : this.closing
+          ? ("closing" as const)
+          : this.failure !== undefined
+            ? ("failed" as const)
+            : ("ready" as const),
+      ready: !this.closing && this.failure === undefined,
+      activeRuns: this.active.size,
+      activeTasks: this.tasks.activeCount,
+    };
+  }
+
+  private fail(error: unknown): void {
+    if (this.failure !== undefined) return;
+    this.failure = error;
+    clearTimeout(this.wakeTimer);
+    this.tasks?.stop(error);
+    for (const active of this.active.values()) active.controller.abort(error);
+    // Diagnostics must never replace the journal failure or create an unhandled rejection.
+    try {
+      void Promise.resolve(this.onFatalError?.(error)).catch(() => {});
+    } catch {}
+  }
+
   private assertOpen(): void {
     if (this.closing) throw new Error("Durable runtime is closed.");
-    if (this.failure !== undefined)
-      throw new Error("Durable runtime storage failed; close and reopen it.", {
-        cause: this.failure,
-      });
+    if (this.failure !== undefined) throw this.failure;
   }
 }
 

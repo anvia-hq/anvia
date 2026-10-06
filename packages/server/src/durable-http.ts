@@ -1,5 +1,4 @@
 import { createEventStreamResponse } from "./response";
-import type { DurableEvent } from "@anvia/durable";
 
 export function jsonResponse(value: unknown, status = 200): Response {
   return Response.json(value, { status, headers: { "cache-control": "no-store" } });
@@ -15,10 +14,10 @@ export function listQuery(url: URL): Record<string, unknown> {
   }
   return query;
 }
-export function durableEventsResponse(
+export function durableEventsResponse<T extends { sequence: number }>(
   request: Request,
   cursor: number,
-  stream: (options: { after: number; abortSignal: AbortSignal }) => AsyncIterable<DurableEvent>,
+  stream: (options: { after: number; abortSignal: AbortSignal }) => AsyncIterable<T>,
 ): Response {
   const url = new URL(request.url);
   const rawCursor = url.searchParams.get("after") ?? request.headers.get("last-event-id") ?? "0";

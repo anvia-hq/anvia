@@ -1,3 +1,4 @@
+import { sqliteMetrics } from "./metrics.js";
 import { graphListSchema, parseGraphRecord } from "./graph-schema.js";
 import {
   taskTables,
@@ -33,6 +34,12 @@ export class SqliteDurableStore implements DurableStore {
     nonblank(path, "SQLite path");
     this.database = new DatabaseSync(path);
     try {
+      if (
+        this.database
+          .prepare("SELECT 1 FROM sqlite_master WHERE name = 'anvia_durable_backup'")
+          .get() !== undefined
+      )
+        throw new Error("Sealed durable backup; restore it into a new database before opening.");
       this.database.exec(`
         PRAGMA busy_timeout = 5000;
         PRAGMA journal_mode = WAL;
@@ -98,18 +105,21 @@ export class SqliteDurableStore implements DurableStore {
 
   close(): void {
     if (this.closed) return;
-    if (this.acquired) {
-      this.atomic(() => {
-        this.database
-          .prepare(
-            "UPDATE anvia_durable_owner SET token = NULL, pid = NULL, host = NULL WHERE singleton = 1 AND token = ?",
-          )
-          .run(this.token);
-      });
+    try {
+      if (this.acquired) {
+        this.atomic(() => {
+          this.database
+            .prepare(
+              "UPDATE anvia_durable_owner SET token = NULL, pid = NULL, host = NULL WHERE singleton = 1 AND token = ?",
+            )
+            .run(this.token);
+        });
+      }
+    } finally {
+      this.database.close();
+      this.closed = true;
+      this.acquired = false;
     }
-    this.database.close();
-    this.closed = true;
-    this.acquired = false;
   }
 
   transaction<T>(callback: (tx: DurableTransaction) => T): T {
@@ -127,6 +137,11 @@ export class SqliteDurableStore implements DurableStore {
         active = false;
       }
     });
+  }
+
+  metrics() {
+    this.assertOpen();
+    return sqliteMetrics(this.database);
   }
 
   listGraphs(input: DurableGraphListOptions): DurableGraphPage {
@@ -334,6 +349,26 @@ export class SqliteDurableStore implements DurableStore {
     };
     return {
       ...taskTransaction(this.database, assertActive),
+      pendingCounts: () => {
+        assertActive();
+        const count = (table: string) =>
+          Number(
+            this.database
+              .prepare(
+                `SELECT COUNT(*) AS n FROM ${table} WHERE status NOT IN ('completed', 'failed', 'cancelled')`,
+              )
+              .get()!.n,
+          );
+        return { runs: count("anvia_durable_runs"), tasks: count("anvia_durable_tasks") };
+      },
+      operationCount: (id) => {
+        assertActive();
+        return Number(
+          this.database
+            .prepare("SELECT COUNT(*) AS n FROM anvia_durable_operations WHERE run_id = ?")
+            .get(id)!.n,
+        );
+      },
       getGraph: (id) => {
         assertActive();
         const row = this.database

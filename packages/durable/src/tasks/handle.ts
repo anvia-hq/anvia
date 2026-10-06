@@ -24,9 +24,10 @@ export class DurableTaskHandle<R = JsonValue> {
     this.assertOpen();
     return this.scheduler.graph(this.id);
   }
-  async cancel(): Promise<void> {
+  /** Optional identity fence for callers authorizing a captured ownership tree. */
+  async cancel(options: { expectedTreeIds?: readonly string[] } = {}): Promise<void> {
     this.assertOpen();
-    this.scheduler.cancel(this.id);
+    this.scheduler.cancel(this.id, options.expectedTreeIds);
   }
   async retry(): Promise<void> {
     this.assertOpen();
@@ -70,6 +71,7 @@ export class DurableTaskHandle<R = JsonValue> {
           throw new Error("Invalid task event type.");
         cursor = event.sequence;
         yield {
+          rootId: initial.task.rootId,
           sequence: event.sequence,
           taskId: event.runId,
           createdAt: event.createdAt,

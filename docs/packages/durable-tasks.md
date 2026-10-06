@@ -4,9 +4,8 @@
 input, version, checkpoint, child ownership, waits, and outcome. Task handlers execute one
 phase at a time; they do not restore JavaScript stacks after a restart.
 
-This API is experimental and currently available in process. The existing HTTP handler and
-browser client expose agent runs and static agent graphs; they do not expose custom-task
-submission, signals, or task-tree streams yet. The durable cookbook remains excluded.
+This API is experimental. The HTTP handler and browser client expose custom-task submission,
+signals, snapshots, tree streams, reconciliation, and cancellation alongside agent runs and static graphs. The durable cookbook remains excluded.
 
 ## Define and submit a task
 
@@ -139,9 +138,8 @@ child's outcome is decided, the owned run cannot be retried independently.
 
 Use the existing run stream for model/tool progress: the task-tree stream contains task
 submission and status changes, not every agent journal event. These generated run sessions
-are reserved; the current HTTP authorization callback receives their generated session ID.
-Applications exposing them remotely must authorize access explicitly. No custom-task HTTP
-routes or automatic mapping to the root's authorization scope are supplied yet.
+are reserved. The HTTP authorization callback maps owned agent runs to their parent task
+session and includes `taskId`, `rootTaskId`, `taskName`, `runId`, and `agentId`.
 
 ## Durable effects
 
@@ -242,6 +240,40 @@ SQLite schema 3 adds custom tasks and scheduling indexes. Acquisition upgrades s
 are unsupported. Custom stores must implement the new task transaction, listing, scheduling,
 and event methods as well as the existing store contract.
 
-Persisted token streaming, distributed workers, Postgres, retention/backup tooling, Studio UI,
-HTTP task APIs, and general migration tooling remain future work. This package is not yet
+Persisted token streaming, distributed workers, Postgres, automatic retention, execution deadlines,
+Studio UI, and general migration tooling remain future work. Offline backup/restore and
+operational controls are described in the [operations guide](./durable-operations.md). This package is not yet
 being presented as production-ready.
+
+## Remote task controls
+
+`createDurableHandler` serves `/durable/tasks` alongside runs and static graphs:
+
+| Method and path                  | Operation                                                                          |
+| -------------------------------- | ---------------------------------------------------------------------------------- |
+| `POST /tasks`                    | Submit `{ name, version, sessionId, requestId, input }` to a registered definition |
+| `GET /tasks?sessionId=...`       | Paginated root tasks                                                               |
+| `GET /tasks/:id`                 | Atomic snapshot and cursor                                                         |
+| `GET /tasks/:id/graph`           | Entire ownership tree                                                              |
+| `GET /tasks/:id/events`          | Reconnectable tree SSE; `after` or `Last-Event-ID`                                 |
+| `POST /tasks/:id/signal`         | Deliver `{ name, requestId, value }`                                               |
+| `POST /tasks/:id/resolve-effect` | Reconcile `{ key, value }`                                                         |
+| `POST /tasks/:id/retry`          | Resume a task needing attention                                                    |
+| `POST /tasks/:id/cancel`         | Cancel the selected subtree                                                        |
+
+`DurableClient` exposes `submitTask`, `listTasks`, `taskSnapshot`, `taskGraph`, `streamTask`,
+`signalTask`, `resolveEffect`, `retryTask`, and `cancelTask`. Define and register executable code
+on the server; clients only select registered names/versions and supply JSON. For direct use,
+`runtime.submitRegisteredTask()` provides the same serialized submission boundary.
+
+Authorization remains mandatory for every request. Resources include the owning session,
+`taskId`, `rootTaskId`, and `taskName`; owned agent resources also include `runId` and `agentId`.
+Tree reads and cancellation authorize existing nodes. Cancellation returns HTTP 409 without
+mutating the tree if children were created during authorization; retry the request to authorize
+the new tree. In-process callers can use `cancel({ expectedTreeIds })` for the same identity fence.
+Events reauthorize each emitting task,
+including dynamically created children, before sending its record. Granting task submission or
+retry authorizes execution of that registered definition, including its spawning behavior; use
+an allowlist of trusted task names. A denial during streaming interrupts the stream without
+exposing the denied event. Event envelopes include `rootId` and `taskId`; clients validate the
+root and monotonically increasing cursor. Global operational metrics are not exposed by these routes.

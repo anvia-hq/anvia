@@ -1,9 +1,14 @@
 import type { JsonValue } from "@anvia/core/completion";
-import { DurableConflictError, DurableRecoveryError } from "../errors.js";
+import {
+  DurableConflictError,
+  DurableRecoveryError,
+  DurableStorageError,
+  DurableLimitError,
+} from "../errors.js";
 import { errorMessage, json, sameJson } from "../json.js";
 import type { DurableStore, DurableAgentRegistration } from "../types.js";
 import { taskWaitSchema } from "./schema.js";
-import { taskInvocation, TaskPersistenceError } from "./invocation.js";
+import { taskInvocation } from "./invocation.js";
 import { spawnAgent } from "./agent.js";
 import {
   cancelTree,
@@ -36,6 +41,10 @@ export class TaskScheduler {
     private readonly syncAgents: (root: string) => void,
   ) {}
 
+  get activeCount(): number {
+    return this.active.size;
+  }
+
   agentChanged(id: string): void {
     if (this.closing) return;
     this.reconcile(this.snapshot(id).task.rootId);
@@ -45,7 +54,7 @@ export class TaskScheduler {
   submit(name: string, version: number, input: unknown, sessionId: string, key: string): string {
     const definition = this.definitions.get(name);
     if (definition === undefined || definition.version !== version)
-      throw new DurableRecoveryError(`Task definition is not registered: ${name}`);
+      throw new DurableConflictError(`Task definition/version is not registered: ${name}`);
     const task = this.store.transaction((tx) => createTask(tx, definition, input, sessionId, key));
     this.pump();
     return task.id;
@@ -96,9 +105,19 @@ export class TaskScheduler {
     });
   }
 
-  cancel(id: string): void {
+  cancel(id: string, expectedTreeIds?: readonly string[]): void {
     const root = this.snapshot(id).task.rootId;
-    const ids = this.store.transaction((tx) => cancelTree(tx, id, "Durable task cancelled."));
+    const ids = this.store.transaction((tx) => {
+      if (expectedTreeIds !== undefined) {
+        const current = tx.taskTree(root);
+        const expected = new Set(expectedTreeIds);
+        if (current.length !== expected.size || current.some((task) => !expected.has(task.id)))
+          throw new DurableConflictError(
+            "Task tree changed during authorization; retry cancellation.",
+          );
+      }
+      return cancelTree(tx, id, "Durable task cancelled.");
+    });
     for (const task of ids)
       this.active.get(task)?.controller.abort(new Error("Durable task cancelled."));
     this.reconcile(root);
@@ -209,6 +228,17 @@ export class TaskScheduler {
     const controller = new AbortController();
     const promise = new Promise<void>((resolve) => setTimeout(resolve, 0))
       .then(() => this.execute(id, controller))
+      .catch((error: unknown) => {
+        if (!(error instanceof DurableLimitError)) throw error;
+        this.store.transaction((tx) => {
+          const task = requireTask(tx, id);
+          delete task.wait;
+          delete task.outcome;
+          task.status = "needs_attention";
+          task.error = error.message;
+          saveTask(tx, task);
+        });
+      })
       .finally(() => {
         this.active.delete(id);
         if (!this.closing) {
@@ -276,7 +306,7 @@ export class TaskScheduler {
     } catch (error) {
       failure = error;
     }
-    if (failure instanceof TaskPersistenceError) throw failure;
+    if (failure instanceof DurableStorageError) throw failure;
     if (this.closing) return;
     const abort = this.store.transaction((tx) => {
       const current = requireTask(tx, id);
@@ -314,7 +344,7 @@ export class TaskScheduler {
             break;
           case "failed":
           case "cancelled":
-            current.outcome = { status: transition.status, error: String(transition.error) };
+            current.outcome = { status: transition.status, error: errorMessage(transition.error) };
             current.status = "cancelling";
             cancelChildren = true;
             break;
@@ -325,9 +355,10 @@ export class TaskScheduler {
         delete current.wait;
         delete current.outcome;
         current.error = errorMessage(error);
-        if (error instanceof DurableRecoveryError) {
+        if (error instanceof DurableRecoveryError || error instanceof DurableLimitError) {
           current.status = "needs_attention";
-          if (error.operationId !== undefined) current.blockedOperation = error.operationId;
+          if (error instanceof DurableRecoveryError && error.operationId !== undefined)
+            current.blockedOperation = error.operationId;
         } else {
           current.status = "cancelling";
           current.outcome = { status: "failed", error: current.error };

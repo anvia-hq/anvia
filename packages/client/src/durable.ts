@@ -1,5 +1,17 @@
+import {
+  parseTaskSnapshot,
+  parseTaskGraph,
+  parseTaskPage,
+  parseTaskEvent,
+  type TaskSubmission,
+  type TaskSnapshot,
+  type TaskGraphSnapshot,
+  type TaskPage,
+  type TaskListOptions,
+  type TaskEvent,
+} from "@anvia/durable/protocol";
 import type { AgentInteractionResponse } from "@anvia/core/agent/interactions";
-import type { ToolResultOutput } from "@anvia/core/completion";
+import type { JsonValue, ToolResultOutput } from "@anvia/core/completion";
 import {
   parseDurableEvent,
   parseDurableGraphSnapshot,
@@ -52,6 +64,95 @@ export class DurableClient {
         "endpoint must be an HTTP(S) base URL without credentials, query, or fragment.",
       );
     this.endpoint = endpoint.href.replace(/\/$/, "");
+  }
+
+  async submitTask(
+    submission: TaskSubmission,
+    options: DurableRequestOptions = {},
+  ): Promise<TaskSnapshot> {
+    return parseTaskSnapshot(
+      await (await this.request("/tasks", "POST", submission, options)).json(),
+    );
+  }
+  async taskSnapshot(id: string, options: DurableRequestOptions = {}): Promise<TaskSnapshot> {
+    const snapshot = parseTaskSnapshot(
+      await (await this.request(this.taskPath(id), "GET", undefined, options)).json(),
+    );
+    if (snapshot.task.id !== id) throw new TypeError("Snapshot belongs to another task.");
+    return snapshot;
+  }
+  async taskGraph(id: string, options: DurableRequestOptions = {}): Promise<TaskGraphSnapshot> {
+    const graph = parseTaskGraph(
+      await (await this.request(`${this.taskPath(id)}/graph`, "GET", undefined, options)).json(),
+    );
+    if (!graph.nodes.some((task) => task.id === id))
+      throw new TypeError("Graph belongs to another task.");
+    return graph;
+  }
+  async listTasks(
+    filter: TaskListOptions & { sessionId: string },
+    options: DurableRequestOptions = {},
+  ): Promise<TaskPage> {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(filter))
+      if (value !== undefined) query.set(key, String(value));
+    return parseTaskPage(
+      await (await this.request(`/tasks?${query}`, "GET", undefined, options)).json(),
+    );
+  }
+  async signalTask(
+    id: string,
+    name: string,
+    requestId: string,
+    value: JsonValue,
+    options: DurableRequestOptions = {},
+  ): Promise<void> {
+    await this.request(`${this.taskPath(id)}/signal`, "POST", { name, requestId, value }, options);
+  }
+  async resolveEffect(
+    id: string,
+    key: string,
+    value: JsonValue,
+    options: DurableRequestOptions = {},
+  ): Promise<void> {
+    await this.request(`${this.taskPath(id)}/resolve-effect`, "POST", { key, value }, options);
+  }
+  async retryTask(id: string, options: DurableRequestOptions = {}): Promise<void> {
+    await this.request(`${this.taskPath(id)}/retry`, "POST", undefined, options);
+  }
+  async cancelTask(id: string, options: DurableRequestOptions = {}): Promise<void> {
+    await this.request(`${this.taskPath(id)}/cancel`, "POST", undefined, options);
+  }
+  async *streamTask(
+    id: string,
+    options: DurableRequestOptions & { after?: number } = {},
+  ): AsyncIterable<TaskEvent> {
+    let cursor = options.after ?? 0;
+    if (!Number.isSafeInteger(cursor) || cursor < 0) throw new TypeError("Invalid task cursor.");
+    const snapshot = await this.taskSnapshot(id, options);
+    const response = await this.request(
+      `${this.taskPath(id)}/events?after=${cursor}`,
+      "GET",
+      undefined,
+      options,
+    );
+    if (
+      !response.headers.get("content-type")?.startsWith("text/event-stream") ||
+      response.body === null
+    )
+      throw new TypeError("Expected a task SSE response.");
+    for await (const value of readSseStream<unknown>(response.body)) {
+      options.abortSignal?.throwIfAborted();
+      const event = parseTaskEvent(value);
+      if (event.rootId !== snapshot.task.rootId || event.sequence <= cursor)
+        throw new TypeError("Invalid task event order or root ID.");
+      cursor = event.sequence;
+      yield event;
+    }
+  }
+  private taskPath(id: string): string {
+    if (id.trim().length === 0 || id === "." || id === "..") throw new TypeError("Invalid taskId.");
+    return `/tasks/${encodeURIComponent(id)}`;
   }
 
   async submitGraph(

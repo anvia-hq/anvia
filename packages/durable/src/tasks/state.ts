@@ -42,7 +42,13 @@ export function createTask(
 ): TaskRecord {
   taskKey(key);
   taskKey(sessionId);
-  const parsed = definition.parseInput(input);
+  let parsed;
+  try {
+    parsed = definition.parseInput(input);
+  } catch (cause) {
+    if (cause instanceof TypeError) throw cause;
+    throw new TypeError("Invalid task input.", { cause });
+  }
   const parent = parentId === undefined ? undefined : requireTask(tx, parentId);
   if (parent !== undefined && parent.status !== "running")
     throw new DurableConflictError("Parent task is no longer running.");

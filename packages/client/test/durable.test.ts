@@ -85,3 +85,50 @@ describe("durable browser client", () => {
     expect(headers).toHaveBeenCalledTimes(1);
   });
 });
+
+it("validates custom-task root identity and monotonic cursors and releases malformed streams", async () => {
+  const task = {
+    id: "task",
+    rootId: "task",
+    depth: 0,
+    sessionId: "s",
+    key: "1",
+    name: "task",
+    version: 1,
+    submissionVersion: 1,
+    submissionInput: null,
+    input: null,
+    checkpoint: null,
+    status: "pending",
+    signals: {},
+    createdAt: event.createdAt,
+    updatedAt: event.createdAt,
+  };
+  const taskEvent = {
+    sequence: 2,
+    rootId: "task",
+    taskId: "task",
+    createdAt: event.createdAt,
+    type: "status",
+    data: { status: "running" },
+  };
+  for (const values of [
+    [{ ...taskEvent, rootId: "other" }],
+    [taskEvent, taskEvent],
+    [{ ...taskEvent, sequence: "bad" }],
+    [{ type: "error" }],
+  ]) {
+    const cancel = vi.fn();
+    const client = new DurableClient({
+      endpoint: "https://test/durable",
+      fetch: async (url) =>
+        String(url).includes("/events")
+          ? stream(values, cancel)
+          : Response.json({ task, operations: [], cursor: 1 }),
+    });
+    const iterator = client.streamTask("task", { after: 1 })[Symbol.asyncIterator]();
+    if (values.length === 2) expect((await iterator.next()).value).toEqual(taskEvent);
+    await expect(iterator.next()).rejects.toThrow();
+    expect(cancel).toHaveBeenCalledTimes(1);
+  }
+});

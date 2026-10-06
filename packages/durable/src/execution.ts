@@ -1,6 +1,6 @@
 import { Usage, type CompletionResponse, type JsonValue } from "@anvia/core/completion";
 import type { AgentRunExecution, AgentToolExecutionResult } from "@anvia/core/internal/agent";
-import { DurableModelError, DurableRecoveryError } from "./errors.js";
+import { DurableModelError, DurableRecoveryError, DurableStorageError } from "./errors.js";
 import { errorMessage, json, sameJson } from "./json.js";
 import type {
   DurableAgentRegistration,
@@ -138,6 +138,7 @@ export function createExecution(
         complete(operation, saved);
         return restoreToolResult(saved);
       } catch (error) {
+        if (error instanceof DurableStorageError) throw error;
         throw new DurableRecoveryError(
           `Could not record the tool result: ${errorMessage(error)}`,
           key,

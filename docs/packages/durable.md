@@ -424,6 +424,13 @@ Durable progress is not the existing token-delta chat protocol.
   Postgres, retention, general migration tooling, and distributed worker deployment are follow-up work.
   Database records are experimental; the task-aware engine upgrades schema 1 or 2 to 3 on acquisition.
 
+## Operational readiness
+
+See the [operations guide](./durable-operations.md) for fail-closed storage handling, readiness,
+metrics, admission limits, offline backup/restore, upgrade/rollback, and staged rollout.
+The SQLite package now requires Node.js 22.16 or newer. Custom task HTTP controls are covered
+in the [task guide](./durable-tasks.md#remote-task-controls).
+
 ## Verification
 
 Run from the repository root:

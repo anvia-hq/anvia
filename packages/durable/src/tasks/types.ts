@@ -110,7 +110,11 @@ export type TaskRecord = {
   updatedAt: string;
 };
 
-export type TaskListOptions = { sessionId?: string; after?: number; limit?: number };
+export type TaskListOptions = {
+  sessionId?: string | undefined;
+  after?: number | undefined;
+  limit?: number | undefined;
+};
 export type TaskPage = { tasks: TaskRecord[]; nextCursor?: number };
 export type TaskGraphSnapshot = {
   rootId: string;
@@ -119,6 +123,7 @@ export type TaskGraphSnapshot = {
   cursor: number;
 };
 export type TaskEvent = {
+  rootId: string;
   sequence: number;
   taskId: string;
   createdAt: string;

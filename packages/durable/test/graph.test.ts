@@ -207,25 +207,28 @@ describe("durable task graphs", () => {
     expect(model).toHaveBeenCalledTimes(1);
   });
 
-  it("upgrades schema version 1 on acquisition while preserving old runs", async () => {
-    const path = database();
-    const original = await open(undefined, path);
-    const run = await original.submit({
-      agentId: "researcher",
-      sessionId: "old",
-      requestId: "old",
-      prompt: "hello",
-    });
-    await run.result();
-    await original.close();
-    const previous = new DatabaseSync(path);
-    previous.exec("UPDATE anvia_durable_owner SET version = 1");
-    previous.close();
-    const restarted = await open(undefined, path);
-    expect(await (await restarted.getRun(run.id)).result()).toMatchObject({ output: "done" });
-    await restarted.close();
-    const updated = new DatabaseSync(path);
-    expect(updated.prepare("SELECT version FROM anvia_durable_owner").get()?.version).toBe(2);
-    updated.close();
-  });
+  it.each([1, 2])(
+    "upgrades schema version %s on acquisition while preserving old runs",
+    async (version) => {
+      const path = database();
+      const original = await open(undefined, path);
+      const run = await original.submit({
+        agentId: "researcher",
+        sessionId: "old",
+        requestId: "old",
+        prompt: "hello",
+      });
+      await run.result();
+      await original.close();
+      const previous = new DatabaseSync(path);
+      previous.prepare("UPDATE anvia_durable_owner SET version = ?").run(version);
+      previous.close();
+      const restarted = await open(undefined, path);
+      expect(await (await restarted.getRun(run.id)).result()).toMatchObject({ output: "done" });
+      await restarted.close();
+      const updated = new DatabaseSync(path);
+      expect(updated.prepare("SELECT version FROM anvia_durable_owner").get()?.version).toBe(3);
+      updated.close();
+    },
+  );
 });

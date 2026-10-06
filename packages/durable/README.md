@@ -134,6 +134,19 @@ The HTTP client exposes `submitGraph`, `graphSnapshot`, `listGraphs`, `streamGra
 This version exposes graph data and execution;
 Studio visualization and durable core Pipeline execution remain future work.
 
+## Custom tasks and dynamic ownership
+
+Use `defineTask()` for schema-validated input, checkpoints, and output. Register definitions
+in `DurableRuntime.open({ store, tasks, agents })`, then call `runtime.submitTask()`.
+A phase can spawn custom or agent children, persist a child join, wait for a timer or named
+signal, and journal external effects with explicit recovery policies. Waiting phases release
+capacity; cancelling a tree fences new work and waits for owned callbacks to settle.
+
+`task.graph()` exposes the complete bounded ownership tree and current waits. `task.stream()`
+emits committed tree changes. These APIs are currently in process; the HTTP/client integration
+continues to expose agent runs and static agent graphs. See the
+[custom task guide](../../docs/packages/durable-tasks.md) for contracts, examples, and limits.
+
 ## Learn more
 
 - [Execution, recovery, and API guide](../../docs/packages/durable.md)

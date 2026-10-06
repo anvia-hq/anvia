@@ -4,6 +4,9 @@
 `agent.generate()` and `agent.stream()` remain available. Durable execution uses
 `runtime.submit()` and a `DurableRun` handle instead.
 
+For versioned custom tasks, dynamic owned agents, child joins, timers, and external signals,
+see [Durable tasks and owned agent work](./durable-tasks.md).
+
 ## Execution model
 
 An agent definition is registered with an explicit version. Submitting a string prompt
@@ -270,14 +273,14 @@ The authorization context includes its agent and task IDs, plus graph/run IDs wh
 Existing `/runs/:id` routes authorize graph children against the graph's owning `sessionId`,
 not their generated execution session. Graph listing requires owning-session access.
 
-SQLite schema version 2 adds graph records and dependency-aware scheduling. Version 1 stores
-are upgraded when ownership is acquired, preserving existing runs. An old version-1 engine
-rejects the upgraded database instead of running graph nodes without checking dependencies.
+SQLite schema version 2 added graph records and dependency-aware scheduling. The current
+schema version 3 adds custom tasks; version 1 and 2 stores upgrade on ownership acquisition,
+preserving existing runs. Older engines reject the upgraded database.
 Downgrading the database is unsupported.
 
-This is a static agent-task DAG. Dynamic graph edits, arbitrary function tasks, conditional
-edges, durable timers/external signals, and durable core Pipeline execution are outside this
-version. No Studio graph UI is added; the exposed topology and live state can feed one.
+`submitGraph()` remains a static agent-task DAG. For dynamic children, custom work, timers,
+and external signals, use the [custom task API](./durable-tasks.md). Editing submitted DAGs,
+conditional DAG edges, durable core Pipeline execution, and a Studio graph UI remain future work.
 
 ## Observing and reconnecting
 
@@ -417,9 +420,9 @@ Durable progress is not the existing token-delta chat protocol.
   persistence boundaries. Durable session history replaces the agent's memory store here.
 - Observability callbacks may run again during reconstruction; they must be safe to repeat.
   They are not the authoritative execution journal.
-- Token streaming, pipeline/team recovery, durable timers, compaction, Studio integration,
+- Token streaming, pipeline/team recovery, compaction, Studio integration,
   Postgres, retention, general migration tooling, and distributed worker deployment are follow-up work.
-  Database records are experimental; the graph-aware engine upgrades schema 1 to 2 on acquisition.
+  Database records are experimental; the task-aware engine upgrades schema 1 or 2 to 3 on acquisition.
 
 ## Verification
 

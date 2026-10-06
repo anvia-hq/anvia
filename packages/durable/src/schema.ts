@@ -134,7 +134,7 @@ export function parseRun(value: unknown): DurableRunRecord {
 const operationSchema = z
   .object({
     key: id,
-    kind: z.enum(["model", "tool"]),
+    kind: z.enum(["model", "tool", "effect"]),
     input: jsonValue,
     status: z.enum(["started", "completed"]),
     recovery: z.enum(["safe", "idempotent", "manual"]),
@@ -153,7 +153,7 @@ export function parseOperation(value: unknown): DurableOperation {
       .passthrough()
       .parse(operation.result);
     parseMessage({ role: "assistant", content: result.choice });
-  } else {
+  } else if (operation.kind === "tool") {
     const result = z
       .discriminatedUnion("failed", [
         z.object({ failed: z.literal(false), output: jsonValue }).strict(),

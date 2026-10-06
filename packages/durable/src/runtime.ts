@@ -1,4 +1,8 @@
 import { DurableTaskGraph } from "./task-graph.js";
+import { TaskScheduler } from "./tasks/scheduler.js";
+import { DurableTaskHandle } from "./tasks/handle.js";
+import type { DefinedTask, RegisteredTask, TaskListOptions } from "./tasks/types.js";
+import { TASK_SESSION_PREFIX, agentTask } from "./tasks/agent.js";
 import { parseDurableGraphSubmission, graphListSchema } from "./graph-schema.js";
 import { createGraph, graphInput, graphSnapshot, requireGraph } from "./graph-state.js";
 import { createRunRecord, GRAPH_SESSION_PREFIX } from "./run-record.js";
@@ -49,13 +53,34 @@ export class DurableRuntime {
   private closePromise: Promise<void> | undefined;
   private failure: unknown;
   private wakeTimer: ReturnType<typeof setTimeout> | undefined;
+  private readonly tasks: TaskScheduler;
 
   private constructor(
     private readonly store: DurableStore,
     agents: Map<string, DurableAgentRegistration>,
     private readonly maxConcurrentRuns: number,
+    definitions: ReadonlyMap<string, RegisteredTask>,
+    maxConcurrentTasks: number,
   ) {
     this.agents = agents;
+    this.tasks = new TaskScheduler(
+      store,
+      definitions,
+      maxConcurrentTasks,
+      (error) => {
+        this.failure = error;
+        for (const active of this.active.values()) active.controller.abort(error);
+      },
+      agents,
+      (id) => this.active.has(id),
+      (root) => {
+        const tasks = this.store.transaction((tx) => tx.taskTree(root));
+        for (const task of tasks)
+          if (task.agentRunId !== undefined && task.status === "cancelling")
+            this.active.get(task.agentRunId)?.controller.abort(new Error("Owner task cancelled."));
+        this.pump();
+      },
+    );
   }
 
   static async open(options: DurableRuntimeOptions): Promise<DurableRuntime> {
@@ -66,9 +91,61 @@ export class DurableRuntime {
       maxConcurrentRuns > 1000
     )
       throw new TypeError("maxConcurrentRuns must be an integer between 1 and 1000.");
-    const agents = registrations(options.agents);
+    const maxConcurrentTasks = options.maxConcurrentTasks ?? 4;
+    if (
+      !Number.isSafeInteger(maxConcurrentTasks) ||
+      maxConcurrentTasks < 1 ||
+      maxConcurrentTasks > 1000
+    )
+      throw new TypeError("maxConcurrentTasks must be an integer between 1 and 1000.");
+    const definitions = new Map<string, RegisteredTask>();
+    for (const { registration } of options.tasks ?? []) {
+      if (registration.name === agentTask.name)
+        throw new TypeError("Reserved task name: anvia.agent");
+      if (definitions.has(registration.name))
+        throw new TypeError(`Duplicate task definition: ${registration.name}`);
+      definitions.set(registration.name, registration);
+    }
+    const agents = registrations(options.agents ?? []);
     options.store.acquire();
-    return new DurableRuntime(options.store, agents, maxConcurrentRuns);
+    return new DurableRuntime(
+      options.store,
+      agents,
+      maxConcurrentRuns,
+      definitions,
+      maxConcurrentTasks,
+    );
+  }
+
+  async submitTask<I, S, R>(
+    definition: DefinedTask<I, S, R>,
+    input: { sessionId: string; requestId: string; input: I },
+  ): Promise<DurableTaskHandle<R>> {
+    this.assertOpen();
+    const id = this.tasks.submit(
+      definition.name,
+      definition.version,
+      input.input,
+      input.sessionId,
+      input.requestId,
+    );
+    return new DurableTaskHandle<R>(id, this.tasks, this.store, () => this.assertOpen());
+  }
+
+  async getTask(id: string): Promise<DurableTaskHandle> {
+    this.assertOpen();
+    this.tasks.snapshot(id);
+    return new DurableTaskHandle(id, this.tasks, this.store, () => this.assertOpen());
+  }
+
+  async listTasks(options: TaskListOptions = {}) {
+    this.assertOpen();
+    return this.store.listTasks(options);
+  }
+
+  async taskGraph(id: string) {
+    this.assertOpen();
+    return this.tasks.graph(id);
   }
 
   async submit(input: DurableSubmission, options: DurableSubmitOptions = {}): Promise<DurableRun> {
@@ -77,8 +154,11 @@ export class DurableRuntime {
       throw new TypeError("enqueue must be a boolean.");
     for (const key of ["agentId", "sessionId", "requestId", "prompt"] as const)
       nonblank(input[key], key);
-    if (input.sessionId.startsWith(GRAPH_SESSION_PREFIX))
-      throw new TypeError("Reserved graph session ID.");
+    if (
+      input.sessionId.startsWith(GRAPH_SESSION_PREFIX) ||
+      input.sessionId.startsWith(TASK_SESSION_PREFIX)
+    )
+      throw new TypeError("Reserved durable session ID.");
     const submission = {
       agentId: input.agentId,
       sessionId: input.sessionId,
@@ -179,6 +259,7 @@ export class DurableRuntime {
   async resume(): Promise<void> {
     this.assertOpen();
     this.pump();
+    this.tasks.resume();
   }
 
   /** Abort in-flight attempts, retain checkpoints, and release ownership after callbacks settle. */
@@ -188,9 +269,10 @@ export class DurableRuntime {
     clearTimeout(this.wakeTimer);
     for (const { controller } of this.active.values())
       controller.abort(new Error("Durable runtime closed."));
-    this.closePromise = Promise.all([...this.active.values()].map(({ task }) => task)).then(() =>
-      this.store.close(),
-    );
+    this.closePromise = Promise.all([
+      this.tasks.close(),
+      ...[...this.active.values()].map(({ task }) => task),
+    ]).then(() => this.store.close());
     return this.closePromise;
   }
 
@@ -221,6 +303,7 @@ export class DurableRuntime {
           throw new DurableConflictError("Interaction already received a different response.");
         return;
       }
+      assertOwnedTaskMutable(tx, run);
       if (
         run.status !== "waiting" ||
         run.outcome?.type !== "interaction" ||
@@ -249,6 +332,7 @@ export class DurableRuntime {
     this.assertOpen();
     this.store.transaction((tx) => {
       const run = requireRun(tx, id);
+      assertOwnedTaskMutable(tx, run);
       if (run.graphId !== undefined && requireGraph(tx, run.graphId).cancelled)
         throw new DurableConflictError("Graph is cancelled.");
       if (run.status !== "needs_attention" || run.blockedOperation !== operationId) {
@@ -278,6 +362,7 @@ export class DurableRuntime {
     if (this.active.has(id)) throw new DurableConflictError("Run is still settling.");
     this.store.transaction((tx) => {
       const run = requireRun(tx, id);
+      assertOwnedTaskMutable(tx, run);
       if (run.graphId !== undefined && requireGraph(tx, run.graphId).cancelled)
         throw new DurableConflictError("Graph is cancelled.");
       if (run.status !== "failed" && run.status !== "needs_attention")
@@ -300,14 +385,17 @@ export class DurableRuntime {
 
   cancel(id: string): void {
     this.assertOpen();
-    this.store.transaction((tx) => {
+    const sessionId = this.store.transaction((tx) => {
       const run = requireRun(tx, id);
-      if (["completed", "failed", "cancelled"].includes(run.status)) return;
+      if (["completed", "failed", "cancelled"].includes(run.status)) return run.sessionId;
       delete run.nextAttemptAt;
       run.error = "Durable run cancelled.";
       setStatus(tx, run, "cancelled");
+      return run.sessionId;
     });
     this.active.get(id)?.controller.abort(new Error("Durable run cancelled."));
+    if (sessionId.startsWith(TASK_SESSION_PREFIX))
+      this.tasks.agentChanged(sessionId.slice(TASK_SESSION_PREFIX.length));
     this.pump();
   }
 
@@ -329,6 +417,7 @@ export class DurableRuntime {
             this.pump();
           } catch (error) {
             this.failure = error;
+            this.tasks.stop(error);
             for (const active of this.active.values()) active.controller.abort(error);
           }
         },
@@ -347,11 +436,18 @@ export class DurableRuntime {
       .then(() => this.execute(id, controller.signal))
       .finally(() => {
         this.active.delete(id);
+        if (
+          !this.closing &&
+          this.failure === undefined &&
+          sessionId.startsWith(TASK_SESSION_PREFIX)
+        )
+          this.tasks.agentChanged(sessionId.slice(TASK_SESSION_PREFIX.length));
         if (!this.closing && this.failure === undefined) this.pump();
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
         this.failure = error;
+        this.tasks.stop(error);
         for (const active of this.active.values()) active.controller.abort(error);
       });
     this.active.set(id, { sessionId, controller, task });
@@ -384,6 +480,8 @@ export class DurableRuntime {
       return current;
     });
     if (run === undefined) return;
+    if (run.sessionId.startsWith(TASK_SESSION_PREFIX))
+      this.tasks.agentChanged(run.sessionId.slice(TASK_SESSION_PREFIX.length));
     try {
       const registration = this.agents.get(run.agentId);
       if (registration === undefined || registration.version !== run.version) {
@@ -470,4 +568,16 @@ function setStatus(
       outcome: run.outcome,
     }),
   );
+}
+
+function assertOwnedTaskMutable(tx: DurableTransaction, run: DurableRunRecord): void {
+  if (!run.sessionId.startsWith(TASK_SESSION_PREFIX)) return;
+  const task = tx.getTask(run.sessionId.slice(TASK_SESSION_PREFIX.length));
+  if (
+    task === undefined ||
+    ["completing", "cancelling", "completed", "failed", "cancelled"].includes(task.status)
+  )
+    throw new DurableConflictError(
+      "Owned task outcomes are immutable; create a new task submission.",
+    );
 }

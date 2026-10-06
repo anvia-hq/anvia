@@ -3,6 +3,7 @@ import type {
   DurableGraphListOptions,
   DurableGraphPage,
 } from "./graph-types.js";
+import type { RegisteredTask, TaskListOptions, TaskPage, TaskTransaction } from "./tasks/types.js";
 import type { Agent, AgentInput, AgentOutcome } from "@anvia/core/agent";
 import type { JsonValue, Message, Usage } from "@anvia/core/completion";
 
@@ -69,7 +70,7 @@ export type DurableRunRecord = DurableSubmission & {
 
 export type DurableOperation = {
   key: string;
-  kind: "model" | "tool";
+  kind: "model" | "tool" | "effect";
   input: JsonValue;
   status: "started" | "completed";
   recovery: ToolRecovery;
@@ -131,7 +132,7 @@ export type DurableSnapshot = {
 };
 
 /** Synchronous, atomic transaction. Never perform external work inside its callback. */
-export interface DurableTransaction {
+export interface DurableTransaction extends TaskTransaction {
   getGraph(id: string): DurableGraphRecord | undefined;
   findGraphRequest(sessionId: string, requestId: string): DurableGraphRecord | undefined;
   putGraph(graph: DurableGraphRecord): void;
@@ -150,6 +151,10 @@ export interface DurableTransaction {
 
 /** A store is exclusively owned by one open runtime. All returned values must be detached copies. */
 export interface DurableStore {
+  listTasks(options: TaskListOptions): TaskPage;
+  scheduleTasks(excluded: readonly string[], limit: number): string[];
+  unsettledTaskRoots(after: number): { ids: string[]; cursor?: number };
+  taskEvents(rootId: string, after: number, limit: number): DurableEvent[];
   acquire(): void;
   close(): void;
   transaction<T>(callback: (tx: DurableTransaction) => T): T;
@@ -170,7 +175,10 @@ export interface DurableStore {
 
 export type DurableRuntimeOptions = {
   store: DurableStore;
-  agents: readonly DurableAgentRegistration[];
+  agents?: readonly DurableAgentRegistration[];
+  tasks?: readonly { readonly registration: RegisteredTask }[];
+  /** Independent capacity for custom task phases. Waiting phases release their slot. */
+  maxConcurrentTasks?: number;
   /** Maximum simultaneous executions across sessions. Defaults to 4. */
   maxConcurrentRuns?: number;
 };

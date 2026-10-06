@@ -1,4 +1,21 @@
 export { DurableRuntime } from "./runtime.js";
+export { defineTask } from "./tasks/definition.js";
+export { DurableTaskHandle } from "./tasks/handle.js";
+export type {
+  DefinedTask,
+  TaskDefinition,
+  TaskContext,
+  TaskTransition,
+  TaskOutcome,
+  TaskWait,
+  TaskRecord,
+  TaskGraphSnapshot,
+  TaskEvent,
+  TaskListOptions,
+  TaskPage,
+  TaskTransaction,
+  RegisteredTask,
+} from "./tasks/types.js";
 export { DurableRun, type DurableStreamOptions } from "./run.js";
 export {
   DurableRecoveryError,

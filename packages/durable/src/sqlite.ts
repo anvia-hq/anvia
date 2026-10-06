@@ -1,4 +1,12 @@
 import { graphListSchema, parseGraphRecord } from "./graph-schema.js";
+import {
+  taskTables,
+  taskTransaction,
+  listTasks,
+  scheduleTasks,
+  unsettledTaskRoots,
+} from "./tasks/sqlite.js";
+import type { TaskListOptions } from "./tasks/types.js";
 import type { DurableGraphListOptions, DurableGraphPage } from "./graph-types.js";
 import { hostname } from "node:os";
 import { DatabaseSync } from "node:sqlite";
@@ -33,7 +41,7 @@ export class SqliteDurableStore implements DurableStore {
           singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
           version INTEGER NOT NULL, token TEXT, pid INTEGER, host TEXT
         );
-        INSERT OR IGNORE INTO anvia_durable_owner(singleton, version) VALUES (1, 2);
+        INSERT OR IGNORE INTO anvia_durable_owner(singleton, version) VALUES (1, 3);
         CREATE TABLE IF NOT EXISTS anvia_durable_runs (
           id TEXT PRIMARY KEY, session_id TEXT NOT NULL, request_id TEXT NOT NULL,
           status TEXT NOT NULL, record TEXT NOT NULL,
@@ -54,11 +62,12 @@ export class SqliteDurableStore implements DurableStore {
           run_id TEXT NOT NULL, created_at TEXT NOT NULL, type TEXT NOT NULL, data TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS anvia_durable_event_run ON anvia_durable_events(run_id, sequence);
+        ${taskTables}
       `);
       const version = this.database
         .prepare("SELECT version FROM anvia_durable_owner WHERE singleton = 1")
         .get();
-      if (version?.version !== 1 && version?.version !== 2)
+      if (version?.version !== 1 && version?.version !== 2 && version?.version !== 3)
         throw new Error("Unsupported durable database schema version.");
     } catch (error) {
       this.database.close();
@@ -80,7 +89,7 @@ export class SqliteDurableStore implements DurableStore {
       }
       this.database
         .prepare(
-          "UPDATE anvia_durable_owner SET token = ?, pid = ?, host = ?, version = 2 WHERE singleton = 1",
+          "UPDATE anvia_durable_owner SET token = ?, pid = ?, host = ?, version = 3 WHERE singleton = 1",
         )
         .run(this.token, process.pid, hostname());
     });
@@ -143,6 +152,44 @@ export class SqliteDurableStore implements DurableStore {
       })),
       ...(rows.length > limit ? { nextCursor: Number(page.at(-1)!.cursor) } : {}),
     };
+  }
+
+  listTasks(options: TaskListOptions) {
+    this.assertOpen();
+    return listTasks(this.database, options);
+  }
+
+  scheduleTasks(excluded: readonly string[], limit: number) {
+    this.assertOpen();
+    return scheduleTasks(this.database, excluded, limit);
+  }
+
+  unsettledTaskRoots(after: number) {
+    this.assertOpen();
+    return unsettledTaskRoots(this.database, after);
+  }
+
+  taskEvents(rootId: string, after: number, limit: number): DurableEvent[] {
+    this.assertOpen();
+    if (
+      !Number.isSafeInteger(after) ||
+      after < 0 ||
+      !Number.isSafeInteger(limit) ||
+      limit < 1 ||
+      limit > 1000
+    )
+      throw new TypeError("Invalid task event cursor or page size.");
+    return this.database
+      .prepare(`SELECT e.* FROM anvia_durable_events e JOIN anvia_durable_tasks t ON t.id = e.run_id
+      WHERE t.root_id = ? AND e.sequence > ? ORDER BY e.sequence LIMIT ?`)
+      .all(rootId, after, limit)
+      .map((row) => ({
+        sequence: Number(row.sequence),
+        runId: String(row.run_id),
+        createdAt: String(row.created_at),
+        type: eventTypeSchema.parse(row.type),
+        data: json(JSON.parse(String(row.data))),
+      }));
   }
 
   graphEvents(graphId: string, after: number, limit: number): DurableEvent[] {
@@ -286,6 +333,7 @@ export class SqliteDurableStore implements DurableStore {
       return row === undefined ? undefined : parseRun(JSON.parse(String(row.record)));
     };
     return {
+      ...taskTransaction(this.database, assertActive),
       getGraph: (id) => {
         assertActive();
         const row = this.database

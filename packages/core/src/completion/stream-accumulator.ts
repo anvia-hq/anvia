@@ -783,7 +783,12 @@ function nonToolPartsMatchFinal(
     (part) =>
       part.type === "reasoning" &&
       part.text === "" &&
-      (part.details === undefined || part.details.every((detail) => detail.type === "encrypted")),
+      (part.details === undefined ||
+        part.details.every(
+          (detail) =>
+            detail.type === "encrypted" ||
+            ((detail.type === "text" || detail.type === "summary") && detail.text === ""),
+        )),
   );
 }
 

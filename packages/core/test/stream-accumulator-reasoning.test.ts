@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { type AssistantContentPart, type ReasoningPart, Usage } from "../src/completion";
+import {
+  type AssistantContentPart,
+  type ReasoningDetail,
+  type ReasoningPart,
+  Usage,
+} from "../src/completion";
 import { CompletionStreamAccumulator } from "../src/completion/stream-accumulator";
 
 const encrypted = { type: "encrypted", data: "opaque-reasoning" } as const;
@@ -8,7 +13,15 @@ const usage = { ...Usage.empty(), inputTokens: 10, outputTokens: 20, totalTokens
 const answer = { type: "text", text: "OK" } as const;
 
 describe("CompletionStreamAccumulator terminal reasoning", () => {
-  it.each([undefined, [], [encrypted]])(
+  it.each([
+    undefined,
+    [],
+    [encrypted],
+    [{ type: "text", text: "" }],
+    [{ type: "summary", text: "" }],
+    [{ type: "text", text: "" }, encrypted],
+    [{ type: "summary", text: "" }, encrypted],
+  ] satisfies (ReasoningDetail[] | undefined)[])(
     "retains final-only reasoning with details %j",
     (details) => {
       const accumulator = new CompletionStreamAccumulator();
@@ -99,6 +112,27 @@ describe("CompletionStreamAccumulator terminal reasoning", () => {
       expect.objectContaining({ kind: "invalid-stream-event", usage }),
     );
   });
+
+  it.each(["text", "summary"] as const)(
+    "rejects nonempty final-only %s details even when the aggregate text is empty",
+    (type) => {
+      const accumulator = new CompletionStreamAccumulator();
+      accumulator.accept({ type: "text_delta", delta: "OK" });
+      complete(accumulator, [
+        {
+          type: "reasoning",
+          id: "rs-1",
+          text: "",
+          details: [{ type, text: "Thinking." }, encrypted],
+        },
+        answer,
+      ]);
+
+      expect(() => accumulator.response()).toThrowError(
+        expect.objectContaining({ kind: "invalid-stream-event", usage }),
+      );
+    },
+  );
 
   it("rejects conflicting tool arguments alongside final-only encrypted reasoning", () => {
     const accumulator = new CompletionStreamAccumulator();

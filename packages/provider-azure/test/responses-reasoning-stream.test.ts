@@ -12,61 +12,72 @@ import { AzureOpenAIClient } from "../src/index";
 describe.each(["azure", "openai"] as const)(
   "%s Responses reasoning SSE compatibility",
   (provider) => {
-    it.each([false, true])("retains final-only reasoning (encrypted=%s)", async (encrypted) => {
-      const reasoning = reasoningItem(encrypted);
-      const { model, fetch } = modelWithSSE(provider, responseStream(reasoning));
-      const events = await collectEvents(
-        streamCompletion({
-          model,
-          prompt: "Say OK.",
-          providerOptions: { reasoning: { effort: "max" } },
-        }),
-      );
-      const final = events.find((event) => event.type === "final");
+    it.each(
+      [false, true].flatMap((encrypted) =>
+        (["none", "summary", "text"] as const).map((emptyDetail) => ({ encrypted, emptyDetail })),
+      ),
+    )(
+      "retains final-only reasoning (encrypted=$encrypted, emptyDetail=$emptyDetail)",
+      async ({ encrypted, emptyDetail }) => {
+        const reasoning = reasoningItem(encrypted, emptyDetail);
+        const details = [
+          ...(emptyDetail === "none" ? [] : [{ type: emptyDetail, text: "" }]),
+          ...(encrypted ? [{ type: "encrypted", data: "opaque-reasoning" }] : []),
+        ];
+        const { model, fetch } = modelWithSSE(provider, responseStream(reasoning));
+        const events = await collectEvents(
+          streamCompletion({
+            model,
+            prompt: "Say OK.",
+            providerOptions: { reasoning: { effort: "max" } },
+          }),
+        );
+        const final = events.find((event) => event.type === "final");
 
-      expect(events.filter((event) => event.type === "error")).toEqual([]);
-      expect(events.filter((event) => event.type === "text_delta")).toEqual([
-        { type: "text_delta", delta: "OK" },
-      ]);
-      expect(final?.result).toMatchObject({
-        output: "OK",
-        content: [
-          {
-            type: "reasoning",
-            id: "rs-1",
-            text: "",
-            ...(encrypted ? { details: [{ type: "encrypted", data: "opaque-reasoning" }] } : {}),
-          },
-          { type: "text", text: "OK" },
-        ],
-        usage: { inputTokens: 10, outputTokens: 20, totalTokens: 30 },
-        finishReason: "stop",
-        rawResponse: { id: "resp-1", output: [reasoning, expect.anything()] },
-      });
-      expect(JSON.parse(fetch.mock.calls[0]![1]!.body as string)).toMatchObject({
-        stream: true,
-        reasoning: { effort: "max" },
-      });
-
-      // Replay the assembled choice through the adapter to preserve reasoning across turns.
-      expect(final).toBeDefined();
-      if (final?.type !== "final") throw new Error("Expected a final completion");
-      fetch.mockImplementationOnce(
-        async () =>
-          new Response(
-            JSON.stringify({ id: "resp-2", status: "completed", output: [], usage: {} }),
+        expect(events.filter((event) => event.type === "error")).toEqual([]);
+        expect(events.filter((event) => event.type === "text_delta")).toEqual([
+          { type: "text_delta", delta: "OK" },
+        ]);
+        expect(final?.result).toMatchObject({
+          output: "OK",
+          content: [
             {
-              headers: { "content-type": "application/json" },
+              type: "reasoning",
+              id: "rs-1",
+              text: "",
+              ...(details.length > 0 ? { details } : {}),
             },
-          ),
-      );
-      await model.completion({
-        chatHistory: [Message.assistant(final.result.content), Message.user("Continue.")],
-        documents: [],
-        tools: [],
-      });
-      expect(JSON.parse(fetch.mock.calls[1]![1]!.body as string).input).toContainEqual(reasoning);
-    });
+            { type: "text", text: "OK" },
+          ],
+          usage: { inputTokens: 10, outputTokens: 20, totalTokens: 30 },
+          finishReason: "stop",
+          rawResponse: { id: "resp-1", output: [reasoning, expect.anything()] },
+        });
+        expect(JSON.parse(fetch.mock.calls[0]![1]!.body as string)).toMatchObject({
+          stream: true,
+          reasoning: { effort: "max" },
+        });
+
+        // Replay the assembled choice through the adapter to preserve reasoning across turns.
+        expect(final).toBeDefined();
+        if (final?.type !== "final") throw new Error("Expected a final completion");
+        fetch.mockImplementationOnce(
+          async () =>
+            new Response(
+              JSON.stringify({ id: "resp-2", status: "completed", output: [], usage: {} }),
+              {
+                headers: { "content-type": "application/json" },
+              },
+            ),
+        );
+        await model.completion({
+          chatHistory: [Message.assistant(final.result.content), Message.user("Continue.")],
+          documents: [],
+          tools: [],
+        });
+        expect(JSON.parse(fetch.mock.calls[1]![1]!.body as string).input).toContainEqual(reasoning);
+      },
+    );
 
     it.each([false, true])(
       "retains streamed reasoning without duplication (encrypted=%s)",
@@ -130,11 +141,12 @@ describe.each(["azure", "openai"] as const)(
   },
 );
 
-function reasoningItem(encrypted: boolean) {
+function reasoningItem(encrypted: boolean, emptyDetail: "none" | "summary" | "text" = "none") {
   return {
     id: "rs-1",
     type: "reasoning",
-    summary: [],
+    summary: emptyDetail === "summary" ? [{ type: "summary_text", text: "" }] : [],
+    ...(emptyDetail === "text" ? { content: [{ type: "reasoning_text", text: "" }] } : {}),
     ...(encrypted ? { encrypted_content: "opaque-reasoning" } : {}),
   };
 }

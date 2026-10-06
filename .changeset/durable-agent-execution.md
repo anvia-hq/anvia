@@ -1,6 +1,6 @@
 ---
 "@anvia/core": minor
-"@anvia/durable": minor
+"@anvia/durable": patch
 ---
 
 Add experimental SQLite-backed durable agent execution with deduplicated submissions,

@@ -1,5 +1,5 @@
 ---
-"@anvia/durable": minor
+"@anvia/durable": patch
 "@anvia/server": minor
 "@anvia/client": minor
 ---

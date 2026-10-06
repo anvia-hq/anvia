@@ -1,5 +1,5 @@
 ---
-"@anvia/durable": minor
+"@anvia/durable": patch
 ---
 
 Add schema-validated, versioned custom tasks with persisted checkpoints, dynamic child ownership,

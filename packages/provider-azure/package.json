@@ -1,13 +1,13 @@
 {
-  "name": "@anvia/openai",
-  "version": "1.1.8",
-  "description": "OpenAI provider adapter for Anvia.",
+  "name": "@anvia/azure",
+  "version": "0.0.0",
+  "description": "Azure OpenAI provider adapter for Anvia.",
   "author": "anvia",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/anvia-hq/anvia",
-    "directory": "packages/provider-openai"
+    "directory": "packages/provider-azure"
   },
   "files": [
     "dist"
@@ -22,20 +22,18 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    },
-    "./adapters": {
-      "types": "./dist/adapters.d.ts",
-      "import": "./dist/adapters.js"
     }
   },
   "scripts": {
-    "prebuild": "test -f ../core/dist/index.d.ts || pnpm --filter @anvia/core build",
-    "build": "tsup src/index.ts src/adapters.ts --format esm --dts --sourcemap --clean",
-    "pretypecheck": "test -f ../core/dist/index.d.ts || pnpm --filter @anvia/core build",
+    "prebuild": "pnpm --filter @anvia/openai build",
+    "build": "tsup src/index.ts --format esm --dts --sourcemap --clean",
+    "pretypecheck": "test -f ../provider-openai/dist/index.d.ts || pnpm --filter @anvia/openai build",
     "test": "vitest run",
+    "test:live": "ANVIA_AZURE_OPENAI_TESTS=1 node --env-file=../../.env ./node_modules/vitest/vitest.mjs run test/responses.integration.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@anvia/openai": "workspace:*",
     "openai": "^7.23.0"
   },
   "devDependencies": {

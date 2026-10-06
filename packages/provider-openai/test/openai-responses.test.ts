@@ -1081,11 +1081,13 @@ describe("OpenAI Responses mapping", () => {
   });
 
   it.each([
-    ["max_output_tokens", "truncated-tool-call", "length"],
-    ["content_filter", "filtered-tool-call", "content-filter"],
+    ["max_output_tokens", "truncated-tool-call", "length", "lookup"],
+    ["max_output_tokens", "truncated-tool-call", "length", undefined],
+    ["content_filter", "filtered-tool-call", "content-filter", "lookup"],
+    ["content_filter", "filtered-tool-call", "content-filter", undefined],
   ])(
-    "prioritizes an unsafe %s Responses stream finish over malformed arguments",
-    async (incompleteReason, kind, finishReason) => {
+    "prioritizes %s over malformed arguments (%s, %s, name=%s)",
+    async (incompleteReason, kind, finishReason, name) => {
       const malformedToolCall = {
         type: "function_call",
         id: "tool_0",
@@ -1101,7 +1103,7 @@ describe("OpenAI Responses mapping", () => {
         {
           type: "response.function_call_arguments.done",
           item_id: "tool_0",
-          name: "lookup",
+          name,
           arguments: malformedToolCall.arguments,
         },
         {

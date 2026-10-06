@@ -34,7 +34,8 @@ const validatorScript = path.join(repositoryRoot, "scripts", "validate-release-t
 
 test("repository config versions every public package independently", () => {
   const packages = findPublicPackages(repositoryRoot);
-  assert.equal(packages.length, 36);
+  assert.equal(packages.length, 37);
+  assert.ok(packages.some(({ packageJson }) => packageJson.name === "@anvia/azure"));
   assert.doesNotThrow(() => assertIndependentVersioning(repositoryRoot, packages));
   assert.doesNotThrow(() => assertWorkspaceInternalDependencies(packages));
 });

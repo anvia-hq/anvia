@@ -5,6 +5,10 @@ OpenAI provider adapter for Anvia.
 Use this package when you want Anvia agents, direct completions, embeddings, image generation,
 speech generation, or transcription to run on OpenAI models or OpenAI-compatible endpoints.
 
+For Azure OpenAI and Azure AI Foundry, use [`@anvia/azure`](./provider-azure.md).
+It owns Azure configuration and Responses event normalization while reusing common
+request and response mapping. Use `AzureOpenAIClient` for Azure-specific stream handling.
+
 ## Installation
 
 ```sh
@@ -139,6 +143,13 @@ const transcript = await transcribe({
 ```
 
 ## Exports
+
+`@anvia/openai/adapters` exports `OpenAIResponsesCompletionModel` for provider-package
+authors. Subclasses can override the protected `normalizeStream()` method to adapt raw
+events before common parsing and validation, and `requestParams()` to adapt outgoing requests.
+The OpenAI implementation passes events
+through unchanged and contains no Azure name-recovery mapper. Ordinary applications
+should use `OpenAIClient` or their provider's client.
 
 - `OpenAIClient`
 - structural completion, embedding, image, speech, and transcription handle types

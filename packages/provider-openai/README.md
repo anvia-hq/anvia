@@ -3,6 +3,9 @@
 Connect Anvia agents to OpenAI or an OpenAI-compatible endpoint. Use one client for
 chat, embeddings, images, speech, and transcription.
 
+For Azure OpenAI and Azure AI Foundry, use
+[`@anvia/azure`](../provider-azure/README.md) for Azure endpoint and authentication configuration.
+
 ## Install
 
 ```sh

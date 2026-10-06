@@ -5,12 +5,12 @@ import {
 } from "@anvia/core/completion";
 import { describe, expect, it } from "vitest";
 import { Message } from "../../core/test/helpers/imports";
-import { OpenAIResponsesCompletionModel } from "../src/openai/responses";
+import { AzureOpenAIClient, type AzureOpenAICompletionModel } from "../src/index";
 
-describe("OpenAI Responses tool-call streaming compatibility", () => {
+describe("Azure OpenAI Responses tool-call streaming compatibility", () => {
   it("accepts a standard arguments.done event that includes the function name", async () => {
     const events = await collectResponsesStream(
-      openAIResponsesModelWithStream(weatherToolCallStream()),
+      azureResponsesModelWithStream(weatherToolCallStream()),
     );
 
     expect(terminalArgumentsEvent(events)).toEqual({
@@ -22,24 +22,22 @@ describe("OpenAI Responses tool-call streaming compatibility", () => {
     });
   });
 
-  it("accepts an unnamed arguments.done event without synthesizing a name", async () => {
+  it("resolves an omitted Azure arguments.done name from output_item.added", async () => {
     const events = await collectResponsesStream(
-      openAIResponsesModelWithStream(weatherToolCallStream({ omitDoneName: true })),
+      azureResponsesModelWithStream(weatherToolCallStream({ omitDoneName: true })),
     );
 
     expect(terminalArgumentsEvent(events)).toEqual({
       type: "tool_call_delta",
       id: "fc_123",
+      name: "get_weather",
       argumentsDelta: '{"city":"Jakarta"}',
       argumentsMode: "replace",
     });
-    expect(events.find((event) => event.type === "tool_call")).toMatchObject({
-      toolCall: { toolName: "get_weather", input: { city: "Jakarta" }, callId: "call_123" },
-    });
   });
 
-  it("rejects an unfinished tool stream without a completed call", async () => {
-    const model = openAIResponsesModelWithStream([
+  it("rejects arguments.done when no function name can be resolved", async () => {
+    const model = azureResponsesModelWithStream([
       {
         type: "response.function_call_arguments.delta",
         item_id: "fc_123",
@@ -53,12 +51,12 @@ describe("OpenAI Responses tool-call streaming compatibility", () => {
     ]);
 
     await expect(collectResponsesStream(model)).rejects.toMatchObject(
-      providerOutputError("incomplete-tool-call", { toolCallId: "fc_123" }),
+      providerOutputError("invalid-tool-call", { toolCallId: "fc_123" }),
     );
   });
 
   it("rejects an arguments.done name that conflicts with output_item.added", async () => {
-    const model = openAIResponsesModelWithStream(
+    const model = azureResponsesModelWithStream(
       weatherToolCallStream({ doneName: "get_forecast" }),
     );
 
@@ -70,8 +68,8 @@ describe("OpenAI Responses tool-call streaming compatibility", () => {
   it("executes one tool call with complete arguments when delta and done are both present", async () => {
     const toolExecutions: unknown[] = [];
     let requestCount = 0;
-    const model = new OpenAIResponsesCompletionModel(
-      {
+    const model = new AzureOpenAIClient({
+      client: {
         responses: {
           create: async () => {
             const events =
@@ -82,10 +80,9 @@ describe("OpenAI Responses tool-call streaming compatibility", () => {
           },
         },
       } as never,
-      "responses-test",
-    );
+    }).completionModel({ modelId: "responses-test", api: "responses" });
     const agent = new Agent({
-      id: "responses-tool-stream",
+      id: "azure-responses-tool-stream",
       model,
       tools: [recordingTool("get_weather", toolExecutions)],
     });
@@ -173,11 +170,10 @@ function completedTextStream(): unknown[] {
   ];
 }
 
-function openAIResponsesModelWithStream(events: unknown[]): OpenAIResponsesCompletionModel {
-  return new OpenAIResponsesCompletionModel(
-    { responses: { create: async () => streamOf(events) } } as never,
-    "responses-test",
-  );
+function azureResponsesModelWithStream(events: unknown[]): AzureOpenAICompletionModel {
+  return new AzureOpenAIClient({
+    client: { responses: { create: async () => streamOf(events) } } as never,
+  }).completionModel({ modelId: "responses-test", api: "responses" });
 }
 
 function streamOf(events: unknown[]): AsyncIterable<unknown> {
@@ -189,7 +185,7 @@ function streamOf(events: unknown[]): AsyncIterable<unknown> {
 }
 
 async function collectResponsesStream(
-  model: OpenAIResponsesCompletionModel,
+  model: AzureOpenAICompletionModel,
 ): Promise<CompletionModelStreamEvent[]> {
   return collectEvents(
     model.streamCompletion({

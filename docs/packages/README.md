@@ -26,6 +26,7 @@ These guides contain the longer API examples, configuration details, and operati
 | `@anvia/gemini`          | [README](../../packages/provider-gemini/README.md)        | [Guide](./provider-gemini.md)        |
 | `@anvia/grok`            | [README](../../packages/provider-grok/README.md)          | [Guide](./provider-grok.md)          |
 | `@anvia/mistral`         | [README](../../packages/provider-mistral/README.md)       | [Guide](./provider-mistral.md)       |
+| `@anvia/azure`           | [README](../../packages/provider-azure/README.md)         | [Guide](./provider-azure.md)         |
 | `@anvia/openai`          | [README](../../packages/provider-openai/README.md)        | [Guide](./provider-openai.md)        |
 | `@anvia/react`           | [README](../../packages/react/README.md)                  | [Guide](./react.md)                  |
 | `@anvia/react-ui`        | [README](../../packages/react-ui/README.md)               | [Guide](./react-ui.md)               |

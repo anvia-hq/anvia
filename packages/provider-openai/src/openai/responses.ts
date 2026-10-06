@@ -50,7 +50,7 @@ type ResponsesInputItem = Record<string, unknown>;
 export class OpenAIResponsesCompletionModel<
   Controls extends CompletionModelControls = CompletionModelControls,
 > implements StreamingCompletionModel<unknown, Controls> {
-  readonly provider = "openai";
+  readonly provider: string = "openai";
   readonly capabilities: CompletionModelCapabilities = {
     streaming: true,
     tools: true,
@@ -79,7 +79,7 @@ export class OpenAIResponsesCompletionModel<
     request: CompletionRequest,
     options: { stream?: boolean | undefined } = {},
   ): JsonObject {
-    const params = toOpenAIResponsesParams(this.modelId, request);
+    const params = this.requestParams(request);
     if (options.stream === true) {
       params.stream = true;
     }
@@ -91,7 +91,7 @@ export class OpenAIResponsesCompletionModel<
     options?: ModelCallOptions,
   ): Promise<CompletionResponse> {
     assertCompletionRequestSupported(this, request);
-    const params = toOpenAIResponsesParams(this.modelId, request);
+    const params = this.requestParams(request);
     const response = await this.client.responses.create(
       params as never,
       openAIRequestOptions(options),
@@ -104,13 +104,13 @@ export class OpenAIResponsesCompletionModel<
     options?: ModelCallOptions,
   ): AsyncIterable<CompletionModelStreamEvent> {
     assertCompletionRequestSupported(this, request, { streaming: true });
-    const params = { ...toOpenAIResponsesParams(this.modelId, request), stream: true };
+    const params = { ...this.requestParams(request), stream: true };
     const stream = await this.client.responses.create(
       params as never,
       openAIRequestOptions(options),
     );
     const streamState = new OpenAIResponsesStreamState();
-    for await (const event of stream as unknown as AsyncIterable<unknown>) {
+    for await (const event of this.normalizeStream(stream as unknown as AsyncIterable<unknown>)) {
       const mapped = streamState.mapEvent(event);
       if (mapped !== undefined) {
         yield mapped.type === "final"
@@ -123,6 +123,16 @@ export class OpenAIResponsesCompletionModel<
       }
     }
     streamState.assertComplete();
+  }
+
+  /** Override at the provider boundary to normalize endpoint-specific stream events. */
+  protected normalizeStream(stream: AsyncIterable<unknown>): AsyncIterable<unknown> {
+    return stream;
+  }
+
+  /** Override at the provider boundary to adapt requests while sharing protocol mapping. */
+  protected requestParams(request: CompletionRequest): Record<string, unknown> {
+    return toOpenAIResponsesParams(this.modelId, request);
   }
 }
 
@@ -422,7 +432,7 @@ export function fromOpenAIStreamEvent(event: unknown): CompletionModelStreamEven
 
   if (event.type === "response.function_call_arguments.done") {
     const id = requiredToolCallString(event.item_id);
-    const name = requiredToolCallString(event.name, id);
+    const name = event.name === undefined ? undefined : requiredToolCallString(event.name, id);
     const argumentsText = requiredTerminalArguments(id, event.arguments);
     parseToolArguments(id, argumentsText);
     return toolCallDelta(id, {
@@ -498,13 +508,11 @@ class OpenAIResponsesStreamState {
   private terminal = false;
 
   mapEvent(event: unknown): CompletionModelStreamEvent | undefined {
-    let eventForMapping = event;
     let mapped: CompletionModelStreamEvent | undefined;
     try {
-      eventForMapping = this.resolveFunctionCallArgumentsDoneName(event);
-      mapped = fromOpenAIStreamEvent(eventForMapping);
+      mapped = fromOpenAIStreamEvent(event);
     } catch (error) {
-      if (this.deferTerminalToolArgumentsError(eventForMapping, error)) return undefined;
+      if (this.deferTerminalToolArgumentsError(event, error)) return undefined;
       throw error;
     }
     if (!isPlainObject(event) || typeof event.type !== "string") return mapped;
@@ -546,19 +554,6 @@ class OpenAIResponsesStreamState {
     }
 
     return mapped;
-  }
-
-  private resolveFunctionCallArgumentsDoneName(event: unknown): unknown {
-    if (
-      !isPlainObject(event) ||
-      event.type !== "response.function_call_arguments.done" ||
-      event.name !== undefined
-    ) {
-      return event;
-    }
-    const id = requiredToolCallString(event.item_id);
-    const name = this.toolCalls.get(id)?.name;
-    return name === undefined ? event : { ...event, name };
   }
 
   assertComplete(): void {
@@ -620,7 +615,7 @@ class OpenAIResponsesStreamState {
     }
     if (event.type === "response.function_call_arguments.done") {
       const id = requiredToolCallString(event.item_id);
-      const name = requiredToolCallString(event.name, id);
+      const name = event.name === undefined ? undefined : requiredToolCallString(event.name, id);
       this.acceptToolCall(id, name);
       this.markArgumentsDone(id);
     } else if (

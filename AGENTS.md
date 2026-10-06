@@ -111,7 +111,7 @@ behavior belongs in `packages/tool-studio`.
 - `packages/durable`: experimental durable agent execution, SQLite checkpoints,
   recovery policies, persisted interactions, and reconnectable progress events.
 - `packages/mcp`: MCP clients, transports, tool discovery, result mapping, and URL safety.
-- `packages/provider-openai`, `packages/provider-anthropic`,
+- `packages/provider-openai`, `packages/provider-azure`, `packages/provider-anthropic`,
   `packages/provider-gemini`, `packages/provider-grok`,
   `packages/provider-mistral`: provider adapters
   mapping Anvia completion/embedding/media contracts to vendor SDKs.

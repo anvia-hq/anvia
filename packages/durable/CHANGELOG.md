@@ -1,5 +1,11 @@
 # @anvia/durable
 
+## 0.2.1
+
+### Patch Changes
+
+- bf847ed: Add validated runtime agent registration and safe removal of idle registrations. Hosts can admit new immutable configurations without closing unrelated executions, and unload archived configurations while retaining their journal history. Existing agent IDs cannot be overwritten; unfinished runs and settling attempts prevent removal.
+
 ## 0.2.0
 
 ### Minor Changes

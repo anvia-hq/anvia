@@ -15,6 +15,27 @@ pnpm add @anvia/durable @anvia/core @anvia/openai zod
 SQLite requires Node.js 22.16 or newer. Use the accompanying core release with the
 durable execution protocol; older core versions are rejected when importing this package.
 
+### Registering configurations without restarting
+
+`runtime.registerAgents(registrations)` validates the complete batch before adding any
+agents. It uses the same validation as `open()`, rejects duplicate or already registered
+IDs, and leaves running work and concurrency limits unchanged. Give each immutable
+configuration its own agent ID; this API never replaces an existing implementation.
+Custom tasks and graph submissions see the same registrations.
+
+`runtime.unregisterAgent(id)` removes an idle registration and returns whether it existed.
+It throws `DurableConflictError` if a run still needs that agent (including queued work,
+approvals, retry waits, recovery blocks, and cancelled attempts still settling).
+Removal preserves journal history, results, and deduplication records. Re-register
+compatible code before retrying a failed run or submitting/spawning new work. Future task
+phases must not depend on an unloaded registration unless the host restores it first.
+
+Registrations are process-local. At startup, open without agents, discover unfinished
+runs with `listRuns()`, restore their exact registrations, then call `resume()`.
+Adding a missing registration does not automatically retry `needs_attention` runs;
+recovery remains an explicit `retry()` decision. Custom task definitions still must be
+provided to `open()`.
+
 ## Quickstart
 
 ```ts

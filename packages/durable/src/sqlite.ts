@@ -55,6 +55,7 @@ export class SqliteDurableStore implements DurableStore {
           UNIQUE(session_id, request_id)
         );
         CREATE INDEX IF NOT EXISTS anvia_durable_run_session ON anvia_durable_runs(session_id, status);
+        CREATE INDEX IF NOT EXISTS anvia_durable_run_agent_status ON anvia_durable_runs(json_extract(record, '$.agentId'), status);
         CREATE TABLE IF NOT EXISTS anvia_durable_graphs (
           id TEXT PRIMARY KEY, session_id TEXT NOT NULL, request_id TEXT NOT NULL, record TEXT NOT NULL,
           UNIQUE(session_id, request_id)

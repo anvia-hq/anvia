@@ -46,8 +46,10 @@ wrappers or silently remove guarantees. Use the matching workspace build or pack
 
 ## Invariants that affect implementation
 
-- Keep one application-scoped runtime per database. Register all agents and custom task
-  definitions before opening, call `resume()` at startup, and `close()` during shutdown.
+- Keep one application-scoped runtime per database. Supply custom task definitions at open.
+  Agents can be supplied at open or added with `registerAgents()` without restarting work.
+  Restore unfinished registrations before `resume()`; `unregisterAgent()` only releases idle
+  registrations. Call `close()` during shutdown.
 - The engine replays committed model/tool/effect results and re-enters task phases from
   checkpoints. It does not restore JavaScript stacks, local variables, or arbitrary promises.
 - Persist identifiers and phase state. Keep child/effect keys stable across replay; a key is

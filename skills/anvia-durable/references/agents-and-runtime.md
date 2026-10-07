@@ -65,6 +65,19 @@ Avoid `__anvia_graph__:` and `__anvia_task__:` session prefixes; they are reserv
 organize history and deduplication, not authentication. Bind them to your application's tenant
 and conversation authorization. Store the returned run ID with your application job if useful.
 
+## Runtime registrations
+
+Use `runtime.registerAgents([{ agent, version }])` to add immutable configurations after
+open. The entire batch is validated before mutation; existing IDs cannot be replaced.
+New registrations share the existing scheduler, concurrency limits, and journal.
+
+Use `runtime.unregisterAgent(id)` to release idle configurations. It preserves history
+and throws `DurableConflictError` while unfinished runs or settling attempts still need
+the registration. Re-register compatible code before retrying archived failures or before
+custom tasks spawn that agent in a later phase. Adding a registration does not implicitly
+retry blocked runs. On restart, open, restore registrations for unfinished work, then resume.
+Custom task definitions remain fixed at open. Verify these APIs exist in the installed version.
+
 ## Reopening and observing
 
 ```ts

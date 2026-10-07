@@ -54,7 +54,7 @@ export class DurableRuntime {
   private readonly agents: Map<string, DurableAgentRegistration>;
   private readonly active = new Map<
     string,
-    { sessionId: string; controller: AbortController; task: Promise<void> }
+    { agentId: string; sessionId: string; controller: AbortController; task: Promise<void> }
   >();
   private closing = false;
   private closed = false;
@@ -127,6 +127,39 @@ export class DurableRuntime {
       limits,
       options.onFatalError,
     );
+  }
+
+  /** Validate and add immutable registrations without restarting running work.
+   * Existing IDs cannot be replaced. Registration does not retry blocked runs.
+   */
+  registerAgents(values: readonly DurableAgentRegistration[]): void {
+    this.assertOpen();
+    const added = registrations(values);
+    for (const id of added.keys())
+      if (this.agents.has(id)) throw new DurableConflictError(`Agent already registered: ${id}`);
+    for (const [id, registration] of added) this.agents.set(id, registration);
+  }
+
+  /** Release an idle registration, preserving journal history and outcomes.
+   * Re-register compatible code before retrying a failed run or spawning new work.
+   */
+  unregisterAgent(id: string): boolean {
+    this.assertOpen();
+    nonblank(id, "Agent ID");
+    if (!this.agents.has(id)) return false;
+    if ([...this.active.values()].some((run) => run.agentId === id))
+      throw new DurableConflictError(`Agent still has an active attempt: ${id}`);
+    for (const status of [
+      "queued",
+      "pending",
+      "running",
+      "retry_wait",
+      "waiting",
+      "needs_attention",
+    ] as const)
+      if (this.store.list({ agentId: id, status, limit: 1 }).runs.length)
+        throw new DurableConflictError(`Agent still has unfinished work: ${id}`);
+    return this.agents.delete(id);
   }
 
   async submitTask<I, S, R>(
@@ -487,7 +520,7 @@ export class DurableRuntime {
 
   private launch(id: string): void {
     if (this.active.has(id) || this.closing) return;
-    const { status, sessionId } = this.snapshot(id).run;
+    const { status, sessionId, agentId } = this.snapshot(id).run;
     if (!["queued", "pending", "running", "retry_wait"].includes(status)) return;
     const controller = new AbortController();
     const task = Promise.resolve()
@@ -514,7 +547,7 @@ export class DurableRuntime {
         if (controller.signal.aborted) return;
         this.fail(error);
       });
-    this.active.set(id, { sessionId, controller, task });
+    this.active.set(id, { agentId, sessionId, controller, task });
   }
 
   private async execute(id: string, signal: AbortSignal): Promise<void> {

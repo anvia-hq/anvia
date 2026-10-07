@@ -28,11 +28,12 @@ export function spawnAgent(
   key: string,
   input: { agentId: string; prompt: string },
 ): string {
+  const child = createTask(tx, agentTask.registration, input, parent.sessionId, key, parent.id);
+  // Replaying a committed spawn needs its saved identity, not executable agent code.
+  if (child.agentRunId !== undefined) return child.id;
   const registration = agents.get(input.agentId);
   if (registration === undefined)
     throw new DurableNotFoundError(`Unknown durable agent: ${input.agentId}`);
-  const child = createTask(tx, agentTask.registration, input, parent.sessionId, key, parent.id);
-  if (child.agentRunId !== undefined) return child.id;
   const run = createRunRecord(
     {
       agentId: input.agentId,

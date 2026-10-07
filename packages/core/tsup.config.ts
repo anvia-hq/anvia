@@ -17,6 +17,7 @@ export default {
       "src/evals/index.ts",
       "src/image-generation/index.ts",
       "src/documents/index.ts",
+      "src/decision/index.ts",
       "src/extractor/index.ts",
       "src/guardrails/index.ts",
       "src/mcp/index.ts",

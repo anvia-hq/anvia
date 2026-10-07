@@ -51,6 +51,7 @@ response, a guardrail block, and an interaction that needs application input.
 - Agents with typed tools, approvals, questions, guardrails, and streaming responses.
 - Agent teams with isolated conversations, delegation, and coordinated cancellation.
 - Direct completions and schema-validated extraction without an agent loop.
+- [Typed decisions](../../docs/packages/decision.md) for classification, tagging, scoring, and routing.
 - Sequential or parallel pipelines and evaluations with built-in or custom metrics.
 - Stateful conversations using memory adapters and explicit compaction policies.
 - RAG with document chunking, embeddings, and vector-store contracts.

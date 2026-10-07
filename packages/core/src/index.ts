@@ -251,3 +251,5 @@ export type {
   TranscriptionResult,
 } from "./transcription";
 export { transcribe } from "./transcription";
+
+export * from "./decision/index";

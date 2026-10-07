@@ -25,6 +25,7 @@ These guides contain the longer API examples, configuration details, and operati
 | `@anvia/anthropic`       | [README](../../packages/provider-anthropic/README.md)     | [Guide](./provider-anthropic.md)     |
 | `@anvia/gemini`          | [README](../../packages/provider-gemini/README.md)        | [Guide](./provider-gemini.md)        |
 | `@anvia/grok`            | [README](../../packages/provider-grok/README.md)          | [Guide](./provider-grok.md)          |
+| `@anvia/jev`             | [README](../../packages/provider-jev/README.md)           | [Guide](./provider-jev.md)           |
 | `@anvia/mistral`         | [README](../../packages/provider-mistral/README.md)       | [Guide](./provider-mistral.md)       |
 | `@anvia/azure`           | [README](../../packages/provider-azure/README.md)         | [Guide](./provider-azure.md)         |
 | `@anvia/openai`          | [README](../../packages/provider-openai/README.md)        | [Guide](./provider-openai.md)        |

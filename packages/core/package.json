@@ -111,6 +111,10 @@
     "./vector-store": {
       "types": "./dist/vector-store/index.d.ts",
       "import": "./dist/vector-store/index.js"
+    },
+    "./decision": {
+      "types": "./dist/decision/index.d.ts",
+      "import": "./dist/decision/index.js"
     }
   },
   "scripts": {

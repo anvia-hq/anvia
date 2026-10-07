@@ -38,8 +38,9 @@ const versionScript = path.join(repositoryRoot, "scripts", "version-packages.mjs
 
 test("repository config versions every public package independently", () => {
   const packages = findPublicPackages(repositoryRoot);
-  assert.equal(packages.length, 37);
+  assert.equal(packages.length, 38);
   assert.ok(packages.some(({ packageJson }) => packageJson.name === "@anvia/azure"));
+  assert.ok(packages.some(({ packageJson }) => packageJson.name === "@anvia/jev"));
   assert.doesNotThrow(() => assertIndependentVersioning(repositoryRoot, packages));
   assert.doesNotThrow(() => assertWorkspaceInternalDependencies(packages));
 });

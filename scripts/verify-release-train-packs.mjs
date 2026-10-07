@@ -11,6 +11,7 @@ const representativePackages = new Set([
   "@anvia/cli",
   "@anvia/client",
   "@anvia/grok",
+  "@anvia/jev",
   "@anvia/lens",
   "@anvia/mcp",
   "@anvia/memory-sqlite",

@@ -177,6 +177,12 @@ export class JevDecisionModel implements DecisionModel<unknown> {
           ];
         }
         const levelKeys = question.rubric.map((_, index) => String(index));
+        const expectedLegend = Object.fromEntries(
+          question.rubric.map((level, index) => [String(index), toEntry(level)]),
+        );
+        if (!isDataObject(answer.legend) || !jsonEqual(answer.legend, expectedLegend)) {
+          return fail("Jev returned a legend that does not match the requested rubric.", name);
+        }
         const scoreProbabilities = answer.probabilities;
         validateDistribution(scoreProbabilities, levelKeys, () =>
           fail("Jev returned invalid score probabilities.", name),
@@ -265,6 +271,31 @@ function sdkJson(value: JsonValue): SdkJsonValue {
 
 function isDataObject(value: unknown): value is Record<string, JsonValue> {
   return value !== null && typeof value === "object" && !Array.isArray(value) && isJsonValue(value);
+}
+
+/** Compare validated JSON without depending on object property order. */
+function jsonEqual(left: JsonValue, right: JsonValue): boolean {
+  if (left === right) return true;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return (
+      Array.isArray(left) &&
+      Array.isArray(right) &&
+      left.length === right.length &&
+      left.every((value, index) => jsonEqual(value, right[index]!))
+    );
+  }
+  if (left === null || right === null || typeof left !== "object" || typeof right !== "object")
+    return false;
+  // Array.isArray does not narrow readonly JSON arrays out of the object union.
+  const leftObject = left as Record<string, JsonValue>;
+  const rightObject = right as Record<string, JsonValue>;
+  const keys = Object.keys(leftObject);
+  return (
+    Object.keys(rightObject).length === keys.length &&
+    keys.every(
+      (key) => Object.hasOwn(rightObject, key) && jsonEqual(leftObject[key]!, rightObject[key]!),
+    )
+  );
 }
 
 function isProbability(value: unknown): value is number {

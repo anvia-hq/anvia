@@ -67,6 +67,11 @@ are exposed on the handle and checked by `decide()` before network work. Unknown
 multi-label limits are omitted. Numeric and boolean state/criteria are represented as `{ value }`
 because the SDK's entry type accepts strings, objects, arrays, and null.
 
+Score responses must include a legend with exactly the numbered rubric levels and descriptions
+sent to Jev. Missing or mismatched legends raise `DecisionProviderOutputError`. Object property
+order does not affect matching; array order does. Validated answers preserve the original Anvia
+rubric, including numeric and boolean levels before their SDK wrapping.
+
 `providerOptions` forwards extra JSON body fields, while the adapter preserves `model`, `state`,
 and `questions`. `usage` maps input/output token counts to Anvia's usage shape. `rawResponse`
 contains the original SDK result, including native answer fields and generated question IDs.

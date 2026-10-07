@@ -162,7 +162,13 @@ describe("Jev decisions", () => {
     ).rejects.toBeInstanceOf(DecisionProviderOutputError);
     const badScore = clientWithResponse(
       fixture({
-        q0: { type: "score", score: 2, confidence: 0.5, probabilities: { "0": 0.5, "1": 0.5 } },
+        q0: {
+          type: "score",
+          score: 2,
+          confidence: 0.5,
+          probabilities: { "0": 0.5, "1": 0.5 },
+          legend: { "0": "Low", "1": "High" },
+        },
       }),
     );
     await expect(
@@ -170,6 +176,110 @@ describe("Jev decisions", () => {
         model: badScore.client.decisionModel({ modelId: JEV_LATEST }),
         state: null,
         questions: { rating: score({ instructions: "Score", rubric: ["Low", "High"] }) },
+      }),
+    ).rejects.toBeInstanceOf(DecisionProviderOutputError);
+  });
+
+  it.each([
+    undefined,
+    null,
+    ["Low", "High"],
+    { "0": "Low" },
+    { "0": "Low", "1": "High", "2": "Extra" },
+    { "00": "Low", "1": "High" },
+    { "0": "High", "1": "Low" },
+    { "0": "Low", "1": "Different" },
+  ])("rejects a missing or mismatched score legend: %j", async (legend) => {
+    const { client } = clientWithResponse(
+      fixture({
+        q0: {
+          type: "score",
+          score: 0.75,
+          confidence: 0.5,
+          probabilities: { "0": 0.25, "1": 0.75 },
+          ...(legend === undefined ? {} : { legend }),
+        },
+      }),
+    );
+    await expect(
+      decide({
+        model: client.decisionModel({ modelId: JEV_LATEST }),
+        state: null,
+        questions: { rating: score({ instructions: "Score", rubric: ["Low", "High"] }) },
+      }),
+    ).rejects.toMatchObject({
+      name: "DecisionProviderOutputError",
+      provider: "jev",
+      modelId: JEV_LATEST,
+      questionName: "rating",
+    });
+  });
+
+  it("validates score legends against normalized criteria and ignores object key order", async () => {
+    const rubric = [
+      { description: "Low", details: { flags: [true, false], rank: 0 } },
+      ["High", { rank: 1, active: true }],
+      2,
+      false,
+      null,
+    ] as const;
+    const { client, fetch } = clientWithResponse(
+      fixture({
+        q0: {
+          type: "score",
+          score: 1.5,
+          confidence: 0.5,
+          probabilities: { "0": 0.2, "1": 0.2, "2": 0.2, "3": 0.2, "4": 0.2 },
+          legend: {
+            "0": { details: { rank: 0, flags: [true, false] }, description: "Low" },
+            "1": ["High", { active: true, rank: 1 }],
+            "2": { value: 2 },
+            "3": { value: false },
+            "4": null,
+          },
+        },
+      }),
+    );
+    const result = await decide({
+      model: client.decisionModel({ modelId: JEV_LATEST }),
+      state: null,
+      questions: { rating: score({ instructions: "Score", rubric }) },
+    });
+    expect(result.answers.rating.rubric).toEqual(rubric);
+    const [, init] = vi.mocked(fetch).mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(String(init.body)).questions.q0.criteria).toEqual([
+      rubric[0],
+      rubric[1],
+      { value: 2 },
+      { value: false },
+      null,
+    ]);
+  });
+
+  it.each([
+    { "0": { flags: [false, true] }, "1": { value: 2 } },
+    { "0": { flags: [true, false], extra: null }, "1": { value: 2 } },
+    { "0": { flags: [true, false] }, "1": 2 },
+    { "0": { flags: [true, false] }, "1": { value: 3 } },
+  ])("rejects altered structured or scalar score criteria: %j", async (legend) => {
+    const { client } = clientWithResponse(
+      fixture({
+        q0: {
+          type: "score",
+          score: 0.75,
+          confidence: 0.5,
+          probabilities: { "0": 0.25, "1": 0.75 },
+          legend,
+        },
+      }),
+    );
+    await expect(
+      decide({
+        model: client.decisionModel({ modelId: JEV_LATEST }),
+        state: null,
+        questions: {
+          rating: score({ instructions: "Score", rubric: [{ flags: [true, false] }, 2] }),
+        },
       }),
     ).rejects.toBeInstanceOf(DecisionProviderOutputError);
   });

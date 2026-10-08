@@ -107,8 +107,9 @@ timeout aborts distinct from caller cancellation. Malformed JSON uses `DecisionP
 | `multi-label`  | One independent `predicate` per label in the same request; inclusive threshold selects labels. |
 
 Mixed questions use one `decisions.create()` call. Generated question IDs preserve application
-names safely. Choice requires 2–255 options, checked before network work. Unknown question and
-rubric limits are omitted from capabilities. Returned distributions must cover exactly the requested
+names safely. Choice requires 2–255 options and score accepts up to 10 rubric levels. A request
+sends at most 200 OpenAI questions, counting each multi-label option as one question. These limits
+are checked before network work. Returned distributions must cover exactly the requested
 options or rubric indices; score labels must match the sent levels. Provider confidence is preserved
 separately from the distribution.
 

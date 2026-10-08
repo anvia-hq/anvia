@@ -409,6 +409,74 @@ describe("OpenAI decisions", () => {
     expect(() => client.decisionModel({ modelId: " " })).toThrow(TypeError);
   });
 
+  it("checks rubric and composed question limits before network work", async () => {
+    const { client, fetch } = clientWithResponse({});
+    const model = client.decisionModel({ modelId: GPT_6_LUNA });
+    const labels = (count: number) =>
+      Object.fromEntries(Array.from({ length: count }, (_, i) => [`l${i}`, null]));
+    const checks = (count: number) =>
+      Object.fromEntries(
+        Array.from({ length: count }, (_, i) => [`c${i}`, check({ instructions: "True?" })]),
+      );
+    for (const [questions, message] of [
+      [
+        {
+          rating: score({
+            instructions: "Score",
+            rubric: ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"],
+          }),
+        },
+        "limit of 10 rubric levels",
+      ],
+      [checks(201), "limit of 200 questions"],
+      [
+        { topics: multiLabel({ instructions: "Topics?", options: labels(201) }) },
+        "after expanding multi-label options; received 201",
+      ],
+      [
+        { ...checks(150), topics: multiLabel({ instructions: "Topics?", options: labels(51) }) },
+        "after expanding multi-label options; received 201",
+      ],
+    ] as const) {
+      const attempt = decide({ model, state: null, questions });
+      await expect(attempt).rejects.toThrow(RangeError);
+      await expect(attempt).rejects.toThrow(message);
+    }
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("sends composed requests at the wire-question limit", async () => {
+    const { client, fetch } = clientWithResponse(
+      fixture([
+        ...Array.from({ length: 150 }, (_, i) => ({
+          type: "predicate",
+          name: `q${i}`,
+          probability: 0.5,
+        })),
+        ...Array.from({ length: 50 }, (_, i) => ({
+          type: "predicate",
+          name: `q150_${i}`,
+          probability: 0.5,
+        })),
+      ]),
+    );
+    const result = await decide({
+      model: client.decisionModel({ modelId: GPT_6_LUNA }),
+      state: null,
+      questions: {
+        ...Object.fromEntries(
+          Array.from({ length: 150 }, (_, i) => [`c${i}`, check({ instructions: "True?" })]),
+        ),
+        topics: multiLabel({
+          instructions: "Topics?",
+          options: Object.fromEntries(Array.from({ length: 50 }, (_, i) => [`l${i}`, null])),
+        }),
+      },
+    });
+    expect(JSON.parse(String(fetch.mock.calls[0]![1]?.body)).questions).toHaveLength(200);
+    expect(Object.keys(result.answers)).toHaveLength(151);
+  });
+
   it("uses injected endpoint and headers and keeps SDK retries disabled", async () => {
     const fetch = vi
       .fn()

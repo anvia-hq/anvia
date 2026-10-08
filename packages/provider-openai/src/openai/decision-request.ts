@@ -3,6 +3,9 @@ import type { DecisionCreateParams } from "openai/resources/decisions";
 
 type WireQuestion = DecisionCreateParams["questions"][number];
 
+/** OpenAI Decisions API limit on questions per request, counted after multi-label expansion. */
+export const MAX_WIRE_QUESTIONS = 200;
+
 export type CompiledDecisionQuestion = {
   name: string;
   question: DecisionQuestion;
@@ -37,6 +40,11 @@ export function compileDecisionQuestions(questions: DecisionQuestions): {
       wireQuestions.push(nativeQuestion(key, question));
       compiled.push({ name, question, keys: [key] });
     }
+  }
+  if (wireQuestions.length > MAX_WIRE_QUESTIONS) {
+    throw new RangeError(
+      `OpenAI decision requests support at most ${MAX_WIRE_QUESTIONS} questions after expanding multi-label options; received ${wireQuestions.length}.`,
+    );
   }
   return { compiled, wireQuestions };
 }

@@ -8,7 +8,7 @@ import type {
 } from "@anvia/core/decision";
 import type OpenAI from "openai";
 import { normalizeDecisionError } from "./decision-errors";
-import { compileDecisionQuestions, decisionText } from "./decision-request";
+import { MAX_WIRE_QUESTIONS, compileDecisionQuestions, decisionText } from "./decision-request";
 import { mapDecisionResponse } from "./decision-response";
 import type { OpenAIDecisionModelId } from "./models";
 
@@ -22,7 +22,11 @@ export class OpenAIDecisionModel implements DecisionModel<unknown> {
       check: "native",
     }),
     mixedQuestions: true,
-    limits: Object.freeze({ maxChoiceOptions: 255 }),
+    limits: Object.freeze({
+      maxQuestionsPerRequest: MAX_WIRE_QUESTIONS,
+      maxChoiceOptions: 255,
+      maxRubricLevels: 10,
+    }),
   });
 
   constructor(

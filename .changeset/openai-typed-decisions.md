@@ -10,7 +10,8 @@ and predicate mappings and composed independent multi-label checks. Export decis
 and handle types plus `GPT_6_LUNA`. Upgrade the OpenAI SDK minimum to 7.30.0 for Decisions support.
 Validate response identities, distributions, rubric labels, and token usage while preserving
 provider confidence and raw responses. Encode structured state and criteria as text, disable SDK
-retries, and use Core retries, cancellation, and ordered batches.
+retries, and use Core retries, cancellation, and ordered batches. Reject requests above OpenAI's
+10 rubric levels or 200 questions, counted after multi-label expansion, before network work.
 
 Add the provider-neutral `DecisionRefusalError` with refused application question names and the
 raw provider response. Refusals fail a complete decision without changing successful answer types.

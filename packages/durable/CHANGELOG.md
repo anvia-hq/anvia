@@ -1,5 +1,11 @@
 # @anvia/durable
 
+## 0.3.0
+
+### Minor Changes
+
+- 9320061: Accept core structured user messages as durable prompts, enabling image and document inputs in runs, graph tasks, and owned agents. Validate multimodal content, preserve it across history and recovery, and compare request identities by canonical JSON. Existing string prompts remain supported. Allow the durable 0.3 release line in the client and server peer ranges.
+
 ## 0.2.1
 
 ### Patch Changes

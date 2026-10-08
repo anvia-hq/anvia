@@ -1,7 +1,7 @@
 # @anvia/openai
 
 Connect Anvia agents to OpenAI or an OpenAI-compatible endpoint. Use one client for
-chat, embeddings, images, speech, and transcription.
+chat, typed decisions, embeddings, images, speech, and transcription.
 
 For Azure OpenAI and Azure AI Foundry, use
 [`@anvia/azure`](../provider-azure/README.md) for Azure endpoint and authentication configuration.
@@ -38,10 +38,32 @@ if (result.type === "response") {
 }
 ```
 
+## Typed decisions
+
+```ts
+import { OpenAIClient, GPT_6_LUNA } from "@anvia/openai";
+import { check, decide } from "@anvia/core/decision";
+
+const model = new OpenAIClient({ apiKey: process.env.OPENAI_API_KEY! }).decisionModel({
+  modelId: GPT_6_LUNA,
+});
+const result = await decide({
+  model,
+  state: { message: "Please refund my duplicate charge." },
+  questions: { refund: check({ instructions: "Is a refund requested?" }) },
+});
+console.log(result.answers.refund.probability);
+```
+
+Uses the dedicated Decisions API with OpenAI SDK 7.30.0+. Text and structured JSON are supported;
+structured state is serialized into text. Refusals throw `DecisionRefusalError` from Core.
+See the usage guide for mapping, limits, batches, and refusal handling.
+
 ## What you can build
 
 - Chat Completions and Responses APIs, streaming, tools, and structured output.
 - Typed reasoning controls for supported models.
+- Typed classification, multi-label checks, and rubric scoring through `decisionModel()` and `decide()`.
 - Embeddings, image generation, speech generation, transcription, and model listing.
 - Custom endpoints through `baseUrl`.
 

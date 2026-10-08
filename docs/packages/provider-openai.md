@@ -2,7 +2,7 @@
 
 OpenAI provider adapter for Anvia.
 
-Use this package when you want Anvia agents, direct completions, embeddings, image generation,
+Use this package when you want Anvia agents, direct completions, typed decisions, embeddings, image generation,
 speech generation, or transcription to run on OpenAI models or OpenAI-compatible endpoints.
 
 For Azure OpenAI and Azure AI Foundry, use [`@anvia/azure`](./provider-azure.md).
@@ -56,6 +56,103 @@ await agent.generate({ prompt: "Solve this.", controls: { reasoningEffort: "high
 const result = await agent.generate({ prompt: "Summarize Anvia in one sentence." });
 if (result.type === "response") console.log(result.output);
 ```
+
+## Typed decisions
+
+Use the dedicated OpenAI Decisions API through the same provider-neutral operations as Jev:
+
+```ts
+import { OpenAIClient, GPT_6_LUNA } from "@anvia/openai";
+import { check, choice, decide, multiLabel, score } from "@anvia/core/decision";
+
+const model = new OpenAIClient({ apiKey: process.env.OPENAI_API_KEY! }).decisionModel({
+  modelId: GPT_6_LUNA,
+});
+
+const result = await decide({
+  model,
+  state: { message: "I was charged twice. Please refund the duplicate." },
+  questions: {
+    department: choice({
+      instructions: "Which department should handle this?",
+      options: { billing: "Payments and refunds", technical: "Product issues", other: null },
+    }),
+    topics: multiLabel({
+      instructions: "Which topics are present?",
+      options: { refund: "Refund requests", duplicate: "Duplicate charges" },
+      threshold: 0.7,
+    }),
+    urgency: score({ instructions: "How urgent?", rubric: ["Low", "Normal", "High"] }),
+    cancellation: check({ instructions: "Is cancellation requested?" }),
+  },
+});
+
+console.log(result.answers.department.choice);
+console.log(result.answers.urgency.score);
+```
+
+The API is currently in public beta with `gpt-6-luna`. `decisionModel({ modelId })` requires a
+non-blank model ID and also accepts custom IDs for endpoints implementing the same Decisions
+schema. This package requires OpenAI SDK 7.30.0 or newer. Managed and injected SDK clients are
+supported; every decision call sets SDK `maxRetries: 0` so Anvia owns retries and cancellation.
+SDK connection failures use errors named `APIConnectionError` and preserve the SDK error as `cause`.
+SDK timeouts use errors named `TimeoutError` and retain the SDK error as `providerError`, keeping internal
+timeout aborts distinct from caller cancellation. Malformed JSON uses `DecisionProviderOutputError`.
+
+| Anvia question | OpenAI mapping                                                                                 |
+| -------------- | ---------------------------------------------------------------------------------------------- |
+| `check`        | Native `predicate`; returns probability of true.                                               |
+| `choice`       | Native `choice`; string option keys become choice values.                                      |
+| `score`        | Native `score`; rubric indices become level labels and descriptions preserve the criteria.     |
+| `multi-label`  | One independent `predicate` per label in the same request; inclusive threshold selects labels. |
+
+Mixed questions use one `decisions.create()` call. Generated question IDs preserve application
+names safely. Choice requires 2–255 options, checked before network work. Unknown question and
+rubric limits are omitted from capabilities. Returned distributions must cover exactly the requested
+options or rubric indices; score labels must match the sent levels. Provider confidence is preserved
+separately from the distribution.
+
+Plain text state is sent unchanged. Objects, arrays, numbers, booleans, and `null` are JSON-serialized
+into OpenAI's text `input`. Option and rubric descriptions use the same conversion; `null` leaves a
+description omitted. Original Anvia rubric values remain in the normalized answer. The current
+Anvia decision state contract supports text and structured JSON, not native image parts; arrays
+of image messages are serialized as text. Native image decisions can be called through the SDK
+until Anvia has a typed multimodal decision-input contract.
+
+`providerOptions` forwards extra JSON body fields, such as `safety_identifier`, while preserving
+`model`, `input`, and `questions`. Usage includes cache-read, cache-write, and reasoning token
+counts. `rawResponse` preserves the original SDK response, including provider answer fields and
+request metadata.
+
+### Refusals
+
+OpenAI may refuse individual questions while answering others. `decide()` requires a complete
+result and throws the provider-neutral `DecisionRefusalError` if any question is refused:
+
+```ts
+import { DecisionRefusalError } from "@anvia/core/decision";
+
+const questions = { ok: check({ instructions: "Does the input satisfy the requirements?" }) };
+try {
+  await decide({ model, state: "Input to evaluate", questions });
+} catch (error) {
+  if (error instanceof DecisionRefusalError) {
+    console.log(error.provider, error.modelId, error.questionNames);
+    // Original response includes any other native answers that were returned.
+    console.log(error.rawResponse);
+  } else {
+    throw error;
+  }
+}
+```
+
+`questionNames` contains original application names, deduplicated when several predicates for one
+multi-label question are refused. Refusals are not retried by the default policy; an explicit custom
+`shouldRetry` can override that policy. `decideBatch()` records a refused input as a failed item and
+continues other inputs. Malformed answers remain `DecisionProviderOutputError` failures.
+
+See the [decision guide](./decision.md), [official OpenAI Decisions guide](https://developers.openai.com/api/docs/guides/decisions),
+and [API reference](https://developers.openai.com/api/reference/resources/decisions/methods/create).
 
 ## OpenAI-Compatible APIs
 
@@ -152,7 +249,8 @@ through unchanged and contains no Azure name-recovery mapper. Ordinary applicati
 should use `OpenAIClient` or their provider's client.
 
 - `OpenAIClient`
-- structural completion, embedding, image, speech, and transcription handle types
-- `OpenAICompletionModelId` and media model-ID types
+- structural completion, decision, embedding, image, speech, and transcription handle types
+- `OpenAICompletionModelId`, `OpenAIDecisionModelId`, `KnownOpenAIDecisionModelId`, and media model-ID types
+- `OpenAIDecisionModelOptions`, `OpenAIDecisionModelHandle`, and `GPT_6_LUNA`
 - model constants such as `GPT_IMAGE_2`, `GPT_4O_MINI_TTS`, and `GPT_TRANSCRIBE`
 - `openai`

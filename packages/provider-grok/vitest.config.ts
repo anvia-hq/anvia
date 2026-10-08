@@ -4,6 +4,9 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   resolve: {
     alias: {
+      "@anvia/core/decision": fileURLToPath(
+        new URL("../core/src/decision/index.ts", import.meta.url),
+      ),
       "@anvia/core/completion": fileURLToPath(
         new URL("../core/src/completion/index.ts", import.meta.url),
       ),

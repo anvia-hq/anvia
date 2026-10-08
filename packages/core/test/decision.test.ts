@@ -6,6 +6,7 @@ import {
   decideBatch,
   DecisionCapabilityError,
   DecisionProviderOutputError,
+  DecisionRefusalError,
   multiLabel,
   score,
   type DecisionAnswers,
@@ -79,6 +80,7 @@ describe("decision operations", () => {
     expect(result.usage).toBeUndefined();
     expect(root.decide).toBe(decide);
     expect(root.multiLabel).toBe(multiLabel);
+    expect(root.DecisionRefusalError).toBe(DecisionRefusalError);
   });
 
   it("preserves a concrete model's raw response type", async () => {

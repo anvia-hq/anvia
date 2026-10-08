@@ -77,8 +77,8 @@ if (result.type === "response") console.log(result.output);
 ## Typed decisions
 
 Use `@anvia/core/decision` for choice, multiple labels, rubric scores, and boolean probabilities.
-Create a `DecisionModel` through an adapter such as `@anvia/jev`, then call `decide()` or
-`decideBatch()` directly. See the [decision guide](./decision.md) for the public API, validation,
+Create a `DecisionModel` through an adapter such as `@anvia/jev` or `@anvia/openai`, then call
+`decide()` or `decideBatch()` directly. See the [decision guide](./decision.md) for the public API, validation,
 capabilities, retries, and cancellation.
 
 ## Agent teams

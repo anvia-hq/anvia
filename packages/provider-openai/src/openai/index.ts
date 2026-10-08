@@ -3,6 +3,8 @@ export {
   type OpenAIClientOptions,
   type OpenAICompletionModel,
   type OpenAICompletionModelOptions,
+  type OpenAIDecisionModelOptions,
+  type OpenAIDecisionModelHandle,
   type OpenAIEmbeddingModelHandle,
   type OpenAIImageGenerationModelHandle,
   type OpenAIImageGenerationModelOptions,
@@ -21,16 +23,19 @@ export {
 export { DALL_E_2, DALL_E_3, GPT_IMAGE_1, GPT_IMAGE_2 } from "./image-generation";
 export type {
   KnownOpenAICompletionModelId,
+  KnownOpenAIDecisionModelId,
   KnownOpenAIEmbeddingModelId,
   KnownOpenAIImageGenerationModelId,
   KnownOpenAISpeechGenerationModelId,
   KnownOpenAITranscriptionModelId,
   OpenAICompletionModelId,
+  OpenAIDecisionModelId,
   OpenAIEmbeddingModelId,
   OpenAIImageGenerationModelId,
   OpenAISpeechGenerationModelId,
   OpenAITranscriptionModelId,
 } from "./models";
+export { GPT_6_LUNA } from "./models";
 export { GPT_4O_MINI_TTS, TTS_1, TTS_1_HD } from "./speech-generation";
 export {
   GPT_4O_MINI_TRANSCRIBE,

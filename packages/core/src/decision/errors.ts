@@ -1,5 +1,27 @@
 import type { DecisionQuestionType } from "./types";
 
+/** A provider declined one or more questions; no complete decision result is available. */
+export class DecisionRefusalError extends Error {
+  readonly provider: string;
+  readonly modelId: string;
+  readonly questionNames: readonly string[];
+  readonly rawResponse: unknown;
+
+  constructor(options: {
+    provider: string;
+    modelId: string;
+    questionNames: readonly string[];
+    rawResponse: unknown;
+  }) {
+    super(`${options.provider}/${options.modelId} refused one or more decision questions.`);
+    this.name = "DecisionRefusalError";
+    this.provider = options.provider;
+    this.modelId = options.modelId;
+    this.questionNames = Object.freeze([...options.questionNames]);
+    this.rawResponse = options.rawResponse;
+  }
+}
+
 export class DecisionCapabilityError extends Error {
   readonly provider: string;
   readonly modelId: string;

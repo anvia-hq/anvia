@@ -5,7 +5,8 @@ bounded judgments. It can classify documents, select handlers, score candidates,
 or select a value from a list of candidate spans. Applications call it directly without an agent.
 
 Create a provider client, obtain a decision model, and call `decide({ model, state, questions })`.
-The same operations and types are exported from `@anvia/core`.
+The same operations and types are exported from `@anvia/core`. Adapters include
+[`@anvia/jev`](./provider-jev.md) and [`@anvia/openai`](./provider-openai.md#typed-decisions).
 
 ## Questions and answers
 
@@ -142,6 +143,9 @@ Core validates questions and capabilities before calling the provider. It valida
 option keys, probability distributions, thresholds, rubric bounds, and usage after the call.
 Unsupported question types throw `DecisionCapabilityError`. Malformed responses throw
 `DecisionProviderOutputError`, carrying provider/model metadata and the question name when known.
+Providers can throw `DecisionRefusalError` when they decline questions. It carries `provider`,
+`modelId`, original `questionNames`, and `rawResponse`. A refusal prevents a complete result;
+`decideBatch()` records it as an individual failure. Refusals are not retried by the default policy.
 Invalid caller input throws `TypeError` or `RangeError`.
 
 The low-level `model.decision()` method performs one invocation; use `decide()` to get the core
@@ -151,7 +155,7 @@ agent hooks, tools, or custom eval metrics without new integration methods.
 ## Public exports
 
 - Functions: `decide`, `decideBatch`, `choice`, `multiLabel`, `score`, `check`.
-- Errors: `DecisionCapabilityError`, `DecisionProviderOutputError`.
+- Errors: `DecisionCapabilityError`, `DecisionProviderOutputError`, `DecisionRefusalError`.
 - Questions: `DecisionOptions`, `DecisionRubric`, `ChoiceQuestion`, `MultiLabelQuestion`,
   `ScoreQuestion`, `CheckQuestion`, `DecisionQuestion`, `DecisionQuestions`, `DecisionQuestionType`.
 - Answers: `ChoiceAnswer`, `MultiLabelAnswer`, `ScoreAnswer`, `CheckAnswer`,

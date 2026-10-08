@@ -53,6 +53,10 @@ export type KnownOpenAICompletionModelId =
 
 export type OpenAICompletionModelId = ModelId<KnownOpenAICompletionModelId>;
 
+export const GPT_6_LUNA = "gpt-6-luna";
+export type KnownOpenAIDecisionModelId = typeof GPT_6_LUNA;
+export type OpenAIDecisionModelId = ModelId<KnownOpenAIDecisionModelId>;
+
 const CONTEXT_128K_16K = { contextWindow: 128_000, maxOutputTokens: 16_384 };
 const CONTEXT_200K_100K = { contextWindow: 200_000, maxOutputTokens: 100_000 };
 const CONTEXT_400K_128K = {

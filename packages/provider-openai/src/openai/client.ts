@@ -6,6 +6,7 @@ import {
   type StreamingCompletionModel,
 } from "@anvia/core/completion";
 import type { EmbeddingModel } from "@anvia/core/embeddings";
+import type { DecisionModel } from "@anvia/core/decision";
 import type { ImageGenerationModel } from "@anvia/core/image-generation";
 import {
   type ModelList,
@@ -16,11 +17,13 @@ import type { SpeechGenerationModel } from "@anvia/core/speech-generation";
 import type { TranscriptionModel } from "@anvia/core/transcription";
 import OpenAI from "openai";
 import { OpenAIChatCompletionModel } from "./chat-completion";
+import { OpenAIDecisionModel } from "./decision";
 import { type OpenAIControlsFor, openAIControlsForModel } from "./controls";
 import { OpenAIEmbeddingModel, type OpenAIEmbeddingModelOptions } from "./embedding";
 import { OpenAIImageGenerationModel } from "./image-generation";
 import type {
   OpenAICompletionModelId,
+  OpenAIDecisionModelId,
   OpenAIImageGenerationModelId,
   OpenAISpeechGenerationModelId,
   OpenAITranscriptionModelId,
@@ -57,6 +60,8 @@ export type OpenAICompletionModelOptions<
 };
 
 export type OpenAIImageGenerationModelOptions = { modelId: OpenAIImageGenerationModelId };
+export type OpenAIDecisionModelOptions = { modelId: OpenAIDecisionModelId };
+export type OpenAIDecisionModelHandle = DecisionModel<unknown>;
 export type OpenAISpeechGenerationModelOptions = { modelId: OpenAISpeechGenerationModelId };
 export type OpenAITranscriptionModelOptions = { modelId: OpenAITranscriptionModelId };
 
@@ -83,6 +88,10 @@ export class OpenAIClient implements ModelListingClient {
       defaultHeaders: options.headers,
       maxRetries: 0,
     });
+  }
+
+  decisionModel(options: OpenAIDecisionModelOptions): OpenAIDecisionModelHandle {
+    return new OpenAIDecisionModel(this.sdk, requireModelId(options.modelId));
   }
 
   completionModel<

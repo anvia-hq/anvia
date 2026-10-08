@@ -1,3 +1,4 @@
+import type { AgentPrompt } from "@anvia/core/agent";
 import type { AgentInteractionRequest } from "@anvia/core/agent/interactions";
 import type { JsonValue } from "@anvia/core/completion";
 import type { DurableEvent, DurableRunStatus } from "./types.js";
@@ -5,7 +6,7 @@ import type { DurableEvent, DurableRunStatus } from "./types.js";
 export type DurableTask = {
   id: string;
   agentId: string;
-  prompt: string;
+  prompt: AgentPrompt;
   dependsOn?: readonly string[];
 };
 export type DurableGraphSubmission = {

@@ -79,6 +79,52 @@ try {
 Keep the runtime alive at application scope in a server. A client disconnect should close
 only that client's subscription. Call `run.cancel()` to explicitly cancel the work.
 
+## Image and document input
+
+Durable prompts use the core `AgentPrompt` contract: a nonblank string or a
+structured `UserMessage`. Existing string submissions keep their behavior. To send
+an image directly to the model, use an image part:
+
+```ts
+const run = await runtime.submit({
+  agentId: researcher.id,
+  sessionId: "image-chat",
+  requestId: "image-message-1",
+  prompt: {
+    role: "user",
+    content: [
+      { type: "text", text: "Describe this image." },
+      {
+        type: "image",
+        image: { type: "data", data: imageBase64 }, // raw base64, without a data-URL prefix
+        mediaType: "image/png",
+      },
+    ],
+  },
+});
+```
+
+Image URLs use `image: { type: "url", url: "https://example.com/image.png" }`.
+Core file parts work too. Media-only user messages are accepted; empty messages,
+non-user roles, and invalid content parts are rejected. The selected model must
+support image or document input as appropriate. Validation and capability checks
+use the core contracts; durable execution does not fetch or transform media.
+
+The same prompt format works in graph tasks and `ctx.spawnAgent`. Graph dependency
+results are appended as text without replacing media parts or user metadata.
+Prompts and their media content are persisted for restart, retry, and later session
+history. An equivalent JSON prompt deduplicates under the same request ID regardless
+of object-key order; changing the content or metadata conflicts. Inline data captures
+the bytes. URLs remain external references and must stay accessible and stable for
+retries and future turns.
+
+Set the runtime's `limits.maxPayloadBytes` and, when using the HTTP bridge,
+`maxBodyBytes` to fit your application's upload policy. Base64 encoding increases
+payload size, and history/model checkpoints also count toward runtime payload limits.
+This release reads existing text-only journals; older releases cannot read journals
+containing structured prompts. Hosts reading `run.prompt` must handle both strings
+and user messages.
+
 ## Streaming model output
 
 Set `stream: true` on an agent registration to execute it with `agent.stream()`:

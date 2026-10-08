@@ -1,3 +1,4 @@
+import type { AgentPrompt } from "@anvia/core/agent";
 import type { JsonValue } from "@anvia/core/completion";
 import type { z } from "zod";
 import type { ToolRecovery, DurableRunStatus } from "../types.js";
@@ -22,7 +23,7 @@ export type TaskContext<I, S> = {
   readonly signal: AbortSignal;
   /** The key is unique for this parent's lifetime. Replay returns the same child. */
   spawn<CI, CS, CR>(key: string, task: TaskDefinition<CI, CS, CR>, input: CI): string;
-  spawnAgent(key: string, input: { agentId: string; prompt: string }): string;
+  spawnAgent(key: string, input: { agentId: string; prompt: AgentPrompt }): string;
   children(): TaskRecord[];
   signalValue(name: string): JsonValue | undefined;
   /** Effects default to manual reconciliation after an uncertain interruption. */

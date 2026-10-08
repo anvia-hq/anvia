@@ -1,3 +1,4 @@
+import type { AgentPrompt } from "@anvia/core/agent";
 import type { JsonValue } from "@anvia/core/completion";
 import {
   DurableConflictError,
@@ -20,7 +21,7 @@ export function taskInvocation(
     tx: DurableTransaction,
     parent: TaskRecord,
     key: string,
-    input: { agentId: string; prompt: string },
+    input: { agentId: string; prompt: AgentPrompt },
   ) => string,
 ) {
   let open = true;

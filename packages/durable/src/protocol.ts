@@ -1,3 +1,4 @@
+import { promptSchema } from "./prompt.js";
 import type { DurableGraphEvent } from "./graph-types.js";
 import { z } from "zod";
 import {
@@ -32,7 +33,7 @@ const submission = z
     agentId: id,
     sessionId: id,
     requestId: id,
-    prompt: z.string().min(1),
+    prompt: promptSchema,
     enqueue: z.boolean().optional(),
   })
   .strict();

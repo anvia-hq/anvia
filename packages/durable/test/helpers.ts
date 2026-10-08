@@ -29,6 +29,7 @@ export function response(choice: CompletionResponse["choice"]): CompletionRespon
 export function makeAgent(
   completion: (request: CompletionRequest, signal?: AbortSignal) => Promise<CompletionResponse>,
   tools: AnyTool[] = [],
+  modelCapabilities: CompletionModel["capabilities"] = capabilities,
 ): Agent {
   return new Agent({
     id: "researcher",
@@ -36,7 +37,7 @@ export function makeAgent(
     model: {
       provider: "test",
       modelId: "test",
-      capabilities,
+      capabilities: modelCapabilities,
       completion: (request, options) => completion(request, options?.abortSignal),
     },
   });

@@ -1,3 +1,4 @@
+import { promptMessage } from "./prompt.js";
 import { Usage } from "@anvia/core/completion";
 import type { DurableAgentRegistration, DurableRunRecord, DurableSubmission } from "./types.js";
 
@@ -24,6 +25,6 @@ export function createRunRecord(
     ...(registration.modelRetry === undefined
       ? {}
       : { modelRetry: { ...registration.modelRetry } }),
-    input: { messages: [{ role: "user", content: submission.prompt }] },
+    input: { messages: [promptMessage(submission.prompt)] },
   };
 }

@@ -1,3 +1,4 @@
+import { promptSchema } from "./prompt.js";
 import { z } from "zod";
 import {
   agentContinuationSchema,
@@ -82,7 +83,8 @@ const runSchema = z
     agentId: id,
     sessionId: id,
     requestId: id,
-    prompt: z.string(),
+    // Older owned-agent submissions permitted whitespace-only string prompts.
+    prompt: z.union([z.string(), promptSchema]),
     version: id,
     status: runStatusSchema,
     createdAt: id,

@@ -1,3 +1,4 @@
+import type { AgentPrompt } from "@anvia/core/agent";
 import type { JsonValue } from "@anvia/core/completion";
 import { DurableConflictError, DurableNotFoundError } from "./errors.js";
 import { json, sameJson } from "./json.js";
@@ -149,7 +150,7 @@ function dependencyFailed(run: DurableRunRecord): boolean {
 }
 
 /** Resolve dependency outputs once, in the same transaction that activates the task. */
-export function graphInput(tx: DurableTransaction, run: DurableRunRecord): string {
+export function graphInput(tx: DurableTransaction, run: DurableRunRecord): AgentPrompt {
   const values: Record<string, JsonValue> = {};
   for (const dependency of run.dependencies ?? []) {
     const prerequisite = tx.getRun(dependency);
@@ -162,7 +163,13 @@ export function graphInput(tx: DurableTransaction, run: DurableRunRecord): strin
       throw new DurableConflictError("Task dependencies are not successful.");
     values[prerequisite.taskId!] = json(prerequisite.outcome.output);
   }
-  return Object.keys(values).length === 0
-    ? run.prompt
-    : `${run.prompt}\n\nTask dependency results (JSON):\n${JSON.stringify(values)}`;
+  if (Object.keys(values).length === 0) return run.prompt;
+  const suffix = `\n\nTask dependency results (JSON):\n${JSON.stringify(values)}`;
+  if (typeof run.prompt === "string") return run.prompt + suffix;
+  const content = run.prompt.content;
+  return {
+    ...run.prompt,
+    content:
+      typeof content === "string" ? content + suffix : [...content, { type: "text", text: suffix }],
+  };
 }

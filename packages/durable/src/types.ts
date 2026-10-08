@@ -6,7 +6,7 @@ import type {
   DurableGraphPage,
 } from "./graph-types.js";
 import type { RegisteredTask, TaskListOptions, TaskPage, TaskTransaction } from "./tasks/types.js";
-import type { Agent, AgentInput, AgentOutcome } from "@anvia/core/agent";
+import type { Agent, AgentInput, AgentOutcome, AgentPrompt } from "@anvia/core/agent";
 import type { JsonValue, Message, Usage } from "@anvia/core/completion";
 
 export type ToolRecovery = "safe" | "idempotent" | "manual";
@@ -44,7 +44,8 @@ export type DurableSubmission = {
   agentId: string;
   sessionId: string;
   requestId: string;
-  prompt: string;
+  /** Text or a structured user message, including image/file content. */
+  prompt: AgentPrompt;
 };
 
 export type DurableRunRecord = DurableSubmission & {

@@ -54,6 +54,13 @@ const snapshot = await run.snapshot();
 // Return run.id to the caller; inspect progress/approvals separately from waiting for result().
 ```
 
+`prompt` also accepts the core `UserMessage` shape (`{ role: "user", content: [...] }`)
+for image and file parts, including media-only messages. This applies to graph nodes
+and owned-agent spawns too. Use inline base64 image data to capture immutable bytes;
+URL parts remain external references that must stay available across retries. Select
+a model with the matching media capability and size HTTP/runtime payload limits for
+base64 data and accumulated conversation history.
+
 An identical `(sessionId, requestId)` returns the original run; different agent/prompt values
 under the same pair conflict. `enqueue: true` accepts a successor behind unfinished work;
 without it an unfinished session rejects another submission. One run per session executes at

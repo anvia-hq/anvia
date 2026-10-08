@@ -1,3 +1,5 @@
+import { json } from "./json.js";
+import { promptSchema } from "./prompt.js";
 import { z } from "zod";
 import type { DurableGraphRecord, DurableGraphSubmission } from "./graph-types.js";
 
@@ -16,7 +18,7 @@ const submissionSchema = z
           .object({
             id: taskId,
             agentId: id,
-            prompt: id,
+            prompt: promptSchema,
             dependsOn: z.array(taskId).max(100).optional(),
           })
           .strict(),
@@ -34,7 +36,7 @@ export const graphListSchema = z
   .strict();
 
 export function parseDurableGraphSubmission(value: unknown): DurableGraphSubmission {
-  const parsed = submissionSchema.safeParse(value);
+  const parsed = submissionSchema.safeParse(json(value));
   if (!parsed.success) throw new TypeError("Invalid durable graph submission.");
   const tasks = parsed.data.tasks.map((task) => ({ ...task, dependsOn: task.dependsOn ?? [] }));
   const byId = new Map(tasks.map((task) => [task.id, task]));

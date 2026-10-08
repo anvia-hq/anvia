@@ -5,6 +5,7 @@ import { DurableClient } from "@anvia/client/durable";
 import { createDurableHandler } from "../src/durable";
 import {
   done,
+  capabilities,
   hasToolResult,
   lookup,
   makeAgent,
@@ -38,6 +39,26 @@ afterEach(async () => {
 });
 
 describe("durable HTTP bridge", () => {
+  it("sends images through the public client and HTTP bridge into the model", async () => {
+    const model = vi.fn<Parameters<typeof makeAgent>[0]>(async () => done());
+    const agent = makeAgent(model, [], { ...capabilities, imageInput: true });
+    const { client, runtime } = await setup(agent);
+    const prompt = {
+      role: "user",
+      content: [
+        { type: "text", text: "Describe this image" },
+        { type: "image", image: { type: "data", data: "aW1hZ2U=" }, mediaType: "image/png" },
+      ],
+    } as const;
+    const accepted = await client.submit({ ...submission, prompt });
+    await (await runtime.getRun(accepted.run.id)).result();
+    expect(model.mock.calls[0]![0].chatHistory).toContainEqual(prompt);
+    expect((await client.snapshot(accepted.run.id)).run.prompt).toEqual(prompt);
+    expect((await client.submit({ ...submission, prompt: structuredClone(prompt) })).run.id).toBe(
+      accepted.run.id,
+    );
+  });
+
   it("submits, discovers, and reconnects from a snapshot cursor through the public client", async () => {
     const { client, runtime, handler } = await setup();
     const initial = await client.submit(submission);

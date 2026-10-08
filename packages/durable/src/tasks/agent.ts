@@ -1,3 +1,5 @@
+import type { AgentPrompt } from "@anvia/core/agent";
+import { promptSchema } from "../prompt.js";
 import { z } from "zod";
 import { isJsonValue, type JsonValue } from "@anvia/core/completion";
 import { DurableNotFoundError } from "../errors.js";
@@ -12,7 +14,9 @@ export const TASK_SESSION_PREFIX = "__anvia_task__:";
 export const agentTask = defineTask({
   name: "anvia.agent",
   version: 1,
-  input: z.object({ agentId: z.string().min(1), prompt: z.string().min(1) }).strict(),
+  input: z
+    .object({ agentId: z.string().min(1), prompt: z.union([z.string().min(1), promptSchema]) })
+    .strict(),
   checkpoint: z.null(),
   output: z.custom<JsonValue>(isJsonValue),
   initial: () => null,
@@ -26,7 +30,7 @@ export function spawnAgent(
   agents: ReadonlyMap<string, DurableAgentRegistration>,
   parent: TaskRecord,
   key: string,
-  input: { agentId: string; prompt: string },
+  input: { agentId: string; prompt: AgentPrompt },
 ): string {
   const child = createTask(tx, agentTask.registration, input, parent.sessionId, key, parent.id);
   // Replaying a committed spawn needs its saved identity, not executable agent code.

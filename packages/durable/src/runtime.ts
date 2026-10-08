@@ -1,3 +1,4 @@
+import { parsePrompt, promptMessage } from "./prompt.js";
 import { parseTaskSubmission, type TaskSubmission } from "./task-protocol.js";
 import { durableLimits, type DurableLimits } from "./limits.js";
 import { guardStore } from "./storage-guard.js";
@@ -237,8 +238,7 @@ export class DurableRuntime {
     this.assertOpen();
     if (options.enqueue !== undefined && typeof options.enqueue !== "boolean")
       throw new TypeError("enqueue must be a boolean.");
-    for (const key of ["agentId", "sessionId", "requestId", "prompt"] as const)
-      nonblank(input[key], key);
+    for (const key of ["agentId", "sessionId", "requestId"] as const) nonblank(input[key], key);
     if (
       input.sessionId.startsWith(GRAPH_SESSION_PREFIX) ||
       input.sessionId.startsWith(TASK_SESSION_PREFIX)
@@ -248,7 +248,7 @@ export class DurableRuntime {
       agentId: input.agentId,
       sessionId: input.sessionId,
       requestId: input.requestId,
-      prompt: input.prompt,
+      prompt: parsePrompt(input.prompt),
     };
     const registration = this.agents.get(input.agentId);
     if (registration === undefined)
@@ -256,7 +256,7 @@ export class DurableRuntime {
     const id = this.store.transaction((tx) => {
       const existing = tx.findRequest(input.sessionId, input.requestId);
       if (existing !== undefined) {
-        if (existing.agentId !== input.agentId || existing.prompt !== input.prompt) {
+        if (existing.agentId !== input.agentId || !sameJson(existing.prompt, submission.prompt)) {
           throw new DurableConflictError("requestId already belongs to a different submission.");
         }
         return existing.id;
@@ -558,7 +558,7 @@ export class DurableRuntime {
         return undefined;
       if (current.status === "queued") {
         if (current.graphId !== undefined) {
-          current.input = { messages: [{ role: "user", content: graphInput(tx, current) }] };
+          current.input = { messages: [promptMessage(graphInput(tx, current))] };
         } else {
           const previous = tx.latestCompleted(current.sessionId);
           current.history =
@@ -566,7 +566,7 @@ export class DurableRuntime {
               ? []
               : [...previous.history, ...(previous.outcome?.messages ?? [])];
           current.input = {
-            messages: [...current.history, { role: "user", content: current.prompt }],
+            messages: [...current.history, promptMessage(current.prompt)],
           };
         }
       }

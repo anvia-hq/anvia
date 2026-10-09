@@ -71,3 +71,12 @@ By default `@anvia/mcp` requires the modern MCP `2026-07-28` protocol and fails
 clearly otherwise. For older servers set `versionNegotiation: { mode: "auto" }`
 (probe modern, fall back to the legacy handshake) or `{ mode: "legacy" }` for a
 known 2025-era server. Prefer `auto` over `legacy` unless the server is pinned.
+
+## Temporary discovery
+
+For a temporary HTTP connection, set `transport.terminateSessionOnClose: true` and close in
+`finally`. Anvia attempts legacy session DELETE on success, failure, and cancellation, with a
+two-second cleanup bound. This is opt-in; persistent sessions keep their existing behavior.
+Set `tools.discoveryLimits: { maxTools: 200, maxBytes: 256_000 }` to bound cumulative decoded
+pages before SDK aggregation. Both limits are positive safe integers; bytes sum UTF-8 serialized
+`page.tools` arrays, including array syntax. Keep `maxBufferSize` for individual response limits.

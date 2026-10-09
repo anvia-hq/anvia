@@ -4,6 +4,8 @@ import type { Transport } from "@modelcontextprotocol/client";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { abortError, linkAbortSignal, throwIfAborted } from "./abort";
+import { DiscoveryClient } from "./discovery-client";
+import { ManagedMcpHttpTransport } from "./http-transport";
 import { createMcpTool } from "./tool";
 import type { McpClientOptions, McpConnectOptions, McpServer, McpServerInfo } from "./types";
 import {
@@ -19,6 +21,7 @@ const modernMcpProtocolVersion = "2026-07-28";
 
 type ClientResource = {
   readonly client: Client;
+  transport?: Transport | undefined;
   closePromise?: Promise<void> | undefined;
 };
 
@@ -100,14 +103,30 @@ export class McpClient {
   }
 
   async #initialize(abortSignal: AbortSignal): Promise<McpServer> {
-    const client = createSdkClient(this.#options.versionNegotiation);
+    const client = createSdkClient(
+      this.#options.versionNegotiation,
+      this.#options.tools?.discoveryLimits,
+    );
     const resource: ClientResource = { client };
     this.#resource = resource;
+    let unlinkTransportAbort = () => {};
 
     try {
       throwIfAborted(abortSignal);
       const transport = await createTransport(this.#options, { abortSignal });
-      throwIfAborted(abortSignal);
+      resource.transport = transport;
+      if (abortSignal.aborted) {
+        // close() may have completed while an asynchronous factory was pending.
+        await transport.close().catch(() => {});
+        throwIfAborted(abortSignal);
+      }
+      // Negotiation starts before the SDK attaches Client.transport and does not
+      // observe request signals. Retain and cancel the transport itself.
+      const onAbort = () => {
+        void transport.close().catch(() => {});
+      };
+      abortSignal.addEventListener("abort", onAbort, { once: true });
+      unlinkTransportAbort = () => abortSignal.removeEventListener("abort", onAbort);
       await client.connect(transport, requestOptions(abortSignal));
       throwIfAborted(abortSignal);
       const definitions = await listAllTools(client, abortSignal);
@@ -150,6 +169,8 @@ export class McpClient {
       }
       this.#server = undefined;
       throw error;
+    } finally {
+      unlinkTransportAbort();
     }
   }
 }
@@ -211,7 +232,7 @@ async function createTransport(
   if (transport.sessionId !== undefined) {
     parameters = { ...parameters, sessionId: transport.sessionId };
   }
-  return new StreamableHTTPClientTransport(url, parameters);
+  return new ManagedMcpHttpTransport(url, parameters, transport.terminateSessionOnClose === true);
 }
 
 function copyMcpHeaders(
@@ -266,10 +287,10 @@ function createMcpEndpointFetch(
 const defaultMcpFetch: McpFetch = (input, init) => globalThis.fetch(input, init);
 
 async function listAllTools(
-  client: Client,
+  client: DiscoveryClient,
   abortSignal?: AbortSignal | undefined,
 ): Promise<Awaited<ReturnType<Client["listTools"]>>["tools"]> {
-  const result = await client.listTools(undefined, requestOptions(abortSignal));
+  const result = await client.discoverTools(requestOptions(abortSignal));
   return result.tools;
 }
 
@@ -285,14 +306,19 @@ function assertUniqueToolNames(tools: readonly { name: string }[], serverName: s
 
 function createSdkClient(
   versionNegotiation: NonNullable<McpClientOptions["versionNegotiation"]> | undefined,
-): Client {
+  discoveryLimits: NonNullable<McpClientOptions["tools"]>["discoveryLimits"],
+): DiscoveryClient {
   const implementation = {
     name: "@anvia/mcp",
     version: getMcpClientVersion(),
   };
-  return new Client(implementation, {
-    versionNegotiation: versionNegotiation ?? { mode: { pin: modernMcpProtocolVersion } },
-  });
+  return new DiscoveryClient(
+    implementation,
+    {
+      versionNegotiation: versionNegotiation ?? { mode: { pin: modernMcpProtocolVersion } },
+    },
+    discoveryLimits,
+  );
 }
 
 function getMcpClientVersion(): string {
@@ -307,7 +333,16 @@ function requestOptions(signal?: AbortSignal | undefined): { signal?: AbortSigna
 }
 
 function closeResource(resource: ClientResource): Promise<void> {
-  resource.closePromise ??= resource.client.close();
+  resource.closePromise ??= (async () => {
+    try {
+      // Also close a transport that has not yet been attached to the SDK client.
+      if (resource.transport !== undefined && resource.client.transport !== resource.transport) {
+        await resource.transport.close();
+      }
+    } finally {
+      await resource.client.close();
+    }
+  })();
   return resource.closePromise;
 }
 

@@ -51,6 +51,8 @@ Agent to pick up changed remote tool definitions. Agents do not close caller-own
 - Protocol negotiation, paginated tool discovery, and tool prefixes.
 - Group connection management with cleanup when initialization fails.
 - HTTP URL safety, bounded response buffering, and explicit authentication configuration.
+- Opt-in cumulative `tools.discoveryLimits` and bounded temporary-session cleanup with
+  `transport.terminateSessionOnClose`; see the connection guide for exact semantics.
 
 The example uses automatic protocol negotiation for compatibility with older servers. HTTP URL
 safety is enabled by default; consult the guide when intentionally connecting to a trusted local

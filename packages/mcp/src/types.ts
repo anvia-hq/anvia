@@ -27,6 +27,8 @@ export type McpStreamableHttpTransport = {
   readonly authProvider?: OAuthClientProvider | undefined;
   readonly reconnectionOptions?: StreamableHTTPReconnectionOptions | undefined;
   readonly sessionId?: string | undefined;
+  /** Best-effort legacy session DELETE before closing, bounded to two seconds. Defaults to false. */
+  readonly terminateSessionOnClose?: boolean | undefined;
   /**
    * Maximum bytes per JSON-RPC response message: the whole body for JSON
    * responses and each SSE event for event streams. Defaults to 10 MiB,
@@ -59,6 +61,14 @@ export type McpClientOptions = {
   readonly versionNegotiation?: VersionNegotiationOptions | undefined;
   readonly tools?: {
     readonly prefix?: string | undefined;
+    /** Cumulative decoded tool-page limits, checked before aggregation. Unlimited by default. */
+    readonly discoveryLimits?:
+      | {
+          readonly maxTools: number;
+          /** Sum of UTF-8 JSON.stringify(page.tools) bytes, including each page's array syntax. */
+          readonly maxBytes: number;
+        }
+      | undefined;
   };
 };
 

@@ -89,12 +89,14 @@ const sdk = vi.hoisted(() => {
   }
 
   class StdioClientTransport {
+    async close(): Promise<void> {}
     constructor(readonly server: unknown) {
       stdioTransports.push(this);
     }
   }
 
   class StreamableHTTPClientTransport {
+    async close(): Promise<void> {}
     constructor(
       readonly url: URL,
       readonly options: Record<string, unknown>,

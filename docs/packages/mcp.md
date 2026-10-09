@@ -104,3 +104,49 @@ pnpm --filter @anvia/mcp typecheck
 pnpm --filter @anvia/mcp test
 pnpm --filter @anvia/mcp build
 ```
+
+## Temporary discovery sessions and catalog limits
+
+For short-lived HTTP discovery (for example, validating an admin connection), opt into
+session termination and cumulative catalog limits:
+
+```ts
+const client = new McpClient({
+  name: "discovery",
+  versionNegotiation: { mode: "auto" },
+  transport: {
+    type: "streamableHttp",
+    url: "https://mcp.example.com/mcp",
+    terminateSessionOnClose: true,
+  },
+  tools: { discoveryLimits: { maxTools: 200, maxBytes: 256_000 } },
+});
+try {
+  const server = await client.connect({ abortSignal });
+  // Inspect server.tools here; close ends this temporary connection.
+} finally {
+  await client.close();
+}
+```
+
+Cancellation closes the retained transport even while HTTP protocol negotiation is pending,
+before the SDK attaches it to the client. Failed connection attempts clean up automatically.
+`terminateSessionOnClose` defaults to `false`, preserving normal persistent-session behavior.
+When enabled and a legacy session ID exists, transport close attempts one session DELETE,
+including after initialization/discovery failure or cancellation. Concurrent closes share cleanup.
+DELETE uses the transport's session ID, endpoint credentials, and URL safety rules. Cleanup is
+best effort and bounded to two seconds before local transport shutdown; a rejected or stalled
+DELETE does not replace the discovery result or original failure. Remote deletion is not guaranteed.
+Modern connections without a session ID do not send DELETE.
+
+`tools.discoveryLimits` is opt-in and applies to each connection attempt's immutable snapshot.
+Both values must be positive safe integers. `maxTools` counts tools across decoded pages;
+`maxBytes` sums `Buffer.byteLength(JSON.stringify(page.tools), "utf8")` for every page,
+including each array's brackets and commas. Limits are inclusive. The first page exceeding either
+limit fails discovery before SDK aggregation/cache insertion or Anvia tool construction, and no
+subsequent page is fetched. A retry starts with a fresh budget. The limits govern initial
+discovery only; later SDK catalog refreshes during tool execution retain normal SDK behavior.
+
+These are application limits, not protocol limits. A page is decoded before it can be measured;
+retain `transport.maxBufferSize` to bound individual HTTP response messages as well. With no
+`discoveryLimits`, Anvia adds no cumulative count/byte limit (SDK pagination safeguards still apply).

@@ -118,6 +118,10 @@ persisting a new goal. This also applies to `submitTask()` and `submitRegistered
 task HTTP/client API put `agentId` inside the submission's `input` object alongside `objective`,
 `acceptanceCriteria`, and `limits`. An agent ID selects a registration; the application remains
 responsible for authorizing that choice for the submitting user.
+With durable 0.6 or newer, HTTP task submission passes the effective `agentId` to
+`authorize(request, resource)`, including definition defaults and saved bindings on duplicate
+requests. A denied agent choice creates no task or run. The server rejects a binding change
+during asynchronous authorization with HTTP 409 so the caller can retry authorization.
 
 Each new goal captures its effective agent ID in its initial checkpoint, including when it uses
 the definition's default. All later sessions and assessments use that saved ID. Changing a

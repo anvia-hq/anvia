@@ -14,13 +14,18 @@ import { spawnAgent } from "./agent.js";
 import {
   cancelTree,
   createTask,
+  prepareTask,
   reconcileTree,
   requireTask,
   saveTask,
   taskKey,
   terminal,
 } from "./state.js";
-import type { RegisteredTask, TaskGraphSnapshot, TaskTransition } from "./types.js";
+import type { RegisteredTask, TaskGraphSnapshot, TaskRecord, TaskTransition } from "./types.js";
+
+function dependencies(definition: RegisteredTask, task: TaskRecord): string[] {
+  return [...new Set(definition.agentDependencies?.(task.input, task.checkpoint) ?? [])].sort();
+}
 
 /** Owns phase invocations only; DurableRuntime owns the shared database lifecycle. */
 export class TaskScheduler {
@@ -52,19 +57,51 @@ export class TaskScheduler {
     this.pump();
   }
 
-  submit(name: string, version: number, input: unknown, sessionId: string, key: string): string {
-    const definition = this.definitions.get(name);
-    if (definition === undefined || definition.version !== version)
-      throw new DurableConflictError(`Task definition/version is not registered: ${name}`);
+  submissionScope(name: string, version: number, input: unknown, sessionId: string, key: string) {
+    const definition = this.definition(name, version);
+    return this.store.transaction((tx) => {
+      const { task } = prepareTask(tx, definition, input, sessionId, key);
+      return {
+        sessionId: task.sessionId,
+        taskName: task.name,
+        agentIds: dependencies(definition, task),
+      };
+    });
+  }
+
+  submit(
+    name: string,
+    version: number,
+    input: unknown,
+    sessionId: string,
+    key: string,
+    expectedAgentIds?: readonly string[],
+  ): string {
+    const definition = this.definition(name, version);
     const task = this.store.transaction((tx) => {
       const task = createTask(tx, definition, input, sessionId, key);
-      for (const agentId of definition.agentDependencies?.(task.input, task.checkpoint) ?? [])
+      const agentIds = dependencies(definition, task);
+      if (
+        expectedAgentIds !== undefined &&
+        !sameJson(agentIds, [...new Set(expectedAgentIds)].sort())
+      )
+        throw new DurableConflictError(
+          "Task agents changed during authorization; retry submission.",
+        );
+      for (const agentId of agentIds)
         if (!this.agents.has(agentId))
           throw new DurableNotFoundError(`Unknown durable agent: ${agentId}`);
       return task;
     });
     this.pump();
     return task.id;
+  }
+
+  private definition(name: string, version: number): RegisteredTask {
+    const definition = this.definitions.get(name);
+    if (definition === undefined || definition.version !== version)
+      throw new DurableConflictError(`Task definition/version is not registered: ${name}`);
+    return definition;
   }
 
   resume(): void {

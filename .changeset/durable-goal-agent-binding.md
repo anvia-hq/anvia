@@ -11,3 +11,8 @@ Validate registration before accepting submissions through both goal and task AP
 Preserve legacy goal inputs and assessment journals across recovery. Missing registrations
 between sessions now require attention and can be retried after re-registering the agent.
 Extend the client and server peer ranges to accept the compatible durable 0.6 minor release.
+
+Authorize HTTP task submissions against each effective registered agent before creating work,
+including definition defaults and persisted goal bindings. Reject bindings changed during
+authorization. HTTP task submission requires durable 0.6 or newer and fails closed on older
+runtimes; existing run routes keep their compatibility.

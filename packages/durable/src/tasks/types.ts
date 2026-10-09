@@ -50,6 +50,7 @@ export type TaskDefinition<I, S, R> = {
   readonly input: z.ZodType<I>;
   readonly checkpoint: z.ZodType<S>;
   readonly output: z.ZodType<R>;
+  /** Pure initialization; submission authorization may evaluate this before persisting work. */
   readonly initial: (input: I) => S;
   /** Re-entered from the last committed checkpoint; external effects belong in effect(). */
   readonly run: (context: TaskContext<I, S>) => Promise<TaskTransition<S, R>>;

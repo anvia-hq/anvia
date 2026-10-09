@@ -40,6 +40,23 @@ export function createTask(
   key: string,
   parentId?: string,
 ): TaskRecord {
+  const { task, created } = prepareTask(tx, definition, input, sessionId, key, parentId);
+  if (created) {
+    tx.putTask(task);
+    tx.appendEvent(task.id, "submitted", json({ name: task.name, parentId, rootId: task.rootId }));
+  }
+  return task;
+}
+
+/** Resolve an idempotent submission without persisting or scheduling work. */
+export function prepareTask(
+  tx: DurableTransaction,
+  definition: RegisteredTask,
+  input: unknown,
+  sessionId: string,
+  key: string,
+  parentId?: string,
+): { task: TaskRecord; created: boolean } {
   taskKey(key);
   taskKey(sessionId);
   let parsed;
@@ -60,7 +77,7 @@ export function createTask(
       !sameJson(existing.submissionInput, parsed)
     )
       throw new DurableConflictError("Task key already belongs to a different submission.");
-    return existing;
+    return { task: existing, created: false };
   }
   if (parent !== undefined && (parent.depth >= 32 || tx.taskTree(parent.rootId).length >= 1000))
     throw new DurableConflictError("Task trees support at most 1000 nodes and depth 32.");
@@ -84,9 +101,7 @@ export function createTask(
     createdAt: now,
     updatedAt: now,
   };
-  tx.putTask(task);
-  tx.appendEvent(id, "submitted", json({ name: task.name, parentId, rootId: task.rootId }));
-  return task;
+  return { task, created: true };
 }
 
 /** Fence the whole owned subtree in one transaction before aborting invocations. */

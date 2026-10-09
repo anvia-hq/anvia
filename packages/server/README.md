@@ -66,6 +66,10 @@ The optional `@anvia/server/durable` entrypoint exports `createDurableHandler` f
 SSE events with persisted IDs, approval responses, retry, cancellation, and reconciliation.
 An `authorize(request, resource)` callback is required for all reads and writes. The host
 owns runtime startup (`resume`) and shutdown (`close`). Client disconnects detach observers.
+Task submission requires `@anvia/durable` 0.6 or newer so authorization receives each effective
+agent ID, including goal defaults and saved bindings. Older runtimes return HTTP 503 for task
+submission; existing run routes remain available. No work is created when agent access is denied,
+and a changed binding during authorization returns HTTP 409 for the caller to retry.
 
 Install `@anvia/durable` when using this subpath. See the
 [durable HTTP guide](../../docs/packages/durable.md#http-server-and-client).

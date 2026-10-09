@@ -191,7 +191,27 @@ export class DurableRuntime {
     return new DurableTaskHandle<R>(id, this.tasks, this.store, () => this.assertOpen());
   }
 
-  async submitRegisteredTask(input: TaskSubmission): Promise<DurableTaskHandle> {
+  /** Resolve effective agents for authorization without persisting or scheduling a task. */
+  taskSubmissionScope(input: TaskSubmission): {
+    sessionId: string;
+    taskName: string;
+    agentIds: string[];
+  } {
+    this.assertOpen();
+    const submission = parseTaskSubmission(input);
+    return this.tasks.submissionScope(
+      submission.name,
+      submission.version,
+      submission.input,
+      submission.sessionId,
+      submission.requestId,
+    );
+  }
+
+  async submitRegisteredTask(
+    input: TaskSubmission,
+    options: { expectedAgentIds?: readonly string[] } = {},
+  ): Promise<DurableTaskHandle> {
     this.assertOpen();
     const submission = parseTaskSubmission(input);
     const id = this.tasks.submit(
@@ -200,6 +220,7 @@ export class DurableRuntime {
       submission.input,
       submission.sessionId,
       submission.requestId,
+      options.expectedAgentIds,
     );
     return new DurableTaskHandle(id, this.tasks, this.store, () => this.assertOpen());
   }

@@ -1,4 +1,5 @@
 import { Agent } from "@anvia/core/agent";
+export { Agent };
 import {
   Usage,
   type CompletionModel,

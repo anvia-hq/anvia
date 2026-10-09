@@ -36,6 +36,7 @@ export type DurableAuthorization = {
   action: DurableHttpAction;
   sessionId: string;
   runId?: string;
+  /** Effective agent; task submissions authorize each declared dependency separately. */
   agentId?: string;
   graphId?: string;
   taskId?: string;

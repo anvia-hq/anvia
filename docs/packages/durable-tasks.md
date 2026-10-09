@@ -268,6 +268,18 @@ on the server; clients only select registered names/versions and supply JSON. Fo
 
 Authorization remains mandatory for every request. Resources include the owning session,
 `taskId`, `rootTaskId`, and `taskName`; owned agent resources also include `runId` and `agentId`.
+Task submission resolves the registered definition's `agentDependencies` and calls `authorize`
+once per effective `agentId` before creating work (once without an agent for tasks without declared
+dependencies). Goal definitions declare their pinned agent automatically. Custom tasks remain
+trusted server code; this does not infer or authorize arbitrary future spawns.
+
+For in-process authorization, `runtime.taskSubmissionScope(submission)` returns `sessionId`,
+`taskName`, and `agentIds` without persisting work. Pass those IDs as
+`submitRegisteredTask(submission, { expectedAgentIds })` to reject changes between authorization
+and submission. Duplicate requests resolve their stored binding. Input schemas and `initial()`
+must be pure: scope resolution can evaluate them before submission. HTTP task submissions require
+durable 0.6 or newer; older runtimes return HTTP 503 rather than omit agent authorization.
+
 Tree reads and cancellation authorize existing nodes. Cancellation returns HTTP 409 without
 mutating the tree if children were created during authorization; retry the request to authorize
 the new tree. In-process callers can use `cancel({ expectedTreeIds })` for the same identity fence.

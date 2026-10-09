@@ -43,15 +43,32 @@ export async function handleDurableTaskRequest(
   if (parts.length === 0) {
     if (request.method === "POST") {
       const input = parseTaskSubmission(await readJson(request, maxBytes));
-      if (
-        !(await options.authorize(request, {
-          action: "submit",
-          sessionId: input.sessionId,
-          taskName: input.name,
-        }))
-      )
-        throw new HttpInputError(403, "Forbidden");
-      return jsonResponse(await (await runtime.submitRegisteredTask(input)).snapshot(), 202);
+      // Older engines cannot expose effective bindings safely; never authorize agent-less here.
+      if (typeof runtime.taskSubmissionScope !== "function")
+        throw new HttpInputError(
+          503,
+          "Task submission authorization requires @anvia/durable 0.6 or newer.",
+        );
+      const { sessionId, taskName, agentIds } = runtime.taskSubmissionScope(input);
+      for (const agentId of agentIds.length === 0 ? [undefined] : agentIds) {
+        if (
+          !(await options.authorize(request, {
+            action: "submit",
+            sessionId,
+            taskName,
+            ...(agentId === undefined ? {} : { agentId }),
+          }))
+        )
+          throw new HttpInputError(403, "Forbidden");
+      }
+      return jsonResponse(
+        await (
+          await runtime.submitRegisteredTask(input, {
+            expectedAgentIds: agentIds,
+          })
+        ).snapshot(),
+        202,
+      );
     }
     if (request.method === "GET") {
       const filter = parseTaskListOptions(listQuery(url));

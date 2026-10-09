@@ -158,6 +158,16 @@ it.each([false, true])(
     expect((await saved.snapshot()).task.error).toContain("Unknown durable agent: original");
     await expect.poll(() => restored.health().activeTasks).toBe(0);
     restored.registerAgents([registration("original")]);
+    const { sessionId, requestId, ...submittedInput } = submission;
+    expect(
+      restored.taskSubmissionScope({
+        name: restoredGoal.name,
+        version: restoredGoal.version,
+        sessionId,
+        requestId,
+        input: submittedInput,
+      }).agentIds,
+    ).toEqual(["original"]);
     // Deduplication uses the original submission and saved binding, not the changed default.
     expect((await restored.submitGoal(restoredGoal, submission)).id).toBe(saved.id);
     await saved.retry();

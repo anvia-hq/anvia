@@ -1,5 +1,13 @@
 # @anvia/core
 
+## 1.11.1
+
+### Patch Changes
+
+- c905486: Allow `createSummaryMemoryCompactor({ temperature: null })` to omit temperature from summary
+  model requests, including durable mid-tool-loop compaction. Omitted or undefined temperature
+  continues to default to 0; explicit finite numbers are forwarded unchanged.
+
 ## 1.11.0
 
 ### Minor Changes

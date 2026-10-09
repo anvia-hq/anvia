@@ -155,7 +155,7 @@ Do not use an unbounded application retry loop around an uncertain external oper
 ## Durable conversation compaction
 
 Configure `compaction` on `DurableAgentRegistration`, not on `Agent.memory`. It accepts
-`trigger: { afterTokens }`, optional `retention: { recentTurns }` (default one), a
+`trigger: { afterTokens }`, optional `retention: { recentTurns, recentToolTurns }` (each defaults to one), a
 `MemoryCompactor` such as `createSummaryMemoryCompactor({ model, retries: false })`, and an
 optional deterministic `tokenCounter`. Policy is captured at submission; restore matching
 callbacks and bump registration version for incompatible changes.
@@ -167,8 +167,12 @@ reuse them. `compaction_started` records intent. Uncommitted summary calls may r
 crash, so compactors must be safe to repeat and honor cancellation. `modelRetry` also governs
 summary failures; explicit retry resets unfinished summary attempts.
 
-This is between-run compaction only. It skips graph tasks, does not compact a live tool loop,
-and provides no manual API. Thresholds count history plus the prompt; the host must reserve
-space for instructions, schemas, output, and tool growth. Canonical storage and payload limits
-remain unchanged. SQLite schemas 1–4 upgrade to schema 5 on acquisition; older runtimes cannot
-read the upgraded database.
+Compaction also checks before model calls inside tool loops and after approved tools finish. Use
+`recentToolTurns: 0` to allow summarizing the latest large tool result. The active user prompt stays
+verbatim; parallel call/result groups are never split. Per-call `context` operations atomically
+save projected messages, usage, and events, including skipped decisions. Approval continuations
+carry the prior projection. Legacy submissions retain their previous request sequence on recovery.
+Graph tasks remain excluded and there is no manual API. Thresholds count messages; reserve room
+for instructions, schemas, output, and retained tool results. Canonical storage and payload limits
+remain unchanged. SQLite schemas 1–5 upgrade to schema 6; older runtimes cannot read that database.
+Upgrade core and durable together for execution protocol version 3.

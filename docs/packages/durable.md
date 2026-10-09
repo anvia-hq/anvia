@@ -435,9 +435,9 @@ Durable progress is not the existing token-delta chat protocol.
   persistence boundaries. Durable session history replaces the agent's memory store here.
 - Observability callbacks may run again during reconstruction; they must be safe to repeat.
   They are not the authoritative execution journal.
-- Pipeline/team recovery, within-run compaction, Studio integration,
+- Pipeline/team recovery, Studio integration,
   Postgres, retention, general migration tooling, and distributed worker deployment are follow-up work.
-  Database records are experimental; the task-aware engine upgrades schema 1–4 to 5 on acquisition. Older engines reject schema 5.
+  Database records are experimental; the task-aware engine upgrades schema 1–5 to 6 on acquisition. Older engines reject schema 6.
 
 ## Operational readiness
 
@@ -468,8 +468,9 @@ handling of uncertain effects. No provider credentials or Docker are required.
 ## Conversation compaction
 
 Durable registrations accept an opt-in `compaction` policy with `trigger.afterTokens`,
-`retention.recentTurns`, a core-compatible `compactor`, and optional `tokenCounter`.
-It summarizes completed history before a new session run and persists the model-facing
+`retention.recentTurns` / `retention.recentToolTurns`, a core-compatible `compactor`, and optional `tokenCounter`.
+It summarizes completed history before a new session run and completed exchanges inside tool loops,
+then persists the model-facing
 projection separately from canonical history. Summary results, usage, and progress commit
 atomically and survive replay. Agent memory remains unsupported.
 

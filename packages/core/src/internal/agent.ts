@@ -15,3 +15,11 @@ export {
   type InternalAgentRunOptions,
   withInternalAgentRunOptions,
 } from "./agent-runtime/run-options";
+
+export {
+  planLoopContext,
+  projectLoopContext,
+  summarizeLoopContext,
+  finishLoopContext,
+} from "./agent-runtime/loop-context";
+export type { LoopContextCheckpoint, PreparedLoopContext } from "./agent-runtime/loop-context";

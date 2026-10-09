@@ -754,7 +754,7 @@ for await (const event of agent.stream({ prompt: "What did we decide?", session 
 - **Counting unit:** a user-led turn, not an individual message. Each `user` message starts a turn;
   every following `assistant`, `tool`, or `system` message belongs to it until the next `user`
   message. Tool calls and results therefore cannot be split at the compaction boundary.
-- **Default:** omitting `retention` resolves to `{ recentTurns: 1 }`.
+- **Default:** omitting `retention` keeps one stored user-led turn and one live tool round.
 - **Validation:** `N` must be a nonnegative safe integer. Fractions, negative values, infinity, and
   specifying both retention modes are rejected.
 - **Boundaries:** exactly the last `N` complete stored turns remain unsummarized. `N = 0` summarizes
@@ -804,8 +804,36 @@ if (result.type === "compacted") {
 
 The automatic trigger is a threshold, not a hard storage limit. Omitting `compaction` keeps the
 full canonical history model-facing. Summary-provider retries belong to the compactor; full
-snapshot-to-checkpoint conflict retries are separately opt-in. A streamed `memory_compaction`
-event is emitted only after the store atomically commits the checkpoint.
+snapshot-to-checkpoint conflict retries are separately opt-in. At run start, a streamed
+`memory_compaction` event follows the store's atomic checkpoint commit.
+
+### Compaction inside a tool loop
+
+With a session compaction policy, the agent also checks context before subsequent model calls in
+`generate()` and streaming runs. A long previous run or an approval continuation is checked before
+its first model call too. `retention.recentToolTurns` controls how many completed tool rounds remain
+verbatim (default `1`, nonnegative safe integer). Set it to `0` to allow summarizing even the latest
+large tool result:
+
+```ts
+compaction: {
+  trigger: { afterTokens: 32_000 },
+  retention: { recentTurns: 3, recentToolTurns: 0 },
+  compactor,
+}
+```
+
+The active user request stays verbatim. Compaction only cuts at completed exchanges, including all
+results for parallel tool calls. Earlier summaries participate in later summaries. The model-facing
+projection is local to the run and carried in approval continuations; canonical outcomes and memory
+appends remain unchanged for every save policy. Store projections are still prepared separately at
+session boundaries. `memory_compaction` events report each completed live projection, and summary
+usage contributes to the run total. `memoryCompaction` on the result describes the latest compaction.
+
+The counter measures conversation messages, not instructions, retrieved documents, tool schemas, or
+reserved output tokens. Leave room for those in the threshold. A large pinned user request, an
+explicitly retained tool round, or a poor summary can still exceed the provider window. This is
+proactive compaction, not an automatic retry of arbitrary provider context-limit errors.
 
 ## Structured Extraction
 

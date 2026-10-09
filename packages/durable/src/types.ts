@@ -13,11 +13,11 @@ import type { MemoryCompactor, MemoryTokenCounter } from "@anvia/core/memory";
 /** Serializable policy captured when a run is submitted. */
 export type DurableCompactionPolicy = {
   trigger: { afterTokens: number };
-  /** Complete user-led turns to retain. Defaults to one. */
-  retention?: { recentTurns: number };
+  /** User-led turns and in-run tool rounds to retain. Both default to one. */
+  retention?: { recentTurns?: number | undefined; recentToolTurns?: number | undefined };
 };
 
-/** Compacts completed session history before a new run, never an active continuation. */
+/** Compacts completed session history and tool rounds in the model-facing context. */
 export type DurableCompactionOptions = DurableCompactionPolicy & {
   compactor: MemoryCompactor;
   tokenCounter?: MemoryTokenCounter;
@@ -91,6 +91,8 @@ export type DurableRunRecord = DurableSubmission & {
   contextCheckpoint?: DurableContextCheckpoint;
   /** Freezes even a skipped compaction decision across retries. */
   contextPrepared?: boolean;
+  /** Captured on new submissions; legacy in-flight runs retain their original request sequence. */
+  loopCompaction?: boolean;
   outcome?: AgentOutcome<unknown>;
   error?: string;
   blockedOperation?: string;
@@ -103,7 +105,7 @@ export type DurableRunRecord = DurableSubmission & {
 
 export type DurableOperation = {
   key: string;
-  kind: "model" | "tool" | "effect" | "compaction";
+  kind: "model" | "tool" | "effect" | "compaction" | "context";
   input: JsonValue;
   status: "started" | "completed";
   recovery: ToolRecovery;

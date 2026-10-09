@@ -73,7 +73,10 @@ export const compactionPolicySchema = z
       .object({ afterTokens: z.number().int().positive().max(Number.MAX_SAFE_INTEGER) })
       .strict(),
     retention: z
-      .object({ recentTurns: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER) })
+      .object({
+        recentTurns: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
+        recentToolTurns: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
+      })
       .strict()
       .optional(),
   })
@@ -119,6 +122,7 @@ const runSchema = z
     compaction: compactionPolicySchema.optional(),
     contextCheckpoint: contextCheckpointSchema.optional(),
     contextPrepared: z.boolean().optional(),
+    loopCompaction: z.boolean().optional(),
     responses: z.record(z.string(), jsonValue),
     input: z.union([
       z.object({ messages: messagesSchema.min(1) }).strict(),
@@ -160,7 +164,7 @@ export function parseRun(value: unknown): DurableRunRecord {
 const operationSchema = z
   .object({
     key: id,
-    kind: z.enum(["model", "tool", "effect", "compaction"]),
+    kind: z.enum(["model", "tool", "effect", "compaction", "context"]),
     input: jsonValue,
     status: z.enum(["started", "completed"]),
     recovery: z.enum(["safe", "idempotent", "manual"]),
@@ -180,6 +184,11 @@ export function parseOperation(value: unknown): DurableOperation {
       .passthrough()
       .parse(operation.result);
     parseMessage({ role: "assistant", content: result.choice });
+  } else if (operation.kind === "context") {
+    const prepared = preparedLoopContextSchema.parse(operation.result);
+    const input = messagesSchema.parse(operation.input);
+    if ((prepared.checkpoint?.coveredMessages ?? 0) > input.length)
+      throw new Error("Context checkpoint exceeds its source transcript.");
   } else if (operation.kind === "compaction") {
     contextCheckpointSchema.parse(operation.result);
   } else if (operation.kind === "tool") {
@@ -212,3 +221,33 @@ export const eventTypeSchema = z.enum([
   "compaction_started",
   "compaction_completed",
 ]);
+
+export const preparedLoopContextSchema = z
+  .object({
+    messages: messagesSchema.min(1),
+    checkpoint: z
+      .object({
+        summary: z.string().trim().min(1),
+        coveredMessages: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+        compactedMessageCount: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+      })
+      .strict()
+      .optional(),
+    compaction: z
+      .object({
+        originalMessageCount: count,
+        compactedMessageCount: count,
+        retainedMessageCount: count,
+        originalTokenCount: count,
+        compactedTokenCount: count,
+        retainedTokenCount: count,
+        resultTokenCount: count,
+        attempts: count,
+        usage: usage.transform(({ details, ...value }) =>
+          details === undefined ? value : { ...value, details },
+        ),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();

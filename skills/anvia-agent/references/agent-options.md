@@ -44,7 +44,10 @@ Compaction (`afterTokens` / `recentTurns` + token counter + compactor) is opt-in
 for long sessions — add it when context growth is the problem, not upfront. `recentTurns` counts
 complete user-led turns (including their assistant and tool activity) and defaults to `1`;
 `recentTokens` remains available as a deprecated compatibility option.
-`agent.compactMemory({ session })` forces that compaction on demand.
+`agent.compactMemory({ session })` forces stored-history compaction on demand. During a tool loop,
+`retention.recentToolTurns` keeps completed tool rounds (default one; zero allows summarizing the
+latest large result). The active user prompt and canonical transcript are preserved. Live projections
+survive approval continuations; choose a threshold that leaves room for instructions and tools.
 
 ## Multi-agent
 

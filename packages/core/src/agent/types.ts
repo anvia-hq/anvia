@@ -72,9 +72,10 @@ export type AgentMemory = {
   compaction?:
     | {
         trigger: { afterTokens: number };
-        retention:
+        retention: { recentToolTurns?: number | undefined } & (
           | { recentTurns: number; recentTokens?: undefined }
-          | { recentTokens: number; recentTurns?: undefined };
+          | { recentTokens: number; recentTurns?: undefined }
+        );
         tokenCounter: MemoryTokenCounter;
         compactor: MemoryCompactor;
         conflictRetries: false | MemoryCompactionConflictRetryOptions;

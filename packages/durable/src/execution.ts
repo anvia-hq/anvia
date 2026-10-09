@@ -1,3 +1,4 @@
+import { createContextPreparation } from "./loop-context.js";
 import {
   Usage,
   type CompletionRequest,
@@ -138,6 +139,7 @@ export function createExecution(
   }
 
   return {
+    prepareMessages: createContextPreparation(store, run, registration, signal),
     async completion(turn, request, execute) {
       const operation = modelOperation(turn, request);
       if (operation.status === "completed")

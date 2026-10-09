@@ -204,7 +204,10 @@ export type MemoryCompactionConflictRetryOptions = {
   maxAttempts: number;
 };
 
-export type MemoryCompactionRetention =
+export type MemoryCompactionRetention = {
+  /** Completed tool rounds to retain within a run. Defaults to one; zero allows summarizing the latest result. */
+  recentToolTurns?: number | undefined;
+} & (
   | {
       /**
        * Number of complete, user-led turns to keep unsummarized. A `user` message starts a turn;
@@ -223,7 +226,8 @@ export type MemoryCompactionRetention =
        */
       recentTokens: number;
       recentTurns?: never;
-    };
+    }
+);
 
 /** When and how session memory is compacted. */
 export type MemoryCompactionOptions = {

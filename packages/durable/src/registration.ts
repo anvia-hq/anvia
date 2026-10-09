@@ -7,7 +7,7 @@ import type { DurableAgentRegistration } from "./types.js";
 export function registrations(
   values: readonly DurableAgentRegistration[],
 ): Map<string, DurableAgentRegistration> {
-  if (AGENT_RUN_EXECUTION_VERSION !== 2) throw new Error("Unsupported core execution protocol.");
+  if (AGENT_RUN_EXECUTION_VERSION !== 3) throw new Error("Unsupported core execution protocol.");
   const result = new Map<string, DurableAgentRegistration>();
   for (const registration of values) {
     nonblank(registration.version, "Agent version");

@@ -468,7 +468,9 @@ export class DurableRuntime {
         throw new DurableConflictError("Session has advanced; create a new submission.");
       for (const operation of tx.operations(id)) {
         if (
-          (operation.kind === "model" || operation.kind === "compaction") &&
+          (operation.kind === "model" ||
+            operation.kind === "compaction" ||
+            operation.kind === "context") &&
           operation.status === "started"
         )
           tx.putOperation(id, { ...operation, attempts: 0 });

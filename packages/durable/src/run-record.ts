@@ -23,6 +23,7 @@ export function createRunRecord(
     ...(registration.compaction === undefined
       ? {}
       : {
+          loopCompaction: true,
           compaction: {
             trigger: { ...registration.compaction.trigger },
             ...(registration.compaction.retention === undefined

@@ -1,3 +1,11 @@
+import {
+  planLoopContext,
+  projectLoopContext,
+  summarizeLoopContext,
+  finishLoopContext,
+  type LoopContextCheckpoint,
+  type PreparedLoopContext,
+} from "./loop-context";
 import type { Agent } from "../../agent/agent";
 import type { AgentMemory } from "../../agent/types";
 import { type Message as MessageType, Usage } from "../../completion/index";
@@ -25,6 +33,29 @@ export type MemoryPreparation = {
 type MemoryAgent = Pick<Agent, "memory">;
 
 export class AgentRunMemory {
+  async prepareLoop(
+    messages: readonly MessageType[],
+    checkpoint: LoopContextCheckpoint | undefined,
+    signal: AbortSignal,
+  ): Promise<PreparedLoopContext> {
+    const options = this.memory()?.compaction;
+    if (options === undefined || this.memoryScope === undefined) return { messages: [...messages] };
+    const plan = await planLoopContext(
+      messages,
+      checkpoint,
+      {
+        afterTokens: options.trigger.afterTokens,
+        recentToolTurns: options.retention.recentToolTurns,
+        tokenCounter: options.tokenCounter,
+      },
+      signal,
+    );
+    if (plan === undefined) return { messages: projectLoopContext(messages, checkpoint) };
+    const summary = await summarizeLoopContext(plan, options.compactor, this.memoryScope, signal);
+    const prepared = await finishLoopContext(plan, summary, options.tokenCounter, signal);
+    return prepared;
+  }
+
   constructor(
     private readonly agent: MemoryAgent,
     private readonly memoryScope: MemoryScope | undefined,

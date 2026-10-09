@@ -53,7 +53,7 @@ response, a guardrail block, and an interaction that needs application input.
 - Direct completions and schema-validated extraction without an agent loop.
 - [Typed decisions](../../docs/packages/decision.md) for classification, tagging, scoring, and routing.
 - Sequential or parallel pipelines and evaluations with built-in or custom metrics.
-- Stateful conversations using memory adapters and explicit compaction policies.
+- Stateful conversations using memory adapters and explicit compaction policies, including active tool loops.
 - RAG with document chunking, embeddings, and vector-store contracts.
 - Image generation, speech, transcription, MCP tools, and local Agent Skills.
 

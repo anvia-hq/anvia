@@ -1,3 +1,4 @@
+import type { LoopContextCheckpoint } from "./loop-context";
 import type { AgentInteractionRequest, AgentQuestionAnswer } from "../../agent/interactions";
 import { parseAgentQuestionPrompts } from "../../agent/interactions";
 import {
@@ -25,6 +26,7 @@ export type AgentContinuationState = {
   remainingToolCalls: ToolCallPart[];
   steering: QueuedSteering[];
   memoryScope?: MemoryScope;
+  loopContextCheckpoint?: LoopContextCheckpoint;
 };
 
 export function serializeContinuationState(state: AgentContinuationState): JsonObject {
@@ -47,6 +49,7 @@ export function parseContinuationState(
     "remainingToolCalls",
     "steering",
     "memoryScope",
+    "loopContextCheckpoint",
   ]);
   if (value.kind !== "anvia.agent-continuation") {
     throw new TypeError("Agent continuation has an unsupported internal state.");
@@ -88,6 +91,28 @@ export function parseContinuationState(
   };
   if (value.memoryScope !== undefined) {
     state.memoryScope = parseOptionalJsonObject(value.memoryScope, "memoryScope") as MemoryScope;
+  }
+  if (value.loopContextCheckpoint !== undefined) {
+    const checkpoint = value.loopContextCheckpoint;
+    if (
+      !object(checkpoint) ||
+      typeof checkpoint.summary !== "string" ||
+      checkpoint.summary.trim().length === 0 ||
+      typeof checkpoint.coveredMessages !== "number" ||
+      !Number.isSafeInteger(checkpoint.coveredMessages) ||
+      checkpoint.coveredMessages < 1 ||
+      checkpoint.coveredMessages > history.length + messages.length ||
+      typeof checkpoint.compactedMessageCount !== "number" ||
+      !Number.isSafeInteger(checkpoint.compactedMessageCount) ||
+      checkpoint.compactedMessageCount < 1
+    )
+      throw new TypeError("Invalid continuation context checkpoint.");
+    requireOnlyKeys(checkpoint, ["summary", "coveredMessages", "compactedMessageCount"]);
+    state.loopContextCheckpoint = {
+      summary: checkpoint.summary,
+      coveredMessages: checkpoint.coveredMessages,
+      compactedMessageCount: checkpoint.compactedMessageCount,
+    };
   }
   return state;
 }

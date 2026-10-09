@@ -13,9 +13,10 @@ type ResolvedMemoryOptions = {
   compaction?:
     | {
         trigger: { afterTokens: number };
-        retention:
+        retention: { recentToolTurns?: number | undefined } & (
           | { recentTurns: number; recentTokens?: undefined }
-          | { recentTokens: number; recentTurns?: undefined };
+          | { recentTokens: number; recentTurns?: undefined }
+        );
         tokenCounter: MemoryTokenCounter;
         compactor: MemoryCompactor;
         conflictRetries: false | MemoryCompactionConflictRetryOptions;
@@ -50,6 +51,9 @@ export function resolveMemoryOptions(options: MemoryOptions = {}): ResolvedMemor
       assertNonnegativeInteger(resolvedRecentTurns, "compaction.retention.recentTurns");
       retention = { recentTurns: resolvedRecentTurns };
     }
+    const recentToolTurns = configuredRetention?.recentToolTurns ?? 1;
+    assertNonnegativeInteger(recentToolTurns, "compaction.retention.recentToolTurns");
+    retention = { ...retention, recentToolTurns };
     const tokenCounter = options.compaction.tokenCounter ?? estimateMemoryTokens;
     if (typeof tokenCounter !== "function") {
       throw new TypeError("compaction.tokenCounter must be a function.");

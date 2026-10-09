@@ -207,7 +207,7 @@ describe("durable task graphs", () => {
     expect(model).toHaveBeenCalledTimes(1);
   });
 
-  it.each([1, 2, 3])(
+  it.each([1, 2, 3, 4, 5])(
     "upgrades schema version %s on acquisition while preserving old runs",
     async (version) => {
       const path = database();
@@ -227,7 +227,7 @@ describe("durable task graphs", () => {
       expect(await (await restarted.getRun(run.id)).result()).toMatchObject({ output: "done" });
       await restarted.close();
       const updated = new DatabaseSync(path);
-      expect(updated.prepare("SELECT version FROM anvia_durable_owner").get()?.version).toBe(5);
+      expect(updated.prepare("SELECT version FROM anvia_durable_owner").get()?.version).toBe(6);
       updated.close();
     },
   );

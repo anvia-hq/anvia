@@ -1,9 +1,15 @@
-import type { CompletionRequest, CompletionResponse, ToolCallPart } from "../../completion";
+import type { PreparedLoopContext, LoopContextCheckpoint } from "./loop-context";
+import type {
+  CompletionRequest,
+  CompletionResponse,
+  ToolCallPart,
+  Message,
+} from "../../completion";
 import type { NormalizedToolOutput, ToolCallContext } from "../../tool";
 import type { AgentStreamEvent } from "../../agent/run-types";
 
 /** Runtime capability marker: older core versions must fail before accepting durable work. */
-export const AGENT_RUN_EXECUTION_VERSION = 2;
+export const AGENT_RUN_EXECUTION_VERSION = 3;
 
 /** Normalized generation progress; never includes raw provider responses. */
 export type AgentCompletionStreamEvent = Extract<
@@ -27,6 +33,12 @@ export type AgentToolExecutionResult =
 
 /** Internal persistence boundary used by execution runtimes. Callbacks own external effects. */
 export interface AgentRunExecution {
+  /** Persist the context selected before each model call, including skipped compaction decisions. */
+  prepareMessages?(
+    turn: number,
+    messages: readonly Message[],
+    checkpoint?: LoopContextCheckpoint,
+  ): Promise<PreparedLoopContext>;
   completion(
     turn: number,
     request: CompletionRequest,

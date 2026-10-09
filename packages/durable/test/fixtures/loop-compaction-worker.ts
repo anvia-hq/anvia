@@ -1,5 +1,6 @@
 import { appendFileSync } from "node:fs";
 import { Usage } from "@anvia/core/completion";
+import { estimateMemoryTokens } from "@anvia/core/memory";
 import { DurableRuntime } from "../../src/index.js";
 import { SqliteDurableStore } from "../../src/sqlite.js";
 import { done, lookup, makeAgent, toolResponse } from "../helpers.js";
@@ -13,6 +14,7 @@ async function halt(): Promise<never> {
   });
 }
 let modelCalls = 0;
+let summaryReturned = false;
 const runtime = await DurableRuntime.open({
   store: new SqliteDurableStore(path),
   agents: [
@@ -32,9 +34,15 @@ const runtime = await DurableRuntime.open({
       compaction: {
         trigger: { afterTokens: 500 },
         retention: { recentToolTurns: 0 },
+        tokenCounter: async (messages) => {
+          // Kill after the provider returned, but before the projection transaction.
+          if (stage === "prepared" && summaryReturned) await halt();
+          return estimateMemoryTokens(messages);
+        },
         compactor: async () => {
           appendFileSync(calls, "summary\n");
           if (stage === "summary") await halt();
+          summaryReturned = true;
           return {
             summary: "Lookup found the answer.",
             usage: { ...Usage.empty(), inputTokens: 5, outputTokens: 2, totalTokens: 7 },

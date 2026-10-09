@@ -43,6 +43,8 @@ export function createContextPreparation(
         return prepared;
       }
     }
+    // A started operation is retryable intent. Its unfinished projection has never
+    // reached the main model; only the completed transaction below freezes replay.
     const options = registration.compaction;
     if (options === undefined)
       throw new DurableRecoveryError("Restore the saved agent's compaction implementation.");

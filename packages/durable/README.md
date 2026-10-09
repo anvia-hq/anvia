@@ -222,10 +222,15 @@ The serializable policy is captured at submission. Restore the same compactor an
 implementation after restart, and bump `registration.version` when either changes. A queued run
 selects its predecessor's checkpoint when it starts. The summary, prepared input, successful
 summary usage, and `compaction_completed` event commit atomically. Even a skipped preparation is
-persisted, so retries cannot change the model input. Approved continuations reuse their saved
+persisted before the next main-model request. Approved continuations reuse their saved
 context, then check newly completed tool output. Live preparation decisions (including skips),
-successful summary usage, and completion events commit atomically. Recovery replays these decisions
-without calling the counter or summarizer again and without repeating committed tools. New submissions
+successful summary usage, and completion events commit atomically before the prepared messages can
+reach the main model. Recovery replays a **completed** context operation's exact saved projection and
+usage without calling the counter or summarizer again and without repeating committed tools. A
+**started** context operation records intent and its attempt count, not a committed projection;
+recovery recomputes that unfinished preparation using the saved policy and deterministic counter.
+The summarizer can return different text or usage on this retry. Neither the unfinished projection
+nor its usage has been committed or exposed to the main model. New submissions
 capture live compaction support; runs created by schema-5 engines retain their old request sequence
 when recovered. Failed or cancelled runs do not advance the next run's conversation checkpoint.
 
@@ -233,8 +238,11 @@ when recovered. Failed or cancelled runs do not advance the next run's conversat
 core's `MemoryCompactionInfo` token/message counts and usage; counts describe the projection,
 while the checkpoint's count refers to canonical messages. Successful summary usage is added once
 to the run total, without consuming its main-model turn budget. An interrupted, uncommitted
-summary may be requested again and incur another provider charge; its unknown usage cannot be
-reconstructed. Compactors must be safe to repeat and honor `abortSignal`.
+summary may be requested again and incur another provider charge, including when the provider
+returned just before a crash but the projection transaction did not commit. The run total includes
+only committed summary usage; it is not an exact provider-billing ledger across crashes. Lost usage
+cannot be reconstructed. Compactors must be safe to repeat and honor `abortSignal`; their output
+need not be deterministic. The replay guarantee begins at the atomic context-operation commit.
 
 `modelRetry`, when configured, also bounds summarizer calls and invalid summary results with
 persisted attempts/backoff. Counter, quota, and journal errors are not provider retries. An

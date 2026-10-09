@@ -7,7 +7,11 @@ import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, expect, it, vi } from "vitest";
 import { Usage, type CompletionRequest } from "@anvia/core/completion";
-import { isMemoryCompactionMessage, type MemoryCompactor } from "@anvia/core/memory";
+import {
+  estimateMemoryTokens,
+  isMemoryCompactionMessage,
+  type MemoryCompactor,
+} from "@anvia/core/memory";
 import {
   DurableRuntime,
   type DurableAgentRegistration,
@@ -168,8 +172,8 @@ it.each([false, true])(
   },
 );
 
-it.each(["summary", "model"])(
-  "recovers after SIGKILL during %s without repeating tools or committed summaries",
+it.each(["summary", "prepared", "model"])(
+  "recovers after SIGKILL during %s without changing a committed projection or usage",
   async (stage) => {
     const dir = directory();
     const path = join(dir, "runs.sqlite");
@@ -195,26 +199,50 @@ it.each(["summary", "model"])(
     const exit = once(child, "exit");
     child.kill("SIGKILL");
     await exit;
-    const compactor = summarize();
+    // An uncommitted retry may return a different summary and usage. Once committed,
+    // neither callback may run again, even if it would return a different result.
+    const retryUsage = { ...Usage.empty(), inputTokens: 8, outputTokens: 3, totalTokens: 11 };
+    const compactor = vi.fn(async () => ({
+      summary: "Summary from the retry.",
+      usage: retryUsage,
+    }));
+    const tokenCounter = vi.fn((messages: Parameters<typeof estimateMemoryTokens>[0]) => {
+      if (stage === "model") throw new Error("Committed preparation must not call the counter");
+      return estimateMemoryTokens(messages);
+    });
     const tool = vi.fn(async () => large);
-    const model = vi.fn(async () => done());
+    const model = vi.fn(async (_request: CompletionRequest) => done());
     const runtime = await open(
       {
         agent: makeAgent(model, [lookup(tool)]),
         version: "1",
-        compaction: policy(compactor),
+        compaction: { ...policy(compactor), tokenCounter },
         toolRecovery: { lookup: "safe" },
       },
       path,
     );
-    await runtime.resume();
     const run = await runtime.getRun(id);
+    const before = await run.snapshot();
+    const savedContext = before.operations.find((operation) => operation.key === "0:context:2");
+    expect(savedContext?.status).toBe(stage === "model" ? "completed" : "started");
+    expect(before.run.usage.totalTokens).toBe(stage === "model" ? 10 : 3);
+    await runtime.resume();
     await run.result();
     expect(readFileSync(calls, "utf8")).toBe("tool\nsummary\n");
     expect(tool).not.toHaveBeenCalled();
-    expect(compactor).toHaveBeenCalledTimes(stage === "summary" ? 1 : 0);
+    expect(compactor).toHaveBeenCalledTimes(stage === "model" ? 0 : 1);
+    if (stage === "model") expect(tokenCounter).not.toHaveBeenCalled();
     expect(model).toHaveBeenCalledTimes(1);
-    expect((await run.snapshot()).run.usage.totalTokens).toBe(13);
+    const after = await run.snapshot();
+    expect(after.run.usage.totalTokens).toBe(stage === "model" ? 13 : 17);
+    const completedContext = after.operations.find((operation) => operation.key === "0:context:2");
+    if (stage === "model") expect(completedContext).toEqual(savedContext);
+    expect(model.mock.calls[0]![0].chatHistory).toContainEqual(
+      expect.objectContaining({
+        role: "system",
+        content: stage === "model" ? "Lookup found the answer." : "Summary from the retry.",
+      }),
+    );
     expect(
       runtime.events(id, 0).filter((event) => event.type === "compaction_completed"),
     ).toHaveLength(1);

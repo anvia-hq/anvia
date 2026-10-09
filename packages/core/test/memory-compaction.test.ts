@@ -1410,3 +1410,45 @@ describe("memory compaction", () => {
     ).toThrow("compaction capability");
   });
 });
+
+describe("summary compactor temperature", () => {
+  it.each([
+    [{}, 0],
+    [{ temperature: undefined }, 0],
+    [{ temperature: null }, undefined],
+    [{ temperature: 0 }, 0],
+    [{ temperature: 0.7 }, 0.7],
+  ] as const)("sends the requested temperature policy %j", async (options, expected) => {
+    const model = new QueueModel([response("summary")]);
+    const result = await createSummaryMemoryCompactor({ model, ...options })({
+      scope: { sessionId: "test" },
+      messages: [Message.user("Remember this")],
+    });
+    expect(result.summary).toBe("summary");
+    expect(result.usage).toEqual(response("summary").usage);
+    const request = model.requests[0]!;
+    expect(request.temperature).toBe(expected);
+    expect(Object.hasOwn(request, "temperature")).toBe(expected !== undefined);
+    expect(JSON.parse(JSON.stringify(request)).temperature).toBe(expected);
+  });
+
+  it("preserves a provider rejection of an explicit temperature", async () => {
+    const error = new Error("Unsupported temperature");
+    const model = new QueueModel([]);
+    const completion = vi.spyOn(model, "completion").mockRejectedValue(error);
+    await expect(
+      createSummaryMemoryCompactor({ model, temperature: 0.7, retries: false })({
+        scope: { sessionId: "test" },
+        messages: [Message.user("Remember this")],
+      }),
+    ).rejects.toMatchObject({ message: "Memory compaction model request failed.", cause: error });
+    expect(completion).toHaveBeenCalledTimes(1);
+    expect(completion.mock.calls[0]![0].temperature).toBe(0.7);
+  });
+
+  it.each([NaN, Infinity, -Infinity])("rejects invalid explicit temperature %s", (temperature) => {
+    expect(() => createSummaryMemoryCompactor({ model: new QueueModel([]), temperature })).toThrow(
+      /temperature/,
+    );
+  });
+});

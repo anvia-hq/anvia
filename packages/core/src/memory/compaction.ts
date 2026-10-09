@@ -36,9 +36,9 @@ export function createSummaryMemoryCompactor(
   options: CreateSummaryMemoryCompactorOptions,
 ): MemoryCompactor {
   const maxTokens = options.maxTokens ?? 1024;
-  const temperature = options.temperature ?? 0;
+  const temperature = options.temperature === undefined ? 0 : options.temperature;
   assertPositiveInteger(maxTokens, "maxTokens");
-  assertFiniteNumber(temperature, "temperature");
+  if (temperature !== null) assertFiniteNumber(temperature, "temperature");
 
   return async ({ messages, abortSignal }) => {
     try {
@@ -47,7 +47,7 @@ export function createSummaryMemoryCompactor(
         prompt: serializeMessagesForSummary(messages),
         instructions: options.instructions ?? defaultSummaryInstructions,
         maxTokens,
-        temperature,
+        ...(temperature === null ? {} : { temperature }),
         providerOptions: options.providerOptions,
         retries: options.retries,
         abortSignal,

@@ -8,6 +8,7 @@ import { DatabaseSync } from "node:sqlite";
 import { afterEach, expect, it, vi } from "vitest";
 import { Usage, type CompletionRequest } from "@anvia/core/completion";
 import {
+  createSummaryMemoryCompactor,
   estimateMemoryTokens,
   isMemoryCompactionMessage,
   type MemoryCompactor,
@@ -20,7 +21,14 @@ import {
 import { SqliteDurableStore } from "../src/sqlite.js";
 import { backupSqlite, restoreSqlite } from "../src/maintenance.js";
 import { parseDurableSnapshot } from "../src/protocol.js";
-import { done, lookup, makeAgent, makeStreamingAgent, toolResponse } from "./helpers.js";
+import {
+  capabilities,
+  done,
+  lookup,
+  makeAgent,
+  makeStreamingAgent,
+  toolResponse,
+} from "./helpers.js";
 
 const large = "payload".repeat(1000);
 const submission = {
@@ -98,12 +106,26 @@ it("compacts newly approved tool output while keeping the continuation and trans
 });
 
 it("cancels an in-flight summary without committing its projection or usage", async () => {
-  const compactor = vi.fn<MemoryCompactor>(async ({ abortSignal }) => {
-    await new Promise<void>((resolve) =>
-      abortSignal!.addEventListener("abort", () => resolve(), { once: true }),
-    );
-    return { summary: "Must not commit", usage };
-  });
+  const summaryCompletion = vi.fn(
+    async (request: CompletionRequest, options?: { abortSignal?: AbortSignal | undefined }) => {
+      expect(Object.hasOwn(request, "temperature")).toBe(false);
+      await new Promise<void>((resolve) =>
+        options!.abortSignal!.addEventListener("abort", () => resolve(), { once: true }),
+      );
+      return { ...done(), usage };
+    },
+  );
+  const compactor = vi.fn(
+    createSummaryMemoryCompactor({
+      model: {
+        provider: "test",
+        modelId: "no-temperature",
+        capabilities,
+        completion: summaryCompletion,
+      },
+      temperature: null,
+    }),
+  );
   const model = vi.fn(async () => toolResponse());
   const runtime = await open({
     agent: makeAgent(model, [lookup(async () => large)]),
@@ -111,7 +133,7 @@ it("cancels an in-flight summary without committing its projection or usage", as
     compaction: policy(compactor),
   });
   const run = await runtime.submit(submission);
-  await vi.waitFor(() => expect(compactor).toHaveBeenCalledTimes(1));
+  await vi.waitFor(() => expect(summaryCompletion).toHaveBeenCalledTimes(1));
   await run.cancel();
   await vi.waitFor(() => expect(runtime.health().activeRuns).toBe(0));
   expect((await run.snapshot()).run.usage.totalTokens).toBe(3);
@@ -140,7 +162,21 @@ it.each([false, true])(
           [lookup(tool)],
         )
       : makeAgent(completion, [lookup(tool)]);
-    const compactor = summarize();
+    const summaryCompletion = vi.fn(async (request: CompletionRequest) => {
+      if (Object.hasOwn(request, "temperature")) throw new Error("Unsupported temperature");
+      return { ...done(), usage };
+    });
+    const compactor = vi.fn(
+      createSummaryMemoryCompactor({
+        model: {
+          provider: "test",
+          modelId: "no-temperature",
+          capabilities,
+          completion: summaryCompletion,
+        },
+        temperature: null,
+      }),
+    );
     const runtime = await open({
       agent,
       version: "1",
@@ -157,6 +193,7 @@ it.each([false, true])(
     ).toHaveLength(2);
     expect(snapshot.run.outcome?.messages.some(isMemoryCompactionMessage)).toBe(false);
     expect(compactor).toHaveBeenCalledTimes(2);
+    expect(summaryCompletion).toHaveBeenCalledTimes(2);
     expect(tool).toHaveBeenCalledTimes(2);
     expect(requests[1]!.chatHistory.map((message) => message.role)).toEqual(["system", "user"]);
     expect(

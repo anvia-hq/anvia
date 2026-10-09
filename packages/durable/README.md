@@ -180,6 +180,7 @@ const runtime = await DurableRuntime.open({
         trigger: { afterTokens: 32_000 },
         retention: { recentTurns: 3, recentToolTurns: 0 },
         compactor: createSummaryMemoryCompactor({
+          temperature: null, // Omit for summary models that reject temperature.
           model: researcher.model,
           maxTokens: 2_000,
           retries: false,
@@ -217,6 +218,11 @@ The next session derives its projection from canonical history and the between-r
 Compaction never deletes or rewrites canonical history,
 and does not reduce journal storage requirements or bypass payload limits. Omitting compaction
 on a future registration sends the full canonical history again.
+
+`createSummaryMemoryCompactor` defaults to `temperature: 0`. Use `temperature: null` to
+omit the parameter; `undefined` retains the default. Upgrade `@anvia/core` to a release
+containing this option and configure it on the summary compactor (main-agent sampling
+settings do not control summary requests). No durable storage migration is required.
 
 The serializable policy is captured at submission. Restore the same compactor and token counter
 implementation after restart, and bump `registration.version` when either changes. A queued run

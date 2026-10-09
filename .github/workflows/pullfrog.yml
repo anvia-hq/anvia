@@ -28,9 +28,6 @@ jobs:
         uses: pullfrog/pullfrog@v0
         with:
           prompt: ${{ inputs.prompt }}
+          model: openrouter/meta/muse-spark-1.3-contributor
         env:
-          OPENAI_COMPATIBLE_BASE_URL: https://gateway.devscale.id/v1
-          OPENAI_COMPATIBLE_API_KEY: ${{ secrets.OPENAI_COMPATIBLE_API_KEY }}
-          OPENAI_COMPATIBLE_MODEL: gpt-6.1-sol
-          OPENAI_COMPATIBLE_CONTEXT: "1050000"
-          OPENAI_COMPATIBLE_MAX_OUTPUT: "131072"
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}

@@ -63,10 +63,13 @@ const clarify = createQuestionTool({ name: "clarify" }); // either option can be
 
 The defaults are also exported from `@anvia/core`. The description guides the model to ask only
 when it cannot proceed, batch questions, and use sensible defaults for routine choices.
+Supply nonblank custom names and descriptions. Defaults apply when an option is omitted;
+explicit strings, including blanks, are preserved for compatibility with existing callers.
 New tool calls accept 1–4 questions with unique, nonblank IDs and nonblank text. Optional choices
 must contain 2–4 entries with nonblank labels and unique, nonblank values. Values are trimmed
 before validation. Set `allowCustom: true` to allow answers outside the choices, or omit choices
-for free text. Snake-case IDs, question marks, and mutually exclusive choices are model guidance,
+for free text. A question without choices cannot set `allowCustom: false`.
+Snake-case IDs, question marks, and mutually exclusive choices are model guidance,
 not additional schema restrictions.
 
 The run returns a `type: "interaction"` outcome with a `tool-question` request and a continuation.

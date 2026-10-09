@@ -88,6 +88,9 @@ describe("createQuestionTool", () => {
     [{ name: "clarify", description: "Custom instructions" }, "clarify", "Custom instructions"],
     [{ name: "clarify" }, "clarify", DEFAULT_QUESTION_TOOL_DESCRIPTION],
     [{ description: "Custom instructions" }, "ask_user", "Custom instructions"],
+    [{ name: "" }, "", DEFAULT_QUESTION_TOOL_DESCRIPTION],
+    [{ description: "" }, "ask_user", ""],
+    [{ name: "  ", description: "  " }, "  ", "  "],
   ] as const)("respects independent overrides %j", async (options, name, description) => {
     expect(await createQuestionTool(options).definition("")).toMatchObject({ name, description });
   });
@@ -109,6 +112,11 @@ describe("createQuestionTool", () => {
     ["blank ID", [question("  ")], "Question IDs must not be empty"],
     ["empty text", [{ ...question(), text: "" }], "Question text must not be empty"],
     ["blank text", [{ ...question(), text: "  " }], "Question text must not be empty"],
+    [
+      "free text with custom answers disabled",
+      [{ ...question(), allowCustom: false }],
+      "A free-text question cannot disable custom answers",
+    ],
     ["no choices", [{ ...question(), choices: [] }], "at least 2 choices"],
     ["one choice", [{ ...question(), choices: choices(1) }], "at least 2 choices"],
     ["too many choices", [{ ...question(), choices: choices(5) }], "no more than 4 choices"],

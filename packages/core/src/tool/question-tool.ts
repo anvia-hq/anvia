@@ -40,7 +40,9 @@ export type QuestionToolOutput = {
 };
 
 export type CreateQuestionToolOptions = {
+  /** Defaults when omitted. Supply a nonblank name; explicit strings are preserved. */
   name?: string;
+  /** Defaults when omitted. Supply nonblank instructions; explicit strings are preserved. */
   description?: string;
 };
 
@@ -95,7 +97,16 @@ export function createQuestionTool(
                   .optional(),
                 allowCustom: z.boolean().optional(),
               })
-              .strict(),
+              .strict()
+              .superRefine((question, context) => {
+                if (question.choices === undefined && question.allowCustom === false) {
+                  context.addIssue({
+                    code: "custom",
+                    message: "A free-text question cannot disable custom answers.",
+                    path: ["allowCustom"],
+                  });
+                }
+              }),
           )
           .min(1, "Provide at least 1 question.")
           .max(4, "Ask no more than 4 questions per call.")

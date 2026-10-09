@@ -579,7 +579,8 @@ or exactly-once execution. Use `createQuestionTool()` when a model must ask for 
 or choice answers. It defaults to the name `ask_user` and instructions for asking only necessary
 questions. Override `name` and/or `description` as needed; both defaults are exported as
 `DEFAULT_QUESTION_TOOL_NAME` and `DEFAULT_QUESTION_TOOL_DESCRIPTION` from `@anvia/core/tool` and
-`@anvia/core`.
+`@anvia/core`. Supply nonblank overrides; defaults apply only to omitted options, and explicit
+strings (including blanks) retain their existing behavior.
 
 The tool's input accepts 1–4 questions with unique, nonblank `id`s and nonblank `text`. When present,
 `choices` must have 2–4 entries with nonblank `label`s and unique, nonblank `value`s. Strings are
@@ -589,7 +590,8 @@ These limits do not change parsing of stored interaction requests or continuatio
 
 Every question requires exactly one nonblank answer: unknown or duplicate question IDs and missing
 answers are rejected. Choice answers must use a configured value unless `allowCustom: true`;
-questions without choices accept free text. Do not tell users they can leave answers blank.
+questions without choices accept free text and cannot set `allowCustom: false`.
+Do not tell users they can leave answers blank.
 On resume, the model receives `{ answers: [{ questionId, value }] }` as the question tool's JSON
 result. The host application owns the question UI; the tool itself pauses the agent.
 

@@ -21,8 +21,8 @@ function validate(db: DatabaseSync): void {
   const version = db
     .prepare("SELECT version FROM anvia_durable_owner WHERE singleton = 1")
     .get()?.version;
-  if (version !== 3 && version !== 4)
-    throw new Error("Maintenance requires durable schema version 3 or 4.");
+  if (version !== 3 && version !== 4 && version !== 5)
+    throw new Error("Maintenance requires durable schema version 3, 4, or 5.");
 }
 function sync(path: string): void {
   const fd = openSync(path, "r");
@@ -91,7 +91,7 @@ export async function backupSqlite(
   try {
     owner.acquire();
     const db = new DatabaseSync(source, { readOnly: true });
-    const info = { createdAt: new Date().toISOString(), schemaVersion: 4 };
+    const info = { createdAt: new Date().toISOString(), schemaVersion: 5 };
     try {
       await copy(db, destination, (snapshot) => {
         snapshot.exec(
@@ -119,7 +119,7 @@ export async function restoreSqlite(
     const row = db.prepare("SELECT metadata FROM anvia_durable_backup").get();
     const info = JSON.parse(String(row?.metadata)) as DurableBackupInfo;
     if (
-      (info.schemaVersion !== 3 && info.schemaVersion !== 4) ||
+      (info.schemaVersion !== 3 && info.schemaVersion !== 4 && info.schemaVersion !== 5) ||
       info.schemaVersion !==
         db.prepare("SELECT version FROM anvia_durable_owner WHERE singleton = 1").get()?.version ||
       typeof info.createdAt !== "string" ||

@@ -160,8 +160,76 @@ exposed before schema validation, and the saved result arrives in `model_complet
 
 Persisting each exposed delta adds SQLite writes and retained event data. The payload limit
 applies to each delta; configure model output limits and database retention in the host application.
-SQLite schema 4 marks these new records; schemas 1–3 upgrade on acquisition. Older engines
-reject schema 4. Use the matching core release with execution protocol version 2.
+SQLite schema 5 includes streaming and compaction records; schemas 1–4 upgrade on acquisition.
+Older engines reject schema 5. Use the matching core release with execution protocol version 2.
+
+## Conversation compaction
+
+Configure `compaction` on the durable registration, rather than `Agent.memory`:
+
+```ts
+import { createSummaryMemoryCompactor } from "@anvia/core/memory";
+
+const runtime = await DurableRuntime.open({
+  store: new SqliteDurableStore("./anvia-runs.sqlite"),
+  agents: [
+    {
+      agent: researcher,
+      version: "researcher-with-compaction-v1",
+      compaction: {
+        trigger: { afterTokens: 32_000 },
+        retention: { recentTurns: 3 },
+        compactor: createSummaryMemoryCompactor({
+          model: researcher.model,
+          maxTokens: 2_000,
+          retries: false,
+        }),
+      },
+    },
+  ],
+});
+```
+
+This is opt-in. A new session run first loads the latest completed history. If the
+model-facing projection plus the incoming prompt exceeds `trigger.afterTokens`, the runtime
+summarizes an older prefix and retains complete user-led turns (default one; zero is allowed).
+A user message and all its following assistant/tool messages remain together. No older prefix
+means compaction is skipped. A later compaction includes the previous summary and advances its
+covered-message count. Graph tasks have independent dependency-enriched input and are not compacted.
+
+The default counter is core's approximate `estimateMemoryTokens`. Supply `tokenCounter` for a
+model-specific count; it must be deterministic, return a nonnegative safe integer, and honor the
+same semantics after restart. The threshold covers history and the incoming prompt, not agent
+instructions, tool schemas, or output reservations. Budget for those separately. Compaction runs
+only before the initial model call of a submission, not within its tool loop or approval
+continuations. It does not guarantee that a large incoming prompt, retained turn, or subsequent
+tool result fits the model window. There is no manual-compaction API in this release.
+
+`run.history` and `outcome.messages` retain canonical messages. `run.contextCheckpoint` contains
+only the latest summary and the number of canonical history messages it covers; `run.input`
+contains the model-facing projection. Compaction never deletes or rewrites canonical history,
+and does not reduce journal storage requirements or bypass payload limits. Omitting compaction
+on a future registration sends the full canonical history again.
+
+The serializable policy is captured at submission. Restore the same compactor and token counter
+implementation after restart, and bump `registration.version` when either changes. A queued run
+selects its predecessor's checkpoint when it starts. The summary, prepared input, successful
+summary usage, and `compaction_completed` event commit atomically. Even a skipped preparation is
+persisted, so retries cannot change the model input. Approved continuations reuse their saved
+context. Failed or cancelled runs do not advance the next run's conversation checkpoint.
+
+`compaction_started` and `compaction_completed` are persisted progress events. Completion includes
+core's `MemoryCompactionInfo` token/message counts and usage; counts describe the projection,
+while the checkpoint's count refers to canonical messages. Successful summary usage is added once
+to the run total, without consuming its main-model turn budget. An interrupted, uncommitted
+summary may be requested again and incur another provider charge; its unknown usage cannot be
+reconstructed. Compactors must be safe to repeat and honor `abortSignal`.
+
+`modelRetry`, when configured, also bounds summarizer calls and invalid summary results with
+persisted attempts/backoff. Counter, quota, and journal errors are not provider retries. An
+empty summary fails before the main model call and leaves canonical history intact. Explicit
+`run.retry()` resets unfinished model and compaction attempt budgets while preserving committed
+results. Compaction does not enable the otherwise unsupported agent memory/lifecycle callbacks.
 
 ## What survives a restart
 

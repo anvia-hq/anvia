@@ -48,7 +48,7 @@ export class SqliteDurableStore implements DurableStore {
           singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
           version INTEGER NOT NULL, token TEXT, pid INTEGER, host TEXT
         );
-        INSERT OR IGNORE INTO anvia_durable_owner(singleton, version) VALUES (1, 4);
+        INSERT OR IGNORE INTO anvia_durable_owner(singleton, version) VALUES (1, 5);
         CREATE TABLE IF NOT EXISTS anvia_durable_runs (
           id TEXT PRIMARY KEY, session_id TEXT NOT NULL, request_id TEXT NOT NULL,
           status TEXT NOT NULL, record TEXT NOT NULL,
@@ -79,7 +79,8 @@ export class SqliteDurableStore implements DurableStore {
         version?.version !== 1 &&
         version?.version !== 2 &&
         version?.version !== 3 &&
-        version?.version !== 4
+        version?.version !== 4 &&
+        version?.version !== 5
       )
         throw new Error("Unsupported durable database schema version.");
     } catch (error) {
@@ -102,7 +103,7 @@ export class SqliteDurableStore implements DurableStore {
       }
       this.database
         .prepare(
-          "UPDATE anvia_durable_owner SET token = ?, pid = ?, host = ?, version = 4 WHERE singleton = 1",
+          "UPDATE anvia_durable_owner SET token = ?, pid = ?, host = ?, version = 5 WHERE singleton = 1",
         )
         .run(this.token, process.pid, hostname());
     });

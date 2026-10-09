@@ -151,3 +151,24 @@ no transient classifier or jitter. Observer/local post-processing failures do no
 retries. Tool failures and storage failures use different recovery
 paths. An explicit `run.retry()` resets unfinished model-attempt counters, not completed results.
 Do not use an unbounded application retry loop around an uncertain external operation.
+
+## Durable conversation compaction
+
+Configure `compaction` on `DurableAgentRegistration`, not on `Agent.memory`. It accepts
+`trigger: { afterTokens }`, optional `retention: { recentTurns }` (default one), a
+`MemoryCompactor` such as `createSummaryMemoryCompactor({ model, retries: false })`, and an
+optional deterministic `tokenCounter`. Policy is captured at submission; restore matching
+callbacks and bump registration version for incompatible changes.
+
+The runtime summarizes completed history before a new run, preserving the canonical transcript
+in `run.history` and storing a separate `contextCheckpoint`. Prepared input and successful
+summary usage commit atomically with `compaction_completed`; replay and approval continuations
+reuse them. `compaction_started` records intent. Uncommitted summary calls may repeat after a
+crash, so compactors must be safe to repeat and honor cancellation. `modelRetry` also governs
+summary failures; explicit retry resets unfinished summary attempts.
+
+This is between-run compaction only. It skips graph tasks, does not compact a live tool loop,
+and provides no manual API. Thresholds count history plus the prompt; the host must reserve
+space for instructions, schemas, output, and tool growth. Canonical storage and payload limits
+remain unchanged. SQLite schemas 1–4 upgrade to schema 5 on acquisition; older runtimes cannot
+read the upgraded database.

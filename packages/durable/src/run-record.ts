@@ -20,6 +20,16 @@ export function createRunRecord(
     maxModelTurns: (registration.agent.defaultMaxTurns ?? 0) + 1,
     usage: Usage.empty(),
     history: [],
+    ...(registration.compaction === undefined
+      ? {}
+      : {
+          compaction: {
+            trigger: { ...registration.compaction.trigger },
+            ...(registration.compaction.retention === undefined
+              ? {}
+              : { retention: { ...registration.compaction.retention } }),
+          },
+        }),
     responses: {},
     ...(registration.stream === undefined ? {} : { stream: registration.stream }),
     ...(registration.modelRetry === undefined

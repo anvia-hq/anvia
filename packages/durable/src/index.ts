@@ -27,6 +27,9 @@ export {
 } from "./errors.js";
 export type {
   DurableAgentRegistration,
+  DurableCompactionOptions,
+  DurableCompactionPolicy,
+  DurableContextCheckpoint,
   DurableListOptions,
   DurableRunPage,
   DurableRunScope,

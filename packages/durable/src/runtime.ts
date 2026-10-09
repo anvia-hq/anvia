@@ -32,6 +32,7 @@ import {
   DurableStorageError,
   DurableLimitError,
 } from "./errors.js";
+import { prepareContext } from "./compaction.js";
 import { createExecution } from "./execution.js";
 import { errorMessage, json, nonblank, sameJson } from "./json.js";
 import { listOptionsSchema } from "./schema.js";
@@ -466,7 +467,10 @@ export class DurableRuntime {
       if (tx.hasLaterStartedRun(id))
         throw new DurableConflictError("Session has advanced; create a new submission.");
       for (const operation of tx.operations(id)) {
-        if (operation.kind === "model" && operation.status === "started")
+        if (
+          (operation.kind === "model" || operation.kind === "compaction") &&
+          operation.status === "started"
+        )
           tx.putOperation(id, { ...operation, attempts: 0 });
       }
       delete run.error;
@@ -565,6 +569,8 @@ export class DurableRuntime {
             previous === undefined
               ? []
               : [...previous.history, ...(previous.outcome?.messages ?? [])];
+          if (previous?.contextCheckpoint !== undefined)
+            current.contextCheckpoint = previous.contextCheckpoint;
           current.input = {
             messages: [...current.history, promptMessage(current.prompt)],
           };
@@ -586,6 +592,7 @@ export class DurableRuntime {
           "The saved agent version is not registered. Restore it before retrying.",
         );
       }
+      await prepareContext(this.store, run, registration, signal);
       const options = withInternalAgentRunOptions(
         {
           ...run.input,

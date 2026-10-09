@@ -67,6 +67,24 @@ export const modelRetrySchema = z
     (value) => value.maxDelayMs >= value.initialDelayMs,
     "maxDelayMs must be at least initialDelayMs",
   );
+export const compactionPolicySchema = z
+  .object({
+    trigger: z
+      .object({ afterTokens: z.number().int().positive().max(Number.MAX_SAFE_INTEGER) })
+      .strict(),
+    retention: z
+      .object({ recentTurns: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER) })
+      .strict()
+      .optional(),
+  })
+  .strict();
+export const contextCheckpointSchema = z
+  .object({
+    summary: z.string().trim().min(1),
+    compactedMessageCount: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  })
+  .strict();
+
 export const listOptionsSchema = z
   .object({
     sessionId: id.optional(),
@@ -98,6 +116,9 @@ const runSchema = z
     maxModelTurns: count,
     usage,
     history: messagesSchema,
+    compaction: compactionPolicySchema.optional(),
+    contextCheckpoint: contextCheckpointSchema.optional(),
+    contextPrepared: z.boolean().optional(),
     responses: z.record(z.string(), jsonValue),
     input: z.union([
       z.object({ messages: messagesSchema.min(1) }).strict(),
@@ -131,13 +152,15 @@ export function parseRun(value: unknown): DurableRunRecord {
     (run.outcome === undefined || run.outcome.type === "interaction")
   )
     throw new Error("Completed run has no terminal outcome.");
+  if ((run.contextCheckpoint?.compactedMessageCount ?? 0) > run.history.length)
+    throw new Error("Compaction checkpoint exceeds canonical history.");
   return run;
 }
 
 const operationSchema = z
   .object({
     key: id,
-    kind: z.enum(["model", "tool", "effect"]),
+    kind: z.enum(["model", "tool", "effect", "compaction"]),
     input: jsonValue,
     status: z.enum(["started", "completed"]),
     recovery: z.enum(["safe", "idempotent", "manual"]),
@@ -157,6 +180,8 @@ export function parseOperation(value: unknown): DurableOperation {
       .passthrough()
       .parse(operation.result);
     parseMessage({ role: "assistant", content: result.choice });
+  } else if (operation.kind === "compaction") {
+    contextCheckpointSchema.parse(operation.result);
   } else if (operation.kind === "tool") {
     const result = z
       .discriminatedUnion("failed", [
@@ -184,4 +209,6 @@ export const eventTypeSchema = z.enum([
   "model_completed",
   "tool_started",
   "tool_completed",
+  "compaction_started",
+  "compaction_completed",
 ]);

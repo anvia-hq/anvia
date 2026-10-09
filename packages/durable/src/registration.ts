@@ -1,6 +1,6 @@
 import { AGENT_RUN_EXECUTION_VERSION, getResolvedAgentOptions } from "@anvia/core/internal/agent";
 import { isStreamingCompletionModel } from "@anvia/core/completion";
-import { modelRetrySchema } from "./schema.js";
+import { compactionPolicySchema, modelRetrySchema } from "./schema.js";
 import { nonblank } from "./json.js";
 import type { DurableAgentRegistration } from "./types.js";
 
@@ -42,11 +42,30 @@ export function registrations(
       if (policy !== "safe" && policy !== "idempotent" && policy !== "manual")
         throw new TypeError(`Invalid recovery policy for ${name}`);
     }
+    let compaction;
+    if (registration.compaction !== undefined) {
+      const { compactor, tokenCounter, ...policy } = registration.compaction;
+      if (
+        typeof compactor !== "function" ||
+        (tokenCounter !== undefined && typeof tokenCounter !== "function")
+      )
+        throw new TypeError(
+          "Durable compaction requires a compactor and an optional token counter.",
+        );
+      const parsed = compactionPolicySchema.parse(policy);
+      compaction = {
+        trigger: parsed.trigger,
+        ...(parsed.retention === undefined ? {} : { retention: parsed.retention }),
+        compactor,
+        ...(tokenCounter === undefined ? {} : { tokenCounter }),
+      };
+    }
     result.set(agent.id, {
       agent,
       version: registration.version,
       ...(registration.stream === undefined ? {} : { stream: registration.stream }),
       toolRecovery: { ...registration.toolRecovery },
+      ...(compaction === undefined ? {} : { compaction }),
       ...(registration.modelRetry === undefined
         ? {}
         : { modelRetry: modelRetrySchema.parse(registration.modelRetry) }),

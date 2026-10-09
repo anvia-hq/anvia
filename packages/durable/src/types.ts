@@ -8,10 +8,30 @@ import type {
 import type { RegisteredTask, TaskListOptions, TaskPage, TaskTransaction } from "./tasks/types.js";
 import type { Agent, AgentInput, AgentOutcome, AgentPrompt } from "@anvia/core/agent";
 import type { JsonValue, Message, Usage } from "@anvia/core/completion";
+import type { MemoryCompactor, MemoryTokenCounter } from "@anvia/core/memory";
+
+/** Serializable policy captured when a run is submitted. */
+export type DurableCompactionPolicy = {
+  trigger: { afterTokens: number };
+  /** Complete user-led turns to retain. Defaults to one. */
+  retention?: { recentTurns: number };
+};
+
+/** Compacts completed session history before a new run, never an active continuation. */
+export type DurableCompactionOptions = DurableCompactionPolicy & {
+  compactor: MemoryCompactor;
+  tokenCounter?: MemoryTokenCounter;
+};
+
+/** Summary projection; the covered canonical messages remain in run.history. */
+export type DurableContextCheckpoint = {
+  summary: string;
+  compactedMessageCount: number;
+};
 
 export type ToolRecovery = "safe" | "idempotent" | "manual";
 
-/** Opt-in retries for model execution/validation errors; observer and journal failures are excluded. */
+/** Opt-in retries for model/compactor errors; observer and journal failures are excluded. */
 export type DurableModelRetry = {
   maxAttempts: number;
   initialDelayMs: number;
@@ -27,6 +47,8 @@ export type DurableAgentRegistration = {
   /** Unlisted tools require reconciliation if interrupted after their intent was committed. */
   toolRecovery?: Readonly<Record<string, ToolRecovery>>;
   modelRetry?: DurableModelRetry;
+  /** Bump registration.version when the compactor or token counter changes. */
+  compaction?: DurableCompactionOptions;
 };
 
 export type DurableRunStatus =
@@ -65,6 +87,10 @@ export type DurableRunRecord = DurableSubmission & {
   usage: Usage;
   /** Canonical history before this submission, retained across interaction continuations. */
   history: Message[];
+  compaction?: DurableCompactionPolicy;
+  contextCheckpoint?: DurableContextCheckpoint;
+  /** Freezes even a skipped compaction decision across retries. */
+  contextPrepared?: boolean;
   outcome?: AgentOutcome<unknown>;
   error?: string;
   blockedOperation?: string;
@@ -77,7 +103,7 @@ export type DurableRunRecord = DurableSubmission & {
 
 export type DurableOperation = {
   key: string;
-  kind: "model" | "tool" | "effect";
+  kind: "model" | "tool" | "effect" | "compaction";
   input: JsonValue;
   status: "started" | "completed";
   recovery: ToolRecovery;
@@ -131,7 +157,9 @@ export type DurableEvent = {
     | "model_attempt_failed"
     | "model_completed"
     | "tool_started"
-    | "tool_completed";
+    | "tool_completed"
+    | "compaction_started"
+    | "compaction_completed";
   data: JsonValue;
 };
 

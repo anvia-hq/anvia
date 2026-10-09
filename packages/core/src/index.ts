@@ -229,7 +229,13 @@ export type {
   ToolCallStreamEvent,
   ToolRequiresApproval,
 } from "./tool/index";
-export { createQuestionTool, createThinkTool, createTool } from "./tool/index";
+export {
+  createQuestionTool,
+  createThinkTool,
+  createTool,
+  DEFAULT_QUESTION_TOOL_NAME,
+  DEFAULT_QUESTION_TOOL_DESCRIPTION,
+} from "./tool/index";
 export type {
   AgentMiddleware,
   CompletionRequestMiddlewareArgs,

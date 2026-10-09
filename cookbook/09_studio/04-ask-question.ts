@@ -1,5 +1,5 @@
 import { Agent } from "@anvia/core/agent";
-import { createTool } from "@anvia/core/tool";
+import { createQuestionTool, createTool } from "@anvia/core/tool";
 import { OpenAIClient } from "@anvia/openai";
 import { Studio } from "@anvia/studio";
 import { z } from "zod";
@@ -9,45 +9,7 @@ const client = new OpenAIClient({
   apiKey: process.env.OPENAI_API_KEY ?? "",
 });
 
-const questionChoiceSchema = z.object({
-  label: z.string().describe("The visible choice label."),
-  value: z.string().describe("The value returned to the model if selected."),
-});
-
-const askQuestion = createTool({
-  name: "ask_question",
-  description: "Ask the human operator one or more follow-up questions. Always include choices.",
-  inputSchema: z.object({
-    questions: z.array(
-      z.object({
-        id: z.string().describe("Stable id for this question."),
-        question: z.string().describe("The question to show to the human operator."),
-        choices: z
-          .array(questionChoiceSchema)
-          .min(1)
-          .describe("Choices to show before a custom input."),
-      }),
-    ),
-  }),
-  outputSchema: z.object({
-    answers: z.array(
-      z.object({
-        questionId: z.string(),
-        answer: z.string(),
-        choice: z.string().optional(),
-        custom: z.boolean().optional(),
-      }),
-    ),
-  }),
-  async execute({ questions }) {
-    return {
-      answers: questions.map((question) => ({
-        questionId: question.id,
-        answer: "No human answer was provided by this runtime.",
-      })),
-    };
-  },
-});
+const askQuestion = createQuestionTool();
 
 const prepareEscalation = createTool({
   name: "prepare_escalation",
@@ -75,10 +37,10 @@ const agent = new Agent({
   name: "Studio Human Feedback",
   description: "Collects missing operator input through Studio before acting.",
   instructions: [
-    "Use ask_question when priority, channel, or operator context is missing.",
-    "Ask multiple questions in one ask_question call when you need multiple answers.",
+    "Use ask_user when priority, channel, or operator context is missing.",
+    "Ask multiple questions in one ask_user call when you need multiple answers.",
     "Use choices for bounded decisions.",
-    "Studio always shows a custom input after the choices.",
+    "Set allowCustom: true when an answer outside the choices is useful; omit choices for free text.",
     "After the human answers, call prepare_escalation with the confirmed values.",
     "Keep the final answer concise.",
   ].join("\n"),

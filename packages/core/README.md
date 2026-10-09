@@ -46,6 +46,39 @@ if (result.type === "response") console.log(result.output);
 Replace the sample tool body with your application's data access. Agent outcomes distinguish a
 response, a guardrail block, and an interaction that needs application input.
 
+## Ask the user a question
+
+Add `createQuestionTool()` to an agent's `tools` to let it ask for missing information:
+
+```ts
+import {
+  createQuestionTool,
+  DEFAULT_QUESTION_TOOL_NAME,
+  DEFAULT_QUESTION_TOOL_DESCRIPTION,
+} from "@anvia/core/tool";
+
+const askUser = createQuestionTool(); // name: "ask_user", with built-in model instructions
+const clarify = createQuestionTool({ name: "clarify" }); // either option can be overridden
+```
+
+The defaults are also exported from `@anvia/core`. The description guides the model to ask only
+when it cannot proceed, batch questions, and use sensible defaults for routine choices.
+New tool calls accept 1–4 questions with unique, nonblank IDs and nonblank text. Optional choices
+must contain 2–4 entries with nonblank labels and unique, nonblank values. Values are trimmed
+before validation. Set `allowCustom: true` to allow answers outside the choices, or omit choices
+for free text. Snake-case IDs, question marks, and mutually exclusive choices are model guidance,
+not additional schema restrictions.
+
+The run returns a `type: "interaction"` outcome with a `tool-question` request and a continuation.
+Collect a nonblank answer for every question, then resume with the continuation and
+`{ type: "tool-question", answers: [{ questionId, value }] }`. The model receives
+`{ answers: [...] }` as the tool result. Calling the question tool directly does not prompt a UI;
+your application renders the interaction and supplies the answers.
+
+Stored interaction requests and continuations keep their existing parsing rules; the new array
+limits apply only to new tool inputs. See the [interaction guide](../../docs/packages/core.md)
+for the resume protocol.
+
 ## What you can build
 
 - Agents with typed tools, approvals, questions, guardrails, and streaming responses.

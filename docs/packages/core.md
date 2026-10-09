@@ -575,8 +575,23 @@ switch (outcome.type) {
 
 Keep continuations server-side. A resumed phase receives a new `runId`; Core validates the
 continuation and current Agent/tool registration but does not provide a durable continuation store
-or exactly-once execution. Use `createQuestionTool({ name, description })` when a model must ask for
-structured free-text or choice answers.
+or exactly-once execution. Use `createQuestionTool()` when a model must ask for structured free-text
+or choice answers. It defaults to the name `ask_user` and instructions for asking only necessary
+questions. Override `name` and/or `description` as needed; both defaults are exported as
+`DEFAULT_QUESTION_TOOL_NAME` and `DEFAULT_QUESTION_TOOL_DESCRIPTION` from `@anvia/core/tool` and
+`@anvia/core`.
+
+The tool's input accepts 1–4 questions with unique, nonblank `id`s and nonblank `text`. When present,
+`choices` must have 2–4 entries with nonblank `label`s and unique, nonblank `value`s. Strings are
+trimmed before validation, including uniqueness checks. The model-facing schema includes the
+array limits, and invalid calls return a tool error for correction rather than suspending the run.
+These limits do not change parsing of stored interaction requests or continuations.
+
+Every question requires exactly one nonblank answer: unknown or duplicate question IDs and missing
+answers are rejected. Choice answers must use a configured value unless `allowCustom: true`;
+questions without choices accept free text. Do not tell users they can leave answers blank.
+On resume, the model receives `{ answers: [{ questionId, value }] }` as the question tool's JSON
+result. The host application owns the question UI; the tool itself pauses the agent.
 
 Import JSON-safe interaction contracts and parsers from their browser-safe subpath. This entrypoint
 does not load the Agent runtime, MCP clients, or Node infrastructure:

@@ -333,6 +333,11 @@ describe("public exports", () => {
     expect(completion).not.toHaveProperty("createCompletionStream");
     expect(completion).not.toHaveProperty("Message");
     expect(tool).toHaveProperty("createQuestionTool");
+    expect(tool).toHaveProperty("DEFAULT_QUESTION_TOOL_NAME", "ask_user");
+    expect(publicCore).toHaveProperty("DEFAULT_QUESTION_TOOL_NAME", "ask_user");
+    expect(publicCore.DEFAULT_QUESTION_TOOL_DESCRIPTION).toBe(
+      tool.DEFAULT_QUESTION_TOOL_DESCRIPTION,
+    );
     expect(completion).toHaveProperty("parseMessage");
     expect(completion).toHaveProperty("messagesSchema");
     expect(embeddings).toHaveProperty("embedText");

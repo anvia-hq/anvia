@@ -132,6 +132,10 @@ const runSchema = z
     ]),
     outcome: outcome.optional(),
     error: z.string().optional(),
+    exhaustion: z
+      .object({ reason: z.literal("max_turns"), messages: messagesSchema })
+      .strict()
+      .optional(),
     blockedOperation: id.optional(),
     modelRetry: modelRetrySchema.optional(),
     nextAttemptAt: z.iso.datetime().optional(),

@@ -309,7 +309,8 @@ describe("durable submissions", () => {
     const outcome = (await run.snapshot()).run.outcome;
     if (outcome?.type !== "interaction") throw new Error("Missing approval");
     await run.respond(outcome.interaction.id, { type: "tool-approval", approved: true });
-    await expect(run.result()).rejects.toThrow("model-turn budget");
+    await expect(run.result()).rejects.toThrow("max turn limit");
+    expect((await run.snapshot()).run.exhaustion?.reason).toBe("max_turns");
     expect(tool).toHaveBeenCalledTimes(1);
     expect((await run.snapshot()).run.modelTurns).toBe(1);
   });

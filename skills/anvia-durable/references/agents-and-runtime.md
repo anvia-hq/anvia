@@ -174,5 +174,5 @@ save projected messages, usage, and events, including skipped decisions. Approva
 carry the prior projection. Legacy submissions retain their previous request sequence on recovery.
 Graph tasks remain excluded and there is no manual API. Thresholds count messages; reserve room
 for instructions, schemas, output, and retained tool results. Canonical storage and payload limits
-remain unchanged. SQLite schemas 1–5 upgrade to schema 6; older runtimes cannot read that database.
+remain unchanged. SQLite schemas 1–6 upgrade to schema 7; older runtimes cannot read that database.
 Upgrade core and durable together for execution protocol version 3.

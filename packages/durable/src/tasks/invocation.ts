@@ -1,4 +1,3 @@
-import type { AgentPrompt } from "@anvia/core/agent";
 import type { JsonValue } from "@anvia/core/completion";
 import {
   DurableConflictError,
@@ -9,7 +8,7 @@ import {
 import { json, sameJson } from "../json.js";
 import type { DurableStore, DurableTransaction, ToolRecovery } from "../types.js";
 import { createTask, requireTask, taskKey } from "./state.js";
-import type { RegisteredTask, TaskContext, TaskRecord } from "./types.js";
+import type { RegisteredTask, TaskAgentInput, TaskContext, TaskRecord } from "./types.js";
 
 export function taskInvocation(
   store: DurableStore,
@@ -21,7 +20,7 @@ export function taskInvocation(
     tx: DurableTransaction,
     parent: TaskRecord,
     key: string,
-    input: { agentId: string; prompt: AgentPrompt },
+    input: TaskAgentInput,
   ) => string,
 ) {
   let open = true;
@@ -136,6 +135,17 @@ export function taskInvocation(
     children: () => {
       assertActive();
       return transaction((tx) => tx.taskChildren(task.id));
+    },
+    agentRun: (childId) => {
+      assertActive();
+      return transaction((tx) => {
+        const child = requireTask(tx, childId);
+        if (child.parentId !== task.id || child.agentRunId === undefined)
+          throw new DurableConflictError("Expected a direct owned agent child.");
+        const run = tx.getRun(child.agentRunId);
+        if (run === undefined) throw new DurableRecoveryError("Owned agent run is missing.");
+        return run;
+      });
     },
     signalValue: (name) => {
       assertActive();

@@ -1,4 +1,5 @@
 import { createContextPreparation } from "./loop-context.js";
+import { MaxTurnsError } from "@anvia/core/agent";
 import {
   Usage,
   type CompletionRequest,
@@ -30,6 +31,7 @@ export function createExecution(
   const prefix = `${run.epoch}:`;
   let modelPhase = 0;
   const check = () => signal.throwIfAborted();
+  const prepare = createContextPreparation(store, run, registration, signal);
 
   function start(
     key: string,
@@ -139,7 +141,19 @@ export function createExecution(
   }
 
   return {
-    prepareMessages: createContextPreparation(store, run, registration, signal),
+    async prepareMessages(turn, messages, checkpoint) {
+      // Check before compaction too: an exhausted session must not spend another model call.
+      const exhausted = store.transaction((tx) => {
+        const current = tx.getRun(run.id)!;
+        return (
+          current.modelTurns >= current.maxModelTurns &&
+          tx.getOperation(run.id, `${prefix}model:${turn}`) === undefined
+        );
+      });
+      if (exhausted)
+        throw new MaxTurnsError(run.maxModelTurns - 1, [...messages], messages.at(-1)!);
+      return prepare(turn, messages, checkpoint);
+    },
     async completion(turn, request, execute) {
       const operation = modelOperation(turn, request);
       if (operation.status === "completed")

@@ -40,9 +40,14 @@ or a memory adapter becomes durable by being called inside another function.
    read [operations-and-http.md](references/operations-and-http.md).
 
 Use the installed package's public types to verify the examples against its version.
-These references describe the current schema-6 package, including operational controls and
+These references describe the current schema-7 package, including operational controls and
 custom-task HTTP APIs. An older npm release may not contain them; do not invent compatibility
 wrappers or silently remove guarantees. Use the matching workspace build or package release.
+
+For an objective spanning bounded agent sessions, read [goals.md](references/goals.md).
+Use `defineGoal()` registered in `tasks` and `runtime.submitGoal()`; require application-owned
+completion verification and respect the distinction between hard model-turn budgets and
+between-session token/deadline admission limits.
 
 ## Invariants that affect implementation
 

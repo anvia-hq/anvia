@@ -49,7 +49,14 @@ export function limitedTransaction(
       )
         throw new DurableLimitError("Pending durable run limit reached.");
       if (previous === undefined) payload(run.prompt);
-      for (const key of ["input", "history", "responses", "outcome", "contextCheckpoint"] as const)
+      for (const key of [
+        "input",
+        "history",
+        "responses",
+        "outcome",
+        "contextCheckpoint",
+        "exhaustion",
+      ] as const)
         if (JSON.stringify(previous?.[key]) !== JSON.stringify(run[key])) payload(run[key]);
       tx.putRun(run);
     },

@@ -1,4 +1,3 @@
-import type { AgentPrompt } from "@anvia/core/agent";
 import { promptSchema } from "../prompt.js";
 import { z } from "zod";
 import { isJsonValue, type JsonValue } from "@anvia/core/completion";
@@ -8,14 +7,18 @@ import { createRunRecord } from "../run-record.js";
 import type { DurableAgentRegistration, DurableTransaction } from "../types.js";
 import { defineTask } from "./definition.js";
 import { createTask, saveTask } from "./state.js";
-import type { TaskRecord } from "./types.js";
+import type { TaskAgentInput, TaskRecord } from "./types.js";
 
 export const TASK_SESSION_PREFIX = "__anvia_task__:";
 export const agentTask = defineTask({
   name: "anvia.agent",
   version: 1,
   input: z
-    .object({ agentId: z.string().min(1), prompt: z.union([z.string().min(1), promptSchema]) })
+    .object({
+      agentId: z.string().min(1),
+      prompt: z.union([z.string().min(1), promptSchema]),
+      maxModelTurns: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
+    })
     .strict(),
   checkpoint: z.null(),
   output: z.custom<JsonValue>(isJsonValue),
@@ -30,7 +33,7 @@ export function spawnAgent(
   agents: ReadonlyMap<string, DurableAgentRegistration>,
   parent: TaskRecord,
   key: string,
-  input: { agentId: string; prompt: AgentPrompt },
+  input: TaskAgentInput,
 ): string {
   const child = createTask(tx, agentTask.registration, input, parent.sessionId, key, parent.id);
   // Replaying a committed spawn needs its saved identity, not executable agent code.
@@ -47,6 +50,8 @@ export function spawnAgent(
     },
     registration,
   );
+  if (input.maxModelTurns !== undefined)
+    run.maxModelTurns = Math.min(run.maxModelTurns, input.maxModelTurns);
   tx.putRun(run);
   tx.appendEvent(run.id, "submitted", json({ taskId: child.id, prompt: input.prompt }));
   child.agentRunId = run.id;

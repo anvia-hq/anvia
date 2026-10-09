@@ -275,7 +275,7 @@ Existing `/runs/:id` routes authorize graph children against the graph's owning 
 not their generated execution session. Graph listing requires owning-session access.
 
 SQLite schema version 2 added graph records and dependency-aware scheduling. The current
-schema version 6 includes persisted per-model-call context projections. Version 1–5 stores upgrade
+schema version 7 includes persisted context projections and typed turn exhaustion. Version 1–6 stores upgrade
 on ownership acquisition, preserving existing runs. Older engines reject the upgraded database.
 Downgrading the database is unsupported.
 
@@ -437,7 +437,7 @@ Durable progress is not the existing token-delta chat protocol.
   They are not the authoritative execution journal.
 - Pipeline/team recovery, Studio integration,
   Postgres, retention, general migration tooling, and distributed worker deployment are follow-up work.
-  Database records are experimental; the task-aware engine upgrades schema 1–5 to 6 on acquisition. Older engines reject schema 6.
+  Database records are experimental; the task-aware engine upgrades schema 1–6 to 7 on acquisition. Older engines reject schema 7.
 
 ## Operational readiness
 

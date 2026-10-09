@@ -1,4 +1,7 @@
 import { parsePrompt, promptMessage } from "./prompt.js";
+import { MaxTurnsError } from "@anvia/core/agent";
+import type { DefinedGoal } from "./goals/definition.js";
+import type { GoalInput, GoalResult } from "./goals/schema.js";
 import { parseTaskSubmission, type TaskSubmission } from "./task-protocol.js";
 import { durableLimits, type DurableLimits } from "./limits.js";
 import { guardStore } from "./storage-guard.js";
@@ -162,6 +165,15 @@ export class DurableRuntime {
       if (this.store.list({ agentId: id, status, limit: 1 }).runs.length)
         throw new DurableConflictError(`Agent still has unfinished work: ${id}`);
     return this.agents.delete(id);
+  }
+
+  /** Submit one persistent objective using a goal definition registered in options.tasks. */
+  async submitGoal(
+    definition: DefinedGoal,
+    input: GoalInput & { sessionId: string; requestId: string },
+  ): Promise<DurableTaskHandle<GoalResult>> {
+    const { sessionId, requestId, ...goal } = input;
+    return this.submitTask(definition, { sessionId, requestId, input: goal });
   }
 
   async submitTask<I, S, R>(
@@ -477,6 +489,7 @@ export class DurableRuntime {
       }
       delete run.error;
       delete run.blockedOperation;
+      delete run.exhaustion;
       setStatus(tx, run, "pending");
     });
     this.pump();
@@ -619,6 +632,8 @@ export class DurableRuntime {
       this.store.transaction((tx) => {
         const current = requireRun(tx, id);
         current.error = errorMessage(error);
+        if (error instanceof MaxTurnsError)
+          current.exhaustion = { reason: "max_turns", messages: error.chatHistory };
         if (error instanceof DurableRecoveryError && error.operationId !== undefined)
           current.blockedOperation = error.operationId;
         if (

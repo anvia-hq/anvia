@@ -95,6 +95,8 @@ export type DurableRunRecord = DurableSubmission & {
   loopCompaction?: boolean;
   outcome?: AgentOutcome<unknown>;
   error?: string;
+  /** A turn limit is a failed session, with recoverable partial work for a goal controller. */
+  exhaustion?: { reason: "max_turns"; messages: Message[] };
   blockedOperation?: string;
   modelRetry?: DurableModelRetry;
   nextAttemptAt?: string;

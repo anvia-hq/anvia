@@ -160,8 +160,8 @@ exposed before schema validation, and the saved result arrives in `model_complet
 
 Persisting each exposed delta adds SQLite writes and retained event data. The payload limit
 applies to each delta; configure model output limits and database retention in the host application.
-SQLite schema 6 includes persisted per-model-call context projections; schemas 1–5 upgrade on acquisition.
-Older engines reject schema 6. Upgrade core and durable together: this runtime requires execution protocol version 3.
+SQLite schema 7 includes persisted context projections and typed turn exhaustion; schemas 1–6 upgrade on acquisition.
+Older engines reject schema 7. Upgrade core and durable together: this runtime requires execution protocol version 3.
 
 ## Conversation compaction
 
@@ -345,6 +345,14 @@ capacity; cancelling a tree fences new work and waits for owned callbacks to set
 emits committed tree changes. The HTTP/client integration also exposes custom-task submission,
 signals, reconciliation, cancellation, snapshots, and graph/event reads. See the
 [custom task guide](../../docs/packages/durable-tasks.md) for contracts, examples, and limits.
+
+## Goals spanning multiple sessions
+
+Register a `defineGoal()` controller in `tasks` and call `runtime.submitGoal()` to pursue an
+objective across bounded agent sessions. A required application assessor verifies progress and
+completion; persisted handoffs, cumulative model-turn budgets, token/deadline admission limits,
+and signal waits govern continuation. See the [durable goal guide](../../docs/packages/durable-goals.md)
+for recovery guarantees, budget semantics, and an example.
 
 ## Operational controls
 

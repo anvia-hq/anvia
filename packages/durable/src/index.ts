@@ -1,10 +1,28 @@
 export { DurableRuntime } from "./runtime.js";
+export { defineGoal } from "./goals/definition.js";
+export type {
+  DefinedGoal,
+  GoalDefinition,
+  GoalAssessment,
+  GoalSession,
+} from "./goals/definition.js";
+export { goalDecisionSchema, goalResumeSchema } from "./goals/schema.js";
+export type {
+  GoalLimits,
+  GoalDecision,
+  GoalInput,
+  GoalCheckpoint,
+  GoalResult,
+  GoalResume,
+  GoalPauseReason,
+} from "./goals/schema.js";
 export { defineTask } from "./tasks/definition.js";
 export { DurableTaskHandle } from "./tasks/handle.js";
 export type {
   DefinedTask,
   TaskDefinition,
   TaskContext,
+  TaskAgentInput,
   TaskTransition,
   TaskOutcome,
   TaskWait,

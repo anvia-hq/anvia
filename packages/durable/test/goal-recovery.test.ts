@@ -24,16 +24,20 @@ afterEach(async () => {
     rmSync(directory, { recursive: true, force: true });
 });
 
-it.each(["spawn", "assessment", "rollover"])(
-  "recovers after SIGKILL at the %s boundary without duplicating committed work",
-  async (boundary) => {
+it.each(
+  ["spawn", "assessment", "rollover"].flatMap((boundary) =>
+    ["default", "override", "legacy"].map((binding) => ({ boundary, binding })),
+  ),
+)(
+  "recovers after SIGKILL at $boundary with $binding binding without duplicating committed work",
+  async ({ boundary, binding }) => {
     const directory = mkdtempSync(join(tmpdir(), "anvia-goal-crash-"));
     directories.push(directory);
     const database = join(directory, "goals.sqlite");
     const log = join(directory, "work.txt");
     const worker = fork(
       fileURLToPath(new URL("./fixtures/goal-worker.ts", import.meta.url)),
-      [database, log, boundary],
+      [database, log, boundary, binding],
       {
         execArgv: ["--import", import.meta.resolve("tsx")],
         stdio: ["ignore", "ignore", "pipe", "ipc"],
@@ -52,7 +56,8 @@ it.each(["spawn", "assessment", "rollover"])(
     const exited = once(worker, "exit");
     worker.kill("SIGKILL");
     await exited;
-    const { goal, registration } = recoveryGoal(log);
+    const agentId = binding === "override" ? "per-user" : "researcher";
+    const { goal, registration } = recoveryGoal(log, agentId);
     const runtime = await DurableRuntime.open({
       store: new SqliteDurableStore(database),
       tasks: [goal],
@@ -60,12 +65,23 @@ it.each(["spawn", "assessment", "rollover"])(
     });
     runtimes.push(runtime);
     const handle = await runtime.getTask(id);
+    if (binding === "legacy") {
+      const { task, operations } = await handle.snapshot();
+      expect(task.input).not.toHaveProperty("agentId");
+      expect(task.checkpoint).not.toHaveProperty("agentId");
+      for (const operation of operations) expect(operation.input).not.toHaveProperty("agentId");
+    }
     const before = (await handle.graph()).nodes.map((node) => node.id);
     await runtime.resume();
     expect(await handle.result()).toMatchObject({ sessions: 2, modelTurns: 4, totalTokens: 12 });
     const after = (await handle.graph()).nodes.map((node) => node.id);
     expect(after).toHaveLength(3);
     expect(after).toEqual(expect.arrayContaining(before));
+    expect((await handle.snapshot()).task.checkpoint).toHaveProperty("agentId", agentId);
+    for (const child of (await handle.graph()).nodes.filter((node) => node.agentRunId))
+      expect((await (await runtime.getRun(child.agentRunId!)).snapshot()).run.agentId).toBe(
+        agentId,
+      );
     const lines = readFileSync(log, "utf8").trim().split("\n");
     expect(lines.filter((line) => line === "tool")).toHaveLength(2);
     expect(lines.filter((line) => line === "assess")).toHaveLength(2);

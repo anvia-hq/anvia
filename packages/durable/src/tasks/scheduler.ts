@@ -4,6 +4,7 @@ import {
   DurableRecoveryError,
   DurableStorageError,
   DurableLimitError,
+  DurableNotFoundError,
 } from "../errors.js";
 import { errorMessage, json, sameJson } from "../json.js";
 import type { DurableStore, DurableAgentRegistration } from "../types.js";
@@ -55,7 +56,13 @@ export class TaskScheduler {
     const definition = this.definitions.get(name);
     if (definition === undefined || definition.version !== version)
       throw new DurableConflictError(`Task definition/version is not registered: ${name}`);
-    const task = this.store.transaction((tx) => createTask(tx, definition, input, sessionId, key));
+    const task = this.store.transaction((tx) => {
+      const task = createTask(tx, definition, input, sessionId, key);
+      for (const agentId of definition.agentDependencies?.(task.input, task.checkpoint) ?? [])
+        if (!this.agents.has(agentId))
+          throw new DurableNotFoundError(`Unknown durable agent: ${agentId}`);
+      return task;
+    });
     this.pump();
     return task.id;
   }

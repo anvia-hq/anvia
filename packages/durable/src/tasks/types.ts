@@ -75,6 +75,8 @@ export type RegisteredTask = {
   parseCheckpoint(value: unknown): JsonValue;
   parseOutput(value: unknown): JsonValue;
   initial(input: JsonValue): JsonValue;
+  /** Agent registrations required at submission, including deduplicated submissions. */
+  agentDependencies?(input: JsonValue, checkpoint: JsonValue): readonly string[];
   run(context: TaskContext<JsonValue, JsonValue>): Promise<TaskTransition<JsonValue, JsonValue>>;
   migrate?: (
     input: JsonValue,

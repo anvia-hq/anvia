@@ -30,6 +30,7 @@ export const goalDecisionSchema = z
 
 export const goalInputSchema = z
   .object({
+    agentId: text.optional(),
     objective: text,
     acceptanceCriteria: z.array(text).min(1),
     limits: goalLimitsSchema,
@@ -48,6 +49,8 @@ export const goalPauseReasonSchema = z.enum([
 
 export const goalCheckpointSchema = z
   .object({
+    /** Captured on submission; absent only in goals persisted by older versions. */
+    agentId: text.optional(),
     phase: z.enum(["ready", "session", "paused"]),
     sessions: count,
     modelTurns: count,

@@ -3,7 +3,7 @@ import { Agent } from "@anvia/core/agent";
 import { defineGoal } from "../src/index.js";
 import { done, hasToolResult, lookup, makeAgent, toolResponse } from "./helpers.js";
 
-export function recoveryGoal(log: string) {
+export function recoveryGoal(log: string, agentId = "researcher") {
   const goal = defineGoal({
     name: "recovery-goal",
     version: 1,
@@ -20,7 +20,7 @@ export function recoveryGoal(log: string) {
     },
   });
   const agent = new Agent({
-    id: "researcher",
+    id: agentId,
     maxTurns: 1,
     model: makeAgent(async (request) => (hasToolResult(request) ? done() : toolResponse())).model,
     tools: [

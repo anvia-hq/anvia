@@ -52,7 +52,7 @@ console.log(result.handoff.evidence);
 ```
 
 `assess` is required and returns a `GoalDecision`, validated with `goalDecisionSchema`.
-It receives the original objective and criteria, the previous verified handoff, and a session
+It receives the effective `agentId`, original objective and criteria, previous verified handoff, and a session
 record containing output, messages, usage, model-turn count, and `response` or `exhausted` status.
 Use these as evidence for your application's checks. Returning `complete` is the trusted
 completion decision; merely returning a final model answer does not complete the goal.
@@ -69,6 +69,81 @@ and operator feedback. Raw transcripts are retained on child runs, not automatic
 to the next prompt. Put necessary artifact references and remaining work in `summary`, `next`,
 and `evidence`; use agent tools to load large artifacts. Existing registration compaction still
 applies inside each session. Compaction does not reset any turn budget.
+
+## Per-submission agents
+
+`agentId` is optional in both `defineGoal()` and the submission. The submission overrides the
+definition's default: `input.agentId ?? policy.agentId`. Register one goal definition at startup,
+then register a captured agent for each user or request before submitting its goal:
+
+```ts
+const buildForUser = defineGoal({
+  name: "user-build",
+  version: 1,
+  assess: async ({ agentId, acceptanceCriteria }, signal) => {
+    // Application-owned verification scoped to the captured agent's work.
+    const check = await verifyUserProject(agentId, acceptanceCriteria, { signal });
+    return {
+      status: check.passed ? "complete" : "continue",
+      progressKey: check.artifactHash,
+      summary: check.summary,
+      next: check.nextAction,
+      evidence: check.evidence,
+    };
+  },
+});
+const runtime = await DurableRuntime.open({
+  store: new SqliteDurableStore("./user-goals.sqlite"),
+  tasks: [buildForUser],
+});
+
+// userAgent is an application-created Agent with a unique ID and captured user/request tools.
+runtime.registerAgents([{ agent: userAgent, version: "user-builder-v1" }]);
+const goal = await runtime.submitGoal(buildForUser, {
+  agentId: userAgent.id,
+  sessionId: "user-42/project-7",
+  requestId: "build-search",
+  objective: "Implement search",
+  acceptanceCriteria: ["Search acceptance tests pass"],
+  limits: {
+    maxSessions: 100,
+    maxTotalModelTurns: 10_000,
+    maxConsecutiveNoProgressSessions: 3,
+  },
+});
+```
+
+Submission rejects a missing effective ID or an agent that is not currently registered, without
+persisting a new goal. This also applies to `submitTask()` and `submitRegisteredTask()`; for the
+task HTTP/client API put `agentId` inside the submission's `input` object alongside `objective`,
+`acceptanceCriteria`, and `limits`. An agent ID selects a registration; the application remains
+responsible for authorizing that choice for the submitting user.
+
+Each new goal captures its effective agent ID in its initial checkpoint, including when it uses
+the definition's default. All later sessions and assessments use that saved ID. Changing a
+definition's default does not redirect an existing goal, and two goals using one definition can
+run different agents. Original submission inputs remain unchanged for request deduplication.
+
+Restore the captured registration with the same ID and compatible version/tools after a restart.
+If it is missing when a new session is spawned, the goal enters `needs_attention`; re-register it
+and call the goal task handle's `retry()`. If an already-created child run needs attention, restore
+its registration and retry that run with `run.retry()`. Registration alone does not retry work.
+The runtime does not fall back to another agent.
+
+### Existing goals and versions
+
+The strict input and checkpoint schemas accept an optional `agentId`; unknown fields are still
+rejected. Goals persisted before this feature have neither field and retain their definition's
+`policy.agentId`. On their first recovered phase, that ID is pinned in the checkpoint before any
+new work. Keep the original default when restoring those legacy goals.
+
+No SQLite schema or goal definition version bump is required for this additive change. Existing
+assessment journal inputs retain their shape so committed decisions can still replay; the
+assessor receives `agentId` alongside that context when it executes. Task version fencing is
+unchanged: a different version still requires a migration, and `defineGoal()` does not provide
+one. Restore the original definition version; use a new name/version for incompatible policies.
+Older package versions cannot parse the new binding fields, so do not downgrade a database once
+goals have been written with this feature.
 
 ## Budgets and pauses
 

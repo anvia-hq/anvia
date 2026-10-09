@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { DurableRuntime } from "@anvia/durable";
+import { DurableRuntime, defineGoal } from "@anvia/durable";
 import { SqliteDurableStore } from "@anvia/durable/sqlite";
 import { DurableClient } from "@anvia/client/durable";
 import { createDurableHandler, type DurableAuthorization } from "../src/durable";
@@ -22,6 +22,49 @@ function clientFor(
     }),
   };
 }
+it("submits a goal with a dynamically registered agent through the task client", async () => {
+  const assessedAgents: string[] = [];
+  const goal = defineGoal({
+    name: "per-submission-goal",
+    version: 1,
+    assess: async ({ agentId, previous }) => {
+      assessedAgents.push(agentId);
+      return {
+        status: previous === null ? "continue" : "complete",
+        progressKey: previous === null ? "one" : "two",
+        summary: "Verified",
+        next: "Continue",
+        evidence: ["checked"],
+      };
+    },
+  });
+  const runtime = await DurableRuntime.open({
+    store: new SqliteDurableStore(":memory:"),
+    tasks: [goal],
+  });
+  runtimes.push(runtime);
+  const { client } = clientFor(runtime, (_, resource) => resource.sessionId === "allowed");
+  const submission = {
+    name: goal.name,
+    version: goal.version,
+    sessionId: "allowed",
+    requestId: "goal",
+    input: {
+      objective: "Build search",
+      acceptanceCriteria: ["Tests pass"],
+      limits: { maxSessions: 3, maxTotalModelTurns: 4, maxConsecutiveNoProgressSessions: 2 },
+    },
+  };
+  await expect(client.submitTask(submission)).rejects.toMatchObject({ status: 400 });
+  const bound = { ...submission, input: { ...submission.input, agentId: "researcher" } };
+  await expect(client.submitTask(bound)).rejects.toMatchObject({ status: 404 });
+  runtime.registerAgents([{ agent: makeAgent(async () => done()), version: "1" }]);
+  const snapshot = await client.submitTask(bound);
+  expect((await client.submitTask(bound)).task.id).toBe(snapshot.task.id);
+  expect(await (await runtime.getTask(snapshot.task.id)).result()).toMatchObject({ sessions: 2 });
+  expect(assessedAgents).toEqual(["researcher", "researcher"]);
+});
+
 it("submits, lists, graphs, signals and reconnects custom tasks over HTTP", async () => {
   const runtime = await DurableRuntime.open({
     store: new SqliteDurableStore(":memory:"),

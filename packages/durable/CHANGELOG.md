@@ -1,5 +1,33 @@
 # @anvia/durable
 
+## 0.4.0
+
+### Minor Changes
+
+- 0f2a6a6: Add opt-in conversation compaction on durable agent registrations. Summarize completed history
+  while retaining recent complete turns and preserving canonical messages. Persist summary
+  checkpoints, projected input, usage, and progress atomically for recovery, with bounded summary
+  attempts using the model retry policy.
+
+  SQLite schemas 1–5 upgrade to schema 6 when acquired. Use matching durable runtime and protocol
+  consumers; older engines reject the upgraded database. Compaction runs between session runs and inside active tool loops; graph tasks remain excluded.
+
+  Allow the durable 0.4 minor line in client and server peer compatibility ranges.
+
+- 4867aef: Compact model-facing context during active tool loops and approval continuations. Preserve complete
+  parallel tool exchanges, the active user request, and canonical history. Add
+  `retention.recentToolTurns` (default one; zero allows summarizing the latest completed tool output).
+  Normal and streaming runs include summary usage and emit compaction progress.
+
+  Durable executions atomically checkpoint each model-call projection and its usage/events, including
+  skipped decisions. Recovery reuses committed projections and tools; uncommitted summaries use the
+  persisted retry budget. Existing submissions retain their original request sequence. SQLite schemas
+  1–5 upgrade to schema 6; upgrade core and durable together for execution protocol version 3.
+
+### Patch Changes
+
+- 699c865: Fix `backupSqlite`/`restoreSqlite` on Windows: `fsync` was called on a read-only handle, which Windows rejects with `EPERM`. The handle now opens with write access on Windows (POSIX keeps the read-only handle so directory syncs still work). Also make the crash-signal assertion in the backup hardening test platform-aware, since Windows force-terminates the process instead of delivering `SIGKILL`.
+
 ## 0.3.0
 
 ### Minor Changes

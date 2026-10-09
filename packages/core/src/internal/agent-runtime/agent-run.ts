@@ -484,11 +484,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
           await this.notifyInternalMemoryCompaction(prepared.compaction);
           await this.recordMemoryCompaction(prepared, runObservers);
         }
-        const request = await this.createTurnRequest(
-          prepared.messages.at(-1)!,
-          prepared.messages.slice(0, -1),
-          currentTurns,
-        );
+        const request = await this.createTurnRequest(prompt, prepared.messages, currentTurns);
 
         let response: CompletionResponse;
         try {
@@ -825,11 +821,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
           await this.recordMemoryCompaction(prepared, runObservers);
           yield { type: "memory_compaction", ...prepared.compaction };
         }
-        const request = await this.createTurnRequest(
-          prepared.messages.at(-1)!,
-          prepared.messages.slice(0, -1),
-          currentTurns,
-        );
+        const request = await this.createTurnRequest(prompt, prepared.messages, currentTurns);
 
         assertCompletionRequestSupported(this.agent.model, request, { streaming: true });
         const providerRequest = this.providerTraceRequest(request, { stream: true });
@@ -1206,14 +1198,14 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
 
   private async createTurnRequest(
     prompt: MessageType,
-    history: MessageType[],
+    messages: readonly MessageType[],
     turn: number,
   ): Promise<CompletionRequest> {
     const ragText = extractRagText(prompt);
     const abortSignal = this.abortController.signal;
     const documents = await fetchContextDocuments(this.agent, ragText, abortSignal);
     const toolDefinitions = await fetchToolDefinitions(this.agent, ragText, abortSignal);
-    const request = createCompletionRequest(providerMessages([...history, prompt]), {
+    const request = createCompletionRequest(providerMessages(messages), {
       instructions: this.agent.instructions,
       documents,
       tools: [...toolDefinitions, ...getAgentToolState(this.agent).providerTools],

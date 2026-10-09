@@ -1,5 +1,7 @@
 import { expect, it, vi } from "vitest";
-import { Agent, type AgentStreamEvent } from "../src/agent";
+import { Agent, createVectorContext, type AgentStreamEvent } from "../src/agent";
+import type { EmbeddingModel } from "../src/embeddings";
+import type { ToolIndex } from "../src/tool";
 import {
   Usage,
   type CompletionModel,
@@ -56,7 +58,7 @@ const result = (id: string): Message => ({
 });
 
 it.each(["message", "turn", "run"] as MemorySavePolicy[])(
-  "compacts oversized tool output with %s persistence in generate and stream",
+  "compacts tool output and preserves retrieval with %s persistence in generate and stream",
   async (savePolicy) => {
     for (const streaming of [false, true]) {
       const { memory, messages } = store();
@@ -91,6 +93,30 @@ it.each(["message", "turn", "run"] as MemorySavePolicy[])(
         usage: { ...Usage.empty(), inputTokens: 2, outputTokens: 1, totalTokens: 3 },
       }));
       const tool = vi.fn(async () => large);
+      const definition = vi.fn((query: string) => ({
+        name: "lookup",
+        description: `Lookup for ${query}`,
+        parameters: { type: "object", properties: {} },
+      }));
+      const nextDefinition = {
+        name: "next",
+        description: "Next step discovered from lookup output",
+        parameters: { type: "object", properties: {} },
+      };
+      const search = vi.fn<ToolIndex["search"]>(async ({ query }) =>
+        query === large
+          ? [
+              {
+                id: "next",
+                score: 1,
+                document: { toolName: "next", definition: nextDefinition, text: "next" },
+              },
+            ]
+          : [],
+      );
+      const embedTexts = vi.fn<EmbeddingModel["embedTexts"]>(async (texts) =>
+        texts.map((document) => ({ document, vector: [1] })),
+      );
       const agent = new Agent({
         id: "test",
         model,
@@ -98,13 +124,29 @@ it.each(["message", "turn", "run"] as MemorySavePolicy[])(
         tools: [
           {
             name: "lookup",
-            definition: () => ({
-              name: "lookup",
-              description: "Lookup",
-              parameters: { type: "object", properties: {} },
-            }),
+            definition,
             call: tool,
           },
+          {
+            kind: "tool-index",
+            tools: [{ name: "next", definition: () => nextDefinition, call: async () => "done" }],
+            topK: 1,
+            search,
+          },
+        ],
+        context: [
+          createVectorContext({
+            model: { provider: "test", modelId: "embedding", embedTexts },
+            store: {
+              async ensure() {},
+              async validate() {},
+              async upsert() {},
+              async search() {
+                return [];
+              },
+            },
+            topK: 1,
+          }),
         ],
         memory: {
           store: memory,
@@ -127,6 +169,17 @@ it.each(["message", "turn", "run"] as MemorySavePolicy[])(
       });
       expect(compactor).toHaveBeenCalledTimes(3);
       expect(tool).toHaveBeenCalledTimes(3);
+      // Compact only the provider transcript; retrieval still follows the latest tool output.
+      const queries = ["Find the answer", large, large, large];
+      expect(definition.mock.calls.map(([query]) => query)).toEqual(queries);
+      expect(search.mock.calls.map(([request]) => request.query)).toEqual(queries);
+      expect(embedTexts.mock.calls.map(([texts]) => texts)).toEqual(
+        queries.map((query) => [query]),
+      );
+      expect(requests[0]!.tools?.some((tool) => tool.name === "next")).toBe(false);
+      expect(
+        requests.slice(1).every((request) => request.tools?.some((tool) => tool.name === "next")),
+      ).toBe(true);
       expect(
         requests.slice(1).every((request) => request.chatHistory.some(isMemoryCompactionMessage)),
       ).toBe(true);

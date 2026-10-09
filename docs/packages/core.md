@@ -823,7 +823,8 @@ compaction: {
 }
 ```
 
-The active user request stays verbatim. Compaction only cuts at completed exchanges, including all
+The active user request stays verbatim. Document retrieval and tool selection still use the latest
+canonical prompt or tool output. Compaction only cuts at completed exchanges, including all
 results for parallel tool calls. Earlier summaries participate in later summaries. The model-facing
 projection is local to the run and carried in approval continuations; canonical outcomes and memory
 appends remain unchanged for every save policy. Store projections are still prepared separately at

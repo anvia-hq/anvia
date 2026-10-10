@@ -1,5 +1,12 @@
 # @anvia/browser
 
+## 1.1.10
+
+### Patch Changes
+
+- Updated dependencies [39678a9]
+  - @anvia/sandbox@1.2.0
+
 ## 1.1.9
 
 ### Patch Changes

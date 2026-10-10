@@ -69,11 +69,29 @@ describe("createDockerSandboxTools", () => {
       status: "exited",
     });
     expect(sandbox.exec).toHaveBeenCalledWith({
-      command: "sh",
+      command: "/bin/bash",
       args: ["-c", command],
       timeoutMs: 30_000,
     });
   });
+
+  it.each(["mkdir -p repro/{raw,results} && ls repro", "[[ -d repro ]] && echo ok"])(
+    "resolveExecInvocation selects Bash for a natural command line: %s",
+    async (command) => {
+      const sandbox = createRuntime();
+      const [tool] = createDockerSandboxTools({ sandbox, tools: ["exec_command"] });
+      if (tool === undefined) throw new Error("Expected exec_command tool.");
+
+      // Exercise the private resolver through its caller without exporting it just for tests.
+      await tool.call({ command });
+
+      expect(sandbox.exec).toHaveBeenCalledTimes(2);
+      expect(sandbox.exec).toHaveBeenLastCalledWith({
+        command: "/bin/bash",
+        args: ["-c", command],
+      });
+    },
+  );
 
   it("applies command policy to the shell used for natural command lines", async () => {
     const sandbox = createRuntime();
@@ -93,33 +111,222 @@ describe("createDockerSandboxTools", () => {
       sandbox,
       tools: ["exec_command"],
       exec: {
-        commands: { mode: "allow", values: ["sh"], allowShellInterpreters: true },
+        commands: { mode: "allow", values: ["/bin/bash"], allowShellInterpreters: true },
       },
     });
     if (allowed === undefined) throw new Error("Expected exec_command tool.");
 
     await expect(allowed.call({ command: "uv run report.py" })).resolves.toBeDefined();
     expect(sandbox.exec).toHaveBeenCalledWith({
-      command: "sh",
+      command: "/bin/bash",
       args: ["-c", "uv run report.py"],
     });
   });
 
-  it("rejects natural command lines with block-mode command policies", async () => {
+  it.each(["exec_command", "start_process"] as const)(
+    "rejects natural command lines with block-mode policies through %s",
+    async (toolName) => {
+      const sandbox = createRuntime();
+      const [tool] = createDockerSandboxTools({
+        sandbox,
+        tools: [toolName],
+        exec: { commands: { mode: "block", values: ["rm"] } },
+      });
+      if (tool === undefined) throw new Error("Expected exec_command tool.");
+
+      await expect(tool.call({ command: "rm -rf output" })).rejects.toMatchObject({
+        code: "tool_policy",
+        message: expect.stringContaining("block-mode"),
+      });
+      expect(sandbox.exec).not.toHaveBeenCalled();
+      expect(sandbox.startProcess).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["exec_command", "start_process"] as const)(
+    "rejects implicit Bash under a sh-only policy through %s and permits explicit sh",
+    async (toolName) => {
+      const sandbox = createRuntime();
+      const [tool] = createDockerSandboxTools({
+        sandbox,
+        tools: [toolName],
+        exec: { commands: { mode: "allow", values: ["sh"], allowShellInterpreters: true } },
+      });
+      await expect(tool!.call({ command: "echo hello" })).rejects.toMatchObject({
+        code: "tool_policy",
+        message: expect.stringContaining("/bin/bash"),
+      });
+      // Only the fixed probe runs; a denied Bash selection must not fall back to sh.
+      expect(sandbox.exec).toHaveBeenCalledExactlyOnceWith({
+        command: "sh",
+        args: ["-c", "test -x /bin/bash"],
+        timeoutMs: 5_000,
+      });
+      expect(sandbox.startProcess).not.toHaveBeenCalled();
+      await tool!.call({ command: "sh", args: ["-c", "echo hello"] });
+      const method = toolName === "exec_command" ? sandbox.exec : sandbox.startProcess;
+      expect(method).toHaveBeenLastCalledWith({ command: "sh", args: ["-c", "echo hello"] });
+    },
+  );
+
+  it.each(["exec_command", "start_process"] as const)(
+    "falls back to sh only when Bash is absent through %s",
+    async (toolName) => {
+      const sandbox = createRuntime();
+      vi.mocked(sandbox.exec).mockResolvedValueOnce(shellProbeResult(1));
+      const [tool] = createDockerSandboxTools({
+        sandbox,
+        tools: [toolName],
+        exec: { commands: { mode: "allow", values: ["sh"], allowShellInterpreters: true } },
+      });
+      await tool!.call({ command: "echo hello" });
+      const method = toolName === "exec_command" ? sandbox.exec : sandbox.startProcess;
+      expect(method).toHaveBeenLastCalledWith({ command: "sh", args: ["-c", "echo hello"] });
+    },
+  );
+
+  it.each(["exec_command", "start_process"] as const)(
+    "checks permission for the fallback shell through %s",
+    async (toolName) => {
+      const sandbox = createRuntime();
+      vi.mocked(sandbox.exec).mockResolvedValueOnce(shellProbeResult(1));
+      const [tool] = createDockerSandboxTools({
+        sandbox,
+        tools: [toolName],
+        exec: { commands: { mode: "allow", values: ["/bin/bash"], allowShellInterpreters: true } },
+      });
+      await expect(tool!.call({ command: "echo hello" })).rejects.toMatchObject({
+        code: "tool_policy",
+        message: "Command is rejected by sandbox tool policy: sh",
+      });
+      expect(sandbox.exec).toHaveBeenCalledTimes(1);
+      expect(sandbox.startProcess).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["exec_command", "start_process"] as const)(
+    "requires shell opt-in before probing for a natural command through %s",
+    async (toolName) => {
+      const sandbox = createRuntime();
+      const [tool] = createDockerSandboxTools({
+        sandbox,
+        tools: [toolName],
+        exec: { commands: { mode: "allow", values: ["/bin/bash", "sh"] } },
+      });
+      await expect(tool!.call({ command: "echo hello" })).rejects.toMatchObject({
+        code: "tool_policy",
+      });
+      expect(sandbox.exec).not.toHaveBeenCalled();
+      expect(sandbox.startProcess).not.toHaveBeenCalled();
+    },
+  );
+
+  it("shares one probe across concurrent exec/process tools and factories for the same sandbox", async () => {
     const sandbox = createRuntime();
-    const [tool] = createDockerSandboxTools({
+    const [exec] = createDockerSandboxTools({ sandbox, tools: ["exec_command"] });
+    const [start] = createDockerSandboxTools({ sandbox, tools: ["start_process"] });
+    const controller = new AbortController();
+    await Promise.all([
+      exec!.call({ command: "echo first" }),
+      start!.call(
+        { command: "echo second", cwd: "app", env: { MODE: "test" } },
+        { abortSignal: controller.signal },
+      ),
+    ]);
+    await exec!.call({ command: "echo third" });
+    expect(sandbox.exec).toHaveBeenCalledTimes(3); // One probe plus two user executions.
+    expect(sandbox.exec).toHaveBeenNthCalledWith(1, {
+      command: "sh",
+      args: ["-c", "test -x /bin/bash"],
+      timeoutMs: 5_000,
+    });
+    expect(sandbox.startProcess).toHaveBeenCalledExactlyOnceWith({
+      command: "/bin/bash",
+      args: ["-c", "echo second"],
+      cwd: "app",
+      env: { MODE: "test" },
+      abortSignal: controller.signal,
+    });
+    const [restricted] = createDockerSandboxTools({
       sandbox,
       tools: ["exec_command"],
-      exec: { commands: { mode: "block", values: ["rm"] } },
+      exec: { commands: { mode: "allow", values: ["sh"], allowShellInterpreters: true } },
     });
-    if (tool === undefined) throw new Error("Expected exec_command tool.");
-
-    await expect(tool.call({ command: "rm -rf output" })).rejects.toMatchObject({
+    await expect(restricted!.call({ command: "echo denied" })).rejects.toMatchObject({
       code: "tool_policy",
-      message: expect.stringContaining("block-mode"),
     });
-    expect(sandbox.exec).not.toHaveBeenCalled();
+    expect(sandbox.exec).toHaveBeenCalledTimes(3);
+    const other = createRuntime(); // Same sandbox ID, different runtime handle: detect again.
+    const [otherExec] = createDockerSandboxTools({ sandbox: other, tools: ["exec_command"] });
+    await otherExec!.call({ command: "echo other" });
+    expect(other.exec).toHaveBeenCalledTimes(2);
   });
+
+  it.each([2, 127, "timed_out", "rejected"] as const)(
+    "does not interpret a failed probe as missing Bash and retries detection: %s",
+    async (failure) => {
+      const sandbox = createRuntime();
+      if (failure === "rejected")
+        vi.mocked(sandbox.exec).mockRejectedValueOnce(new Error("unavailable"));
+      else if (failure === "timed_out")
+        vi.mocked(sandbox.exec).mockResolvedValueOnce({
+          ...shellProbeResult(0),
+          status: "timed_out",
+        });
+      else vi.mocked(sandbox.exec).mockResolvedValueOnce(shellProbeResult(failure));
+      const [tool] = createDockerSandboxTools({ sandbox, tools: ["exec_command"] });
+      await expect(tool!.call({ command: "echo hello" })).rejects.toThrow();
+      expect(sandbox.exec).toHaveBeenCalledTimes(1);
+      await tool!.call({ command: "echo retried" });
+      expect(sandbox.exec).toHaveBeenCalledTimes(3);
+      expect(sandbox.exec).toHaveBeenLastCalledWith({
+        command: "/bin/bash",
+        args: ["-c", "echo retried"],
+      });
+    },
+  );
+
+  it("does not run cancelled input or cancel a probe shared by another caller", async () => {
+    const sandbox = createRuntime();
+    let finish!: (result: ReturnType<typeof shellProbeResult>) => void;
+    vi.mocked(sandbox.exec).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const [tool] = createDockerSandboxTools({ sandbox, tools: ["exec_command"] });
+    const controller = new AbortController();
+    const cancelled = tool!.call({ command: "echo cancelled" }, { abortSignal: controller.signal });
+    const successful = tool!.call({ command: "echo successful" });
+    const assertion = expect(cancelled).rejects.toThrow("cancelled");
+    await vi.waitFor(() => expect(sandbox.exec).toHaveBeenCalledTimes(1));
+    controller.abort(new Error("cancelled"));
+    await assertion;
+    expect(sandbox.exec).toHaveBeenCalledTimes(1);
+    finish(shellProbeResult(0));
+    await successful;
+    expect(sandbox.exec).toHaveBeenCalledTimes(2);
+    expect(sandbox.exec).toHaveBeenLastCalledWith({
+      command: "/bin/bash",
+      args: ["-c", "echo successful"],
+    });
+  });
+
+  it.each(["exec_command", "start_process"] as const)(
+    "preserves explicit argv, even an empty args array, through %s",
+    async (toolName) => {
+      const sandbox = createRuntime();
+      const [tool] = createDockerSandboxTools({ sandbox, tools: [toolName] });
+      await tool!.call({ command: "an executable with spaces", args: [] });
+      const method = toolName === "exec_command" ? sandbox.exec : sandbox.startProcess;
+      expect(method).toHaveBeenCalledExactlyOnceWith({
+        command: "an executable with spaces",
+        args: [],
+      });
+      if (toolName === "start_process") expect(sandbox.exec).not.toHaveBeenCalled();
+    },
+  );
 
   it("enforces discriminated command and timeout policies", async () => {
     const [tool] = createDockerSandboxTools({
@@ -544,4 +751,16 @@ function createRuntime(): DockerSandboxRuntime {
 
 function toolMap(tools: readonly { name: string; call: (input: unknown) => unknown }[]) {
   return Object.fromEntries(tools.map((tool) => [tool.name, tool] as const));
+}
+
+function shellProbeResult(exitCode: number) {
+  return {
+    status: "exited" as const,
+    exitCode,
+    stdout: new Uint8Array(),
+    stderr: new Uint8Array(),
+    durationMs: 1,
+    stdoutTruncated: false,
+    stderrTruncated: false,
+  };
 }

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { decodeUtf8 } from "./docker-cli";
 import { DockerSandboxError } from "./errors";
 import { normalizeSandboxPath } from "./path";
+import { sandboxShell } from "./shell";
 import type {
   CreateDockerSandboxToolsOptions,
   DockerSandboxCommandPolicy,
@@ -34,7 +35,7 @@ const execCommandInput = z.object({
     .string()
     .min(1)
     .describe(
-      "Command to run. Complete shell command lines are supported; use args for exact argv execution.",
+      "Command to run. Natural command lines use /bin/bash -c when available, otherwise sh -c. Use args for exact argv execution.",
     ),
   args: z
     .array(z.string())
@@ -126,8 +127,8 @@ const publishedPortOutput = z.object({
 const listPortsOutput = z.object({ ports: z.array(publishedPortOutput) });
 
 const startProcessInput = z.object({
-  command: z.string().min(1),
-  args: z.array(z.string()).optional(),
+  command: execCommandInput.shape.command,
+  args: execCommandInput.shape.args,
   cwd: z
     .string()
     .describe("Workspace-relative directory or an absolute directory inside the sandbox workdir.")
@@ -206,19 +207,22 @@ export function createDockerSandboxTools(
 function createExecCommandTool(options: CreateDockerSandboxToolsOptions): AnyTool {
   return createTool({
     name: "exec_command",
-    description: "Run a command inside the sandbox, including natural shell command lines.",
+    description:
+      "Run a command inside the sandbox. Natural command lines use /bin/bash -c when available, otherwise sh -c; supply args for exact argv execution.",
     inputSchema: execCommandInput,
     outputSchema: execResultOutput,
     execute: async ({ command, args, cwd, env, timeoutMs, input }, context) => {
-      const invocation = resolveExecInvocation(command, args, options.exec?.commands);
       const effectiveTimeoutMs = timeoutMs ?? options.exec?.defaultTimeoutMs;
       assertTimeoutAllowed(effectiveTimeoutMs, options.exec?.maxTimeoutMs);
+      const normalizedCwd =
+        cwd === undefined ? undefined : normalizeToolPath(options.sandbox, cwd, true);
+      const invocation = await resolveExecInvocation(options, command, args, context.abortSignal);
       let execOptions: DockerSandboxExecOptions = {
         command: invocation.command,
       };
       if (invocation.args !== undefined) execOptions = { ...execOptions, args: invocation.args };
-      if (cwd !== undefined) {
-        execOptions = { ...execOptions, cwd: normalizeToolPath(options.sandbox, cwd, true) };
+      if (normalizedCwd !== undefined) {
+        execOptions = { ...execOptions, cwd: normalizedCwd };
       }
       if (env !== undefined) execOptions = { ...execOptions, env };
       if (effectiveTimeoutMs !== undefined) {
@@ -318,15 +322,17 @@ function createListPortsTool(sandbox: DockerSandboxRuntime): AnyTool {
 function createStartProcessTool(options: CreateDockerSandboxToolsOptions): AnyTool {
   return createTool({
     name: "start_process",
-    description: "Start a managed long-running process inside the sandbox.",
+    description:
+      "Start a managed long-running process inside the sandbox. Natural command lines use /bin/bash -c when available, otherwise sh -c; supply args for exact argv execution.",
     inputSchema: startProcessInput,
     outputSchema: processInfoOutput,
     execute: async ({ command, args, cwd, env }, context) => {
-      assertCommandAllowed(command, options.exec?.commands);
-      let startOptions: Parameters<typeof options.sandbox.startProcess>[0] = { command };
-      if (args !== undefined) startOptions = { ...startOptions, args };
-      if (cwd !== undefined) {
-        startOptions = { ...startOptions, cwd: normalizeToolPath(options.sandbox, cwd, true) };
+      const normalizedCwd =
+        cwd === undefined ? undefined : normalizeToolPath(options.sandbox, cwd, true);
+      const invocation = await resolveExecInvocation(options, command, args, context.abortSignal);
+      let startOptions: Parameters<typeof options.sandbox.startProcess>[0] = { ...invocation };
+      if (normalizedCwd !== undefined) {
+        startOptions = { ...startOptions, cwd: normalizedCwd };
       }
       if (env !== undefined) startOptions = { ...startOptions, env };
       if (context.abortSignal !== undefined) {
@@ -629,19 +635,27 @@ function assertCommandAllowed(
   }
 }
 
-function resolveExecInvocation(
+async function resolveExecInvocation(
+  options: CreateDockerSandboxToolsOptions,
   command: string,
   args: readonly string[] | undefined,
-  policy: DockerSandboxCommandPolicy | undefined,
-): Pick<DockerSandboxExecOptions, "command" | "args"> {
+  abortSignal?: AbortSignal,
+): Promise<Pick<DockerSandboxExecOptions, "command" | "args">> {
+  abortSignal?.throwIfAborted();
+  const policy = options.exec?.commands;
   if (args === undefined && requiresShell(command)) {
     if (policy?.mode === "block") {
       throw toolPolicyError(
         "Natural command lines cannot be used with block-mode command policies. Use command and args instead.",
       );
     }
-    assertCommandAllowed("sh", policy);
-    return { command: "sh", args: ["-c", command] };
+    if (policy?.mode === "allow" && policy.allowShellInterpreters !== true) {
+      throw toolPolicyError("Natural command lines require allowShellInterpreters: true.");
+    }
+    const shell = await sandboxShell(options.sandbox, abortSignal);
+    abortSignal?.throwIfAborted();
+    assertCommandAllowed(shell, policy);
+    return { command: shell, args: ["-c", command] };
   }
   assertCommandAllowed(command, policy);
   return args === undefined ? { command } : { command, args };

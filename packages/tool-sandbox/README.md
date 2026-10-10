@@ -41,6 +41,17 @@ const tools = createDockerSandboxTools({
 
 `await using` destroys the owned container and ephemeral volume at scope exit. Keep the scope open while agents use its tools. Command policies filter executable names; they do not restrict what an allowed interpreter can execute.
 
+## Shell command lines
+
+`exec_command` and `start_process` use `/bin/bash -c` for natural command lines when `/bin/bash`
+is executable, falling back to `sh -c` when it is absent. Availability is cached per live sandbox
+runtime handle. Explicit `command` plus `args` remains exact argv; use
+`{ command: "sh", args: ["-c", script] }` to retain the previous POSIX shell behavior.
+
+Allow policies must permit the selected executable (`/bin/bash` or `sh`) and set
+`allowShellInterpreters: true`. Allowing only `sh` does not implicitly authorize Bash.
+Block-mode policies continue to reject natural command lines. See the usage guide for details.
+
 ## Learn more
 
 - [Usage guide](https://github.com/anvia-hq/anvia/blob/main/docs/packages/tool-sandbox.md)

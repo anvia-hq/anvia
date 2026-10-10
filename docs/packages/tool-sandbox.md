@@ -32,12 +32,36 @@ Networking is explicit. Use `{ mode: "none" }` or `{ mode: "bridge", ports: [...
 bind only to `127.0.0.1`. Runtime methods use object arguments, propagate abort signals, and expose
 command and process output as bytes. Tool wrappers decode UTF-8 strictly and return structured values.
 
-`exec_command` accepts a complete shell command line in `command`, including pipes, redirects, and
-multiline scripts. For exact argv execution without shell parsing, provide the executable in
-`command` and its arguments in `args`. Command policies apply to the implicit `sh` executable when a
-shell command line is used. Natural command lines are rejected with block-mode command policies
-because arbitrary shell syntax cannot be checked safely against an executable block list; use exact
-`command` and `args` input in that configuration.
+`exec_command` and `start_process` accept complete shell command lines in `command`, including
+pipes, redirects, and multiline scripts. When `args` is omitted and the command contains shell
+syntax or whitespace, the tools use `/bin/bash -c` if `/bin/bash` is executable, otherwise `sh -c`.
+A fixed, read-only probe checks availability once per live sandbox runtime handle; concurrent tools
+share the result. Failed or timed-out probes reject the call and can be retried, rather than being
+treated as absence of Bash. The CLI image builder includes Bash in its common apt packages.
+
+For exact argv execution without shell parsing, provide the executable in `command` and its
+arguments in `args` (even `args: []` opts out of automatic shell selection). Runtime methods
+`sandbox.runtime.exec()` and `startProcess()` remain exact-argv APIs. The internal managed-process
+launcher remains POSIX `sh`; the selected shell runs only the user command line.
+
+Command policies check the selected executable using exact names: allow `/bin/bash` for automatic
+Bash execution, or `sh` for the fallback, with `allowShellInterpreters: true`. A policy allowing only
+`sh` rejects natural command lines when Bash is present; a policy rejection never triggers fallback.
+The read-only availability probe is internal infrastructure and contains no caller input.
+Natural command lines remain rejected with block-mode command policies, before any probe, because
+arbitrary shell syntax cannot be checked safely against an executable block list. Use exact
+`command` and `args` input in that configuration; policies do not inspect shell script contents.
+
+Previously, natural command lines used `sh -c`. Callers relying on POSIX `sh` behavior can keep it
+explicitly (and allow `sh` plus `allowShellInterpreters: true` when using an allow policy):
+
+```ts
+await execTool.call({ command: "sh", args: ["-c", "your POSIX shell script"] });
+```
+
+Changing the default shell can affect builtins such as `echo`, even in scripts that previously
+succeeded. Install/remove shells before creating the live sandbox handle; cached detection does
+not track changes to shell installation during that handle's lifetime.
 
 File paths and command working directories passed to agent tools may be workspace-relative (for
 example `notes/result.txt`) or absolute paths inside the sandbox workdir (for example

@@ -6,7 +6,7 @@ import {
   agentInteractionResponseSchema,
 } from "@anvia/core/agent/interactions";
 import { isJsonValue, messagesSchema, parseMessage, type JsonValue } from "@anvia/core/completion";
-import type { DurableOperation, DurableRunRecord } from "./types.js";
+import type { DurableOperation, DurableRunRecord, DurableRunSummary } from "./types.js";
 
 const jsonValue = z.custom<JsonValue>(isJsonValue);
 const id = z.string().min(1);
@@ -56,6 +56,26 @@ export const runStatusSchema = z.enum([
   "failed",
   "cancelled",
 ]);
+const summaryId = z.string().refine((value) => value.trim().length > 0);
+export const runSummarySchema = z
+  .object({
+    id: summaryId,
+    agentId: summaryId,
+    sessionId: summaryId,
+    requestId: summaryId,
+    status: runStatusSchema,
+    createdAt: z.string(),
+    updatedAt: z.string(),
+    error: z.string().optional(),
+    blockedOperation: summaryId.optional(),
+    nextAttemptAt: z.string().optional(),
+  })
+  .strict();
+
+export function parseRunSummary(value: unknown): DurableRunSummary {
+  return runSummarySchema.parse(value) as DurableRunSummary;
+}
+
 export const modelRetrySchema = z
   .object({
     maxAttempts: z.number().int().min(1).max(100),

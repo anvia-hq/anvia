@@ -30,6 +30,48 @@ const waiting = defineTask({
       : { status: "completed", output: null },
 });
 
+it.each(
+  ["status", "listRuns"].flatMap((read) =>
+    [{ id: " " }, { status: "unknown" }, { error: 42 }, { unexpected: true }].map((corruption) => ({
+      read,
+      corruption,
+    })),
+  ),
+)("fails closed when $read reads a corrupt summary: $corruption", async ({ read, corruption }) => {
+  const dir = mkdtempSync(join(tmpdir(), "durable-summary-fault-"));
+  dirs.push(dir);
+  const path = join(dir, "live.sqlite");
+  const fatal = vi.fn();
+  const runtime = await DurableRuntime.open({
+    store: new SqliteDurableStore(path),
+    agents: [{ agent: makeAgent(async () => done()), version: "1" }],
+    onFatalError: fatal,
+  });
+  runtimes.push(runtime);
+  const run = await runtime.submit(submission);
+  await run.result();
+  const db = new DatabaseSync(path);
+  try {
+    const row = db
+      .prepare("SELECT record FROM anvia_durable_run_summaries WHERE id = ?")
+      .get(run.id)!;
+    const summary = { ...JSON.parse(String(row.record)), ...corruption };
+    db.prepare("UPDATE anvia_durable_run_summaries SET record = ? WHERE id = ?").run(
+      JSON.stringify(summary),
+      run.id,
+    );
+  } finally {
+    db.close();
+  }
+  if (read === "status") {
+    expect(() => runtime.status(run.id)).toThrow("Durable storage failed");
+  } else {
+    await expect(runtime.listRuns()).rejects.toThrow("Durable storage failed");
+  }
+  expect(runtime.health().status).toBe("failed");
+  expect(fatal).toHaveBeenCalledTimes(1);
+});
+
 it("poisons the runtime after a model checkpoint failure and recovers from the saved intent", async () => {
   const dir = mkdtempSync(join(tmpdir(), "durable-fault-"));
   dirs.push(dir);

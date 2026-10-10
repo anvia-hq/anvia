@@ -13,7 +13,13 @@ import type { DurableGraphListOptions, DurableGraphPage } from "./graph-types.js
 import { hostname } from "node:os";
 import { DatabaseSync } from "node:sqlite";
 import { json, nonblank } from "./json.js";
-import { eventTypeSchema, listOptionsSchema, parseOperation, parseRun } from "./schema.js";
+import {
+  eventTypeSchema,
+  listOptionsSchema,
+  parseOperation,
+  parseRun,
+  parseRunSummary,
+} from "./schema.js";
 import type {
   DurableEvent,
   DurableListOptions,
@@ -290,7 +296,7 @@ export class SqliteDurableStore implements DurableStore {
       .all(...parameters, limit + 1);
     const page = rows.slice(0, limit);
     return {
-      runs: page.map((row) => JSON.parse(String(row.record)) as DurableRunSummary),
+      runs: page.map((row) => parseRunSummary(JSON.parse(String(row.record)))),
       ...(rows.length > limit ? { nextCursor: Number(page.at(-1)!.cursor) } : {}),
     };
   }
@@ -423,9 +429,7 @@ export class SqliteDurableStore implements DurableStore {
         const row = this.database
           .prepare("SELECT record FROM anvia_durable_run_summaries WHERE id = ?")
           .get(id);
-        return row === undefined
-          ? undefined
-          : (JSON.parse(String(row.record)) as DurableRunSummary);
+        return row === undefined ? undefined : parseRunSummary(JSON.parse(String(row.record)));
       },
       getRun: (id) => readRun("SELECT record FROM anvia_durable_runs WHERE id = ?", id),
       findRequest: (session, request) =>

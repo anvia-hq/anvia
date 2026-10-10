@@ -11,7 +11,7 @@ import {
   listOptionsSchema,
   parseOperation,
   parseRun,
-  runStatusSchema,
+  runSummarySchema,
 } from "./schema.js";
 import { json } from "./json.js";
 import type { DurableEvent, DurableListOptions, DurableRunPage, DurableSnapshot } from "./types.js";
@@ -46,20 +46,6 @@ const event = z
     createdAt: z.string(),
     type: eventTypeSchema,
     data: z.unknown(),
-  })
-  .strict();
-const summary = z
-  .object({
-    id,
-    agentId: id,
-    sessionId: id,
-    requestId: id,
-    status: runStatusSchema,
-    createdAt: z.string(),
-    updatedAt: z.string(),
-    error: z.string().optional(),
-    blockedOperation: id.optional(),
-    nextAttemptAt: z.string().optional(),
   })
   .strict();
 
@@ -123,7 +109,7 @@ export function parseDurableEvent(value: unknown): DurableEvent {
 }
 export function parseDurableRunPage(value: unknown): DurableRunPage {
   return parse(
-    z.object({ runs: z.array(summary).max(100), nextCursor: cursor.optional() }).strict(),
+    z.object({ runs: z.array(runSummarySchema).max(100), nextCursor: cursor.optional() }).strict(),
     value,
     "run page",
   ) as DurableRunPage;

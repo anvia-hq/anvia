@@ -665,6 +665,35 @@ later middleware sees earlier overrides. Set attribution alongside any request c
 another prompt: attribution itself does not change the model input. It is a runtime side channel,
 not a provider request field or global current-prompt setting.
 
+### Observer failures
+
+Agent observers fail through `observability.errorPolicy`, which accepts `"ignore"` (default) or
+`"throw"`. Under `"throw"`, the run rejects with an `AgentObserverDispatchError` carrying the phase
+and per-observer failures. Under `"ignore"`, the run does not reject, but Anvia still reports each
+failure through `onObserverError`, so a flaky observer cannot silently drop traces:
+
+```ts
+const agent = new Agent({
+  name: "support",
+  model,
+  observability: {
+    observers: { langfuse: langfuse.observer() },
+    errorPolicy: "ignore",
+    onObserverError: ({ phase, observer, error }) => {
+      logger.warn("observer failed", { phase, observer, error });
+    },
+  },
+});
+```
+
+Reports cover startup (`startRun`, `startGeneration`, `startTool`) and terminal phases. Each report
+carries the phase, the observer name, and the original error. The default handler writes one line per
+failure to `console.error`; pass a no-op to keep ignored failures silent, or route them into your
+logger as above. An error thrown by the handler is ignored, so a faulty sink cannot fail the run.
+
+Pipelines accept the same `errorPolicy` values, but this reporting is agent-only; pipeline observer
+dispatch keeps its existing behavior.
+
 ## Memory
 
 Configure conversation memory on the Agent, then run through a session. This minimal example uses

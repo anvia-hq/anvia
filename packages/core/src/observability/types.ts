@@ -186,8 +186,24 @@ export type AgentObserverMap = Readonly<Record<string, AgentObserver>>;
 
 export type AgentObserverErrorPolicy = "ignore" | "throw";
 
+/** One observer failure that the active error policy did not rethrow. */
+export type AgentObserverFailureReport = {
+  readonly phase: string;
+  readonly observer: string;
+  readonly error: unknown;
+};
+
+/**
+ * Sink for observer failures swallowed by the active error policy. The default
+ * writes one line per failure to `console.error`; pass a no-op to silence ignored
+ * failures, or forward the reports to an application logger. An error thrown by the
+ * handler is ignored so a faulty sink cannot fail the run.
+ */
+export type AgentObserverErrorHandler = (failure: AgentObserverFailureReport) => void;
+
 export type AgentObservabilityOptions<Observers extends AgentObserverMap = AgentObserverMap> = {
   readonly observers: Observers;
   readonly primaryTrace?: Extract<keyof Observers, string> | undefined;
   readonly errorPolicy?: AgentObserverErrorPolicy | undefined;
+  readonly onObserverError?: AgentObserverErrorHandler | undefined;
 };

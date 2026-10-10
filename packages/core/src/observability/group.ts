@@ -6,7 +6,9 @@ import type {
   AgentGenerationObserver,
   AgentGenerationStartArgs,
   AgentGenerationUpdateArgs,
+  AgentObserverErrorHandler,
   AgentObserverErrorPolicy,
+  AgentObserverFailureReport,
   AgentObserverMap,
   AgentRunEndArgs,
   AgentRunErrorArgs,
@@ -25,6 +27,13 @@ import type {
 export type AgentObserverFailure = {
   readonly observer: string;
   readonly error: unknown;
+};
+
+const defaultOnObserverError: AgentObserverErrorHandler = (failure) => {
+  const message = failure.error instanceof Error ? failure.error.message : String(failure.error);
+  console.error(
+    `[anvia] observer "${failure.observer}" failed during ${failure.phase}: ${message}`,
+  );
 };
 
 export class AgentObserverDispatchError extends AggregateError {
@@ -57,6 +66,7 @@ export async function startAgentRunObservers(
   options: {
     readonly primaryTrace?: string | undefined;
     readonly errorPolicy: AgentObserverErrorPolicy;
+    readonly onObserverError?: AgentObserverErrorHandler | undefined;
   },
 ): Promise<ActiveAgentRunObservers> {
   const runObservers: ActiveNamedObserver<AgentRunObserver>[] = [];
@@ -85,19 +95,25 @@ export async function startAgentRunObservers(
     );
     throw new AgentObserverDispatchError("startRun", [...failures, ...cleanupFailures]);
   }
+  if (options.errorPolicy === "ignore") {
+    reportObserverFailures("startRun", failures, options.onObserverError ?? defaultOnObserverError);
+  }
   return new ActiveAgentRunObservers(runObservers, options);
 }
 
 export class ActiveAgentRunObservers {
   readonly trace: AgentTraceInfo | undefined;
+  private readonly onObserverError: AgentObserverErrorHandler;
 
   constructor(
     private readonly runObservers: readonly ActiveNamedObserver<AgentRunObserver>[],
     private readonly options: {
       readonly primaryTrace?: string | undefined;
       readonly errorPolicy: AgentObserverErrorPolicy;
+      readonly onObserverError?: AgentObserverErrorHandler | undefined;
     },
   ) {
+    this.onObserverError = options.onObserverError ?? defaultOnObserverError;
     const primary =
       options.primaryTrace === undefined
         ? undefined
@@ -129,7 +145,14 @@ export class ActiveAgentRunObservers {
       );
       throw new AgentObserverDispatchError("startGeneration", [...failures, ...cleanupFailures]);
     }
-    return new ActiveGenerationObservers(generationObservers, this.options.errorPolicy);
+    if (this.options.errorPolicy === "ignore") {
+      reportObserverFailures("startGeneration", failures, this.onObserverError);
+    }
+    return new ActiveGenerationObservers(
+      generationObservers,
+      this.options.errorPolicy,
+      this.onObserverError,
+    );
   }
 
   async startTool(args: AgentToolStartArgs): Promise<ActiveToolObservers> {
@@ -153,7 +176,10 @@ export class ActiveAgentRunObservers {
       );
       throw new AgentObserverDispatchError("startTool", [...failures, ...cleanupFailures]);
     }
-    return new ActiveToolObservers(toolObservers, this.options.errorPolicy);
+    if (this.options.errorPolicy === "ignore") {
+      reportObserverFailures("startTool", failures, this.onObserverError);
+    }
+    return new ActiveToolObservers(toolObservers, this.options.errorPolicy, this.onObserverError);
   }
 
   async end(args: AgentRunEndArgs): Promise<void> {
@@ -162,6 +188,7 @@ export class ActiveAgentRunObservers {
       "end",
       (observer) => observer.end(observerSnapshot(args)),
       this.options.errorPolicy,
+      this.onObserverError,
     );
   }
 
@@ -171,6 +198,7 @@ export class ActiveAgentRunObservers {
       "error",
       (observer) => observer.error?.(observerSnapshot(args)),
       "ignore",
+      this.onObserverError,
     );
   }
 
@@ -180,15 +208,21 @@ export class ActiveAgentRunObservers {
       "event",
       (observer) => observer.event?.(observerSnapshot(args)),
       this.options.errorPolicy,
+      this.onObserverError,
     );
   }
 }
 
 export class ActiveGenerationObservers {
+  private readonly onObserverError: AgentObserverErrorHandler;
+
   constructor(
     private readonly observers: readonly ActiveNamedObserver<AgentGenerationObserver>[],
     private readonly errorPolicy: AgentObserverErrorPolicy,
-  ) {}
+    onObserverError?: AgentObserverErrorHandler,
+  ) {
+    this.onObserverError = onObserverError ?? defaultOnObserverError;
+  }
 
   async end(args: AgentGenerationEndArgs): Promise<void> {
     await dispatchTerminalObservers(
@@ -196,6 +230,7 @@ export class ActiveGenerationObservers {
       "generation.end",
       (observer) => observer.end(observerSnapshot(args)),
       this.errorPolicy,
+      this.onObserverError,
     );
   }
 
@@ -205,6 +240,7 @@ export class ActiveGenerationObservers {
       "generation.error",
       (observer) => observer.error?.(observerSnapshot(args)),
       "ignore",
+      this.onObserverError,
     );
   }
 
@@ -214,15 +250,21 @@ export class ActiveGenerationObservers {
       "generation.update",
       (observer) => observer.update?.(observerSnapshot(args)),
       this.errorPolicy,
+      this.onObserverError,
     );
   }
 }
 
 export class ActiveToolObservers {
+  private readonly onObserverError: AgentObserverErrorHandler;
+
   constructor(
     private readonly observers: readonly ActiveNamedObserver<AgentToolObserver>[],
     private readonly errorPolicy: AgentObserverErrorPolicy,
-  ) {}
+    onObserverError?: AgentObserverErrorHandler,
+  ) {
+    this.onObserverError = onObserverError ?? defaultOnObserverError;
+  }
 
   async streamEvent(args: AgentToolStreamEventArgs): Promise<void> {
     await dispatchObservers(
@@ -230,6 +272,7 @@ export class ActiveToolObservers {
       "tool.streamEvent",
       (observer) => observer.streamEvent?.(observerSnapshot(args)),
       this.errorPolicy,
+      this.onObserverError,
     );
   }
 
@@ -239,6 +282,7 @@ export class ActiveToolObservers {
       "tool.end",
       (observer) => observer.end(observerSnapshot(args)),
       this.errorPolicy,
+      this.onObserverError,
     );
   }
 
@@ -248,6 +292,7 @@ export class ActiveToolObservers {
       "tool.suspend",
       (observer) => observer.suspend?.(observerSnapshot(args)),
       this.errorPolicy,
+      this.onObserverError,
     );
   }
 
@@ -257,6 +302,7 @@ export class ActiveToolObservers {
       "tool.error",
       (observer) => observer.error?.(observerSnapshot(args)),
       "ignore",
+      this.onObserverError,
     );
   }
 }
@@ -266,6 +312,7 @@ async function dispatchObservers<T>(
   phase: string,
   dispatch: (observer: T) => void | Promise<void> | undefined,
   errorPolicy: AgentObserverErrorPolicy,
+  onObserverError: AgentObserverErrorHandler,
 ): Promise<void> {
   const failures: AgentObserverFailure[] = [];
   for (const entry of observers) {
@@ -275,7 +322,7 @@ async function dispatchObservers<T>(
       failures.push({ observer: entry.name, error });
     }
   }
-  throwObserverFailures(phase, failures, errorPolicy);
+  throwObserverFailures(phase, failures, errorPolicy, onObserverError);
 }
 
 async function dispatchTerminalObservers<T>(
@@ -283,9 +330,10 @@ async function dispatchTerminalObservers<T>(
   phase: string,
   dispatch: (observer: T) => void | Promise<void> | undefined,
   errorPolicy: AgentObserverErrorPolicy,
+  onObserverError: AgentObserverErrorHandler,
 ): Promise<void> {
   const failures = await terminateObservers(observers, dispatch);
-  throwObserverFailures(phase, failures, errorPolicy);
+  throwObserverFailures(phase, failures, errorPolicy, onObserverError);
 }
 
 async function terminateObservers<T>(
@@ -309,8 +357,30 @@ function throwObserverFailures(
   phase: string,
   failures: readonly AgentObserverFailure[],
   errorPolicy: AgentObserverErrorPolicy,
+  onObserverError: AgentObserverErrorHandler,
 ): void {
-  if (errorPolicy === "throw" && failures.length > 0) {
+  if (failures.length === 0) return;
+  if (errorPolicy === "throw") {
     throw new AgentObserverDispatchError(phase, failures);
+  }
+  reportObserverFailures(phase, failures, onObserverError);
+}
+
+function reportObserverFailures(
+  phase: string,
+  failures: readonly AgentObserverFailure[],
+  onObserverError: AgentObserverErrorHandler,
+): void {
+  for (const failure of failures) {
+    const report: AgentObserverFailureReport = {
+      phase,
+      observer: failure.observer,
+      error: failure.error,
+    };
+    try {
+      onObserverError(report);
+    } catch {
+      // A faulty sink must not turn an ignored observer failure into a rejected run.
+    }
   }
 }

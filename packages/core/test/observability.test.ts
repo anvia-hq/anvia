@@ -1,4 +1,4 @@
-import { describe, expect, expectTypeOf, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 import { z } from "zod";
 import {
   ActiveGenerationObservers,
@@ -174,6 +174,16 @@ const addTool = createTool({
   }),
   outputSchema: z.number(),
   execute: (args) => args.x + args.y,
+});
+
+beforeEach(() => {
+  // The observer group logs ignored failures through console.error; capture it so
+  // tests assert on the calls instead of printing them.
+  vi.spyOn(console, "error").mockImplementation(() => {});
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 describe("agent observability", () => {
@@ -1413,9 +1423,149 @@ describe("active agent observer groups", () => {
     await expect(active.startTool(toolStartArgs())).resolves.toBeInstanceOf(ActiveToolObservers);
     await expect(active.end(runEndArgs())).resolves.toBeUndefined();
     await expect(active.error(runErrorArgs())).resolves.toBeUndefined();
+
+    const consoleError = vi.mocked(console.error);
+    expect(consoleError).toHaveBeenCalledWith(
+      '[anvia] observer "broken" failed during end: nested failed',
+    );
   });
 
-  it("throws nested observer failures in strict mode", async () => {
+  it("logs ignored failures on the run error phase", async () => {
+    const error = new Error("run failed");
+    const active = await startAgentRunObservers(
+      {
+        broken: {
+          startRun: () =>
+            createRunObserver({
+              end: () => {
+                throw error;
+              },
+              error: () => {
+                throw error;
+              },
+            }),
+        },
+      },
+      runStartArgs(),
+      { errorPolicy: "ignore" },
+    );
+
+    await expect(active.error(runErrorArgs())).resolves.toBeUndefined();
+
+    expect(vi.mocked(console.error)).toHaveBeenCalledWith(
+      '[anvia] observer "broken" failed during error: run failed',
+    );
+  });
+
+  it("logs ignored failures on generation and tool error phases", async () => {
+    const error = new Error("phase failed");
+    const active = await startAgentRunObservers(
+      {
+        broken: {
+          startRun: () =>
+            createRunObserver({
+              startGeneration: () => ({
+                end() {},
+                error() {
+                  throw error;
+                },
+              }),
+              startTool: () => ({
+                end() {},
+                error() {
+                  throw error;
+                },
+              }),
+            }),
+        },
+      },
+      runStartArgs(),
+      { errorPolicy: "ignore" },
+    );
+
+    const generation = await active.startGeneration(generationStartArgs());
+    const tool = await active.startTool(toolStartArgs());
+
+    await expect(generation.error(generationErrorArgs())).resolves.toBeUndefined();
+    await expect(tool.error(toolErrorArgs())).resolves.toBeUndefined();
+
+    const consoleError = vi.mocked(console.error);
+    expect(consoleError).toHaveBeenCalledWith(
+      '[anvia] observer "broken" failed during generation.error: phase failed',
+    );
+    expect(consoleError).toHaveBeenCalledWith(
+      '[anvia] observer "broken" failed during tool.error: phase failed',
+    );
+  });
+
+  it("routes ignored failures to a custom sink instead of the console", async () => {
+    const error = new Error("sink failed");
+    const onObserverError = vi.fn();
+    const active = await startAgentRunObservers(
+      {
+        broken: {
+          startRun: () =>
+            createRunObserver({
+              end: () => {
+                throw error;
+              },
+            }),
+        },
+      },
+      runStartArgs(),
+      { errorPolicy: "ignore", onObserverError },
+    );
+
+    await expect(active.end(runEndArgs())).resolves.toBeUndefined();
+
+    expect(onObserverError).toHaveBeenCalledTimes(1);
+    expect(onObserverError).toHaveBeenCalledWith({ phase: "end", observer: "broken", error });
+    expect(vi.mocked(console.error)).not.toHaveBeenCalled();
+  });
+
+  it("reports ignored startup failures through the sink", async () => {
+    const error = new Error("startup failed");
+    const onObserverError = vi.fn();
+    await startAgentRunObservers(
+      {
+        broken: {
+          startRun: () => {
+            throw error;
+          },
+        },
+      },
+      runStartArgs(),
+      { errorPolicy: "ignore", onObserverError },
+    );
+
+    expect(onObserverError).toHaveBeenCalledWith({ phase: "startRun", observer: "broken", error });
+  });
+
+  it("keeps the run resolving when a custom sink throws", async () => {
+    const error = new Error("observer failed");
+    const onObserverError = vi.fn(() => {
+      throw new Error("sink exploded");
+    });
+    const active = await startAgentRunObservers(
+      {
+        broken: {
+          startRun: () =>
+            createRunObserver({
+              end: () => {
+                throw error;
+              },
+            }),
+        },
+      },
+      runStartArgs(),
+      { errorPolicy: "ignore", onObserverError },
+    );
+
+    await expect(active.end(runEndArgs())).resolves.toBeUndefined();
+    expect(onObserverError).toHaveBeenCalledWith({ phase: "end", observer: "broken", error });
+  });
+
+  it("throws nested observer failures in strict mode without logging", async () => {
     const error = new Error("strict failed");
     const active = await startAgentRunObservers(
       {
@@ -1436,6 +1586,8 @@ describe("active agent observer groups", () => {
       name: "AgentObserverDispatchError",
       phase: "startGeneration",
     });
+
+    expect(vi.mocked(console.error)).not.toHaveBeenCalled();
   });
 
   it("terminates nested observers that started before strict startup failures", async () => {

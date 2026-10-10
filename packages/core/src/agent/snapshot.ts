@@ -48,12 +48,21 @@ export function snapshotAgentObservability(
   if (errorPolicy !== "ignore" && errorPolicy !== "throw") {
     throw new TypeError('Agent observability.errorPolicy must be "ignore" or "throw".');
   }
+  if (
+    observability.onObserverError !== undefined &&
+    typeof observability.onObserverError !== "function"
+  ) {
+    throw new TypeError("Agent observability.onObserverError must be a function.");
+  }
   let snapshot: AgentObservabilityOptions = {
     observers: Object.freeze(observers),
     errorPolicy,
   };
   if (observability.primaryTrace !== undefined) {
     snapshot = { ...snapshot, primaryTrace: observability.primaryTrace };
+  }
+  if (observability.onObserverError !== undefined) {
+    snapshot = { ...snapshot, onObserverError: observability.onObserverError };
   }
   return Object.freeze(snapshot);
 }

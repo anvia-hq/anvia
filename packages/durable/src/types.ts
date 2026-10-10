@@ -7,7 +7,7 @@ import type {
 } from "./graph-types.js";
 import type { RegisteredTask, TaskListOptions, TaskPage, TaskTransaction } from "./tasks/types.js";
 import type { Agent, AgentInput, AgentOutcome, AgentPrompt } from "@anvia/core/agent";
-import type { JsonValue, Message, Usage } from "@anvia/core/completion";
+import type { JsonValue, Message, Usage, UserMessage } from "@anvia/core/completion";
 import type { MemoryCompactor, MemoryTokenCounter } from "@anvia/core/memory";
 
 /** Serializable policy captured when a run is submitted. */
@@ -70,6 +70,18 @@ export type DurableSubmission = {
   prompt: AgentPrompt;
 };
 
+/** Reuse requestId when retrying delivery of the same steering input. Scoped to one run. */
+export type DurableSteerOptions = { requestId?: string };
+
+export type DurableSteeringEntry = { id: string; messages: UserMessage[] };
+
+/** Empty boundaries are persisted too, so later input cannot alter replayed requests. */
+export type DurableSteeringState = {
+  pending: DurableSteeringEntry[];
+  checkpoints: Record<string, { turn: number; closing: boolean; entries: DurableSteeringEntry[] }>;
+  closed: boolean;
+};
+
 export type DurableRunRecord = DurableSubmission & {
   id: string;
   version: string;
@@ -103,6 +115,8 @@ export type DurableRunRecord = DurableSubmission & {
   /** Captured at submission; older records continue using generate(). */
   stream?: boolean;
   responses: Record<string, JsonValue>;
+  /** Absent on legacy runs, which retain their original execution boundaries. */
+  steering?: DurableSteeringState;
 };
 
 export type DurableOperation = {
@@ -155,6 +169,8 @@ export type DurableEvent = {
   runId: string;
   createdAt: string;
   type:
+    | "steering_queued"
+    | "steering_applied"
     | "submitted"
     | "status"
     | "model_started"

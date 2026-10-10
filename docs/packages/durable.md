@@ -359,6 +359,39 @@ Responses are validated and persisted atomically with the continuation transitio
 the same response is harmless; a conflicting response fails. Reopening the runtime does not
 discard a pending interaction or execute its tool before approval.
 
+## Steering an active run
+
+```ts
+const receipt = await run.steer(
+  { prompt: "Focus on the recovery behavior." },
+  { requestId: "correction-123" }, // optional; reuse when retrying delivery
+);
+// receipt: { id: "correction-123", status: "queued" }
+```
+
+`runtime.steer(runId, input, options)` provides the same control. Input accepts exactly
+one of `prompt` (text or a structured user message) and `messages` (a nonempty array of
+user messages). The receipt confirms persistence, not model consumption. Reusing a request
+ID with equivalent messages returns the original receipt; different input conflicts.
+
+Steering is applied in acceptance order at the next safe boundary: before the first model
+call, after the current tool batch, or after a model answer before finalization. It never
+interrupts an in-flight model/tool call. `steering_queued` and `steering_applied` are committed
+progress events; the latter includes the receipt `id`, `epoch`, and boundary `turn` (`0`
+before the initial model call). Snapshots retain pending input and applied checkpoints.
+Empty boundaries are saved too, so restart/retry cannot change an already saved model request.
+Applied messages remain in the canonical conversation and subsequent session history.
+
+Waiting approvals and recovery blocks accept steering but still require `respond()` or
+reconciliation before execution continues. Steering consumes the existing model-turn budget;
+it does not extend it or guarantee another model call if the run fails or is cancelled.
+New input is rejected once finalization begins or the run is terminal. Duplicate request IDs
+can still acknowledge earlier acceptance. Owned runs also obey their parent task's controls.
+
+Steering is available on runs submitted by this release, including graph and owned-agent
+runs. Legacy runs keep their old replay boundaries and reject steering. Custom task handlers
+continue to use `signal()`. Steering state counts toward `limits.maxPayloadBytes`.
+
 ## HTTP server and client
 
 Import `createDurableHandler` from `@anvia/server/durable` and `DurableClient` from
@@ -394,12 +427,13 @@ ends or disconnects; authorization is checked at connection time.
 | GET    | `/durable/runs?sessionId=...`        | List summaries; optional `agentId`, `status`, `after`, `limit`                    |
 | GET    | `/durable/runs/:id`                  | Atomic snapshot                                                                   |
 | GET    | `/durable/runs/:id/events?after=...` | SSE committed events; `Last-Event-ID` is the fallback cursor                      |
+| POST   | `/durable/runs/:id/steer`            | `{input: {prompt} or {messages}, requestId?}`; returns a receipt (202)            |
 | POST   | `/durable/runs/:id/respond`          | `{interactionId, response}`                                                       |
 | POST   | `/durable/runs/:id/resolve-tool`     | `{operationId, output}`                                                           |
 | POST   | `/durable/runs/:id/retry`            | Explicitly retry                                                                  |
 | POST   | `/durable/runs/:id/cancel`           | Persist cancellation                                                              |
 
-Mutation endpoints other than submit return 204. JSON bodies default to a 64 KiB limit,
+Mutation endpoints other than submit and steer return 204. JSON bodies default to a 64 KiB limit,
 configurable through `maxBodyBytes`. Validation errors return 400, denial 403, missing runs
 404, conflicts 409, oversized bodies 413, unsupported media types 415, and unexpected errors
 500 without internal diagnostics. Responses disable caching. SSE frames include the durable
@@ -428,6 +462,9 @@ for await (const event of client.stream(accepted.run.id, { after: snapshot.curso
 }
 ```
 
+Use `client.steer(runId, { prompt: "Focus on recovery" }, { requestId: "correction-123" })`
+for the same persisted control over HTTP. The handler authorizes it with action `steer`.
+
 The client also exposes `listRuns`, `respond`, `resolveTool`, `retry`, and `cancel`. Request
 options accept `abortSignal`; streaming cancellation only detaches that subscriber. The
 client validates incoming snapshots and events and rejects wrong-run or out-of-order events.
@@ -454,7 +491,7 @@ Durable progress is not the existing token-delta chat protocol.
   They are not the authoritative execution journal.
 - Pipeline/team recovery, Studio integration,
   Postgres, retention, general migration tooling, and distributed worker deployment are follow-up work.
-  Database records are experimental; the task-aware engine upgrades schema 1–7 to 8 on acquisition. Older engines reject schema 8.
+  Database records are experimental; the task-aware engine upgrades schema 1–8 to 9 on acquisition. Older engines reject schema 9. Core execution protocol 4 is required.
 
 ## Operational readiness
 

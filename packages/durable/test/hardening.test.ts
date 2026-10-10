@@ -460,7 +460,7 @@ it("restores schema-3 backups and upgrades their runs without changing completed
   const legacy = new DatabaseSync(path);
   legacy.exec("UPDATE anvia_durable_owner SET version = 3");
   legacy.close();
-  expect((await backupSqlite(path, archive)).schemaVersion).toBe(8);
+  expect((await backupSqlite(path, archive)).schemaVersion).toBe(9);
   // Reproduce a sealed pre-streaming backup: these records contain no streaming fields.
   const backup = new DatabaseSync(archive);
   backup.exec("UPDATE anvia_durable_owner SET version = 3");

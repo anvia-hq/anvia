@@ -227,7 +227,7 @@ describe("durable task graphs", () => {
       expect(await (await restarted.getRun(run.id)).result()).toMatchObject({ output: "done" });
       await restarted.close();
       const updated = new DatabaseSync(path);
-      expect(updated.prepare("SELECT version FROM anvia_durable_owner").get()?.version).toBe(8);
+      expect(updated.prepare("SELECT version FROM anvia_durable_owner").get()?.version).toBe(9);
       updated.close();
     },
   );

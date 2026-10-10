@@ -132,3 +132,15 @@ it("validates custom-task root identity and monotonic cursors and releases malfo
     expect(cancel).toHaveBeenCalledTimes(1);
   }
 });
+
+it("validates steering receipts from the server", async () => {
+  for (const receipt of [{ id: "", status: "queued" }, { id: "id", status: "applied" }, null]) {
+    const client = new DurableClient({
+      endpoint: "https://example.test/durable",
+      fetch: async () => Response.json(receipt),
+    });
+    await expect(client.steer("run", { prompt: "change" })).rejects.toThrow(
+      "Invalid durable steering receipt",
+    );
+  }
+});

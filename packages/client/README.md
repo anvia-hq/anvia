@@ -59,7 +59,11 @@ readers are also available from `@anvia/client/transport` for other event contra
 
 The optional `@anvia/client/durable` entrypoint exports `DurableClient` and
 `DurableHttpError`. Install `@anvia/durable` to use it. It supports submit, list, snapshot,
-SSE observation, approval responses, retry, cancellation, and tool reconciliation.
+SSE observation, queued steering, approval responses, retry, cancellation, and tool reconciliation.
+Use `client.steer(runId, { prompt: "Focus on recovery" }, { requestId: "correction-123" })`
+to receive a persisted receipt. Reuse the optional request ID to deduplicate delivery;
+observe `steering_applied` to confirm the input entered the conversation. Steering requires
+the matching durable release (0.8 or newer within the supported peer range).
 
 Construct it with an absolute `endpoint`, optional `fetch`, `credentials`, and static or
 per-request `headers`. Restore UI state from `snapshot(runId)`, then observe

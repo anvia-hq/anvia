@@ -63,7 +63,10 @@ Your application owns routing, authentication, request error handling, and durab
 
 The optional `@anvia/server/durable` entrypoint exports `createDurableHandler` for
 `@anvia/durable` runtimes. It provides submission, session-scoped run listing, snapshots,
-SSE events with persisted IDs, approval responses, retry, cancellation, and reconciliation.
+SSE events with persisted IDs, queued steering, approval responses, retry, cancellation, and reconciliation.
+`POST /durable/runs/:id/steer` accepts `{ input: { prompt } }` or `{ input: { messages } }`,
+plus an optional `requestId`, and returns a persisted receipt with HTTP 202. It requires
+authorization action `steer` and the matching durable release (0.8 or newer within the supported peer range).
 An `authorize(request, resource)` callback is required for all reads and writes. The host
 owns runtime startup (`resume`) and shutdown (`close`). Client disconnects detach observers.
 Task submission requires `@anvia/durable` 0.6 or newer so authorization receives each effective

@@ -215,6 +215,9 @@ it("resumes an unfinished journal actually written by 0.6.0, preserving embedded
   runtimes.push(runtime);
   const id = fixture.runs[0].id;
   expect(runtime.status(id).status).toBe("running");
+  expect(() => runtime.steer(id, { prompt: "legacy correction" })).toThrow(
+    "Steering requires a run submitted with steering support",
+  );
   for (const [index, op] of runtime
     .snapshot(id)
     .operations.filter((op) => op.kind === "model")

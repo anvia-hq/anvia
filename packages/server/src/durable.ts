@@ -10,6 +10,7 @@ import {
   parseDurableListOptions,
   parseDurableResolution,
   parseDurableResponse,
+  parseDurableSteering,
   parseDurableSubmission,
 } from "@anvia/durable/protocol";
 import {
@@ -27,6 +28,7 @@ export type DurableHttpAction =
   | "inspect"
   | "events"
   | "respond"
+  | "steer"
   | "resolve-tool"
   | "retry"
   | "cancel"
@@ -122,7 +124,7 @@ export function createDurableHandler(
       if (
         parts.length > 2 ||
         (suffix !== undefined &&
-          !["events", "respond", "resolve-tool", "retry", "cancel"].includes(suffix))
+          !["events", "steer", "respond", "resolve-tool", "retry", "cancel"].includes(suffix))
       )
         return json({ error: "Not found" }, 404);
       const action: DurableHttpAction =
@@ -135,6 +137,16 @@ export function createDurableHandler(
       if (action === "inspect") return json(snapshot);
       if (action === "events")
         return durableEventsResponse(request, snapshot.cursor, (options) => run.stream(options));
+      if (action === "steer") {
+        const body = parseDurableSteering(await readJson(request, maxBodyBytes));
+        return json(
+          await run.steer(
+            body.input,
+            body.requestId === undefined ? {} : { requestId: body.requestId },
+          ),
+          202,
+        );
+      }
       if (action === "respond") {
         const body = parseDurableResponse(await readJson(request, maxBodyBytes));
         await run.respond(body.interactionId, body.response);

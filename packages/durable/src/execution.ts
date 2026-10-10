@@ -1,3 +1,4 @@
+import { createSteeringDrain } from "./steering.js";
 import { createContextPreparation } from "./loop-context.js";
 import { MaxTurnsError } from "@anvia/core/agent";
 import {
@@ -141,6 +142,9 @@ export function createExecution(
   }
 
   return {
+    ...(run.steering === undefined
+      ? {}
+      : { drainSteering: createSteeringDrain(store, run, signal) }),
     async prepareMessages(turn, messages, checkpoint) {
       // Check before compaction too: an exhausted session must not spend another model call.
       const exhausted = store.transaction((tx) => {

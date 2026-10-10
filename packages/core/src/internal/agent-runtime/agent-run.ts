@@ -460,6 +460,9 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
           throw error;
         }
       }
+      if (this.continuationState === undefined && this.execution?.drainSteering !== undefined) {
+        await this.drainSteeringMessages(runId, 0, newMessages, pendingTurnMessages);
+      }
       while (currentTurns <= this.maxTurnCount) {
         const prompt = newMessages.at(-1);
         if (prompt === undefined) {
@@ -789,6 +792,9 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
           }
           throw error;
         }
+      }
+      if (this.continuationState === undefined && this.execution?.drainSteering !== undefined) {
+        await this.drainSteeringMessages(runId, 0, newMessages, pendingTurnMessages);
       }
       while (currentTurns <= this.maxTurnCount) {
         const prompt = newMessages.at(-1);
@@ -2303,7 +2309,10 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     pendingTurnMessages: MessageType[],
     options: { closeWhenEmpty?: boolean } = {},
   ): Promise<QueuedSteering[]> {
-    const receipts = this.steeringMessages.splice(0);
+    const receipts = [
+      ...(this.execution?.drainSteering?.(turn, options.closeWhenEmpty === true) ?? []),
+      ...this.steeringMessages.splice(0),
+    ];
     if (receipts.length === 0) {
       if (options.closeWhenEmpty === true) {
         this.runState = "closing";

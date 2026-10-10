@@ -98,6 +98,7 @@ describe("durable HTTP bridge", () => {
     for (const action of [
       () => client.snapshot(privateRun.id),
       () => client.cancel(privateRun.id),
+      () => client.steer(privateRun.id, { prompt: "change" }),
       () => client.retry(privateRun.id),
       () => client.respond(privateRun.id, "approval", { type: "tool-approval", approved: true }),
       () => client.resolveTool(privateRun.id, "operation", { type: "text", value: "ok" }),
@@ -300,4 +301,52 @@ it("delivers persisted token events and reconnects by cursor over the durable HT
   expect(reconnected.filter((event) => event.type === "model_delta")).toEqual([deltas[1]]);
   expect((await client.snapshot(initial.run.id)).run.stream).toBe(true);
   expect(completion).not.toHaveBeenCalled();
+});
+
+it("steers remotely with authorization, deduplication, validation, and persisted events", async () => {
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const model = vi.fn<Parameters<typeof makeAgent>[0]>(async () => {
+    await held;
+    return done();
+  });
+  const { client, runtime, authorize } = await setup(makeAgent(model));
+  const { run } = await client.submit(submission);
+  await vi.waitFor(() => expect(model).toHaveBeenCalledTimes(1));
+  try {
+    const receipt = await client.steer(
+      run.id,
+      { prompt: "Use the new plan" },
+      { requestId: "correction" },
+    );
+    expect(
+      await client.steer(run.id, { prompt: "Use the new plan" }, { requestId: "correction" }),
+    ).toEqual(receipt);
+    await expect(
+      client.steer(run.id, { prompt: "Conflict" }, { requestId: "correction" }),
+    ).rejects.toMatchObject({ status: 409 });
+    await expect(client.steer(run.id, { messages: [] })).rejects.toMatchObject({ status: 400 });
+    await expect(client.steer(run.id, { prompt: "x".repeat(2000) })).rejects.toMatchObject({
+      status: 413,
+    });
+    expect(authorize).toHaveBeenCalledWith(
+      expect.any(Request),
+      expect.objectContaining({ action: "steer", runId: run.id, sessionId: "allowed" }),
+    );
+  } finally {
+    release();
+  }
+  await (await runtime.getRun(run.id)).result();
+  expect(model).toHaveBeenCalledTimes(2);
+  expect(model.mock.calls[1]![0].chatHistory.at(-1)).toEqual({
+    role: "user",
+    content: "Use the new plan",
+  });
+  const applied = [];
+  for await (const event of client.stream(run.id))
+    if (event.type === "steering_applied") applied.push(event);
+  expect(applied).toHaveLength(1);
+  await expect(client.steer(run.id, { prompt: "too late" })).rejects.toMatchObject({ status: 409 });
 });

@@ -32,6 +32,7 @@ export function createRunRecord(
           },
         }),
     responses: {},
+    steering: { pending: [], checkpoints: {}, closed: false },
     ...(registration.stream === undefined ? {} : { stream: registration.stream }),
     ...(registration.modelRetry === undefined
       ? {}

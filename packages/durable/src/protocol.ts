@@ -1,3 +1,4 @@
+export { parseDurableSteering, parseDurableSteerReceipt } from "./steering.js";
 import { promptSchema } from "./prompt.js";
 import type { DurableGraphEvent } from "./graph-types.js";
 import { z } from "zod";
@@ -22,6 +23,9 @@ export type {
   DurableRunPage,
   DurableRunSummary,
   DurableSnapshot,
+  DurableSteerOptions,
+  DurableSteeringEntry,
+  DurableSteeringState,
   DurableSubmission,
   DurableSubmitOptions,
 } from "./types.js";

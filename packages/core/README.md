@@ -102,10 +102,12 @@ streamed reasoning for replay on subsequent turns. Conflicting text, reasoning, 
 fail provider output validation.
 
 For recoverable execution, register a supported agent with the experimental
-[`@anvia/durable`](../durable/README.md) runtime. Durable tools receive an optional stable
+[`@anvia/durable`](../durable/README.md) runtime. Internal execution protocol 4 adds a synchronous steering checkpoint boundary for
+persisting queued user input and replaying it consistently. Upgrade core and durable together.
+Durable tools receive an optional stable
 `ToolCallContext.operationId` for external idempotency. Direct execution does not supply it.
 Durable registrations can opt into persisted streaming with `stream: true`; core execution
-protocol version 2 checkpoints validated streamed completions alongside tool results.
+protocol version 4 checkpoints validated streamed completions alongside tool results.
 
 ## Learn more
 

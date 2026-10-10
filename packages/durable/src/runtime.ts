@@ -1,3 +1,5 @@
+import { queueSteering } from "./steering.js";
+import type { AgentSteerInput, AgentSteerReceipt } from "@anvia/core/agent";
 import { parsePrompt, promptMessage } from "./prompt.js";
 import { MaxTurnsError } from "@anvia/core/agent";
 import type { DefinedGoal } from "./goals/definition.js";
@@ -46,6 +48,7 @@ import { listOptionsSchema } from "./schema.js";
 import { registrations } from "./registration.js";
 import { DurableRun } from "./run.js";
 import type {
+  DurableSteerOptions,
   DurableAgentRegistration,
   DurableListOptions,
   DurableRunPage,
@@ -448,6 +451,19 @@ export class DurableRuntime {
     this.assertOpen();
     if (!Number.isSafeInteger(after) || after < 0) throw new TypeError("Invalid event cursor.");
     return this.store.events(id, after, 100);
+  }
+
+  steer(id: string, input: AgentSteerInput, options: DurableSteerOptions = {}): AgentSteerReceipt {
+    this.assertOpen();
+    const receipt = this.store.transaction((tx) => {
+      const run = requireRun(tx, id);
+      assertOwnedTaskMutable(tx, run);
+      if (run.graphId !== undefined && requireGraph(tx, run.graphId).cancelled)
+        throw new DurableConflictError("Graph is cancelled.");
+      return queueSteering(tx, run, input, options);
+    });
+    this.pump();
+    return receipt;
   }
 
   respond(id: string, interactionId: string, value: AgentInteractionResponse): void {

@@ -508,8 +508,8 @@ it("preserves compaction checkpoints and complete history through backup and res
   await runtime.close();
   const archive = join(dir, "backup.sqlite");
   const restored = join(dir, "restored.sqlite");
-  expect((await backupSqlite(path, archive)).schemaVersion).toBe(8);
-  expect((await restoreSqlite(archive, restored)).schemaVersion).toBe(8);
+  expect((await backupSqlite(path, archive)).schemaVersion).toBe(9);
+  expect((await restoreSqlite(archive, restored)).schemaVersion).toBe(9);
   const reopened = await open(registration, restored);
   expect(await (await reopened.getRun(run.id)).snapshot()).toEqual(before);
   const next = await turn(reopened, "3");

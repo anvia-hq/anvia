@@ -10,10 +10,13 @@ import {
   type TaskListOptions,
   type TaskEvent,
 } from "@anvia/durable/protocol";
+import type { AgentSteerInput, AgentSteerReceipt } from "@anvia/core/agent";
 import type { AgentInteractionResponse } from "@anvia/core/agent/interactions";
 import type { JsonValue, ToolResultOutput } from "@anvia/core/completion";
 import {
   parseDurableEvent,
+  parseDurableSteerReceipt,
+  type DurableSteerOptions,
   parseDurableGraphSnapshot,
   parseDurableGraphEvent,
   parseDurableGraphPage,
@@ -272,6 +275,22 @@ export class DurableClient {
       cursor = event.sequence;
       yield event;
     }
+  }
+  async steer(
+    runId: string,
+    input: AgentSteerInput,
+    options: DurableSteerOptions & DurableRequestOptions = {},
+  ): Promise<AgentSteerReceipt> {
+    return parseDurableSteerReceipt(
+      await (
+        await this.request(
+          `${this.path(runId)}/steer`,
+          "POST",
+          { input, ...(options.requestId === undefined ? {} : { requestId: options.requestId }) },
+          options,
+        )
+      ).json(),
+    );
   }
   async respond(
     runId: string,

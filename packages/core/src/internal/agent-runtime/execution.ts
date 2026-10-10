@@ -4,12 +4,13 @@ import type {
   CompletionResponse,
   ToolCallPart,
   Message,
+  UserMessage,
 } from "../../completion";
 import type { NormalizedToolOutput, ToolCallContext } from "../../tool";
 import type { AgentStreamEvent } from "../../agent/run-types";
 
 /** Runtime capability marker: older core versions must fail before accepting durable work. */
-export const AGENT_RUN_EXECUTION_VERSION = 3;
+export const AGENT_RUN_EXECUTION_VERSION = 4;
 
 /** Normalized generation progress; never includes raw provider responses. */
 export type AgentCompletionStreamEvent = Extract<
@@ -33,6 +34,8 @@ export type AgentToolExecutionResult =
 
 /** Internal persistence boundary used by execution runtimes. Callbacks own external effects. */
 export interface AgentRunExecution {
+  /** Synchronously checkpoint queued input at a safe boundary, including empty/closing drains. */
+  drainSteering?(turn: number, closing: boolean): { id: string; messages: UserMessage[] }[];
   /** Persist the context selected before each model call, including skipped compaction decisions. */
   prepareMessages?(
     turn: number,

@@ -53,6 +53,7 @@ export function limitedTransaction(
         "input",
         "history",
         "responses",
+        "steering",
         "outcome",
         "contextCheckpoint",
         "exhaustion",

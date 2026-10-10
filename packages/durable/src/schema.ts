@@ -1,3 +1,4 @@
+import { steeringStateSchema } from "./steering.js";
 import { promptSchema } from "./prompt.js";
 import { z } from "zod";
 import {
@@ -144,6 +145,7 @@ const runSchema = z
     contextPrepared: z.boolean().optional(),
     loopCompaction: z.boolean().optional(),
     responses: z.record(z.string(), jsonValue),
+    steering: steeringStateSchema.optional(),
     input: z.union([
       z.object({ messages: messagesSchema.min(1) }).strict(),
       z
@@ -264,6 +266,8 @@ export function parseOperation(value: unknown): DurableOperation {
 }
 
 export const eventTypeSchema = z.enum([
+  "steering_queued",
+  "steering_applied",
   "submitted",
   "status",
   "model_started",

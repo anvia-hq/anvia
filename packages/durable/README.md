@@ -125,6 +125,39 @@ This release reads existing text-only journals; older releases cannot read journ
 containing structured prompts. Hosts reading `run.prompt` must handle both strings
 and user messages.
 
+## Steering an active run
+
+```ts
+const receipt = await run.steer(
+  { prompt: "Focus on the recovery behavior." },
+  { requestId: "correction-123" }, // optional; reuse when retrying delivery
+);
+// receipt: { id: "correction-123", status: "queued" }
+```
+
+`runtime.steer(runId, input, options)` provides the same control. Input accepts exactly
+one of `prompt` (text or a structured user message) and `messages` (a nonempty array of
+user messages). The receipt confirms persistence, not model consumption. Reusing a request
+ID with equivalent messages returns the original receipt; different input conflicts.
+
+Steering is applied in acceptance order at the next safe boundary: before the first model
+call, after the current tool batch, or after a model answer before finalization. It never
+interrupts an in-flight model/tool call. `steering_queued` and `steering_applied` are committed
+progress events; the latter includes the receipt `id`, `epoch`, and boundary `turn` (`0`
+before the initial model call). Snapshots retain pending input and applied checkpoints.
+Empty boundaries are saved too, so restart/retry cannot change an already saved model request.
+Applied messages remain in the canonical conversation and subsequent session history.
+
+Waiting approvals and recovery blocks accept steering but still require `respond()` or
+reconciliation before execution continues. Steering consumes the existing model-turn budget;
+it does not extend it or guarantee another model call if the run fails or is cancelled.
+New input is rejected once finalization begins or the run is terminal. Duplicate request IDs
+can still acknowledge earlier acceptance. Owned runs also obey their parent task's controls.
+
+Steering is available on runs submitted by this release, including graph and owned-agent
+runs. Legacy runs keep their old replay boundaries and reject steering. Custom task handlers
+continue to use `signal()`. Steering state counts toward `limits.maxPayloadBytes`.
+
 ## Streaming model output
 
 Set `stream: true` on an agent registration to execute it with `agent.stream()`:
@@ -160,8 +193,8 @@ exposed before schema validation, and the saved result arrives in `model_complet
 
 Persisting each exposed delta adds SQLite writes and retained event data. The payload limit
 applies to each delta; configure model output limits and database retention in the host application.
-SQLite schema 8 shares persisted model histories and context projections; schemas 1–7 upgrade on acquisition.
-Older engines reject schema 8. Upgrade core and durable together: this runtime requires execution protocol version 3.
+SQLite schema 9 persists steering boundaries alongside shared model histories and context projections; schemas 1–8 upgrade on acquisition.
+Older engines reject schema 9. Upgrade core and durable together: this runtime requires execution protocol version 4.
 
 ## Conversation compaction
 

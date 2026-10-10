@@ -174,5 +174,38 @@ save projected messages, usage, and events, including skipped decisions. Approva
 carry the prior projection. Legacy submissions retain their previous request sequence on recovery.
 Graph tasks remain excluded and there is no manual API. Thresholds count messages; reserve room
 for instructions, schemas, output, and retained tool results. Canonical storage and payload limits
-remain unchanged. SQLite schemas 1–6 upgrade to schema 7; older runtimes cannot read that database.
-Upgrade core and durable together for execution protocol version 3.
+remain unchanged. SQLite schemas 1–8 upgrade to schema 9; older runtimes cannot read that database.
+Upgrade core and durable together for execution protocol version 4.
+
+## Steering an active run
+
+```ts
+const receipt = await run.steer(
+  { prompt: "Focus on the recovery behavior." },
+  { requestId: "correction-123" }, // optional; reuse when retrying delivery
+);
+// receipt: { id: "correction-123", status: "queued" }
+```
+
+`runtime.steer(runId, input, options)` provides the same control. Input accepts exactly
+one of `prompt` (text or a structured user message) and `messages` (a nonempty array of
+user messages). The receipt confirms persistence, not model consumption. Reusing a request
+ID with equivalent messages returns the original receipt; different input conflicts.
+
+Steering is applied in acceptance order at the next safe boundary: before the first model
+call, after the current tool batch, or after a model answer before finalization. It never
+interrupts an in-flight model/tool call. `steering_queued` and `steering_applied` are committed
+progress events; the latter includes the receipt `id`, `epoch`, and boundary `turn` (`0`
+before the initial model call). Snapshots retain pending input and applied checkpoints.
+Empty boundaries are saved too, so restart/retry cannot change an already saved model request.
+Applied messages remain in the canonical conversation and subsequent session history.
+
+Waiting approvals and recovery blocks accept steering but still require `respond()` or
+reconciliation before execution continues. Steering consumes the existing model-turn budget;
+it does not extend it or guarantee another model call if the run fails or is cancelled.
+New input is rejected once finalization begins or the run is terminal. Duplicate request IDs
+can still acknowledge earlier acceptance. Owned runs also obey their parent task's controls.
+
+Steering is available on runs submitted by this release, including graph and owned-agent
+runs. Legacy runs keep their old replay boundaries and reject steering. Custom task handlers
+continue to use `signal()`. Steering state counts toward `limits.maxPayloadBytes`.

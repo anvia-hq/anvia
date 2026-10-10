@@ -1,10 +1,15 @@
 import { delay } from "./wait.js";
-import type { AgentOutcome } from "@anvia/core/agent";
+import type { AgentOutcome, AgentSteerInput, AgentSteerReceipt } from "@anvia/core/agent";
 import type { AgentInteractionResponse } from "@anvia/core/agent/interactions";
 import type { ToolResultOutput } from "@anvia/core/completion";
 import { DurableRunError } from "./errors.js";
 import type { DurableRuntime } from "./runtime.js";
-import type { DurableEvent, DurableSnapshot, DurableRunSummary } from "./types.js";
+import type {
+  DurableEvent,
+  DurableSnapshot,
+  DurableRunSummary,
+  DurableSteerOptions,
+} from "./types.js";
 
 export type DurableStreamOptions = { after?: number; abortSignal?: AbortSignal };
 
@@ -60,6 +65,13 @@ export class DurableRun {
       // Cancelling a wait only detaches this subscriber.
       await delay(options.abortSignal);
     }
+  }
+
+  async steer(
+    input: AgentSteerInput,
+    options: DurableSteerOptions = {},
+  ): Promise<AgentSteerReceipt> {
+    return this.runtime.steer(this.id, input, options);
   }
 
   async respond(interactionId: string, response: AgentInteractionResponse): Promise<void> {

@@ -1,3 +1,4 @@
+import { expectJournalRequests } from "./journal-assertions.js";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -167,6 +168,7 @@ describe("run discovery and scheduling", () => {
     expect((await restored.snapshot()).run.nextAttemptAt).toBe(before.run.nextAttemptAt);
     expect(model).toHaveBeenCalledTimes(1);
     expect(await restored.result()).toMatchObject({ output: "done" });
+    expectJournalRequests(restarted, restored.id);
     const after = await restored.snapshot();
     expect(after.operations[0]?.attempts).toBe(2);
     expect(after.run.modelTurns).toBe(1);

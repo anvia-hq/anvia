@@ -4,7 +4,7 @@ import type { AgentInteractionResponse } from "@anvia/core/agent/interactions";
 import type { ToolResultOutput } from "@anvia/core/completion";
 import { DurableRunError } from "./errors.js";
 import type { DurableRuntime } from "./runtime.js";
-import type { DurableEvent, DurableSnapshot } from "./types.js";
+import type { DurableEvent, DurableSnapshot, DurableRunSummary } from "./types.js";
 
 export type DurableStreamOptions = { after?: number; abortSignal?: AbortSignal };
 
@@ -15,14 +15,18 @@ export class DurableRun {
     private readonly runtime: DurableRuntime,
   ) {}
 
-  async snapshot(): Promise<DurableSnapshot> {
-    return this.runtime.snapshot(this.id);
+  async snapshot(options: { operations?: boolean } = {}): Promise<DurableSnapshot> {
+    return this.runtime.snapshot(this.id, options);
+  }
+
+  async status(): Promise<DurableRunSummary> {
+    return this.runtime.status(this.id);
   }
 
   async *stream(options: DurableStreamOptions = {}): AsyncIterable<DurableEvent> {
     let cursor = options.after ?? 0;
     if (!Number.isSafeInteger(cursor) || cursor < 0) throw new TypeError("Invalid event cursor.");
-    if (cursor > (await this.snapshot()).cursor)
+    if (cursor > (await this.snapshot({ operations: false })).cursor)
       throw new TypeError("Event cursor is ahead of the store.");
     while (true) {
       options.abortSignal?.throwIfAborted();
@@ -33,7 +37,7 @@ export class DurableRun {
         yield event;
       }
       if (events.length > 0) continue;
-      const { run } = await this.snapshot();
+      const run = await this.status();
       if (run.status === "completed" || run.status === "failed" || run.status === "cancelled")
         return;
       await delay(options.abortSignal);
@@ -44,13 +48,14 @@ export class DurableRun {
     while (true) {
       options.abortSignal?.throwIfAborted();
       // Settle from the observed state: another caller may retry before the next snapshot.
-      const { run } = await this.snapshot();
+      const run = await this.status();
       if (run.status === "failed" || run.status === "cancelled") {
         throw new DurableRunError(run.id, run.status, run.error ?? run.status);
       }
       if (run.status === "completed") {
-        if (run.outcome === undefined) throw new Error("Completed durable run has no outcome.");
-        return run.outcome;
+        const { outcome } = this.runtime.run(this.id);
+        if (outcome === undefined) throw new Error("Completed durable run has no outcome.");
+        return outcome;
       }
       // Cancelling a wait only detaches this subscriber.
       await delay(options.abortSignal);

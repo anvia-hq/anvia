@@ -160,8 +160,8 @@ exposed before schema validation, and the saved result arrives in `model_complet
 
 Persisting each exposed delta adds SQLite writes and retained event data. The payload limit
 applies to each delta; configure model output limits and database retention in the host application.
-SQLite schema 7 includes persisted context projections and typed turn exhaustion; schemas 1–6 upgrade on acquisition.
-Older engines reject schema 7. Upgrade core and durable together: this runtime requires execution protocol version 3.
+SQLite schema 8 shares persisted model histories and context projections; schemas 1–7 upgrade on acquisition.
+Older engines reject schema 8. Upgrade core and durable together: this runtime requires execution protocol version 3.
 
 ## Conversation compaction
 
@@ -292,7 +292,41 @@ never executed again, regardless of policy. An interrupted `manual` tool becomes
 
 Use `runtime.listRuns({ sessionId, status: "waiting", limit: 25 })` to discover pending
 approvals. Listings also support agent/status filters and insertion cursors. Inspect the
-full record with `runtime.getRun(id)` and `run.snapshot()`.
+full record with `runtime.run(id)`, or obtain a handle with `runtime.getRun(id)`.
+
+For frequent status polling, use the bounded summary rather than decoding a transcript:
+
+```ts
+const status = runtime.status(runId); // DurableRunSummary; independent of turn count
+const record = runtime.run(runId); // DurableRunRecord; no operation reads
+const view = runtime.snapshot(runId, { operations: false }); // record + cursor, operations: []
+const request = runtime.operationRequest(runId, "0:model:2"); // complete CompletionRequest
+```
+
+Run handles also expose `await run.status()` and `await run.snapshot({ operations: false })`.
+`run()` and snapshots still decode the run's history/outcome; choose `status()` when those
+are unnecessary. `listRuns()` reads the same bounded summaries. `runScope()`, task graphs,
+and default task snapshots never load operation payloads. Pass `{ operations: true }` to
+`task.snapshot()` when inspecting task effects.
+
+**Breaking in 0.7:** SQLite snapshots retain compact operation envelopes. Model operations
+marked `historyEncoding: "linked-v1"` contain an opaque `{ head, length }` reference at
+`input.request.chatHistory`; context inputs and prepared messages use the same representation.
+Use `operationRequest(runId, operation.key)` to reconstruct one model request on demand,
+including requests from before compaction or an approval continuation. It returns a detached
+copy and also supports legacy embedded requests. Do not treat stored references as message arrays.
+
+Messages and immutable list prefixes are shared across operations. Writes commit the referenced
+content atomically with the operation, preserve JSON property order, and replay the expanded
+request through the existing checkpoint comparison. Model-started events use the shared log
+on disk but return their original full payloads; event semantics and cursors are unchanged.
+Existing 0.6.x operations are read in place and compacted only if rewritten. Registration
+`version` fencing is unchanged; the storage upgrade does not require changing agent versions.
+Backups include the entire shared log. There is no automatic pruning or vacuum of old records.
+
+Custom stores must implement `DurableTransaction.getRunSummary(id)` as a bounded read.
+`getOperation()` must return expanded histories; `operations()` returns stored envelopes.
+These storage interfaces and the snapshot shape are the migration points for custom adapters.
 
 `runtime.submit(input, { enqueue: true })` persists a successor behind the current session
 run. Different sessions execute up to `maxConcurrentRuns` (default 4). Approvals and recovery

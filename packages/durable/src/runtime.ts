@@ -25,7 +25,11 @@ import {
   parseAgentInteractionResponse,
   type AgentInteractionResponse,
 } from "@anvia/core/agent/interactions";
-import { parseMessage, type ToolResultOutput } from "@anvia/core/completion";
+import {
+  parseMessage,
+  type CompletionRequest,
+  type ToolResultOutput,
+} from "@anvia/core/completion";
 import { withInternalAgentRunOptions } from "@anvia/core/internal/agent";
 import {
   DurableConflictError,
@@ -49,6 +53,7 @@ import type {
   DurableRunRecord,
   DurableRuntimeOptions,
   DurableSnapshot,
+  DurableRunSummary,
   DurableStore,
   DurableSubmission,
   DurableTransaction,
@@ -371,7 +376,7 @@ export class DurableRuntime {
   }
 
   async getRun(id: string): Promise<DurableRun> {
-    this.snapshot(id);
+    this.run(id);
     return new DurableRun(id, this);
   }
 
@@ -402,11 +407,39 @@ export class DurableRuntime {
     return this.closePromise;
   }
 
-  snapshot(id: string): DurableSnapshot {
+  /** Read only the run record, without decoding any operation records. */
+  run(id: string): DurableRunRecord {
+    this.assertOpen();
+    return this.store.transaction((tx) => requireRun(tx, id));
+  }
+
+  /** Bounded status projection, independent of transcript and operation count. */
+  status(id: string): DurableRunSummary {
+    this.assertOpen();
+    return this.store.transaction((tx) => {
+      const summary = tx.getRunSummary(id);
+      if (summary === undefined) throw new DurableNotFoundError("Durable run not found.");
+      return summary;
+    });
+  }
+
+  /** Rebuild one model request, including legacy embedded requests. */
+  operationRequest(id: string, key: string): CompletionRequest {
+    this.assertOpen();
+    return this.store.transaction((tx) => {
+      requireRun(tx, id);
+      const operation = tx.getOperation(id, key);
+      if (operation === undefined) throw new DurableNotFoundError("Durable operation not found.");
+      if (operation.kind !== "model") throw new TypeError("Operation is not a model request.");
+      return (operation.input as unknown as { request: CompletionRequest }).request;
+    });
+  }
+
+  snapshot(id: string, options: { operations?: boolean } = {}): DurableSnapshot {
     this.assertOpen();
     return this.store.transaction((tx) => ({
       run: requireRun(tx, id),
-      operations: tx.operations(id),
+      operations: options.operations === false ? [] : tx.operations(id),
       cursor: tx.cursor(),
     }));
   }
@@ -560,7 +593,7 @@ export class DurableRuntime {
 
   private launch(id: string): void {
     if (this.active.has(id) || this.closing) return;
-    const { status, sessionId, agentId } = this.snapshot(id).run;
+    const { status, sessionId, agentId } = this.run(id);
     if (!["queued", "pending", "running", "retry_wait"].includes(status)) return;
     const controller = new AbortController();
     const task = Promise.resolve()

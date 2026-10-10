@@ -1,3 +1,4 @@
+import { expectJournalRequests } from "./journal-assertions.js";
 import { fork, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
@@ -96,6 +97,7 @@ it("compacts newly approved tool output while keeping the continuation and trans
   if (outcome?.type !== "interaction") throw new Error("Expected approval");
   await run.respond(outcome.interaction.id, { type: "tool-approval", approved: true });
   await run.result();
+  expectJournalRequests(runtime, run.id);
   expect(compactor).toHaveBeenCalledTimes(1);
   expect(tool).toHaveBeenCalledTimes(1);
   expect(requests[1]!.chatHistory.some(isMemoryCompactionMessage)).toBe(true);
@@ -186,6 +188,7 @@ it.each([false, true])(
     });
     const run = await runtime.submit(submission);
     await run.result();
+    expectJournalRequests(runtime, run.id);
     const snapshot = parseDurableSnapshot(await run.snapshot());
     expect(snapshot.run.usage.totalTokens).toBe(23);
     expect(
@@ -265,6 +268,7 @@ it.each(["summary", "prepared", "model"])(
     expect(before.run.usage.totalTokens).toBe(stage === "model" ? 10 : 3);
     await runtime.resume();
     await run.result();
+    expectJournalRequests(runtime, run.id);
     expect(readFileSync(calls, "utf8")).toBe("tool\nsummary\n");
     expect(tool).not.toHaveBeenCalled();
     expect(compactor).toHaveBeenCalledTimes(stage === "model" ? 0 : 1);
@@ -308,6 +312,7 @@ it("bounds invalid in-loop summaries and resets their attempts on explicit retry
     await run.retry();
   });
   await run.result();
+  expectJournalRequests(runtime, run.id);
   expect(compactor).toHaveBeenCalledTimes(3);
   expect(tool).toHaveBeenCalledTimes(1);
 });
@@ -411,6 +416,7 @@ it("backs up and restores per-call projections with their usage and progress", a
   const runtime = await open(registration, path);
   const run = await runtime.submit(submission);
   await run.result();
+  expectJournalRequests(runtime, run.id);
   const before = await run.snapshot();
   await runtime.close();
   const archive = join(dir, "backup.sqlite");

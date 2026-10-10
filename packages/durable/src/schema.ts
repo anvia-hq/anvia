@@ -165,8 +165,20 @@ export function parseRun(value: unknown): DurableRunRecord {
   return run;
 }
 
+const historyReferenceSchema = z
+  .object({
+    head: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .nullable(),
+    length: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  })
+  .strict()
+  .refine((ref) => (ref.head === null) === (ref.length === 0), "Invalid history reference length.");
+
 const operationSchema = z
   .object({
+    historyEncoding: z.literal("linked-v1").optional(),
     key: id,
     kind: z.enum(["model", "tool", "effect", "compaction", "context"]),
     input: jsonValue,
@@ -180,6 +192,25 @@ const operationSchema = z
 
 export function parseOperation(value: unknown): DurableOperation {
   const operation = operationSchema.parse(value);
+  if (operation.historyEncoding !== undefined) {
+    if (operation.kind === "model") {
+      z.object({ request: z.object({ chatHistory: historyReferenceSchema }) }).parse(
+        operation.input,
+      );
+    } else if (operation.kind === "context") {
+      const input = historyReferenceSchema.parse(operation.input);
+      if (operation.status === "completed") {
+        const prepared = preparedLoopContextSchema
+          .extend({ messages: historyReferenceSchema })
+          .parse(operation.result);
+        if (
+          prepared.messages.length === 0 ||
+          (prepared.checkpoint?.coveredMessages ?? 0) > input.length
+        )
+          throw new Error("Invalid context history reference.");
+      }
+    } else throw new Error("History encoding is not supported for this operation kind.");
+  }
   if (operation.status !== "completed") return operation;
   if (operation.result === undefined) throw new Error("Completed operation has no result.");
   if (operation.kind === "model") {
@@ -188,7 +219,7 @@ export function parseOperation(value: unknown): DurableOperation {
       .passthrough()
       .parse(operation.result);
     parseMessage({ role: "assistant", content: result.choice });
-  } else if (operation.kind === "context") {
+  } else if (operation.kind === "context" && operation.historyEncoding === undefined) {
     const prepared = preparedLoopContextSchema.parse(operation.result);
     const input = messagesSchema.parse(operation.input);
     if ((prepared.checkpoint?.coveredMessages ?? 0) > input.length)

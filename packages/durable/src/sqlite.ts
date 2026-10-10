@@ -1,3 +1,4 @@
+import { messageLog, messageLogTables } from "./message-log.js";
 import { sqliteMetrics } from "./metrics.js";
 import { graphListSchema, parseGraphRecord } from "./graph-schema.js";
 import {
@@ -18,6 +19,7 @@ import type {
   DurableListOptions,
   DurableRunPage,
   DurableRunRecord,
+  DurableRunSummary,
   DurableStore,
   DurableTransaction,
 } from "./types.js";
@@ -25,6 +27,7 @@ import type {
 /** SQLite storage for one host and one runtime owner. Use a dedicated local database file. */
 export class SqliteDurableStore implements DurableStore {
   private readonly database: DatabaseSync;
+  private readonly histories: ReturnType<typeof messageLog>;
   private readonly token = globalThis.crypto.randomUUID();
   private acquired = false;
   private closed = false;
@@ -48,7 +51,7 @@ export class SqliteDurableStore implements DurableStore {
           singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
           version INTEGER NOT NULL, token TEXT, pid INTEGER, host TEXT
         );
-        INSERT OR IGNORE INTO anvia_durable_owner(singleton, version) VALUES (1, 7);
+        INSERT OR IGNORE INTO anvia_durable_owner(singleton, version) VALUES (1, 8);
         CREATE TABLE IF NOT EXISTS anvia_durable_runs (
           id TEXT PRIMARY KEY, session_id TEXT NOT NULL, request_id TEXT NOT NULL,
           status TEXT NOT NULL, record TEXT NOT NULL,
@@ -67,10 +70,14 @@ export class SqliteDurableStore implements DurableStore {
         );
         CREATE TABLE IF NOT EXISTS anvia_durable_events (
           sequence INTEGER PRIMARY KEY AUTOINCREMENT,
-          run_id TEXT NOT NULL, created_at TEXT NOT NULL, type TEXT NOT NULL, data TEXT NOT NULL
+          run_id TEXT NOT NULL, created_at TEXT NOT NULL, type TEXT NOT NULL, data TEXT NOT NULL, history_encoding TEXT
         );
         CREATE INDEX IF NOT EXISTS anvia_durable_event_run ON anvia_durable_events(run_id, sequence);
         ${taskTables}
+        ${messageLogTables}
+        CREATE TABLE IF NOT EXISTS anvia_durable_run_summaries (
+          id TEXT PRIMARY KEY, record TEXT NOT NULL
+        );
       `);
       const version = this.database
         .prepare("SELECT version FROM anvia_durable_owner WHERE singleton = 1")
@@ -82,9 +89,11 @@ export class SqliteDurableStore implements DurableStore {
         version?.version !== 4 &&
         version?.version !== 5 &&
         version?.version !== 6 &&
-        version?.version !== 7
+        version?.version !== 7 &&
+        version?.version !== 8
       )
         throw new Error("Unsupported durable database schema version.");
+      this.histories = messageLog(this.database);
     } catch (error) {
       this.database.close();
       throw error;
@@ -103,9 +112,26 @@ export class SqliteDurableStore implements DurableStore {
           "Durable store already has a live owner. Only one runtime per database is supported.",
         );
       }
+      if (
+        !this.database
+          .prepare("PRAGMA table_info(anvia_durable_events)")
+          .all()
+          .some((column) => column.name === "history_encoding")
+      )
+        this.database.exec("ALTER TABLE anvia_durable_events ADD COLUMN history_encoding TEXT");
+      // Populate only legacy rows, under the exclusive owner transaction.
+      for (const row of this.database
+        .prepare(`SELECT r.record FROM anvia_durable_runs r
+        LEFT JOIN anvia_durable_run_summaries s ON s.id = r.id WHERE s.id IS NULL`)
+        .iterate()) {
+        const summary = runSummary(parseRun(JSON.parse(String(row.record))));
+        this.database
+          .prepare("INSERT INTO anvia_durable_run_summaries VALUES (?, ?)")
+          .run(summary.id, JSON.stringify(summary));
+      }
       this.database
         .prepare(
-          "UPDATE anvia_durable_owner SET token = ?, pid = ?, host = ?, version = 7 WHERE singleton = 1",
+          "UPDATE anvia_durable_owner SET token = ?, pid = ?, host = ?, version = 8 WHERE singleton = 1",
         )
         .run(this.token, process.pid, hostname());
     });
@@ -212,7 +238,7 @@ export class SqliteDurableStore implements DurableStore {
         runId: String(row.run_id),
         createdAt: String(row.created_at),
         type: eventTypeSchema.parse(row.type),
-        data: json(JSON.parse(String(row.data))),
+        data: this.eventData(row),
       }));
   }
 
@@ -235,19 +261,19 @@ export class SqliteDurableStore implements DurableStore {
         runId: String(row.run_id),
         createdAt: String(row.created_at),
         type: eventTypeSchema.parse(row.type),
-        data: json(JSON.parse(String(row.data))),
+        data: this.eventData(row),
       }));
   }
 
   list(input: DurableListOptions): DurableRunPage {
     this.assertOpen();
     const options = listOptionsSchema.parse(input);
-    const conditions = ["rowid > ?"];
+    const conditions = ["r.rowid > ?"];
     const parameters: (string | number)[] = [options.after ?? 0];
     for (const [column, value] of [
-      ["session_id", options.sessionId],
-      ["json_extract(record, '$.agentId')", options.agentId],
-      ["status", options.status],
+      ["r.session_id", options.sessionId],
+      ["json_extract(r.record, '$.agentId')", options.agentId],
+      ["r.status", options.status],
     ] as const) {
       if (value !== undefined) {
         conditions.push(`${column} = ?`);
@@ -257,37 +283,14 @@ export class SqliteDurableStore implements DurableStore {
     const limit = options.limit ?? 50;
     const rows = this.database
       .prepare(
-        `SELECT rowid AS cursor, record FROM anvia_durable_runs WHERE ${conditions.join(" AND ")} ORDER BY rowid LIMIT ?`,
+        `SELECT r.rowid AS cursor, s.record FROM anvia_durable_runs r
+         JOIN anvia_durable_run_summaries s ON s.id = r.id
+         WHERE ${conditions.join(" AND ")} ORDER BY r.rowid LIMIT ?`,
       )
       .all(...parameters, limit + 1);
     const page = rows.slice(0, limit);
     return {
-      runs: page.map((row) => {
-        const {
-          id,
-          agentId,
-          sessionId,
-          requestId,
-          status,
-          createdAt,
-          updatedAt,
-          error,
-          blockedOperation,
-          nextAttemptAt,
-        } = parseRun(JSON.parse(String(row.record)));
-        return {
-          id,
-          agentId,
-          sessionId,
-          requestId,
-          status,
-          createdAt,
-          updatedAt,
-          ...(error === undefined ? {} : { error }),
-          ...(blockedOperation === undefined ? {} : { blockedOperation }),
-          ...(nextAttemptAt === undefined ? {} : { nextAttemptAt }),
-        };
-      }),
+      runs: page.map((row) => JSON.parse(String(row.record)) as DurableRunSummary),
       ...(rows.length > limit ? { nextCursor: Number(page.at(-1)!.cursor) } : {}),
     };
   }
@@ -346,11 +349,20 @@ export class SqliteDurableStore implements DurableStore {
         runId: String(row.run_id),
         createdAt: String(row.created_at),
         type: eventTypeSchema.parse(row.type),
-        data: json(JSON.parse(String(row.data))),
+        data: this.eventData(row),
       }));
   }
 
+  private eventData(row: Record<string, unknown>) {
+    const data = json(JSON.parse(String(row.data)));
+    if (row.history_encoding === null || row.history_encoding === undefined) return data;
+    if (row.history_encoding !== "linked-v1" || row.type !== "model_started")
+      throw new Error("Unsupported durable event history encoding.");
+    return this.histories.unpackEvent(data);
+  }
+
   private transactionApi(assertActive: () => void): DurableTransaction {
+    const histories = this.histories;
     const readRun = (sql: string, ...parameters: string[]): DurableRunRecord | undefined => {
       assertActive();
       const row = this.database.prepare(sql).get(...parameters);
@@ -406,6 +418,15 @@ export class SqliteDurableStore implements DurableStore {
             JSON.stringify(parseGraphRecord(json(graph))),
           );
       },
+      getRunSummary: (id) => {
+        assertActive();
+        const row = this.database
+          .prepare("SELECT record FROM anvia_durable_run_summaries WHERE id = ?")
+          .get(id);
+        return row === undefined
+          ? undefined
+          : (JSON.parse(String(row.record)) as DurableRunSummary);
+      },
       getRun: (id) => readRun("SELECT record FROM anvia_durable_runs WHERE id = ?", id),
       findRequest: (session, request) =>
         readRun(
@@ -440,13 +461,19 @@ export class SqliteDurableStore implements DurableStore {
           .prepare(`INSERT INTO anvia_durable_runs(id, session_id, request_id, status, record)
           VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET status = excluded.status, record = excluded.record`)
           .run(run.id, run.sessionId, run.requestId, run.status, serialized);
+        this.database
+          .prepare(`INSERT INTO anvia_durable_run_summaries VALUES (?, ?)
+          ON CONFLICT(id) DO UPDATE SET record = excluded.record`)
+          .run(run.id, JSON.stringify(runSummary(run)));
       },
       getOperation: (runId, key) => {
         assertActive();
         const row = this.database
           .prepare("SELECT record FROM anvia_durable_operations WHERE run_id = ? AND key = ?")
           .get(runId, key);
-        return row === undefined ? undefined : parseOperation(JSON.parse(String(row.record)));
+        return row === undefined
+          ? undefined
+          : parseOperation(histories.unpack(parseOperation(JSON.parse(String(row.record)))));
       },
       operations: (runId) => {
         assertActive();
@@ -460,15 +487,25 @@ export class SqliteDurableStore implements DurableStore {
         this.database
           .prepare(`INSERT INTO anvia_durable_operations(run_id, key, record) VALUES (?, ?, ?)
           ON CONFLICT(run_id, key) DO UPDATE SET record = excluded.record`)
-          .run(runId, operation.key, JSON.stringify(parseOperation(json(operation))));
+          .run(
+            runId,
+            operation.key,
+            JSON.stringify(histories.pack(parseOperation(json(operation)))),
+          );
       },
       appendEvent: (runId, type, data) => {
         assertActive();
         this.database
           .prepare(
-            "INSERT INTO anvia_durable_events(run_id, created_at, type, data) VALUES (?, ?, ?, ?)",
+            "INSERT INTO anvia_durable_events(run_id, created_at, type, data, history_encoding) VALUES (?, ?, ?, ?, ?)",
           )
-          .run(runId, new Date().toISOString(), type, JSON.stringify(json(data)));
+          .run(
+            runId,
+            new Date().toISOString(),
+            type,
+            JSON.stringify(type === "model_started" ? histories.packEvent(json(data)) : json(data)),
+            type === "model_started" ? "linked-v1" : null,
+          );
       },
       cursor: () => {
         assertActive();
@@ -521,4 +558,31 @@ function processExists(pid: number): boolean {
   } catch (error) {
     return (error as NodeJS.ErrnoException).code !== "ESRCH";
   }
+}
+
+function runSummary(run: DurableRunRecord): DurableRunSummary {
+  const {
+    id,
+    agentId,
+    sessionId,
+    requestId,
+    status,
+    createdAt,
+    updatedAt,
+    error,
+    blockedOperation,
+    nextAttemptAt,
+  } = run;
+  return {
+    id,
+    agentId,
+    sessionId,
+    requestId,
+    status,
+    createdAt,
+    updatedAt,
+    ...(error === undefined ? {} : { error }),
+    ...(blockedOperation === undefined ? {} : { blockedOperation }),
+    ...(nextAttemptAt === undefined ? {} : { nextAttemptAt }),
+  };
 }

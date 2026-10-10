@@ -1,3 +1,4 @@
+import { expectJournalRequests } from "./journal-assertions.js";
 import { fork, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
@@ -66,7 +67,7 @@ it.each(
     runtimes.push(runtime);
     const handle = await runtime.getTask(id);
     if (binding === "legacy") {
-      const { task, operations } = await handle.snapshot();
+      const { task, operations } = await handle.snapshot({ operations: true });
       expect(task.input).not.toHaveProperty("agentId");
       expect(task.checkpoint).not.toHaveProperty("agentId");
       for (const operation of operations) expect(operation.input).not.toHaveProperty("agentId");
@@ -74,6 +75,8 @@ it.each(
     const before = (await handle.graph()).nodes.map((node) => node.id);
     await runtime.resume();
     expect(await handle.result()).toMatchObject({ sessions: 2, modelTurns: 4, totalTokens: 12 });
+    for (const node of (await handle.graph()).nodes)
+      if (node.agentRunId !== undefined) expectJournalRequests(runtime, node.agentRunId);
     const after = (await handle.graph()).nodes.map((node) => node.id);
     expect(after).toHaveLength(3);
     expect(after).toEqual(expect.arrayContaining(before));

@@ -1,3 +1,4 @@
+import { expectJournalRequests } from "./journal-assertions.js";
 import { fork, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
@@ -130,6 +131,7 @@ it("streams persisted deltas before completion and detaches subscribers without 
       { data: { event: { type: "text_delta", turn: 1, delta: "ne" } } },
     ]);
     expect(await run.result()).toMatchObject({ output: "done" });
+    expectJournalRequests(runtime, run.id);
     const saved = await events(run);
     const started = saved.find((event) => event.type === "model_attempt_started")!;
     const attemptId = (started.data as { attemptId: string }).attemptId;
@@ -160,6 +162,7 @@ it("replays completed streams after reopening without duplicating deltas or invo
   await reopened.resume();
   const restored = await reopened.getRun(run.id);
   expect(await restored.result()).toMatchObject({ output: "done" });
+  expectJournalRequests(reopened, restored.id);
   expect(await events(restored)).toEqual(saved);
   expect(stream).toHaveBeenCalledTimes(1);
   expect(completion).not.toHaveBeenCalled();
@@ -181,6 +184,7 @@ it("retries failed streams under new attempt identities and preserves the retry 
   expect(calls).toBe(2);
   await run.retry();
   expect(await run.result()).toMatchObject({ output: "done" });
+  expectJournalRequests(runtime, run.id);
   const saved = await events(run);
   const attempts = saved
     .filter((event) => event.type === "model_attempt_started")
@@ -225,6 +229,7 @@ it("keeps completed streamed model and tool checkpoints when a later stream is i
   await reopened.resume();
   const restored = await reopened.getRun(run.id);
   expect(await restored.result()).toMatchObject({ output: "done" });
+  expectJournalRequests(reopened, restored.id);
   expect(resumed.stream).toHaveBeenCalledTimes(1);
   expect(tool).toHaveBeenCalledTimes(1);
   expect((await restored.snapshot()).run.usage.totalTokens).toBe(6);
@@ -258,6 +263,7 @@ it("preserves tool approval and continues with streaming after a restart", async
   const restored = await reopened.getRun(run.id);
   await restored.respond(outcome.interaction.id, { type: "tool-approval", approved: true });
   expect(await restored.result()).toMatchObject({ output: "done" });
+  expectJournalRequests(reopened, restored.id);
   expect(tool).toHaveBeenCalledTimes(1);
   expect(completion).not.toHaveBeenCalled();
 });
@@ -383,6 +389,7 @@ it("recovers persisted partial tokens and completed tools after SIGKILL", async 
   await runtime.resume();
   const run = await runtime.getRun(id);
   expect(await run.result()).toMatchObject({ output: "done" });
+  expectJournalRequests(runtime, run.id);
   const saved = await events(run);
   const partial = saved.find(
     (event) => event.type === "model_delta" && JSON.stringify(event.data).includes("partial"),
@@ -487,6 +494,7 @@ it("treats a delta write failure as fatal storage failure and recovers with a ne
   await reopened.resume();
   const restored = await reopened.getRun(run.id);
   expect(await restored.result()).toMatchObject({ output: "done" });
+  expectJournalRequests(reopened, restored.id);
   const saved = await events(restored);
   expect(saved.filter((event) => event.type === "model_attempt_started")).toHaveLength(2);
   expect(saved.filter((event) => event.type === "model_delta")).toHaveLength(2);
@@ -502,8 +510,8 @@ it("preserves persisted deltas and attempt identities through backup and restore
   await runtime.close();
   const archive = `${path}.backup`;
   const restored = `${path}.restored`;
-  expect((await backupSqlite(path, archive)).schemaVersion).toBe(7);
-  expect((await restoreSqlite(archive, restored)).schemaVersion).toBe(7);
+  expect((await backupSqlite(path, archive)).schemaVersion).toBe(8);
+  expect((await restoreSqlite(archive, restored)).schemaVersion).toBe(8);
   const reopened = await open(agent, restored);
   await reopened.resume();
   expect(await events(await reopened.getRun(run.id))).toEqual(saved);

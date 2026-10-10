@@ -106,6 +106,23 @@ Listings return summaries without prompts, histories, or operation results. Filt
 `sessionId`, `agentId`, and `status`. Pages contain at most 100 runs, in insertion order;
 `nextCursor` is an exclusive insertion cursor, separate from progress-event cursors. Status
 filters reflect live state: restart a listing to discover older runs whose status changed.
+For 250 ms status polling, use `runtime.status(id)` (or `await run.status()`), which reads a
+bounded `DurableRunSummary` without decoding histories or operation records. `runtime.run(id)`
+returns the full `DurableRunRecord` without operations. Use
+`runtime.snapshot(id, { operations: false })` for the run record and atomic event cursor;
+its `operations` array is empty. Listings use stored summaries, and `runScope`, task graphs,
+and default task snapshots do not decode operation payloads.
+
+Starting in durable 0.7, SQLite operation snapshots use shared message-log references.
+For a model operation with `historyEncoding: "linked-v1"`, `input.request.chatHistory`
+is an opaque `{ head, length }` reference. Reconstruct the original request with
+`runtime.operationRequest(id, operation.key)`; this also reads legacy embedded requests.
+Context operation inputs and prepared messages are likewise compact. Task snapshots default
+to no operations; request `task.snapshot({ operations: true })` to inspect effects.
+This is a breaking snapshot shape change. Event payloads and cursors remain unchanged.
+See the [package migration details](../../packages/durable/README.md#queues-inspection-and-http)
+for custom stores and the schema upgrade.
+
 Use `getRun(id).snapshot()` for full execution details and existing handle methods for retry,
 cancellation, interaction responses, and reconciliation.
 
@@ -437,7 +454,7 @@ Durable progress is not the existing token-delta chat protocol.
   They are not the authoritative execution journal.
 - Pipeline/team recovery, Studio integration,
   Postgres, retention, general migration tooling, and distributed worker deployment are follow-up work.
-  Database records are experimental; the task-aware engine upgrades schema 1–6 to 7 on acquisition. Older engines reject schema 7.
+  Database records are experimental; the task-aware engine upgrades schema 1–7 to 8 on acquisition. Older engines reject schema 8.
 
 ## Operational readiness
 

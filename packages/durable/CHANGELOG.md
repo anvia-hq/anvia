@@ -1,5 +1,31 @@
 # @anvia/durable
 
+## 0.7.0
+
+### Minor Changes
+
+- Store durable model histories and loop-context checkpoints in an immutable, content-addressed
+  message log with shared list prefixes. Model operation storage grows with unique messages
+  instead of copying the entire transcript on every turn. SQLite schema 8 reads legacy embedded
+  requests and lets unfinished 0.6.x runs finish without changing registration version fencing.
+  Model-started events share physical history storage too; event payloads, ordering and cursors
+  remain unchanged when read through the public APIs.
+
+  Breaking snapshot change: new SQLite model operations have `historyEncoding: "linked-v1"`
+  and `input.request.chatHistory` is an opaque `{ head, length }` reference, not a message array.
+  Context operations likewise reference their input and prepared messages. Use
+  `runtime.operationRequest(runId, key)` for a detached, fully reconstructed `CompletionRequest`.
+  Existing embedded operations remain readable in both forms.
+
+  Add `runtime.status(runId)` and `run.status()` for bounded status polling,
+  `runtime.run(runId)` for an operation-free run record, and
+  `runtime.snapshot(runId, { operations: false })` (also on run handles) for a record plus cursor.
+  Listings read bounded summaries. Task snapshots omit operations by default; pass
+  `{ operations: true }` to inspect task effects. Custom stores must implement
+  `DurableTransaction.getRunSummary`; `getOperation` returns expanded histories while
+  `operations` returns stored envelopes. Backups include the shared log, and older engines
+  reject upgraded schema-8 databases. Client/server peer ranges accept durable 0.7.
+
 ## 0.6.0
 
 ### Minor Changes

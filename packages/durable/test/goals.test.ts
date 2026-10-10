@@ -323,7 +323,7 @@ it("fences a late assessment result when the goal is cancelled during verificati
   await assessing;
   await handle.cancel();
   await expect(handle.result()).rejects.toThrow("cancelled");
-  const snapshot = await handle.snapshot();
+  const snapshot = await handle.snapshot({ operations: true });
   expect(snapshot.operations[0]?.status).toBe("started");
   expect(snapshot.task.outcome?.status).toBe("cancelled");
   expect((await handle.graph()).nodes).toHaveLength(2);

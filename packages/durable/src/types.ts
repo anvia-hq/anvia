@@ -106,6 +106,8 @@ export type DurableRunRecord = DurableSubmission & {
 };
 
 export type DurableOperation = {
+  /** SQLite snapshot histories are immutable linked-log references; use operationRequest(). */
+  historyEncoding?: "linked-v1" | undefined;
   key: string;
   kind: "model" | "tool" | "effect" | "compaction" | "context";
   input: JsonValue;
@@ -182,13 +184,16 @@ export interface DurableTransaction extends TaskTransaction {
   getGraph(id: string): DurableGraphRecord | undefined;
   findGraphRequest(sessionId: string, requestId: string): DurableGraphRecord | undefined;
   putGraph(graph: DurableGraphRecord): void;
+  getRunSummary(id: string): DurableRunSummary | undefined;
   getRun(id: string): DurableRunRecord | undefined;
   findRequest(sessionId: string, requestId: string): DurableRunRecord | undefined;
   activeRun(sessionId: string): DurableRunRecord | undefined;
   latestCompleted(sessionId: string): DurableRunRecord | undefined;
   hasLaterStartedRun(id: string): boolean;
   putRun(run: DurableRunRecord): void;
+  /** Expands shared histories for deterministic execution and checkpoint validation. */
   getOperation(runId: string, key: string): DurableOperation | undefined;
+  /** Stored operation envelopes; does not expand shared histories. */
   operations(runId: string): DurableOperation[];
   putOperation(runId: string, operation: DurableOperation): void;
   appendEvent(runId: string, type: DurableEvent["type"], data: JsonValue): void;

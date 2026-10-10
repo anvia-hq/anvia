@@ -16,9 +16,9 @@ export class DurableTaskHandle<R = JsonValue> {
     private readonly assertOpen: () => void,
   ) {}
 
-  async snapshot() {
+  async snapshot(options: { operations?: boolean } = {}) {
     this.assertOpen();
-    return this.scheduler.snapshot(this.id);
+    return this.scheduler.snapshot(this.id, options);
   }
   async graph() {
     this.assertOpen();

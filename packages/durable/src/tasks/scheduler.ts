@@ -125,10 +125,10 @@ export class TaskScheduler {
     await Promise.all([...this.active.values()].map((value) => value.promise));
   }
 
-  snapshot(id: string) {
+  snapshot(id: string, options: { operations?: boolean } = {}) {
     return this.store.transaction((tx) => ({
       task: requireTask(tx, id),
-      operations: tx.operations(id),
+      operations: options.operations === true ? tx.operations(id) : [],
       cursor: tx.cursor(),
     }));
   }

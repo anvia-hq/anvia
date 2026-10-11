@@ -196,6 +196,41 @@ explicit resume. If limits are still exhausted the goal pauses again. Invalid de
 a new signal name because an existing delivery is immutable. A resumed ordinary failure starts
 a new session; inspect the failed run's committed work and supply appropriate feedback first.
 
+## Controlling a running goal
+
+Applications can pause, edit, or message a goal while it runs. Each is a signal family with
+indexed names (`pause:0`, `pause:1`, …). Signals are stored as they arrive, even while a session
+runs, and the controller reads them in order before admitting the next session.
+`goalControlSignal(task, family)` returns the next unused name:
+
+```ts
+import { goalControlSignal } from "@anvia/durable";
+
+const { task } = await goal.snapshot();
+// Stop after the current session; the goal pauses with pauseReason "requested".
+await goal.signal(goalControlSignal(task, "pause"), "pause-7", {});
+// Change the objective or criteria for later sessions and assessments.
+await goal.signal(goalControlSignal(task, "edit"), "edit-7", {
+  acceptanceCriteria: ["Search p95 latency is under 50ms"],
+});
+// Give the next session a message, such as a user note sent while the goal runs.
+await goal.signal(goalControlSignal(task, "message"), "message-7", {
+  text: "Use the cached index instead of rebuilding it.",
+});
+```
+
+- A pause lets the running session finish and be assessed, then waits on the usual
+  `resume:N` signal. Pause requests that arrive while already paused are dropped on resume.
+- Edits validate with `goalEditSchema`: `objective` and/or `acceptanceCriteria`. They replace the
+  submitted values in the checkpoint; the running session and its assessment keep the old ones.
+- Messages validate with `goalMessageSchema` and reach exactly one session, in a `messages` field
+  of its prompt. Resume `feedback` still repeats for every later session.
+- Edits and messages sent while paused take effect on resume. Malformed values are skipped, and
+  their names stay used. For text the agent should read mid-session, steer the live session run
+  with `run.steer()` instead.
+- When a crash interrupts a session spawn, the spawned session keeps the controls it read, and
+  the next session reads them again: a message can arrive twice but is never lost.
+
 The goal checkpoints session indices and uses stable child/effect keys, so interrupted spawns,
 assessments, and rollover reuse their committed identities. A child hitting its turn budget
 remains `failed` for existing run APIs, with `run.exhaustion.reason === "max_turns"` and a partial

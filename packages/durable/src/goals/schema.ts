@@ -45,7 +45,12 @@ export const goalPauseReasonSchema = z.enum([
   "no_progress",
   "blocked",
   "session_failed",
+  /** The application asked the goal to stop after its current session. */
+  "requested",
 ]);
+
+/** Next unread index per control signal family; absent in goals persisted by older versions. */
+export const goalControlsSchema = z.object({ pause: count, edit: count, message: count }).strict();
 
 export const goalCheckpointSchema = z
   .object({
@@ -62,8 +67,31 @@ export const goalCheckpointSchema = z
     resumeIndex: count,
     feedback: z.string(),
     limits: goalLimitsSchema,
+    controls: goalControlsSchema.optional(),
+    /** Replaces the submitted objective once edited; later sessions and assessments use it. */
+    objective: text.optional(),
+    acceptanceCriteria: z.array(text).min(1).optional(),
+    /** Messages delivered once, to the next session. */
+    messages: z.array(text).optional(),
   })
   .strict();
+
+/** Signal `pause:N`: stop after the current session, before admitting another one. */
+export const goalPauseSchema = z.object({}).strict();
+
+/** Signal `edit:N`: change the objective or criteria for later sessions and assessments. */
+export const goalEditSchema = z
+  .object({
+    objective: text.optional(),
+    acceptanceCriteria: z.array(text).min(1).optional(),
+  })
+  .strict()
+  .refine((value) => value.objective !== undefined || value.acceptanceCriteria !== undefined, {
+    message: "An edit must change the objective or the acceptance criteria.",
+  });
+
+/** Signal `message:N`: text for the next session, such as a user message sent while it runs. */
+export const goalMessageSchema = z.object({ text }).strict();
 
 /** Send to the signal name exposed by the paused goal's task.wait. */
 export const goalResumeSchema = z
@@ -90,3 +118,6 @@ export type GoalCheckpoint = z.infer<typeof goalCheckpointSchema>;
 export type GoalResult = z.infer<typeof goalResultSchema>;
 export type GoalResume = z.infer<typeof goalResumeSchema>;
 export type GoalPauseReason = z.infer<typeof goalPauseReasonSchema>;
+export type GoalControls = z.infer<typeof goalControlsSchema>;
+export type GoalEdit = z.infer<typeof goalEditSchema>;
+export type GoalMessage = z.infer<typeof goalMessageSchema>;

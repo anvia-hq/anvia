@@ -2233,6 +2233,7 @@ describe("Agent streaming", () => {
       let nextCalls = 0;
       let cleanup = 0;
       let settle: (() => void) | undefined;
+      const nextStarted = deferred<void>();
       const events: AsyncIterable<{ type: string; delta: string }> = {
         [Symbol.asyncIterator]() {
           return {
@@ -2246,6 +2247,7 @@ describe("Agent streaming", () => {
                     reject
                       ? fail(new Error("late SECRET"))
                       : resolve({ done: false, value: { type: "text_delta", delta: "too late" } });
+                  nextStarted.resolve();
                 },
               );
             },
@@ -2261,7 +2263,7 @@ describe("Agent streaming", () => {
         '{"type":"text_delta","delta":"one"}\n',
       );
       const pending = reader.read();
-      await Promise.resolve();
+      await nextStarted.promise;
       await reader.cancel();
       settle?.();
       expect(await pending).toEqual({ done: true, value: undefined });

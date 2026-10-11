@@ -196,6 +196,10 @@ explicit resume. If limits are still exhausted the goal pauses again. Invalid de
 a new signal name because an existing delivery is immutable. A resumed ordinary failure starts
 a new session; inspect the failed run's committed work and supply appropriate feedback first.
 
+An assessment may also return `context`: material for the next session that is not part of the
+verdict, such as the session's final answer or the files it changed. It reaches the next session
+inside `previous`, so later sessions can build on earlier work instead of rediscovering it.
+
 ## Controlling a running goal
 
 Applications can pause, edit, or message a goal while it runs. Each is a signal family with

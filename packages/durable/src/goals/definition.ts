@@ -201,23 +201,26 @@ export function defineGoal(policy: GoalDefinition): DefinedGoal {
         session,
       };
       const assessment: GoalAssessment = { ...assessmentInput, agentId: state.agentId };
-      const decision = await ctx.effect(
-        `assess:${next.sessions}`,
-        // Keep the existing journal input shape. The session's runId already binds its agent.
-        json(assessmentInput),
-        async (_, signal) => {
-          let value: GoalDecision;
-          try {
-            value = await policy.assess(assessment, signal);
-          } catch (error) {
-            throw new DurableRecoveryError(`Goal assessment failed: ${errorMessage(error)}`);
-          }
-          const parsed = goalDecisionSchema.safeParse(value);
-          if (!parsed.success)
-            throw new DurableRecoveryError("Goal assessor returned an invalid decision.");
-          return parsed.data;
-        },
-        "safe",
+      // The journal stores plain JSON; the decision is validated again when read back.
+      const decision = goalDecisionSchema.parse(
+        await ctx.effect(
+          `assess:${next.sessions}`,
+          // Keep the existing journal input shape. The session's runId already binds its agent.
+          json(assessmentInput),
+          async (_, signal) => {
+            let value: GoalDecision;
+            try {
+              value = await policy.assess(assessment, signal);
+            } catch (error) {
+              throw new DurableRecoveryError(`Goal assessment failed: ${errorMessage(error)}`);
+            }
+            const parsed = goalDecisionSchema.safeParse(value);
+            if (!parsed.success)
+              throw new DurableRecoveryError("Goal assessor returned an invalid decision.");
+            return json(parsed.data);
+          },
+          "safe",
+        ),
       );
       next.handoff = decision;
       next.noProgressSessions =

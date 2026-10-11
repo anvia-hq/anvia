@@ -25,6 +25,11 @@ export const goalDecisionSchema = z
     /** Application-defined evidence of progress, such as a verified test count or artifact hash. */
     progressKey: text,
     evidence: z.array(z.string()),
+    /**
+     * Material for the next session that is not part of the verdict, such as the session's final
+     * answer or the files it changed. It reaches the next session inside `previous`.
+     */
+    context: z.string().optional(),
   })
   .strict();
 

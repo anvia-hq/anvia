@@ -456,3 +456,37 @@ it("delivers messages sent between sessions to exactly one session", async () =>
     undefined,
   ]);
 });
+
+it("passes an assessment's context to the next session inside previous", async () => {
+  const prompts: string[] = [];
+  let sessions = 0;
+  const goal = defineGoal({
+    name: "context",
+    version: 1,
+    agentId: "researcher",
+    assess: async () => {
+      sessions++;
+      return {
+        ...decision(sessions === 2 ? "complete" : "continue", `progress-${sessions}`),
+        context: "Previous answer: index built.\nChanged files: src/index.ts",
+      };
+    },
+  });
+  const runtime = await open(
+    goal,
+    makeAgent(async (request) => {
+      const prompt = request.chatHistory.find((message) => message.role === "user");
+      prompts.push(typeof prompt?.content === "string" ? prompt.content : "");
+      return done();
+    }),
+  );
+  const handle = await runtime.submitGoal(goal, input);
+  expect(await handle.result()).toMatchObject({
+    sessions: 2,
+    handoff: { context: "Previous answer: index built.\nChanged files: src/index.ts" },
+  });
+  const second = JSON.parse(prompts[1]!.split("\n").at(-1)!);
+  expect(second.previous.context).toBe(
+    "Previous answer: index built.\nChanged files: src/index.ts",
+  );
+});

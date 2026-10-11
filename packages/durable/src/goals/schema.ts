@@ -78,6 +78,8 @@ export const goalCheckpointSchema = z
     acceptanceCriteria: z.array(text).min(1).optional(),
     /** Messages delivered once, to the next session. */
     messages: z.array(text).optional(),
+    /** Key of the latest settled session; a continuing round picks up its conversation. */
+    previousChildKey: z.string().optional(),
   })
   .strict();
 

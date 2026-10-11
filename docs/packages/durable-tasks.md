@@ -125,6 +125,12 @@ child with `ctx.spawnAgent("research", { agentId: "researcher", prompt: "Researc
 and include its returned task ID in a child wait. Creation of the task and its agent run is
 atomic. Every owned agent gets isolated durable session history and its own run ID.
 
+An agent child normally starts a new conversation. Pass `continueFrom` with the key of a
+finished agent child of the same task to continue that run's whole conversation instead,
+including the partial work of a run that hit its turn limit:
+`ctx.spawnAgent("research-2", { agentId: "researcher", prompt: "Continue.", continueFrom: "research" })`.
+The earlier run must use the same agent and be completed or turn-limited.
+
 The custom task slot is released while the agent works. Agent concurrency, model/tool
 checkpoints, approvals, retry backoff, and manual tool recovery retain their existing
 semantics. A successful response becomes the child's JSON output. Failed, cancelled, or

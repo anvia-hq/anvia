@@ -649,11 +649,18 @@ export class DurableRuntime {
         if (current.graphId !== undefined) {
           current.input = { messages: [promptMessage(graphInput(tx, current))] };
         } else {
-          const previous = tx.latestCompleted(current.sessionId);
+          // A continued run picks up that run's whole conversation; a turn-limited one keeps
+          // its partial work. Others continue their session's latest completed run.
+          const previous =
+            current.continueFrom === undefined
+              ? tx.latestCompleted(current.sessionId)
+              : requireRun(tx, current.continueFrom);
           current.history =
             previous === undefined
               ? []
-              : [...previous.history, ...(previous.outcome?.messages ?? [])];
+              : previous.status === "completed"
+                ? [...previous.history, ...(previous.outcome?.messages ?? [])]
+                : [...(previous.exhaustion?.messages ?? previous.history)];
           if (previous?.contextCheckpoint !== undefined)
             current.contextCheckpoint = previous.contextCheckpoint;
           current.input = {

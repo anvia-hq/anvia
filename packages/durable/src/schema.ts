@@ -140,6 +140,7 @@ const runSchema = z
     maxModelTurns: count,
     usage,
     history: messagesSchema,
+    continueFrom: id.optional(),
     compaction: compactionPolicySchema.optional(),
     contextCheckpoint: contextCheckpointSchema.optional(),
     contextPrepared: z.boolean().optional(),

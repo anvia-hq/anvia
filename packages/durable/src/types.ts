@@ -99,6 +99,11 @@ export type DurableRunRecord = DurableSubmission & {
   usage: Usage;
   /** Canonical history before this submission, retained across interaction continuations. */
   history: Message[];
+  /**
+   * A finished run whose conversation this run continues instead of its session's latest
+   * completed run. Set for owned agent tasks spawned with `continueFrom`.
+   */
+  continueFrom?: string;
   compaction?: DurableCompactionPolicy;
   contextCheckpoint?: DurableContextCheckpoint;
   /** Freezes even a skipped compaction decision across retries. */

@@ -3,6 +3,7 @@ import { Agent } from "@anvia/core/agent";
 import {
   DurableRuntime,
   defineGoal,
+  defineTask,
   goalControlSignal,
   type GoalDefinition,
   type GoalDecision,
@@ -13,7 +14,8 @@ import {
 import { SqliteDurableStore } from "../src/sqlite.js";
 import { DurableRecoveryError } from "../src/errors.js";
 import { journaledDecision } from "../src/goals/definition.js";
-import { done, lookup, makeAgent, makeStreamingAgent, toolResponse } from "./helpers.js";
+import { done, lookup, makeAgent, makeStreamingAgent, response, toolResponse } from "./helpers.js";
+import { z } from "zod";
 
 const runtimes: DurableRuntime[] = [];
 afterEach(async () => {
@@ -497,4 +499,112 @@ it("treats a journaled decision that does not validate as recoverable", () => {
   const valid = { ...decision("continue"), context: "Earlier answer" };
   expect(journaledDecision(valid)).toEqual(valid);
   expect(() => journaledDecision({ status: "done" })).toThrow(DurableRecoveryError);
+});
+
+const userText = (message: { role: string; content: unknown }) =>
+  typeof message.content === "string"
+    ? message.content
+    : (message.content as { type: string; text?: string }[])
+        .flatMap((part) => (part.type === "text" ? [part.text ?? ""] : []))
+        .join("");
+
+it("continues every round in the previous round's conversation when rounds continue", async () => {
+  const histories: string[][] = [];
+  const rounds: string[][] = [];
+  const goal = defineGoal({
+    name: "continuing",
+    version: 1,
+    agentId: "researcher",
+    rounds: "continue",
+    assess: async ({ session }) => {
+      rounds.push(session.roundMessages.map((message) => message.role));
+      return decision(rounds.length === 2 ? "complete" : "continue", `round-${rounds.length}`);
+    },
+  });
+  const runtime = await open(
+    goal,
+    makeAgent(async (request) => {
+      histories.push(
+        request.chatHistory.map((message) => `${message.role}:${userText(message).slice(0, 40)}`),
+      );
+      return response([{ type: "text", text: `Answer ${histories.length}` }]);
+    }),
+  );
+  const handle = await runtime.submitGoal(goal, input);
+  expect(await handle.result()).toMatchObject({ sessions: 2 });
+  // Round 1 starts a conversation; round 2 continues it after round 1's answer.
+  expect(histories[0]).toEqual([expect.stringMatching(/^user:Work on the next bounded session/)]);
+  expect(histories[1]).toEqual([
+    expect.stringMatching(/^user:Work on the next bounded session/),
+    "assistant:Answer 1",
+    expect.stringMatching(/^user:Continue working toward the goal/),
+  ]);
+  // The assessor sees only the round's own messages; whole conversations stay out of the journal.
+  expect(rounds).toEqual([
+    ["user", "assistant"],
+    ["user", "assistant"],
+  ]);
+  const operations = (await handle.snapshot({ operations: true })).operations;
+  const assessed = operations.find((operation) => operation.key === "assess:2")!.input as {
+    session: { messages: unknown[] };
+  };
+  expect(assessed.session.messages).toHaveLength(2);
+});
+
+it("keeps a turn-limited round's partial work for the next round", async () => {
+  let calls = 0;
+  const agent = new Agent({
+    id: "researcher",
+    maxTurns: 0,
+    tools: [lookup(async () => "artifact from round one")],
+    model: makeAgent(async (request) => {
+      calls++;
+      if (calls === 1) return toolResponse();
+      // The second round starts from the first round's tool result.
+      expect(JSON.stringify(request.chatHistory)).toContain("artifact from round one");
+      return done();
+    }).model,
+  });
+  let rounds = 0;
+  const goal = defineGoal({
+    name: "continuing-exhausted",
+    version: 1,
+    agentId: agent.id,
+    rounds: "continue",
+    assess: async ({ session }) => {
+      rounds++;
+      return decision(session.status === "response" ? "complete" : "continue", `round-${rounds}`);
+    },
+  });
+  const runtime = await open(goal, agent);
+  const handle = await runtime.submitGoal(goal, input);
+  expect(await handle.result()).toMatchObject({ sessions: 2 });
+  expect(calls).toBe(2);
+});
+
+it("rejects continuing from a run that is not a finished sibling of the same agent", async () => {
+  const task = defineTask({
+    name: "bad-continuation",
+    version: 1,
+    input: z.object({}),
+    checkpoint: z.null(),
+    output: z.string(),
+    initial: () => null,
+    run: async (ctx) => {
+      try {
+        ctx.spawnAgent("second", { agentId: "researcher", prompt: "Go", continueFrom: "missing" });
+        return { status: "completed", output: "spawned" };
+      } catch (error) {
+        return { status: "completed", output: (error as Error).message };
+      }
+    },
+  });
+  const runtime = await DurableRuntime.open({
+    store: new SqliteDurableStore(":memory:"),
+    tasks: [task],
+    agents: [{ agent: makeAgent(async () => done()), version: "1" }],
+  });
+  runtimes.push(runtime);
+  const handle = await runtime.submitTask(task, { sessionId: "s", requestId: "r", input: {} });
+  expect(await handle.result()).toBe("continueFrom must name an agent child of the same task.");
 });

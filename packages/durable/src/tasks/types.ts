@@ -8,6 +8,11 @@ export type TaskAgentInput = {
   prompt: AgentPrompt;
   /** Optional lower cap, including the initial model response. */
   maxModelTurns?: number;
+  /**
+   * Key of a finished agent child of the same task. The new run continues that run's whole
+   * conversation, including a turn-limited one's partial work, instead of starting empty.
+   */
+  continueFrom?: string;
 };
 
 export type TaskOutcome<R = JsonValue> =

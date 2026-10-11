@@ -200,6 +200,44 @@ An assessment may also return `context`: material for the next session that is n
 verdict, such as the session's final answer or the files it changed. It reaches the next session
 inside `previous`, so later sessions can build on earlier work instead of rediscovering it.
 
+## Continuing rounds
+
+By default every session starts a new conversation and sees earlier work only through the
+assessor's handoff. Set `rounds: "continue"` to keep one conversation instead: each session
+after the first continues the previous session's conversation, including a turn-limited
+session's partial work, with a short "continue working toward the goal in this same
+conversation" prompt. This suits long-running agents whose rounds build on what they read,
+wrote, and verified, without restating it in a handoff.
+
+```ts
+const research = defineGoal({
+  name: "research",
+  version: 1,
+  agentId: researcher.id,
+  rounds: "continue",
+  // The agent can declare completion itself, for example through an application tool; the
+  // assessor reads that from the round's own messages and decides.
+  assess: async ({ session }) => {
+    const done = session.roundMessages.some((message) => calledCompleteTool(message));
+    return {
+      status: done ? "complete" : "continue",
+      summary: "Round finished.",
+      next: done ? "" : "Continue the work.",
+      progressKey: session.runId,
+      evidence: [],
+    };
+  },
+});
+```
+
+- `session.messages` is the whole conversation, and `session.roundMessages` only the round's
+  own messages, starting with its prompt. The assessment journal stores the round's messages
+  and run ID, not the growing conversation.
+- Budgets, pauses, edits, messages, and recovery work as for fresh sessions. A continuing round
+  is an ordinary owned agent run spawned with `continueFrom`; see the task guide.
+- Context grows with every round; configure `compaction` on the agent registration for long
+  goals. Changing `rounds` for a definition affects sessions spawned afterwards.
+
 ## Controlling a running goal
 
 Applications can pause, edit, or message a goal while it runs. Each is a signal family with

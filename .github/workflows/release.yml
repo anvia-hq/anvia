@@ -206,7 +206,8 @@ jobs:
   publish:
     name: Publish packages to npm
     needs: prepare
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    # npm provenance requires a GitHub-hosted runner.
+    runs-on: ubuntu-24.04
     environment: npm-publish
     permissions:
       contents: write

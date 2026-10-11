@@ -187,13 +187,18 @@ export function defineGoal(policy: GoalDefinition): DefinedGoal {
         ...state,
         phase: "ready",
         childId: null,
-        ...(settled === undefined ? {} : { previousChildKey: settled.key }),
         sessions: state.sessions + 1,
         modelTurns: state.modelTurns + run.modelTurns,
         totalTokens: state.totalTokens + run.usage.totalTokens,
       };
       let session: GoalSession;
+      // Only a usable conversation can be continued: a failed session leaves the previous
+      // one as the round to continue after a resume.
+      const continueAfter = () => {
+        if (settled !== undefined) next.previousChildKey = settled.key;
+      };
       if (run.status === "completed" && run.outcome?.type === "response") {
+        continueAfter();
         session = {
           runId: run.id,
           status: "response",
@@ -204,6 +209,7 @@ export function defineGoal(policy: GoalDefinition): DefinedGoal {
           usage: run.usage,
         };
       } else if (run.status === "failed" && run.exhaustion !== undefined) {
+        continueAfter();
         session = {
           runId: run.id,
           status: "exhausted",

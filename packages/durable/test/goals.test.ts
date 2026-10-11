@@ -608,3 +608,32 @@ it("rejects continuing from a run that is not a finished sibling of the same age
   const handle = await runtime.submitTask(task, { sessionId: "s", requestId: "r", input: {} });
   expect(await handle.result()).toBe("continueFrom must name an agent child of the same task.");
 });
+
+it("continues from the last usable round after a failed round is resumed", async () => {
+  let calls = 0;
+  const histories: number[] = [];
+  const goal = defineGoal({
+    name: "continuing-after-failure",
+    version: 1,
+    agentId: "researcher",
+    rounds: "continue",
+    assess: async () => decision(calls >= 3 ? "complete" : "continue", `round-${calls}`),
+  });
+  const runtime = await open(
+    goal,
+    makeAgent(async (request) => {
+      calls++;
+      histories.push(request.chatHistory.length);
+      // The second round fails outright, without a turn limit.
+      if (calls === 2) throw new Error("Provider unavailable");
+      return response([{ type: "text", text: `Answer ${calls}` }]);
+    }),
+  );
+  const handle = await runtime.submitGoal(goal, input);
+  const task = await paused(handle, "session_failed");
+  expect(task.checkpoint).toMatchObject({ previousChildKey: "session:1" });
+  await handle.signal("resume:0", "resume", { feedback: "Provider is back." });
+  expect(await handle.result()).toMatchObject({ sessions: 3 });
+  // The third round continues round one's conversation: its prompt and answer, then its own.
+  expect(histories).toEqual([1, 3, 3]);
+});

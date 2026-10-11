@@ -217,13 +217,15 @@ const research = defineGoal({
   rounds: "continue",
   // The agent can declare completion itself, for example through an application tool; the
   // assessor reads that from the round's own messages and decides.
-  assess: async ({ session }) => {
+  assess: async ({ session }, signal) => {
     const done = session.roundMessages.some((message) => calledCompleteTool(message));
     return {
       status: done ? "complete" : "continue",
       summary: "Round finished.",
       next: done ? "" : "Continue the work.",
-      progressKey: session.runId,
+      // Observed state, such as a hash of the workspace. A key that changes every round,
+      // like the run ID, would never repeat and disable the no-progress guard.
+      progressKey: await workspaceHash(signal),
       evidence: [],
     };
   },

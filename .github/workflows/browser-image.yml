@@ -24,7 +24,7 @@ env:
 jobs:
   build:
     name: Build browser image
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       contents: read
 
@@ -73,7 +73,7 @@ jobs:
     name: Publish browser image
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       contents: read
       packages: write

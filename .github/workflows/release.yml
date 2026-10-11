@@ -27,7 +27,7 @@ jobs:
   version:
     name: Create release pull request
     if: github.event_name == 'push' && github.ref_type == 'branch'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       contents: write
       pull-requests: write
@@ -76,7 +76,7 @@ jobs:
   prepare:
     name: Validate and build packages
     if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     outputs:
       channel: ${{ steps.release.outputs.channel }}
       npm_tag: ${{ steps.release.outputs.npm_tag }}
@@ -206,7 +206,7 @@ jobs:
   publish:
     name: Publish packages to npm
     needs: prepare
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     environment: npm-publish
     permissions:
       contents: write

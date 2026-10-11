@@ -11,6 +11,8 @@ import {
   type DurableTaskHandle,
 } from "../src/index.js";
 import { SqliteDurableStore } from "../src/sqlite.js";
+import { DurableRecoveryError } from "../src/errors.js";
+import { journaledDecision } from "../src/goals/definition.js";
 import { done, lookup, makeAgent, makeStreamingAgent, toolResponse } from "./helpers.js";
 
 const runtimes: DurableRuntime[] = [];
@@ -489,4 +491,10 @@ it("passes an assessment's context to the next session inside previous", async (
   expect(second.previous.context).toBe(
     "Previous answer: index built.\nChanged files: src/index.ts",
   );
+});
+
+it("treats a journaled decision that does not validate as recoverable", () => {
+  const valid = { ...decision("continue"), context: "Earlier answer" };
+  expect(journaledDecision(valid)).toEqual(valid);
+  expect(() => journaledDecision({ status: "done" })).toThrow(DurableRecoveryError);
 });

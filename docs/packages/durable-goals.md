@@ -232,6 +232,10 @@ await goal.signal(goalControlSignal(task, "message"), "message-7", {
 - Edits and messages sent while paused take effect on resume. Malformed values are skipped, and
   their names stay used. For text the agent should read mid-session, steer the live session run
   with `run.steer()` instead.
+- Two senders can compute the same next name. The later delivery then fails with
+  `DurableConflictError` because a signal name takes one delivery: take a fresh snapshot, call
+  `goalControlSignal` again, and retry with the same request ID. A request ID already delivered
+  under some name of that family needs no retry.
 - When a crash interrupts a session spawn, the spawned session keeps the controls it read, and
   the next session reads them again: a message can arrive twice but is never lost.
 

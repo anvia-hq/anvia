@@ -201,8 +201,7 @@ export function defineGoal(policy: GoalDefinition): DefinedGoal {
         session,
       };
       const assessment: GoalAssessment = { ...assessmentInput, agentId: state.agentId };
-      // The journal stores plain JSON; the decision is validated again when read back.
-      const decision = goalDecisionSchema.parse(
+      const decision = journaledDecision(
         await ctx.effect(
           `assess:${next.sessions}`,
           // Keep the existing journal input shape. The session's runId already binds its agent.
@@ -259,6 +258,18 @@ function pause(
   };
 }
 
+/**
+ * The journal stores plain JSON, so a decision is validated again when read back. A value
+ * that no longer validates, such as one an operator recorded by hand, needs attention rather
+ * than failing the goal.
+ */
+export function journaledDecision(value: JsonValue): GoalDecision {
+  const parsed = goalDecisionSchema.safeParse(value);
+  if (!parsed.success)
+    throw new DurableRecoveryError("Goal assessment journal holds an invalid decision.");
+  return parsed.data;
+}
+
 /** The objective and criteria in force: the latest edit, else the submission. */
 function effective(input: GoalInput, state: GoalCheckpoint) {
   return {
@@ -305,7 +316,11 @@ function readControls(
   return { state: { ...next, controls, ...(messages.length ? { messages } : {}) }, pause };
 }
 
-/** The next unused signal name of a control family, for delivering a pause, edit, or message. */
+/**
+ * The next unused signal name of a control family, for delivering a pause, edit, or message.
+ * Two senders can read the same name; the later delivery then fails with
+ * `DurableConflictError`, so take a fresh snapshot and call this again before retrying.
+ */
 export function goalControlSignal(task: TaskRecord, family: keyof GoalControls): string {
   const parsed = goalCheckpointSchema.safeParse(task.checkpoint);
   let index = parsed.success ? (parsed.data.controls?.[family] ?? 0) : 0;

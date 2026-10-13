@@ -40,6 +40,9 @@ jobs:
       - name: Check formatting and linting
         run: pnpm check
 
+      - name: Test custom lint rules
+        run: node --test scripts/oxlint-anvia.test.mjs
+
       - name: Validate package releases
         run: pnpm releases:validate
 

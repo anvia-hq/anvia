@@ -370,12 +370,9 @@ describe("AgentTeam", () => {
       });
       const model = new ScriptModel([call("write")]);
       const team = new AgentTeam({ id: "lead", model, members: [], tools: [guarded] });
-      await expect(
-        team.generate({
-          prompt: "start",
-          ...(kind === "invalid" ? { resolveInteraction: () => ({ type: "wrong" }) as never } : {}),
-        }),
-      ).rejects.toBeInstanceOf(AgentTeamInteractionError);
+      const options: Parameters<typeof team.generate>[0] = { prompt: "start" };
+      if (kind === "invalid") options.resolveInteraction = () => ({ type: "wrong" }) as never;
+      await expect(team.generate(options)).rejects.toBeInstanceOf(AgentTeamInteractionError);
       expect(execute).not.toHaveBeenCalled();
     },
   );

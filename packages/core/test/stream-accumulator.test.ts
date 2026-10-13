@@ -137,15 +137,13 @@ describe("CompletionStreamAccumulator", () => {
     const accumulator = new CompletionStreamAccumulator();
     accumulator.accept({ type: "message_id", id: "s" });
     accumulator.accept({ type: "text_delta", delta: "ok" });
-    accumulator.accept({
-      type: "final",
-      response: {
-        choice: [],
-        usage: Usage.empty(),
-        rawResponse: {},
-        ...(messageId === undefined ? {} : { messageId }),
-      },
-    });
+    const response: CompletionResponse = {
+      choice: [],
+      usage: Usage.empty(),
+      rawResponse: {},
+    };
+    if (messageId !== undefined) response.messageId = messageId;
+    accumulator.accept({ type: "final", response });
 
     const result = accumulator.response();
     expect(result.choice).toEqual([AssistantContent.text("ok")]);

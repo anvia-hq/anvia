@@ -1,4 +1,7 @@
-import { generateCompletion } from "../completion/generate-completion";
+import {
+  generateCompletion,
+  type GenerateCompletionOptions,
+} from "../completion/generate-completion";
 import type {
   AssistantContentPart,
   FilePart,
@@ -42,16 +45,17 @@ export function createSummaryMemoryCompactor(
 
   return async ({ messages, abortSignal }) => {
     try {
-      const result = await generateCompletion({
+      const request: GenerateCompletionOptions = {
         model: options.model,
         prompt: serializeMessagesForSummary(messages),
         instructions: options.instructions ?? defaultSummaryInstructions,
         maxTokens,
-        ...(temperature === null ? {} : { temperature }),
-        providerOptions: options.providerOptions,
-        retries: options.retries,
-        abortSignal,
-      });
+      };
+      if (temperature !== null) request.temperature = temperature;
+      request.providerOptions = options.providerOptions;
+      request.retries = options.retries;
+      request.abortSignal = abortSignal;
+      const result = await generateCompletion(request);
       const summary = result.text.trim();
       if (summary.length === 0) {
         throw new MemoryCompactionError("Memory compaction model returned an empty summary.", {

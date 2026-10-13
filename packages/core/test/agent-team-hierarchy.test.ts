@@ -8,6 +8,7 @@ import {
   createTool,
   defineGuardrailPolicy,
   defineOutputGuardrail,
+  type AgentOptions,
   type AgentTeamEvent,
   type AgentTeamOptions,
   type CompletionModel,
@@ -280,21 +281,20 @@ describe("AgentTeam hierarchy", () => {
     "stops idle descendants when their parent is terminated (%s)",
     async (termination) => {
       const leaf = new Agent({ id: "leaf", model: model(() => say("leaf done")) });
+      const options: Pick<AgentOptions, "id" | "guardrails"> = { id: "worker" };
+      if (termination === "block") {
+        options.guardrails = defineGuardrailPolicy({
+          id: "block-policy",
+          output: [
+            defineOutputGuardrail({
+              id: "block",
+              check: (_context, { block }) => block({ reason: "denied" }),
+            }),
+          ],
+        });
+      }
       const worker = new Agent({
-        id: "worker",
-        ...(termination === "block"
-          ? {
-              guardrails: defineGuardrailPolicy({
-                id: "block-policy",
-                output: [
-                  defineOutputGuardrail({
-                    id: "block",
-                    check: (_context, { block }) => block({ reason: "denied" }),
-                  }),
-                ],
-              }),
-            }
-          : {}),
+        ...options,
         model: script(call("spawn_leaf", { prompt: "work" }), say("early"), () => {
           if (termination === "fail") throw new Error("parent failed");
           return say("parent done");

@@ -203,11 +203,14 @@ describe("createQuestionTool", () => {
   });
 
   it.each([1, 4])("accepts %i questions and trims nonblank fields", (count) => {
-    const questions = Array.from({ length: count }, (_, index) => ({
-      id: ` q_${index} `,
-      text: " Question? ",
-      ...(index === 0 ? {} : { choices: choices(index === 1 ? 2 : 4) }),
-    }));
+    const questions = Array.from({ length: count }, (_, index) => {
+      const prompt: { id: string; text: string; choices?: ReturnType<typeof choices> } = {
+        id: ` q_${index} `,
+        text: " Question? ",
+      };
+      if (index !== 0) prompt.choices = choices(index === 1 ? 2 : 4);
+      return prompt;
+    });
     expect(createQuestionTool().parseInput!({ questions }).questions[0]).toEqual({
       id: "q_0",
       text: "Question?",
@@ -300,21 +303,23 @@ describe("createQuestionTool", () => {
 });
 
 describe("question response validation", () => {
-  const request = (allowCustom?: boolean) =>
-    parseAgentInteractionRequest({
+  const request = (allowCustom?: boolean) => {
+    const prompt: {
+      id: string;
+      text: string;
+      choices: ReturnType<typeof choices>;
+      allowCustom?: boolean;
+    } = { ...question(), choices: choices(2) };
+    if (allowCustom !== undefined) prompt.allowCustom = allowCustom;
+    return parseAgentInteractionRequest({
       type: "tool-question",
       id: "interaction",
       toolName: "ask_user",
       toolCallId: "call",
       internalCallId: "internal",
-      questions: [
-        {
-          ...question(),
-          choices: choices(2),
-          ...(allowCustom === undefined ? {} : { allowCustom }),
-        },
-      ],
+      questions: [prompt],
     });
+  };
 
   it.each([
     ["unknown ID", [{ questionId: "unknown", value: "format_0" }]],

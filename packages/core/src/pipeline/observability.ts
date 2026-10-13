@@ -63,13 +63,15 @@ export function snapshotPipelineObservability(
   if (errorPolicy !== "ignore" && errorPolicy !== "throw") {
     throw new TypeError('Pipeline observability.errorPolicy must be "ignore" or "throw".');
   }
-  const snapshot: PipelineObservabilityOptions = {
+  const snapshot: {
+    observers: PipelineObserverMap;
+    errorPolicy: PipelineObserverErrorPolicy;
+    primaryTrace?: string;
+  } = {
     observers: Object.freeze(observers),
     errorPolicy,
-    ...(observability.primaryTrace === undefined
-      ? {}
-      : { primaryTrace: observability.primaryTrace }),
   };
+  if (observability.primaryTrace !== undefined) snapshot.primaryTrace = observability.primaryTrace;
   return Object.freeze(snapshot);
 }
 

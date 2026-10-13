@@ -523,30 +523,23 @@ function redactOutcome(
   caseId: string,
   metricName: string,
 ): unknown {
-  return {
-    ...outcome,
-    ...(outcome.score === undefined
-      ? {}
-      : { score: redact(outcome.score, options, { kind: "score", caseId, metricName }) }),
-    ...(outcome.comment === undefined
-      ? {}
-      : { comment: redact(outcome.comment, options, { kind: "comment", caseId, metricName }) }),
-    ...(!("reason" in outcome) || outcome.reason === undefined
-      ? {}
-      : { reason: redact(outcome.reason, options, { kind: "comment", caseId, metricName }) }),
-    ...(outcome.metadata === undefined
-      ? {}
-      : {
-          metadata: redact(outcome.metadata, options, {
-            kind: "metadata",
-            caseId,
-            metricName,
-          }),
-        }),
-    ...(!("error" in outcome) || outcome.error === undefined
-      ? {}
-      : { error: redact(outcome.error, options, { kind: "error", caseId, metricName }) }),
-  };
+  const redacted: Record<string, unknown> = { ...outcome };
+  if (outcome.score !== undefined) {
+    redacted.score = redact(outcome.score, options, { kind: "score", caseId, metricName });
+  }
+  if (outcome.comment !== undefined) {
+    redacted.comment = redact(outcome.comment, options, { kind: "comment", caseId, metricName });
+  }
+  if ("reason" in outcome && outcome.reason !== undefined) {
+    redacted.reason = redact(outcome.reason, options, { kind: "comment", caseId, metricName });
+  }
+  if (outcome.metadata !== undefined) {
+    redacted.metadata = redact(outcome.metadata, options, { kind: "metadata", caseId, metricName });
+  }
+  if ("error" in outcome && outcome.error !== undefined) {
+    redacted.error = redact(outcome.error, options, { kind: "error", caseId, metricName });
+  }
+  return redacted;
 }
 
 function validatePrintOptions(options: Omit<PrintEvalResultOptions, "output">): void {

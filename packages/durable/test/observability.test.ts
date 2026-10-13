@@ -323,6 +323,40 @@ describe("durable observability", () => {
     });
   });
 
+  it("drops application metadata that claims runtime-owned durable keys", async () => {
+    const { observer, recorded } = recorder();
+    const agent = new Agent({
+      id: "researcher",
+      observability: { observers: { lens: observer } },
+      model: { provider: "test", modelId: "test", capabilities, completion: async () => done() },
+    });
+    const runtime = await open({ agents: [{ agent, version: "1" }] });
+    const run = await runtime.submit({
+      agentId: "researcher",
+      sessionId: "s",
+      requestId: "r",
+      prompt: "hi",
+      trace: {
+        sessionId: "s",
+        metadata: {
+          plan: "pro",
+          durableRunId: "forged",
+          durableSessionId: "elsewhere",
+          durableTaskId: "task",
+          durableRootTaskId: "root",
+          durableGraphId: "graph",
+        },
+      },
+    });
+    await run.result();
+
+    expect(recorded.runs[0]!.trace?.metadata).toEqual({
+      plan: "pro",
+      durableRunId: run.id,
+      durableEpoch: 0,
+    });
+  });
+
   it("keeps the first trace options for a duplicate submission", async () => {
     const { observer, recorded } = recorder();
     const agent = new Agent({

@@ -379,9 +379,10 @@ await runtime.submit({
   show the executions as one trace with one root span per execution. With `@anvia/otel` and your
   own tracer provider, install `createAnviaIdGenerator()`; see the
   [`@anvia/otel` guide](./observability-otel.md#supplied-trace-ids).
-- Metadata includes `durableRunId` and `durableEpoch`, plus `durableTaskId` and
-  `durableRootTaskId` for task-owned runs, or `durableGraphId` for graph nodes. These keys
-  replace application metadata with the same names.
+- Metadata includes `durableRunId` and `durableEpoch`, plus `durableSessionId` when
+  `trace.sessionId` differs from the execution session, `durableTaskId` and `durableRootTaskId`
+  for task-owned runs, or `durableGraphId` for graph nodes. These keys are reserved: application
+  metadata with the same names is dropped, even when the runtime does not set that key.
 - Optional `trace` accepts `sessionId`, `name`, `userId`, `tags`, `metadata`, and `version`, up
   to 16 KiB in total. It is ignored for request deduplication, so a duplicate submission keeps the
   first value. `submitTask()`, `submitGoal()`, and `submitRegisteredTask()` accept the same option

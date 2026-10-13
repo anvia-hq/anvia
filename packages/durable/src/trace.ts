@@ -19,7 +19,7 @@ export function runTrace(tx: DurableTransaction, run: DurableRunRecord): AgentTr
   const executionSessionId = task?.sessionId ?? graph?.submission.sessionId ?? run.sessionId;
   const sessionId = options?.sessionId ?? executionSessionId;
   const metadata: JsonObject = {
-    ...options?.metadata,
+    ...applicationMetadata(options?.metadata),
     durableRunId: run.id,
     durableEpoch: run.epoch,
     // Keeps the execution session discoverable when the observability session groups several.
@@ -34,4 +34,24 @@ export function runTrace(tx: DurableTransaction, run: DurableRunRecord): AgentTr
     traceId: run.id.replaceAll("-", ""),
     metadata,
   };
+}
+
+const RUNTIME_METADATA_KEYS = [
+  "durableRunId",
+  "durableEpoch",
+  "durableSessionId",
+  "durableTaskId",
+  "durableRootTaskId",
+  "durableGraphId",
+];
+
+/**
+ * The runtime adds only the durable keys that apply to a run, so application values for the others
+ * are dropped rather than passed off as runtime identifiers.
+ */
+function applicationMetadata(metadata: JsonObject | undefined): JsonObject {
+  if (metadata === undefined) return {};
+  return Object.fromEntries(
+    Object.entries(metadata).filter(([key]) => !RUNTIME_METADATA_KEYS.includes(key)),
+  );
 }

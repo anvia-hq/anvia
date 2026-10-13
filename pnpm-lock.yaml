@@ -570,6 +570,9 @@ importers:
       '@anvia/core':
         specifier: workspace:*
         version: link:../core
+      '@anvia/durable':
+        specifier: workspace:*
+        version: link:../durable
       '@types/node':
         specifier: ^24.9.1
         version: 24.12.2
@@ -582,6 +585,9 @@ importers:
       vitest:
         specifier: ^4.1.11
         version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@24.12.2)(@vitest/coverage-v8@4.1.11)(happy-dom@20.9.0)(vite@8.2.2(@types/node@24.12.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.1))
+      zod:
+        specifier: ^4.6.5
+        version: 4.6.5
 
   packages/observability-otel:
     dependencies:

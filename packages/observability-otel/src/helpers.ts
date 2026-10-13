@@ -9,16 +9,7 @@ import type {
   AgentToolErrorArgs,
   AgentToolStartArgs,
 } from "@anvia/core/observability";
-import {
-  type Attributes,
-  type Context,
-  context,
-  ROOT_CONTEXT,
-  type Span,
-  SpanStatusCode,
-  TraceFlags,
-  trace,
-} from "@opentelemetry/api";
+import { type Attributes, type Span, SpanStatusCode } from "@opentelemetry/api";
 import type { OtelObserverOptions } from "./types.js";
 
 export function rootSpanName(args: AgentRunStartArgs): string {
@@ -288,21 +279,6 @@ export function compactAttributes(values: Record<string, Attributes[string]>): A
       return value !== undefined;
     }),
   );
-}
-
-export function parentContextFromTraceId(
-  traceId: string | undefined,
-  parentObservationId?: string | undefined,
-): Context {
-  if (!isValidTraceId(traceId)) {
-    return context.active();
-  }
-  return trace.setSpanContext(ROOT_CONTEXT, {
-    traceId,
-    spanId: isValidSpanId(parentObservationId) ? parentObservationId : "0000000000000001",
-    traceFlags: TraceFlags.SAMPLED,
-    isRemote: true,
-  });
 }
 
 export function isRecord(value: unknown): value is Record<string, unknown> {

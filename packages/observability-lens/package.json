@@ -42,10 +42,12 @@
   },
   "devDependencies": {
     "@anvia/core": "workspace:*",
+    "@anvia/durable": "workspace:*",
     "@types/node": "^24.9.1",
     "tsup": "^8.5.0",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.11",
+    "zod": "^4.6.5"
   },
   "peerDependencies": {
     "@anvia/core": "workspace:^"

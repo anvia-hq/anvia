@@ -24,9 +24,9 @@ import {
   compactAttributes,
   emptyToUndefined,
   metadataAttributes,
-  parentContextFromTraceId,
   recordSpanError,
 } from "./helpers.js";
+import { startRootSpan } from "./root-span.js";
 import type { OtelPipelineObserverOptions } from "./types.js";
 
 export function createOtelPipelineObserver(
@@ -48,17 +48,15 @@ class OtelPipelineObserver implements PipelineObserver {
   }
 
   startRun(args: PipelineRunStartArgs): PipelineRunObservation {
-    const parentContext = parentContextFromTraceId(
-      args.trace?.traceId,
-      args.trace?.parentObservationId,
-    );
-    const root = this.tracer.startSpan(
+    const root = startRootSpan(
+      this.tracer,
       `pipeline.${args.pipelineName ?? args.pipelineId}`,
       {
         kind: SpanKind.INTERNAL,
         attributes: pipelineRunStartAttributes(args, this.options),
       },
-      parentContext,
+      args.trace?.traceId,
+      args.trace?.parentObservationId,
     );
     return new OtelPipelineRunObserver(this.tracer, root, this.options);
   }

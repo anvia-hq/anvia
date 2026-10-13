@@ -40,7 +40,6 @@ import {
   isRecord,
   modelInputMessage,
   modelInputMessages,
-  parentContextFromTraceId,
   recordSpanError,
   rootSpanName,
   runEndAttributes,
@@ -52,6 +51,7 @@ import {
   toolStartAttributes,
   usageAttributesFromRecord,
 } from "./helpers.js";
+import { startRootSpan } from "./root-span.js";
 import type { OtelObserverOptions } from "./types.js";
 
 export function createOtelObserver(options: OtelObserverOptions = {}): AgentObserver {
@@ -75,17 +75,15 @@ class OtelAgentObserver implements AgentObserver {
   }
 
   startRun(args: AgentRunStartArgs): AgentRunObserver {
-    const parentContext = parentContextFromTraceId(
-      args.trace?.traceId,
-      args.trace?.parentObservationId,
-    );
-    const root = this.tracer.startSpan(
+    const root = startRootSpan(
+      this.tracer,
       rootSpanName(args),
       {
         kind: SpanKind.INTERNAL,
         attributes: runStartAttributes(args, this.serviceName, this.options),
       },
-      parentContext,
+      args.trace?.traceId,
+      args.trace?.parentObservationId,
     );
 
     return new OtelRunObserver(this.tracer, root, this.options);

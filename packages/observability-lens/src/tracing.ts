@@ -2,6 +2,7 @@ import type { EvalReporter } from "@anvia/core/evals";
 import type { AgentObserver, AgentRunStartArgs } from "@anvia/core/observability";
 import type { PipelineObserver, PipelineRunStartArgs } from "@anvia/core/pipeline";
 import {
+  createAnviaIdGenerator,
   createOtelEvalReporter,
   createOtelObserver,
   createOtelPipelineObserver,
@@ -12,7 +13,7 @@ import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-http";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { resourceFromAttributes } from "@opentelemetry/resources";
 import { BatchLogRecordProcessor, LoggerProvider } from "@opentelemetry/sdk-logs";
-import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-base";
+import { BatchSpanProcessor, RandomIdGenerator } from "@opentelemetry/sdk-trace-base";
 import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
 import { assertCaptureMaxBytes, type ResolvedLensConfig, resolveLensConfig } from "./config.js";
 import { createLensDatasetClient } from "./dataset-client.js";
@@ -314,6 +315,8 @@ async function createLensResources(
   try {
     tracerProvider = new NodeTracerProvider({
       resource,
+      // Lets runs that supply a trace ID, such as durable run attempts, start real root spans.
+      idGenerator: createAnviaIdGenerator(new RandomIdGenerator()),
       spanProcessors: [
         new BatchSpanProcessor(
           new OTLPTraceExporter({

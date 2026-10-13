@@ -1,11 +1,16 @@
 import type { ToolCallPart, Usage } from "@anvia/core/completion";
 import { EvalOutcome } from "@anvia/core/evals";
 import type { AgentGenerationStartArgs } from "@anvia/core/observability";
-import { type Context, SpanKind, SpanStatusCode, trace } from "@opentelemetry/api";
+import { type Context, diag, SpanKind, SpanStatusCode, trace } from "@opentelemetry/api";
 import { type Logger, SeverityNumber } from "@opentelemetry/api-logs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AssistantContent, Message } from "../../core/test/helpers/imports";
-import { createOtelEvalReporter, createOtelObserver } from "../src/index";
+import {
+  createAnviaIdGenerator,
+  createOtelEvalReporter,
+  createOtelObserver,
+  createOtelPipelineObserver,
+} from "../src/index";
 import { FakeTracer } from "./helpers/fake-tracer";
 
 afterEach(() => {
@@ -1446,6 +1451,106 @@ describe("otel", () => {
     expect(tracer.spans[0]?.parentSpanId).toBe(parentObservationId);
     expect(generated?.trace?.traceId).not.toBe("invalid");
     expect(generated?.trace?.traceId).toBe(tracer.spans[1]?.spanContextValue.traceId);
+  });
+});
+
+describe("OpenTelemetry run roots", () => {
+  const traceId = "1234567890abcdef1234567890abcdef";
+  const runArgs = (trace?: { traceId?: string; parentObservationId?: string }) => ({
+    runId: "run_1",
+    agentName: "support",
+    prompt: userMessage("hello"),
+    history: [],
+    maxTurns: 1,
+    trace,
+  });
+
+  it("starts a parentless root in a supplied trace and parents its children to it", async () => {
+    const tracer = new FakeTracer(createAnviaIdGenerator());
+    const run = await createOtelObserver({ tracer: tracer.tracer }).startRun(runArgs({ traceId }));
+    await run?.startGeneration?.(generationStartArgs());
+    await run?.startTool?.({
+      turn: 1,
+      toolName: "lookup",
+      args: "{}",
+      toolCall: toolCall(),
+      internalCallId: "internal-1",
+      toolCallId: "call-1",
+    });
+
+    const [root, generation, tool] = tracer.spans;
+    expect(run?.trace).toEqual({ traceId, observationId: root?.spanContextValue.spanId });
+    expect(root?.parentSpanId).toBeUndefined();
+    expect(root?.spanContextValue.traceId).toBe(traceId);
+    for (const child of [generation, tool]) {
+      expect(child?.spanContextValue.traceId).toBe(traceId);
+      expect(child?.parentSpanId).toBe(root?.spanContextValue.spanId);
+    }
+  });
+
+  it("does not leak a supplied trace ID into later or interleaved runs", async () => {
+    const generator = createAnviaIdGenerator();
+    const tracer = new FakeTracer(generator);
+    const tracing = createOtelObserver({ tracer: tracer.tracer });
+    const otherTraceId = "abcdef1234567890abcdef1234567890";
+
+    const first = await tracing.startRun(runArgs({ traceId }));
+    const second = await tracing.startRun(runArgs({ traceId: otherTraceId }));
+    const unrelated = await tracing.startRun(runArgs());
+    await first?.startGeneration?.(generationStartArgs());
+    await second?.startGeneration?.(generationStartArgs());
+
+    expect(first?.trace?.traceId).toBe(traceId);
+    expect(second?.trace?.traceId).toBe(otherTraceId);
+    expect([traceId, otherTraceId]).not.toContain(unrelated?.trace?.traceId);
+    expect([traceId, otherTraceId]).not.toContain(generator.generateTraceId());
+    expect(tracer.spans[3]?.parentSpanId).toBe(first?.trace?.observationId);
+    expect(tracer.spans[4]?.parentSpanId).toBe(second?.trace?.observationId);
+  });
+
+  it("keeps an explicit parent observation in the supplied trace", async () => {
+    const tracer = new FakeTracer(createAnviaIdGenerator());
+    const parentObservationId = "abcdef1234567890";
+    const run = await createOtelObserver({ tracer: tracer.tracer }).startRun(
+      runArgs({ traceId, parentObservationId }),
+    );
+
+    expect(run?.trace?.traceId).toBe(traceId);
+    expect(tracer.spans[0]?.parentSpanId).toBe(parentObservationId);
+  });
+
+  it("follows the active context when no trace ID is supplied", async () => {
+    const tracer = new FakeTracer(createAnviaIdGenerator());
+    const run = await createOtelObserver({ tracer: tracer.tracer }).startRun(runArgs());
+
+    expect(run?.trace?.traceId).toMatch(/^[0-9a-f]{32}$/);
+    expect(run?.trace?.traceId).not.toBe(traceId);
+    expect(tracer.spans[0]?.parentSpanId).toBeUndefined();
+  });
+
+  it("never invents a parent when the tracer ignores the supplied trace ID", async () => {
+    const warn = vi.spyOn(diag, "warn").mockImplementation(() => {});
+    const tracer = new FakeTracer();
+    const tracing = createOtelObserver({ tracer: tracer.tracer });
+    await tracing.startRun(runArgs({ traceId }));
+    await tracing.startRun(runArgs({ traceId }));
+
+    expect(tracer.spans.map((span) => span.parentSpanId)).toEqual([undefined, undefined]);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]?.[0]).toContain("createAnviaIdGenerator");
+  });
+
+  it("starts a pipeline root in a supplied trace", async () => {
+    const tracer = new FakeTracer(createAnviaIdGenerator());
+    const run = await createOtelPipelineObserver({ tracer: tracer.tracer }).startRun({
+      runId: "pipeline-run",
+      pipelineId: "research",
+      input: "hi",
+      trace: { traceId },
+    });
+
+    expect(run?.trace?.traceId).toBe(traceId);
+    expect(tracer.spans[0]?.parentSpanId).toBeUndefined();
   });
 });
 

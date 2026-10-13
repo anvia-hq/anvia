@@ -85,6 +85,28 @@ The application also owns graceful process shutdown. On `SIGINT` or `SIGTERM`, a
 active Agent run before awaiting the OpenTelemetry SDK's `shutdown()`. Core marks aborted runs as
 `cancelled`; shutting down the SDK first cannot export a root span that is still open.
 
+### Supplied trace IDs
+
+A run that sets `trace.traceId` joins that trace. With `trace.parentObservationId` its root span
+is a child of that span. Without it, the root span is a parentless root of the supplied trace,
+which `@anvia/durable` relies on so every execution of a durable run shares one trace.
+OpenTelemetry chooses a root span's trace ID through the provider's ID generator, so install
+`createAnviaIdGenerator()` on your provider:
+
+```ts
+import { createAnviaIdGenerator } from "@anvia/otel";
+import { RandomIdGenerator } from "@opentelemetry/sdk-trace-base";
+import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
+
+const provider = new NodeTracerProvider({
+  idGenerator: createAnviaIdGenerator(new RandomIdGenerator()),
+  spanProcessors: [processor],
+});
+```
+
+Every other ID comes from the generator you pass. Without it, such runs are exported as roots of
+separate traces and a diagnostic warning is logged once. `@anvia/lens` installs it for you.
+
 Set `captureMode: "safe"` to record operational attributes without prompt or response bodies.
 Existing `@anvia/otel` integrations retain full capture when the option is omitted. Use
 `captureMaxBytes` to set a per-value limit and `transformInput` / `transformOutput` to redact or

@@ -11,11 +11,18 @@ import {
 export class FakeTracer {
   readonly spans: FakeSpan[] = [];
   private nextId = 2;
+
+  /** Mirrors the SDK: root spans take their trace ID from the configured generator. */
+  constructor(private readonly idGenerator?: { generateTraceId(): string }) {}
+
   readonly tracer: Tracer = {
     startSpan: (name: string, options: SpanOptions = {}, parentContext?: Context) => {
-      const parent = parentContext === undefined ? undefined : trace.getSpanContext(parentContext);
+      const parent =
+        parentContext === undefined || options.root === true
+          ? undefined
+          : trace.getSpanContext(parentContext);
       const span = new FakeSpan(name, options, {
-        traceId: parent?.traceId ?? this.nextTraceId(),
+        traceId: parent?.traceId ?? this.idGenerator?.generateTraceId() ?? this.nextTraceId(),
         spanId: this.nextSpanId(),
         traceFlags: parent?.traceFlags ?? 1,
       });

@@ -1,10 +1,9 @@
-import { createServer } from "node:http";
-import type { AddressInfo } from "node:net";
 import { defineEvalSuite, exactMatch, selectPromptOutput } from "@anvia/core/evals";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { resolveLensConfig } from "../src/config";
 import { createLensRedactor, DEFAULT_PATTERNS, passesLuhn } from "../src/redaction";
 import { LensClient } from "../src/tracing";
+import { startOtlpServer } from "./otlp-server";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -605,45 +604,5 @@ function evalPayloadArgs(input: unknown) {
       traceId: "1234567890abcdef1234567890abcdef",
       observationId: "1234567890abcdef",
     },
-  };
-}
-
-type CapturedOtlpRequest = {
-  url: string;
-  authorization: string | undefined;
-  body: string;
-};
-
-async function startOtlpServer(): Promise<{
-  baseUrl: string;
-  bodies(): string;
-  requests(): readonly CapturedOtlpRequest[];
-  close(): Promise<void>;
-}> {
-  const received: CapturedOtlpRequest[] = [];
-  const server = createServer((incoming, response) => {
-    const chunks: Buffer[] = [];
-    incoming.on("data", (chunk: Buffer) => chunks.push(chunk));
-    incoming.on("end", () => {
-      received.push({
-        url: incoming.url ?? "",
-        authorization: incoming.headers.authorization,
-        body: Buffer.concat(chunks).toString("utf8"),
-      });
-      response.writeHead(200, { "Content-Type": "application/json" });
-      response.end("{}");
-    });
-  });
-  const listening = new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  await listening;
-  const address = server.address() as AddressInfo;
-  return {
-    baseUrl: `http://127.0.0.1:${address.port}`,
-    bodies: () => received.map((request) => request.body).join("\n"),
-    requests: () => received,
-    close: () =>
-      new Promise<void>((resolve, reject) => {
-        server.close((error) => (error ? reject(error) : resolve()));
-      }),
   };
 }

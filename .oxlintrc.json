@@ -1,10 +1,12 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "plugins": ["typescript", "unicorn", "oxc", "react"],
+  "jsPlugins": ["./scripts/oxlint-anvia.mjs"],
   "categories": {
     "correctness": "error"
   },
   "rules": {
+    "anvia/no-conditional-object-spread": "error",
     "eslint/no-useless-constructor": "error",
     "react/immutability": "off",
     "react/preserve-manual-memoization": "off",

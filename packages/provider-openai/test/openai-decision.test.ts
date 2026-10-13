@@ -357,14 +357,14 @@ describe("OpenAI decisions", () => {
   it("records refusal failures separately from completed batch inputs", async () => {
     const fetch = vi.fn(async (_url: unknown, init?: RequestInit) => {
       const input = JSON.parse(String(init?.body)).input;
-      return Response.json(
-        fixture([
-          {
-            name: "q0",
-            ...(input === "refuse" ? { type: "refusal" } : { type: "predicate", probability: 0.8 }),
-          },
-        ]),
-      );
+      const answer: Record<string, unknown> = { name: "q0" };
+      if (input === "refuse") {
+        answer.type = "refusal";
+      } else {
+        answer.type = "predicate";
+        answer.probability = 0.8;
+      }
+      return Response.json(fixture([answer]));
     });
     const model = new OpenAIClient({ client: new OpenAI({ apiKey: "test", fetch }) }).decisionModel(
       { modelId: GPT_6_LUNA },

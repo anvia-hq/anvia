@@ -190,17 +190,14 @@ describe("Jev decisions", () => {
     { "0": "High", "1": "Low" },
     { "0": "Low", "1": "Different" },
   ])("rejects a missing or mismatched score legend: %j", async (legend) => {
-    const { client } = clientWithResponse(
-      fixture({
-        q0: {
-          type: "score",
-          score: 0.75,
-          confidence: 0.5,
-          probabilities: { "0": 0.25, "1": 0.75 },
-          ...(legend === undefined ? {} : { legend }),
-        },
-      }),
-    );
+    const answer: Record<string, unknown> = {
+      type: "score",
+      score: 0.75,
+      confidence: 0.5,
+      probabilities: { "0": 0.25, "1": 0.75 },
+    };
+    if (legend !== undefined) answer.legend = legend;
+    const { client } = clientWithResponse(fixture({ q0: answer }));
     await expect(
       decide({
         model: client.decisionModel({ modelId: JEV_LATEST }),

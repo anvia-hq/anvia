@@ -57,10 +57,11 @@ function nativeQuestion(
     case "check":
       return { type: "predicate", name, instructions: question.instructions };
     case "choice": {
-      const choices = Object.entries(question.options).map(([value, description]) => ({
-        value,
-        ...(description === null ? {} : { description: decisionText(description) }),
-      }));
+      const choices = Object.entries(question.options).map(([value, description]) => {
+        const choice: { value: string; description?: string } = { value };
+        if (description !== null) choice.description = decisionText(description);
+        return choice;
+      });
       if (choices.length < 2) {
         throw new RangeError("OpenAI choice questions require at least two options.");
       }
@@ -71,10 +72,11 @@ function nativeQuestion(
         type: "score",
         name,
         instructions: question.instructions,
-        levels: question.rubric.map((description, index) => ({
-          label: String(index),
-          ...(description === null ? {} : { description: decisionText(description) }),
-        })),
+        levels: question.rubric.map((description, index) => {
+          const level: { label: string; description?: string } = { label: String(index) };
+          if (description !== null) level.description = decisionText(description);
+          return level;
+        }),
       };
   }
 }

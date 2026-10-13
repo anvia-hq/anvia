@@ -79,18 +79,17 @@ export class JevDecisionModel implements DecisionModel<unknown> {
 
     let rawResponse: unknown;
     try {
-      rawResponse = await this.sdk.systemOne(
-        {
-          ...request.providerOptions,
-          state: toEntry(request.state),
-          model: this.modelId,
-          questions: Object.fromEntries(questions),
-        },
-        {
-          ...(options?.abortSignal === undefined ? {} : { signal: options.abortSignal }),
-          retry: { maxRetries: 0 },
-        },
-      );
+      const body = {
+        ...request.providerOptions,
+        state: toEntry(request.state),
+        model: this.modelId,
+        questions: Object.fromEntries(questions),
+      };
+      const requestOptions: NonNullable<Parameters<TypeSafeClient["systemOne"]>[1]> = {
+        retry: { maxRetries: 0 },
+      };
+      if (options?.abortSignal !== undefined) requestOptions.signal = options.abortSignal;
+      rawResponse = await this.sdk.systemOne(body, requestOptions);
     } catch (error) {
       throw normalizeJevError(error, options?.abortSignal);
     }

@@ -38,17 +38,15 @@ describe.each(["azure", "openai"] as const)(
         expect(events.filter((event) => event.type === "text_delta")).toEqual([
           { type: "text_delta", delta: "OK" },
         ]);
+        const expectedReasoning: Record<string, unknown> = {
+          type: "reasoning",
+          id: "rs-1",
+          text: "",
+        };
+        if (details.length > 0) expectedReasoning.details = details;
         expect(final?.result).toMatchObject({
           output: "OK",
-          content: [
-            {
-              type: "reasoning",
-              id: "rs-1",
-              text: "",
-              ...(details.length > 0 ? { details } : {}),
-            },
-            { type: "text", text: "OK" },
-          ],
+          content: [expectedReasoning, { type: "text", text: "OK" }],
           usage: { inputTokens: 10, outputTokens: 20, totalTokens: 30 },
           finishReason: "stop",
           rawResponse: { id: "resp-1", output: [reasoning, expect.anything()] },
@@ -142,13 +140,20 @@ describe.each(["azure", "openai"] as const)(
 );
 
 function reasoningItem(encrypted: boolean, emptyDetail: "none" | "summary" | "text" = "none") {
-  return {
+  const item: {
+    id: string;
+    type: string;
+    summary: { type: string; text: string }[];
+    content?: { type: string; text: string }[];
+    encrypted_content?: string;
+  } = {
     id: "rs-1",
     type: "reasoning",
     summary: emptyDetail === "summary" ? [{ type: "summary_text", text: "" }] : [],
-    ...(emptyDetail === "text" ? { content: [{ type: "reasoning_text", text: "" }] } : {}),
-    ...(encrypted ? { encrypted_content: "opaque-reasoning" } : {}),
   };
+  if (emptyDetail === "text") item.content = [{ type: "reasoning_text", text: "" }];
+  if (encrypted) item.encrypted_content = "opaque-reasoning";
+  return item;
 }
 
 function responseStream(reasoning: unknown, options: { summary?: string; text?: string } = {}) {

@@ -39,25 +39,23 @@ describe("Azure Responses requests", () => {
       } else {
         await model.completion(request);
       }
-      expect(create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          model: "deployment",
-          ...(stream ? { stream: true } : {}),
-          input: [
-            { type: "message", role: "user", content: "Weather?" },
-            { type: "message", role: "assistant", content: "Checking." },
-            {
-              type: "function_call",
-              id: "item_1",
-              call_id: "call_1",
-              name: "weather",
-              arguments: "{}",
-            },
-            { type: "function_call_output", call_id: "call_1", output: "Sunny" },
-          ],
-        }),
-        expect.anything(),
-      );
+      const expected: Record<string, unknown> = {
+        model: "deployment",
+        input: [
+          { type: "message", role: "user", content: "Weather?" },
+          { type: "message", role: "assistant", content: "Checking." },
+          {
+            type: "function_call",
+            id: "item_1",
+            call_id: "call_1",
+            name: "weather",
+            arguments: "{}",
+          },
+          { type: "function_call_output", call_id: "call_1", output: "Sunny" },
+        ],
+      };
+      if (stream) expected.stream = true;
+      expect(create).toHaveBeenCalledWith(expect.objectContaining(expected), expect.anything());
       expect(request.chatHistory[0]).not.toHaveProperty("type");
     },
   );

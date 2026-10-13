@@ -41,13 +41,14 @@ export class JevClient implements ModelListingClient {
     if (typeof apiKey !== "string" || apiKey.trim().length === 0) {
       throw new TypeError("JevClient requires apiKey or TYPESAFE_API_KEY.");
     }
-    this.sdk = new TypeSafeClient({
+    const clientOptions: ConstructorParameters<typeof TypeSafeClient>[0] = {
       apiKey,
-      ...(options.baseUrl === undefined ? {} : { baseURL: options.baseUrl }),
-      ...(options.headers === undefined ? {} : { defaultHeaders: options.headers }),
       retry: { maxRetries: 0 },
       logLevel: "off",
-    });
+    };
+    if (options.baseUrl !== undefined) clientOptions.baseURL = options.baseUrl;
+    if (options.headers !== undefined) clientOptions.defaultHeaders = options.headers;
+    this.sdk = new TypeSafeClient(clientOptions);
   }
 
   decisionModel(options: JevDecisionModelOptions): JevDecisionModelHandle {
@@ -59,10 +60,11 @@ export class JevClient implements ModelListingClient {
 
   async listModels(options?: { abortSignal?: AbortSignal | undefined }): Promise<ModelList> {
     try {
-      const models = await this.sdk.models.list({
-        ...(options?.abortSignal === undefined ? {} : { signal: options.abortSignal }),
+      const requestOptions: NonNullable<Parameters<TypeSafeClient["models"]["list"]>[0]> = {
         retry: { maxRetries: 0 },
-      });
+      };
+      if (options?.abortSignal !== undefined) requestOptions.signal = options.abortSignal;
+      const models = await this.sdk.models.list(requestOptions);
       if (
         !Array.isArray(models) ||
         models.some(

@@ -53,6 +53,12 @@ export class HttpInputError extends Error {
   }
 }
 
+/** Trace identity comes from the server's `trace` hook; a client must never choose it. */
+export function rejectClientTrace(body: unknown): void {
+  if (typeof body === "object" && body !== null && Object.hasOwn(body, "trace"))
+    throw new HttpInputError(400, "Trace context is set by the server, not the client.");
+}
+
 export async function readJson(request: Request, maxBytes: number): Promise<unknown> {
   if (
     request.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() !== "application/json"

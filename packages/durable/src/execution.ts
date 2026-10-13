@@ -147,6 +147,8 @@ export function createExecution(
     ...(run.steering === undefined
       ? {}
       : { drainSteering: createSteeringDrain(store, run, signal) }),
+    // Status only: tool args are not final yet, and a changed input fails in start() with a
+    // recovery error that the run's own span records.
     replayed(step) {
       const key =
         step.kind === "tool"

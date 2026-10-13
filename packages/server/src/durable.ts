@@ -20,6 +20,7 @@ import {
   jsonResponse,
   listQuery,
   readJson,
+  rejectClientTrace,
 } from "./durable-http";
 import { handleDurableGraphRequest } from "./durable-graph";
 
@@ -112,9 +113,9 @@ export function createDurableHandler(
           return json(page);
         }
         if (request.method === "POST") {
-          const { enqueue, ...submission } = parseDurableSubmission(
-            await readJson(request, maxBodyBytes),
-          );
+          const body = await readJson(request, maxBodyBytes);
+          rejectClientTrace(body);
+          const { enqueue, ...submission } = parseDurableSubmission(body);
           const resource: DurableAuthorization = {
             action: "submit",
             sessionId: submission.sessionId,

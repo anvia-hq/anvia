@@ -299,8 +299,16 @@ it("sets trace context on the server and rejects client-supplied trace", async (
   const task = { name: "wait", version: 1, sessionId: "s", requestId: "t", input: null };
   const spoofed = { userId: "someone-else" };
 
-  expect((await post("/runs", { ...run, trace: spoofed })).status).toBe(400);
-  expect((await post("/tasks", { ...task, trace: spoofed })).status).toBe(400);
+  for (const [path, body] of [
+    ["/runs", run],
+    ["/tasks", task],
+  ] as const) {
+    const rejected = await post(path, { ...body, trace: spoofed });
+    expect(rejected.status).toBe(400);
+    expect(await rejected.json()).toEqual({
+      error: "Trace context is set by the server, not the client.",
+    });
+  }
   expect(trace).not.toHaveBeenCalled();
   expect(await runtime.listRuns()).toMatchObject({ runs: [] });
 

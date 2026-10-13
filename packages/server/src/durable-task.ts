@@ -12,6 +12,7 @@ import {
   jsonResponse,
   listQuery,
   readJson,
+  rejectClientTrace,
 } from "./durable-http";
 
 export async function handleDurableTaskRequest(
@@ -42,9 +43,9 @@ export async function handleDurableTaskRequest(
   };
   if (parts.length === 0) {
     if (request.method === "POST") {
-      const input = parseTaskSubmission(await readJson(request, maxBytes));
-      if (input.trace !== undefined)
-        throw new HttpInputError(400, "Trace context is set by the server, not the client.");
+      const body = await readJson(request, maxBytes);
+      rejectClientTrace(body);
+      const input = parseTaskSubmission(body);
       // Older engines cannot expose effective bindings safely; never authorize agent-less here.
       if (typeof runtime.taskSubmissionScope !== "function")
         throw new HttpInputError(

@@ -184,7 +184,9 @@ export class ToolCallExecutor {
       }
       if (toolDefinition !== undefined) toolStartArgs = { ...toolStartArgs, toolDefinition };
       if (toolMetadata !== undefined) toolStartArgs = { ...toolStartArgs, toolMetadata };
-      const toolObservers = await observation?.runObservers.startTool(toolStartArgs);
+      const toolObservers = this.replayed(toolCall)
+        ? undefined
+        : await observation?.runObservers.startTool(toolStartArgs);
       const toolObservation = new ToolObserverScope(toolObservers);
 
       let output: NormalizedToolOutput | undefined;
@@ -480,7 +482,9 @@ export class ToolCallExecutor {
     }
     if (toolDefinition !== undefined) toolStartArgs = { ...toolStartArgs, toolDefinition };
     if (toolMetadata !== undefined) toolStartArgs = { ...toolStartArgs, toolMetadata };
-    const observers = await observation?.runObservers.startTool(toolStartArgs);
+    const observers = this.replayed(toolCall)
+      ? undefined
+      : await observation?.runObservers.startTool(toolStartArgs);
     const toolObservation = new ToolObserverScope(observers);
     let output: NormalizedToolOutput;
     let failed = false;
@@ -702,6 +706,11 @@ export class ToolCallExecutor {
       );
       throw error;
     }
+  }
+
+  /** A restored result was observed when the tool ran; observing it again duplicates it. */
+  private replayed(toolCall: ToolCallPart): boolean {
+    return this.execution?.replayed?.({ kind: "tool", toolCall }) === true;
   }
 
   private runApprovedToolCall(

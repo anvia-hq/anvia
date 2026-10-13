@@ -74,6 +74,7 @@ export type {
   DurableSteeringEntry,
   DurableSteeringState,
   DurableSubmission,
+  DurableTraceOptions,
   DurableTransaction,
   ToolRecovery,
 } from "./types.js";

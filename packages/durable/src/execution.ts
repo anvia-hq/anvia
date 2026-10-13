@@ -33,6 +33,8 @@ export function createExecution(
   let modelPhase = 0;
   const check = () => signal.throwIfAborted();
   const prepare = createContextPreparation(store, run, registration, signal);
+  const toolKey = (toolCallId: string) =>
+    `${prefix}tool:${modelPhase === 0 ? "resume" : modelPhase}:${toolCallId}`;
 
   function start(
     key: string,
@@ -145,6 +147,13 @@ export function createExecution(
     ...(run.steering === undefined
       ? {}
       : { drainSteering: createSteeringDrain(store, run, signal) }),
+    replayed(step) {
+      const key =
+        step.kind === "tool"
+          ? toolKey(step.toolCall.toolCallId)
+          : `${prefix}${step.kind}:${step.turn}`;
+      return store.transaction((tx) => tx.getOperation(run.id, key))?.status === "completed";
+    },
     async prepareMessages(turn, messages, checkpoint) {
       // Check before compaction too: an exhausted session must not spend another model call.
       const exhausted = store.transaction((tx) => {
@@ -229,7 +238,7 @@ export function createExecution(
       }
     },
     async tool(call, execute) {
-      const key = `${prefix}tool:${modelPhase === 0 ? "resume" : modelPhase}:${call.toolCall.toolCallId}`;
+      const key = toolKey(call.toolCall.toolCallId);
       const operation = start(
         key,
         "tool",

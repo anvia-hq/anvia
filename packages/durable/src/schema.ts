@@ -1,5 +1,6 @@
 import { steeringStateSchema } from "./steering.js";
 import { promptSchema } from "./prompt.js";
+import { traceOptionsSchema } from "./trace-schema.js";
 import { z } from "zod";
 import {
   agentContinuationSchema,
@@ -127,6 +128,7 @@ const runSchema = z
     requestId: id,
     // Older owned-agent submissions permitted whitespace-only string prompts.
     prompt: z.union([z.string(), promptSchema]),
+    trace: traceOptionsSchema.optional(),
     version: id,
     status: runStatusSchema,
     createdAt: id,

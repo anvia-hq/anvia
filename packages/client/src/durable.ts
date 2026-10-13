@@ -70,7 +70,8 @@ export class DurableClient {
   }
 
   async submitTask(
-    submission: TaskSubmission,
+    /** Trace context is set by the server's `trace` hook. */
+    submission: Omit<TaskSubmission, "trace">,
     options: DurableRequestOptions = {},
   ): Promise<TaskSnapshot> {
     return parseTaskSnapshot(
@@ -218,7 +219,8 @@ export class DurableClient {
   }
 
   async submit(
-    submission: DurableSubmission,
+    /** Trace context is set by the server's `trace` hook. */
+    submission: Omit<DurableSubmission, "trace">,
     options: DurableSubmitOptions & DurableRequestOptions = {},
   ): Promise<DurableSnapshot> {
     return parseDurableSnapshot(

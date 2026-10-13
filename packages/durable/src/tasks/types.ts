@@ -1,7 +1,12 @@
 import type { AgentPrompt } from "@anvia/core/agent";
 import type { JsonValue } from "@anvia/core/completion";
 import type { z } from "zod";
-import type { ToolRecovery, DurableRunStatus, DurableRunRecord } from "../types.js";
+import type {
+  ToolRecovery,
+  DurableRunStatus,
+  DurableRunRecord,
+  DurableTraceOptions,
+} from "../types.js";
 
 export type TaskAgentInput = {
   agentId: string;
@@ -124,6 +129,8 @@ export type TaskRecord = {
   error?: string;
   blockedOperation?: string;
   signals: Record<string, { requestId: string; value: JsonValue }>;
+  /** Root tasks only; applied to every agent run in the tree. */
+  trace?: DurableTraceOptions | undefined;
   createdAt: string;
   updatedAt: string;
 };

@@ -32,8 +32,19 @@ export type AgentToolExecutionResult =
   | { output: NormalizedToolOutput; failed: false }
   | { output: NormalizedToolOutput; failed: true; error: unknown };
 
+/** A run step the execution runtime may restore from a committed checkpoint. */
+export type AgentRunExecutionStep =
+  | { kind: "context"; turn: number }
+  | { kind: "model"; turn: number }
+  | { kind: "tool"; toolCall: ToolCallPart };
+
 /** Internal persistence boundary used by execution runtimes. Callbacks own external effects. */
 export interface AgentRunExecution {
+  /**
+   * Whether a step is already committed and will be restored rather than executed. Queried before
+   * the step starts; replayed steps are not observed or counted as run usage again.
+   */
+  replayed?(step: AgentRunExecutionStep): boolean;
   /** Synchronously checkpoint queued input at a safe boundary, including empty/closing drains. */
   drainSteering?(turn: number, closing: boolean): { id: string; messages: UserMessage[] }[];
   /** Persist the context selected before each model call, including skipped compaction decisions. */

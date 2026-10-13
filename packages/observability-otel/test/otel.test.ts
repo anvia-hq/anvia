@@ -973,6 +973,8 @@ describe("otel", () => {
       message: "run failed",
     });
     expect(tracer.spans[0]?.attributes["anvia.run.status"]).toBe("failed");
+    // Failed runs never reach end(), so the run ID must already be recorded at start.
+    expect(tracer.spans[0]?.attributes["anvia.run.id"]).toBe("run_1");
     expect(tracer.spans.every((span) => span.ended)).toBe(true);
   });
 

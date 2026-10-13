@@ -2,6 +2,7 @@ import { z } from "zod";
 import { isJsonValue, type JsonValue } from "@anvia/core/completion";
 import { parseTask, taskListSchema } from "./tasks/schema.js";
 import { parseOperation } from "./schema.js";
+import { traceOptionsSchema } from "./trace-schema.js";
 import type { DurableOperation } from "./types.js";
 import type { TaskRecord, TaskEvent, TaskGraphSnapshot, TaskPage } from "./tasks/types.js";
 
@@ -28,6 +29,7 @@ const submission = z
     sessionId: id,
     requestId: id,
     input: json,
+    trace: traceOptionsSchema.optional(),
   })
   .strict();
 export type TaskSubmission = z.infer<typeof submission>;

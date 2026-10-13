@@ -166,3 +166,62 @@ it("passes validated streamed responses through the checkpoint boundary", async 
   expect(deltas).toEqual(["done"]);
   expect(saved?.choice).toEqual([AssistantContent.text("done")]);
 });
+
+it("does not observe or count usage for steps the execution runtime replays", async () => {
+  const observed: string[] = [];
+  const usages: number[] = [];
+  const { agent: base } = streamingAgentWithTool(() => "written");
+  const agent = new Agent({
+    id: base.id,
+    tools: base.tools,
+    model: base.model,
+    observability: {
+      observers: {
+        recorder: {
+          startRun: () => ({
+            startGeneration: (args) => {
+              observed.push(`model:${args.turn}`);
+              return { end() {} };
+            },
+            startTool: (args) => {
+              observed.push(`tool:${args.toolName}`);
+              return { end() {} };
+            },
+            end: (args) => {
+              usages.push(args.usage.totalTokens);
+            },
+          }),
+        },
+      },
+    },
+  });
+  const usage = { ...Usage.empty(), inputTokens: 2, outputTokens: 1, totalTokens: 3 };
+  const replayed = vi.fn((step: { kind: string; turn?: number }) =>
+    step.kind === "tool" ? true : step.turn === 1,
+  );
+  const execution: AgentRunExecution = {
+    replayed,
+    completion: async () => {
+      throw new Error("Unexpected generate boundary");
+    },
+    async *streamCompletion(turn, _request, execute) {
+      if (turn > 1) return { ...(yield* execute()), usage };
+      return { choice: [AssistantContent.toolCall("call", "write", {})], usage, rawResponse: null };
+    },
+    tool: async () => ({ failed: false, output: { type: "text", value: "saved tool" } }),
+  };
+  const outcome = await agent.stream(
+    withInternalAgentRunOptions({ prompt: "write" }, { execution }),
+  ).result;
+
+  expect(outcome).toMatchObject({ output: "done" });
+  expect(observed).toEqual(["model:2"]);
+  expect(usages).toEqual([3]);
+  expect(replayed).toHaveBeenCalledWith({ kind: "model", turn: 1 });
+  expect(replayed).toHaveBeenCalledWith(
+    expect.objectContaining({
+      kind: "tool",
+      toolCall: expect.objectContaining({ toolCallId: "call" }),
+    }),
+  );
+});

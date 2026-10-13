@@ -48,7 +48,10 @@ export function limitedTransaction(
         tx.pendingCounts().runs >= limits.maxPendingRuns
       )
         throw new DurableLimitError("Pending durable run limit reached.");
-      if (previous === undefined) payload(run.prompt);
+      if (previous === undefined) {
+        payload(run.prompt);
+        payload(run.trace);
+      }
       for (const key of [
         "input",
         "history",
@@ -69,6 +72,7 @@ export function limitedTransaction(
         tx.pendingCounts().tasks >= limits.maxPendingTasks
       )
         throw new DurableLimitError("Pending durable task limit reached.");
+      if (previous === undefined) payload(task.trace);
       // Allow control/status transitions after limits are lowered on restart.
       for (const key of ["input", "checkpoint", "signals"] as const)
         if (JSON.stringify(previous?.[key]) !== JSON.stringify(task[key])) payload(task[key]);

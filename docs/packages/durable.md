@@ -339,6 +339,55 @@ open during approvals and recovery blocks. `run.result({ abortSignal })` waits f
 outcome, throwing `DurableRunError` for failure/cancellation. An application must separately
 observe and resolve pending interactions; waiting for the result does not approve them.
 
+## Tracing with Lens and OpenTelemetry
+
+Attach observers to the registered agent as usual. Durable work passes trace context to every
+execution of a run:
+
+```ts
+import { LensClient } from "@anvia/lens";
+
+const lens = new LensClient();
+const agent = new Agent({
+  id: "researcher",
+  model,
+  observability: { observers: { lens: lens.observer() } },
+});
+const runtime = await DurableRuntime.open({ store, agents: [{ agent, version: "1" }] });
+
+await runtime.submit({
+  agentId: "researcher",
+  sessionId: "conversation-42",
+  requestId: "message-7",
+  prompt: "Summarize the incident.",
+  trace: { userId: "user-1", tags: ["support"], metadata: { plan: "pro" } },
+});
+```
+
+- The trace `sessionId` is the session the application submitted. Task-owned and goal agent
+  runs use their task's session, and graph nodes use the graph's session, never an internal
+  durable session ID.
+- Every execution of a run, including model retries, crash recovery, explicit retries, and
+  resumed approvals, shares one trace ID derived from the durable run ID. Observers that honor
+  `trace.traceId`, such as `@anvia/lens` and `@anvia/otel`, show them as one trace.
+- Metadata includes `durableRunId` and `durableEpoch`, plus `durableTaskId` and
+  `durableRootTaskId` for task-owned runs, or `durableGraphId` for graph nodes. These keys
+  replace application metadata with the same names.
+- Optional `trace` accepts `name`, `userId`, `tags`, `metadata`, and `version`, up to 16 KiB in
+  total. It is ignored for request deduplication, so a duplicate submission keeps the first
+  value. `submitTask()`, `submitGoal()`, and `submitRegisteredTask()` accept the same option
+  and apply it to every agent run in the task tree. Graph submissions do not accept it.
+- Model, tool, and context steps restored from a checkpoint are not observed again, and their
+  usage is not reported again. Observer usage can still differ from `run.usage`: session
+  compaction before a run is not observed, and an execution that crashes reports no usage.
+  Tool calls that never executed, such as denied approvals, can be observed again on recovery.
+- HTTP clients cannot set `trace`. Derive it on the server with the `trace(request, resource)`
+  option of `createDurableHandler()`, for example from the authenticated user.
+
+Call `lens.flush()` or `lens.close()` during shutdown, after `runtime.close()`.
+`DurableRuntime` does not own observer clients, so spans that are still buffered are otherwise
+lost.
+
 ## Approvals and questions
 
 Existing `requiresApproval` tools and question tools use core's interaction protocol. A
@@ -421,6 +470,18 @@ HTTP listings require `sessionId`. Your host supplies identity, CORS/CSRF policy
 applicable, and startup/shutdown lifecycle. An authorized SSE subscription lasts until it
 ends or disconnects; authorization is checked at connection time.
 
+Submissions over HTTP cannot carry `trace`, so a client cannot claim another user's identity
+in your traces. To attach trace context, add a `trace(request, resource)` option. It runs after
+authorization for run and task submissions:
+
+```ts
+const handleRequest = createDurableHandler({
+  runtime,
+  authorize,
+  trace: async (request) => ({ userId: (await authenticate(request))?.id }),
+});
+```
+
 | Method | Path                                 | Result                                                                            |
 | ------ | ------------------------------------ | --------------------------------------------------------------------------------- |
 | POST   | `/durable/runs`                      | Submit `{agentId, sessionId, requestId, prompt, enqueue?}`; return snapshot (202) |
@@ -487,8 +548,9 @@ Durable progress is not the existing token-delta chat protocol.
 - Agent memory, lifecycle callbacks, middleware, guardrails, context sources, MCP, provider
   tools, and dynamic tool indexes are rejected at registration because they need additional
   persistence boundaries. Durable session history replaces the agent's memory store here.
-- Observability callbacks may run again during reconstruction; they must be safe to repeat.
-  They are not the authoritative execution journal.
+- Each execution of a run starts a new observer run. Replayed checkpointed model, tool, and
+  context steps are not observed again, but other callbacks may repeat during
+  reconstruction. Observers are not the authoritative execution journal.
 - Pipeline/team recovery, Studio integration,
   Postgres, retention, general migration tooling, and distributed worker deployment are follow-up work.
   Database records are experimental; the task-aware engine upgrades schema 1–8 to 9 on acquisition. Older engines reject schema 9. Core execution protocol 4 is required.

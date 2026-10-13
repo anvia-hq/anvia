@@ -43,6 +43,8 @@ export async function handleDurableTaskRequest(
   if (parts.length === 0) {
     if (request.method === "POST") {
       const input = parseTaskSubmission(await readJson(request, maxBytes));
+      if (input.trace !== undefined)
+        throw new HttpInputError(400, "Trace context is set by the server, not the client.");
       // Older engines cannot expose effective bindings safely; never authorize agent-less here.
       if (typeof runtime.taskSubmissionScope !== "function")
         throw new HttpInputError(
@@ -61,9 +63,10 @@ export async function handleDurableTaskRequest(
         )
           throw new HttpInputError(403, "Forbidden");
       }
+      const trace = await options.trace?.(request, { action: "submit", sessionId, taskName });
       return jsonResponse(
         await (
-          await runtime.submitRegisteredTask(input, {
+          await runtime.submitRegisteredTask(trace === undefined ? input : { ...input, trace }, {
             expectedAgentIds: agentIds,
           })
         ).snapshot(),

@@ -73,6 +73,9 @@ Task submission requires `@anvia/durable` 0.6 or newer so authorization receives
 agent ID, including goal defaults and saved bindings. Older runtimes return HTTP 503 for task
 submission; existing run routes remain available. No work is created when agent access is denied,
 and a changed binding during authorization returns HTTP 409 for the caller to retry.
+Clients cannot send `trace`. An optional `trace(request, resource)` callback sets observer trace
+context, such as the authenticated user ID, for authorized run and task submissions. It requires
+`@anvia/durable` 0.11 or newer.
 
 Install `@anvia/durable` when using this subpath. See the
 [durable HTTP guide](../../docs/packages/durable.md#http-server-and-client).

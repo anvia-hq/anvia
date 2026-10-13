@@ -43,6 +43,8 @@ import {
 } from "./errors.js";
 import { prepareContext } from "./compaction.js";
 import { createExecution } from "./execution.js";
+import { runTrace } from "./trace.js";
+import { parseTraceOptions } from "./trace-schema.js";
 import { errorMessage, json, nonblank, sameJson } from "./json.js";
 import { listOptionsSchema } from "./schema.js";
 import { registrations } from "./registration.js";
@@ -59,6 +61,7 @@ import type {
   DurableRunSummary,
   DurableStore,
   DurableSubmission,
+  DurableTraceOptions,
   DurableTransaction,
   DurableRunScope,
 } from "./types.js";
@@ -178,15 +181,25 @@ export class DurableRuntime {
   /** Submit one persistent objective using a goal definition registered in options.tasks. */
   async submitGoal(
     definition: DefinedGoal,
-    input: GoalInput & { sessionId: string; requestId: string },
+    input: GoalInput & {
+      sessionId: string;
+      requestId: string;
+      trace?: DurableTraceOptions | undefined;
+    },
   ): Promise<DurableTaskHandle<GoalResult>> {
-    const { sessionId, requestId, ...goal } = input;
-    return this.submitTask(definition, { sessionId, requestId, input: goal });
+    const { sessionId, requestId, trace, ...goal } = input;
+    return this.submitTask(definition, { sessionId, requestId, input: goal, trace });
   }
 
+  /** `trace` applies to every agent run in the task tree and is ignored for deduplication. */
   async submitTask<I, S, R>(
     definition: DefinedTask<I, S, R>,
-    input: { sessionId: string; requestId: string; input: I },
+    input: {
+      sessionId: string;
+      requestId: string;
+      input: I;
+      trace?: DurableTraceOptions | undefined;
+    },
   ): Promise<DurableTaskHandle<R>> {
     this.assertOpen();
     const id = this.tasks.submit(
@@ -195,6 +208,8 @@ export class DurableRuntime {
       input.input,
       input.sessionId,
       input.requestId,
+      undefined,
+      parseTraceOptions(input.trace),
     );
     return new DurableTaskHandle<R>(id, this.tasks, this.store, () => this.assertOpen());
   }
@@ -229,6 +244,7 @@ export class DurableRuntime {
       submission.sessionId,
       submission.requestId,
       options.expectedAgentIds,
+      submission.trace,
     );
     return new DurableTaskHandle(id, this.tasks, this.store, () => this.assertOpen());
   }
@@ -286,11 +302,13 @@ export class DurableRuntime {
       input.sessionId.startsWith(TASK_SESSION_PREFIX)
     )
       throw new TypeError("Reserved durable session ID.");
+    const trace = parseTraceOptions(input.trace);
     const submission = {
       agentId: input.agentId,
       sessionId: input.sessionId,
       requestId: input.requestId,
       prompt: parsePrompt(input.prompt),
+      ...(trace === undefined ? {} : { trace }),
     };
     const registration = this.agents.get(input.agentId);
     if (registration === undefined)
@@ -685,9 +703,11 @@ export class DurableRuntime {
         );
       }
       await prepareContext(this.store, run, registration, signal);
+      const trace = this.store.transaction((tx) => runTrace(tx, run));
       const options = withInternalAgentRunOptions(
         {
           ...run.input,
+          trace,
           abortSignal: signal,
           retries: false as const,
         },

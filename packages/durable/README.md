@@ -321,6 +321,14 @@ never executed again, regardless of policy. An interrupted `manual` tool becomes
 `needs_attention`; inspect the external system and supply its actual result with
 `run.resolveTool(operationId, output)`. Merely selecting `idempotent` does not make an API safe.
 
+## Tracing
+
+Observers on the registered agent, such as `@anvia/lens` or `@anvia/otel`, see one trace per
+durable run across retries and recovery, grouped under the submitted session. Replayed steps are
+not traced or counted again. Pass optional `trace` (`name`, `userId`, `tags`, `metadata`,
+`version`) to `submit()`, `submitTask()`, or `submitGoal()`. See
+[tracing with Lens and OpenTelemetry](../../docs/packages/durable.md#tracing-with-lens-and-opentelemetry).
+
 ## Queues, inspection, and HTTP
 
 Use `runtime.listRuns({ sessionId, status: "waiting", limit: 25 })` to discover pending

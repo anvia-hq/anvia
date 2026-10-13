@@ -82,6 +82,10 @@ are absent. `lens.enabled` reports the state. The disabled observer and reporter
 dataset and prompt access still reject because they require a configured connection. Partial configuration is
 always an error.
 
+The observer works unchanged with `@anvia/durable` agents. Each durable run is one trace across
+retries and recovery, grouped under the submitted session. See
+[tracing durable runs](./durable.md#tracing-with-lens-and-opentelemetry).
+
 ## Capture and evaluation policy
 
 Safe capture omits prompt and response bodies. Configure observer and reporter payloads

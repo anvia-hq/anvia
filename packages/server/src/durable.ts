@@ -5,6 +5,7 @@ import {
   DurableLimitError,
   DurableStorageError,
   type DurableRuntime,
+  type DurableTraceOptions,
 } from "@anvia/durable";
 import {
   parseDurableListOptions,
@@ -49,6 +50,14 @@ export type DurableHandlerOptions = {
   runtime: DurableRuntime;
   /** Authenticate and authorize every operation, including reads. Deny by returning false. */
   authorize: (request: Request, resource: DurableAuthorization) => boolean | Promise<boolean>;
+  /**
+   * Observer trace context for an authorized run or task submission, such as the authenticated
+   * user ID. Clients cannot set trace context themselves. Requires @anvia/durable 0.11 or newer.
+   */
+  trace?: (
+    request: Request,
+    resource: DurableAuthorization,
+  ) => DurableTraceOptions | undefined | Promise<DurableTraceOptions | undefined>;
   basePath?: string;
   maxBodyBytes?: number;
 };
@@ -106,15 +115,17 @@ export function createDurableHandler(
           const { enqueue, ...submission } = parseDurableSubmission(
             await readJson(request, maxBodyBytes),
           );
-          if (
-            !(await options.authorize(request, {
-              action: "submit",
-              sessionId: submission.sessionId,
-              agentId: submission.agentId,
-            }))
-          )
-            return denied();
-          const run = await runtime.submit(submission, enqueue === undefined ? {} : { enqueue });
+          const resource: DurableAuthorization = {
+            action: "submit",
+            sessionId: submission.sessionId,
+            agentId: submission.agentId,
+          };
+          if (!(await options.authorize(request, resource))) return denied();
+          const trace = await options.trace?.(request, resource);
+          const run = await runtime.submit(
+            trace === undefined ? submission : { ...submission, trace },
+            enqueue === undefined ? {} : { enqueue },
+          );
           return json(await run.snapshot(), 202);
         }
         return json({ error: "Method not allowed" }, 405);

@@ -3,6 +3,7 @@ import { isJsonValue, type JsonValue } from "@anvia/core/completion";
 import { json } from "../json.js";
 import type { TaskRecord } from "./types.js";
 import { runStatusSchema } from "../schema.js";
+import { traceOptionsSchema } from "../trace-schema.js";
 
 const id = z
   .string()
@@ -65,6 +66,7 @@ const record = z
     error: z.string().optional(),
     blockedOperation: z.string().optional(),
     signals: z.record(id, z.object({ requestId: id, value }).strict()),
+    trace: traceOptionsSchema.optional(),
     createdAt: z.iso.datetime(),
     updatedAt: z.iso.datetime(),
   })

@@ -1,6 +1,6 @@
 import { DurableConflictError, DurableNotFoundError } from "../errors.js";
 import { json, nonblank, sameJson } from "../json.js";
-import type { DurableTransaction } from "../types.js";
+import type { DurableTraceOptions, DurableTransaction } from "../types.js";
 import type { RegisteredTask, TaskRecord } from "./types.js";
 
 export function taskKey(value: string): void {
@@ -39,8 +39,9 @@ export function createTask(
   sessionId: string,
   key: string,
   parentId?: string,
+  trace?: DurableTraceOptions,
 ): TaskRecord {
-  const { task, created } = prepareTask(tx, definition, input, sessionId, key, parentId);
+  const { task, created } = prepareTask(tx, definition, input, sessionId, key, parentId, trace);
   if (created) {
     tx.putTask(task);
     tx.appendEvent(task.id, "submitted", json({ name: task.name, parentId, rootId: task.rootId }));
@@ -56,6 +57,7 @@ export function prepareTask(
   sessionId: string,
   key: string,
   parentId?: string,
+  trace?: DurableTraceOptions,
 ): { task: TaskRecord; created: boolean } {
   taskKey(key);
   taskKey(sessionId);
@@ -98,6 +100,7 @@ export function prepareTask(
     checkpoint: definition.initial(parsed),
     status: "pending",
     signals: {},
+    ...(parent === undefined && trace !== undefined ? { trace } : {}),
     createdAt: now,
     updatedAt: now,
   };

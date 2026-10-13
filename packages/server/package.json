@@ -45,7 +45,7 @@
   },
   "peerDependencies": {
     "@anvia/client": "workspace:^",
-    "@anvia/durable": "workspace:^0.8.0 || ^0.9.0 || ^0.10.0"
+    "@anvia/durable": "workspace:^0.8.0 || ^0.9.0 || ^0.10.0 || ^0.11.0"
   },
   "peerDependenciesMeta": {
     "@anvia/durable": {

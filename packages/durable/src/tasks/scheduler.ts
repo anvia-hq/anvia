@@ -7,7 +7,7 @@ import {
   DurableNotFoundError,
 } from "../errors.js";
 import { errorMessage, json, sameJson } from "../json.js";
-import type { DurableStore, DurableAgentRegistration } from "../types.js";
+import type { DurableStore, DurableAgentRegistration, DurableTraceOptions } from "../types.js";
 import { taskWaitSchema } from "./schema.js";
 import { taskInvocation } from "./invocation.js";
 import { spawnAgent } from "./agent.js";
@@ -76,10 +76,11 @@ export class TaskScheduler {
     sessionId: string,
     key: string,
     expectedAgentIds?: readonly string[],
+    trace?: DurableTraceOptions,
   ): string {
     const definition = this.definition(name, version);
     const task = this.store.transaction((tx) => {
-      const task = createTask(tx, definition, input, sessionId, key);
+      const task = createTask(tx, definition, input, sessionId, key, undefined, trace);
       const agentIds = dependencies(definition, task);
       if (
         expectedAgentIds !== undefined &&

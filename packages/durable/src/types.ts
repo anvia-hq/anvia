@@ -7,7 +7,7 @@ import type {
 } from "./graph-types.js";
 import type { RegisteredTask, TaskListOptions, TaskPage, TaskTransaction } from "./tasks/types.js";
 import type { Agent, AgentInput, AgentOutcome, AgentPrompt } from "@anvia/core/agent";
-import type { JsonValue, Message, Usage, UserMessage } from "@anvia/core/completion";
+import type { JsonObject, JsonValue, Message, Usage, UserMessage } from "@anvia/core/completion";
 import type { MemoryCompactor, MemoryTokenCounter } from "@anvia/core/memory";
 
 /** Serializable policy captured when a run is submitted. */
@@ -62,12 +62,26 @@ export type DurableRunStatus =
   | "failed"
   | "cancelled";
 
+/**
+ * Observer trace context for durable work. The runtime adds the owning session ID, a trace ID shared
+ * by every execution of a run, and durable identifiers under `metadata.durable*`.
+ */
+export type DurableTraceOptions = {
+  name?: string | undefined;
+  userId?: string | undefined;
+  tags?: string[] | undefined;
+  metadata?: JsonObject | undefined;
+  version?: string | undefined;
+};
+
 export type DurableSubmission = {
   agentId: string;
   sessionId: string;
   requestId: string;
   /** Text or a structured user message, including image/file content. */
   prompt: AgentPrompt;
+  /** Not part of request deduplication; the first accepted submission's value is kept. */
+  trace?: DurableTraceOptions | undefined;
 };
 
 /** Reuse requestId when retrying delivery of the same steering input. Scoped to one run. */

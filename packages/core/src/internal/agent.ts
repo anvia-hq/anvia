@@ -5,6 +5,7 @@ export type { ResolvedAgentOptions } from "../agent/types";
 export { AGENT_RUN_EXECUTION_VERSION } from "./agent-runtime/execution";
 export type {
   AgentRunExecution,
+  AgentRunExecutionStep,
   AgentToolExecutionResult,
   AgentCompletionStreamEvent,
   AgentCompletionStream,

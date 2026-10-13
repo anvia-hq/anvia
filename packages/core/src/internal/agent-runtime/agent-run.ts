@@ -74,7 +74,7 @@ import type { MemoryCompactionInfo, MemoryScope } from "../../memory/types";
 import type { ModelCallOptions } from "../../model-call-options";
 import {
   type ActiveAgentRunObservers,
-  type ActiveGenerationObservers,
+  ActiveGenerationObservers,
   startAgentRunObservers,
 } from "../../observability/group";
 import type {
@@ -113,7 +113,11 @@ import {
   approvalInteraction,
   ToolExecutionSuspension,
 } from "./interaction-suspension";
-import type { AgentCompletionStream, AgentCompletionStreamEvent } from "./execution";
+import type {
+  AgentCompletionStream,
+  AgentCompletionStreamEvent,
+  AgentRunExecutionStep,
+} from "./execution";
 import { AgentRunMemory, type MemoryPreparation } from "./memory";
 import { normalizeMemoryScope } from "./memory-scope";
 import { fetchContextDocuments, fetchToolDefinitions } from "./retrieval";
@@ -476,19 +480,21 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         await this.runTurnStartHook(currentTurns, prompt, historyForRequest, newMessages);
         await this.runCompletionCallHook(prompt, historyForRequest, newMessages);
 
+        const contextReplayed = this.replayed({ kind: "context", turn: currentTurns });
         const prepared =
           this.execution?.prepareMessages !== undefined ||
           this.agent.memory?.compaction !== undefined
             ? await this.prepareTurnMessages(currentTurns, [...historyForRequest, prompt])
             : { messages: [...historyForRequest, prompt] };
         if (prepared.compaction !== undefined) {
-          usage = Usage.add(usage, prepared.compaction.usage);
+          if (!contextReplayed) usage = Usage.add(usage, prepared.compaction.usage);
           this.memoryCompaction = prepared.compaction;
           await this.notifyInternalMemoryCompaction(prepared.compaction);
-          await this.recordMemoryCompaction(prepared, runObservers);
+          if (!contextReplayed) await this.recordMemoryCompaction(prepared, runObservers);
         }
         const request = await this.createTurnRequest(prompt, prepared.messages, currentTurns);
 
+        const modelReplayed = this.replayed({ kind: "model", turn: currentTurns });
         let response: CompletionResponse;
         try {
           response = await this.runCompletion(request, currentTurns, runObservers);
@@ -506,7 +512,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
           if (providerOutputUsage !== undefined) usage = Usage.add(usage, providerOutputUsage);
           throw error;
         }
-        usage = Usage.add(usage, response.usage);
+        if (!modelReplayed) usage = Usage.add(usage, response.usage);
         this.updateRunProgress(newMessages);
         await this.runCompletionResponseHook(prompt, response, newMessages);
         await this.runTurnEndHook(currentTurns, response, newMessages);
@@ -815,16 +821,17 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         await this.runTurnStartHook(currentTurns, prompt, historyForRequest, newMessages);
         await this.runCompletionCallHook(prompt, historyForRequest, newMessages);
 
+        const contextReplayed = this.replayed({ kind: "context", turn: currentTurns });
         const prepared =
           this.execution?.prepareMessages !== undefined ||
           this.agent.memory?.compaction !== undefined
             ? await this.prepareTurnMessages(currentTurns, [...historyForRequest, prompt])
             : { messages: [...historyForRequest, prompt] };
         if (prepared.compaction !== undefined) {
-          usage = Usage.add(usage, prepared.compaction.usage);
+          if (!contextReplayed) usage = Usage.add(usage, prepared.compaction.usage);
           this.memoryCompaction = prepared.compaction;
           await this.notifyInternalMemoryCompaction(prepared.compaction);
-          await this.recordMemoryCompaction(prepared, runObservers);
+          if (!contextReplayed) await this.recordMemoryCompaction(prepared, runObservers);
           yield { type: "memory_compaction", ...prepared.compaction };
         }
         const request = await this.createTurnRequest(prompt, prepared.messages, currentTurns);
@@ -836,7 +843,11 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
           request,
           providerRequest,
         );
-        const generationObservers = await runObservers.startGeneration(generationStartArgs);
+        const modelReplayed = this.replayed({ kind: "model", turn: currentTurns });
+        // A restored response was observed when it was generated; observing it again duplicates it.
+        const generationObservers = modelReplayed
+          ? new ActiveGenerationObservers([], "ignore")
+          : await runObservers.startGeneration(generationStartArgs);
         this.activeGeneration = { turn: currentTurns, observers: generationObservers };
         const generationStartedAt = Date.now();
         yield {
@@ -909,7 +920,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         }
         const { firstDeltaMs, emittedToolCallIds } = completionState;
 
-        usage = Usage.add(usage, response.usage);
+        if (!modelReplayed) usage = Usage.add(usage, response.usage);
         this.updateRunProgress(newMessages);
         await this.runCompletionResponseHook(prompt, response, newMessages);
         await this.runTurnEndHook(currentTurns, response, newMessages);
@@ -2097,6 +2108,10 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       }
     }
     return context;
+  }
+
+  private replayed(step: AgentRunExecutionStep): boolean {
+    return this.execution?.replayed?.(step) === true;
   }
 
   private async startRunObservers(runId: string): Promise<ActiveAgentRunObservers> {

@@ -34,6 +34,8 @@ export function runStartAttributes(
 ): Attributes {
   return compactAttributes({
     "service.name": serviceName,
+    // Set at start too, so runs that fail or never end can still be correlated.
+    "anvia.run.id": args.runId,
     "anvia.agent.name": args.agentName,
     "anvia.agent.description": args.agentDescription,
     "anvia.agent.instructions": capturedString(args.instructions, "input", options),

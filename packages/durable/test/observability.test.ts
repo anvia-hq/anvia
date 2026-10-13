@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { Agent } from "@anvia/core/agent";
-import { Usage, type CompletionResponse } from "@anvia/core/completion";
+import { Usage, type CompletionRequest, type CompletionResponse } from "@anvia/core/completion";
 import type { AgentObserver, AgentRunStartArgs } from "@anvia/core/observability";
 import { DurableRuntime, defineTask, type DurableRuntimeOptions } from "../src/index.js";
 import { SqliteDurableStore } from "../src/sqlite.js";
@@ -340,6 +340,103 @@ describe("durable observability", () => {
     expect(recorded.runs.map((run) => run.trace?.userId)).toEqual(["first"]);
   });
 
+  it("groups runs under an observability session without sharing execution history", async () => {
+    const { observer, recorded } = recorder();
+    const requests: CompletionRequest[] = [];
+    const agent = new Agent({
+      id: "researcher",
+      observability: { observers: { lens: observer } },
+      model: {
+        provider: "test",
+        modelId: "test",
+        capabilities,
+        completion: async (request) => {
+          requests.push(request);
+          return done();
+        },
+      },
+    });
+    const runtime = await open({ agents: [{ agent, version: "1" }] });
+    const trace = { sessionId: "chat-1", userId: "user-1" };
+    const first = await runtime.submit({
+      agentId: "researcher",
+      sessionId: "turns",
+      requestId: "one",
+      prompt: "first",
+      trace,
+    });
+    await first.result();
+    const isolated = await runtime.submit({
+      agentId: "researcher",
+      sessionId: "side-work",
+      requestId: "two",
+      prompt: "second",
+      trace,
+    });
+    await isolated.result();
+
+    expect(recorded.runs.map((run) => run.trace)).toEqual([
+      {
+        sessionId: "chat-1",
+        userId: "user-1",
+        traceId: first.id.replaceAll("-", ""),
+        metadata: { durableRunId: first.id, durableEpoch: 0, durableSessionId: "turns" },
+      },
+      {
+        sessionId: "chat-1",
+        userId: "user-1",
+        traceId: isolated.id.replaceAll("-", ""),
+        metadata: { durableRunId: isolated.id, durableEpoch: 0, durableSessionId: "side-work" },
+      },
+    ]);
+    // Same observability session, separate execution sessions: no history crosses over.
+    expect(JSON.stringify(requests[1]?.chatHistory)).not.toContain("first");
+    expect((await isolated.snapshot()).run.sessionId).toBe("side-work");
+  });
+
+  it("applies a task's observability session to every agent run in its tree", async () => {
+    const { observer, recorded } = recorder();
+    const parent = defineTask({
+      name: "research",
+      version: 1,
+      input: z.string(),
+      checkpoint: z.boolean(),
+      output: z.string(),
+      initial: () => false,
+      run: async (ctx) =>
+        ctx.checkpoint
+          ? { status: "completed", output: "ok" }
+          : {
+              status: "waiting",
+              checkpoint: true,
+              wait: {
+                type: "children",
+                ids: [ctx.spawnAgent("child", { agentId: "researcher", prompt: ctx.input })],
+                policy: "allSettled",
+              },
+            },
+    });
+    const agent = new Agent({
+      id: "researcher",
+      observability: { observers: { lens: observer } },
+      model: { provider: "test", modelId: "test", capabilities, completion: async () => done() },
+    });
+    const runtime = await open({ tasks: [parent], agents: [{ agent, version: "1" }] });
+    const handle = await runtime.submitTask(parent, {
+      sessionId: "task-work",
+      requestId: "task-1",
+      input: "go",
+      trace: { sessionId: "chat-1" },
+    });
+    expect(await handle.result()).toBe("ok");
+
+    expect(recorded.runs).toHaveLength(1);
+    expect(recorded.runs[0]!.trace).toMatchObject({
+      sessionId: "chat-1",
+      metadata: { durableSessionId: "task-work", durableRootTaskId: handle.id },
+    });
+  });
+
   it("rejects invalid trace options before persisting work", async () => {
     const { observer } = recorder();
     const runtime = await open({ agents: [{ agent: flakyAgent(observer).agent, version: "1" }] });
@@ -350,6 +447,15 @@ describe("durable observability", () => {
         requestId: "r",
         prompt: "hi",
         trace: { tags: [""] },
+      }),
+    ).rejects.toThrow("Invalid durable trace options.");
+    await expect(
+      runtime.submit({
+        agentId: "researcher",
+        sessionId: "s",
+        requestId: "r",
+        prompt: "hi",
+        trace: { sessionId: "  " },
       }),
     ).rejects.toThrow("Invalid durable trace options.");
     await expect(

@@ -83,7 +83,9 @@ dataset and prompt access still reject because they require a configured connect
 always an error.
 
 The observer works unchanged with `@anvia/durable` agents. Each durable run is one trace across
-retries and recovery, grouped under the submitted session. See
+retries, recovery, and resumed interactions, with one root span per execution. Traces are grouped
+under the submitted session, or under `trace.sessionId` to keep a whole chat in one Lens session.
+See
 [tracing durable runs](./durable.md#tracing-with-lens-and-opentelemetry).
 
 ## Capture and evaluation policy

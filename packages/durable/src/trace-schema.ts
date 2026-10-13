@@ -7,6 +7,7 @@ const text = z.string().trim().min(1).max(1024);
 const MAX_TRACE_BYTES = 16_384;
 export const traceOptionsSchema = z
   .object({
+    sessionId: text.optional(),
     name: text.optional(),
     userId: text.optional(),
     tags: z.array(text).max(50).optional(),

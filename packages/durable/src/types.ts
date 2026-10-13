@@ -63,10 +63,17 @@ export type DurableRunStatus =
   | "cancelled";
 
 /**
- * Observer trace context for durable work. The runtime adds the owning session ID, a trace ID shared
- * by every execution of a run, and durable identifiers under `metadata.durable*`.
+ * Observer trace context for durable work. The runtime adds a trace ID shared by every execution of
+ * a run and durable identifiers under `metadata.durable*`.
  */
 export type DurableTraceOptions = {
+  /**
+   * Observability session that groups traces, such as one chat across its turns, goals, and
+   * subagents. It only affects observers; execution sessions, histories, and ownership stay
+   * separate. Defaults to the submitted session. Use a globally unique value, such as a chat ID,
+   * because observability backends group by this value alone.
+   */
+  sessionId?: string | undefined;
   name?: string | undefined;
   userId?: string | undefined;
   tags?: string[] | undefined;

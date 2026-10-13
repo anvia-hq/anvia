@@ -364,18 +364,27 @@ await runtime.submit({
 });
 ```
 
-- The trace `sessionId` is the session the application submitted. Task-owned and goal agent
-  runs use their task's session, and graph nodes use the graph's session, never an internal
+- The trace `sessionId` defaults to the session the application submitted. Task-owned and goal
+  agent runs use their task's session, and graph nodes use the graph's session, never an internal
   durable session ID.
+- Set `trace.sessionId` to group work from several execution sessions under one observability
+  session, such as every turn, goal, and subagent of one chat. Task-owned runs, including goal
+  rounds and spawned subagents, use the root task's value. It only affects observers: execution
+  sessions, histories, and ownership stay separate, and `metadata.durableSessionId` records the
+  execution session. Observability backends group by this value alone, so use one that is unique
+  across users, such as a chat ID, and set `userId` as well.
 - Every execution of a run, including model retries, crash recovery, explicit retries, and
-  resumed approvals, shares one trace ID derived from the durable run ID. Observers that honor
-  `trace.traceId`, such as `@anvia/lens` and `@anvia/otel`, show them as one trace.
+  resumed approvals, shares one trace ID derived from the durable run ID, and each run is a
+  separate trace. Observers that honor `trace.traceId`, such as `@anvia/lens` and `@anvia/otel`,
+  show the executions as one trace with one root span per execution. With `@anvia/otel` and your
+  own tracer provider, install `createAnviaIdGenerator()`; see the
+  [`@anvia/otel` guide](./observability-otel.md#supplied-trace-ids).
 - Metadata includes `durableRunId` and `durableEpoch`, plus `durableTaskId` and
   `durableRootTaskId` for task-owned runs, or `durableGraphId` for graph nodes. These keys
   replace application metadata with the same names.
-- Optional `trace` accepts `name`, `userId`, `tags`, `metadata`, and `version`, up to 16 KiB in
-  total. It is ignored for request deduplication, so a duplicate submission keeps the first
-  value. `submitTask()`, `submitGoal()`, and `submitRegisteredTask()` accept the same option
+- Optional `trace` accepts `sessionId`, `name`, `userId`, `tags`, `metadata`, and `version`, up
+  to 16 KiB in total. It is ignored for request deduplication, so a duplicate submission keeps the
+  first value. `submitTask()`, `submitGoal()`, and `submitRegisteredTask()` accept the same option
   and apply it to every agent run in the task tree. Graph submissions do not accept it.
 - Model, tool, and context steps restored from a checkpoint are not observed again, and their
   usage is not reported again. Observer usage can still differ from `run.usage`: session

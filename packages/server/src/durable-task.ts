@@ -5,7 +5,7 @@ import {
   parseTaskResolution,
 } from "@anvia/durable/protocol";
 import type { TaskRecord } from "@anvia/durable";
-import type { DurableHandlerOptions, DurableHttpAction } from "./durable";
+import type { DurableAuthorization, DurableHandlerOptions, DurableHttpAction } from "./durable";
 import {
   durableEventsResponse,
   HttpInputError,
@@ -29,17 +29,18 @@ export async function handleDurableTaskRequest(
   const authorize = async (task: TaskRecord, action: DurableHttpAction) => {
     const agent =
       task.agentRunId === undefined ? undefined : runtime.runScope(task.agentRunId).agentId;
-    if (
-      !(await options.authorize(request, {
-        action,
-        sessionId: task.sessionId,
-        taskId: task.id,
-        rootTaskId: task.rootId,
-        taskName: task.name,
-        ...(agent === undefined ? {} : { agentId: agent, runId: task.agentRunId! }),
-      }))
-    )
-      throw new HttpInputError(403, "Forbidden");
+    const resource: DurableAuthorization = {
+      action,
+      sessionId: task.sessionId,
+      taskId: task.id,
+      rootTaskId: task.rootId,
+      taskName: task.name,
+    };
+    if (agent !== undefined) {
+      resource.agentId = agent;
+      resource.runId = task.agentRunId!;
+    }
+    if (!(await options.authorize(request, resource))) throw new HttpInputError(403, "Forbidden");
   };
   if (parts.length === 0) {
     if (request.method === "POST") {
@@ -54,14 +55,13 @@ export async function handleDurableTaskRequest(
         );
       const { sessionId, taskName, agentIds } = runtime.taskSubmissionScope(input);
       for (const agentId of agentIds.length === 0 ? [undefined] : agentIds) {
-        if (
-          !(await options.authorize(request, {
-            action: "submit",
-            sessionId,
-            taskName,
-            ...(agentId === undefined ? {} : { agentId }),
-          }))
-        )
+        const resource: DurableAuthorization = {
+          action: "submit",
+          sessionId,
+          taskName,
+        };
+        if (agentId !== undefined) resource.agentId = agentId;
+        if (!(await options.authorize(request, resource)))
           throw new HttpInputError(403, "Forbidden");
       }
       const trace = await options.trace?.(request, { action: "submit", sessionId, taskName });

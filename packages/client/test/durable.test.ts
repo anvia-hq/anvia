@@ -84,6 +84,47 @@ describe("durable browser client", () => {
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(headers).toHaveBeenCalledTimes(1);
   });
+
+  it("omits unset fetch options and steering request IDs", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async (url) =>
+      Response.json(
+        String(url).endsWith("/steer") ? { id: "queued", status: "queued" } : { runs: [] },
+      ),
+    );
+    const client = new DurableClient({ endpoint: "https://example.test/durable", fetch });
+    await client.listRuns({ sessionId: "session" });
+    const init = fetch.mock.calls[0]![1]!;
+    for (const key of ["body", "signal", "credentials"]) {
+      expect(Object.hasOwn(init, key)).toBe(false);
+    }
+    await client.steer("run", { prompt: "continue" });
+    expect(fetch.mock.calls[1]![1]!.body).toBe('{"input":{"prompt":"continue"}}');
+    await client.steer("run", { prompt: "continue" }, { requestId: "request" });
+    expect(fetch.mock.calls[2]![1]!.body).toBe(
+      '{"input":{"prompt":"continue"},"requestId":"request"}',
+    );
+  });
+
+  it.each([undefined, false, true])(
+    "preserves enqueue=%s in submission payloads",
+    async (enqueue) => {
+      const fetch = vi.fn<typeof globalThis.fetch>(async () => new Response(null, { status: 403 }));
+      const client = new DurableClient({ endpoint: "https://example.test/durable", fetch });
+      const submission = {
+        agentId: "agent",
+        sessionId: "session",
+        requestId: "request",
+        prompt: "hello",
+      };
+      const options: { enqueue?: boolean } = {};
+      if (enqueue !== undefined) options.enqueue = enqueue;
+      await expect(client.submit(submission, options)).rejects.toMatchObject({ status: 403 });
+      const body = JSON.parse(String(fetch.mock.calls[0]![1]!.body));
+      expect(Object.hasOwn(body, "enqueue")).toBe(enqueue !== undefined);
+      if (enqueue !== undefined) expect(body.enqueue).toBe(enqueue);
+      expect(submission).not.toHaveProperty("enqueue");
+    },
+  );
 });
 
 it("validates custom-task root identity and monotonic cursors and releases malformed streams", async () => {

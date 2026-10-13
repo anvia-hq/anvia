@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DurableRuntime } from "@anvia/durable";
+import { DurableRuntime, type DurableAgentRegistration } from "@anvia/durable";
 import { SqliteDurableStore } from "@anvia/durable/sqlite";
 import { DurableClient } from "@anvia/client/durable";
 import { createDurableHandler } from "../src/durable";
@@ -21,9 +21,11 @@ const submission = {
   prompt: "hello",
 };
 async function setup(agent = makeAgent(async () => done()), stream = false) {
+  const registration: DurableAgentRegistration = { agent, version: "1" };
+  if (stream) registration.stream = true;
   const runtime = await DurableRuntime.open({
     store: new SqliteDurableStore(":memory:"),
-    agents: [{ agent, version: "1", ...(stream ? { stream: true } : {}) }],
+    agents: [registration],
   });
   runtimes.push(runtime);
   const authorize = vi.fn((_request, resource) => resource.sessionId === "allowed");

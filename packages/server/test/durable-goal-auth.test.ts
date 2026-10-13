@@ -60,9 +60,11 @@ it.each(["override", "default"])(
         resource.sessionId === submission.sessionId && resource.agentId === "allowed-agent",
     );
     const client = clientFor(runtime, authorize);
+    const input: typeof goalInput & { agentId?: string } = { ...goalInput };
+    if (binding === "override") input.agentId = "private-agent";
     const denied = {
       ...submission,
-      input: { ...goalInput, ...(binding === "override" ? { agentId: "private-agent" } : {}) },
+      input,
     };
     expect(runtime.taskSubmissionScope(denied).agentIds).toEqual(["private-agent"]);
     await expect(client.submitTask(denied)).rejects.toMatchObject({ status: 403 });

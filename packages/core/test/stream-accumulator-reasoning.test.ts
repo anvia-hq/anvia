@@ -26,6 +26,7 @@ describe("CompletionStreamAccumulator terminal reasoning", () => {
     (details) => {
       const accumulator = new CompletionStreamAccumulator();
       accumulator.accept({ type: "text_delta", delta: "OK" });
+
       const reasoning: {
         type: "reasoning";
         id: string;
@@ -36,7 +37,11 @@ describe("CompletionStreamAccumulator terminal reasoning", () => {
         id: "rs-1",
         text: "",
       };
-      if (details !== undefined) reasoning.details = details;
+
+      if (details !== undefined) {
+        reasoning.details = details;
+      }
+
       complete(accumulator, [reasoning, answer]);
 
       expect(accumulator.response()).toMatchObject({ choice: [reasoning, answer], usage });

@@ -36,11 +36,15 @@ export async function handleDurableTaskRequest(
       rootTaskId: task.rootId,
       taskName: task.name,
     };
+
     if (agent !== undefined) {
       resource.agentId = agent;
       resource.runId = task.agentRunId!;
     }
-    if (!(await options.authorize(request, resource))) throw new HttpInputError(403, "Forbidden");
+
+    if (!(await options.authorize(request, resource))) {
+      throw new HttpInputError(403, "Forbidden");
+    }
   };
   if (parts.length === 0) {
     if (request.method === "POST") {
@@ -60,9 +64,14 @@ export async function handleDurableTaskRequest(
           sessionId,
           taskName,
         };
-        if (agentId !== undefined) resource.agentId = agentId;
-        if (!(await options.authorize(request, resource)))
+
+        if (agentId !== undefined) {
+          resource.agentId = agentId;
+        }
+
+        if (!(await options.authorize(request, resource))) {
           throw new HttpInputError(403, "Forbidden");
+        }
       }
       const trace = await options.trace?.(request, { action: "submit", sessionId, taskName });
       return jsonResponse(

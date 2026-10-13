@@ -61,7 +61,11 @@ it.each(["override", "default"])(
     );
     const client = clientFor(runtime, authorize);
     const input: typeof goalInput & { agentId?: string } = { ...goalInput };
-    if (binding === "override") input.agentId = "private-agent";
+
+    if (binding === "override") {
+      input.agentId = "private-agent";
+    }
+
     const denied = {
       ...submission,
       input,

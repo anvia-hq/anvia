@@ -41,13 +41,21 @@ export class JevClient implements ModelListingClient {
     if (typeof apiKey !== "string" || apiKey.trim().length === 0) {
       throw new TypeError("JevClient requires apiKey or TYPESAFE_API_KEY.");
     }
+
     const clientOptions: ConstructorParameters<typeof TypeSafeClient>[0] = {
       apiKey,
       retry: { maxRetries: 0 },
       logLevel: "off",
     };
-    if (options.baseUrl !== undefined) clientOptions.baseURL = options.baseUrl;
-    if (options.headers !== undefined) clientOptions.defaultHeaders = options.headers;
+
+    if (options.baseUrl !== undefined) {
+      clientOptions.baseURL = options.baseUrl;
+    }
+
+    if (options.headers !== undefined) {
+      clientOptions.defaultHeaders = options.headers;
+    }
+
     this.sdk = new TypeSafeClient(clientOptions);
   }
 
@@ -63,7 +71,11 @@ export class JevClient implements ModelListingClient {
       const requestOptions: NonNullable<Parameters<TypeSafeClient["models"]["list"]>[0]> = {
         retry: { maxRetries: 0 },
       };
-      if (options?.abortSignal !== undefined) requestOptions.signal = options.abortSignal;
+
+      if (options?.abortSignal !== undefined) {
+        requestOptions.signal = options.abortSignal;
+      }
+
       const models = await this.sdk.models.list(requestOptions);
       if (
         !Array.isArray(models) ||

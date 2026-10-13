@@ -139,7 +139,11 @@ export function defineGoal(policy: GoalDefinition): DefinedGoal {
               agentId: admitted.agentId!,
               maxModelTurns: admitted.limits.maxTotalModelTurns - admitted.modelTurns,
             };
-            if (continueFrom !== undefined) input.continueFrom = continueFrom;
+
+            if (continueFrom !== undefined) {
+              input.continueFrom = continueFrom;
+            }
+
             const context: Record<string, unknown> = {
               objective: goal.objective,
               acceptanceCriteria: goal.acceptanceCriteria,
@@ -147,7 +151,11 @@ export function defineGoal(policy: GoalDefinition): DefinedGoal {
               previous: admitted.handoff,
               feedback: admitted.feedback,
             };
-            if (admitted.messages?.length) context.messages = admitted.messages;
+
+            if (admitted.messages?.length) {
+              context.messages = admitted.messages;
+            }
+
             childId = ctx.spawnAgent(key, {
               ...input,
               prompt: [
@@ -356,7 +364,11 @@ function readControls(
     controls.pause === (state.controls?.pause ?? 0);
   if (unchanged) return { state, pause };
   next.controls = controls;
-  if (messages.length) next.messages = messages;
+
+  if (messages.length) {
+    next.messages = messages;
+  }
+
   return { state: next, pause };
 }
 

@@ -50,6 +50,7 @@ it("copies persisted policies without mutating the registered options", () => {
   const normalized = registrations([registration]).get(agent.id)!;
   expect(normalized.compaction?.compactor).toBe(registration.compaction!.compactor);
   expect(normalized.compaction?.tokenCounter).toBe(registration.compaction!.tokenCounter);
+
   const record = createRunRecord(submission, normalized);
   expect(record.loopCompaction).toBe(true);
   expect(record.compaction).toEqual({

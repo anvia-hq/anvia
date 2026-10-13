@@ -93,6 +93,7 @@ describe("durable browser client", () => {
     );
     const client = new DurableClient({ endpoint: "https://example.test/durable", fetch });
     await client.listRuns({ sessionId: "session" });
+
     const init = fetch.mock.calls[0]![1]!;
     for (const key of ["body", "signal", "credentials"]) {
       expect(Object.hasOwn(init, key)).toBe(false);
@@ -117,11 +118,20 @@ describe("durable browser client", () => {
         prompt: "hello",
       };
       const options: { enqueue?: boolean } = {};
-      if (enqueue !== undefined) options.enqueue = enqueue;
+
+      if (enqueue !== undefined) {
+        options.enqueue = enqueue;
+      }
+
       await expect(client.submit(submission, options)).rejects.toMatchObject({ status: 403 });
+
       const body = JSON.parse(String(fetch.mock.calls[0]![1]!.body));
       expect(Object.hasOwn(body, "enqueue")).toBe(enqueue !== undefined);
-      if (enqueue !== undefined) expect(body.enqueue).toBe(enqueue);
+
+      if (enqueue !== undefined) {
+        expect(body.enqueue).toBe(enqueue);
+      }
+
       expect(submission).not.toHaveProperty("enqueue");
     },
   );

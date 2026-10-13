@@ -22,7 +22,11 @@ const submission = {
 };
 async function setup(agent = makeAgent(async () => done()), stream = false) {
   const registration: DurableAgentRegistration = { agent, version: "1" };
-  if (stream) registration.stream = true;
+
+  if (stream) {
+    registration.stream = true;
+  }
+
   const runtime = await DurableRuntime.open({
     store: new SqliteDurableStore(":memory:"),
     agents: [registration],

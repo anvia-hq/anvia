@@ -68,6 +68,10 @@ const submission: Parameters<typeof runtime.submitGoal>[1] = {
   acceptanceCriteria: ["Both artifacts verified"],
   limits: { maxSessions: 3, maxTotalModelTurns: 4, maxConsecutiveNoProgressSessions: 2 },
 };
-if (binding === "override") submission.agentId = registration.agent.id;
+
+if (binding === "override") {
+  submission.agentId = registration.agent.id;
+}
+
 await runtime.submitGoal(goal, submission);
 setInterval(() => {}, 1000);

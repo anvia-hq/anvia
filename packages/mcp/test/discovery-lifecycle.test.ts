@@ -189,6 +189,7 @@ it.each(["within limits", "tool count", "catalog bytes"])(
       }
       pages++;
       expect(message.params?.cursor).toBe(pages === 1 ? undefined : String(pages - 1));
+
       const result: Record<string, unknown> = {
         resultType: "complete",
         ttlMs: 0,
@@ -199,7 +200,11 @@ it.each(["within limits", "tool count", "catalog bytes"])(
           inputSchema: { type: "object" },
         })),
       };
-      if (pages < (scenario === "within limits" ? 2 : 5)) result.nextCursor = String(pages);
+
+      if (pages < (scenario === "within limits" ? 2 : 5)) {
+        result.nextCursor = String(pages);
+      }
+
       json(response, message.id, result);
     });
     const mcp = client(url, { limits: { maxTools: 200, maxBytes: 256_000 } });
@@ -317,13 +322,18 @@ it.each([4, 3])("counts array syntax for every empty tool page (maxBytes=%s)", a
       return;
     }
     pages++;
+
     const result: Record<string, unknown> = {
       resultType: "complete",
       ttlMs: 0,
       cacheScope: "public",
       tools: [],
     };
-    if (pages === 1) result.nextCursor = "2";
+
+    if (pages === 1) {
+      result.nextCursor = "2";
+    }
+
     json(response, message.id, result);
   });
   const mcp = client(url, { limits: { maxTools: 200, maxBytes } });

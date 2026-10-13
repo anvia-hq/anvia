@@ -208,7 +208,11 @@ describe("createQuestionTool", () => {
         id: ` q_${index} `,
         text: " Question? ",
       };
-      if (index !== 0) prompt.choices = choices(index === 1 ? 2 : 4);
+
+      if (index !== 0) {
+        prompt.choices = choices(index === 1 ? 2 : 4);
+      }
+
       return prompt;
     });
     expect(createQuestionTool().parseInput!({ questions }).questions[0]).toEqual({
@@ -310,7 +314,11 @@ describe("question response validation", () => {
       choices: ReturnType<typeof choices>;
       allowCustom?: boolean;
     } = { ...question(), choices: choices(2) };
-    if (allowCustom !== undefined) prompt.allowCustom = allowCustom;
+
+    if (allowCustom !== undefined) {
+      prompt.allowCustom = allowCustom;
+    }
+
     return parseAgentInteractionRequest({
       type: "tool-question",
       id: "interaction",

@@ -67,7 +67,11 @@ export function listTasks(db: DatabaseSync, input: TaskListOptions): TaskPage {
   const result: TaskPage = {
     tasks: page.map((row) => parseTask(JSON.parse(String(row.record)))),
   };
-  if (rows.length > limit) result.nextCursor = Number(page.at(-1)!.cursor);
+
+  if (rows.length > limit) {
+    result.nextCursor = Number(page.at(-1)!.cursor);
+  }
+
   return result;
 }
 
@@ -97,6 +101,10 @@ export function unsettledTaskRoots(
   const result: { ids: string[]; cursor?: number } = {
     ids: rows.map((row) => String(row.id)),
   };
-  if (rows.length === 100) result.cursor = Number(rows.at(-1)!.cursor);
+
+  if (rows.length === 100) {
+    result.cursor = Number(rows.at(-1)!.cursor);
+  }
+
   return result;
 }

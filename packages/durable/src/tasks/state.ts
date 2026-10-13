@@ -102,8 +102,15 @@ export function prepareTask(
     createdAt: now,
     updatedAt: now,
   };
-  if (parentId !== undefined) task.parentId = parentId;
-  if (parent === undefined && trace !== undefined) task.trace = trace;
+
+  if (parentId !== undefined) {
+    task.parentId = parentId;
+  }
+
+  if (parent === undefined && trace !== undefined) {
+    task.trace = trace;
+  }
+
   return { task, created: true };
 }
 
@@ -203,7 +210,12 @@ export function reconcileTree(
       saveTask(tx, task);
     }
   }
+
   const result: { abort: string[]; deadline?: number } = { abort };
-  if (deadline !== undefined) result.deadline = deadline;
+
+  if (deadline !== undefined) {
+    result.deadline = deadline;
+  }
+
   return result;
 }

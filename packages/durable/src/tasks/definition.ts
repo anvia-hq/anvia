@@ -41,11 +41,14 @@ export function registerTask<I, S, R>(task: TaskDefinition<I, S, R>): Registered
         JsonValue
       >,
   };
+
   if (task.migrate !== undefined) {
     registration.migrate = (value, state, version) => {
       const result = task.migrate!(value, state, version);
+
       return { input: input(result.input), checkpoint: checkpoint(result.checkpoint) };
     };
   }
+
   return registration;
 }

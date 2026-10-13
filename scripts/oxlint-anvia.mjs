@@ -13,7 +13,9 @@ const noConditionalObjectSpread = {
   create(context) {
     return {
       SpreadElement(node) {
-        if (node.parent.type !== "ObjectExpression") return;
+        if (node.parent.type !== "ObjectExpression") {
+          return;
+        }
 
         let argument = node.argument;
         // TypeScript wrappers must not hide the expression being spread.

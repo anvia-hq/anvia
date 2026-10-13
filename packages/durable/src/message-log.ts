@@ -82,9 +82,11 @@ export function messageLog(database: DatabaseSync) {
       ...operation,
       input: transform(operation.input),
     };
+
     if (result !== undefined) {
       mapped.result = { ...result, messages: transform(result.messages!) };
     }
+
     return mapped;
   }
 

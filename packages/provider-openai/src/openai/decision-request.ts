@@ -59,7 +59,11 @@ function nativeQuestion(
     case "choice": {
       const choices = Object.entries(question.options).map(([value, description]) => {
         const choice: { value: string; description?: string } = { value };
-        if (description !== null) choice.description = decisionText(description);
+
+        if (description !== null) {
+          choice.description = decisionText(description);
+        }
+
         return choice;
       });
       if (choices.length < 2) {
@@ -74,7 +78,11 @@ function nativeQuestion(
         instructions: question.instructions,
         levels: question.rubric.map((description, index) => {
           const level: { label: string; description?: string } = { label: String(index) };
-          if (description !== null) level.description = decisionText(description);
+
+          if (description !== null) {
+            level.description = decisionText(description);
+          }
+
           return level;
         }),
       };

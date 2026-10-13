@@ -358,12 +358,14 @@ describe("OpenAI decisions", () => {
     const fetch = vi.fn(async (_url: unknown, init?: RequestInit) => {
       const input = JSON.parse(String(init?.body)).input;
       const answer: Record<string, unknown> = { name: "q0" };
+
       if (input === "refuse") {
         answer.type = "refusal";
       } else {
         answer.type = "predicate";
         answer.probability = 0.8;
       }
+
       return Response.json(fixture([answer]));
     });
     const model = new OpenAIClient({ client: new OpenAI({ apiKey: "test", fetch }) }).decisionModel(

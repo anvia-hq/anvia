@@ -45,6 +45,7 @@ it.each([false, true])(
       },
     });
     const registration: DurableAgentRegistration = { agent, version: "1" };
+
     if (compact) {
       registration.compaction = {
         trigger: { afterTokens: 20_000 },
@@ -52,6 +53,7 @@ it.each([false, true])(
         compactor: async () => ({ summary: `summary-${calls}`, usage: done().usage }),
       };
     }
+
     const runtime = await DurableRuntime.open({
       store: new SqliteDurableStore(path),
       limits: { maxPayloadBytes: 64 * 1024 * 1024 },

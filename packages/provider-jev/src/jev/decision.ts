@@ -88,7 +88,11 @@ export class JevDecisionModel implements DecisionModel<unknown> {
       const requestOptions: NonNullable<Parameters<TypeSafeClient["systemOne"]>[1]> = {
         retry: { maxRetries: 0 },
       };
-      if (options?.abortSignal !== undefined) requestOptions.signal = options.abortSignal;
+
+      if (options?.abortSignal !== undefined) {
+        requestOptions.signal = options.abortSignal;
+      }
+
       rawResponse = await this.sdk.systemOne(body, requestOptions);
     } catch (error) {
       throw normalizeJevError(error, options?.abortSignal);

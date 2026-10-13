@@ -15,6 +15,7 @@ const diagnosticCode = "anvia(no-conditional-object-spread)";
 function lint(t, filename, expressions) {
   const directory = mkdtempSync(path.join(os.tmpdir(), "anvia-lint-"));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
+
   const fixture = path.join(directory, filename);
   writeFileSync(
     fixture,
@@ -22,6 +23,7 @@ function lint(t, filename, expressions) {
       .map((expression, index) => `export const example${index} = ${expression};`)
       .join("\n"),
   );
+
   const result = spawnSync(
     process.execPath,
     [
@@ -36,6 +38,7 @@ function lint(t, filename, expressions) {
   );
   assert.ifError(result.error);
   assert.equal(result.signal, null, result.stderr);
+
   return { status: result.status, diagnostics: JSON.parse(result.stdout).diagnostics };
 }
 

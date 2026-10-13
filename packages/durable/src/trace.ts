@@ -24,12 +24,19 @@ export function runTrace(tx: DurableTransaction, run: DurableRunRecord): AgentTr
     durableEpoch: run.epoch,
   };
   // Keeps the execution session discoverable when the observability session groups several.
-  if (sessionId !== executionSessionId) metadata.durableSessionId = executionSessionId;
+  if (sessionId !== executionSessionId) {
+    metadata.durableSessionId = executionSessionId;
+  }
+
   if (task !== undefined) {
     metadata.durableTaskId = task.id;
     metadata.durableRootTaskId = task.rootId;
   }
-  if (run.graphId !== undefined) metadata.durableGraphId = run.graphId;
+
+  if (run.graphId !== undefined) {
+    metadata.durableGraphId = run.graphId;
+  }
+
   return {
     ...options,
     sessionId,

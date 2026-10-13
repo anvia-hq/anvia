@@ -282,6 +282,7 @@ describe("AgentTeam hierarchy", () => {
     async (termination) => {
       const leaf = new Agent({ id: "leaf", model: model(() => say("leaf done")) });
       const options: Pick<AgentOptions, "id" | "guardrails"> = { id: "worker" };
+
       if (termination === "block") {
         options.guardrails = defineGuardrailPolicy({
           id: "block-policy",
@@ -293,6 +294,7 @@ describe("AgentTeam hierarchy", () => {
           ],
         });
       }
+
       const worker = new Agent({
         ...options,
         model: script(call("spawn_leaf", { prompt: "work" }), say("early"), () => {

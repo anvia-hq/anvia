@@ -38,12 +38,17 @@ describe.each(["azure", "openai"] as const)(
         expect(events.filter((event) => event.type === "text_delta")).toEqual([
           { type: "text_delta", delta: "OK" },
         ]);
+
         const expectedReasoning: Record<string, unknown> = {
           type: "reasoning",
           id: "rs-1",
           text: "",
         };
-        if (details.length > 0) expectedReasoning.details = details;
+
+        if (details.length > 0) {
+          expectedReasoning.details = details;
+        }
+
         expect(final?.result).toMatchObject({
           output: "OK",
           content: [expectedReasoning, { type: "text", text: "OK" }],
@@ -151,8 +156,15 @@ function reasoningItem(encrypted: boolean, emptyDetail: "none" | "summary" | "te
     type: "reasoning",
     summary: emptyDetail === "summary" ? [{ type: "summary_text", text: "" }] : [],
   };
-  if (emptyDetail === "text") item.content = [{ type: "reasoning_text", text: "" }];
-  if (encrypted) item.encrypted_content = "opaque-reasoning";
+
+  if (emptyDetail === "text") {
+    item.content = [{ type: "reasoning_text", text: "" }];
+  }
+
+  if (encrypted) {
+    item.encrypted_content = "opaque-reasoning";
+  }
+
   return item;
 }
 

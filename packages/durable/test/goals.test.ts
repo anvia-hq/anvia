@@ -181,9 +181,19 @@ it.each(["max_sessions", "max_tokens", "deadline"] as const)(
     });
     const runtime = await open(goal);
     const bounded: typeof limits & { maxTotalTokens?: number; deadline?: string } = { ...limits };
-    if (reason === "max_sessions") bounded.maxSessions = 1;
-    if (reason === "max_tokens") bounded.maxTotalTokens = 1;
-    if (reason === "deadline") bounded.deadline = "2000-01-01T00:00:00.000Z";
+
+    if (reason === "max_sessions") {
+      bounded.maxSessions = 1;
+    }
+
+    if (reason === "max_tokens") {
+      bounded.maxTotalTokens = 1;
+    }
+
+    if (reason === "deadline") {
+      bounded.deadline = "2000-01-01T00:00:00.000Z";
+    }
+
     const handle = await runtime.submitGoal(goal, { ...input, limits: bounded });
     const task = await paused(handle, reason);
     expect(task.checkpoint).toMatchObject({ sessions: reason === "deadline" ? 0 : 1 });

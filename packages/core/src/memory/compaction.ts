@@ -51,10 +51,15 @@ export function createSummaryMemoryCompactor(
         instructions: options.instructions ?? defaultSummaryInstructions,
         maxTokens,
       };
-      if (temperature !== null) request.temperature = temperature;
+
+      if (temperature !== null) {
+        request.temperature = temperature;
+      }
+
       request.providerOptions = options.providerOptions;
       request.retries = options.retries;
       request.abortSignal = abortSignal;
+
       const result = await generateCompletion(request);
       const summary = result.text.trim();
       if (summary.length === 0) {

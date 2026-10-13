@@ -196,7 +196,11 @@ describe("Jev decisions", () => {
       confidence: 0.5,
       probabilities: { "0": 0.25, "1": 0.75 },
     };
-    if (legend !== undefined) answer.legend = legend;
+
+    if (legend !== undefined) {
+      answer.legend = legend;
+    }
+
     const { client } = clientWithResponse(fixture({ q0: answer }));
     await expect(
       decide({

@@ -39,6 +39,7 @@ describe("Azure Responses requests", () => {
       } else {
         await model.completion(request);
       }
+
       const expected: Record<string, unknown> = {
         model: "deployment",
         input: [
@@ -54,7 +55,11 @@ describe("Azure Responses requests", () => {
           { type: "function_call_output", call_id: "call_1", output: "Sunny" },
         ],
       };
-      if (stream) expected.stream = true;
+
+      if (stream) {
+        expected.stream = true;
+      }
+
       expect(create).toHaveBeenCalledWith(expect.objectContaining(expected), expect.anything());
       expect(request.chatHistory[0]).not.toHaveProperty("type");
     },

@@ -208,7 +208,11 @@ export class SqliteDurableStore implements DurableStore {
         createdAt: String(row.created_at),
       })),
     };
-    if (rows.length > limit) result.nextCursor = Number(page.at(-1)!.cursor);
+
+    if (rows.length > limit) {
+      result.nextCursor = Number(page.at(-1)!.cursor);
+    }
+
     return result;
   }
 
@@ -300,7 +304,11 @@ export class SqliteDurableStore implements DurableStore {
     const result: DurableRunPage = {
       runs: page.map((row) => parseRunSummary(JSON.parse(String(row.record)))),
     };
-    if (rows.length > limit) result.nextCursor = Number(page.at(-1)!.cursor);
+
+    if (rows.length > limit) {
+      result.nextCursor = Number(page.at(-1)!.cursor);
+    }
+
     return result;
   }
 
@@ -335,7 +343,11 @@ export class SqliteDurableStore implements DurableStore {
       ${eligible} AND r.status = 'retry_wait' AND json_extract(r.record, '$.nextAttemptAt') > ?`)
       .get(...excludedSessions, now);
     const result: { ids: string[]; nextAttemptAt?: string } = { ids };
-    if (typeof wake?.deadline === "string") result.nextAttemptAt = wake.deadline;
+
+    if (typeof wake?.deadline === "string") {
+      result.nextAttemptAt = wake.deadline;
+    }
+
     return result;
   }
 
@@ -591,8 +603,18 @@ function runSummary(run: DurableRunRecord): DurableRunSummary {
     createdAt,
     updatedAt,
   };
-  if (error !== undefined) summary.error = error;
-  if (blockedOperation !== undefined) summary.blockedOperation = blockedOperation;
-  if (nextAttemptAt !== undefined) summary.nextAttemptAt = nextAttemptAt;
+
+  if (error !== undefined) {
+    summary.error = error;
+  }
+
+  if (blockedOperation !== undefined) {
+    summary.blockedOperation = blockedOperation;
+  }
+
+  if (nextAttemptAt !== undefined) {
+    summary.nextAttemptAt = nextAttemptAt;
+  }
+
   return summary;
 }

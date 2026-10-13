@@ -309,7 +309,11 @@ export class DurableRuntime {
       requestId: input.requestId,
       prompt: parsePrompt(input.prompt),
     };
-    if (trace !== undefined) submission.trace = trace;
+
+    if (trace !== undefined) {
+      submission.trace = trace;
+    }
+
     const registration = this.agents.get(input.agentId);
     if (registration === undefined)
       throw new DurableNotFoundError(`Unknown durable agent: ${input.agentId}`);

@@ -90,11 +90,16 @@ export function createExecution(
         current.usage = Usage.add(current.usage, usage);
         tx.putRun(current);
       }
+
       const data: JsonObject = {
         operationId: operation.key,
         result,
       };
-      if (operation.attemptId !== undefined) data.attemptId = operation.attemptId;
+
+      if (operation.attemptId !== undefined) {
+        data.attemptId = operation.attemptId;
+      }
+
       tx.appendEvent(
         run.id,
         operation.kind === "model" ? "model_completed" : "tool_completed",
@@ -150,7 +155,11 @@ export function createExecution(
   }
 
   const steering: Pick<AgentRunExecution, "drainSteering"> = {};
-  if (run.steering !== undefined) steering.drainSteering = createSteeringDrain(store, run, signal);
+
+  if (run.steering !== undefined) {
+    steering.drainSteering = createSteeringDrain(store, run, signal);
+  }
+
   return {
     ...steering,
     // Status only: tool args are not final yet, and a changed input fails in start() with a

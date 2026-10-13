@@ -27,9 +27,11 @@ const agent = makeAgent(
   ],
 );
 const registration: DurableAgentRegistration = { agent, version: "1" };
+
 if (crashAt === "budget") {
   registration.modelRetry = { maxAttempts: 1, initialDelayMs: 1, maxDelayMs: 1 };
 }
+
 registration.toolRecovery = { lookup: recovery as "safe" | "idempotent" | "manual" };
 const runtime = await DurableRuntime.open({
   store: new SqliteDurableStore(database),

@@ -95,18 +95,35 @@ export function graphSnapshot(tx: DurableTransaction, id: string): DurableGraphS
       wait = { type: "interaction", interactionId: run.outcome.interaction.id };
     else if (run.status === "needs_attention") {
       wait = { type: "recovery" };
-      if (run.blockedOperation !== undefined) wait.operationId = run.blockedOperation;
+
+      if (run.blockedOperation !== undefined) {
+        wait.operationId = run.blockedOperation;
+      }
     }
+
     const node: DurableGraphSnapshot["nodes"][number] = {
       id: task.id,
       agentId: task.agentId,
       runId: run.id,
       status: run.status,
     };
-    if (wait !== undefined) node.wait = wait;
-    if (run.error !== undefined) node.error = run.error;
-    if (run.outcome?.type === "response") node.output = json(run.outcome.output);
-    if (run.outcome?.type === "interaction") node.interaction = run.outcome.interaction;
+
+    if (wait !== undefined) {
+      node.wait = wait;
+    }
+
+    if (run.error !== undefined) {
+      node.error = run.error;
+    }
+
+    if (run.outcome?.type === "response") {
+      node.output = json(run.outcome.output);
+    }
+
+    if (run.outcome?.type === "interaction") {
+      node.interaction = run.outcome.interaction;
+    }
+
     return node;
   });
   const all = [...runs.values()];

@@ -93,21 +93,21 @@ export function graphSnapshot(tx: DurableTransaction, id: string): DurableGraphS
     } else if (run.status === "retry_wait") wait = { type: "retry", until: run.nextAttemptAt! };
     else if (run.status === "waiting" && run.outcome?.type === "interaction")
       wait = { type: "interaction", interactionId: run.outcome.interaction.id };
-    else if (run.status === "needs_attention")
-      wait = {
-        type: "recovery",
-        ...(run.blockedOperation === undefined ? {} : { operationId: run.blockedOperation }),
-      };
-    return {
+    else if (run.status === "needs_attention") {
+      wait = { type: "recovery" };
+      if (run.blockedOperation !== undefined) wait.operationId = run.blockedOperation;
+    }
+    const node: DurableGraphSnapshot["nodes"][number] = {
       id: task.id,
       agentId: task.agentId,
       runId: run.id,
       status: run.status,
-      ...(wait === undefined ? {} : { wait }),
-      ...(run.error === undefined ? {} : { error: run.error }),
-      ...(run.outcome?.type === "response" ? { output: json(run.outcome.output) } : {}),
-      ...(run.outcome?.type === "interaction" ? { interaction: run.outcome.interaction } : {}),
     };
+    if (wait !== undefined) node.wait = wait;
+    if (run.error !== undefined) node.error = run.error;
+    if (run.outcome?.type === "response") node.output = json(run.outcome.output);
+    if (run.outcome?.type === "interaction") node.interaction = run.outcome.interaction;
+    return node;
   });
   const all = [...runs.values()];
   const status = graph.cancelled

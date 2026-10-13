@@ -88,7 +88,6 @@ export function prepareTask(
   const task: TaskRecord = {
     id,
     rootId: parent?.rootId ?? id,
-    ...(parentId === undefined ? {} : { parentId }),
     depth: parent === undefined ? 0 : parent.depth + 1,
     sessionId,
     key,
@@ -100,10 +99,11 @@ export function prepareTask(
     checkpoint: definition.initial(parsed),
     status: "pending",
     signals: {},
-    ...(parent === undefined && trace !== undefined ? { trace } : {}),
     createdAt: now,
     updatedAt: now,
   };
+  if (parentId !== undefined) task.parentId = parentId;
+  if (parent === undefined && trace !== undefined) task.trace = trace;
   return { task, created: true };
 }
 
@@ -203,5 +203,7 @@ export function reconcileTree(
       saveTask(tx, task);
     }
   }
-  return { abort, ...(deadline === undefined ? {} : { deadline }) };
+  const result: { abort: string[]; deadline?: number } = { abort };
+  if (deadline !== undefined) result.deadline = deadline;
+  return result;
 }

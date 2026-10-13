@@ -66,8 +66,8 @@ export function createContextPreparation(
     if (plan === undefined) {
       prepared = {
         messages: projectLoopContext(messages, checkpoint),
-        ...(checkpoint === undefined ? {} : { checkpoint }),
       };
+      if (checkpoint !== undefined) prepared.checkpoint = checkpoint;
     } else {
       if (operation === undefined) {
         operation = { key, kind: "context", recovery: "safe", status: "started", input };

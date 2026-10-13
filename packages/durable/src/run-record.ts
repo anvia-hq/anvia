@@ -8,7 +8,7 @@ export function createRunRecord(
   registration: DurableAgentRegistration,
 ): DurableRunRecord {
   const now = new Date().toISOString();
-  return {
+  const record: Omit<DurableRunRecord, "input"> = {
     ...submission,
     id: globalThis.crypto.randomUUID(),
     version: registration.version,
@@ -20,23 +20,20 @@ export function createRunRecord(
     maxModelTurns: (registration.agent.defaultMaxTurns ?? 0) + 1,
     usage: Usage.empty(),
     history: [],
-    ...(registration.compaction === undefined
-      ? {}
-      : {
-          loopCompaction: true,
-          compaction: {
-            trigger: { ...registration.compaction.trigger },
-            ...(registration.compaction.retention === undefined
-              ? {}
-              : { retention: { ...registration.compaction.retention } }),
-          },
-        }),
     responses: {},
     steering: { pending: [], checkpoints: {}, closed: false },
-    ...(registration.stream === undefined ? {} : { stream: registration.stream }),
-    ...(registration.modelRetry === undefined
-      ? {}
-      : { modelRetry: { ...registration.modelRetry } }),
+  };
+  if (registration.compaction !== undefined) {
+    record.loopCompaction = true;
+    record.compaction = { trigger: { ...registration.compaction.trigger } };
+    if (registration.compaction.retention !== undefined) {
+      record.compaction.retention = { ...registration.compaction.retention };
+    }
+  }
+  if (registration.stream !== undefined) record.stream = registration.stream;
+  if (registration.modelRetry !== undefined) record.modelRetry = { ...registration.modelRetry };
+  return {
+    ...record,
     input: { messages: [promptMessage(submission.prompt)] },
   };
 }

@@ -200,15 +200,16 @@ export class SqliteDurableStore implements DurableStore {
         limit + 1,
       );
     const page = rows.slice(0, limit);
-    return {
+    const result: DurableGraphPage = {
       graphs: page.map((row) => ({
         id: String(row.id),
         sessionId: String(row.session_id),
         requestId: String(row.request_id),
         createdAt: String(row.created_at),
       })),
-      ...(rows.length > limit ? { nextCursor: Number(page.at(-1)!.cursor) } : {}),
     };
+    if (rows.length > limit) result.nextCursor = Number(page.at(-1)!.cursor);
+    return result;
   }
 
   listTasks(options: TaskListOptions) {
@@ -296,10 +297,11 @@ export class SqliteDurableStore implements DurableStore {
       )
       .all(...parameters, limit + 1);
     const page = rows.slice(0, limit);
-    return {
+    const result: DurableRunPage = {
       runs: page.map((row) => parseRunSummary(JSON.parse(String(row.record)))),
-      ...(rows.length > limit ? { nextCursor: Number(page.at(-1)!.cursor) } : {}),
     };
+    if (rows.length > limit) result.nextCursor = Number(page.at(-1)!.cursor);
+    return result;
   }
 
   schedule(
@@ -332,7 +334,9 @@ export class SqliteDurableStore implements DurableStore {
       .prepare(`SELECT MIN(json_extract(r.record, '$.nextAttemptAt')) AS deadline
       ${eligible} AND r.status = 'retry_wait' AND json_extract(r.record, '$.nextAttemptAt') > ?`)
       .get(...excludedSessions, now);
-    return { ids, ...(typeof wake?.deadline === "string" ? { nextAttemptAt: wake.deadline } : {}) };
+    const result: { ids: string[]; nextAttemptAt?: string } = { ids };
+    if (typeof wake?.deadline === "string") result.nextAttemptAt = wake.deadline;
+    return result;
   }
 
   events(runId: string, after: number, limit: number): DurableEvent[] {
@@ -578,7 +582,7 @@ function runSummary(run: DurableRunRecord): DurableRunSummary {
     blockedOperation,
     nextAttemptAt,
   } = run;
-  return {
+  const summary: DurableRunSummary = {
     id,
     agentId,
     sessionId,
@@ -586,8 +590,9 @@ function runSummary(run: DurableRunRecord): DurableRunSummary {
     status,
     createdAt,
     updatedAt,
-    ...(error === undefined ? {} : { error }),
-    ...(blockedOperation === undefined ? {} : { blockedOperation }),
-    ...(nextAttemptAt === undefined ? {} : { nextAttemptAt }),
   };
+  if (error !== undefined) summary.error = error;
+  if (blockedOperation !== undefined) summary.blockedOperation = blockedOperation;
+  if (nextAttemptAt !== undefined) summary.nextAttemptAt = nextAttemptAt;
+  return summary;
 }

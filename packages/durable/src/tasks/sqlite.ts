@@ -64,10 +64,11 @@ export function listTasks(db: DatabaseSync, input: TaskListOptions): TaskPage {
       limit + 1,
     );
   const page = rows.slice(0, limit);
-  return {
+  const result: TaskPage = {
     tasks: page.map((row) => parseTask(JSON.parse(String(row.record)))),
-    ...(rows.length > limit ? { nextCursor: Number(page.at(-1)!.cursor) } : {}),
   };
+  if (rows.length > limit) result.nextCursor = Number(page.at(-1)!.cursor);
+  return result;
 }
 
 export function scheduleTasks(
@@ -93,8 +94,9 @@ export function unsettledTaskRoots(
     .prepare(`SELECT rowid AS cursor, id FROM anvia_durable_tasks
     WHERE parent_id = '' AND status NOT IN ('completed', 'failed', 'cancelled') AND rowid > ? ORDER BY rowid LIMIT 100`)
     .all(after);
-  return {
+  const result: { ids: string[]; cursor?: number } = {
     ids: rows.map((row) => String(row.id)),
-    ...(rows.length === 100 ? { cursor: Number(rows.at(-1)!.cursor) } : {}),
   };
+  if (rows.length === 100) result.cursor = Number(rows.at(-1)!.cursor);
+  return result;
 }

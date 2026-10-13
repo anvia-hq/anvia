@@ -78,15 +78,14 @@ export function messageLog(database: DatabaseSync) {
       return { ...operation, input: requestInput(operation.input, transform) };
     }
     const result = operation.result as JsonObject | undefined;
-    return {
+    const mapped: DurableOperation = {
       ...operation,
       input: transform(operation.input),
-      ...(result === undefined
-        ? {}
-        : {
-            result: { ...result, messages: transform(result.messages!) },
-          }),
     };
+    if (result !== undefined) {
+      mapped.result = { ...result, messages: transform(result.messages!) };
+    }
+    return mapped;
   }
 
   function requestInput(value: JsonValue, transform: (value: JsonValue) => JsonValue): JsonValue {

@@ -1,5 +1,5 @@
 import { appendFileSync } from "node:fs";
-import { DurableRuntime } from "../../src/index.js";
+import { DurableRuntime, type DurableAgentRegistration } from "../../src/index.js";
 import { SqliteDurableStore } from "../../src/sqlite.js";
 import { done, hasToolResult, lookup, makeAgent, toolResponse } from "../helpers.js";
 
@@ -26,18 +26,14 @@ const agent = makeAgent(
     }),
   ],
 );
+const registration: DurableAgentRegistration = { agent, version: "1" };
+if (crashAt === "budget") {
+  registration.modelRetry = { maxAttempts: 1, initialDelayMs: 1, maxDelayMs: 1 };
+}
+registration.toolRecovery = { lookup: recovery as "safe" | "idempotent" | "manual" };
 const runtime = await DurableRuntime.open({
   store: new SqliteDurableStore(database),
-  agents: [
-    {
-      agent,
-      version: "1",
-      ...(crashAt === "budget"
-        ? { modelRetry: { maxAttempts: 1, initialDelayMs: 1, maxDelayMs: 1 } }
-        : {}),
-      toolRecovery: { lookup: recovery as "safe" | "idempotent" | "manual" },
-    },
-  ],
+  agents: [registration],
 });
 const run = await runtime.submit({
   agentId: agent.id,

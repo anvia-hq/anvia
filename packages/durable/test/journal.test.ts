@@ -8,7 +8,7 @@ import { createQuestionTool } from "@anvia/core/tool";
 import { expectJournalRequests } from "./journal-assertions.js";
 import { Agent } from "@anvia/core/agent";
 import type { CompletionRequest } from "@anvia/core/completion";
-import { DurableRuntime, defineTask } from "../src/index.js";
+import { DurableRuntime, defineTask, type DurableAgentRegistration } from "../src/index.js";
 import { SqliteDurableStore } from "../src/sqlite.js";
 import { capabilities, done, lookup, response, makeAgent } from "./helpers.js";
 
@@ -44,24 +44,18 @@ it.each([false, true])(
         },
       },
     });
+    const registration: DurableAgentRegistration = { agent, version: "1" };
+    if (compact) {
+      registration.compaction = {
+        trigger: { afterTokens: 20_000 },
+        retention: { recentToolTurns: 1 },
+        compactor: async () => ({ summary: `summary-${calls}`, usage: done().usage }),
+      };
+    }
     const runtime = await DurableRuntime.open({
       store: new SqliteDurableStore(path),
       limits: { maxPayloadBytes: 64 * 1024 * 1024 },
-      agents: [
-        {
-          agent,
-          version: "1",
-          ...(compact
-            ? {
-                compaction: {
-                  trigger: { afterTokens: 20_000 },
-                  retention: { recentToolTurns: 1 },
-                  compactor: async () => ({ summary: `summary-${calls}`, usage: done().usage }),
-                },
-              }
-            : {}),
-        },
-      ],
+      agents: [registration],
     });
     runtimes.push(runtime);
     const handle = await runtime.submit({

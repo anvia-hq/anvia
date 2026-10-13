@@ -27,7 +27,7 @@ export function registerTask<I, S, R>(task: TaskDefinition<I, S, R>): Registered
   };
   const input = (value: unknown) => parse(task.input, value);
   const checkpoint = (value: unknown) => parse(task.checkpoint, value);
-  return {
+  const registration: RegisteredTask = {
     name: task.name,
     version: task.version,
     parseInput: input,
@@ -40,13 +40,12 @@ export function registerTask<I, S, R>(task: TaskDefinition<I, S, R>): Registered
         JsonValue,
         JsonValue
       >,
-    ...(task.migrate === undefined
-      ? {}
-      : {
-          migrate: (value, state, version) => {
-            const result = task.migrate!(value, state, version);
-            return { input: input(result.input), checkpoint: checkpoint(result.checkpoint) };
-          },
-        }),
   };
+  if (task.migrate !== undefined) {
+    registration.migrate = (value, state, version) => {
+      const result = task.migrate!(value, state, version);
+      return { input: input(result.input), checkpoint: checkpoint(result.checkpoint) };
+    };
+  }
+  return registration;
 }

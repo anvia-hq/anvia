@@ -303,13 +303,13 @@ export class DurableRuntime {
     )
       throw new TypeError("Reserved durable session ID.");
     const trace = parseTraceOptions(input.trace);
-    const submission = {
+    const submission: DurableSubmission = {
       agentId: input.agentId,
       sessionId: input.sessionId,
       requestId: input.requestId,
       prompt: parsePrompt(input.prompt),
-      ...(trace === undefined ? {} : { trace }),
     };
+    if (trace !== undefined) submission.trace = trace;
     const registration = this.agents.get(input.agentId);
     if (registration === undefined)
       throw new DurableNotFoundError(`Unknown durable agent: ${input.agentId}`);

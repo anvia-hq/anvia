@@ -6,6 +6,7 @@ import {
   type CompletionRequest,
   type CompletionResponse,
   type JsonValue,
+  type JsonObject,
 } from "@anvia/core/completion";
 import type {
   AgentCompletionStreamEvent,
@@ -89,11 +90,16 @@ export function createExecution(
         current.usage = Usage.add(current.usage, usage);
         tx.putRun(current);
       }
-      tx.appendEvent(run.id, operation.kind === "model" ? "model_completed" : "tool_completed", {
+      const data: JsonObject = {
         operationId: operation.key,
         result,
-        ...(operation.attemptId === undefined ? {} : { attemptId: operation.attemptId }),
-      });
+      };
+      if (operation.attemptId !== undefined) data.attemptId = operation.attemptId;
+      tx.appendEvent(
+        run.id,
+        operation.kind === "model" ? "model_completed" : "tool_completed",
+        data,
+      );
     });
   }
 
@@ -143,10 +149,10 @@ export function createExecution(
     return saved as unknown as CompletionResponse;
   }
 
+  const steering: Pick<AgentRunExecution, "drainSteering"> = {};
+  if (run.steering !== undefined) steering.drainSteering = createSteeringDrain(store, run, signal);
   return {
-    ...(run.steering === undefined
-      ? {}
-      : { drainSteering: createSteeringDrain(store, run, signal) }),
+    ...steering,
     // Status only: tool args are not final yet, and a changed input fails in start() with a
     // recovery error that the run's own span records.
     replayed(step) {

@@ -61,12 +61,13 @@ store.transaction = <T>(callback: (tx: DurableTransaction) => T): T =>
     }),
   );
 const runtime = await DurableRuntime.open({ store, tasks: [goal], agents: [registration] });
-await runtime.submitGoal(goal, {
-  ...(binding === "override" ? { agentId: registration.agent.id } : {}),
+const submission: Parameters<typeof runtime.submitGoal>[1] = {
   sessionId: "project",
   requestId: "goal",
   objective: "Create two artifacts",
   acceptanceCriteria: ["Both artifacts verified"],
   limits: { maxSessions: 3, maxTotalModelTurns: 4, maxConsecutiveNoProgressSessions: 2 },
-});
+};
+if (binding === "override") submission.agentId = registration.agent.id;
+await runtime.submitGoal(goal, submission);
 setInterval(() => {}, 1000);

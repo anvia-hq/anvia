@@ -51,10 +51,11 @@ export function parseDurableSteering(value: unknown): {
     .strict()
     .safeParse(json(value));
   if (!parsed.success) throw new TypeError("Invalid durable steering input.");
-  return {
+  const steering: { input: AgentSteerInput; requestId?: string } = {
     input: parsed.data.input,
-    ...(parsed.data.requestId === undefined ? {} : { requestId: parsed.data.requestId }),
   };
+  if (parsed.data.requestId !== undefined) steering.requestId = parsed.data.requestId;
+  return steering;
 }
 
 export function parseDurableSteerReceipt(value: unknown): AgentSteerReceipt {

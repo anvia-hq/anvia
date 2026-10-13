@@ -42,7 +42,7 @@ export function registrations(
       if (policy !== "safe" && policy !== "idempotent" && policy !== "manual")
         throw new TypeError(`Invalid recovery policy for ${name}`);
     }
-    let compaction;
+    let compaction: DurableAgentRegistration["compaction"];
     if (registration.compaction !== undefined) {
       const { compactor, tokenCounter, ...policy } = registration.compaction;
       if (
@@ -55,21 +55,22 @@ export function registrations(
       const parsed = compactionPolicySchema.parse(policy);
       compaction = {
         trigger: parsed.trigger,
-        ...(parsed.retention === undefined ? {} : { retention: parsed.retention }),
         compactor,
-        ...(tokenCounter === undefined ? {} : { tokenCounter }),
       };
+      if (parsed.retention !== undefined) compaction.retention = parsed.retention;
+      if (tokenCounter !== undefined) compaction.tokenCounter = tokenCounter;
     }
-    result.set(agent.id, {
+    const normalized: DurableAgentRegistration = {
       agent,
       version: registration.version,
-      ...(registration.stream === undefined ? {} : { stream: registration.stream }),
-      toolRecovery: { ...registration.toolRecovery },
-      ...(compaction === undefined ? {} : { compaction }),
-      ...(registration.modelRetry === undefined
-        ? {}
-        : { modelRetry: modelRetrySchema.parse(registration.modelRetry) }),
-    });
+    };
+    if (registration.stream !== undefined) normalized.stream = registration.stream;
+    normalized.toolRecovery = { ...registration.toolRecovery };
+    if (compaction !== undefined) normalized.compaction = compaction;
+    if (registration.modelRetry !== undefined) {
+      normalized.modelRetry = modelRetrySchema.parse(registration.modelRetry);
+    }
+    result.set(agent.id, normalized);
   }
   return result;
 }

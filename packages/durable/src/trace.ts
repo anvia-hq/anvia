@@ -22,11 +22,14 @@ export function runTrace(tx: DurableTransaction, run: DurableRunRecord): AgentTr
     ...applicationMetadata(options?.metadata),
     durableRunId: run.id,
     durableEpoch: run.epoch,
-    // Keeps the execution session discoverable when the observability session groups several.
-    ...(sessionId === executionSessionId ? {} : { durableSessionId: executionSessionId }),
-    ...(task === undefined ? {} : { durableTaskId: task.id, durableRootTaskId: task.rootId }),
-    ...(run.graphId === undefined ? {} : { durableGraphId: run.graphId }),
   };
+  // Keeps the execution session discoverable when the observability session groups several.
+  if (sessionId !== executionSessionId) metadata.durableSessionId = executionSessionId;
+  if (task !== undefined) {
+    metadata.durableTaskId = task.id;
+    metadata.durableRootTaskId = task.rootId;
+  }
+  if (run.graphId !== undefined) metadata.durableGraphId = run.graphId;
   return {
     ...options,
     sessionId,

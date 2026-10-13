@@ -90,7 +90,8 @@ it.each(["goal", "registered"])(
     const goal = defineGoal({ name: "dynamic", version: 1, assess });
     const runtime = await open(goal);
     const submit = (agentId?: string) => {
-      const goalInput = { ...input, ...(agentId === undefined ? {} : { agentId }) };
+      const goalInput: typeof input & { agentId?: string } = { ...input };
+      if (agentId !== undefined) goalInput.agentId = agentId;
       if (path === "goal") return runtime.submitGoal(goal, goalInput);
       const { sessionId, requestId, ...value } = goalInput;
       return runtime.submitRegisteredTask({
@@ -143,7 +144,8 @@ it.each([false, true])(
     const goal = defineGoal(policy);
     const runtime = await open(goal, path);
     runtime.registerAgents([registration("original")]);
-    const submission = { ...input, ...(override ? { agentId: "original" } : {}) };
+    const submission: typeof input & { agentId?: string } = { ...input };
+    if (override) submission.agentId = "original";
     const handle = await runtime.submitGoal(goal, submission);
     await expect
       .poll(async () => (await handle.snapshot()).task.wait)

@@ -2,7 +2,7 @@ import type { JsonValue, Message, Usage } from "@anvia/core/completion";
 import { DurableNotFoundError, DurableRecoveryError } from "../errors.js";
 import { errorMessage, json } from "../json.js";
 import { defineTask } from "../tasks/definition.js";
-import type { DefinedTask, TaskRecord, TaskTransition } from "../tasks/types.js";
+import type { DefinedTask, TaskAgentInput, TaskRecord, TaskTransition } from "../tasks/types.js";
 import type { TaskContext } from "../tasks/types.js";
 import {
   goalCheckpointSchema,
@@ -135,10 +135,21 @@ export function defineGoal(policy: GoalDefinition): DefinedGoal {
         let childId = existing?.id;
         if (childId === undefined) {
           try {
-            childId = ctx.spawnAgent(key, {
+            const input: Omit<TaskAgentInput, "prompt"> = {
               agentId: admitted.agentId!,
               maxModelTurns: admitted.limits.maxTotalModelTurns - admitted.modelTurns,
-              ...(continueFrom === undefined ? {} : { continueFrom }),
+            };
+            if (continueFrom !== undefined) input.continueFrom = continueFrom;
+            const context: Record<string, unknown> = {
+              objective: goal.objective,
+              acceptanceCriteria: goal.acceptanceCriteria,
+              session: admitted.sessions + 1,
+              previous: admitted.handoff,
+              feedback: admitted.feedback,
+            };
+            if (admitted.messages?.length) context.messages = admitted.messages;
+            childId = ctx.spawnAgent(key, {
+              ...input,
               prompt: [
                 ...(continueFrom === undefined
                   ? [
@@ -155,14 +166,7 @@ export function defineGoal(policy: GoalDefinition): DefinedGoal {
                 ...(admitted.messages?.length
                   ? ["Follow the user's `messages`; they were sent while the goal was running."]
                   : []),
-                JSON.stringify({
-                  objective: goal.objective,
-                  acceptanceCriteria: goal.acceptanceCriteria,
-                  session: admitted.sessions + 1,
-                  previous: admitted.handoff,
-                  feedback: admitted.feedback,
-                  ...(admitted.messages?.length ? { messages: admitted.messages } : {}),
-                }),
+                JSON.stringify(context),
               ].join("\n"),
             });
           } catch (error) {
@@ -351,7 +355,9 @@ function readControls(
     controls.message === (state.controls?.message ?? 0) &&
     controls.pause === (state.controls?.pause ?? 0);
   if (unchanged) return { state, pause };
-  return { state: { ...next, controls, ...(messages.length ? { messages } : {}) }, pause };
+  next.controls = controls;
+  if (messages.length) next.messages = messages;
+  return { state: next, pause };
 }
 
 /**

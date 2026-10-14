@@ -154,14 +154,7 @@ export function createExecution(
     return saved as unknown as CompletionResponse;
   }
 
-  const steering: Pick<AgentRunExecution, "drainSteering"> = {};
-
-  if (run.steering !== undefined) {
-    steering.drainSteering = createSteeringDrain(store, run, signal);
-  }
-
-  return {
-    ...steering,
+  const execution: AgentRunExecution = {
     // Status only: tool args are not final yet, and a changed input fails in start() with a
     // recovery error that the run's own span records.
     replayed(step) {
@@ -282,6 +275,12 @@ export function createExecution(
       }
     },
   };
+
+  if (run.steering !== undefined) {
+    execution.drainSteering = createSteeringDrain(store, run, signal);
+  }
+
+  return execution;
 }
 
 async function closeCompletionStream(

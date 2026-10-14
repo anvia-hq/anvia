@@ -35,7 +35,7 @@
   "devDependencies": {
     "@anvia/core": "workspace:*",
     "@types/node": "^24.9.1",
-    "drizzle-orm": "^0.45.3",
+    "drizzle-orm": "^0.45.4",
     "tsup": "^8.5.0",
     "typescript": "^5.9.3",
     "vitest": "^4.1.11"

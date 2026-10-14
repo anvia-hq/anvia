@@ -30,7 +30,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@lancedb/lancedb": "^0.39.0",
+    "@lancedb/lancedb": "^0.40.0",
     "apache-arrow": "21.2.0"
   },
   "devDependencies": {

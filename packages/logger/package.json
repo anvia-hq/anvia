@@ -30,7 +30,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "pino": "^10.3.1"
+    "pino": "^10.4.0"
   },
   "devDependencies": {
     "@anvia/core": "workspace:*",

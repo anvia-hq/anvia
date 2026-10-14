@@ -30,13 +30,13 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "pg": "^8.23.0",
+    "pg": "^8.23.1",
     "pgvector": "^0.3.0"
   },
   "devDependencies": {
     "@anvia/core": "workspace:*",
     "@types/node": "^24.9.1",
-    "@types/pg": "^8.15.6",
+    "@types/pg": "^8.23.1",
     "tsup": "^8.5.0",
     "typescript": "^5.9.3",
     "vitest": "^4.1.11"

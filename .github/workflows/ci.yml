@@ -59,7 +59,8 @@ jobs:
         run: pnpm releases:verify-packs
 
       - name: Typecheck packages
-        run: pnpm --filter './packages/**' typecheck
+        # Some typecheck scripts rebuild dependencies with --clean; avoid concurrent readers.
+        run: pnpm --workspace-concurrency=1 --filter './packages/**' typecheck
 
       - name: Typecheck cookbook and internal tests
         run: pnpm --filter cookbook --filter './tests/**' typecheck

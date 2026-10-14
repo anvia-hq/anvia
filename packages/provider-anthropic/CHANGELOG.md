@@ -1,5 +1,11 @@
 # @anvia/anthropic
 
+## 1.1.8
+
+### Patch Changes
+
+- 8b1bd1a: Update runtime dependencies to the latest compatible minor and patch releases.
+
 ## 1.1.7
 
 ### Patch Changes

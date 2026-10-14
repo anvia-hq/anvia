@@ -1,5 +1,13 @@
 # @anvia/lens
 
+## 1.2.4
+
+### Patch Changes
+
+- 8b1bd1a: Update runtime dependencies to the latest compatible minor and patch releases.
+- Updated dependencies [8b1bd1a]
+  - @anvia/otel@1.3.1
+
 ## 1.2.3
 
 ### Patch Changes

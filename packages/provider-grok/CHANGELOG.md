@@ -1,5 +1,13 @@
 # @anvia/grok
 
+## 1.1.11
+
+### Patch Changes
+
+- 8b1bd1a: Update runtime dependencies to the latest compatible minor and patch releases.
+- Updated dependencies [8b1bd1a]
+  - @anvia/openai@1.3.1
+
 ## 1.1.10
 
 ### Patch Changes

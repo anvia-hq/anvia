@@ -1,5 +1,11 @@
 # @anvia/lancedb
 
+## 1.1.6
+
+### Patch Changes
+
+- 8b1bd1a: Update runtime dependencies to the latest compatible minor and patch releases.
+
 ## 1.1.5
 
 ### Patch Changes

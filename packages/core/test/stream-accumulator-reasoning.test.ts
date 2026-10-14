@@ -6,6 +6,7 @@ import {
   Usage,
 } from "../src/completion";
 import { CompletionStreamAccumulator } from "../src/completion/stream-accumulator";
+import type { Writable } from "../src/internal/type-utils";
 
 const encrypted = { type: "encrypted", data: "opaque-reasoning" } as const;
 const summary = { type: "summary", text: "Thinking." } as const;
@@ -27,12 +28,7 @@ describe("CompletionStreamAccumulator terminal reasoning", () => {
       const accumulator = new CompletionStreamAccumulator();
       accumulator.accept({ type: "text_delta", delta: "OK" });
 
-      const reasoning: {
-        type: "reasoning";
-        id: string;
-        text: string;
-        details?: ReasoningDetail[];
-      } = {
+      const reasoning: Writable<ReasoningPart> = {
         type: "reasoning",
         id: "rs-1",
         text: "",

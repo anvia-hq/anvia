@@ -1,3 +1,4 @@
+import type { Writable } from "../internal/type-utils";
 import { observerSnapshot } from "../observability/snapshot";
 import { PipelineObserverDispatchError, type PipelineObserverFailure } from "./errors";
 import type {
@@ -64,11 +65,7 @@ export function snapshotPipelineObservability(
     throw new TypeError('Pipeline observability.errorPolicy must be "ignore" or "throw".');
   }
 
-  const snapshot: {
-    observers: PipelineObserverMap;
-    errorPolicy: PipelineObserverErrorPolicy;
-    primaryTrace?: string;
-  } = {
+  const snapshot: Writable<PipelineObservabilityOptions> = {
     observers: Object.freeze(observers),
     errorPolicy,
   };

@@ -1,17 +1,11 @@
 import { spawnSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import path from "node:path";
-import {
-  assertPreviewAllowed,
-  createPreviewVersion,
-  findPublicPackages,
-  readReleasePlan,
-} from "./release-train.mjs";
+import { createPreviewVersion, findPublicPackages, readReleasePlan } from "./release-train.mjs";
 
 const root = process.cwd();
 const dryRun = process.argv.includes("--dry-run");
 const buildId = process.env.PREVIEW_BUILD_ID ?? createBuildId();
-assertPreviewAllowed(root);
 
 const packages = findPublicPackages(root);
 const packagesByName = new Map(packages.map((pkg) => [pkg.packageJson.name, pkg]));

@@ -166,7 +166,7 @@ Root scripts in `scripts/` are release automation:
   unless intentionally mutating manifests.
 - `scripts/create-github-releases.mjs`: creates GitHub Releases for existing
   package tags. Requires `GITHUB_TOKEN` unless `--dry-run` is used.
-- `scripts/notify-discord-release.mjs`: sends stable, RC, or preview release notes to
+- `scripts/notify-discord-release.mjs`: sends stable or preview release notes to
   Discord when `DISCORD_WEBHOOK_URL` is set.
 
 Package publication runs only through `.github/workflows/release.yml` using npm
@@ -235,11 +235,6 @@ tags, or deployment commands unless explicitly requested.
    packages and any required dependents.
 3. Dispatch the stable release workflow from `main`. It publishes and tags only package versions
    that are not already present on npm.
-
-For release candidates, target `staging`, use `pnpm rc:enter` for the first candidate or
-`pnpm rc:version` for the next candidate, and merge the generated version state. Dispatch the
-release workflow with the `rc` channel from `staging`. Each changed package receives its own
-prerelease version and package tag. Use `pnpm rc:exit` to return those packages to stable versions.
 
 ## Pull Request Expectations
 

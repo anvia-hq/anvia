@@ -14,7 +14,6 @@ on:
         options:
           - stable
           - preview
-          - rc
 
 permissions:
   contents: read
@@ -106,16 +105,6 @@ jobs:
               echo "npm_tag=preview"
               echo "create_tags=false"
             } >> "$GITHUB_OUTPUT"
-          elif [ "${REQUESTED_CHANNEL}" = "rc" ]; then
-            if [ "${GITHUB_REF_NAME}" != "staging" ]; then
-              echo "RC publishing must run from staging."
-              exit 1
-            fi
-            {
-              echo "channel=rc"
-              echo "npm_tag=rc"
-              echo "create_tags=true"
-            } >> "$GITHUB_OUTPUT"
           else
             if [ "${GITHUB_REF_NAME}" != "main" ]; then
               echo "Stable publishing must run from main."
@@ -151,10 +140,6 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-
-      - name: Validate release candidate
-        if: steps.release.outputs.channel == 'rc'
-        run: node scripts/validate-release-train.mjs --prerelease rc
 
       - name: Validate preview release state
         if: steps.release.outputs.channel == 'preview'
@@ -263,14 +248,6 @@ jobs:
         run: pnpm github-releases
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PUBLISHED_PACKAGES_FILE: .published-packages.json
-
-      - name: Notify RC Discord channel
-        if: needs.prepare.outputs.channel == 'rc'
-        continue-on-error: true
-        run: node scripts/notify-discord-release.mjs rc
-        env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_RC_RELEASE_WEBHOOK_URL }}
           PUBLISHED_PACKAGES_FILE: .published-packages.json
 
       - name: Notify stable Discord channel

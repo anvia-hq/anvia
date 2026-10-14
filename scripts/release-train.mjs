@@ -22,12 +22,6 @@ export function createPreviewVersion(version, buildId) {
   return `${version}-preview.${buildId}`;
 }
 
-export function assertPreviewAllowed(root = process.cwd()) {
-  if (readPrereleaseState(root) !== undefined) {
-    throw new Error("Preview releases are disabled after the RC prerelease flow begins.");
-  }
-}
-
 export function findPublicPackages(root = process.cwd()) {
   return findPackageDirs(path.join(root, "packages"))
     .map((dir) => ({ dir, packageJson: readJson(path.join(dir, "package.json")) }))
@@ -90,10 +84,6 @@ export function assertStableReleaseState(root, packages = findPublicPackages(roo
   if (invalid.length > 0) {
     throw new Error(`Stable releases require stable semantic versions: ${invalid.join(", ")}.`);
   }
-  if (readPrereleaseState(root) !== undefined) {
-    throw new Error("Stable releases require Changesets prerelease mode to be exited.");
-  }
-
   assertNoPendingChangesets(root);
   return packages.map(({ packageJson }) => ({
     name: packageJson.name,
@@ -101,57 +91,8 @@ export function assertStableReleaseState(root, packages = findPublicPackages(roo
   }));
 }
 
-export function readPrereleaseState(root = process.cwd()) {
-  const filePath = path.join(root, ".changeset", "pre.json");
-  return existsSync(filePath) ? readJson(filePath) : undefined;
-}
-
-export function assertPrereleaseState(root, tag, packages = findPublicPackages(root)) {
-  const state = readPrereleaseState(root);
-  if (state === undefined || state.mode !== "pre" || state.tag !== tag) {
-    throw new Error(`.changeset/pre.json must be in the ${tag} prerelease mode.`);
-  }
-
-  const initialVersions = Object.keys(state.initialVersions ?? {}).sort();
-  const packageNames = packages.map(({ packageJson }) => packageJson.name).sort();
-  const initialVersionSet = new Set(initialVersions);
-  const missingPackages = packageNames.filter((name) => !initialVersionSet.has(name));
-  if (missingPackages.length > 0) {
-    throw new Error(
-      `pre.json initialVersions is missing public packages: ${missingPackages.join(", ")}.`,
-    );
-  }
-
-  if (!Array.isArray(state.changesets)) {
-    throw new Error(".changeset/pre.json changesets must be an array.");
-  }
-  const prereleasePattern = new RegExp(
-    `^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)-${escapeRegExp(tag)}\\.(0|[1-9]\\d*)$`,
-  );
-  const invalid = packages
-    .filter(
-      ({ packageJson }) =>
-        !stableVersionPattern.test(packageJson.version) &&
-        !prereleasePattern.test(packageJson.version),
-    )
-    .map(({ packageJson }) => `${packageJson.name}@${packageJson.version}`);
-  if (invalid.length > 0) {
-    throw new Error(
-      `Packages must use stable versions or the ${tag} prerelease tag: ${invalid.join(", ")}.`,
-    );
-  }
-  const prereleases = packages.filter(({ packageJson }) =>
-    prereleasePattern.test(packageJson.version),
-  );
-  if (prereleases.length === 0) {
-    throw new Error(`At least one public package must have a ${tag} prerelease version.`);
-  }
-  return prereleases;
-}
-
 export function readPendingChangesets(root = process.cwd()) {
   const changesetRoot = path.join(root, ".changeset");
-  const consumed = new Set(readPrereleaseState(root)?.changesets ?? []);
   return readdirSync(changesetRoot)
     .filter((entry) => entry.endsWith(".md") && entry !== "README.md")
     .sort()
@@ -170,8 +111,7 @@ export function readPendingChangesets(root = process.cwd()) {
       }
 
       return { id: entry.slice(0, -3), releases };
-    })
-    .filter(({ id }) => !consumed.has(id));
+    });
 }
 
 export function assertNoPendingChangesets(root = process.cwd()) {
@@ -298,8 +238,4 @@ function findPackageDirs(dir) {
     }
   }
   return directories;
-}
-
-function escapeRegExp(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

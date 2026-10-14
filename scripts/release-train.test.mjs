@@ -14,13 +14,11 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { releasesReadyForTags } from "./publish-release-state.mjs";
-import { releasePresentation } from "./release-notification.mjs";
 import {
   assertIndependentVersioning,
   assertNoMajorReleases,
   assertNoMajorVersionChanges,
   assertNoPendingChangesets,
-  assertPrereleaseState,
   assertReleasableChangesets,
   assertStableReleaseState,
   assertWorkspaceInternalDependencies,
@@ -31,7 +29,6 @@ import {
 } from "./release-train.mjs";
 
 const repositoryRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const rcScript = path.join(repositoryRoot, "scripts", "version-release-candidate.mjs");
 const previewScript = path.join(repositoryRoot, "scripts", "prepare-preview-release.mjs");
 const validatorScript = path.join(repositoryRoot, "scripts", "validate-release-train.mjs");
 const versionScript = path.join(repositoryRoot, "scripts", "version-packages.mjs");
@@ -216,7 +213,7 @@ test("release-plan validation works in detached CI checkouts without a local mai
   }
 });
 
-test("stable, RC, preview, and validation commands reject implicit major cascades", () => {
+test("stable, preview, and validation commands reject implicit major cascades", () => {
   const fixture = createReleaseFixture();
   try {
     initializeGitFixture(fixture);
@@ -229,12 +226,7 @@ test("stable, RC, preview, and validation commands reject implicit major cascade
     });
     writeChangeset(fixture, "a-minor", "minor", "Add an API to A.", ["a"]);
     const before = [dependencyPath, dependentPath].map((file) => readFileSync(file, "utf8"));
-    for (const args of [
-      [versionScript],
-      [rcScript, "enter"],
-      [previewScript, "--dry-run"],
-      [validatorScript],
-    ]) {
+    for (const args of [[versionScript], [previewScript, "--dry-run"], [validatorScript]]) {
       const result = spawnSync(process.execPath, args, {
         cwd: fixture,
         encoding: "utf8",
@@ -251,7 +243,6 @@ test("stable, RC, preview, and validation commands reject implicit major cascade
         [dependencyPath, dependentPath].map((file) => readFileSync(file, "utf8")),
         before,
       );
-      assert.equal(existsSync(path.join(fixture, ".changeset", "pre.json")), false);
       assert.equal(existsSync(path.join(fixture, ".changeset", "a-minor.md")), true);
     }
   } finally {
@@ -283,89 +274,33 @@ test("versioned release PRs cannot hide major bumps by consuming changesets", ()
   }
 });
 
-test("RC entry rolls back a rejected peer cascade and accepts declared prerelease compatibility", () => {
+test("workspace peers release unchanged dependents across the 0.x minor boundary", () => {
   const fixture = createReleaseFixture();
   try {
     initializeGitFixture(fixture);
-    const manifestPath = path.join(fixture, "packages", "b", "package.json");
-    const manifest = {
-      ...readJson(manifestPath),
+    const dependencyPath = path.join(fixture, "packages", "a", "package.json");
+    writeJson(dependencyPath, { ...readJson(dependencyPath), version: "0.2.3" });
+    const dependentPath = path.join(fixture, "packages", "b", "package.json");
+    writeJson(dependentPath, {
+      ...readJson(dependentPath),
       peerDependencies: { "@fixture/a": "workspace:^" },
-    };
-    writeJson(manifestPath, manifest);
+    });
+    // Only A changes: B must be released solely because its peer range is exceeded.
     writeChangeset(fixture, "a-minor", "minor", "Add an API to A.", ["a"]);
-    assert.doesNotThrow(() => readReleasePlan(fixture));
-    const rejected = spawnRcScript(fixture, "enter");
-    assert.notEqual(rejected.status, 0);
-    assert.match(rejected.stderr, /Major releases are prohibited.*@fixture\/b/);
-    assert.equal(existsSync(path.join(fixture, ".changeset", "pre.json")), false);
-    assertPackageVersion(fixture, "a", "1.0.2");
-    assertPackageVersion(fixture, "b", "2.4.0");
-    assert.equal(existsSync(path.join(fixture, ".changeset", "a-minor.md")), true);
-
-    manifest.peerDependencies["@fixture/a"] = "workspace:^1.0.2 || ^1.1.0-0";
-    writeJson(manifestPath, manifest);
-    writeChangeset(fixture, "b-peers", "patch", "Accept tested prerelease peers.", ["b"]);
-    runRcScript(fixture, "enter");
-    assertPackageVersion(fixture, "a", "1.1.0-rc.0");
-    assertPackageVersion(fixture, "b", "2.4.1-rc.0");
+    const output = path.join(fixture, "plan.json");
+    runCommand("pnpm", ["changeset", "status", "--output", output], fixture);
+    const { releases } = readJson(output);
+    assert.equal(releases.find(({ name }) => name === "@fixture/a").newVersion, "0.3.0");
+    const dependent = releases.find(({ name }) => name === "@fixture/b");
+    assert.ok(dependent, "Out-of-range peers must receive an implicit release");
+    assert.deepEqual(dependent.changesets, []);
+    assert.equal(dependent.type, "major");
+    assert.equal(dependent.oldVersion, "2.4.0");
+    assert.equal(dependent.newVersion, "3.0.0");
   } finally {
     rmSync(fixture, { recursive: true, force: true });
   }
 });
-
-for (const scenario of [
-  {
-    name: "0.x minor boundary",
-    current: "0.2.3",
-    next: "0.3.0",
-    dependentNext: "3.0.0",
-    prerelease: false,
-  },
-  {
-    name: "prerelease tuple boundary",
-    current: "1.2.3-rc.0",
-    next: "1.3.0-rc.1",
-    dependentNext: "3.0.0-rc.0",
-    prerelease: true,
-  },
-]) {
-  test(`workspace peers release unchanged dependents across the ${scenario.name}`, () => {
-    const fixture = createReleaseFixture();
-    try {
-      initializeGitFixture(fixture);
-      const dependencyPath = path.join(fixture, "packages", "a", "package.json");
-      writeJson(dependencyPath, { ...readJson(dependencyPath), version: scenario.current });
-      const dependentPath = path.join(fixture, "packages", "b", "package.json");
-      writeJson(dependentPath, {
-        ...readJson(dependentPath),
-        peerDependencies: { "@fixture/a": "workspace:^" },
-      });
-      if (scenario.prerelease) {
-        writeJson(path.join(fixture, ".changeset", "pre.json"), {
-          mode: "pre",
-          tag: "rc",
-          changesets: [],
-          initialVersions: { "@fixture/a": "1.2.2", "@fixture/b": "2.4.0" },
-        });
-      }
-      // Only A changes: B must be released solely because its peer range is exceeded.
-      writeChangeset(fixture, "a-minor", "minor", "Add an API to A.", ["a"]);
-      const output = path.join(fixture, "plan.json");
-      runCommand("pnpm", ["changeset", "status", "--output", output], fixture);
-      const { releases } = readJson(output);
-      assert.equal(releases.find(({ name }) => name === "@fixture/a").newVersion, scenario.next);
-      const dependent = releases.find(({ name }) => name === "@fixture/b");
-      assert.ok(dependent, "Out-of-range peers must receive an implicit release");
-      assert.deepEqual(dependent.changesets, []);
-      assert.equal(dependent.type, "major");
-      assert.equal(dependent.oldVersion, "2.4.0");
-      assert.equal(dependent.newVersion, scenario.dependentNext);
-    } finally {
-      rmSync(fixture, { recursive: true, force: true });
-    }
-  });
-}
 
 test("preview versions use each package release plan version", () => {
   assert.equal(
@@ -422,38 +357,6 @@ test("tag recovery includes only current-commit retries", () => {
   assert.deepEqual(releasesReadyForTags(existing, published, [published[0]], recoverableTags), []);
 });
 
-test("release candidate preparation versions only changed packages", () => {
-  const fixture = createReleaseFixture();
-  try {
-    initializeGitFixture(fixture);
-    writeChangeset(fixture, "a-fix", "patch", "Fix package A.", ["a"]);
-    runRcScript(fixture, "enter");
-    assertPackageVersion(fixture, "a", "1.0.3-rc.0");
-    assertPackageVersion(fixture, "b", "2.4.0");
-    assert.equal(assertPrereleaseState(fixture, "rc").length, 1);
-    assert.equal(spawnPrereleaseValidator(fixture).status, 0);
-
-    const missingChangeset = spawnRcScript(fixture, "next");
-    assert.notEqual(missingChangeset.status, 0);
-    assert.match(missingChangeset.stderr, /At least one changeset/);
-
-    writeChangeset(fixture, "b-feature", "minor", "Add package B support.", ["b"]);
-    runRcScript(fixture, "next");
-    assertPackageVersion(fixture, "a", "1.0.3-rc.0");
-    assertPackageVersion(fixture, "b", "2.5.0-rc.0");
-    assert.equal(assertPrereleaseState(fixture, "rc").length, 2);
-
-    runRcScript(fixture, "exit");
-    assertPackageVersion(fixture, "a", "1.0.3");
-    assertPackageVersion(fixture, "b", "2.5.0");
-    assert.equal(existsSync(path.join(fixture, ".changeset", "pre.json")), false);
-    assert.equal(assertStableReleaseState(fixture).length, 2);
-    assert.equal(spawnStableValidator(fixture).status, 0);
-  } finally {
-    rmSync(fixture, { recursive: true, force: true });
-  }
-});
-
 test("stable validation permits different package versions and rejects pending changesets", () => {
   const fixture = createReleaseFixture();
   try {
@@ -470,42 +373,6 @@ test("stable validation permits different package versions and rejects pending c
   } finally {
     rmSync(fixture, { recursive: true, force: true });
   }
-});
-
-test("manual RC publishing and OIDC setup remain explicit in the workflow", () => {
-  const workflow = readFileSync(
-    path.join(repositoryRoot, ".github", "workflows", "release.yml"),
-    "utf8",
-  );
-  const publishJob = workflow.slice(workflow.indexOf("\n  publish:"));
-  const prepareJob = workflow.slice(
-    workflow.indexOf("\n  prepare:"),
-    workflow.indexOf("\n  publish:"),
-  );
-  assert.ok(
-    prepareJob.indexOf("- name: Install dependencies") <
-      prepareJob.indexOf("- name: Validate preview release state"),
-  );
-  const installDependencies = publishJob.indexOf("- name: Install dependencies");
-  const publishPackages = publishJob.indexOf("- name: Publish packages");
-
-  assert.match(workflow, /RC publishing must run from staging/);
-  assert.match(workflow, /validate-release-train\.mjs --prerelease rc/);
-  assert.doesNotMatch(workflow, /v1\.0\.0-rc\.\*/);
-  assert.doesNotMatch(workflow, /Require current release branch\n\s+if:/);
-  assert.notEqual(installDependencies, -1);
-  assert.notEqual(publishPackages, -1);
-  assert.ok(installDependencies < publishPackages);
-  assert.match(publishJob, /- name: Install dependencies\n\s+run: pnpm install --frozen-lockfile/);
-});
-
-test("RC notifications retain their dedicated npm presentation", () => {
-  assert.deepEqual(releasePresentation("rc"), {
-    title: "Release candidate packages published",
-    npmTag: "rc",
-    color: 0x8b5cf6,
-    description: "Release candidate packages",
-  });
 });
 
 function createReleaseFixture() {
@@ -586,39 +453,6 @@ function initializeGitFixture(root) {
 function runCommand(command, args, root) {
   const result = spawnSync(command, args, { cwd: root, encoding: "utf8" });
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
-}
-
-function runRcScript(root, action) {
-  const result = spawnRcScript(root, action);
-  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
-}
-
-function spawnRcScript(root, action) {
-  return spawnSync(process.execPath, [rcScript, action], {
-    cwd: root,
-    encoding: "utf8",
-    env: { ...process.env, CI: "true" },
-  });
-}
-
-function spawnPrereleaseValidator(root) {
-  return spawnSync(process.execPath, [validatorScript, "--prerelease", "rc"], {
-    cwd: root,
-    encoding: "utf8",
-    env: { ...process.env, CI: "true", GITHUB_BASE_REF: "" },
-  });
-}
-
-function spawnStableValidator(root) {
-  return spawnSync(process.execPath, [validatorScript, "--stable"], {
-    cwd: root,
-    encoding: "utf8",
-    env: { ...process.env, CI: "true", GITHUB_BASE_REF: "" },
-  });
-}
-
-function assertPackageVersion(root, packageDir, expected) {
-  assert.equal(readJson(path.join(root, "packages", packageDir, "package.json")).version, expected);
 }
 
 function readJson(filePath) {

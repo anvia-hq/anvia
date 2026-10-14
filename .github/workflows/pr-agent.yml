@@ -23,4 +23,5 @@ jobs:
           OPENAI_KEY: ${{ secrets.DEVSCALE_API_KEY }}
           OPENAI.API_BASE: https://gateway.devscale.id/v1
           config.model: openai/deepseek-v4.1-flash
+          config.custom_model_max_tokens: 128000
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

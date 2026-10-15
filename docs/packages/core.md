@@ -937,8 +937,52 @@ const { runId, output } = await pipeline.run({
 });
 ```
 
+### Decision and route stages
+
+`.decide()` maps the current value to decision `state` and returns the typed `DecisionResult` from
+[`decide()`](./decision.md). `.route()` asks one `choice` question and runs only the branch
+Pipeline keyed by the selected option:
+
+```ts
+import { check, choice } from "@anvia/core/decision";
+
+const triage = new Pipeline({ id: "triage", inputSchema: z.string() })
+  .decide({
+    id: "assess",
+    model: decisionModel,
+    state: ({ input }) => ({ message: input }),
+    questions: { urgent: check({ instructions: "Is this urgent?" }) },
+  })
+  .step({ id: "flag", run: ({ input }) => input.answers.urgent.probability >= 0.8 });
+
+const router = new Pipeline({ id: "support-router", inputSchema: z.string() }).route({
+  id: "department",
+  model: decisionModel,
+  state: ({ input }) => input,
+  question: choice({
+    instructions: "Which department should handle this?",
+    options: { billing: "Payments and refunds", technical: "Bugs and outages" },
+  }),
+  branches: { billing: billingPipeline, technical: technicalPipeline },
+});
+
+const { output: routed } = await router.run({ input: "I was charged twice." });
+if (routed.branch === "billing") routed.output; // typed as billingPipeline's output
+routed.answer.confidence; // provider-reported confidence, when available
+routed.usage; // routing decision usage, when reported
+```
+
+Route questions are validated, and branches must match the question options exactly; missing or
+extra branches throw when the stage is added. Both stages accept `retries` and `providerOptions`
+and receive the run's `abortSignal`. Graphs use the `decision` and `route` stage kinds. Route
+branches are `branch` nodes with `branchOf: "route"` whose incoming edges are labelled with the
+option key; parallel branches carry `branchOf: "parallel"`. Only the selected branch emits stage
+events.
+
+### Observability
+
 Pipelines use the same named observability configuration as Agents. Pipeline observers receive the
-root run and every composed, parallel, Agent, extraction, and custom stage. A primary stage trace is
+root run and every composed, parallel, route, Agent, extraction, decision, and custom stage. A primary stage trace is
 propagated into an Agent stage so its generations and tools become children of that stage. This
 requires the Pipeline and Agent `primaryTrace` names to match. When they differ, Anvia leaves the
 Agent trace unchanged without raising an error:

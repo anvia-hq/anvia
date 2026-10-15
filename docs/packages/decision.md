@@ -149,7 +149,8 @@ Providers can throw `DecisionRefusalError` when they decline questions. It carri
 Invalid caller input throws `TypeError` or `RangeError`.
 
 The low-level `model.decision()` method performs one invocation; use `decide()` to get the core
-validation and retry layer. Decision operations can be used inside existing `Pipeline.step()`,
+validation and retry layer. Pipelines provide `.decide()` and `.route()` stages
+([Pipelines](./core.md#decision-and-route-stages)). Decision operations can also be used inside
 agent hooks, tools, or custom eval metrics without new integration methods.
 
 ## Public exports

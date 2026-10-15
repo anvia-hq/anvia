@@ -51,6 +51,46 @@ const ticketed = pipeline.extract({
 behave like the single extraction call. The cookbook's extractor-pipeline
 example shows a full flow.
 
+## Decision and route stages
+
+Use a decision model (for example `@anvia/jev`) when a step needs a bounded
+judgment — classify, score, or check — rather than generated text. `.decide()`
+maps the previous output to decision `state` and returns the typed
+`DecisionResult`:
+
+```ts
+const assessed = pipeline.decide({
+  id: "assess",
+  model: decisionModel,
+  state: ({ input }) => ({ message: input.body }),
+  questions: {
+    urgent: check({ instructions: "Is this urgent?" }),
+    severity: score({ instructions: "How severe?", rubric: ["low", "medium", "high"] }),
+  },
+});
+// next stage reads input.answers.urgent.probability
+```
+
+`.route()` asks one `choice` question and runs only the matching branch. Every
+option needs exactly one branch pipeline; the output is `{ branch, answer, usage?, output }`,
+discriminated by `branch`:
+
+```ts
+const triaged = pipeline.route({
+  id: "department",
+  model: decisionModel,
+  state: ({ input }) => input.body,
+  question: choice({
+    instructions: "Which department should handle this?",
+    options: { billing: "Payments and refunds", technical: "Bugs and outages" },
+  }),
+  branches: { billing: billingFlow, technical: technicalFlow },
+});
+```
+
+Both accept `retries` and `providerOptions` like `decide()`. Prefer a route over
+an agent that "decides what to do next" when the options are known upfront.
+
 ## Observing runs
 
 `run` / `runBatch` accept an `observer` (`stage_started` / `stage_completed` /

@@ -156,7 +156,10 @@ export function pipelineStageLog(
 }
 
 function stageCategory(node: PipelineGraphNode): StudioPipelineLogAppendInput["category"] {
-  if (node.kind === "parallel" || node.kind === "branch") {
+  if (node.kind === "branch") {
+    return node.branchOf === "route" ? "decision" : "parallel";
+  }
+  if (node.kind === "parallel") {
     return "parallel";
   }
   if (node.kind === "agent") {
@@ -164,6 +167,9 @@ function stageCategory(node: PipelineGraphNode): StudioPipelineLogAppendInput["c
   }
   if (node.kind === "extractor") {
     return "extractor";
+  }
+  if (node.kind === "decision" || node.kind === "route") {
+    return "decision";
   }
   return "stage";
 }
@@ -178,6 +184,7 @@ function nodeMetadata(node: PipelineGraphNode): JsonObject {
   if (node.agentId !== undefined) metadata.agentId = node.agentId;
   if (node.pipelineId !== undefined) metadata.pipelineId = node.pipelineId;
   if (node.branchKey !== undefined) metadata.branchKey = node.branchKey;
+  if (node.branchOf !== undefined) metadata.branchOf = node.branchOf;
   return metadata;
 }
 

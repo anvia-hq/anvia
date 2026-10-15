@@ -72,25 +72,37 @@ export function appendComposedGraph(
   return appendChildGraph(state, boundary.path, child);
 }
 
-export function appendParallelBranch(
+/** Append one branch per child graph under a parallel or route node, joining their terminals. */
+export function appendBranches(
   state: PipelineState,
-  parallel: PipelineGraphNode,
-  branchKey: string,
-  child: PipelineGraph,
-): { state: PipelineState; node: PipelineGraphNode; terminalPaths: PipelineNodePath[] } {
-  const id = validateStageId(branchKey);
-  const path = [...parallel.path, id];
-  const node = graphNode(id, path, "branch", id, { branchKey: id, pipelineId: child.id });
-  const withBranch = appendNode(state, node, [parallel.path], state.terminalPaths);
-  const withChild = appendChildGraph(withBranch, node.path, child);
-  return { state: withChild, node, terminalPaths: withChild.terminalPaths };
-}
-
-export function withTerminalPaths(
-  state: PipelineState,
-  terminalPaths: PipelineNodePath[],
-): PipelineState {
-  return { ...state, terminalPaths };
+  parent: PipelineGraphNode,
+  branches: ReadonlyArray<readonly [string, PipelineGraph]>,
+  branchOf: "parallel" | "route",
+): { state: PipelineState; nodes: Map<string, PipelineGraphNode> } {
+  let nextState = state;
+  const nodes = new Map<string, PipelineGraphNode>();
+  const terminalPaths: PipelineNodePath[] = [];
+  for (const [branchKey, child] of branches) {
+    const id = validateStageId(branchKey);
+    const node = graphNode(id, [...parent.path, id], "branch", id, {
+      branchKey: id,
+      branchOf,
+      pipelineId: child.id,
+    });
+    const edgeLabel = branchOf === "route" ? id : undefined;
+    const withBranch = appendNode(
+      nextState,
+      node,
+      [parent.path],
+      nextState.terminalPaths,
+      undefined,
+      edgeLabel,
+    );
+    nextState = appendChildGraph(withBranch, node.path, child);
+    nodes.set(id, node);
+    terminalPaths.push(...nextState.terminalPaths);
+  }
+  return { state: { ...nextState, terminalPaths }, nodes };
 }
 
 export function withOutputNode(state: PipelineState): PipelineGraph {
@@ -175,12 +187,17 @@ function appendNode(
   sourcePaths: PipelineNodePath[],
   terminalPaths: PipelineNodePath[],
   stageId?: string,
+  edgeLabel?: string,
 ): PipelineState {
-  const edges = sourcePaths.map((source, index) => ({
-    id: `edge_${state.nextEdgeIndex + index}`,
-    source: [...source],
-    target: [...node.path],
-  }));
+  const edges = sourcePaths.map((source, index) => {
+    const edge: PipelineGraphEdge = {
+      id: `edge_${state.nextEdgeIndex + index}`,
+      source: [...source],
+      target: [...node.path],
+    };
+    if (edgeLabel !== undefined) edge.label = edgeLabel;
+    return edge;
+  });
   const stageIds = new Set(state.stageIds);
   if (stageId !== undefined) stageIds.add(stageId);
   return {
@@ -207,6 +224,7 @@ function graphNode(
     agentName?: string | undefined;
     pipelineId?: string | undefined;
     branchKey?: string | undefined;
+    branchOf?: "parallel" | "route" | undefined;
   } = {},
 ): PipelineGraphNode {
   const node: PipelineGraphNode = { id, path: [...path], kind, label };
@@ -216,6 +234,7 @@ function graphNode(
   if (options.agentName !== undefined) node.agentName = options.agentName;
   if (options.pipelineId !== undefined) node.pipelineId = options.pipelineId;
   if (options.branchKey !== undefined) node.branchKey = options.branchKey;
+  if (options.branchOf !== undefined) node.branchOf = options.branchOf;
   return node;
 }
 

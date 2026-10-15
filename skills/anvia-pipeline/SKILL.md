@@ -1,6 +1,6 @@
 ---
 name: anvia-pipeline
-description: Build deterministic multi-step work with Anvia Pipelines — steps, composition, parallel branches, batch runs, agent and extractor stages.
+description: Build deterministic multi-step work with Anvia Pipelines — steps, composition, parallel branches, decision routing, batch runs, agent, extractor, and decision stages.
 ---
 
 # Anvia Pipeline Skill

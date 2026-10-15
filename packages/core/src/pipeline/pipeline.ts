@@ -2,20 +2,36 @@ import { z } from "zod";
 import type { Agent } from "../agent/agent";
 import { AgentRunBlockedError } from "../agent/errors";
 import type { AgentInput, AgentRunOptions, AgentRunSettings } from "../agent/run-types";
-import type { CompletionModel, CompletionModelControlsOf, JsonObject } from "../completion";
+import type {
+  CompletionModel,
+  CompletionModelControlsOf,
+  JsonObject,
+  JsonValue,
+} from "../completion";
+import { decide as decideQuestions } from "../decision/decide";
+import type {
+  ChoiceQuestion,
+  DecideOptions,
+  DecisionModel,
+  DecisionOptions,
+  DecisionQuestions,
+  DecisionRawResponseOf,
+  DecisionResult,
+} from "../decision/types";
+import { assertQuestion } from "../decision/validation";
 import { type ExtractOptions, extract as extractData } from "../extractor";
 import { throwIfAborted } from "../internal/abort";
 import { mapWithConcurrency } from "../internal/concurrency";
 import type { AgentTraceOptions } from "../observability";
+import type { RetrySetting } from "../retry";
 import { PipelineAgentSuspensionError } from "./errors";
 import {
+  appendBranches,
   appendComposedGraph,
-  appendParallelBranch,
   appendStageNode,
   cloneGraph,
   initialPipelineState,
   withOutputNode,
-  withTerminalPaths,
 } from "./graph";
 import { snapshotPipelineObservability, startPipelineRunObservers } from "./observability";
 import {
@@ -41,6 +57,7 @@ import type {
   PipelineStageMetadata,
   PipelineState,
   PipelineTraceInfo,
+  RouteOutput,
 } from "./types";
 
 const internalPipelineOptions = Symbol("internal-pipeline-options");
@@ -89,6 +106,34 @@ export type PipelineExtractOptions<
   Omit<ExtractOptions<Extracted, Model>, "text" | "abortSignal"> & {
     text(context: PipelineStageContext<Input>): string | Promise<string>;
   };
+
+export type PipelineDecideOptions<
+  Input,
+  Questions extends DecisionQuestions,
+  Model extends DecisionModel,
+> = PipelineStageMetadata &
+  Omit<DecideOptions<Questions, Model>, "state" | "abortSignal"> & {
+    state(context: PipelineStageContext<Input>): JsonValue | Promise<JsonValue>;
+  };
+
+/** One Pipeline per option of the route question, keyed by option label. */
+export type PipelineRouteBranches<Input, Options extends DecisionOptions> = {
+  readonly [Label in Extract<keyof Options, string>]: Pipeline<Input, unknown>;
+};
+
+export type PipelineRouteOptions<
+  Input,
+  Options extends DecisionOptions,
+  Model extends DecisionModel,
+  Branches extends PipelineRouteBranches<Input, Options>,
+> = PipelineStageMetadata & {
+  model: Model;
+  question: ChoiceQuestion<Options>;
+  state(context: PipelineStageContext<Input>): JsonValue | Promise<JsonValue>;
+  branches: Branches & { readonly [Extra in Exclude<keyof Branches, keyof Options>]: never };
+  retries?: RetrySetting | undefined;
+  providerOptions?: JsonObject | undefined;
+};
 
 type InternalPipelineOptions<Input, Output> = {
   [internalPipelineOptions]: {
@@ -174,23 +219,19 @@ export class Pipeline<Input, Output = Input> {
   parallel<Branches extends Record<string, Pipeline<Awaited<Output>, unknown>>>(
     options: PipelineParallelOptions<Awaited<Output>, Branches>,
   ): Pipeline<Input, ParallelOutput<Branches>> {
-    const branchEntries = normalizeParallelBranches(options.branches);
+    const branchEntries = normalizeBranches(options.branches, "parallel");
     if (branchEntries.length === 0) {
       throw new TypeError("Pipeline parallel branches must not be empty.");
     }
     const parallel = appendStageNode(this.state, "parallel", options, {
       defaultLabel: `${branchEntries.length} parallel branches`,
     });
-    let nextState = parallel.state;
-    const branchNodes = new Map<string, PipelineGraphNode>();
-    const terminalPaths: PipelineNodePath[] = [];
-    for (const [key, branch] of branchEntries) {
-      const appended = appendParallelBranch(nextState, parallel.node, key, branch.graph());
-      nextState = appended.state;
-      branchNodes.set(key, appended.node);
-      terminalPaths.push(...appended.terminalPaths);
-    }
-    nextState = withTerminalPaths(nextState, terminalPaths);
+    const { state: nextState, nodes: branchNodes } = appendBranches(
+      parallel.state,
+      parallel.node,
+      branchEntries.map(([key, branch]) => [key, branch.graph()] as const),
+      "parallel",
+    );
 
     return this.derive<ParallelOutput<Branches>>(async (input, context, pathPrefix) => {
       const value = await this.execute(input, context, pathPrefix);
@@ -289,6 +330,87 @@ export class Pipeline<Input, Output = Input> {
         return result.output;
       });
     }, next.state);
+  }
+
+  /** Answer typed decision questions about the current value. */
+  decide<const Questions extends DecisionQuestions, Model extends DecisionModel>(
+    options: PipelineDecideOptions<Awaited<Output>, Questions, Model>,
+  ): Pipeline<Input, DecisionResult<Questions, DecisionRawResponseOf<Model>>> {
+    const next = appendStageNode(this.state, "decision", options);
+    return this.derive<DecisionResult<Questions, DecisionRawResponseOf<Model>>>(
+      async (input, context, pathPrefix) => {
+        const value = await this.execute(input, context, pathPrefix);
+        const path = [...pathPrefix, next.node.id];
+        return runNode(context, next.node, path, value, async () => {
+          const state = await options.state(stageContext(value, context));
+          return decideQuestions({
+            model: options.model,
+            state,
+            questions: options.questions,
+            retries: options.retries,
+            providerOptions: options.providerOptions,
+            abortSignal: context.abortSignal,
+          });
+        });
+      },
+      next.state,
+    );
+  }
+
+  /** Choose one branch with a choice decision, then run only that branch. */
+  route<
+    const Options extends DecisionOptions,
+    Model extends DecisionModel,
+    Branches extends PipelineRouteBranches<Awaited<Output>, Options>,
+  >(
+    options: PipelineRouteOptions<Awaited<Output>, Options, Model, Branches>,
+  ): Pipeline<Input, RouteOutput<Branches>> {
+    assertQuestion(options.question);
+    if (options.question.type !== "choice") {
+      throw new TypeError("Pipeline route question must be a choice question.");
+    }
+    const branchEntries = normalizeBranches(
+      options.branches as Readonly<Record<string, Pipeline<Awaited<Output>, unknown>>>,
+      "route",
+    );
+    assertRouteBranchesMatchOptions(options.id, branchEntries, options.question.options);
+    const route = appendStageNode(this.state, "route", options);
+    const { state: nextState, nodes: branchNodes } = appendBranches(
+      route.state,
+      route.node,
+      branchEntries.map(([key, branch]) => [key, branch.graph()] as const),
+      "route",
+    );
+    const branchPipelines = new Map(branchEntries);
+
+    return this.derive<RouteOutput<Branches>>(async (input, context, pathPrefix) => {
+      const value = await this.execute(input, context, pathPrefix);
+      const routePath = [...pathPrefix, route.node.id];
+      return runNode(context, route.node, routePath, value, async () => {
+        const state = await options.state(stageContext(value, context));
+        const result = await decideQuestions({
+          model: options.model,
+          state,
+          questions: { route: options.question },
+          retries: options.retries,
+          providerOptions: options.providerOptions,
+          abortSignal: context.abortSignal,
+        });
+        const answer = result.answers.route;
+        // decide() validates the choice against the question options, which match the branches.
+        const node = branchNodes.get(answer.choice) as PipelineGraphNode;
+        const branch = branchPipelines.get(answer.choice) as Pipeline<Awaited<Output>, unknown>;
+        const path = [...routePath, node.id];
+        const output = await runNode(context, node, path, value, () =>
+          branch.execute(value, context, path),
+        );
+        return (
+          result.usage === undefined
+            ? { branch: answer.choice, answer, output }
+            : { branch: answer.choice, answer, usage: result.usage, output }
+        ) as RouteOutput<Branches>;
+      });
+    }, nextState);
   }
 
   async run(options: PipelineRunOptions<Input>): Promise<PipelineRunResult<Output>> {
@@ -448,8 +570,9 @@ function normalizeRunId(runId: string): string {
   return normalized;
 }
 
-function normalizeParallelBranches<Branch>(
+function normalizeBranches<Branch>(
   branches: Readonly<Record<string, Branch>>,
+  kind: "parallel" | "route",
 ): Array<readonly [string, Branch]> {
   const entries: Array<readonly [string, Branch]> = [];
   const ids = new Set<string>();
@@ -457,16 +580,36 @@ function normalizeParallelBranches<Branch>(
     const pipeline = branches[key] as Branch;
     const id = key.trim();
     if (id.length === 0) {
-      throw new TypeError("Pipeline parallel branch id must be a non-empty string.");
+      throw new TypeError(`Pipeline ${kind} branch id must be a non-empty string.`);
     }
     if (ids.has(id)) {
-      throw new TypeError(`Pipeline parallel branch id "${id}" is already registered.`);
+      throw new TypeError(`Pipeline ${kind} branch id "${id}" is already registered.`);
     }
     ids.add(id);
     if (id !== key) {
-      throw new TypeError("Pipeline parallel branch ids must not contain surrounding whitespace.");
+      throw new TypeError(`Pipeline ${kind} branch ids must not contain surrounding whitespace.`);
     }
     entries.push([id, pipeline]);
   }
   return entries;
+}
+
+function assertRouteBranchesMatchOptions(
+  routeId: string,
+  branchEntries: ReadonlyArray<readonly [string, unknown]>,
+  options: DecisionOptions,
+): void {
+  const branchKeys = new Set(branchEntries.map(([key]) => key));
+  for (const label of Object.keys(options)) {
+    if (!branchKeys.has(label)) {
+      throw new TypeError(`Pipeline route "${routeId}" is missing a branch for option "${label}".`);
+    }
+  }
+  for (const key of branchKeys) {
+    if (!Object.hasOwn(options, key)) {
+      throw new TypeError(
+        `Pipeline route "${routeId}" branch "${key}" is not an option of its question.`,
+      );
+    }
+  }
 }

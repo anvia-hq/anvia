@@ -32,4 +32,5 @@ export type {
   PipelineStageStartArgs,
   PipelineTraceInfo,
   PipelineTraceOptions,
+  RouteOutput,
 } from "./types";

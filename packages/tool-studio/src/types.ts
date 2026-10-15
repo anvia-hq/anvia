@@ -1156,6 +1156,7 @@ export type StudioPipelineLogCategory =
   | "parallel"
   | "agent"
   | "extractor"
+  | "decision"
   | "api";
 
 export type StudioPipelineLogEntry = {

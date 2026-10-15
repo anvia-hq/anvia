@@ -18,6 +18,8 @@ const { output: summary } = await ticketSummary.run({ input: rawTicket });
   Prefer many small named steps over one big closure.
 - `.compose({ id, pipeline })` — nest a whole pipeline as a stage. Build
   parse/score/format sub-pipelines independently, then compose them.
+- `.route({ id, model, question, state, branches })` — run one sub-pipeline
+  picked by a decision model (see `references/agents-extract.md`).
 - `.parallel({ id, branches })` — fan out over named sub-pipelines, then merge:
 
 ```ts

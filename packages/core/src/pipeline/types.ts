@@ -1,5 +1,6 @@
 import type { z } from "zod";
-import type { JsonObject } from "../completion";
+import type { JsonObject, Usage } from "../completion";
+import type { ChoiceAnswer } from "../decision/types";
 import type {
   AgentObserverErrorPolicy,
   AgentObserverTraceInfo,
@@ -48,6 +49,8 @@ export type PipelineStageKind =
   | "branch"
   | "agent"
   | "extractor"
+  | "decision"
+  | "route"
   | "output";
 
 export type PipelineNodePath = readonly string[];
@@ -63,6 +66,8 @@ export type PipelineGraphNode = {
   agentName?: string | undefined;
   pipelineId?: string | undefined;
   branchKey?: string | undefined;
+  /** Kind of stage that owns a `branch` node. */
+  branchOf?: "parallel" | "route" | undefined;
 };
 
 export type PipelineGraphEdge = {
@@ -222,6 +227,17 @@ export type PipelineOutput<Value> =
 export type ParallelOutput<Branches extends Record<string, unknown>> = {
   [Key in keyof Branches]: PipelineOutput<Branches[Key]>;
 };
+
+/** Output of a route stage, discriminated by the selected branch. */
+export type RouteOutput<Branches extends Record<string, unknown>> = {
+  [Key in Extract<keyof Branches, string>]: {
+    branch: Key;
+    answer: ChoiceAnswer<Extract<keyof Branches, string>>;
+    /** Usage of the routing decision only; omitted when the provider does not report it. */
+    usage?: Usage | undefined;
+    output: PipelineOutput<Branches[Key]>;
+  };
+}[Extract<keyof Branches, string>];
 
 export type PipelineRunContext = {
   runId: string;

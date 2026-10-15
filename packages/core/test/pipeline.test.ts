@@ -1,5 +1,17 @@
-import { describe, expect, expectTypeOf, it } from "vitest";
+import { describe, expect, expectTypeOf, it, vi } from "vitest";
 import { z } from "zod";
+import {
+  type ChoiceAnswer,
+  check,
+  choice,
+  type DecisionAnswers,
+  type DecisionModel,
+  DecisionProviderOutputError,
+  type DecisionQuestions,
+  type DecisionRequest,
+  type DecisionResult,
+  score,
+} from "../src/decision";
 import type { AgentRunStartArgs } from "../src/observability";
 import type { PipelineObserver } from "../src/pipeline";
 import * as publicPipeline from "../src/pipeline";
@@ -563,6 +575,252 @@ describe("Pipeline", () => {
     });
   });
 
+  it("maps Pipeline values explicitly into decision state", async () => {
+    const model = fakeDecisionModel({
+      urgent: { type: "check", probability: 0.9 },
+      severity: { type: "score", score: 2, rubric: ["low", "medium", "high"] },
+    });
+    const controller = new AbortController();
+    const pipeline = new Pipeline({ id: "decision", inputSchema: z.string() }).decide({
+      id: "assess",
+      model,
+      state: ({ input }) => ({ message: input }),
+      questions: {
+        urgent: check({ instructions: "Is this urgent?" }),
+        severity: score({ instructions: "How severe?", rubric: ["low", "medium", "high"] }),
+      },
+      providerOptions: { tier: "fast" },
+    });
+
+    const result = await pipeline.run({
+      input: "Checkout is down",
+      abortSignal: controller.signal,
+    });
+
+    expectTypeOf(result.output.answers.urgent.probability).toEqualTypeOf<number>();
+    expectTypeOf(result.output.answers.severity.rubric).toEqualTypeOf<
+      readonly ["low", "medium", "high"]
+    >();
+    expect(result.output.answers.urgent.probability).toBe(0.9);
+    expect(result.output.rawResponse).toEqual({ requestId: "decision" });
+    expect(model.requests[0]?.request).toMatchObject({
+      state: { message: "Checkout is down" },
+      providerOptions: { tier: "fast" },
+    });
+    expect(model.requests[0]?.abortSignal).toBe(controller.signal);
+    expect(pipeline.graph().nodes.find((node) => node.id === "assess")?.kind).toBe("decision");
+  });
+
+  it("routes to the single chosen branch and reports a discriminated output", async () => {
+    const billingRun = vi.fn(({ input }: { input: string }) => `billing:${input}`);
+    const technicalRun = vi.fn(({ input }: { input: string }) => input.length);
+    const billing = new Pipeline({ id: "billing", inputSchema: z.string() }).step({
+      id: "refund",
+      run: billingRun,
+    });
+    const technical = new Pipeline({ id: "technical", inputSchema: z.string() }).step({
+      id: "diagnose",
+      run: technicalRun,
+    });
+    const usage: Usage = { ...Usage.empty(), inputTokens: 12, outputTokens: 3, totalTokens: 15 };
+    const model = fakeDecisionModel(
+      { route: { type: "choice", choice: "billing", confidence: 0.8 } },
+      { usage, failures: [Object.assign(new Error("Unavailable"), { status: 503 })] },
+    );
+    const pipeline = new Pipeline({ id: "triage", inputSchema: z.string() }).route({
+      id: "department",
+      model,
+      state: ({ input }) => input,
+      question: choice({
+        instructions: "Which department?",
+        options: { billing: "Payments", technical: "Bugs" },
+      }),
+      branches: { billing, technical },
+      retries: { maxAttempts: 2, initialDelayMs: 0, maxDelayMs: 0 },
+      providerOptions: { tier: "fast" },
+    });
+    const controller = new AbortController();
+    const paths: string[][] = [];
+
+    const result = await pipeline.run({
+      input: "refund please",
+      abortSignal: controller.signal,
+      observer: {
+        onEvent(event) {
+          if (event.type === "stage_started") paths.push([...event.path]);
+        },
+      },
+    });
+
+    type Answer = ChoiceAnswer<"billing" | "technical">;
+    expectTypeOf(result.output).toEqualTypeOf<
+      | { branch: "billing"; answer: Answer; usage?: Usage | undefined; output: string }
+      | { branch: "technical"; answer: Answer; usage?: Usage | undefined; output: number }
+    >();
+    expect(result.output).toEqual({
+      branch: "billing",
+      answer: { type: "choice", choice: "billing", confidence: 0.8 },
+      usage,
+      output: "billing:refund please",
+    });
+    expect(technicalRun).not.toHaveBeenCalled();
+    expect(paths).toEqual([
+      ["department"],
+      ["department", "billing"],
+      ["department", "billing", "refund"],
+    ]);
+    expect(model.requests).toHaveLength(2);
+    expect(model.requests[1]?.request).toMatchObject({
+      state: "refund please",
+      providerOptions: { tier: "fast" },
+    });
+    expect(model.requests[1]?.abortSignal).toBe(controller.signal);
+  });
+
+  it("omits route usage when the provider does not report it", async () => {
+    const branch = new Pipeline({ id: "branch", inputSchema: z.string() });
+    const pipeline = new Pipeline({ id: "route-usage", inputSchema: z.string() }).route({
+      id: "pick",
+      model: fakeDecisionModel({ route: { type: "choice", choice: "left" } }),
+      state: ({ input }) => input,
+      question: choice({ instructions: "Pick", options: { left: null, right: null } }),
+      branches: { left: branch, right: branch },
+    });
+
+    const result = await pipeline.run({ input: "value" });
+
+    expect(result.output).not.toHaveProperty("usage");
+  });
+
+  it("fails both the branch and the route when the chosen branch fails", async () => {
+    const failing = new Pipeline({ id: "failing", inputSchema: z.string() }).step({
+      id: "explode",
+      run: () => {
+        throw new Error("branch failed");
+      },
+    });
+    const pipeline = new Pipeline({ id: "route-branch-failure", inputSchema: z.string() }).route({
+      id: "pick",
+      model: fakeDecisionModel({ route: { type: "choice", choice: "left" } }),
+      state: ({ input }) => input,
+      question: choice({ instructions: "Pick", options: { left: null, right: null } }),
+      branches: { left: failing, right: failing },
+    });
+    const failed: string[] = [];
+
+    await expect(
+      pipeline.run({
+        input: "value",
+        observer: {
+          onEvent(event) {
+            if (event.type === "stage_failed") failed.push(event.path.join("/"));
+          },
+        },
+      }),
+    ).rejects.toThrow("branch failed");
+    expect(failed).toEqual(["pick/left/explode", "pick/left", "pick"]);
+  });
+
+  it("produces a route graph with labelled branch edges and joined terminals", () => {
+    const branch = new Pipeline({ id: "branch", inputSchema: z.string() }).step({
+      id: "handle",
+      run: ({ input }) => input,
+    });
+    const pipeline = new Pipeline({ id: "route-graph", inputSchema: z.string() })
+      .route({
+        id: "pick",
+        model: fakeDecisionModel({}),
+        state: ({ input }) => input,
+        question: choice({ instructions: "Pick", options: { left: null, right: null } }),
+        branches: { left: branch, right: branch },
+      })
+      .step({ id: "after", run: ({ input }) => input.branch });
+    const graph = pipeline.graph();
+
+    expect(
+      graph.nodes.map((node) => [node.path.join("/"), node.kind, node.branchOf ?? null]),
+    ).toEqual([
+      ["$input", "input", null],
+      ["pick", "route", null],
+      ["pick/left", "branch", "route"],
+      ["pick/left/handle", "step", null],
+      ["pick/right", "branch", "route"],
+      ["pick/right/handle", "step", null],
+      ["after", "step", null],
+      ["$output", "output", null],
+    ]);
+    expect(graph.edges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ source: ["pick"], target: ["pick", "left"], label: "left" }),
+        expect.objectContaining({ source: ["pick"], target: ["pick", "right"], label: "right" }),
+        expect.objectContaining({ source: ["pick", "left", "handle"], target: ["after"] }),
+        expect.objectContaining({ source: ["pick", "right", "handle"], target: ["after"] }),
+      ]),
+    );
+  });
+
+  it("requires route branches to match the choice options exactly", () => {
+    const branch = new Pipeline({ id: "branch", inputSchema: z.string() });
+    const pipeline = new Pipeline({ id: "route-validation", inputSchema: z.string() });
+    const question = choice({ instructions: "Pick", options: { left: null, right: null } });
+    const base = { id: "pick", model: fakeDecisionModel({}), state: () => "value" };
+
+    expect(() =>
+      // @ts-expect-error - every option requires a branch.
+      pipeline.route({ ...base, question, branches: { left: branch } }),
+    ).toThrow('Pipeline route "pick" is missing a branch for option "right"');
+    expect(() =>
+      pipeline.route({
+        ...base,
+        question,
+        // @ts-expect-error - branches must be options of the question.
+        branches: { left: branch, right: branch, extra: branch },
+      }),
+    ).toThrow('Pipeline route "pick" branch "extra" is not an option of its question');
+    expect(() =>
+      pipeline.route({
+        ...base,
+        // @ts-expect-error - route questions must be choices.
+        question: check({ instructions: "Yes?" }),
+        branches: {},
+      }),
+    ).toThrow("Pipeline route question must be a choice question");
+    expect(() =>
+      pipeline.route({
+        ...base,
+        question: { type: "choice", instructions: "Pick", options: {} },
+        branches: {},
+      }),
+    ).toThrow(TypeError);
+    expect(() =>
+      pipeline.route({ ...base, question, branches: { left: branch, right: branch } }),
+    ).not.toThrow();
+  });
+
+  it("fails the route stage when the decision is invalid", async () => {
+    const branch = new Pipeline({ id: "branch", inputSchema: z.string() });
+    const pipeline = new Pipeline({ id: "route-invalid", inputSchema: z.string() }).route({
+      id: "pick",
+      model: fakeDecisionModel({ route: { type: "choice", choice: "unknown" } }),
+      state: ({ input }) => input,
+      question: choice({ instructions: "Pick", options: { left: null, right: null } }),
+      branches: { left: branch, right: branch },
+    });
+    const failed: string[] = [];
+
+    await expect(
+      pipeline.run({
+        input: "value",
+        observer: {
+          onEvent(event) {
+            if (event.type === "stage_failed") failed.push(event.path.join("/"));
+          },
+        },
+      }),
+    ).rejects.toBeInstanceOf(DecisionProviderOutputError);
+    expect(failed).toEqual(["pick"]);
+  });
+
   it("produces hierarchical graphs and events for composed and parallel children", async () => {
     const child = new Pipeline({ id: "child", inputSchema: z.string() }).step({
       id: "shared",
@@ -605,6 +863,12 @@ describe("Pipeline", () => {
       ["fanout", "right", "shared"],
       ["$output"],
     ]);
+    expect(
+      pipeline
+        .graph()
+        .nodes.filter((node) => node.kind === "branch")
+        .map((node) => node.branchOf),
+    ).toEqual(["parallel", "parallel"]);
     expect(pipeline.graph().edges).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ source: ["$input"], target: ["nested"] }),
@@ -737,6 +1001,43 @@ describe("Pipeline", () => {
 
 function response(choice: CompletionResponse["choice"]): CompletionResponse {
   return { choice, usage: Usage.empty(), rawResponse: {} };
+}
+
+function fakeDecisionModel(
+  answers: Record<string, unknown>,
+  options: { usage?: Usage; failures?: unknown[] } = {},
+): DecisionModel & {
+  requests: Array<{ request: DecisionRequest; abortSignal: AbortSignal | undefined }>;
+} {
+  const requests: Array<{ request: DecisionRequest; abortSignal: AbortSignal | undefined }> = [];
+  const failures = [...(options.failures ?? [])];
+  return {
+    provider: "test",
+    modelId: "decision-test",
+    capabilities: {
+      questionSupport: {
+        choice: "native",
+        "multi-label": "native",
+        score: "native",
+        check: "native",
+      },
+      mixedQuestions: true,
+    },
+    requests,
+    async decision<Q extends DecisionQuestions>(
+      request: DecisionRequest<Q>,
+      callOptions?: { abortSignal?: AbortSignal | undefined },
+    ) {
+      requests.push({ request, abortSignal: callOptions?.abortSignal });
+      if (failures.length > 0) throw failures.shift();
+      const result: DecisionResult<Q> = {
+        answers: answers as DecisionAnswers<Q>,
+        rawResponse: { requestId: "decision" },
+      };
+      if (options.usage !== undefined) return { ...result, usage: options.usage };
+      return result;
+    },
+  };
 }
 
 function delay(milliseconds: number): Promise<void> {

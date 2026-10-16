@@ -46,6 +46,9 @@ export type InMemoryVectorStoreOptions = {
    * negated Euclidean distance (matching the pgvector, Chroma, LanceDB, and Milvus
    * adapters), so the nearest document ranks first and `minScore` is a negative
    * distance threshold.
+   *
+   * With an `{ type: "lsh" }` index, non-cosine metrics are approximate because LSH
+   * buckets are angle-based; `{ type: "bruteForce" }` (the default) is exact.
    */
   metric?: VectorMetric | undefined;
 };

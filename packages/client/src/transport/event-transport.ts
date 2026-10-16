@@ -24,6 +24,8 @@ export type CreateFetchEventTransportOptions<TRequest, TEvent> = {
   init?: Omit<RequestInit, "body" | "headers" | "method" | "signal">;
   mapEvent?: (event: unknown) => TEvent;
   validateResponse?: (response: Response) => void;
+  /** Receives malformed frames that were skipped instead of aborting the stream. */
+  onParseError?: FetchEventStreamOptions["onParseError"];
 };
 
 export function createFetchEventTransport<TRequest, TEvent = unknown>(
@@ -50,6 +52,7 @@ export function createFetchEventTransport<TRequest, TEvent = unknown>(
       if (transportOptions.abortSignal !== undefined) init.signal = transportOptions.abortSignal;
       if (options.fetch !== undefined) init.fetch = options.fetch;
       if (options.validateResponse !== undefined) init.validateResponse = options.validateResponse;
+      if (options.onParseError !== undefined) init.onParseError = options.onParseError;
 
       for await (const event of fetchEventStream<unknown>(init)) {
         yield options.mapEvent === undefined ? (event as TEvent) : options.mapEvent(event);

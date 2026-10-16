@@ -145,7 +145,7 @@ export class DurableClient {
       response.body === null
     )
       throw new TypeError("Expected a task SSE response.");
-    for await (const value of readSseStream<unknown>(response.body)) {
+    for await (const value of readSseStream<unknown>(response.body, { strict: true })) {
       options.abortSignal?.throwIfAborted();
       const event = parseTaskEvent(value);
       if (event.rootId !== snapshot.task.rootId || event.sequence <= cursor)
@@ -208,7 +208,7 @@ export class DurableClient {
       response.body === null
     )
       throw new TypeError("Expected a graph SSE response.");
-    for await (const value of readSseStream<unknown>(response.body)) {
+    for await (const value of readSseStream<unknown>(response.body, { strict: true })) {
       options.abortSignal?.throwIfAborted();
       const event = parseDurableGraphEvent(value);
       if (event.graphId !== graphId || event.sequence <= cursor)
@@ -269,7 +269,7 @@ export class DurableClient {
       response.body === null
     )
       throw new TypeError("Expected a durable SSE response.");
-    for await (const value of readSseStream<unknown>(response.body)) {
+    for await (const value of readSseStream<unknown>(response.body, { strict: true })) {
       options.abortSignal?.throwIfAborted();
       const event = parseDurableEvent(value);
       if (event.runId !== runId || event.sequence <= cursor)

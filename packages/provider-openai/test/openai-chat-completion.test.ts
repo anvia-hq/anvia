@@ -811,27 +811,27 @@ describe("OpenAI chat-completions client path", () => {
   it.each([
     ["empty", ""],
     ["whitespace-only", " \n\t"],
-  ])("rejects %s non-streaming tool arguments", (_label, argumentsText) => {
-    expect(() =>
-      fromOpenAIChatCompletionResponse({
-        choices: [
-          {
-            finish_reason: "tool_calls",
-            message: {
-              role: "assistant",
-              tool_calls: [
-                {
-                  id: "tool_0",
-                  type: "function",
-                  function: { name: "Echo", arguments: argumentsText },
-                },
-              ],
-            },
+  ])("treats %s non-streaming tool arguments as an empty object", (_label, argumentsText) => {
+    const response = fromOpenAIChatCompletionResponse({
+      choices: [
+        {
+          finish_reason: "tool_calls",
+          message: {
+            role: "assistant",
+            tool_calls: [
+              {
+                id: "tool_0",
+                type: "function",
+                function: { name: "Echo", arguments: argumentsText },
+              },
+            ],
           },
-        ],
-        usage: {},
-      }),
-    ).toThrowError(expect.objectContaining({ kind: "malformed-tool-arguments" }));
+        },
+      ],
+      usage: {},
+    });
+
+    expect(response.choice).toEqual([AssistantContent.toolCall("tool_0", "Echo", {}, "tool_0")]);
   });
 
   it("maps Chat Completions refusals to visible assistant text", () => {
@@ -1280,6 +1280,27 @@ describe("OpenAI chat-completions client path", () => {
     });
     expect(calls).toHaveLength(0);
     expect(remainingStreams).toHaveLength(2);
+  });
+
+  it("executes a streamed zero-argument tool call with empty arguments", async () => {
+    const calls: unknown[] = [];
+    const model = openAIChatModelWithStreams([
+      [
+        chatChunk([chatChoice([toolCallDelta(0, "call_ping", "Ping", "")])]),
+        chatChunk([chatChoice([], 0, "tool_calls")]),
+      ],
+      finalTextStream(),
+    ]);
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      tools: [recordingTool("Ping", calls)],
+    });
+
+    const events = await collect(agent.stream({ prompt: "ping" }));
+
+    expect(events.some((event) => event.type === "error")).toBe(false);
+    expect(calls).toEqual([{}]);
   });
 
   it("omits empty streamed tool metadata while preserving argument fragments", () => {

@@ -471,7 +471,7 @@ describe("CompletionStreamAccumulator", () => {
   it.each([
     ["empty", ""],
     ["whitespace-only", " \n\t"],
-  ])("rejects %s streamed tool arguments", (_label, argumentsDelta) => {
+  ])("treats %s streamed tool arguments as an empty object", (_label, argumentsDelta) => {
     const accumulator = new CompletionStreamAccumulator();
 
     accumulator.accept({
@@ -479,6 +479,22 @@ describe("CompletionStreamAccumulator", () => {
       id: "tool_0",
       name: "NoOp",
       argumentsDelta,
+    });
+    finish(accumulator);
+
+    expect(accumulator.response().choice).toEqual([
+      AssistantContent.toolCall("tool_0", "NoOp", {}),
+    ]);
+  });
+
+  it("still rejects malformed non-empty streamed tool arguments", () => {
+    const accumulator = new CompletionStreamAccumulator();
+
+    accumulator.accept({
+      type: "tool_call_delta",
+      id: "tool_0",
+      name: "NoOp",
+      argumentsDelta: '{"query":',
     });
     finish(accumulator);
 

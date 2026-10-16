@@ -3,12 +3,12 @@
 Agent-side [Agent Client Protocol](https://agentclientprotocol.com/libraries/typescript)
 adapter for Anvia. Applications supply their own agents, models, tools, and credentials.
 
-**Current status: ACP 05 cancellation.** The package supports stable v1 initialization,
+**Current status: ACP 06 approval and question bridge.** The package supports stable v1 initialization,
 no-op authentication, NDJSON transport, a dedicated launcher, and in-memory sessions with
 multi-turn prompt execution. Text/resource references work by default; images are opt-in.
 `session/update` streams assistant text and tool status with stable session-local IDs;
-`session/prompt` settles once with a stop reason after updates finish. `session/cancel` aborts the active turn and settles it with `cancelled`. Permission
-bridging and editor MCP connections are subsequent tasks. Nonempty MCP declarations are rejected explicitly.
+`session/prompt` settles once with a stop reason after updates finish. `session/cancel` aborts the active turn and settles it with `cancelled`. Approval and question suspensions resume inside the same prompt.
+Editor MCP connections are a subsequent task. Nonempty MCP declarations are rejected explicitly.
 
 ## Launcher
 
@@ -109,8 +109,8 @@ Anvia image parts with their MIME type. Audio, embedded resources, disabled imag
 MIME types fail with `unsupported_content` (`-32602`); malformed base64 fails with `invalid_content`.
 Annotations and `_meta` never become model instructions or permission overrides.
 
-Streaming models use one stream consumer; completion-only models use `generate`. Unsupported
-approval/question suspensions fail with `unsupported_interaction` without resuming the tool.
+Streaming models use one stream consumer per segment; completion-only models use `generate`.
+Approval and supported question suspensions resume within the original prompt.
 Successful completion maps to `end_turn`, output limits to `max_tokens`, exhausted agent turns
 to `max_turn_requests`, and guardrail/filter refusals to `refusal`. Provider/factory errors expose
 only safe kinds (`execution_failed` / `configuration_error`), never raw causes or credentials.
@@ -183,9 +183,57 @@ signal stays live. If caller code ignores abort, the prompt still settles, but t
 launcher retains its bounded shutdown timeout. Cancellation cannot undo effects already started.
 Tools should honor their `ToolCallContext.abortSignal` and pass it through to external operations.
 
-Editor-supplied MCP and permission bridges are not implemented yet. Cancellation tests use real
-Anvia runs with fixture local/MCP tools and the internal pending-request registry, plus v1 byte
-streams; they do not claim real editor compatibility.
+Editor-supplied MCP connections are not implemented yet. Cancellation tests use real
+Anvia runs with fixture local/MCP tools, pending permissions, and v1 byte streams; they do not
+claim real editor compatibility.
+
+## Approvals and questions
+
+Tools with `requiresApproval` suspend until the editor answers `session/request_permission`.
+Only `allow_once` and `reject_once` are offered. Allow resumes the tool; rejection resumes with
+`approved: false`, letting the model handle the denied result. Unknown or malformed option IDs,
+missing outcomes and RPC failures also reject. A cancelled outcome ends the prompt as `cancelled`.
+Late replies after cancellation or disconnect cannot resume a continuation. No grants persist.
+
+Permission dialogs use the same tool ID, title, kind and locations as tool updates. Raw arguments,
+approval reasons and continuation state remain private. Use `toolPresentation` to supply the public
+information needed to make a permission decision.
+
+Question tools use form `elicitation/create` when `clientCapabilities.elicitation.form` is explicitly
+present and non-null. Choices become titled enums; free/custom answers become strings. Every answer
+is validated against the original question. Decline/cancel ends the turn as `cancelled`; invalid or
+failed replies return `invalid_interaction_response`. Clients without form support receive
+`unsupported_interaction`. No answer is fabricated or collected from stdin. Use question tools for
+non-sensitive information only; this adapter does not implement URL elicitation for credentials.
+
+A factory may return `turnBudget` alongside its agent:
+
+```ts
+return {
+  agent,
+  turnBudget: {
+    maxModelCalls: 10,
+    maxDurationMs: 5 * 60_000,
+    maxCost: 1, // Units defined by your estimator, for example USD.
+    estimateCost: (usage) => priceUsage(usage), // Your model pricing function.
+  },
+};
+```
+
+All limits span the entire prompt, including continuation segments. Logical model generation
+requests default to `agent.defaultMaxTurns + 1` (normally 21); `maxModelCalls` can lower that ceiling.
+Provider retries/structured-output repair attempts remain controlled by the agent's retry policy.
+A resumed tool can finish after the last allowed generation, but no further generation starts.
+
+Time and cost limits are optional. The one deadline includes time waiting for permission or answers.
+Cost uses cumulative core usage across segments, including reported retry usage, and a host-supplied
+`estimateCost` callback. It is checked after each generation and before resumption; it cannot prevent
+that generation's charges or undo effects already started. Exhaustion returns `max_turn_requests`,
+keeps prior history, and invalidates pending requests. Deadline expiry aborts execution; an
+uncooperative provider/tool keeps the session busy until it finishes, as with cancellation.
+
+Only public Anvia continuation types are used. Intermediate messages are stored privately and
+committed once after the whole turn succeeds; text and tool calls are not replayed at resumption.
 
 ## Resource bounds
 
@@ -200,7 +248,7 @@ Configure `limits` on the library host. Every value must be a positive safe inte
 | `maxContentBlocks`   | 256     | Blocks per prompt                                           |
 | `maxHistoryBytes`    | 16 MiB  | Serialized private history per session                      |
 | `maxHistoryMessages` | 1,000   | Private history messages per session                        |
-| `maxPendingRequests` | 16      | Outstanding editor requests per session (for later bridges) |
+| `maxPendingRequests` | 16      | Outstanding permission/question/editor requests per session |
 
 Limit violations return `resource_limit` (`-32602`). The separate `maxMessageBytes` wire limit
 includes metadata and closes the connection on overflow. History uses an adapter-owned in-memory
@@ -242,8 +290,8 @@ The subprocess tests exercise the built bin, sample agent, factory loading, stdo
 startup errors, EOF, and signals. Session tests cover isolation, concurrent prompts, multi-turn
 history, content conversion, resource limits and teardown. Update tests cover ordering, reused tool
 IDs, failures, reasoning policy, presentation, refusals and one final settlement. Cancellation tests
-cover provider/tool signals, pending callbacks, late updates, session isolation and cleanup. These are not
-editor compatibility claims.
+cover provider/tool signals, pending callbacks, late updates, session isolation and cleanup. Permission tests cover allow/reject, malformed responses, late approvals, elicitation,
+and budgets across suspensions in both model modes. These are not editor compatibility claims.
 
 Manual editor verification belongs to ACP 10 after the remaining bridges exist:
 
@@ -252,5 +300,5 @@ Manual editor verification belongs to ACP 10 after the remaining bridges exist:
 - Once implemented, exercise two chat turns, approval/denial, cancellation, MCP, and subprocess exit.
 
 See [DESIGN.md](./DESIGN.md) for the proposed contract and later task boundaries. External
-documentation should describe this as partial ACP support until permissions and MCP integration are available. The new `reasoning`, `toolPresentation` and `AcpToolPresentation`
-options need coverage in the ACP 16 external documentation task.
+documentation should describe this as partial ACP support until MCP integration and editor verification are available. The new `reasoning`, `toolPresentation` and `AcpToolPresentation`
+options, plus `turnBudget` / `AcpTurnBudget`, need coverage in the ACP 16 external documentation task.

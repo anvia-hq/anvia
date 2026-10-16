@@ -1,7 +1,9 @@
 import type { AgentStream, AgentStreamEvent, AgentOutcome } from "@anvia/core/agent";
+import type { AgentInteractionRequest } from "@anvia/core/agent/interactions";
 import { hasEnforcedOutputGuardrails } from "@anvia/core/guardrails";
 import type { ToolResultOutput } from "@anvia/core/completion";
 import type { AcpSessionBinding, AcpToolPresentation } from "./types.js";
+import type { PermissionTool } from "./permissions.js";
 import { presentTool } from "./presentation.js";
 
 /** Adapter-owned updates; SDK types and v1 discriminators stay at the wire boundary. */
@@ -16,7 +18,7 @@ export type SessionUpdate =
 
 export type UpdateSink = (update: SessionUpdate) => Promise<void>;
 
-type ToolState = { id: string; completed: boolean };
+type ToolState = PermissionTool & { callId: string; completed: boolean };
 
 /** One mapper per prompt. Allocation is session-owned, correlation is generation-local. */
 export class TurnEvents {
@@ -24,6 +26,9 @@ export class TurnEvents {
   private readonly textTurns = new Set<number>();
   private readonly calls = new Map<string, ToolState>();
   private readonly executions = new Map<string, ToolState>();
+
+  private resuming = false;
+  private readonly unfinished = new Map<string, ToolState>();
 
   constructor(
     private readonly allocateId: () => string,
@@ -34,6 +39,28 @@ export class TurnEvents {
     private readonly signal?: AbortSignal,
   ) {
     this.outputGuarded = hasEnforcedOutputGuardrails([...binding.agent.guardrails]);
+  }
+
+  /** Core restarts turn numbers on resume; carry only uncompleted calls forward. */
+  beginSegment(): void {
+    for (const state of this.calls.values()) {
+      if (!state.completed) this.unfinished.set(state.callId, state);
+    }
+    this.calls.clear();
+    this.textTurns.clear();
+    this.resuming = true;
+  }
+
+  async interaction(request: AgentInteractionRequest): Promise<PermissionTool> {
+    const state =
+      [...this.calls.values()]
+        .reverse()
+        .find((candidate) => candidate.callId === request.toolCallId && !candidate.completed) ??
+      this.unfinished.get(request.toolCallId);
+    if (!state) throw new Error("Missing interaction tool call.");
+    this.executions.set(request.internalCallId, state);
+    const { id, title, kind, locations } = state;
+    return { id, title, kind, locations };
   }
 
   async consume(stream: AgentStream): Promise<AgentOutcome> {
@@ -49,6 +76,9 @@ export class TurnEvents {
   async accept(event: AgentStreamEvent): Promise<void> {
     if (this.signal?.aborted) return;
     switch (event.type) {
+      case "turn_start":
+        this.resuming = false;
+        break;
       case "text_delta":
         if (event.delta) {
           this.textTurns.add(event.turn);
@@ -90,6 +120,7 @@ export class TurnEvents {
           this.cwd,
           this.binding.toolPresentation?.(call),
         );
+        Object.assign(state, presentation);
         await this.send({ type: "tool-update", id: state.id, status: "pending", ...presentation });
         break;
       }
@@ -112,10 +143,11 @@ export class TurnEvents {
 
   /** Completion-only models have no stream; project this run's public messages once. */
   async completed(outcome: AgentOutcome): Promise<void> {
-    if (outcome.type !== "response") return;
+    if (outcome.type === "blocked") return;
     let turn = 0;
     for (const message of outcome.messages) {
       if (message.role === "assistant") {
+        this.resuming = false;
         turn++;
         if (typeof message.content === "string") {
           if (!this.outputGuarded) {
@@ -140,7 +172,7 @@ export class TurnEvents {
         }
       }
     }
-    if (this.outputGuarded && outcome.text) {
+    if (this.outputGuarded && outcome.type === "response" && outcome.text) {
       await this.send({ type: "text", text: outcome.text });
     }
   }
@@ -148,10 +180,12 @@ export class TurnEvents {
   private async call(turn: number, callId: string, name?: string): Promise<ToolState> {
     // JSON encoding avoids delimiter collisions. Provider callId is not an identity:
     // providers may reuse it, even for distinct toolCallIds in the same generation.
+    const pending = this.resuming ? this.unfinished.get(callId) : undefined;
+    if (pending) return pending;
     const key = JSON.stringify([turn, callId]);
     let state = this.calls.get(key);
     if (!state) {
-      state = { id: this.allocateId(), completed: false };
+      state = { id: this.allocateId(), callId, completed: false, ...presentTool(name, this.cwd) };
       this.calls.set(key, state);
       await this.send({ type: "tool", id: state.id, ...presentTool(name, this.cwd) });
     }

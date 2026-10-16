@@ -1,5 +1,8 @@
 import { AgentRunCancelledError, MaxTurnsError } from "@anvia/core/agent";
 import type { AgentInput, AgentOutcome, AgentStream } from "@anvia/core/agent";
+import type { Message } from "@anvia/core/completion";
+import { requestInteraction, type InteractionClient } from "./permissions.js";
+import { TurnBudget, TurnBudgetExceeded } from "./turn-budget.js";
 import { convertPrompt, type PromptBlock } from "./content.js";
 import { TurnEvents, type UpdateSink } from "./events.js";
 import { AcpError } from "./errors.js";
@@ -18,6 +21,7 @@ type ActiveTurn = {
   controller: AbortController;
   stream?: AgentStream;
   cancelled: boolean;
+  budgetExceeded: boolean;
   finished: boolean;
   sending: Promise<void>;
 };
@@ -45,6 +49,7 @@ export class AcpSession {
   prompt(
     blocks: readonly PromptBlock[],
     send: UpdateSink = async () => {},
+    client?: InteractionClient,
   ): Promise<TurnStopReason> {
     if (this.controller.signal.aborted) return Promise.reject(new AcpError("connection_closed"));
     if (this.activeTurn) return Promise.reject(new AcpError("session_busy"));
@@ -53,6 +58,7 @@ export class AcpSession {
     const turn: ActiveTurn = {
       controller: new AbortController(),
       cancelled: false,
+      budgetExceeded: false,
       finished: false,
       sending: Promise.resolve(),
     };
@@ -63,7 +69,8 @@ export class AcpSession {
     let onAbort!: () => void;
     const aborted = new Promise<TurnStopReason>((resolve, reject) => {
       onAbort = () => {
-        if (turn.cancelled) resolve("cancelled");
+        if (turn.budgetExceeded) resolve("max_turn_requests");
+        else if (turn.cancelled) resolve("cancelled");
         else reject(new AcpError("connection_closed"));
       };
       signal.addEventListener("abort", onAbort, { once: true });
@@ -71,7 +78,20 @@ export class AcpSession {
     const onClose = () => turn.controller.abort();
     this.controller.signal.addEventListener("abort", onClose, { once: true });
     let executionFinished = false;
-    const execution = this.run(blocks, send, turn).finally(() => {
+    const requests = this.pendingRequests;
+    const budget = new TurnBudget(this.binding.turnBudget, this.binding.agent.defaultMaxTurns);
+    const duration = this.binding.turnBudget?.maxDurationMs;
+    const timer =
+      duration === undefined
+        ? undefined
+        : setTimeout(() => {
+            if (turn.finished || turn.cancelled) return;
+            turn.budgetExceeded = true;
+            requests.close(new TurnBudgetExceeded());
+            turn.controller.abort();
+            turn.stream?.cancel("ACP turn budget exhausted.");
+          }, duration);
+    const execution = this.run(blocks, send, turn, requests, budget, client).finally(() => {
       executionFinished = true;
     });
     const task = Promise.race([execution, aborted])
@@ -81,6 +101,7 @@ export class AcpSession {
         return turn.cancelled ? ("cancelled" as const) : reason;
       })
       .finally(() => {
+        clearTimeout(timer);
         turn.finished = true;
         signal.removeEventListener("abort", onAbort);
         this.controller.signal.removeEventListener("abort", onClose);
@@ -127,6 +148,9 @@ export class AcpSession {
     blocks: readonly PromptBlock[],
     send: UpdateSink,
     turn: ActiveTurn,
+    requests: PendingRequests,
+    budget: TurnBudget,
+    client?: InteractionClient,
   ): Promise<TurnStopReason> {
     try {
       const prompt = convertPrompt(blocks, this.limits, this.images);
@@ -134,10 +158,10 @@ export class AcpSession {
       const history = await this.memory.load({ scope });
       const messages = [...history, prompt];
       this.memory.assertFits(messages);
-      const input: AgentInput = { messages };
+      let input: AgentInput = { messages };
       if (this.controller.signal.aborted) throw new AcpError("connection_closed");
       if (turn.cancelled) return "cancelled";
-      const options = { ...input, abortSignal: turn.controller.signal };
+
       const agent = this.binding.agent;
       const events = new TurnEvents(
         () => `${this.context.sessionId}:${++this.nextToolId}`,
@@ -146,23 +170,57 @@ export class AcpSession {
         this.reasoning,
         async (update) => {
           if (this.controller.signal.aborted) throw new AcpError("connection_closed");
-          if (turn.cancelled || turn.finished) return;
+          if (turn.controller.signal.aborted || turn.finished) return;
           turn.sending = send(update);
           await turn.sending;
         },
         turn.controller.signal,
       );
       let outcome: AgentOutcome;
-      if (agent.model.capabilities.streaming) {
-        turn.stream = agent.stream(options);
-        outcome = await events.consume(turn.stream);
-      } else {
-        outcome = await agent.generate(options);
-        if (!turn.cancelled) await events.completed(outcome);
+      const produced: Message[] = [];
+      while (true) {
+        budget.check();
+        turn.controller.signal.throwIfAborted();
+        const options = {
+          ...input,
+          abortSignal: turn.controller.signal,
+          middlewares: [budget.middleware],
+          lifecycle: budget.segment(),
+        };
+        if (agent.model.capabilities.streaming) {
+          turn.stream = agent.stream(options);
+          outcome = await events.consume(turn.stream);
+        } else {
+          outcome = await agent.generate(options);
+          if (!turn.controller.signal.aborted) await events.completed(outcome);
+        }
+        delete turn.stream;
+        if (this.controller.signal.aborted) throw new AcpError("connection_closed");
+        turn.controller.signal.throwIfAborted();
+        budget.check();
+        produced.push(...outcome.messages);
+        this.memory.assertFits([...history, ...produced]);
+        if (outcome.type !== "interaction") break;
+        const response = await requestInteraction(
+          outcome,
+          events,
+          requests,
+          client,
+          this.context.clientCapabilities.elicitationForm,
+        );
+        // No await between the identity/signal check and the next stream creation.
+        if (this.activeTurn !== turn || turn.controller.signal.aborted) {
+          turn.controller.signal.throwIfAborted();
+          return "cancelled";
+        }
+        if (response === "cancel") {
+          this.cancel();
+          return "cancelled";
+        }
+        budget.check();
+        input = { continuation: outcome.continuation, response };
+        events.beginSegment();
       }
-      if (this.controller.signal.aborted) throw new AcpError("connection_closed");
-      if (turn.cancelled) return "cancelled";
-      if (outcome.type === "interaction") throw new AcpError("unsupported_interaction");
       // Only complete, successful turns enter memory. Failed/suspended turns cannot
       // leave unmatched tool calls or duplicate user messages in the next request.
       if (outcome.type === "blocked") return "refusal";
@@ -175,12 +233,13 @@ export class AcpSession {
         turn: 0,
         // Core returns this run's messages (including the new user prompt),
         // excluding the chatHistory supplied to the run.
-        messages: outcome.messages,
+        messages: produced,
       });
       if (outcome.finishReason === "length") return "max_tokens";
       if (outcome.finishReason === "content-filter") return "refusal";
       return "end_turn";
     } catch (error) {
+      if (turn.budgetExceeded || error instanceof TurnBudgetExceeded) return "max_turn_requests";
       if (turn.cancelled || error instanceof AgentRunCancelledError) return "cancelled";
       if (this.controller.signal.aborted) throw new AcpError("connection_closed");
       if (error instanceof AcpError) throw error;

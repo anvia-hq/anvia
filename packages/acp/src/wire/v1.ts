@@ -2,6 +2,7 @@ import {
   agent,
   RequestError,
   type ContentBlock,
+  type ElicitationPropertySchema,
   type Stream,
   type SessionUpdate as V1Update,
 } from "@agentclientprotocol/sdk";
@@ -70,14 +71,104 @@ export function connectV1(stream: Stream, sessions: SessionManager, options: Acp
     .onRequest("session/prompt", ({ params, client }) => {
       requireInitialized();
       return respond(async () => ({
-        stopReason: await sessions
-          .get(params.sessionId)
-          .prompt(params.prompt.map(normalizeContent), (update) =>
+        stopReason: await sessions.get(params.sessionId).prompt(
+          params.prompt.map(normalizeContent),
+          (update) =>
             client.notify("session/update", {
               sessionId: params.sessionId,
               update: toV1Update(update),
             }),
-          ),
+          {
+            async permission(tool, signal) {
+              try {
+                const reply: unknown = await client.request(
+                  "session/request_permission",
+                  {
+                    sessionId: params.sessionId,
+                    toolCall: {
+                      toolCallId: tool.id,
+                      title: tool.title,
+                      kind: tool.kind,
+                      locations: [...tool.locations],
+                      status: "pending",
+                    },
+                    options: [
+                      { optionId: "allow_once", name: "Allow once", kind: "allow_once" },
+                      { optionId: "reject_once", name: "Reject once", kind: "reject_once" },
+                    ],
+                  },
+                  { cancellationSignal: signal },
+                );
+                const outcome = object(object(reply)?.outcome);
+                if (outcome?.outcome === "cancelled") return "cancel";
+                return outcome?.outcome === "selected" && outcome.optionId === "allow_once"
+                  ? "allow"
+                  : "reject";
+              } catch {
+                signal.throwIfAborted();
+                // RPC errors and SDK schema failures cannot authorize execution.
+                return "reject";
+              }
+            },
+            async question(toolId, questions, signal) {
+              const properties: Record<string, ElicitationPropertySchema> = {};
+              // Adapter field IDs avoid prototype keys and keep core IDs private.
+              for (const [index, question] of questions.entries()) {
+                const property: ElicitationPropertySchema = {
+                  type: "string",
+                  title: question.text,
+                  minLength: 1,
+                };
+                if (question.choices && question.allowCustom !== true) {
+                  property.oneOf = question.choices.map((choice) => ({
+                    const: choice.value,
+                    title: choice.label,
+                  }));
+                }
+                properties[`q${index}`] = property;
+              }
+              let reply: unknown;
+              try {
+                reply = await client.request(
+                  "elicitation/create",
+                  {
+                    sessionId: params.sessionId,
+                    toolCallId: toolId,
+                    mode: "form",
+                    message: "Please answer the tool's questions.",
+                    requestedSchema: {
+                      type: "object",
+                      properties,
+                      required: Object.keys(properties),
+                    },
+                  },
+                  { cancellationSignal: signal },
+                );
+              } catch {
+                signal.throwIfAborted();
+                throw new AcpError("invalid_interaction_response");
+              }
+              const result = object(reply);
+              if (result?.action === "cancel" || result?.action === "decline") return "cancel";
+              const content = object(result?.content);
+              if (
+                result?.action !== "accept" ||
+                !content ||
+                Object.keys(content).length !== questions.length
+              ) {
+                throw new AcpError("invalid_interaction_response");
+              }
+              return {
+                type: "tool-question",
+                answers: questions.map((question, index) => {
+                  const value = content[`q${index}`];
+                  if (typeof value !== "string") throw new AcpError("invalid_interaction_response");
+                  return { questionId: question.id, value };
+                }),
+              };
+            },
+          },
+        ),
       }));
     })
     .onNotification("session/cancel", ({ params }) => {
@@ -145,4 +236,10 @@ function toV1Update(update: SessionUpdate): V1Update {
       return result;
     }
   }
+}
+
+function object(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
 }

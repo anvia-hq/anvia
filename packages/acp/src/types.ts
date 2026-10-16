@@ -1,4 +1,4 @@
-import type { ToolCallPart } from "@anvia/core/completion";
+import type { Usage, ToolCallPart } from "@anvia/core/completion";
 import type { Agent } from "@anvia/core/agent";
 import type { McpServer } from "@anvia/core/mcp";
 import type { AnyTool } from "@anvia/core/tool";
@@ -49,8 +49,21 @@ export type AcpToolPresentation = Readonly<{
   locations?: readonly Readonly<{ path: string; line?: number }>[];
 }>;
 
+/** One budget shared by every continuation segment of an ACP prompt. */
+export type AcpTurnBudget = Readonly<{
+  /** Logical model generations; defaults to agent.defaultMaxTurns + 1. */
+  maxModelCalls?: number;
+  /** Wall time including time spent waiting for the user. No deadline by default. */
+  maxDurationMs?: number;
+  /** Host-defined cost units; requires estimateCost. No cost ceiling by default. */
+  maxCost?: number;
+  /** Estimate cumulative cost from cumulative usage across all segments. */
+  estimateCost?: (usage: Usage) => number;
+}>;
+
 export type AcpSessionBinding = Readonly<{
   agent: Agent;
+  turnBudget?: AcpTurnBudget;
   /** Trusted display projection. Never return credentials or private tool arguments. */
   toolPresentation?: (call: ToolCallPart) => AcpToolPresentation | undefined;
   dispose?: () => void | Promise<void>;

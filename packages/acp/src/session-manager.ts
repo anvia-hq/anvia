@@ -4,6 +4,7 @@ import { realpath, stat } from "node:fs/promises";
 import { isAbsolute, relative, sep } from "node:path";
 import { AcpError } from "./errors.js";
 import { resolveLimits } from "./limits.js";
+import { validateTurnBudget } from "./turn-budget.js";
 import { AcpSession } from "./session.js";
 import type {
   AcpClientCapabilities,
@@ -112,6 +113,7 @@ export class SessionManager {
       ) {
         throw new AcpError("configuration_error");
       }
+      validateTurnBudget(binding.turnBudget);
       this.agents.add(binding.agent);
       if (this.closed) throw new AcpError("connection_closed");
       if (

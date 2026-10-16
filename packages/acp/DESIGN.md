@@ -6,9 +6,57 @@ This is the repository design contract for the agent-side adapter. ACP 01 added 
 only. ACP 02 implements the package manifest, pinned SDK, stream/stdio entrypoints,
 initialization, no-op authentication, and launcher. ACP 03 adds session creation and prompt
 execution with bounded in-memory history. ACP 04 adds ordered text/tool updates and optional
-plaintext reasoning. ACP 05 adds per-turn cancellation. The remaining APIs and capabilities below
+plaintext reasoning. ACP 05 adds per-turn cancellation. ACP 06 adds approval/question continuations and whole-prompt budgets. The remaining APIs and capabilities below
 are implementation targets, not claims of editor compatibility. Later tasks own session
 execution and optional capabilities.
+
+### ACP 06 implementation status
+
+The prompt stays pending across approval and question suspensions. The coordinator passes opaque
+public `AgentContinuation` values back through `AgentInput`, with `agent.stream()` for streaming
+models and `agent.generate()` for completion-only models. It never reads `continuation.state` or
+imports core internals. Completed segment messages accumulate privately and append atomically only
+when the entire prompt succeeds. One event mapper retains unfinished calls and execution aliases
+across segments while resetting core's segment-local generation numbers. Permission requests,
+elicitations and final tool updates share the same editor tool ID.
+
+Proposed decisions — pending Indra review:
+
+- Offer only `allow_once` and `reject_once`. Validate selection against those IDs. Unknown,
+  malformed, absent and RPC-error permission responses resume with `approved: false`; an explicit
+  cancelled outcome stops the prompt. No always-grant cache exists. Permission presentation uses
+  the existing trusted title/kind/locations projection, never raw inputs, reasons or continuations.
+- Capture the prompt's pending-request registry before execution. Cancellation/disconnect closes
+  it, signals the SDK callback request and ignores late replies. Recheck the active prompt identity
+  and abort signal immediately before resumption. A stale approval cannot authorize a later turn.
+- Map questions to session/tool-scoped form `elicitation/create` only when the client advertises
+  non-null `elicitation.form`. Generate adapter field IDs, require every answer, and validate again
+  with core's public interaction validator. Closed choices use titled string enums; custom-answer
+  questions use strings. Decline/cancel stops the turn as `cancelled`. Malformed answers or RPC
+  failures return sanitized `invalid_interaction_response`. Without form support, return
+  `unsupported_interaction`; never fabricate an answer, read terminal stdin, or reuse a later prompt
+  as the answer. Applications must use question tools only for non-sensitive information.
+- `AcpSessionBinding.turnBudget` optionally supplies `maxModelCalls`, `maxDurationMs`, and
+  `maxCost` with `estimateCost(usage)`. Model calls mean logical generation requests, matching
+  core's tool-loop semantics; provider retries/structured-output repair attempts remain governed
+  by the application's retry settings. Count them across segments with public request middleware.
+  The ceiling is the smaller of `maxModelCalls` and `agent.defaultMaxTurns + 1` (normally 21),
+  preserving the initial request plus follow-up behavior from ACP 04. Resumed tools may finish
+  at that ceiling, but another model generation cannot start.
+- Time and cost have no default ceilings. A single wall-clock deadline starts at prompt entry,
+  including approval waits. Cost is a monotonic host estimate from cumulative usage, in host-defined
+  units; ACP does not guess provider pricing. Check cost after each generation and before resume,
+  so the generation that reaches a ceiling has already incurred its cost. Retry usage reported by
+  core is included. Budget exhaustion returns `max_turn_requests` and retains prior history only.
+  Deadline aborts use the same execution quarantine as cancellation. Neither cost estimates nor
+  deadlines undo already-started effects or bound arbitrary work inside application tools.
+
+Headless tests exercise both model modes, multiple approvals in one generation, reused provider IDs,
+private history, malformed replies, late cancellation, questions, and budgets across suspensions.
+Real editor verification remains ACP 10. External docs in ACP 16 must cover `AcpTurnBudget`,
+`turnBudget`, and the form fallback. Protocol shape follows the pinned SDK and
+[ACP tool permissions](https://agentclientprotocol.com/protocol/v1/tool-calls) and
+[form elicitation](https://agentclientprotocol.com/protocol/v1/elicitation).
 
 ### ACP 05 implementation status
 
@@ -33,7 +81,7 @@ Proposed decisions — pending Indra review:
 - Each prompt owns a fresh pending-request registry. Closing it synchronously invalidates queued
   and late replies, aborts callback signals, and rejects further dispatch through stale registry
   references. Future approval/editor bridges must capture that registry for the turn and check
-  its cancellation before resuming a continuation. No permission bridge is implemented here.
+  its cancellation before resuming a continuation. ACP 06 now uses this registry for the permission bridge.
 - Cancelled turns never enter private history. Successful history append is the atomic completion
   boundary; cancellation after that boundary is a no-op. Session lifetime signals remain live
   after a turn cancellation, so other sessions and later turns remain usable.
@@ -69,8 +117,7 @@ Proposed decisions — pending Indra review:
   execution `internalCallId` aliases when results arrive. Provider `callId` is never the primary
   key: multiple local calls can share it, and all IDs may repeat in later generations/prompts.
   Core validates local tool IDs within a generation. Correlation maps are discarded after each
-  prompt; the session counter is not reset. ACP 06 must preserve correlation across its future
-  continuation segments instead of creating a new mapper for each segment.
+  prompt; the session counter is not reset. ACP 06 preserves correlation across continuation segments with this mapper.
 - A partial or final tool call emits `pending`, then its result emits `completed` or `failed`.
   `execution-denied`, `error-text` and `error-json` all mean `failed`. No `in_progress` is
   fabricated from a model call event: that event can precede approval or execution. Tool raw
@@ -109,8 +156,7 @@ the process cwd. Factories must resolve application tool paths using their conte
 `session/prompt` validates all content before model execution and rejects overlap with
 `session_busy`. It uses `Agent.stream()` with one consumer for streaming models and `generate()`
 for completion-only models. ACP 03 originally returned only the final stop reason; ACP 04
-adds the output projection described above. Approvals/questions fail
-safely with `unsupported_interaction`; ACP 05 now implements cancellation, while editor MCP
+adds the output projection described above. ACP 06 now bridges approvals/questions; ACP 05 implements cancellation, while editor MCP
 connections remain ACP 07 work. Nonempty MCP declarations are explicitly rejected before the factory runs.
 
 Proposed decisions — pending Indra review:
@@ -317,29 +363,29 @@ only; never carry an unanswered tool invocation into a fresh model request.
 handlers, host opt-in, and client capabilities must all agree before advertising/using a feature.
 Absent optional capabilities mean unsupported; no optimistic probing or silent downgrade.
 
-| ACP surface                                      | MVP target                                        | Later work / gate                                                                                      |
-| ------------------------------------------------ | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `initialize`                                     | v1, agent identity, conservative capabilities     | SDK/schema upgrades are explicit                                                                       |
-| `authenticate`                                   | No-op; `authMethods: []`                          | Custom auth would need a separate contract                                                             |
-| `session/new`                                    | Absolute cwd, fresh agent, stdio MCP              | Policy validation before effects                                                                       |
-| `session/prompt`                                 | Pending until the whole turn ends                 | No premature response at an approval suspension                                                        |
-| `session/cancel`                                 | Abort active turn; settle prompt as `cancelled`   | Idle/unknown-session notification is harmless                                                          |
-| `session/update`                                 | Text, tool start/progress/result                  | Basic title/kind/locations in ACP 04; rich diffs, plan, usage in ACP 08; never fabricate provider data |
-| `session/request_permission`                     | Once-only approval bridge                         | No always-allow/reject options                                                                         |
-| Text / resource links                            | Supported; links remain references                | No implicit URI fetching                                                                               |
-| `promptCapabilities.image`                       | `false` by default; host opt-in from ACP 03       | `images: true` requires a compatible model in every factory result                                     |
-| `promptCapabilities.embeddedContext`             | `false`                                           | ACP 08: validated text resources                                                                       |
-| `promptCapabilities.audio`                       | `false`                                           | Future explicit conversion policy                                                                      |
-| Stdio MCP                                        | Supported, per-session ownership                  | Required ACP transport; no capability flag                                                             |
-| `mcpCapabilities.http` / `.sse`                  | Both `false`                                      | HTTP after explicit trusted-local policy; legacy SSE deferred                                          |
-| Client `fs.readTextFile` / `fs.writeTextFile`    | Unused; tools off                                 | ACP 08: opt-in, separate client flags and workspace policy                                             |
-| Client `terminal`                                | Unused; tools off                                 | ACP 08: opt-in, lifecycle and cancellation cleanup                                                     |
-| `session/set_config_option` / `session/set_mode` | Unadvertised and unavailable                      | ACP 08: permission presets, validated while idle, atomic config/mode updates                           |
-| `available_commands_update`                      | No commands advertised                            | ACP 08: explicit application command registry                                                          |
-| `elicitation/create`                             | Unsupported interaction ends safely with an error | ACP 08: form-capable client, validated answers; no fabricated answers or terminal stdin prompts        |
-| `loadSession`                                    | `false`                                           | ACP 11: safe replay without model/tool execution                                                       |
-| `sessionCapabilities.resume/list/close/delete`   | Omitted                                           | ACP 11: advertise each only with working store semantics                                               |
-| v2 / remote transports / durable driver          | Unavailable                                       | Separate adapters/tasks, never implicit fallback                                                       |
+| ACP surface                                      | MVP target                                      | Later work / gate                                                                                      |
+| ------------------------------------------------ | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `initialize`                                     | v1, agent identity, conservative capabilities   | SDK/schema upgrades are explicit                                                                       |
+| `authenticate`                                   | No-op; `authMethods: []`                        | Custom auth would need a separate contract                                                             |
+| `session/new`                                    | Absolute cwd, fresh agent, stdio MCP            | Policy validation before effects                                                                       |
+| `session/prompt`                                 | Pending until the whole turn ends               | No premature response at an approval suspension                                                        |
+| `session/cancel`                                 | Abort active turn; settle prompt as `cancelled` | Idle/unknown-session notification is harmless                                                          |
+| `session/update`                                 | Text, tool start/progress/result                | Basic title/kind/locations in ACP 04; rich diffs, plan, usage in ACP 08; never fabricate provider data |
+| `session/request_permission`                     | Once-only approval bridge                       | No always-allow/reject options                                                                         |
+| Text / resource links                            | Supported; links remain references              | No implicit URI fetching                                                                               |
+| `promptCapabilities.image`                       | `false` by default; host opt-in from ACP 03     | `images: true` requires a compatible model in every factory result                                     |
+| `promptCapabilities.embeddedContext`             | `false`                                         | ACP 08: validated text resources                                                                       |
+| `promptCapabilities.audio`                       | `false`                                         | Future explicit conversion policy                                                                      |
+| Stdio MCP                                        | Supported, per-session ownership                | Required ACP transport; no capability flag                                                             |
+| `mcpCapabilities.http` / `.sse`                  | Both `false`                                    | HTTP after explicit trusted-local policy; legacy SSE deferred                                          |
+| Client `fs.readTextFile` / `fs.writeTextFile`    | Unused; tools off                               | ACP 08: opt-in, separate client flags and workspace policy                                             |
+| Client `terminal`                                | Unused; tools off                               | ACP 08: opt-in, lifecycle and cancellation cleanup                                                     |
+| `session/set_config_option` / `session/set_mode` | Unadvertised and unavailable                    | ACP 08: permission presets, validated while idle, atomic config/mode updates                           |
+| `available_commands_update`                      | No commands advertised                          | ACP 08: explicit application command registry                                                          |
+| `elicitation/create`                             | ACP 06: validated forms for capable clients     | Without form support: `unsupported_interaction`; no fabricated answers or stdin prompts                |
+| `loadSession`                                    | `false`                                         | ACP 11: safe replay without model/tool execution                                                       |
+| `sessionCapabilities.resume/list/close/delete`   | Omitted                                         | ACP 11: advertise each only with working store semantics                                               |
+| v2 / remote transports / durable driver          | Unavailable                                     | Separate adapters/tasks, never implicit fallback                                                       |
 
 An MVP `initialize` response therefore has `protocolVersion: 1`, `authMethods: []`,
 `loadSession: false`, all three optional prompt flags false, both optional MCP flags false,
@@ -388,13 +434,13 @@ state, request permission, validate the returned option ID against this request,
 with `{ continuation, response: { type: "tool-approval", approved } }`. Denial resumes with
 `approved: false` so the model can explain or choose another operation. An absent, malformed,
 cancelled, or failed permission reply never authorizes execution. A cancelled permission ends
-the turn as cancelled; malformed replies fail the turn safely. No continuation crosses sessions.
+the turn as cancelled; malformed replies resume with a rejection. No continuation crosses sessions.
 
 Keep one ACP prompt pending across all continuation segments. Count model requests and usage
 across segments, not once per `Agent.stream()` call; a continuation cannot reset the turn budget.
-Use the configured agent limit (20 by default today) as a whole-prompt limit. Core continuation
-budget semantics must be covered by ACP 06 tests before selecting the exact run-setting override;
-do not inspect or mutate opaque `continuation.state` as a public API. Exhaustion maps to
+Use the configured agent limit plus the initial generation as a whole-prompt ceiling, optionally
+lowered by `turnBudget.maxModelCalls`. ACP 06 uses public middleware to count generations across
+segments; it never inspects or mutates opaque `continuation.state`. Exhaustion maps to
 `max_turn_requests`, even after multiple approval cycles.
 
 Each active turn has an abort controller and generation token. Cancellation invalidates pending
@@ -459,20 +505,20 @@ The wire adapter translates normalized errors into SDK responses. Use standard c
 [ACP schema](https://agentclientprotocol.com/protocol/v1/schema); keep Anvia-specific reasons
 in a small `data.kind` field, not invented global numeric codes.
 
-| Condition                                                                   | Wire behavior                                                                                                   |
-| --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| Malformed JSON / invalid envelope                                           | SDK parse error `-32700` / invalid request `-32600`                                                             |
-| Method unavailable or not implemented                                       | Method not found `-32601`                                                                                       |
-| Invalid cwd, content, config value, or MCP declaration                      | Invalid params `-32602`; safe kind such as `invalid_cwd` or `unsupported_content`                               |
-| Request before initialization, duplicate initialization, overlapping prompt | Invalid request `-32600`; kind `not_initialized`, `already_initialized`, or `session_busy`                      |
-| Unknown/closed session on a request                                         | Resource not found `-32002`; kind `session_not_found`                                                           |
-| Host policy rejects setup                                                   | Invalid params `-32602`; kind `policy_denied`; no side effects                                                  |
-| Factory, MCP connection, or provider failure                                | Internal error `-32603`; kind `configuration_error`, `mcp_connection_failed`, or `execution_failed`             |
-| Tool execution failure                                                      | Failed tool update/result; let the agent handle it when possible                                                |
-| Unsupported interaction / invalid permission response                       | Internal error `-32603`; kind `unsupported_interaction` / `invalid_permission_response`; never execute the tool |
-| Cancelled prompt                                                            | Successful prompt result with `stopReason: "cancelled"`                                                         |
-| Other request aborted during shutdown                                       | Request cancelled `-32800` if transport is still writable                                                       |
-| Normal response / token limit / turn budget / guardrail refusal             | `end_turn` / `max_tokens` / `max_turn_requests` / `refusal`                                                     |
+| Condition                                                                   | Wire behavior                                                                                                    |
+| --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Malformed JSON / invalid envelope                                           | SDK parse error `-32700` / invalid request `-32600`                                                              |
+| Method unavailable or not implemented                                       | Method not found `-32601`                                                                                        |
+| Invalid cwd, content, config value, or MCP declaration                      | Invalid params `-32602`; safe kind such as `invalid_cwd` or `unsupported_content`                                |
+| Request before initialization, duplicate initialization, overlapping prompt | Invalid request `-32600`; kind `not_initialized`, `already_initialized`, or `session_busy`                       |
+| Unknown/closed session on a request                                         | Resource not found `-32002`; kind `session_not_found`                                                            |
+| Host policy rejects setup                                                   | Invalid params `-32602`; kind `policy_denied`; no side effects                                                   |
+| Factory, MCP connection, or provider failure                                | Internal error `-32603`; kind `configuration_error`, `mcp_connection_failed`, or `execution_failed`              |
+| Tool execution failure                                                      | Failed tool update/result; let the agent handle it when possible                                                 |
+| Unsupported interaction / invalid question response                         | Internal error `-32603`; kind `unsupported_interaction` / `invalid_interaction_response`; never execute the tool |
+| Cancelled prompt                                                            | Successful prompt result with `stopReason: "cancelled"`                                                          |
+| Other request aborted during shutdown                                       | Request cancelled `-32800` if transport is still writable                                                        |
+| Normal response / token limit / turn budget / guardrail refusal             | `end_turn` / `max_tokens` / `max_turn_requests` / `refusal`                                                      |
 
 Do not use authentication-required `-32000` for missing application provider credentials when
 no ACP authentication method is available. Notifications receive no RPC response. Errors have

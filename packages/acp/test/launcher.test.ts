@@ -28,6 +28,41 @@ function launch(args: string[]) {
 }
 
 describe("built anvia-acp launcher", () => {
+  it("creates a session and completes successive offline prompts over real stdio", async () => {
+    const peer = launch(["examples/sample-agent.mjs"]);
+    let id = 0;
+    async function request(method: string, params: unknown) {
+      const requestId = ++id;
+      peer.child.stdin!.write(
+        JSON.stringify({ jsonrpc: "2.0", id: requestId, method, params }) + "\n",
+      );
+      const responses = () =>
+        peer
+          .stdout()
+          .trim()
+          .split("\n")
+          .filter(Boolean)
+          .map((line) => JSON.parse(line));
+      await vi.waitFor(() =>
+        expect(responses().some((response) => response.id === requestId)).toBe(true),
+      );
+      return responses().find((response) => response.id === requestId);
+    }
+    await request("initialize", { protocolVersion: 1 });
+    const created = await request("session/new", { cwd: packageRoot, mcpServers: [] });
+    expect(created.error).toBeUndefined();
+    for (const text of ["hello", "again"]) {
+      expect(
+        await request("session/prompt", {
+          sessionId: created.result.sessionId,
+          prompt: [{ type: "text", text }],
+        }),
+      ).toMatchObject({ result: { stopReason: "end_turn" } });
+    }
+    peer.child.stdin!.end();
+    expect(await peer.closed).toEqual([0, null]);
+  });
+
   it.each([
     "examples/sample-agent.mjs",
     "test/fixtures/noisy-agent.mjs",

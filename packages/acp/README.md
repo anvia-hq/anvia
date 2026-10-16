@@ -3,10 +3,12 @@
 Agent-side [Agent Client Protocol](https://agentclientprotocol.com/libraries/typescript)
 adapter for Anvia. Applications supply their own agents, models, tools, and credentials.
 
-**Current status: ACP 02 transport scaffold.** The package supports stable v1 initialization,
-no-op authentication, NDJSON transport, and a dedicated launcher. Session creation, prompts,
-streaming, cancellation, and editor tools are subsequent tasks. This is not yet a usable
-editor chat agent: session methods return JSON-RPC method-not-found (`-32601`).
+**Current status: ACP 03 session execution.** The package supports stable v1 initialization,
+no-op authentication, NDJSON transport, a dedicated launcher, and in-memory sessions with
+multi-turn prompt execution. Text/resource references work by default; images are opt-in.
+`session/prompt` returns a stop reason, but `session/update` output mapping is ACP 04 work,
+so this is not yet a usable editor chat agent. Cancellation, permission bridging and editor MCP
+connections are subsequent tasks. Nonempty MCP declarations are rejected explicitly.
 
 ## Launcher
 
@@ -38,8 +40,9 @@ export function sessionFactory(context) {
 }
 ```
 
-Factories are loaded and validated as functions at startup; they will be called by the future
-session manager, never during `initialize`. A directly exported agent is constructed during
+Factories are loaded and validated as functions at startup and called once per `session/new`,
+never during `initialize`. Return a fresh text-output Agent without its own `memory` option;
+the adapter owns bounded, session-local history. A directly exported agent is constructed during
 module import and normalized to a single-use factory, preventing reuse across sessions.
 Prefer a factory for multiple sessions. Named `sessionFactory` takes precedence over default
 exports; a default export takes precedence over named `agent`.
@@ -71,16 +74,72 @@ await connection.closed;
 
 `serveStdio` also accepts Node `input`/`output` streams. The library does not replace the global
 console, attach process signal handlers, or run providers on import. Library hosts must route
-their own logs to stderr and own shutdown. Closing cancels the input reader but does not close
-the caller's output stream. `closed` resolves on EOF, explicit close, or transport failure.
+their own logs to stderr and own shutdown. Closing cancels the input reader, aborts session work,
+clears history and disposes bindings without closing the caller's output stream. `closed` resolves
+after cleanup on EOF, explicit close, or transport failure. Library shutdown waits for cooperative
+factories/runs/disposers; the launcher bounds its shutdown wait to five seconds.
 
 Optional settings are `agentInfo: { name, version, title? }` and `maxMessageBytes` (10 MiB by
 default). Oversized input closes the connection through the SDK's bounded NDJSON reader.
 `initialize` always returns protocol version `1`, including when another version is requested,
 as specified by [ACP version negotiation](https://agentclientprotocol.com/protocol/v1/initialization).
-All optional prompt, persistence, and MCP transport capabilities are disabled. Local/editor
+Optional persistence and MCP transport capabilities are disabled. Local/editor
 filesystem and terminal tools are not installed. Unknown methods return `-32601`, invalid
 params return `-32602`, malformed JSON returns `-32700`, and invalid envelopes return `-32600`.
+
+## Sessions and content
+
+After initialization, send `session/new` with `{ "cwd": "/absolute/workspace", "mcpServers": [] }`.
+Use its `sessionId` in `session/prompt` with an ordered `prompt` array of content blocks. A new
+prompt on the same session sees successful prior turns. Different sessions have independent
+agents, histories and locks; overlapping prompts in one session fail with `data.kind: "session_busy"`
+(`-32600`). Unknown sessions fail with `session_not_found` (`-32002`).
+
+The cwd must exist and be a directory. Optional `workspaceRoots` restricts creation to canonical
+paths inside those directories, including symlink checks. The factory receives the canonical
+absolute cwd and immutable client capability/policy snapshots. Application tools should resolve
+paths against `context.cwd`; the adapter never calls `process.chdir()`. These checks do not sandbox
+application code. Editor filesystem and terminal tools stay disabled even if the client advertises them.
+
+Text becomes Anvia user text parts. Resource links become labelled references containing name,
+URI and description; no URI is fetched. Set `images: true` on `serveStdio` or `createAcpConnection`
+to accept base64 PNG, JPEG, GIF and WebP images. Every factory result must then have an
+image-capable model. The launcher uses defaults; opt-in requires a library host. Images map to
+Anvia image parts with their MIME type. Audio, embedded resources, disabled images and unsupported
+MIME types fail with `unsupported_content` (`-32602`); malformed base64 fails with `invalid_content`.
+Annotations and `_meta` never become model instructions or permission overrides.
+
+Streaming models use one stream consumer; completion-only models use `generate`. Unsupported
+approval/question suspensions fail with `unsupported_interaction` without resuming the tool.
+Successful completion maps to `end_turn`, output limits to `max_tokens`, exhausted agent turns
+to `max_turn_requests`, and guardrail/filter refusals to `refusal`. Provider/factory errors expose
+only safe kinds (`execution_failed` / `configuration_error`), never raw causes or credentials.
+
+## Resource bounds
+
+Configure `limits` on the library host. Every value must be a positive safe integer.
+
+| Option               | Default | Scope                                                       |
+| -------------------- | ------- | ----------------------------------------------------------- |
+| `maxSessions`        | 32      | Connection, including in-progress factories                 |
+| `maxPromptBytes`     | 10 MiB  | Aggregate text and encoded-image bytes per prompt           |
+| `maxTextBytes`       | 1 MiB   | UTF-8 text, including rendered resource references          |
+| `maxImageBytes`      | 5 MiB   | Decoded bytes per image                                     |
+| `maxContentBlocks`   | 256     | Blocks per prompt                                           |
+| `maxHistoryBytes`    | 16 MiB  | Serialized private history per session                      |
+| `maxHistoryMessages` | 1,000   | Private history messages per session                        |
+| `maxPendingRequests` | 16      | Outstanding editor requests per session (for later bridges) |
+
+Limit violations return `resource_limit` (`-32602`). The separate `maxMessageBytes` wire limit
+includes metadata and closes the connection on overflow. History uses an adapter-owned in-memory
+`MemoryStore`, with atomic completed-turn appends. It does not silently truncate or evict messages.
+A response that exceeds the history budget fails the prompt, preserving prior history; application
+effects that already ran cannot be undone. A prompt that already exceeds the history budget is
+rejected before execution. Failed, blocked, suspended and exhausted runs preserve prior history only.
+Provider/tool transient allocations are not bounded by the stored-history budget.
+
+Sessions last until connection close; persistence, per-session close/delete RPCs and eviction are
+not implemented. Reconnect to release a full connection, or create a new session if capacity remains.
 
 ## Offline smoke test
 
@@ -108,7 +167,8 @@ key is needed. EOF, SIGINT, and SIGTERM stop the transport.
 
 `pnpm --filter @anvia/acp test` builds the package and runs unit and real subprocess tests.
 The subprocess tests exercise the built bin, sample agent, factory loading, stdout isolation,
-startup errors, EOF, and signals. These are handshake tests, not editor compatibility claims.
+startup errors, EOF, and signals. Session tests cover isolation, concurrent prompts, multi-turn
+history, content conversion, resource limits and teardown. These are not editor compatibility claims.
 
 Manual editor verification belongs to ACP 10 after session execution exists:
 
@@ -117,4 +177,5 @@ Manual editor verification belongs to ACP 10 after session execution exists:
 - Once implemented, exercise two chat turns, approval/denial, cancellation, MCP, and subprocess exit.
 
 See [DESIGN.md](./DESIGN.md) for the proposed contract and later task boundaries. External
-documentation should describe this as a scaffold until session execution is available.
+documentation should describe this as partial ACP support until output mapping, cancellation,
+permissions and MCP integration are available.

@@ -20,7 +20,7 @@ export type AcpSessionPolicy = Readonly<{
   }>;
 }>;
 
-/** Session creation contract; session execution is introduced after the transport scaffold. */
+/** Immutable, session-local creation context. Resolve tool paths against cwd, never process.chdir. */
 export type AcpSessionContext = Readonly<{
   sessionId: string;
   cwd: string;
@@ -46,12 +46,29 @@ export type AcpAgentInfo = Readonly<{
   title?: string;
 }>;
 
+export type AcpLimits = Readonly<{
+  maxSessions: number;
+  maxPromptBytes: number;
+  maxTextBytes: number;
+  maxImageBytes: number;
+  maxContentBlocks: number;
+  maxHistoryBytes: number;
+  maxHistoryMessages: number;
+  maxPendingRequests: number;
+}>;
+
 export type AcpOptions = Readonly<{
-  /** Loaded now, invoked only once session/new is implemented. */
+  /** Called once per session. Must return a fresh Agent without separately configured memory. */
   sessionFactory: AcpSessionFactory;
   agentInfo?: AcpAgentInfo;
   /** Maximum bytes per incoming NDJSON message; defaults to 10 MiB. */
   maxMessageBytes?: number;
+  /** Images require explicit opt-in and an image-capable model in every session. */
+  images?: boolean;
+  /** Existing absolute directories; canonical containment is checked before calling the factory. */
+  workspaceRoots?: readonly string[];
+  /** Positive integer resource bounds. See README for defaults. */
+  limits?: Partial<AcpLimits>;
 }>;
 
 export type AcpConnectionOptions = AcpOptions &
@@ -61,8 +78,8 @@ export type AcpConnectionOptions = AcpOptions &
   }>;
 
 export type AcpConnection = Readonly<{
-  /** Resolves on input EOF, transport failure, or explicit close. */
+  /** Resolves after session cleanup on input EOF, transport failure, or explicit close. */
   closed: Promise<void>;
-  /** Idempotent. Cancels the input reader; does not close caller-owned output. */
+  /** Idempotent. Aborts session work and disposes bindings; does not close caller-owned output. */
   close: () => Promise<void>;
 }>;

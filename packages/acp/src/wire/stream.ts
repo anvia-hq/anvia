@@ -1,6 +1,7 @@
 import { ndJsonStream, type AnyMessage, type Stream } from "@agentclientprotocol/sdk";
 import { WritableStream } from "node:stream/web";
 import type { AcpConnectionOptions } from "../types.js";
+import { errorCodes } from "../errors.js";
 
 const errorMessages: Record<number, string> = {
   [-32700]: "Parse error",
@@ -25,7 +26,11 @@ export function createV1Stream(options: AcpConnectionOptions): Stream {
           code,
           message: errorMessages[code] ?? "Request failed",
         };
-        if (code === -32600 && (kind === "already_initialized" || kind === "not_initialized")) {
+        if (
+          typeof kind === "string" &&
+          Object.hasOwn(errorCodes, kind) &&
+          errorCodes[kind as keyof typeof errorCodes] === code
+        ) {
           message.error.data = { kind };
         }
         chunk = encoder.encode(JSON.stringify(message) + "\n");

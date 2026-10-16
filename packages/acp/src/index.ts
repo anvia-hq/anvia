@@ -4,6 +4,7 @@ export type {
   AcpClientCapabilities,
   AcpConnection,
   AcpConnectionOptions,
+  AcpLimits,
   AcpOptions,
   AcpSessionBinding,
   AcpSessionContext,

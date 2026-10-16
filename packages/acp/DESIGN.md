@@ -3,10 +3,53 @@
 Status: proposed, pending Indra review. Baseline verified on 2026-10-16.
 
 This is the repository design contract for the agent-side adapter. ACP 01 added documentation
-only. ACP 02 now implements the package manifest, pinned SDK, stream/stdio entrypoints,
-initialization, no-op authentication, and launcher. The remaining APIs and capabilities below
+only. ACP 02 implements the package manifest, pinned SDK, stream/stdio entrypoints,
+initialization, no-op authentication, and launcher. ACP 03 adds session creation and prompt
+execution with bounded in-memory history. The remaining APIs and capabilities below
 are implementation targets, not claims of editor compatibility. Later tasks own session
 execution and optional capabilities.
+
+### ACP 03 implementation status
+
+`session/new` validates an existing absolute directory, canonicalizes symlinks, checks optional
+host `workspaceRoots`, reserves capacity during setup, and calls the factory once. Each record
+owns an immutable cwd/capability/policy snapshot, fresh agent, empty MCP connection/tool slots,
+private `MemoryStore`, prompt lock, and bounded pending-editor-request registry. No code changes
+the process cwd. Factories must resolve application tool paths using their context cwd.
+
+`session/prompt` validates all content before model execution and rejects overlap with
+`session_busy`. It uses `Agent.stream()` with one consumer for streaming models and `generate()`
+for completion-only models. ACP 04 will map events to `session/update`; ACP 03 returns only the
+final stop reason, so it is still not a usable editor chat integration. Approvals/questions fail
+safely with `unsupported_interaction`; cancellation RPCs and editor MCP connections remain ACP
+05–07 work. Nonempty MCP declarations are explicitly rejected before the factory runs.
+
+Proposed decisions — pending Indra review:
+
+- Use a private, scope-checked in-memory `MemoryStore` per session, managed by the adapter.
+  Pass loaded history plus the new user message through `AgentInput.messages`; append only
+  successful outcome messages once. Core outcomes contain this run's messages, excluding prior
+  input history. Reject agents with separately configured memory or structured output.
+- Implement optional image conversion in ACP 03 to meet its acceptance criteria. `images: true`
+  advertises support and requires an image-capable model from every factory result. Defaults
+  remain text/resource references only. Accept canonical base64 PNG, JPEG, GIF and WebP payloads;
+  never fetch image URIs. Image decoding/format recognition belongs to the model provider.
+- Default limits per connection: 32 sessions including setup. Per session: 16 pending editor
+  requests, 1,000 history messages and 16 MiB serialized history. Per prompt: 256 blocks,
+  10 MiB aggregate text/encoded-image bytes, 1 MiB aggregate UTF-8 text (including rendered
+  resource references), 5 MiB decoded per image. The independent 10 MiB wire-frame limit still
+  includes metadata. Hosts can override positive integer limits with `limits`.
+- Reject history overflow atomically without truncating tool pairs or evicting old turns. A
+  completed response that exceeds the history budget fails the prompt and retains prior history;
+  already executed application effects cannot be undone. Failed, blocked, suspended and
+  max-turn-exhausted runs retain prior history only. A full session needs a new session/connection.
+- No persistence, idle eviction or session close/delete RPC yet. On connection close, abort setup,
+  active runs and pending requests, clear history, and dispose bindings once. Dispose late factory
+  bindings too. Library close waits for cooperative factories/runs/disposers to settle; the existing
+  launcher timeout bounds process shutdown. Application/provider transient allocations and tool
+  outputs during a run are not a heap quota; output queue hardening remains later work.
+- Pending editor requests reserve slots before dispatch and reject late replies after teardown.
+  ACP 03 makes no editor requests itself; later bridges must use this registry.
 
 ### ACP 02 implementation status
 
@@ -14,7 +57,7 @@ execution and optional capabilities.
 `anvia-acp <module-path>` loads trusted JavaScript modules exporting a named/default session
 factory or Anvia agent. It reserves protocol stdout before import and redirects console/direct
 `process.stdout.write` logging to stderr. The library leaves process logging/signals to its host.
-Only `initialize` and `authenticate` are registered; session methods return `-32601`. No factory
+At ACP 02 only `initialize` and `authenticate` were registered. No factory
 is invoked during initialization. The public factory types establish the ACP 03 boundary.
 The SDK validates envelopes and method parameters, handles JSON-RPC errors, and bounds incoming
 messages to 10 MiB by default. Tests cover the built launcher with an offline sample agent;
@@ -81,7 +124,7 @@ separately. These decisions are explicit defaults for implementation, not comple
 | Permissions                  | Offer `allow_once` and `reject_once` only. No “always” grant cache, across either turns or sessions. Application tools retain `requiresApproval`; editor and client-supplied MCP tools require approval by default.                                                                                                                                                       |
 | Concurrency                  | One active prompt per session; reject overlapping prompts rather than queueing. Different sessions may run concurrently with isolated cwd, histories, callbacks, and tool IDs.                                                                                                                                                                                            |
 | Runtime                      | Direct `Agent.stream()` driver first. Durable execution, a client-side adapter, remote transport, and the `anvia acp` CLI command are later tasks.                                                                                                                                                                                                                        |
-| Content/privacy              | Text and resource-link references in the MVP. Images and embedded context are later opt-ins; audio is unsupported initially. Suppress reasoning and signatures in editor updates and transcript replay.                                                                                                                                                                   |
+| Content/privacy              | Text and resource-link references by default; images are an explicit host opt-in from ACP 03. Embedded context and audio remain unsupported. Suppress reasoning and signatures in editor updates and transcript replay.                                                                                                                                                   |
 
 An application can provide trusted custom tools that do arbitrary work. This adapter is not
 a sandbox for application code. Permission presets govern registered operations; they cannot
@@ -170,14 +213,14 @@ that every session factory result supports any advertised prompt capability.
 5. On teardown, invalidate callbacks first, abort the stream, close MCP/terminal resources,
    invoke `dispose` once, and remove the record. Cleanup attempts all resources even if one fails.
 
-Default history is adapter-managed: start a turn with `Agent.stream({ messages, ...settings })`,
-using private prior outcome messages plus the new user message. Keep one authoritative history;
-do not also configure agent memory in this mode. A memory-backed binding is a future explicit
-mode using `{ prompt, session }`, with an isolated `MemoryScope`. The MVP must reject an agent
-with memory rather than accidentally duplicate or share history. ACP session storage and Anvia
-model memory are separate contracts. Completed outcomes replace history once, rather than
-appending the full outcome repeatedly. Cancellation retains only consistent completed messages;
-never carry an unanswered tool invocation into a fresh model request.
+Default history is adapter-managed through a private `MemoryStore`: start a turn with
+`Agent.stream({ messages, ...settings })` (or `generate` for a completion-only model), using
+loaded history plus the new user message. Reject independently configured agent memory to avoid
+duplicate or shared history. The coordinator uses an isolated `MemoryScope` when loading and
+appending, and commits each successful run's messages once. Core outcomes exclude prior input
+history; do not slice those outcome messages by the prior history length. ACP session records and
+model history remain separate contracts. Failed or suspended runs retain prior committed history
+only; never carry an unanswered tool invocation into a fresh model request.
 
 ## Capability matrix
 
@@ -195,7 +238,7 @@ Absent optional capabilities mean unsupported; no optimistic probing or silent d
 | `session/update`                                 | Text, tool start/progress/result                  | Rich diffs, locations, plan, usage in ACP 08; never fabricate provider data                     |
 | `session/request_permission`                     | Once-only approval bridge                         | No always-allow/reject options                                                                  |
 | Text / resource links                            | Supported; links remain references                | No implicit URI fetching                                                                        |
-| `promptCapabilities.image`                       | `false`                                           | ACP 08: explicit host opt-in and compatible model                                               |
+| `promptCapabilities.image`                       | `false` by default; host opt-in from ACP 03       | `images: true` requires a compatible model in every factory result                              |
 | `promptCapabilities.embeddedContext`             | `false`                                           | ACP 08: validated text resources                                                                |
 | `promptCapabilities.audio`                       | `false`                                           | Future explicit conversion policy                                                               |
 | Stdio MCP                                        | Supported, per-session ownership                  | Required ACP transport; no capability flag                                                      |
@@ -223,8 +266,8 @@ never silently omit context. Text maps to Anvia user text parts. A resource link
 clearly labelled user-context reference containing its URI, name, and supplied description;
 it does not authorize a file read, HTTP request, or MCP resource read.
 
-When enabled later, base64 images map to Anvia image parts after MIME and decoded-size checks.
-Embedded text resources become labelled user-context text, never system instructions. Binary
+When enabled with `images: true`, base64 images map to Anvia image parts after MIME and
+decoded-size checks. Future embedded text resources become labelled user-context text, never system instructions. Binary
 embedded resources and audio remain rejected until a converter is explicitly implemented.
 Untrusted annotations, resource text, and MCP instructions cannot widen host permissions.
 These content distinctions follow the [ACP content contract](https://agentclientprotocol.com/protocol/v1/content).

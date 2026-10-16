@@ -99,7 +99,7 @@ describe("ACP v1 transport", () => {
     }
   });
 
-  it.each(["unknown", "session/new", "session/prompt", "session/load", "session/set_mode"])(
+  it.each(["unknown", "session/load", "session/set_mode"])(
     "returns method-not-found for %s",
     async (method) => {
       expect((await fixture().request(method, {})).error?.code).toBe(-32601);

@@ -10,6 +10,65 @@ plaintext reasoning. ACP 05 adds per-turn cancellation. ACP 06 adds approval/que
 are implementation targets, not claims of editor compatibility. Later tasks own session
 execution and optional capabilities.
 
+### ACP 08 implementation status
+
+Phase-2 editor tools, config rebuilds, slash commands, text resources and explicit edit diffs are
+implemented. Images reuse ACP 03's opt-in validation. No core or Docker package changes are needed:
+local and Docker backends use the existing session factory/tool contracts.
+
+Proposed decisions — pending Indra review:
+
+- Keep the framework adapter boundary, application-owned model/credentials, no-op authentication,
+  in-memory sessions, and local/editor tools off by default. `editorTools` opts in independently to
+  reads, writes and terminals; each is intersected with the client's advertised capability. All
+  registered editor tools require approval, and the factory must attach their frozen identities.
+  Never retry a denied or failed operation through a different backend.
+- Resolve editor paths against canonical session cwd; validate lexical roots and existing ancestors
+  (including symlinks) before dispatch. The editor owns access-time policy and unsaved buffers.
+  Terminal cwd containment is not a shell sandbox. Use explicit command/argv, no adapter shell/env.
+  Bound file text and terminal output to 1 MiB. Always attempt terminal release in `finally`; kill
+  first on cancellation or wait failure. Cleanup uses independent two-second signals. Retain late
+  create replies to release their IDs; an unresponsive create quarantines execution. Once the
+  transport is gone, cleanup is best effort and the editor owns its remaining terminal resources.
+- Refine ACP 01's MVP-only prohibition on model switching: phase 2 accepts an explicit host model
+  catalog (`models`, first value default), passed through `context.config.model`. No model discovery,
+  provider construction or credentials on the wire. Always return the `mode` config option (`ask`),
+  and offer `read-only` only with host opt-in. Legacy mode RPC remains unsupported.
+- Config changes validate first, cancel any active turn/approval, wait for owned execution to finish,
+  then rebuild via the session factory. Block overlapping prompts/config writes while rebuilding.
+  Preserve successful history and session-owned MCP clients. Commit only a validated fresh binding;
+  dispose failed/late bindings, keep the previous config on rebuild failure, and dispose the old
+  binding after a successful swap. Disposal failure disables the session rather than resurrecting
+  a disposed binding. Stale approvals and continuations cannot cross this boundary.
+- Read-only contexts omit editor writes, terminals and editor MCP servers. Require explicit
+  `readOnlyTools` classification for every remaining application tool; preserve approvals.
+  Factories must exclude opaque provider-side/dynamic/nested execution with write effects. This
+  trusted host contract does not sandbox arbitrary application code. MCP connections remain owned
+  by the session and can be used again when switching back to ask.
+- Commands are an explicit, fixed host registry of pure synchronous prompt expansions. Announce
+  them after creation; dispatch only sole text blocks matching `/name arguments`. Unknown commands
+  remain text. Validate original and expanded inputs against normal limits; no built-in shell.
+- `embeddedContext: true` accepts text resources as labelled user context (URI is metadata, never
+  fetched); reject binary blobs and audio. Image policy remains unchanged.
+- `AcpToolPresentation.diffs` supplies proposed old/new text and explicit paths. Omit unknown old
+  text; null means a known new file. Bound presentation to 20 diffs / 1 MiB aggregate text and show
+  it in pending updates and permission requests. Editor writes supply new-text proposals and
+  locations automatically; other tools keep generic kind `other` unless the host projects metadata.
+  Never infer a diff from arbitrary raw arguments or claim a proposal was applied after denial.
+- Local/Docker tools stay host-owned. Docker uses its own POSIX workdir; `mapSandboxPath` maps an
+  explicitly corresponding sandbox root to a host root for display, rejecting traversal. It does
+  not mount/copy/synchronize files; the host must establish that correspondence or omit locations.
+
+Headless tests cover opt-in/capability intersections, identity registration, editor denial with no
+local fallback, cwd/symlink checks, terminal cleanup including late create replies, config rollback,
+read-only classification, approval races, execution quarantine, history preservation, command/config
+wire updates, text/image input and diff permissions. Real editor and Docker integration remain manual;
+see the README checklist. ACP 16 must document the new options, context config, binding classification,
+`AcpCommand`, `AcpSessionConfig`, diff metadata and `mapSandboxPath` externally. Wire contracts follow
+[terminals](https://agentclientprotocol.com/protocol/v1/terminals),
+[config options](https://agentclientprotocol.com/protocol/v1/session-config-options), and
+[slash commands](https://agentclientprotocol.com/protocol/v1/slash-commands).
+
 ### ACP 07 implementation status
 
 Editor stdio declarations now connect through session-owned `McpClientGroup` instances before
@@ -296,19 +355,19 @@ All Anvia-specific defaults and policies in this document are proposals under th
 including the detailed contracts in subsequent sections. Protocol requirements are sourced
 separately. These decisions are explicit defaults for implementation, not completed approval.
 
-| Question                     | Proposed decision and consequence                                                                                                                                                                                                                                                                                                                                         |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Product shape                | Framework adapter. Applications supply an Anvia agent factory; no bundled coding agent, provider SDK, or default model.                                                                                                                                                                                                                                                   |
-| Model and credentials        | The application configures both through its own Anvia agent/provider setup. Advertise `authMethods: []`; a schema-valid `authenticate` is an idempotent no-op returning `{}`. Never collect credentials through ACP, infer a login flow, or expose provider secrets. Missing provider credentials produce a sanitized configuration error, not an editor login challenge. |
-| Session persistence          | An adapter-owned in-memory session store by default. Records and multi-turn context last only for the connection lifetime. Do not select SQLite or an application `MemoryStore` implicitly.                                                                                                                                                                               |
-| Local/editor fs and terminal | Off by default. Local tools require explicit application registration; editor-backed tools require explicit opt-in plus the corresponding client capability. Advertising a capability alone grants no permission.                                                                                                                                                         |
-| Modes/config options         | Permission presets on the same agent first: `ask` by default and optional `read-only`. No model or agent switching in the first release. Prefer config options; legacy modes, when exposed, alias the same preset. `read-only` admits only application-classified reads, and still honors an existing approval requirement. Unknown effects are denied.                   |
-| Disconnect                   | Cancel all active turns and pending interactions, invalidate continuations, and dispose connection-owned sessions/resources. Never continue in the background or accept a late approval. Already-started side effects may have happened; do not retry them automatically.                                                                                                 |
-| Cross-process restore        | Not required for the first v1 MVP. No load/resume/list/close/delete advertisement until ACP 11 implements and tests each operation. Persistent history does not imply resumable execution.                                                                                                                                                                                |
-| Permissions                  | Offer `allow_once` and `reject_once` only. No “always” grant cache, across either turns or sessions. Application tools retain `requiresApproval`; editor and client-supplied MCP tools require approval by default.                                                                                                                                                       |
-| Concurrency                  | One active prompt per session; reject overlapping prompts rather than queueing. Different sessions may run concurrently with isolated cwd, histories, callbacks, and tool IDs.                                                                                                                                                                                            |
-| Runtime                      | Direct `Agent.stream()` driver first. Durable execution, a client-side adapter, remote transport, and the `anvia acp` CLI command are later tasks.                                                                                                                                                                                                                        |
-| Content/privacy              | Text and resource-link references by default; images are an explicit host opt-in from ACP 03. Embedded context and audio remain unsupported. Suppress reasoning by default; ACP 04 permits explicit plaintext live-update opt-in. Never expose signatures or replay reasoning.                                                                                            |
+| Question                     | Proposed decision and consequence                                                                                                                                                                                                                                                                                                                                              |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Product shape                | Framework adapter. Applications supply an Anvia agent factory; no bundled coding agent, provider SDK, or default model.                                                                                                                                                                                                                                                        |
+| Model and credentials        | The application configures both through its own Anvia agent/provider setup. Advertise `authMethods: []`; a schema-valid `authenticate` is an idempotent no-op returning `{}`. Never collect credentials through ACP, infer a login flow, or expose provider secrets. Missing provider credentials produce a sanitized configuration error, not an editor login challenge.      |
+| Session persistence          | An adapter-owned in-memory session store by default. Records and multi-turn context last only for the connection lifetime. Do not select SQLite or an application `MemoryStore` implicitly.                                                                                                                                                                                    |
+| Local/editor fs and terminal | Off by default. Local tools require explicit application registration; editor-backed tools require explicit opt-in plus the corresponding client capability. Advertising a capability alone grants no permission.                                                                                                                                                              |
+| Modes/config options         | Permission presets on the same agent first: `ask` by default and optional `read-only`. No model switching in the MVP; ACP 08 adds host-catalog model selection. Prefer config options; legacy modes, when exposed, alias the same preset. `read-only` admits only application-classified reads, and still honors an existing approval requirement. Unknown effects are denied. |
+| Disconnect                   | Cancel all active turns and pending interactions, invalidate continuations, and dispose connection-owned sessions/resources. Never continue in the background or accept a late approval. Already-started side effects may have happened; do not retry them automatically.                                                                                                      |
+| Cross-process restore        | Not required for the first v1 MVP. No load/resume/list/close/delete advertisement until ACP 11 implements and tests each operation. Persistent history does not imply resumable execution.                                                                                                                                                                                     |
+| Permissions                  | Offer `allow_once` and `reject_once` only. No “always” grant cache, across either turns or sessions. Application tools retain `requiresApproval`; editor and client-supplied MCP tools require approval by default.                                                                                                                                                            |
+| Concurrency                  | One active prompt per session; reject overlapping prompts rather than queueing. Different sessions may run concurrently with isolated cwd, histories, callbacks, and tool IDs.                                                                                                                                                                                                 |
+| Runtime                      | Direct `Agent.stream()` driver first. Durable execution, a client-side adapter, remote transport, and the `anvia acp` CLI command are later tasks.                                                                                                                                                                                                                             |
+| Content/privacy              | Text and resource-link references by default; images are an explicit host opt-in from ACP 03. Embedded context and audio remain unsupported. Suppress reasoning by default; ACP 04 permits explicit plaintext live-update opt-in. Never expose signatures or replay reasoning.                                                                                                 |
 
 An application can provide trusted custom tools that do arbitrary work. This adapter is not
 a sandbox for application code. Permission presets govern registered operations; they cannot
@@ -317,13 +376,13 @@ for an agent with execution paths whose effects cannot be enforced.
 
 ## Session factory API
 
-The factory is called once for each successful `session/new`, after validating the absolute
+The factory is called for each successful `session/new` and config rebuild, after validating the absolute
 cwd, authorizing MCP configuration, and connecting session-owned MCP clients. It receives
 Anvia tool/server contracts and a normalized capability snapshot, never the raw SDK connection.
-It returns a fresh agent for the session and an optional cleanup callback. Provider clients
+It returns a fresh agent for each binding and an optional cleanup callback. Provider clients
 may be shared by the application; mutable agent/session state may not.
 
-Proposed TypeScript surface (a design sketch, not a compiled public entrypoint):
+Original TypeScript surface sketch (see `src/types.ts` for compiled APIs and ACP 08 config fields):
 
 ```ts
 import type { Agent } from "@anvia/core/agent";
@@ -412,29 +471,29 @@ only; never carry an unanswered tool invocation into a fresh model request.
 handlers, host opt-in, and client capabilities must all agree before advertising/using a feature.
 Absent optional capabilities mean unsupported; no optimistic probing or silent downgrade.
 
-| ACP surface                                      | MVP target                                      | Later work / gate                                                                                      |
-| ------------------------------------------------ | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `initialize`                                     | v1, agent identity, conservative capabilities   | SDK/schema upgrades are explicit                                                                       |
-| `authenticate`                                   | No-op; `authMethods: []`                        | Custom auth would need a separate contract                                                             |
-| `session/new`                                    | Absolute cwd, fresh agent, stdio MCP            | Policy validation before effects                                                                       |
-| `session/prompt`                                 | Pending until the whole turn ends               | No premature response at an approval suspension                                                        |
-| `session/cancel`                                 | Abort active turn; settle prompt as `cancelled` | Idle/unknown-session notification is harmless                                                          |
-| `session/update`                                 | Text, tool start/progress/result                | Basic title/kind/locations in ACP 04; rich diffs, plan, usage in ACP 08; never fabricate provider data |
-| `session/request_permission`                     | Once-only approval bridge                       | No always-allow/reject options                                                                         |
-| Text / resource links                            | Supported; links remain references              | No implicit URI fetching                                                                               |
-| `promptCapabilities.image`                       | `false` by default; host opt-in from ACP 03     | `images: true` requires a compatible model in every factory result                                     |
-| `promptCapabilities.embeddedContext`             | `false`                                         | ACP 08: validated text resources                                                                       |
-| `promptCapabilities.audio`                       | `false`                                         | Future explicit conversion policy                                                                      |
-| Stdio MCP                                        | Supported, per-session ownership                | Required ACP transport; no capability flag                                                             |
-| `mcpCapabilities.http` / `.sse`                  | HTTP opt-in; SSE `false`                        | ACP 07 tests HTTP and exact endpoint trust; legacy SSE unsupported                                     |
-| Client `fs.readTextFile` / `fs.writeTextFile`    | Unused; tools off                               | ACP 08: opt-in, separate client flags and workspace policy                                             |
-| Client `terminal`                                | Unused; tools off                               | ACP 08: opt-in, lifecycle and cancellation cleanup                                                     |
-| `session/set_config_option` / `session/set_mode` | Unadvertised and unavailable                    | ACP 08: permission presets, validated while idle, atomic config/mode updates                           |
-| `available_commands_update`                      | No commands advertised                          | ACP 08: explicit application command registry                                                          |
-| `elicitation/create`                             | ACP 06: validated forms for capable clients     | Without form support: `unsupported_interaction`; no fabricated answers or stdin prompts                |
-| `loadSession`                                    | `false`                                         | ACP 11: safe replay without model/tool execution                                                       |
-| `sessionCapabilities.resume/list/close/delete`   | Omitted                                         | ACP 11: advertise each only with working store semantics                                               |
-| v2 / remote transports / durable driver          | Unavailable                                     | Separate adapters/tasks, never implicit fallback                                                       |
+| ACP surface                                      | MVP target                                      | Later work / gate                                                                                                        |
+| ------------------------------------------------ | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `initialize`                                     | v1, agent identity, conservative capabilities   | SDK/schema upgrades are explicit                                                                                         |
+| `authenticate`                                   | No-op; `authMethods: []`                        | Custom auth would need a separate contract                                                                               |
+| `session/new`                                    | Absolute cwd, fresh agent, stdio MCP            | Policy validation before effects                                                                                         |
+| `session/prompt`                                 | Pending until the whole turn ends               | No premature response at an approval suspension                                                                          |
+| `session/cancel`                                 | Abort active turn; settle prompt as `cancelled` | Idle/unknown-session notification is harmless                                                                            |
+| `session/update`                                 | Text, tool start/progress/result                | Basic title/kind/locations in ACP 04; rich diffs in ACP 08; plan/usage remain future work; never fabricate provider data |
+| `session/request_permission`                     | Once-only approval bridge                       | No always-allow/reject options                                                                                           |
+| Text / resource links                            | Supported; links remain references              | No implicit URI fetching                                                                                                 |
+| `promptCapabilities.image`                       | `false` by default; host opt-in from ACP 03     | `images: true` requires a compatible model in every factory result                                                       |
+| `promptCapabilities.embeddedContext`             | `false`                                         | ACP 08: validated text resources                                                                                         |
+| `promptCapabilities.audio`                       | `false`                                         | Future explicit conversion policy                                                                                        |
+| Stdio MCP                                        | Supported, per-session ownership                | Required ACP transport; no capability flag                                                                               |
+| `mcpCapabilities.http` / `.sse`                  | HTTP opt-in; SSE `false`                        | ACP 07 tests HTTP and exact endpoint trust; legacy SSE unsupported                                                       |
+| Client `fs.readTextFile` / `fs.writeTextFile`    | Unused; tools off                               | ACP 08: opt-in, separate client flags and workspace policy                                                               |
+| Client `terminal`                                | Unused; tools off                               | ACP 08: opt-in, lifecycle and cancellation cleanup                                                                       |
+| `session/set_config_option` / `session/set_mode` | Unadvertised and unavailable                    | ACP 08: config options rebuild safely after cancellation; legacy mode RPC unsupported                                    |
+| `available_commands_update`                      | No commands advertised                          | ACP 08: explicit application command registry                                                                            |
+| `elicitation/create`                             | ACP 06: validated forms for capable clients     | Without form support: `unsupported_interaction`; no fabricated answers or stdin prompts                                  |
+| `loadSession`                                    | `false`                                         | ACP 11: safe replay without model/tool execution                                                                         |
+| `sessionCapabilities.resume/list/close/delete`   | Omitted                                         | ACP 11: advertise each only with working store semantics                                                                 |
+| v2 / remote transports / durable driver          | Unavailable                                     | Separate adapters/tasks, never implicit fallback                                                                         |
 
 An MVP `initialize` response therefore has `protocolVersion: 1`, `authMethods: []`,
 `loadSession: false`, all three optional prompt flags false, both optional MCP flags false,
@@ -451,7 +510,7 @@ clearly labelled user-context reference containing its URI, name, and supplied d
 it does not authorize a file read, HTTP request, or MCP resource read.
 
 When enabled with `images: true`, base64 images map to Anvia image parts after MIME and
-decoded-size checks. Future embedded text resources become labelled user-context text, never system instructions. Binary
+decoded-size checks. Opt-in embedded text resources become labelled user-context text, never system instructions. Binary
 embedded resources and audio remain rejected until a converter is explicitly implemented.
 Untrusted annotations, resource text, and MCP instructions cannot widen host permissions.
 These content distinctions follow the [ACP content contract](https://agentclientprotocol.com/protocol/v1/content).
@@ -509,8 +568,8 @@ never unlock it for another prompt or claim the side effect was rolled back. A l
 kill arbitrary caller code. Editor terminal cleanup is best effort once the connection is gone.
 
 Permission presets cannot override an application's stricter `requiresApproval` or workspace
-restriction. Configuration changes are allowed only while idle, cannot enable disabled
-backends, and take effect atomically at the next prompt. Do not implement an always-allow mode.
+restriction. ACP 08 config changes cancel active execution and wait for it to settle before rebuilding. They
+cannot enable host-disabled backends and take effect atomically at the next prompt. Do not implement an always-allow mode.
 
 ## Execution backends and editor MCP
 

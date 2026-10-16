@@ -1,3 +1,5 @@
+import { SessionConfiguration } from "./config.js";
+import { createEditorTools, editorPresentation, type EditorClient } from "./editor-tools.js";
 import { Agent } from "@anvia/core/agent";
 import { randomUUID } from "node:crypto";
 import { realpath, stat } from "node:fs/promises";
@@ -21,6 +23,7 @@ import type {
   AcpSessionBinding,
   AcpSessionContext,
   AcpSessionFactory,
+  AcpSessionConfig,
 } from "./types.js";
 
 export class SessionManager {
@@ -32,11 +35,17 @@ export class SessionManager {
   private readonly roots: readonly string[] | undefined;
   private readonly images: boolean;
   private readonly reasoning: boolean;
+  readonly configuration: SessionConfiguration;
+  private readonly editorTools: AcpOptions["editorTools"];
+  private readonly embeddedContext: boolean;
   private readonly mcp: AcpMcpOptions;
   private closing: Promise<void> | undefined;
   private closed = false;
 
   constructor(options: AcpOptions) {
+    this.configuration = new SessionConfiguration(options);
+    this.editorTools = Object.freeze({ ...options.editorTools });
+    this.embeddedContext = options.embeddedContext === true;
     this.limits = resolveLimits(options.limits);
     this.factory = options.sessionFactory;
     this.roots = options.workspaceRoots && [...options.workspaceRoots];
@@ -53,17 +62,22 @@ export class SessionManager {
     cwd: string,
     capabilities: AcpClientCapabilities,
     declarations: readonly McpDeclaration[] = [],
+    editor?: (sessionId: string) => EditorClient,
   ): Promise<string> {
     if (this.closed) return Promise.reject(new AcpError("connection_closed"));
     if (this.sessions.size + this.setups.size >= this.limits.maxSessions) {
       return Promise.reject(new AcpError("resource_limit"));
     }
     const controller = new AbortController();
-    const setup = this.setup(cwd, capabilities, controller, structuredClone(declarations)).finally(
-      () => {
-        this.setups.delete(controller);
-      },
-    );
+    const setup = this.setup(
+      cwd,
+      Object.freeze({ ...capabilities }),
+      controller,
+      structuredClone(declarations),
+      editor,
+    ).finally(() => {
+      this.setups.delete(controller);
+    });
     this.setups.set(controller, setup);
     return setup;
   }
@@ -92,11 +106,65 @@ export class SessionManager {
     return this.closing;
   }
 
+  private async bind(context: AcpSessionContext): Promise<AcpSessionBinding> {
+    let binding: AcpSessionBinding | undefined;
+    try {
+      const result = await this.factory(context);
+      // A reused agent remains owned by its original binding.
+      if (result?.agent instanceof Agent && this.agents.has(result.agent))
+        throw new AcpError("configuration_error");
+      binding = result;
+      if (
+        !(binding?.agent instanceof Agent) ||
+        (binding.dispose !== undefined && typeof binding.dispose !== "function") ||
+        (binding.toolPresentation !== undefined && typeof binding.toolPresentation !== "function")
+      )
+        throw new AcpError("configuration_error");
+      const agent = binding.agent;
+      this.agents.add(agent);
+      validateTurnBudget(binding.turnBudget);
+      assertMcpRegistration(agent, context.mcpServers);
+      if (context.editorTools.some((tool) => !agent.tools.includes(tool)))
+        throw new AcpError("configuration_error");
+      if (context.config.mode === "read-only") {
+        const reads = new Set(binding.readOnlyTools ?? []);
+        if (
+          agent.mcpServers.length ||
+          agent.tools.some((tool) => !context.editorTools.includes(tool) && !reads.has(tool.name))
+        )
+          throw new AcpError("configuration_error");
+      }
+      if (
+        agent.memory !== undefined ||
+        agent.outputSchema !== undefined ||
+        (this.images && !agent.model.capabilities.imageInput)
+      )
+        throw new AcpError("configuration_error");
+      if (this.closed || context.signal.aborted) throw new AcpError("connection_closed");
+      const presentation = binding.toolPresentation;
+      return {
+        ...binding,
+        toolPresentation: (call) =>
+          editorPresentation(call, context.editorTools) ?? presentation?.(call),
+      };
+    } catch (error) {
+      try {
+        await disposeResources(binding);
+      } catch {
+        /* Preserve the setup error. */
+      }
+      if (this.closed || context.signal.aborted) throw new AcpError("connection_closed");
+      if (error instanceof AcpError) throw error;
+      throw new AcpError("configuration_error");
+    }
+  }
+
   private async setup(
     cwd: string,
     capabilities: AcpClientCapabilities,
     controller: AbortController,
     declarations: readonly McpDeclaration[],
+    editor?: (sessionId: string) => EditorClient,
   ): Promise<string> {
     let binding: AcpSessionBinding | undefined;
     let mcp: McpClientGroup | undefined;
@@ -113,57 +181,61 @@ export class SessionManager {
       );
       mcp = connected.group;
       if (this.closed) throw new AcpError("connection_closed");
-      const context: AcpSessionContext = Object.freeze({
-        sessionId: randomUUID(),
-        cwd: canonicalCwd,
-        clientCapabilities: Object.freeze({ ...capabilities }),
-        policy: Object.freeze({
-          permissionPreset: "ask",
+      const sessionId = randomUUID();
+      const client = editor?.(sessionId);
+      let session: AcpSession | undefined;
+      const build = async (config: AcpSessionConfig) => {
+        const readOnly = config.mode === "read-only";
+        const policy = Object.freeze({
+          permissionPreset: config.mode,
           workspaceRoots: Object.freeze(roots),
           editorTools: Object.freeze({
-            readTextFile: false,
-            writeTextFile: false,
-            terminal: false,
+            readTextFile:
+              !!client && this.editorTools?.readTextFile === true && capabilities.readTextFile,
+            writeTextFile:
+              !!client &&
+              !readOnly &&
+              this.editorTools?.writeTextFile === true &&
+              capabilities.writeTextFile,
+            terminal:
+              !!client && !readOnly && this.editorTools?.terminal === true && capabilities.terminal,
           }),
-        }),
-        mcpServers: connected.servers,
-        editorTools: Object.freeze([]),
-        signal: controller.signal,
-      });
-      const result = await this.factory(context);
-      // Never dispose a reused agent: the first session still owns its resources.
-      if (result?.agent instanceof Agent && this.agents.has(result.agent)) {
-        throw new AcpError("configuration_error");
-      }
-      binding = result;
-      if (
-        !(binding?.agent instanceof Agent) ||
-        (binding.dispose !== undefined && typeof binding.dispose !== "function") ||
-        (binding.toolPresentation !== undefined && typeof binding.toolPresentation !== "function")
-      ) {
-        throw new AcpError("configuration_error");
-      }
-      validateTurnBudget(binding.turnBudget);
-      assertMcpRegistration(binding.agent, context.mcpServers);
-      this.agents.add(binding.agent);
-      if (this.closed) throw new AcpError("connection_closed");
-      if (
-        binding.agent.memory !== undefined ||
-        binding.agent.outputSchema !== undefined ||
-        (this.images && !binding.agent.model.capabilities.imageInput)
-      ) {
-        throw new AcpError("configuration_error");
-      }
-      const session = new AcpSession(
-        context,
-        { ...binding, dispose: () => disposeResources(binding, mcp) },
+        });
+        const tools = createEditorTools(canonicalCwd, policy, client, () => {
+          if (!session) throw new AcpError("configuration_error");
+          return session.pendingRequests;
+        });
+        const context: AcpSessionContext = Object.freeze({
+          sessionId,
+          cwd: canonicalCwd,
+          clientCapabilities: Object.freeze({ ...capabilities }),
+          policy,
+          config,
+          mcpServers: readOnly ? Object.freeze([]) : connected.servers,
+          editorTools: tools,
+          signal: controller.signal,
+        });
+        return { context, binding: await this.bind(context) };
+      };
+      const initial = await build(this.configuration.initial());
+      binding = initial.binding;
+      if (this.closed || controller.signal.aborted) throw new AcpError("connection_closed");
+      session = new AcpSession(
+        initial.context,
+        binding,
         controller,
         this.limits,
         this.images,
         this.reasoning,
+        {
+          configuration: this.configuration,
+          embeddedContext: this.embeddedContext,
+          rebuild: build,
+          cleanup: () => disposeResources(undefined, mcp),
+        },
       );
-      this.sessions.set(context.sessionId, session);
-      return context.sessionId;
+      this.sessions.set(sessionId, session);
+      return sessionId;
     } catch (error) {
       controller.abort();
       try {

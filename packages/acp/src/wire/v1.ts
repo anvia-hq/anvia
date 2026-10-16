@@ -2,11 +2,14 @@ import {
   agent,
   RequestError,
   type ContentBlock,
+  type AvailableCommand,
+  type ToolCallUpdate,
+  type ToolCallContent,
   type ElicitationPropertySchema,
   type Stream,
   type SessionUpdate as V1Update,
 } from "@agentclientprotocol/sdk";
-import type { AcpClientCapabilities, AcpOptions } from "../types.js";
+import type { AcpClientCapabilities, AcpOptions, AcpToolPresentation } from "../types.js";
 import type { PromptBlock } from "../content.js";
 import { AcpError, errorCodes } from "../errors.js";
 import type { SessionManager } from "../session-manager.js";
@@ -49,7 +52,7 @@ export function connectV1(stream: Stream, sessions: SessionManager, options: Acp
           promptCapabilities: {
             image: options.images ?? false,
             audio: false,
-            embeddedContext: false,
+            embeddedContext: options.embeddedContext ?? false,
           },
           mcpCapabilities: { http: sessions.supportsHttpMcp, sse: false },
           sessionCapabilities: {},
@@ -60,22 +63,106 @@ export function connectV1(stream: Stream, sessions: SessionManager, options: Acp
       requireInitialized();
       return {};
     })
-    .onRequest("session/new", ({ params }) => {
+    .onRequest("session/new", ({ params, client }) => {
       requireInitialized();
       return respond(async () => {
-        return {
-          sessionId: await sessions.create(
-            params.cwd,
-            capabilities,
-            params.mcpServers.map((server) => {
-              if ("type" in server && server.type !== undefined) {
-                if (server.type === "acp") throw new AcpError("unsupported_mcp");
-                return server;
-              }
-              return { ...server, type: "stdio" as const };
-            }),
-          ),
-        };
+        const sessionId = await sessions.create(
+          params.cwd,
+          capabilities,
+          params.mcpServers.map((server) => {
+            if ("type" in server && server.type !== undefined) {
+              if (server.type === "acp") throw new AcpError("unsupported_mcp");
+              return server;
+            }
+            return { ...server, type: "stdio" as const };
+          }),
+          (sessionId) => ({
+            read: async (path, signal) =>
+              (
+                await client.request(
+                  "fs/read_text_file",
+                  { sessionId, path },
+                  { cancellationSignal: signal },
+                )
+              ).content,
+            write: async (path, content, signal) => {
+              await client.request(
+                "fs/write_text_file",
+                { sessionId, path, content },
+                { cancellationSignal: signal },
+              );
+            },
+            create: async (command, args, cwd) =>
+              (
+                await client.request("terminal/create", {
+                  sessionId,
+                  command,
+                  args,
+                  cwd,
+                  outputByteLimit: 1024 * 1024,
+                })
+              ).terminalId,
+            wait: async (terminalId, signal) => {
+              const result = await client.request(
+                "terminal/wait_for_exit",
+                { sessionId, terminalId },
+                { cancellationSignal: signal },
+              );
+              return { exitCode: result.exitCode ?? null, signal: result.signal ?? null };
+            },
+            output: async (terminalId, signal) => {
+              const result = await client.request(
+                "terminal/output",
+                { sessionId, terminalId },
+                { cancellationSignal: signal },
+              );
+              return { output: result.output, truncated: result.truncated };
+            },
+            kill: async (terminalId, signal) => {
+              await client.request(
+                "terminal/kill",
+                { sessionId, terminalId },
+                { cancellationSignal: signal },
+              );
+            },
+            release: async (terminalId, signal) => {
+              await client.request(
+                "terminal/release",
+                { sessionId, terminalId },
+                { cancellationSignal: signal },
+              );
+            },
+          }),
+        );
+        if (sessions.configuration.commands.length)
+          await client.notify("session/update", {
+            sessionId,
+            update: {
+              sessionUpdate: "available_commands_update",
+              availableCommands: sessions.configuration.commands.map((command) => {
+                const result: AvailableCommand = {
+                  name: command.name,
+                  description: command.description,
+                };
+                if (command.inputHint) result.input = { hint: command.inputHint };
+                return result;
+              }),
+            },
+          });
+        return { sessionId, configOptions: sessions.get(sessionId).configOptions };
+      });
+    })
+    .onRequest("session/set_config_option", ({ params, client }) => {
+      requireInitialized();
+      return respond(async () => {
+        const session = sessions.get(params.sessionId);
+        await session.setConfig(params.configId, params.value);
+        const configOptions = session.configOptions;
+        await client.notify("session/update", {
+          sessionId: params.sessionId,
+          update: { sessionUpdate: "config_option_update", configOptions },
+        });
+        return { configOptions };
       });
     })
     .onRequest("session/prompt", ({ params, client }) => {
@@ -91,17 +178,19 @@ export function connectV1(stream: Stream, sessions: SessionManager, options: Acp
           {
             async permission(tool, signal) {
               try {
+                const toolCall: ToolCallUpdate = {
+                  toolCallId: tool.id,
+                  title: tool.title,
+                  kind: tool.kind,
+                  locations: [...tool.locations],
+                  status: "pending",
+                };
+                if (tool.diffs) toolCall.content = diffContent(tool.diffs);
                 const reply: unknown = await client.request(
                   "session/request_permission",
                   {
                     sessionId: params.sessionId,
-                    toolCall: {
-                      toolCallId: tool.id,
-                      title: tool.title,
-                      kind: tool.kind,
-                      locations: [...tool.locations],
-                      status: "pending",
-                    },
+                    toolCall,
                     options: [
                       { optionId: "allow_once", name: "Allow once", kind: "allow_once" },
                       { optionId: "reject_once", name: "Reject once", kind: "reject_once" },
@@ -203,6 +292,16 @@ function normalizeContent(block: ContentBlock): PromptBlock {
       return { type: "text", text: block.text };
     case "image":
       return { type: "image", data: block.data, mimeType: block.mimeType };
+    case "resource": {
+      if (!("text" in block.resource)) return { type: "unsupported" };
+      const resource: PromptBlock = {
+        type: "resource",
+        uri: block.resource.uri,
+        text: block.resource.text,
+      };
+      if (block.resource.mimeType != null) resource.mimeType = block.resource.mimeType;
+      return resource;
+    }
     case "resource_link": {
       const reference: PromptBlock = {
         type: "resource_link",
@@ -225,8 +324,8 @@ function toV1Update(update: SessionUpdate): V1Update {
         sessionUpdate: update.type === "text" ? "agent_message_chunk" : "agent_thought_chunk",
         content: { type: "text", text: update.text },
       };
-    case "tool":
-      return {
+    case "tool": {
+      const result: V1Update = {
         sessionUpdate: "tool_call",
         toolCallId: update.id,
         title: update.title,
@@ -234,12 +333,16 @@ function toV1Update(update: SessionUpdate): V1Update {
         locations: [...update.locations],
         status: "pending",
       };
+      if (update.diffs) result.content = diffContent(update.diffs);
+      return result;
+    }
     case "tool-update": {
       const result: V1Update = {
         sessionUpdate: "tool_call_update",
         toolCallId: update.id,
         status: update.status,
       };
+      if (update.diffs !== undefined) result.content = diffContent(update.diffs);
       if (update.title !== undefined) result.title = update.title;
       if (update.kind !== undefined) result.kind = update.kind;
       if (update.locations !== undefined) result.locations = [...update.locations];
@@ -252,4 +355,8 @@ function object(value: unknown): Record<string, unknown> | undefined {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : undefined;
+}
+
+function diffContent(diffs: NonNullable<AcpToolPresentation["diffs"]>): ToolCallContent[] {
+  return diffs.map((diff) => ({ type: "diff", ...diff }));
 }

@@ -3,7 +3,7 @@
 Agent-side [Agent Client Protocol](https://agentclientprotocol.com/libraries/typescript)
 adapter for Anvia. Applications supply their own agents, models, tools, and credentials.
 
-**Current status: ACP 07 editor MCP integration.** The package supports stable v1 initialization,
+**Current status: ACP 08 editor features.** The package supports stable v1 initialization,
 no-op authentication, NDJSON transport, a dedicated launcher, and in-memory sessions with
 multi-turn prompt execution. Text/resource references work by default; images are opt-in.
 `session/update` streams assistant text and tool status with stable session-local IDs;
@@ -40,7 +40,7 @@ export function sessionFactory(context) {
 }
 ```
 
-Factories are loaded and validated as functions at startup and called once per `session/new`,
+Factories are loaded and validated as functions at startup and called per `session/new` and successful config rebuild,
 never during `initialize`. Return a fresh text-output Agent without its own `memory` option;
 the adapter owns bounded, session-local history. A directly exported agent is constructed during
 module import and normalized to a single-use factory, preventing reuse across sessions.
@@ -84,7 +84,7 @@ default). Oversized input closes the connection through the SDK's bounded NDJSON
 `initialize` always returns protocol version `1`, including when another version is requested,
 as specified by [ACP version negotiation](https://agentclientprotocol.com/protocol/v1/initialization).
 Optional persistence and HTTP MCP are disabled by default; legacy SSE is unsupported. Local/editor
-filesystem and terminal tools are not installed. Unknown methods return `-32601`, invalid
+filesystem and terminal tools are not installed by default. Unknown methods return `-32601`, invalid
 params return `-32602`, malformed JSON returns `-32700`, and invalid envelopes return `-32600`.
 
 ## Sessions and content
@@ -99,14 +99,15 @@ The cwd must exist and be a directory. Optional `workspaceRoots` restricts creat
 paths inside those directories, including symlink checks. The factory receives the canonical
 absolute cwd and immutable client capability/policy snapshots. Application tools should resolve
 paths against `context.cwd`; the adapter never calls `process.chdir()`. These checks do not sandbox
-application code. Editor filesystem and terminal tools stay disabled even if the client advertises them.
+application code. Editor filesystem and terminal tools also require explicit host opt-in.
 
 Text becomes Anvia user text parts. Resource links become labelled references containing name,
 URI and description; no URI is fetched. Set `images: true` on `serveStdio` or `createAcpConnection`
 to accept base64 PNG, JPEG, GIF and WebP images. Every factory result must then have an
 image-capable model. The launcher uses defaults; opt-in requires a library host. Images map to
-Anvia image parts with their MIME type. Audio, embedded resources, disabled images and unsupported
-MIME types fail with `unsupported_content` (`-32602`); malformed base64 fails with `invalid_content`.
+Anvia image parts with their MIME type. Set `embeddedContext: true` to accept embedded text resources as labelled user context.
+Their URI is a label, never fetched; binary resource blobs remain unsupported. Audio, disabled
+embedded context, disabled images and unsupported MIME types fail with `unsupported_content` (`-32602`); malformed base64 fails with `invalid_content`.
 Annotations and `_meta` never become model instructions or permission overrides.
 
 Streaming models use one stream consumer per segment; completion-only models use `generate`.
@@ -153,7 +154,11 @@ export const sessionFactory: AcpSessionFactory = (context) => ({
 lines are one-based. Titles are limited to 200 characters with controls removed; at most 100
 locations are shown. Invalid lines and paths containing controls are omitted. Locations only
 annotate the UI and grant no filesystem permission. Include only public metadata in the callback;
-its errors are sanitized. Diffs and rich result content belong to ACP 08.
+its errors are sanitized. Set `diffs: [{ path, oldText?, newText }]` for proposed edits. Omit
+`oldText` when unknown; use `null` only for a known new file. Diffs appear in pending updates and
+permission requests, not as a claim of completed execution. Up to 20 diffs and 1 MiB aggregate
+old/new text are shown. Oversized or invalid diffs are omitted. Built-in editor writes provide
+a proposed new-text diff and location automatically; other tools require explicit host metadata.
 
 The mapper awaits each update in order and reads the final result only after consuming the stream.
 Generations that return text only in the final response emit it once from core's `turn_end`
@@ -167,6 +172,140 @@ Input/output guardrail blocks and provider content filtering settle with `refusa
 streamed refusal message is shown, but internal guardrail reasons and decision metadata are omitted;
 blocked outcome text is not replayed. Enforced output guardrails control buffering before this
 adapter receives deltas. Already emitted text or executed effects cannot be retracted.
+
+## Editor tools and backend selection
+
+Use the library host to enable editor features (the dedicated launcher keeps conservative defaults):
+
+```ts
+serveStdio({
+  editorTools: { readTextFile: true, writeTextFile: true, terminal: true },
+  images: true,
+  embeddedContext: true,
+  sessionFactory: (context) => ({
+    agent: new Agent({
+      id: context.sessionId,
+      model, // Host-owned, image-capable Anvia model.
+      tools: context.editorTools,
+      mcpServers: context.mcpServers,
+    }),
+  }),
+});
+```
+
+`context.editorTools` contains `editor_read_text_file`, `editor_write_text_file`, and/or
+`editor_run_terminal` only when both the host and corresponding client capability allow it.
+The factory must attach those exact tool objects. All require once-only approval, including reads.
+No denied or failed editor call falls back to the local filesystem, shell, or Docker.
+
+File paths and optional terminal cwd resolve against the session cwd. Lexical containment and
+existing ancestor symlinks are checked against workspace roots, including for new files. The
+editor must enforce access-time policy too: an external editor operation cannot be made atomic
+with this process's symlink check. Terminal approval authorizes arbitrary command execution;
+a cwd restriction does not sandbox the command. Commands use explicit argv without an adapter
+shell or inherited environment. Text reads/writes and retained terminal output are bounded to
+1 MiB. Terminals return output, truncation and exit status; they are released after success or
+failure, and killed then released on cancellation. Cleanup uses independent two-second signals.
+A late terminal creation response is retained for cleanup; execution stays quarantined until it
+settles. A disconnected editor cannot acknowledge cleanup, so release is best effort on disconnect.
+
+Local tools and Docker tools remain application-owned Anvia tools. Register only the backend
+chosen for the session; enforce roots and approvals in local tool implementations. A local factory
+should close over `context.cwd` and resolve every relative path against it, never `process.cwd()`.
+No adapter code starts Docker. For an application-owned Docker runtime, register tools from
+`createDockerSandboxTools` and map presentation paths explicitly:
+
+```ts
+import { mapSandboxPath } from "@anvia/acp";
+import { createDockerSandboxTools } from "@anvia/sandbox";
+
+// Inside your factory, after obtaining a session-owned sandbox whose workspace
+// you explicitly seeded/synchronized from context.cwd:
+const mapping = { sandboxRoot: sandbox.runtime.workdir, hostRoot: context.cwd };
+const tools = createDockerSandboxTools({ sandbox: sandbox.runtime, tools: ["read_file"] }).map(
+  (tool) => Object.freeze({ ...tool, requiresApproval: true }),
+);
+return {
+  agent: new Agent({ id: context.sessionId, model, tools, mcpServers: context.mcpServers }),
+  readOnlyTools: ["read_file"],
+  toolPresentation(call) {
+    if (
+      call.toolName !== "read_file" ||
+      !call.input ||
+      typeof call.input !== "object" ||
+      !("path" in call.input) ||
+      typeof call.input.path !== "string"
+    )
+      return undefined;
+    return { kind: "read", locations: [{ path: mapSandboxPath(call.input.path, mapping) }] };
+  },
+  dispose: () => sandbox.destroy(),
+};
+```
+
+The snippet assumes editor tools are disabled. Sandbox tool arguments stay in the sandbox's
+POSIX namespace; never pass host paths into them. `mapSandboxPath` rejects escapes from the
+specified sandbox root. It only maps display metadata: it does not mount, copy, synchronize or
+write host files. The existing Docker backend uses ephemeral or named Docker volumes. If there
+is no corresponding host file, omit its editor location rather than inventing a mapping. For
+sandbox edit tools, use the same mapping for explicitly supplied `diffs` and `locations`.
+
+## Config options and slash commands
+
+```ts
+serveStdio({
+  models: [
+    { value: "fast", name: "Fast" },
+    { value: "thorough", name: "Thorough" },
+  ],
+  readOnlyMode: true,
+  commands: [
+    {
+      name: "explain",
+      description: "Explain a topic",
+      inputHint: "topic",
+      expand: (args) => `Explain this topic: ${args}`,
+    },
+  ],
+  sessionFactory(context) {
+    const readOnly = context.config.mode === "read-only";
+    return {
+      agent: new Agent({
+        id: context.sessionId,
+        model: models[context.config.model ?? "fast"], // Your host-owned model map.
+        tools: readOnly ? readTools : allTools, // Your application tools.
+        mcpServers: context.mcpServers,
+      }),
+      readOnlyTools: readTools.map((tool) => tool.name),
+    };
+  },
+});
+```
+
+`session/new` returns `configOptions`. Mode defaults to `ask`; `read-only` is offered only with
+`readOnlyMode: true`. Model choices come only from the host; the first is the default. The factory
+maps `context.config.model` to its own model and credentials. No model selector is offered without
+a host catalog. Legacy `session/set_mode` remains unsupported.
+
+`session/set_config_option` validates the value, cancels an active turn and its pending approval,
+waits for execution/terminal cleanup, then calls the factory with a new immutable context. New
+prompts and overlapping config changes fail with `session_busy` during rebuild. Invalid values
+leave the current turn untouched. A failed rebuild retains the previous agent/config/history;
+a successful rebuild swaps atomically, disposes the old binding, and emits `config_option_update`.
+If disposal fails after the swap, the session is disabled instead of restoring a disposed agent.
+MCP connections and successful history survive config changes; no old continuation is reused.
+Disposers must release binding-owned resources only, not context-owned MCP clients.
+
+Read-only mode supplies only enabled editor reads and no editor MCP tools. Every other tool in
+the new agent must be listed in `readOnlyTools`; unknown tools reject the rebuild. Existing approval
+requirements still apply. This is a host classification contract: the host must exclude dynamic
+write paths, nested agents with effects, provider-side tools and middleware that adds effects before
+enabling read-only mode. It is not an operating-system sandbox.
+
+Commands are announced through `available_commands_update` after session creation. A sole text
+block `/name arguments` invokes the registered synchronous, pure prompt expansion inside the
+prompt lock. Unknown commands and mixed-content prompts remain ordinary user input. Both original
+and expanded prompts obey normal limits. No built-in shell or configuration command is installed.
 
 ## Cancellation
 
@@ -357,7 +496,15 @@ Manual editor verification belongs to ACP 10 after the remaining bridges exist:
 - Exercise two chat turns, approval/denial, cancellation, MCP, and subprocess exit.
 - Confirm supplied stdio args/env and session cwd in a trusted fixture; verify a denied call never executes.
 - With a library host enabling HTTP, verify a pinned editor endpoint connects and another private URL fails.
+- Opt into editor tools; verify unsaved-buffer reads, proposed write diffs/locations, and denied writes.
+- Cancel a long terminal command and verify kill/release; also cancel while terminal creation is delayed.
+- Switch model/mode during a pending approval; verify cancellation and that a late approval cannot execute.
+- Verify slash-command completion/expansion, image prompts, and embedded text context.
+- For a Docker backend, seed a known workspace explicitly and verify mapped paths in the editor.
+  Docker daemon and real editor GUI verification were not run for ACP 08; headless fixtures cover
+  the protocol and mapping contracts.
 
 See [DESIGN.md](./DESIGN.md) for the proposed contract and later task boundaries. External
 documentation should describe this as partial ACP support until editor verification is available. The new `reasoning`, `toolPresentation` and `AcpToolPresentation`
-options, plus `turnBudget` / `AcpTurnBudget` and `mcp` / `AcpMcpOptions` / `AcpMcpServer`, need coverage in the ACP 16 external documentation task.
+options, plus `turnBudget` / `AcpTurnBudget` and `mcp` / `AcpMcpOptions` / `AcpMcpServer`, plus `editorTools`, `models`, `readOnlyMode`, `commands`, `embeddedContext`, `readOnlyTools`,
+`AcpSessionConfig`, `AcpCommand`, `diffs`, and `mapSandboxPath` need coverage in ACP 16 external docs.

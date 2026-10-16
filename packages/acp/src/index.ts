@@ -1,6 +1,8 @@
 export { createAcpConnection } from "./connection.js";
 export type {
   AcpAgentInfo,
+  AcpCommand,
+  AcpSessionConfig,
   AcpClientCapabilities,
   AcpConnection,
   AcpConnectionOptions,
@@ -15,3 +17,4 @@ export type {
   AcpToolPresentation,
   AcpTurnBudget,
 } from "./types.js";
+export { mapSandboxPath } from "./presentation.js";

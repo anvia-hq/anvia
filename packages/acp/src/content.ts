@@ -7,12 +7,14 @@ export type PromptBlock =
   | { type: "text"; text: string }
   | { type: "image"; data: string; mimeType: string }
   | { type: "resource_link"; uri: string; name: string; description?: string }
+  | { type: "resource"; uri: string; text: string; mimeType?: string }
   | { type: "unsupported" };
 
 export function convertPrompt(
   blocks: readonly PromptBlock[],
   limits: AcpLimits,
   images: boolean,
+  embeddedContext = false,
 ): UserMessage {
   if (blocks.length === 0) throw new AcpError("invalid_content");
   if (blocks.length > limits.maxContentBlocks) throw new AcpError("resource_limit");
@@ -22,15 +24,20 @@ export function convertPrompt(
   for (const block of blocks) {
     switch (block.type) {
       case "text":
+      case "resource":
       case "resource_link": {
+        if (block.type === "resource" && !embeddedContext)
+          throw new AcpError("unsupported_content");
         const text =
           block.type === "text"
             ? block.text
-            : `Resource reference: ${JSON.stringify({
-                name: block.name,
-                uri: block.uri,
-                description: block.description,
-              })}`;
+            : block.type === "resource"
+              ? `Embedded context (user-supplied): ${JSON.stringify({ uri: block.uri, mimeType: block.mimeType, text: block.text })}`
+              : `Resource reference: ${JSON.stringify({
+                  name: block.name,
+                  uri: block.uri,
+                  description: block.description,
+                })}`;
         const bytes = Buffer.byteLength(text, "utf8");
         textBytes += bytes;
         totalBytes += bytes;

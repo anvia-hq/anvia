@@ -4,12 +4,12 @@ import { hasEnforcedOutputGuardrails } from "@anvia/core/guardrails";
 import type { ToolResultOutput } from "@anvia/core/completion";
 import type { AcpSessionBinding, AcpToolPresentation } from "./types.js";
 import type { PermissionTool } from "./permissions.js";
-import { presentTool } from "./presentation.js";
+import { presentTool, type PresentedTool } from "./presentation.js";
 
 /** Adapter-owned updates; SDK types and v1 discriminators stay at the wire boundary. */
 export type SessionUpdate =
   | { type: "text" | "thought"; text: string }
-  | ({ type: "tool"; id: string } & Required<AcpToolPresentation>)
+  | ({ type: "tool"; id: string } & PresentedTool)
   | ({
       type: "tool-update";
       id: string;
@@ -59,8 +59,10 @@ export class TurnEvents {
       this.unfinished.get(request.toolCallId);
     if (!state) throw new Error("Missing interaction tool call.");
     this.executions.set(request.internalCallId, state);
-    const { id, title, kind, locations } = state;
-    return { id, title, kind, locations };
+    const { id, title, kind, locations, diffs } = state;
+    const tool: PermissionTool = { id, title, kind, locations };
+    if (diffs) return { ...tool, diffs };
+    return tool;
   }
 
   async consume(stream: AgentStream): Promise<AgentOutcome> {

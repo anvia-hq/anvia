@@ -29,6 +29,7 @@ export type AcpSessionContext = Readonly<{
   policy: AcpSessionPolicy;
   mcpServers: readonly McpServer[];
   editorTools: readonly AnyTool[];
+  config: AcpSessionConfig;
   signal: AbortSignal;
 }>;
 
@@ -47,6 +48,8 @@ export type AcpToolPresentation = Readonly<{
     | "other";
   /** Display-only paths, resolved against the session cwd; lines are one-based. */
   locations?: readonly Readonly<{ path: string; line?: number }>[];
+  /** Explicit proposed edits, never inferred from arbitrary tool arguments. */
+  diffs?: readonly Readonly<{ path: string; oldText?: string | null; newText: string }>[];
 }>;
 
 /** One budget shared by every continuation segment of an ACP prompt. */
@@ -64,6 +67,9 @@ export type AcpTurnBudget = Readonly<{
 export type AcpSessionBinding = Readonly<{
   agent: Agent;
   turnBudget?: AcpTurnBudget;
+  /** In read-only mode, every non-editor tool must be explicitly classified here.
+   * The host must also exclude provider-side effects and dynamic execution paths. */
+  readOnlyTools?: readonly string[];
   /** Trusted display projection. Never return credentials or private tool arguments. */
   toolPresentation?: (call: ToolCallPart) => AcpToolPresentation | undefined;
   dispose?: () => void | Promise<void>;
@@ -115,7 +121,7 @@ export type AcpMcpOptions = Readonly<{
 }>;
 
 export type AcpOptions = Readonly<{
-  /** Called once per session. Must return a fresh Agent without separately configured memory. */
+  /** Called for session creation and config changes. Return a fresh Agent each time. */
   sessionFactory: AcpSessionFactory;
   agentInfo?: AcpAgentInfo;
   /** Maximum bytes per incoming NDJSON message; defaults to 10 MiB. */
@@ -125,6 +131,16 @@ export type AcpOptions = Readonly<{
   /** Forward plaintext reasoning deltas only. Defaults to false; signatures stay private. */
   reasoning?: boolean;
   mcp?: AcpMcpOptions;
+  /** Explicit opt-in, intersected with client capabilities. No local fallback. */
+  editorTools?: Partial<AcpSessionPolicy["editorTools"]>;
+  /** Expose the read-only permission preset. The factory must honor it. */
+  readOnlyMode?: boolean;
+  /** Host-owned model identifiers. First entry is the default; no credentials on the wire. */
+  models?: readonly Readonly<{ value: string; name: string }>[];
+  /** Text resource payloads only, no URI fetching. Defaults to false. */
+  embeddedContext?: boolean;
+  /** Pure prompt expansions. Unknown slash commands remain ordinary user text. */
+  commands?: readonly AcpCommand[];
   /** Existing absolute directories; canonical containment is checked before calling the factory. */
   workspaceRoots?: readonly string[];
   /** Positive integer resource bounds. See README for defaults. */
@@ -142,4 +158,14 @@ export type AcpConnection = Readonly<{
   closed: Promise<void>;
   /** Idempotent. Aborts session work and disposes bindings; does not close caller-owned output. */
   close: () => Promise<void>;
+}>;
+
+export type AcpSessionConfig = Readonly<{ mode: "ask" | "read-only"; model?: string }>;
+
+export type AcpCommand = Readonly<{
+  name: string;
+  description: string;
+  inputHint?: string;
+  /** Runs inside the prompt lock. Its output is validated against normal prompt limits. */
+  expand: (argumentsText: string, context: AcpSessionContext) => string;
 }>;

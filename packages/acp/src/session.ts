@@ -7,8 +7,9 @@ import { convertPrompt, type PromptBlock } from "./content.js";
 import { TurnEvents, type UpdateSink } from "./events.js";
 import { AcpError } from "./errors.js";
 import { SessionMemory } from "./memory.js";
+import type { SessionConfiguration } from "./config.js";
 import { PendingRequests } from "./pending-requests.js";
-import type { AcpLimits, AcpSessionBinding, AcpSessionContext } from "./types.js";
+import type { AcpLimits, AcpSessionBinding, AcpSessionContext, AcpSessionConfig } from "./types.js";
 
 export type TurnStopReason =
   | "end_turn"
@@ -32,15 +33,24 @@ export class AcpSession {
   private activePrompt: Promise<void> | undefined;
   private activeTurn: ActiveTurn | undefined;
   private nextToolId = 0;
+  private updating: Promise<void> | undefined;
   private closing: Promise<void> | undefined;
 
   constructor(
-    readonly context: AcpSessionContext,
-    private readonly binding: AcpSessionBinding,
+    public context: AcpSessionContext,
+    private binding: AcpSessionBinding,
     private readonly controller: AbortController,
     private readonly limits: AcpLimits,
     private readonly images: boolean,
     private readonly reasoning = false,
+    private readonly features?: {
+      configuration: SessionConfiguration;
+      embeddedContext: boolean;
+      rebuild: (
+        config: AcpSessionConfig,
+      ) => Promise<{ context: AcpSessionContext; binding: AcpSessionBinding }>;
+      cleanup: () => Promise<void>;
+    },
   ) {
     this.memory = new SessionMemory(context.sessionId, limits);
     this.pendingRequests = new PendingRequests(limits.maxPendingRequests);
@@ -52,7 +62,7 @@ export class AcpSession {
     client?: InteractionClient,
   ): Promise<TurnStopReason> {
     if (this.controller.signal.aborted) return Promise.reject(new AcpError("connection_closed"));
-    if (this.activeTurn) return Promise.reject(new AcpError("session_busy"));
+    if (this.activeTurn || this.updating) return Promise.reject(new AcpError("session_busy"));
     // Reserve synchronously, including history loading and content conversion. The
     // turn object is its identity: a cancelled run never shares state with a new run.
     const turn: ActiveTurn = {
@@ -118,6 +128,49 @@ export class AcpSession {
     return task;
   }
 
+  get configOptions() {
+    return this.features?.configuration.options(this.context.config) ?? [];
+  }
+
+  setConfig(id: string, value: unknown): Promise<void> {
+    if (this.controller.signal.aborted) return Promise.reject(new AcpError("connection_closed"));
+    if (this.updating) return Promise.reject(new AcpError("session_busy"));
+    const features = this.features;
+    if (!features) return Promise.reject(new AcpError("invalid_config"));
+    let config: AcpSessionConfig;
+    try {
+      config = features.configuration.change(this.context.config, id, value);
+    } catch (error) {
+      return Promise.reject(error);
+    }
+    if (config.mode === this.context.config.mode && config.model === this.context.config.model)
+      return Promise.resolve();
+    this.cancel();
+    const update = (async () => {
+      await this.activePrompt;
+      this.controller.signal.throwIfAborted();
+      const next = await features.rebuild(config);
+      if (this.controller.signal.aborted) {
+        await next.binding.dispose?.();
+        throw new AcpError("connection_closed");
+      }
+      const previous = this.binding;
+      this.binding = next.binding;
+      this.context = next.context;
+      // The new binding is committed; never restore a disposed old agent.
+      try {
+        await previous.dispose?.();
+      } catch {
+        this.controller.abort();
+        throw new AcpError("configuration_error");
+      }
+    })().finally(() => {
+      this.updating = undefined;
+    });
+    this.updating = update;
+    return update;
+  }
+
   cancel(): void {
     const turn = this.activeTurn;
     if (!turn || turn.finished || turn.cancelled) return;
@@ -140,8 +193,13 @@ export class AcpSession {
   private async dispose(): Promise<void> {
     // Do not dispose resources while an uncooperative tool is still using them.
     await this.activePrompt?.catch(() => undefined);
+    await this.updating?.catch(() => undefined);
     await this.memory.clear({ scope: { sessionId: this.context.sessionId } });
-    await this.binding.dispose?.();
+    try {
+      await this.binding.dispose?.();
+    } finally {
+      await this.features?.cleanup();
+    }
   }
 
   private async run(
@@ -153,7 +211,18 @@ export class AcpSession {
     client?: InteractionClient,
   ): Promise<TurnStopReason> {
     try {
-      const prompt = convertPrompt(blocks, this.limits, this.images);
+      // Validate the original payload as well as any trusted command expansion.
+      let prompt = convertPrompt(blocks, this.limits, this.images, this.features?.embeddedContext);
+      if (blocks.length === 1 && blocks[0]?.type === "text") {
+        const match = /^\/([a-z][a-z0-9_-]*)(?:\s+([\s\S]*))?$/.exec(blocks[0].text);
+        const command =
+          match && this.features?.configuration.commands.find((entry) => entry.name === match[1]);
+        if (command) {
+          const expanded = command.expand(match?.[2] ?? "", this.context);
+          if (typeof expanded !== "string") throw new AcpError("configuration_error");
+          prompt = convertPrompt([{ type: "text", text: expanded }], this.limits, this.images);
+        }
+      }
       const scope = { sessionId: this.context.sessionId };
       const history = await this.memory.load({ scope });
       const messages = [...history, prompt];

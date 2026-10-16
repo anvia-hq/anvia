@@ -5,11 +5,11 @@ import {
 } from "@anvia/core/agent/interactions";
 import type { AgentInteractionOutcome } from "@anvia/core/agent";
 import { AcpError } from "./errors.js";
-import type { AcpToolPresentation } from "./types.js";
+import type { PresentedTool } from "./presentation.js";
 import type { PendingRequests } from "./pending-requests.js";
 import type { TurnEvents } from "./events.js";
 
-export type PermissionTool = { id: string } & Required<AcpToolPresentation>;
+export type PermissionTool = { id: string } & PresentedTool;
 export type InteractionClient = {
   permission(tool: PermissionTool, signal: AbortSignal): Promise<"allow" | "reject" | "cancel">;
   question(

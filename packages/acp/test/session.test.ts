@@ -351,14 +351,14 @@ describe("session v1 wire boundary", () => {
     expect(model.requests).toHaveLength(1);
   });
 
-  it("rejects MCP declarations before the factory until ACP 07", async () => {
+  it("rejects legacy SSE declarations before the factory", async () => {
     const factory = vi.fn(() => makeAgent());
     const fixture = await peer({ sessionFactory: factory });
     expect(
       (
         await fixture.request("session/new", {
           cwd: root,
-          mcpServers: [{ name: "server", command: "untrusted", args: [], env: [] }],
+          mcpServers: [{ type: "sse", name: "server", url: "http://localhost/mcp", headers: [] }],
         })
       ).error?.data?.kind,
     ).toBe("unsupported_mcp");

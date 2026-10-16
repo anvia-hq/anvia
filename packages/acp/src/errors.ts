@@ -9,6 +9,7 @@ export const errorCodes = {
   unsupported_content: -32602,
   invalid_content: -32602,
   unsupported_mcp: -32602,
+  invalid_mcp: -32602,
   resource_limit: -32602,
   configuration_error: -32603,
   execution_failed: -32603,

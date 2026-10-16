@@ -6,9 +6,58 @@ This is the repository design contract for the agent-side adapter. ACP 01 added 
 only. ACP 02 implements the package manifest, pinned SDK, stream/stdio entrypoints,
 initialization, no-op authentication, and launcher. ACP 03 adds session creation and prompt
 execution with bounded in-memory history. ACP 04 adds ordered text/tool updates and optional
-plaintext reasoning. ACP 05 adds per-turn cancellation. ACP 06 adds approval/question continuations and whole-prompt budgets. The remaining APIs and capabilities below
+plaintext reasoning. ACP 05 adds per-turn cancellation. ACP 06 adds approval/question continuations and whole-prompt budgets. ACP 07 connects editor MCP servers per session. The remaining APIs and capabilities below
 are implementation targets, not claims of editor compatibility. Later tasks own session
 execution and optional capabilities.
+
+### ACP 07 implementation status
+
+Editor stdio declarations now connect through session-owned `McpClientGroup` instances before
+factory invocation. The factory must attach `context.mcpServers`; core preserves the frozen
+approval-wrapped tool identities, which the coordinator validates. No core API changes are needed.
+Every setup failure attempts group cleanup and any returned binding disposer; session cleanup
+closes both after active execution finishes. Aborted MCP connection rollback now awaits the same
+close promise as the initial abort, including stdio process exit.
+
+Proposed decisions — pending Indra review:
+
+- Trust validated stdio declarations from the local editor by default. Add optional host
+  `mcp.authorizeServer(server, { cwd, signal })` to restrict normalized declarations before
+  connecting any server. It cannot grant execution approval. Use argv without a shell, canonical
+  session cwd, SDK platform environment allowlist plus explicit env, piped stdout and inherited
+  stderr. Do not spread `process.env`; provider keys must be explicitly supplied to a server.
+- Validate the whole declaration list first: nonempty unique names, command/args without NUL,
+  env names without NUL/equals, duplicate env names (case-insensitive on Windows), and duplicate
+  HTTP headers (case-insensitive). Reject malformed, routing and transport-owned headers. No
+  config values or underlying error details cross the ACP error boundary.
+- Use existing MCP automatic negotiation explicitly, preserving its standalone pinned default.
+  Real subprocess fixtures verify discovery-to-legacy fallback, including the SDK's disposable probe
+  process followed by a separate session process. Launch declarations must tolerate two startups.
+- Prefix with `mcp_<16 hex SHA-256(server name)>_`. This is stable across sessions and ordering,
+  avoids punctuation normalization collisions, and preserves remote names in provenance. Reject
+  all final tool-name collisions, including hash collisions and application tools. Require approval
+  for every editor MCP tool, regardless of server annotations; no automatic read-only bypass.
+- Bound each setup to 32 servers, each catalog to 256 tools / 1 MiB; existing transport bounds
+  remain 10 MiB per message. These MCP-specific bounds are fixed for this phase.
+- Implement and test Streamable HTTP, but advertise it only with `mcp.http: true`. Add host-owned
+  `mcp.trustedHttpEndpoints: [{ url, addresses }]`, backed by the new MCP transport option
+  `trustedAddresses`. Refine the earlier origin proposal to an **exact URL** plus pinned IPs.
+  Socket lookup uses only host-approved addresses, so DNS rebinding cannot expand trust. Allow
+  loopback, RFC1918 and ULA; reject metadata, link-local, mapped IPv6 and reserved ranges. Keep
+  strict SSRF protection for every other URL, including OAuth requests; reject endpoint redirects
+  and never forward configured headers elsewhere. Close each private dispatcher with its client.
+  No global SSRF switch is used. Trust cannot be supplied through editor declarations or `_meta`.
+- Request best-effort legacy HTTP session termination on close, using MCP's existing two-second
+  deadline. Keep legacy SSE and ACP-proxied MCP unsupported. Library hosts configure policy;
+  the dedicated launcher uses defaults (stdio, ask on every tool call, HTTP disabled).
+
+Tests cover real stdio and HTTP servers, both protocol handshakes, cwd/argv/env isolation,
+permission allow/reject/cancel with late replies, duplicates and tool collisions, rollback,
+factory failure and disconnect during setup, and exact endpoint boundaries. Real GUI verification
+remains ACP 10; the README contains its manual checklist. ACP 16 must document `AcpMcpOptions`,
+`AcpMcpServer` and `trustedAddresses` externally. Existing ACP 01 product decisions still apply:
+framework adapter, host-owned model/credentials, no-op authentication, in-memory sessions, and
+local/editor filesystem and terminal tools off by default.
 
 ### ACP 06 implementation status
 
@@ -377,7 +426,7 @@ Absent optional capabilities mean unsupported; no optimistic probing or silent d
 | `promptCapabilities.embeddedContext`             | `false`                                         | ACP 08: validated text resources                                                                       |
 | `promptCapabilities.audio`                       | `false`                                         | Future explicit conversion policy                                                                      |
 | Stdio MCP                                        | Supported, per-session ownership                | Required ACP transport; no capability flag                                                             |
-| `mcpCapabilities.http` / `.sse`                  | Both `false`                                    | HTTP after explicit trusted-local policy; legacy SSE deferred                                          |
+| `mcpCapabilities.http` / `.sse`                  | HTTP opt-in; SSE `false`                        | ACP 07 tests HTTP and exact endpoint trust; legacy SSE unsupported                                     |
 | Client `fs.readTextFile` / `fs.writeTextFile`    | Unused; tools off                               | ACP 08: opt-in, separate client flags and workspace policy                                             |
 | Client `terminal`                                | Unused; tools off                               | ACP 08: opt-in, lifecycle and cancellation cleanup                                                     |
 | `session/set_config_option` / `session/set_mode` | Unadvertised and unavailable                    | ACP 08: permission presets, validated while idle, atomic config/mode updates                           |
@@ -493,10 +542,9 @@ Do not change `@anvia/mcp` defaults globally. Wrap MCP tools with approval polic
 current conversion does not set `requiresApproval`; do not trust remote read-only annotations
 as authorization. A setup failure rolls back every successfully connected client.
 
-HTTP MCP remains unadvertised until ACP 07/08 provides explicit endpoint trust. Proposed policy:
-strict URL safety by default; exact host-configured origins may opt into loopback/private access,
-with redirects and DNS changes revalidated. Do not blanket-disable SSRF protection merely because
-a URL came from an editor. Legacy SSE is deferred. Neither server configs nor environment/header
+ACP 07 implements opt-in HTTP with strict URL safety by default and exact host-configured URLs
+plus pinned IP addresses for private access (see implementation decisions above). No trust comes
+from editor declarations. Legacy SSE stays unsupported. Neither server configs nor environment/header
 values belong in transcript replay or error data.
 
 ## Error model

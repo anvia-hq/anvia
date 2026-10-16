@@ -6,9 +6,17 @@ import { AcpError } from "./errors.js";
 import { resolveLimits } from "./limits.js";
 import { validateTurnBudget } from "./turn-budget.js";
 import { AcpSession } from "./session.js";
+import {
+  assertMcpRegistration,
+  connectSessionMcp,
+  snapshotMcpOptions,
+  type McpDeclaration,
+} from "./mcp.js";
+import type { McpClientGroup } from "@anvia/mcp";
 import type {
   AcpClientCapabilities,
   AcpLimits,
+  AcpMcpOptions,
   AcpOptions,
   AcpSessionBinding,
   AcpSessionContext,
@@ -24,6 +32,7 @@ export class SessionManager {
   private readonly roots: readonly string[] | undefined;
   private readonly images: boolean;
   private readonly reasoning: boolean;
+  private readonly mcp: AcpMcpOptions;
   private closing: Promise<void> | undefined;
   private closed = false;
 
@@ -33,17 +42,28 @@ export class SessionManager {
     this.roots = options.workspaceRoots && [...options.workspaceRoots];
     this.images = options.images ?? false;
     this.reasoning = options.reasoning ?? false;
+    this.mcp = snapshotMcpOptions(options.mcp);
   }
 
-  create(cwd: string, capabilities: AcpClientCapabilities): Promise<string> {
+  get supportsHttpMcp(): boolean {
+    return this.mcp.http === true;
+  }
+
+  create(
+    cwd: string,
+    capabilities: AcpClientCapabilities,
+    declarations: readonly McpDeclaration[] = [],
+  ): Promise<string> {
     if (this.closed) return Promise.reject(new AcpError("connection_closed"));
     if (this.sessions.size + this.setups.size >= this.limits.maxSessions) {
       return Promise.reject(new AcpError("resource_limit"));
     }
     const controller = new AbortController();
-    const setup = this.setup(cwd, capabilities, controller).finally(() => {
-      this.setups.delete(controller);
-    });
+    const setup = this.setup(cwd, capabilities, controller, structuredClone(declarations)).finally(
+      () => {
+        this.setups.delete(controller);
+      },
+    );
     this.setups.set(controller, setup);
     return setup;
   }
@@ -76,12 +96,22 @@ export class SessionManager {
     cwd: string,
     capabilities: AcpClientCapabilities,
     controller: AbortController,
+    declarations: readonly McpDeclaration[],
   ): Promise<string> {
     let binding: AcpSessionBinding | undefined;
+    let mcp: McpClientGroup | undefined;
     try {
       const canonicalCwd = await directory(cwd);
       const roots = this.roots ? await Promise.all(this.roots.map(directory)) : [canonicalCwd];
       if (!roots.some((root) => contains(root, canonicalCwd))) throw new AcpError("policy_denied");
+      if (this.closed) throw new AcpError("connection_closed");
+      const connected = await connectSessionMcp(
+        declarations,
+        this.mcp,
+        canonicalCwd,
+        controller.signal,
+      );
+      mcp = connected.group;
       if (this.closed) throw new AcpError("connection_closed");
       const context: AcpSessionContext = Object.freeze({
         sessionId: randomUUID(),
@@ -96,7 +126,7 @@ export class SessionManager {
             terminal: false,
           }),
         }),
-        mcpServers: Object.freeze([]),
+        mcpServers: connected.servers,
         editorTools: Object.freeze([]),
         signal: controller.signal,
       });
@@ -114,6 +144,7 @@ export class SessionManager {
         throw new AcpError("configuration_error");
       }
       validateTurnBudget(binding.turnBudget);
+      assertMcpRegistration(binding.agent, context.mcpServers);
       this.agents.add(binding.agent);
       if (this.closed) throw new AcpError("connection_closed");
       if (
@@ -125,7 +156,7 @@ export class SessionManager {
       }
       const session = new AcpSession(
         context,
-        binding,
+        { ...binding, dispose: () => disposeResources(binding, mcp) },
         controller,
         this.limits,
         this.images,
@@ -136,7 +167,7 @@ export class SessionManager {
     } catch (error) {
       controller.abort();
       try {
-        if (typeof binding?.dispose === "function") await binding.dispose();
+        await disposeResources(binding, mcp);
       } catch {
         // Preserve the original safe setup failure after attempting cleanup.
       }
@@ -145,6 +176,17 @@ export class SessionManager {
       throw new AcpError("configuration_error");
     }
   }
+}
+
+async function disposeResources(binding?: AcpSessionBinding, mcp?: McpClientGroup): Promise<void> {
+  const results = await Promise.allSettled([
+    Promise.resolve().then(() => mcp?.close()),
+    Promise.resolve().then(() => {
+      if (typeof binding?.dispose === "function") return binding.dispose();
+    }),
+  ]);
+  const errors = results.flatMap((result) => (result.status === "rejected" ? [result.reason] : []));
+  if (errors.length) throw new AggregateError(errors, "Session cleanup failed");
 }
 
 async function directory(path: string): Promise<string> {

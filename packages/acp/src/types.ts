@@ -90,6 +90,30 @@ export type AcpLimits = Readonly<{
   maxPendingRequests: number;
 }>;
 
+/** Normalized editor declaration, validated before any server is started. */
+export type AcpMcpServer = Readonly<
+  | {
+      type: "stdio";
+      name: string;
+      command: string;
+      args: readonly string[];
+      env: Readonly<Record<string, string>>;
+    }
+  | { type: "http"; name: string; url: string; headers: Readonly<Record<string, string>> }
+>;
+
+export type AcpMcpOptions = Readonly<{
+  /** Enable tested Streamable HTTP support and advertise it. Defaults to false. */
+  http?: boolean;
+  /** Exact URLs with host-approved IPs; no editor-controlled trust or DNS expansion. */
+  trustedHttpEndpoints?: readonly Readonly<{ url: string; addresses: readonly string[] }>[];
+  /** Optional host restriction on privileged launch/connect configuration. Default: allow. */
+  authorizeServer?: (
+    server: AcpMcpServer,
+    context: Readonly<{ cwd: string; signal: AbortSignal }>,
+  ) => boolean | Promise<boolean>;
+}>;
+
 export type AcpOptions = Readonly<{
   /** Called once per session. Must return a fresh Agent without separately configured memory. */
   sessionFactory: AcpSessionFactory;
@@ -100,6 +124,7 @@ export type AcpOptions = Readonly<{
   images?: boolean;
   /** Forward plaintext reasoning deltas only. Defaults to false; signatures stay private. */
   reasoning?: boolean;
+  mcp?: AcpMcpOptions;
   /** Existing absolute directories; canonical containment is checked before calling the factory. */
   workspaceRoots?: readonly string[];
   /** Positive integer resource bounds. See README for defaults. */

@@ -3,12 +3,12 @@
 Agent-side [Agent Client Protocol](https://agentclientprotocol.com/libraries/typescript)
 adapter for Anvia. Applications supply their own agents, models, tools, and credentials.
 
-**Current status: ACP 06 approval and question bridge.** The package supports stable v1 initialization,
+**Current status: ACP 07 editor MCP integration.** The package supports stable v1 initialization,
 no-op authentication, NDJSON transport, a dedicated launcher, and in-memory sessions with
 multi-turn prompt execution. Text/resource references work by default; images are opt-in.
 `session/update` streams assistant text and tool status with stable session-local IDs;
 `session/prompt` settles once with a stop reason after updates finish. `session/cancel` aborts the active turn and settles it with `cancelled`. Approval and question suspensions resume inside the same prompt.
-Editor MCP connections are a subsequent task. Nonempty MCP declarations are rejected explicitly.
+Editor-supplied stdio MCP servers connect per session; Streamable HTTP is opt-in.
 
 ## Launcher
 
@@ -83,7 +83,7 @@ Optional settings are `agentInfo: { name, version, title? }` and `maxMessageByte
 default). Oversized input closes the connection through the SDK's bounded NDJSON reader.
 `initialize` always returns protocol version `1`, including when another version is requested,
 as specified by [ACP version negotiation](https://agentclientprotocol.com/protocol/v1/initialization).
-Optional persistence and MCP transport capabilities are disabled. Local/editor
+Optional persistence and HTTP MCP are disabled by default; legacy SSE is unsupported. Local/editor
 filesystem and terminal tools are not installed. Unknown methods return `-32601`, invalid
 params return `-32602`, malformed JSON returns `-32700`, and invalid envelopes return `-32600`.
 
@@ -183,9 +183,64 @@ signal stays live. If caller code ignores abort, the prompt still settles, but t
 launcher retains its bounded shutdown timeout. Cancellation cannot undo effects already started.
 Tools should honor their `ToolCallContext.abortSignal` and pass it through to external operations.
 
-Editor-supplied MCP connections are not implemented yet. Cancellation tests use real
-Anvia runs with fixture local/MCP tools, pending permissions, and v1 byte streams; they do not
-claim real editor compatibility.
+Cancellation tests use real Anvia runs, MCP subprocesses, pending permissions, and v1 byte streams;
+they do not claim real editor compatibility.
+
+## Editor-supplied MCP servers
+
+Pass editor declarations in `session/new.mcpServers`. Stdio entries use `name`, `command`,
+`args` and `env: [{ name, value }]`. The adapter starts each server without a shell, in the
+canonical session cwd, with piped protocol stdout and inherited stderr. The SDK inherits only
+its platform environment allowlist (on Unix: `HOME`, `LOGNAME`, `PATH`, `SHELL`, `TERM`, `USER`),
+plus the explicitly supplied values. Provider credentials are not inherited implicitly. This
+is privileged process launch, not a sandbox; supply trusted declarations only.
+
+Return an Agent constructed with `mcpServers: context.mcpServers`, as in the factory example.
+Dropping servers, replacing their tools, or stripping approval wrappers fails session creation.
+All editor MCP tools require once-only approval, including tools claiming to be read-only.
+No remote annotations grant permission. Tool names are `mcp_<first 16 hex digits of SHA-256(server name)>_<remote name>`;
+prefixes are stable across order and sessions. Duplicate server names, duplicate remote names,
+prefix collisions, and collisions with application tools fail setup rather than shadowing tools.
+
+All declarations are validated before any server connects. Duplicate environment names (case-insensitive
+on Windows), duplicate header names (always case-insensitive), invalid env/header entries and
+transport-owned headers are rejected. Setup allows at most 32 servers and discovers at most
+256 tools / 1 MiB of tool definitions per server. Connections use `versionNegotiation: { mode: "auto" }`:
+modern discovery falls back to the legacy handshake. The SDK uses a disposable stdio probe process, then starts a separate session process;
+server startup must tolerate this. The standalone `@anvia/mcp` default remains pinned.
+
+Each session owns independent connections. Partial connection, discovery, or factory failure
+closes acquired clients. Closing the session/ACP connection aborts setup and prompts, waits for
+active execution, and attempts both MCP cleanup and the application's disposer even if one fails.
+The MCP HTTP session DELETE is best effort and bounded to two seconds. Session close RPCs remain
+ACP 11 work. Configuration, credentials, and raw MCP errors are omitted from ACP error responses.
+
+Library hosts can restrict declarations and enable HTTP:
+
+```ts
+const connection = serveStdio({
+  sessionFactory,
+  mcp: {
+    http: true,
+    authorizeServer: (server, { cwd, signal }) => {
+      signal.throwIfAborted();
+      return cwd === "/work/project" && server.name === "editor";
+    },
+    trustedHttpEndpoints: [{ url: "http://localhost:3000/mcp", addresses: ["127.0.0.1", "::1"] }],
+  },
+});
+```
+
+HTTP declarations use `type: "http"`, `name`, `url`, and `headers: [{ name, value }]`.
+`mcp.http: true` advertises the tested Streamable HTTP capability. Public URLs use strict SSRF
+protection. Private access requires an exact host-configured URL and approved IP literals;
+connections pin those addresses instead of trusting DNS changes. Only that URL receives the
+exception. Other paths, ports, endpoints and OAuth URLs retain strict protection. Endpoint
+redirects fail; configured headers never follow them. Loopback, RFC1918 and IPv6 ULA addresses
+are supported; cloud metadata, link-local, mapped IPv6 and other reserved addresses remain blocked.
+The editor cannot expand trust via declarations or `_meta`. Legacy SSE and ACP-proxied MCP
+remain unsupported. Use the library entrypoint for host policy options; the dedicated launcher
+uses defaults. The default `authorizeServer` permits validated declarations from the local editor.
 
 ## Approvals and questions
 
@@ -291,14 +346,18 @@ startup errors, EOF, and signals. Session tests cover isolation, concurrent prom
 history, content conversion, resource limits and teardown. Update tests cover ordering, reused tool
 IDs, failures, reasoning policy, presentation, refusals and one final settlement. Cancellation tests
 cover provider/tool signals, pending callbacks, late updates, session isolation and cleanup. Permission tests cover allow/reject, malformed responses, late approvals, elicitation,
-and budgets across suspensions in both model modes. These are not editor compatibility claims.
+and budgets across suspensions in both model modes. MCP fixtures cover modern/legacy HTTP,
+real stdio fallback, environment isolation, approvals, collisions, rollback, cancellation and
+exact endpoint trust. These are not editor compatibility claims.
 
 Manual editor verification belongs to ACP 10 after the remaining bridges exist:
 
 - Configure Zed and one JetBrains/Neovim client with the built launcher and an absolute module path.
 - Record editor versions; verify the handshake and stderr/stdout separation.
-- Once implemented, exercise two chat turns, approval/denial, cancellation, MCP, and subprocess exit.
+- Exercise two chat turns, approval/denial, cancellation, MCP, and subprocess exit.
+- Confirm supplied stdio args/env and session cwd in a trusted fixture; verify a denied call never executes.
+- With a library host enabling HTTP, verify a pinned editor endpoint connects and another private URL fails.
 
 See [DESIGN.md](./DESIGN.md) for the proposed contract and later task boundaries. External
-documentation should describe this as partial ACP support until MCP integration and editor verification are available. The new `reasoning`, `toolPresentation` and `AcpToolPresentation`
-options, plus `turnBudget` / `AcpTurnBudget`, need coverage in the ACP 16 external documentation task.
+documentation should describe this as partial ACP support until editor verification is available. The new `reasoning`, `toolPresentation` and `AcpToolPresentation`
+options, plus `turnBudget` / `AcpTurnBudget` and `mcp` / `AcpMcpOptions` / `AcpMcpServer`, need coverage in the ACP 16 external documentation task.

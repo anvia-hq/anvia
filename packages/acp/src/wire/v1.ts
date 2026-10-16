@@ -51,7 +51,7 @@ export function connectV1(stream: Stream, sessions: SessionManager, options: Acp
             audio: false,
             embeddedContext: false,
           },
-          mcpCapabilities: { http: false, sse: false },
+          mcpCapabilities: { http: sessions.supportsHttpMcp, sse: false },
           sessionCapabilities: {},
         },
       };
@@ -63,9 +63,19 @@ export function connectV1(stream: Stream, sessions: SessionManager, options: Acp
     .onRequest("session/new", ({ params }) => {
       requireInitialized();
       return respond(async () => {
-        // ACP 07 owns validation, launch and rollback of editor-supplied MCP servers.
-        if (params.mcpServers.length) throw new AcpError("unsupported_mcp");
-        return { sessionId: await sessions.create(params.cwd, capabilities) };
+        return {
+          sessionId: await sessions.create(
+            params.cwd,
+            capabilities,
+            params.mcpServers.map((server) => {
+              if ("type" in server && server.type !== undefined) {
+                if (server.type === "acp") throw new AcpError("unsupported_mcp");
+                return server;
+              }
+              return { ...server, type: "stdio" as const };
+            }),
+          ),
+        };
       });
     })
     .onRequest("session/prompt", ({ params, client }) => {

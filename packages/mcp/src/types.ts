@@ -23,6 +23,13 @@ export type McpStreamableHttpTransport = {
   readonly type: "streamableHttp";
   readonly url: string | URL;
   readonly ssrfProtection?: "strict" | "disabled" | undefined;
+  /**
+   * Host-approved IP addresses for this exact endpoint only. Pins socket connections;
+   * permits loopback/RFC1918/ULA, but not metadata or other reserved ranges. Redirects
+   * fail and all other URLs (including OAuth) retain strict SSRF protection.
+   * Cannot be combined with ssrfProtection: "disabled".
+   */
+  readonly trustedAddresses?: readonly string[] | undefined;
   readonly headers?: Readonly<Record<string, string>> | undefined;
   readonly authProvider?: OAuthClientProvider | undefined;
   readonly reconnectionOptions?: StreamableHTTPReconnectionOptions | undefined;

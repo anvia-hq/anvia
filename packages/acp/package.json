@@ -36,7 +36,7 @@
     "node": ">=20.18.1"
   },
   "scripts": {
-    "prebuild": "test -f ../core/dist/index.d.ts || pnpm --filter @anvia/core build",
+    "prebuild": "pnpm --filter @anvia/mcp build",
     "build": "tsup src/index.ts src/stdio.ts src/cli.ts --format esm --dts --sourcemap --clean && chmod +x dist/cli.js",
     "pretest": "pnpm run build",
     "test": "vitest run",
@@ -53,6 +53,7 @@
     "@anvia/core": "workspace:^"
   },
   "dependencies": {
-    "@agentclientprotocol/sdk": "1.9.0"
+    "@agentclientprotocol/sdk": "1.9.0",
+    "@anvia/mcp": "workspace:*"
   }
 }

@@ -58,6 +58,28 @@ The example uses automatic protocol negotiation for compatibility with older ser
 safety is enabled by default; consult the guide when intentionally connecting to a trusted local
 or private-network server.
 
+For a narrow private endpoint exception, use `transport.trustedAddresses` with strict protection:
+
+```ts
+const editor = new McpClient({
+  name: "editor",
+  versionNegotiation: { mode: "auto" },
+  transport: {
+    type: "streamableHttp",
+    url: "http://localhost:3000/mcp",
+    trustedAddresses: ["127.0.0.1", "::1"],
+  },
+});
+```
+
+This pins socket connections for the exact URL to host-approved IP literals without DNS expansion.
+Loopback, RFC1918 and ULA addresses are allowed; metadata, link-local, IPv4-mapped IPv6 and other
+reserved addresses remain blocked. A literal endpoint IP must be included in the pins. Other
+URLs, including OAuth discovery, retain strict SSRF protection. Endpoint redirects fail even
+without configured headers. This option cannot be combined with `ssrfProtection: "disabled"`;
+that broader legacy escape hatch remains unchanged. Static header names must be unique ignoring
+case. Close the client to release its private dispatcher as well as the transport.
+
 ## Learn more
 
 - [MCP connection guide](https://github.com/anvia-hq/anvia/blob/main/docs/packages/mcp.md)

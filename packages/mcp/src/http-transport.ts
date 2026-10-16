@@ -3,15 +3,18 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 /** Own session cleanup here because the SDK also closes on handshake failure. */
 export class ManagedMcpHttpTransport extends StreamableHTTPClientTransport {
   readonly #terminate: boolean;
+  readonly #dispose: (() => Promise<void>) | undefined;
   #closing?: Promise<void>;
 
   constructor(
     url: URL,
     options: ConstructorParameters<typeof StreamableHTTPClientTransport>[1],
     terminate: boolean,
+    dispose?: () => Promise<void>,
   ) {
     super(url, options);
     this.#terminate = terminate;
+    this.#dispose = dispose;
   }
 
   override close(): Promise<void> {
@@ -37,7 +40,11 @@ export class ManagedMcpHttpTransport extends StreamableHTTPClientTransport {
         }
       }
     } finally {
-      await super.close();
+      try {
+        await super.close();
+      } finally {
+        await this.#dispose?.();
+      }
     }
   }
 }

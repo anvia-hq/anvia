@@ -4,6 +4,7 @@
     "outDir": "dist",
     "baseUrl": ".",
     "paths": {
+      "@anvia/mcp": ["../mcp/src/index.ts"],
       "@anvia/core": ["../core/src/index.ts"],
       "@anvia/core/*": ["../core/src/*/index.ts"]
     }

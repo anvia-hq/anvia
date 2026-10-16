@@ -1,4 +1,4 @@
-import { readJsonlStream, readSseStream } from "./streams";
+import { type EventStreamReadOptions, readJsonlStream, readSseStream } from "./streams";
 import type { EventStreamFormat } from "./types";
 
 export type FetchEventStreamOptions = Omit<RequestInit, "headers"> & {
@@ -7,6 +7,7 @@ export type FetchEventStreamOptions = Omit<RequestInit, "headers"> & {
   fetch?: typeof fetch;
   headers?: HeadersInit;
   validateResponse?: (response: Response) => void;
+  onParseError?: EventStreamReadOptions["onParseError"];
 };
 
 export class EventStreamHttpError extends Error {
@@ -34,10 +35,12 @@ export async function* fetchEventStream<TEvent>(
     options.format === undefined || options.format === "auto"
       ? inferEventStreamFormat(response.headers.get("content-type"))
       : options.format;
+  const readOptions: EventStreamReadOptions = {};
+  if (options.onParseError !== undefined) readOptions.onParseError = options.onParseError;
   if (format === "sse") {
-    yield* readSseStream<TEvent>(response.body);
+    yield* readSseStream<TEvent>(response.body, readOptions);
   } else {
-    yield* readJsonlStream<TEvent>(response.body);
+    yield* readJsonlStream<TEvent>(response.body, readOptions);
   }
 }
 
@@ -47,6 +50,7 @@ function fetchOptions(options: FetchEventStreamOptions): RequestInit {
     format: _format,
     fetch: _fetch,
     validateResponse: _validate,
+    onParseError: _onParseError,
     ...init
   } = options;
   return init;

@@ -1,8 +1,10 @@
 import { z } from "zod";
 import {
   cosineSimilarity,
+  dotProduct,
   type EmbeddedDocument,
   type Embedding,
+  euclideanDistance,
   type VectorMetadata,
 } from "../embeddings";
 import { assertFiniteMinScore, assertPositiveSearchLimit } from "../internal/vector-search-options";
@@ -16,6 +18,7 @@ import type {
   VectorInspectItem,
   VectorInspectPage,
   VectorInspectRequest,
+  VectorMetric,
   VectorSearchRequest,
   VectorSearchResult,
   VectorSearchToolOptions,
@@ -28,11 +31,26 @@ export * from "./ingest";
 export { retrieveDocuments } from "./retrieve";
 export type * from "./types";
 
+const VECTOR_METRICS: ReadonlySet<VectorMetric> = new Set(["cosine", "euclidean", "dotProduct"]);
+
 type StoredDocument<T, Metadata extends VectorMetadata> = EmbeddedDocument<T, Metadata>;
 
 export type InMemoryVectorStoreOptions = {
   dimensions?: number | undefined;
   index?: IndexStrategy | undefined;
+  /**
+   * Similarity metric used to score documents. Defaults to `"cosine"`.
+   *
+   * Scores are always "higher is better": `"cosine"` returns cosine similarity,
+   * `"dotProduct"` returns the raw inner product, and `"euclidean"` returns the
+   * negated Euclidean distance (matching the pgvector, Chroma, LanceDB, and Milvus
+   * adapters), so the nearest document ranks first and `minScore` is a negative
+   * distance threshold.
+   *
+   * With an `{ type: "lsh" }` index, non-cosine metrics are approximate because LSH
+   * buckets are angle-based; `{ type: "bruteForce" }` (the default) is exact.
+   */
+  metric?: VectorMetric | undefined;
 };
 
 export type InMemoryVectorStoreFromDocumentsOptions<
@@ -48,11 +66,16 @@ export class InMemoryVectorStore<
 > implements VectorStore<T, Metadata> {
   private readonly documents = new Map<string, StoredDocument<T, Metadata>>();
   private readonly indexStrategy: IndexStrategy;
+  private readonly metric: VectorMetric;
   private lshIndex: LshIndex | undefined;
   private embeddingDimension: number | undefined;
 
   constructor(options: InMemoryVectorStoreOptions = {}) {
     this.indexStrategy = options.index ?? { type: "bruteForce" };
+    this.metric = options.metric ?? "cosine";
+    if (!VECTOR_METRICS.has(this.metric)) {
+      throw new TypeError(`Unsupported vector metric: ${String(this.metric)}`);
+    }
     if (
       options.dimensions !== undefined &&
       (!Number.isSafeInteger(options.dimensions) || options.dimensions < 1)
@@ -101,7 +124,7 @@ export class InMemoryVectorStore<
     const results = this.candidates(queryEmbedding)
       .filter((document) => matchesVectorFilter(document.metadata, request.filter))
       .flatMap((document) => {
-        const score = bestScore(queryEmbedding, document.embeddings);
+        const score = bestScore(queryEmbedding, document.embeddings, this.metric);
         if (score === undefined || (request.minScore !== undefined && score < request.minScore)) {
           return [];
         }
@@ -261,13 +284,30 @@ export function createVectorSearchTool<T, Metadata extends VectorMetadata>(
   }) as Tool<{ query: string; topK?: number }, Array<VectorSearchResult<T, Metadata>>>;
 }
 
-function bestScore(queryEmbedding: Embedding, embeddings: Embedding[]): number | undefined {
+function bestScore(
+  queryEmbedding: Embedding,
+  embeddings: Embedding[],
+  metric: VectorMetric,
+): number | undefined {
   let best: number | undefined;
   for (const embedding of embeddings) {
-    const score = cosineSimilarity(queryEmbedding.vector, embedding.vector);
+    const score = metricScore(queryEmbedding.vector, embedding.vector, metric);
     best = best === undefined ? score : Math.max(best, score);
   }
   return best;
+}
+
+function metricScore(left: number[], right: number[], metric: VectorMetric): number {
+  switch (metric) {
+    case "euclidean": {
+      const distance = euclideanDistance(left, right);
+      return distance === 0 ? 0 : -distance;
+    }
+    case "dotProduct":
+      return dotProduct(left, right);
+    default:
+      return cosineSimilarity(left, right);
+  }
 }
 
 function validateEmbeddingDimension(

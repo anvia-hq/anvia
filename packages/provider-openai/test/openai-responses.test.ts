@@ -817,9 +817,10 @@ describe("OpenAI Responses mapping", () => {
   it.each([
     ["empty", ""],
     ["whitespace-only", " \n\t"],
-  ])("rejects %s non-streaming Responses tool arguments", (_label, argumentsText) => {
-    expect(() =>
-      fromOpenAIResponse({
+  ])(
+    "treats %s non-streaming Responses tool arguments as an empty object",
+    (_label, argumentsText) => {
+      const response = fromOpenAIResponse({
         status: "completed",
         output: [
           {
@@ -831,9 +832,13 @@ describe("OpenAI Responses mapping", () => {
           },
         ],
         usage: {},
-      }),
-    ).toThrowError(expect.objectContaining({ kind: "malformed-tool-arguments" }));
-  });
+      });
+
+      expect(response.choice).toEqual([
+        AssistantContent.toolCall("tool_0", "Echo", {}, "call_abc"),
+      ]);
+    },
+  );
 
   it("maps Responses refusals to visible assistant text", () => {
     const response = fromOpenAIResponse({

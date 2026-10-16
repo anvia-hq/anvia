@@ -115,6 +115,26 @@ describe("Agent tool execution", () => {
     await expect(agent.callTool("add", "{")).rejects.toBeInstanceOf(ToolJsonError);
   });
 
+  it.each([
+    ["empty", ""],
+    ["whitespace-only", " \n\t"],
+  ])("treats %s arguments as an empty object", async (_label, args) => {
+    const inputs: unknown[] = [];
+    const tool = createTool({
+      name: "ping",
+      description: "Accept no arguments",
+      inputSchema: z.object({}),
+      execute: (input) => {
+        inputs.push(input);
+        return "pong";
+      },
+    });
+    const agent = agentWithTools([tool]);
+
+    await expect(agent.callTool("ping", args)).resolves.toEqual({ type: "text", value: "pong" });
+    expect(inputs).toEqual([{}]);
+  });
+
   it("rejects non-finite parsed arguments before a tool executes", async () => {
     let executions = 0;
     const tool = createTool({

@@ -47,7 +47,9 @@ server; keep `UIMessage[]` as presentation state in your application.
 - Typed custom stream data, Agent interactions, and HTTP resume cursors.
 
 For React, `@anvia/react` manages this state through `useChat` and `useCompletion`. Generic JSONL/SSE
-readers are also available from `@anvia/client/transport` for other event contracts.
+readers are also available from `@anvia/client/transport` for other event contracts. Malformed
+frames are skipped and reported through `onParseError` (or thrown with `strict: true`), and
+`readSseFrames` exposes SSE event names, last event IDs, and retry hints.
 
 ## Learn more
 

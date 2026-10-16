@@ -265,9 +265,10 @@ describe("Mistral completion mapping", () => {
     ).toThrow('Completion provider returned tool call "call_1" with malformed JSON arguments.');
   });
 
-  it.each(["", "   ", "\n\t"])("rejects blank tool arguments (%j)", (argumentsValue) => {
-    expect(() =>
-      fromMistralChatResponse({
+  it.each(["", "   ", "\n\t"])(
+    "treats blank tool arguments (%j) as an empty object",
+    (argumentsValue) => {
+      const response = fromMistralChatResponse({
         choices: [
           {
             finishReason: "tool_calls",
@@ -281,15 +282,13 @@ describe("Mistral completion mapping", () => {
             },
           },
         ],
-      }),
-    ).toThrowError(
-      expect.objectContaining({
-        name: "CompletionProviderOutputError",
-        kind: "malformed-tool-arguments",
-        toolCallId: "call_1",
-      }),
-    );
-  });
+      });
+
+      expect(response.choice).toEqual([
+        AssistantContent.toolCall("call_1", "lookup", {}, "call_1"),
+      ]);
+    },
+  );
 
   it("accepts strict native object tool arguments", () => {
     const response = fromMistralChatResponse({

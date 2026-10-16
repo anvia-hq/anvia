@@ -163,8 +163,12 @@ function isRichToolOutput(value: unknown): value is RichToolOutput {
   return Object.getOwnPropertyDescriptor(value, richToolOutput)?.value === true;
 }
 
-/** Parses and JSON-validates the raw argument string supplied by the model. */
+/**
+ * Parses and JSON-validates the raw argument string supplied by the model.
+ * Blank argument strings are treated as an empty object for zero-argument tool calls.
+ */
 export function parseToolArgs(args: string): JsonValue {
+  if (args.trim() === "") return {};
   const value: unknown = JSON.parse(args);
   if (!isJsonValue(value)) {
     throw new TypeError("Tool arguments must be a JSON value.");

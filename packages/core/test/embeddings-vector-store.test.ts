@@ -601,6 +601,82 @@ describe("vector stores and retrieval", () => {
     expect(store.get({ id: "cat" })?.document).toMatchObject({ text: "updated" });
   });
 
+  describe("in-memory metrics", () => {
+    const metricDocuments = [
+      {
+        id: "aligned-far",
+        document: "aligned-far",
+        embeddings: [{ document: "", vector: [10, 0] }],
+      },
+      { id: "near", document: "near", embeddings: [{ document: "", vector: [1, 0.5] }] },
+      { id: "exact", document: "exact", embeddings: [{ document: "", vector: [1, 0] }] },
+    ];
+    const query: VectorSearchRequest = { vector: [1, 0], topK: 3 };
+
+    it("defaults to cosine similarity", async () => {
+      const store = InMemoryVectorStore.fromDocuments({ documents: metricDocuments });
+      const results = await store.search(query);
+      expect(results.map((result) => result.id).slice(2)).toEqual(["near"]);
+      expect(results[0]?.score).toBeCloseTo(1);
+      expect(results[2]?.score).toBeCloseTo(1 / Math.sqrt(1.25));
+      const explicit = InMemoryVectorStore.fromDocuments({
+        documents: metricDocuments,
+        metric: "cosine",
+      });
+      expect(await explicit.search(query)).toEqual(results);
+    });
+
+    it("ranks euclidean results nearest first with negated distance scores", async () => {
+      const store = InMemoryVectorStore.fromDocuments({
+        documents: metricDocuments,
+        metric: "euclidean",
+      });
+      const results = await store.search(query);
+      expect(results.map((result) => result.id)).toEqual(["exact", "near", "aligned-far"]);
+      expect(results.map((result) => result.score)).toEqual([0, -0.5, -9]);
+      expect((await store.search({ ...query, minScore: -1 })).map((result) => result.id)).toEqual([
+        "exact",
+        "near",
+      ]);
+    });
+
+    it("ranks dotProduct results by raw inner product", async () => {
+      const store = InMemoryVectorStore.fromDocuments({
+        documents: metricDocuments,
+        metric: "dotProduct",
+      });
+      const results = await store.search(query);
+      expect(results.map((result) => result.id)).toEqual(["aligned-far", "near", "exact"]);
+      expect(results.map((result) => result.score)).toEqual([10, 1, 1]);
+      expect((await store.search({ ...query, minScore: 2 })).map((result) => result.id)).toEqual([
+        "aligned-far",
+      ]);
+    });
+
+    it("uses the best-scoring chunk per document for the configured metric", async () => {
+      const store = InMemoryVectorStore.fromDocuments({
+        metric: "euclidean",
+        documents: [
+          {
+            id: "chunked",
+            document: "chunked",
+            embeddings: [
+              { document: "", vector: [5, 0] },
+              { document: "", vector: [1, 1] },
+            ],
+          },
+        ],
+      });
+      expect(await store.search(query)).toMatchObject([{ id: "chunked", score: -1 }]);
+    });
+
+    it("rejects unsupported metrics", () => {
+      expect(() => new InMemoryVectorStore({ metric: "manhattan" as unknown as "cosine" })).toThrow(
+        /Unsupported vector metric/,
+      );
+    });
+  });
+
   it("composes dense retrieval without giving the store a model", async () => {
     const model = new KeywordModel();
     const search = vi.fn(async (_request: VectorSearchRequest) => [

@@ -1,5 +1,11 @@
 # @anvia/core
 
+## 1.15.0
+
+### Minor Changes
+
+- a2af885: Add Pipeline `.decide()` stages for typed decision questions and `.route()` stages that run only the branch selected by a choice decision. Graph branch nodes now carry `branchOf` (`"parallel"` or `"route"`). Studio logs decision stages, route stages, and route branches under a `decision` category.
+
 ## 1.14.1
 
 ### Patch Changes

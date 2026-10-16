@@ -1,5 +1,11 @@
 # @anvia/mistral
 
+## 1.1.6
+
+### Patch Changes
+
+- 3f1e8c1: Treat empty or whitespace-only tool-call argument strings as `{}` instead of failing with `malformed-tool-arguments`, so zero-argument tool calls from OpenAI-compatible backends (OpenRouter, Ollama, vLLM) and Mistral succeed. Malformed non-empty JSON arguments are still rejected.
+
 ## 1.1.5
 
 ### Patch Changes

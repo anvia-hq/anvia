@@ -1,5 +1,16 @@
 # @anvia/core
 
+## 1.16.0
+
+### Minor Changes
+
+- cc993bd: Add a `metric` option (`"cosine" | "euclidean" | "dotProduct"`) to `InMemoryVectorStore`. Cosine remains the default. Euclidean scores are negated distances (nearest first, `minScore` acts as a negative distance threshold), matching the pgvector, Chroma, LanceDB, and Milvus adapters.
+- 85d6cf4: Add richer vector metadata filters. `VectorFilter` now supports `ne`, `in`, `gte`, and `lte`, and `and`/`or` accept any non-empty list of child filters (existing two-element filters keep working). `vectorFilter` gains matching builders, and `and(...)`/`or(...)` are variadic. The in-memory store and LanceDB post-filtering evaluate the new operators, and the Chroma, Milvus, PgVector, Pinecone, Qdrant, Redis, and Weaviate adapters translate them to native operators, throwing a descriptive error for combinations a backend cannot express. The bundled `anvia-rag` skill documents the new operators.
+
+### Patch Changes
+
+- 3f1e8c1: Treat empty or whitespace-only tool-call argument strings as `{}` instead of failing with `malformed-tool-arguments`, so zero-argument tool calls from OpenAI-compatible backends (OpenRouter, Ollama, vLLM) and Mistral succeed. Malformed non-empty JSON arguments are still rejected.
+
 ## 1.15.0
 
 ### Minor Changes

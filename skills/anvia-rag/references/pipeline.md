@@ -76,6 +76,10 @@ const results = await retrieveDocuments({
 });
 ```
 
+`vectorFilter` supports `eq`, `ne`, `gt`, `gte`, `lt`, `lte`, `in(key, values)`, and
+n-ary `and(...filters)` / `or(...filters)`. Adapters translate these to native
+backend operators and throw when a backend cannot express one.
+
 Start with exact retrieval (`topK`, metadata filters) before adding approximate
 indexes — LSH trades recall for speed and needs a fixed `seed` for reproducible
 evals.

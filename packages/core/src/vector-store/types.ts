@@ -9,12 +9,23 @@ import type {
 } from "../embeddings";
 import type { RetrySetting } from "../retry";
 
+export type VectorFilterComparisonOperator = "eq" | "ne" | "gt" | "gte" | "lt" | "lte";
+
+export type VectorFilterOperator = VectorFilterComparisonOperator | "in" | "and" | "or";
+
+/** Non-empty list of child filters. Existing two-element tuples remain valid. */
+export type VectorFilterList = [VectorFilter, ...VectorFilter[]];
+
 export type VectorFilter =
   | { type: "eq"; key: string; value: VectorMetadataValue }
+  | { type: "ne"; key: string; value: VectorMetadataValue }
   | { type: "gt"; key: string; value: VectorMetadataValue }
+  | { type: "gte"; key: string; value: VectorMetadataValue }
   | { type: "lt"; key: string; value: VectorMetadataValue }
-  | { type: "and"; filters: [VectorFilter, VectorFilter] }
-  | { type: "or"; filters: [VectorFilter, VectorFilter] };
+  | { type: "lte"; key: string; value: VectorMetadataValue }
+  | { type: "in"; key: string; values: VectorMetadataValue[] }
+  | { type: "and"; filters: VectorFilterList }
+  | { type: "or"; filters: VectorFilterList };
 
 export type VectorMetric = "cosine" | "euclidean" | "dotProduct";
 export type VectorFusion = "rrf" | "dbsf";

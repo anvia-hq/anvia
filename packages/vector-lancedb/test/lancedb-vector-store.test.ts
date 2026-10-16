@@ -2,6 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, expectTypeOf, it, vi } from "vitest";
+import type { VectorFilter } from "@anvia/core/vector-store";
 import * as publicApi from "../src/index.js";
 import {
   type LanceDBConnectionLike,
@@ -222,6 +223,48 @@ describe("LanceDBVectorClient", () => {
       }),
     ).resolves.toMatchObject([{ id: "b" }]);
     expect(limits).toEqual([1, 2]);
+  });
+
+  it("supports ne, in, inclusive ranges, and n-ary boolean filters", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "anvia-lancedb-rich-filter-"));
+    const client = new LanceDBVectorClient({ uri: directory });
+    const store = client.vectorStore<string>({ tableName: "documents", dimensions: 2 });
+
+    try {
+      await store.ensure();
+      await store.upsert({
+        documents: [1, 2, 3].map((priority) => ({
+          id: `document-${priority}`,
+          document: `doc ${priority}`,
+          metadata: { tenantId: priority === 3 ? "tenant-2" : "tenant-1", priority },
+          embeddings: [{ document: `doc ${priority}`, vector: [1, priority / 10] }],
+        })),
+      });
+
+      const ids = async (filter: VectorFilter) =>
+        (await store.search({ vector: [1, 0], topK: 3, filter })).map((result) => result.id).sort();
+
+      await expect(ids({ type: "ne", key: "tenantId", value: "tenant-1" })).resolves.toEqual([
+        "document-3",
+      ]);
+      await expect(ids({ type: "in", key: "priority", values: [1, 3] })).resolves.toEqual([
+        "document-1",
+        "document-3",
+      ]);
+      await expect(
+        ids({
+          type: "and",
+          filters: [
+            { type: "gte", key: "priority", value: 2 },
+            { type: "lte", key: "priority", value: 3 },
+            { type: "eq", key: "tenantId", value: "tenant-1" },
+          ],
+        }),
+      ).resolves.toEqual(["document-2"]);
+    } finally {
+      await client.close();
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 
   it("applies metadata filters without interpolating SQL", async () => {

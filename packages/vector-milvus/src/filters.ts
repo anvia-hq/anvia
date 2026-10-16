@@ -25,26 +25,40 @@ const milvusExpressionKeywords = new Set([
   "random_sample",
 ]);
 
+const milvusComparisonOperators = {
+  eq: "==",
+  ne: "!=",
+  gt: ">",
+  gte: ">=",
+  lt: "<",
+  lte: "<=",
+} as const;
+
 export function filterToMilvusExpr(filter: VectorFilter | undefined): string | undefined {
   if (filter === undefined) {
     return undefined;
   }
 
   switch (filter.type) {
-    case "eq": {
+    case "eq":
+    case "ne":
+    case "gt":
+    case "gte":
+    case "lt":
+    case "lte": {
       const key = sanitizeFilterKey(filter.key);
       const val = milvusLiteral(filter.value);
-      return `${key} == ${val}`;
+      return `${key} ${milvusComparisonOperators[filter.type]} ${val}`;
     }
-    case "gt": {
+    case "in": {
       const key = sanitizeFilterKey(filter.key);
-      const val = milvusLiteral(filter.value);
-      return `${key} > ${val}`;
-    }
-    case "lt": {
-      const key = sanitizeFilterKey(filter.key);
-      const val = milvusLiteral(filter.value);
-      return `${key} < ${val}`;
+      if (filter.values.length === 0) {
+        throw new Error(`Milvus "in" filter for ${key} requires at least one value`);
+      }
+      if (filter.values.includes(null)) {
+        throw new Error(`Milvus does not support null values in "in" filters (field ${key})`);
+      }
+      return `${key} in [${filter.values.map(milvusLiteral).join(", ")}]`;
     }
     case "and": {
       const parts = filter.filters

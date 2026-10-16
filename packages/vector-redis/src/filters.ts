@@ -1,3 +1,4 @@
+import type { VectorMetadataValue } from "@anvia/core/embeddings";
 import type { VectorFilter } from "@anvia/core/vector-store";
 import { redisTagValue } from "./helpers.js";
 import type { RedisMetadataFieldType, RedisMetadataSchema } from "./types.js";
@@ -24,30 +25,57 @@ function translateFilter(
     );
   }
   switch (filter.type) {
-    case "eq": {
-      if (fieldType === "numeric") {
-        if (typeof filter.value !== "number" || !Number.isFinite(filter.value)) {
-          throw new TypeError(
-            `Redis numeric metadata field ${filter.key} requires numeric filters`,
-          );
-        }
-        return `@${filter.key}:[${filter.value} ${filter.value}]`;
+    case "eq":
+      return equalityQuery(filter.key, filter.value, fieldType);
+    case "ne":
+      return `-(${equalityQuery(filter.key, filter.value, fieldType)})`;
+    case "in": {
+      if (filter.values.length === 0) {
+        throw new TypeError(`Redis "in" filter for ${filter.key} requires at least one value`);
       }
-      return `@${filter.key}:{${escapeRedisValue(redisTagValue(filter.value))}}`;
+      if (fieldType === "numeric") {
+        return filter.values
+          .map((value) => `(${equalityQuery(filter.key, value, fieldType)})`)
+          .join(" | ");
+      }
+      const tags = filter.values.map((value) => escapeRedisValue(redisTagValue(value)));
+      return `@${filter.key}:{${tags.join(" | ")}}`;
     }
     case "gt": {
       assertNumericFilter(filter.key, filter.value, fieldType);
       return `@${filter.key}:[(${filter.value} +inf]`;
     }
+    case "gte": {
+      assertNumericFilter(filter.key, filter.value, fieldType);
+      return `@${filter.key}:[${filter.value} +inf]`;
+    }
     case "lt": {
       assertNumericFilter(filter.key, filter.value, fieldType);
       return `@${filter.key}:[-inf (${filter.value}]`;
+    }
+    case "lte": {
+      assertNumericFilter(filter.key, filter.value, fieldType);
+      return `@${filter.key}:[-inf ${filter.value}]`;
     }
     case "and":
       return filter.filters.map((f) => `(${translateFilter(f, metadataSchema)})`).join(" ");
     case "or":
       return filter.filters.map((f) => `(${translateFilter(f, metadataSchema)})`).join(" | ");
   }
+}
+
+function equalityQuery(
+  key: string,
+  value: VectorMetadataValue,
+  fieldType: RedisMetadataFieldType | undefined,
+): string {
+  if (fieldType === "numeric") {
+    if (typeof value !== "number" || !Number.isFinite(value)) {
+      throw new TypeError(`Redis numeric metadata field ${key} requires numeric filters`);
+    }
+    return `@${key}:[${value} ${value}]`;
+  }
+  return `@${key}:{${escapeRedisValue(redisTagValue(value))}}`;
 }
 
 function assertNumericFilter(

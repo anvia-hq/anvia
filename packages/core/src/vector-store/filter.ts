@@ -1,23 +1,40 @@
 import type { VectorMetadata, VectorMetadataValue } from "../embeddings";
-import type { VectorFilter } from "./types";
+import type { VectorFilter, VectorFilterList } from "./types";
 
-export type { VectorFilter } from "./types";
+export type {
+  VectorFilter,
+  VectorFilterComparisonOperator,
+  VectorFilterList,
+  VectorFilterOperator,
+} from "./types";
 
 export const vectorFilter = {
   eq(key: string, value: VectorMetadataValue): VectorFilter {
     return { type: "eq", key, value };
   },
+  ne(key: string, value: VectorMetadataValue): VectorFilter {
+    return { type: "ne", key, value };
+  },
   gt(key: string, value: VectorMetadataValue): VectorFilter {
     return { type: "gt", key, value };
+  },
+  gte(key: string, value: VectorMetadataValue): VectorFilter {
+    return { type: "gte", key, value };
   },
   lt(key: string, value: VectorMetadataValue): VectorFilter {
     return { type: "lt", key, value };
   },
-  and(left: VectorFilter, right: VectorFilter): VectorFilter {
-    return { type: "and", filters: [left, right] };
+  lte(key: string, value: VectorMetadataValue): VectorFilter {
+    return { type: "lte", key, value };
   },
-  or(left: VectorFilter, right: VectorFilter): VectorFilter {
-    return { type: "or", filters: [left, right] };
+  in(key: string, values: readonly VectorMetadataValue[]): VectorFilter {
+    return { type: "in", key, values: [...values] };
+  },
+  and(...filters: VectorFilterList): VectorFilter {
+    return { type: "and", filters };
+  },
+  or(...filters: VectorFilterList): VectorFilter {
+    return { type: "or", filters };
   },
 };
 
@@ -35,24 +52,35 @@ export function matchesVectorFilter(
   switch (filter.type) {
     case "eq":
       return metadata[filter.key] === filter.value;
+    case "ne":
+      return metadata[filter.key] !== filter.value;
     case "gt":
-      return compare(metadata[filter.key], filter.value) > 0;
+      return (compare(metadata[filter.key], filter.value) ?? 0) > 0;
+    case "gte": {
+      const result = compare(metadata[filter.key], filter.value);
+      return result !== undefined && result >= 0;
+    }
     case "lt":
-      return compare(metadata[filter.key], filter.value) < 0;
+      return (compare(metadata[filter.key], filter.value) ?? 0) < 0;
+    case "lte": {
+      const result = compare(metadata[filter.key], filter.value);
+      return result !== undefined && result <= 0;
+    }
+    case "in": {
+      const value = metadata[filter.key];
+      return value !== undefined && filter.values.includes(value);
+    }
     case "and":
-      return (
-        matchesVectorFilter(metadata, filter.filters[0]) &&
-        matchesVectorFilter(metadata, filter.filters[1])
-      );
+      return filter.filters.every((child) => matchesVectorFilter(metadata, child));
     case "or":
-      return (
-        matchesVectorFilter(metadata, filter.filters[0]) ||
-        matchesVectorFilter(metadata, filter.filters[1])
-      );
+      return filter.filters.some((child) => matchesVectorFilter(metadata, child));
   }
 }
 
-function compare(left: VectorMetadataValue | undefined, right: VectorMetadataValue): number {
+function compare(
+  left: VectorMetadataValue | undefined,
+  right: VectorMetadataValue,
+): number | undefined {
   if (typeof left === "number" && typeof right === "number") {
     return left - right;
   }
@@ -62,5 +90,5 @@ function compare(left: VectorMetadataValue | undefined, right: VectorMetadataVal
   if (typeof left === "boolean" && typeof right === "boolean") {
     return Number(left) - Number(right);
   }
-  return 0;
+  return undefined;
 }

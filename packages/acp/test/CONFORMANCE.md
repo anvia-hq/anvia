@@ -81,6 +81,10 @@ solely to obtain a passing verdict.
 
 ## Manual follow-up (ACP 10)
 
+The [ACP 10 compatibility matrix](./EDITOR_COMPATIBILITY.md) now provides the shared offline
+sample, config generator, automated smoke command and per-editor manual scenarios. Its fixture
+results do not count as real editor verification; GUI acceptance remains open.
+
 - Launch the configured application factory in Zed and one independent client (JetBrains or
   Neovim); verify multi-turn text and two distinct workspaces.
 - Approve, deny and cancel a tool; verify displayed IDs/results and no execution after denial.

@@ -40,6 +40,8 @@
     "build": "tsup src/index.ts src/stdio.ts src/cli.ts --format esm --dts --sourcemap --clean && chmod +x dist/cli.js",
     "pretest": "pnpm run build",
     "test": "vitest run",
+    "pretest:editors": "pnpm run build",
+    "test:editors": "vitest run test/editor-smoke.test.ts test/launcher.test.ts",
     "pretest:tck": "pnpm run build",
     "test:tck": "node test/run-tck.mjs",
     "typecheck": "tsc --noEmit"

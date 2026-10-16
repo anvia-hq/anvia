@@ -10,6 +10,28 @@ plaintext reasoning. ACP 05 adds per-turn cancellation. ACP 06 adds approval/que
 are implementation targets, not claims of editor compatibility. Later tasks own session
 execution and optional capabilities.
 
+### ACP 10 verification status
+
+Repository-only editor smoke assets now exercise a deterministic streaming session factory and
+stdio MCP server through the dedicated bin. The sample exposes turn history, an approval-gated
+in-memory counter, cancellation and simulated configuration/credential failures. A config generator
+writes reviewable Zed, JetBrains and CodeCompanion snippets without changing installed editors.
+See [the compatibility matrix and manual checklist](./test/EDITOR_COMPATIBILITY.md) for evidence,
+reproduction steps, per-editor blockers and follow-ups. Real-editor acceptance is still open:
+Zed is installed but Computer Use access was denied; JetBrains and Neovim were unavailable.
+
+Proposed decisions — pending Indra review:
+
+- Use the same offline sample for automated and GUI verification, with no provider credentials or
+  model cost. Fixture-client passes cannot satisfy Zed or independent-editor acceptance. Record
+  exact versions and real observations before claiming editor compatibility.
+- Preserve framework-adapter scope, application-owned model/credentials, no-op authentication,
+  default in-memory sessions and opt-in-only local/editor filesystem and terminal tools.
+- Keep editor configs and smoke agents in repository examples; do not add launcher flags, bundled
+  coding-agent behavior, provider dependencies or editor-specific runtime branches for verification.
+- Missing-auth checks simulate application setup failure. Actual credential validation belongs to
+  the host. Verify safe stderr visibility manually; generic wire error UX remains a follow-up.
+
 ### ACP 09 implementation status
 
 The test suite now includes a reusable raw ACP fixture client driving the built `anvia-acp`

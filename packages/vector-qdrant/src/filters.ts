@@ -22,6 +22,14 @@ export function filterToQdrantFilter(filter: VectorFilter | undefined): unknown 
       if (filter.values.length === 0) {
         throw new Error(`Qdrant "in" filter for ${filter.key} requires at least one value`);
       }
+      if (
+        !filter.values.every((value) => typeof value === "string") &&
+        !filter.values.every((value) => typeof value === "number" && Number.isInteger(value))
+      ) {
+        throw new Error(
+          `Qdrant "in" filters only support all-string or all-integer values (field ${filter.key})`,
+        );
+      }
       return { must: [{ key: filter.key, match: { any: filter.values } }] };
     case "and":
       return { must: filter.filters.map(filterToQdrantFilter) };

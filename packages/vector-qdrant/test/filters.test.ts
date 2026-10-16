@@ -44,4 +44,21 @@ describe("filterToQdrantFilter", () => {
       /Qdrant "in" filter/,
     );
   });
+
+  it("accepts all-integer in filters", () => {
+    expect(filterToQdrantFilter({ type: "in", key: "priority", values: [1, 2] })).toEqual({
+      must: [{ key: "priority", match: { any: [1, 2] } }],
+    });
+  });
+
+  it.each([
+    ["booleans", [true, false]],
+    ["floats", [1.5, 2]],
+    ["null", [null]],
+    ["mixed strings and integers", ["a", 1]],
+  ])("rejects in filters with %s", (_label, values) => {
+    expect(() => filterToQdrantFilter({ type: "in", key: "tenant", values })).toThrow(
+      /Qdrant "in" filters only support all-string or all-integer values \(field tenant\)/,
+    );
+  });
 });

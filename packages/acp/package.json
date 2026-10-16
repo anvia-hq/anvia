@@ -40,6 +40,8 @@
     "build": "tsup src/index.ts src/stdio.ts src/cli.ts --format esm --dts --sourcemap --clean && chmod +x dist/cli.js",
     "pretest": "pnpm run build",
     "test": "vitest run",
+    "pretest:tck": "pnpm run build",
+    "test:tck": "node test/run-tck.mjs",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

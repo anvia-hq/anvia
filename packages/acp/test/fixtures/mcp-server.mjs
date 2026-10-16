@@ -69,6 +69,7 @@ createInterface({ input: process.stdin })
       };
       result = { tools: process.env.FIXTURE_MODE === "duplicate" ? [tool, tool] : [tool] };
     } else if (request.method === "tools/call") {
+      if (process.env.FIXTURE_MODE === "call-wait") return;
       result = { content: [{ type: "text", text: "fixture result" }] };
     } else {
       result = {};

@@ -10,6 +10,30 @@ plaintext reasoning. ACP 05 adds per-turn cancellation. ACP 06 adds approval/que
 are implementation targets, not claims of editor compatibility. Later tasks own session
 execution and optional capabilities.
 
+### ACP 09 implementation status
+
+The test suite now includes a reusable raw ACP fixture client driving the built `anvia-acp`
+subprocess, an offline streaming factory, direct support-module tests, real MCP call cancellation,
+and opt-in library-host editor callback cancellation. Existing tests cover every runtime module;
+the coverage map, reproduction commands and GUI follow-up are in
+[test/CONFORMANCE.md](./test/CONFORMANCE.md).
+
+Proposed decisions — pending Indra review:
+
+- Keep ordinary tests offline and credential-free. Run the experimental upstream TCK separately
+  with a clean pinned checkout and frozen Python dependencies. Do not add Python or TCK runtime
+  dependencies to the published adapter.
+- Record a compact per-requirement/per-test report without wire transcripts or stderr payloads.
+  Require all mandatory checks to pass, including both cancellation checks; do not accept an
+  upstream cancellation skip as sufficient coverage. A passing TCK is not official certification.
+- Preserve all prior product defaults: framework adapter, host-owned model/credentials, no-op
+  authentication, in-memory sessions, and local/editor tools disabled by default. Opt-in tests use
+  a separate library host. Real editor GUI verification remains ACP 10.
+
+The pinned TCK reports CONFORMANT with all 21 mandatory requirements passing. The recorded report
+includes unsupported-capability skips and the exact TCK/SDK/schema versions. No protocol or public
+runtime behavior changes were needed for ACP 09.
+
 ### ACP 08 implementation status
 
 Phase-2 editor tools, config rebuilds, slash commands, text resources and explicit edit diffs are

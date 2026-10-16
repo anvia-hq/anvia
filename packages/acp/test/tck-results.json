@@ -1,0 +1,687 @@
+{
+  "tck_repository": "https://github.com/agentclientprotocol/acp-tck",
+  "tck_revision": "fa00ccdc13dfaa4b288a91877c1f3e468af4aa7d",
+  "tck_version": "0.2.0",
+  "protocol_version": 1,
+  "schema_revision": "6d08f412a7a1370d3cc9a124e3be3d6acf92641e",
+  "sdk_version": "1.9.0",
+  "environment": {
+    "platform": "darwin",
+    "arch": "arm64",
+    "node": "v26.9.0",
+    "python": "Python 3.14.7"
+  },
+  "fixture": "test/fixtures/conformance-agent.mjs via dist/cli.js",
+  "cancel_prompt": "fixture:wait",
+  "started_at": "2026-10-16T18:08:45.431187+00:00",
+  "finished_at": "2026-10-16T18:08:52.974899+00:00",
+  "verdict": {
+    "conformant": true,
+    "tier_counts": {
+      "MANDATORY": {
+        "PASS": 21,
+        "FAIL": 0,
+        "SKIPPED": 0,
+        "NOT_TESTED": 0
+      },
+      "CAPABILITY": {
+        "PASS": 1,
+        "FAIL": 0,
+        "SKIPPED": 18,
+        "NOT_TESTED": 0
+      },
+      "ADVISORY": {
+        "PASS": 10,
+        "FAIL": 0,
+        "SKIPPED": 2,
+        "NOT_TESTED": 0
+      },
+      "INFORMATIONAL": {
+        "PASS": 4,
+        "FAIL": 0,
+        "SKIPPED": 0,
+        "NOT_TESTED": 0
+      }
+    },
+    "blocked_by_auth": false,
+    "blocked_by_version_mismatch": false
+  },
+  "requirements": [
+    {
+      "id": "ACP-ADDDIRS-001",
+      "tier": "CAPABILITY",
+      "status": "SKIPPED",
+      "tests": [
+        {
+          "nodeid": "test_session_capabilities.py::test_new_session_with_additional_directories_is_accepted",
+          "status": "SKIPPED",
+          "message": "('<acp-tck>/src/tck/v1/conformance/test_session_capabilities.py', 356, \"Skipped: capability 'agentCapabilities.sessionCapabilities.additionalDirectories' not advertised by the agent under test\")"
+        }
+      ]
+    },
+    {
+      "id": "ACP-AUTH-001",
+      "tier": "ADVISORY",
+      "status": "PASS",
+      "tests": [
+        {
+          "nodeid": "test_authentication.py::test_auth_methods_have_unique_ids",
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "ACP-AUTH-002",
+      "tier": "MANDATORY",
+      "status": "PASS",
+      "tests": [
+        {
+          "nodeid": "test_authentication.py::test_no_terminal_auth_method_without_client_capability",
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "ACP-AUTH-003",
+      "tier": "CAPABILITY",
+      "status": "SKIPPED",
+      "tests": [
+        {
+          "nodeid": "test_authentication.py::test_authenticate_then_session_new_succeeds",
+          "status": "SKIPPED",
+          "message": "('<acp-tck>/src/tck/v1/conformance/test_authentication.py', 70, 'Skipped: no --tck-auth-method given; cannot exercise the authenticate flow')"
+        }
+      ]
+    },
+    {
+      "id": "ACP-AUTH-004",
+      "tier": "CAPABILITY",
+      "status": "SKIPPED",
+      "tests": [
+        {
+          "nodeid": "test_authentication.py::test_logout_succeeds",
+          "status": "SKIPPED",
+          "message": "('<acp-tck>/src/tck/v1/conformance/test_authentication.py', 123, \"Skipped: capability 'agentCapabilities.auth.logout' not advertised by the agent under test\")"
+        }
+      ]
+    },
+    {
+      "id": "ACP-AUTH-005",
+      "tier": "ADVISORY",
+      "status": "PASS",
+      "tests": [
+        {
+          "nodeid": "test_authentication.py::test_session_new_not_gated_when_no_auth_methods_advertised",
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "ACP-CANCEL-001",
+      "tier": "MANDATORY",
+      "status": "PASS",
+      "tests": [
+        {
+          "nodeid": "test_cancel.py::test_cancel_resolves_with_cancelled_stop_reason",
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "ACP-CANCEL-002",
+      "tier": "MANDATORY",
+      "status": "PASS",
+      "tests": [
+        {
+          "nodeid": "test_cancel.py::test_no_session_update_follows_the_cancelled_response",
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "ACP-CLIENTCAP-001",
+      "tier": "MANDATORY",
+      "status": "PASS",
+      "tests": [
+        {
+          "nodeid": "test_client_capabilities.py::test_no_unadvertised_clientcap_fs_call",
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "ACP-CLIENTCAP-002",
+      "tier": "MANDATORY",
+      "status": "PASS",
+      "tests": [
+        {
+          "nodeid": "test_client_capabilities.py::test_no_unadvertised_clientcap_terminal_call",
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "ACP-CLIENTCAP-003",
+      "tier": "MANDATORY",
+      "status": "PASS",
+      "tests": [
+        {
+          "nodeid": "test_client_capabilities.py::test_no_unadvertised_clientcap_elicitation_call",
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "ACP-CLOSE-001",
+      "tier": "CAPABILITY",
+      "status": "SKIPPED",
+      "tests": [
+        {
+          "nodeid": "test_session_capabilities.py::test_close_idle_session_succeeds",
+          "status": "SKIPPED",
+          "message": "('<acp-tck>/src/tck/v1/conformance/test_session_capabilities.py', 262, \"Skipped: capability 'agentCapabilities.sessionCapabilities.close' not advertised by the agent under test\")"
+        }
+      ]
+    },
+    {
+      "id": "ACP-CLOSE-002",
+      "tier": "CAPABILITY",
+      "status": "SKIPPED",
+      "tests": [
+        {
+          "nodeid": "test_session_capabilities.py::test_close_in_flight_prompt_resolves_cancelled",
+          "status": "SKIPPED",
+          "message": "('<acp-tck>/src/tck/v1/conformance/test_session_capabilities.py', 279, \"Skipped: capability 'agentCapabilities.sessionCapabilities.close' not advertised by the agent under test\")"
+        }
+      ]
+    },
+    {
+      "id": "ACP-CONFIG-001",
+      "tier": "CAPABILITY",
+      "status": "PASS",
+      "tests": [
+        {
+          "nodeid": "test_session_config.py::test_config_options_current_values_are_valid",
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "ACP-CONFIG-002",
+      "tier": "CAPABILITY",
+      "status": "SKIPPED",
+      "tests": [
+        {
+          "nodeid": "test_session_config.py::test_set_config_option_returns_the_complete_list",
+          "status": "SKIPPED",
+          "message": "('<acp-tck>/src/tck/v1/conformance/test_session_config.py', 216, \"Skipped: config option 'mode' has no alternative value to switch to\")"
+        }
+      ]
+    },
+    {
+      "id": "ACP-CONFIG-003",
+      "tier": "MANDATORY",
+      "status": "PASS",
+      "tests": [
+        {
+          "nodeid": "test_session_config.py::test_no_boolean_config_option_without_client_capability",
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "ACP-DELETE-001",
+      "tier": "CAPABILITY",
+      "status": "SKIPPED",
+      "tests": [
+        {
+          "nodeid": "test_session_capabilities.py::test_delete_existing_session_succeeds",
+          "status": "SKIPPED",
+          "message": "('<acp-tck>/src/tck/v1/conformance/test_session_capabilities.py', 226, \"Skipped: capability 'agentCapabilities.sessionCapabilities.delete' not advertised by the agent under test\")"
+        }
+      ]
+    },
+    {
+      "id": "ACP-DELETE-002",
+      "tier": "ADVISORY",
+      "status": "SKIPPED",
+      "tests": [
+        {
+          "nodeid": "test_session_capabilities.py::test_delete_unknown_session_succeeds_silently",
+          "status": "SKIPPED",
+          "message": "('<acp-tck>/src/tck/v1/conformance/test_session_capabilities.py', 243, \"Skipped: capability 'agentCapabilities.sessionCapabilities.delete' not advertised by the agent under test\")"
+        }
+      ]
+    },
+    {
+      "id": "ACP-ERROR-001",
+      "tier": "ADVISORY",
+      "status": "PASS",
+      "tests": [
+        {
+          "nodeid": "test_diagnostics.py::test_error_messages_are_non_empty_single_line",
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "ACP-EXT-001",
+      "tier": "MANDATORY",
+      "status": "PASS",
+      "tests": [
+        {
+          "nodeid": "test_extensibility.py::test_unknown_custom_method_receives_a_response",
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "ACP-INFO-INVALIDREQ-001",
+      "tier": "INFORMATIONAL",
+      "status": "PASS",
+      "tests": [
+        {
+          "nodeid": "test_informational.py::test_structurally_invalid_request_behaviour",
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "ACP-INFO-PARSE-001",
+      "tier": "INFORMATIONAL",
+      "status": "PASS",
+      "tests": [
+        {
+          "nodeid": "test_informational.py::test_malformed_json_line_behaviour",
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "ACP-INFO-UNKNOWNSESSION-001",
+      "tier": "INFORMATIONAL",
+      "status": "PASS",
+      "tests": [
+        {
+          "nodeid": "test_informational.py::test_unknown_session_id_behaviour",
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "ACP-INIT-001",
+      "tier": "MANDATORY",
+      "status": "PASS",
+      "tests": [
+        {
+          "nodeid": "test_initialize.py::test_initialize_succeeds_and_validates",
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "ACP-INIT-002",
+      "tier": "MANDATORY",
+      "status": "PASS",
+      "tests": [
+        {
+          "nodeid": "test_initialize.py::test_requested_v1_is_echoed",
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "ACP-INIT-003",
+      "tier": "MANDATORY",
+      "status": "PASS",
+      "tests": [
+        {
+          "nodeid": "test_initialize.py::test_unsupported_version_still_succeeds",
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "ACP-INIT-004",
+      "tier": "ADVISORY",
+      "status": "PASS",
+      "tests": [
+        {
+          "nodeid": "test_initialize.py::test_agent_info_present",
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "ACP-JSONRPC-001",
+      "tier": "MANDATORY",
+      "status": "PASS",
+      "tests": [
+        {
+          "nodeid": "test_jsonrpc.py::test_id_is_echoed_for_integer_and_string_ids",
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "ACP-JSONRPC-002",
+      "tier": "MANDATORY",
+      "status": "PASS",
+      "tests": [
+        {
+          "nodeid": "test_jsonrpc.py::test_response_envelope_is_result_xor_error_with_valid_shape",
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "ACP-JSONRPC-003",
+      "tier": "MANDATORY",
+      "status": "PASS",
+      "tests": [
+        {
+          "nodeid": "test_jsonrpc.py::test_notification_receives_no_response",
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "ACP-JSONRPC-004",
+      "tier": "ADVISORY",
+      "status": "PASS",
+      "tests": [
+        {
+          "nodeid": "test_jsonrpc.py::test_unknown_method_yields_method_not_found",
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "ACP-JSONRPC-005",
+      "tier": "ADVISORY",
+      "status": "PASS",
+      "tests": [
+        {
+          "nodeid": "test_jsonrpc.py::test_connection_survives_an_erroneous_request",
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "ACP-LIST-001",
+      "tier": "CAPABILITY",
+      "status": "SKIPPED",
+      "tests": [
+        {
+          "nodeid": "test_session_capabilities.py::test_list_succeeds_and_validates",
+          "status": "SKIPPED",
+          "message": "('<acp-tck>/src/tck/v1/conformance/test_session_capabilities.py', 181, \"Skipped: capability 'agentCapabilities.sessionCapabilities.list' not advertised by the agent under test\")"
+        }
+      ]
+    },
+    {
+      "id": "ACP-LIST-002",
+      "tier": "CAPABILITY",
+      "status": "SKIPPED",
+      "tests": [
+        {
+          "nodeid": "test_session_capabilities.py::test_list_with_unmatched_cwd_filter_returns_empty_array",
+          "status": "SKIPPED",
+          "message": "('<acp-tck>/src/tck/v1/conformance/test_session_capabilities.py', 201, \"Skipped: capability 'agentCapabilities.sessionCapabilities.list' not advertised by the agent under test\")"
+        }
+      ]
+    },
+    {
+      "id": "ACP-LOAD-001",
+      "tier": "CAPABILITY",
+      "status": "SKIPPED",
+      "tests": [
+        {
+          "nodeid": "test_session_capabilities.py::test_load_succeeds_and_validates",
+          "status": "SKIPPED",
+          "message": "('<acp-tck>/src/tck/v1/conformance/test_session_capabilities.py', 27, \"Skipped: capability 'agentCapabilities.loadSession' not advertised by the agent under test\")"
+        }
+      ]
+    },
+    {
+      "id": "ACP-LOAD-002",
+      "tier": "CAPABILITY",
+      "status": "SKIPPED",
+      "tests": [
+        {
+          "nodeid": "test_session_capabilities.py::test_load_replays_before_responding_and_nothing_after",
+          "status": "SKIPPED",
+          "message": "('<acp-tck>/src/tck/v1/conformance/test_session_capabilities.py', 52, \"Skipped: capability 'agentCapabilities.loadSession' not advertised by the agent under test\")"
+        }
+      ]
+    },
+    {
+      "id": "ACP-LOAD-003",
+      "tier": "ADVISORY",
+      "status": "SKIPPED",
+      "tests": [
+        {
+          "nodeid": "test_session_capabilities.py::test_load_empty_result_is_object_not_null",
+          "status": "SKIPPED",
+          "message": "('<acp-tck>/src/tck/v1/conformance/test_session_capabilities.py', 92, \"Skipped: capability 'agentCapabilities.loadSession' not advertised by the agent under test\")"
+        }
+      ]
+    },
+    {
+      "id": "ACP-META-001",
+      "tier": "ADVISORY",
+      "status": "PASS",
+      "tests": [
+        {
+          "nodeid": "test_extensibility.py::test_prompt_meta_field_is_accepted",
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "ACP-MODES-001",
+      "tier": "CAPABILITY",
+      "status": "SKIPPED",
+      "tests": [
+        {
+          "nodeid": "test_session_config.py::test_modes_validate_and_current_mode_is_available",
+          "status": "SKIPPED",
+          "message": "('<acp-tck>/src/tck/v1/conformance/test_session_config.py', 72, 'Skipped: session/new returned no modes/configOptions')"
+        }
+      ]
+    },
+    {
+      "id": "ACP-MODES-002",
+      "tier": "CAPABILITY",
+      "status": "SKIPPED",
+      "tests": [
+        {
+          "nodeid": "test_session_config.py::test_set_mode_succeeds_and_update_uses_currentModeId",
+          "status": "SKIPPED",
+          "message": "('<acp-tck>/src/tck/v1/conformance/test_session_config.py', 96, 'Skipped: session/new returned no modes/configOptions')"
+        }
+      ]
+    },
+    {
+      "id": "ACP-PROMPT-001",
+      "tier": "MANDATORY",
+      "status": "PASS",
+      "tests": [
+        {
+          "nodeid": "test_prompt.py::test_text_only_prompt_resolves_with_a_valid_stop_reason",
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "ACP-PROMPT-002",
+      "tier": "MANDATORY",
+      "status": "PASS",
+      "tests": [
+        {
+          "nodeid": "test_prompt.py::test_updates_validate_and_carry_the_right_session_id",
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "ACP-PROMPT-003",
+      "tier": "ADVISORY",
+      "status": "PASS",
+      "tests": [
+        {
+          "nodeid": "test_prompt.py::test_resource_link_content_block_is_accepted",
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "ACP-PROMPTCAP-001",
+      "tier": "CAPABILITY",
+      "status": "SKIPPED",
+      "tests": [
+        {
+          "nodeid": "test_prompt_capabilities.py::test_prompt_with_image_block_resolves",
+          "status": "SKIPPED",
+          "message": "('<acp-tck>/src/tck/v1/conformance/test_prompt_capabilities.py', 46, \"Skipped: capability 'agentCapabilities.promptCapabilities.image' not advertised by the agent under test\")"
+        }
+      ]
+    },
+    {
+      "id": "ACP-PROMPTCAP-002",
+      "tier": "CAPABILITY",
+      "status": "SKIPPED",
+      "tests": [
+        {
+          "nodeid": "test_prompt_capabilities.py::test_prompt_with_audio_block_resolves",
+          "status": "SKIPPED",
+          "message": "('<acp-tck>/src/tck/v1/conformance/test_prompt_capabilities.py', 65, \"Skipped: capability 'agentCapabilities.promptCapabilities.audio' not advertised by the agent under test\")"
+        }
+      ]
+    },
+    {
+      "id": "ACP-PROMPTCAP-003",
+      "tier": "CAPABILITY",
+      "status": "SKIPPED",
+      "tests": [
+        {
+          "nodeid": "test_prompt_capabilities.py::test_prompt_with_embedded_resource_block_resolves",
+          "status": "SKIPPED",
+          "message": "('<acp-tck>/src/tck/v1/conformance/test_prompt_capabilities.py', 84, \"Skipped: capability 'agentCapabilities.promptCapabilities.embeddedContext' not advertised by the agent under test\")"
+        }
+      ]
+    },
+    {
+      "id": "ACP-RESUME-001",
+      "tier": "CAPABILITY",
+      "status": "SKIPPED",
+      "tests": [
+        {
+          "nodeid": "test_session_capabilities.py::test_resume_succeeds_and_validates",
+          "status": "SKIPPED",
+          "message": "('<acp-tck>/src/tck/v1/conformance/test_session_capabilities.py', 118, \"Skipped: capability 'agentCapabilities.sessionCapabilities.resume' not advertised by the agent under test\")"
+        }
+      ]
+    },
+    {
+      "id": "ACP-RESUME-002",
+      "tier": "CAPABILITY",
+      "status": "SKIPPED",
+      "tests": [
+        {
+          "nodeid": "test_session_capabilities.py::test_resume_sends_no_history_before_responding",
+          "status": "SKIPPED",
+          "message": "('<acp-tck>/src/tck/v1/conformance/test_session_capabilities.py', 137, \"Skipped: capability 'agentCapabilities.sessionCapabilities.resume' not advertised by the agent under test\")"
+        }
+      ]
+    },
+    {
+      "id": "ACP-SCHEMA-001",
+      "tier": "MANDATORY",
+      "status": "PASS",
+      "tests": [
+        {
+          "nodeid": "test_initialize.py::test_full_exchange_validates_against_schema",
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "ACP-SCHEMA-002",
+      "tier": "ADVISORY",
+      "status": "PASS",
+      "tests": [
+        {
+          "nodeid": "test_extensibility.py::test_full_exchange_has_no_unknown_root_keys",
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "ACP-SESSION-001",
+      "tier": "MANDATORY",
+      "status": "PASS",
+      "tests": [
+        {
+          "nodeid": "test_session.py::test_session_new_succeeds_with_a_unique_session_id",
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "ACP-SESSION-002",
+      "tier": "MANDATORY",
+      "status": "PASS",
+      "tests": [
+        {
+          "nodeid": "test_session.py::test_two_sessions_get_distinct_ids",
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "ACP-SHUTDOWN-001",
+      "tier": "ADVISORY",
+      "status": "PASS",
+      "tests": [
+        {
+          "nodeid": "test_diagnostics.py::test_agent_exits_promptly_after_stdin_close",
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "ACP-STDERR-001",
+      "tier": "INFORMATIONAL",
+      "status": "PASS",
+      "tests": [
+        {
+          "nodeid": "test_diagnostics.py::test_stderr_byte_count_is_recorded",
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "ACP-TRANSPORT-001",
+      "tier": "MANDATORY",
+      "status": "PASS",
+      "tests": [
+        {
+          "nodeid": "test_transport.py::test_stdout_is_clean_ndjson_jsonrpc",
+          "status": "PASS"
+        }
+      ]
+    },
+    {
+      "id": "ACP-TRANSPORT-002",
+      "tier": "MANDATORY",
+      "status": "PASS",
+      "tests": [
+        {
+          "nodeid": "test_transport.py::test_stdout_is_valid_utf8",
+          "status": "PASS"
+        }
+      ]
+    }
+  ]
+}

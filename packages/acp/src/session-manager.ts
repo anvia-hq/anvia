@@ -54,6 +54,10 @@ export class SessionManager {
     return session;
   }
 
+  cancel(sessionId: string): void {
+    this.sessions.get(sessionId)?.cancel();
+  }
+
   close(): Promise<void> {
     if (!this.closing) {
       this.closed = true;

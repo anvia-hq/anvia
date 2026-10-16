@@ -80,6 +80,10 @@ export function connectV1(stream: Stream, sessions: SessionManager, options: Acp
           ),
       }));
     })
+    .onNotification("session/cancel", ({ params }) => {
+      // Session cancellation is independent of the SDK's $/cancel_request signal.
+      if (initialized) sessions.cancel(params.sessionId);
+    })
     .connect(stream);
 }
 

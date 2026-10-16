@@ -3,11 +3,11 @@
 Agent-side [Agent Client Protocol](https://agentclientprotocol.com/libraries/typescript)
 adapter for Anvia. Applications supply their own agents, models, tools, and credentials.
 
-**Current status: ACP 04 streaming updates.** The package supports stable v1 initialization,
+**Current status: ACP 05 cancellation.** The package supports stable v1 initialization,
 no-op authentication, NDJSON transport, a dedicated launcher, and in-memory sessions with
 multi-turn prompt execution. Text/resource references work by default; images are opt-in.
 `session/update` streams assistant text and tool status with stable session-local IDs;
-`session/prompt` settles once with a stop reason after updates finish. Cancellation, permission
+`session/prompt` settles once with a stop reason after updates finish. `session/cancel` aborts the active turn and settles it with `cancelled`. Permission
 bridging and editor MCP connections are subsequent tasks. Nonempty MCP declarations are rejected explicitly.
 
 ## Launcher
@@ -168,6 +168,25 @@ streamed refusal message is shown, but internal guardrail reasons and decision m
 blocked outcome text is not replayed. Enforced output guardrails control buffering before this
 adapter receives deltas. Already emitted text or executed effects cannot be retracted.
 
+## Cancellation
+
+Send a `session/cancel` notification with the session ID to stop an active prompt. The adapter
+aborts the stream and the signal passed to the provider and local/MCP tools, invalidates pending
+callbacks, and responds to the original `session/prompt` once with `stopReason: "cancelled"`.
+Core `AgentRunCancelledError` is also normalized to this result. Idle and unknown-session cancels
+are no-ops. `$/cancel_request` is separate and does not cancel a session turn.
+
+Updates already handed to the transport drain before the response; subsequent updates and late
+callback replies are discarded. Cancelled turns do not enter history, and the session lifetime
+signal stays live. If caller code ignores abort, the prompt still settles, but the session returns
+`session_busy` until that execution finishes. Resource disposal waits for execution too; the
+launcher retains its bounded shutdown timeout. Cancellation cannot undo effects already started.
+Tools should honor their `ToolCallContext.abortSignal` and pass it through to external operations.
+
+Editor-supplied MCP and permission bridges are not implemented yet. Cancellation tests use real
+Anvia runs with fixture local/MCP tools and the internal pending-request registry, plus v1 byte
+streams; they do not claim real editor compatibility.
+
 ## Resource bounds
 
 Configure `limits` on the library host. Every value must be a positive safe integer.
@@ -222,7 +241,8 @@ key is needed. EOF, SIGINT, and SIGTERM stop the transport.
 The subprocess tests exercise the built bin, sample agent, factory loading, stdout isolation,
 startup errors, EOF, and signals. Session tests cover isolation, concurrent prompts, multi-turn
 history, content conversion, resource limits and teardown. Update tests cover ordering, reused tool
-IDs, failures, reasoning policy, presentation, refusals and one final settlement. These are not
+IDs, failures, reasoning policy, presentation, refusals and one final settlement. Cancellation tests
+cover provider/tool signals, pending callbacks, late updates, session isolation and cleanup. These are not
 editor compatibility claims.
 
 Manual editor verification belongs to ACP 10 after the remaining bridges exist:
@@ -232,6 +252,5 @@ Manual editor verification belongs to ACP 10 after the remaining bridges exist:
 - Once implemented, exercise two chat turns, approval/denial, cancellation, MCP, and subprocess exit.
 
 See [DESIGN.md](./DESIGN.md) for the proposed contract and later task boundaries. External
-documentation should describe this as partial ACP support until cancellation, permissions and
-MCP integration are available. The new `reasoning`, `toolPresentation` and `AcpToolPresentation`
+documentation should describe this as partial ACP support until permissions and MCP integration are available. The new `reasoning`, `toolPresentation` and `AcpToolPresentation`
 options need coverage in the ACP 16 external documentation task.

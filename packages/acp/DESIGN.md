@@ -6,9 +6,45 @@ This is the repository design contract for the agent-side adapter. ACP 01 added 
 only. ACP 02 implements the package manifest, pinned SDK, stream/stdio entrypoints,
 initialization, no-op authentication, and launcher. ACP 03 adds session creation and prompt
 execution with bounded in-memory history. ACP 04 adds ordered text/tool updates and optional
-plaintext reasoning. The remaining APIs and capabilities below
+plaintext reasoning. ACP 05 adds per-turn cancellation. The remaining APIs and capabilities below
 are implementation targets, not claims of editor compatibility. Later tasks own session
 execution and optional capabilities.
+
+### ACP 05 implementation status
+
+`session/cancel` invalidates the active turn's pending requests, aborts its controller and
+calls `AgentStream.cancel()` when streaming. Completion-only agents receive the same per-turn
+abort signal. Core passes it to provider requests and tool/MCP execution contexts. The original
+prompt resolves once with `cancelled`; core `AgentRunCancelledError` is normalized to that
+stop reason. Idle, unknown-session and pre-initialization notifications are harmless.
+`$/cancel_request` remains SDK-owned request cancellation and does not abort session execution.
+
+Proposed decisions — pending Indra review:
+
+- Cancellation settles the prompt after any update already handed to the transport drains.
+  It does not wait indefinitely for application/provider code that ignores abort. The session
+  remains busy until that execution finishes, and resource disposal waits for it. This refines
+  ACP 01's cooperative-stop rule: protocol settlement and execution ownership are separate.
+  Already-started side effects cannot be rolled back or forcibly stopped in-process.
+- Drop subsequent text/tool updates and skip late presentation callbacks. No synthetic successful
+  or failed tool completion is emitted on cancel; v1 has no cancelled tool-call status, and the
+  prompt's `cancelled` stop reason is authoritative. Updates already in flight may still arrive
+  before that response.
+- Each prompt owns a fresh pending-request registry. Closing it synchronously invalidates queued
+  and late replies, aborts callback signals, and rejects further dispatch through stale registry
+  references. Future approval/editor bridges must capture that registry for the turn and check
+  its cancellation before resuming a continuation. No permission bridge is implemented here.
+- Cancelled turns never enter private history. Successful history append is the atomic completion
+  boundary; cancellation after that boundary is a no-op. Session lifetime signals remain live
+  after a turn cancellation, so other sessions and later turns remain usable.
+- MCP cancellation is verified with an application-supplied `McpServer` fixture tool using core's
+  normal MCP execution path. Existing `@anvia/mcp` tools forward this context signal to their SDK
+  calls. Editor-supplied server setup/transport integration stays in ACP 07; real permission and
+  editor callbacks stay in ACP 06/08. ACP 05 tests exercise their pending-request foundation.
+
+Verification covers generation (streaming and completion-only), local/MCP tool execution,
+late and queued callback responses, late tool events, cancellation before model dispatch,
+independent sessions, history preservation, quarantine/disposal, and v1 response cardinality.
 
 ### ACP 04 implementation status
 
@@ -74,8 +110,8 @@ the process cwd. Factories must resolve application tool paths using their conte
 `session_busy`. It uses `Agent.stream()` with one consumer for streaming models and `generate()`
 for completion-only models. ACP 03 originally returned only the final stop reason; ACP 04
 adds the output projection described above. Approvals/questions fail
-safely with `unsupported_interaction`; cancellation RPCs and editor MCP connections remain ACP
-05–07 work. Nonempty MCP declarations are explicitly rejected before the factory runs.
+safely with `unsupported_interaction`; ACP 05 now implements cancellation, while editor MCP
+connections remain ACP 07 work. Nonempty MCP declarations are explicitly rejected before the factory runs.
 
 Proposed decisions — pending Indra review:
 
@@ -365,7 +401,8 @@ Each active turn has an abort controller and generation token. Cancellation inva
 permission/question callbacks synchronously; immediately before resumption and tool execution,
 check both the token and abort signal. Drop late replies/updates. An idle cancel is a no-op.
 An explicit `session/cancel` resolves the original prompt exactly once with `cancelled` after
-cooperative work has stopped and pending updates have drained; it is not an ordinary RPC error.
+already-dispatched updates have drained; it is not an ordinary RPC error. ACP 05 retains the
+session lock and resource ownership until any uncooperative execution finishes.
 See [prompt completion and cancellation](https://agentclientprotocol.com/protocol/v1/prompt-turn).
 
 Disconnect (EOF, broken output, explicit connection close, or launcher shutdown) follows that

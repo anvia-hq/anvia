@@ -31,17 +31,23 @@ export class TurnEvents {
     private readonly binding: AcpSessionBinding,
     private readonly reasoning: boolean,
     private readonly send: UpdateSink,
+    private readonly signal?: AbortSignal,
   ) {
     this.outputGuarded = hasEnforcedOutputGuardrails([...binding.agent.guardrails]);
   }
 
   async consume(stream: AgentStream): Promise<AgentOutcome> {
     // Reading result first can auto-drain AgentStream. Never use text/textStream here.
-    for await (const event of stream.events) await this.accept(event);
+    for await (const event of stream.events) {
+      // Drain core to completion without projecting late results or calling host
+      // presentation callbacks after cancellation.
+      if (!this.signal?.aborted) await this.accept(event);
+    }
     return stream.result;
   }
 
   async accept(event: AgentStreamEvent): Promise<void> {
+    if (this.signal?.aborted) return;
     switch (event.type) {
       case "text_delta":
         if (event.delta) {
@@ -78,6 +84,7 @@ export class TurnEvents {
       case "tool_call": {
         const call = event.toolCall;
         const state = await this.call(event.turn, call.toolCallId, call.toolName);
+        if (this.signal?.aborted) return;
         const presentation = presentTool(
           call.toolName,
           this.cwd,

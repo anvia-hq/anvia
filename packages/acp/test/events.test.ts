@@ -47,6 +47,30 @@ function fixture(reasoning = false) {
 }
 
 describe("stream event projection", () => {
+  it("drops late tool calls/results and does not present a call cancelled during its first update", async () => {
+    const controller = new AbortController();
+    const presentation = vi.fn();
+    const updates: SessionUpdate[] = [];
+    const mapper = new TurnEvents(
+      () => "session:1",
+      "/workspace",
+      { ...makeAgent(), toolPresentation: presentation },
+      false,
+      async (update) => {
+        updates.push(update);
+        controller.abort();
+      },
+      controller.signal,
+    );
+    await mapper.accept({ type: "tool_call", turn: 0, toolCall: call() });
+    await mapper.accept(result(0, "local", "exec", { type: "text", value: "late" }));
+    await mapper.accept(result(0, "unknown", "other", { type: "error-text", value: "late" }));
+    await mapper.accept({ type: "tool_call", turn: 0, toolCall: call("late") });
+    expect(updates).toHaveLength(1);
+    expect(updates[0]?.type).toBe("tool");
+    expect(presentation).not.toHaveBeenCalled();
+  });
+
   it("correlates partial calls and out-of-order results despite repeated provider IDs", async () => {
     const { mapper, updates } = fixture();
     await mapper.accept({ type: "tool_call_delta", turn: 0, id: "a", argumentsDelta: "private" });

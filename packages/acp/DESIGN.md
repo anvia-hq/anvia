@@ -2,11 +2,37 @@
 
 Status: proposed, pending Indra review. Baseline verified on 2026-10-16.
 
-This is the repository design contract for the agent-side adapter. ACP 01 adds documentation
-only: the APIs and capabilities below are implementation targets, not existing exports or
-claims of editor compatibility. ACP 02 owns the package manifest, dependency installation,
-stdio transport, and launcher. Later tasks own session execution and optional capabilities.
-No package changeset is needed for this repository-only design document.
+This is the repository design contract for the agent-side adapter. ACP 01 added documentation
+only. ACP 02 now implements the package manifest, pinned SDK, stream/stdio entrypoints,
+initialization, no-op authentication, and launcher. The remaining APIs and capabilities below
+are implementation targets, not claims of editor compatibility. Later tasks own session
+execution and optional capabilities.
+
+### ACP 02 implementation status
+
+`createAcpConnection` and `serveStdio` expose `closed` and idempotent `close()`. The launcher
+`anvia-acp <module-path>` loads trusted JavaScript modules exporting a named/default session
+factory or Anvia agent. It reserves protocol stdout before import and redirects console/direct
+`process.stdout.write` logging to stderr. The library leaves process logging/signals to its host.
+Only `initialize` and `authenticate` are registered; session methods return `-32601`. No factory
+is invoked during initialization. The public factory types establish the ACP 03 boundary.
+The SDK validates envelopes and method parameters, handles JSON-RPC errors, and bounds incoming
+messages to 10 MiB by default. Tests cover the built launcher with an offline sample agent;
+real editor chat remains unverified until session execution is implemented.
+The v1 output boundary removes SDK error details that can echo invalid request bodies; only
+standard error codes/messages and the adapter's initialization error kinds reach the client.
+
+Additional proposed decisions — pending Indra review:
+
+- Launch local ESM JavaScript via one module-path argument; TypeScript needs an explicit host loader.
+- Prefer factories; normalize an exported singleton Agent to a single-use factory and reject reuse.
+- Import failures report generic stderr diagnostics, never raw provider errors or stacks.
+- Add the runtime `@anvia/mcp` dependency when ACP 07 actually connects MCP servers; ACP 02 uses
+  only core MCP types in the factory contract.
+- Scaffold shutdown has no sessions/resources to drain. The launcher exits on signals; the
+  output drain is bounded to five seconds, and imported module handles cannot hold the process
+  open after EOF or startup failure. The session manager will add resource cleanup when it owns
+  live session resources.
 
 ## Protocol and dependency baseline
 

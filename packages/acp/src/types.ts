@@ -1,3 +1,4 @@
+import type { ToolCallPart } from "@anvia/core/completion";
 import type { Agent } from "@anvia/core/agent";
 import type { McpServer } from "@anvia/core/mcp";
 import type { AnyTool } from "@anvia/core/tool";
@@ -31,8 +32,27 @@ export type AcpSessionContext = Readonly<{
   signal: AbortSignal;
 }>;
 
+export type AcpToolPresentation = Readonly<{
+  title?: string;
+  kind?:
+    | "read"
+    | "edit"
+    | "delete"
+    | "move"
+    | "search"
+    | "execute"
+    | "think"
+    | "fetch"
+    | "switch_mode"
+    | "other";
+  /** Display-only paths, resolved against the session cwd; lines are one-based. */
+  locations?: readonly Readonly<{ path: string; line?: number }>[];
+}>;
+
 export type AcpSessionBinding = Readonly<{
   agent: Agent;
+  /** Trusted display projection. Never return credentials or private tool arguments. */
+  toolPresentation?: (call: ToolCallPart) => AcpToolPresentation | undefined;
   dispose?: () => void | Promise<void>;
 }>;
 
@@ -65,6 +85,8 @@ export type AcpOptions = Readonly<{
   maxMessageBytes?: number;
   /** Images require explicit opt-in and an image-capable model in every session. */
   images?: boolean;
+  /** Forward plaintext reasoning deltas only. Defaults to false; signatures stay private. */
+  reasoning?: boolean;
   /** Existing absolute directories; canonical containment is checked before calling the factory. */
   workspaceRoots?: readonly string[];
   /** Positive integer resource bounds. See README for defaults. */

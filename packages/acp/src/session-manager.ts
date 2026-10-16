@@ -22,6 +22,7 @@ export class SessionManager {
   private readonly factory: AcpSessionFactory;
   private readonly roots: readonly string[] | undefined;
   private readonly images: boolean;
+  private readonly reasoning: boolean;
   private closing: Promise<void> | undefined;
   private closed = false;
 
@@ -30,6 +31,7 @@ export class SessionManager {
     this.factory = options.sessionFactory;
     this.roots = options.workspaceRoots && [...options.workspaceRoots];
     this.images = options.images ?? false;
+    this.reasoning = options.reasoning ?? false;
   }
 
   create(cwd: string, capabilities: AcpClientCapabilities): Promise<string> {
@@ -101,7 +103,8 @@ export class SessionManager {
       binding = result;
       if (
         !(binding?.agent instanceof Agent) ||
-        (binding.dispose !== undefined && typeof binding.dispose !== "function")
+        (binding.dispose !== undefined && typeof binding.dispose !== "function") ||
+        (binding.toolPresentation !== undefined && typeof binding.toolPresentation !== "function")
       ) {
         throw new AcpError("configuration_error");
       }
@@ -114,7 +117,14 @@ export class SessionManager {
       ) {
         throw new AcpError("configuration_error");
       }
-      const session = new AcpSession(context, binding, controller, this.limits, this.images);
+      const session = new AcpSession(
+        context,
+        binding,
+        controller,
+        this.limits,
+        this.images,
+        this.reasoning,
+      );
       this.sessions.set(context.sessionId, session);
       return context.sessionId;
     } catch (error) {

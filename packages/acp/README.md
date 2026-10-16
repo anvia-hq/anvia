@@ -3,12 +3,12 @@
 Agent-side [Agent Client Protocol](https://agentclientprotocol.com/libraries/typescript)
 adapter for Anvia. Applications supply their own agents, models, tools, and credentials.
 
-**Current status: ACP 03 session execution.** The package supports stable v1 initialization,
+**Current status: ACP 04 streaming updates.** The package supports stable v1 initialization,
 no-op authentication, NDJSON transport, a dedicated launcher, and in-memory sessions with
 multi-turn prompt execution. Text/resource references work by default; images are opt-in.
-`session/prompt` returns a stop reason, but `session/update` output mapping is ACP 04 work,
-so this is not yet a usable editor chat agent. Cancellation, permission bridging and editor MCP
-connections are subsequent tasks. Nonempty MCP declarations are rejected explicitly.
+`session/update` streams assistant text and tool status with stable session-local IDs;
+`session/prompt` settles once with a stop reason after updates finish. Cancellation, permission
+bridging and editor MCP connections are subsequent tasks. Nonempty MCP declarations are rejected explicitly.
 
 ## Launcher
 
@@ -115,6 +115,59 @@ Successful completion maps to `end_turn`, output limits to `max_tokens`, exhaust
 to `max_turn_requests`, and guardrail/filter refusals to `refusal`. Provider/factory errors expose
 only safe kinds (`execution_failed` / `configuration_error`), never raw causes or credentials.
 
+## Streaming and tool presentation
+
+`text_delta` becomes `agent_message_chunk`. Reasoning stays private by default. A library host
+can set `reasoning: true` to send plaintext/summary deltas as `agent_thought_chunk`; encrypted
+or redacted reasoning and signatures are never forwarded. This setting applies to live streaming
+models, not completion-only projection or future transcript replay.
+
+Tool calls emit `tool_call` and `tool_call_update` with the same adapter-generated ID. IDs remain
+unique across model generations and prompts even when a provider reuses its IDs. Calls start as
+`pending`; results become `completed`, or `failed` for `execution-denied`, `error-text` and
+`error-json`. Raw arguments, outputs and error details stay private. There is no inferred
+`in_progress` update because a model's call event may precede approval or execution.
+
+The default title is the tool name, kind is `other`, and locations are empty. Return a trusted
+presentation callback from your session factory to customize complete calls:
+
+```ts
+import type { AcpSessionFactory } from "@anvia/acp";
+
+export const sessionFactory: AcpSessionFactory = (context) => ({
+  agent: createApplicationAgent(context), // Your application-owned constructor.
+  toolPresentation(call) {
+    if (call.toolName === "read_config") {
+      return {
+        title: "Read project configuration",
+        kind: "read",
+        locations: [{ path: "package.json", line: 1 }],
+      };
+    }
+    return undefined;
+  },
+});
+```
+
+`AcpToolPresentation` is exported for typed callbacks. Paths resolve against the session cwd;
+lines are one-based. Titles are limited to 200 characters with controls removed; at most 100
+locations are shown. Invalid lines and paths containing controls are omitted. Locations only
+annotate the UI and grant no filesystem permission. Include only public metadata in the callback;
+its errors are sanitized. Diffs and rich result content belong to ACP 08.
+
+The mapper awaits each update in order and reads the final result only after consuming the stream.
+Generations that return text only in the final response emit it once from core's `turn_end`
+response when output guardrails are absent. With enforced output guardrails, only core's safe
+replacement deltas are used; completion-only text comes from the guarded final outcome. Already
+streamed text is never replayed from the outcome. Completion-only agents project successful run
+messages after execution, including assistant text and tool status, without prior history.
+Nested agent events and provider-side tool artifacts are not projected.
+
+Input/output guardrail blocks and provider content filtering settle with `refusal`. Core's public
+streamed refusal message is shown, but internal guardrail reasons and decision metadata are omitted;
+blocked outcome text is not replayed. Enforced output guardrails control buffering before this
+adapter receives deltas. Already emitted text or executed effects cannot be retracted.
+
 ## Resource bounds
 
 Configure `limits` on the library host. Every value must be a positive safe integer.
@@ -168,14 +221,17 @@ key is needed. EOF, SIGINT, and SIGTERM stop the transport.
 `pnpm --filter @anvia/acp test` builds the package and runs unit and real subprocess tests.
 The subprocess tests exercise the built bin, sample agent, factory loading, stdout isolation,
 startup errors, EOF, and signals. Session tests cover isolation, concurrent prompts, multi-turn
-history, content conversion, resource limits and teardown. These are not editor compatibility claims.
+history, content conversion, resource limits and teardown. Update tests cover ordering, reused tool
+IDs, failures, reasoning policy, presentation, refusals and one final settlement. These are not
+editor compatibility claims.
 
-Manual editor verification belongs to ACP 10 after session execution exists:
+Manual editor verification belongs to ACP 10 after the remaining bridges exist:
 
 - Configure Zed and one JetBrains/Neovim client with the built launcher and an absolute module path.
 - Record editor versions; verify the handshake and stderr/stdout separation.
 - Once implemented, exercise two chat turns, approval/denial, cancellation, MCP, and subprocess exit.
 
 See [DESIGN.md](./DESIGN.md) for the proposed contract and later task boundaries. External
-documentation should describe this as partial ACP support until output mapping, cancellation,
-permissions and MCP integration are available.
+documentation should describe this as partial ACP support until cancellation, permissions and
+MCP integration are available. The new `reasoning`, `toolPresentation` and `AcpToolPresentation`
+options need coverage in the ACP 16 external documentation task.

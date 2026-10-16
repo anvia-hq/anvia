@@ -1,3 +1,4 @@
+import type { SessionNotification } from "@agentclientprotocol/sdk";
 import { Agent } from "@anvia/core/agent";
 import { Usage, type CompletionModel, type CompletionRequest } from "@anvia/core/completion";
 import { PassThrough } from "node:stream";
@@ -43,7 +44,9 @@ export function makeAgent(before?: (request: CompletionRequest) => Promise<void>
 }
 
 type Response = {
-  id: number;
+  id?: number;
+  method?: string;
+  params?: SessionNotification;
   result?: { sessionId?: string; stopReason?: string; agentCapabilities?: unknown };
   error?: { code: number; data?: { kind: string } };
 };

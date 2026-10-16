@@ -1,6 +1,7 @@
 import { MaxTurnsError } from "@anvia/core/agent";
 import type { AgentInput, AgentOutcome } from "@anvia/core/agent";
 import { convertPrompt, type PromptBlock } from "./content.js";
+import { TurnEvents, type UpdateSink } from "./events.js";
 import { AcpError } from "./errors.js";
 import { SessionMemory } from "./memory.js";
 import { PendingRequests } from "./pending-requests.js";
@@ -12,6 +13,7 @@ export class AcpSession {
   readonly memory: SessionMemory;
   readonly pendingRequests: PendingRequests;
   private activePrompt: Promise<TurnStopReason> | undefined;
+  private nextToolId = 0;
   private closing: Promise<void> | undefined;
 
   constructor(
@@ -20,16 +22,20 @@ export class AcpSession {
     private readonly controller: AbortController,
     private readonly limits: AcpLimits,
     private readonly images: boolean,
+    private readonly reasoning = false,
   ) {
     this.memory = new SessionMemory(context.sessionId, limits);
     this.pendingRequests = new PendingRequests(limits.maxPendingRequests);
   }
 
-  prompt(blocks: readonly PromptBlock[]): Promise<TurnStopReason> {
+  prompt(
+    blocks: readonly PromptBlock[],
+    send: UpdateSink = async () => {},
+  ): Promise<TurnStopReason> {
     if (this.controller.signal.aborted) return Promise.reject(new AcpError("connection_closed"));
     if (this.activePrompt) return Promise.reject(new AcpError("session_busy"));
     // Reserve before the first await, including history loading and content conversion.
-    const task = this.run(blocks).finally(() => {
+    const task = this.run(blocks, send).finally(() => {
       this.activePrompt = undefined;
     });
     this.activePrompt = task;
@@ -52,7 +58,7 @@ export class AcpSession {
     await this.binding.dispose?.();
   }
 
-  private async run(blocks: readonly PromptBlock[]): Promise<TurnStopReason> {
+  private async run(blocks: readonly PromptBlock[], send: UpdateSink): Promise<TurnStopReason> {
     try {
       const prompt = convertPrompt(blocks, this.limits, this.images);
       const scope = { sessionId: this.context.sessionId };
@@ -63,15 +69,22 @@ export class AcpSession {
       if (this.controller.signal.aborted) throw new AcpError("connection_closed");
       const options = { ...input, abortSignal: this.controller.signal };
       const agent = this.binding.agent;
+      const events = new TurnEvents(
+        () => `${this.context.sessionId}:${++this.nextToolId}`,
+        this.context.cwd,
+        this.binding,
+        this.reasoning,
+        async (update) => {
+          if (this.controller.signal.aborted) throw new AcpError("connection_closed");
+          await send(update);
+        },
+      );
       let outcome: AgentOutcome;
       if (agent.model.capabilities.streaming) {
-        const stream = agent.stream(options);
-        for await (const _event of stream.events) {
-          // ACP 04 will map this single consumer's events to session/update.
-        }
-        outcome = await stream.result;
+        outcome = await events.consume(agent.stream(options));
       } else {
         outcome = await agent.generate(options);
+        await events.completed(outcome);
       }
       if (this.controller.signal.aborted) throw new AcpError("connection_closed");
       if (outcome.type === "interaction") throw new AcpError("unsupported_interaction");

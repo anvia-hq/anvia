@@ -1,8 +1,15 @@
-import { agent, RequestError, type ContentBlock, type Stream } from "@agentclientprotocol/sdk";
+import {
+  agent,
+  RequestError,
+  type ContentBlock,
+  type Stream,
+  type SessionUpdate as V1Update,
+} from "@agentclientprotocol/sdk";
 import type { AcpClientCapabilities, AcpOptions } from "../types.js";
 import type { PromptBlock } from "../content.js";
 import { AcpError, errorCodes } from "../errors.js";
 import type { SessionManager } from "../session-manager.js";
+import type { SessionUpdate } from "../events.js";
 import packageJson from "../../package.json";
 
 /** Keep SDK state and v1 handlers at this boundary, separate from session execution. */
@@ -60,12 +67,17 @@ export function connectV1(stream: Stream, sessions: SessionManager, options: Acp
         return { sessionId: await sessions.create(params.cwd, capabilities) };
       });
     })
-    .onRequest("session/prompt", ({ params }) => {
+    .onRequest("session/prompt", ({ params, client }) => {
       requireInitialized();
       return respond(async () => ({
         stopReason: await sessions
           .get(params.sessionId)
-          .prompt(params.prompt.map(normalizeContent)),
+          .prompt(params.prompt.map(normalizeContent), (update) =>
+            client.notify("session/update", {
+              sessionId: params.sessionId,
+              update: toV1Update(update),
+            }),
+          ),
       }));
     })
     .connect(stream);
@@ -97,5 +109,36 @@ function normalizeContent(block: ContentBlock): PromptBlock {
     }
     default:
       return { type: "unsupported" };
+  }
+}
+
+function toV1Update(update: SessionUpdate): V1Update {
+  switch (update.type) {
+    case "text":
+    case "thought":
+      return {
+        sessionUpdate: update.type === "text" ? "agent_message_chunk" : "agent_thought_chunk",
+        content: { type: "text", text: update.text },
+      };
+    case "tool":
+      return {
+        sessionUpdate: "tool_call",
+        toolCallId: update.id,
+        title: update.title,
+        kind: update.kind,
+        locations: [...update.locations],
+        status: "pending",
+      };
+    case "tool-update": {
+      const result: V1Update = {
+        sessionUpdate: "tool_call_update",
+        toolCallId: update.id,
+        status: update.status,
+      };
+      if (update.title !== undefined) result.title = update.title;
+      if (update.kind !== undefined) result.kind = update.kind;
+      if (update.locations !== undefined) result.locations = [...update.locations];
+      return result;
+    }
   }
 }

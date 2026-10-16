@@ -5,9 +5,62 @@ Status: proposed, pending Indra review. Baseline verified on 2026-10-16.
 This is the repository design contract for the agent-side adapter. ACP 01 added documentation
 only. ACP 02 implements the package manifest, pinned SDK, stream/stdio entrypoints,
 initialization, no-op authentication, and launcher. ACP 03 adds session creation and prompt
-execution with bounded in-memory history. The remaining APIs and capabilities below
+execution with bounded in-memory history. ACP 04 adds ordered text/tool updates and optional
+plaintext reasoning. The remaining APIs and capabilities below
 are implementation targets, not claims of editor compatibility. Later tasks own session
 execution and optional capabilities.
+
+### ACP 04 implementation status
+
+`events.ts` consumes `AgentStream.events` exactly once, awaits each normalized update, then
+reads `stream.result`. For a generation without text deltas, it projects text from core's
+`turn_end` response when no enforced output guardrails exist. With output guardrails, only core's
+safe replacement deltas are used: intermediate `turn_end` text may still be unguarded. Already
+streamed text is not repeated. Only `wire/v1.ts` constructs SDK `session/update` payloads. The prompt
+handler returns one final response after updates and history handling finish; outcomes/error
+events never independently settle the RPC or replay already streamed text.
+
+Proposed decisions — pending Indra review:
+
+- Default `reasoning: false`. A library host may opt into plaintext/summary `reasoning_delta`
+  updates with `reasoning: true`. Encrypted/redacted reasoning and all signatures remain private.
+  Completion-only models project successful run messages after `generate()` finishes; they do
+  not project reasoning or raw outcome metadata. With enforced output guardrails, completion-only
+  text comes exclusively from the guarded final outcome, not intermediate assistant messages. Nested agent events and provider-side tool
+  artifacts remain private until a separate presentation contract exists.
+- Allocate tool IDs using the session ID and a session-lifetime counter. Within a prompt,
+  correlate partial calls, final calls and results by `(generation turn, toolCallId)`; record
+  execution `internalCallId` aliases when results arrive. Provider `callId` is never the primary
+  key: multiple local calls can share it, and all IDs may repeat in later generations/prompts.
+  Core validates local tool IDs within a generation. Correlation maps are discarded after each
+  prompt; the session counter is not reset. ACP 06 must preserve correlation across its future
+  continuation segments instead of creating a new mapper for each segment.
+- A partial or final tool call emits `pending`, then its result emits `completed` or `failed`.
+  `execution-denied`, `error-text` and `error-json` all mean `failed`. No `in_progress` is
+  fabricated from a model call event: that event can precede approval or execution. Tool raw
+  input/output and error details are omitted. Basic titles default to the tool name (or
+  `Tool call`), unknown kinds to `other`, and locations to empty.
+- A binding may supply `toolPresentation(call)` returning `AcpToolPresentation` with a public
+  title, kind and locations. It runs on complete calls only. Titles are stripped of controls
+  and limited to 200 characters; at most 100 locations are displayed, relative paths resolve
+  against the session cwd, and invalid lines/control-containing paths are omitted. Locations
+  are display metadata, not filesystem access or authorization. This trusted host callback
+  must avoid secrets; callback errors become sanitized `execution_failed` errors. Diffs and
+  richer tool content remain ACP 08 work.
+- Input/output guardrail blocked outcomes and provider `content-filter` finish reasons map
+  explicitly to `refusal`. Core's streamed public refusal text is forwarded normally; internal
+  guardrail reasons, rule IDs and decision metadata are never projected. The adapter does not
+  replay blocked outcome text. Output guardrails own buffering/replacement before deltas reach
+  this adapter; this layer cannot retract earlier output or tool effects.
+- `length` maps to `max_tokens`, `MaxTurnsError` to `max_turn_requests`, and other completed
+  responses to `end_turn`. Unexpected stream, presentation and notification errors go through
+  the existing safe JSON-RPC error boundary. Core currently allows the initial model request
+  plus `maxTurns` follow-ups; ACP 04 preserves that behavior. Continuation budgeting is ACP 06.
+
+Verification includes real Agent streams, delayed notification sinks, v1 byte-stream fixtures,
+completion-only projection, reused IDs across generations/prompts/sessions, all tool result
+failure variants, input/output refusals, reasoning privacy, mid-stream failures, and exactly one
+terminal response. No editor GUI compatibility is claimed by these headless checks.
 
 ### ACP 03 implementation status
 
@@ -19,8 +72,8 @@ the process cwd. Factories must resolve application tool paths using their conte
 
 `session/prompt` validates all content before model execution and rejects overlap with
 `session_busy`. It uses `Agent.stream()` with one consumer for streaming models and `generate()`
-for completion-only models. ACP 04 will map events to `session/update`; ACP 03 returns only the
-final stop reason, so it is still not a usable editor chat integration. Approvals/questions fail
+for completion-only models. ACP 03 originally returned only the final stop reason; ACP 04
+adds the output projection described above. Approvals/questions fail
 safely with `unsupported_interaction`; cancellation RPCs and editor MCP connections remain ACP
 05–07 work. Nonempty MCP declarations are explicitly rejected before the factory runs.
 
@@ -124,7 +177,7 @@ separately. These decisions are explicit defaults for implementation, not comple
 | Permissions                  | Offer `allow_once` and `reject_once` only. No “always” grant cache, across either turns or sessions. Application tools retain `requiresApproval`; editor and client-supplied MCP tools require approval by default.                                                                                                                                                       |
 | Concurrency                  | One active prompt per session; reject overlapping prompts rather than queueing. Different sessions may run concurrently with isolated cwd, histories, callbacks, and tool IDs.                                                                                                                                                                                            |
 | Runtime                      | Direct `Agent.stream()` driver first. Durable execution, a client-side adapter, remote transport, and the `anvia acp` CLI command are later tasks.                                                                                                                                                                                                                        |
-| Content/privacy              | Text and resource-link references by default; images are an explicit host opt-in from ACP 03. Embedded context and audio remain unsupported. Suppress reasoning and signatures in editor updates and transcript replay.                                                                                                                                                   |
+| Content/privacy              | Text and resource-link references by default; images are an explicit host opt-in from ACP 03. Embedded context and audio remain unsupported. Suppress reasoning by default; ACP 04 permits explicit plaintext live-update opt-in. Never expose signatures or replay reasoning.                                                                                            |
 
 An application can provide trusted custom tools that do arbitrary work. This adapter is not
 a sandbox for application code. Permission presets govern registered operations; they cannot
@@ -228,29 +281,29 @@ only; never carry an unanswered tool invocation into a fresh model request.
 handlers, host opt-in, and client capabilities must all agree before advertising/using a feature.
 Absent optional capabilities mean unsupported; no optimistic probing or silent downgrade.
 
-| ACP surface                                      | MVP target                                        | Later work / gate                                                                               |
-| ------------------------------------------------ | ------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `initialize`                                     | v1, agent identity, conservative capabilities     | SDK/schema upgrades are explicit                                                                |
-| `authenticate`                                   | No-op; `authMethods: []`                          | Custom auth would need a separate contract                                                      |
-| `session/new`                                    | Absolute cwd, fresh agent, stdio MCP              | Policy validation before effects                                                                |
-| `session/prompt`                                 | Pending until the whole turn ends                 | No premature response at an approval suspension                                                 |
-| `session/cancel`                                 | Abort active turn; settle prompt as `cancelled`   | Idle/unknown-session notification is harmless                                                   |
-| `session/update`                                 | Text, tool start/progress/result                  | Rich diffs, locations, plan, usage in ACP 08; never fabricate provider data                     |
-| `session/request_permission`                     | Once-only approval bridge                         | No always-allow/reject options                                                                  |
-| Text / resource links                            | Supported; links remain references                | No implicit URI fetching                                                                        |
-| `promptCapabilities.image`                       | `false` by default; host opt-in from ACP 03       | `images: true` requires a compatible model in every factory result                              |
-| `promptCapabilities.embeddedContext`             | `false`                                           | ACP 08: validated text resources                                                                |
-| `promptCapabilities.audio`                       | `false`                                           | Future explicit conversion policy                                                               |
-| Stdio MCP                                        | Supported, per-session ownership                  | Required ACP transport; no capability flag                                                      |
-| `mcpCapabilities.http` / `.sse`                  | Both `false`                                      | HTTP after explicit trusted-local policy; legacy SSE deferred                                   |
-| Client `fs.readTextFile` / `fs.writeTextFile`    | Unused; tools off                                 | ACP 08: opt-in, separate client flags and workspace policy                                      |
-| Client `terminal`                                | Unused; tools off                                 | ACP 08: opt-in, lifecycle and cancellation cleanup                                              |
-| `session/set_config_option` / `session/set_mode` | Unadvertised and unavailable                      | ACP 08: permission presets, validated while idle, atomic config/mode updates                    |
-| `available_commands_update`                      | No commands advertised                            | ACP 08: explicit application command registry                                                   |
-| `elicitation/create`                             | Unsupported interaction ends safely with an error | ACP 08: form-capable client, validated answers; no fabricated answers or terminal stdin prompts |
-| `loadSession`                                    | `false`                                           | ACP 11: safe replay without model/tool execution                                                |
-| `sessionCapabilities.resume/list/close/delete`   | Omitted                                           | ACP 11: advertise each only with working store semantics                                        |
-| v2 / remote transports / durable driver          | Unavailable                                       | Separate adapters/tasks, never implicit fallback                                                |
+| ACP surface                                      | MVP target                                        | Later work / gate                                                                                      |
+| ------------------------------------------------ | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `initialize`                                     | v1, agent identity, conservative capabilities     | SDK/schema upgrades are explicit                                                                       |
+| `authenticate`                                   | No-op; `authMethods: []`                          | Custom auth would need a separate contract                                                             |
+| `session/new`                                    | Absolute cwd, fresh agent, stdio MCP              | Policy validation before effects                                                                       |
+| `session/prompt`                                 | Pending until the whole turn ends                 | No premature response at an approval suspension                                                        |
+| `session/cancel`                                 | Abort active turn; settle prompt as `cancelled`   | Idle/unknown-session notification is harmless                                                          |
+| `session/update`                                 | Text, tool start/progress/result                  | Basic title/kind/locations in ACP 04; rich diffs, plan, usage in ACP 08; never fabricate provider data |
+| `session/request_permission`                     | Once-only approval bridge                         | No always-allow/reject options                                                                         |
+| Text / resource links                            | Supported; links remain references                | No implicit URI fetching                                                                               |
+| `promptCapabilities.image`                       | `false` by default; host opt-in from ACP 03       | `images: true` requires a compatible model in every factory result                                     |
+| `promptCapabilities.embeddedContext`             | `false`                                           | ACP 08: validated text resources                                                                       |
+| `promptCapabilities.audio`                       | `false`                                           | Future explicit conversion policy                                                                      |
+| Stdio MCP                                        | Supported, per-session ownership                  | Required ACP transport; no capability flag                                                             |
+| `mcpCapabilities.http` / `.sse`                  | Both `false`                                      | HTTP after explicit trusted-local policy; legacy SSE deferred                                          |
+| Client `fs.readTextFile` / `fs.writeTextFile`    | Unused; tools off                                 | ACP 08: opt-in, separate client flags and workspace policy                                             |
+| Client `terminal`                                | Unused; tools off                                 | ACP 08: opt-in, lifecycle and cancellation cleanup                                                     |
+| `session/set_config_option` / `session/set_mode` | Unadvertised and unavailable                      | ACP 08: permission presets, validated while idle, atomic config/mode updates                           |
+| `available_commands_update`                      | No commands advertised                            | ACP 08: explicit application command registry                                                          |
+| `elicitation/create`                             | Unsupported interaction ends safely with an error | ACP 08: form-capable client, validated answers; no fabricated answers or terminal stdin prompts        |
+| `loadSession`                                    | `false`                                           | ACP 11: safe replay without model/tool execution                                                       |
+| `sessionCapabilities.resume/list/close/delete`   | Omitted                                           | ACP 11: advertise each only with working store semantics                                               |
+| v2 / remote transports / durable driver          | Unavailable                                       | Separate adapters/tasks, never implicit fallback                                                       |
 
 An MVP `initialize` response therefore has `protocolVersion: 1`, `authMethods: []`,
 `loadSession: false`, all three optional prompt flags false, both optional MCP flags false,
@@ -287,7 +340,7 @@ again from the final outcome. Presentation supplies safe title/kind, absolute lo
 optional diffs; unknown tool kinds use `other`.
 
 Keep private model history distinct from the editor transcript. Do not forward generation
-requests, system prompts, continuations, reasoning, signatures, raw provider responses, or
+requests, system prompts, continuations, non-opted-in reasoning, signatures, raw provider responses, or
 credential-bearing tool inputs. Public text and sanitized tool summaries form an allowlisted
 projection for future replay. Redact error details and permission presentation as well.
 

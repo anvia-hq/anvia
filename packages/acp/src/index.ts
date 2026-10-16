@@ -10,4 +10,5 @@ export type {
   AcpSessionContext,
   AcpSessionFactory,
   AcpSessionPolicy,
+  AcpToolPresentation,
 } from "./types.js";

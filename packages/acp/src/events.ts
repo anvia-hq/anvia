@@ -59,8 +59,9 @@ export class TurnEvents {
       this.unfinished.get(request.toolCallId);
     if (!state) throw new Error("Missing interaction tool call.");
     this.executions.set(request.internalCallId, state);
-    const { id, title, kind, locations, diffs } = state;
-    const tool: PermissionTool = { id, title, kind, locations };
+    const { id, title, kind, locations, diffs, text } = state;
+    let tool: PermissionTool = { id, title, kind, locations };
+    if (text !== undefined) tool = { ...tool, text };
     if (diffs) return { ...tool, diffs };
     return tool;
   }

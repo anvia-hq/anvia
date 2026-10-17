@@ -236,7 +236,9 @@ async function createTransport(
   } else {
     url = parseMcpHttpUrl(transport.url);
   }
-  transportFetch = createMcpEndpointFetch(url, headers, transportFetch ?? defaultMcpFetch);
+  if (transport.headers !== undefined || transport.trustedAddresses !== undefined) {
+    transportFetch = createMcpEndpointFetch(url, headers, transportFetch ?? defaultMcpFetch);
+  }
   parameters = {
     ...parameters,
     fetch: createBoundedMcpFetch(transportFetch ?? defaultMcpFetch, maxBufferSize) as McpFetch,

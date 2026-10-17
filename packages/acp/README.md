@@ -151,14 +151,18 @@ export const sessionFactory: AcpSessionFactory = (context) => ({
 ```
 
 `AcpToolPresentation` is exported for typed callbacks. Paths resolve against the session cwd;
-lines are one-based. Titles are limited to 200 characters with controls removed; at most 100
-locations are shown. Invalid lines and paths containing controls are omitted. Locations only
+lines are one-based. Titles are limited to 200 characters with controls removed and an ellipsis
+when truncated; at most 100 locations are shown. Invalid lines and paths containing controls
+are omitted. Locations only
 annotate the UI and grant no filesystem permission. Include only public metadata in the callback;
 its errors are sanitized. Set `diffs: [{ path, oldText?, newText }]` for proposed edits. Omit
 `oldText` when unknown; use `null` only for a known new file. Diffs appear in pending updates and
 permission requests, not as a claim of completed execution. Up to 20 diffs and 1 MiB aggregate
 old/new text are shown. Oversized or invalid diffs are omitted. Built-in editor writes provide
 a proposed new-text diff and location automatically; other tools require explicit host metadata.
+Set `text` for explicit display text in tool updates and permission requests; controls are removed.
+Built-in editor terminals include the full sanitized command with JSON-quoted arguments where
+needed and the resolved cwd in this text, plus a command title and cwd location.
 
 The mapper awaits each update in order and reads the final result only after consuming the stream.
 Generations that return text only in the final response emit it once from core's `turn_end`
@@ -507,4 +511,4 @@ Manual editor verification belongs to ACP 10 after the remaining bridges exist:
 See [DESIGN.md](./DESIGN.md) for the proposed contract and later task boundaries. External
 documentation should describe this as partial ACP support until editor verification is available. The new `reasoning`, `toolPresentation` and `AcpToolPresentation`
 options, plus `turnBudget` / `AcpTurnBudget` and `mcp` / `AcpMcpOptions` / `AcpMcpServer`, plus `editorTools`, `models`, `readOnlyMode`, `commands`, `embeddedContext`, `readOnlyTools`,
-`AcpSessionConfig`, `AcpCommand`, `diffs`, and `mapSandboxPath` need coverage in ACP 16 external docs.
+`AcpSessionConfig`, `AcpCommand`, `diffs`, presentation `text`, and `mapSandboxPath` need coverage in ACP 16 external docs.

@@ -1,5 +1,6 @@
 import type { LookupAddress } from "node:dns";
 import type { LookupFunction } from "node:net";
+import type { Dispatcher } from "undici";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createBoundedMcpFetch,
@@ -122,6 +123,42 @@ describe("MCP connection SSRF protection", () => {
       expect(() => safeFetch("http://[fd12::1]/mcp")).toThrow("private IPv6 range not allowed");
       expect(undici.fetch).not.toHaveBeenCalled();
     });
+
+    it.each(["http://127.0.0.1/mcp", "http://169.254.169.254/mcp", "http://[fd12::1]/mcp"])(
+      "revalidates redirect destination %s through the safe dispatcher",
+      async (location) => {
+        const actual = await vi.importActual<typeof import("undici")>("undici");
+        const origin = "https://api.example.com";
+        const mock = new actual.MockAgent();
+        mock.disableNetConnect();
+        mock.get(origin).intercept({ path: "/mcp" }).reply(302, "", { headers: { location } });
+        const destinations: string[] = [];
+        undici.fetch.mockImplementation((url, init) => {
+          const safeDispatcher = init.dispatcher as Dispatcher;
+          // Serve the public origin without network I/O; redirects use the real safe dispatcher.
+          return actual.fetch(url, {
+            ...init,
+            dispatcher: {
+              dispatch(options, handler) {
+                destinations.push(String(options.origin));
+                return (String(options.origin) === origin ? mock : safeDispatcher).dispatch(
+                  options,
+                  handler,
+                );
+              },
+            } as Dispatcher,
+          });
+        });
+        try {
+          await expect(createSafeMcpFetch()(`${origin}/mcp`)).rejects.toMatchObject({
+            cause: { message: expect.stringContaining("MCP URL blocked") },
+          });
+          expect(destinations).toEqual([origin, new URL(location).origin]);
+        } finally {
+          await mock.close();
+        }
+      },
+    );
   });
 });
 

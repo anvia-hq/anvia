@@ -185,7 +185,7 @@ export function connectV1(stream: Stream, sessions: SessionManager, options: Acp
                   locations: [...tool.locations],
                   status: "pending",
                 };
-                if (tool.diffs) toolCall.content = diffContent(tool.diffs);
+                if (tool.diffs || tool.text !== undefined) toolCall.content = toolContent(tool);
                 const reply: unknown = await client.request(
                   "session/request_permission",
                   {
@@ -333,7 +333,7 @@ function toV1Update(update: SessionUpdate): V1Update {
         locations: [...update.locations],
         status: "pending",
       };
-      if (update.diffs) result.content = diffContent(update.diffs);
+      if (update.diffs || update.text !== undefined) result.content = toolContent(update);
       return result;
     }
     case "tool-update": {
@@ -342,7 +342,8 @@ function toV1Update(update: SessionUpdate): V1Update {
         toolCallId: update.id,
         status: update.status,
       };
-      if (update.diffs !== undefined) result.content = diffContent(update.diffs);
+      if (update.diffs !== undefined || update.text !== undefined)
+        result.content = toolContent(update);
       if (update.title !== undefined) result.title = update.title;
       if (update.kind !== undefined) result.kind = update.kind;
       if (update.locations !== undefined) result.locations = [...update.locations];
@@ -357,6 +358,9 @@ function object(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
-function diffContent(diffs: NonNullable<AcpToolPresentation["diffs"]>): ToolCallContent[] {
-  return diffs.map((diff) => ({ type: "diff", ...diff }));
+function toolContent(tool: AcpToolPresentation): ToolCallContent[] {
+  const content: ToolCallContent[] = (tool.diffs ?? []).map((diff) => ({ type: "diff", ...diff }));
+  if (tool.text !== undefined)
+    content.push({ type: "content", content: { type: "text", text: tool.text } });
+  return content;
 }

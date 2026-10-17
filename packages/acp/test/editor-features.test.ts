@@ -5,7 +5,7 @@ import { mkdtemp, realpath, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createEditorTools, type EditorClient } from "../src/editor-tools.js";
+import { createEditorTools, editorPresentation, type EditorClient } from "../src/editor-tools.js";
 import { PendingRequests } from "../src/pending-requests.js";
 import { mapSandboxPath, presentTool } from "../src/presentation.js";
 import { SessionManager } from "../src/session-manager.js";
@@ -414,6 +414,109 @@ describe("session configuration", () => {
 });
 
 describe("presentation and wire features", () => {
+  it("sanitizes terminal command, argument and cwd controls without truncating short titles", async () => {
+    const fixture = await toolsFixture();
+    const metadata = editorPresentation(
+      {
+        type: "tool-call",
+        toolCallId: "terminal",
+        toolName: "editor_run_terminal",
+        input: { command: "ec\u0085ho", args: ["a\nb"], cwd: "bad\tpath" },
+      },
+      fixture.tools,
+      fixture.cwd,
+    );
+    expect(presentTool("editor_run_terminal", fixture.cwd, metadata)).toEqual({
+      title: 'Run: "ec ho" "a b"',
+      kind: "execute",
+      text: `Command: "ec ho" "a b" | cwd: ${join(fixture.cwd, "bad path")}`,
+      locations: [],
+    });
+  });
+
+  it.each([{ command: 42 }, { command: "echo", args: "hello" }, { command: "echo", args: [null] }])(
+    "falls back safely for malformed terminal input %j",
+    async (input) => {
+      const fixture = await toolsFixture();
+      expect(
+        editorPresentation(
+          { type: "tool-call", toolCallId: "terminal", toolName: "editor_run_terminal", input },
+          fixture.tools,
+          fixture.cwd,
+        ),
+      ).toEqual({ title: "Run editor terminal", kind: "execute" });
+    },
+  );
+
+  it.each([undefined, "subdir/../target", "/absolute/target"])(
+    "shows the full sanitized terminal command and resolved cwd (%s) in permission requests",
+    async (targetCwd) => {
+      const cwd = await directory();
+      const args = ["hello world", 'say "hi"', "it's", "", "a\\b", "x".repeat(220)];
+      const commandLine = `echo ${args.map((arg) => (/^[a-z]+$/.test(arg) ? arg : JSON.stringify(arg))).join(" ")}`;
+      const path =
+        targetCwd === undefined ? cwd : targetCwd.startsWith("/") ? targetCwd : join(cwd, "target");
+      const input: Record<string, string | string[]> = {
+        command: "echo",
+        args: ["hello\tworld", ...args.slice(1)],
+      };
+      if (targetCwd !== undefined) input.cwd = targetCwd;
+      const call: ToolCallPart = {
+        type: "tool-call",
+        toolCallId: "terminal",
+        toolName: "editor_run_terminal",
+        input,
+      };
+      let turn = 0;
+      const fixture = wireFixture({
+        editorTools: { terminal: true },
+        sessionFactory: (context) => {
+          const model = makeAgent().model;
+          model.completion = async () => ({
+            choice: turn++ === 0 ? [call] : [{ type: "text", text: "done" }],
+            usage: Usage.empty(),
+            rawResponse: {},
+          });
+          return { agent: new Agent({ id: "terminal", model, tools: context.editorTools }) };
+        },
+      });
+      cleanups.push(() => fixture.connection.close());
+      await fixture.request("initialize", {
+        protocolVersion: 1,
+        clientCapabilities: { terminal: true },
+      });
+      const sessionId = (await fixture.request("session/new", { cwd, mcpServers: [] })).result!
+        .sessionId!;
+      const prompt = fixture.request("session/prompt", { sessionId, prompt: textPrompt });
+      await vi.waitFor(() =>
+        expect(fixture.responses.some((r) => r.method === "session/request_permission")).toBe(true),
+      );
+      const permission = fixture.responses.find((r) => r.method === "session/request_permission")!;
+      expect(permission.params).toMatchObject({
+        toolCall: {
+          title: `${`Run: ${commandLine}`.slice(0, 199)}…`,
+          kind: "execute",
+          locations: [{ path }],
+          content: [
+            {
+              type: "content",
+              content: { type: "text", text: `Command: ${commandLine} | cwd: ${path}` },
+            },
+          ],
+        },
+      });
+      fixture.input.write(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: permission.id,
+          result: { outcome: { outcome: "selected", optionId: "reject_once" } },
+        }) + "\n",
+      );
+      expect((await prompt).result?.stopReason).toBe("end_turn");
+      expect(fixture.responses.some((r) => r.method === "terminal/create")).toBe(false);
+    },
+  );
+
   it("maps only explicitly mounted Docker paths and limits proposed diffs", () => {
     const mapping = { sandboxRoot: "/workspace", hostRoot: "/host/project" };
     expect(mapSandboxPath("src/a.ts", mapping)).toBe("/host/project/src/a.ts");

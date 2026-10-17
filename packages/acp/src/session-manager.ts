@@ -145,7 +145,7 @@ export class SessionManager {
       return {
         ...binding,
         toolPresentation: (call) =>
-          editorPresentation(call, context.editorTools) ?? presentation?.(call),
+          editorPresentation(call, context.editorTools, context.cwd) ?? presentation?.(call),
       };
     } catch (error) {
       try {

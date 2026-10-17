@@ -208,12 +208,37 @@ function contains(root: string, path: string): boolean {
 export function editorPresentation(
   call: ToolCallPart,
   tools: readonly AnyTool[],
+  cwd: string,
 ): AcpToolPresentation | undefined {
   if (!tools.some((tool) => tool.name === call.toolName)) return undefined;
   if (!call.input || typeof call.input !== "object" || Array.isArray(call.input)) return undefined;
   const input = call.input as JsonObject;
-  if (call.toolName === "editor_run_terminal")
-    return { title: "Run editor terminal", kind: "execute" };
+  if (call.toolName === "editor_run_terminal") {
+    if (
+      typeof input.command !== "string" ||
+      (input.args !== undefined &&
+        (!Array.isArray(input.args) || input.args.some((arg) => typeof arg !== "string")))
+    )
+      return { title: "Run editor terminal", kind: "execute" };
+    const command = [input.command, ...((input.args as string[] | undefined) ?? [])]
+      .map((arg) => {
+        const clean = arg.replace(/\p{Cc}/gu, " ");
+        return /^[a-zA-Z0-9_./:=+-]+$/.test(clean) ? clean : JSON.stringify(clean);
+      })
+      .join(" ");
+    const path =
+      input.cwd === undefined
+        ? cwd
+        : typeof input.cwd === "string"
+          ? resolve(cwd, input.cwd)
+          : undefined;
+    return {
+      title: `Run: ${command}`,
+      kind: "execute",
+      text: `Command: ${command}${path === undefined ? "" : ` | cwd: ${path}`}`,
+      locations: path === undefined ? [] : [{ path }],
+    };
+  }
   if (typeof input.path !== "string") return undefined;
   const locations = [{ path: input.path }];
   if (call.toolName === "editor_write_text_file" && typeof input.content === "string") {

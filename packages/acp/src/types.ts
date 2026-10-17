@@ -35,6 +35,8 @@ export type AcpSessionContext = Readonly<{
 
 export type AcpToolPresentation = Readonly<{
   title?: string;
+  /** Explicit display text for tool updates and approval requests. */
+  text?: string;
   kind?:
     | "read"
     | "edit"

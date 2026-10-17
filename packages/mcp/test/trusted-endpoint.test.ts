@@ -9,6 +9,34 @@ vi.mock("undici", async (importOriginal) => ({
 }));
 afterEach(() => vi.clearAllMocks());
 
+it.each([
+  { headers: undefined, trustedAddresses: undefined, redirect: "manual" },
+  { headers: {}, trustedAddresses: undefined, redirect: "error" },
+  { headers: undefined, trustedAddresses: ["127.0.0.1"], redirect: "error" },
+])(
+  "uses the strict connection redirect policy: %j",
+  async ({ headers, trustedAddresses, redirect }) => {
+    const failure = new Error("stop before network I/O");
+    undici.fetch.mockRejectedValue(failure);
+    const client = new McpClient({
+      name: "redirects",
+      transport: {
+        type: "streamableHttp",
+        url: "https://editor.example/mcp",
+        headers,
+        trustedAddresses,
+      },
+    });
+    try {
+      await expect(client.connect()).rejects.toThrow(failure.message);
+      expect(undici.fetch).toHaveBeenCalled();
+      expect(undici.fetch.mock.calls[0]![1].redirect).toBe(redirect);
+    } finally {
+      await client.close();
+    }
+  },
+);
+
 it.each(["127.0.0.1", "10.0.0.1", "172.16.0.1", "192.168.0.1", "::1", "fd12::1", "93.184.216.34"])(
   "allows explicitly trusted address %s only for the exact endpoint",
   async (address) => {

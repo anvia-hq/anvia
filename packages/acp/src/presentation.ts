@@ -21,12 +21,9 @@ export function presentTool(
   metadata?: AcpToolPresentation,
 ): PresentedTool {
   const title =
-    (metadata?.title ?? name ?? "Tool call")
-      .replace(/\p{Cc}/gu, " ")
-      .trim()
-      .slice(0, 200) || "Tool call";
-  const result: PresentedTool = {
-    title,
+    (metadata?.title ?? name ?? "Tool call").replace(/\p{Cc}/gu, " ").trim() || "Tool call";
+  let result: PresentedTool = {
+    title: title.length > 200 ? `${title.slice(0, 199)}…` : title,
     kind: metadata?.kind && kinds.has(metadata.kind) ? metadata.kind : "other",
     locations: (metadata?.locations ?? []).slice(0, 100).flatMap((location) => {
       if (!location.path || /\p{Cc}/u.test(location.path)) return [];
@@ -38,6 +35,8 @@ export function presentTool(
       return [normalized];
     }),
   };
+  if (metadata?.text !== undefined)
+    result = { ...result, text: metadata.text.replace(/\p{Cc}/gu, " ") };
   if (!metadata?.diffs) return result;
   let diffBytes = 0;
   const diffs = metadata.diffs.slice(0, 20).flatMap((diff) => {
@@ -54,8 +53,8 @@ export function presentTool(
   return { ...result, diffs };
 }
 
-export type PresentedTool = Required<Omit<AcpToolPresentation, "diffs">> &
-  Pick<AcpToolPresentation, "diffs">;
+export type PresentedTool = Required<Omit<AcpToolPresentation, "diffs" | "text">> &
+  Pick<AcpToolPresentation, "diffs" | "text">;
 
 /** Map a Docker POSIX workspace path to an explicitly corresponding host directory.
  * Display mapping only: it neither mounts a volume nor grants tool access. */

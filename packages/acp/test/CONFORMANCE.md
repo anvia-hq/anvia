@@ -27,6 +27,15 @@ host uses the built library with explicit read/terminal opt-in; it executes no l
 | `launcher`, `cli`, public exports                         | `launcher.test.ts`: built entrypoint, module shapes, import failure, help, signals, noisy modules; subprocess conversations check stdout throughout complete turns and shutdown                                                                                         |
 | Cancellation and settlement                               | `cancellation.test.ts`, `updates.test.ts`, `stdio-conformance.test.ts`: generation/local/MCP/editor cancellation, busy quarantine, late approval/output suppression, ordered updates and one final settlement                                                           |
 
+`persistence.test.ts` also exercises `session-store` and `transcript`: three actual subprocesses
+share an opt-in file store, replay retains the exact visible chunks/tool IDs, resume is silent and
+continuation uses prior model context without executing old tools. Unit/wire coverage includes
+missing vs empty records, metadata-only filtered pagination, store capability gates, config restore,
+workspace restrictions, replay rollback, close/cancellation and failed atomic writes.
+The ACP 11 review adds actual terminal command replay across processes (without repeated terminal
+callbacks or raw output), malformed stored display fields, and cancelled-turn tool ID collisions
+after silent resume. Those regressions failed before their fixes.
+
 `types.ts` is checked by the package TypeScript build and typed tests; it has no runtime behavior.
 This map records behavioral coverage, not a claim of exhaustive branch or line coverage.
 
@@ -58,16 +67,18 @@ See [tck-results.json](./tck-results.json) for the machine-readable run. TCK `0.
 `fa00ccdc13dfaa4b288a91877c1f3e468af4aa7d`, checks its vendored schema revision
 `6d08f412a7a1370d3cc9a124e3be3d6acf92641e` against ACP SDK `1.9.0`.
 
-The result is **CONFORMANT**: 36 pytest tests passed, 20 skipped, no failures.
+The result is **CONFORMANT**: 47 pytest tests passed, 9 skipped, no failures.
+Rerun on 2026-10-17 against the ACP 11 tree (persistent sessions plus the review fixes).
 
 | Requirement tier | Passed | Failed | Skipped | Not tested |
 | ---------------- | -----: | -----: | ------: | ---------: |
 | Mandatory        |     21 |      0 |       0 |          0 |
-| Capability       |      1 |      0 |      18 |          0 |
-| Advisory         |     10 |      0 |       2 |          0 |
+| Capability       |     10 |      0 |       9 |          0 |
+| Advisory         |     12 |      0 |       0 |          0 |
 | Informational    |      4 |      0 |       0 |          0 |
 
-Both cancellation requirements passed. Skips cover unadvertised persistence, extra directories,
+Both cancellation requirements and all advertised session lifecycle requirements passed.
+Skips cover extra directories,
 legacy modes, media/context capabilities and logout; authentication has no advertised method,
 and the default mode catalog has no alternative value to select. Unit/wire tests separately
 exercise no-op authentication and the opt-in capabilities/configuration implemented in ACP 08.
@@ -91,6 +102,24 @@ results do not count as real editor verification; GUI acceptance remains open.
 - With explicit editor opt-in, verify unsaved-buffer reads and terminal cancellation/cleanup.
 - Confirm stdout remains protocol-only and disconnect terminates session-owned MCP resources.
 
-These GUI checks were not run for ACP 09. Persistent sessions, durable execution, v2 and publishing
-remain separate tasks. No generated build artifacts are committed; the TCK summary is the only
+These GUI checks were not run for ACP 09. ACP 11 persistence coverage is described below; durable
+execution, v2 and publishing remain separate tasks. No generated build artifacts are committed; the TCK summary is the only
 intentionally recorded generated artifact.
+
+## Manual editor persistence checklist (ACP 11)
+
+No GUI persistence verification was run for this task. The headless tests and TCK validate protocol
+behavior; Zed/JetBrains/Neovim display/reconnect UX remains manual. Use a private temporary data path
+and configure the editor to launch Node with `test/fixtures/persistence-host.mjs` plus that absolute
+JSON path (build first), or use your own library host with `FileAcpSessionStore`.
+
+- Create a session, send a text prompt and approve `fixture:tools`; record the visible tool cards.
+- Close and reopen the session. Confirm list retains it, title/workspace are correct and a load
+  replaces history exactly once with matching tool cards. Confirm resume adds no historical output.
+- Restart the host process, restore the same session and send a new prompt. Confirm prior user
+  messages remain context and old tool actions do not execute again.
+- Close during `fixture:wait`; confirm the prompt is cancelled, the editor remains responsive and
+  the stored record contains only earlier completed turns.
+- Delete the session, restart and confirm it stays absent from list and cannot load/resume.
+- Repeat in a second independent editor and record exact versions, config and observed behavior
+  in [EDITOR_COMPATIBILITY.md](./EDITOR_COMPATIBILITY.md). Remove the temporary store afterward.

@@ -18,3 +18,13 @@ export type {
   AcpTurnBudget,
 } from "./types.js";
 export { mapSandboxPath } from "./presentation.js";
+
+export { InMemoryAcpSessionStore, FileAcpSessionStore } from "./session-store.js";
+export type {
+  AcpSessionStore,
+  AcpSessionRecord,
+  AcpSessionInfo,
+  AcpSessionPage,
+  AcpSessionQuery,
+} from "./session-store.js";
+export type { AcpTranscriptEntry } from "./transcript.js";

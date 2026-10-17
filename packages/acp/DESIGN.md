@@ -10,6 +10,64 @@ plaintext reasoning. ACP 05 adds per-turn cancellation. ACP 06 adds approval/que
 are implementation targets, not claims of editor compatibility. Later tasks own session
 execution and optional capabilities.
 
+### ACP 11 implementation status
+
+Session lifecycle RPCs now use an adapter-owned `AcpSessionStore` alongside the existing
+`SessionMemory` implementation of core's `MemoryStore`. Core's API is unchanged. Records include
+canonical workspace, config, title/timestamps, presentation ID counter, model messages and a separate
+allowlisted replay transcript. The default is `InMemoryAcpSessionStore`; `FileAcpSessionStore` is an
+explicit host option with atomic snapshot replacement. Load and resume rebuild bindings and MCP
+connections without generating output or executing historical tools. Only load replays history.
+
+Proposed decisions — pending Indra review:
+
+- Preserve framework-adapter scope, host-owned models/credentials, no-op authentication, default
+  in-memory storage and local/editor tools off by default. File storage is a library-host option;
+  do not add launcher configuration or a database dependency in ACP 11.
+- Save completed turns atomically as one versioned envelope with both histories and metadata.
+  Starting the store write is the completion boundary; later cancel/close waits for its outcome.
+  Failed writes retain prior state. Suspensions/cancellations are not persisted checkpoints; an
+  interrupted effect may already have happened. Durable recovery remains ACP 12.
+- Store original user blocks (not command expansions), public text and sanitized tool presentation.
+  Never reconstruct replay from private model messages. Exclude all reasoning, including opted-in
+  plaintext, and all raw arguments/results/provider artifacts. Keep stable tool IDs across restore.
+  Replay each committed entry once before the load response; resume emits no history. Loading into
+  a client with existing display history requires that client to replace its view.
+- Preserve sanitized presentation `text`, including terminal command/argv/cwd, on tool updates.
+  Proposed decision: new tool IDs include a fresh runtime namespace as well as the persisted
+  counter. Cancelled/failed turns may leave visible cards without committing that counter; the
+  namespace prevents collisions after silent resume. Historical IDs replay unchanged and remain
+  opaque to clients. Reject malformed known transcript fields before replay begins.
+- Close releases execution/MCP/editor resources but retains records. Delete closes first and hard
+  deletes stored history; absent deletes succeed. Existing empty records load successfully; missing
+  records fail regardless of what a model MemoryStore might return. Idle active sessions may be
+  rebound; active turns/config updates and concurrent lifecycle mutations return `session_busy`.
+- Restore requires identical canonical cwd, current workspace policy and still-available stored
+  mode/model. It never reuses saved capabilities, credentials, MCP launch/env/header declarations,
+  approvals or continuations. Current clients resupply servers; current factories own credentials.
+- Advertise load/resume/close because the required store contract implements them. Advertise list
+  and delete only when the supplied store provides those methods. List metadata only, filter before
+  pagination, 50 rows/page, stable session-ID keyset order and filter-bound cursors. Titles default
+  to the first completed original user text (200 characters), otherwise "Untitled session".
+- One active connection owns a store. The file adapter serializes calls within one instance, writes
+  0600 snapshots via rename, and creates 0700 directories. It is for modest local histories, not
+  distributed writers or power-loss durability. The host owns trusted storage location, user
+  isolation, exclusive access, encryption, retention, quotas and backups. No idle eviction or
+  automatic record migration; unknown versions fail closed. Both private history and transcript
+  separately obey the existing per-session byte budget; active-session limits exclude stored data.
+
+Tests cover real process restarts, exact replay and silent resume, continuation without historical
+tool execution, privacy, empty-vs-absent records, configuration/workspace changes, pagination,
+capability gates, replay failure, cancellation/close races and atomic-write failure. Protocol shapes
+follow the pinned SDK plus [session setup](https://agentclientprotocol.com/protocol/v1/session-setup),
+[list](https://agentclientprotocol.com/protocol/v1/session-list) and
+[delete](https://agentclientprotocol.com/protocol/v1/session-delete). The v1 schema and pinned SDK
+use `sessionCapabilities.resume`, `.list`, `.close` and `.delete`; only load uses `loadSession`.
+Unimplemented `additionalDirectories` and unstable `fork`/`systemPrompt` stay unadvertised.
+Real editor persistence UX remains
+on the manual checklist; headless fixtures do not establish GUI compatibility. ACP 16 should carry
+the new store options/types, lifecycle semantics and single-owner limitation into external docs.
+
 ### ACP 10 verification status
 
 Repository-only editor smoke assets now exercise a deterministic streaming session factory and
@@ -537,13 +595,14 @@ Absent optional capabilities mean unsupported; no optimistic probing or silent d
 | `session/set_config_option` / `session/set_mode` | Unadvertised and unavailable                    | ACP 08: config options rebuild safely after cancellation; legacy mode RPC unsupported                                    |
 | `available_commands_update`                      | No commands advertised                          | ACP 08: explicit application command registry                                                                            |
 | `elicitation/create`                             | ACP 06: validated forms for capable clients     | Without form support: `unsupported_interaction`; no fabricated answers or stdin prompts                                  |
-| `loadSession`                                    | `false`                                         | ACP 11: safe replay without model/tool execution                                                                         |
-| `sessionCapabilities.resume/list/close/delete`   | Omitted                                         | ACP 11: advertise each only with working store semantics                                                                 |
+| `loadSession`                                    | `true`                                          | ACP 11: safe replay without model/tool execution                                                                         |
+| `sessionCapabilities.resume/list/close/delete`   | Supported; list/delete gated by store methods   | ACP 11: advertise each only with working store semantics                                                                 |
 | v2 / remote transports / durable driver          | Unavailable                                     | Separate adapters/tasks, never implicit fallback                                                                         |
 
-An MVP `initialize` response therefore has `protocolVersion: 1`, `authMethods: []`,
+The original MVP `initialize` response had `protocolVersion: 1`, `authMethods: []`,
 `loadSession: false`, all three optional prompt flags false, both optional MCP flags false,
-and empty `sessionCapabilities`, alongside `agentInfo`. Client fs/terminal flags are inputs,
+and empty `sessionCapabilities`, alongside `agentInfo`. ACP 11 now advertises the implemented
+session lifecycle methods as described above. Client fs/terminal flags are inputs,
 not agent capability claims. These field names follow the
 [initialization contract](https://agentclientprotocol.com/protocol/v1/initialization).
 

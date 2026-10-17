@@ -3,7 +3,20 @@ import { createEditorTools, editorPresentation, type EditorClient } from "./edit
 import { Agent } from "@anvia/core/agent";
 import { randomUUID } from "node:crypto";
 import { realpath, stat } from "node:fs/promises";
-import { isAbsolute, relative, sep } from "node:path";
+import { isAbsolute } from "node:path";
+import {
+  InMemoryAcpSessionStore,
+  contains,
+  validateRecord,
+  sessionInfo,
+  type AcpSessionStore,
+  type AcpSessionRecord,
+  type AcpSessionPage,
+  type AcpSessionQuery,
+} from "./session-store.js";
+import type { AcpTranscriptEntry } from "./transcript.js";
+import { Transcript } from "./transcript.js";
+import { SessionMemory } from "./memory.js";
 import { AcpError } from "./errors.js";
 import { resolveLimits } from "./limits.js";
 import { validateTurnBudget } from "./turn-budget.js";
@@ -41,8 +54,11 @@ export class SessionManager {
   private readonly mcp: AcpMcpOptions;
   private closing: Promise<void> | undefined;
   private closed = false;
+  readonly store: AcpSessionStore;
+  private readonly operations = new Map<string, Promise<unknown>>();
 
   constructor(options: AcpOptions) {
+    this.store = options.sessionStore ?? new InMemoryAcpSessionStore();
     this.configuration = new SessionConfiguration(options);
     this.editorTools = Object.freeze({ ...options.editorTools });
     this.embeddedContext = options.embeddedContext === true;
@@ -64,6 +80,150 @@ export class SessionManager {
     declarations: readonly McpDeclaration[] = [],
     editor?: (sessionId: string) => EditorClient,
   ): Promise<string> {
+    return this.start(cwd, capabilities, declarations, editor);
+  }
+
+  restore(
+    sessionId: string,
+    cwd: string,
+    capabilities: AcpClientCapabilities,
+    declarations: readonly McpDeclaration[] = [],
+    editor?: (sessionId: string) => EditorClient,
+    replay?: (entry: AcpTranscriptEntry) => Promise<void>,
+  ): Promise<AcpSession> {
+    return this.exclusive(sessionId, async () => {
+      const existing = this.sessions.get(sessionId);
+      if (existing?.busy) throw new AcpError("session_busy");
+      const record = await this.stored(sessionId, true);
+      if ((await directory(cwd)) !== record.cwd) throw new AcpError("policy_denied");
+      if (existing) {
+        try {
+          await existing.close();
+        } finally {
+          this.sessions.delete(sessionId);
+        }
+      }
+      await this.start(cwd, capabilities, declarations, editor, record);
+      const session = this.sessions.get(sessionId);
+      if (!session || this.closed) throw new AcpError("connection_closed");
+      try {
+        if (replay)
+          for (const entry of session.transcript()) {
+            if (this.closed) throw new AcpError("connection_closed");
+            await replay(entry);
+          }
+        return session;
+      } catch (error) {
+        await session.close().catch(() => undefined);
+        this.sessions.delete(sessionId);
+        throw error;
+      }
+    });
+  }
+
+  closeSession(sessionId: string): Promise<void> {
+    return this.exclusive(sessionId, async () => {
+      const session = this.sessions.get(sessionId);
+      if (!session) {
+        await this.stored(sessionId);
+        return;
+      }
+      session.cancel();
+      try {
+        await session.close();
+      } finally {
+        this.sessions.delete(sessionId);
+      }
+    });
+  }
+
+  deleteSession(sessionId: string): Promise<void> {
+    if (!this.store.delete) return Promise.reject(new AcpError("unsupported_session_operation"));
+    return this.exclusive(sessionId, async () => {
+      try {
+        await this.stored(sessionId);
+      } catch (error) {
+        if (error instanceof AcpError && error.kind === "session_not_found") return;
+        throw error;
+      }
+      const session = this.sessions.get(sessionId);
+      if (session) {
+        session.cancel();
+        try {
+          await session.close();
+        } finally {
+          this.sessions.delete(sessionId);
+        }
+      }
+      await this.store.delete!(sessionId);
+    });
+  }
+
+  async list(cwd?: string, cursor?: string): Promise<AcpSessionPage> {
+    if (this.closed) throw new AcpError("connection_closed");
+    if (!this.store.list) throw new AcpError("unsupported_session_operation");
+    const roots = this.roots ? await Promise.all(this.roots.map(directory)) : undefined;
+    const canonical = cwd === undefined ? undefined : await directory(cwd);
+    if (canonical && roots && !roots.some((root) => contains(root, canonical)))
+      throw new AcpError("policy_denied");
+    const query: AcpSessionQuery = { limit: 50 };
+    if (canonical !== undefined) query.cwd = canonical;
+    if (roots !== undefined) query.workspaceRoots = roots;
+    if (cursor !== undefined) query.cursor = cursor;
+    const page = await this.store.list(query);
+    // Stores are trusted, but never spread their private fields onto the wire.
+    const result: AcpSessionPage = {
+      sessions: page.sessions
+        .filter(
+          (entry) =>
+            (!canonical || entry.cwd === canonical) &&
+            (!roots || roots.some((root) => contains(root, entry.cwd))),
+        )
+        .map(sessionInfo),
+    };
+    if (page.nextCursor !== undefined) result.nextCursor = page.nextCursor;
+    return result;
+  }
+
+  private exclusive<T>(sessionId: string, operation: () => Promise<T>): Promise<T> {
+    if (this.closed) return Promise.reject(new AcpError("connection_closed"));
+    if (this.operations.has(sessionId)) return Promise.reject(new AcpError("session_busy"));
+    const task = Promise.resolve()
+      .then(operation)
+      .finally(() => this.operations.delete(sessionId));
+    this.operations.set(sessionId, task);
+    return task;
+  }
+
+  private async stored(sessionId: string, restore = false): Promise<AcpSessionRecord> {
+    const record = await this.store.get(sessionId);
+    if (!record) throw new AcpError("session_not_found");
+    validateRecord(record);
+    if (record.sessionId !== sessionId) throw new AcpError("configuration_error");
+    const cwd = restore ? await directory(record.cwd) : record.cwd;
+    if (cwd !== record.cwd) throw new AcpError("policy_denied");
+    if (
+      this.roots &&
+      !(await Promise.all(this.roots.map(directory))).some((root) => contains(root, cwd))
+    )
+      throw new AcpError("policy_denied");
+    if (!restore) return structuredClone(record);
+    // Reject removed models/presets before constructing resources or replaying anything.
+    this.configuration.change(record.config, "mode", record.config.mode);
+    if (record.config.model !== undefined)
+      this.configuration.change(record.config, "model", record.config.model);
+    new SessionMemory(sessionId, this.limits, record.messages);
+    const transcript = new Transcript(cwd, this.limits.maxHistoryBytes, record.transcript).entries;
+    return structuredClone({ ...record, transcript });
+  }
+
+  private start(
+    cwd: string,
+    capabilities: AcpClientCapabilities,
+    declarations: readonly McpDeclaration[] = [],
+    editor?: (sessionId: string) => EditorClient,
+    record?: AcpSessionRecord,
+  ): Promise<string> {
     if (this.closed) return Promise.reject(new AcpError("connection_closed"));
     if (this.sessions.size + this.setups.size >= this.limits.maxSessions) {
       return Promise.reject(new AcpError("resource_limit"));
@@ -75,6 +235,7 @@ export class SessionManager {
       controller,
       structuredClone(declarations),
       editor,
+      record,
     ).finally(() => {
       this.setups.delete(controller);
     });
@@ -84,6 +245,7 @@ export class SessionManager {
 
   get(sessionId: string): AcpSession {
     if (this.closed) throw new AcpError("connection_closed");
+    if (this.operations.has(sessionId)) throw new AcpError("session_busy");
     const session = this.sessions.get(sessionId);
     if (!session) throw new AcpError("session_not_found");
     return session;
@@ -99,9 +261,11 @@ export class SessionManager {
       for (const controller of this.setups.keys()) controller.abort();
       const cleanup = [...this.sessions.values()].map((session) => session.close());
       this.sessions.clear();
-      this.closing = Promise.allSettled([...cleanup, ...this.setups.values()]).then(
-        () => undefined,
-      );
+      this.closing = Promise.allSettled([
+        ...cleanup,
+        ...this.setups.values(),
+        ...this.operations.values(),
+      ]).then(() => undefined);
     }
     return this.closing;
   }
@@ -165,6 +329,7 @@ export class SessionManager {
     controller: AbortController,
     declarations: readonly McpDeclaration[],
     editor?: (sessionId: string) => EditorClient,
+    restored?: AcpSessionRecord,
   ): Promise<string> {
     let binding: AcpSessionBinding | undefined;
     let mcp: McpClientGroup | undefined;
@@ -181,7 +346,7 @@ export class SessionManager {
       );
       mcp = connected.group;
       if (this.closed) throw new AcpError("connection_closed");
-      const sessionId = randomUUID();
+      const sessionId = restored?.sessionId ?? randomUUID();
       const client = editor?.(sessionId);
       let session: AcpSession | undefined;
       const build = async (config: AcpSessionConfig) => {
@@ -217,8 +382,25 @@ export class SessionManager {
         });
         return { context, binding: await this.bind(context) };
       };
-      const initial = await build(this.configuration.initial());
+      const initial = await build(
+        restored ? Object.freeze({ ...restored.config }) : this.configuration.initial(),
+      );
       binding = initial.binding;
+      if (this.closed || controller.signal.aborted) throw new AcpError("connection_closed");
+      const now = new Date().toISOString();
+      const record: AcpSessionRecord = restored ?? {
+        version: 1,
+        sessionId,
+        cwd: canonicalCwd,
+        title: "Untitled session",
+        createdAt: now,
+        updatedAt: now,
+        config: initial.context.config,
+        nextToolId: 0,
+        messages: [],
+        transcript: [],
+      };
+      if (!restored) await this.store.put(record);
       if (this.closed || controller.signal.aborted) throw new AcpError("connection_closed");
       session = new AcpSession(
         initial.context,
@@ -228,6 +410,7 @@ export class SessionManager {
         this.images,
         this.reasoning,
         {
+          persistence: { record, store: this.store },
           configuration: this.configuration,
           embeddedContext: this.embeddedContext,
           rebuild: build,
@@ -270,9 +453,4 @@ async function directory(path: string): Promise<string> {
   } catch {
     throw new AcpError("invalid_cwd");
   }
-}
-
-function contains(root: string, cwd: string): boolean {
-  const path = relative(root, cwd);
-  return path === "" || (path !== ".." && !path.startsWith(`..${sep}`) && !isAbsolute(path));
 }

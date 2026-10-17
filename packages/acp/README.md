@@ -3,7 +3,7 @@
 Agent-side [Agent Client Protocol](https://agentclientprotocol.com/libraries/typescript)
 adapter for Anvia. Applications supply their own agents, models, tools, and credentials.
 
-**Current status: ACP 08 editor features.** The package supports stable v1 initialization,
+**Current status: ACP 11 persistent sessions.** The package supports stable v1 initialization,
 no-op authentication, NDJSON transport, a dedicated launcher, and in-memory sessions with
 multi-turn prompt execution. Text/resource references work by default; images are opt-in.
 `session/update` streams assistant text and tool status with stable session-local IDs;
@@ -40,7 +40,7 @@ export function sessionFactory(context) {
 }
 ```
 
-Factories are loaded and validated as functions at startup and called per `session/new` and successful config rebuild,
+Factories are loaded and validated as functions at startup and called per `session/new`, load/resume and successful config rebuild,
 never during `initialize`. Return a fresh text-output Agent without its own `memory` option;
 the adapter owns bounded, session-local history. A directly exported agent is constructed during
 module import and normalized to a single-use factory, preventing reuse across sessions.
@@ -75,7 +75,7 @@ await connection.closed;
 `serveStdio` also accepts Node `input`/`output` streams. The library does not replace the global
 console, attach process signal handlers, or run providers on import. Library hosts must route
 their own logs to stderr and own shutdown. Closing cancels the input reader, aborts session work,
-clears history and disposes bindings without closing the caller's output stream. `closed` resolves
+clears runtime caches and disposes bindings while retaining committed store records without closing the caller's output stream. `closed` resolves
 after cleanup on EOF, explicit close, or transport failure. Library shutdown waits for cooperative
 factories/runs/disposers; the launcher bounds its shutdown wait to five seconds.
 
@@ -83,7 +83,7 @@ Optional settings are `agentInfo: { name, version, title? }` and `maxMessageByte
 default). Oversized input closes the connection through the SDK's bounded NDJSON reader.
 `initialize` always returns protocol version `1`, including when another version is requested,
 as specified by [ACP version negotiation](https://agentclientprotocol.com/protocol/v1/initialization).
-Optional persistence and HTTP MCP are disabled by default; legacy SSE is unsupported. Local/editor
+Disk persistence and HTTP MCP are disabled by default; legacy SSE is unsupported. Local/editor
 filesystem and terminal tools are not installed by default. Unknown methods return `-32601`, invalid
 params return `-32602`, malformed JSON returns `-32700`, and invalid envelopes return `-32600`.
 
@@ -355,8 +355,9 @@ server startup must tolerate this. The standalone `@anvia/mcp` default remains p
 Each session owns independent connections. Partial connection, discovery, or factory failure
 closes acquired clients. Closing the session/ACP connection aborts setup and prompts, waits for
 active execution, and attempts both MCP cleanup and the application's disposer even if one fails.
-The MCP HTTP session DELETE is best effort and bounded to two seconds. Session close RPCs remain
-ACP 11 work. Configuration, credentials, and raw MCP errors are omitted from ACP error responses.
+The MCP HTTP session DELETE is best effort and bounded to two seconds. `session/close` releases
+runtime resources while retaining history. Configuration, credentials, and raw MCP errors are
+omitted from ACP error responses.
 
 Library hosts can restrict declarations and enable HTTP:
 
@@ -433,6 +434,75 @@ uncooperative provider/tool keeps the session busy until it finishes, as with ca
 Only public Anvia continuation types are used. Intermediate messages are stored privately and
 committed once after the whole turn succeeds; text and tool calls are not replayed at resumption.
 
+## Session storage and restore
+
+The default `InMemoryAcpSessionStore` retains completed sessions for the connection lifetime,
+including after `session/close`. Supply `sessionStore` to share records across sequential
+connections or persist them across process restarts:
+
+```ts
+import { FileAcpSessionStore } from "@anvia/acp";
+import { serveStdio } from "@anvia/acp/stdio";
+import { sessionFactory } from "./agent.js";
+
+const connection = serveStdio({
+  sessionFactory,
+  sessionStore: new FileAcpSessionStore("/absolute/private-app-data/acp-sessions.json"),
+});
+await connection.closed;
+```
+
+Use a library host for this option; the dedicated launcher continues to use in-memory defaults.
+The host must keep logs on stderr. The file store serializes writes through one instance and
+atomically replaces a JSON snapshot (0600 files, 0700 newly created directories). It reads and
+rewrites the whole snapshot, so use a custom database-backed `AcpSessionStore` for large histories.
+Use one active connection per store; concurrent processes/instances need host-managed exclusive
+ownership. This store does not provide distributed locks, encryption, power-loss durability,
+retention or backup deletion. Keep its path outside editor-controlled workspaces. Private model
+history may contain sensitive tool output and provider reasoning/signatures.
+
+`AcpSessionStore` is separate from core's `MemoryStore`: it stores a versioned session record
+with canonical cwd, title, timestamps, config, the tool presentation ID counter, private model
+messages and an allowlisted display transcript. `get` returns `undefined` only for an absent
+session; an existing empty session is valid. `put` must atomically replace the entire record and
+leave the old record intact on rejection. Return detached snapshots. Optional `list` and `delete`
+methods control their advertised capabilities. Custom stores must apply workspace filters before
+pagination and scope data to the host's user; ACP authentication remains a no-op.
+
+- `session/load` restores through a fresh factory binding and replays committed original user
+  content, visible assistant text and sanitized tool presentation before responding. It never
+  executes historical tools or regenerates model output. Clients should replace the displayed
+  transcript for a load; v1 replay is a complete history, not an append to an existing view.
+- `session/resume` restores the same context without replay. Load/resume accept idle active or
+  closed sessions, require matching canonical cwd and current host config/workspace policy, and
+  reconnect only the newly supplied MCP declarations. Active turns, config rebuilds and concurrent
+  lifecycle operations return `session_busy`. Config and command availability are returned/refreshed.
+- `session/list` returns metadata only, optionally filtered by canonical `cwd` and always by host
+  workspace roots. Pages contain at most 50 records in session-ID order; pass `nextCursor` back as
+  `cursor` with the same filter. Cursors survive restart and deletion of earlier records. This is
+  keyset pagination, not a snapshot: newly inserted IDs before a cursor require a fresh listing.
+- `session/close` cancels ongoing work, waits for owned execution and disposes runtime resources.
+  Committed data stays loadable/listed. Closing an already-closed existing record succeeds.
+- `session/delete` closes active work and removes the record, its private history and its transcript.
+  Repeated/unknown deletes succeed. A deleted session cannot be loaded or resumed.
+
+Only completed turns commit; interrupted turns, pending approvals and continuations are not
+execution checkpoints. Restoring cannot undo side effects from a turn interrupted before commit.
+Starting an atomic store write is the completion boundary: a later cancellation cannot abandon it.
+A failed write reports an error and preserves prior history/config, although live output may already
+have been displayed. Replay excludes all reasoning (even live opt-in plaintext), system prompts,
+provider signatures, raw arguments/results and private slash-command expansions. Explicit trusted
+host presentation text/diffs and original user content remain visible. Model history is never used
+as a fallback transcript. Each history and transcript independently obeys `maxHistoryBytes`.
+Replay retains presentation `text`, including terminal command/argv/cwd details, without exposing
+raw terminal output. Stored tool IDs replay unchanged; newly allocated IDs include a runtime
+namespace so cards from uncommitted turns cannot collide after silent resume. IDs are opaque.
+Malformed known transcript fields reject restore before any history is sent.
+
+The default store implements and advertises load, resume, list, close and delete. Disk persistence
+is not implied by these capabilities. See [DESIGN.md](./DESIGN.md) for proposed decisions and
+[test/CONFORMANCE.md](./test/CONFORMANCE.md) for automated coverage and the GUI follow-up checklist.
+
 ## Resource bounds
 
 Configure `limits` on the library host. Every value must be a positive safe integer.
@@ -444,7 +514,7 @@ Configure `limits` on the library host. Every value must be a positive safe inte
 | `maxTextBytes`       | 1 MiB   | UTF-8 text, including rendered resource references          |
 | `maxImageBytes`      | 5 MiB   | Decoded bytes per image                                     |
 | `maxContentBlocks`   | 256     | Blocks per prompt                                           |
-| `maxHistoryBytes`    | 16 MiB  | Serialized private history per session                      |
+| `maxHistoryBytes`    | 16 MiB  | Private history and replay transcript (each, per session)   |
 | `maxHistoryMessages` | 1,000   | Private history messages per session                        |
 | `maxPendingRequests` | 16      | Outstanding permission/question/editor requests per session |
 
@@ -456,8 +526,8 @@ effects that already ran cannot be undone. A prompt that already exceeds the his
 rejected before execution. Failed, blocked, suspended and exhausted runs preserve prior history only.
 Provider/tool transient allocations are not bounded by the stored-history budget.
 
-Sessions last until connection close; persistence, per-session close/delete RPCs and eviction are
-not implemented. Reconnect to release a full connection, or create a new session if capacity remains.
+`maxSessions` bounds active sessions and factories. Use `session/close` to release capacity.
+Stored records have no automatic eviction; the host owns retention and disk quotas.
 
 ## Offline smoke test
 
@@ -479,8 +549,8 @@ Send this newline-terminated request on stdin:
 }
 ```
 
-Expect a response with `protocolVersion: 1`, `authMethods: []`, and disabled optional
-capabilities. The sample constructs a real Anvia agent with an offline fixture model; no API
+Expect a response with `protocolVersion: 1`, `authMethods: []`, and load/resume/list/close/delete
+capabilities. Optional media and HTTP MCP remain disabled. The sample constructs a real Anvia agent with an offline fixture model; no API
 key is needed. EOF, SIGINT, and SIGTERM stop the transport.
 
 `pnpm --filter @anvia/acp test` builds the package and runs unit and real subprocess tests.

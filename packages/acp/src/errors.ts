@@ -4,6 +4,8 @@ export const errorCodes = {
   already_initialized: -32600,
   session_busy: -32600,
   session_not_found: -32002,
+  invalid_cursor: -32602,
+  unsupported_session_operation: -32601,
   invalid_config: -32602,
   invalid_cwd: -32602,
   policy_denied: -32602,

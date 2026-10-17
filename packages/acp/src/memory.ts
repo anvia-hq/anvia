@@ -10,7 +10,11 @@ export class SessionMemory implements MemoryStore {
   constructor(
     private readonly sessionId: string,
     private readonly limits: AcpLimits,
-  ) {}
+    messages: readonly Message[] = [],
+  ) {
+    this.assertFits(messages);
+    this.messages = structuredClone([...messages]);
+  }
 
   async load({ scope }: MemoryLoadOptions): Promise<Message[]> {
     this.assertScope(scope.sessionId);

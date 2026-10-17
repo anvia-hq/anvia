@@ -123,8 +123,10 @@ export type AcpMcpOptions = Readonly<{
 }>;
 
 export type AcpOptions = Readonly<{
-  /** Called for session creation and config changes. Return a fresh Agent each time. */
+  /** Called for session creation, restore and config changes. Return a fresh Agent each time. */
   sessionFactory: AcpSessionFactory;
+  /** Defaults to isolated in-memory storage. Supply a store for cross-connection restore. */
+  sessionStore?: import("./session-store.js").AcpSessionStore;
   agentInfo?: AcpAgentInfo;
   /** Maximum bytes per incoming NDJSON message; defaults to 10 MiB. */
   maxMessageBytes?: number;

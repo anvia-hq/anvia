@@ -2,6 +2,9 @@ import {
   agent,
   RequestError,
   type ContentBlock,
+  type AgentContext,
+  type SessionCapabilities,
+  type McpServer,
   type AvailableCommand,
   type ToolCallUpdate,
   type ToolCallContent,
@@ -9,6 +12,8 @@ import {
   type Stream,
   type SessionUpdate as V1Update,
 } from "@agentclientprotocol/sdk";
+import { editorClient } from "./editor.js";
+import type { AcpTranscriptEntry } from "../transcript.js";
 import type { AcpClientCapabilities, AcpOptions, AcpToolPresentation } from "../types.js";
 import type { PromptBlock } from "../content.js";
 import { AcpError, errorCodes } from "../errors.js";
@@ -30,6 +35,24 @@ export function connectV1(stream: Stream, sessions: SessionManager, options: Acp
     if (!initialized) throw RequestError.invalidRequest({ kind: "not_initialized" });
   }
 
+  async function announceCommands(client: AgentContext, sessionId: string) {
+    if (sessions.configuration.commands.length)
+      await client.notify("session/update", {
+        sessionId,
+        update: {
+          sessionUpdate: "available_commands_update",
+          availableCommands: sessions.configuration.commands.map((command) => {
+            const result: AvailableCommand = {
+              name: command.name,
+              description: command.description,
+            };
+            if (command.inputHint) result.input = { hint: command.inputHint };
+            return result;
+          }),
+        },
+      });
+  }
+
   return agent({ name: "anvia-acp" })
     .onRequest("initialize", ({ params }) => {
       if (initialized) {
@@ -43,19 +66,22 @@ export function connectV1(stream: Stream, sessions: SessionManager, options: Acp
         terminal: client?.terminal === true,
         elicitationForm: client?.elicitation?.form != null,
       });
+      const sessionCapabilities: SessionCapabilities = { resume: {}, close: {} };
+      if (sessions.store.list) sessionCapabilities.list = {};
+      if (sessions.store.delete) sessionCapabilities.delete = {};
       return {
         protocolVersion: 1,
         agentInfo: options.agentInfo ?? { name: "anvia", version: packageJson.version },
         authMethods: [],
         agentCapabilities: {
-          loadSession: false,
+          loadSession: true,
           promptCapabilities: {
             image: options.images ?? false,
             audio: false,
             embeddedContext: options.embeddedContext ?? false,
           },
           mcpCapabilities: { http: sessions.supportsHttpMcp, sse: false },
-          sessionCapabilities: {},
+          sessionCapabilities,
         },
       };
     })
@@ -69,87 +95,65 @@ export function connectV1(stream: Stream, sessions: SessionManager, options: Acp
         const sessionId = await sessions.create(
           params.cwd,
           capabilities,
-          params.mcpServers.map((server) => {
-            if ("type" in server && server.type !== undefined) {
-              if (server.type === "acp") throw new AcpError("unsupported_mcp");
-              return server;
-            }
-            return { ...server, type: "stdio" as const };
-          }),
-          (sessionId) => ({
-            read: async (path, signal) =>
-              (
-                await client.request(
-                  "fs/read_text_file",
-                  { sessionId, path },
-                  { cancellationSignal: signal },
-                )
-              ).content,
-            write: async (path, content, signal) => {
-              await client.request(
-                "fs/write_text_file",
-                { sessionId, path, content },
-                { cancellationSignal: signal },
-              );
-            },
-            create: async (command, args, cwd) =>
-              (
-                await client.request("terminal/create", {
-                  sessionId,
-                  command,
-                  args,
-                  cwd,
-                  outputByteLimit: 1024 * 1024,
-                })
-              ).terminalId,
-            wait: async (terminalId, signal) => {
-              const result = await client.request(
-                "terminal/wait_for_exit",
-                { sessionId, terminalId },
-                { cancellationSignal: signal },
-              );
-              return { exitCode: result.exitCode ?? null, signal: result.signal ?? null };
-            },
-            output: async (terminalId, signal) => {
-              const result = await client.request(
-                "terminal/output",
-                { sessionId, terminalId },
-                { cancellationSignal: signal },
-              );
-              return { output: result.output, truncated: result.truncated };
-            },
-            kill: async (terminalId, signal) => {
-              await client.request(
-                "terminal/kill",
-                { sessionId, terminalId },
-                { cancellationSignal: signal },
-              );
-            },
-            release: async (terminalId, signal) => {
-              await client.request(
-                "terminal/release",
-                { sessionId, terminalId },
-                { cancellationSignal: signal },
-              );
-            },
-          }),
+          normalizeServers(params.mcpServers),
+          editorClient(client),
         );
-        if (sessions.configuration.commands.length)
-          await client.notify("session/update", {
-            sessionId,
-            update: {
-              sessionUpdate: "available_commands_update",
-              availableCommands: sessions.configuration.commands.map((command) => {
-                const result: AvailableCommand = {
-                  name: command.name,
-                  description: command.description,
-                };
-                if (command.inputHint) result.input = { hint: command.inputHint };
-                return result;
-              }),
-            },
-          });
+        await announceCommands(client, sessionId);
         return { sessionId, configOptions: sessions.get(sessionId).configOptions };
+      });
+    })
+    .onRequest("session/load", ({ params, client }) => {
+      requireInitialized();
+      return respond(async () => {
+        const session = await sessions.restore(
+          params.sessionId,
+          params.cwd,
+          capabilities,
+          normalizeServers(params.mcpServers),
+          editorClient(client),
+          (entry) =>
+            client.notify("session/update", {
+              sessionId: params.sessionId,
+              update: toV1Replay(entry),
+            }),
+        );
+        await announceCommands(client, params.sessionId);
+        return { configOptions: session.configOptions };
+      });
+    })
+    .onRequest("session/resume", ({ params, client }) => {
+      requireInitialized();
+      return respond(async () => {
+        const session = await sessions.restore(
+          params.sessionId,
+          params.cwd,
+          capabilities,
+          normalizeServers(params.mcpServers ?? []),
+          editorClient(client),
+        );
+        await announceCommands(client, params.sessionId);
+        return { configOptions: session.configOptions };
+      });
+    })
+    .onRequest("session/list", ({ params }) => {
+      requireInitialized();
+      return respond(async () => {
+        const page = await sessions.list(params.cwd ?? undefined, params.cursor ?? undefined);
+        return { ...page, sessions: [...page.sessions] };
+      });
+    })
+    .onRequest("session/close", ({ params }) => {
+      requireInitialized();
+      return respond(async () => {
+        await sessions.closeSession(params.sessionId);
+        return {};
+      });
+    })
+    .onRequest("session/delete", ({ params }) => {
+      requireInitialized();
+      return respond(async () => {
+        await sessions.deleteSession(params.sessionId);
+        return {};
       });
     })
     .onRequest("session/set_config_option", ({ params, client }) => {
@@ -363,4 +367,29 @@ function toolContent(tool: AcpToolPresentation): ToolCallContent[] {
   if (tool.text !== undefined)
     content.push({ type: "content", content: { type: "text", text: tool.text } });
   return content;
+}
+
+function normalizeServers(servers: McpServer[]) {
+  return servers.map((server) => {
+    if ("type" in server && server.type !== undefined) {
+      if (server.type === "acp") throw new AcpError("unsupported_mcp");
+      return server;
+    }
+    return { ...server, type: "stdio" as const };
+  });
+}
+
+function toV1Replay(entry: AcpTranscriptEntry): V1Update {
+  if (entry.type !== "user") return toV1Update(entry);
+  const block = entry.content;
+  let content: ContentBlock;
+  if (block.type === "resource") {
+    const resource: { uri: string; text: string; mimeType?: string } = {
+      uri: block.uri,
+      text: block.text,
+    };
+    if (block.mimeType !== undefined) resource.mimeType = block.mimeType;
+    content = { type: "resource", resource };
+  } else content = block;
+  return { sessionUpdate: "user_message_chunk", content };
 }

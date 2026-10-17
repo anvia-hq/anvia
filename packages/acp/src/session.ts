@@ -6,6 +6,9 @@ import { TurnBudget, TurnBudgetExceeded } from "./turn-budget.js";
 import { convertPrompt, type PromptBlock } from "./content.js";
 import { TurnEvents, type UpdateSink } from "./events.js";
 import { AcpError } from "./errors.js";
+import { randomUUID } from "node:crypto";
+import { Transcript, type AcpTranscriptEntry } from "./transcript.js";
+import type { AcpSessionRecord, AcpSessionStore } from "./session-store.js";
 import { SessionMemory } from "./memory.js";
 import type { SessionConfiguration } from "./config.js";
 import { PendingRequests } from "./pending-requests.js";
@@ -33,6 +36,10 @@ export class AcpSession {
   private activePrompt: Promise<void> | undefined;
   private activeTurn: ActiveTurn | undefined;
   private nextToolId = 0;
+  // Uncommitted cards may remain in a client's view after silent resume. A fresh
+  // runtime namespace prevents their IDs from colliding with newly allocated cards.
+  private readonly toolIdNamespace = randomUUID();
+  private record: AcpSessionRecord | undefined;
   private updating: Promise<void> | undefined;
   private closing: Promise<void> | undefined;
 
@@ -50,9 +57,12 @@ export class AcpSession {
         config: AcpSessionConfig,
       ) => Promise<{ context: AcpSessionContext; binding: AcpSessionBinding }>;
       cleanup: () => Promise<void>;
+      persistence?: { record: AcpSessionRecord; store: AcpSessionStore };
     },
   ) {
-    this.memory = new SessionMemory(context.sessionId, limits);
+    this.record = features?.persistence?.record;
+    this.nextToolId = this.record?.nextToolId ?? 0;
+    this.memory = new SessionMemory(context.sessionId, limits, this.record?.messages);
     this.pendingRequests = new PendingRequests(limits.maxPendingRequests);
   }
 
@@ -85,7 +95,9 @@ export class AcpSession {
       };
       signal.addEventListener("abort", onAbort, { once: true });
     });
-    const onClose = () => turn.controller.abort();
+    const onClose = () => {
+      if (!turn.finished) turn.controller.abort();
+    };
     this.controller.signal.addEventListener("abort", onClose, { once: true });
     let executionFinished = false;
     const requests = this.pendingRequests;
@@ -128,6 +140,10 @@ export class AcpSession {
     return task;
   }
 
+  get busy(): boolean {
+    return this.activeTurn !== undefined || this.updating !== undefined;
+  }
+
   get configOptions() {
     return this.features?.configuration.options(this.context.config) ?? [];
   }
@@ -154,6 +170,12 @@ export class AcpSession {
         await next.binding.dispose?.();
         throw new AcpError("connection_closed");
       }
+      try {
+        await this.persist({ config });
+      } catch (error) {
+        await next.binding.dispose?.();
+        throw error;
+      }
       const previous = this.binding;
       this.binding = next.binding;
       this.context = next.context;
@@ -169,6 +191,19 @@ export class AcpSession {
     });
     this.updating = update;
     return update;
+  }
+
+  /** Detached, allowlisted display history; never exposes private model messages. */
+  transcript(): readonly AcpTranscriptEntry[] {
+    return new Transcript(this.context.cwd, this.limits.maxHistoryBytes, this.record?.transcript)
+      .entries;
+  }
+
+  private async persist(changes: Partial<AcpSessionRecord>): Promise<void> {
+    if (!this.record || !this.features?.persistence) return;
+    const next = { ...this.record, ...changes, updatedAt: new Date().toISOString() };
+    await this.features.persistence.store.put(structuredClone(next));
+    this.record = next;
   }
 
   cancel(): void {
@@ -231,15 +266,25 @@ export class AcpSession {
       if (this.controller.signal.aborted) throw new AcpError("connection_closed");
       if (turn.cancelled) return "cancelled";
 
+      const transcript = new Transcript(
+        this.context.cwd,
+        this.limits.maxHistoryBytes,
+        this.record?.transcript,
+      );
+      // Preserve the user's original command, not a private host expansion.
+      for (const block of blocks) {
+        if (block.type !== "unsupported") transcript.add({ type: "user", content: block });
+      }
       const agent = this.binding.agent;
       const events = new TurnEvents(
-        () => `${this.context.sessionId}:${++this.nextToolId}`,
+        () => `${this.context.sessionId}:${this.toolIdNamespace}:${++this.nextToolId}`,
         this.context.cwd,
         this.binding,
         this.reasoning,
         async (update) => {
           if (this.controller.signal.aborted) throw new AcpError("connection_closed");
           if (turn.controller.signal.aborted || turn.finished) return;
+          transcript.add(update);
           turn.sending = send(update);
           await turn.sending;
         },
@@ -293,9 +338,22 @@ export class AcpSession {
       // Only complete, successful turns enter memory. Failed/suspended turns cannot
       // leave unmatched tool calls or duplicate user messages in the next request.
       if (outcome.type === "blocked") return "refusal";
-      // Memory append is synchronous/atomic in SessionMemory. From this commit
-      // point the completed turn wins over a later cancellation notification.
+      // Starting the atomic store commit is the completion boundary. Cancellation
+      // cannot abandon an in-flight write whose outcome is not yet known.
       turn.finished = true;
+      await this.persist({
+        title:
+          this.record?.messages.length === 0
+            ? blocks
+                .find((block) => block.type === "text")
+                ?.text.replace(/\p{Cc}/gu, " ")
+                .trim()
+                .slice(0, 200) || "Untitled session"
+            : (this.record?.title ?? "Untitled session"),
+        messages: [...history, ...produced],
+        transcript: transcript.entries,
+        nextToolId: this.nextToolId,
+      });
       await this.memory.append({
         scope,
         runId: outcome.runId,

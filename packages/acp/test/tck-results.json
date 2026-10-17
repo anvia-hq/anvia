@@ -13,8 +13,8 @@
   },
   "fixture": "test/fixtures/conformance-agent.mjs via dist/cli.js",
   "cancel_prompt": "fixture:wait",
-  "started_at": "2026-10-16T18:08:45.431187+00:00",
-  "finished_at": "2026-10-16T18:08:52.974899+00:00",
+  "started_at": "2026-10-17T06:26:28.065725+00:00",
+  "finished_at": "2026-10-17T06:26:37.897653+00:00",
   "verdict": {
     "conformant": true,
     "tier_counts": {
@@ -25,15 +25,15 @@
         "NOT_TESTED": 0
       },
       "CAPABILITY": {
-        "PASS": 1,
+        "PASS": 10,
         "FAIL": 0,
-        "SKIPPED": 18,
+        "SKIPPED": 9,
         "NOT_TESTED": 0
       },
       "ADVISORY": {
-        "PASS": 10,
+        "PASS": 12,
         "FAIL": 0,
-        "SKIPPED": 2,
+        "SKIPPED": 0,
         "NOT_TESTED": 0
       },
       "INFORMATIONAL": {
@@ -174,24 +174,22 @@
     {
       "id": "ACP-CLOSE-001",
       "tier": "CAPABILITY",
-      "status": "SKIPPED",
+      "status": "PASS",
       "tests": [
         {
           "nodeid": "test_session_capabilities.py::test_close_idle_session_succeeds",
-          "status": "SKIPPED",
-          "message": "('<acp-tck>/src/tck/v1/conformance/test_session_capabilities.py', 262, \"Skipped: capability 'agentCapabilities.sessionCapabilities.close' not advertised by the agent under test\")"
+          "status": "PASS"
         }
       ]
     },
     {
       "id": "ACP-CLOSE-002",
       "tier": "CAPABILITY",
-      "status": "SKIPPED",
+      "status": "PASS",
       "tests": [
         {
           "nodeid": "test_session_capabilities.py::test_close_in_flight_prompt_resolves_cancelled",
-          "status": "SKIPPED",
-          "message": "('<acp-tck>/src/tck/v1/conformance/test_session_capabilities.py', 279, \"Skipped: capability 'agentCapabilities.sessionCapabilities.close' not advertised by the agent under test\")"
+          "status": "PASS"
         }
       ]
     },
@@ -232,24 +230,22 @@
     {
       "id": "ACP-DELETE-001",
       "tier": "CAPABILITY",
-      "status": "SKIPPED",
+      "status": "PASS",
       "tests": [
         {
           "nodeid": "test_session_capabilities.py::test_delete_existing_session_succeeds",
-          "status": "SKIPPED",
-          "message": "('<acp-tck>/src/tck/v1/conformance/test_session_capabilities.py', 226, \"Skipped: capability 'agentCapabilities.sessionCapabilities.delete' not advertised by the agent under test\")"
+          "status": "PASS"
         }
       ]
     },
     {
       "id": "ACP-DELETE-002",
       "tier": "ADVISORY",
-      "status": "SKIPPED",
+      "status": "PASS",
       "tests": [
         {
           "nodeid": "test_session_capabilities.py::test_delete_unknown_session_succeeds_silently",
-          "status": "SKIPPED",
-          "message": "('<acp-tck>/src/tck/v1/conformance/test_session_capabilities.py', 243, \"Skipped: capability 'agentCapabilities.sessionCapabilities.delete' not advertised by the agent under test\")"
+          "status": "PASS"
         }
       ]
     },
@@ -410,60 +406,55 @@
     {
       "id": "ACP-LIST-001",
       "tier": "CAPABILITY",
-      "status": "SKIPPED",
+      "status": "PASS",
       "tests": [
         {
           "nodeid": "test_session_capabilities.py::test_list_succeeds_and_validates",
-          "status": "SKIPPED",
-          "message": "('<acp-tck>/src/tck/v1/conformance/test_session_capabilities.py', 181, \"Skipped: capability 'agentCapabilities.sessionCapabilities.list' not advertised by the agent under test\")"
+          "status": "PASS"
         }
       ]
     },
     {
       "id": "ACP-LIST-002",
       "tier": "CAPABILITY",
-      "status": "SKIPPED",
+      "status": "PASS",
       "tests": [
         {
           "nodeid": "test_session_capabilities.py::test_list_with_unmatched_cwd_filter_returns_empty_array",
-          "status": "SKIPPED",
-          "message": "('<acp-tck>/src/tck/v1/conformance/test_session_capabilities.py', 201, \"Skipped: capability 'agentCapabilities.sessionCapabilities.list' not advertised by the agent under test\")"
+          "status": "PASS"
         }
       ]
     },
     {
       "id": "ACP-LOAD-001",
       "tier": "CAPABILITY",
-      "status": "SKIPPED",
+      "status": "PASS",
       "tests": [
         {
           "nodeid": "test_session_capabilities.py::test_load_succeeds_and_validates",
-          "status": "SKIPPED",
-          "message": "('<acp-tck>/src/tck/v1/conformance/test_session_capabilities.py', 27, \"Skipped: capability 'agentCapabilities.loadSession' not advertised by the agent under test\")"
+          "status": "PASS"
         }
       ]
     },
     {
       "id": "ACP-LOAD-002",
       "tier": "CAPABILITY",
-      "status": "SKIPPED",
+      "status": "PASS",
       "tests": [
         {
           "nodeid": "test_session_capabilities.py::test_load_replays_before_responding_and_nothing_after",
-          "status": "SKIPPED",
-          "message": "('<acp-tck>/src/tck/v1/conformance/test_session_capabilities.py', 52, \"Skipped: capability 'agentCapabilities.loadSession' not advertised by the agent under test\")"
+          "status": "PASS"
         }
       ]
     },
     {
       "id": "ACP-LOAD-003",
       "tier": "ADVISORY",
-      "status": "SKIPPED",
+      "status": "PASS",
       "tests": [
         {
           "nodeid": "test_session_capabilities.py::test_load_empty_result_is_object_not_null",
-          "status": "SKIPPED",
-          "message": "('<acp-tck>/src/tck/v1/conformance/test_session_capabilities.py', 92, \"Skipped: capability 'agentCapabilities.loadSession' not advertised by the agent under test\")"
+          "status": "PASS"
         }
       ]
     },
@@ -574,24 +565,22 @@
     {
       "id": "ACP-RESUME-001",
       "tier": "CAPABILITY",
-      "status": "SKIPPED",
+      "status": "PASS",
       "tests": [
         {
           "nodeid": "test_session_capabilities.py::test_resume_succeeds_and_validates",
-          "status": "SKIPPED",
-          "message": "('<acp-tck>/src/tck/v1/conformance/test_session_capabilities.py', 118, \"Skipped: capability 'agentCapabilities.sessionCapabilities.resume' not advertised by the agent under test\")"
+          "status": "PASS"
         }
       ]
     },
     {
       "id": "ACP-RESUME-002",
       "tier": "CAPABILITY",
-      "status": "SKIPPED",
+      "status": "PASS",
       "tests": [
         {
           "nodeid": "test_session_capabilities.py::test_resume_sends_no_history_before_responding",
-          "status": "SKIPPED",
-          "message": "('<acp-tck>/src/tck/v1/conformance/test_session_capabilities.py', 137, \"Skipped: capability 'agentCapabilities.sessionCapabilities.resume' not advertised by the agent under test\")"
+          "status": "PASS"
         }
       ]
     },

@@ -64,10 +64,10 @@ describe("ACP v1 transport", () => {
           agentInfo: { name: "anvia", version: expect.any(String) },
           authMethods: [],
           agentCapabilities: {
-            loadSession: false,
+            loadSession: true,
             promptCapabilities: { image: false, audio: false, embeddedContext: false },
             mcpCapabilities: { http: false, sse: false },
-            sessionCapabilities: {},
+            sessionCapabilities: { resume: {}, close: {}, list: {}, delete: {} },
           },
         },
       });
@@ -99,12 +99,9 @@ describe("ACP v1 transport", () => {
     }
   });
 
-  it.each(["unknown", "session/load", "session/set_mode"])(
-    "returns method-not-found for %s",
-    async (method) => {
-      expect((await fixture().request(method, {})).error?.code).toBe(-32601);
-    },
-  );
+  it.each(["unknown", "session/set_mode"])("returns method-not-found for %s", async (method) => {
+    expect((await fixture().request(method, {})).error?.code).toBe(-32601);
+  });
 
   it.each([
     ["initialize", {}],

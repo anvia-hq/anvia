@@ -230,6 +230,35 @@ describe("McpClient", () => {
     expect(sdk.httpTransports[0]?.options).not.toHaveProperty("requestInit");
   });
 
+  it.each([undefined, {}, { "x-api-key": "secret" }])(
+    "preserves plain redirect behavior and rejects redirects with configured headers %j",
+    async (headers) => {
+      const fetchMock = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(new Response(null, { status: 204 }));
+      const client = new McpClient({
+        name: "redirects",
+        transport: {
+          type: "streamableHttp",
+          url: "http://localhost:3000/mcp",
+          ssrfProtection: "disabled",
+          headers,
+        },
+      });
+      try {
+        await client.connect();
+        const fetchRequest = sdk.httpTransports[0]?.options.fetch as typeof fetch;
+        await fetchRequest("http://localhost:3000/mcp");
+        expect(fetchMock.mock.calls[0]?.[1]?.redirect).toBe(
+          headers === undefined ? undefined : "error",
+        );
+      } finally {
+        fetchMock.mockRestore();
+        await client.close();
+      }
+    },
+  );
+
   it("scopes configured headers to the exact MCP endpoint", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(null, {

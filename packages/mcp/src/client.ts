@@ -7,6 +7,7 @@ import { abortError, linkAbortSignal, throwIfAborted } from "./abort";
 import { DiscoveryClient } from "./discovery-client";
 import { ManagedMcpHttpTransport } from "./http-transport";
 import { createMcpTool } from "./tool";
+import { createTrustedEndpointFetch } from "./trusted-endpoint";
 import type { McpClientOptions, McpConnectOptions, McpServer, McpServerInfo } from "./types";
 import {
   createBoundedMcpFetch,
@@ -123,7 +124,10 @@ export class McpClient {
       // Negotiation starts before the SDK attaches Client.transport and does not
       // observe request signals. Retain and cancel the transport itself.
       const onAbort = () => {
-        void transport.close().catch(() => {});
+        // Share the first close promise with rollback. In particular, stdio close
+        // clears its process handle before awaiting exit; a second close alone
+        // could otherwise let setup finish while that child is still alive.
+        void closeResource(resource).catch(() => {});
       };
       abortSignal.addEventListener("abort", onAbort, { once: true });
       unlinkTransportAbort = () => abortSignal.removeEventListener("abort", onAbort);
@@ -194,7 +198,14 @@ async function createTransport(
     if (transport.maxBufferSize !== undefined) {
       parameters = { ...parameters, maxBufferSize: transport.maxBufferSize };
     }
-    return new StdioClientTransport(parameters);
+    const stdio = new StdioClientTransport(parameters);
+    // The SDK can start close itself after handshake failure without awaiting it.
+    // Retain that promise too, so our rollback waits for the same child exit.
+    // Keep the base class: SDK auto negotiation clones it for its probe process.
+    const close = stdio.close.bind(stdio);
+    let closing: Promise<void> | undefined;
+    stdio.close = () => (closing ??= close());
+    return stdio;
   }
 
   const ssrfProtection = transport.ssrfProtection ?? "strict";
@@ -208,16 +219,25 @@ async function createTransport(
   let parameters: ConstructorParameters<typeof StreamableHTTPClientTransport>[1] = {};
   let url: URL;
   let transportFetch: McpFetch | undefined;
-  if (ssrfProtection === "strict") {
+  let disposeFetch: (() => Promise<void>) | undefined;
+  // Validate headers before allocating a trusted dispatcher.
+  const headers = copyMcpHeaders(transport.headers ?? {}, transport.authProvider !== undefined);
+  if (transport.trustedAddresses !== undefined) {
+    if (ssrfProtection !== "strict") {
+      throw new TypeError("trustedAddresses requires strict SSRF protection");
+    }
+    url = parseMcpHttpUrl(transport.url);
+    const trusted = createTrustedEndpointFetch(url, transport.trustedAddresses);
+    transportFetch = trusted.fetch;
+    disposeFetch = trusted.close;
+  } else if (ssrfProtection === "strict") {
     transportFetch = createSafeMcpFetch();
     url = parseAndValidateMcpUrl(transport.url);
   } else {
     url = parseMcpHttpUrl(transport.url);
   }
-  if (transport.headers !== undefined) {
-    const headers = copyMcpHeaders(transport.headers, transport.authProvider !== undefined);
-    const fetchRequest = transportFetch ?? defaultMcpFetch;
-    transportFetch = createMcpEndpointFetch(url, headers, fetchRequest);
+  if (transport.headers !== undefined || transport.trustedAddresses !== undefined) {
+    transportFetch = createMcpEndpointFetch(url, headers, transportFetch ?? defaultMcpFetch);
   }
   parameters = {
     ...parameters,
@@ -232,7 +252,17 @@ async function createTransport(
   if (transport.sessionId !== undefined) {
     parameters = { ...parameters, sessionId: transport.sessionId };
   }
-  return new ManagedMcpHttpTransport(url, parameters, transport.terminateSessionOnClose === true);
+  try {
+    return new ManagedMcpHttpTransport(
+      url,
+      parameters,
+      transport.terminateSessionOnClose === true,
+      disposeFetch,
+    );
+  } catch (error) {
+    await disposeFetch?.();
+    throw error;
+  }
 }
 
 function copyMcpHeaders(
@@ -252,6 +282,9 @@ function copyMcpHeaders(
       throw new TypeError(`MCP Streamable HTTP header ${name} must be a string`);
     }
     const normalizedName = name.toLowerCase();
+    if (headers.has(normalizedName)) {
+      throw new TypeError("Duplicate MCP Streamable HTTP header");
+    }
     if (transportOwnedHttpHeaders.has(normalizedName) || normalizedName.startsWith("mcp-param-")) {
       throw new TypeError(`MCP Streamable HTTP header ${name} is owned by the transport`);
     }

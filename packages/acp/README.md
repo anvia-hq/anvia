@@ -11,8 +11,8 @@ pnpm add @anvia/acp @anvia/core @anvia/openai
 pnpm add -D @anvia/cli
 ```
 
-Requires Node.js 20.18.1+ for ESM JavaScript. For `.ts`/`.mts` modules, use Node 22.18+ with native
-type stripping enabled. Use erasable types, `import type` and explicit local import extensions;
+Requires Node.js 22.19.0+ (including the MCP transport's Undici dependency). For `.ts`/`.mts`
+modules, enable native type stripping. Use erasable types, `import type` and explicit local import extensions;
 Node does not resolve `tsconfig` aliases or transform JSX, enums or parameter properties. On older
 Node versions, compile to JavaScript or supply your own loader. The CLI does not install a
 transpiler or load `.env` files. Choose any Anvia provider in place of OpenAI.
@@ -63,14 +63,14 @@ errors are sanitized; EOF, SIGINT and SIGTERM await cleanup with a five-second d
 definitions without calling `generate` or starting servers on import. Put session-owned cleanup
 in the binding's `dispose()`.
 
-The [cookbook example](../../cookbook/10_integrations/09-acp-zed-agent.ts) quietly loads a
+The [cookbook example](https://github.com/anvia-hq/anvia/blob/main/cookbook/10_integrations/09-acp-zed-agent.ts) quietly loads a
 repository-root `.env` and exports a factory without starting execution on import.
 
 ## Editor setup
 
 Replace every `/absolute/project` path and make a suitable Node version and provider environment
 available to the editor subprocess. Config shapes were checked against the linked official docs
-on 2026-10-18 and the [repository editor notes](./test/EDITOR_COMPATIBILITY.md).
+on 2026-10-18 and the [repository editor notes](https://github.com/anvia-hq/anvia/blob/main/packages/acp/test/EDITOR_COMPATIBILITY.md).
 **ACP 10 manual editor acceptance is still pending.** Disable MCP forwarding until you configure
 [host MCP policy](#mcp-passthrough).
 
@@ -207,7 +207,7 @@ ceiling; cost is a host estimate checked after generation, not a guarantee again
 `locations: [{ path, line? }]` and `diffs: [{ path, oldText?, newText }]`. Lines are one-based;
 omit unknown `oldText`, use `null` for a known new file. Raw arguments/results stay private.
 `mapSandboxPath` maps corresponding sandbox/host paths for display; it does not mount/synchronize
-files. See [presentation/backend details](./DESIGN.md#acp-08-implementation-status).
+files. See [presentation/backend details](https://github.com/anvia-hq/anvia/blob/main/packages/acp/DESIGN.md#acp-08-implementation-status).
 
 ### Host options
 
@@ -236,7 +236,7 @@ Config changes cancel active work, wait for cleanup and rebuild while preserving
 A read-only factory must classify every remaining application tool in `readOnlyTools` and exclude
 opaque effects; editor writes/terminals/MCP are omitted. Legacy `session/set_mode` is unsupported.
 Commands expand only a sole matching text block; unknown commands remain text. See the
-[host configuration guide](../../docs/packages/acp.md).
+[host configuration guide](https://github.com/anvia-hq/anvia/blob/main/docs/packages/acp.md).
 
 ### Permissions and cancellation
 
@@ -284,7 +284,7 @@ Client metadata cannot supply policy. Tool calls still require once-only approva
 HTTP restrictions via `authorizeServer`. HTTP is off by default; opt-in uses Streamable HTTP with
 strict URL/DNS safety. Private access requires an exact host-approved endpoint and pinned IPs;
 endpoint redirects fail. `AcpMcpServer` supplied to authorization has normalized env/header records.
-Legacy SSE and ACP-proxied MCP are unsupported. Review [SECURITY.md](./SECURITY.md) before opting in.
+Legacy SSE and ACP-proxied MCP are unsupported. Review [SECURITY.md](https://github.com/anvia-hq/anvia/blob/main/packages/acp/SECURITY.md) before opting in.
 
 ## Persistence and session lifecycle
 
@@ -325,14 +325,14 @@ Custom `AcpSessionStore` implementations provide `get(id)` and atomic whole-reco
 optional `list(query)` and `delete(id)` gate those capabilities. Return detached snapshots;
 missing records (`undefined`) differ from empty history. Root types include `AcpSessionStore`,
 `AcpSessionRecord`, `AcpSessionInfo`, `AcpSessionPage`, `AcpSessionQuery` and `AcpTranscriptEntry`.
-See [storage/replay details](./DESIGN.md#acp-11-implementation-status).
+See [storage/replay details](https://github.com/anvia-hq/anvia/blob/main/packages/acp/DESIGN.md#acp-11-implementation-status).
 
 ## Durable binding
 
-Install `@anvia/durable` separately; SQLite execution requires Node 22.16+. Call
+Install `@anvia/durable` separately and use the same Node 22.19.0+ runtime for SQLite. Call
 `createDurableSessionBinding(runtime, { agent, version, ...registration })` from `@anvia/acp/durable`
 once per host-owned runtime/registration, then return that reusable binding from your factory.
-The [guide includes a complete host](../../docs/packages/acp.md#durable-host).
+The [guide includes a complete host](https://github.com/anvia-hq/anvia/blob/main/docs/packages/acp.md#durable-host).
 
 The supported subset is static instructions/models/local tools with persisted approval/question
 responses. Registration still rejects memory, lifecycle callbacks, middleware, guardrails, context
@@ -353,7 +353,7 @@ or registration migration is supported. Uncertain effects require host reconcili
 (`recovery_required`); approval is not reconciliation. Tools default to manual recovery; use `safe`
 for repeatable pure work and `idempotent` only when the service deduplicates `operationId`. Delete
 requires pending work to be cancelled/settled and removes only ACP records. See the
-[supported subset and recovery details](./DESIGN.md#acp-12-implementation-status).
+[supported subset and recovery details](https://github.com/anvia-hq/anvia/blob/main/packages/acp/DESIGN.md#acp-12-implementation-status).
 
 ## Compatibility and limits
 
@@ -376,8 +376,8 @@ requires pending work to be cancelled/settled and removes only ACP records. See 
 | JetBrains AI Assistant                    | Config format checked; IDE/plugin run pending                                                       |
 | Neovim / CodeCompanion                    | Current documented config shape checked; editor/plugin run pending                                  |
 
-See [CONFORMANCE.md](./test/CONFORMANCE.md) for pinned TCK results and
-[EDITOR_COMPATIBILITY.md](./test/EDITOR_COMPATIBILITY.md) for manual acceptance.
+See [CONFORMANCE.md](https://github.com/anvia-hq/anvia/blob/main/packages/acp/test/CONFORMANCE.md) for pinned TCK results and
+[EDITOR_COMPATIBILITY.md](https://github.com/anvia-hq/anvia/blob/main/packages/acp/test/EDITOR_COMPATIBILITY.md) for manual acceptance.
 Real-editor MCP forwarding, persistence/reconnect, unsaved buffers, terminals and durable attachment
 remain unverified. Fixture passes do not establish editor acceptance.
 
@@ -385,10 +385,10 @@ Default `limits`: 32 active sessions (including setup), 64 concurrent RPCs, 16 p
 per session, 256 blocks, 10 MiB prompt bytes, 1 MiB text, 5 MiB decoded per image, 1,000 history
 messages, 16 MiB each for private history/display transcript, 1 MiB terminal output, 10,000 replay
 entries and 16 MiB replay bytes. No silent history eviction or partial load replay; stored records
-need host retention. See [bounds/hardening](./DESIGN.md#acp-14-implementation-status).
+need host retention. See [bounds/hardening](https://github.com/anvia-hq/anvia/blob/main/packages/acp/DESIGN.md#acp-14-implementation-status).
 
 This trusted local host is not an OS sandbox. Admission roots do not confine arbitrary tools or
 terminal commands. Errors are sanitized, but public model text and host presentation can expose
-what you put into them. Review [SECURITY.md](./SECURITY.md) for MCP launch authority, filesystem
+what you put into them. Review [SECURITY.md](https://github.com/anvia-hq/anvia/blob/main/packages/acp/SECURITY.md) for MCP launch authority, filesystem
 races, private storage and host responsibilities. Internals and
-[v2 remaining work](./DESIGN.md#v2-readiness-and-remaining-gaps) stay in DESIGN.md.
+[v2 remaining work](https://github.com/anvia-hq/anvia/blob/main/packages/acp/DESIGN.md#v2-readiness-and-remaining-gaps) stay in DESIGN.md.

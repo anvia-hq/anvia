@@ -21,8 +21,8 @@ The module can export a named/default factory or named/default Agent; an Agent i
 only one session. Factories run on creation/restore/config rebuild, not initialization. They must
 return fresh ephemeral Agents without independently configured memory or structured output.
 
-ESM JavaScript requires Node 20.18.1+. TypeScript uses native type stripping (Node 22.18+
-recommended), explicit local extensions and erasable syntax; there is no `tsconfig` path alias,
+The ACP runtime requires Node 22.19.0+. TypeScript uses native type stripping,
+explicit local extensions and erasable syntax; there is no `tsconfig` path alias,
 JSX or enum transform. The launcher does not load environment files. Configure the provider in
 the module/environment and keep credentials out of editor config committed to source control.
 
@@ -48,7 +48,7 @@ pnpm --filter @anvia/cli... --filter @anvia/openai... build
 pnpm cookbook:integrations:09
 ```
 
-Use Node 22.18+ and set `OPENAI_API_KEY` in the root `.env` or process environment. Optional
+Use Node 22.19.0+ and set `OPENAI_API_KEY` in the root `.env` or process environment. Optional
 `OPENAI_BASEURL` and `ANVIA_ACP_MODEL` customize the provider. The helper resolves `.env` relative
 to its own file, loads it quietly at session creation, and preserves existing environment values.
 Ask which workspace you are in to exercise the approval-gated `workspace_info` tool. The example
@@ -194,7 +194,7 @@ distributed locking or power-loss durability.
 
 ## Durable host
 
-Install `@anvia/durable` separately and use Node 22.16+ for SQLite. This host uses static tools
+Install `@anvia/durable` separately and use the same Node 22.19.0+ runtime for SQLite. This host uses static tools
 (none in this minimal example), no connection-owned resources, and two coordinated private stores:
 
 ```sh

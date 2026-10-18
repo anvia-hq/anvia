@@ -68,13 +68,13 @@ pnpm exec anvia acp --agent ./agent.ts
 
 `@anvia/acp` is loaded only by `acp`; skills and UI commands work without it. The module path is
 relative to the launch directory. Export a named `sessionFactory`, a default factory, or a
-named/default Anvia `Agent`. See the [ACP launcher examples](../acp/README.md#launcher) for the
+named/default Anvia `Agent`. See the [ACP launcher examples](https://github.com/anvia-hq/anvia/blob/main/packages/acp/README.md#launcher) for the
 factory contract and single-session restriction on exported agent instances.
 
-JavaScript (`.mjs`, or `.js` in an ESM project) works on Node 20.18.1+. TypeScript (`.ts`/`.mts`)
-uses [Node's native type stripping](https://nodejs.org/api/typescript.html): use Node 22.18+ with
+The ACP runtime requires Node 22.19.0+ for JavaScript and TypeScript. TypeScript (`.ts`/`.mts`)
+uses [Node's native type stripping](https://nodejs.org/api/typescript.html): enable it with
 erasable type syntax and explicit import extensions. No transpiler or `tsconfig` path aliases are
-provided. On Node 20, compile to JavaScript first or supply your own Node loader.
+provided. Compile non-erasable TypeScript to JavaScript first or supply your own Node loader.
 
 For [Zed](https://zed.dev/docs/ai/external-agents), add this `agent_servers` entry to your
 settings, replacing both absolute paths (and using a Node version that supports your module):

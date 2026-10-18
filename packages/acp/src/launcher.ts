@@ -87,7 +87,7 @@ async function loadAgentModule(
     const code = (error as NodeJS.ErrnoException | null)?.code;
     if (code === "ERR_UNKNOWN_FILE_EXTENSION") {
       throw new StartupError(
-        "cannot load this module's file type. For TypeScript, use Node with native type stripping enabled (Node 22.18+ recommended), or compile to JavaScript.",
+        "cannot load this module's file type. For TypeScript, use Node 22.19.0+ with native type stripping enabled, or compile to JavaScript.",
       );
     }
     if (code === "ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX") {

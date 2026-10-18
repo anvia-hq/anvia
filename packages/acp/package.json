@@ -1,7 +1,15 @@
 {
   "name": "@anvia/acp",
   "version": "0.1.0",
-  "description": "Agent Client Protocol adapter for Anvia agents.",
+  "description": "Agent Client Protocol adapter and stdio launcher for Anvia agents in editors.",
+  "keywords": [
+    "anvia",
+    "acp",
+    "agent-client-protocol",
+    "ai",
+    "agent",
+    "stdio"
+  ],
   "author": "anvia",
   "license": "MIT",
   "repository": {
@@ -41,7 +49,7 @@
     "anvia-acp": "./dist/cli.js"
   },
   "engines": {
-    "node": ">=20.18.1"
+    "node": ">=22.19.0"
   },
   "scripts": {
     "prebuild": "pnpm --filter @anvia/mcp build",

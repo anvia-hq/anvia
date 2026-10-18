@@ -1,6 +1,6 @@
 /**
  * Export-only ACP agent: no generation, server, logging or signal handlers on import.
- * Prerequisites (repository root, Node 22.18+ with native type stripping enabled):
+ * Prerequisites (repository root, Node 22.19.0+ with native type stripping enabled):
  *   pnpm --filter @anvia/cli... --filter @anvia/openai... build
  * Set OPENAI_API_KEY in the root .env; optional OPENAI_BASEURL and ANVIA_ACP_MODEL.
  * The support helper loads that file quietly when a session is created.

@@ -89,16 +89,23 @@ export class FileAcpSessionStore implements AcpSessionStore {
   }
 
   get(sessionId: string): Promise<AcpSessionRecord | undefined> {
-    return this.serial(async () =>
-      (await this.read()).find((entry) => entry.sessionId === sessionId),
-    );
+    return this.serial(async () => {
+      const matches = (await this.read()).filter((entry) => storedSessionId(entry) === sessionId);
+      if (matches.length > 1) throw new AcpError("configuration_error");
+      if (matches.length === 0) return undefined;
+      const record = matches[0];
+      validateRecord(record);
+      return record;
+    });
   }
 
   put(record: AcpSessionRecord): Promise<void> {
     validateRecord(record);
     const snapshot = structuredClone(record);
     return this.serial(async () => {
-      const records = (await this.read()).filter((entry) => entry.sessionId !== snapshot.sessionId);
+      const records = (await this.read()).filter(
+        (entry) => storedSessionId(entry) !== snapshot.sessionId,
+      );
       records.push(snapshot);
       await this.write(records);
     });
@@ -106,12 +113,33 @@ export class FileAcpSessionStore implements AcpSessionStore {
 
   delete(sessionId: string): Promise<void> {
     return this.serial(async () => {
-      await this.write((await this.read()).filter((entry) => entry.sessionId !== sessionId));
+      await this.write((await this.read()).filter((entry) => storedSessionId(entry) !== sessionId));
     });
   }
 
   list(query: AcpSessionQuery): Promise<AcpSessionPage> {
-    return this.serial(async () => page(await this.read(), query));
+    return this.serial(async () => {
+      const records = new Map<string, AcpSessionRecord | undefined>();
+      for (const entry of await this.read()) {
+        const id = storedSessionId(entry);
+        if (id === undefined) continue;
+        if (records.has(id)) {
+          // Ambiguous IDs are unreadable too; do not expose either record.
+          records.set(id, undefined);
+          continue;
+        }
+        try {
+          validateRecord(entry);
+          records.set(id, entry);
+        } catch {
+          records.set(id, undefined);
+        }
+      }
+      return page(
+        [...records.values()].filter((record) => record !== undefined),
+        query,
+      );
+    });
   }
 
   private serial<T>(operation: () => Promise<T>): Promise<T> {
@@ -120,32 +148,35 @@ export class FileAcpSessionStore implements AcpSessionStore {
     return task;
   }
 
-  private async read(): Promise<AcpSessionRecord[]> {
-    let data: string;
+  private async read(): Promise<unknown[]> {
     try {
-      data = await readFile(this.path, "utf8");
+      const records: unknown = JSON.parse(await readFile(this.path, "utf8"));
+      if (!Array.isArray(records)) throw new AcpError("configuration_error");
+      return records;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
-      throw error;
-    }
-    const records: unknown = JSON.parse(data);
-    if (!Array.isArray(records)) throw new AcpError("configuration_error");
-    for (const record of records) validateRecord(record);
-    if (new Set(records.map((record) => record.sessionId)).size !== records.length)
       throw new AcpError("configuration_error");
-    return records;
+    }
   }
 
-  private async write(records: AcpSessionRecord[]): Promise<void> {
-    await mkdir(dirname(this.path), { recursive: true, mode: 0o700 });
+  private async write(records: unknown[]): Promise<void> {
     const temporary = `${this.path}.${randomUUID()}.tmp`;
     try {
+      await mkdir(dirname(this.path), { recursive: true, mode: 0o700 });
       await writeFile(temporary, JSON.stringify(records), { mode: 0o600, flag: "wx" });
       await rename(temporary, this.path);
+    } catch {
+      throw new AcpError("configuration_error");
     } finally {
       await unlink(temporary).catch(() => undefined);
     }
   }
+}
+
+function storedSessionId(value: unknown): string | undefined {
+  if (value && typeof value === "object" && "sessionId" in value)
+    return typeof value.sessionId === "string" ? value.sessionId : undefined;
+  return undefined;
 }
 
 export function validateRecord(value: unknown): asserts value is AcpSessionRecord {
@@ -173,7 +204,8 @@ export function validateRecord(value: unknown): asserts value is AcpSessionRecor
     (record.driverKey !== undefined &&
       (typeof record.driverKey !== "string" || !record.driverKey)) ||
     (record.pendingRun !== undefined &&
-      (!record.driverKey ||
+      (!record.pendingRun ||
+        !record.driverKey ||
         typeof record.pendingRun.requestId !== "string" ||
         !record.pendingRun.requestId ||
         record.pendingRun.prompt?.role !== "user" ||
@@ -202,14 +234,17 @@ export function sessionInfo(record: AcpSessionInfo): AcpSessionInfo {
 function page(records: readonly AcpSessionRecord[], query: AcpSessionQuery): AcpSessionPage {
   if (!Number.isSafeInteger(query.limit) || query.limit < 1 || query.limit > 1000)
     throw new AcpError("configuration_error");
-  let after = "";
+  let after: Pick<AcpSessionInfo, "updatedAt" | "sessionId"> | undefined;
   if (query.cursor) {
     try {
       const cursor = JSON.parse(Buffer.from(query.cursor, "base64url").toString("utf8"));
       if (
         cursor.cwd !== (query.cwd ?? null) ||
         JSON.stringify(cursor.roots) !== JSON.stringify(query.workspaceRoots ?? null) ||
-        typeof cursor.after !== "string"
+        typeof cursor.after?.sessionId !== "string" ||
+        !cursor.after.sessionId ||
+        typeof cursor.after.updatedAt !== "string" ||
+        !Number.isFinite(Date.parse(cursor.after.updatedAt))
       )
         throw new Error();
       after = cursor.after;
@@ -220,12 +255,13 @@ function page(records: readonly AcpSessionRecord[], query: AcpSessionQuery): Acp
   const filtered = records
     .filter(
       (record) =>
+        (record.messages.length > 0 || record.transcript.length > 0 || !!record.pendingRun) &&
         (!query.cwd || record.cwd === query.cwd) &&
         (!query.workspaceRoots ||
           query.workspaceRoots.some((root) => contains(root, record.cwd))) &&
-        record.sessionId > after,
+        (!after || compareSessions(record, after) > 0),
     )
-    .sort((a, b) => (a.sessionId < b.sessionId ? -1 : a.sessionId > b.sessionId ? 1 : 0));
+    .sort(compareSessions);
   const sessions = filtered.slice(0, query.limit).map(sessionInfo);
   const last = sessions.at(-1);
   const result: AcpSessionPage = { sessions };
@@ -234,11 +270,21 @@ function page(records: readonly AcpSessionRecord[], query: AcpSessionQuery): Acp
       JSON.stringify({
         cwd: query.cwd ?? null,
         roots: query.workspaceRoots ?? null,
-        after: last.sessionId,
+        after: { updatedAt: last.updatedAt, sessionId: last.sessionId },
       }),
     ).toString("base64url");
   }
   return result;
+}
+
+function compareSessions(
+  a: Pick<AcpSessionInfo, "updatedAt" | "sessionId">,
+  b: Pick<AcpSessionInfo, "updatedAt" | "sessionId">,
+): number {
+  return (
+    Date.parse(b.updatedAt) - Date.parse(a.updatedAt) ||
+    (a.sessionId < b.sessionId ? -1 : a.sessionId > b.sessionId ? 1 : 0)
+  );
 }
 
 export function contains(root: string, cwd: string): boolean {

@@ -126,6 +126,7 @@ it("detaches pending approval, ignores a late grant, and reattaches via respond 
   const first = manager(binding, store);
   const id = await first.create(process.cwd(), capabilities);
   const grant = deferred<"allow">();
+  expect(await first.list()).toEqual({ sessions: [] });
   const requested = deferred();
   const updates: SessionUpdate[] = [];
   const original = first
@@ -152,6 +153,8 @@ it("detaches pending approval, ignores a late grant, and reattaches via respond 
   expect((await run.status()).status).toBe("waiting");
   expect(execute).not.toHaveBeenCalled();
   const second = manager(binding, store);
+  expect((await store.get(id))!.messages).toEqual([]);
+  expect((await second.list()).sessions).toMatchObject([{ sessionId: id }]);
   await second.restore(id, process.cwd(), capabilities);
   await expect(second.get(id).prompt(prompt)).rejects.toMatchObject({ kind: "session_busy" });
   const resumed: SessionUpdate[] = [];
@@ -212,6 +215,7 @@ it.each(["completed", "manual", "idempotent"] as const)(
     );
     const sessions = manager(first.binding, new FileAcpSessionStore(records));
     const id = await sessions.create(dir, capabilities);
+    expect(await sessions.list()).toEqual({ sessions: [] });
     const result = sessions
       .get(id)
       .prompt(prompt)
@@ -227,6 +231,8 @@ it.each(["completed", "manual", "idempotent"] as const)(
       mode === "idempotent" ? "idempotent" : "manual",
     );
     const restored = manager(second.binding, new FileAcpSessionStore(records));
+    expect((await restored.store.get(id))!.messages).toEqual([]);
+    expect((await restored.list()).sessions).toMatchObject([{ sessionId: id }]);
     await restored.restore(id, dir, capabilities);
     if (mode === "manual") {
       const run = await waiting(second.runtime, id, "needs_attention");

@@ -316,6 +316,11 @@ It supplies no distributed locks, encryption, retention, quotas or power-loss gu
 | `session/close`  | Releases resources, retains records; ephemeral work is cancelled                                                               |
 | `session/delete` | Closes and removes ACP history; repeated/absent deletes succeed                                                                |
 
+Built-in stores list recently updated sessions first, with session ID breaking timestamp ties.
+Unused threads stay hidden until a turn commits or a durable pending run is saved; their records
+still support load/resume by ID. File-store listing skips malformed entries, and writes/deletes
+preserve unrelated entries, including unreadable ones. An unreadable file envelope still fails.
+
 Load/resume require matching canonical cwd and current config/workspace policy. Clients resupply
 MCP declarations; saved credentials, capabilities or approvals are never reused. Replay never
 executes historical tools. Only successful ephemeral turns commit; history is not an execution

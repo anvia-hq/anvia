@@ -278,13 +278,17 @@ Proposed decisions — pending Indra review:
   approvals or continuations. Current clients resupply servers; current factories own credentials.
 - Advertise load/resume/close because the required store contract implements them. Advertise list
   and delete only when the supplied store provides those methods. List metadata only, filter before
-  pagination, 50 rows/page, stable session-ID keyset order and filter-bound cursors. Titles default
-  to the first completed original user text (200 characters), otherwise "Untitled session".
+  pagination, 50 rows/page, newest-update-first keyset order with session-ID tie breaking and
+  filter-bound tuple cursors. Built-in stores omit records without committed messages/transcript
+  or a durable pending run; empty records still load/resume by ID. Titles default to the first
+  completed original user text (200 characters), otherwise "Untitled session".
 - One active connection owns a store. The file adapter serializes calls within one instance, writes
   0600 snapshots via rename, and creates 0700 directories. It is for modest local histories, not
   distributed writers or power-loss durability. The host owns trusted storage location, user
   isolation, exclusive access, encryption, retention, quotas and backups. No idle eviction or
-  automatic record migration; unknown versions fail closed. Both private history and transcript
+  automatic record migration. Malformed entries and unknown versions fail closed when loaded and
+  are skipped by file-store listing; unrelated entries remain intact during writes/deletes. An
+  unreadable file envelope still fails closed. Both private history and transcript
   separately obey the existing per-session byte budget; active-session limits exclude stored data.
 
 Tests cover real process restarts, exact replay and silent resume, continuation without historical

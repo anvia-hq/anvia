@@ -42,13 +42,19 @@ function record(sessionId: string, cwd = root): AcpSessionRecord {
     version: 1,
     sessionId,
     cwd,
-    title: "Empty",
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    title: "Saved",
+    createdAt: "2026-10-17T00:00:00.000Z",
+    updatedAt: "2026-10-17T00:00:00.000Z",
     config: { mode: "ask" },
     nextToolId: 0,
-    messages: [],
-    transcript: [],
+    messages: [
+      { role: "user", content: "saved" },
+      { role: "assistant", content: "reply" },
+    ],
+    transcript: [
+      { type: "user", content: { type: "text", text: "saved" } },
+      { type: "text", text: "reply" },
+    ],
   };
 }
 
@@ -340,6 +346,56 @@ it("distinguishes empty existing sessions from absent records; close retains dat
   });
 });
 
+it.each(["memory", "file"])(
+  "%s store hides unused threads while preserving empty load/resume",
+  async (kind) => {
+    const path = join(root, "empty.json");
+    const store = kind === "file" ? new FileAcpSessionStore(path) : new InMemoryAcpSessionStore();
+    const first = manager({ sessionStore: store });
+    const id = await first.create(root, capabilities);
+    expect(await first.list()).toEqual({ sessions: [] });
+    await first.close();
+    const second = manager({
+      sessionStore: kind === "file" ? new FileAcpSessionStore(path) : store,
+    });
+    expect(await second.list()).toEqual({ sessions: [] });
+    expect((await second.store.get(id))?.messages).toEqual([]);
+    const replay = vi.fn(async () => {});
+    await second.restore(id, root, capabilities, [], undefined, replay);
+    expect(replay).not.toHaveBeenCalled();
+    await second.closeSession(id);
+    const resumed = await second.restore(id, root, capabilities);
+    await expect(second.restore("missing", root, capabilities)).rejects.toMatchObject({
+      kind: "session_not_found",
+    });
+    await resumed.prompt(text("first committed turn"));
+    expect((await second.list()).sessions).toMatchObject([
+      { sessionId: id, title: "first committed turn" },
+    ]);
+  },
+);
+
+it("hides a record when the connection closes after the initial setup write", async () => {
+  const store = new FileAcpSessionStore(join(root, "setup.json"));
+  const entered = deferred();
+  const gate = deferred();
+  const put = store.put.bind(store);
+  vi.spyOn(store, "put").mockImplementation(async (value) => {
+    await put(value);
+    entered.resolve();
+    await gate.promise;
+  });
+  const sessions = manager({ sessionStore: store });
+  const creating = sessions.create(root, capabilities);
+  const rejected = expect(creating).rejects.toMatchObject({ kind: "connection_closed" });
+  await entered.promise;
+  const closing = sessions.close();
+  gate.resolve();
+  await rejected;
+  await closing;
+  expect(await store.list({ limit: 50 })).toEqual({ sessions: [] });
+});
+
 it("persists config and rejects changed workspace or removed host options before factory/replay", async () => {
   const store = new InMemoryAcpSessionStore();
   const factory = vi.fn(() => makeAgent());
@@ -401,6 +457,56 @@ it("filters workspaces before cursor pagination and validates cursor scope", asy
   });
   expect(await sessions.list(join(root, "a"))).toMatchObject({ sessions: expect.any(Array) });
 });
+
+it.each(["memory", "file"])(
+  "%s store paginates by newest update then session ID using a stable tuple",
+  async (kind) => {
+    const store =
+      kind === "file"
+        ? new FileAcpSessionStore(join(root, "pages.json"))
+        : new InMemoryAcpSessionStore();
+    const newest = { ...record("z"), updatedAt: "2026-10-18T00:00:00.000Z" };
+    const tied = record("a");
+    const oldest = { ...record("0"), updatedAt: "2026-10-16T00:00:00.000Z" };
+    for (const value of [
+      record("c"),
+      oldest,
+      tied,
+      newest,
+      { ...record("b"), updatedAt: "2026-10-17T07:00:00+07:00" },
+    ])
+      await store.put(value);
+    const first = await store.list({ limit: 2 });
+    expect(first.sessions.map((entry) => entry.sessionId)).toEqual(["z", "a"]);
+    expect(first.nextCursor).toBeTypeOf("string");
+    // Moving the cursor's record must not move the saved page boundary.
+    await store.put({ ...tied, updatedAt: "2026-10-19T00:00:00.000Z" });
+    const second = await store.list({ limit: 2, cursor: first.nextCursor! });
+    expect(second.sessions.map((entry) => entry.sessionId)).toEqual(["b", "c"]);
+    expect(second.nextCursor).toBeTypeOf("string");
+    const third = await store.list({ limit: 2, cursor: second.nextCursor! });
+    expect(third.sessions.map((entry) => entry.sessionId)).toEqual(["0"]);
+    expect(third.nextCursor).toBeUndefined();
+    expect((await store.list({ limit: 2 })).sessions.map((entry) => entry.sessionId)).toEqual([
+      "a",
+      "z",
+    ]);
+    for (const after of [
+      "a",
+      {},
+      { sessionId: "a", updatedAt: "private-invalid-date" },
+      { sessionId: "", updatedAt: tied.updatedAt },
+    ]) {
+      const cursor = Buffer.from(JSON.stringify({ cwd: null, roots: null, after })).toString(
+        "base64url",
+      );
+      await expect(store.list({ limit: 2, cursor })).rejects.toMatchObject({
+        kind: "invalid_cursor",
+        message: "invalid_cursor",
+      });
+    }
+  },
+);
 
 it("advertises optional store operations only when available and requires initialization", async () => {
   const memory = new InMemoryAcpSessionStore();
@@ -511,17 +617,91 @@ it("failed atomic writes retain prior history/config and never expose storage er
   expect(JSON.stringify(response)).not.toContain("private-database-secret");
 });
 
-it("file store isolates snapshots, serializes writes, and rejects corrupt files without overwriting them", async () => {
+it("file store isolates snapshots and serializes writes", async () => {
   const path = join(root, "store.json");
   const store = new FileAcpSessionStore(path);
   expect(await store.get("missing")).toBeUndefined();
-  await Promise.all([store.put(record("a")), store.put(record("b"))]);
+  const original = record("a");
+  await Promise.all([store.put(original), store.put(record("b"))]);
+  Object.assign(original, { title: "mutated" });
+  const snapshot = (await store.get("a"))!;
+  expect(snapshot.title).toBe("Saved");
+  Object.assign(snapshot.messages[0]!, { content: "mutated" });
+  expect((await store.get("a"))!.messages[0]!.content).toBe("saved");
   expect((await new FileAcpSessionStore(path).list({ limit: 50 })).sessions).toHaveLength(2);
-  await writeFile(path, '[{"version":99}]');
-  await expect(store.get("a")).rejects.toMatchObject({ kind: "configuration_error" });
-  await expect(store.put(record("c"))).rejects.toMatchObject({ kind: "configuration_error" });
-  expect(await readFile(path, "utf8")).toBe('[{"version":99}]');
 });
+
+it("file store isolates unreadable entries and preserves them across put/delete", async () => {
+  const path = join(root, "mixed.json");
+  const store = new FileAcpSessionStore(path);
+  const malformed = [
+    null,
+    42,
+    "private-record-data",
+    [],
+    { ...record("bad"), driverKey: "driver", pendingRun: null },
+    { version: 99, sessionId: "future", private: "opaque" },
+  ];
+  const saved = record("good");
+  await writeFile(path, JSON.stringify([...malformed, saved]));
+  expect(await store.get("missing")).toBeUndefined();
+  expect(await store.get("good")).toEqual(saved);
+  await expect(store.get("bad")).rejects.toMatchObject({
+    kind: "configuration_error",
+    message: "configuration_error",
+  });
+  await expect(store.get("future")).rejects.toMatchObject({
+    kind: "configuration_error",
+    message: "configuration_error",
+  });
+  expect((await store.list({ limit: 1 })).sessions.map((entry) => entry.sessionId)).toEqual([
+    "good",
+  ]);
+  await store.put({ ...saved, title: "Updated" });
+  expect(JSON.parse(await readFile(path, "utf8"))).toEqual([
+    ...malformed,
+    { ...saved, title: "Updated" },
+  ]);
+  await store.delete("missing");
+  await store.delete("good");
+  expect(JSON.parse(await readFile(path, "utf8"))).toEqual(malformed);
+  // A targeted repair or deletion is allowed without validating the corrupt old value.
+  await store.put(record("bad"));
+  expect((await store.get("bad"))?.title).toBe("Saved");
+  await store.delete("future");
+  expect(JSON.parse(await readFile(path, "utf8"))).toEqual([
+    ...malformed.slice(0, 4),
+    record("bad"),
+  ]);
+});
+
+it("file store treats duplicate IDs as unreadable without blocking unrelated records", async () => {
+  const path = join(root, "duplicates.json");
+  const store = new FileAcpSessionStore(path);
+  const duplicates = [record("duplicate"), record("duplicate")];
+  await writeFile(path, JSON.stringify([...duplicates, record("good")]));
+  await expect(store.get("duplicate")).rejects.toMatchObject({ kind: "configuration_error" });
+  expect((await store.list({ limit: 1 })).sessions.map((entry) => entry.sessionId)).toEqual([
+    "good",
+  ]);
+  await store.put(record("new"));
+  await store.delete("good");
+  expect(JSON.parse(await readFile(path, "utf8"))).toEqual([...duplicates, record("new")]);
+});
+
+it.each(['{"private":"not-an-array"}', '[{"private":"unfinished-secret'])(
+  "file store rejects corrupt envelopes without exposing or overwriting them: %s",
+  async (data) => {
+    const path = join(root, "corrupt.json");
+    const store = new FileAcpSessionStore(path);
+    await writeFile(path, data);
+    await expect(store.get("a")).rejects.toMatchObject({ kind: "configuration_error" });
+    await expect(store.put(record("c"))).rejects.toMatchObject({ kind: "configuration_error" });
+    await expect(store.delete("a")).rejects.toThrow("configuration_error");
+    await expect(store.list({ limit: 50 })).rejects.toThrow("configuration_error");
+    expect(await readFile(path, "utf8")).toBe(data);
+  },
+);
 
 it("finishes an in-flight atomic commit before close or delete can release ownership", async () => {
   const backing = new InMemoryAcpSessionStore();

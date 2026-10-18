@@ -43,8 +43,9 @@ describe("built anvia-acp launcher", () => {
           .split("\n")
           .filter(Boolean)
           .map((line) => JSON.parse(line));
-      await vi.waitFor(() =>
-        expect(responses().some((response) => response.id === requestId)).toBe(true),
+      await vi.waitFor(
+        () => expect(responses().some((response) => response.id === requestId)).toBe(true),
+        { timeout: 10_000 },
       );
       return responses().find((response) => response.id === requestId);
     }
@@ -73,7 +74,7 @@ describe("built anvia-acp launcher", () => {
     peer.child.stdin!.write(
       '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1}}\n',
     );
-    await vi.waitFor(() => expect(peer.stdout()).toContain("\n"));
+    await vi.waitFor(() => expect(peer.stdout()).toContain("\n"), { timeout: 10_000 });
     expect(JSON.parse(peer.stdout())).toMatchObject({
       id: 1,
       result: { protocolVersion: 1, authMethods: [] },
@@ -115,7 +116,7 @@ describe("built anvia-acp launcher", () => {
     peer.child.stdin!.write(
       '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1}}\n',
     );
-    await vi.waitFor(() => expect(peer.stdout()).toContain("\n"));
+    await vi.waitFor(() => expect(peer.stdout()).toContain("\n"), { timeout: 10_000 });
     peer.child.kill(signal);
     expect(await peer.closed).toEqual([0, null]);
   });

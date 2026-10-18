@@ -54,6 +54,48 @@ prompt attachment convention still needs real-editor verification.
 `types.ts` is checked by the package TypeScript build and typed tests; it has no runtime behavior.
 This map records behavioral coverage, not a claim of exhaustive branch or line coverage.
 
+## CI (ACP 15)
+
+The `Packages` job in `.github/workflows/ci.yml` runs on every PR and pushes to `main` and
+`staging`, on Ubuntu 24.04 with Node 24 and pnpm 11.0.4. ACP is already selected by the existing
+`pnpm --filter './packages/**'` build, typecheck and test commands: `packages/acp` matches the
+workspace's `packages/*` glob. Verify selection with
+`pnpm --filter './packages/**' list --depth -1`. Root `pnpm check` runs formatting and Oxlint
+across the repository, including ACP source and tests. No extra ACP build or lint job is needed.
+The release workflow's `prepare` job uses the same package filters and root check.
+
+Ordinary package tests include `stdio-client.test.ts`, `stdio-conformance.test.ts`,
+`launcher.test.ts`, `editor-smoke.test.ts`, `persistence.test.ts` and `durable-process.test.ts`;
+their real subprocess fixtures are not gated or skipped in CI. Polling/startup/shutdown waits
+allow 10 seconds, with a 30-second test budget and 15-second hook budget for slower runners.
+These are deadline bounds, not fixed sleeps; successful checks finish immediately.
+
+Security and negotiation coverage also runs through the existing package test command:
+
+- `packages/mcp/test/url-safety.test.ts`: URL, DNS, connection pinning and redirect protections;
+  `trusted-endpoint.test.ts` covers explicit private-endpoint exceptions.
+- `packages/mcp/test/modern-protocol.test.ts`: modern discovery and configured legacy fallback.
+- `packages/acp/test/connection.test.ts` and `stdio-conformance.test.ts`: ACP version negotiation,
+  including an unsupported version negotiating to v1 over a real subprocess.
+- `packages/acp/test/mcp.test.ts` and `mcp-http.test.ts`: MCP negotiation through ACP with real
+  stdio and HTTP fixtures, launch policy and exact-endpoint trust.
+
+Both workflows add a dedicated TCK step after package tests, reusing the built launcher without
+the `pretest:tck` rebuild. They check out the exact TCK commit below, pin uv to `0.12.17` and
+Python to `3.14.7`, and cache uv dependencies keyed by the upstream `uv.lock`. `uv sync --frozen`
+performs initial network installation; the runner then executes with `UV_OFFLINE=true` and
+`--frozen`. `run-tck.mjs` itself never clones or fetches git, and rejects dirty or different
+checkouts. Without preinstalled dependencies, its normal `uv run` may download Python/packages.
+The CI step has a ten-minute limit; the runner also bounds the TCK process to three minutes.
+Its compact summary goes to `$RUNNER_TEMP/acp-tck-summary.json`, not the checked-in recorded result.
+
+Linux runs the same POSIX signal, subprocess and SQLite tests as macOS. macOS temporary paths
+can resolve through `/private`; workspace fixtures use `realpath` rather than assuming `/tmp`.
+There are no macOS-only test skips. A restricted local sandbox can deny localhost `listen` with
+`EPERM`, blocking the four `mcp-http.test.ts` tests; Linux CI must run those tests without exclusions.
+For local repetition in that sandbox only, use
+`pnpm --filter @anvia/acp exec vitest run --exclude test/mcp-http.test.ts`.
+
 ## Reproduce the upstream TCK run
 
 The [experimental ACP TCK](https://agentclientprotocol.com/libraries/testing) launches a fresh

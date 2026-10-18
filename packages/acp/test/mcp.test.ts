@@ -274,8 +274,9 @@ it("closes negotiation on disconnect and disposes a late factory even if its dis
   const sessions = manager();
   const setup = sessions.create(root, capabilities, [server("editor", "hang")]);
   const rejected = expect(setup).rejects.toMatchObject({ kind: "connection_closed" });
-  await vi.waitFor(async () =>
-    expect((await records()).some((entry) => entry.event === "tools/list")).toBe(true),
+  await vi.waitFor(
+    async () => expect((await records()).some((entry) => entry.event === "tools/list")).toBe(true),
+    { timeout: 10_000 },
   );
   await sessions.close();
   await rejected;
@@ -294,7 +295,7 @@ it("closes negotiation on disconnect and disposes a late factory even if its dis
   });
   const pending = late.create(root, capabilities, [server("late")]);
   const lateRejected = expect(pending).rejects.toMatchObject({ kind: "connection_closed" });
-  await vi.waitFor(() => expect(contexts).toHaveLength(1));
+  await vi.waitFor(() => expect(contexts).toHaveLength(1), { timeout: 10_000 });
   const closed = late.close();
   gate.resolve();
   await closed;

@@ -40,7 +40,7 @@ function child(dir: string, mode: string, phase: string) {
   let id = 0;
   const wait = async (predicate: (frame: Frame) => boolean, after = 0) => {
     await vi.waitFor(() => expect(frames.slice(after).some(predicate), stderr).toBe(true), {
-      timeout: 5000,
+      timeout: 10_000,
     });
     return frames.slice(after).find(predicate)!;
   };
@@ -69,7 +69,9 @@ it.each(["approval", "completed", "ambiguous", "idempotent"])(
     if (mode === "approval") {
       await first.wait((frame) => frame.method === "session/request_permission");
     } else {
-      await vi.waitFor(() => expect(first.control).toContainEqual({ checkpoint: true }));
+      await vi.waitFor(() => expect(first.control).toContainEqual({ checkpoint: true }), {
+        timeout: 10_000,
+      });
     }
     await first.kill();
     const second = child(dir, mode, "recover");
@@ -88,7 +90,9 @@ it.each(["approval", "completed", "ambiguous", "idempotent"])(
     if (mode === "ambiguous") {
       expect((await turn).error?.data).toEqual({ kind: "recovery_required" });
       second.process.send("reconcile");
-      await vi.waitFor(() => expect(second.control).toContainEqual({ reconciled: true }));
+      await vi.waitFor(() => expect(second.control).toContainEqual({ reconciled: true }), {
+        timeout: 10_000,
+      });
       expect((await second.request("session/prompt", { sessionId, prompt: [] })).result).toEqual({
         stopReason: "end_turn",
       });
@@ -102,5 +106,5 @@ it.each(["approval", "completed", "ambiguous", "idempotent"])(
     expect(attempts).toEqual(Array(mode === "idempotent" ? 2 : 1).fill(receipts[0]));
     for (const frame of [...first.frames, ...second.frames]) expect(frame.jsonrpc).toBe("2.0");
   },
-  15_000,
+  30_000,
 );

@@ -193,7 +193,7 @@ describe("editor smoke sample over stdio (fixture client, not an editor)", () =>
     const result = spawnSync(process.execPath, [cli, sample], {
       env: { ...process.env, ANVIA_ACP_SMOKE_FAILURE: "missing-config" },
       encoding: "utf8",
-      timeout: 5000,
+      timeout: 10_000,
     });
     expect(result.error).toBeUndefined();
     expect(result.status).toBe(1);
@@ -209,7 +209,7 @@ describe("editor smoke sample over stdio (fixture client, not an editor)", () =>
       spawnSync(
         process.execPath,
         [join(packageRoot, "examples/write-editor-configs.mjs"), destination],
-        { encoding: "utf8", timeout: 5000 },
+        { encoding: "utf8", timeout: 10_000 },
       );
     expect(run().status).toBe(0);
     for (const file of ["zed.json", "jetbrains-acp.json"]) {

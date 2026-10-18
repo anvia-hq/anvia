@@ -87,7 +87,7 @@ export function stdioClient(entry = "dist/cli.js", args = ["test/fixtures/confor
         if (fault) throw fault;
         expect(frames.slice(after).some(predicate), stderr).toBe(true);
       },
-      { timeout: 5000, interval: 10 },
+      { timeout: 10_000, interval: 10 },
     );
     return frames.slice(after).find(predicate)!;
   }
@@ -100,7 +100,7 @@ export function stdioClient(entry = "dist/cli.js", args = ["test/fixtures/confor
   let closing: Promise<void> | undefined;
   async function close() {
     child.stdin.end();
-    const timer = setTimeout(() => child.kill("SIGKILL"), 3000);
+    const timer = setTimeout(() => child.kill("SIGKILL"), 10_000);
     try {
       await closed;
       if (fault) throw fault;

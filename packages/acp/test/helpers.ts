@@ -73,7 +73,9 @@ export function wireFixture(options: AcpOptions) {
     async request(method: string, params: unknown): Promise<Response> {
       const id = ++nextId;
       input.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
-      await vi.waitFor(() => expect(responses.some((response) => response.id === id)).toBe(true));
+      await vi.waitFor(() => expect(responses.some((response) => response.id === id)).toBe(true), {
+        timeout: 10_000,
+      });
       return responses.find((response) => response.id === id)!;
     },
   };

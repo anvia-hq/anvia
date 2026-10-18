@@ -228,15 +228,19 @@ describe("real stdio conversations", () => {
     const id = (created.result as { sessionId: string }).sessionId;
     const pending = peer.start("session/prompt", prompt(id, "fixture:mcp"));
     peer.reply(await peer.waitFor(permission), allow);
-    await vi.waitFor(async () =>
-      expect((await records()).some((entry) => entry.event === "tools/call")).toBe(true),
+    await vi.waitFor(
+      async () =>
+        expect((await records()).some((entry) => entry.event === "tools/call")).toBe(true),
+      { timeout: 10_000 },
     );
     peer.notify("session/cancel", { sessionId: id });
     expect(await pending.response).toMatchObject({ result: { stopReason: "cancelled" } });
-    await vi.waitFor(async () =>
-      expect((await records()).some((entry) => entry.event === "notifications/cancelled")).toBe(
-        true,
-      ),
+    await vi.waitFor(
+      async () =>
+        expect((await records()).some((entry) => entry.event === "notifications/cancelled")).toBe(
+          true,
+        ),
+      { timeout: 10_000 },
     );
     await peer.close();
     const events = await records();

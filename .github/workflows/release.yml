@@ -177,6 +177,29 @@ jobs:
       - name: Test packages
         run: pnpm --filter './packages/**' test
 
+      - name: Checkout pinned ACP TCK
+        uses: actions/checkout@v5
+        with:
+          repository: agentclientprotocol/acp-tck
+          ref: fa00ccdc13dfaa4b288a91877c1f3e468af4aa7d
+          path: .acp-tck
+          persist-credentials: false
+
+      - name: Setup uv for ACP TCK
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version: "0.12.17"
+          python-version: "3.14.7"
+          enable-cache: true
+          cache-dependency-glob: .acp-tck/uv.lock
+
+      - name: Test ACP TCK
+        timeout-minutes: 10
+        # Packages are already built; exec avoids the test:tck prebuild hook.
+        run: |
+          uv sync --project .acp-tck --frozen
+          UV_OFFLINE=true pnpm --filter @anvia/acp exec node test/run-tck.mjs "$GITHUB_WORKSPACE/.acp-tck" "$RUNNER_TEMP/acp-tck-summary.json"
+
       - name: Archive package release files
         run: tar -cf package-release-files.tar packages/*/dist packages/*/package.json
 

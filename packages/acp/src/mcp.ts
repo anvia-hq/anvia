@@ -73,11 +73,17 @@ export async function connectSessionMcp(
     return Object.freeze({ type: "http", name: entry.name, url: httpUrl(entry.url), headers });
   });
   const clients: McpClient[] = [];
+  // A client capability/declaration is never authorization to execute host code.
+  if (
+    servers.some((server) => server.type === "stdio") &&
+    (options.stdio !== true || !options.authorizeServer)
+  )
+    throw new AcpError("policy_denied");
   for (const server of servers) {
     signal.throwIfAborted();
     if (
       options.authorizeServer &&
-      !(await options.authorizeServer(server, Object.freeze({ cwd, signal })))
+      (await options.authorizeServer(server, Object.freeze({ cwd, signal }))) !== true
     ) {
       throw new AcpError("policy_denied");
     }
@@ -156,7 +162,7 @@ function entries(
             name,
           ) ||
           name.toLowerCase().startsWith("mcp-param-")
-        : !name || /[=\0]/.test(name) || value.includes("\0"))
+        : !/^[A-Za-z_][A-Za-z0-9_]*$/.test(name) || value.includes("\0"))
     ) {
       throw new AcpError("invalid_mcp");
     }

@@ -2,7 +2,18 @@ import type { PromptBlock } from "./content.js";
 import type { SessionUpdate } from "./events.js";
 import { AcpError } from "./errors.js";
 import { presentTool } from "./presentation.js";
-import type { AcpToolPresentation } from "./types.js";
+import type { AcpLimits, AcpToolPresentation } from "./types.js";
+
+/** v1 has no replay cursor: reject an oversized load atomically, never silently truncate. */
+export function assertReplayFits(entries: readonly AcpTranscriptEntry[], limits: AcpLimits): void {
+  if (entries.length > limits.maxReplayBatchEntries) throw new AcpError("resource_limit");
+  let bytes = 2;
+  if (bytes > limits.maxReplayBatchBytes) throw new AcpError("resource_limit");
+  for (const entry of entries) {
+    bytes += Buffer.byteLength(JSON.stringify(entry)) + 1;
+    if (bytes > limits.maxReplayBatchBytes) throw new AcpError("resource_limit");
+  }
+}
 
 export type AcpTranscriptEntry =
   | Exclude<SessionUpdate, { type: "text" | "thought" }>
@@ -129,6 +140,7 @@ function projectPresentation(metadata: AcpToolPresentation, cwd: string) {
 export class Transcript {
   readonly entries: AcpTranscriptEntry[] = [];
   private bytes = 2;
+  private lastTextBytes = 0;
 
   constructor(
     private readonly cwd: string,
@@ -141,8 +153,27 @@ export class Transcript {
   add(entry: AcpTranscriptEntry | SessionUpdate): void {
     const projected = projectTranscript(entry, this.cwd);
     if (!projected) return;
-    this.bytes += Buffer.byteLength(JSON.stringify(projected), "utf8") + 1;
-    if (this.bytes > this.maxBytes) throw new AcpError("resource_limit");
-    this.entries.push(projected);
+    const last = this.entries.at(-1);
+    const textBytes = projected.type === "text" ? Buffer.byteLength(projected.text) : 0;
+    const merge =
+      projected.type === "text" &&
+      last?.type === "text" &&
+      this.lastTextBytes + textBytes <= 64 * 1024;
+    // Merge display deltas only; live streaming stays unchanged. Incremental JSON
+    // accounting avoids serializing the growing string on every tiny delta.
+    const bytes =
+      this.bytes +
+      Buffer.byteLength(JSON.stringify(projected)) +
+      1 -
+      (merge ? Buffer.byteLength('{"type":"text","text":""}') + 1 : 0);
+    if (bytes > this.maxBytes) throw new AcpError("resource_limit");
+    this.bytes = bytes;
+    if (merge && last?.type === "text" && projected.type === "text") {
+      last.text += projected.text;
+      this.lastTextBytes += textBytes;
+    } else {
+      this.entries.push(projected);
+      this.lastTextBytes = textBytes;
+    }
   }
 }

@@ -23,6 +23,11 @@ import packageJson from "../../package.json";
 
 /** Keep SDK state and v1 handlers at this boundary, separate from session execution. */
 export function connectV1(stream: Stream, sessions: SessionManager, options: AcpOptions) {
+  return createV1Agent(sessions, options).connect(stream);
+}
+
+/** Version-specific connector, ready for the SDK router's withV1() seam. */
+export function createV1Agent(sessions: SessionManager, options: AcpOptions) {
   let initialized = false;
   let capabilities: AcpClientCapabilities = {
     readTextFile: false,
@@ -277,8 +282,7 @@ export function connectV1(stream: Stream, sessions: SessionManager, options: Acp
     .onNotification("session/cancel", async ({ params }) => {
       // Session cancellation is independent of the SDK's $/cancel_request signal.
       if (initialized) await respond(() => sessions.cancel(params.sessionId));
-    })
-    .connect(stream);
+    });
 }
 
 async function respond<T>(operation: () => Promise<T>): Promise<T> {

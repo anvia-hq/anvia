@@ -3,6 +3,7 @@ import type { JsonObject, ToolCallPart } from "@anvia/core/completion";
 import { lstat, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { AcpError } from "./errors.js";
+import { resolveLimits } from "./limits.js";
 import type { PendingRequests } from "./pending-requests.js";
 import type { AcpSessionPolicy, AcpToolPresentation } from "./types.js";
 
@@ -10,7 +11,7 @@ import type { AcpSessionPolicy, AcpToolPresentation } from "./types.js";
 export type EditorClient = {
   read(path: string, signal: AbortSignal): Promise<string>;
   write(path: string, content: string, signal: AbortSignal): Promise<void>;
-  create(command: string, args: string[], cwd: string): Promise<string>;
+  create(command: string, args: string[], cwd: string, outputByteLimit: number): Promise<string>;
   wait(
     id: string,
     signal: AbortSignal,
@@ -28,6 +29,7 @@ export function createEditorTools(
   policy: AcpSessionPolicy,
   client: EditorClient | undefined,
   requests: () => PendingRequests,
+  terminalOutputBytes = resolveLimits().maxTerminalOutputBytes,
 ): readonly AnyTool[] {
   if (!client) return Object.freeze([]);
   const tools: AnyTool[] = [];
@@ -139,6 +141,7 @@ export function createEditorTools(
             input.command as string,
             (input.args as string[] | undefined) ?? [],
             path,
+            terminalOutputBytes,
           );
           let exited = false;
           try {
@@ -147,7 +150,8 @@ export function createEditorTools(
             exited = true;
             signal.throwIfAborted();
             const result = await client.output(id, signal);
-            if (Buffer.byteLength(result.output) > maxBytes) throw new AcpError("resource_limit");
+            if (Buffer.byteLength(result.output) > terminalOutputBytes)
+              throw new AcpError("resource_limit");
             return { ...result, exitStatus };
           } finally {
             try {

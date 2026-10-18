@@ -1,5 +1,10 @@
 # ACP 09 verification
 
+ACP 14 adds `hardening.test.ts`, `streaming-resources.test.ts` and `wire-resources.test.ts` for
+launch policy, workspace confinement, resource bounds, private error injection, long sessions
+and adapter/SDK cleanup. Stdio MCP now needs explicit host launch approval: integration fixtures
+use library hosts with constrained policies. The dedicated launcher denies client stdio by default.
+
 The adapter is tested with deterministic Anvia agents, without provider credentials or model
 network calls. `pnpm --filter @anvia/acp test` builds the real launcher and runs the unit,
 wire, subprocess and local MCP integration suites. `stdio-client.ts` parses every stdout line,
@@ -28,7 +33,7 @@ host uses the built library with explicit read/terminal opt-in; it executes no l
 | Cancellation and settlement                               | `cancellation.test.ts`, `updates.test.ts`, `stdio-conformance.test.ts`: generation/local/MCP/editor cancellation, busy quarantine, late approval/output suppression, ordered updates and one final settlement                                                           |
 
 `persistence.test.ts` also exercises `session-store` and `transcript`: three actual subprocesses
-share an opt-in file store, replay retains the exact visible chunks/tool IDs, resume is silent and
+share an opt-in file store, replay retains visible text/order and stable tool IDs, resume is silent and
 continuation uses prior model context without executing old tools. Unit/wire coverage includes
 missing vs empty records, metadata-only filtered pagination, store capability gates, config restore,
 workspace restrictions, replay rollback, close/cancellation and failed atomic writes.

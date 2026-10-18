@@ -16,7 +16,7 @@ import {
   type AcpSessionQuery,
 } from "./session-store.js";
 import type { AcpTranscriptEntry } from "./transcript.js";
-import { Transcript } from "./transcript.js";
+import { Transcript, assertReplayFits } from "./transcript.js";
 import { SessionMemory } from "./memory.js";
 import { AcpError } from "./errors.js";
 import { resolveLimits } from "./limits.js";
@@ -47,6 +47,7 @@ export class SessionManager {
   private readonly agents = new WeakSet<Agent>();
   private readonly factory: AcpSessionFactory;
   private readonly roots: readonly string[] | undefined;
+  private readonly editorRoots: readonly string[];
   private readonly images: boolean;
   private readonly reasoning: boolean;
   readonly configuration: SessionConfiguration;
@@ -66,6 +67,7 @@ export class SessionManager {
     this.limits = resolveLimits(options.limits);
     this.factory = options.sessionFactory;
     this.roots = options.workspaceRoots && [...options.workspaceRoots];
+    this.editorRoots = [...(options.editorWorkspaceRoots ?? [])];
     this.images = options.images ?? false;
     this.reasoning = options.reasoning ?? false;
     this.mcp = snapshotMcpOptions(options.mcp);
@@ -97,6 +99,7 @@ export class SessionManager {
       if (existing?.busy) throw new AcpError("session_busy");
       const record = await this.stored(sessionId, true);
       if ((await directory(cwd)) !== record.cwd) throw new AcpError("policy_denied");
+      if (replay) assertReplayFits(record.transcript, this.limits);
       if (existing) {
         try {
           await existing.close();
@@ -193,6 +196,8 @@ export class SessionManager {
   private exclusive<T>(sessionId: string, operation: () => Promise<T>): Promise<T> {
     if (this.closed) return Promise.reject(new AcpError("connection_closed"));
     if (this.operations.has(sessionId)) return Promise.reject(new AcpError("session_busy"));
+    if (this.operations.size >= this.limits.maxConcurrentRequests)
+      return Promise.reject(new AcpError("resource_limit"));
     const task = Promise.resolve()
       .then(operation)
       .finally(() => this.operations.delete(sessionId));
@@ -357,6 +362,7 @@ export class SessionManager {
       const canonicalCwd = await directory(cwd);
       const roots = this.roots ? await Promise.all(this.roots.map(directory)) : [canonicalCwd];
       if (!roots.some((root) => contains(root, canonicalCwd))) throw new AcpError("policy_denied");
+      const editorRoots = [canonicalCwd, ...(await Promise.all(this.editorRoots.map(directory)))];
       if (this.closed) throw new AcpError("connection_closed");
       const connected = await connectSessionMcp(
         declarations,
@@ -373,7 +379,7 @@ export class SessionManager {
         const readOnly = config.mode === "read-only";
         const policy = Object.freeze({
           permissionPreset: config.mode,
-          workspaceRoots: Object.freeze(roots),
+          workspaceRoots: Object.freeze(editorRoots),
           editorTools: Object.freeze({
             readTextFile:
               !!client && this.editorTools?.readTextFile === true && capabilities.readTextFile,
@@ -386,10 +392,16 @@ export class SessionManager {
               !!client && !readOnly && this.editorTools?.terminal === true && capabilities.terminal,
           }),
         });
-        const tools = createEditorTools(canonicalCwd, policy, client, () => {
-          if (!session) throw new AcpError("configuration_error");
-          return session.pendingRequests;
-        });
+        const tools = createEditorTools(
+          canonicalCwd,
+          policy,
+          client,
+          () => {
+            if (!session) throw new AcpError("configuration_error");
+            return session.pendingRequests;
+          },
+          this.limits.maxTerminalOutputBytes,
+        );
         const context: AcpSessionContext = Object.freeze({
           sessionId,
           cwd: canonicalCwd,

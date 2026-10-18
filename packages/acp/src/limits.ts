@@ -9,6 +9,10 @@ const defaults: AcpLimits = {
   maxHistoryBytes: 16 * 1024 * 1024,
   maxHistoryMessages: 1000,
   maxPendingRequests: 16,
+  maxConcurrentRequests: 64,
+  maxTerminalOutputBytes: 1024 * 1024,
+  maxReplayBatchEntries: 10_000,
+  maxReplayBatchBytes: 16 * 1024 * 1024,
 };
 
 export function resolveLimits(overrides: Partial<AcpLimits> = {}): AcpLimits {

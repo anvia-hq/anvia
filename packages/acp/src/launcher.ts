@@ -3,7 +3,10 @@ import { stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { Writable } from "node:stream";
 import { pathToFileURL } from "node:url";
-import type { AcpConnection, AcpSessionFactory } from "./types.js";
+import type { AcpConnection, AcpOptions, AcpSessionFactory } from "./types.js";
+
+/** Optional `acpOptions` export from the trusted agent module. Other settings use defaults. */
+export type AcpLauncherOptions = Pick<AcpOptions, "mcp">;
 
 class StartupError extends Error {}
 
@@ -48,9 +51,9 @@ export async function runStdioServer(modulePath: string): Promise<void> {
   output.on("error", shutdown);
   try {
     const { serveStdio } = await import("./stdio.js");
-    const sessionFactory = await loadSessionFactory(modulePath);
+    const options = await loadAgentModule(modulePath);
     if (exiting) return await exiting;
-    connection = serveStdio({ sessionFactory, output });
+    connection = serveStdio({ ...options, output });
     await connection.closed;
   } catch (error) {
     if (!exiting) {
@@ -65,7 +68,9 @@ export async function runStdioServer(modulePath: string): Promise<void> {
 }
 
 /** Load a trusted local ESM module. Factory evaluation belongs to session/new, not startup. */
-async function loadSessionFactory(modulePath: string): Promise<AcpSessionFactory> {
+async function loadAgentModule(
+  modulePath: string,
+): Promise<Pick<AcpOptions, "sessionFactory" | "mcp">> {
   const path = resolve(modulePath);
   try {
     if (!(await stat(path)).isFile()) throw new Error();
@@ -92,11 +97,13 @@ async function loadSessionFactory(modulePath: string): Promise<AcpSessionFactory
     }
     throw new StartupError("startup failed; check the agent module and its configuration.");
   }
+  // Only trusted module code can supply host MCP policy; never take it from client metadata.
+  const mcp = (module.acpOptions as AcpLauncherOptions | undefined)?.mcp ?? {};
   if (typeof module.sessionFactory === "function") {
-    return module.sessionFactory as AcpSessionFactory;
+    return { sessionFactory: module.sessionFactory as AcpSessionFactory, mcp };
   }
   if (typeof module.default === "function") {
-    return module.default as AcpSessionFactory;
+    return { sessionFactory: module.default as AcpSessionFactory, mcp };
   }
   const agent = module.default ?? module.agent;
   if (!(agent instanceof Agent)) {
@@ -107,11 +114,12 @@ async function loadSessionFactory(modulePath: string): Promise<AcpSessionFactory
 
   // A singleton must never share mutable agent state across sessions.
   let claimed = false;
-  return () => {
+  const sessionFactory: AcpSessionFactory = () => {
     if (claimed) {
       throw new Error("An exported Agent supports one session; export a sessionFactory instead.");
     }
     claimed = true;
     return { agent };
   };
+  return { sessionFactory, mcp };
 }

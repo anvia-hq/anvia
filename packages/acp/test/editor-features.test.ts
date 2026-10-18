@@ -159,7 +159,7 @@ describe("editor backends", () => {
       truncated: false,
       exitStatus: { exitCode: 0, signal: null },
     });
-    expect(fixture.client.create).toHaveBeenCalledWith("echo", ["hello"], fixture.cwd);
+    expect(fixture.client.create).toHaveBeenCalledWith("echo", ["hello"], fixture.cwd, 1024 * 1024);
     expect(fixture.client.release).toHaveBeenCalledTimes(1);
     expect(fixture.client.kill).not.toHaveBeenCalled();
     fixture.client.wait = vi.fn(async () => {

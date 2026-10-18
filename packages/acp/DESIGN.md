@@ -10,6 +10,109 @@ plaintext reasoning. ACP 05 adds per-turn cancellation. ACP 06 adds approval/que
 are implementation targets, not claims of editor compatibility. Later tasks own session
 execution and optional capabilities.
 
+### ACP 14 implementation status
+
+Production hardening is implemented. [SECURITY.md](./SECURITY.md) records assets, attackers,
+trust boundaries, controls, residual host responsibilities and the error-path audit. These
+defaults supersede earlier ACP 07 launch trust and the shared admission/editor root scope:
+
+- Client stdio MCP is denied unless `mcp.stdio: true` **and** `authorizeServer` returns exactly
+  `true` for each declaration. Host approval happens before any process or connection, including
+  the SDK's discovery probe. Tool calls still require independent once-only approval. The
+  launcher uses defaults and cannot accept client stdio declarations; constrained library hosts
+  can opt in. Environment names must be identifiers; approved env values can still execute code
+  (for example `NODE_OPTIONS`), so the host must approve the full executable/argv/env/cwd tuple.
+- HTTP remains disabled by default. Reuse `@anvia/mcp` strict URL/DNS/fetch safety through
+  `McpClient`; exact host endpoints with pinned addresses remain the only private-access exception.
+  No copied URL-safety logic, SSRF bypass option or change to `@anvia/mcp` is introduced.
+- `workspaceRoots` admits sessions only. Editor read/write paths and terminal cwd default to
+  canonical session cwd even when admission covers a parent directory. Explicit host
+  `editorWorkspaceRoots` adds directories. Existing-ancestor realpath checks reject symlink and
+  dangling-symlink escapes, `..`, absolute outside paths and prefix siblings. The editor must
+  enforce access-time policy; separate-process checks cannot close filesystem mutation races.
+- Add positive-integer `limits.maxConcurrentRequests` (64), `maxTerminalOutputBytes` (1 MiB),
+  `maxReplayBatchEntries` (10,000), and `maxReplayBatchBytes` (16 MiB). Keep 10 MiB incoming wire
+  messages, 32 active sessions including setup and 16 pending editor requests per session.
+  Concurrent RPC overflow or duplicate outstanding IDs closes before SDK allocation; replies and
+  cancellation notifications still flow. Terminal creation requests the configured retention bound
+  and rejects oversized UTF-8 output. A v1 load is one replay batch: validate both bounds before
+  teardown/factory/MCP setup or updates; no partial replay/truncation. Silent resume remains usable.
+- Await updates/replay individually. Merge adjacent **retained** text chunks up to 64 KiB to reduce
+  allocation and replay entries; live chunks, ordering, tool IDs and content remain unchanged.
+  Check byte budgets incrementally without serializing the growing text per delta. This also
+  normalizes older fine-grained stored transcripts on restore.
+- SDK 1.9.0 sends `$/cancel_request` without settling its pending response entry. The wire stream
+  also delivers a fixed local cancellation response to the SDK so cancelled permission/editor
+  RPCs release promises/maps even if the client never replies. Late replies are ignored; terminal
+  creation remains deliberately uncancelled to retain late IDs for cleanup. `wire-resources.test.ts`
+  repeats 128 cancellations with no peer replies and inspects SDK maps/listeners, then closes with
+  another pending request. No production access to SDK internals is used.
+- Preserve fixed error kinds and final SDK error sanitization. Inject private errors through
+  factories, MCP policy, storage read/write, disposal, config rebuilds, commands, presentation and
+  provider execution. Existing tests cover malformed envelopes/schema, client interaction errors,
+  tool status, startup and durable recovery. Public model text and trusted presentation are
+  deliberate output, not error diagnostics; the host must keep secrets out of these projections.
+
+Verification lives in `test/hardening.test.ts`, `test/mcp.test.ts`,
+`test/streaming-resources.test.ts`, `test/wire-resources.test.ts` and the existing connection/content/session/pending-request,
+editor, permissions, updates, persistence, launcher and durable tests. No tests need provider keys.
+The long-session test runs 64 turns × 256 chunks for each cancel/close case, then interrupts a
+stream with a pending callback. It asserts zero open streams, pending requests, abort listeners,
+fake deadline timers and manager session/setup/operation map entries after cleanup; disposal runs
+once, memory clears and no updates arrive late. Persistent records intentionally outlive close.
+
+#### Profiling
+
+Opt in from repo root after workspace dependencies are built:
+
+```sh
+node --expose-gc --import tsx packages/acp/bench/stream.mjs
+# Optional positive arguments: turns chunksPerTurn chunkBytes
+```
+
+Offline fake streaming model, macOS arm64 / Apple M4, Node v26.9.0,
+100 turns × 512 deltas × 128 ASCII bytes: 51,200 live
+updates, 6.25 MiB output, default history limits and an active 60-second deadline per turn.
+This measures session execution/projection/history/store overhead; it excludes editor I/O and
+wire serialization. Sampled peaks are heap snapshots after turns, not an allocation ceiling.
+
+| Measurement                                           | Before retained-text merging | After      |
+| ----------------------------------------------------- | ---------------------------- | ---------- |
+| Wall time                                             | 3,223 ms                     | 1,056 ms   |
+| Live updates/second                                   | 15,886                       | 48,507     |
+| GC heap before workload                               | 24.13 MiB                    | 24.03 MiB  |
+| Peak sampled heap                                     | 364.40 MiB                   | 356.72 MiB |
+| GC heap after workload (history retained)             | 56.30 MiB                    | 54.86 MiB  |
+| GC heap after close + explicit record deletion        | 23.40 MiB                    | 23.29 MiB  |
+| Remaining lifetime abort listeners / pending requests | 0 / 0                        | 0 / 0      |
+
+Both runs use the same script/input and include bounded successful history. The post-close GC
+heap returns below its pre-workload value; deterministic resource assertions provide the cleanup
+regression test rather than a flaky heap threshold. History cloning/validation and provider/core
+transient allocations still make peak heap much larger than retained text; tune host capacity and
+limits for concurrent deployments. Closing alone retains stored records by design, so the script
+explicitly deletes its own record before the final measurement. Numbers are local observations,
+not CI performance thresholds.
+
+#### v2 readiness and remaining gaps
+
+Checked against the pinned SDK 1.9.0 `AgentProtocolRouter`/`agentProtocolRouter` declarations and
+the [official v2 migration guide](https://agentclientprotocol.com/protocol/v2/migration)
+on 2026-10-18. v2 remains disabled; live documentation can advance beyond the bundled alpha.9
+schema. Implement to a deliberately pinned schema when enabling the feature.
+
+| v2 surface                                            | Internal model today                                                                                                                                                           | Work before enabling                                                                                                                                                                                       |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Prompt acceptance versus lifecycle                    | `AcpSession` owns active turn, cancellation, pending interaction and completion independently of RPC; `prompt()` returns final stop reason.                                    | Add accepted prompt identity/ack and project running/requires-action/idle/failure state. Never leave execution ownership in an RPC responder or treat acknowledgement as completion.                       |
+| Keyed upserts                                         | Normalized tool IDs remain stable through continuation and replay; `events.ts` owns projection without SDK types. Text is append-only; presentation patches use absent fields. | Add stable message/content/plan IDs, complete upsert state and omit/null/value semantics, plus terminal display state if supported. Do not reinterpret v1 deltas as complete v2 state.                     |
+| Session/resume replay                                 | Store already separates canonical history and allowlisted display transcript. v1 load replays; resume is silent and both fence cwd/config/driver identity.                     | Replace load with resume replayFrom, stable replay cursors/IDs, snapshot-plus-live handoff and dedup semantics. Current replay batch bounds remain admission policy; no claim of resumable cursor support. |
+| No client fs or terminal execution APIs               | `EditorClient` is a protocol-independent optional backend; disabled by host/capability intersection. MCP bindings are session-owned.                                           | v2 capability snapshot leaves editor backend off. Use approved client MCP tools. Agent-owned terminal display is separate from client execution. Durable connection-owned tools remain unsupported.        |
+| Initialization, required session baseline and routing | `wire/v1.ts` contains SDK normalization/registration only; `createV1Agent()` returns a connector usable by `router.withV1()`. Session/events/storage have no SDK dependency.   | Add separate `wire/v2.ts` and explicit feature flag, route through the SDK router once per connection; map v2 info/capabilities and require session/list support. Preserve v1 fallback.                    |
+
+No speculative v2 event schema or core-runtime refactor is introduced. Product questions are
+recorded in SECURITY.md: launcher host-policy configuration, whether public HTTP should require
+an endpoint allowlist too, and hosted retention/quota policy. Safe defaults remain in force.
+
 ### ACP 13 implementation status
 
 `@anvia/cli` adds `anvia acp --agent ./agent.ts`. Both it and the dedicated `anvia-acp` bin call

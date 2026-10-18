@@ -201,6 +201,8 @@ describe("real stdio conversations", () => {
   });
 
   it("cancels an approved real MCP call and closes both negotiation and session processes", async () => {
+    await peer.close();
+    peer = stdioClient("test/fixtures/editor-host.mjs", []);
     await initialize();
     const log = join(root, "mcp.jsonl");
     const records = async (): Promise<Array<{ pid: number; event: string }>> =>

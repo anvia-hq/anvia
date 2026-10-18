@@ -8,7 +8,7 @@ no-op authentication, NDJSON transport, a dedicated launcher, and in-memory sess
 multi-turn prompt execution. Text/resource references work by default; images are opt-in.
 `session/update` streams assistant text and tool status with stable session-local IDs;
 `session/prompt` settles once with a stop reason after updates finish. `session/cancel` aborts the active turn and settles it with `cancelled`. Approval and question suspensions resume inside the same prompt.
-Editor-supplied stdio MCP servers connect per session; Streamable HTTP is opt-in.
+Editor-supplied MCP servers require host opt-in. Stdio also requires per-server host approval.
 
 ## Launcher
 
@@ -77,6 +77,29 @@ module import and normalized to a single-use factory, preventing reuse across se
 Prefer a factory for multiple sessions. Named `sessionFactory` takes precedence over default
 exports; a default export takes precedence over named `agent`.
 
+Client MCP remains disabled by default. A trusted module can export `acpOptions.mcp` to supply
+the same host policy accepted by `serveStdio` (only `mcp` is read by the launcher):
+
+```ts
+import type { AcpLauncherOptions } from "@anvia/acp/launcher";
+
+export const acpOptions = {
+  mcp: {
+    stdio: true,
+    authorizeServer: (server, { cwd }) =>
+      cwd === "/work/project" &&
+      server.type === "stdio" &&
+      server.command === "/usr/local/bin/editor-mcp" &&
+      server.args.length === 0 &&
+      Object.keys(server.env).length === 0,
+  },
+} satisfies AcpLauncherOptions;
+```
+
+This privileged approval must constrain the complete executable/argv/env/cwd tuple; a
+client-selected name alone is insufficient. Client declarations and `_meta` cannot supply policy.
+MCP tool calls still require once-only approval. See [the security model](./SECURITY.md).
+
 The launcher reserves stdout for protocol traffic before importing the module. `console`
 methods and `process.stdout.write` go to stderr, including startup diagnostics and help.
 Application code must not bypass this with direct writes to file descriptor 1 or inherited
@@ -123,7 +146,7 @@ Optional settings are `agentInfo: { name, version, title? }` and `maxMessageByte
 default). Oversized input closes the connection through the SDK's bounded NDJSON reader.
 `initialize` always returns protocol version `1`, including when another version is requested,
 as specified by [ACP version negotiation](https://agentclientprotocol.com/protocol/v1/initialization).
-Disk persistence and HTTP MCP are disabled by default; legacy SSE is unsupported. Local/editor
+Disk persistence and client MCP are disabled by default; legacy SSE is unsupported. Local/editor
 filesystem and terminal tools are not installed by default. Unknown methods return `-32601`, invalid
 params return `-32602`, malformed JSON returns `-32700`, and invalid envelopes return `-32600`.
 
@@ -243,12 +266,16 @@ The factory must attach those exact tool objects. All require once-only approval
 No denied or failed editor call falls back to the local filesystem, shell, or Docker.
 
 File paths and optional terminal cwd resolve against the session cwd. Lexical containment and
-existing ancestor symlinks are checked against workspace roots, including for new files. The
-editor must enforce access-time policy too: an external editor operation cannot be made atomic
+existing ancestor symlinks are checked against the canonical cwd, including for new files.
+`workspaceRoots` controls session admission only; it does not grant cross-project editor access.
+Explicit host `editorWorkspaceRoots` adds directories for editor file operations and terminal cwd.
+The editor must enforce access-time policy too: an external editor operation cannot be made atomic
 with this process's symlink check. Terminal approval authorizes arbitrary command execution;
 a cwd restriction does not sandbox the command. Commands use explicit argv without an adapter
-shell or inherited environment. Text reads/writes and retained terminal output are bounded to
-1 MiB. Terminals return output, truncation and exit status; they are released after success or
+shell or inherited environment. Text reads/writes are bounded to 1 MiB. Retained terminal output
+defaults to 1 MiB, configurable with `limits.maxTerminalOutputBytes`; the editor receives that
+limit on creation, and oversized replies are rejected. Terminals return output, truncation and
+exit status; they are released after success or
 failure, and killed then released on cancellation. Cleanup uses independent two-second signals.
 A late terminal creation response is retained for cleanup; execution stays quarantined until it
 settles. A disconnected editor cannot acknowledge cleanup, so release is best effort on disconnect.
@@ -372,7 +399,11 @@ they do not claim real editor compatibility.
 ## Editor-supplied MCP servers
 
 Pass editor declarations in `session/new.mcpServers`. Stdio entries use `name`, `command`,
-`args` and `env: [{ name, value }]`. The adapter starts each server without a shell, in the
+`args` and `env: [{ name, value }]`. Stdio launch is disabled by default. An embedded host must set
+`mcp.stdio: true` and supply `authorizeServer`, which must explicitly return `true` for every
+declaration before any server connects. This callback is the host's launch approval: inspect
+executable, argv, env and cwd, or obtain an operator decision there. Tool approval happens later
+and cannot authorize server startup. The adapter starts approved servers without a shell, in the
 canonical session cwd, with piped protocol stdout and inherited stderr. The SDK inherits only
 its platform environment allowlist (on Unix: `HOME`, `LOGNAME`, `PATH`, `SHELL`, `TERM`, `USER`),
 plus the explicitly supplied values. Provider credentials are not inherited implicitly. This
@@ -399,16 +430,22 @@ The MCP HTTP session DELETE is best effort and bounded to two seconds. `session/
 runtime resources while retaining history. Configuration, credentials, and raw MCP errors are
 omitted from ACP error responses.
 
-Library hosts can restrict declarations and enable HTTP:
+Library hosts can approve constrained stdio launches and enable HTTP:
 
 ```ts
 const connection = serveStdio({
   sessionFactory,
   mcp: {
+    stdio: true,
     http: true,
     authorizeServer: (server, { cwd, signal }) => {
       signal.throwIfAborted();
-      return cwd === "/work/project" && server.name === "editor";
+      if (cwd !== "/work/project") return false;
+      return server.type === "stdio"
+        ? server.command === "/usr/local/bin/editor-mcp" &&
+            server.args.length === 0 &&
+            Object.keys(server.env).length === 0
+        : server.url === "http://localhost:3000/mcp" && Object.keys(server.headers).length === 0;
     },
     trustedHttpEndpoints: [{ url: "http://localhost:3000/mcp", addresses: ["127.0.0.1", "::1"] }],
   },
@@ -423,8 +460,10 @@ exception. Other paths, ports, endpoints and OAuth URLs retain strict protection
 redirects fail; configured headers never follow them. Loopback, RFC1918 and IPv6 ULA addresses
 are supported; cloud metadata, link-local, mapped IPv6 and other reserved addresses remain blocked.
 The editor cannot expand trust via declarations or `_meta`. Legacy SSE and ACP-proxied MCP
-remain unsupported. Use the library entrypoint for host policy options; the dedicated launcher
-uses defaults. The default `authorizeServer` permits validated declarations from the local editor.
+remain unsupported. Library hosts pass `mcp` directly; trusted launcher modules can export
+`acpOptions.mcp`. Both keep client MCP disabled without host opt-in. HTTP opt-in permits public
+egress under strict URL safety; `authorizeServer` can restrict it further. See [the threat model](./SECURITY.md) for host
+responsibilities, access-time symlink races and open policy questions.
 
 ## Approvals and questions
 
@@ -615,16 +654,20 @@ cancellation cannot discard the completed result. See
 
 Configure `limits` on the library host. Every value must be a positive safe integer.
 
-| Option               | Default | Scope                                                       |
-| -------------------- | ------- | ----------------------------------------------------------- |
-| `maxSessions`        | 32      | Connection, including in-progress factories                 |
-| `maxPromptBytes`     | 10 MiB  | Aggregate text and encoded-image bytes per prompt           |
-| `maxTextBytes`       | 1 MiB   | UTF-8 text, including rendered resource references          |
-| `maxImageBytes`      | 5 MiB   | Decoded bytes per image                                     |
-| `maxContentBlocks`   | 256     | Blocks per prompt                                           |
-| `maxHistoryBytes`    | 16 MiB  | Private history and replay transcript (each, per session)   |
-| `maxHistoryMessages` | 1,000   | Private history messages per session                        |
-| `maxPendingRequests` | 16      | Outstanding permission/question/editor requests per session |
+| Option                   | Default | Scope                                                       |
+| ------------------------ | ------- | ----------------------------------------------------------- |
+| `maxSessions`            | 32      | Connection, including in-progress factories                 |
+| `maxPromptBytes`         | 10 MiB  | Aggregate text and encoded-image bytes per prompt           |
+| `maxTextBytes`           | 1 MiB   | UTF-8 text, including rendered resource references          |
+| `maxImageBytes`          | 5 MiB   | Decoded bytes per image                                     |
+| `maxContentBlocks`       | 256     | Blocks per prompt                                           |
+| `maxHistoryBytes`        | 16 MiB  | Private history and replay transcript (each, per session)   |
+| `maxHistoryMessages`     | 1,000   | Private history messages per session                        |
+| `maxPendingRequests`     | 16      | Outstanding permission/question/editor requests per session |
+| `maxConcurrentRequests`  | 64      | Incoming RPCs awaiting responses across the connection      |
+| `maxTerminalOutputBytes` | 1 MiB   | Editor retention request and terminal reply validation      |
+| `maxReplayBatchEntries`  | 10,000  | Display entries in one complete v1 load replay              |
+| `maxReplayBatchBytes`    | 16 MiB  | Serialized display entries in one complete v1 load replay   |
 
 Limit violations return `resource_limit` (`-32602`). The separate `maxMessageBytes` wire limit
 includes metadata and closes the connection on overflow. History uses an adapter-owned in-memory
@@ -633,6 +676,22 @@ A response that exceeds the history budget fails the prompt, preserving prior hi
 effects that already ran cannot be undone. A prompt that already exceeds the history budget is
 rejected before execution. Failed, blocked, suspended and exhausted runs preserve prior history only.
 Provider/tool transient allocations are not bounded by the stored-history budget.
+
+Concurrent RPC overflow or duplicate outstanding request IDs also closes the connection before
+SDK dispatch. Client replies and cancel notifications remain readable while prompt requests are
+pending. RPC slots release after response writes finish. The SDK and adapter await each streamed
+update; replay is also sent one update at a time, without an unbounded output queue.
+Malformed envelope replies share the capacity bound. Parser errors cannot free another request's
+slot. Cancelled outbound SDK requests settle locally and release their response entries even if
+the editor never replies; late responses cannot revive them.
+
+A v1 `session/load` is one replay batch, with no replay cursor. Both replay bounds are checked
+before rebuilding resources or sending updates; overflow returns `resource_limit`, with no partial
+replay. Silent `session/resume` does not replay and is unaffected. Adjacent stored text deltas merge
+up to 64 KiB of UTF-8 text per entry; live chunks and full replay text/order are preserved.
+
+An offline opt-in benchmark and recorded results are in [DESIGN.md](./DESIGN.md):
+`node --expose-gc --import tsx packages/acp/bench/stream.mjs` from the repository root.
 
 `maxSessions` bounds active sessions and factories. Use `session/close` to release capacity.
 Stored records have no automatic eviction; the host owns retention and disk quotas.

@@ -98,6 +98,12 @@ export type AcpLimits = Readonly<{
   maxHistoryBytes: number;
   maxHistoryMessages: number;
   maxPendingRequests: number;
+  /** Inbound RPCs awaiting a response, across the connection. */
+  maxConcurrentRequests: number;
+  maxTerminalOutputBytes: number;
+  /** One v1 session/load replay, checked before any replay is sent. */
+  maxReplayBatchEntries: number;
+  maxReplayBatchBytes: number;
 }>;
 
 /** Normalized editor declaration, validated before any server is started. */
@@ -113,11 +119,14 @@ export type AcpMcpServer = Readonly<
 >;
 
 export type AcpMcpOptions = Readonly<{
+  /** Privileged process launch. Requires authorizeServer approval too. Default: false. */
+  stdio?: boolean;
   /** Enable tested Streamable HTTP support and advertise it. Defaults to false. */
   http?: boolean;
   /** Exact URLs with host-approved IPs; no editor-controlled trust or DNS expansion. */
   trustedHttpEndpoints?: readonly Readonly<{ url: string; addresses: readonly string[] }>[];
-  /** Optional host restriction on privileged launch/connect configuration. Default: allow. */
+  /** Host approval for each declaration, before any connections. Must return true.
+   * Required for stdio; optional additional restriction for opt-in HTTP. */
   authorizeServer?: (
     server: AcpMcpServer,
     context: Readonly<{ cwd: string; signal: AbortSignal }>,
@@ -147,8 +156,10 @@ export type AcpOptions = Readonly<{
   embeddedContext?: boolean;
   /** Pure prompt expansions. Unknown slash commands remain ordinary user text. */
   commands?: readonly AcpCommand[];
-  /** Existing absolute directories; canonical containment is checked before calling the factory. */
+  /** Session admission roots. Does not widen editor file/terminal access beyond cwd. */
   workspaceRoots?: readonly string[];
+  /** Additional existing absolute directories accessible to editor tools. Privileged host policy. */
+  editorWorkspaceRoots?: readonly string[];
   /** Positive integer resource bounds. See README for defaults. */
   limits?: Partial<AcpLimits>;
 }>;

@@ -1,5 +1,10 @@
 # ACP 10 editor smoke verification
 
+ACP 14 changes the launch default: the dedicated bin rejects client stdio MCP. MCP smoke tests
+now use `fixtures/smoke-host.mjs`, with explicit executable/argv/env approval. The earlier manual
+MCP setup below needs an equivalently approved library host; it cannot grant launch authority
+through an editor declaration. No new GUI verification was run for ACP 14.
+
 Status: **automated sample checks pass; real-editor acceptance remains open**.
 This records repository verification, not a claim of compatibility certification.
 

@@ -99,7 +99,17 @@ it("restarts real processes, replays once with stable tool IDs, resumes silently
     .map((frame) => frame.params!.update);
   expect(replay).toEqual([
     { sessionUpdate: "user_message_chunk", content: { type: "text", text: "fixture:tools" } },
-    ...updates,
+    ...updates.slice(0, -2),
+    {
+      sessionUpdate: "agent_message_chunk",
+      content: {
+        type: "text",
+        text: updates
+          .slice(-2)
+          .map((update) => (update as { content: { text: string } }).content.text)
+          .join(""),
+      },
+    },
   ]);
   expect(second.stderr()).not.toContain("fixture generation");
   expect(second.stderr()).not.toContain("fixture tool executed");
@@ -214,7 +224,17 @@ it("replays terminal command presentation after restart without repeating editor
       .map((frame) => frame.params!.update),
   ).toEqual([
     { sessionUpdate: "user_message_chunk", content: { type: "text", text: "fixture:terminal" } },
-    ...updates,
+    ...updates.slice(0, -2),
+    {
+      sessionUpdate: "agent_message_chunk",
+      content: {
+        type: "text",
+        text: updates
+          .slice(-2)
+          .map((update) => (update as { content: { text: string } }).content.text)
+          .join(""),
+      },
+    },
   ]);
   expect(second.frames.some((frame) => frame.method?.startsWith("terminal/"))).toBe(false);
   expect(JSON.stringify(second.frames)).not.toContain("private terminal output");
@@ -297,7 +317,10 @@ it("keeps original input and visible output separate from private model history 
     replay.push(entry);
   });
   expect(JSON.stringify(replay)).not.toMatch(/private|opaque|signature/);
-  expect(replay).toHaveLength(3);
+  expect(replay).toEqual([
+    { type: "user", content: { type: "text", text: "/brief" } },
+    { type: "text", text: "public replysafe" },
+  ]);
 });
 
 it("distinguishes empty existing sessions from absent records; close retains data, delete removes it", async () => {

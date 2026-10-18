@@ -81,12 +81,20 @@ function binding(context: AcpSessionContext) {
   };
 }
 function manager(options: Partial<AcpOptions> = {}) {
-  const result = new SessionManager({ sessionFactory: binding, ...options });
+  const result = new SessionManager({
+    sessionFactory: binding,
+    mcp: { stdio: true, authorizeServer: () => true },
+    ...options,
+  });
   cleanup.push(() => result.close());
   return result;
 }
 async function peer(options: Partial<AcpOptions> = {}) {
-  const result = wireFixture({ sessionFactory: binding, ...options });
+  const result = wireFixture({
+    sessionFactory: binding,
+    mcp: { stdio: true, authorizeServer: () => true },
+    ...options,
+  });
   cleanup.push(() => result.connection.close());
   await result.request("initialize", { protocolVersion: 1 });
   return result;
@@ -171,13 +179,44 @@ it.each([
 
 it("authorizes all launches before spawning any child", async () => {
   const authorize = vi.fn((entry: { name: string }) => entry.name !== "denied");
-  const sessions = manager({ mcp: { authorizeServer: authorize } });
+  const sessions = manager({ mcp: { stdio: true, authorizeServer: authorize } });
   await expect(
     sessions.create(root, capabilities, [server(), server("denied")]),
   ).rejects.toMatchObject({ kind: "policy_denied" });
   expect(authorize).toHaveBeenCalledTimes(2);
   expect(Object.isFrozen(authorize.mock.calls[0]![0])).toBe(true);
   expect(await records()).toEqual([]);
+});
+
+it.each([
+  {},
+  { stdio: true },
+  { authorizeServer: () => true },
+  { stdio: true, authorizeServer: () => false },
+  { stdio: true, authorizeServer: () => "allow" as unknown as boolean },
+])("denies process launch unless the host opts in AND explicitly approves: %j", async (mcp) => {
+  const factory = vi.fn(binding);
+  const sessions = manager({ mcp, sessionFactory: factory });
+  await expect(sessions.create(root, capabilities, [server()])).rejects.toMatchObject({
+    kind: "policy_denied",
+  });
+  expect(factory).not.toHaveBeenCalled();
+  expect(await records()).toEqual([]);
+});
+
+it.each([
+  "http://127.0.0.1/mcp",
+  "http://localhost/mcp",
+  "http://10.1.2.3/mcp",
+  "http://169.254.169.254/mcp",
+  "http://[::1]/mcp",
+  "http://[::ffff:7f00:1]/mcp",
+  "http://[fd00:ec2::254]/mcp",
+])("reuses MCP URL safety for untrusted HTTP without reaching the network: %s", async (url) => {
+  const sessions = manager({ mcp: { http: true } });
+  await expect(
+    sessions.create(root, capabilities, [{ type: "http", name: "blocked", url, headers: [] }]),
+  ).rejects.toMatchObject({ kind: "configuration_error" });
 });
 
 it.each(["initialize-fail", "fail", "duplicate"])(

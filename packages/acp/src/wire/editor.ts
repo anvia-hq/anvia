@@ -18,14 +18,14 @@ export function editorClient(client: AgentContext): (sessionId: string) => Edito
         { cancellationSignal: signal },
       );
     },
-    create: async (command, args, cwd) =>
+    create: async (command, args, cwd, outputByteLimit) =>
       (
         await client.request("terminal/create", {
           sessionId,
           command,
           args,
           cwd,
-          outputByteLimit: 1024 * 1024,
+          outputByteLimit,
         })
       ).terminalId,
     wait: async (terminalId, signal) => {

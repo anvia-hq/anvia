@@ -2,9 +2,11 @@ import { spawn } from "node:child_process";
 import { once } from "node:events";
 import {
   cpSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -193,6 +195,43 @@ describe("built anvia acp", () => {
     expect(peer.stderr()).toContain("sessionFactory");
   });
 
+  it.each([
+    ["no policy", ""],
+    ["stdio opt-in only", "export const acpOptions = { mcp: { stdio: true } };"],
+    ["server approval only", "export const acpOptions = { mcp: { authorizeServer: () => true } };"],
+    [
+      "host denial",
+      "export const acpOptions = { mcp: { stdio: true, authorizeServer: () => false } };",
+    ],
+    [
+      "non-boolean approval",
+      'export const acpOptions = { mcp: { stdio: true, authorizeServer: () => "true" } };',
+    ],
+  ])("rejects client stdio MCP with %s without spawning", async (_name, policy) => {
+    const log = join(root, `denied-${nextModule}.log`);
+    const path = moduleFile(
+      `import agent from ${JSON.stringify(sample)}; export default agent; ${policy}`,
+    );
+    const peer = launch(["acp", "--agent", path]);
+    await peer.request("initialize", { protocolVersion: 1 });
+    expect(
+      await peer.request("session/new", {
+        cwd: root,
+        mcpServers: [
+          {
+            name: "fixture",
+            command: process.execPath,
+            args: [join(acpRoot, "test/fixtures/mcp-server.mjs")],
+            env: [{ name: "FIXTURE_LOG", value: log }],
+          },
+        ],
+      }),
+    ).toMatchObject({ error: { code: -32602, data: { kind: "policy_denied" } } });
+    expect(existsSync(log)).toBe(false);
+    peer.child.stdin!.end();
+    expect(await peer.closed).toEqual([0, null]);
+  });
+
   it.each(["SIGINT", "SIGTERM", "EOF"] as const)(
     "awaits session disposal and terminal/MCP process exit on %s",
     async (signal) => {
@@ -201,6 +240,21 @@ describe("built anvia acp", () => {
         import { spawn } from "node:child_process";
         import { once } from "node:events";
         import sample from ${JSON.stringify(sample)};
+        // Host launch approval is separate from tool approval; allow only this fixture tuple.
+        export const acpOptions = {
+          mcp: {
+            stdio: true,
+            authorizeServer: (server, { cwd }) =>
+              cwd === ${JSON.stringify(realpathSync(root))} &&
+              server.type === "stdio" &&
+              server.name === "fixture" &&
+              server.command === ${JSON.stringify(process.execPath)} &&
+              server.args.length === 1 &&
+              server.args[0] === ${JSON.stringify(join(acpRoot, "test/fixtures/mcp-server.mjs"))} &&
+              Object.keys(server.env).length === 1 &&
+              server.env.FIXTURE_LOG === ${JSON.stringify(log)},
+          },
+        };
         export const sessionFactory = (context) => {
           const terminal = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
           const terminalClosed = once(terminal, "close");

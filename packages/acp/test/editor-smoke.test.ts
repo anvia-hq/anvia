@@ -37,7 +37,7 @@ function textSince(after = 0) {
   });
 }
 async function setup(mcp = false) {
-  peer = stdioClient(cli, [sample]);
+  peer = mcp ? stdioClient("test/fixtures/smoke-host.mjs", []) : stdioClient(cli, [sample]);
   expect(await peer.request("initialize", { protocolVersion: 1 })).toMatchObject({
     result: { protocolVersion: 1, authMethods: [] },
   });
@@ -58,7 +58,7 @@ async function setup(mcp = false) {
   return (created.result as { sessionId: string }).sessionId;
 }
 
-describe("editor smoke sample through the ACP bin (fixture client, not an editor)", () => {
+describe("editor smoke sample over stdio (fixture client, not an editor)", () => {
   it("streams multiple turns, requires each approval, rejects without execution and isolates sessions", async () => {
     const id = await setup();
     const first = peer!.start("session/prompt", prompt(id, "hello"));

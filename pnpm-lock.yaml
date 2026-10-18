@@ -63,6 +63,9 @@ importers:
 
   cookbook:
     dependencies:
+      '@anvia/acp':
+        specifier: workspace:*
+        version: link:../packages/acp
       '@anvia/anthropic':
         specifier: workspace:*
         version: link:../packages/provider-anthropic

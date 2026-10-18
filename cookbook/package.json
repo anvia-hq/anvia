@@ -106,6 +106,7 @@
     "integrations:06": "tsx -r dotenv/config 10_integrations/06-agent-logging.ts dotenv_config_path=../.env",
     "integrations:07": "tsx -r dotenv/config 10_integrations/07-console-logging.ts dotenv_config_path=../.env",
     "integrations:08": "tsx -r dotenv/config 10_integrations/08-lens-native.ts dotenv_config_path=../.env",
+    "integrations:09": "node ../packages/acp/dist/cli.js 10_integrations/09-acp-zed-agent.ts",
     "basic": "tsx -r dotenv/config 01_basics/01-text-call.ts dotenv_config_path=../.env",
     "basic:01": "tsx -r dotenv/config 01_basics/01-text-call.ts dotenv_config_path=../.env",
     "basic:02": "tsx -r dotenv/config 01_basics/02-conversation-memory.ts dotenv_config_path=../.env",
@@ -162,6 +163,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@anvia/acp": "workspace:*",
     "@anvia/anthropic": "workspace:*",
     "@anvia/browser": "workspace:*",
     "@anvia/chroma": "workspace:*",

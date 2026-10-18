@@ -5,6 +5,7 @@ These guides contain the longer API examples, configuration details, and operati
 
 | Package                  | Overview                                                  | Guide                                |
 | ------------------------ | --------------------------------------------------------- | ------------------------------------ |
+| `@anvia/acp`             | [README](../../packages/acp/README.md)                    | [Guide](./acp.md)                    |
 | `@anvia/cli`             | [README](../../packages/cli/README.md)                    | [Guide](./cli.md)                    |
 | `@anvia/client`          | [README](../../packages/client/README.md)                 | [Guide](./client.md)                 |
 | `@anvia/core`            | [README](../../packages/core/README.md)                   | [Guide](./core.md)                   |

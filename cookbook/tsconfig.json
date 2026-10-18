@@ -3,10 +3,12 @@
   "compilerOptions": {
     "baseUrl": ".",
     "noEmit": true,
+    "allowImportingTsExtensions": true,
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "jsx": "react-jsx",
     "jsxImportSource": "hono/jsx",
     "paths": {
+      "@anvia/acp": ["../packages/acp"],
       "@anvia/anthropic": ["../packages/provider-anthropic/src/index.ts"],
       "@anvia/chroma": ["../packages/vector-chroma/src/index.ts"],
       "@anvia/core": ["../packages/core/src/index.ts"],

@@ -274,9 +274,9 @@ export function connectV1(stream: Stream, sessions: SessionManager, options: Acp
         ),
       }));
     })
-    .onNotification("session/cancel", ({ params }) => {
+    .onNotification("session/cancel", async ({ params }) => {
       // Session cancellation is independent of the SDK's $/cancel_request signal.
-      if (initialized) sessions.cancel(params.sessionId);
+      if (initialized) await respond(() => sessions.cancel(params.sessionId));
     })
     .connect(stream);
 }

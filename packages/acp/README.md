@@ -486,8 +486,8 @@ pagination and scope data to the host's user; ACP authentication remains a no-op
 - `session/delete` closes active work and removes the record, its private history and its transcript.
   Repeated/unknown deletes succeed. A deleted session cannot be loaded or resumed.
 
-Only completed turns commit; interrupted turns, pending approvals and continuations are not
-execution checkpoints. Restoring cannot undo side effects from a turn interrupted before commit.
+For the default ephemeral driver, only completed turns commit; interrupted turns, pending approvals
+and continuations are not execution checkpoints. Restoring cannot undo side effects from a turn interrupted before commit.
 Starting an atomic store write is the completion boundary: a later cancellation cannot abandon it.
 A failed write reports an error and preserves prior history/config, although live output may already
 have been displayed. Replay excludes all reasoning (even live opt-in plaintext), system prompts,
@@ -502,6 +502,74 @@ Malformed known transcript fields reject restore before any history is sent.
 The default store implements and advertises load, resume, list, close and delete. Disk persistence
 is not implied by these capabilities. See [DESIGN.md](./DESIGN.md) for proposed decisions and
 [test/CONFORMANCE.md](./test/CONFORMANCE.md) for automated coverage and the GUI follow-up checklist.
+
+## Durable sessions (optional)
+
+Use `@anvia/acp/durable` with `@anvia/durable` installed and Node.js 22.16+. The base adapter
+has no runtime dependency on durable. Create one host-owned runtime per database, register each
+binding once, and reuse it from the session factory:
+
+```ts
+import { FileAcpSessionStore } from "@anvia/acp";
+import { createDurableSessionBinding } from "@anvia/acp/durable";
+import { serveStdio } from "@anvia/acp/stdio";
+import { DurableRuntime } from "@anvia/durable";
+import { SqliteDurableStore } from "@anvia/durable/sqlite";
+import { agent } from "./agent.js"; // Static tools, no memory or connection-owned resources.
+
+const runtime = await DurableRuntime.open({
+  store: new SqliteDurableStore("/absolute/private-app-data/runs.sqlite"),
+});
+const binding = createDurableSessionBinding(runtime, {
+  agent,
+  version: "assistant-v1", // Change when model/instructions/tools change incompatibly.
+  // Unlisted tools use manual recovery. No effect is automatically classified as safe.
+});
+await runtime.resume();
+const connection = serveStdio({
+  sessionFactory: () => binding,
+  sessionStore: new FileAcpSessionStore("/absolute/private-app-data/acp-sessions.json"),
+});
+await connection.closed;
+await runtime.close(); // Host shutdown preserves unfinished checkpoints for the next startup.
+```
+
+Keep both stores under the same single-owner supervision and backup/retention policy. Do not
+replace/delete the runtime database independently of ACP records or submit other work into
+ACP-owned runtime session IDs. File persistence is required for ACP IDs to survive process restart.
+A durable session cannot be restored through an ephemeral factory or a different registration key.
+
+No durable registration restrictions are lifted: memory, lifecycle callbacks, middleware,
+guardrails, context sources, MCP servers, provider tools and tool indexes remain unsupported.
+ACP additionally rejects connection-owned editor tools, binding `dispose`, `turnBudget`, and config
+changes. Local static tools must own resources that survive detachment. The runtime persists the
+agent's model-turn limit; exhaustion returns `max_turn_requests`, preserves prior committed history,
+and settles pending work so the next prompt can start. ACP's ephemeral time/cost budgets are unavailable.
+
+- EOF, connection close and durable `session/close` detach. Execution may continue and approvals
+  stay pending. Ephemeral sessions abort on close. Only the host shuts down the runtime.
+- Load/resume restores the session and committed display history as described above. Attach to an
+  unfinished turn with `session/prompt` and `prompt: []`; new nonempty content returns `session_busy`.
+  An empty prompt without pending work is invalid. Reattachment may display uncommitted text again;
+  tool IDs are stable. This convention still needs real-editor UX verification.
+- Approvals/questions use the existing editor interaction UI and durable `respond()`. Late replies
+  after detach are ignored. Display uses committed interaction/final outcomes, not token deltas,
+  partial failed attempts, reasoning, or private journal payloads.
+- `session/cancel` cancels a loaded pending run even without an attached prompt. It does not undo
+  effects. A completed result awaiting an ACP store write stays recoverable. Delete requires
+  pending work to be cancelled or settled first and removes only ACP records, not durable journals.
+
+Built-in editor `fs/write_text_file` and `terminal/create` are rejected by this subset, so they cannot
+be silently replayed. For host-owned effect tools, keep `toolRecovery` at `manual` unless the external
+service really deduplicates `context.operationId`; only then choose `idempotent`. Use `safe` only
+for repeatable reads/pure work. Completed results are reused under all three policies. An
+interrupted manual effect reports the fixed error kind `recovery_required` and keeps its turn.
+The authorized host operator inspects the run and actual external receipt, then calls
+`run.resolveTool(blockedOperation, verifiedOutput)`; the editor cannot perform this reconciliation.
+Explicit host `retry()` can recover compatible failed work. No automatic retry or fabricated result
+is used. If completed output exceeds ACP history/transcript bounds, raise those limits and reattach;
+cancellation cannot discard the completed result. See
+[DESIGN.md](./DESIGN.md#acp-12-implementation-status) for boundaries and the remaining editor UX decision.
 
 ## Resource bounds
 

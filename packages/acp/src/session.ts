@@ -42,6 +42,7 @@ export class AcpSession {
   private record: AcpSessionRecord | undefined;
   private updating: Promise<void> | undefined;
   private closing: Promise<void> | undefined;
+  private cancelling: Promise<void> | undefined;
 
   constructor(
     public context: AcpSessionContext,
@@ -72,7 +73,8 @@ export class AcpSession {
     client?: InteractionClient,
   ): Promise<TurnStopReason> {
     if (this.controller.signal.aborted) return Promise.reject(new AcpError("connection_closed"));
-    if (this.activeTurn || this.updating) return Promise.reject(new AcpError("session_busy"));
+    if (this.activeTurn || this.updating || this.cancelling)
+      return Promise.reject(new AcpError("session_busy"));
     // Reserve synchronously, including history loading and content conversion. The
     // turn object is its identity: a cancelled run never shares state with a new run.
     const turn: ActiveTurn = {
@@ -141,7 +143,11 @@ export class AcpSession {
   }
 
   get busy(): boolean {
-    return this.activeTurn !== undefined || this.updating !== undefined;
+    return this.activeTurn !== undefined || this.updating !== undefined || !!this.cancelling;
+  }
+
+  get durable(): boolean {
+    return this.binding.driver !== undefined;
   }
 
   get configOptions() {
@@ -150,6 +156,7 @@ export class AcpSession {
 
   setConfig(id: string, value: unknown): Promise<void> {
     if (this.controller.signal.aborted) return Promise.reject(new AcpError("connection_closed"));
+    if (this.durable) return Promise.reject(new AcpError("invalid_config"));
     if (this.updating) return Promise.reject(new AcpError("session_busy"));
     const features = this.features;
     if (!features) return Promise.reject(new AcpError("invalid_config"));
@@ -170,6 +177,7 @@ export class AcpSession {
         await next.binding.dispose?.();
         throw new AcpError("connection_closed");
       }
+      if (next.binding.driver) throw new AcpError("configuration_error");
       try {
         await this.persist({ config });
       } catch (error) {
@@ -206,14 +214,31 @@ export class AcpSession {
     this.record = next;
   }
 
-  cancel(): void {
+  cancel(): Promise<void> {
+    if (this.cancelling) return this.cancelling;
     const turn = this.activeTurn;
-    if (!turn || turn.finished || turn.cancelled) return;
-    turn.cancelled = true;
-    const reason = new AgentRunCancelledError([], "ACP prompt cancelled.");
-    this.pendingRequests.close(reason);
-    turn.controller.abort(reason);
-    turn.stream?.cancel("ACP prompt cancelled.");
+    if (turn?.finished) return Promise.resolve();
+    if (turn && !turn.cancelled) {
+      turn.cancelled = true;
+      const reason = new AgentRunCancelledError([], "ACP prompt cancelled.");
+      this.pendingRequests.close(reason);
+      turn.controller.abort(reason);
+      turn.stream?.cancel("ACP prompt cancelled.");
+    }
+    const driver = this.binding.driver;
+    if (!driver) return Promise.resolve();
+    // Wait for a possible in-flight write-ahead save before cancelling its submission.
+    this.cancelling = (async () => {
+      await this.activePrompt;
+      const pending = this.record?.pendingRun;
+      if (pending) {
+        if ((await driver.cancel(this.context.sessionId, pending.requestId)) === "cancelled")
+          await this.persist({ pendingRun: undefined });
+      }
+    })().finally(() => {
+      this.cancelling = undefined;
+    });
+    return this.cancelling;
   }
 
   close(): Promise<void> {
@@ -228,6 +253,7 @@ export class AcpSession {
   private async dispose(): Promise<void> {
     // Do not dispose resources while an uncooperative tool is still using them.
     await this.activePrompt?.catch(() => undefined);
+    await this.cancelling?.catch(() => undefined);
     await this.updating?.catch(() => undefined);
     await this.memory.clear({ scope: { sessionId: this.context.sessionId } });
     try {
@@ -246,6 +272,7 @@ export class AcpSession {
     client?: InteractionClient,
   ): Promise<TurnStopReason> {
     try {
+      if (this.binding.driver) return await this.runDurable(blocks, send, turn, requests, client);
       // Validate the original payload as well as any trusted command expansion.
       let prompt = convertPrompt(blocks, this.limits, this.images, this.features?.embeddedContext);
       if (blocks.length === 1 && blocks[0]?.type === "text") {
@@ -373,5 +400,102 @@ export class AcpSession {
       if (error instanceof MaxTurnsError) return "max_turn_requests";
       throw new AcpError("execution_failed");
     }
+  }
+
+  private async runDurable(
+    blocks: readonly PromptBlock[],
+    send: UpdateSink,
+    turn: ActiveTurn,
+    requests: PendingRequests,
+    client?: InteractionClient,
+  ): Promise<TurnStopReason> {
+    const driver = this.binding.driver!;
+    if (!this.features?.persistence) throw new AcpError("configuration_error");
+    let pending = this.record?.pendingRun;
+    if (pending && blocks.length !== 0) throw new AcpError("session_busy");
+    if (!pending) {
+      let prompt = convertPrompt(blocks, this.limits, this.images, this.features?.embeddedContext);
+      if (blocks.length === 1 && blocks[0]?.type === "text") {
+        const match = /^\/([a-z][a-z0-9_-]*)(?:\s+([\s\S]*))?$/.exec(blocks[0].text);
+        const command =
+          match && this.features?.configuration.commands.find((c) => c.name === match[1]);
+        if (command) {
+          const expanded = command.expand(match?.[2] ?? "", this.context);
+          if (typeof expanded !== "string") throw new AcpError("configuration_error");
+          prompt = convertPrompt([{ type: "text", text: expanded }], this.limits, this.images);
+        }
+      }
+      this.memory.assertFits([...(this.record?.messages ?? []), prompt]);
+      pending = { requestId: randomUUID(), prompt, blocks: structuredClone(blocks) };
+      // Persist before submit. Re-delivery after either store commit uses this same request ID.
+      turn.controller.signal.throwIfAborted();
+      await this.persist({ pendingRun: pending });
+    }
+    const transcript = new Transcript(
+      this.context.cwd,
+      this.limits.maxHistoryBytes,
+      this.record?.transcript,
+    );
+    for (const block of pending.blocks) {
+      if (block.type !== "unsupported") transcript.add({ type: "user", content: block });
+    }
+    let nextId = 0;
+    const events = new TurnEvents(
+      () => `${this.context.sessionId}:${pending.requestId}:${++nextId}`,
+      this.context.cwd,
+      this.binding,
+      false,
+      async (update) => {
+        turn.controller.signal.throwIfAborted();
+        transcript.add(update);
+        turn.sending = send(update);
+        await turn.sending;
+      },
+      turn.controller.signal,
+    );
+    const result = await driver.execute({
+      sessionId: this.context.sessionId,
+      pending,
+      historyLength: this.record?.messages.length ?? 0,
+      signal: turn.controller.signal,
+      project: (outcome) => events.completed(outcome),
+      interact: async (outcome) => {
+        const response = await requestInteraction(
+          outcome,
+          events,
+          requests,
+          client,
+          this.context.clientCapabilities.elicitationForm,
+        );
+        events.beginSegment();
+        return response;
+      },
+    });
+    turn.controller.signal.throwIfAborted();
+    if (result === "cancelled" || result === "max_turn_requests") {
+      turn.finished = true;
+      await this.persist({ pendingRun: undefined });
+      return result;
+    }
+    this.memory.assertFits(result.messages);
+    turn.finished = true;
+    await this.persist({
+      pendingRun: undefined,
+      messages: result.messages,
+      transcript: transcript.entries,
+      title:
+        this.record?.messages.length === 0
+          ? pending.blocks
+              .find((block) => block.type === "text")
+              ?.text.replace(/\p{Cc}/gu, " ")
+              .trim()
+              .slice(0, 200) || "Untitled session"
+          : (this.record?.title ?? "Untitled session"),
+    });
+    const outcome = result.outcome;
+    if (outcome.type === "blocked") return "refusal";
+    if (outcome.type === "response" && outcome.finishReason === "length") return "max_tokens";
+    if (outcome.type === "response" && outcome.finishReason === "content-filter") return "refusal";
+    return "end_turn";
   }
 }

@@ -145,7 +145,7 @@ export class TurnEvents {
   }
 
   /** Completion-only models have no stream; project this run's public messages once. */
-  async completed(outcome: AgentOutcome): Promise<void> {
+  async completed(outcome: AgentOutcome<unknown>): Promise<void> {
     if (outcome.type === "blocked") return;
     let turn = 0;
     for (const message of outcome.messages) {

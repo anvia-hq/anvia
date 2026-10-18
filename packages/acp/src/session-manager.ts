@@ -1,4 +1,5 @@
 import { SessionConfiguration } from "./config.js";
+import { convertPrompt } from "./content.js";
 import { createEditorTools, editorPresentation, type EditorClient } from "./editor-tools.js";
 import { Agent } from "@anvia/core/agent";
 import { randomUUID } from "node:crypto";
@@ -128,7 +129,7 @@ export class SessionManager {
         await this.stored(sessionId);
         return;
       }
-      session.cancel();
+      if (!session.durable) await session.cancel();
       try {
         await session.close();
       } finally {
@@ -141,14 +142,18 @@ export class SessionManager {
     if (!this.store.delete) return Promise.reject(new AcpError("unsupported_session_operation"));
     return this.exclusive(sessionId, async () => {
       try {
-        await this.stored(sessionId);
+        const record = await this.stored(sessionId);
+        if (record.pendingRun) throw new AcpError("session_busy");
       } catch (error) {
         if (error instanceof AcpError && error.kind === "session_not_found") return;
         throw error;
       }
       const session = this.sessions.get(sessionId);
       if (session) {
-        session.cancel();
+        await session.cancel();
+        // Cancellation can retain a completed durable result awaiting its ACP commit.
+        // Re-read after settling a turn that may have started during the initial read.
+        if ((await this.stored(sessionId)).pendingRun) throw new AcpError("session_busy");
         try {
           await session.close();
         } finally {
@@ -212,7 +217,11 @@ export class SessionManager {
     this.configuration.change(record.config, "mode", record.config.mode);
     if (record.config.model !== undefined)
       this.configuration.change(record.config, "model", record.config.model);
-    new SessionMemory(sessionId, this.limits, record.messages);
+    const memory = new SessionMemory(sessionId, this.limits, record.messages);
+    if (record.pendingRun) {
+      convertPrompt(record.pendingRun.blocks, this.limits, this.images, this.embeddedContext);
+      memory.assertFits([...record.messages, record.pendingRun.prompt]);
+    }
     const transcript = new Transcript(cwd, this.limits.maxHistoryBytes, record.transcript).entries;
     return structuredClone({ ...record, transcript });
   }
@@ -251,8 +260,8 @@ export class SessionManager {
     return session;
   }
 
-  cancel(sessionId: string): void {
-    this.sessions.get(sessionId)?.cancel();
+  async cancel(sessionId: string): Promise<void> {
+    await this.sessions.get(sessionId)?.cancel();
   }
 
   close(): Promise<void> {
@@ -275,7 +284,7 @@ export class SessionManager {
     try {
       const result = await this.factory(context);
       // A reused agent remains owned by its original binding.
-      if (result?.agent instanceof Agent && this.agents.has(result.agent))
+      if (result?.agent instanceof Agent && !result.driver && this.agents.has(result.agent))
         throw new AcpError("configuration_error");
       binding = result;
       if (
@@ -285,6 +294,17 @@ export class SessionManager {
       )
         throw new AcpError("configuration_error");
       const agent = binding.agent;
+      if (
+        binding.driver &&
+        (!binding.driver.key ||
+          typeof binding.driver.execute !== "function" ||
+          typeof binding.driver.cancel !== "function" ||
+          binding.turnBudget !== undefined ||
+          binding.dispose !== undefined ||
+          context.editorTools.length > 0 ||
+          context.mcpServers.length > 0)
+      )
+        throw new AcpError("configuration_error");
       this.agents.add(agent);
       validateTurnBudget(binding.turnBudget);
       assertMcpRegistration(agent, context.mcpServers);
@@ -386,9 +406,11 @@ export class SessionManager {
         restored ? Object.freeze({ ...restored.config }) : this.configuration.initial(),
       );
       binding = initial.binding;
+      if (restored && restored.driverKey !== binding.driver?.key)
+        throw new AcpError("configuration_error");
       if (this.closed || controller.signal.aborted) throw new AcpError("connection_closed");
       const now = new Date().toISOString();
-      const record: AcpSessionRecord = restored ?? {
+      let record: AcpSessionRecord = restored ?? {
         version: 1,
         sessionId,
         cwd: canonicalCwd,
@@ -400,6 +422,7 @@ export class SessionManager {
         messages: [],
         transcript: [],
       };
+      if (!restored && binding.driver) record = { ...record, driverKey: binding.driver.key };
       if (!restored) await this.store.put(record);
       if (this.closed || controller.signal.aborted) throw new AcpError("connection_closed");
       session = new AcpSession(

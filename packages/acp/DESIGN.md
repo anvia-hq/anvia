@@ -10,6 +10,96 @@ plaintext reasoning. ACP 05 adds per-turn cancellation. ACP 06 adds approval/que
 are implementation targets, not claims of editor compatibility. Later tasks own session
 execution and optional capabilities.
 
+### ACP 12 implementation status
+
+`@anvia/acp/durable` exports `createDurableSessionBinding(runtime, registration)`. It registers a
+static agent once on a host-owned `DurableRuntime` and returns a reusable session-factory binding.
+The default factory binding still uses ephemeral execution. The base adapter imports no durable
+runtime code; durable is an optional peer plus a development dependency, with a separate export.
+No changes to `packages/durable` or core execution internals are required.
+
+Registration limits lifted: **none**. The following limits remain enforced by runtime registration:
+
+| Kept limit          | Reason                                                                                                                                                                            |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Agent memory        | Durable history owns ordering and recovery; a second memory writer has no atomic checkpoint boundary. ACP's store is a separate presentation/submission record, not agent memory. |
+| Lifecycle callbacks | Effects in callbacks could repeat during reconstruction.                                                                                                                          |
+| Middleware          | Request rewrites and effects are not independently checkpointed.                                                                                                                  |
+| Guardrails          | Their callbacks and external checks lack replay boundaries.                                                                                                                       |
+| Context sources     | Re-running a source can change saved model input or repeat effects.                                                                                                               |
+| MCP servers         | Connection-owned catalogs and calls cannot be reconstructed as static, journaled tools.                                                                                           |
+| Provider tools      | Remote provider effects have no independently reconciled tool intent.                                                                                                             |
+| Tool indexes        | Dynamic discovery and tool identity need their own persisted boundaries.                                                                                                          |
+
+Implementation defaults — editor attachment UX remains pending product review:
+
+- Support static local tools/instructions, host-owned models, persisted approval/question responses,
+  and optional durable model streaming. Reject ACP connection-owned editor tools (including reads),
+  editor MCP bindings, binding disposers and `turnBudget`. Reject config changes on durable sessions.
+  Runtime registrations and tool resources must outlive connections; do not close over connection
+  signals or disguise unsupported integrations in local callbacks. Keep schemas, definitions and
+  approval predicates pure; repeatable observability callbacks must not own business effects.
+  Agent `maxTurns` is persisted and enforced by durable; ephemeral time/cost middleware is not
+  silently applied or ignored.
+- Keep built-in `fs/write_text_file` and `terminal/create` unavailable in durable bindings. They have
+  no editor idempotency contract and their callbacks/resources belong to a connection. The adapter
+  cannot silently repeat them. Host-owned static effect tools default to `ToolRecovery: "manual"`. Classify
+  pure/repeatable reads as `safe`, and use `idempotent` only when the actual service deduplicates
+  `ToolCallContext.operationId`. A policy label alone does not make an operation idempotent.
+- Before submission, atomically save a private `pendingRun` containing a fresh request ID, converted
+  prompt and original display blocks in ACP 11's record. Deduplicate submission with that ID and
+  the ACP session ID. A crash before submission can safely submit later; a crash after submission
+  or before final ACP commit reopens the same run. Durable is authoritative for model history and
+  effects. ACP commits full canonical history and allowlisted transcript together, then removes
+  the pending record. An ACP save failure retains the pending record and cannot rerun effects.
+- Fence restore with a persisted driver/agent/version key. No automatic ephemeral-to-durable
+  migration (including through a config rebuild) or registration-version migration. Keep both stores
+  and their exclusive ownership together; deleting, independently restoring or reusing the runtime
+  journal while keeping ACP records is unsupported. Do not submit/steer unrelated work into
+  ACP-owned runtime session IDs.
+- `session/load` replays completed ACP history; `session/resume` is silent. Both rebuild the binding
+  without approving/submitting work. A host's startup `runtime.resume()` may independently resume
+  saved executable work. To attach to a pending turn, send `session/prompt` with `prompt: []`.
+  Nonempty input returns `session_busy` until the pending turn is settled or explicitly cancelled.
+  No pending turn means empty input is still invalid. This explicit attachment convention needs
+  editor UX verification; do not discard a new user message or treat it as implicit approval.
+- Read an atomic snapshot, then subscribe with `run.stream({ after: snapshot.cursor })`. Project
+  committed interaction/final outcomes only, never partial model attempts or raw journal events.
+  Deliver authorized decisions through `run.respond()`, never core continuation APIs. A late reply
+  after detach cannot write a decision. Reattachment reconstructs the uncommitted turn's display
+  with stable request-scoped tool IDs; its text may be displayed again. It does not offer exactly-once
+  display across disconnects. Completed load replay keeps the ACP 11 guarantees.
+- Transport EOF/close and durable `session/close` **detach**, leaving execution/waits/checkpoints
+  intact. Ephemeral close still aborts execution. `session/cancel` explicitly cancels the durable
+  run, including a restored idle pending turn; it cannot undo effects. Cancellation cannot discard
+  a completed runtime result awaiting ACP commit. Host shutdown calls `runtime.close()`, which
+  aborts attempts while retaining checkpoints; after restart the host registers compatible code
+  and calls `resume()`. Disconnecting an ACP subscriber never closes the shared runtime.
+- Return sanitized `recovery_required` for `needs_attention`; retain the pending turn. Only a host
+  operator can inspect private snapshots and reconcile verified results with `resolveTool()` or
+  explicitly retry compatible failed work. Approval is not reconciliation. No automatic retry or
+  fabricated success. Failed turns also stay pending until host recovery or explicit cancellation,
+  except persisted model-turn exhaustion: return `max_turn_requests`, clear the pending submission,
+  preserve prior committed history and allow the next prompt. The failed journal remains available
+  to the host.
+- Reject deletion while a pending turn exists: restore, explicitly cancel/settle it, then delete.
+  Recheck after cancellation so a concurrent turn or failed final save cannot lose its pending record.
+  Deleting ACP history does not delete durable journals. The host owns retention, access control,
+  encryption, capacity limits and coordinated backups for both stores. Runtime admission and
+  history limits remain host responsibilities; ACP checks its own prompt/history/transcript bounds.
+  If completed output exceeds those bounds, raise the ACP limits and reattach; cancellation does
+  not truncate or discard a completed durable result.
+
+Tests cover multi-turn canonical history, pending approval detach and stale grants, stable tool IDs,
+multiple approval segments with reused provider IDs, persisted questions, write-ahead/final-save
+failures, deletion races, cancellation, registration/config fences and committed-only streaming retries.
+`test/durable.test.ts` covers completed/manual/idempotent recovery and stable operation IDs.
+`test/durable-process.test.ts` and `test/fixtures/durable-process.mjs` use real subprocess SIGKILL
+tests to reopen both file/SQLite stores at approval, completed-effect and ambiguous-effect boundaries.
+An idempotent crash case verifies two attempts with the same operation ID produce one external effect.
+The normal server stdout remains protocol-only; snapshot errors, arguments/results and continuations
+are never forwarded. ACP 16 should document this API/subset and the explicit reattachment convention.
+
 ### ACP 11 implementation status
 
 Session lifecycle RPCs now use an adapter-owned `AcpSessionStore` alongside the existing
@@ -470,7 +560,7 @@ separately. These decisions are explicit defaults for implementation, not comple
 | Cross-process restore        | Not required for the first v1 MVP. No load/resume/list/close/delete advertisement until ACP 11 implements and tests each operation. Persistent history does not imply resumable execution.                                                                                                                                                                                     |
 | Permissions                  | Offer `allow_once` and `reject_once` only. No “always” grant cache, across either turns or sessions. Application tools retain `requiresApproval`; editor and client-supplied MCP tools require approval by default.                                                                                                                                                            |
 | Concurrency                  | One active prompt per session; reject overlapping prompts rather than queueing. Different sessions may run concurrently with isolated cwd, histories, callbacks, and tool IDs.                                                                                                                                                                                                 |
-| Runtime                      | Direct `Agent.stream()` driver first. Durable execution, a client-side adapter, remote transport, and the `anvia acp` CLI command are later tasks.                                                                                                                                                                                                                             |
+| Runtime                      | Direct `Agent.stream()` / `generate()` by default; optional durable binding in ACP 12. A client-side adapter, remote transport, and the `anvia acp` CLI command remain later tasks.                                                                                                                                                                                            |
 | Content/privacy              | Text and resource-link references by default; images are an explicit host opt-in from ACP 03. Embedded context and audio remain unsupported. Suppress reasoning by default; ACP 04 permits explicit plaintext live-update opt-in. Never expose signatures or replay reasoning.                                                                                                 |
 
 An application can provide trusted custom tools that do arbitrary work. This adapter is not
@@ -597,7 +687,7 @@ Absent optional capabilities mean unsupported; no optimistic probing or silent d
 | `elicitation/create`                             | ACP 06: validated forms for capable clients     | Without form support: `unsupported_interaction`; no fabricated answers or stdin prompts                                  |
 | `loadSession`                                    | `true`                                          | ACP 11: safe replay without model/tool execution                                                                         |
 | `sessionCapabilities.resume/list/close/delete`   | Supported; list/delete gated by store methods   | ACP 11: advertise each only with working store semantics                                                                 |
-| v2 / remote transports / durable driver          | Unavailable                                     | Separate adapters/tasks, never implicit fallback                                                                         |
+| v2 / remote transports                           | Unavailable                                     | Separate adapters/tasks, never implicit fallback                                                                         |
 
 The original MVP `initialize` response had `protocolVersion: 1`, `authMethods: []`,
 `loadSession: false`, all three optional prompt flags false, both optional MCP flags false,
@@ -775,7 +865,7 @@ Relevant existing contracts:
   [client group ownership](../mcp/src/client-group.ts),
   [tool conversion](../mcp/src/tool.ts), and [URL safety](../mcp/src/url-safety.ts).
 - [Durable registration restrictions](../durable/src/registration.ts): memory, middleware,
-  guardrails, and MCP currently need additional checkpoint support. No durable claim in the MVP.
+  guardrails, and MCP currently need additional checkpoint support. The optional ACP 12 driver preserves these restrictions.
 
 ## Implementation verification handoff
 

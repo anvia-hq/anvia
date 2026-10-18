@@ -1,4 +1,5 @@
 import type { Message } from "@anvia/core/completion";
+import { messageSchema } from "@anvia/core/completion";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, relative, sep } from "node:path";
@@ -22,6 +23,9 @@ export type AcpSessionRecord = AcpSessionInfo &
     nextToolId: number;
     messages: readonly Message[];
     transcript: readonly AcpTranscriptEntry[];
+    /** Execution identity fences restores against a different driver/registration. */
+    driverKey?: string;
+    pendingRun?: import("./driver.js").AcpPendingRun | undefined;
   }>;
 
 export type AcpSessionPage = {
@@ -75,7 +79,7 @@ export class InMemoryAcpSessionStore implements AcpSessionStore {
 /**
  * Opt-in JSON snapshot storage for a single local host. Atomic rename, 0600 files, 0700
  * newly created directories. Caller owns retention, encryption/backups and exclusive access.
- * Not an execution checkpoint: interrupted turns and pending approvals are never restored.
+ * Execution checkpoints/approvals live in a separate durable journal when that driver is used.
  */
 export class FileAcpSessionStore implements AcpSessionStore {
   private queue: Promise<unknown> = Promise.resolve();
@@ -166,6 +170,16 @@ export function validateRecord(value: unknown): asserts value is AcpSessionRecor
     record.nextToolId < 0 ||
     !Array.isArray(record.messages) ||
     !Array.isArray(record.transcript) ||
+    (record.driverKey !== undefined &&
+      (typeof record.driverKey !== "string" || !record.driverKey)) ||
+    (record.pendingRun !== undefined &&
+      (!record.driverKey ||
+        typeof record.pendingRun.requestId !== "string" ||
+        !record.pendingRun.requestId ||
+        record.pendingRun.prompt?.role !== "user" ||
+        !messageSchema.safeParse(record.pendingRun.prompt).success ||
+        !Array.isArray(record.pendingRun.blocks) ||
+        record.pendingRun.blocks.length === 0)) ||
     record.messages.some(
       (message) =>
         !message ||

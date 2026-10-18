@@ -36,6 +36,16 @@ The ACP 11 review adds actual terminal command replay across processes (without 
 callbacks or raw output), malformed stored display fields, and cancelled-turn tool ID collisions
 after silent resume. Those regressions failed before their fixes.
 
+ACP 12's `durable.test.ts` checks pending approval detach/stale replies, multiple approval segments,
+persisted questions, completed/manual/idempotent effect recovery, stable operation IDs, final-save
+and deletion races, registration/config fences, editor-tool rejection and committed-only streaming
+retries. `durable-process.test.ts` uses `fixtures/durable-process.mjs` to SIGKILL and restart the
+host at approval, completed-effect and ambiguous-effect boundaries. The idempotent case verifies
+that two attempts use the same key and a deduplicating service applies the external effect once.
+Disconnect tests distinguish durable detachment from ephemeral cancellation. These tests require
+Node.js 22.16+ and local SQLite, without model services or localhost listeners. The durable empty
+prompt attachment convention still needs real-editor verification.
+
 `types.ts` is checked by the package TypeScript build and typed tests; it has no runtime behavior.
 This map records behavioral coverage, not a claim of exhaustive branch or line coverage.
 

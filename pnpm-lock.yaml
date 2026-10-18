@@ -182,6 +182,9 @@ importers:
       '@anvia/core':
         specifier: workspace:*
         version: link:../core
+      '@anvia/durable':
+        specifier: workspace:*
+        version: link:../durable
       '@types/node':
         specifier: ^24.9.1
         version: 24.12.2

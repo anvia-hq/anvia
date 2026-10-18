@@ -68,6 +68,8 @@ export type AcpTurnBudget = Readonly<{
 
 export type AcpSessionBinding = Readonly<{
   agent: Agent;
+  /** Created by @anvia/acp/durable; omitted for ephemeral execution. */
+  driver?: import("./driver.js").AcpDurableDriver;
   turnBudget?: AcpTurnBudget;
   /** In read-only mode, every non-editor tool must be explicitly classified here.
    * The host must also exclude provider-side effects and dynamic execution paths. */
@@ -123,7 +125,7 @@ export type AcpMcpOptions = Readonly<{
 }>;
 
 export type AcpOptions = Readonly<{
-  /** Called for session creation, restore and config changes. Return a fresh Agent each time. */
+  /** Return a fresh Agent for ephemeral sessions, or a host-owned durable binding. */
   sessionFactory: AcpSessionFactory;
   /** Defaults to isolated in-memory storage. Supply a store for cross-connection restore. */
   sessionStore?: import("./session-store.js").AcpSessionStore;
@@ -160,7 +162,7 @@ export type AcpConnectionOptions = AcpOptions &
 export type AcpConnection = Readonly<{
   /** Resolves after session cleanup on input EOF, transport failure, or explicit close. */
   closed: Promise<void>;
-  /** Idempotent. Aborts session work and disposes bindings; does not close caller-owned output. */
+  /** Idempotent. Aborts ephemeral work, detaches durable work, and releases connection resources. */
   close: () => Promise<void>;
 }>;
 

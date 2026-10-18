@@ -16,6 +16,7 @@ export const errorCodes = {
   resource_limit: -32602,
   configuration_error: -32603,
   execution_failed: -32603,
+  recovery_required: -32603,
   invalid_interaction_response: -32603,
   unsupported_interaction: -32603,
   connection_closed: -32800,

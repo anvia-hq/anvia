@@ -2,6 +2,7 @@
 
 Add Anvia to your development workflow: install Agent Skills for your coding agent, or copy editable
 React UI components into your application.
+Run your agent as an ACP server for editors with `anvia acp`.
 
 Requires Node.js 20.18.1 or newer.
 
@@ -54,6 +55,48 @@ pnpm exec anvia --help
 
 Use `--cwd <path>` to target another project. `skills list` shows the bundled skills. Root-level
 `init`, `add`, and `update` commands remain supported as compatibility aliases for `ui` commands.
+
+## Run an ACP agent
+
+Install the CLI and its optional ACP peer in the project containing your agent:
+
+```sh
+pnpm add -D @anvia/cli
+pnpm add @anvia/acp @anvia/core
+pnpm exec anvia acp --agent ./agent.ts
+```
+
+`@anvia/acp` is loaded only by `acp`; skills and UI commands work without it. The module path is
+relative to the launch directory. Export a named `sessionFactory`, a default factory, or a
+named/default Anvia `Agent`. See the [ACP launcher examples](../acp/README.md#launcher) for the
+factory contract and single-session restriction on exported agent instances.
+
+JavaScript (`.mjs`, or `.js` in an ESM project) works on Node 20.18.1+. TypeScript (`.ts`/`.mts`)
+uses [Node's native type stripping](https://nodejs.org/api/typescript.html): use Node 22.18+ with
+erasable type syntax and explicit import extensions. No transpiler or `tsconfig` path aliases are
+provided. On Node 20, compile to JavaScript first or supply your own Node loader.
+
+For [Zed](https://zed.dev/docs/ai/external-agents), add this `agent_servers` entry to your
+settings, replacing both absolute paths (and using a Node version that supports your module):
+
+```json
+{
+  "agent_servers": {
+    "Anvia": {
+      "type": "custom",
+      "command": "/absolute/project/node_modules/.bin/anvia",
+      "args": ["acp", "--agent", "/absolute/project/agent.ts"]
+    }
+  }
+}
+```
+
+`anvia acp --help` prints command help to stderr. Stdout carries only ACP protocol traffic;
+application `console` calls and `process.stdout.write` are redirected to stderr before module
+evaluation. Startup failures print sanitized diagnostics without raw causes or stacks. EOF,
+SIGINT, and SIGTERM await session/MCP disposal within a five-second shutdown limit. Module-owned
+resources belong in the factory binding's `dispose()` callback. Credentials remain configured by
+your agent module; the CLI does not load an environment file automatically.
 
 ## Learn more
 

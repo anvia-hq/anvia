@@ -10,10 +10,11 @@ import {
   updateSkills,
 } from "../index";
 import { optionValue } from "./options";
+import { runAcp } from "./acp";
 import { printAdapterTargets, reportSkills, reportSkillsPreview } from "./skills-output";
 import { parseSkillsTargets } from "./skills-targets";
 
-export function runCli(args: string[]): void {
+export function runCli(args: string[]): void | Promise<void> {
   const [group, ...rest] = args;
   if (group === undefined || group === "--help" || group === "-h") {
     printUsage();
@@ -21,6 +22,25 @@ export function runCli(args: string[]): void {
   }
 
   const grouped = group === "ui" || group === "skills";
+  if (group === "acp") {
+    if (rest.includes("--help") || rest.includes("-h")) {
+      console.error(
+        "Usage: anvia acp --agent <agent-module>\nRequires @anvia/acp installed locally.",
+      );
+      return;
+    }
+    const positional = parseArguments(rest, ["--agent"]);
+    const modulePath = optionValue(rest, "--agent");
+    if (
+      !modulePath ||
+      positional.length > 0 ||
+      rest.filter((arg) => arg === "--agent").length > 1
+    ) {
+      throw new Error("Usage: anvia acp --agent <agent-module>");
+    }
+    return runAcp(modulePath);
+  }
+
   const [action, ...actionArgs] = rest;
   const command = grouped ? action : group;
   const commandArgs = grouped ? actionArgs : rest;
@@ -80,7 +100,7 @@ function parseArguments(args: string[], flags: string[]): string[] {
     if (!flags.includes(value)) {
       throw new Error(`Unknown option "${value}". Run \`anvia --help\`.`);
     }
-    if (value === "--cwd" || value === "--dir") {
+    if (value === "--cwd" || value === "--dir" || value === "--agent") {
       optionValue(args.slice(index), value);
       index += 1;
     }
@@ -300,7 +320,7 @@ function printUsage(group?: "ui" | "skills"): void {
   anvia skills init [--claude] [--codex] [--cursor] [--agents] [--dir <path>] [--cwd <path>] [--force]
   anvia skills update [--claude] [--codex] [--cursor] [--agents] [--dir <path>] [--cwd <path>] [--apply]`;
   console.log(`Usage:
-${group === "ui" ? ui : group === "skills" ? skills : `${ui}\n${skills}`}
+${group === "ui" ? ui : group === "skills" ? skills : `${ui}\n${skills}\n  anvia acp --agent <agent-module>`}
 
 Updates preview changes without writing files. Use --apply to write them.
 Compatibility: init/add/update alias ui commands; ui update --overwrite and skills update --force alias --apply.`);

@@ -10,6 +10,44 @@ plaintext reasoning. ACP 05 adds per-turn cancellation. ACP 06 adds approval/que
 are implementation targets, not claims of editor compatibility. Later tasks own session
 execution and optional capabilities.
 
+### ACP 13 implementation status
+
+`@anvia/cli` adds `anvia acp --agent ./agent.ts`. Both it and the dedicated `anvia-acp` bin call
+`runStdioServer(modulePath)` from the new `@anvia/acp/launcher` entrypoint, which reuses the existing
+module loader and `serveStdio`. Importing the entrypoint has no process side effects; calling it
+owns stdout, signals, and process exit. Embedded hosts continue to use `serveStdio`.
+
+Implementation defaults:
+
+- ACP is an optional CLI peer, dynamically imported only for `acp`, plus a workspace development
+  dependency. The peer requires the 0.2 minor line containing the launcher API. Missing ACP prints
+  an install command on stderr; skills/UI commands and help do not require the runtime. The CLI's
+  TypeScript source path mapping supports workspace checks before packages are linked/built;
+  tsup keeps the runtime import external. The packed peer range is verified by release tooling.
+- Load trusted local ESM `.js`/`.mjs` modules on every supported Node version (>=20.18.1). TypeScript
+  relies on native type stripping, enabled by default in Node 22.18+ and 23.6+. No bundled transpiler
+  or automatic respawn/loader installation. On Node 20 or with stripping disabled, report safe
+  guidance to compile JS or enable native stripping/use a caller-supplied loader. Erasable syntax
+  and explicit import extensions are required; no `tsconfig` aliases or JSX transformation.
+- Preserve named `sessionFactory`, default factory, named/default Agent precedence and single-use
+  exported agents. Factories run on session creation/restore, not initialization. Distinguish bad
+  paths, invalid/missing exports, and unsupported TS from generic import/provider failures using
+  fixed diagnostics only; never expose raw causes or stacks.
+- Reserve stdout and redirect console/direct stdout writes before loading user modules. Install
+  signal handlers before asynchronous initialization. EOF, SIGINT, SIGTERM and output failure
+  trigger idempotent connection close and await session/MCP/disposer cleanup before draining output
+  and exiting, with a five-second deadline for uncooperative code. Module-owned terminal handles
+  belong in binding disposal; existing editor-terminal cancellation/release semantics remain.
+- Both READMEs include a local install and Zed `agent_servers` configuration using one launch command
+  and absolute executable/module paths. Headless subprocess tests verify protocol behavior, not editor GUI UX.
+
+`packages/cli/test/acp.test.ts` exercises built installations with/without the optional peer,
+JS/TS modules, multi-turn prompts, stdout isolation, sanitized failures, EOF, signals during module
+initialization and resource disposal. `packages/acp/test/launcher.test.ts` continues to cover the
+dedicated bin; `test/editor-features.test.ts` covers terminal kill/release on cancellation.
+No additional product decision is required for these defaults. External docs in ACP 16 should
+cover the command, optional peer, Node/TS requirements and process-owned launcher API.
+
 ### ACP 12 implementation status
 
 `@anvia/acp/durable` exports `createDurableSessionBinding(runtime, registration)`. It registers a
@@ -560,7 +598,7 @@ separately. These decisions are explicit defaults for implementation, not comple
 | Cross-process restore        | Not required for the first v1 MVP. No load/resume/list/close/delete advertisement until ACP 11 implements and tests each operation. Persistent history does not imply resumable execution.                                                                                                                                                                                     |
 | Permissions                  | Offer `allow_once` and `reject_once` only. No “always” grant cache, across either turns or sessions. Application tools retain `requiresApproval`; editor and client-supplied MCP tools require approval by default.                                                                                                                                                            |
 | Concurrency                  | One active prompt per session; reject overlapping prompts rather than queueing. Different sessions may run concurrently with isolated cwd, histories, callbacks, and tool IDs.                                                                                                                                                                                                 |
-| Runtime                      | Direct `Agent.stream()` / `generate()` by default; optional durable binding in ACP 12. A client-side adapter, remote transport, and the `anvia acp` CLI command remain later tasks.                                                                                                                                                                                            |
+| Runtime                      | Direct `Agent.stream()` / `generate()` by default; optional durable binding in ACP 12. `anvia acp` reuses the launcher (ACP 13); a client-side adapter and remote transport remain later tasks.                                                                                                                                                                                |
 | Content/privacy              | Text and resource-link references by default; images are an explicit host opt-in from ACP 03. Embedded context and audio remain unsupported. Suppress reasoning by default; ACP 04 permits explicit plaintext live-update opt-in. Never expose signatures or replay reasoning.                                                                                                 |
 
 An application can provide trusted custom tools that do arbitrary work. This adapter is not

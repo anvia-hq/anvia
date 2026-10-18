@@ -18,8 +18,38 @@ pnpm exec anvia-acp ./agent.mjs
 ```
 
 The single argument is a trusted local module path, resolved against the launch directory.
-Use compiled JavaScript (`.mjs`, or `.js` in an ESM project). TypeScript requires a caller-supplied
-Node loader; the launcher does not transpile it or install dependencies.
+JavaScript (`.mjs`, or `.js` in an ESM project) works on Node 20.18.1+. TypeScript (`.ts`/`.mts`)
+uses [Node's native type stripping](https://nodejs.org/api/typescript.html); Node 22.18+ is
+recommended. Use erasable types, `import type`, and explicit file extensions. Native stripping
+does not read `tsconfig.json`, resolve path aliases, or transform enums/parameter properties.
+On Node 20 or a runtime without stripping enabled, compile to JavaScript or supply your own Node
+loader. Unsupported file types and TypeScript syntax produce safe stderr guidance; the launcher
+does not install a transpiler or dependencies.
+
+The main CLI uses this same launcher. Install it locally alongside its optional ACP peer:
+
+```sh
+pnpm add -D @anvia/cli
+pnpm add @anvia/acp @anvia/core
+pnpm exec anvia acp --agent ./agent.ts
+```
+
+For [Zed](https://zed.dev/docs/ai/external-agents), replace the absolute paths in this
+settings entry. Use the same Node version as your working shell command:
+
+```json
+{
+  "agent_servers": {
+    "Anvia": {
+      "type": "custom",
+      "command": "/absolute/project/node_modules/.bin/anvia",
+      "args": ["acp", "--agent", "/absolute/project/agent.ts"]
+    }
+  }
+}
+```
+
+The dedicated `anvia-acp ./agent.ts` bin remains available as the low-level entrypoint.
 
 Export a named `sessionFactory`, a default factory, or a named/default Anvia `Agent`:
 
@@ -56,8 +86,18 @@ application code; it is not a sandbox.
 No auth methods are advertised. Schema-valid `authenticate` requests return `{}` after
 initialization. The module owns credential configuration; import errors produce a generic
 stderr diagnostic and exit status 1 without printing the raw error or stack.
+Missing/unreadable paths and invalid/missing exports have distinct safe diagnostics. EOF, SIGINT,
+and SIGTERM await session disposal and MCP shutdown within five seconds before exiting. Release
+module-owned handles, including local terminal processes, in the factory binding's `dispose()`.
+Editor terminal cleanup uses the existing session cancellation lifecycle and is best effort after
+the editor transport disconnects; editor tools remain disabled by default in both launchers.
 
 ## Library
+
+`@anvia/acp/launcher` exports `runStdioServer(modulePath)` for executable hosts such as `anvia acp`.
+Calling it redirects the process's console/stdout, installs shutdown handlers, loads the module,
+and exits the process after cleanup. Importing it has no process side effects. Embedded hosts
+should use `serveStdio` or `createAcpConnection` to retain ownership of streams and process lifetime.
 
 ```ts
 import { createAcpConnection } from "@anvia/acp";

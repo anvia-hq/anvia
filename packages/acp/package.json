@@ -28,6 +28,10 @@
       "types": "./dist/stdio.d.ts",
       "import": "./dist/stdio.js"
     },
+    "./launcher": {
+      "types": "./dist/launcher.d.ts",
+      "import": "./dist/launcher.js"
+    },
     "./durable": {
       "types": "./dist/durable.d.ts",
       "import": "./dist/durable.js"
@@ -41,7 +45,7 @@
   },
   "scripts": {
     "prebuild": "pnpm --filter @anvia/mcp build",
-    "build": "tsup src/index.ts src/stdio.ts src/cli.ts src/durable.ts --format esm --dts --sourcemap --clean && chmod +x dist/cli.js",
+    "build": "tsup src/index.ts src/stdio.ts src/cli.ts src/launcher.ts src/durable.ts --format esm --dts --sourcemap --clean && chmod +x dist/cli.js",
     "pretest": "pnpm --filter @anvia/durable build && pnpm run build",
     "test": "vitest run",
     "pretest:editors": "pnpm run build",

@@ -79,3 +79,11 @@ See the [durable HTTP guide](../../docs/packages/durable.md#http-server-and-clie
 `cancelGraph`. Graph snapshots contain renderable nodes/edges and explicit waiting reasons.
 Use each node's `runId` with the existing response/retry/reconciliation methods. Graph streams
 carry `graphId` and `taskId`; refresh the snapshot to obtain the latest graph-wide state.
+
+## Restarted generations
+
+A repeated `generation_start` for an unfinished turn emits `message_reset` before
+new content. The reducer clears that message's parts, metadata, and generation state
+while preserving its ID and role. Completed turns and other agent scopes are unaffected.
+Upgrade both server and frontend copies of `@anvia/client` together so the frontend
+validator recognizes this event.

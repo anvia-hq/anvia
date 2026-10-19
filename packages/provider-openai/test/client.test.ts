@@ -169,6 +169,28 @@ describe("OpenAIClient", () => {
     });
   });
 
+  it("preserves advertised reasoning metadata and rejects invalid shapes", async () => {
+    const reasoning = { supported_efforts: ["high", "none"], default_effort: "high" };
+    const client = new OpenAIClient({
+      client: {
+        models: {
+          list: async () => ({
+            data: [
+              { id: "reasoner", supported_parameters: ["reasoning_effort"], reasoning },
+              { id: "invalid", supported_parameters: [42], reasoning: [] },
+            ],
+          }),
+        },
+      } as never,
+    });
+    await expect(client.listModels()).resolves.toEqual({
+      data: [
+        { id: "reasoner", supportedParameters: ["reasoning_effort"], reasoning },
+        { id: "invalid" },
+      ],
+    });
+  });
+
   it("wraps model listing failures", async () => {
     const client = new OpenAIClient({
       client: {

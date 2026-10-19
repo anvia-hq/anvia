@@ -200,7 +200,7 @@ export class AnthropicCompletionModel<
         if (state.initialInput.type === "complete") {
           throw providerOutputError("invalid-tool-arguments", streamUsage, state.id);
         }
-        state.hasPartialJson = true;
+        state.hasPartialJson ||= event.delta.partial_json.length > 0;
         state.partialJson += event.delta.partial_json;
         yield toolCallDelta(state.id, { argumentsDelta: event.delta.partial_json });
         continue;

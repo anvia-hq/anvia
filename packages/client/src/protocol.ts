@@ -203,6 +203,10 @@ export function parseClientStreamEvent<
         invalid("generation_start.model", value);
       }
       break;
+    case "message_reset":
+      requireEventKeys(event, ["messageId"]);
+      requireStrings(event, ["messageId"], value);
+      break;
     case "message_start":
       requireEventKeys(event, ["messageId", "role", "metadata"]);
       requireStrings(event, ["messageId"], value);

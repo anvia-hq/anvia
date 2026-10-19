@@ -332,6 +332,10 @@ export type AgentStreamEvent<Output = string, RawResponse = unknown> =
  * Async stream of run events. The run is driven by consuming the stream —
  * iterating events or awaiting `text`/`result`. The stream can be consumed
  * once; abandoning it before completion cancels the run.
+ * Reading `text` or `result` schedules automatic draining on the next microtask
+ * if iteration has not started. To consume events as well, start iteration before
+ * reading these promises, or read them after the event loop finishes. Merely
+ * obtaining an iterator without calling `next()` does not start consumption.
  */
 export interface AgentStream<Output = string, RawResponse = unknown> extends AsyncIterable<
   AgentStreamEvent<Output, RawResponse>
@@ -339,9 +343,15 @@ export interface AgentStream<Output = string, RawResponse = unknown> extends Asy
   readonly events: AsyncIterable<AgentStreamEvent<Output, RawResponse>>;
   /** Incremental text deltas only, with turn metadata stripped. */
   readonly textStream: AsyncIterable<string>;
-  /** Resolves with the run's final assistant text; rejects if the run errors. */
+  /**
+   * Resolves with the run's final assistant text; rejects if the run errors.
+   * Reading this property auto-drains unconsumed events; see AgentStream.
+   */
   readonly text: Promise<string>;
-  /** Resolves with the run's terminal outcome; rejects if the run errors. */
+  /**
+   * Resolves with the run's terminal outcome; rejects if the run errors.
+   * Reading this property auto-drains unconsumed events; see AgentStream.
+   */
   readonly result: Promise<AgentOutcome<Output>>;
   /** Queues input to inject at the next turn boundary. Throws if the run already ended. */
   steer(input: AgentSteerInput): AgentSteerReceipt;

@@ -18,6 +18,12 @@ export function applyClientStreamEvent<Metadata extends JsonObject, Data extends
   }
 
   switch (event.type) {
+    case "message_reset":
+      return messages.map((message) =>
+        message.id === event.messageId
+          ? { id: message.id, role: message.role, parts: [] }
+          : message,
+      );
     case "message_start": {
       if (messages.some((message) => message.id === event.messageId)) return messages;
       let message: UIMessage<Metadata, Data> = {

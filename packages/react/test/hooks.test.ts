@@ -633,3 +633,36 @@ function events(values: ClientStreamEvent[]): ClientStream {
     },
   };
 }
+
+describe("terminal stream errors", () => {
+  it.each([true, false])("preserves detailed errors when present: %s", async (detailed) => {
+    const onError = vi.fn();
+    const transport: ClientTransport<ClientStreamRequest> = {
+      async *send() {
+        yield {
+          type: "stream_start",
+          protocol: CLIENT_STREAM_PROTOCOL,
+          streamId: "error",
+          eventId: 0,
+          resumable: false,
+        };
+        if (detailed)
+          yield {
+            type: "stream_event",
+            streamId: "error",
+            eventId: 1,
+            event: { type: "error", runId: "run", error: { message: "Configure a provider key." } },
+          };
+        yield { type: "stream_end", streamId: "error", eventId: detailed ? 2 : 1, status: "error" };
+      },
+    };
+    const { result } = renderHook(() => useChat({ transport, onError }));
+    await act(async () => result.current.sendMessage({ text: "Hello" }));
+    expect(result.current.status).toBe("error");
+    expect(result.current.error?.message).toBe(
+      detailed ? "Configure a provider key." : "Client stream ended with status error.",
+    );
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError).toHaveBeenCalledWith(result.current.error);
+  });
+});

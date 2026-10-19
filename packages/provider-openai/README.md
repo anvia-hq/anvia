@@ -75,3 +75,9 @@ Bun users can install the same packages with `bun add`.
 - [Usage guide](https://github.com/anvia-hq/anvia/blob/main/docs/packages/provider-openai.md)
 - [Anvia overview](https://github.com/anvia-hq/anvia/blob/main/README.md)
 - [Contributing](https://github.com/anvia-hq/anvia/blob/main/CONTRIBUTING.md)
+
+## Compatible model metadata
+
+`listModels()` preserves advertised `supported_parameters` as `supportedParameters`
+when it is an array of strings, and object-valued `reasoning` as provider-specific
+metadata. Validate reasoning fields before using them; their schema varies by service.

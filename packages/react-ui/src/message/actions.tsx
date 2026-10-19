@@ -9,7 +9,11 @@ const MessageActions = forwardRef<HTMLDivElement, PrimitiveProps<"div">>(
     const chat = useChatContext();
     const { message } = useMessage();
     const index = chat.messages.findIndex((item) => item.id === message.id);
-    if (message.role !== "assistant" || index < 0 || messageText(message).trim().length === 0) {
+    if (
+      message.role !== "assistant" ||
+      index < 0 ||
+      (props.children == null && messageText(message).trim().length === 0)
+    ) {
       return null;
     }
     const following = chat.messages.slice(index + 1);

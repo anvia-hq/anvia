@@ -8,6 +8,10 @@ export type ListedModel = {
   createdAt?: number;
   ownedBy?: string;
   contextLength?: number;
+  /** Parameter names advertised by the provider. */
+  supportedParameters?: string[];
+  /** Provider-specific reasoning metadata; validate fields before using them. */
+  reasoning?: Record<string, unknown>;
 };
 
 export type ModelList = {

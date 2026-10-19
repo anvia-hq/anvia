@@ -333,7 +333,11 @@ async function* translateAgentEvent(
       yield scopedEvent(runtime.runId, turn, scope, { type: "turn_start" });
       return;
     case "generation_start": {
-      const state = getAgentMessage(runtime, event.turn, scope);
+      let state = getAgentMessage(runtime, event.turn, scope);
+      if (state.started && !state.ended) {
+        state = getAgentMessage(runtime, event.turn, scope, true);
+        yield clientEvent(state, { type: "message_reset", messageId: state.messageId });
+      }
       yield scopedEvent(runtime.runId, event.turn, scope, {
         type: "generation_start",
         model: {
@@ -521,16 +525,21 @@ function getAgentMessage(
   runtime: AgentAdapterRuntime,
   turn: number,
   scope: ClientStreamScope | undefined,
+  reset = false,
 ): MessageState {
   const key = `${scopeKey(scope)}:${turn}`;
   const current = runtime.messages.get(key);
-  if (current !== undefined) return current;
+  if (current !== undefined && !reset) return current;
   const input: { runId: string; turn: number; scope?: ClientStreamScope } = {
     runId: runtime.runId,
     turn,
   };
   if (scope !== undefined) input.scope = scope;
   const created = createMessageState(input);
+  if (current !== undefined) {
+    created.messageId = current.messageId;
+    created.started = current.started;
+  }
   runtime.messages.set(key, created);
   return created;
 }

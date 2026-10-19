@@ -214,7 +214,7 @@ export function useChat<Transport extends AnyClientTransport = ClientTransport>(
           }
           lastEventIdRef.current = frame.eventId;
           clearResumeState();
-          if (frame.status !== "completed") {
+          if (frame.status !== "completed" && streamError === undefined) {
             throw new ClientProtocolError(
               `Client stream ended with status ${frame.status}.`,
               frame,

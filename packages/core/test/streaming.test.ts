@@ -107,6 +107,31 @@ describe("Agent streaming", () => {
     await expect(stream.text).resolves.toBe("hello");
   });
 
+  it("allows reading the result after event consumption starts across an await", async () => {
+    const agent = new Agent({
+      id: "test-agent",
+      model: new StreamingQueueModel([successfulTextStream("done")]),
+    });
+    const stream = agent.stream({ prompt: "hi" });
+    const eventsPromise = collect(stream);
+    await Promise.resolve();
+    const resultPromise = stream.result;
+    expect((await eventsPromise).at(-1)).toMatchObject({ type: "response", output: "done" });
+    await expect(resultPromise).resolves.toMatchObject({ output: "done" });
+  });
+
+  it("reading result before iteration drains the single-consumer stream", async () => {
+    const agent = new Agent({
+      id: "test-agent",
+      model: new StreamingQueueModel([successfulTextStream("done")]),
+    });
+    const stream = agent.stream({ prompt: "hi" });
+    const result = stream.result;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await expect(result).resolves.toMatchObject({ output: "done" });
+    await expect(collect(stream)).rejects.toThrow("Agent stream has already been consumed.");
+  });
+
   it("supports text-only streaming and result-only consumption", async () => {
     const textAgent = new Agent({
       id: "text-agent",

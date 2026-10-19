@@ -50,6 +50,11 @@ cancellation, and installation from packed package artifacts.
 - `applyClientStreamEvent(messages, event)` applies canonical events to `UIMessage[]` state.
 - `parseUIMessage` and `parseUIMessages` validate externally loaded UI state.
 
+Repeated `generation_start` events for an unfinished turn emit `message_reset` with
+the existing `messageId`. Apply it before new deltas to discard the failed attempt's
+parts and metadata. Completed messages remain intact. Custom reducers must handle this
+event, and server and frontend Client packages must be upgraded together.
+
 Tool-call start, delta, and end events are automatic when the provider exposes streamed arguments.
 `UIToolMessagePart` states are exact: `input-streaming` carries raw partial text,
 `input-available` carries parsed JSON input, and terminal `output-available` or `error` parts retain

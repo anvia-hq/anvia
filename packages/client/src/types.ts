@@ -223,6 +223,11 @@ type ClientStandardStreamEvent<Metadata extends JsonObject, Data extends ClientD
       model?: { provider: string; modelId: string };
     }
   | {
+      /** Discards an unfinished generation attempt while retaining message identity. */
+      type: "message_reset";
+      messageId: string;
+    }
+  | {
       type: "message_start";
       messageId: string;
       role: "assistant";

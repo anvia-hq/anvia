@@ -235,6 +235,15 @@ function toListedModel(model: unknown): ModelList["data"][number] | undefined {
   if (typeof model.contextLength === "number") {
     listedModel.contextLength = model.contextLength;
   }
+  if (
+    Array.isArray(model.supported_parameters) &&
+    model.supported_parameters.every((parameter) => typeof parameter === "string")
+  ) {
+    listedModel.supportedParameters = model.supported_parameters;
+  }
+  if (isObject(model.reasoning) && !Array.isArray(model.reasoning)) {
+    listedModel.reasoning = model.reasoning;
+  }
   return listedModel;
 }
 

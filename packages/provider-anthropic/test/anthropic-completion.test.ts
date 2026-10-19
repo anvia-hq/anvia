@@ -1004,7 +1004,7 @@ describe("Anthropic Messages mapping", () => {
     });
   });
 
-  it.each(["   ", ""])(
+  it.each(["   "])(
     "rejects an explicit %j tool argument fragment instead of treating it as absent",
     async (partialJson) => {
       await expect(
@@ -1036,7 +1036,7 @@ describe("Anthropic Messages mapping", () => {
     },
   );
 
-  it("emits explicit empty-object arguments for a legitimate no-argument tool", async () => {
+  it.each([0, 1, 2])("accepts no-argument tools with %i empty deltas", async (count) => {
     const events = await collectStreamEvents([
       {
         type: "content_block_start",
@@ -1048,6 +1048,11 @@ describe("Anthropic Messages mapping", () => {
           input: {},
         },
       },
+      ...Array.from({ length: count }, () => ({
+        type: "content_block_delta",
+        index: 0,
+        delta: { type: "input_json_delta", partial_json: "" },
+      })),
       { type: "content_block_stop", index: 0 },
       { type: "message_delta", delta: { stop_reason: "tool_use" }, usage: {} },
       { type: "message_stop" },

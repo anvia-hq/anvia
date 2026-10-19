@@ -115,3 +115,20 @@ protocol version 4 checkpoints validated streamed completions alongside tool res
 - [Runnable cookbook](https://github.com/anvia-hq/anvia/tree/main/cookbook)
 - [Package catalog](https://github.com/anvia-hq/anvia#readme)
 - [Contributing](https://github.com/anvia-hq/anvia/blob/main/CONTRIBUTING.md)
+
+## Stream consumption
+
+An `AgentStream` has one consumer. Reading `stream.result` or `stream.text` schedules
+automatic draining on the next microtask if event iteration has not started. When you
+need events and the final outcome, iterate first and read `result` after the loop:
+
+```ts
+const stream = agent.stream({ prompt: "Hello" });
+for await (const event of stream) {
+  if (event.type === "text_delta") process.stdout.write(event.delta);
+}
+const outcome = await stream.result;
+```
+
+For HTTP adapters whose consumption starts later, pass the stream without reading
+its final promises first; capture terminal outcome events while forwarding events.

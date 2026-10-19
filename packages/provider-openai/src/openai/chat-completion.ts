@@ -482,7 +482,7 @@ class OpenAIChatCompletionStreamState {
     for (const event of mapping.events) {
       if (event.type === "tool_call_delta") this.acceptToolCallDelta(event);
       if (event.type === "final") {
-        if (this.finalResponse !== undefined) throw invalidToolCallError();
+        // Usage reports are snapshots; keep the latest until the stream emits its final event.
         this.finalResponse = event.response;
       }
     }

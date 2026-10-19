@@ -432,6 +432,113 @@ describe("OpenAI chat-completions client path", () => {
     });
   });
 
+  it.each([
+    ["revised repeated usage", 82, true],
+    ["identical repeated usage", 23, true],
+    ["single terminal usage", 23, false],
+    ["single trailing usage", undefined, true],
+  ] as const)(
+    "emits one final event with the latest %s",
+    async (_label, promptTokens, trailing) => {
+      const usage = (inputTokens: number) => ({
+        prompt_tokens: inputTokens,
+        completion_tokens: 42,
+        total_tokens: inputTokens + 42,
+      });
+      const chunks = [
+        {
+          id: "chat-test",
+          choices: [{ index: 0, delta: { content: "Halo!" }, finish_reason: null }],
+        },
+        {
+          id: "chat-test",
+          choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+          usage: promptTokens !== undefined ? usage(promptTokens) : undefined,
+        },
+        ...(trailing
+          ? [
+              {
+                id: "chat-test",
+                choices: [],
+                usage: usage(23),
+              },
+            ]
+          : []),
+      ];
+      const model = openAIChatModelWithStreams([chunks]);
+
+      const events = await collect(
+        model.streamCompletion({
+          chatHistory: [Message.user("Halo!")],
+          documents: [],
+          tools: [],
+        }),
+      );
+
+      expect(events.filter((event) => event.type === "text_delta")).toEqual([
+        { type: "text_delta", delta: "Halo!" },
+      ]);
+      expect(events.filter((event) => event.type === "message_id")).toEqual(
+        chunks.map(() => ({ type: "message_id", id: "chat-test" })),
+      );
+      const finals = events.filter((event) => event.type === "final");
+      expect(finals).toHaveLength(1);
+      expect(events.at(-1)).toBe(finals[0]);
+      expect(finals[0]).toMatchObject({
+        type: "final",
+        response: {
+          messageId: "chat-test",
+          finishReason: "stop",
+          providerFinishReason: "stop",
+          usage: { inputTokens: 23, outputTokens: 42, totalTokens: 65 },
+          rawResponse: chunks.at(-1),
+        },
+      });
+    },
+  );
+
+  it("preserves valid tool-call deltas with repeated usage snapshots", async () => {
+    const model = openAIChatModelWithStreams([
+      [
+        chatChunk([chatChoice([toolCallDelta(0, "call_echo", "Echo", '{"text":')])]),
+        chatChunk([chatChoice([toolCallDelta(0, "", "", '"Halo!"}')])]),
+        {
+          id: "chatcmpl_test",
+          choices: [chatChoice([], 0, "tool_calls")],
+          usage: { prompt_tokens: 82, completion_tokens: 42, total_tokens: 124 },
+        },
+        {
+          choices: [],
+          usage: { prompt_tokens: 23, completion_tokens: 42, total_tokens: 65 },
+        },
+      ],
+    ]);
+
+    const events = await collectStreamEvents(model);
+
+    expect(events.filter((event) => event.type === "tool_call_delta")).toEqual([
+      {
+        type: "tool_call_delta",
+        id: "tool_0",
+        callId: "call_echo",
+        name: "Echo",
+        argumentsDelta: '{"text":',
+      },
+      { type: "tool_call_delta", id: "tool_0", argumentsDelta: '"Halo!"}' },
+    ]);
+    const finals = events.filter((event) => event.type === "final");
+    expect(finals).toHaveLength(1);
+    expect(events.at(-1)).toBe(finals[0]);
+    expect(finals[0]).toMatchObject({
+      response: {
+        messageId: "chatcmpl_test",
+        finishReason: "tool-calls",
+        providerFinishReason: "tool_calls",
+        usage: { inputTokens: 23, outputTokens: 42, totalTokens: 65 },
+      },
+    });
+  });
+
   it("preserves a terminal finish reason when an OpenAI-compatible stream omits usage", async () => {
     const model = openAIChatModelWithStreams([
       [

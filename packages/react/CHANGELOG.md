@@ -1,5 +1,11 @@
 # @anvia/react
 
+## 1.1.5
+
+### Patch Changes
+
+- 068e15c: Preserve detailed chat stream errors and report them once when the stream ends with an error status.
+
 ## 1.1.4
 
 ### Patch Changes

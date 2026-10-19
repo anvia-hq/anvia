@@ -1,5 +1,11 @@
 # @anvia/client
 
+## 1.6.0
+
+### Minor Changes
+
+- 068e15c: Reset unfinished generation attempts before emitting retry content, retaining message identity and completed turns. Add the validated message_reset event; upgrade server and frontend Client packages together.
+
 ## 1.5.0
 
 ### Minor Changes

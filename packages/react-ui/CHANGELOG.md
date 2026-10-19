@@ -1,5 +1,11 @@
 # @anvia/react-ui
 
+## 1.1.9
+
+### Patch Changes
+
+- 068e15c: Render custom message actions for final assistant replies without text while retaining default-action and streaming visibility rules. Boolean children from conditional JSX do not render an empty actions row on textless replies.
+
 ## 1.1.8
 
 ### Patch Changes

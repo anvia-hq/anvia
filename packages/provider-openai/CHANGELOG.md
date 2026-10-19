@@ -1,5 +1,11 @@
 # @anvia/openai
 
+## 1.3.4
+
+### Patch Changes
+
+- 068e15c: Expose advertised supported parameters and provider-specific reasoning metadata in model listings. Clarify the single-consumer AgentStream final-promise contract.
+
 ## 1.3.3
 
 ### Patch Changes

@@ -1,5 +1,11 @@
 # @anvia/anthropic
 
+## 1.1.9
+
+### Patch Changes
+
+- 068e15c: Accept empty argument deltas for no-argument tools without weakening malformed or truncated tool argument validation.
+
 ## 1.1.8
 
 ### Patch Changes

@@ -1,5 +1,11 @@
 # @anvia/core
 
+## 1.17.0
+
+### Minor Changes
+
+- 068e15c: Expose advertised supported parameters and provider-specific reasoning metadata in model listings. Clarify the single-consumer AgentStream final-promise contract.
+
 ## 1.16.0
 
 ### Minor Changes

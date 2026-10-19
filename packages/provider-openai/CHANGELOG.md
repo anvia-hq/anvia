@@ -1,5 +1,11 @@
 # @anvia/openai
 
+## 1.3.3
+
+### Patch Changes
+
+- c9db6a4: Accept repeated Chat Completions usage snapshots from OpenAI-compatible providers, using the latest reported usage and emitting exactly one final event while preserving stream validation.
+
 ## 1.3.2
 
 ### Patch Changes

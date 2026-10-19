@@ -12,6 +12,8 @@ export type ListedModel = {
   supportedParameters?: string[];
   /** Provider-specific reasoning metadata; validate fields before using them. */
   reasoning?: Record<string, unknown>;
+  /** Provider-specific pricing metadata; validate fields before using them. */
+  pricing?: Record<string, unknown>;
 };
 
 export type ModelList = {

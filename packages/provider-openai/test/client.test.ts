@@ -191,6 +191,25 @@ describe("OpenAIClient", () => {
     });
   });
 
+  it("preserves advertised pricing metadata and rejects invalid shapes", async () => {
+    const pricing = { prompt: "0.000001", completion: "0.000004", currency: "USD" };
+    const client = new OpenAIClient({
+      client: {
+        models: {
+          list: async () => ({
+            data: [
+              { id: "priced", pricing },
+              { id: "invalid", pricing: ["not-an-object"] },
+            ],
+          }),
+        },
+      } as never,
+    });
+    await expect(client.listModels()).resolves.toEqual({
+      data: [{ id: "priced", pricing }, { id: "invalid" }],
+    });
+  });
+
   it("wraps model listing failures", async () => {
     const client = new OpenAIClient({
       client: {

@@ -42,6 +42,7 @@ import {
   DurableLimitError,
 } from "./errors.js";
 import { prepareContext } from "./compaction.js";
+import { settledProgress } from "./settled-progress.js";
 import { createExecution } from "./execution.js";
 import { runTrace } from "./trace.js";
 import { parseTraceOptions } from "./trace-schema.js";
@@ -672,7 +673,7 @@ export class DurableRuntime {
           current.input = { messages: [promptMessage(graphInput(tx, current))] };
         } else {
           // A continued run picks up that run's whole conversation; a turn-limited one keeps
-          // its partial work. Others continue their session's latest completed run.
+          // its partial work. Others continue their session's latest settled run.
           const previous =
             current.continueFrom === undefined
               ? tx.latestCompleted(current.sessionId)
@@ -682,7 +683,7 @@ export class DurableRuntime {
               ? []
               : previous.status === "completed"
                 ? [...previous.history, ...(previous.outcome?.messages ?? [])]
-                : [...(previous.exhaustion?.messages ?? previous.history)];
+                : [...previous.history, ...settledProgress(tx, previous)];
           if (previous?.contextCheckpoint !== undefined)
             current.contextCheckpoint = previous.contextCheckpoint;
           current.input = {

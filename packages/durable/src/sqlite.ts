@@ -462,7 +462,7 @@ export class SqliteDurableStore implements DurableStore {
         ),
       latestCompleted: (session) =>
         readRun(
-          "SELECT record FROM anvia_durable_runs WHERE session_id = ? AND status = 'completed' ORDER BY rowid DESC LIMIT 1",
+          "SELECT record FROM anvia_durable_runs WHERE session_id = ? AND (status = 'completed' OR (status IN ('failed', 'cancelled') AND json_extract(record, '$.startedAt') IS NOT NULL)) ORDER BY rowid DESC LIMIT 1",
           session,
         ),
       hasLaterStartedRun: (id) => {

@@ -244,6 +244,9 @@ function toListedModel(model: unknown): ModelList["data"][number] | undefined {
   if (isObject(model.reasoning) && !Array.isArray(model.reasoning)) {
     listedModel.reasoning = model.reasoning;
   }
+  if (isObject(model.pricing) && !Array.isArray(model.pricing)) {
+    listedModel.pricing = model.pricing;
+  }
   return listedModel;
 }
 

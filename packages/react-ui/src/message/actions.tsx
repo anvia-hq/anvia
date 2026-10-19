@@ -12,7 +12,8 @@ const MessageActions = forwardRef<HTMLDivElement, PrimitiveProps<"div">>(
     if (
       message.role !== "assistant" ||
       index < 0 ||
-      (props.children == null && messageText(message).trim().length === 0)
+      ((props.children == null || typeof props.children === "boolean") &&
+        messageText(message).trim().length === 0)
     ) {
       return null;
     }

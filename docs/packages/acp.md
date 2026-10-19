@@ -180,6 +180,9 @@ Optional `list`/`delete` methods gate their capabilities. It is distinct from co
 | Close     | Release capacity/resources while retaining records; cancel ephemeral work, detach durable work                                                |
 | Delete    | Close then remove ACP records; absent deletion succeeds; durable pending work must settle/cancel first                                        |
 
+Stored model messages must pass the core message schema, including nested content and metadata,
+before write or restore. File-store listing skips malformed records without blocking valid sessions.
+
 Restore requires matching canonical cwd, available config and current workspace policy. The client
 resupplies MCP declarations; stored credentials, grants and client capabilities are not restored.
 Replay never generates output or executes old tools. Private model messages and the public display

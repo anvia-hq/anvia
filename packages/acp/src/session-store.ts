@@ -212,12 +212,7 @@ export function validateRecord(value: unknown): asserts value is AcpSessionRecor
         !messageSchema.safeParse(record.pendingRun.prompt).success ||
         !Array.isArray(record.pendingRun.blocks) ||
         record.pendingRun.blocks.length === 0)) ||
-    record.messages.some(
-      (message) =>
-        !message ||
-        !["user", "assistant", "tool", "system"].includes(message.role) ||
-        (typeof message.content !== "string" && !Array.isArray(message.content)),
-    )
+    record.messages.some((message) => !messageSchema.safeParse(message).success)
   )
     throw new AcpError("configuration_error");
 }

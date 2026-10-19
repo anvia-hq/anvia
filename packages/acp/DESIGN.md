@@ -1,14 +1,15 @@
 # ACP 01: `@anvia/acp` contract
 
-Status: proposed, pending Indra review. Baseline verified on 2026-10-16.
+Status: ACP 01–09 and ACP 11–17 implementation and release preparation are complete. ACP 10
+automated editor fixtures pass. Real-editor GUI
+acceptance remains unverified; see [EDITOR_COMPATIBILITY.md](./test/EDITOR_COMPATIBILITY.md).
+Publication is a separate maintainer-triggered release workflow, not part of this PR.
 
-This is the repository design contract for the agent-side adapter. ACP 01 added documentation
-only. ACP 02 implements the package manifest, pinned SDK, stream/stdio entrypoints,
-initialization, no-op authentication, and launcher. ACP 03 adds session creation and prompt
-execution with bounded in-memory history. ACP 04 adds ordered text/tool updates and optional
-plaintext reasoning. ACP 05 adds per-turn cancellation. ACP 06 adds approval/question continuations and whole-prompt budgets. ACP 07 connects editor MCP servers per session. The remaining APIs and capabilities below
-are implementation targets, not claims of editor compatibility. Later tasks own session
-execution and optional capabilities.
+This document retains the staged design history. Earlier task notes describe the behavior at
+that stage; the package [README](./README.md), [SECURITY.md](./SECURITY.md) and current public
+API describe the implemented defaults. In particular, sessions now support load/resume/list/
+close/delete, durable execution is optional, and both launchers accept a trusted module's
+`acpOptions.mcp` policy while denying editor-supplied MCP by default.
 
 ### ACP 14 implementation status
 
@@ -19,8 +20,9 @@ defaults supersede earlier ACP 07 launch trust and the shared admission/editor r
 - Client stdio MCP is denied unless `mcp.stdio: true` **and** `authorizeServer` returns exactly
   `true` for each declaration. Host approval happens before any process or connection, including
   the SDK's discovery probe. Tool calls still require independent once-only approval. The
-  launcher uses defaults and cannot accept client stdio declarations; constrained library hosts
-  can opt in. Environment names must be identifiers; approved env values can still execute code
+  launcher denies client stdio declarations by default; trusted agent modules can opt in
+  through `acpOptions.mcp`, and library hosts can configure the same policy. Environment names must
+  be identifiers; approved env values can still execute code
   (for example `NODE_OPTIONS`), so the host must approve the full executable/argv/env/cwd tuple.
 - HTTP remains disabled by default. Reuse `@anvia/mcp` strict URL/DNS/fetch safety through
   `McpClient`; exact host endpoints with pinned addresses remain the only private-access exception.
@@ -123,15 +125,14 @@ owns stdout, signals, and process exit. Embedded hosts continue to use `serveStd
 Implementation defaults:
 
 - ACP is an optional CLI peer, dynamically imported only for `acp`, plus a workspace development
-  dependency. The peer requires the 0.2 minor line containing the launcher API. Missing ACP prints
+  dependency. The peer supports the 0.1 and 0.2 minor lines. Missing ACP prints
   an install command on stderr; skills/UI commands and help do not require the runtime. The CLI's
   TypeScript source path mapping supports workspace checks before packages are linked/built;
   tsup keeps the runtime import external. The packed peer range is verified by release tooling.
-- Load trusted local ESM `.js`/`.mjs` modules on every supported Node version (>=20.18.1). TypeScript
-  relies on native type stripping, enabled by default in Node 22.18+ and 23.6+. No bundled transpiler
-  or automatic respawn/loader installation. On Node 20 or with stripping disabled, report safe
-  guidance to compile JS or enable native stripping/use a caller-supplied loader. Erasable syntax
-  and explicit import extensions are required; no `tsconfig` aliases or JSX transformation.
+- Load trusted local ESM `.js`/`.mjs` modules on supported Node versions (>=22.19.0). TypeScript
+  relies on native type stripping. No bundled transpiler or automatic respawn/loader installation.
+  With stripping disabled, report safe guidance to compile JS or enable native stripping/use a
+  caller-supplied loader. Erasable syntax and explicit import extensions are required; no `tsconfig` aliases or JSX transformation.
 - Preserve named `sessionFactory`, default factory, named/default Agent precedence and single-use
   exported agents. Factories run on session creation/restore, not initialization. Distinguish bad
   paths, invalid/missing exports, and unsupported TS from generic import/provider failures using

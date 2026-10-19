@@ -1,4 +1,19 @@
-# ACP 09 verification
+# ACP verification
+
+## Current review verification (2026-10-19)
+
+The ACP suite passes 345 tests across 23 files. The new
+`session-store-validation.test.ts` cases reject malformed nested model messages and metadata
+on store writes, file reads/listing and custom-store restoration before factory construction or replay.
+The six regressions failed against the previous validator.
+
+The unchanged pinned upstream TCK passed again: 47 tests passed and 9 capability-based tests
+were skipped. Every mandatory requirement passed. This rerun used the existing conformance
+fixture and did not enable extra capabilities to alter the verdict. The checked-in
+`tck-results.json` remains the historical ACP 09 result; no generated report was replaced.
+Real-editor GUI acceptance remains open, independently of these protocol checks.
+
+## Coverage history
 
 ACP 14 adds `hardening.test.ts`, `streaming-resources.test.ts` and `wire-resources.test.ts` for
 launch policy, workspace confinement, resource bounds, private error injection, long sessions
@@ -159,8 +174,8 @@ results do not count as real editor verification; GUI acceptance remains open.
 - With explicit editor opt-in, verify unsaved-buffer reads and terminal cancellation/cleanup.
 - Confirm stdout remains protocol-only and disconnect terminates session-owned MCP resources.
 
-These GUI checks were not run for ACP 09. ACP 11 persistence coverage is described below; durable
-execution, v2 and publishing remain separate tasks. No generated build artifacts are committed; the TCK summary is the only
+These GUI checks were not run for ACP 09. ACP 11 persistence coverage is described below, and
+ACP 12 durable execution coverage is described above. v2 and publishing remain outside this PR. No generated build artifacts are committed; the TCK summary is the only
 intentionally recorded generated artifact.
 
 ## Manual editor persistence checklist (ACP 11)

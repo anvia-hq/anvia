@@ -317,6 +317,9 @@ It supplies no distributed locks, encryption, retention, quotas or power-loss gu
 | `session/delete` | Closes and removes ACP history; repeated/absent deletes succeed                                                                |
 
 Built-in stores list recently updated sessions first, with session ID breaking timestamp ties.
+Stored model messages are validated against the core message schema before write or restore,
+including nested content and metadata. Malformed records are omitted from file-store listings.
+
 Unused threads stay hidden until a turn commits or a durable pending run is saved; their records
 still support load/resume by ID. File-store listing skips malformed entries, and writes/deletes
 preserve unrelated entries, including unreadable ones. An unreadable file envelope still fails.

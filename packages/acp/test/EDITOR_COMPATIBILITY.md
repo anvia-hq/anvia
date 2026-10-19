@@ -1,11 +1,12 @@
 # ACP 10 editor smoke verification
 
-ACP 14 changes the launch default: the dedicated bin rejects client stdio MCP. MCP smoke tests
+The launch default rejects client stdio MCP; trusted modules can opt in via `acpOptions.mcp`. MCP smoke tests
 now use `fixtures/smoke-host.mjs`, with explicit executable/argv/env approval. The earlier manual
 MCP setup below needs an equivalently approved library host; it cannot grant launch authority
 through an editor declaration. No new GUI verification was run for ACP 14.
 
 Status: **automated sample checks pass; real-editor acceptance remains open**.
+The run counts and editor results below are historical ACP 10 evidence, not current suite totals.
 This records repository verification, not a claim of compatibility certification.
 
 ## Recorded environment and results
@@ -47,16 +48,16 @@ for acceptance; Zed plus JetBrains or Neovim must still complete the checklist b
 
 ### Capability boundaries and known gaps
 
-| Surface                       | Dedicated bin / smoke sample                                                        | Editor implications                                                                                                          |
-| ----------------------------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| Authentication                | `authMethods: []`; `authenticate` succeeds without work                             | No ACP login UI is expected. Real model credentials belong to the application factory.                                       |
-| Sessions                      | In-memory, session factory creates a fresh agent                                    | New chats reset counters. Load/resume/list are not advertised; history restoration is ACP 11.                                |
-| Approvals                     | Only allow once and reject once                                                     | Test both choices; there is no always-allow cache.                                                                           |
-| MCP                           | Stdio supported; HTTP disabled by default; SSE unsupported                          | Forward only the smoke stdio server. Private HTTP / integrated IDE MCP may require an explicitly configured library host.    |
-| Editor filesystem / terminals | Off by default                                                                      | These configs do not test unsaved buffers or editor terminal callbacks. Existing ACP 08/09 tests cover opt-in library hosts. |
-| Model/config UI               | Default `ask` config; no model catalog                                              | Empty model selection or no alternative mode is expected for this sample.                                                    |
-| Error presentation            | Fixed startup stderr; factory failure is `-32603`, `data.kind: configuration_error` | Editor display of stderr remains unverified. Generic wire errors alone do not identify a missing provider key.               |
-| Sample                        | Deterministic text model, in-memory local counter and dedicated MCP ping            | Proves adapter behavior, not real-provider authentication, latency, reasoning, media, or coding quality.                     |
+| Surface                       | Dedicated bin / smoke sample                                                        | Editor implications                                                                                                                |
+| ----------------------------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Authentication                | `authMethods: []`; `authenticate` succeeds without work                             | No ACP login UI is expected. Real model credentials belong to the application factory.                                             |
+| Sessions                      | In-memory, session factory creates a fresh agent                                    | Load/resume/list/close/delete work within the connection. Cross-process restoration requires a persistent store in a library host. |
+| Approvals                     | Only allow once and reject once                                                     | Test both choices; there is no always-allow cache.                                                                                 |
+| MCP                           | Stdio requires host approval; HTTP disabled by default; SSE unsupported             | Forward only the smoke stdio server. Private HTTP / integrated IDE MCP may require an explicitly configured library host.          |
+| Editor filesystem / terminals | Off by default                                                                      | These configs do not test unsaved buffers or editor terminal callbacks. Existing ACP 08/09 tests cover opt-in library hosts.       |
+| Model/config UI               | Default `ask` config; no model catalog                                              | Empty model selection or no alternative mode is expected for this sample.                                                          |
+| Error presentation            | Fixed startup stderr; factory failure is `-32603`, `data.kind: configuration_error` | Editor display of stderr remains unverified. Generic wire errors alone do not identify a missing provider key.                     |
+| Sample                        | Deterministic text model, in-memory local counter and dedicated MCP ping            | Proves adapter behavior, not real-provider authentication, latency, reasoning, media, or coding quality.                           |
 
 The sample's missing-config and missing-credentials switches are **simulations**, not an attempt to
 authenticate to a provider. Its fixed stderr diagnostics explain recovery without logging a key or
@@ -176,6 +177,6 @@ entries after the run and restore any test-specific changes.
 | ACP10-ERRORS      | Generic factory errors do not explain missing credentials on the wire; stderr visibility varies by editor.                      | ACP 10 verification; ACP 14 if needed | User can find actionable safe diagnostics without an ACP auth loop; file a narrowly scoped fix if not. |
 | ACP10-DOCS        | Snippets follow current vendor docs but editor versions may differ. Promote only verified recipes.                              | ACP 16                                | Document tested versions and gaps; add a provider-backed cookbook separately.                          |
 
-No runtime API behavior or published README changed, so no changeset is needed under
-`CHANGESET_GUIDE.md`. No generated artifacts are tracked for this task. Persistent sessions,
-durable execution, CLI integration, CI and publication remain later tasks.
+The original ACP 10 verification changed no runtime API behavior. Persistent sessions,
+durable execution, CLI integration, CI and release preparation are implemented. Actual publication
+remains a separate maintainer-triggered workflow; GUI acceptance is still open.

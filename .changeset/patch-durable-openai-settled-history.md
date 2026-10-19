@@ -1,4 +1,5 @@
 ---
+"@anvia/core": patch
 "@anvia/durable": patch
 "@anvia/openai": patch
 ---

@@ -81,3 +81,4 @@ Bun users can install the same packages with `bun add`.
 `listModels()` preserves advertised `supported_parameters` as `supportedParameters`
 when it is an array of strings, and object-valued `reasoning` as provider-specific
 metadata. Validate reasoning fields before using them; their schema varies by service.
+Object-valued `pricing` is preserved the same way; validate its fields before using them.

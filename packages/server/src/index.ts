@@ -12,6 +12,7 @@ export {
   createResumableStream,
   resumeStreamEvents,
 } from "./resumable";
+export type { MemoryResumableStreamStoreOptions } from "./resumable";
 export { createSseStream } from "./sse";
 export type {
   CreateEventStreamResponseOptions,

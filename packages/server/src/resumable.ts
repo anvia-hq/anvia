@@ -86,6 +86,9 @@ export function createMemoryResumableStreamStore<TEvent = unknown>(): ResumableS
     async open(input) {
       const existing = streams.get(input.streamId);
       if (existing !== undefined) {
+        if (existing.status === "running") {
+          throw new Error(`Resumable stream "${input.streamId}" is already running`);
+        }
         closeSubscribers(existing);
       }
 

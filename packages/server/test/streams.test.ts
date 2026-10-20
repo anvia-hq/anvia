@@ -216,6 +216,73 @@ describe("client stream responses", () => {
   });
 });
 
+describe("memory resumable stream store", () => {
+  it("opens a new stream id as running with no history", async () => {
+    const store = createMemoryResumableStreamStore<{ kind: string }>();
+    const state = await store.open({ streamId: "fresh" });
+    expect(state).toEqual({ status: "running", lastEventId: 0 });
+    expect(await store.status({ streamId: "fresh" })).toEqual({
+      status: "running",
+      lastEventId: 0,
+    });
+  });
+
+  it("rejects reopening a running stream and keeps its history and subscribers", async () => {
+    const store = createMemoryResumableStreamStore<{ kind: string }>();
+    await store.open({ streamId: "live" });
+    await store.append({ streamId: "live", event: { kind: "one" } });
+    await store.append({ streamId: "live", event: { kind: "two" } });
+
+    const seen: string[] = [];
+    const iterator = store.subscribe({ streamId: "live", after: 2 })[Symbol.asyncIterator]();
+    const pending = (async () => {
+      const next = await iterator.next();
+      if (next.done !== true) {
+        const event = next.value.event;
+        if ("kind" in event) seen.push(event.kind);
+      }
+    })();
+
+    await expect(store.open({ streamId: "live" })).rejects.toThrow(
+      'Resumable stream "live" is already running',
+    );
+
+    // History survives the rejected reopen.
+    expect(await store.status({ streamId: "live" })).toEqual({
+      status: "running",
+      lastEventId: 2,
+    });
+    const replay = store.subscribe({ streamId: "live" })[Symbol.asyncIterator]();
+    const replayed: string[] = [];
+    for (let i = 0; i < 2; i++) {
+      const next = await replay.next();
+      if (next.done === true) break;
+      const event = next.value.event;
+      if ("kind" in event) replayed.push(event.kind);
+    }
+    await replay.return?.();
+    expect(replayed).toEqual(["one", "two"]);
+
+    // The subscriber attached before the rejected reopen still receives new events.
+    await store.append({ streamId: "live", event: { kind: "three" } });
+    await pending;
+    await iterator.return?.();
+    expect(seen).toEqual(["three"]);
+  });
+
+  it("resets a closed stream id to a fresh running stream", async () => {
+    const store = createMemoryResumableStreamStore<{ kind: string }>();
+    await store.open({ streamId: "done" });
+    await store.append({ streamId: "done", event: { kind: "old" } });
+    await store.close({ streamId: "done", status: "completed" });
+
+    const state = await store.open({ streamId: "done" });
+    expect(state).toEqual({ status: "running", lastEventId: 0 });
+    const record = await store.append({ streamId: "done", event: { kind: "new" } });
+    expect(record.eventId).toBe(1);
+  });
+});
+
 function values<T>(items: T[]): AsyncIterable<T> {
   return {
     async *[Symbol.asyncIterator]() {

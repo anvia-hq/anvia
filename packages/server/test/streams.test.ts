@@ -1,5 +1,5 @@
 import type { ClientStream, ClientStreamEvent, ClientStreamFrame } from "@anvia/client";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import * as publicServer from "../src";
 import {
   type ClientResumableEvent,
@@ -213,6 +213,67 @@ describe("client stream responses", () => {
       expect.objectContaining({ type: "stream_start", protocol: "anvia.client.v3" }),
       { type: "stream_end", streamId: "stream_v1", eventId: 1, status: "error" },
     ]);
+  });
+
+  it("leaves a running stream untouched when a second producer reuses its id", async () => {
+    const store = createMemoryResumableStreamStore<ClientResumableEvent>();
+    let releaseFirst: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const firstEvents: ClientStream = {
+      async *[Symbol.asyncIterator]() {
+        yield { type: "run_start", runId: "run_1", source: "completion" };
+        await gate;
+        yield { type: "run_end", runId: "run_1", status: "completed", text: "Done" };
+      },
+    };
+    const first = createClientStreamResponse({
+      events: firstEvents,
+      resumable: { streamId: "dup_running", store },
+    });
+    const firstDone = jsonl(first);
+
+    // Wait until the first producer's event is persisted so the stream is live.
+    await vi.waitFor(async () => {
+      expect((await store.status({ streamId: "dup_running" })).lastEventId).toBe(1);
+    });
+
+    const second = createClientStreamResponse({
+      events: clientEvents([{ type: "run_end", runId: "run_1", status: "completed" }]),
+      resumable: { streamId: "dup_running", store },
+    });
+    const secondFrames = (await jsonl(second)) as ClientStreamFrame[];
+    expect(secondFrames).toEqual([
+      expect.objectContaining({ type: "stream_start" }),
+      { type: "stream_end", streamId: "dup_running", eventId: 0, status: "error" },
+    ]);
+
+    // The rejected reopen leaves the first stream running with its history intact.
+    expect(await store.status({ streamId: "dup_running" })).toEqual({
+      status: "running",
+      lastEventId: 1,
+    });
+
+    releaseFirst?.();
+    const firstFrames = (await firstDone) as ClientStreamFrame[];
+    expect(firstFrames.map((frame) => frame.type)).toEqual([
+      "stream_start",
+      "stream_event",
+      "stream_event",
+      "stream_end",
+    ]);
+    expect(firstFrames.at(-1)).toEqual({
+      type: "stream_end",
+      streamId: "dup_running",
+      eventId: 2,
+      status: "completed",
+    });
+    expect(firstFrames[1]).toMatchObject({
+      type: "stream_event",
+      eventId: 1,
+      event: { type: "run_start", runId: "run_1" },
+    });
   });
 });
 

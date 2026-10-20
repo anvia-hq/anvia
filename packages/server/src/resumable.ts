@@ -189,6 +189,13 @@ async function drainResumableStream<TEvent>(
   const streamId = options.id;
   try {
     await openPromise;
+  } catch {
+    // A rejected open() (for example a duplicate id for a running stream) must
+    // leave any existing stream untouched. The caller's iterator awaits the
+    // same openPromise and reports the failure, so there is nothing to drain.
+    return;
+  }
+  try {
     for await (const event of events) {
       await options.store.append({ streamId, event });
     }
@@ -198,12 +205,12 @@ async function drainResumableStream<TEvent>(
     try {
       await options.store.append({ streamId, event });
     } catch {
-      // The response iterator reports store-open failures; avoid a background rejection.
+      // Recording the failure is best-effort once draining already failed.
     }
     try {
       await options.store.close({ streamId, status: "error" });
     } catch {
-      // The store may not have opened.
+      // Marking the stream failed is best-effort once draining already failed.
     }
   }
 }

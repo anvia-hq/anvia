@@ -168,6 +168,14 @@ async function drainClientStream<Metadata extends ClientMetadata, Data extends C
 ): Promise<void> {
   try {
     await open;
+  } catch {
+    // A rejected open() (for example a duplicate id for a running stream) must
+    // leave any existing stream untouched. The caller's iterator awaits the
+    // same open promise and reports the failure to its own response, so there
+    // is nothing to drain.
+    return;
+  }
+  try {
     for await (const value of events) {
       await store.append({
         streamId,
@@ -182,7 +190,7 @@ async function drainClientStream<Metadata extends ClientMetadata, Data extends C
     try {
       await store.close({ streamId, status: "error" });
     } catch {
-      // A failed store open has no stream to close.
+      // Marking the stream failed is best-effort once draining already failed.
     }
   }
 }

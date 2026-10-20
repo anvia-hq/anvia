@@ -38,7 +38,7 @@ import {
 } from "./config";
 import { registerEvalRoutes } from "./evals";
 import { registerGraphRoutes } from "./graphs";
-import { errorResponse, unsupportedCapability } from "./http";
+import { errorResponse, studioHostGuard, unsupportedCapability } from "./http";
 import { createStudioContinuationRegistry } from "./interactions";
 import { registerKnowledgeRoutes } from "./knowledge";
 import { registerMcpRoutes } from "./mcps";
@@ -406,6 +406,9 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
   const sandboxRegistry = createStudioSandboxRegistry(agents, options.sandboxes ?? []);
   const memorySources = createStudioMemorySourceRegistry(agents, stores.sessions);
   const app = new HonoApp();
+  // Validate Host/Origin before any route handling so DNS rebinding and
+  // cross-origin pages cannot reach state-changing routes.
+  app.use(studioHostGuard);
   const uiOptions = isStudioUiEnabled(options.ui) ? resolveStudioUiOptions(options.ui) : undefined;
 
   if (uiOptions !== undefined && !uiOptions.protectShell) {

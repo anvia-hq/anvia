@@ -41,7 +41,7 @@ describe("memory resumable stream store eviction", () => {
   it("never evicts a running stream", async () => {
     const store = createMemoryResumableStreamStore<string>({
       closedStreamTtlMs: 1,
-      maxClosedStreams: 0,
+      maxClosedStreams: 1,
     });
     await store.open({ streamId: "open" });
     await store.open({ streamId: "closed" });
@@ -57,28 +57,21 @@ describe("memory resumable stream store eviction", () => {
     });
   });
 
-  it("does not leave subscribers of an evicted stream dangling", async () => {
+  it("ends a running subscriber when its stream closes", async () => {
     const store = createMemoryResumableStreamStore<string>({ closedStreamTtlMs: 1_000 });
     await store.open({ streamId: "s1" });
+    const iterator = store.subscribe({ streamId: "s1" })[Symbol.asyncIterator]();
+
+    await store.append({ streamId: "s1", event: "hello" });
+    expect(await iterator.next()).toMatchObject({ done: false, value: { event: "hello" } });
+
+    // Closing ends the subscriber: queued records are drained first, then
+    // the iterator completes.
     await store.close({ streamId: "s1", status: "completed" });
+    expect(await iterator.next()).toEqual({ value: undefined, done: true });
 
-    // A live subscriber on a running stream keeps receiving events normally.
-    await store.open({ streamId: "live" });
-    const seen: string[] = [];
-    const iterator = store.subscribe({ streamId: "live" })[Symbol.asyncIterator]();
-    const pending = (async () => {
-      const next = await iterator.next();
-      if (!next.done && next.value) {
-        seen.push(next.value.event as string);
-      }
-    })();
-    await store.append({ streamId: "live", event: "hello" });
-    await pending;
-    expect(seen).toEqual(["hello"]);
-    await iterator.return?.();
-
-    // Evict the closed stream; subscribing afterwards resolves immediately
-    // with no records instead of hanging on a stale subscriber queue.
+    // An evicted stream reports missing: subscribing after the TTL yields
+    // no records and the final status is gone.
     await vi.advanceTimersByTimeAsync(1_000);
     const records: unknown[] = [];
     for await (const record of store.subscribe({ streamId: "s1" })) {
@@ -89,6 +82,26 @@ describe("memory resumable stream store eviction", () => {
       status: "missing",
       lastEventId: 0,
     });
-    expect(await store.status({ streamId: "live" })).toMatchObject({ status: "running" });
+  });
+
+  it("keeps a just-closed stream readable for resumers", async () => {
+    for (const options of [{ closedStreamTtlMs: 0 }, { maxClosedStreams: 0 }]) {
+      const store = createMemoryResumableStreamStore<string>(options);
+      await store.open({ streamId: "s1" });
+      await store.append({ streamId: "s1", event: "a" });
+      await store.close({ streamId: "s1", status: "completed" });
+
+      // Zero TTL/cap are clamped so close() does not evict immediately: the
+      // final state must still be visible to resumers.
+      expect(await store.status({ streamId: "s1" })).toEqual({
+        status: "completed",
+        lastEventId: 1,
+      });
+      const records: unknown[] = [];
+      for await (const record of store.subscribe({ streamId: "s1" })) {
+        records.push(record);
+      }
+      expect(records).toHaveLength(1);
+    }
   });
 });

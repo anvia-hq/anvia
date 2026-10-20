@@ -75,7 +75,7 @@ export type MemoryResumableStreamStoreOptions = {
   /**
    * How long a closed stream is retained for resume before it is evicted, in
    * milliseconds. Defaults to 10 minutes. Closed streams are removed lazily:
-   * on the next open/append/subscribe/status/close call, once the TTL has
+   * on the next open/subscribe/status/close call, once the TTL has
    * elapsed since the stream was closed.
    */
   closedStreamTtlMs?: number;
@@ -93,8 +93,11 @@ const DEFAULT_MAX_CLOSED_STREAMS = 1000;
 export function createMemoryResumableStreamStore<TEvent = unknown>(
   options: MemoryResumableStreamStoreOptions = {},
 ): ResumableStreamStore<TEvent> {
-  const closedStreamTtlMs = Math.max(0, options.closedStreamTtlMs ?? DEFAULT_CLOSED_STREAM_TTL_MS);
-  const maxClosedStreams = Math.max(0, options.maxClosedStreams ?? DEFAULT_MAX_CLOSED_STREAMS);
+  // Clamp to at least 1 so a just-closed stream stays readable for resumers:
+  // with a zero TTL/cap, close() would evict the stream immediately and a
+  // later resume would report "missing" instead of the final status.
+  const closedStreamTtlMs = Math.max(1, options.closedStreamTtlMs ?? DEFAULT_CLOSED_STREAM_TTL_MS);
+  const maxClosedStreams = Math.max(1, options.maxClosedStreams ?? DEFAULT_MAX_CLOSED_STREAMS);
   const streams = new Map<string, MemoryStream<TEvent>>();
 
   /** Remove expired closed streams and enforce the closed-stream cap. */
@@ -105,7 +108,6 @@ export function createMemoryResumableStreamStore<TEvent = unknown>(
         continue;
       }
       if (now - stream.closedAt >= closedStreamTtlMs) {
-        closeSubscribers(stream);
         streams.delete(streamId);
       }
     }
@@ -121,11 +123,7 @@ export function createMemoryResumableStreamStore<TEvent = unknown>(
     }
     closed.sort((a, b) => a.closedAt - b.closedAt);
     for (const entry of closed.slice(0, closed.length - maxClosedStreams)) {
-      const stream = streams.get(entry.streamId);
-      if (stream !== undefined) {
-        closeSubscribers(stream);
-        streams.delete(entry.streamId);
-      }
+      streams.delete(entry.streamId);
     }
   }
 
@@ -157,7 +155,6 @@ export function createMemoryResumableStreamStore<TEvent = unknown>(
     },
 
     async append(input) {
-      evictClosedStreams();
       const stream = streams.get(input.streamId);
       if (stream === undefined) {
         throw new Error(`Resumable stream "${input.streamId}" is not open`);

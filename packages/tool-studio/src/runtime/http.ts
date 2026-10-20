@@ -4,9 +4,14 @@ import type { StudioCapability, StudioErrorCode, StudioErrorResponse } from "../
 import { isObject } from "./type-guards";
 
 /**
- * Hostnames accepted by the Studio HTTP API. Studio binds to a loopback
- * interface, so only loopback callers are trusted. Ports are ignored because
- * callers may reach Studio on any configured port.
+ * Hostnames trusted by default by the Studio HTTP API. Studio defaults to a
+ * loopback bind address, so only loopback callers are trusted unless the
+ * operator explicitly allows more. Ports are ignored because callers may
+ * reach Studio on any configured port.
+ *
+ * Binding to 0.0.0.0 (or ::) exposes Studio on every interface; requests then
+ * arrive with whatever hostname clients use, so operators must list those
+ * hostnames in `allowedHosts` (see `StudioServeOptions`).
  */
 export const STUDIO_LOCAL_HOSTNAMES = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
 
@@ -14,23 +19,68 @@ export function isStudioLocalHostname(hostname: string | undefined): boolean {
   return hostname !== undefined && STUDIO_LOCAL_HOSTNAMES.has(hostname.trim().toLowerCase());
 }
 
+function normalizeHostname(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+/**
+ * Hostnames accepted by the Studio HTTP API for this server instance: the
+ * loopback set, plus operator-configured `allowedHosts`, plus the explicit
+ * non-wildcard `hostname` the server bound to (for example a LAN address
+ * inside Docker). Wildcard binds (0.0.0.0, ::, or empty) add nothing, so
+ * operators binding to all interfaces must list client-facing hostnames in
+ * `allowedHosts` instead.
+ */
+export function resolveStudioAllowedHostnames(options?: {
+  allowedHosts?: readonly string[];
+  hostname?: string;
+}): Set<string> {
+  const allowed = new Set<string>(STUDIO_LOCAL_HOSTNAMES);
+  for (const host of options?.allowedHosts ?? []) {
+    const normalized = normalizeHostname(host);
+    if (normalized !== "") allowed.add(normalized);
+  }
+  const bound = normalizeHostname(options?.hostname ?? "");
+  if (bound !== "" && bound !== "0.0.0.0" && bound !== "::" && !allowed.has(bound)) {
+    allowed.add(bound);
+  }
+  return allowed;
+}
+
+function isAllowedHostname(hostname: string | undefined, allowed: Set<string>): boolean {
+  return hostname !== undefined && allowed.has(hostname.trim().toLowerCase());
+}
+
 /**
  * Reject requests that cannot come from the local Studio UI: a Host header
- * that does not target a loopback address (DNS rebinding), or an Origin
- * header from a non-loopback origin (cross-origin page).
+ * that is not in the allowed Host set (DNS rebinding), or an Origin header
+ * whose host is not in the allowed set (cross-origin page). The Origin rule
+ * follows the same allowlist, so a non-loopback Origin is accepted only when
+ * its host was explicitly allowed.
  */
-export async function studioHostGuard(c: Context, next: Next): Promise<Response | void> {
+export function createStudioHostGuard(options?: {
+  allowedHosts?: readonly string[];
+  hostname?: string;
+}): (c: Context, next: Next) => Promise<Response | void> {
+  const allowed = resolveStudioAllowedHostnames(options);
   // A missing Host header only happens for in-process fetch callers; servers
   // on the wire always provide one, so there is nothing to validate.
-  const host = c.req.header("host");
-  if (host !== undefined && !isStudioLocalHostname(studioRequestHostname(host))) {
-    return errorResponse(c, 403, "forbidden", "Host not allowed");
-  }
-  const origin = c.req.header("origin");
-  if (origin !== undefined && !isStudioLocalOrigin(origin)) {
-    return errorResponse(c, 403, "forbidden", "Origin not allowed");
-  }
-  return next();
+  return async function studioHostGuard(c: Context, next: Next): Promise<Response | void> {
+    const host = c.req.header("host");
+    if (host !== undefined && !isAllowedHostname(studioRequestHostname(host), allowed)) {
+      return errorResponse(c, 403, "forbidden", "Host not allowed");
+    }
+    const origin = c.req.header("origin");
+    if (origin !== undefined && !isAllowedOrigin(origin, allowed)) {
+      return errorResponse(c, 403, "forbidden", "Origin not allowed");
+    }
+    return next();
+  };
+}
+
+/** Default `studioHostGuard` middleware: loopback Hosts and Origins only. */
+export async function studioHostGuard(c: Context, next: Next): Promise<Response | void> {
+  return createStudioHostGuard()(c, next);
 }
 
 function studioRequestHostname(hostHeader: string | undefined): string | undefined {
@@ -47,14 +97,14 @@ function studioRequestHostname(hostHeader: string | undefined): string | undefin
   return host;
 }
 
-function isStudioLocalOrigin(origin: string): boolean {
+function isAllowedOrigin(origin: string, allowed: Set<string>): boolean {
   let url: URL;
   try {
     url = new URL(origin);
   } catch {
     return false;
   }
-  return isStudioLocalHostname(url.hostname);
+  return isAllowedHostname(url.hostname, allowed);
 }
 
 export function errorResponse(

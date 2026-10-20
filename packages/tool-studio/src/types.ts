@@ -1086,6 +1086,13 @@ export type StudioOptions = {
 export type StudioServeOptions = {
   port?: number;
   hostname?: string;
+  /**
+   * Extra Host header hostnames (and Origin hosts) trusted by the Studio HTTP
+   * API, in addition to the loopback set and an explicitly configured
+   * non-wildcard `hostname`. Required when binding to 0.0.0.0 (or ::): list
+   * every hostname clients use to reach Studio, for example `["studio.lan"]`.
+   */
+  allowedHosts?: readonly string[];
   log?: boolean;
   handleSignals?: boolean;
   shutdownTimeoutMs?: number;

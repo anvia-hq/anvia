@@ -38,7 +38,7 @@ import {
 } from "./config";
 import { registerEvalRoutes } from "./evals";
 import { registerGraphRoutes } from "./graphs";
-import { errorResponse, studioHostGuard, unsupportedCapability } from "./http";
+import { createStudioHostGuard, errorResponse, unsupportedCapability } from "./http";
 import { createStudioContinuationRegistry } from "./interactions";
 import { registerKnowledgeRoutes } from "./knowledge";
 import { registerMcpRoutes } from "./mcps";
@@ -100,7 +100,12 @@ export class Studio implements AnviaStudio {
 
   start(serveOptions: StudioServeOptions = {}): this {
     this.close();
-    this.studio = createStudioApp(this.options);
+    const serveHostOptions: { allowedHosts?: readonly string[]; hostname?: string } = {};
+    if (serveOptions.allowedHosts !== undefined) {
+      serveHostOptions.allowedHosts = serveOptions.allowedHosts;
+    }
+    if (serveOptions.hostname !== undefined) serveHostOptions.hostname = serveOptions.hostname;
+    this.studio = createStudioApp({ ...this.options, ...serveHostOptions });
     this.shutdownPromise = undefined;
 
     const port = serveOptions.port ?? Number(process.env.RUNNER_PORT ?? 4021);
@@ -407,8 +412,14 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
   const memorySources = createStudioMemorySourceRegistry(agents, stores.sessions);
   const app = new HonoApp();
   // Validate Host/Origin before any route handling so DNS rebinding and
-  // cross-origin pages cannot reach state-changing routes.
-  app.use(studioHostGuard);
+  // cross-origin pages cannot reach state-changing routes. The allowlist
+  // follows the serve options: an explicit non-wildcard bind hostname is
+  // trusted automatically, and operators binding 0.0.0.0 must list
+  // client-facing hostnames in allowedHosts.
+  const guardOptions: { allowedHosts?: readonly string[]; hostname?: string } = {};
+  if (options.allowedHosts !== undefined) guardOptions.allowedHosts = options.allowedHosts;
+  if (options.hostname !== undefined) guardOptions.hostname = options.hostname;
+  app.use(createStudioHostGuard(guardOptions));
   const uiOptions = isStudioUiEnabled(options.ui) ? resolveStudioUiOptions(options.ui) : undefined;
 
   if (uiOptions !== undefined && !uiOptions.protectShell) {

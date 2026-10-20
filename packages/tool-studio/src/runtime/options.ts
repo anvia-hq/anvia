@@ -35,4 +35,16 @@ export type StudioRuntimeOptions = {
   ui?: boolean | StudioUiOptions;
   sandboxes?: readonly StudioSandboxRegistration[];
   graphs: StudioGraphRegistration[];
+  /**
+   * Extra Host header hostnames (and Origin hosts) trusted alongside the
+   * loopback set. Populated from `StudioServeOptions.allowedHosts` when
+   * serving; in-process `fetch` callers use the loopback default.
+   */
+  allowedHosts?: readonly string[];
+  /**
+   * Bind hostname from `StudioServeOptions.hostname`. An explicit
+   * non-wildcard value is trusted automatically so the bind address works
+   * without extra config.
+   */
+  hostname?: string;
 };

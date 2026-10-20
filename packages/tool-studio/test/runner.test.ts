@@ -2224,6 +2224,44 @@ describe("Anvia studio", () => {
     });
   });
 
+  it("rejects invalid cursors on dynamic knowledge sources backed by vector stores", async () => {
+    const embeddings = new KeywordEmbeddingModel();
+    const { documents: embedded } = await embedDocuments({
+      model: embeddings,
+      documents: [
+        { id: "refund-policy", text: "Refund policy is 30 days." },
+        { id: "shipping-policy", text: "Shipping updates go to operations." },
+      ],
+      id: (document) => document.id,
+      content: (document) => document.text,
+    });
+    const inspectableStore = InMemoryVectorStore.fromDocuments({ documents: embedded });
+    const toolIndex = await createToolIndex({
+      model: embeddings,
+      tools: [lookupPolicyTool],
+      topK: 1,
+    });
+    const agent = new Agent({
+      id: "support",
+      model: new QueueModel([]),
+      context: [createVectorContext({ store: inspectableStore, model: embeddings, topK: 1 })],
+      tools: [toolIndex],
+    });
+    const runner = new Studio([agent]);
+
+    for (const sourceId of ["dynamic-context-0", "dynamic-tools-0"]) {
+      const invalid = await runner.fetch(
+        new Request(
+          `http://runner.test/knowledge/items?agentId=support&sourceId=${sourceId}&cursor=abc`,
+        ),
+      );
+      expect(invalid.status).toBe(400);
+      await expect(invalid.json()).resolves.toEqual({
+        error: { code: "bad_request", message: "Invalid cursor" },
+      });
+    }
+  });
+
   it("exposes inspectable dynamic knowledge items and unsupported source states", async () => {
     const embeddings = new KeywordEmbeddingModel();
     const { documents: embedded } = await embedDocuments({

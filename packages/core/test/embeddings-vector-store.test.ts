@@ -21,6 +21,7 @@ import {
   type SparseEmbeddingModel,
   type VectorSearchRequest,
   type VectorStoreUpsertOptions,
+  VectorInspectCursorError,
 } from "./helpers/imports";
 
 class KeywordModel implements EmbeddingModel {
@@ -868,6 +869,21 @@ describe("vector stores and retrieval", () => {
     await expect(
       store.inspect({ limit: 1, cursor: String(Number.MAX_SAFE_INTEGER + 1) }),
     ).rejects.toThrow(/Invalid vector inspect cursor/);
+  });
+
+  it("identifies invalid inspect cursors without matching on the message", async () => {
+    const store = InMemoryVectorStore.fromDocuments({
+      documents: [
+        { id: "doc-0", document: "alpha", embeddings: [{ document: "alpha", vector: [1, 0] }] },
+      ],
+    });
+
+    const cursorError = await store.inspect({ limit: 1, cursor: "abc" }).catch((error) => error);
+    expect(cursorError).toBeInstanceOf(RangeError);
+    expect(VectorInspectCursorError.isCursorError(cursorError)).toBe(true);
+    expect(VectorInspectCursorError.isCursorError(new RangeError("unrelated"))).toBe(false);
+    expect(VectorInspectCursorError.isCursorError(new Error("boom"))).toBe(false);
+    expect(VectorInspectCursorError.isCursorError(undefined)).toBe(false);
   });
 
   it("creates explicit vector contexts", () => {

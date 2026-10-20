@@ -1,6 +1,6 @@
 import type { JsonObject, JsonValue } from "@anvia/core/completion";
 import { getAgentToolState } from "@anvia/core/internal/agent";
-import { parseVectorInspectCursor } from "@anvia/core/vector-store";
+import { parseVectorInspectCursor, VectorInspectCursorError } from "@anvia/core/vector-store";
 import type { Hono } from "hono";
 import type {
   StudioAgent,
@@ -194,11 +194,19 @@ async function knowledgeItemsPage(
     if (inspect === undefined) {
       return nonInspectablePage(agent.id, sourceId, "dynamic_context");
     }
-    const page = await inspect({
-      limit: request.limit,
-      cursor: request.cursor,
-      filter: vectorContext.filter,
-    });
+    let page;
+    try {
+      page = await inspect({
+        limit: request.limit,
+        cursor: request.cursor,
+        filter: vectorContext.filter,
+      });
+    } catch (error) {
+      if (VectorInspectCursorError.isCursorError(error)) {
+        return false;
+      }
+      throw error;
+    }
     const result: StudioKnowledgeItemsPage = {
       agentId: agent.id,
       sourceId,
@@ -221,11 +229,19 @@ async function knowledgeItemsPage(
     if (inspect === undefined) {
       return nonInspectablePage(agent.id, sourceId, "dynamic_tools");
     }
-    const page = await inspect({
-      limit: request.limit,
-      cursor: request.cursor,
-      filter: toolIndex.filter,
-    });
+    let page;
+    try {
+      page = await inspect({
+        limit: request.limit,
+        cursor: request.cursor,
+        filter: toolIndex.filter,
+      });
+    } catch (error) {
+      if (VectorInspectCursorError.isCursorError(error)) {
+        return false;
+      }
+      throw error;
+    }
     const result: StudioKnowledgeItemsPage = {
       agentId: agent.id,
       sourceId,

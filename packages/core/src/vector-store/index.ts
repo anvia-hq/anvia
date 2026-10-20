@@ -29,7 +29,7 @@ import type {
 
 export { matchesVectorFilter, vectorFilter } from "./filter";
 export * from "./ingest";
-export { parseVectorInspectCursor } from "./inspect-cursor";
+export { parseVectorInspectCursor, VectorInspectCursorError } from "./inspect-cursor";
 export { retrieveDocuments } from "./retrieve";
 export type * from "./types";
 

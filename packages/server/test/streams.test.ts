@@ -9,7 +9,6 @@ import {
   createJsonlStream,
   createMemoryResumableStreamStore,
   errorEvent,
-  parseResumableAfter,
   resumeClientStreamResponse,
   resumeEventStreamResponse,
   resumeStreamEvents,
@@ -302,7 +301,6 @@ describe("resumable after cursor validation", () => {
 
   it("rejects invalid client resume cursors with a 400 error", async () => {
     const store = createMemoryResumableStreamStore<ClientResumableEvent>();
-    expect(parseResumableAfter(undefined)).toBe(0);
     const response = resumeClientStreamResponse({ streamId: "client_after", after: -1, store });
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({

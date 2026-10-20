@@ -15,10 +15,6 @@ import { isObject } from "./type-guards";
  */
 export const STUDIO_LOCAL_HOSTNAMES = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
 
-export function isStudioLocalHostname(hostname: string | undefined): boolean {
-  return hostname !== undefined && STUDIO_LOCAL_HOSTNAMES.has(hostname.trim().toLowerCase());
-}
-
 function normalizeHostname(value: string): string {
   return value.trim().toLowerCase();
 }
@@ -43,6 +39,9 @@ export function resolveStudioAllowedHostnames(options?: {
   const bound = normalizeHostname(options?.hostname ?? "");
   if (bound !== "" && bound !== "0.0.0.0" && bound !== "::" && !allowed.has(bound)) {
     allowed.add(bound);
+    // Host headers carry IPv6 literals bracketed (e.g. "[2001:db8::1]"), while
+    // the configured bind address is unbracketed, so trust both spellings.
+    if (bound.includes(":")) allowed.add(`[${bound}]`);
   }
   return allowed;
 }
@@ -76,11 +75,6 @@ export function createStudioHostGuard(options?: {
     }
     return next();
   };
-}
-
-/** Default `studioHostGuard` middleware: loopback Hosts and Origins only. */
-export async function studioHostGuard(c: Context, next: Next): Promise<Response | void> {
-  return createStudioHostGuard()(c, next);
 }
 
 function studioRequestHostname(hostHeader: string | undefined): string | undefined {

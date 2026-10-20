@@ -1,6 +1,8 @@
 import { request as requestNode } from "node:http";
+import { networkInterfaces } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
 import { Studio } from "../src/index";
+import { resolveStudioAllowedHostnames } from "../src/runtime/http";
 
 const studios: Studio[] = [];
 
@@ -71,19 +73,28 @@ describe("Studio Host and Origin validation", () => {
     }
   });
 
-  it("accepts the bind Host without extra config when bound to a non-loopback address", async () => {
-    const lanAddress = await lanIpv4Address();
-    const { studio, port } = await startStudio({ hostname: lanAddress });
-    try {
-      const response = await fetch(`http://${lanAddress}:${port}/health`);
-      expect(response.status).toBe(200);
-      expect(await response.json()).toMatchObject({ status: "ok" });
+  it.skipIf(findLanIpv4() === undefined)(
+    "accepts the bind Host without extra config when bound to a non-loopback address",
+    async () => {
+      const lanAddress = lanIpv4Address();
+      const { studio, port } = await startStudio({ hostname: lanAddress });
+      try {
+        const response = await fetch(`http://${lanAddress}:${port}/health`);
+        expect(response.status).toBe(200);
+        expect(await response.json()).toMatchObject({ status: "ok" });
 
-      const raw = await fetchRaw(`http://${lanAddress}:${port}/health`, "attacker.test");
-      expect(raw.status).toBe(403);
-    } finally {
-      studio.close();
-    }
+        const raw = await fetchRaw(`http://${lanAddress}:${port}/health`, "attacker.test");
+        expect(raw.status).toBe(403);
+      } finally {
+        studio.close();
+      }
+    },
+  );
+
+  it("trusts an explicit IPv6 bind in both bracketed and unbracketed form", () => {
+    const allowed = resolveStudioAllowedHostnames({ hostname: "2001:db8::1" });
+    expect(allowed.has("2001:db8::1")).toBe(true);
+    expect(allowed.has("[2001:db8::1]")).toBe(true);
   });
 
   it("accepts an allowlisted non-loopback Origin while rejecting others", async () => {
@@ -153,14 +164,13 @@ async function studioPort(studio: Studio): Promise<number> {
   throw new Error("Expected Studio to listen on a TCP port");
 }
 
-async function lanIpv4Address(): Promise<string> {
-  const lan = await findLanIpv4();
+function lanIpv4Address(): string {
+  const lan = findLanIpv4();
   if (lan === undefined) throw new Error("No non-loopback IPv4 address available");
   return lan;
 }
 
-async function findLanIpv4(): Promise<string | undefined> {
-  const { networkInterfaces } = await import("node:os");
+function findLanIpv4(): string | undefined {
   for (const interfaces of Object.values(networkInterfaces())) {
     for (const entry of interfaces ?? []) {
       if (entry.family === "IPv4" && !entry.internal) return entry.address;

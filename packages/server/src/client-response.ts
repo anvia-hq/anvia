@@ -11,7 +11,8 @@ import {
   createClientId,
   parseClientStreamEvent,
 } from "@anvia/client";
-import { encodeEventStreamResponse } from "./response";
+import { encodeEventStreamResponse, resumeAfterErrorResponse } from "./response";
+import { InvalidResumableAfterError, parseResumableAfter } from "./resumable";
 import type { EventStreamFormat, ResumableStreamStore } from "./types";
 
 type ClientResponseOptions<Metadata extends ClientMetadata, Data extends ClientDataMap> = {
@@ -79,16 +80,24 @@ export function resumeClientStreamResponse<
   Metadata extends ClientMetadata = ClientMetadata,
   Data extends ClientDataMap = ClientDataMap,
 >(options: ResumeClientStreamResponseOptions<Metadata, Data>): Response {
-  return clientResponse(
-    resumeClientFrames(
-      options.streamId,
-      options.after,
-      options.store,
-      options.metadataSchema,
-      options.dataSchemas,
-    ),
-    options,
-  );
+  try {
+    const after = parseResumableAfter(options.after);
+    return clientResponse(
+      resumeClientFrames(
+        options.streamId,
+        after,
+        options.store,
+        options.metadataSchema,
+        options.dataSchemas,
+      ),
+      options,
+    );
+  } catch (error) {
+    if (error instanceof InvalidResumableAfterError) {
+      return resumeAfterErrorResponse(error);
+    }
+    throw error;
+  }
 }
 
 function frameClientStream<Metadata extends ClientMetadata, Data extends ClientDataMap>(

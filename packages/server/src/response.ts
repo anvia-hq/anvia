@@ -1,5 +1,10 @@
 import { createJsonlStream } from "./jsonl";
-import { createResumableStream, resumeStreamEvents } from "./resumable";
+import {
+  createResumableStream,
+  InvalidResumableAfterError,
+  parseResumableAfter,
+  resumeStreamEvents,
+} from "./resumable";
 import { createSseStream } from "./sse";
 import type {
   CreateEventStreamResponseOptions,
@@ -38,14 +43,34 @@ export function createEventStreamResponse<TEvent>(
 export function resumeEventStreamResponse<TEvent>(
   options: ResumeEventStreamResponseOptions<TEvent>,
 ): Response {
-  return encodeEventStreamResponse({
-    events: resumeStreamEvents({
-      id: options.streamId,
-      after: options.after,
-      store: options.store,
+  try {
+    const after = parseResumableAfter(options.after);
+    return encodeEventStreamResponse({
+      events: resumeStreamEvents({
+        id: options.streamId,
+        after,
+        store: options.store,
+      }),
+      ...copyResponseOptions(options),
+    });
+  } catch (error) {
+    if (error instanceof InvalidResumableAfterError) {
+      return resumeAfterErrorResponse(error);
+    }
+    throw error;
+  }
+}
+
+export function resumeAfterErrorResponse(error: InvalidResumableAfterError): Response {
+  return new Response(
+    JSON.stringify({
+      error: { code: error.code, message: error.message },
     }),
-    ...copyResponseOptions(options),
-  });
+    {
+      status: error.status,
+      headers: { "content-type": "application/json; charset=utf-8" },
+    },
+  );
 }
 
 export function encodeEventStreamResponse<TEvent>(

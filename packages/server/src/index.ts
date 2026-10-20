@@ -5,8 +5,13 @@ export type {
 } from "./client-response";
 export { createClientStreamResponse, resumeClientStreamResponse } from "./client-response";
 export { errorEvent } from "./errors";
+export { InvalidResumableAfterError, parseResumableAfter } from "./resumable";
 export { createJsonlStream } from "./jsonl";
-export { createEventStreamResponse, resumeEventStreamResponse } from "./response";
+export {
+  createEventStreamResponse,
+  resumeAfterErrorResponse,
+  resumeEventStreamResponse,
+} from "./response";
 export {
   createMemoryResumableStreamStore,
   createResumableStream,

@@ -10,6 +10,24 @@ import type {
   ResumeStreamEventsOptions,
 } from "./types";
 
+export class InvalidResumableAfterError extends RangeError {
+  readonly code = "invalid_resumable_after";
+  readonly status = 400;
+
+  constructor(readonly value: unknown) {
+    super("Resumable stream resume cursor must be a nonnegative safe integer.");
+    this.name = "InvalidResumableAfterError";
+  }
+}
+
+export function parseResumableAfter(value: unknown): number {
+  if (value === undefined) return 0;
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
+    throw new InvalidResumableAfterError(value);
+  }
+  return value;
+}
+
 type Subscriber<TEvent> = {
   after: number;
   queue: AsyncQueue<ResumableStreamRecord<TEvent>>;
@@ -54,13 +72,11 @@ export function createResumableStream<TEvent>(
 export async function* resumeStreamEvents<TEvent>(
   options: ResumeStreamEventsOptions<TEvent>,
 ): AsyncIterable<ResumableStreamEnvelope<TEvent>> {
+  const after = parseResumableAfter(options.after);
   const streamId = options.id;
   yield { type: "stream_start", streamId, eventId: 0 };
 
-  const subscribeInput: ResumableStreamSubscribeInput = { streamId };
-  if (options.after !== undefined) {
-    subscribeInput.after = options.after;
-  }
+  const subscribeInput: ResumableStreamSubscribeInput = { streamId, after };
   for await (const record of options.store.subscribe(subscribeInput)) {
     yield recordToEnvelope(record);
   }

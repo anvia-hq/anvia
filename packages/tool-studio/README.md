@@ -39,6 +39,12 @@ await new Studio([agent]).serve({ port: 4021 });
 
 Session storage is in memory by default; configure SQLite to persist it across restarts. Studio is intended for local development. Add application authentication and authorization when exposing it remotely.
 
+Studio rejects HTTP requests with an untrusted Host or Origin hostname. Loopback hosts are
+trusted by default, as is an explicitly configured non-wildcard bind `hostname`. When binding
+to `0.0.0.0` or `::`, set `allowedHosts` to the hostnames clients use, for example
+`serve({ hostname: "0.0.0.0", allowedHosts: ["studio.lan"] })`. This allowlist also applies to
+Origin hosts; ports are ignored. See the [serving guide](../../docs/packages/tool-studio.md#usage).
+
 ## Learn more
 
 - [Usage guide](https://github.com/anvia-hq/anvia/blob/main/docs/packages/tool-studio.md)

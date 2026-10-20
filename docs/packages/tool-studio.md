@@ -99,6 +99,22 @@ Then open:
 http://localhost:4021/ui/playground
 ```
 
+Studio validates Host and Origin headers before routing. By default it trusts `localhost`,
+`127.0.0.1`, and `::1`. Requests with another Host or a present, untrusted Origin receive HTTP
+403 `forbidden`. An explicit non-wildcard `hostname` is trusted automatically. For a wildcard
+bind, list client-facing hostnames in `StudioServeOptions.allowedHosts`:
+
+```ts
+await new Studio([agent]).serve({
+  hostname: "0.0.0.0",
+  port: 4021,
+  allowedHosts: ["studio.lan"],
+});
+```
+
+The same allowlist applies to Origin hostnames, with ports ignored. List hostnames without
+schemes or ports. This check supplements application authentication for remote deployments.
+
 ## Graceful shutdown
 
 `serve()` handles both `SIGINT` and `SIGTERM`. Studio stops accepting work, aborts active Agent and

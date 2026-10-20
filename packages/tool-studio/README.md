@@ -37,6 +37,9 @@ await new Studio([agent]).serve({ port: 4021 });
 - Knowledge-graph exploration and browser sandbox viewing with human takeover.
 - Optional SQLite session storage and graceful server shutdown.
 
+The knowledge inspector returns HTTP 400 `bad_request` with message `Invalid cursor` for invalid
+static-context cursors or when a dynamic context/tool store raises `VectorInspectCursorError`.
+
 Session storage is in memory by default; configure SQLite to persist it across restarts. Studio is intended for local development. Add application authentication and authorization when exposing it remotely.
 
 ## Learn more

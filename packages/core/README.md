@@ -96,6 +96,12 @@ for the resume protocol.
 Use `@anvia/client`, `@anvia/server`, and `@anvia/react` to deliver agent output to an application UI.
 Use provider, memory, vector-store, and observability adapters for the infrastructure you choose.
 
+`InMemoryVectorStore.inspect()` accepts canonical nonnegative decimal cursor strings within the
+safe-integer range; omit the cursor to start at zero. Invalid cursors throw
+`VectorInspectCursorError`, a `RangeError`. The `@anvia/core/vector-store` subpath also exports
+`parseVectorInspectCursor()` and `VectorInspectCursorError.isCursorError()` for validation and
+error handling. See the [inspection guide](../../docs/packages/core.md#documents).
+
 Streaming completions preserve empty or encrypted reasoning supplied only in the final provider
 response, including Azure Responses streams. Final encrypted details can also enrich matching
 streamed reasoning for replay on subsequent turns. Conflicting text, reasoning, and tool calls still

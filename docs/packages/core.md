@@ -1073,6 +1073,14 @@ await ingestVectorText({
 source document is embedded as one chunk. Chunk embeddings remain grouped under the source document
 ID so re-ingestion replaces its complete vector representation instead of leaving stale chunks.
 
+`InMemoryVectorStore.inspect({ limit, cursor })` returns a page and an optional `nextCursor`.
+Pass that cursor unchanged to fetch the next page. Its decimal offset must be a canonical
+nonnegative safe integer string: signs, fractions, exponents, whitespace, and leading zeroes
+are rejected. An omitted cursor starts at zero. `parseVectorInspectCursor()` and
+`VectorInspectCursorError` are exported from `@anvia/core/vector-store`; invalid cursors throw
+this `RangeError` subclass, identifiable with `VectorInspectCursorError.isCursorError(error)`.
+Other vector-store adapters may use different opaque cursor formats.
+
 `embedTexts()`, `embedSparseTexts()`, and `embedDocuments()` require exactly one embedding per
 requested text in every provider batch. Short and long batches reject before results are flattened
 or grouped, even when their total counts would match. Successful batches retain input batch order.

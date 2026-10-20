@@ -826,6 +826,50 @@ describe("vector stores and retrieval", () => {
     expect(search).toHaveBeenLastCalledWith(expect.objectContaining({ topK: 2, filter }));
   });
 
+  it("pages in-memory inspect results with validated cursors", async () => {
+    const store = InMemoryVectorStore.fromDocuments({
+      documents: ["alpha", "bravo", "charlie"].map((text, index) => ({
+        id: `doc-${index}`,
+        document: text,
+        embeddings: [{ document: text, vector: [index + 1, 0] }],
+      })),
+    });
+
+    const first = await store.inspect({ limit: 2 });
+    expect(first.items.map((item) => item.id)).toEqual(["doc-0", "doc-1"]);
+    expect(first.nextCursor).toBe("2");
+    expect(first.totalCount).toBe(3);
+
+    const second = await store.inspect({ limit: 2, cursor: first.nextCursor });
+    expect(second.items.map((item) => item.id)).toEqual(["doc-2"]);
+    expect(second.nextCursor).toBeUndefined();
+    expect(second.totalCount).toBe(3);
+  });
+
+  it("rejects invalid in-memory inspect cursors instead of replaying a page", async () => {
+    const store = InMemoryVectorStore.fromDocuments({
+      documents: [
+        { id: "doc-0", document: "alpha", embeddings: [{ document: "alpha", vector: [1, 0] }] },
+      ],
+    });
+
+    await expect(store.inspect({ limit: 1, cursor: "abc" })).rejects.toThrow(
+      /Invalid vector inspect cursor/,
+    );
+    await expect(store.inspect({ limit: 1, cursor: "-1" })).rejects.toThrow(
+      /Invalid vector inspect cursor/,
+    );
+    await expect(store.inspect({ limit: 1, cursor: "1.5" })).rejects.toThrow(
+      /Invalid vector inspect cursor/,
+    );
+    await expect(store.inspect({ limit: 1, cursor: "1e999" })).rejects.toThrow(
+      /Invalid vector inspect cursor/,
+    );
+    await expect(
+      store.inspect({ limit: 1, cursor: String(Number.MAX_SAFE_INTEGER + 1) }),
+    ).rejects.toThrow(/Invalid vector inspect cursor/);
+  });
+
   it("creates explicit vector contexts", () => {
     const context = createVectorContext({
       store: new InMemoryVectorStore<string>({ dimensions: 2 }),

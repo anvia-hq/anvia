@@ -2205,6 +2205,25 @@ describe("Anvia studio", () => {
     expect(evaluations.status).toBe(404);
   });
 
+  it("rejects an invalid static knowledge cursor instead of replaying the first page", async () => {
+    const agent = new Agent({
+      id: "support",
+      model: new QueueModel([]),
+      context: [{ id: "refund-policy", text: "Refund policy is 30 days." }],
+    });
+    const runner = new Studio([agent]);
+
+    const invalid = await runner.fetch(
+      new Request(
+        "http://runner.test/knowledge/items?agentId=support&sourceId=static-context&cursor=abc",
+      ),
+    );
+    expect(invalid.status).toBe(400);
+    await expect(invalid.json()).resolves.toEqual({
+      error: { code: "bad_request", message: "Invalid cursor" },
+    });
+  });
+
   it("exposes inspectable dynamic knowledge items and unsupported source states", async () => {
     const embeddings = new KeywordEmbeddingModel();
     const { documents: embedded } = await embedDocuments({

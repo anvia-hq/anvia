@@ -1,5 +1,6 @@
 import type { JsonObject, JsonValue } from "@anvia/core/completion";
 import { getAgentToolState } from "@anvia/core/internal/agent";
+import { parseVectorInspectCursor } from "@anvia/core/vector-store";
 import type { Hono } from "hono";
 import type {
   StudioAgent,
@@ -71,6 +72,9 @@ export function registerKnowledgeRoutes(
     });
     if (page === undefined) {
       return errorResponse(c, 404, "not_found", "Knowledge source not found");
+    }
+    if (page === false) {
+      return errorResponse(c, 400, "bad_request", "Invalid cursor");
     }
 
     return c.json(page);
@@ -175,7 +179,7 @@ async function knowledgeItemsPage(
   agent: StudioAgent,
   sourceId: string,
   request: { limit: number; cursor?: string | undefined },
-): Promise<StudioKnowledgeItemsPage | undefined> {
+): Promise<StudioKnowledgeItemsPage | false | undefined> {
   if (sourceId === staticSourceId()) {
     return staticKnowledgeItemsPage(agent, request);
   }
@@ -249,9 +253,14 @@ function inspectFn(store: unknown): InspectableStore["inspect"] | undefined {
 function staticKnowledgeItemsPage(
   agent: StudioAgent,
   request: { limit: number; cursor?: string | undefined },
-): StudioKnowledgeItemsPage {
+): StudioKnowledgeItemsPage | false {
   const staticContext = staticContextDocuments(agent.agent);
-  const start = Math.max(0, Math.trunc(Number(request.cursor ?? "0")));
+  let start: number;
+  try {
+    start = parseVectorInspectCursor(request.cursor);
+  } catch {
+    return false;
+  }
   const page = staticContext.slice(start, start + request.limit);
   const nextOffset = start + page.length;
   const result: StudioKnowledgeItemsPage = {

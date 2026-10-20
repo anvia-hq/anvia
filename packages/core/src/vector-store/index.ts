@@ -11,6 +11,7 @@ import { assertFiniteMinScore, assertPositiveSearchLimit } from "../internal/vec
 import { createTool } from "../tool/create-tool";
 import type { Tool } from "../tool/tool";
 import { matchesVectorFilter } from "./filter";
+import { parseVectorInspectCursor } from "./inspect-cursor";
 import { LshIndex } from "./lsh";
 import { retrieveDocuments } from "./retrieve";
 import type {
@@ -28,6 +29,7 @@ import type {
 
 export { matchesVectorFilter, vectorFilter } from "./filter";
 export * from "./ingest";
+export { parseVectorInspectCursor } from "./inspect-cursor";
 export { retrieveDocuments } from "./retrieve";
 export type * from "./types";
 
@@ -147,7 +149,7 @@ export class InMemoryVectorStore<
   async inspect(request: VectorInspectRequest): Promise<VectorInspectPage<T, Metadata>> {
     throwIfAborted(request.abortSignal);
     const limit = assertPositiveSearchLimit(request.limit);
-    const start = Math.max(0, Math.trunc(Number(request.cursor ?? "0")));
+    const start = parseVectorInspectCursor(request.cursor);
     const documents = this.values().filter((document) =>
       matchesVectorFilter(document.metadata, request.filter),
     );

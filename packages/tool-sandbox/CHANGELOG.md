@@ -1,5 +1,13 @@
 # @anvia/sandbox
 
+## 1.2.2
+
+### Patch Changes
+
+- 227b29b: Reject sandbox file writes when the destination or any parent path component is a symlink,
+  including dangling links. Inspect before creating parent directories and again before copying
+  bytes, preventing existing links from redirecting either operation outside the workspace.
+
 ## 1.2.1
 
 ### Patch Changes

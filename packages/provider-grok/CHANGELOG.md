@@ -1,5 +1,14 @@
 # @anvia/grok
 
+## 1.1.15
+
+### Patch Changes
+
+- 3d01f68: Reject Grok MCP `serverUrl` values that target private, loopback, link-local,
+  or otherwise reserved hosts instead of accepting any HTTPS URL.
+- Updated dependencies [978458e]
+  - @anvia/openai@1.3.5
+
 ## 1.1.14
 
 ### Patch Changes

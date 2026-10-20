@@ -1,5 +1,19 @@
 # @anvia/studio
 
+## 1.3.19
+
+### Patch Changes
+
+- 8b4a88e: Reject Studio HTTP requests whose Host header is not a loopback hostname or whose Origin header is not a loopback origin, blocking DNS rebinding and cross-origin page attacks on state-changing routes. Non-loopback deployments stay possible: `StudioServeOptions.allowedHosts` lists extra trusted hostnames, and an explicitly configured non-wildcard `hostname` is trusted automatically (binding to 0.0.0.0 still requires `allowedHosts`).
+- 42b37ee: The Studio knowledge inspector now returns a `400 bad_request` ("Invalid cursor") response for invalid cursors on every inspectable knowledge source (static context, dynamic context, and dynamic tools). Invalid cursors on store-backed sources are identified via the new `VectorInspectCursorError` exported from `@anvia/core/vector-store` instead of silently replaying the first page or failing with a server error.
+- Updated dependencies [fd80238]
+- Updated dependencies [09d2235]
+- Updated dependencies [c4f9f3b]
+  - @anvia/server@1.3.5
+  - @anvia/client@1.6.0
+  - @anvia/graph@1.1.5
+  - @anvia/react@1.1.5
+
 ## 1.3.18
 
 ### Patch Changes

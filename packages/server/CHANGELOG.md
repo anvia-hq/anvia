@@ -1,5 +1,13 @@
 # @anvia/server
 
+## 1.3.5
+
+### Patch Changes
+
+- fd80238: Evict closed in-memory resumable streams: remove closed streams after a configurable TTL and cap the number of retained closed streams (oldest first). Running streams are never evicted.
+- 09d2235: Validate the resumable stream `after` cursor as a nonnegative safe integer. Invalid cursors now return a typed 400 error instead of silently returning all or no records with a normal end envelope.
+- c4f9f3b: Reject reopening a running resumable stream instead of silently discarding its history. Reopening a closed stream id still resets it to a fresh running stream.
+
 ## 1.3.4
 
 ### Patch Changes

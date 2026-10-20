@@ -79,6 +79,10 @@ try {
 Keep the runtime alive at application scope in a server. A client disconnect should close
 only that client's subscription. Call `run.cancel()` to explicitly cancel the work.
 
+New submissions continue from the session's latest started settled run, including failed or
+cancelled runs. Saved progress preserves completed tool exchanges after approval continuations;
+an unfinished tool exchange without a complete checkpoint is omitted from the next run's history.
+
 ## Image and document input
 
 Durable prompts use the core `AgentPrompt` contract: a nonblank string or a

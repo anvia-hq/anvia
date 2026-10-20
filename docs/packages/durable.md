@@ -157,8 +157,11 @@ session is eligible. `enqueue: true` accepts a persisted successor; otherwise su
 an unfinished session still fails. Repeated request IDs return the original run regardless
 of the enqueue option. Queued work survives shutdown and restart.
 
-A queued run receives the latest completed session history when execution starts. Failed
-or cancelled predecessors release the queue without adding their partial work to history.
+A queued run receives the latest started settled session history when execution starts,
+including failed or cancelled predecessors. Saved exhaustion/context checkpoints preserve partial
+work; without loop compaction, saved model requests also provide a recovery transcript. Approval
+continuations retain completed tool call/result pairs without repeating earlier history. An
+unfinished tool exchange with no complete checkpoint is omitted from the inherited history.
 Approvals and `needs_attention` block their session queue while releasing global execution
 capacity. Cancelling an active run keeps its slot occupied until its callbacks settle.
 

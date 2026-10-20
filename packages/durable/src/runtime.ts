@@ -42,7 +42,7 @@ import {
   DurableLimitError,
 } from "./errors.js";
 import { prepareContext } from "./compaction.js";
-import { settledProgress } from "./settled-progress.js";
+import { settledHistory } from "./settled-progress.js";
 import { createExecution } from "./execution.js";
 import { runTrace } from "./trace.js";
 import { parseTraceOptions } from "./trace-schema.js";
@@ -683,7 +683,7 @@ export class DurableRuntime {
               ? []
               : previous.status === "completed"
                 ? [...previous.history, ...(previous.outcome?.messages ?? [])]
-                : [...previous.history, ...settledProgress(tx, previous)];
+                : settledHistory(tx, previous);
           if (previous?.contextCheckpoint !== undefined)
             current.contextCheckpoint = previous.contextCheckpoint;
           current.input = {

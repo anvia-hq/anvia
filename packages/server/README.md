@@ -53,6 +53,10 @@ hooks. Add `format: "sse"` to the response options for SSE instead of the defaul
 
 Your application owns routing, authentication, request error handling, and durable storage.
 
+Both resume response helpers require `after` to be a nonnegative safe integer; omitted values
+default to zero. Invalid values return HTTP 400 JSON with error code `invalid_resumable_after`.
+The lower-level `resumeStreamEvents()` throws `InvalidResumableAfterError` before yielding.
+
 ## Learn more
 
 - [Server streaming guide](https://github.com/anvia-hq/anvia/blob/main/docs/packages/server.md)

@@ -40,6 +40,14 @@ return createClientStreamResponse({ events }); // JSONL by default
 For resumable streams, pass `{ resumable: { streamId, store } }` when creating the response and
 call `resumeClientStreamResponse({ streamId, after, store })` for a resume request.
 
+Both resume response helpers validate `after` as a nonnegative safe integer, defaulting to zero
+when it is omitted. Negative, fractional, non-number, and unsafe values return HTTP 400 JSON
+with `error.code: "invalid_resumable_after"` instead of opening a stream. Use the exported
+`parseResumableAfter(value)` to apply the same validation in a route. It throws
+`InvalidResumableAfterError`, whose `code`, `status`, and `value` describe the failure;
+`resumeAfterErrorResponse(error)` formats that error as the same JSON response.
+`resumeStreamEvents()` throws the typed error before yielding any envelopes.
+
 ## Generic event responses
 
 `createEventStreamResponse({ events, ...options })` and `resumeEventStreamResponse(options)` are

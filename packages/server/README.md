@@ -48,6 +48,8 @@ hooks. Add `format: "sse"` to the response options for SSE instead of the defaul
 
 - Framed client responses with protocol headers and ordered event IDs.
 - Resumable streams backed by a store you provide, with an in-memory store for local use.
+  `createMemoryResumableStreamStore({ closedStreamTtlMs, maxClosedStreams })` defaults to
+  retaining closed streams for 10 minutes, up to 1000 closed streams.
 - Separate generic event responses for application-defined protocols.
 - Lower-level JSONL and SSE stream helpers.
 

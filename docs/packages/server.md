@@ -52,6 +52,12 @@ The lower-level exports are:
 - `createSseStream({ events, ...options })`
 - `createResumableStream({ events, ...options })`
 - `resumeStreamEvents(options)`
-- `createMemoryResumableStreamStore()`
+- `createMemoryResumableStreamStore(options?)`
+
+`MemoryResumableStreamStoreOptions` exposes `closedStreamTtlMs` (default 600000) and
+`maxClosedStreams` (default 1000), both clamped to at least 1. Closed streams expire lazily on
+the next open, subscribe, status, or close call; the oldest closed streams are removed when
+the cap is exceeded. Running streams are never evicted. Resuming an evicted stream reports
+`missing`, so configure retention to cover the reconnection window your application needs.
 
 There are no compatibility aliases for the removed ambiguous response APIs.

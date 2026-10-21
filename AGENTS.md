@@ -103,9 +103,11 @@ behavior belongs in `packages/tool-studio`.
   runtime, streaming, UI messages, extractors, pipelines, evals, embeddings,
   loaders, MCP, memory, model listing, observability, redaction, skills, transcription,
   audio/image generation, and vector-store contracts.
+- `packages/acp`: Agent Client Protocol v1 editor adapter, stdio launcher, session
+  persistence, approvals, and optional durable execution.
 - `packages/cli`: CLI entrypoint for installing editable Anvia UI components into
   React applications and scaffolding the bundled Agent Skills (`skills init`).
-  Its build bundles the `skills/` folder.
+  It also exposes `anvia acp` through the optional ACP adapter. Its build bundles the `skills/` folder.
 - `packages/client`: framework-neutral client protocol, transports, and UI
   message state for Anvia.
 - `packages/durable`: experimental durable agent execution, SQLite checkpoints,

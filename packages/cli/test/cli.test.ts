@@ -7,7 +7,9 @@ const handlers = vi.hoisted(() => ({
   initSkills: vi.fn(),
   updateSkills: vi.fn(),
   skillNames: vi.fn(),
+  runAcp: vi.fn(),
 }));
+vi.mock("../src/cli/acp", () => ({ runAcp: handlers.runAcp }));
 vi.mock("../src/index", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../src/index")>()),
   ...handlers,
@@ -29,6 +31,7 @@ describe("CLI command groups", () => {
     runCli(args);
     expect(console.log).toHaveBeenCalledWith(expect.stringContaining("anvia ui init"));
     expect(console.log).toHaveBeenCalledWith(expect.stringContaining("anvia skills update"));
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining("anvia acp --agent"));
   });
 
   it.each(["ui", "skills"])("shows %s group help", (group) => {
@@ -36,6 +39,21 @@ describe("CLI command groups", () => {
     expect(console.log).toHaveBeenCalledWith(expect.stringContaining(`anvia ${group} init`));
     expect(handlers.initializeProject).not.toHaveBeenCalled();
     expect(handlers.initSkills).not.toHaveBeenCalled();
+  });
+
+  it("prints ACP help to stderr without loading the optional peer", () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    runCli(["acp", "--help"]);
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining("anvia acp --agent"));
+    expect(console.log).not.toHaveBeenCalled();
+    expect(handlers.runAcp).not.toHaveBeenCalled();
+  });
+
+  it("returns the async ACP lifecycle to the entrypoint", async () => {
+    const error = new Error("safe startup diagnostic");
+    handlers.runAcp.mockRejectedValueOnce(error);
+    await expect(runCli(["acp", "--agent", "agent with spaces.ts"])).rejects.toBe(error);
+    expect(handlers.runAcp).toHaveBeenCalledWith("agent with spaces.ts");
   });
 
   it.for([["ui", "init"], ["init"]])("initializes UI using %j", (prefix) => {
@@ -137,6 +155,13 @@ describe("CLI command groups", () => {
     ["skills", "update", "--dir", "--apply"],
     ["skills", "list", "anvia-agent"],
     ["ui", "add", "unknown"],
+    ["acp"],
+    ["acp", "--agent"],
+    ["acp", "--agent", "--help-me"],
+    ["acp", "./agent.ts"],
+    ["acp", "--agent", "./agent.ts", "extra"],
+    ["acp", "--agent", "a.ts", "--agent", "b.ts"],
+    ["acp", "--agent", "a.ts", "--cwd", "project"],
   ])("rejects invalid arguments before invoking a writer: %j", (args) => {
     expect(() => runCli(args)).toThrow();
     expect(handlers.initializeProject).not.toHaveBeenCalled();
@@ -144,5 +169,6 @@ describe("CLI command groups", () => {
     expect(handlers.updateInstalledItems).not.toHaveBeenCalled();
     expect(handlers.initSkills).not.toHaveBeenCalled();
     expect(handlers.updateSkills).not.toHaveBeenCalled();
+    expect(handlers.runAcp).not.toHaveBeenCalled();
   });
 });

@@ -1,0 +1,86 @@
+{
+  "name": "@anvia/acp",
+  "version": "0.1.0",
+  "description": "Agent Client Protocol adapter and stdio launcher for Anvia agents in editors.",
+  "keywords": [
+    "anvia",
+    "acp",
+    "agent-client-protocol",
+    "ai",
+    "agent",
+    "stdio"
+  ],
+  "author": "anvia",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/anvia-hq/anvia",
+    "directory": "packages/acp"
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./stdio": {
+      "types": "./dist/stdio.d.ts",
+      "import": "./dist/stdio.js"
+    },
+    "./launcher": {
+      "types": "./dist/launcher.d.ts",
+      "import": "./dist/launcher.js"
+    },
+    "./durable": {
+      "types": "./dist/durable.d.ts",
+      "import": "./dist/durable.js"
+    }
+  },
+  "bin": {
+    "anvia-acp": "./dist/cli.js"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "prebuild": "pnpm --filter @anvia/mcp build",
+    "build": "tsup src/index.ts src/stdio.ts src/cli.ts src/launcher.ts src/durable.ts --format esm --dts --sourcemap --clean && chmod +x dist/cli.js",
+    "pretest": "pnpm --filter @anvia/durable build && pnpm run build",
+    "test": "vitest run",
+    "pretest:editors": "pnpm run build",
+    "test:editors": "vitest run test/editor-smoke.test.ts test/launcher.test.ts",
+    "pretest:tck": "pnpm run build",
+    "test:tck": "node test/run-tck.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@anvia/core": "workspace:*",
+    "@anvia/durable": "workspace:*",
+    "@types/node": "^24.9.1",
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11"
+  },
+  "peerDependencies": {
+    "@anvia/core": "workspace:^",
+    "@anvia/durable": "workspace:^"
+  },
+  "dependencies": {
+    "@agentclientprotocol/sdk": "1.9.0",
+    "@anvia/mcp": "workspace:*"
+  },
+  "peerDependenciesMeta": {
+    "@anvia/durable": {
+      "optional": true
+    }
+  }
+}

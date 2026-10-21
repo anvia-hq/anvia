@@ -1,7 +1,7 @@
 {
   "name": "@anvia/cli",
   "version": "1.5.3",
-  "description": "Install Anvia Agent Skills and editable React UI components.",
+  "description": "Install Anvia Agent Skills and editable React UI components, or run an ACP agent server.",
   "author": "anvia",
   "license": "MIT",
   "repository": {
@@ -37,6 +37,7 @@
     "shadcn": "^4.21.5"
   },
   "devDependencies": {
+    "@anvia/acp": "workspace:*",
     "@anvia/react-ui": "workspace:*",
     "@types/node": "^24.9.1",
     "@types/react": "^19.3.0",
@@ -44,5 +45,13 @@
     "tsup": "^8.5.0",
     "typescript": "^5.9.3",
     "vitest": "^4.1.11"
+  },
+  "peerDependencies": {
+    "@anvia/acp": "workspace:^0.1.0 || ^0.2.0"
+  },
+  "peerDependenciesMeta": {
+    "@anvia/acp": {
+      "optional": true
+    }
   }
 }

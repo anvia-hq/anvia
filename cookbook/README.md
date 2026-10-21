@@ -29,7 +29,7 @@ Legacy script names such as `cookbook:basic:01`, `cookbook:intermediate:14`, `co
 | `07_multi_agent`              | Agent-tools, pipeline-backed parallel specialists, streaming agent-tools, and AgentTeam collaboration with dynamic instances.                                                                                                                                                                                            |
 | `08_evals`                    | Deterministic metrics, semantic similarity, custom metrics, agent eval targets, LLM judges, RAG quality, G-Eval, and conversational evals.                                                                                                                                                                               |
 | `09_studio`                   | Single-agent, multi-agent, pipeline, eval, and subagent Studio runners, pipeline replay, realtime observability, tool approvals, human feedback, Knowledge, Memory, Status, tool and sandbox inspection, embedded browser desktops, MCP tools, SQLite persistence, multi-provider model selection, and UI route options. |
-| `10_integrations`             | MCP tools, local skills, Langfuse and OpenTelemetry tracing, logging, and correlated eval reporting.                                                                                                                                                                                                                     |
+| `10_integrations`             | MCP tools, local skills, Langfuse and OpenTelemetry tracing, logging, correlated eval reporting, and an ACP agent for Zed.                                                                                                                                                                                               |
 
 ## Environment
 
@@ -82,6 +82,33 @@ Not every example needs every variable. Pure pipeline, dynamic tool, and core ev
 - `providers:09` uses the bundled `assets/audio/voice.wav` sample by default. Set `ANVIA_AUDIO_FILE` to transcribe a different local audio file.
 - `tools:11` requires Docker and runs code in an ephemeral `@anvia/sandbox` container workspace.
 - `studio:16` requires Docker, a locally available `ANVIA_BROWSER_IMAGE`, and an exactly eight-character `ANVIA_BROWSER_VNC_PASSWORD`. Build `packages/tool-browser/image` or explicitly pull a published image first. The example connects browser tools to an Agent; matching tool calls open Studio's clean noVNC Playground panel automatically, with explicit human takeover when needed.
+
+## ACP agent for Zed
+
+[`10_integrations/09-acp-zed-agent.ts`](./10_integrations/09-acp-zed-agent.ts) exports a session
+factory for `anvia acp --agent`; importing it starts no run or protocol server. Use Node 22.18+
+with native type stripping enabled. From the repository root, build the launcher/provider first:
+
+```sh
+pnpm --filter @anvia/cli... --filter @anvia/openai... build
+pnpm cookbook:integrations:09
+```
+
+Or run `pnpm integrations:09` from this directory. The script starts ACP on stdin/stdout and waits
+for a client. For Zed, copy the exact `agent_servers` JSON from the example's header, substituting
+absolute Node and checkout paths. Launch Node directly from Zed; package-manager script banners
+must not enter protocol stdout.
+
+Set `OPENAI_API_KEY` in the repository-root `.env` or environment; optional `OPENAI_BASEURL` and
+`ANVIA_ACP_MODEL` select the endpoint/model. The `_support` helper loads `.env` quietly at session
+creation, independent of editor cwd. Ask “Which workspace am I in?” and allow/reject the
+`workspace_info` tool; it reports the session cwd without reading files. No file/terminal tools or
+client MCP launch policy are enabled. Keep editor MCP forwarding disabled for this example.
+
+See the [ACP API reference](../packages/acp/README.md) and [host guide](../docs/packages/acp.md)
+for editor tools, MCP policy, persistence and durable execution. The config shape is checked against
+Zed's docs; real-editor verification remains pending in
+[EDITOR_COMPATIBILITY.md](../packages/acp/test/EDITOR_COMPATIBILITY.md).
 
 ## Representative No-Network Checks
 

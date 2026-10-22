@@ -6,14 +6,16 @@ const bytes = (length: number) => new Uint8Array(length);
 function stream(maxBufferBytes = 100) {
   const acks: number[] = [];
   const onOverflow = vi.fn();
+  const onEnd = vi.fn();
   const inbound = new InboundStream<{ reason: string }>({
     maxBufferBytes,
     label: "Test",
     overflowEnd: { reason: "error" },
     onConsumed: (total) => acks.push(total),
     onOverflow,
+    onEnd,
   });
-  return { inbound, acks, onOverflow };
+  return { inbound, acks, onOverflow, onEnd };
 }
 
 describe("InboundStream", () => {
@@ -56,6 +58,19 @@ describe("InboundStream", () => {
       message: "Test consumer is too slow.",
       code: "protocol",
     });
+  });
+
+  it("tells its owner once when it ends, whichever way it ends", async () => {
+    const closed = stream();
+    closed.inbound.end({ reason: "done" });
+    closed.inbound.end({ reason: "again" });
+    expect(closed.onEnd.mock.calls).toEqual([[{ reason: "done" }]]);
+
+    // An overflow ends the stream too, so the owner hears about it through the same hook.
+    const overflowed = stream(10);
+    overflowed.inbound.push(bytes(20));
+    expect(overflowed.onOverflow).toHaveBeenCalledTimes(1);
+    expect(overflowed.onEnd.mock.calls).toEqual([[{ reason: "error" }]]);
   });
 
   it("ignores data after the end and keeps the first end", async () => {

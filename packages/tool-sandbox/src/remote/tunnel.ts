@@ -131,9 +131,12 @@ class RemoteTunnelHandle implements TunnelHandle {
       label: "Tunnel",
       overflowEnd: { reason: "error", message: "The tunnel consumer is too slow." },
       onConsumed: (bytes) => this.trySend({ type: "tunnel.ack", tunnelId, bytes }),
-      onOverflow: () => {
-        this.trySend({ type: "tunnel.close", tunnelId });
+      onOverflow: () => this.trySend({ type: "tunnel.close", tunnelId }),
+      // Every way a tunnel ends, including an overflow, lands here: the registry entry goes, and
+      // writers parked waiting for room are woken to find the tunnel closed.
+      onEnd: () => {
         this.connection.unregisterTunnel(tunnelId);
+        this.wakeWriters();
       },
     });
     this.output = this.stream.chunks;
@@ -223,9 +226,7 @@ class RemoteTunnelHandle implements TunnelHandle {
   }
 
   private end(info: TunnelExit): void {
-    this.connection.unregisterTunnel(this.tunnelId);
     this.stream.end(info);
-    this.wakeWriters();
   }
 
   private trySend(frame: Parameters<HubConnection["sendFrame"]>[0]): void {

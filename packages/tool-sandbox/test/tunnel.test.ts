@@ -221,6 +221,61 @@ describe("tunnel", () => {
       handle.close();
     }, 30_000);
 
+    it("rejects a write that is waiting for room when the tunnel is cut off for overflowing", async () => {
+      // A daemon that ignores flow control: it never acks the hub's data, and floods it with output.
+      const hub = new RemoteSandboxHub({
+        authorize: (candidate) => (candidate === token ? { sandboxId } : null),
+        connectTimeoutMs: 2_000,
+        maxTunnelBufferBytes: 64 * 1024,
+      });
+      hubs.push(hub);
+      const { port } = await hub.listen({ host: "127.0.0.1" });
+      const daemon = new WebSocket(`ws://127.0.0.1:${port}`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      let tunnelId = "";
+      daemon.on("message", (data) => {
+        const frame = JSON.parse(data.toString()) as { type: string; tunnelId?: string };
+        if (frame.type === "tunnel.open") {
+          tunnelId = frame.tunnelId ?? "";
+          daemon.send(JSON.stringify({ type: "tunnel.opened", tunnelId }));
+        }
+      });
+      await new Promise<void>((resolve) =>
+        daemon.once("open", () => {
+          daemon.send(
+            JSON.stringify({
+              type: "hello",
+              protocolVersion: 1,
+              daemonVersion: "test",
+              workdir: "/w",
+              capabilities: ["tunnel"],
+            }),
+          );
+          resolve();
+        }),
+      );
+      await eventually(() => hub.isConnected(sandboxId));
+      const handle = await hub.tunnel(sandboxId).open(1234);
+
+      // More than the 256 KiB window and never acknowledged, so this write parks waiting for room.
+      const parked = handle.write(new Uint8Array(1024 * 1024)).then(
+        () => "written",
+        (error: unknown) => (error as { code?: string }).code,
+      );
+      await sleep(200);
+
+      // Nobody reads handle.output, so this overflows the 64 KiB buffer.
+      const chunk = Buffer.alloc(16 * 1024, 1).toString("base64");
+      for (let seq = 0; seq < 8; seq += 1) {
+        daemon.send(JSON.stringify({ type: "tunnel.data", tunnelId, seq, data: chunk }));
+      }
+
+      expect(await Promise.race([parked, sleep(3_000).then(() => "hung")])).toBe("invalid_state");
+      expect(await handle.exit).toMatchObject({ reason: "error" });
+      daemon.close();
+    }, 30_000);
+
     it("makes writes wait while the service is not reading", async () => {
       let received = 0;
       let socketRef: net.Socket | undefined;
@@ -500,7 +555,7 @@ describe("browser tunnel relay", () => {
     expect(second.state.closed?.reason).toMatch(/^unsupported:/);
   });
 
-  it("pauses a browser that sends faster than the service reads", async () => {
+  it("delivers everything a browser sends faster than the service reads, once it reads", async () => {
     let received = 0;
     let serviceSocket: net.Socket | undefined;
     const { port } = await listen((socket) => {
@@ -517,14 +572,13 @@ describe("browser tunnel relay", () => {
     for (let index = 0; index < frames; index += 1) viewer.socket.send(frame);
     await sleep(1_000);
 
-    // The hub stopped reading from the browser, so the browser's own send queue is still full
-    // and the service has seen nothing. Reading it all into memory would drain the queue.
+    // The service reads nothing, so nothing reaches it. (That the relay stops reading from the
+    // browser meanwhile is tested deterministically in tunnel-relay.test.ts: how much the kernel
+    // buffers on the way is up to the machine.)
     expect(received).toBe(0);
-    expect(viewer.socket.bufferedAmount).toBeGreaterThan(2 * 1024 * 1024);
 
     serviceSocket?.resume();
     await eventually(() => received === frame.byteLength * frames, 20_000);
-    expect(viewer.socket.bufferedAmount).toBe(0);
     viewer.socket.close();
   }, 40_000);
 

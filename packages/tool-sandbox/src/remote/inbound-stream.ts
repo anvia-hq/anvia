@@ -5,8 +5,13 @@ export interface InboundStreamOptions<End> {
   maxBufferBytes: number;
   /** The reader consumed this many bytes in total. Tell the sender, so it can send more. */
   onConsumed: (totalBytes: number) => void;
-  /** The sender ignored flow control. Release whatever the stream holds on the link. */
+  /** The sender ignored flow control. Tell it to stop; the stream ends right after. */
   onOverflow: () => void;
+  /**
+   * The stream ended, however that happened: a close from either side, a lost link, or an
+   * overflow. Release whatever the owner holds for it. Called once.
+   */
+  onEnd: (info: End) => void;
   /** How the stream ends when it overflows. */
   overflowEnd: End;
   /** Names the stream in the error a reader sees when it overflows. */
@@ -62,6 +67,7 @@ export class InboundStream<End> {
   end(info: End): void {
     if (this.finished !== undefined) return;
     this.finished = info;
+    this.options.onEnd(info);
     this.resolveEnded(info);
     this.signal();
   }

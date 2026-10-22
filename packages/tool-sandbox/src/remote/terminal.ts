@@ -202,10 +202,8 @@ class RemoteTerminalHandle implements TerminalHandle {
       label: "Terminal",
       overflowEnd: { reason: "error" },
       onConsumed: (bytes) => this.trySend({ type: "pty.ack", ptyId, bytes }),
-      onOverflow: () => {
-        this.trySend({ type: "pty.close", ptyId });
-        this.connection.unregisterPty(ptyId);
-      },
+      onOverflow: () => this.trySend({ type: "pty.close", ptyId }),
+      onEnd: () => this.connection.unregisterPty(ptyId),
     });
     this.output = this.stream.chunks;
     this.exit = this.stream.ended;
@@ -278,7 +276,6 @@ class RemoteTerminalHandle implements TerminalHandle {
   }
 
   private end(info: TerminalExit): void {
-    this.connection.unregisterPty(this.ptyId);
     this.stream.end(info);
   }
 

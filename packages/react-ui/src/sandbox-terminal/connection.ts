@@ -82,7 +82,8 @@ export class TerminalConnection {
 
   /** Try again now, for a link that gave up. */
   retry(): void {
-    if (this.disposed || this.socket !== undefined) return;
+    // Only a link that gave up needs this; otherwise an attempt is already under way.
+    if (this.disposed || !this.finished) return;
     clearTimeout(this.timer);
     this.finished = false;
     this.attempt = 0;
@@ -108,10 +109,28 @@ export class TerminalConnection {
   private async connect(): Promise<void> {
     if (this.disposed) return;
     this.options.onStatus({ state: "connecting" });
+    // A fatal error belongs to the attempt that hit it. Without this, one that was retried away
+    // would fail every later drop.
+    this.fatalMessage = undefined;
+
+    let ticket: string | undefined;
+    try {
+      ticket = await this.options.getTicket?.();
+    } catch (error) {
+      // Fetching a ticket usually fails because the control plane is restarting, which is exactly
+      // when reconnecting is wanted, so it backs off like a dropped socket.
+      if (this.disposed) return;
+      const detail = error instanceof Error ? `: ${error.message}` : "";
+      this.scheduleReconnect(`Could not get a terminal ticket${detail}`);
+      return;
+    }
+    if (this.disposed) return;
+
     let socket: WebSocket;
     try {
-      socket = new WebSocket(await this.resolveUrl(), await this.resolveProtocols());
+      socket = new WebSocket(this.resolveUrl(), resolveProtocols(ticket));
     } catch (error) {
+      // A bad URL or a malformed ticket: trying again cannot fix either.
       this.fail(error instanceof Error ? error.message : "Could not open the terminal.");
       return;
     }
@@ -160,7 +179,7 @@ export class TerminalConnection {
     });
   }
 
-  private scheduleReconnect(): void {
+  private scheduleReconnect(reason = "The connection to the terminal was lost."): void {
     const { initialDelayMs, maxDelayMs, maxAttempts } = {
       initialDelayMs: defaultInitialDelayMs,
       maxDelayMs: defaultMaxDelayMs,
@@ -168,7 +187,7 @@ export class TerminalConnection {
       ...this.options.reconnect,
     };
     if (this.attempt >= maxAttempts) {
-      this.fail("The connection to the terminal was lost.");
+      this.fail(reason);
       return;
     }
     const delay =
@@ -191,7 +210,7 @@ export class TerminalConnection {
     if (this.socket?.readyState === WebSocket.OPEN) this.socket.send(JSON.stringify(value));
   }
 
-  private async resolveUrl(): Promise<string> {
+  private resolveUrl(): string {
     const url = new URL(this.options.url, globalThis.location?.href);
     if (url.protocol === "http:") url.protocol = "ws:";
     else if (url.protocol === "https:") url.protocol = "wss:";
@@ -200,15 +219,15 @@ export class TerminalConnection {
     }
     return url.toString();
   }
+}
 
-  private async resolveProtocols(): Promise<string[]> {
-    const ticket = await this.options.getTicket?.();
-    if (ticket === undefined) return [terminalSubprotocol];
-    if (!subprotocolToken.test(ticket)) {
-      throw new Error("The terminal ticket must use only URL-safe characters (A-Z a-z 0-9 - _ .).");
-    }
-    return [terminalSubprotocol, `${ticketSubprotocolPrefix}${ticket}`];
+/** The subprotocols to offer: ours, plus the ticket when there is one. */
+function resolveProtocols(ticket: string | undefined): string[] {
+  if (ticket === undefined) return [terminalSubprotocol];
+  if (!subprotocolToken.test(ticket)) {
+    throw new Error("The terminal ticket must use only URL-safe characters (A-Z a-z 0-9 - _ .).");
   }
+  return [terminalSubprotocol, `${ticketSubprotocolPrefix}${ticket}`];
 }
 
 function parseMessage(text: string): ServerMessage | undefined {

@@ -166,6 +166,74 @@ describe("TerminalConnection", () => {
     expect(transient.statuses.at(-1)?.state).toBe("reconnecting");
   });
 
+  it("forgets a fatal error once it is retried away", async () => {
+    const ctx = setup({ reconnect: { initialDelayMs: 100 } });
+    ctx.connection.start();
+    await flush();
+    FakeSocket.last.serverOpen();
+    FakeSocket.last.serverMessage({ type: "error", code: "invalid_state", message: "Too many." });
+    FakeSocket.last.serverClose();
+    expect(ctx.statuses.at(-1)?.state).toBe("failed");
+
+    ctx.connection.retry();
+    await flush();
+    FakeSocket.last.serverOpen();
+    FakeSocket.last.serverMessage({ type: "ready" });
+    expect(ctx.statuses.at(-1)?.state).toBe("open");
+
+    // A later drop is an ordinary drop, not the old error again.
+    FakeSocket.last.serverClose();
+    expect(ctx.statuses.at(-1)?.state).toBe("reconnecting");
+  });
+
+  it("backs off when fetching a ticket fails, then connects once it works", async () => {
+    let attempts = 0;
+    const ctx = setup({
+      getTicket: async () => {
+        attempts += 1;
+        if (attempts < 3) throw new Error("ticket endpoint is down");
+        return "good";
+      },
+      reconnect: { initialDelayMs: 100, maxDelayMs: 1_000 },
+    });
+    ctx.connection.start();
+    await flush();
+    expect(FakeSocket.instances).toHaveLength(0);
+    expect(ctx.statuses.at(-1)).toMatchObject({ state: "reconnecting", attempt: 1 });
+
+    await vi.advanceTimersByTimeAsync(ctx.statuses.at(-1)?.retryInMs ?? 0);
+    expect(ctx.statuses.at(-1)).toMatchObject({ state: "reconnecting", attempt: 2 });
+    expect(FakeSocket.instances).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(ctx.statuses.at(-1)?.retryInMs ?? 0);
+    expect(FakeSocket.instances).toHaveLength(1);
+    expect(FakeSocket.last.protocols).toEqual(["anvia.terminal.v1", "anvia.ticket.good"]);
+  });
+
+  it("gives up on a ticket that keeps failing, and says why", async () => {
+    const ctx = setup({
+      getTicket: async () => {
+        throw new Error("ticket endpoint is down");
+      },
+      reconnect: { initialDelayMs: 10, maxDelayMs: 10, maxAttempts: 2 },
+    });
+    ctx.connection.start();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(FakeSocket.instances).toHaveLength(0);
+    expect(ctx.statuses.at(-1)).toEqual({
+      state: "failed",
+      message: "Could not get a terminal ticket: ticket endpoint is down",
+    });
+  });
+
+  it("ignores retry() while an attempt is already under way", async () => {
+    const ctx = setup();
+    ctx.connection.start();
+    await flush();
+    ctx.connection.retry();
+    await flush();
+    expect(FakeSocket.instances).toHaveLength(1);
+  });
+
   it("retries on demand after giving up", async () => {
     const ctx = setup({ reconnect: { maxAttempts: 0 } });
     ctx.connection.start();

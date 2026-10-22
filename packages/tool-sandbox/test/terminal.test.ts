@@ -182,9 +182,25 @@ for (const mode of ["shell", "tmux"] as const) {
       await eventually(async () => (await terminal.list()).length === 1);
 
       await terminal.kill("doomed");
-      await handle.exit;
+      // Viewers are told it was killed, not that their shell happened to exit.
+      expect(await handle.exit).toMatchObject({ reason: "killed" });
       expect(await terminal.list()).toEqual([]);
       await expect(terminal.kill("doomed")).rejects.toMatchObject({ code: "invalid_state" });
+    });
+
+    it("reports a session that ends on its own as exited, even after an earlier kill", async () => {
+      const { open, terminal } = await start();
+      const first = await open("reused");
+      watch(first);
+      await eventually(async () => (await terminal.list()).length === 1);
+      await terminal.kill("reused");
+      await first.exit;
+
+      // Same name, new session: its own exit is not a kill.
+      const second = await open("reused");
+      watch(second);
+      second.write("exit 0\n");
+      expect(await second.exit).toMatchObject({ reason: "exited" });
     });
 
     it("ignores input from a read-only viewer", async () => {

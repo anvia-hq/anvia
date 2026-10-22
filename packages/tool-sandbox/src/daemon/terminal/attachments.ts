@@ -42,6 +42,8 @@ export class PtyAttachment implements TerminalAttachment {
       pausable: boolean;
       readOnly: boolean;
       onClosed: (attachment: TerminalAttachment) => void;
+      /** True if the session was killed rather than the viewer's client ending by itself. */
+      wasKilled?: () => boolean;
     },
   ) {
     this.pausable = options.pausable;
@@ -50,7 +52,9 @@ export class PtyAttachment implements TerminalAttachment {
       else this.listener.onData(chunk);
     });
     pty.onExit(({ exitCode }) => {
-      this.exited = this.closing ? { reason: "closed" } : { reason: "exited", exitCode };
+      if (this.closing) this.exited = { reason: "closed" };
+      else if (this.options.wasKilled?.() === true) this.exited = { reason: "killed" };
+      else this.exited = { reason: "exited", exitCode };
       this.options.onClosed(this);
       this.listener?.onExit(this.exited);
     });

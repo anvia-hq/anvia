@@ -34,6 +34,8 @@ const defaultScrollbackBytes = 256 * 1024;
 const defaultMaxSessions = 16;
 const defaultSocketName = "anvia-sandbox";
 const tmuxHistoryLimit = 50_000;
+/** How soon after `kill` a viewer's exit still counts as caused by it. */
+const killWindowMs = 5_000;
 const minTmuxMajor = 3;
 const minTmuxMinor = 2;
 
@@ -78,6 +80,8 @@ export class TerminalManager {
   private readonly commandEnv: () => Record<string, string>;
   private readonly shellSessions = new Map<string, ShellSession>();
   private readonly attachments = new Set<TerminalAttachment>();
+  /** When each tmux session was last killed through `kill`, to tell a kill from a plain exit. */
+  private readonly killedAt = new Map<string, number>();
 
   constructor(options: TerminalManagerOptions) {
     this.spawn = options.spawn;
@@ -119,11 +123,19 @@ export class TerminalManager {
       session.kill();
       return;
     }
+    // Viewers' `tmux attach` clients exit by themselves, possibly before the kill call returns,
+    // so the kill is recorded first and rolled back if it failed.
+    const previous = this.killedAt.get(sessionName);
+    this.killedAt.set(sessionName, Date.now());
     try {
       await this.tmux(this.tmuxPath, ["kill-session", "-t", `=${sessionName}`]);
     } catch {
+      if (previous === undefined) this.killedAt.delete(sessionName);
+      else this.killedAt.set(sessionName, previous);
       throw unknownSession(sessionName);
     }
+    const forget = setTimeout(() => this.killedAt.delete(sessionName), killWindowMs * 2);
+    forget.unref?.();
   }
 
   /** Detach every viewer. tmux sessions keep running; fallback shells end with the daemon. */
@@ -247,9 +259,14 @@ export class TerminalManager {
       cols: request.cols,
       rows: request.rows,
     });
+    const openedAt = Date.now();
     return new PtyAttachment(pty, {
       pausable: true,
       readOnly: request.readOnly,
+      wasKilled: () => {
+        const killed = this.killedAt.get(request.sessionName);
+        return killed !== undefined && killed >= openedAt && Date.now() - killed < killWindowMs;
+      },
       onClosed: (attachment) => this.attachments.delete(attachment),
     });
   }

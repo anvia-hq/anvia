@@ -10,16 +10,19 @@ import {
   daemonFrameSchema,
   rawDataToString,
   terminalCapability,
+  tunnelCapability,
   type HubFrame,
 } from "./protocol";
 import { RemoteSandboxRuntime } from "./runtime";
+import { handleBrowserUpgrade, rejectUpgrade } from "./relay-common";
 import { RemoteSandboxTerminal, type SandboxTerminal } from "./terminal";
 import {
   type TerminalAuthorization,
-  originAllowed,
   relayTerminal,
   selectTerminalProtocol,
 } from "./terminal-relay";
+import { RemoteSandboxTunnel, type SandboxTunnel } from "./tunnel";
+import { type TunnelAuthorization, relayTunnel, selectTunnelProtocol } from "./tunnel-relay";
 
 /** Identifies which sandbox a daemon's token belongs to. */
 export type RemoteSandboxAuthorization = Readonly<{ sandboxId: string }>;
@@ -57,8 +60,18 @@ export interface RemoteSandboxHubOptions {
   authorizeTerminal?(
     request: IncomingMessage,
   ): Promise<TerminalAuthorization | null | undefined> | TerminalAuthorization | null | undefined;
+  /** Unread tunnel bytes a handle may hold before it is cut off. Default 1 MiB. */
+  maxTunnelBufferBytes?: number;
   /**
-   * Origins allowed to open a terminal. Without a list, a browser's Origin must match the Host it
+   * Decide whether a browser may open a tunnel to a port in a sandbox, from its upgrade request, or
+   * return null/undefined to refuse it with 401. Tickets work as for `authorizeTerminal`. Required
+   * for `handleTunnelUpgrade`.
+   */
+  authorizeTunnel?(
+    request: IncomingMessage,
+  ): Promise<TunnelAuthorization | null | undefined> | TunnelAuthorization | null | undefined;
+  /**
+   * Origins allowed to open a terminal or tunnel. Without a list, a browser's Origin must match the Host it
    * connected to, which fails behind a proxy that rewrites Host, so set this there.
    */
   allowedOrigins?: readonly string[];
@@ -71,6 +84,8 @@ export interface RemoteSandboxHubListenOptions {
   path?: string;
   /** Upgrade requests to this path are browser terminals, handled by `handleTerminalUpgrade`. */
   terminalPath?: string;
+  /** Upgrade requests to this path are browser tunnels, handled by `handleTunnelUpgrade`. */
+  tunnelPath?: string;
 }
 
 const defaultConnectTimeoutMs = 30_000;
@@ -89,6 +104,7 @@ export class RemoteSandboxHub {
   private readonly handshakeTimeoutMs: number;
   private readonly server: WebSocketServer;
   private readonly terminalServer: WebSocketServer;
+  private readonly tunnelServer: WebSocketServer;
   private readonly relays = new Set<WebSocket>();
   private readonly connections = new Map<string, HubConnection>();
   private readonly waiters = new Map<string, Set<() => void>>();
@@ -111,6 +127,24 @@ export class RemoteSandboxHub {
       // Browser messages are keystrokes and resizes; nothing here needs more.
       maxPayload: 128 * 1024,
       handleProtocols: selectTerminalProtocol,
+    });
+    this.tunnelServer = new WebSocketServer({
+      noServer: true,
+      // A browser sends protocol bytes in small pieces; a tunnel never needs a huge frame.
+      maxPayload: 1024 * 1024,
+      handleProtocols: selectTunnelProtocol,
+    });
+  }
+
+  /** Raw TCP tunnels into one sandbox. Cheap to call; nothing is cached per sandbox. */
+  tunnel(sandboxId: string): SandboxTunnel {
+    if (typeof sandboxId !== "string" || sandboxId.length === 0) {
+      throw new TypeError("sandboxId must be a non-empty string.");
+    }
+    return new RemoteSandboxTunnel({
+      id: sandboxId,
+      maxBufferBytes: this.options.maxTunnelBufferBytes,
+      source: this.linkSource(sandboxId),
     });
   }
 
@@ -182,15 +216,15 @@ export class RemoteSandboxHub {
   /** Complete a WebSocket upgrade for a request routed here by your own HTTP server. */
   handleUpgrade(request: IncomingMessage, socket: Duplex, head: Buffer): void {
     socket.on("error", () => undefined);
-    if (this.closed) return reject(socket, 503, "Service Unavailable");
+    if (this.closed) return rejectUpgrade(socket, 503, "Service Unavailable");
     const token = bearerToken(request);
-    if (token === undefined) return reject(socket, 401, "Unauthorized");
+    if (token === undefined) return rejectUpgrade(socket, 401, "Unauthorized");
     void (async () => {
       let authorization: RemoteSandboxAuthorization | null | undefined;
       try {
         authorization = await this.options.authorize(token);
       } catch {
-        return reject(socket, 500, "Internal Server Error");
+        return rejectUpgrade(socket, 500, "Internal Server Error");
       }
       if (
         authorization === null ||
@@ -198,7 +232,7 @@ export class RemoteSandboxHub {
         typeof authorization.sandboxId !== "string" ||
         authorization.sandboxId.length === 0
       ) {
-        return reject(socket, 401, "Unauthorized");
+        return rejectUpgrade(socket, 401, "Unauthorized");
       }
       if (this.closed || socket.destroyed) return socket.destroy();
       const { sandboxId } = authorization;
@@ -213,40 +247,45 @@ export class RemoteSandboxHub {
    * path, `handleUpgrade`, is unaffected.
    */
   handleTerminalUpgrade(request: IncomingMessage, socket: Duplex, head: Buffer): void {
-    socket.on("error", () => undefined);
-    const authorizeTerminal = this.options.authorizeTerminal;
-    if (this.closed) return reject(socket, 503, "Service Unavailable");
-    if (authorizeTerminal === undefined) return reject(socket, 404, "Not Found");
-    if (!originAllowed(request, this.options.allowedOrigins)) {
-      return reject(socket, 403, "Forbidden");
-    }
-    void (async () => {
-      let authorization: TerminalAuthorization | null | undefined;
-      try {
-        authorization = await authorizeTerminal.call(this.options, request);
-      } catch {
-        return reject(socket, 500, "Internal Server Error");
-      }
-      if (
-        authorization === null ||
-        authorization === undefined ||
-        typeof authorization.sandboxId !== "string" ||
-        authorization.sandboxId.length === 0 ||
-        typeof authorization.sessionName !== "string"
-      ) {
-        return reject(socket, 401, "Unauthorized");
-      }
-      if (this.closed || socket.destroyed) return socket.destroy();
-      const granted = authorization;
-      this.terminalServer.handleUpgrade(request, socket, head, (ws) => {
-        this.relays.add(ws);
-        ws.once("close", () => this.relays.delete(ws));
-        relayTerminal(ws, {
-          terminal: this.terminal(granted.sandboxId),
-          authorization: granted,
-        });
-      });
-    })();
+    handleBrowserUpgrade<TerminalAuthorization>(request, socket, head, {
+      authorize: this.options.authorizeTerminal?.bind(this.options),
+      valid: (grant) => isSandboxId(grant.sandboxId) && typeof grant.sessionName === "string",
+      allowedOrigins: this.options.allowedOrigins,
+      isClosed: () => this.closed,
+      server: this.terminalServer,
+      onSocket: (ws, grant) => {
+        this.trackRelay(ws);
+        relayTerminal(ws, { terminal: this.terminal(grant.sandboxId), authorization: grant });
+      },
+    });
+  }
+
+  /**
+   * Complete a browser's tunnel WebSocket upgrade: a byte-for-byte relay to a loopback port in the
+   * sandbox, such as a VNC server. Tickets, Origin checks and status codes work as for
+   * `handleTerminalUpgrade`. The browser may offer the `anvia.tunnel.v1` or `binary` subprotocol.
+   */
+  handleTunnelUpgrade(request: IncomingMessage, socket: Duplex, head: Buffer): void {
+    handleBrowserUpgrade<TunnelAuthorization>(request, socket, head, {
+      authorize: this.options.authorizeTunnel?.bind(this.options),
+      valid: (grant) =>
+        isSandboxId(grant.sandboxId) &&
+        Number.isInteger(grant.port) &&
+        grant.port >= 1 &&
+        grant.port <= 65_535,
+      allowedOrigins: this.options.allowedOrigins,
+      isClosed: () => this.closed,
+      server: this.tunnelServer,
+      onSocket: (ws, grant) => {
+        this.trackRelay(ws);
+        relayTunnel(ws, { tunnel: this.tunnel(grant.sandboxId), authorization: grant });
+      },
+    });
+  }
+
+  private trackRelay(ws: WebSocket): void {
+    this.relays.add(ws);
+    ws.once("close", () => this.relays.delete(ws));
   }
 
   /** Convenience HTTP listener for deployments with no existing server to attach to. */
@@ -260,8 +299,11 @@ export class RemoteSandboxHub {
       if (options.terminalPath !== undefined && requested === options.terminalPath) {
         return this.handleTerminalUpgrade(request, socket, head);
       }
+      if (options.tunnelPath !== undefined && requested === options.tunnelPath) {
+        return this.handleTunnelUpgrade(request, socket, head);
+      }
       if (options.path !== undefined && requested !== options.path) {
-        return reject(socket, 404, "Not Found");
+        return rejectUpgrade(socket, 404, "Not Found");
       }
       this.handleUpgrade(request, socket, head);
     });
@@ -291,6 +333,7 @@ export class RemoteSandboxHub {
     await Promise.all([...this.connections.values()].map((connection) => connection.closed));
     await new Promise<void>((resolve) => this.server.close(() => resolve()));
     await new Promise<void>((resolve) => this.terminalServer.close(() => resolve()));
+    await new Promise<void>((resolve) => this.tunnelServer.close(() => resolve()));
   }
 
   private accept(ws: WebSocket, sandboxId: string): void {
@@ -309,7 +352,7 @@ export class RemoteSandboxHub {
         type: "welcome",
         protocolVersion: PROTOCOL_VERSION,
         heartbeatIntervalMs: this.heartbeatIntervalMs,
-        capabilities: [terminalCapability],
+        capabilities: [terminalCapability, tunnelCapability],
       };
       ws.send(JSON.stringify(welcome));
 
@@ -378,18 +421,15 @@ function unavailable(sandboxId: string, reason: string): DockerSandboxError {
   );
 }
 
+function isSandboxId(value: unknown): boolean {
+  return typeof value === "string" && value.length > 0;
+}
+
 function bearerToken(request: IncomingMessage): string | undefined {
   const header = request.headers.authorization;
   if (header === undefined) return undefined;
   const match = /^Bearer\s+(\S+)$/i.exec(header);
   return match?.[1];
-}
-
-function reject(socket: Duplex, status: number, message: string): void {
-  if (socket.writable) {
-    socket.write(`HTTP/1.1 ${status} ${message}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
-  }
-  socket.destroy();
 }
 
 function parseHello(data: WebSocket.RawData) {

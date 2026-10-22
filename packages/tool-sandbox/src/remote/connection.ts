@@ -4,6 +4,7 @@ import {
   type DaemonFrame,
   type HubFrame,
   type PtyExitReason,
+  type TunnelCloseReason,
   type MethodParams,
   type MethodResult,
   type SandboxMethod,
@@ -28,13 +29,22 @@ export interface CallOptions {
   onStream?: ((stream: "stdout" | "stderr", data: Uint8Array) => void) | undefined;
 }
 
-/** Receives one terminal's frames. Registered by the terminal that opened the PTY. */
-export interface PtyEndpoint {
+export type PtyExit = { reason: PtyExitReason; exitCode?: number };
+export type TunnelExit = { reason: TunnelCloseReason; message?: string };
+
+/** A tunnel's endpoint also hears when the daemon has consumed what the hub sent. */
+export interface TunnelEndpoint extends StreamEndpoint<TunnelExit> {
+  /** The daemon consumed this many bytes of hub data in total. */
+  acked(totalBytes: number): void;
+}
+
+/** Receives one stream's frames (a terminal's or a tunnel's). Registered by whoever opened it. */
+export interface StreamEndpoint<Exit> {
   opened(): void;
-  /** `pty.open` was refused. */
+  /** The open was refused. */
   failed(error: Error): void;
   output(data: Uint8Array): void;
-  exit(info: { reason: PtyExitReason; exitCode?: number }): void;
+  exit(info: Exit): void;
   /** The link dropped; whether the PTY was open yet is for the endpoint to know. */
   lost(error: LinkClosedError): void;
 }
@@ -51,7 +61,8 @@ interface Pending {
 export class HubConnection {
   readonly closed: Promise<void>;
   private readonly pending = new Map<string, Pending>();
-  private readonly ptys = new Map<string, { endpoint: PtyEndpoint; nextSeq: number }>();
+  private readonly ptys = new Map<string, { endpoint: StreamEndpoint<PtyExit>; nextSeq: number }>();
+  private readonly tunnels = new Map<string, { endpoint: TunnelEndpoint; nextSeq: number }>();
   private readonly heartbeat: ReturnType<typeof setInterval>;
   private lastSeen = Date.now();
   private open = true;
@@ -70,9 +81,10 @@ export class HubConnection {
         const error = new LinkClosedError();
         for (const pending of this.pending.values()) pending.reject(error);
         this.pending.clear();
-        const ptys = [...this.ptys.values()];
+        const streams = [...this.ptys.values(), ...this.tunnels.values()];
         this.ptys.clear();
-        for (const { endpoint } of ptys) endpoint.lost(error);
+        this.tunnels.clear();
+        for (const { endpoint } of streams) endpoint.lost(error);
         resolve();
       });
     });
@@ -100,12 +112,20 @@ export class HubConnection {
     setTimeout(() => this.socket.terminate(), 1_000).unref?.();
   }
 
-  registerPty(ptyId: string, endpoint: PtyEndpoint): void {
+  registerPty(ptyId: string, endpoint: StreamEndpoint<PtyExit>): void {
     this.ptys.set(ptyId, { endpoint, nextSeq: 0 });
   }
 
   unregisterPty(ptyId: string): void {
     this.ptys.delete(ptyId);
+  }
+
+  registerTunnel(tunnelId: string, endpoint: TunnelEndpoint): void {
+    this.tunnels.set(tunnelId, { endpoint, nextSeq: 0 });
+  }
+
+  unregisterTunnel(tunnelId: string): void {
+    this.tunnels.delete(tunnelId);
   }
 
   /** Send a terminal frame. Throws `LinkClosedError` if the link is already down. */
@@ -222,8 +242,45 @@ export class HubConnection {
         );
         return;
       }
+      case "tunnel.opened":
+        this.tunnels.get(frame.tunnelId)?.endpoint.opened();
+        return;
+      case "tunnel.data": {
+        const entry = this.tunnels.get(frame.tunnelId);
+        if (entry === undefined) return;
+        if (frame.seq !== entry.nextSeq) {
+          this.tunnels.delete(frame.tunnelId);
+          this.trySend({ type: "tunnel.close", tunnelId: frame.tunnelId });
+          entry.endpoint.exit({ reason: "error", message: "Tunnel frames arrived out of order." });
+          return;
+        }
+        entry.nextSeq += 1;
+        entry.endpoint.output(decodeBytes(frame.data));
+        return;
+      }
+      case "tunnel.ack":
+        this.tunnels.get(frame.tunnelId)?.endpoint.acked(frame.bytes);
+        return;
+      case "tunnel.close": {
+        const entry = this.tunnels.get(frame.tunnelId);
+        if (entry === undefined) return;
+        this.tunnels.delete(frame.tunnelId);
+        entry.endpoint.exit(
+          frame.message === undefined
+            ? { reason: frame.reason }
+            : { reason: frame.reason, message: frame.message },
+        );
+        return;
+      }
       case "error": {
         if (frame.requestId === undefined) return;
+        const tunnel = this.tunnels.get(frame.requestId);
+        if (tunnel !== undefined) {
+          // As for terminals, the only error a tunnel gets is a refusal to open.
+          this.tunnels.delete(frame.requestId);
+          tunnel.endpoint.failed(decodeError(frame));
+          return;
+        }
         const terminal = this.ptys.get(frame.requestId);
         if (terminal !== undefined) {
           // The only error a PTY gets is a refusal to open, which the daemon sends under its id.

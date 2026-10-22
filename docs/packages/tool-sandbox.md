@@ -458,6 +458,74 @@ Agent-facing terminal tools (such as capturing a pane), recording and replay, au
 input, and terminals for the Docker runtime are out of scope. `DockerSandboxRuntime` does not
 implement `SandboxTerminal`; `docker exec -it` is the Docker equivalent today.
 
+### Tunnels
+
+A tunnel is a raw TCP connection from the control plane to a service listening on the sandbox's own
+loopback: a dev server, a database, or a VNC server. The sandbox needs no inbound port and no
+published address; the bytes ride the daemon's existing WebSocket.
+
+```ts
+const tunnel = hub.tunnel("sandbox-1");
+const handle = await tunnel.open(5432); // 127.0.0.1, then ::1
+
+await handle.write(startupMessage);
+for await (const chunk of handle.output) process(chunk);
+console.log(await handle.exit); // { reason: "remote" }
+```
+
+`open(port, { host })` accepts only `127.0.0.1` and `::1`; omit `host` to try both. Any other host is
+a `TypeError` in the hub, and the daemon's frame validation rejects it as well, so a tunnel can
+never reach another machine or the sandbox's external interfaces. A port nothing listens on fails
+with the `port` error code. `exit` reports `remote` (the service closed), `closed` (`close()`),
+`error`, or `disconnected` (the daemon link dropped), and never rejects.
+
+To restrict what tunnels may reach, give the daemon `tunnel: { allowedPorts: [3000, 5900] }`;
+other ports fail with `port`. `maxTunnels` (default 64 per connection) bounds how many a hub may
+hold open, and `tunnel: false` switches tunnels off. The daemon advertises `tunnel` in `hello`, and
+a hub talking to a daemon without it gets `unsupported`.
+
+Tunnels share the daemon link with `exec` calls, terminals and heartbeats, and use the same flow
+control as terminals in both directions. Output is batched, numbered and acknowledged as the reader
+consumes it, and the daemon stops reading from a service once 256 KiB are unacknowledged, so a
+reader that is slow or has stopped never makes the daemon buffer more. `handle.write()` works the
+same way in reverse: it waits while 256 KiB are unconsumed by the service, so an upload to a slow
+service does not pile up in memory either. A handle that falls `maxTunnelBufferBytes` (1 MiB)
+behind is cut off with `error`.
+
+#### Browser tunnels
+
+`hub.handleTunnelUpgrade(request, socket, head)` relays a browser's WebSocket to a tunnel byte for
+byte, in binary frames, which is the framing noVNC and websockify use. Give the hub
+`authorizeTunnel`, which returns the sandbox and port a ticket grants, and, behind a proxy,
+`allowedOrigins`. Tickets and the Origin check work exactly as they do for
+[browser terminals](#browser-terminals): `relayTicket(request)` reads the ticket from the
+`anvia.ticket.<ticket>` subprotocol or `?ticket=`, a foreign Origin gets 403 before the authorizer
+runs, and a missing or refused ticket gets 401. (`terminalTicket` is the same function under its
+earlier name.)
+
+```ts
+const hub = new RemoteSandboxHub({
+  authorize: (token) => lookupDaemonToken(token),
+  allowedOrigins: ["https://app.example.com"],
+  async authorizeTunnel(request) {
+    const grant = await redeemTicket(relayTicket(request)); // single use, ~30 s
+    return grant ? { sandboxId: grant.sandboxId, port: grant.port } : null; // 401
+  },
+});
+await hub.listen({ port: 8787, path: "/daemon", tunnelPath: "/tunnel" });
+```
+
+The browser offers the `anvia.tunnel.v1` or `binary` subprotocol (plus its ticket). If the tunnel
+cannot be opened, the relay closes the socket with code 1011 and a reason that starts with the error
+code, such as `port: ...` or `unsupported: ...`. A browser that sends faster than the service reads
+is paused until the service catches up.
+
+#### Not included
+
+Preview URLs and domain routing for tunnelled services, tunnels to hosts other than the sandbox's
+loopback, and UDP are out of scope. A tunnel is a connection you open on demand, not a published
+address.
+
 ### Protocol
 
 One WebSocket carries versioned JSON frames (`PROTOCOL_VERSION`), validated with zod on both ends.
@@ -470,12 +538,14 @@ Failures arrive as typed `error` frames that map to the existing error codes, pl
 is silent for three intervals.
 
 Optional features are negotiated, not versioned: `hello` and `welcome` carry an optional
-`capabilities` list (`terminal`, and `terminal.tmux` when sessions persist). A peer that predates a
+`capabilities` list (`terminal`, `terminal.tmux` when sessions persist, and `tunnel`). A peer that predates a
 feature sends none, and zod ignores fields it does not know, so mixed versions keep working and
 terminals simply report `unsupported`. `PROTOCOL_VERSION` only changes when an existing frame
 changes meaning. Terminal traffic uses its own frames (`pty.open`, `pty.opened`, `pty.input`,
 `pty.resize`, `pty.ack`, `pty.output`, `pty.exit`, `pty.close`) plus the ordinary request frames
-`terminalList` and `terminalKill`.
+`terminalList` and `terminalKill`. Tunnels have theirs (`tunnel.open`, `tunnel.opened`,
+`tunnel.data`, `tunnel.ack`, `tunnel.close`), and both reuse one flow-controlled stream channel on
+each side of the link.
 
 A request that carries an `operationId` is not aborted when the connection drops. It finishes on
 the daemon and its result waits for the retry. Anything else is aborted, since nobody can receive

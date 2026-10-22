@@ -13,8 +13,10 @@ import {
   compact,
   hubFrameSchema,
   mutatingMethods,
+  rawDataToString,
   terminalCapability,
   terminalTmuxCapability,
+  tunnelCapability,
   type DaemonFrame,
 } from "../remote/protocol";
 import type { SandboxExecOptions, SandboxRuntimeLimits } from "../types";
@@ -24,8 +26,9 @@ import { ConnectionTerminals } from "./terminal/connection-terminals";
 import { TerminalManager, detectTmux } from "./terminal/manager";
 import type { SandboxDaemonTerminalOptions } from "./terminal/options";
 import { loadNodePty } from "./terminal/pty";
+import { ConnectionTunnels, type SandboxDaemonTunnelOptions } from "./tunnels";
 
-export type { SandboxDaemonTerminalOptions };
+export type { SandboxDaemonTerminalOptions, SandboxDaemonTunnelOptions };
 
 export type SandboxDaemonLogLevel = "info" | "warn" | "error";
 
@@ -44,6 +47,11 @@ export interface SandboxDaemonOptions {
    * turn them off.
    */
   terminal?: false | SandboxDaemonTerminalOptions;
+  /**
+   * Raw TCP tunnels to loopback ports in the sandbox, for viewers such as a browser relay. On by
+   * default; pass false to turn them off, or `allowedPorts` to restrict which ports they reach.
+   */
+  tunnel?: false | SandboxDaemonTunnelOptions;
   /** Extra environment for every command. */
   env?: Readonly<Record<string, string>>;
   /** Completed operations remembered for retries. Defaults to 256. */
@@ -228,12 +236,13 @@ export class SandboxDaemon {
           daemonVersion: this.options.version ?? "unknown",
           workdir: this.sandbox.workdir,
         };
+        const capabilities: string[] = [];
         if (terminals !== undefined) {
-          hello.capabilities = [
-            terminalCapability,
-            ...(terminals.persistent ? [terminalTmuxCapability] : []),
-          ];
+          capabilities.push(terminalCapability);
+          if (terminals.persistent) capabilities.push(terminalTmuxCapability);
         }
+        if (this.options.tunnel !== false) capabilities.push(tunnelCapability);
+        if (capabilities.length > 0) hello.capabilities = capabilities;
         socket.send(JSON.stringify(hello));
       });
       socket.once("message", (data) => {
@@ -261,6 +270,8 @@ export class SandboxDaemon {
             operations: this.operations,
             terminals,
             terminalOptions: this.options.terminal === false ? undefined : this.options.terminal,
+            tunnelOptions: this.options.tunnel === false ? undefined : this.options.tunnel,
+            tunnelsEnabled: this.options.tunnel !== false,
             log: (level, message) => this.log(level, message),
           }),
         );
@@ -278,6 +289,8 @@ interface SessionDependencies {
   operations: OperationStore;
   terminals: TerminalManager | undefined;
   terminalOptions: SandboxDaemonTerminalOptions | undefined;
+  tunnelOptions: SandboxDaemonTunnelOptions | undefined;
+  tunnelsEnabled: boolean;
   log: (level: SandboxDaemonLogLevel, message: string) => void;
 }
 
@@ -287,6 +300,7 @@ class DaemonSession {
   readonly closed: Promise<number>;
   private readonly active = new Map<string, { controller: AbortController; detachable: boolean }>();
   private readonly terminals: ConnectionTerminals;
+  private readonly tunnels: ConnectionTunnels;
   private readonly heartbeat: ReturnType<typeof setInterval>;
   private lastSeen = Date.now();
 
@@ -302,6 +316,12 @@ class DaemonSession {
       send: (frame) => this.send(frame),
       bufferedAmount: () => socket.bufferedAmount,
     });
+    this.tunnels = new ConnectionTunnels({
+      enabled: deps.tunnelsEnabled,
+      options: deps.tunnelOptions,
+      send: (frame) => this.send(frame),
+      bufferedAmount: () => socket.bufferedAmount,
+    });
     this.closed = new Promise((resolve) => {
       socket.once("close", (code) => {
         this.ready = false;
@@ -313,6 +333,7 @@ class DaemonSession {
         }
         // Viewers belong to the connection that opened them. tmux sessions themselves persist.
         this.terminals.dispose();
+        this.tunnels.dispose();
         resolve(code);
       });
     });
@@ -376,6 +397,18 @@ class DaemonSession {
         return;
       case "pty.close":
         this.terminals.close(frame.ptyId);
+        return;
+      case "tunnel.open":
+        void this.tunnels.open(frame);
+        return;
+      case "tunnel.data":
+        this.tunnels.data(frame.tunnelId, frame.data);
+        return;
+      case "tunnel.ack":
+        this.tunnels.ack(frame.tunnelId, frame.bytes);
+        return;
+      case "tunnel.close":
+        this.tunnels.close(frame.tunnelId);
         return;
       default:
         return;
@@ -475,30 +508,35 @@ function execOptions(
 
 function parseHubFrame(data: WebSocket.RawData) {
   try {
-    const parsed = hubFrameSchema.safeParse(JSON.parse(rawToString(data)));
+    const parsed = hubFrameSchema.safeParse(JSON.parse(rawDataToString(data)));
     return parsed.success ? parsed.data : undefined;
   } catch {
     return undefined;
   }
 }
 
+/**
+ * The id a caller is waiting under, for a frame that failed validation: the `requestId` of a
+ * request, or the id a terminal or tunnel open is keyed by. Without it the caller would wait
+ * forever on a link that stays healthy.
+ */
 function recoverRequestId(data: WebSocket.RawData): string | undefined {
   try {
-    const value: unknown = JSON.parse(rawToString(data));
+    const value: unknown = JSON.parse(rawDataToString(data));
     if (typeof value !== "object" || value === null) return undefined;
     const record = value as Record<string, unknown>;
-    if (record.type !== "request") return undefined;
-    const id = record.requestId;
+    const id =
+      record.type === "request"
+        ? record.requestId
+        : record.type === "pty.open"
+          ? record.ptyId
+          : record.type === "tunnel.open"
+            ? record.tunnelId
+            : undefined;
     return typeof id === "string" && id.length > 0 && id.length <= 128 ? id : undefined;
   } catch {
     return undefined;
   }
-}
-
-function rawToString(data: WebSocket.RawData): string {
-  if (typeof data === "string") return data;
-  if (Array.isArray(data)) return Buffer.concat(data).toString("utf8");
-  return Buffer.from(data as ArrayBuffer).toString("utf8");
 }
 
 function isLoopback(hostname: string): boolean {

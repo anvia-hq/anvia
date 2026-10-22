@@ -15,9 +15,16 @@ export {
   type TerminalOpenOptions,
   type TerminalSessionInfo,
 } from "./terminal";
+export { type TerminalAuthorization, terminalSubprotocol } from "./terminal-relay";
 export {
-  type TerminalAuthorization,
-  originAllowed,
-  terminalSubprotocol,
-  terminalTicket,
-} from "./terminal-relay";
+  RemoteSandboxTunnel,
+  type RemoteSandboxTunnelOptions,
+  type SandboxTunnel,
+  type TunnelExit,
+  type TunnelHandle,
+  type TunnelOpenOptions,
+} from "./tunnel";
+export { type TunnelAuthorization, tunnelSubprotocol } from "./tunnel-relay";
+export { originAllowed, relayTicket } from "./relay-common";
+/** The terminal relay reads its ticket exactly as the tunnel relay does. */
+export { relayTicket as terminalTicket } from "./relay-common";

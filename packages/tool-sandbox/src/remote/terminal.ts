@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { DockerSandboxError } from "../errors";
-import { type HubConnection, LinkClosedError, type PtyEndpoint } from "./connection";
+import { type HubConnection, LinkClosedError, type StreamEndpoint } from "./connection";
+import { InboundStream } from "./inbound-stream";
 import {
   type PtyExitReason,
   type TerminalSessionInfo,
@@ -177,32 +178,34 @@ export class RemoteSandboxTerminal implements SandboxTerminal {
 }
 
 class RemoteTerminalHandle implements TerminalHandle {
-  readonly output: AsyncIterable<Uint8Array> = this.read();
+  readonly output: AsyncIterable<Uint8Array>;
   readonly exit: Promise<TerminalExit>;
-  readonly endpoint: PtyEndpoint;
-  private readonly queue: Uint8Array[] = [];
-  private queued = 0;
-  private consumed = 0;
-  private acked = 0;
-  private ended: TerminalExit | undefined;
-  private failure: Error | undefined;
-  private wake: (() => void) | undefined;
-  private resolveExit!: (exit: TerminalExit) => void;
+  readonly endpoint: StreamEndpoint<TerminalExit>;
+  private readonly stream: InboundStream<TerminalExit>;
   private settleOpen: { resolve: () => void; reject: (error: Error) => void } | undefined;
 
   constructor(
     private readonly ptyId: string,
     readonly sessionName: string,
     private readonly connection: HubConnection,
-    private readonly maxBufferBytes: number,
+    maxBufferBytes: number,
   ) {
-    this.exit = new Promise((resolve) => {
-      this.resolveExit = resolve;
+    this.stream = new InboundStream<TerminalExit>({
+      maxBufferBytes,
+      label: "Terminal",
+      overflowEnd: { reason: "error" },
+      onConsumed: (bytes) => this.trySend({ type: "pty.ack", ptyId, bytes }),
+      onOverflow: () => {
+        this.trySend({ type: "pty.close", ptyId });
+        this.connection.unregisterPty(ptyId);
+      },
     });
+    this.output = this.stream.chunks;
+    this.exit = this.stream.ended;
     this.endpoint = {
       opened: () => this.settleOpen?.resolve(),
       failed: (error) => this.settleOpen?.reject(error),
-      output: (data) => this.receive(data),
+      output: (data) => this.stream.push(data),
       exit: (info) => this.end(info),
       lost: (error) => {
         if (this.settleOpen !== undefined) this.settleOpen.reject(error);
@@ -244,7 +247,7 @@ class RemoteTerminalHandle implements TerminalHandle {
   }
 
   write(data: string | Uint8Array): void {
-    if (this.ended !== undefined) return;
+    if (this.stream.endedWith !== undefined) return;
     const bytes = typeof data === "string" ? new TextEncoder().encode(data) : data;
     for (let start = 0; start < bytes.byteLength; start += inputChunkBytes) {
       this.trySend({
@@ -257,68 +260,19 @@ class RemoteTerminalHandle implements TerminalHandle {
 
   resize(cols: number, rows: number): void {
     assertSize(cols, rows);
-    if (this.ended !== undefined) return;
+    if (this.stream.endedWith !== undefined) return;
     this.trySend({ type: "pty.resize", ptyId: this.ptyId, cols, rows });
   }
 
   close(): void {
-    if (this.ended !== undefined) return;
+    if (this.stream.endedWith !== undefined) return;
     this.trySend({ type: "pty.close", ptyId: this.ptyId });
     this.end({ reason: "closed" });
   }
 
-  private receive(data: Uint8Array): void {
-    if (this.ended !== undefined) return;
-    if (this.queued + data.byteLength > this.maxBufferBytes) {
-      // The daemon honours acks, so this is a peer ignoring flow control or a reader that stopped.
-      this.failure = new DockerSandboxError("Terminal consumer is too slow.", "protocol");
-      this.trySend({ type: "pty.close", ptyId: this.ptyId });
-      this.connection.unregisterPty(this.ptyId);
-      this.end({ reason: "error" });
-      return;
-    }
-    this.queue.push(data);
-    this.queued += data.byteLength;
-    this.signal();
-  }
-
   private end(info: TerminalExit): void {
-    if (this.ended !== undefined) return;
-    this.ended = info;
     this.connection.unregisterPty(this.ptyId);
-    this.resolveExit(info);
-    this.signal();
-  }
-
-  private async *read(): AsyncGenerator<Uint8Array, void, void> {
-    while (true) {
-      this.acknowledge();
-      const chunk = this.queue.shift();
-      if (chunk !== undefined) {
-        this.queued -= chunk.byteLength;
-        this.consumed += chunk.byteLength;
-        yield chunk;
-        continue;
-      }
-      if (this.failure !== undefined) throw this.failure;
-      if (this.ended !== undefined) return;
-      await new Promise<void>((resolve) => {
-        this.wake = resolve;
-      });
-    }
-  }
-
-  /** Tell the daemon how much has been consumed, once the reader has asked for more. */
-  private acknowledge(): void {
-    if (this.consumed === this.acked || this.ended !== undefined) return;
-    this.acked = this.consumed;
-    this.trySend({ type: "pty.ack", ptyId: this.ptyId, bytes: this.consumed });
-  }
-
-  private signal(): void {
-    const wake = this.wake;
-    this.wake = undefined;
-    wake?.();
+    this.stream.end(info);
   }
 
   private trySend(frame: Parameters<HubConnection["sendFrame"]>[0]): void {

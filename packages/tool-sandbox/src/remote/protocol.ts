@@ -19,6 +19,9 @@ export const terminalCapability = "terminal";
 export const terminalTmuxCapability = "terminal.tmux";
 const capabilities = z.array(z.string().max(64)).max(32).optional();
 
+/** Raw TCP tunnels to loopback ports inside the sandbox. */
+export const tunnelCapability = "tunnel";
+
 export const terminalSessionNamePattern = /^[A-Za-z0-9_-]{1,64}$/;
 const terminalSessionName = z.string().regex(terminalSessionNamePattern);
 const terminalSize = z.number().int().min(1).max(1_000);
@@ -216,6 +219,29 @@ const ptyClose = z.object({ type: z.literal("pty.close"), ptyId });
 export const ptyExitReasons = ["exited", "closed", "killed", "error", "disconnected"] as const;
 export type PtyExitReason = (typeof ptyExitReasons)[number];
 
+const tunnelId = z.string().min(1).max(128);
+/** The only addresses a tunnel may reach: the sandbox's own loopback. */
+export const tunnelHosts = ["127.0.0.1", "::1"] as const;
+
+const tunnelOpen = z.object({
+  type: z.literal("tunnel.open"),
+  tunnelId,
+  port: z.number().int().min(1).max(65_535),
+  /** Omit to try 127.0.0.1 and then ::1. */
+  host: z.enum(tunnelHosts).optional(),
+});
+const tunnelData = z.object({
+  type: z.literal("tunnel.data"),
+  tunnelId,
+  data: base64.max(131_072),
+});
+/** Cumulative bytes of `tunnel.data` the receiver has consumed. Flow control, in both directions. */
+const tunnelAck = z.object({ type: z.literal("tunnel.ack"), tunnelId, bytes: nonNegativeInt });
+const tunnelClose = z.object({ type: z.literal("tunnel.close"), tunnelId });
+
+export const tunnelCloseReasons = ["remote", "closed", "error", "disconnected"] as const;
+export type TunnelCloseReason = (typeof tunnelCloseReasons)[number];
+
 const ping = z.object({ type: z.literal("ping") });
 const pong = z.object({ type: z.literal("pong") });
 
@@ -228,6 +254,10 @@ export const hubFrameSchema = z.union([
   ptyResize,
   ptyAck,
   ptyClose,
+  tunnelOpen,
+  tunnelData,
+  tunnelAck,
+  tunnelClose,
   z.object({
     type: z.literal("welcome"),
     protocolVersion: z.number().int(),
@@ -248,6 +278,20 @@ export const daemonFrameSchema = z.union([
     daemonVersion: z.string(),
     workdir: z.string(),
     capabilities,
+  }),
+  z.object({ type: z.literal("tunnel.opened"), tunnelId }),
+  z.object({
+    type: z.literal("tunnel.data"),
+    tunnelId,
+    seq: nonNegativeInt,
+    data: base64,
+  }),
+  tunnelAck,
+  z.object({
+    type: z.literal("tunnel.close"),
+    tunnelId,
+    reason: z.enum(tunnelCloseReasons),
+    message: z.string().max(1_000).optional(),
   }),
   z.object({ type: z.literal("pty.opened"), ptyId }),
   z.object({

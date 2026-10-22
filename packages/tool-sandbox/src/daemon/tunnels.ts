@@ -1,0 +1,247 @@
+import net from "node:net";
+import { DockerSandboxError } from "../errors";
+import {
+  type DaemonFrame,
+  type HubFrame,
+  type TunnelCloseReason,
+  decodeBytes,
+  encodeError,
+  tunnelHosts,
+} from "../remote/protocol";
+import { type StreamChannelLimits, StreamChannel } from "./stream-channel";
+
+export interface SandboxDaemonTunnelOptions {
+  /** Ports tunnels may reach. Default: any loopback port. */
+  allowedPorts?: readonly number[];
+  /** Tunnels one hub connection may hold open. Default 64. */
+  maxTunnels?: number;
+  /** How long to wait for the local service to accept. Default 5 s. */
+  connectTimeoutMs?: number;
+  /** Output batching and flow-control bounds. */
+  flow?: StreamChannelLimits;
+}
+
+interface TunnelExitInfo {
+  reason: Exclude<TunnelCloseReason, "disconnected">;
+  message?: string;
+}
+
+interface Entry {
+  closing: boolean;
+  socket?: net.Socket;
+  channel?: StreamChannel<TunnelExitInfo>;
+  /** Hub bytes received, written to the socket, and acknowledged back. */
+  received: number;
+  written: number;
+  acknowledged: number;
+}
+
+const defaultMaxTunnels = 64;
+const defaultConnectTimeoutMs = 5_000;
+/** The hub stops at 256 KiB unacked; this much more than that means it is not listening to acks. */
+const maxUnwrittenBytes = 1024 * 1024;
+const ackStepBytes = 32 * 1024;
+
+/**
+ * The tunnels one hub connection has open: raw TCP streams to services on the sandbox's own
+ * loopback, flow-controlled in both directions. They belong to the connection and close with it.
+ */
+export class ConnectionTunnels {
+  private readonly entries = new Map<string, Entry>();
+
+  constructor(
+    private readonly deps: {
+      /** False when the daemon was started with tunnels switched off. */
+      enabled: boolean;
+      options: SandboxDaemonTunnelOptions | undefined;
+      /** Ports allowed even when `allowedPorts` is set, such as the desktop's VNC port. */
+      alwaysAllowedPorts?: () => readonly number[];
+      send: (frame: DaemonFrame) => void;
+      bufferedAmount: () => number;
+    },
+  ) {}
+
+  async open(frame: Extract<HubFrame, { type: "tunnel.open" }>): Promise<void> {
+    const { tunnelId, port } = frame;
+    const fail = (error: unknown) => this.deps.send(encodeError(error, tunnelId));
+    const { options } = this.deps;
+    if (!this.deps.enabled) {
+      fail(new DockerSandboxError("This sandbox has no tunnel support.", "unsupported"));
+      return;
+    }
+    const allowed = options?.allowedPorts;
+    if (allowed !== undefined && !allowed.includes(port) && !this.alwaysAllowed(port)) {
+      fail(new DockerSandboxError(`Port ${port} is not allowed for tunnels.`, "port"));
+      return;
+    }
+    const maxTunnels = options?.maxTunnels ?? defaultMaxTunnels;
+    if (this.entries.has(tunnelId) || this.entries.size >= maxTunnels) {
+      fail(
+        new DockerSandboxError(
+          this.entries.has(tunnelId)
+            ? `Tunnel ${tunnelId} is already open.`
+            : `Too many open tunnels (${maxTunnels}).`,
+          "invalid_state",
+        ),
+      );
+      return;
+    }
+
+    const entry: Entry = { closing: false, received: 0, written: 0, acknowledged: 0 };
+    this.entries.set(tunnelId, entry);
+    let socket: net.Socket;
+    try {
+      socket = await connectLoopback(
+        port,
+        frame.host,
+        options?.connectTimeoutMs ?? defaultConnectTimeoutMs,
+      );
+    } catch (error) {
+      this.entries.delete(tunnelId);
+      if (!entry.closing) fail(error);
+      return;
+    }
+    if (entry.closing) {
+      socket.destroy();
+      return;
+    }
+
+    const channel = new StreamChannel<TunnelExitInfo>(
+      {
+        pausable: true,
+        pause: () => socket.pause(),
+        resume: () => socket.resume(),
+        snapshot: () => undefined,
+      },
+      {
+        output: (seq, data) => ({ type: "tunnel.data", tunnelId, seq, data }),
+        exit: (info) => {
+          const closed: DaemonFrame = { type: "tunnel.close", tunnelId, reason: info.reason };
+          return info.message === undefined ? closed : { ...closed, message: info.message };
+        },
+      },
+      { send: this.deps.send, bufferedAmount: this.deps.bufferedAmount },
+      options?.flow,
+    );
+    entry.socket = socket;
+    entry.channel = channel;
+
+    let failure: string | undefined;
+    socket.setNoDelay(true);
+    socket.on("data", (chunk) => channel.push(chunk));
+    socket.on("error", (error) => {
+      failure = error.message;
+    });
+    socket.once("close", () => {
+      if (this.entries.get(tunnelId) !== entry) return; // Closed from our side; already reported.
+      this.entries.delete(tunnelId);
+      channel.finish(
+        failure === undefined ? { reason: "remote" } : { reason: "error", message: failure },
+      );
+    });
+    this.deps.send({ type: "tunnel.opened", tunnelId });
+  }
+
+  /** Bytes from the hub, written to the service. Acknowledged once the socket took them. */
+  data(tunnelId: string, data: string): void {
+    const entry = this.entries.get(tunnelId);
+    if (entry?.socket === undefined) return;
+    const bytes = decodeBytes(data);
+    entry.received += bytes.byteLength;
+    if (entry.received - entry.written > maxUnwrittenBytes) {
+      this.shutdown(tunnelId, entry, { reason: "error", message: "Tunnel ignored flow control." });
+      return;
+    }
+    entry.socket.write(bytes, () => {
+      entry.written += bytes.byteLength;
+      this.acknowledge(tunnelId, entry);
+    });
+  }
+
+  /** The hub consumed this much of the service's output. */
+  ack(tunnelId: string, bytes: number): void {
+    this.entries.get(tunnelId)?.channel?.ack(bytes);
+  }
+
+  close(tunnelId: string): void {
+    const entry = this.entries.get(tunnelId);
+    if (entry === undefined) return;
+    this.entries.delete(tunnelId);
+    this.release(entry);
+  }
+
+  /** The connection is gone: drop every tunnel. */
+  dispose(): void {
+    const entries = Array.from(this.entries.values());
+    this.entries.clear();
+    for (const entry of entries) this.release(entry);
+  }
+
+  private alwaysAllowed(port: number): boolean {
+    return this.deps.alwaysAllowedPorts?.().includes(port) === true;
+  }
+
+  private acknowledge(tunnelId: string, entry: Entry): void {
+    if (entry.closing) return;
+    const unacked = entry.written - entry.acknowledged;
+    // Step acks to keep traffic down, but never leave the hub waiting on the last few bytes.
+    if (unacked < ackStepBytes && entry.written < entry.received) return;
+    if (unacked === 0) return;
+    entry.acknowledged = entry.written;
+    this.deps.send({ type: "tunnel.ack", tunnelId, bytes: entry.written });
+  }
+
+  private shutdown(tunnelId: string, entry: Entry, info: TunnelExitInfo): void {
+    if (this.entries.get(tunnelId) !== entry) return;
+    this.entries.delete(tunnelId);
+    entry.channel?.finish(info);
+    this.release(entry);
+  }
+
+  private release(entry: Entry): void {
+    entry.closing = true;
+    entry.channel?.dispose();
+    entry.socket?.destroy();
+  }
+}
+
+/** Connect to a service on this machine's own loopback, and nowhere else. */
+async function connectLoopback(
+  port: number,
+  host: (typeof tunnelHosts)[number] | undefined,
+  timeoutMs: number,
+): Promise<net.Socket> {
+  const candidates = host === undefined ? tunnelHosts : [host];
+  let lastError: Error | undefined;
+  for (const candidate of candidates) {
+    try {
+      return await connectOnce(candidate, port, timeoutMs);
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+    }
+  }
+  throw new DockerSandboxError(
+    `Nothing accepted a connection on port ${port}: ${lastError?.message ?? "unknown error"}`,
+    "port",
+  );
+}
+
+function connectOnce(host: string, port: number, timeoutMs: number): Promise<net.Socket> {
+  return new Promise((resolve, reject) => {
+    const socket = net.connect({ host, port });
+    const timer = setTimeout(() => {
+      socket.destroy();
+      reject(new Error("timed out"));
+    }, timeoutMs);
+    socket.once("connect", () => {
+      clearTimeout(timer);
+      socket.removeAllListeners("error");
+      resolve(socket);
+    });
+    socket.once("error", (error) => {
+      clearTimeout(timer);
+      socket.destroy();
+      reject(error);
+    });
+  });
+}

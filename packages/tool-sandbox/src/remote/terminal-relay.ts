@@ -1,8 +1,8 @@
-import type { IncomingMessage } from "node:http";
 import WebSocket from "ws";
 import { z } from "zod";
 import { DockerSandboxError } from "../errors";
 import { rawDataToString } from "./protocol";
+import { keepAlive, sendBinary, sendJson } from "./relay-common";
 import type { SandboxTerminal, TerminalHandle } from "./terminal";
 
 /** What a browser is allowed to do, decided by `authorizeTerminal` for one upgrade request. */
@@ -17,7 +17,6 @@ export type TerminalAuthorization = Readonly<{
 
 /** Subprotocol the browser must offer; the hub selects it. */
 export const terminalSubprotocol = "anvia.terminal.v1";
-const ticketPrefix = "anvia.ticket.";
 
 const size = z.number().int().min(1).max(1_000);
 const browserMessage = z.discriminatedUnion("type", [
@@ -26,50 +25,11 @@ const browserMessage = z.discriminatedUnion("type", [
   z.object({ type: z.literal("resize"), cols: size, rows: size }),
 ]);
 
-/**
- * Pull a short-lived ticket out of a terminal upgrade request. Browsers cannot set an
- * `Authorization` header on a WebSocket, so the ticket travels in the `ticket` query parameter or
- * as a `anvia.ticket.<ticket>` entry of `Sec-WebSocket-Protocol`. Prefer the latter: URLs end up
- * in access logs.
- */
-export function terminalTicket(request: IncomingMessage): string | undefined {
-  const header = request.headers["sec-websocket-protocol"];
-  const offered = (Array.isArray(header) ? header.join(",") : (header ?? ""))
-    .split(",")
-    .map((entry) => entry.trim());
-  for (const entry of offered) {
-    if (entry.startsWith(ticketPrefix) && entry.length > ticketPrefix.length) {
-      return entry.slice(ticketPrefix.length);
-    }
-  }
-  const ticket = new URL(request.url ?? "/", "http://hub").searchParams.get("ticket");
-  return ticket === null || ticket === "" ? undefined : ticket;
-}
-
-/**
- * Cross-site WebSocket hijacking guard. A request with no Origin is not from a browser page and
- * passes. Otherwise the Origin must be listed, or, with no list, must be the host that was asked.
- */
-export function originAllowed(
-  request: IncomingMessage,
-  allowedOrigins: readonly string[] | undefined,
-): boolean {
-  const origin = request.headers.origin;
-  if (origin === undefined) return true;
-  if (allowedOrigins !== undefined) return allowedOrigins.includes(origin);
-  try {
-    return new URL(origin).host === request.headers.host;
-  } catch {
-    return false;
-  }
-}
-
 export function selectTerminalProtocol(protocols: Set<string>): string | false {
   return protocols.has(terminalSubprotocol) ? terminalSubprotocol : false;
 }
 
 const openTimeoutMs = 10_000;
-const pingIntervalMs = 30_000;
 
 /**
  * Bridge one browser WebSocket to a terminal. Output goes out as binary frames; everything else is
@@ -85,28 +45,16 @@ export function relayTerminal(
   const readOnly = authorization.readOnly === true;
   let handle: TerminalHandle | undefined;
   let opening = false;
-  let alive = true;
 
   ws.on("error", () => undefined);
-  ws.on("pong", () => {
-    alive = true;
-  });
-  const ping = setInterval(() => {
-    if (!alive) {
-      ws.terminate();
-      return;
-    }
-    alive = false;
-    ws.ping();
-  }, pingIntervalMs);
-  ping.unref?.();
+  const stopPing = keepAlive(ws);
   const waitForOpen = setTimeout(() => {
     if (!opening) ws.close(1008, "open timeout");
   }, openTimeoutMs);
   waitForOpen.unref?.();
 
   ws.once("close", () => {
-    clearInterval(ping);
+    stopPing();
     clearTimeout(waitForOpen);
     handle?.close();
   });
@@ -180,14 +128,4 @@ function parseMessage(data: WebSocket.RawData) {
   } catch {
     return undefined;
   }
-}
-
-function sendJson(ws: WebSocket, value: unknown): void {
-  if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(value));
-}
-
-function sendBinary(ws: WebSocket, chunk: Uint8Array): Promise<void> {
-  return new Promise((resolve, reject) => {
-    ws.send(chunk, { binary: true }, (error) => (error ? reject(error) : resolve()));
-  });
 }

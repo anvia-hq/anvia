@@ -1,5 +1,6 @@
 import type WebSocket from "ws";
 import { DockerSandboxError } from "../errors";
+import { rawDataToString } from "./protocol";
 import { keepAlive, sendBinary } from "./relay-common";
 import type { SandboxTunnel, TunnelHandle } from "./tunnel";
 
@@ -24,15 +25,34 @@ const maxQueuedBytes = 1024 * 1024;
 /** WebSocket close reasons are limited to 123 bytes. */
 const maxReasonBytes = 120;
 
-/**
- * Bridge one browser WebSocket to a raw TCP tunnel, byte for byte in both directions (binary
- * frames, as noVNC and websockify use). Nothing is buffered without bound: output is acknowledged
- * to the daemon once the browser's socket accepted it, and a browser that sends faster than the
- * service reads is paused until the service catches up.
- */
+/** Ways a caller can shape the byte relay, which a desktop viewer needs and a plain tunnel does not. */
+export interface BridgeHooks {
+  /** Rewrite what the browser sends before it goes to the service. Throwing closes the socket. */
+  filter?: (bytes: Uint8Array) => Uint8Array;
+  /** Handle a text frame. Without this, text frames are a protocol error. */
+  onText?: (text: string) => void;
+  /** The browser socket closed. */
+  onClose?: () => void;
+}
+
+/** Bridge one browser WebSocket to a raw TCP tunnel to `authorization.port`. */
 export function relayTunnel(
   ws: WebSocket,
   options: { tunnel: SandboxTunnel; authorization: TunnelAuthorization },
+): void {
+  bridgeTunnel(ws, options.tunnel.open(options.authorization.port));
+}
+
+/**
+ * Bridge a browser WebSocket to a tunnel that is being opened, byte for byte in both directions
+ * (binary frames, as noVNC and websockify use). Nothing is buffered without bound: output is
+ * acknowledged to the daemon once the browser's socket accepted it, and a browser that sends faster
+ * than the service reads is paused until the service catches up.
+ */
+export function bridgeTunnel(
+  ws: WebSocket,
+  opening: Promise<TunnelHandle>,
+  hooks: BridgeHooks = {},
 ): void {
   let handle: TunnelHandle | undefined;
   let closed = false;
@@ -40,7 +60,7 @@ export function relayTunnel(
   const stopPing = keepAlive(ws);
   ws.on("error", () => undefined);
 
-  const opened = options.tunnel.open(options.authorization.port).then(
+  const opened = opening.then(
     (value) => {
       handle = value;
       if (closed) value.close();
@@ -58,12 +78,23 @@ export function relayTunnel(
   let chain: Promise<void> = Promise.resolve();
   ws.on("message", (data, isBinary) => {
     if (!isBinary) {
-      closeSocket(1003, "binary frames only");
+      if (hooks.onText === undefined) closeSocket(1003, "binary frames only");
+      else hooks.onText(rawDataToString(data));
       return;
     }
-    const bytes = toBytes(data);
+    let bytes = toBytes(data);
+    if (hooks.filter !== undefined) {
+      try {
+        bytes = hooks.filter(bytes);
+      } catch (error) {
+        closeSocket(1008, error instanceof Error ? error.message : "unsupported message");
+        return;
+      }
+      if (bytes.byteLength === 0) return;
+    }
     queued += bytes.byteLength;
     if (queued > maxQueuedBytes) ws.pause();
+    const size = bytes.byteLength;
     chain = chain.then(async () => {
       try {
         const target = await opened;
@@ -72,7 +103,7 @@ export function relayTunnel(
         // The tunnel ended while this frame was in flight. Its exit closes the socket, with the
         // right code for why, so closing here too would only race it.
       } finally {
-        queued -= bytes.byteLength;
+        queued -= size;
         if (queued <= maxQueuedBytes / 2) ws.resume();
       }
     });
@@ -82,6 +113,7 @@ export function relayTunnel(
     closed = true;
     stopPing();
     handle?.close();
+    hooks.onClose?.();
   });
 
   void (async () => {

@@ -1,6 +1,7 @@
 export {
   SandboxDaemon,
   type SandboxDaemonLogLevel,
+  type SandboxDaemonDesktopOptions,
   type SandboxDaemonOptions,
   type SandboxDaemonTerminalOptions,
   type SandboxDaemonTunnelOptions,

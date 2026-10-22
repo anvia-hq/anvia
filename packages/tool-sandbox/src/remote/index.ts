@@ -28,3 +28,15 @@ export { type TunnelAuthorization, tunnelSubprotocol } from "./tunnel-relay";
 export { originAllowed, relayTicket } from "./relay-common";
 /** The terminal relay reads its ticket exactly as the tunnel relay does. */
 export { relayTicket as terminalTicket } from "./relay-common";
+export {
+  RemoteSandboxDesktop,
+  type DesktopAction,
+  type DesktopCallOptions,
+  type DesktopControl,
+  type DesktopInputOptions,
+  type DesktopScreenshot,
+  type DesktopStatus,
+  type RemoteSandboxDesktopOptions,
+  type SandboxDesktop,
+} from "./desktop";
+export { type DesktopAuthorization, desktopSubprotocol } from "./desktop-relay";

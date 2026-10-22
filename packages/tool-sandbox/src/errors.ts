@@ -14,6 +14,7 @@ export const dockerSandboxErrorCodes = [
   "process",
   "sandbox_unavailable",
   "unsupported",
+  "desktop_locked",
   "protocol",
 ] as const;
 

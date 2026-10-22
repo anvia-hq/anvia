@@ -526,6 +526,113 @@ Preview URLs and domain routing for tunnelled services, tunnels to hosts other t
 loopback, and UDP are out of scope. A tunnel is a connection you open on demand, not a published
 address.
 
+### Desktop
+
+A remote sandbox can have a desktop: a virtual display that an agent can see and drive and that a
+person can watch or take over. It replaces what `@anvia/browser` used to provide. Chromium is just
+a program on the desktop, so any graphical application works, and nothing is specific to browsers.
+
+```ts
+const desktop = hub.desktop("sandbox-1");
+
+const shot = await desktop.screenshot({ scale: 0.5 }); // { png, width, height, displayWidth, ... }
+await desktop.act({ type: "click", x: 640, y: 400 });
+await desktop.act({ type: "type", text: "hello" });
+await desktop.act({ type: "key", keys: "ctrl+s" });
+await desktop.resize(1920, 1080);
+```
+
+`act` takes `mouse_move`, `click` (with `button` and `count`), `drag`, `scroll`, `type` and `key`.
+Coordinates are pixels of the current display; a point outside it, or an `x` without a `y`, is a
+`RangeError` rather than a click somewhere unexpected. Inputs run one at a time. They accept an
+`operationId`, like other mutating calls, so a retry does not click twice.
+
+#### Image requirements
+
+The daemon offers `desktop` only when `Xvfb`, `x11vnc`, `xdotool`, `xrandr` and ImageMagick's
+`import` are installed, and says what is missing in its log otherwise. A window manager is optional
+(`openbox` is used if it is there). `packages/tool-sandbox/images/desktop/Dockerfile` is a reference
+image with all of that plus fonts, Chromium, tmux, `node-pty` and the daemon:
+
+```sh
+docker build -t my-desktop-sandbox packages/tool-sandbox/images/desktop
+docker run --rm -e ANVIA_CONTROL_URL=wss://hub.example.com/daemon \
+  -e ANVIA_SANDBOX_TOKEN=... my-desktop-sandbox
+```
+
+Inside it, `anvia-chromium` starts Chromium on the desktop. Chromium's own sandbox needs user
+namespaces, which Docker's default seccomp profile blocks, so the launcher starts it with
+`--no-sandbox`: the container is already the isolation boundary. Set `ANVIA_CHROMIUM_SANDBOX=1` to
+keep Chromium's sandbox, and run the container with a seccomp profile that allows user namespaces
+(or `--cap-add SYS_ADMIN`). `@anvia/browser`'s seccomp profile is not carried over: it crashes
+`runc` on current Docker releases. For another base image, install the same packages (`xvfb x11vnc xdotool
+imagemagick x11-xserver-utils`, optionally `openbox`).
+
+#### Starting, supervising, resizing
+
+Nothing graphical runs until the desktop is first used: `screenshot`, `act`, `resize`, `start()` or
+a viewer connecting starts it, and callers arriving together share one start. The daemon runs Xvfb,
+the window manager and x11vnc, and restarts whichever crashes, with backoff. Xvfb takes the others
+down with it, since they hold its display, and comes back at the size it was left at. A call that
+arrives while the desktop is restarting waits for it. After five quick crashes in a row it gives up
+and `status()` reports `failed` with the reason, until the next call tries again.
+
+`status()` reports `state` (`stopped`, `starting`, `running`, `restarting`, `failed`), the current
+and maximum size, the display, and how many restarts there have been. The display starts at
+1280x800 and can be resized, with windows staying open, up to the maximum Xvfb was started with
+(3840x2160). Configure all of this with `desktop: { resolution, maxResolution, display, vncPort,
+windowManager, lock }` on `SandboxDaemon`, or `desktop: false` to turn it off.
+
+#### Control
+
+A person takes over with `desktop.takeover({ holder: "alice" })`. While they hold control, the
+agent's `act` calls fail with the `desktop_locked` error code, which says who holds it; screenshots,
+`cursorPosition` and everyone's ability to watch are unaffected. `release({ holder })` hands it
+back. Set the daemon's `lock.waitForReleaseMs` to make agent inputs wait for a release before they
+fail.
+
+A hold is a lease (60 s by default) that its holder renews by calling `takeover` again. If the
+holder disappears, the lease runs out and the agent can act again, so a closed tab cannot lock it
+out for good. Another holder cannot take over, or release, someone else's hold; `release({ force:
+true })` is the operator's override. The hold lives in the daemon, so it survives a hub restart.
+
+#### Viewing in a browser
+
+The daemon's VNC server listens on `127.0.0.1` with no password, so the only way to reach it is a
+[tunnel](#tunnels); the daemon allows its port through even when it restricts tunnel ports.
+`desktop.openViewer()` opens that tunnel, and `hub.handleDesktopUpgrade` relays a browser's noVNC
+connection to it, with `authorizeDesktop` returning `{ sandboxId, readOnly?, holder? }`. Tickets,
+Origin checks and status codes are the same as for [browser terminals](#browser-terminals), and
+`hub.listen({ desktopPath: "/desktop" })` routes to it. No websockify runs in the sandbox.
+
+```ts
+authorizeDesktop(request) {
+  const grant = redeemTicket(relayTicket(request));
+  return grant ? { sandboxId: grant.sandboxId, readOnly: grant.readOnly, holder: grant.userId } : null;
+},
+```
+
+Binary frames carry the VNC stream. The relay reads the client half of it and removes the messages
+that would drive the desktop (keys, pointer, clipboard, and resize requests) for a `readOnly` viewer
+and for any viewer who is not the current holder, so a read-only viewer cannot type even with a
+modified client. Anything the relay cannot account for closes the connection.
+
+Text frames are a small JSON control channel. The browser sends `{ "type": "takeover" }` or
+`{ "type": "release" }`; the relay answers with `{ "type": "control", held, holder, expiresAt, you,
+readOnly }` whenever control changes, and `{ "type": "error", code, message }` when a request
+fails. The relay renews its viewer's hold while connected and releases it on disconnect.
+
+Anyone who can run commands inside the sandbox can also connect to the VNC port directly. That is
+the same access the sandbox already gives them, but it means the desktop is not a boundary against
+code running in the sandbox.
+
+#### Not included
+
+Wayland and WebRTC streaming, audio, CDP-based browser automation tools, preview URLs and domain
+routing, and desktops for the local Docker runtime are out of scope. `@anvia/browser`'s semantic
+page snapshots and per-tab scheduling are not carried over; the agent works from screenshots and
+input actions.
+
 ### Protocol
 
 One WebSocket carries versioned JSON frames (`PROTOCOL_VERSION`), validated with zod on both ends.
@@ -538,14 +645,16 @@ Failures arrive as typed `error` frames that map to the existing error codes, pl
 is silent for three intervals.
 
 Optional features are negotiated, not versioned: `hello` and `welcome` carry an optional
-`capabilities` list (`terminal`, `terminal.tmux` when sessions persist, and `tunnel`). A peer that predates a
+`capabilities` list (`terminal`, `terminal.tmux` when sessions persist, `tunnel`, and `desktop`). A peer that predates a
 feature sends none, and zod ignores fields it does not know, so mixed versions keep working and
 terminals simply report `unsupported`. `PROTOCOL_VERSION` only changes when an existing frame
 changes meaning. Terminal traffic uses its own frames (`pty.open`, `pty.opened`, `pty.input`,
 `pty.resize`, `pty.ack`, `pty.output`, `pty.exit`, `pty.close`) plus the ordinary request frames
 `terminalList` and `terminalKill`. Tunnels have theirs (`tunnel.open`, `tunnel.opened`,
 `tunnel.data`, `tunnel.ack`, `tunnel.close`), and both reuse one flow-controlled stream channel on
-each side of the link.
+each side of the link. The desktop is plain request frames (`desktopStatus`, `desktopResize`,
+`desktopScreenshot`, `desktopCursor`, `desktopAction`, `desktopControl`, `desktopTakeover`,
+`desktopRelease`), with the VNC stream carried by a tunnel.
 
 A request that carries an `operationId` is not aborted when the connection drops. It finishes on
 the daemon and its result waits for the retry. Anything else is aborted, since nobody can receive

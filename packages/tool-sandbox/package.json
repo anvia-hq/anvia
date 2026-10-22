@@ -10,7 +10,8 @@
     "directory": "packages/tool-sandbox"
   },
   "files": [
-    "dist"
+    "dist",
+    "images"
   ],
   "publishConfig": {
     "access": "public"

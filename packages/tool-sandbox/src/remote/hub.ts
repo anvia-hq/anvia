@@ -14,6 +14,8 @@ import {
   type HubFrame,
 } from "./protocol";
 import { RemoteSandboxRuntime } from "./runtime";
+import { RemoteSandboxDesktop, type SandboxDesktop } from "./desktop";
+import { type DesktopAuthorization, relayDesktop, selectDesktopProtocol } from "./desktop-relay";
 import { handleBrowserUpgrade, rejectUpgrade } from "./relay-common";
 import { RemoteSandboxTerminal, type SandboxTerminal } from "./terminal";
 import {
@@ -60,6 +62,14 @@ export interface RemoteSandboxHubOptions {
   authorizeTerminal?(
     request: IncomingMessage,
   ): Promise<TerminalAuthorization | null | undefined> | TerminalAuthorization | null | undefined;
+  /**
+   * Decide whether a browser may view (and perhaps control) a sandbox's desktop, or return
+   * null/undefined to refuse it with 401. Tickets work as for `authorizeTerminal`. Required for
+   * `handleDesktopUpgrade`.
+   */
+  authorizeDesktop?(
+    request: IncomingMessage,
+  ): Promise<DesktopAuthorization | null | undefined> | DesktopAuthorization | null | undefined;
   /** Unread tunnel bytes a handle may hold before it is cut off. Default 1 MiB. */
   maxTunnelBufferBytes?: number;
   /**
@@ -86,6 +96,8 @@ export interface RemoteSandboxHubListenOptions {
   terminalPath?: string;
   /** Upgrade requests to this path are browser tunnels, handled by `handleTunnelUpgrade`. */
   tunnelPath?: string;
+  /** Upgrade requests to this path are browser desktops, handled by `handleDesktopUpgrade`. */
+  desktopPath?: string;
 }
 
 const defaultConnectTimeoutMs = 30_000;
@@ -105,6 +117,7 @@ export class RemoteSandboxHub {
   private readonly server: WebSocketServer;
   private readonly terminalServer: WebSocketServer;
   private readonly tunnelServer: WebSocketServer;
+  private readonly desktopServer: WebSocketServer;
   private readonly relays = new Set<WebSocket>();
   private readonly connections = new Map<string, HubConnection>();
   private readonly waiters = new Map<string, Set<() => void>>();
@@ -133,6 +146,23 @@ export class RemoteSandboxHub {
       // A browser sends protocol bytes in small pieces; a tunnel never needs a huge frame.
       maxPayload: 1024 * 1024,
       handleProtocols: selectTunnelProtocol,
+    });
+    this.desktopServer = new WebSocketServer({
+      noServer: true,
+      maxPayload: 1024 * 1024,
+      handleProtocols: selectDesktopProtocol,
+    });
+  }
+
+  /** A sandbox's virtual display: screenshots, input, a control lock, and a VNC viewer path. */
+  desktop(sandboxId: string): SandboxDesktop {
+    if (typeof sandboxId !== "string" || sandboxId.length === 0) {
+      throw new TypeError("sandboxId must be a non-empty string.");
+    }
+    return new RemoteSandboxDesktop({
+      id: sandboxId,
+      source: this.linkSource(sandboxId),
+      tunnel: this.tunnel(sandboxId),
     });
   }
 
@@ -283,6 +313,25 @@ export class RemoteSandboxHub {
     });
   }
 
+  /**
+   * Complete a browser's desktop WebSocket upgrade: a VNC viewer relay with a JSON control channel.
+   * Tickets, Origin checks and status codes work as for `handleTerminalUpgrade`. The browser may
+   * offer the `anvia.desktop.v1` or `binary` subprotocol.
+   */
+  handleDesktopUpgrade(request: IncomingMessage, socket: Duplex, head: Buffer): void {
+    handleBrowserUpgrade<DesktopAuthorization>(request, socket, head, {
+      authorize: this.options.authorizeDesktop?.bind(this.options),
+      valid: (grant) => isSandboxId(grant.sandboxId),
+      allowedOrigins: this.options.allowedOrigins,
+      isClosed: () => this.closed,
+      server: this.desktopServer,
+      onSocket: (ws, grant) => {
+        this.trackRelay(ws);
+        relayDesktop(ws, { desktop: this.desktop(grant.sandboxId), authorization: grant });
+      },
+    });
+  }
+
   private trackRelay(ws: WebSocket): void {
     this.relays.add(ws);
     ws.once("close", () => this.relays.delete(ws));
@@ -301,6 +350,9 @@ export class RemoteSandboxHub {
       }
       if (options.tunnelPath !== undefined && requested === options.tunnelPath) {
         return this.handleTunnelUpgrade(request, socket, head);
+      }
+      if (options.desktopPath !== undefined && requested === options.desktopPath) {
+        return this.handleDesktopUpgrade(request, socket, head);
       }
       if (options.path !== undefined && requested !== options.path) {
         return rejectUpgrade(socket, 404, "Not Found");
@@ -334,6 +386,7 @@ export class RemoteSandboxHub {
     await new Promise<void>((resolve) => this.server.close(() => resolve()));
     await new Promise<void>((resolve) => this.terminalServer.close(() => resolve()));
     await new Promise<void>((resolve) => this.tunnelServer.close(() => resolve()));
+    await new Promise<void>((resolve) => this.desktopServer.close(() => resolve()));
   }
 
   private accept(ws: WebSocket, sandboxId: string): void {

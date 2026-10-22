@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { DockerSandboxError } from "../errors";
 import { type HubConnection, LinkClosedError, type StreamEndpoint } from "./connection";
 import { InboundStream } from "./inbound-stream";
+import { rpc } from "./rpc";
 import {
   type PtyExitReason,
   type TerminalSessionInfo,
@@ -77,7 +78,6 @@ export interface RemoteSandboxTerminalOptions {
 const defaultMaxBufferBytes = 1024 * 1024;
 const defaultOpenTimeoutMs = 15_000;
 const inputChunkBytes = 32 * 1024;
-const maxAttempts = 3;
 
 export class RemoteSandboxTerminal implements SandboxTerminal {
   private readonly maxBufferBytes: number;
@@ -127,19 +127,16 @@ export class RemoteSandboxTerminal implements SandboxTerminal {
   async list(
     options: { abortSignal?: AbortSignal | undefined } = {},
   ): Promise<readonly TerminalSessionInfo[]> {
-    let lastLoss: LinkClosedError | undefined;
-    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-      const connection = await this.options.source.acquire(options.abortSignal);
-      this.assertSupported(connection);
-      try {
-        const result = await connection.call("terminalList", {}, { signal: options.abortSignal });
-        return result.sessions.map((session) => compact(session));
-      } catch (error) {
-        if (!(error instanceof LinkClosedError)) throw error;
-        lastLoss = error;
-      }
-    }
-    throw this.unavailable(lastLoss);
+    const result = await rpc(
+      this.options.source,
+      "terminalList",
+      {},
+      {
+        signal: options.abortSignal,
+        require: this.requirement(),
+      },
+    );
+    return result.sessions.map((session) => compact(session));
   }
 
   async kill(
@@ -147,20 +144,30 @@ export class RemoteSandboxTerminal implements SandboxTerminal {
     options: { abortSignal?: AbortSignal | undefined } = {},
   ): Promise<void> {
     assertSessionName(sessionName);
-    const connection = await this.options.source.acquire(options.abortSignal);
-    this.assertSupported(connection);
-    try {
-      await connection.call("terminalKill", { sessionName }, { signal: options.abortSignal });
-    } catch (error) {
-      // Not retried: a second attempt would report the session as unknown, hiding that it worked.
-      if (error instanceof LinkClosedError) throw this.unavailable(error);
-      throw error;
-    }
+    // Never repeated after a link loss: a second attempt would report the session as unknown,
+    // hiding that the first one worked.
+    await rpc(
+      this.options.source,
+      "terminalKill",
+      { sessionName },
+      {
+        signal: options.abortSignal,
+        require: this.requirement(),
+        retry: false,
+      },
+    );
+  }
+
+  private requirement() {
+    return { capability: terminalCapability, error: () => this.unsupported() };
   }
 
   private assertSupported(connection: HubConnection): void {
-    if (connection.capabilities.has(terminalCapability)) return;
-    throw new DockerSandboxError(
+    if (!connection.capabilities.has(terminalCapability)) throw this.unsupported();
+  }
+
+  private unsupported(): DockerSandboxError {
+    return new DockerSandboxError(
       `Sandbox ${this.options.id} does not support terminals. Its daemon needs node-pty ` +
         "installed (and tmux for persistent sessions), and a version that supports terminals.",
       "unsupported",

@@ -21,6 +21,8 @@ const capabilities = z.array(z.string().max(64)).max(32).optional();
 
 /** Raw TCP tunnels to loopback ports inside the sandbox. */
 export const tunnelCapability = "tunnel";
+/** A virtual display with screenshots, input actions, a control lock, and a VNC server. */
+export const desktopCapability = "desktop";
 
 export const terminalSessionNamePattern = /^[A-Za-z0-9_-]{1,64}$/;
 const terminalSessionName = z.string().regex(terminalSessionNamePattern);
@@ -49,6 +51,47 @@ const processStartParams = z.object({
   env: z.record(z.string(), z.string()).optional(),
 });
 
+const desktopLength = z.number().int().min(1).max(16_384);
+const desktopCoordinate = z.number().int().min(0).max(32_767);
+const desktopHolder = z.string().min(1).max(128);
+const desktopButton = z.enum(["left", "middle", "right"]);
+/** Key names as xdotool takes them: `Return`, `ctrl+c`, `alt+Tab`, `F5`. No shell syntax. */
+export const desktopKeyPattern = /^[A-Za-z0-9_+\- ]{1,200}$/;
+
+/** An input the agent performs. Coordinates are pixels of the current display. */
+export const desktopActionSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("mouse_move"), x: desktopCoordinate, y: desktopCoordinate }),
+  z.object({
+    type: z.literal("click"),
+    x: desktopCoordinate.optional(),
+    y: desktopCoordinate.optional(),
+    button: desktopButton.optional(),
+    count: z.number().int().min(1).max(3).optional(),
+  }),
+  z.object({
+    type: z.literal("drag"),
+    fromX: desktopCoordinate.optional(),
+    fromY: desktopCoordinate.optional(),
+    toX: desktopCoordinate,
+    toY: desktopCoordinate,
+    button: desktopButton.optional(),
+  }),
+  z.object({
+    type: z.literal("scroll"),
+    x: desktopCoordinate.optional(),
+    y: desktopCoordinate.optional(),
+    direction: z.enum(["up", "down", "left", "right"]),
+    amount: z.number().int().min(1).max(100).optional(),
+  }),
+  z.object({
+    type: z.literal("type"),
+    text: z.string().min(1).max(20_000),
+    delayMs: z.number().int().min(0).max(1_000).optional(),
+  }),
+  z.object({ type: z.literal("key"), keys: z.string().regex(desktopKeyPattern) }),
+]);
+export type DesktopAction = z.infer<typeof desktopActionSchema>;
+
 export const methodParams = {
   exec: execParams,
   execStream: execParams,
@@ -74,6 +117,17 @@ export const methodParams = {
   }),
   terminalList: z.object({}),
   terminalKill: z.object({ sessionName: terminalSessionName }),
+  desktopStatus: z.object({ start: z.boolean().optional() }),
+  desktopResize: z.object({ width: desktopLength, height: desktopLength }),
+  desktopScreenshot: z.object({ scale: z.number().gt(0).max(1).optional() }),
+  desktopCursor: z.object({}),
+  desktopAction: z.object({ action: desktopActionSchema }),
+  desktopControl: z.object({}),
+  desktopTakeover: z.object({
+    holder: desktopHolder,
+    leaseMs: z.number().int().positive().optional(),
+  }),
+  desktopRelease: z.object({ holder: desktopHolder.optional(), force: z.boolean().optional() }),
 } as const;
 
 export type SandboxMethod = keyof typeof methodParams;
@@ -86,6 +140,10 @@ export const mutatingMethods: ReadonlySet<SandboxMethod> = new Set([
   "writeFile",
   "startProcess",
   "stopProcess",
+  "desktopAction",
+  "desktopResize",
+  "desktopTakeover",
+  "desktopRelease",
 ]);
 
 const execBase = {
@@ -109,6 +167,34 @@ const processInfo = z.object({
   startedAt: z.string(),
   endedAt: z.string().optional(),
 });
+
+export const desktopStates = ["stopped", "starting", "running", "restarting", "failed"] as const;
+export type DesktopState = (typeof desktopStates)[number];
+
+/** Who may drive the desktop. While a human holds it, the agent's inputs fail. */
+const desktopControlResult = z.object({
+  held: z.boolean(),
+  holder: z.string().optional(),
+  /** When the hold lapses unless renewed, as an ISO timestamp. */
+  expiresAt: z.string().optional(),
+});
+export type DesktopControl = z.infer<typeof desktopControlResult>;
+
+const desktopStatusResult = z.object({
+  state: z.enum(desktopStates),
+  width: z.number().int(),
+  height: z.number().int(),
+  maxWidth: z.number().int(),
+  maxHeight: z.number().int(),
+  display: z.string(),
+  /** Loopback port of the VNC server. Reach it through a tunnel. */
+  vncPort: z.number().int(),
+  /** Times a crashed desktop process was restarted. */
+  restarts: z.number().int(),
+  message: z.string().optional(),
+  control: desktopControlResult,
+});
+export type DesktopStatus = z.infer<typeof desktopStatusResult>;
 
 export const methodResults = {
   exec: execResult,
@@ -153,6 +239,21 @@ export const methodResults = {
     ),
   }),
   terminalKill: z.object({}),
+  desktopStatus: desktopStatusResult,
+  desktopResize: desktopStatusResult,
+  desktopScreenshot: z.object({
+    base64,
+    /** Size of the image. Smaller than the display when a scale was asked for. */
+    width: z.number().int(),
+    height: z.number().int(),
+    displayWidth: z.number().int(),
+    displayHeight: z.number().int(),
+  }),
+  desktopCursor: z.object({ x: z.number().int(), y: z.number().int() }),
+  desktopAction: z.object({}),
+  desktopControl: desktopControlResult,
+  desktopTakeover: desktopControlResult,
+  desktopRelease: desktopControlResult,
 } as const satisfies Record<SandboxMethod, z.ZodType>;
 
 export type MethodResult<M extends SandboxMethod> = z.infer<(typeof methodResults)[M]>;
@@ -193,6 +294,14 @@ const requestFrame = z.discriminatedUnion("method", [
   request("waitForPort"),
   request("terminalList"),
   request("terminalKill"),
+  request("desktopStatus"),
+  request("desktopResize"),
+  request("desktopScreenshot"),
+  request("desktopCursor"),
+  request("desktopAction"),
+  request("desktopControl"),
+  request("desktopTakeover"),
+  request("desktopRelease"),
 ]);
 
 const ptyOpen = z.object({

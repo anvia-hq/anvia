@@ -34,7 +34,7 @@ import type {
   SandboxWriteFileOptions,
   SandboxWriteTextFileOptions,
 } from "../types";
-import { type CallOptions, type HubConnection, LinkClosedError } from "./connection";
+import type { CallOptions, HubConnection } from "./connection";
 import {
   type MethodParams,
   type MethodResult,
@@ -45,8 +45,8 @@ import {
   decodeProcessLogs,
   encodeBytes,
   encodeInput,
-  mutatingMethods,
 } from "./protocol";
+import { rpc } from "./rpc";
 
 /** Where a runtime gets a live daemon connection from. */
 export interface RemoteLinkSource {
@@ -63,8 +63,6 @@ export interface RemoteSandboxRuntimeOptions {
   maxStreamBufferBytes?: number | undefined;
 }
 
-/** Link losses a call survives. Each retry waits for a reconnect of up to `connectTimeoutMs`. */
-const maxAttempts = 3;
 const defaultMaxStreamBufferBytes = 1024 * 1024;
 
 /**
@@ -280,31 +278,12 @@ export class RemoteSandboxRuntime implements SandboxRuntime {
     );
   }
 
-  private async call<M extends SandboxMethod>(
+  private call<M extends SandboxMethod>(
     method: M,
     params: MethodParams<M>,
     options: CallOptions,
   ): Promise<MethodResult<M>> {
-    const retryable = !mutatingMethods.has(method) || options.operationId !== undefined;
-    let lastLoss: LinkClosedError | undefined;
-    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-      const connection = await this.source.acquire(options.signal);
-      try {
-        return await connection.call(method, params, options);
-      } catch (error) {
-        if (!(error instanceof LinkClosedError)) throw error;
-        lastLoss = error;
-        if (!retryable) break;
-      }
-    }
-    throw new DockerSandboxError(
-      retryable
-        ? "Sandbox connection kept dropping."
-        : `Sandbox connection dropped during ${method}; pass an operationId to make it safe to retry.`,
-      "sandbox_unavailable",
-      undefined,
-      lastLoss === undefined ? undefined : { cause: lastLoss },
-    );
+    return rpc(this.source, method, params, options);
   }
 }
 

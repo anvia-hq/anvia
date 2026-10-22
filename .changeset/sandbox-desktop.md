@@ -1,0 +1,19 @@
+---
+"@anvia/sandbox": minor
+---
+
+Add a desktop capability to remote sandboxes. `hub.desktop(sandboxId)` returns a `SandboxDesktop`
+with `screenshot` (optionally scaled), `act` (move, click, drag, scroll, type, key), `cursorPosition`,
+`resize`, `status`, and a control lock: `takeover` pauses the agent's inputs with a typed
+`desktop_locked` error until `release` or the lease runs out, while watching and screenshots are
+never blocked.
+
+The daemon runs Xvfb, a window manager and x11vnc (loopback only, no password) itself: lazily on
+first use, restarting what crashes, and advertising `desktop` only when the programs are installed.
+A reference Debian image with Chromium and tmux is in `images/desktop/`. Viewers reach VNC through
+a tunnel; `hub.handleDesktopUpgrade` and `authorizeDesktop` relay a browser's noVNC connection,
+filtering the RFB stream so read-only viewers, and viewers who are not the current holder, cannot
+send input, and offering a JSON control channel for taking over and releasing.
+
+`SandboxDaemon` gains `desktop: false | { resolution, maxResolution, display, vncPort, windowManager,
+lock, ... }`. The new `desktop_locked` error code is added.

@@ -14,21 +14,25 @@ import {
   hubFrameSchema,
   mutatingMethods,
   rawDataToString,
-  terminalCapability,
-  terminalTmuxCapability,
-  tunnelCapability,
   type DaemonFrame,
 } from "../remote/protocol";
 import type { SandboxExecOptions, SandboxRuntimeLimits } from "../types";
 import { LocalSandbox } from "./local-sandbox";
 import { OperationStore, defaultMaxOperationEntries } from "./operations";
+import { dispatchDesktop } from "./desktop/dispatch";
+import { type DaemonFeatures, detectFeatures } from "./features";
+import type { SandboxDaemonDesktopOptions } from "./desktop/options";
+import { DesktopService } from "./desktop/service";
 import { ConnectionTerminals } from "./terminal/connection-terminals";
-import { TerminalManager, detectTmux } from "./terminal/manager";
+import type { TerminalManager } from "./terminal/manager";
 import type { SandboxDaemonTerminalOptions } from "./terminal/options";
-import { loadNodePty } from "./terminal/pty";
 import { ConnectionTunnels, type SandboxDaemonTunnelOptions } from "./tunnels";
 
-export type { SandboxDaemonTerminalOptions, SandboxDaemonTunnelOptions };
+export type {
+  SandboxDaemonDesktopOptions,
+  SandboxDaemonTerminalOptions,
+  SandboxDaemonTunnelOptions,
+};
 
 export type SandboxDaemonLogLevel = "info" | "warn" | "error";
 
@@ -52,6 +56,12 @@ export interface SandboxDaemonOptions {
    * default; pass false to turn them off, or `allowedPorts` to restrict which ports they reach.
    */
   tunnel?: false | SandboxDaemonTunnelOptions;
+  /**
+   * A virtual display (Xvfb, a window manager, x11vnc) the agent can see and drive and a human can
+   * take over. Offered automatically when the programs it needs are installed; pass false to turn
+   * it off. Nothing runs until the desktop is first used.
+   */
+  desktop?: false | SandboxDaemonDesktopOptions;
   /** Extra environment for every command. */
   env?: Readonly<Record<string, string>>;
   /** Completed operations remembered for retries. Defaults to 256. */
@@ -80,7 +90,7 @@ export class SandboxDaemon {
   private readonly stopController = new AbortController();
   private readonly readyWaiters: Array<{ resolve: () => void; reject: (error: Error) => void }> =
     [];
-  private terminals: Promise<TerminalManager | undefined> | undefined;
+  private features: Promise<DaemonFeatures> | undefined;
   private session: DaemonSession | undefined;
   private loop: Promise<void> | undefined;
   private everConnected = false;
@@ -131,7 +141,9 @@ export class SandboxDaemon {
       waiter.reject(new Error("Sandbox daemon stopped before connecting."));
     }
     await this.loop;
-    (await this.terminals)?.dispose();
+    const features = await this.features;
+    features?.terminals?.dispose();
+    await features?.desktop?.stop();
     await this.sandbox.dispose();
   }
 
@@ -165,37 +177,14 @@ export class SandboxDaemon {
     }
   }
 
-  /** Look for a PTY backend and tmux once; the result decides what `hello` advertises. */
-  private detectTerminals(): Promise<TerminalManager | undefined> {
-    this.terminals ??= (async () => {
-      const config = this.options.terminal;
-      if (config === false) return undefined;
-      const spawn = config?.spawn ?? (await loadNodePty());
-      if (spawn === undefined) {
-        this.log("info", "terminals unavailable: node-pty is not installed");
-        return undefined;
-      }
-      const tmuxPath =
-        config?.tmuxPath === false ? undefined : await detectTmux(config?.tmuxPath ?? "tmux");
-      this.log("info", `terminals enabled (${tmuxPath === undefined ? "plain shell" : "tmux"})`);
-      return new TerminalManager({
-        spawn,
-        tmuxPath,
-        socketName: config?.socketName,
-        scrollbackBytes: config?.scrollbackBytes,
-        maxSessions: config?.maxSessions,
-        commandEnv: () => this.sandbox.commandEnvironment(),
-      });
-    })();
-    return this.terminals;
-  }
-
   private async connect(): Promise<DaemonSession> {
-    const terminals = await this.detectTerminals();
-    return this.dial(terminals);
+    this.features ??= detectFeatures(this.options, this.sandbox, (level, message) =>
+      this.log(level, message),
+    );
+    return this.dial(await this.features);
   }
 
-  private dial(terminals: TerminalManager | undefined): Promise<DaemonSession> {
+  private dial(features: DaemonFeatures): Promise<DaemonSession> {
     // Detection above is asynchronous, so a stop() may already have happened; its abort event
     // would never reach a listener added now.
     if (this.stopController.signal.aborted) {
@@ -236,13 +225,7 @@ export class SandboxDaemon {
           daemonVersion: this.options.version ?? "unknown",
           workdir: this.sandbox.workdir,
         };
-        const capabilities: string[] = [];
-        if (terminals !== undefined) {
-          capabilities.push(terminalCapability);
-          if (terminals.persistent) capabilities.push(terminalTmuxCapability);
-        }
-        if (this.options.tunnel !== false) capabilities.push(tunnelCapability);
-        if (capabilities.length > 0) hello.capabilities = capabilities;
+        if (features.capabilities.length > 0) hello.capabilities = features.capabilities;
         socket.send(JSON.stringify(hello));
       });
       socket.once("message", (data) => {
@@ -268,7 +251,8 @@ export class SandboxDaemon {
           new DaemonSession(socket, frame.heartbeatIntervalMs, {
             sandbox: this.sandbox,
             operations: this.operations,
-            terminals,
+            terminals: features.terminals,
+            desktop: features.desktop,
             terminalOptions: this.options.terminal === false ? undefined : this.options.terminal,
             tunnelOptions: this.options.tunnel === false ? undefined : this.options.tunnel,
             tunnelsEnabled: this.options.tunnel !== false,
@@ -288,6 +272,7 @@ interface SessionDependencies {
   sandbox: LocalSandbox;
   operations: OperationStore;
   terminals: TerminalManager | undefined;
+  desktop: DesktopService | undefined;
   terminalOptions: SandboxDaemonTerminalOptions | undefined;
   tunnelOptions: SandboxDaemonTunnelOptions | undefined;
   tunnelsEnabled: boolean;
@@ -319,6 +304,8 @@ class DaemonSession {
     this.tunnels = new ConnectionTunnels({
       enabled: deps.tunnelsEnabled,
       options: deps.tunnelOptions,
+      // The desktop's VNC server is reached through a tunnel, whatever ports the daemon allows.
+      alwaysAllowedPorts: () => (deps.desktop === undefined ? [] : [deps.desktop.vncPort]),
       send: (frame) => this.send(frame),
       bufferedAmount: () => socket.bufferedAmount,
     });
@@ -483,6 +470,15 @@ class DaemonSession {
         return sandbox.stopProcess(compact({ ...frame.params, abortSignal }));
       case "waitForPort":
         return sandbox.waitForPort(compact({ ...frame.params, abortSignal }));
+      case "desktopStatus":
+      case "desktopResize":
+      case "desktopScreenshot":
+      case "desktopCursor":
+      case "desktopAction":
+      case "desktopControl":
+      case "desktopTakeover":
+      case "desktopRelease":
+        return dispatchDesktop(this.deps.desktop, frame, abortSignal);
       case "terminalList":
         return { sessions: await this.terminals.require().list() };
       case "terminalKill":

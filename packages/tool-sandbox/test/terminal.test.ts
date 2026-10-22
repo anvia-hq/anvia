@@ -393,6 +393,7 @@ describe("terminal capability negotiation", () => {
       workdir: h.workdir,
       stateDir: h.stateDir,
       terminal: { spawn: fakeSpawner().spawn, tmuxPath: false },
+      desktop: false,
     });
     try {
       daemon.start();
@@ -428,6 +429,7 @@ describe("terminal capability negotiation", () => {
         workdir: h.workdir,
         stateDir: h.stateDir,
         terminal,
+        desktop: false,
       });
     const none = make(false);
     const plain = make({ spawn, tmuxPath: false });

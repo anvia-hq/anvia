@@ -11,6 +11,7 @@ import {
   decodeBytes,
   decodeError,
   methodResults,
+  rawDataToString,
 } from "./protocol";
 
 /** The link dropped before the call finished. Whether to retry is the caller's decision. */
@@ -157,7 +158,7 @@ export class HubConnection {
   private onMessage(data: WebSocket.RawData): void {
     let frame: DaemonFrame;
     try {
-      const parsed = daemonFrameSchema.safeParse(JSON.parse(rawToString(data)));
+      const parsed = daemonFrameSchema.safeParse(JSON.parse(rawDataToString(data)));
       if (!parsed.success) {
         this.socket.close(1002, "invalid frame");
         return;
@@ -261,10 +262,4 @@ export class HubConnection {
       // Closed links drop their own pending work.
     }
   }
-}
-
-function rawToString(data: WebSocket.RawData): string {
-  if (typeof data === "string") return data;
-  if (Array.isArray(data)) return Buffer.concat(data).toString("utf8");
-  return Buffer.from(data as ArrayBuffer).toString("utf8");
 }

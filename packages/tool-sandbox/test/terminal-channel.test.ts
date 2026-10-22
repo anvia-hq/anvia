@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PtyChannel } from "../src/daemon/terminal/channel";
-import type { TerminalAttachment } from "../src/daemon/terminal/manager";
+import type { TerminalAttachment } from "../src/daemon/terminal/attachments";
 import { type DaemonFrame, decodeBytes } from "../src/remote/protocol";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));

@@ -2,6 +2,7 @@ import type { IncomingMessage } from "node:http";
 import WebSocket from "ws";
 import { z } from "zod";
 import { DockerSandboxError } from "../errors";
+import { rawDataToString } from "./protocol";
 import type { SandboxTerminal, TerminalHandle } from "./terminal";
 
 /** What a browser is allowed to do, decided by `authorizeTerminal` for one upgrade request. */
@@ -174,10 +175,7 @@ export function relayTerminal(
 
 function parseMessage(data: WebSocket.RawData) {
   try {
-    const text = Array.isArray(data)
-      ? Buffer.concat(data).toString("utf8")
-      : Buffer.from(data as ArrayBuffer).toString("utf8");
-    const parsed = browserMessage.safeParse(JSON.parse(text));
+    const parsed = browserMessage.safeParse(JSON.parse(rawDataToString(data)));
     return parsed.success ? parsed.data : undefined;
   } catch {
     return undefined;

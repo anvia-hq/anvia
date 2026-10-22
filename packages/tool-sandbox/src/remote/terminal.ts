@@ -3,6 +3,7 @@ import { DockerSandboxError } from "../errors";
 import { type HubConnection, LinkClosedError, type PtyEndpoint } from "./connection";
 import {
   type PtyExitReason,
+  type TerminalSessionInfo,
   compact,
   encodeBytes,
   terminalCapability,
@@ -24,6 +25,8 @@ export interface TerminalOpenOptions {
   abortSignal?: AbortSignal | undefined;
 }
 
+export type { TerminalSessionInfo };
+
 export interface TerminalExit {
   /**
    * `exited`: the shell or tmux client ended. `closed`: {@link TerminalHandle.close} was called.
@@ -32,15 +35,6 @@ export interface TerminalExit {
    */
   reason: PtyExitReason;
   exitCode?: number;
-}
-
-export interface TerminalSessionInfo {
-  name: string;
-  /** Viewers attached right now. */
-  attached: number;
-  /** True for tmux sessions, which survive a daemon restart. */
-  persistent: boolean;
-  createdAt?: string;
 }
 
 /** One viewer of a terminal session. */

@@ -8,6 +8,7 @@ import {
   CLOSE_CODE_SUPERSEDED,
   PROTOCOL_VERSION,
   daemonFrameSchema,
+  rawDataToString,
   terminalCapability,
   type HubFrame,
 } from "./protocol";
@@ -393,10 +394,7 @@ function reject(socket: Duplex, status: number, message: string): void {
 
 function parseHello(data: WebSocket.RawData) {
   try {
-    const text = Array.isArray(data)
-      ? Buffer.concat(data).toString("utf8")
-      : Buffer.from(data as ArrayBuffer).toString("utf8");
-    const parsed = daemonFrameSchema.safeParse(JSON.parse(text));
+    const parsed = daemonFrameSchema.safeParse(JSON.parse(rawDataToString(data)));
     return parsed.success && parsed.data.type === "hello" ? parsed.data : undefined;
   } catch {
     return undefined;

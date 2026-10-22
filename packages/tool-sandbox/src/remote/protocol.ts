@@ -1,3 +1,4 @@
+import type WebSocket from "ws";
 import { z } from "zod";
 import { DockerSandboxError, dockerSandboxErrorCodes } from "../errors";
 import type { SandboxExecOptions, SandboxExecResult, SandboxProcessLogs } from "../types";
@@ -152,6 +153,16 @@ export const methodResults = {
 } as const satisfies Record<SandboxMethod, z.ZodType>;
 
 export type MethodResult<M extends SandboxMethod> = z.infer<(typeof methodResults)[M]>;
+
+/** One terminal session, as `terminalList` reports it. */
+export type TerminalSessionInfo = MethodResult<"terminalList">["sessions"][number];
+
+/** A WebSocket message as text. Frames are JSON, so they are never binary. */
+export function rawDataToString(data: WebSocket.RawData): string {
+  if (Array.isArray(data)) return Buffer.concat(data).toString("utf8");
+  if (Buffer.isBuffer(data)) return data.toString("utf8");
+  return Buffer.from(data).toString("utf8");
+}
 
 const operationId = z.string().min(1).max(256);
 

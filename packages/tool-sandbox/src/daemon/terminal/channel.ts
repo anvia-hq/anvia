@@ -1,6 +1,6 @@
 import type { DaemonFrame } from "../../remote/protocol";
 import { encodeBytes } from "../../remote/protocol";
-import type { TerminalAttachment, TerminalExitInfo } from "./manager";
+import type { TerminalAttachment, TerminalExitInfo } from "./attachments";
 
 export interface PtyChannelLimits {
   /** Coalescing window for output. Default 10 ms. */

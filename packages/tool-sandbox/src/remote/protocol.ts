@@ -8,6 +8,21 @@ export const PROTOCOL_VERSION = 1;
 /** WebSocket close code the hub uses when a newer daemon connection takes over a sandbox. */
 export const CLOSE_CODE_SUPERSEDED = 4001;
 
+/**
+ * Optional features a peer can advertise in `hello` (daemon) and `welcome` (hub). A peer that
+ * predates a feature sends no `capabilities` at all, which reads as "none", so features can be
+ * added without bumping {@link PROTOCOL_VERSION}.
+ */
+export const terminalCapability = "terminal";
+/** Terminal sessions persist in tmux, so they survive a daemon restart. */
+export const terminalTmuxCapability = "terminal.tmux";
+const capabilities = z.array(z.string().max(64)).max(32).optional();
+
+export const terminalSessionNamePattern = /^[A-Za-z0-9_-]{1,64}$/;
+const terminalSessionName = z.string().regex(terminalSessionNamePattern);
+const terminalSize = z.number().int().min(1).max(1_000);
+const ptyId = z.string().min(1).max(128);
+
 const requestId = z.string().min(1).max(128);
 const base64 = z.string();
 const nonNegativeInt = z.number().int().nonnegative();
@@ -53,6 +68,8 @@ export const methodParams = {
     timeoutMs: z.number().int().positive().optional(),
     intervalMs: z.number().int().positive().optional(),
   }),
+  terminalList: z.object({}),
+  terminalKill: z.object({ sessionName: terminalSessionName }),
 } as const;
 
 export type SandboxMethod = keyof typeof methodParams;
@@ -121,6 +138,17 @@ export const methodResults = {
   }),
   stopProcess: processInfo,
   waitForPort: z.object({ containerPort: z.number().int(), protocol: z.literal("tcp") }),
+  terminalList: z.object({
+    sessions: z.array(
+      z.object({
+        name: z.string(),
+        attached: nonNegativeInt,
+        persistent: z.boolean(),
+        createdAt: z.string().optional(),
+      }),
+    ),
+  }),
+  terminalKill: z.object({}),
 } as const satisfies Record<SandboxMethod, z.ZodType>;
 
 export type MethodResult<M extends SandboxMethod> = z.infer<(typeof methodResults)[M]>;
@@ -149,7 +177,33 @@ const requestFrame = z.discriminatedUnion("method", [
   request("readProcessLogs"),
   request("stopProcess"),
   request("waitForPort"),
+  request("terminalList"),
+  request("terminalKill"),
 ]);
+
+const ptyOpen = z.object({
+  type: z.literal("pty.open"),
+  ptyId,
+  sessionName: terminalSessionName,
+  cols: terminalSize,
+  rows: terminalSize,
+  cwd: z.string().optional(),
+  env: z.record(z.string(), z.string()).optional(),
+  readOnly: z.boolean().optional(),
+});
+const ptyInput = z.object({ type: z.literal("pty.input"), ptyId, data: base64.max(131_072) });
+const ptyResize = z.object({
+  type: z.literal("pty.resize"),
+  ptyId,
+  cols: terminalSize,
+  rows: terminalSize,
+});
+/** Cumulative bytes of `pty.output` the receiver has consumed. Drives flow control. */
+const ptyAck = z.object({ type: z.literal("pty.ack"), ptyId, bytes: nonNegativeInt });
+const ptyClose = z.object({ type: z.literal("pty.close"), ptyId });
+
+export const ptyExitReasons = ["exited", "closed", "killed", "error", "disconnected"] as const;
+export type PtyExitReason = (typeof ptyExitReasons)[number];
 
 const ping = z.object({ type: z.literal("ping") });
 const pong = z.object({ type: z.literal("pong") });
@@ -158,10 +212,16 @@ const pong = z.object({ type: z.literal("pong") });
 export const hubFrameSchema = z.union([
   requestFrame,
   z.object({ type: z.literal("cancel"), requestId }),
+  ptyOpen,
+  ptyInput,
+  ptyResize,
+  ptyAck,
+  ptyClose,
   z.object({
     type: z.literal("welcome"),
     protocolVersion: z.number().int(),
     heartbeatIntervalMs: z.number().int().positive(),
+    capabilities,
   }),
   ping,
   pong,
@@ -176,6 +236,20 @@ export const daemonFrameSchema = z.union([
     protocolVersion: z.number().int(),
     daemonVersion: z.string(),
     workdir: z.string(),
+    capabilities,
+  }),
+  z.object({ type: z.literal("pty.opened"), ptyId }),
+  z.object({
+    type: z.literal("pty.output"),
+    ptyId,
+    seq: nonNegativeInt,
+    data: base64,
+  }),
+  z.object({
+    type: z.literal("pty.exit"),
+    ptyId,
+    reason: z.enum(ptyExitReasons),
+    exitCode: z.number().int().optional(),
   }),
   z.object({ type: z.literal("response"), requestId, result: z.unknown() }),
   z.object({

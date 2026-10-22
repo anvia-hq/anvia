@@ -1,5 +1,6 @@
 import path from "node:path";
 import WebSocket from "ws";
+import { DockerSandboxError } from "../errors";
 import {
   CLOSE_CODE_SUPERSEDED,
   PROTOCOL_VERSION,
@@ -13,13 +14,36 @@ import {
   compact,
   hubFrameSchema,
   mutatingMethods,
+  terminalCapability,
+  terminalTmuxCapability,
   type DaemonFrame,
+  type HubFrame,
 } from "../remote/protocol";
 import type { SandboxExecOptions, SandboxRuntimeLimits } from "../types";
 import { LocalSandbox } from "./local-sandbox";
 import { OperationStore, defaultMaxOperationEntries } from "./operations";
+import { PtyChannel, type PtyChannelLimits } from "./terminal/channel";
+import { type TerminalAttachment, TerminalManager, detectTmux } from "./terminal/manager";
+import { type PtySpawner, loadNodePty } from "./terminal/pty";
 
 export type SandboxDaemonLogLevel = "info" | "warn" | "error";
+
+export interface SandboxDaemonTerminalOptions {
+  /** PTY implementation. Defaults to `node-pty` when the image installed it. */
+  spawn?: PtySpawner;
+  /** tmux binary to use, or false to force the plain-shell fallback. Default: `tmux` on PATH. */
+  tmuxPath?: string | false;
+  /** tmux server socket name. Default `anvia-sandbox`. */
+  socketName?: string;
+  /** Scrollback the plain-shell fallback keeps per session. Default 256 KiB. */
+  scrollbackBytes?: number;
+  /** Terminal sessions allowed at once. Default 16. */
+  maxSessions?: number;
+  /** Terminal attachments one hub connection may hold open. Default 16. */
+  maxAttachments?: number;
+  /** Output batching and flow-control bounds. */
+  flow?: PtyChannelLimits;
+}
 
 export interface SandboxDaemonOptions {
   /** `ws://` or `wss://` URL of the control plane's hub endpoint. */
@@ -31,6 +55,11 @@ export interface SandboxDaemonOptions {
   /** Directory for the operation dedup table. Keep it outside `workdir`. */
   stateDir: string;
   limits?: SandboxRuntimeLimits;
+  /**
+   * Interactive terminals. Offered automatically when `node-pty` can be loaded; pass false to
+   * turn them off.
+   */
+  terminal?: false | SandboxDaemonTerminalOptions;
   /** Extra environment for every command. */
   env?: Readonly<Record<string, string>>;
   /** Completed operations remembered for retries. Defaults to 256. */
@@ -59,6 +88,7 @@ export class SandboxDaemon {
   private readonly stopController = new AbortController();
   private readonly readyWaiters: Array<{ resolve: () => void; reject: (error: Error) => void }> =
     [];
+  private terminals: Promise<TerminalManager | undefined> | undefined;
   private session: DaemonSession | undefined;
   private loop: Promise<void> | undefined;
   private everConnected = false;
@@ -109,6 +139,7 @@ export class SandboxDaemon {
       waiter.reject(new Error("Sandbox daemon stopped before connecting."));
     }
     await this.loop;
+    (await this.terminals)?.dispose();
     await this.sandbox.dispose();
   }
 
@@ -142,7 +173,42 @@ export class SandboxDaemon {
     }
   }
 
-  private connect(): Promise<DaemonSession> {
+  /** Look for a PTY backend and tmux once; the result decides what `hello` advertises. */
+  private detectTerminals(): Promise<TerminalManager | undefined> {
+    this.terminals ??= (async () => {
+      const config = this.options.terminal;
+      if (config === false) return undefined;
+      const spawn = config?.spawn ?? (await loadNodePty());
+      if (spawn === undefined) {
+        this.log("info", "terminals unavailable: node-pty is not installed");
+        return undefined;
+      }
+      const tmuxPath =
+        config?.tmuxPath === false ? undefined : await detectTmux(config?.tmuxPath ?? "tmux");
+      this.log("info", `terminals enabled (${tmuxPath === undefined ? "plain shell" : "tmux"})`);
+      return new TerminalManager({
+        spawn,
+        tmuxPath,
+        socketName: config?.socketName,
+        scrollbackBytes: config?.scrollbackBytes,
+        maxSessions: config?.maxSessions,
+        commandEnv: () => this.sandbox.commandEnvironment(),
+      });
+    })();
+    return this.terminals;
+  }
+
+  private async connect(): Promise<DaemonSession> {
+    const terminals = await this.detectTerminals();
+    return this.dial(terminals);
+  }
+
+  private dial(terminals: TerminalManager | undefined): Promise<DaemonSession> {
+    // Detection above is asynchronous, so a stop() may already have happened; its abort event
+    // would never reach a listener added now.
+    if (this.stopController.signal.aborted) {
+      return Promise.reject(new Error("Sandbox daemon stopped."));
+    }
     const handshakeTimeoutMs = this.options.handshakeTimeoutMs ?? defaultHandshakeTimeoutMs;
     return new Promise((resolve, reject) => {
       const socket = new WebSocket(this.options.controlUrl, {
@@ -178,6 +244,12 @@ export class SandboxDaemon {
           daemonVersion: this.options.version ?? "unknown",
           workdir: this.sandbox.workdir,
         };
+        if (terminals !== undefined) {
+          hello.capabilities = [
+            terminalCapability,
+            ...(terminals.persistent ? [terminalTmuxCapability] : []),
+          ];
+        }
         socket.send(JSON.stringify(hello));
       });
       socket.once("message", (data) => {
@@ -203,6 +275,8 @@ export class SandboxDaemon {
           new DaemonSession(socket, frame.heartbeatIntervalMs, {
             sandbox: this.sandbox,
             operations: this.operations,
+            terminals,
+            terminalOptions: this.options.terminal === false ? undefined : this.options.terminal,
             log: (level, message) => this.log(level, message),
           }),
         );
@@ -218,6 +292,8 @@ export class SandboxDaemon {
 interface SessionDependencies {
   sandbox: LocalSandbox;
   operations: OperationStore;
+  terminals: TerminalManager | undefined;
+  terminalOptions: SandboxDaemonTerminalOptions | undefined;
   log: (level: SandboxDaemonLogLevel, message: string) => void;
 }
 
@@ -226,6 +302,7 @@ class DaemonSession {
   ready = true;
   readonly closed: Promise<number>;
   private readonly active = new Map<string, { controller: AbortController; detachable: boolean }>();
+  private readonly ptys = new Map<string, PtyEntry>();
   private readonly heartbeat: ReturnType<typeof setInterval>;
   private lastSeen = Date.now();
 
@@ -243,6 +320,13 @@ class DaemonSession {
         for (const { controller, detachable } of this.active.values()) {
           if (!detachable) controller.abort(new DOMException("Connection closed", "AbortError"));
         }
+        // Viewers belong to the connection that opened them. tmux sessions themselves persist.
+        for (const entry of this.ptys.values()) {
+          entry.closing = true;
+          entry.channel?.dispose();
+          entry.attachment?.close();
+        }
+        this.ptys.clear();
         resolve(code);
       });
     });
@@ -292,8 +376,87 @@ class DaemonSession {
       case "request":
         void this.handle(frame);
         return;
+      case "pty.open":
+        void this.openPty(frame);
+        return;
+      case "pty.input":
+        this.ptys.get(frame.ptyId)?.attachment?.write(decodeBytes(frame.data));
+        return;
+      case "pty.resize":
+        this.ptys.get(frame.ptyId)?.attachment?.resize(frame.cols, frame.rows);
+        return;
+      case "pty.ack":
+        this.ptys.get(frame.ptyId)?.channel?.ack(frame.bytes);
+        return;
+      case "pty.close": {
+        const entry = this.ptys.get(frame.ptyId);
+        if (entry === undefined) return;
+        entry.closing = true;
+        this.ptys.delete(frame.ptyId);
+        entry.channel?.dispose();
+        entry.attachment?.close();
+        return;
+      }
       default:
         return;
+    }
+  }
+
+  private async openPty(frame: Extract<HubFrame, { type: "pty.open" }>) {
+    const { ptyId } = frame;
+    const { terminals } = this.deps;
+    const fail = (error: unknown) => this.send(encodeError(error, ptyId));
+    if (terminals === undefined) {
+      fail(new DockerSandboxError("This sandbox has no terminal support.", "unsupported"));
+      return;
+    }
+    const maxAttachments = this.deps.terminalOptions?.maxAttachments ?? 16;
+    if (this.ptys.has(ptyId) || this.ptys.size >= maxAttachments) {
+      fail(
+        new DockerSandboxError(
+          this.ptys.has(ptyId)
+            ? `Terminal ${ptyId} is already open.`
+            : `Too many open terminals (${maxAttachments}).`,
+          "invalid_state",
+        ),
+      );
+      return;
+    }
+    const entry: PtyEntry = { closing: false };
+    this.ptys.set(ptyId, entry);
+    try {
+      const context = await this.deps.sandbox.terminalContext(frame.cwd, frame.env);
+      const attachment = await terminals.open({
+        sessionName: frame.sessionName,
+        cols: frame.cols,
+        rows: frame.rows,
+        cwd: context.cwd,
+        env: context.env,
+        readOnly: frame.readOnly === true,
+      });
+      if (entry.closing) {
+        attachment.close();
+        return;
+      }
+      const channel = new PtyChannel(
+        ptyId,
+        attachment,
+        { send: (out) => this.send(out), bufferedAmount: () => this.socket.bufferedAmount },
+        this.deps.terminalOptions?.flow,
+      );
+      entry.attachment = attachment;
+      entry.channel = channel;
+      this.send({ type: "pty.opened", ptyId });
+      attachment.start({
+        onData: (chunk) => channel.push(chunk),
+        onExit: (info) => {
+          this.ptys.delete(ptyId);
+          channel.finish(info);
+        },
+      });
+    } catch (error) {
+      this.ptys.delete(ptyId);
+      if (!entry.closing) fail(error);
     }
   }
 
@@ -318,6 +481,14 @@ class DaemonSession {
     } finally {
       this.active.delete(requestId);
     }
+  }
+
+  private requireTerminals(): TerminalManager {
+    const { terminals } = this.deps;
+    if (terminals === undefined) {
+      throw new DockerSandboxError("This sandbox has no terminal support.", "unsupported");
+    }
+    return terminals;
   }
 
   private async dispatch(frame: RequestFrame, abortSignal: AbortSignal): Promise<unknown> {
@@ -365,8 +536,19 @@ class DaemonSession {
         return sandbox.stopProcess(compact({ ...frame.params, abortSignal }));
       case "waitForPort":
         return sandbox.waitForPort(compact({ ...frame.params, abortSignal }));
+      case "terminalList":
+        return { sessions: await this.requireTerminals().list() };
+      case "terminalKill":
+        await this.requireTerminals().kill(frame.params.sessionName);
+        return {};
     }
   }
+}
+
+interface PtyEntry {
+  closing: boolean;
+  attachment?: TerminalAttachment;
+  channel?: PtyChannel;
 }
 
 function execOptions(

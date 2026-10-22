@@ -2,7 +2,11 @@ import { mkdtemp, realpath, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { SandboxDaemon, type SandboxDaemonOptions } from "../../src/daemon/index";
-import { RemoteSandboxHub, type RemoteSandboxHubOptions } from "../../src/remote/index";
+import {
+  RemoteSandboxHub,
+  type RemoteSandboxHubListenOptions,
+  type RemoteSandboxHubOptions,
+} from "../../src/remote/index";
 import type { SandboxRuntime, SandboxRuntimeLimits } from "../../src/types";
 
 export const sandboxId = "sandbox-1";
@@ -25,6 +29,7 @@ export interface RemoteHarness {
 export interface RemoteHarnessOptions {
   limits?: SandboxRuntimeLimits;
   hub?: Partial<RemoteSandboxHubOptions>;
+  listen?: RemoteSandboxHubListenOptions;
   daemon?: Partial<SandboxDaemonOptions>;
   /** Wait for the daemon's first handshake. Default true. */
   connect?: boolean;
@@ -45,7 +50,7 @@ export async function createRemoteHarness(
     connectTimeoutMs: 5_000,
     ...options.hub,
   });
-  const { port } = await hub.listen({ host: "127.0.0.1" });
+  const { port } = await hub.listen({ host: "127.0.0.1", ...options.listen });
   const url = `ws://127.0.0.1:${port}`;
   const logs: string[] = [];
   const daemons: SandboxDaemon[] = [];

@@ -3,6 +3,7 @@ import WebSocket from "ws";
 import {
   type DaemonFrame,
   type HubFrame,
+  type PtyExitReason,
   type MethodParams,
   type MethodResult,
   type SandboxMethod,
@@ -26,6 +27,17 @@ export interface CallOptions {
   onStream?: ((stream: "stdout" | "stderr", data: Uint8Array) => void) | undefined;
 }
 
+/** Receives one terminal's frames. Registered by the terminal that opened the PTY. */
+export interface PtyEndpoint {
+  opened(): void;
+  /** `pty.open` was refused. */
+  failed(error: Error): void;
+  output(data: Uint8Array): void;
+  exit(info: { reason: PtyExitReason; exitCode?: number }): void;
+  /** The link dropped; whether the PTY was open yet is for the endpoint to know. */
+  lost(error: LinkClosedError): void;
+}
+
 interface Pending {
   method: SandboxMethod;
   resolve: (result: unknown) => void;
@@ -38,6 +50,7 @@ interface Pending {
 export class HubConnection {
   readonly closed: Promise<void>;
   private readonly pending = new Map<string, Pending>();
+  private readonly ptys = new Map<string, { endpoint: PtyEndpoint; nextSeq: number }>();
   private readonly heartbeat: ReturnType<typeof setInterval>;
   private lastSeen = Date.now();
   private open = true;
@@ -46,6 +59,8 @@ export class HubConnection {
     private readonly socket: WebSocket,
     readonly workdir: string,
     heartbeatIntervalMs: number,
+    /** Optional features the daemon said it has. Empty for a daemon that predates them. */
+    readonly capabilities: ReadonlySet<string> = new Set(),
   ) {
     this.closed = new Promise((resolve) => {
       socket.once("close", () => {
@@ -54,6 +69,9 @@ export class HubConnection {
         const error = new LinkClosedError();
         for (const pending of this.pending.values()) pending.reject(error);
         this.pending.clear();
+        const ptys = [...this.ptys.values()];
+        this.ptys.clear();
+        for (const { endpoint } of ptys) endpoint.lost(error);
         resolve();
       });
     });
@@ -79,6 +97,19 @@ export class HubConnection {
   close(code: number, reason: string): void {
     this.socket.close(code, reason);
     setTimeout(() => this.socket.terminate(), 1_000).unref?.();
+  }
+
+  registerPty(ptyId: string, endpoint: PtyEndpoint): void {
+    this.ptys.set(ptyId, { endpoint, nextSeq: 0 });
+  }
+
+  unregisterPty(ptyId: string): void {
+    this.ptys.delete(ptyId);
+  }
+
+  /** Send a terminal frame. Throws `LinkClosedError` if the link is already down. */
+  sendFrame(frame: HubFrame): void {
+    this.send(frame);
   }
 
   async call<M extends SandboxMethod>(
@@ -162,8 +193,43 @@ export class HubConnection {
         else pending.reject(new LinkClosedError("Sandbox returned an invalid result."));
         return;
       }
+      case "pty.opened":
+        this.ptys.get(frame.ptyId)?.endpoint.opened();
+        return;
+      case "pty.output": {
+        const entry = this.ptys.get(frame.ptyId);
+        if (entry === undefined) return;
+        if (frame.seq !== entry.nextSeq) {
+          // Frames on one socket are ordered; a gap means this terminal cannot be trusted.
+          this.ptys.delete(frame.ptyId);
+          this.trySend({ type: "pty.close", ptyId: frame.ptyId });
+          entry.endpoint.exit({ reason: "error" });
+          return;
+        }
+        entry.nextSeq += 1;
+        entry.endpoint.output(decodeBytes(frame.data));
+        return;
+      }
+      case "pty.exit": {
+        const entry = this.ptys.get(frame.ptyId);
+        if (entry === undefined) return;
+        this.ptys.delete(frame.ptyId);
+        entry.endpoint.exit(
+          frame.exitCode === undefined
+            ? { reason: frame.reason }
+            : { reason: frame.reason, exitCode: frame.exitCode },
+        );
+        return;
+      }
       case "error": {
         if (frame.requestId === undefined) return;
+        const terminal = this.ptys.get(frame.requestId);
+        if (terminal !== undefined) {
+          // The only error a PTY gets is a refusal to open, which the daemon sends under its id.
+          this.ptys.delete(frame.requestId);
+          terminal.endpoint.failed(decodeError(frame));
+          return;
+        }
         const pending = this.pending.get(frame.requestId);
         if (pending === undefined) return;
         this.pending.delete(frame.requestId);

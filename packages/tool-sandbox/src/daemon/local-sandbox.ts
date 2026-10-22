@@ -280,6 +280,29 @@ export class LocalSandbox {
     }
   }
 
+  /** Where a terminal starts and what it inherits: the daemon's environment minus credentials. */
+  async terminalContext(
+    cwd?: string,
+    env?: Readonly<Record<string, string>>,
+  ): Promise<{ cwd: string; env: Record<string, string> }> {
+    const resolved = containerPath(this.workdir, cwd ?? ".");
+    if (!(await isDirectory(resolved))) {
+      throw new DockerSandboxError(
+        `Sandbox working directory not found: ${cwd ?? "."}`,
+        "invalid_path",
+      );
+    }
+    return { cwd: resolved, env: this.commandEnvironment(env) };
+  }
+
+  /** The environment commands run with, as plain strings. */
+  commandEnvironment(extra?: Readonly<Record<string, string>>): Record<string, string> {
+    const entries = Object.entries(this.environment(extra));
+    return Object.fromEntries(
+      entries.filter((entry): entry is [string, string] => entry[1] !== undefined),
+    );
+  }
+
   async dispose(): Promise<void> {
     await this.processes.dispose();
   }

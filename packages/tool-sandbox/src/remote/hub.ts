@@ -8,9 +8,17 @@ import {
   CLOSE_CODE_SUPERSEDED,
   PROTOCOL_VERSION,
   daemonFrameSchema,
+  terminalCapability,
   type HubFrame,
 } from "./protocol";
 import { RemoteSandboxRuntime } from "./runtime";
+import { RemoteSandboxTerminal, type SandboxTerminal } from "./terminal";
+import {
+  type TerminalAuthorization,
+  originAllowed,
+  relayTerminal,
+  selectTerminalProtocol,
+} from "./terminal-relay";
 
 /** Identifies which sandbox a daemon's token belongs to. */
 export type RemoteSandboxAuthorization = Readonly<{ sandboxId: string }>;
@@ -37,6 +45,22 @@ export interface RemoteSandboxHubOptions {
   handshakeTimeoutMs?: number;
   /** Bytes an execStream consumer may lag by before the stream aborts. Default 1 MiB. */
   maxStreamBufferBytes?: number;
+  /** Unread terminal output a handle may hold before it is cut off. Default 1 MiB. */
+  maxTerminalBufferBytes?: number;
+  /**
+   * Decide whether a browser may open a terminal, from its upgrade request, or return null/undefined
+   * to refuse it with 401. Browsers cannot send an `Authorization` header on a WebSocket, so read a
+   * short-lived ticket with `terminalTicket(request)` (query parameter or WebSocket subprotocol),
+   * check it, and return the sandbox and session it grants. Required for `handleTerminalUpgrade`.
+   */
+  authorizeTerminal?(
+    request: IncomingMessage,
+  ): Promise<TerminalAuthorization | null | undefined> | TerminalAuthorization | null | undefined;
+  /**
+   * Origins allowed to open a terminal. Without a list, a browser's Origin must match the Host it
+   * connected to, which fails behind a proxy that rewrites Host, so set this there.
+   */
+  allowedOrigins?: readonly string[];
 }
 
 export interface RemoteSandboxHubListenOptions {
@@ -44,6 +68,8 @@ export interface RemoteSandboxHubListenOptions {
   host?: string;
   /** Only upgrade requests to this path are accepted. Default: any path. */
   path?: string;
+  /** Upgrade requests to this path are browser terminals, handled by `handleTerminalUpgrade`. */
+  terminalPath?: string;
 }
 
 const defaultConnectTimeoutMs = 30_000;
@@ -61,6 +87,8 @@ export class RemoteSandboxHub {
   private readonly heartbeatIntervalMs: number;
   private readonly handshakeTimeoutMs: number;
   private readonly server: WebSocketServer;
+  private readonly terminalServer: WebSocketServer;
+  private readonly relays = new Set<WebSocket>();
   private readonly connections = new Map<string, HubConnection>();
   private readonly waiters = new Map<string, Set<() => void>>();
   private readonly runtimes = new Map<string, RemoteSandboxRuntime>();
@@ -76,6 +104,24 @@ export class RemoteSandboxHub {
     this.server = new WebSocketServer({
       noServer: true,
       maxPayload: options.maxPayloadBytes ?? defaultMaxPayloadBytes,
+    });
+    this.terminalServer = new WebSocketServer({
+      noServer: true,
+      // Browser messages are keystrokes and resizes; nothing here needs more.
+      maxPayload: 128 * 1024,
+      handleProtocols: selectTerminalProtocol,
+    });
+  }
+
+  /** Interactive terminals for one sandbox. Cheap to call; nothing is cached per sandbox. */
+  terminal(sandboxId: string): SandboxTerminal {
+    if (typeof sandboxId !== "string" || sandboxId.length === 0) {
+      throw new TypeError("sandboxId must be a non-empty string.");
+    }
+    return new RemoteSandboxTerminal({
+      id: sandboxId,
+      maxBufferBytes: this.options.maxTerminalBufferBytes,
+      source: this.linkSource(sandboxId),
     });
   }
 
@@ -93,17 +139,19 @@ export class RemoteSandboxHub {
       runtime = new RemoteSandboxRuntime({
         id: sandboxId,
         maxStreamBufferBytes: this.options.maxStreamBufferBytes,
-        source: {
-          workdir: () =>
-            this.lastWorkdirs.get(sandboxId) ??
-            this.configuredWorkdirs.get(sandboxId) ??
-            "/workspace",
-          acquire: (signal) => this.acquire(sandboxId, signal),
-        },
+        source: this.linkSource(sandboxId),
       });
       this.runtimes.set(sandboxId, runtime);
     }
     return runtime;
+  }
+
+  private linkSource(sandboxId: string) {
+    return {
+      workdir: () =>
+        this.lastWorkdirs.get(sandboxId) ?? this.configuredWorkdirs.get(sandboxId) ?? "/workspace",
+      acquire: (signal?: AbortSignal) => this.acquire(sandboxId, signal),
+    };
   }
 
   /**
@@ -157,6 +205,49 @@ export class RemoteSandboxHub {
     })();
   }
 
+  /**
+   * Complete a browser's terminal WebSocket upgrade, routed here by your own HTTP server. The
+   * browser must offer the `anvia.terminal.v1` subprotocol (plus `anvia.ticket.<ticket>` if it
+   * carries its ticket there). A bad Origin gets 403, a missing or refused ticket 401. The daemon
+   * path, `handleUpgrade`, is unaffected.
+   */
+  handleTerminalUpgrade(request: IncomingMessage, socket: Duplex, head: Buffer): void {
+    socket.on("error", () => undefined);
+    const authorizeTerminal = this.options.authorizeTerminal;
+    if (this.closed) return reject(socket, 503, "Service Unavailable");
+    if (authorizeTerminal === undefined) return reject(socket, 404, "Not Found");
+    if (!originAllowed(request, this.options.allowedOrigins)) {
+      return reject(socket, 403, "Forbidden");
+    }
+    void (async () => {
+      let authorization: TerminalAuthorization | null | undefined;
+      try {
+        authorization = await authorizeTerminal.call(this.options, request);
+      } catch {
+        return reject(socket, 500, "Internal Server Error");
+      }
+      if (
+        authorization === null ||
+        authorization === undefined ||
+        typeof authorization.sandboxId !== "string" ||
+        authorization.sandboxId.length === 0 ||
+        typeof authorization.sessionName !== "string"
+      ) {
+        return reject(socket, 401, "Unauthorized");
+      }
+      if (this.closed || socket.destroyed) return socket.destroy();
+      const granted = authorization;
+      this.terminalServer.handleUpgrade(request, socket, head, (ws) => {
+        this.relays.add(ws);
+        ws.once("close", () => this.relays.delete(ws));
+        relayTerminal(ws, {
+          terminal: this.terminal(granted.sandboxId),
+          authorization: granted,
+        });
+      });
+    })();
+  }
+
   /** Convenience HTTP listener for deployments with no existing server to attach to. */
   listen(options: RemoteSandboxHubListenOptions = {}): Promise<{ port: number }> {
     if (this.httpServer !== undefined) throw new Error("Hub is already listening.");
@@ -165,6 +256,9 @@ export class RemoteSandboxHub {
     });
     server.on("upgrade", (request, socket, head) => {
       const requested = new URL(request.url ?? "/", "http://hub").pathname;
+      if (options.terminalPath !== undefined && requested === options.terminalPath) {
+        return this.handleTerminalUpgrade(request, socket, head);
+      }
       if (options.path !== undefined && requested !== options.path) {
         return reject(socket, 404, "Not Found");
       }
@@ -185,6 +279,7 @@ export class RemoteSandboxHub {
   async close(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
+    for (const relay of this.relays) relay.close(1001, "hub closing");
     for (const connection of this.connections.values()) connection.close(1001, "hub closing");
     for (const waiters of this.waiters.values()) for (const wake of waiters) wake();
     const httpServer = this.httpServer;
@@ -194,6 +289,7 @@ export class RemoteSandboxHub {
     }
     await Promise.all([...this.connections.values()].map((connection) => connection.closed));
     await new Promise<void>((resolve) => this.server.close(() => resolve()));
+    await new Promise<void>((resolve) => this.terminalServer.close(() => resolve()));
   }
 
   private accept(ws: WebSocket, sandboxId: string): void {
@@ -212,10 +308,16 @@ export class RemoteSandboxHub {
         type: "welcome",
         protocolVersion: PROTOCOL_VERSION,
         heartbeatIntervalMs: this.heartbeatIntervalMs,
+        capabilities: [terminalCapability],
       };
       ws.send(JSON.stringify(welcome));
 
-      const connection = new HubConnection(ws, hello.workdir, this.heartbeatIntervalMs);
+      const connection = new HubConnection(
+        ws,
+        hello.workdir,
+        this.heartbeatIntervalMs,
+        new Set(hello.capabilities ?? []),
+      );
       // A daemon that reconnects before the hub noticed the old socket die replaces it.
       this.connections.get(sandboxId)?.close(CLOSE_CODE_SUPERSEDED, "replaced by newer connection");
       this.connections.set(sandboxId, connection);

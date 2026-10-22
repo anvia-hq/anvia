@@ -12,6 +12,7 @@ Environment:
   ANVIA_SANDBOX_TOKEN      Credential for the hub's authorize() (required)
   ANVIA_SANDBOX_WORKDIR    Workspace directory (default: current directory)
   ANVIA_SANDBOX_STATE_DIR  Operation dedup table (default: <tmpdir>/anvia-sandbox-daemon)
+  ANVIA_SANDBOX_TERMINAL   Set to 0 to turn interactive terminals off (default: on when node-pty loads)
   ANVIA_SANDBOX_COMMAND_TIMEOUT_MS, ANVIA_SANDBOX_MAX_OUTPUT_BYTES,
   ANVIA_SANDBOX_MAX_FILE_BYTES, ANVIA_SANDBOX_MAX_PROCESSES   Optional limits
 `;
@@ -53,6 +54,7 @@ function main(): void {
       process.env.ANVIA_SANDBOX_STATE_DIR ?? path.join(os.tmpdir(), "anvia-sandbox-daemon"),
     ),
     limits,
+    terminal: process.env.ANVIA_SANDBOX_TERMINAL === "0" ? false : {},
     onLog: (level, message) =>
       process.stderr.write(`[anvia-sandbox-daemon] ${level}: ${message}\n`),
   });

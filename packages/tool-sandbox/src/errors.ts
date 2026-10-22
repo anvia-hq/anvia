@@ -13,6 +13,7 @@ export const dockerSandboxErrorCodes = [
   "port",
   "process",
   "sandbox_unavailable",
+  "unsupported",
   "protocol",
 ] as const;
 

@@ -265,6 +265,131 @@ behavior match. Known differences:
 - The runtime reports the daemon's workdir once it has connected; until then it uses the `workdir`
   passed to `hub.runtime()`, defaulting to `/workspace`.
 
+### Terminals
+
+A remote sandbox can also offer interactive terminals: a person (or your code) attaches to a
+named session in the sandbox, types, resizes, and reattaches later with the scrollback intact.
+Terminals are a separate capability, not part of `SandboxRuntime`, and only remote sandboxes have
+them.
+
+```ts
+const terminal = hub.terminal("sandbox-1");
+const handle = await terminal.open({ sessionName: "main", cols: 120, rows: 30 });
+
+handle.write("npm test\n");
+for await (const chunk of handle.output) process.stdout.write(chunk);
+console.log(await handle.exit); // { reason: "exited", exitCode: 0 }
+
+await terminal.list(); // [{ name: "main", attached: 1, persistent: true }]
+await terminal.kill("main");
+```
+
+`open` attaches to the session named `sessionName`, creating it in the workdir (or `cwd`, relative
+to it) if needed. Several handles can attach to one session and all see the same output. `close()`
+detaches; the session keeps running until `kill` or until the sandbox stops. `output` is read once,
+and `exit` never rejects. It reports `exited`, `closed`, `killed`, `error`, or `disconnected` (the
+daemon link dropped; the tmux session itself is unaffected, so reopen it after the daemon is back).
+Opening a terminal waits for a disconnected daemon like any other call, then fails with
+`sandbox_unavailable`. A terminal is bound to one connection, so it is never retried across a
+reconnect.
+
+#### Image requirements
+
+The daemon offers terminals only when it can load [`node-pty`](https://github.com/microsoft/node-pty).
+It is an optional peer dependency, so Docker-only users never install native code; add it to the
+daemon's image yourself. On Linux it compiles from source, which needs `python3`, `make` and `g++`
+at install time.
+
+```dockerfile
+FROM node:22-bookworm
+RUN apt-get update && apt-get install -y --no-install-recommends tmux python3 make g++ \
+    && rm -rf /var/lib/apt/lists/*
+RUN npm install -g @anvia/sandbox node-pty
+ENV NODE_PATH=/usr/local/lib/node_modules
+CMD ["anvia-sandbox-daemon"]
+```
+
+With **tmux 3.2 or newer** on `PATH`, a session is a tmux session on a private socket and every
+viewer is its own `tmux attach`, so sessions persist across hub disconnects and daemon restarts and
+reattaching redraws the screen. The daemon sets `window-size latest` so viewers of different sizes
+share one session, and read-only viewers attach with `read-only,ignore-size`. Splits and windows
+made inside tmux work, as do its key bindings.
+
+**Without tmux** the daemon falls back to one plain shell per session with a bounded scrollback
+ring (`scrollbackBytes`, 256 KiB by default). That session survives hub disconnects but **not a
+daemon restart**, and `list()` reports it with `persistent: false`. Set `ANVIA_SANDBOX_TERMINAL=0`
+to switch terminals off, or `terminal: false` on `SandboxDaemon`.
+
+The daemon advertises what it supports in `hello`, and the hub in `welcome`. A hub never sends a
+terminal frame to a daemon that did not advertise `terminal`: `open`, `list` and `kill` fail with
+the `unsupported` error code instead, and the rest of the link is unaffected. The same goes for a
+daemon whose image lacks `node-pty`.
+
+#### Flow control
+
+Terminal output cannot starve `exec` calls or heartbeats on the shared socket. The daemon batches
+output for about 10 ms into frames of at most 16 KiB, numbered per terminal. The consumer
+acknowledges bytes as it reads them, and once 256 KiB are unacknowledged the daemon stops that
+terminal: with tmux it pauses the attach PTY (tmux skips ahead for a slow client), and in the
+fallback it drops the backlog and sends a reset plus a snapshot once the viewer catches up. It also
+holds output back while the socket's send buffer is full. A handle that falls `maxTerminalBufferBytes`
+(1 MiB) behind is cut off with `error`. A stalled viewer therefore slows only itself.
+
+#### Browser terminals
+
+`hub.handleTerminalUpgrade(request, socket, head)` accepts a browser's WebSocket and relays it to a
+terminal. It is separate from the daemon upgrade path. Give the hub an `authorizeTerminal` function
+and, behind a proxy, `allowedOrigins`:
+
+```ts
+const hub = new RemoteSandboxHub({
+  authorize: (token) => lookupDaemonToken(token),
+  allowedOrigins: ["https://app.example.com"],
+  async authorizeTerminal(request) {
+    const ticket = terminalTicket(request); // from ?ticket= or a WebSocket subprotocol
+    const grant = ticket && (await redeemTicket(ticket)); // your store: single use, ~30 s
+    return grant
+      ? { sandboxId: grant.sandboxId, sessionName: grant.sessionName, readOnly: grant.readOnly }
+      : null; // 401
+  },
+});
+server.on("upgrade", (request, socket, head) => {
+  if (new URL(request.url ?? "/", "http://x").pathname === "/terminal") {
+    hub.handleTerminalUpgrade(request, socket, head);
+  } else {
+    hub.handleUpgrade(request, socket, head);
+  }
+});
+```
+
+(`hub.listen({ terminalPath: "/terminal" })` does the same routing for you.)
+
+Browsers cannot send an `Authorization` header on a WebSocket, and a long-lived credential in a URL
+would leak into logs, so the flow is:
+
+1. The signed-in user asks your backend for access to a sandbox session.
+2. Your backend checks permissions and mints a short-lived, single-use ticket bound to
+   `{ sandboxId, sessionName, readOnly }`.
+3. The browser opens the WebSocket offering the subprotocols `anvia.terminal.v1` and
+   `anvia.ticket.<ticket>` (or, less ideally, `?ticket=<ticket>`).
+4. `authorizeTerminal` redeems the ticket. A missing or refused ticket gets HTTP 401.
+
+The hub checks `Origin` before it calls `authorizeTerminal`: it must be in `allowedOrigins`, or,
+with no list, match the `Host` the browser connected to. Anything else gets 403. Requests with no
+`Origin` (not a browser page) pass this check and still need a ticket.
+
+Over the socket, the browser's first message must be `{ "type": "open", "cols": 80, "rows": 24 }`,
+followed by `{ "type": "input", "data": "ls\n" }` and `{ "type": "resize", "cols": 100, "rows": 30 }`.
+Terminal output comes back as binary frames; `{ "type": "ready" | "exit" | "error" }` arrive as
+text. A `readOnly` grant receives output only: the relay drops its input and resize messages, and
+the daemon also attaches it read-only.
+
+#### Not included
+
+Agent-facing terminal tools (such as capturing a pane), recording and replay, audit logs of terminal
+input, and terminals for the Docker runtime are out of scope. `DockerSandboxRuntime` does not
+implement `SandboxTerminal`; `docker exec -it` is the Docker equivalent today.
+
 ### Protocol
 
 One WebSocket carries versioned JSON frames (`PROTOCOL_VERSION`), validated with zod on both ends.
@@ -276,14 +401,22 @@ Failures arrive as typed `error` frames that map to the existing error codes, pl
 `sandbox_unavailable` and `protocol`. Both sides send application-level pings and drop a peer that
 is silent for three intervals.
 
+Optional features are negotiated, not versioned: `hello` and `welcome` carry an optional
+`capabilities` list (`terminal`, and `terminal.tmux` when sessions persist). A peer that predates a
+feature sends none, and zod ignores fields it does not know, so mixed versions keep working and
+terminals simply report `unsupported`. `PROTOCOL_VERSION` only changes when an existing frame
+changes meaning. Terminal traffic uses its own frames (`pty.open`, `pty.opened`, `pty.input`,
+`pty.resize`, `pty.ack`, `pty.output`, `pty.exit`, `pty.close`) plus the ordinary request frames
+`terminalList` and `terminalKill`.
+
 A request that carries an `operationId` is not aborted when the connection drops. It finishes on
 the daemon and its result waits for the retry. Anything else is aborted, since nobody can receive
 its answer.
 
 ### Not included
 
-Provider adapters (for example E2B or Kubernetes), snapshots, idle pause and wake, port tunnels, a
-PTY, and routing a sandbox across several control-plane nodes are out of scope. The interfaces
+Provider adapters (for example E2B or Kubernetes), snapshots, idle pause and wake, port tunnels,
+and routing a sandbox across several control-plane nodes are out of scope. The interfaces
 leave room for them: a provider adapter would create sandboxes, hand each daemon a token and URL,
 and call `hub.runtime(id)`; tunnels would populate `host` and `hostPort` in `waitForPort`'s result;
 and multi-node routing would replace the hub's in-memory registry. Until then, run one hub per

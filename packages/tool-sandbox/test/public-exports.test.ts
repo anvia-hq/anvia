@@ -6,8 +6,10 @@ describe("public exports", () => {
     expect(Object.keys(sandbox).sort()).toEqual([
       "DockerSandboxClient",
       "DockerSandboxError",
+      "createDesktopTools",
       "createDockerSandboxTools",
       "createSandboxTools",
+      "desktopToolRecovery",
     ]);
     expect(sandbox).not.toHaveProperty("isSandboxPortSession");
     expect(sandbox).not.toHaveProperty("isSandboxProcessSession");

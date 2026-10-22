@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import { findExecutable } from "../src/daemon/desktop/exec";
 import { DesktopService } from "../src/daemon/desktop/service";
+import { createDesktopTools, viewOf } from "../src/desktop-tools";
 import { relayTicket, type SandboxDesktop } from "../src/remote/index";
 import {
   type RemoteHarness,
@@ -178,6 +179,79 @@ describe.skipIf(!hasDesktop)("desktop", () => {
     await h.desktop.resize(1920, 1080);
     expect(pngSize((await h.desktop.screenshot()).png)).toEqual({ width: 1920, height: 1080 });
   }, 60_000);
+
+  describe("agent tools", () => {
+    const callTool = (
+      tools: ReturnType<typeof createDesktopTools>,
+      name: string,
+      args: unknown,
+      context: object = {},
+    ) => {
+      const tool = tools.find((candidate) => candidate.name === name);
+      if (tool === undefined) throw new Error(name);
+      return Promise.resolve(tool.call(args as never, context));
+    };
+
+    it("click where the model pointed in a scaled screenshot, and respect the lock", async () => {
+      // Big enough that the screenshot the model sees is scaled down.
+      const h = await start({ resolution: { width: 2560, height: 1440 } });
+      const tools = createDesktopTools({ sandbox: h.desktop });
+      const view = viewOf(2560, 1440, { maxEdge: 1568, maxPixels: 1_150_000 });
+      expect(view.scale).toBeLessThan(1);
+
+      const shot = (await callTool(tools, "desktop_screenshot", {})) as {
+        content: Array<{ type: string; text?: string; data?: { data: string } }>;
+      };
+      const meta = JSON.parse(shot.content[0]?.text ?? "{}") as { width: number; height: number };
+      expect(meta).toEqual({ width: view.imageWidth, height: view.imageHeight });
+      expect(pngSize(Buffer.from(shot.content[1]?.data?.data ?? "", "base64"))).toEqual(meta);
+
+      // A window covering the display's centre, in display pixels.
+      const status = await h.desktop.start();
+      const xev = await h.runtime.startProcess({
+        command: "xev",
+        args: ["-geometry", "600x400+980+520"],
+        env: { DISPLAY: status.display },
+      });
+      const log = async () =>
+        new TextDecoder().decode((await h.runtime.readProcessLogs({ processId: xev.id })).stdout);
+      await eventually(async () => (await log()).includes("MapNotify"), 10_000);
+      await sleep(300);
+
+      // The centre of the screenshot is the centre of the display, inside that window.
+      await callTool(
+        tools,
+        "desktop_click",
+        { coordinate: [view.imageWidth / 2, view.imageHeight / 2] },
+        { operationId: "run/click-1" },
+      );
+      await eventually(async () => (await log()).includes("ButtonPress"));
+      const clicked = /root:\((\d+),(\d+)\)/.exec(await log());
+      expect(Math.abs(Number(clicked?.[1]) - 1280)).toBeLessThanOrEqual(2);
+      expect(Math.abs(Number(clicked?.[2]) - 720)).toBeLessThanOrEqual(2);
+
+      // The cursor comes back in the same screenshot space.
+      expect(await callTool(tools, "desktop_cursor_position", {})).toEqual({
+        coordinate: [Math.floor(view.imageWidth / 2), Math.floor(view.imageHeight / 2)],
+      });
+
+      // A point beyond the screenshot is refused before anything happens.
+      await expect(
+        callTool(tools, "desktop_click", { coordinate: [view.imageWidth, 0] }),
+      ).rejects.toThrow(/outside the/);
+
+      // While a person holds control the model's inputs fail with a typed, explanatory error.
+      await h.desktop.takeover({ holder: "alice" });
+      await expect(callTool(tools, "desktop_key", { text: "a" })).rejects.toMatchObject({
+        code: "desktop_locked",
+        message: expect.stringContaining("alice"),
+      });
+      await callTool(tools, "desktop_screenshot", {});
+      await h.desktop.release({ holder: "alice" });
+      await callTool(tools, "desktop_key", { text: "a" });
+      await eventually(async () => (await log()).includes("keysym 0x61, a"));
+    }, 60_000);
+  });
 
   describe("control lock", () => {
     it("blocks the agent's inputs while a human holds control, and restores them on release", async () => {

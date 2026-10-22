@@ -1,6 +1,14 @@
 export { DockerSandboxClient } from "./docker-sandbox";
 export { DockerSandboxError, type DockerSandboxErrorCode } from "./errors";
 export { createDockerSandboxTools, createSandboxTools } from "./tools";
+export {
+  createDesktopTools,
+  desktopToolRecovery,
+  type CreateDesktopToolsOptions,
+  type DesktopScreenshotPolicy,
+  type DesktopToolName,
+} from "./desktop-tools";
+export type { SandboxDesktop } from "./remote/desktop";
 export type {
   CreateDockerSandboxOptions,
   CreateDockerSandboxToolsOptions,

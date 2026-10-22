@@ -38,7 +38,9 @@ export interface SandboxDesktop {
   start(options?: DesktopCallOptions): Promise<DesktopStatus>;
   /** Change the display size, up to `maxWidth` by `maxHeight`. Open windows stay open. */
   resize(width: number, height: number, options?: DesktopInputOptions): Promise<DesktopStatus>;
-  screenshot(options?: DesktopCallOptions & { scale?: number }): Promise<DesktopScreenshot>;
+  screenshot(
+    options?: DesktopCallOptions & { scale?: number | undefined },
+  ): Promise<DesktopScreenshot>;
   cursorPosition(options?: DesktopCallOptions): Promise<{ x: number; y: number }>;
   /** Perform an input as the agent. Fails with `desktop_locked` while a human has control. */
   act(action: DesktopAction, options?: DesktopInputOptions): Promise<void>;

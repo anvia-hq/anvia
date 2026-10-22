@@ -626,6 +626,47 @@ Anyone who can run commands inside the sandbox can also connect to the VNC port 
 the same access the sandbox already gives them, but it means the desktop is not a boundary against
 code running in the sandbox.
 
+#### Agent tools
+
+`createDesktopTools({ sandbox })` gives an agent eyes and hands on the desktop:
+
+```ts
+import { createDesktopTools, desktopToolRecovery } from "@anvia/sandbox";
+
+const tools = createDesktopTools({ sandbox: hub.desktop("sandbox-1") });
+// desktop_screenshot, desktop_click, desktop_mouse_move, desktop_drag, desktop_scroll,
+// desktop_type, desktop_key, desktop_cursor_position, desktop_wait
+```
+
+Pass `tools: ["desktop_screenshot", "desktop_cursor_position"]` to let an agent look but not touch.
+
+The arguments follow Claude's computer-use tool, so a model can use them as it already knows
+them: `coordinate: [x, y]`, `start_coordinate`, `text` for `type` and `key` (key names such as
+`Return` or `ctrl+s`), `scroll_direction` and `scroll_amount`, and `click_count` with `button` for
+the left, right, middle, double and triple clicks. `left_mouse_down`/`up`, `hold_key` and `zoom` are
+not offered.
+
+Coordinates are **pixels of the latest screenshot**, from its top-left corner. Claude downscales
+images beyond about 1568 px on the long edge or 1.15 megapixels, which would make coordinates drift,
+so `desktop_screenshot` scales the image to fit those limits first (`screenshot: { maxEdge,
+maxPixels }` changes them) and the other tools translate points back to display pixels, aiming at
+the centre of the pixel the model pointed at. A point outside the screenshot is refused with the
+valid range before anything happens. A display that already fits is not scaled, and one that is
+resized between calls is noticed, because each tool reads the current size.
+
+The tools are separate rather than one `computer` tool because durable recovery is decided per tool
+name. `desktopToolRecovery` is the table to use in a durable registration: screenshots, the cursor
+position and waiting are `safe` to repeat, and every input is `idempotent`, because the run's
+`operationId` reaches the daemon, which performs each input once even if the call is retried:
+
+```ts
+toolRecovery: { ...desktopToolRecovery, exec_command: "idempotent" },
+```
+
+While a person has taken control, the input tools fail with the `desktop_locked` error code and a
+message naming who holds it, which the model sees as a failed tool call; the screenshot and cursor
+tools keep working so the agent can watch and wait.
+
 #### Not included
 
 Wayland and WebRTC streaming, audio, CDP-based browser automation tools, preview URLs and domain

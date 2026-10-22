@@ -106,6 +106,21 @@ export class RemoteSandboxHub {
     return runtime;
   }
 
+  /**
+   * Drop what the hub remembers about a sandbox: its runtime, configured workdir, and last
+   * reported workdir. Call it when whatever manages the sandbox's lifecycle destroys it, or a
+   * long-lived hub accumulates an entry per sandbox id. A connected daemon is disconnected, and
+   * calls already waiting for one fail with `sandbox_unavailable` after `connectTimeoutMs`. A
+   * runtime object you still hold keeps working if the daemon connects again.
+   */
+  forget(sandboxId: string): void {
+    this.runtimes.delete(sandboxId);
+    this.configuredWorkdirs.delete(sandboxId);
+    this.lastWorkdirs.delete(sandboxId);
+    this.connections.get(sandboxId)?.close(1000, "sandbox forgotten");
+    this.connections.delete(sandboxId);
+  }
+
   /** Ids of sandboxes whose daemon is connected right now. */
   connected(): string[] {
     return [...this.connections].filter(([, connection]) => connection.isOpen).map(([id]) => id);

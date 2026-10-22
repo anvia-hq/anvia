@@ -6,30 +6,51 @@ import { DockerSandboxError } from "../errors";
 export interface OperationStoreOptions {
   /** Directory holding one small file per completed operation. */
   directory: string;
-  /** Completed operations kept on disk; the oldest are evicted first. */
+  /** Completed operations kept (on disk and in memory); the oldest are evicted first. */
   maxEntries?: number | undefined;
+  /**
+   * Largest serialized result written to disk. A bigger result is replaced by a marker, so a
+   * retry fails instead of running the operation twice. Defaults to 256 KiB.
+   */
+  maxStoredResultBytes?: number | undefined;
   onError?: ((error: unknown) => void) | undefined;
 }
 
 type StoredOperation = {
   operationId: string;
   fingerprint: string;
-  result: unknown;
+  result?: unknown;
+  /** Set when the result was too large to keep. The operation ran, but its answer is gone. */
+  resultDropped?: true;
 };
 
-export const defaultMaxOperationEntries = 1_024;
+export interface OperationRunOptions {
+  /**
+   * Keep the result on disk so it outlives the daemon. Pass false for results that describe
+   * in-memory daemon state (such as processes): after a restart that state is gone, so replaying
+   * the stored result would describe something that no longer exists. Defaults to true.
+   */
+  durable?: boolean;
+}
+
+export const defaultMaxOperationEntries = 256;
+export const defaultMaxStoredResultBytes = 256 * 1024;
 
 /**
  * Makes mutating requests execute once per `operationId`. A retry that arrives while the first
  * attempt is running joins it; a retry that arrives later gets the stored result. Only successful
  * results are kept, so a failed or cancelled attempt can be retried for real.
  *
- * The on-disk table is bounded. An operation evicted from it executes again if retried, so the
- * guarantee covers the most recent `maxEntries` operations, not all of history.
+ * The table is bounded in entries and in bytes per entry. An operation evicted from it executes
+ * again if retried, so the guarantee covers the most recent `maxEntries` operations, not all of
+ * history. Results are stored verbatim, command output included, so the directory should be
+ * private to the daemon.
  */
 export class OperationStore {
   private readonly directory: string;
   private readonly maxEntries: number;
+  private readonly maxStoredResultBytes: number;
+  private readonly volatile = new Map<string, StoredOperation>();
   private readonly inflight = new Map<string, { fingerprint: string; promise: Promise<unknown> }>();
   private prepared: Promise<void> | undefined;
   private writesSincePrune = 0;
@@ -40,12 +61,17 @@ export class OperationStore {
     if (!Number.isSafeInteger(this.maxEntries) || this.maxEntries < 1) {
       throw new RangeError("maxEntries must be a positive safe integer.");
     }
+    this.maxStoredResultBytes = options.maxStoredResultBytes ?? defaultMaxStoredResultBytes;
+    if (!Number.isSafeInteger(this.maxStoredResultBytes) || this.maxStoredResultBytes < 1) {
+      throw new RangeError("maxStoredResultBytes must be a positive safe integer.");
+    }
   }
 
   async run<T>(
     operationId: string,
     request: { method: string; params: unknown },
     execute: () => Promise<T>,
+    { durable = true }: OperationRunOptions = {},
   ): Promise<T> {
     const fingerprint = fingerprintRequest(request);
 
@@ -63,16 +89,23 @@ export class OperationStore {
         }
       }
 
-      const stored = await this.load(operationId);
+      const stored = this.volatile.get(operationId) ?? (await this.load(operationId));
       if (stored !== undefined) {
         assertSameRequest(operationId, stored.fingerprint, fingerprint);
+        if (stored.resultDropped) {
+          throw new DockerSandboxError(
+            `Operation ${operationId} already ran, but its result was too large to store.`,
+            "invalid_state",
+          );
+        }
         return stored.result as T;
       }
       // Another retry may have started while the disk lookup was pending.
       if (this.inflight.has(operationId)) continue;
 
       const promise = execute().then(async (result) => {
-        await this.save({ operationId, fingerprint, result });
+        if (durable) await this.save({ operationId, fingerprint, result });
+        else this.remember({ operationId, fingerprint, result });
         return result;
       });
       this.inflight.set(operationId, { fingerprint, promise });
@@ -95,12 +128,26 @@ export class OperationStore {
     }
   }
 
+  private remember(entry: StoredOperation): void {
+    this.volatile.delete(entry.operationId);
+    this.volatile.set(entry.operationId, entry);
+    for (const oldest of this.volatile.keys()) {
+      if (this.volatile.size <= this.maxEntries) break;
+      this.volatile.delete(oldest);
+    }
+  }
+
   private async save(entry: StoredOperation): Promise<void> {
     try {
+      let serialized = JSON.stringify(entry);
+      if (Buffer.byteLength(serialized) > this.maxStoredResultBytes) {
+        const { operationId, fingerprint } = entry;
+        serialized = JSON.stringify({ operationId, fingerprint, resultDropped: true });
+      }
       await this.prepare();
       const target = this.fileFor(entry.operationId);
       const temporary = `${target}.tmp`;
-      await writeFile(temporary, JSON.stringify(entry), { mode: 0o600 });
+      await writeFile(temporary, serialized, { mode: 0o600 });
       await rename(temporary, target);
       this.writesSincePrune += 1;
       if (this.writesSincePrune >= Math.max(1, Math.floor(this.maxEntries / 8))) {

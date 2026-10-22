@@ -217,6 +217,27 @@ describe.skipIf(process.platform === "win32")("remote sandbox", () => {
       expect(await lines(path.join(h.workdir, "durable.txt"))).toEqual(["x"]);
     });
 
+    it("does not replay a process operation after the daemon restarts", async () => {
+      const h = await harness();
+      const request = {
+        command: "sh",
+        args: ["-c", "sleep 30"],
+        operationId: "op-process",
+      };
+      const first = await h.runtime.startProcess(request);
+      expect(await h.runtime.startProcess(request)).toEqual(first);
+      await h.daemon.stop();
+
+      const restarted = h.startDaemon();
+      await restarted.ready();
+      // The first process died with the old daemon, so this must start a real one.
+      const second = await h.runtime.startProcess(request);
+      const listed = await h.runtime.listProcesses();
+      expect(listed.map((process) => process.id)).toEqual([second.id]);
+      expect(listed[0]?.status).toBe("running");
+      await h.runtime.stopProcess({ processId: second.id, gracePeriodMs: 100 });
+    });
+
     it("validates the id", async () => {
       const h = await harness();
       await expect(h.runtime.exec({ command: "true", operationId: "" })).rejects.toThrow(
@@ -417,6 +438,20 @@ describe.skipIf(process.platform === "win32")("remote sandbox", () => {
       });
     });
 
+    it("forgets a sandbox and disconnects its daemon", async () => {
+      const h = await harness();
+      const before = h.hub.runtime(sandboxId);
+      expect(h.hub.isConnected(sandboxId)).toBe(true);
+
+      h.hub.forget(sandboxId);
+      expect(h.hub.isConnected(sandboxId)).toBe(false);
+      expect(h.hub.runtime(sandboxId)).not.toBe(before);
+
+      // The daemon is still authorized, so it reconnects and the hub serves it again.
+      await eventually(() => h.hub.isConnected(sandboxId));
+      expect(await h.hub.runtime(sandboxId).listFiles()).toEqual([]);
+    });
+
     it("reports the daemon's workdir once connected", async () => {
       const h = await harness();
       expect(h.runtime.workdir).toBe(h.workdir);
@@ -498,7 +533,7 @@ describe.skipIf(process.platform === "win32")("remote sandbox", () => {
       const server = new WebSocketServer({ port: 0, host: "127.0.0.1" });
       await new Promise((resolve) => server.once("listening", resolve));
       const { port } = server.address() as { port: number };
-      const received: Array<{ type: string; code?: string }> = [];
+      const received: Array<{ type: string; code?: string; requestId?: string }> = [];
       server.on("connection", (socket) => {
         socket.once("message", () => {
           socket.send(
@@ -508,6 +543,15 @@ describe.skipIf(process.platform === "win32")("remote sandbox", () => {
           socket.send("not json");
           socket.send(
             JSON.stringify({ type: "request", requestId: "r1", method: "exec", params: {} }),
+          );
+          // An unknown method, as a newer hub might send: the caller must get an answer.
+          socket.send(
+            JSON.stringify({
+              type: "request",
+              requestId: "r2",
+              method: "futureMethod",
+              params: {},
+            }),
           );
           socket.send(JSON.stringify({ type: "ping" }));
         });
@@ -523,7 +567,11 @@ describe.skipIf(process.platform === "win32")("remote sandbox", () => {
       try {
         daemon.start();
         await eventually(() => received.some((frame) => frame.type === "pong"));
-        expect(received.filter((frame) => frame.type === "error")).toHaveLength(2);
+        const errors = received.filter((frame) => frame.type === "error");
+        expect(errors).toHaveLength(3);
+        expect(errors.find((frame) => frame.requestId === "r2")).toMatchObject({
+          code: "protocol",
+        });
         expect(daemon.connected).toBe(true);
       } finally {
         await daemon.stop();

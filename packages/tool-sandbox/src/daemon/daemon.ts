@@ -33,8 +33,10 @@ export interface SandboxDaemonOptions {
   limits?: SandboxRuntimeLimits;
   /** Extra environment for every command. */
   env?: Readonly<Record<string, string>>;
-  /** Completed operations remembered for retries. Defaults to 1024. */
+  /** Completed operations remembered for retries. Defaults to 256. */
   maxOperations?: number;
+  /** Largest result kept on disk per operation; bigger ones make a retry fail. Default 256 KiB. */
+  maxStoredResultBytes?: number;
   reconnect?: { initialDelayMs?: number; maxDelayMs?: number };
   handshakeTimeoutMs?: number;
   maxPayloadBytes?: number;
@@ -80,6 +82,7 @@ export class SandboxDaemon {
     this.operations = new OperationStore({
       directory: path.join(options.stateDir, "operations"),
       maxEntries: options.maxOperations ?? defaultMaxOperationEntries,
+      maxStoredResultBytes: options.maxStoredResultBytes,
       onError: (error) => this.log("warn", `operation store: ${describe(error)}`),
     });
   }
@@ -272,7 +275,9 @@ class DaemonSession {
   private onMessage(data: WebSocket.RawData): void {
     const frame = parseHubFrame(data);
     if (frame === undefined) {
-      this.send(encodeError(new TypeError("Malformed frame.")));
+      // Answer under the caller's requestId when one can be recovered (an unknown method from a
+      // newer hub, say), so that call fails fast instead of waiting on a link that stays healthy.
+      this.send(encodeError(new TypeError("Malformed frame."), recoverRequestId(data)));
       return;
     }
     switch (frame.type) {
@@ -302,7 +307,10 @@ class DaemonSession {
       const result =
         operationId === undefined
           ? await execute()
-          : await this.deps.operations.run(operationId, { method, params: frame.params }, execute);
+          : await this.deps.operations.run(operationId, { method, params: frame.params }, execute, {
+              // Process state lives in daemon memory, so a restart must not replay these.
+              durable: method !== "startProcess" && method !== "stopProcess",
+            });
       this.send({ type: "response", requestId, result });
     } catch (error) {
       // A cancelled caller has already stopped listening.
@@ -379,6 +387,19 @@ function parseHubFrame(data: WebSocket.RawData) {
   try {
     const parsed = hubFrameSchema.safeParse(JSON.parse(rawToString(data)));
     return parsed.success ? parsed.data : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function recoverRequestId(data: WebSocket.RawData): string | undefined {
+  try {
+    const value: unknown = JSON.parse(rawToString(data));
+    if (typeof value !== "object" || value === null) return undefined;
+    const record = value as Record<string, unknown>;
+    if (record.type !== "request") return undefined;
+    const id = record.requestId;
+    return typeof id === "string" && id.length > 0 && id.length <= 128 ? id : undefined;
   } catch {
     return undefined;
   }

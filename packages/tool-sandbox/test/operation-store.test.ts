@@ -9,11 +9,15 @@ afterEach(async () => {
   await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true })));
 });
 
-async function store(maxEntries?: number) {
+async function store(maxEntries?: number, maxStoredResultBytes?: number) {
   const root = await mkdtemp(path.join(os.tmpdir(), "anvia-ops-"));
   directories.push(root);
   const directory = path.join(root, "ops");
-  return { directory, store: new OperationStore({ directory, maxEntries }) };
+  return {
+    directory,
+    store: new OperationStore({ directory, maxEntries, maxStoredResultBytes }),
+    reopen: () => new OperationStore({ directory, maxEntries, maxStoredResultBytes }),
+  };
 }
 
 const request = { method: "exec", params: { command: "true" } };
@@ -71,7 +75,73 @@ describe("OperationStore", () => {
     expect(executions).toBe(1);
   });
 
+  it("keeps non-durable results in memory only", async () => {
+    const { directory, store: operations, reopen } = await store();
+    let executions = 0;
+    const execute = async () => {
+      executions += 1;
+      return { executions };
+    };
+    await operations.run("op", request, execute, { durable: false });
+    await operations.run("op", request, execute, { durable: false });
+    expect(executions).toBe(1);
+    await expect(readdir(directory)).rejects.toMatchObject({ code: "ENOENT" });
+
+    // A new store stands in for a restarted daemon: the in-memory result is gone.
+    await reopen().run("op", request, execute, { durable: false });
+    expect(executions).toBe(2);
+  });
+
+  it("bounds non-durable results by entry count", async () => {
+    const { store: operations } = await store(2);
+    let executions = 0;
+    const run = (id: string) =>
+      operations.run(
+        id,
+        request,
+        async () => {
+          executions += 1;
+        },
+        { durable: false },
+      );
+    await run("a");
+    await run("b");
+    await run("c");
+    await run("c");
+    expect(executions).toBe(3);
+    await run("a");
+    expect(executions).toBe(4);
+  });
+
+  it("refuses to re-run an operation whose result was too large to store", async () => {
+    const { directory, store: operations, reopen } = await store(undefined, 200);
+    let executions = 0;
+    const big = "x".repeat(1_000);
+    const execute = async () => {
+      executions += 1;
+      return { big };
+    };
+    const [first, joined] = await Promise.all([
+      operations.run("op", request, execute),
+      operations.run("op", request, execute),
+    ]);
+    expect(first.big).toBe(big);
+    expect(joined.big).toBe(big);
+
+    for (const candidate of [operations, reopen()]) {
+      await expect(candidate.run("op", request, execute)).rejects.toMatchObject({
+        code: "invalid_state",
+      });
+    }
+    expect(executions).toBe(1);
+    const files = (await readdir(directory)).filter((name) => name.endsWith(".json"));
+    expect(files).toHaveLength(1);
+  });
+
   it("rejects non-positive bounds", () => {
     expect(() => new OperationStore({ directory: "/tmp/x", maxEntries: 0 })).toThrow(RangeError);
+    expect(() => new OperationStore({ directory: "/tmp/x", maxStoredResultBytes: 0 })).toThrow(
+      RangeError,
+    );
   });
 });

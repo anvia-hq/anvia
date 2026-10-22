@@ -174,6 +174,9 @@ that is not loopback.
 
 The hub does no lifecycle management. It never creates, stops, or destroys a sandbox, and it does
 not issue tokens. `hub.connected()` and `hub.isConnected(id)` report which daemons are attached.
+The hub keeps a small record per sandbox id; call `hub.forget(id)` when your lifecycle code
+destroys a sandbox so a long-lived hub does not accumulate them. It also disconnects that
+sandbox's daemon.
 
 Daemon environment: `ANVIA_CONTROL_URL` and `ANVIA_SANDBOX_TOKEN` are required.
 `ANVIA_SANDBOX_WORKDIR` defaults to the current directory, and `ANVIA_SANDBOX_STATE_DIR` (the
@@ -221,12 +224,19 @@ toolRecovery: {
 },
 ```
 
-The operation table lives on the daemon's disk and is bounded (1,024 operations by default, oldest
-evicted first), so deduplication covers recent operations, not all history. An operation that was
-evicted runs again if retried. Two exceptions apply:
+The operation table is bounded (256 operations by default, oldest evicted first), so
+deduplication covers recent operations, not all history. An operation that was evicted runs again
+if retried. Exceptions and limits:
 
 - `execStream` deduplicates the final result only. A duplicate does not replay output events.
 - A daemon that loses its state directory also loses its history.
+- `startProcess` and `stopProcess` results are kept in daemon memory only, because process state
+  does not survive a daemon restart. They deduplicate across reconnects and hub restarts, but a
+  retry after the daemon itself restarted runs again.
+- Other results are written to the state directory as they are, including command output. Results
+  larger than 256 KiB are not kept (`maxStoredResultBytes`): a retry of such an operation fails
+  with `invalid_state` instead of running it a second time. The directory is created with owner-only
+  permissions; point `ANVIA_SANDBOX_STATE_DIR` somewhere private if commands may print secrets.
 
 Without `@anvia/durable`, pass your own `operationId` to the runtime methods to get the same
 behavior.

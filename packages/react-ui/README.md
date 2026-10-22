@@ -67,6 +67,8 @@ semantic attributes and behavior; it has no package stylesheet.
 - Images, selection toolbars, and optional streaming presentation smoothing.
 - Graph exploration primitives through `@anvia/react-ui/graph-explorer`; install `@anvia/graph`
   when using that integration.
+- A remote sandbox terminal through `@anvia/react-ui/sandbox-terminal`; install `@xterm/xterm` and
+  `@xterm/addon-fit` when using it.
 
 ## Learn more
 

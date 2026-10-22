@@ -51,6 +51,10 @@
       "types": "./dist/message/index.d.ts",
       "import": "./dist/message/index.js"
     },
+    "./sandbox-terminal": {
+      "types": "./dist/sandbox-terminal/index.d.ts",
+      "import": "./dist/sandbox-terminal/index.js"
+    },
     "./selection-toolbar": {
       "types": "./dist/selection-toolbar/index.d.ts",
       "import": "./dist/selection-toolbar/index.js"
@@ -69,7 +73,7 @@
     }
   },
   "scripts": {
-    "build": "tsup src/index.ts src/attachment/index.ts src/chat/index.ts src/completion/index.ts src/graph-explorer/index.ts src/human-input/index.ts src/image/index.ts src/message/index.ts src/selection-toolbar/index.ts src/shared.ts src/stream/index.ts src/thread-list/index.ts --format esm --dts --sourcemap --clean --external react --external react-dom",
+    "build": "tsup src/index.ts src/attachment/index.ts src/chat/index.ts src/completion/index.ts src/graph-explorer/index.ts src/human-input/index.ts src/image/index.ts src/message/index.ts src/sandbox-terminal/index.ts src/selection-toolbar/index.ts src/shared.ts src/stream/index.ts src/thread-list/index.ts --format esm --dts --sourcemap --clean --external react --external react-dom --external @xterm/xterm --external @xterm/addon-fit",
     "coverage": "vitest run --coverage",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
@@ -95,10 +99,18 @@
     "@anvia/graph": "workspace:^",
     "@anvia/react": "workspace:^",
     "react": ">=18",
-    "react-dom": ">=18"
+    "react-dom": ">=18",
+    "@xterm/xterm": ">=5.5.0",
+    "@xterm/addon-fit": ">=0.10.0"
   },
   "peerDependenciesMeta": {
     "@anvia/graph": {
+      "optional": true
+    },
+    "@xterm/xterm": {
+      "optional": true
+    },
+    "@xterm/addon-fit": {
       "optional": true
     }
   },
@@ -111,6 +123,8 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitest/coverage-v8": "4.1.11",
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/xterm": "^5.5.0",
     "happy-dom": "20.9.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",

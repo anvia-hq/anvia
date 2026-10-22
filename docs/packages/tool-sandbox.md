@@ -384,6 +384,74 @@ Terminal output comes back as binary frames; `{ "type": "ready" | "exit" | "erro
 text. A `readOnly` grant receives output only: the relay drops its input and resize messages, and
 the daemon also attaches it read-only.
 
+#### End to end
+
+**1. The control plane** runs the hub and mints tickets for your signed-in users:
+
+```ts
+import { randomBytes } from "node:crypto";
+import { RemoteSandboxHub, terminalTicket } from "@anvia/sandbox/remote";
+
+const daemonTokens = new Map([[process.env.DAEMON_TOKEN!, "sandbox-1"]]);
+const tickets = new Map<
+  string,
+  { sandboxId: string; sessionName: string; readOnly: boolean; expires: number }
+>();
+
+/** Call this from an authenticated route, after checking the user may open this session. */
+export function mintTerminalTicket(grant: {
+  sandboxId: string;
+  sessionName: string;
+  readOnly: boolean;
+}) {
+  const ticket = randomBytes(24).toString("base64url"); // URL-safe, so it can ride as a subprotocol
+  tickets.set(ticket, { ...grant, expires: Date.now() + 30_000 });
+  return ticket;
+}
+
+const hub = new RemoteSandboxHub({
+  authorize: (token) => {
+    const sandboxId = daemonTokens.get(token);
+    return sandboxId ? { sandboxId } : null;
+  },
+  allowedOrigins: ["http://localhost:5173"],
+  authorizeTerminal(request) {
+    const ticket = terminalTicket(request);
+    const grant = ticket === undefined ? undefined : tickets.get(ticket);
+    if (ticket !== undefined) tickets.delete(ticket); // single use
+    return grant !== undefined && grant.expires > Date.now() ? grant : null;
+  },
+});
+await hub.listen({ port: 8787, path: "/daemon", terminalPath: "/terminal" });
+```
+
+**2. The sandbox** is the image from [Image requirements](#image-requirements), started with the
+daemon's credentials. Use `wss://` outside local development:
+
+```sh
+docker build -t my-sandbox .
+docker run --rm \
+  -e ANVIA_CONTROL_URL=ws://host.docker.internal:8787/daemon \
+  -e ANVIA_SANDBOX_TOKEN="$DAEMON_TOKEN" \
+  my-sandbox
+```
+
+**3. The browser** renders `SandboxTerminal` from `@anvia/react-ui/sandbox-terminal`
+(see [the component docs](./react-ui.md#sandbox-terminal)) and asks your backend for a ticket on
+every connection:
+
+```tsx
+import "@xterm/xterm/css/xterm.css";
+import { SandboxTerminal } from "@anvia/react-ui/sandbox-terminal";
+
+<div style={{ height: 420 }}>
+  <SandboxTerminal
+    url="ws://localhost:8787/terminal"
+    ticket={async () => (await fetch("/api/terminal-ticket", { method: "POST" })).text()}
+  />
+</div>;
+```
+
 #### Not included
 
 Agent-facing terminal tools (such as capturing a pane), recording and replay, audit logs of terminal

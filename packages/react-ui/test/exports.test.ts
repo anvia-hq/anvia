@@ -29,6 +29,8 @@ import { CompletionPrimitive, CompletionProvider } from "../src/completion";
 import { HumanInputPrimitive } from "../src/human-input";
 import { ImagePrimitive } from "../src/image";
 import { MessagePrimitive } from "../src/message";
+import * as root from "../src";
+import { SandboxTerminal } from "../src/sandbox-terminal";
 import { SelectionToolbarPrimitive } from "../src/selection-toolbar";
 import {
   ChatProvider as SharedChatProvider,
@@ -112,5 +114,10 @@ describe("public entrypoints", () => {
       createThread(): Promise<void> | void;
       switchThread(threadId: string): Promise<void> | void;
     }>();
+  });
+
+  it("keeps the terminal on its own subpath so xterm stays an optional peer", () => {
+    expect(SandboxTerminal).toBeDefined();
+    expect(root).not.toHaveProperty("SandboxTerminal");
   });
 });

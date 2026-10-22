@@ -145,3 +145,54 @@ do not expose React elements for individual nodes can consume the controller dir
 node primitives.
 
 `MessagePrimitive.Actions` displays its action group only for the final assistant message in each user exchange, after streaming completes. Earlier completed replies retain their actions. Use `MessagePrimitive.Copy` or `MessagePrimitive.Regenerate` directly when composing custom action visibility.
+
+## Sandbox terminal
+
+`@anvia/react-ui/sandbox-terminal` draws an interactive terminal for a remote sandbox session with
+[xterm.js](https://xtermjs.org). It talks to the browser relay of `RemoteSandboxHub` (see
+[Terminals](./tool-sandbox.md#terminals)). Install the optional peers `@xterm/xterm` and
+`@xterm/addon-fit`, and import xterm's stylesheet once. xterm is loaded on demand when the first
+terminal mounts, and the component lives on its own subpath so apps that never show a terminal never
+load it.
+
+```tsx
+import "@xterm/xterm/css/xterm.css";
+import { SandboxTerminal } from "@anvia/react-ui/sandbox-terminal";
+
+export function Terminal({ sandboxId }: { sandboxId: string }) {
+  return (
+    <div style={{ height: 420 }}>
+      <SandboxTerminal
+        url="/terminal"
+        sessionName="main"
+        // Single-use, so pass a function: every reconnect fetches a fresh one.
+        ticket={async () => (await fetch(`/api/sandboxes/${sandboxId}/terminal-ticket`)).text()}
+      />
+    </div>
+  );
+}
+```
+
+The component fills its parent, so give the parent a height. It refits with a `ResizeObserver` and
+sends the new size to the sandbox.
+
+| Prop              | Purpose                                                                                                                                           |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `url`             | The hub's terminal endpoint: `ws:`/`wss:`, `http:`/`https:`, or a path on this page.                                                              |
+| `ticket`          | A short-lived ticket or a function returning one. It travels as the `anvia.ticket.<ticket>` subprotocol, so it must use only URL-safe characters. |
+| `sessionName`     | Sent as `?session=`. Your `authorizeTerminal` may use it; the server decides which session a ticket grants.                                       |
+| `readOnly`        | Output only. The terminal takes no input, and the server enforces it as well.                                                                     |
+| `reconnect`       | `{ initialDelayMs, maxDelayMs, maxAttempts }`. Defaults are 500 ms, 15 s and 10 attempts.                                                         |
+| `terminalOptions` | xterm options such as `fontSize` or `theme`, applied when the terminal is created.                                                                |
+| `onStatusChange`  | Called with every connection state change.                                                                                                        |
+| `renderStatus`    | Replace the default status line.                                                                                                                  |
+
+A connection is `loading`, `connecting`, `open`, `reconnecting`, `ended` (the shell exited; no
+reconnect) or `failed` (a fatal error or the attempts ran out). The root element carries the state
+as `data-state`, and the default status line is a `role="status"` element in its corner that offers
+a Retry button after a failure. After a reconnect the screen is cleared before the session redraws.
+Changing `url`, `sessionName` or `readOnly` reconnects; other props are read when they are needed.
+A `ref` exposes `focus()` and `reconnect()`.
+
+The component does not choose who may see a session. That is the job of the ticket your backend
+mints and the hub's `authorizeTerminal`, including the `readOnly` grant.

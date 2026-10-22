@@ -72,6 +72,8 @@ export class DesktopSupervisor {
   private ready: Promise<void> | undefined;
   private stopping = false;
   private recovery: ReturnType<typeof setTimeout> | undefined;
+  /** Fails whoever is waiting on a pending restart, when the supervisor stops first. */
+  private abandonRecovery: (() => void) | undefined;
   private readonly processes = new Map<ProcessName, Managed>();
 
   constructor(private readonly options: DesktopSupervisorOptions) {
@@ -136,6 +138,7 @@ export class DesktopSupervisor {
   async stop(): Promise<void> {
     this.stopping = true;
     clearTimeout(this.recovery);
+    this.abandonRecovery?.();
     await this.killAll();
     this.state = "stopped";
   }
@@ -253,7 +256,13 @@ export class DesktopSupervisor {
     this.options.log(`restarting ${crashed} in ${delay}ms`);
     // Callers arriving meanwhile wait for the restart instead of failing.
     const waiting = new Promise<void>((resolve, reject) => {
+      this.abandonRecovery = () => {
+        this.abandonRecovery = undefined;
+        this.ready = undefined;
+        reject(unavailable("The desktop is shutting down."));
+      };
       this.recovery = setTimeout(() => {
+        this.abandonRecovery = undefined;
         void (async () => {
           try {
             if (crashed === "xvfb") {

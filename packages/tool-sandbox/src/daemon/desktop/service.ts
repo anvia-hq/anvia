@@ -160,10 +160,12 @@ export class DesktopService {
 
   /** Perform an input as the agent. Fails with `desktop_locked` while a human holds control. */
   async act(action: DesktopAction, signal?: AbortSignal): Promise<void> {
-    await this.control.assertAgentInput(signal);
-    await this.supervisor.ensureRunning();
+    // Check the input first: a bad coordinate must not start a desktop or wait on the lock. The
+    // size is known before the display is up.
     const { width, height } = this.supervisor.status();
     const args = this.xdotoolArguments(action, width, height);
+    await this.control.assertAgentInput(signal);
+    await this.supervisor.ensureRunning();
     await this.serialize(async () => {
       // The hold may have been taken while this action waited its turn.
       await this.control.assertAgentInput(signal);

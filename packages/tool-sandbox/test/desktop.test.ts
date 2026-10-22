@@ -3,6 +3,7 @@ import net from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import { findExecutable } from "../src/daemon/desktop/exec";
+import { DesktopService } from "../src/daemon/desktop/service";
 import { relayTicket, type SandboxDesktop } from "../src/remote/index";
 import {
   type RemoteHarness,
@@ -202,6 +203,24 @@ describe.skipIf(!hasDesktop)("desktop", () => {
       expect(await h.desktop.cursorPosition()).toEqual({ x: 10, y: 10 });
     }, 30_000);
 
+    it("lets an operator force control back", async () => {
+      const h = await start();
+      await h.desktop.takeover({ holder: "alice" });
+      await expect(h.desktop.release({ holder: "bob" })).rejects.toMatchObject({
+        code: "desktop_locked",
+      });
+      expect(await h.desktop.release({ holder: "bob", force: true })).toEqual({ held: false });
+      await h.desktop.act({ type: "mouse_move", x: 3, y: 3 });
+    }, 30_000);
+
+    it("rejects an invalid input without starting the desktop", async () => {
+      const h = await start();
+      await expect(h.desktop.act({ type: "mouse_move", x: 9_000, y: 1 })).rejects.toThrow(
+        RangeError,
+      );
+      expect((await h.desktop.status()).state).toBe("stopped");
+    }, 30_000);
+
     it("gives control back when the lease runs out", async () => {
       const h = await start();
       await h.desktop.takeover({ holder: "alice", leaseMs: 400 });
@@ -254,6 +273,35 @@ describe.skipIf(!hasDesktop)("desktop", () => {
     const status = await h.desktop.status();
     expect(status.restarts).toBeGreaterThanOrEqual(1);
     expect(status.state).toBe("running");
+  }, 60_000);
+
+  it("settles a caller waiting on a restart when the desktop is stopped", async () => {
+    // Below the hub, which would retry the dropped call itself and hide whether the daemon
+    // leaves it pending.
+    const found = await DesktopService.detect(
+      {
+        display: `:${80 + (displayCounter += 1)}`,
+        vncPort: await freePort(),
+        restart: { initialDelayMs: 5_000, maxDelayMs: 5_000 },
+      },
+      { env: () => ({ ...process.env }) as Record<string, string>, log: () => undefined },
+    );
+    if (!("service" in found)) throw new Error(`missing ${found.missing.join(", ")}`);
+    const { service } = found;
+    await service.status(true);
+    execFileSync("pkill", ["-9", "-x", "Xvfb"]);
+    await eventually(async () => (await service.status()).state === "restarting", 10_000);
+
+    // This caller is waiting for a restart that is five seconds away.
+    const waiting = service.screenshot(undefined).then(
+      () => "completed",
+      () => "rejected",
+    );
+    await sleep(200);
+    const stopped = Date.now();
+    await service.stop();
+    expect(await waiting).toBe("rejected");
+    expect(Date.now() - stopped).toBeLessThan(3_000);
   }, 60_000);
 
   it("restarts the VNC server on its own, leaving the display alone", async () => {
@@ -333,6 +381,7 @@ describe("browser desktop relay", () => {
         authorizeDesktop: (request) => {
           const ticket = relayTicket(request);
           if (ticket === "rw") return { sandboxId, ...grant };
+          if (ticket === "rw2") return { sandboxId, holder: "bob" };
           if (ticket === "ro") return { sandboxId, readOnly: true };
           return null;
         },
@@ -459,10 +508,15 @@ describe("browser desktop relay", () => {
         alice.state.text.some((message) => message.type === "control" && message.you === true),
       );
 
-      // Another viewer cannot type while alice holds control...
-      const bob = browser(`${url}?ticket=ro`);
+      // Bob may type in general, but not while alice holds control...
+      const bob = browser(`${url}?ticket=rw2`);
       await bob.refused;
-      // ...and alice still can.
+      const bobRfb = await rfb(bob);
+      bobRfb.click(200, 200);
+      await sleep(800);
+      expect(await xev.log()).not.toContain("ButtonPress");
+
+      // ...and alice, who holds it, still can.
       aliceRfb.click(200, 200);
       await eventually(async () => (await xev.log()).includes("ButtonPress"));
 
@@ -470,6 +524,16 @@ describe("browser desktop relay", () => {
       alice.socket.close();
       await eventually(async () => !(await desktop.control()).held, 10_000);
       await desktop.act({ type: "mouse_move", x: 5, y: 5 });
+
+      // Each relay learns that control is free from its next poll, and tells its viewer. Input in
+      // between is dropped rather than risk letting it through, so wait for that, as a user would.
+      await eventually(() => {
+        const controls = bob.state.text.filter((message) => message.type === "control");
+        return controls.at(-1)?.held === false;
+      });
+      const before = ((await xev.log()).match(/ButtonPress/g) ?? []).length;
+      bobRfb.click(210, 210);
+      await eventually(async () => ((await xev.log()).match(/ButtonPress/g) ?? []).length > before);
       bob.socket.close();
     }, 60_000);
 

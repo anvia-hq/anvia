@@ -6,13 +6,14 @@ import { normalizeSandboxPath } from "./path";
 import { sandboxShell } from "./shell";
 import type {
   CreateDockerSandboxToolsOptions,
+  CreateSandboxToolsOptions,
   DockerSandboxCommandPolicy,
   DockerSandboxExecOptions,
   DockerSandboxExecResult,
   DockerSandboxListProcessesOptions,
   DockerSandboxProcessInfo,
-  DockerSandboxRuntime,
   DockerSandboxToolName,
+  SandboxRuntime,
 } from "./types";
 import { Writable } from "./internal/type-utils";
 import { shellInterpreters } from "./types";
@@ -168,7 +169,14 @@ const waitForPortInput = z.object({
   containerPort: z.number().int().min(1).max(65_535),
   timeoutMs: z.number().int().positive().max(300_000).optional(),
 });
-const waitForPortOutput = z.object({ port: publishedPortOutput });
+// Docker reports where the published port is reachable; runtimes without a host-reachable
+// endpoint only confirm the port is listening, so the address fields are optional here.
+const waitForPortOutput = z.object({
+  port: publishedPortOutput.extend({
+    host: z.string().optional(),
+    hostPort: publishedPortOutput.shape.hostPort.optional(),
+  }),
+});
 
 const defaultReadFileLineCount = 500;
 const defaultReadFileMaxLineCount = 2_000;
@@ -180,6 +188,10 @@ const maxToolTimeoutMs = 300_000;
 export function createDockerSandboxTools(
   options: CreateDockerSandboxToolsOptions,
 ): readonly AnyTool[] {
+  return createSandboxTools(options);
+}
+
+export function createSandboxTools(options: CreateSandboxToolsOptions): readonly AnyTool[] {
   validateFactoryOptions(options);
   options = snapshotFactoryOptions(options);
   const selected = new Set(options.tools);
@@ -204,7 +216,7 @@ export function createDockerSandboxTools(
   return Object.freeze(tools);
 }
 
-function createExecCommandTool(options: CreateDockerSandboxToolsOptions): AnyTool {
+function createExecCommandTool(options: CreateSandboxToolsOptions): AnyTool {
   return createTool({
     name: "exec_command",
     description:
@@ -229,6 +241,9 @@ function createExecCommandTool(options: CreateDockerSandboxToolsOptions): AnyToo
         execOptions = { ...execOptions, timeoutMs: effectiveTimeoutMs };
       }
       if (input !== undefined) execOptions = { ...execOptions, input };
+      if (context.operationId !== undefined) {
+        execOptions = { ...execOptions, operationId: context.operationId };
+      }
       if (context.abortSignal !== undefined) {
         execOptions = { ...execOptions, abortSignal: context.abortSignal };
       }
@@ -237,7 +252,7 @@ function createExecCommandTool(options: CreateDockerSandboxToolsOptions): AnyToo
   });
 }
 
-function createReadFileTool(options: CreateDockerSandboxToolsOptions): AnyTool {
+function createReadFileTool(options: CreateSandboxToolsOptions): AnyTool {
   const limits = resolveReadFileLimits(options);
   return createTool({
     name: "read_file",
@@ -265,7 +280,7 @@ function createReadFileTool(options: CreateDockerSandboxToolsOptions): AnyTool {
   });
 }
 
-function createWriteFileTool(options: CreateDockerSandboxToolsOptions): AnyTool {
+function createWriteFileTool(options: CreateSandboxToolsOptions): AnyTool {
   return createTool({
     name: "write_file",
     description: "Write a complete UTF-8 text file inside the sandbox workspace.",
@@ -282,6 +297,9 @@ function createWriteFileTool(options: CreateDockerSandboxToolsOptions): AnyTool 
         path: normalizedPath,
         text: content,
       };
+      if (context.operationId !== undefined) {
+        writeOptions = { ...writeOptions, operationId: context.operationId };
+      }
       if (context.abortSignal !== undefined) {
         writeOptions = { ...writeOptions, abortSignal: context.abortSignal };
       }
@@ -291,7 +309,7 @@ function createWriteFileTool(options: CreateDockerSandboxToolsOptions): AnyTool 
   });
 }
 
-function createListFilesTool(sandbox: DockerSandboxRuntime): AnyTool {
+function createListFilesTool(sandbox: SandboxRuntime): AnyTool {
   return createTool({
     name: "list_files",
     description: "List direct children of a directory in the sandbox workspace.",
@@ -309,7 +327,7 @@ function createListFilesTool(sandbox: DockerSandboxRuntime): AnyTool {
   });
 }
 
-function createListPortsTool(sandbox: DockerSandboxRuntime): AnyTool {
+function createListPortsTool(sandbox: SandboxRuntime): AnyTool {
   return createTool({
     name: "list_ports",
     description: "List explicitly published localhost TCP ports for the sandbox.",
@@ -319,7 +337,7 @@ function createListPortsTool(sandbox: DockerSandboxRuntime): AnyTool {
   });
 }
 
-function createStartProcessTool(options: CreateDockerSandboxToolsOptions): AnyTool {
+function createStartProcessTool(options: CreateSandboxToolsOptions): AnyTool {
   return createTool({
     name: "start_process",
     description:
@@ -335,6 +353,9 @@ function createStartProcessTool(options: CreateDockerSandboxToolsOptions): AnyTo
         startOptions = { ...startOptions, cwd: normalizedCwd };
       }
       if (env !== undefined) startOptions = { ...startOptions, env };
+      if (context.operationId !== undefined) {
+        startOptions = { ...startOptions, operationId: context.operationId };
+      }
       if (context.abortSignal !== undefined) {
         startOptions = { ...startOptions, abortSignal: context.abortSignal };
       }
@@ -343,7 +364,7 @@ function createStartProcessTool(options: CreateDockerSandboxToolsOptions): AnyTo
   });
 }
 
-function createListProcessesTool(sandbox: DockerSandboxRuntime): AnyTool {
+function createListProcessesTool(sandbox: SandboxRuntime): AnyTool {
   return createTool({
     name: "list_processes",
     description: "List processes managed by this live sandbox handle.",
@@ -359,7 +380,7 @@ function createListProcessesTool(sandbox: DockerSandboxRuntime): AnyTool {
   });
 }
 
-function createReadProcessLogsTool(options: CreateDockerSandboxToolsOptions): AnyTool {
+function createReadProcessLogsTool(options: CreateSandboxToolsOptions): AnyTool {
   const maxLogBytes = options.process?.maxLogBytes ?? 64 * 1024;
   return createTool({
     name: "read_process_logs",
@@ -392,7 +413,7 @@ function createReadProcessLogsTool(options: CreateDockerSandboxToolsOptions): An
   });
 }
 
-function createStopProcessTool(options: CreateDockerSandboxToolsOptions): AnyTool {
+function createStopProcessTool(options: CreateSandboxToolsOptions): AnyTool {
   return createTool({
     name: "stop_process",
     description: "Stop a process managed by this live sandbox handle.",
@@ -403,6 +424,9 @@ function createStopProcessTool(options: CreateDockerSandboxToolsOptions): AnyToo
         processId,
         gracePeriodMs: options.process?.stopGracePeriodMs ?? 5_000,
       };
+      if (context.operationId !== undefined) {
+        stopOptions = { ...stopOptions, operationId: context.operationId };
+      }
       if (context.abortSignal !== undefined) {
         stopOptions = { ...stopOptions, abortSignal: context.abortSignal };
       }
@@ -411,7 +435,7 @@ function createStopProcessTool(options: CreateDockerSandboxToolsOptions): AnyToo
   });
 }
 
-function createWaitForPortTool(options: CreateDockerSandboxToolsOptions): AnyTool {
+function createWaitForPortTool(options: CreateSandboxToolsOptions): AnyTool {
   return createTool({
     name: "wait_for_port",
     description: "Wait until an explicitly published sandbox TCP port is listening.",
@@ -467,20 +491,16 @@ function serializeProcessInfo(
   return serialized;
 }
 
-function normalizeToolPath(
-  sandbox: DockerSandboxRuntime,
-  input: string,
-  allowRoot = false,
-): string {
+function normalizeToolPath(sandbox: SandboxRuntime, input: string, allowRoot = false): string {
   return normalizeSandboxPath(input, { allowRoot, workdir: sandbox.workdir });
 }
 
-function validateFactoryOptions(options: CreateDockerSandboxToolsOptions): void {
+function validateFactoryOptions(options: CreateSandboxToolsOptions): void {
   if (!isRecord(options)) {
     throw new TypeError("options must be an object.");
   }
-  if (!isDockerSandboxRuntime(options.sandbox)) {
-    throw new TypeError("sandbox must be a DockerSandboxRuntime.");
+  if (!isSandboxRuntime(options.sandbox)) {
+    throw new TypeError("sandbox must be a SandboxRuntime.");
   }
   if (!Array.isArray(options.tools) || options.tools.length === 0) {
     throw new TypeError("tools must be a non-empty array.");
@@ -553,9 +573,7 @@ function snapshotCommandPolicy(policy: DockerSandboxCommandPolicy): DockerSandbo
   return Object.freeze({ mode: policy.mode, values });
 }
 
-function snapshotFactoryOptions(
-  options: CreateDockerSandboxToolsOptions,
-): CreateDockerSandboxToolsOptions {
+function snapshotFactoryOptions(options: CreateSandboxToolsOptions): CreateSandboxToolsOptions {
   const toolNames = Object.freeze([...options.tools]) as unknown as readonly [
     DockerSandboxToolName,
     ...DockerSandboxToolName[],
@@ -564,7 +582,7 @@ function snapshotFactoryOptions(
     options.exec?.commands === undefined
       ? undefined
       : Object.freeze(snapshotCommandPolicy(options.exec.commands));
-  let snapshot: CreateDockerSandboxToolsOptions = {
+  let snapshot: CreateSandboxToolsOptions = {
     sandbox: options.sandbox,
     tools: toolNames,
   };
@@ -636,7 +654,7 @@ function assertCommandAllowed(
 }
 
 async function resolveExecInvocation(
-  options: CreateDockerSandboxToolsOptions,
+  options: CreateSandboxToolsOptions,
   command: string,
   args: readonly string[] | undefined,
   abortSignal?: AbortSignal,
@@ -671,7 +689,7 @@ function assertTimeoutAllowed(timeoutMs: number | undefined, maxTimeoutMs: numbe
   }
 }
 
-function resolveReadFileLimits(options: CreateDockerSandboxToolsOptions) {
+function resolveReadFileLimits(options: CreateSandboxToolsOptions) {
   const defaultLineCount = options.readFile?.defaultLineCount ?? defaultReadFileLineCount;
   const maxLineCount = options.readFile?.maxLineCount ?? defaultReadFileMaxLineCount;
   const maxBytes = options.readFile?.maxBytes ?? defaultReadFileMaxBytes;
@@ -710,11 +728,11 @@ function assertOptionalBoundedPositiveInteger(value: number | undefined, name: s
   }
 }
 
-function isDockerSandboxRuntime(value: unknown): value is DockerSandboxRuntime {
+function isSandboxRuntime(value: unknown): value is SandboxRuntime {
   if (!isRecord(value)) return false;
   return (
     typeof value.id === "string" &&
-    value.provider === "docker" &&
+    typeof value.provider === "string" &&
     typeof value.workdir === "string" &&
     Array.isArray(value.publishedPorts) &&
     [

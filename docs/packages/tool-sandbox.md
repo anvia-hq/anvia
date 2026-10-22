@@ -112,3 +112,169 @@ const studio = new Studio([agent], {
 The `anvia-sandbox create-image` CLI only builds images. It does not create, resume, stop, or destroy
 sandboxes. Its `playwright` feature remains a general code-sandbox image; the visible Chromium/CDP/
 noVNC appliance is source-controlled and owned by `@anvia/browser`.
+
+## Remote sandboxes
+
+`DockerSandboxClient` drives the local `docker` CLI, so the sandbox lives and dies with the host
+running the agent. The remote runtime splits that apart. The **control plane** runs the agent and
+its tools. A small **daemon** inside each sandbox connects _out_ to the control plane over a
+WebSocket, executes operations locally, and owns process state and logs. Restarting the control
+plane only means the daemons reconnect; their processes keep running.
+
+Everything runs against the neutral `SandboxRuntime` interface (`provider: string`).
+`DockerSandboxRuntime` extends it, and `createSandboxTools({ sandbox })` builds the same tools for
+any runtime. `createDockerSandboxTools` is a wrapper around it. The remote pieces ship as subpath
+exports so Docker-only applications do not load `ws`:
+
+- `@anvia/sandbox/remote`: `RemoteSandboxHub` and `RemoteSandboxRuntime`.
+- `@anvia/sandbox/daemon`: `SandboxDaemon`, for embedding the daemon in your own process.
+- `anvia-sandbox-daemon`: the daemon as an executable.
+
+### End to end
+
+Control plane:
+
+```ts
+import { createSandboxTools } from "@anvia/sandbox";
+import { RemoteSandboxHub } from "@anvia/sandbox/remote";
+
+const hub = new RemoteSandboxHub({
+  // Map a daemon's bearer token to the sandbox it belongs to, or return null to refuse it.
+  authorize: async (token) => {
+    const sandbox = await db.sandboxes.findByToken(token);
+    return sandbox ? { sandboxId: sandbox.id } : null;
+  },
+  connectTimeoutMs: 30_000,
+});
+await hub.listen({ port: 8787, path: "/daemon" });
+
+// Usable before the daemon has connected. Calls wait up to connectTimeoutMs for it.
+const sandbox = hub.runtime("sbx_123", { workdir: "/workspace" });
+
+const tools = createSandboxTools({
+  sandbox,
+  tools: ["exec_command", "read_file", "write_file", "list_files", "start_process"],
+});
+```
+
+Inside the sandbox (however your infrastructure starts it):
+
+```sh
+ANVIA_CONTROL_URL=wss://agents.example.com/daemon \
+ANVIA_SANDBOX_TOKEN=<the token authorize() recognises> \
+ANVIA_SANDBOX_WORKDIR=/workspace \
+npx anvia-sandbox-daemon
+```
+
+To attach the hub to a server you already run, call `hub.handleUpgrade(request, socket, head)` from
+its `upgrade` event instead of `hub.listen()`. The daemon sends the token as an
+`Authorization: Bearer` header, and the hub calls `authorize` before the upgrade completes, so a
+refused daemon gets HTTP 401. Use `wss://`; the daemon warns when it is given an unencrypted URL
+that is not loopback.
+
+The hub does no lifecycle management. It never creates, stops, or destroys a sandbox, and it does
+not issue tokens. `hub.connected()` and `hub.isConnected(id)` report which daemons are attached.
+
+Daemon environment: `ANVIA_CONTROL_URL` and `ANVIA_SANDBOX_TOKEN` are required.
+`ANVIA_SANDBOX_WORKDIR` defaults to the current directory, and `ANVIA_SANDBOX_STATE_DIR` (the
+operation table) to a directory under the OS temp directory. Optional limits are
+`ANVIA_SANDBOX_COMMAND_TIMEOUT_MS`, `ANVIA_SANDBOX_MAX_OUTPUT_BYTES`,
+`ANVIA_SANDBOX_MAX_FILE_BYTES` and `ANVIA_SANDBOX_MAX_PROCESSES`, with the same defaults as Docker.
+The daemon removes `ANVIA_SANDBOX_TOKEN` and `ANVIA_CONTROL_URL` from the environment of every
+command and process it runs, so agent-run code cannot read its own credentials. Keep the state
+directory outside the workdir.
+
+### Behavior while disconnected
+
+A call made while the daemon is disconnected waits up to `connectTimeoutMs` and then fails with
+`sandbox_unavailable`. If the connection drops while a call is in flight:
+
+- **Reads** (`readFile`, `listFiles`, `readProcessLogs`, `listProcesses`, `waitForPort`) are retried
+  after the daemon reconnects.
+- **Mutations** (`exec`, `execStream`, `writeFile`, `startProcess`, `stopProcess`) that carry an
+  `operationId` are retried the same way.
+- **Mutations without an `operationId`** fail with `sandbox_unavailable`, because they may already
+  have run.
+
+Reconnects use exponential backoff with jitter. Daemons keep running processes, logs and the
+operation table across disconnects. If a second daemon connects for the same sandbox id, it
+replaces the first; the displaced daemon stops reconnecting rather than evicting its replacement.
+
+### Idempotent operations with @anvia/durable
+
+`exec`, `writeFile`, `startProcess` and `stopProcess` accept an optional `operationId`. The daemon
+runs each id once. A retry that arrives while the first attempt is still running joins it, and a
+later retry gets the stored result. Only successful results are stored: a failed or cancelled
+attempt can be retried for real. Reusing an id with different parameters fails with
+`invalid_state`.
+
+`createSandboxTools` passes `ToolCallContext.operationId` through, so a durable run's stable
+operation key reaches the daemon. That makes the mutating tools safe to mark `idempotent` in the
+durable registration's `toolRecovery`:
+
+```ts
+toolRecovery: {
+  exec_command: "idempotent",
+  write_file: "idempotent",
+  start_process: "idempotent",
+  stop_process: "idempotent",
+},
+```
+
+The operation table lives on the daemon's disk and is bounded (1,024 operations by default, oldest
+evicted first), so deduplication covers recent operations, not all history. An operation that was
+evicted runs again if retried. Two exceptions apply:
+
+- `execStream` deduplicates the final result only. A duplicate does not replay output events.
+- A daemon that loses its state directory also loses its history.
+
+Without `@anvia/durable`, pass your own `operationId` to the runtime methods to get the same
+behavior.
+
+### Differences from Docker
+
+Remote and Docker share one conformance test suite, so file, exec, process, path-safety and limit
+behavior match. Known differences:
+
+- The sandbox is the machine the daemon runs on, not a container the library created, so there is
+  no `publishedPorts` (it is always empty) and no host address for a port. `waitForPort` resolves
+  once something accepts TCP connections on the sandbox's loopback interface, and returns
+  `{ containerPort, protocol: "tcp" }` with no `host` or `hostPort`. For this reason the
+  `wait_for_port` tool's `host` and `hostPort` output fields are optional; Docker still returns
+  them.
+- A missing command is reported as exit code 127 and a missing working directory as exit 126,
+  rather than as a thrown error. Reading a missing file fails with `invalid_path`.
+- Path checks use the real path: reading or listing through a symlink that resolves outside the
+  workdir is rejected, and a write is rejected if any component is a symlink. These checks are
+  best-effort, because a concurrently running process can swap a path component between inspection
+  and use.
+- Commands run on the daemon's host with the daemon's privileges. Isolation, resource limits and
+  network policy are whatever the surrounding sandbox provides.
+- Each file moves in one frame, base64 encoded, so files are bounded by `maxFileBytes` and the
+  hub's `maxPayloadBytes` (64 MiB by default). The daemon supports POSIX hosts only.
+- The runtime reports the daemon's workdir once it has connected; until then it uses the `workdir`
+  passed to `hub.runtime()`, defaulting to `/workspace`.
+
+### Protocol
+
+One WebSocket carries versioned JSON frames (`PROTOCOL_VERSION`), validated with zod on both ends.
+The daemon opens with `hello` (version and workdir) and the hub answers `welcome`; a version
+mismatch closes the socket with code 1002. Requests are correlated by `requestId`. `execStream`
+output arrives as ordered `stream` frames, and a gap in the sequence aborts the call. Aborting a
+call sends `cancel`, which aborts the daemon-side work and kills the command's whole process group.
+Failures arrive as typed `error` frames that map to the existing error codes, plus
+`sandbox_unavailable` and `protocol`. Both sides send application-level pings and drop a peer that
+is silent for three intervals.
+
+A request that carries an `operationId` is not aborted when the connection drops. It finishes on
+the daemon and its result waits for the retry. Anything else is aborted, since nobody can receive
+its answer.
+
+### Not included
+
+Provider adapters (for example E2B or Kubernetes), snapshots, idle pause and wake, port tunnels, a
+PTY, and routing a sandbox across several control-plane nodes are out of scope. The interfaces
+leave room for them: a provider adapter would create sandboxes, hand each daemon a token and URL,
+and call `hub.runtime(id)`; tunnels would populate `host` and `hostPort` in `waitForPort`'s result;
+and multi-node routing would replace the hub's in-memory registry. Until then, run one hub per
+control-plane process and point each sandbox's daemon at it.

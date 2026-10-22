@@ -7,8 +7,8 @@ describe("public exports", () => {
       "DockerSandboxClient",
       "DockerSandboxError",
       "createDockerSandboxTools",
+      "createSandboxTools",
     ]);
-    expect(sandbox).not.toHaveProperty("createSandboxTools");
     expect(sandbox).not.toHaveProperty("isSandboxPortSession");
     expect(sandbox).not.toHaveProperty("isSandboxProcessSession");
   });

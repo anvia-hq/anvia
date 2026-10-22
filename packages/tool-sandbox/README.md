@@ -38,6 +38,8 @@ const tools = createDockerSandboxTools({
 - Explicit networking, resource limits, and command policies.
 - Stop/resume lifecycle and automatic disposal.
 - Read-only sandbox inspection in Anvia Studio.
+- Remote sandboxes: a daemon inside any sandbox dials out to your control plane, so the sandbox is
+  not tied to the agent's host (`@anvia/sandbox/remote`, `anvia-sandbox-daemon`).
 
 `await using` destroys the owned container and ephemeral volume at scope exit. Keep the scope open while agents use its tools. Command policies filter executable names; they do not restrict what an allowed interpreter can execute.
 

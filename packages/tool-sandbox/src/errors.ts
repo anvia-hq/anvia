@@ -1,17 +1,22 @@
-export type DockerSandboxErrorCode =
-  | "docker_unavailable"
-  | "docker_command_failed"
-  | "image_not_found"
-  | "runtime_not_found"
-  | "volume_not_found"
-  | "sandbox_not_found"
-  | "invalid_state"
-  | "invalid_path"
-  | "timeout"
-  | "file_too_large"
-  | "tool_policy"
-  | "port"
-  | "process";
+export const dockerSandboxErrorCodes = [
+  "docker_unavailable",
+  "docker_command_failed",
+  "image_not_found",
+  "runtime_not_found",
+  "volume_not_found",
+  "sandbox_not_found",
+  "invalid_state",
+  "invalid_path",
+  "timeout",
+  "file_too_large",
+  "tool_policy",
+  "port",
+  "process",
+  "sandbox_unavailable",
+  "protocol",
+] as const;
+
+export type DockerSandboxErrorCode = (typeof dockerSandboxErrorCodes)[number];
 
 export class DockerSandboxError extends Error {
   constructor(

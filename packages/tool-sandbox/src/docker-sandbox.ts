@@ -6,7 +6,33 @@ import { assertDockerCli, decodeUtf8, runDockerCli } from "./docker-cli";
 import { DockerProcessManager } from "./docker-process";
 import { DockerSandboxError } from "./errors";
 import { Writable } from "./internal/type-utils";
-import { containerPath, normalizeSandboxPath, parentSandboxPath } from "./path";
+import { containerPath, isPathInside, normalizeSandboxPath, parentSandboxPath } from "./path";
+import {
+  assertFileSize,
+  defaultMaxFileBytes,
+  defaultMaxOutputBytes,
+  resolveRuntimeLimits,
+  validateRuntimeLimits,
+  type ResolvedRuntimeLimits,
+} from "./shared/limits";
+import {
+  assertNonEmptyString,
+  assertNonNegativeSafeInteger,
+  assertOptionsObject,
+  assertPort,
+  assertPositiveSafeInteger,
+  assertReadOptions,
+  combineSignals,
+  copyStringRecord,
+  isPort,
+  isRecord,
+  resolvePortWaitOptions,
+  resolveTextFilePageOptions,
+  validateExecOptions,
+  validateProcessStartOptions,
+  waitWithSignal,
+} from "./shared/validation";
+import { mapFileMode, toExecResult } from "./shared/result";
 import { createTextFilePage } from "./text-file";
 import type {
   CreateDockerSandboxOptions,
@@ -16,7 +42,6 @@ import type {
   DockerSandboxExecResult,
   DockerSandboxExecStreamEvent,
   DockerSandboxFileEntry,
-  DockerSandboxFileType,
   DockerSandboxInspectionOptions,
   DockerSandboxInspector,
   DockerSandboxListFilesOptions,
@@ -29,7 +54,6 @@ import type {
   DockerSandboxReadProcessLogsOptions,
   DockerSandboxReadTextFilePageOptions,
   DockerSandboxRuntime,
-  DockerSandboxRuntimeLimits,
   DockerSandboxState,
   DockerSandboxStopProcessOptions,
   DockerSandboxTextFilePage,
@@ -44,16 +68,7 @@ import type {
 const schemaVersion = "1";
 const labelPrefix = "anvia.sandbox.";
 const defaultWorkdir = "/workspace";
-const defaultCommandTimeoutMs = 30_000;
-const defaultMaxOutputBytes = 1024 * 1024;
-const defaultMaxFileBytes = 10 * 1024 * 1024;
-const defaultMaxProcesses = 4;
-const defaultTextFilePageLines = 500;
-const defaultTextFilePageBytes = 64 * 1024;
-const defaultPortWaitTimeoutMs = 30_000;
-const defaultPortWaitIntervalMs = 100;
 const idPattern = /^[a-z0-9](?:[a-z0-9_.-]{0,62})$/;
-const envKeyPattern = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 // The destination is an argv value, never interpolated into shell source.
 const writePathCheckScript = [
@@ -79,6 +94,7 @@ const labels = {
   maxProcesses: `${labelPrefix}runtime.max-processes`,
 } as const;
 
+// Exit 0 when a TCP listener is bound to the port inside the container.
 const portProbeScript = [
   'port="$(printf \'%04X\' "$1")"',
   "for table in /proc/net/tcp /proc/net/tcp6; do",
@@ -93,8 +109,6 @@ const portProbeScript = [
   "done",
   "exit 1",
 ].join("\n");
-
-type ResolvedRuntimeLimits = Required<DockerSandboxRuntimeLimits>;
 
 type SandboxConfiguration = {
   id: string;
@@ -666,12 +680,7 @@ class DockerSandboxRuntimeImpl {
     options: DockerSandboxReadTextFilePageOptions,
   ): Promise<DockerSandboxTextFilePage> {
     assertReadOptions(options);
-    const startLine = options.startLine ?? 1;
-    const lineCount = options.lineCount ?? defaultTextFilePageLines;
-    const maxBytes = options.maxBytes ?? defaultTextFilePageBytes;
-    assertPositiveSafeInteger(startLine, "startLine");
-    assertPositiveSafeInteger(lineCount, "lineCount");
-    assertPositiveSafeInteger(maxBytes, "maxBytes");
+    const { startLine, lineCount, maxBytes } = resolveTextFilePageOptions(options);
     let readOptions: DockerSandboxReadFileOptions = {
       path: options.path,
     };
@@ -818,10 +827,7 @@ class DockerSandboxRuntimeImpl {
         "port",
       );
     }
-    const timeoutMs = options.timeoutMs ?? defaultPortWaitTimeoutMs;
-    const intervalMs = options.intervalMs ?? defaultPortWaitIntervalMs;
-    assertPositiveSafeInteger(timeoutMs, "timeoutMs");
-    assertPositiveSafeInteger(intervalMs, "intervalMs");
+    const { timeoutMs, intervalMs } = resolvePortWaitOptions(options);
 
     return this.runOperation(options.abortSignal, async (abortSignal) => {
       const deadline = Date.now() + timeoutMs;
@@ -959,12 +965,7 @@ class DockerSandboxRuntimeImpl {
   }
 
   private assertFileSize(size: number, filePath: string): void {
-    if (size > this.configuration.runtime.maxFileBytes) {
-      throw new DockerSandboxError(
-        `Sandbox file exceeds maxFileBytes (${size} > ${this.configuration.runtime.maxFileBytes}): ${filePath}`,
-        "file_too_large",
-      );
-    }
+    assertFileSize(size, filePath, this.configuration.runtime.maxFileBytes);
   }
 }
 
@@ -1170,20 +1171,6 @@ function validateCreateOptions(options: CreateDockerSandboxOptions): void {
   }
 }
 
-function validateRuntimeLimits(runtime?: DockerSandboxRuntimeLimits): void {
-  if (runtime !== undefined && !isRecord(runtime)) {
-    throw new TypeError("runtime must be an object.");
-  }
-  if (runtime?.commandTimeoutMs !== undefined)
-    assertPositiveSafeInteger(runtime.commandTimeoutMs, "commandTimeoutMs");
-  if (runtime?.maxOutputBytes !== undefined)
-    assertNonNegativeSafeInteger(runtime.maxOutputBytes, "maxOutputBytes");
-  if (runtime?.maxFileBytes !== undefined)
-    assertNonNegativeSafeInteger(runtime.maxFileBytes, "maxFileBytes");
-  if (runtime?.maxProcesses !== undefined)
-    assertNonNegativeSafeInteger(runtime.maxProcesses, "maxProcesses");
-}
-
 function validateResources(resources: CreateDockerSandboxOptions["resources"]): void {
   if (resources !== undefined && !isRecord(resources)) {
     throw new TypeError("resources must be an object.");
@@ -1240,58 +1227,6 @@ function validateSecurity(security: CreateDockerSandboxOptions["security"]): voi
       throw new TypeError(`addCapabilities contains a duplicate: ${capability}`);
     seen.add(capability);
   }
-}
-
-function validateExecOptions(options: DockerSandboxExecOptions): void {
-  assertOptionsObject(options);
-  assertNonEmptyString(options.command, "command");
-  if (
-    options.args !== undefined &&
-    (!Array.isArray(options.args) || !options.args.every((value) => typeof value === "string"))
-  ) {
-    throw new TypeError("args must contain only strings.");
-  }
-  if (options.cwd !== undefined) normalizeSandboxPath(options.cwd, { allowRoot: true });
-  copyStringRecord(options.env, "env");
-  if (options.timeoutMs !== undefined) assertPositiveSafeInteger(options.timeoutMs, "timeoutMs");
-  if (
-    options.input !== undefined &&
-    typeof options.input !== "string" &&
-    !(options.input instanceof Uint8Array)
-  ) {
-    throw new TypeError("input must be a string or Uint8Array.");
-  }
-}
-
-function validateProcessStartOptions(options: DockerSandboxProcessStartOptions): void {
-  assertOptionsObject(options);
-  assertNonEmptyString(options.command, "command");
-  if (
-    options.args !== undefined &&
-    (!Array.isArray(options.args) || !options.args.every((value) => typeof value === "string"))
-  ) {
-    throw new TypeError("args must contain only strings.");
-  }
-  if (options.cwd !== undefined) normalizeSandboxPath(options.cwd, { allowRoot: true });
-  copyStringRecord(options.env, "env");
-}
-
-function assertReadOptions(options: DockerSandboxReadFileOptions): void {
-  assertOptionsObject(options);
-  normalizeSandboxPath(options.path);
-}
-
-function assertOptionsObject(value: unknown): asserts value is Record<string, unknown> {
-  if (!isRecord(value)) throw new TypeError("options must be an object.");
-}
-
-function resolveRuntimeLimits(runtime?: DockerSandboxRuntimeLimits): ResolvedRuntimeLimits {
-  return {
-    commandTimeoutMs: runtime?.commandTimeoutMs ?? defaultCommandTimeoutMs,
-    maxOutputBytes: runtime?.maxOutputBytes ?? defaultMaxOutputBytes,
-    maxFileBytes: runtime?.maxFileBytes ?? defaultMaxFileBytes,
-    maxProcesses: runtime?.maxProcesses ?? defaultMaxProcesses,
-  };
 }
 
 function snapshotCreateOptions(options: CreateDockerSandboxOptions): CreateDockerSandboxOptions {
@@ -1516,13 +1451,7 @@ async function assertCopiedRegularFile(
     realpath(temporaryDirectory),
     realpath(target),
   ]);
-  const relativeTarget = path.relative(resolvedDirectory, resolvedTarget);
-  if (
-    relativeTarget === "" ||
-    relativeTarget === ".." ||
-    relativeTarget.startsWith(`..${path.sep}`) ||
-    path.isAbsolute(relativeTarget)
-  ) {
+  if (!isPathInside(resolvedDirectory, resolvedTarget)) {
     throw new DockerSandboxError(
       `Sandbox file escaped its temporary read boundary: ${sandboxPath}`,
       "invalid_path",
@@ -1565,14 +1494,6 @@ function parseFindEntry(line: string, workdir: string): DockerSandboxFileEntry {
   return entry;
 }
 
-function mapFileMode(mode: number): DockerSandboxFileType {
-  const type = mode & 0o170000;
-  if (type === 0o100000) return "file";
-  if (type === 0o040000) return "directory";
-  if (type === 0o120000) return "symlink";
-  return "other";
-}
-
 function dockerExecFailureMessage(prefix: string, result: DockerSandboxExecResult): string {
   const detail = (safeDecode(result.stderr).trim() || safeDecode(result.stdout).trim()).slice(
     0,
@@ -1582,19 +1503,6 @@ function dockerExecFailureMessage(prefix: string, result: DockerSandboxExecResul
   return result.status === "exited"
     ? `${prefix}: command exited with code ${result.exitCode}.`
     : `${prefix}: command timed out.`;
-}
-
-function toExecResult(result: Awaited<ReturnType<typeof runDockerCli>>): DockerSandboxExecResult {
-  const common = {
-    stdout: result.stdout.slice(),
-    stderr: result.stderr.slice(),
-    durationMs: result.durationMs,
-    stdoutTruncated: result.stdoutTruncated,
-    stderrTruncated: result.stderrTruncated,
-  };
-  return result.timedOut
-    ? { ...common, status: "timed_out" }
-    : { ...common, status: "exited", exitCode: result.exitCode };
 }
 
 function copyWorkspace(workspace: DockerSandboxWorkspace): DockerSandboxWorkspace {
@@ -1609,22 +1517,6 @@ function copyNetwork(
   return network.mode === "none"
     ? Object.freeze({ mode: "none" })
     : Object.freeze({ mode: "bridge", ports: Object.freeze([...(network.ports ?? [])]) });
-}
-
-function copyStringRecord(
-  value: Readonly<Record<string, string>> | undefined,
-  name: string,
-): Record<string, string> {
-  if (value === undefined) return {};
-  if (!isRecord(value)) throw new TypeError(`${name} must be an object.`);
-  const copy: Record<string, string> = {};
-  for (const [key, item] of Object.entries(value)) {
-    if (typeof item !== "string") throw new TypeError(`${name}.${key} must be a string.`);
-    if (name === "env" && !envKeyPattern.test(key))
-      throw new TypeError(`Invalid environment variable name: ${key}`);
-    copy[key] = item;
-  }
-  return copy;
 }
 
 function requiredLabel(containerLabels: Record<string, string>, name: string): string {
@@ -1657,18 +1549,6 @@ function validatePorts(ports: readonly number[]): void {
   }
 }
 
-function assertPort(port: number): void {
-  if (!isPort(port))
-    throw new DockerSandboxError(
-      `Sandbox port must be an integer from 1 to 65535: ${port}`,
-      "port",
-    );
-}
-
-function isPort(port: number): boolean {
-  return Number.isInteger(port) && port >= 1 && port <= 65_535;
-}
-
 function assertSandboxId(id: string): void {
   if (typeof id !== "string" || !idPattern.test(id)) {
     throw new TypeError(
@@ -1683,21 +1563,6 @@ function assertDockerVolumeName(name: string): void {
     throw new TypeError("workspace.name is not a valid Docker volume name.");
 }
 
-function assertNonEmptyString(value: unknown, name: string): asserts value is string {
-  if (typeof value !== "string" || value.length === 0)
-    throw new TypeError(`${name} must be a non-empty string.`);
-}
-
-function assertPositiveSafeInteger(value: number, name: string): void {
-  if (!Number.isSafeInteger(value) || value <= 0)
-    throw new RangeError(`${name} must be a positive safe integer.`);
-}
-
-function assertNonNegativeSafeInteger(value: number, name: string): void {
-  if (!Number.isSafeInteger(value) || value < 0)
-    throw new RangeError(`${name} must be a non-negative safe integer.`);
-}
-
 function invalidState(id: string, state: DockerSandboxState): DockerSandboxError {
   return new DockerSandboxError(`Sandbox ${id} is not running (${state}).`, "invalid_state", {
     state,
@@ -1708,33 +1573,10 @@ function containerNameFor(id: string): string {
   return `anvia-sandbox-${id}`;
 }
 
-function combineSignals(first: AbortSignal | undefined, second: AbortSignal): AbortSignal {
-  return first === undefined ? second : AbortSignal.any([first, second]);
-}
-
-async function waitWithSignal(timeoutMs: number, abortSignal: AbortSignal): Promise<void> {
-  abortSignal.throwIfAborted();
-  await new Promise<void>((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      abortSignal.removeEventListener("abort", abort);
-      resolve();
-    }, timeoutMs);
-    const abort = () => {
-      clearTimeout(timeout);
-      reject(abortSignal.reason ?? new DOMException("Aborted", "AbortError"));
-    };
-    abortSignal.addEventListener("abort", abort, { once: true });
-  });
-}
-
 function safeDecode(bytes: Uint8Array): string {
   try {
     return decodeUtf8(bytes);
   } catch {
     return "";
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

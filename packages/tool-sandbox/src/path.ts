@@ -53,3 +53,10 @@ export function parentSandboxPath(relativePath: string): string {
   const parent = path.posix.dirname(normalized);
   return parent === "." ? "." : parent;
 }
+
+/** Whether `target` is `base` itself or lies beneath it. Both must already be resolved paths. */
+export function isPathInside(base: string, target: string, options: { allowSame?: boolean } = {}) {
+  const relative = path.relative(base, target);
+  if (relative === "") return options.allowSame === true;
+  return relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+}

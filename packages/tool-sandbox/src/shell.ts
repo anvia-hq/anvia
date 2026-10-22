@@ -1,13 +1,13 @@
 import { DockerSandboxError } from "./errors";
-import type { DockerSandboxRuntime } from "./types";
+import type { SandboxRuntime } from "./types";
 
 type SandboxShell = "/bin/bash" | "sh";
 
-const shells = new WeakMap<DockerSandboxRuntime, Promise<SandboxShell>>();
+const shells = new WeakMap<SandboxRuntime, Promise<SandboxShell>>();
 
 /** Share only capability detection, never command-policy decisions, across tool factories. */
 export async function sandboxShell(
-  sandbox: DockerSandboxRuntime,
+  sandbox: SandboxRuntime,
   abortSignal?: AbortSignal,
 ): Promise<SandboxShell> {
   abortSignal?.throwIfAborted();
@@ -35,7 +35,7 @@ export async function sandboxShell(
   }
 }
 
-async function detectShell(sandbox: DockerSandboxRuntime): Promise<SandboxShell> {
+async function detectShell(sandbox: SandboxRuntime): Promise<SandboxShell> {
   // Fixed, read-only infrastructure probe. Do not include caller input, cwd, or env.
   // A caller's cancellation must not cancel detection shared with other tool calls.
   const result = await sandbox.exec({

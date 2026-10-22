@@ -1,4 +1,31 @@
-export type DockerSandboxFileType = "file" | "directory" | "symlink" | "other";
+import type {
+  SandboxExecOptions,
+  SandboxExecResult,
+  SandboxExecStreamEvent,
+  SandboxFileEntry,
+  SandboxFileType,
+  SandboxListFilesOptions,
+  SandboxListProcessesOptions,
+  SandboxProcessInfo,
+  SandboxProcessLogs,
+  SandboxProcessStartOptions,
+  SandboxProcessStatus,
+  SandboxPublishedPort,
+  SandboxReadFileOptions,
+  SandboxReadProcessLogsOptions,
+  SandboxReadTextFilePageOptions,
+  SandboxResources,
+  SandboxRuntime,
+  SandboxRuntimeLimits,
+  SandboxState,
+  SandboxStopProcessOptions,
+  SandboxTextFilePage,
+  SandboxWaitForPortOptions,
+  SandboxWriteFileOptions,
+  SandboxWriteTextFileOptions,
+} from "./engine/types";
+
+export type DockerSandboxFileType = SandboxFileType;
 
 export type DockerSandboxWorkspace =
   | Readonly<{ type: "ephemeral" }>
@@ -8,27 +35,11 @@ export type DockerSandboxNetwork =
   | Readonly<{ mode: "none" }>
   | Readonly<{ mode: "bridge"; ports?: readonly number[] }>;
 
-export type DockerSandboxState =
-  | "running"
-  | "stopping"
-  | "stopped"
-  | "destroying"
-  | "destroyed"
-  | "error";
+export type DockerSandboxState = SandboxState;
 
-export type DockerSandboxResources = Readonly<{
-  memoryMb?: number;
-  cpus?: number;
-  pidsLimit?: number;
-  sharedMemoryMb?: number;
-}>;
+export type DockerSandboxResources = SandboxResources;
 
-export type DockerSandboxRuntimeLimits = Readonly<{
-  commandTimeoutMs?: number;
-  maxOutputBytes?: number;
-  maxFileBytes?: number;
-  maxProcesses?: number;
-}>;
+export type DockerSandboxRuntimeLimits = SandboxRuntimeLimits;
 
 export type DockerSandboxSecurity = Readonly<{
   readonlyRootfs?: boolean;
@@ -77,158 +88,46 @@ export type PullDockerImageOptions = Readonly<{
   abortSignal?: AbortSignal;
 }>;
 
-export type DockerSandboxExecOptions = Readonly<{
-  command: string;
-  args?: readonly string[];
-  cwd?: string;
-  env?: Readonly<Record<string, string>>;
-  timeoutMs?: number;
-  input?: string | Uint8Array;
-  abortSignal?: AbortSignal;
-}>;
+export type DockerSandboxExecOptions = SandboxExecOptions;
 
-type DockerSandboxExecResultBase = Readonly<{
-  stdout: Uint8Array;
-  stderr: Uint8Array;
-  durationMs: number;
-  stdoutTruncated: boolean;
-  stderrTruncated: boolean;
-}>;
+export type DockerSandboxExecResult = SandboxExecResult;
 
-export type DockerSandboxExecResult =
-  | (DockerSandboxExecResultBase & Readonly<{ status: "exited"; exitCode: number }>)
-  | (DockerSandboxExecResultBase & Readonly<{ status: "timed_out" }>);
+export type DockerSandboxExecStreamEvent = SandboxExecStreamEvent;
 
-export type DockerSandboxExecStreamEvent =
-  | Readonly<{ type: "stdout"; data: Uint8Array }>
-  | Readonly<{ type: "stderr"; data: Uint8Array }>
-  | Readonly<{ type: "result"; result: DockerSandboxExecResult }>;
+export type DockerSandboxReadFileOptions = SandboxReadFileOptions;
 
-export type DockerSandboxReadFileOptions = Readonly<{
-  path: string;
-  abortSignal?: AbortSignal;
-}>;
+export type DockerSandboxReadTextFilePageOptions = SandboxReadTextFilePageOptions;
 
-export type DockerSandboxReadTextFilePageOptions = DockerSandboxReadFileOptions &
-  Readonly<{
-    startLine?: number;
-    lineCount?: number;
-    maxBytes?: number;
-  }>;
+export type DockerSandboxTextFilePage = SandboxTextFilePage;
 
-export type DockerSandboxTextFilePage = Readonly<{
-  content: string;
-  startLine: number;
-  endLine: number | null;
-  nextStartLine: number | null;
-  truncated: boolean;
-  truncatedBy: "lines" | "bytes" | null;
-}>;
+export type DockerSandboxWriteFileOptions = SandboxWriteFileOptions;
 
-export type DockerSandboxWriteFileOptions = Readonly<{
-  path: string;
-  data: Uint8Array;
-  abortSignal?: AbortSignal;
-}>;
+export type DockerSandboxWriteTextFileOptions = SandboxWriteTextFileOptions;
 
-export type DockerSandboxWriteTextFileOptions = Readonly<{
-  path: string;
-  text: string;
-  abortSignal?: AbortSignal;
-}>;
+export type DockerSandboxListFilesOptions = SandboxListFilesOptions;
 
-export type DockerSandboxListFilesOptions = Readonly<{
-  path?: string;
-  abortSignal?: AbortSignal;
-}>;
+export type DockerSandboxFileEntry = SandboxFileEntry;
 
-export type DockerSandboxFileEntry = Readonly<{
-  path: string;
-  type: DockerSandboxFileType;
-  size?: number;
-}>;
+export type DockerSandboxPublishedPort = SandboxPublishedPort;
 
-export type DockerSandboxPublishedPort = Readonly<{
-  containerPort: number;
-  host: "127.0.0.1";
-  hostPort: number;
-  protocol: "tcp";
-}>;
+export type DockerSandboxWaitForPortOptions = SandboxWaitForPortOptions;
 
-export type DockerSandboxWaitForPortOptions = Readonly<{
-  containerPort: number;
-  timeoutMs?: number;
-  intervalMs?: number;
-  abortSignal?: AbortSignal;
-}>;
+export type DockerSandboxProcessStartOptions = SandboxProcessStartOptions;
 
-export type DockerSandboxProcessStartOptions = Readonly<{
-  command: string;
-  args?: readonly string[];
-  cwd?: string;
-  env?: Readonly<Record<string, string>>;
-  abortSignal?: AbortSignal;
-}>;
+export type DockerSandboxProcessStatus = SandboxProcessStatus;
 
-export type DockerSandboxProcessStatus = "running" | "exited" | "stopped";
+export type DockerSandboxProcessInfo = SandboxProcessInfo;
 
-export type DockerSandboxProcessInfo = Readonly<{
-  id: string;
-  command: string;
-  args: readonly string[];
-  cwd?: string;
-  status: DockerSandboxProcessStatus;
-  exitCode?: number;
-  startedAt: string;
-  endedAt?: string;
-}>;
+export type DockerSandboxListProcessesOptions = SandboxListProcessesOptions;
 
-export type DockerSandboxListProcessesOptions = Readonly<{
-  abortSignal?: AbortSignal;
-}>;
+export type DockerSandboxReadProcessLogsOptions = SandboxReadProcessLogsOptions;
 
-export type DockerSandboxReadProcessLogsOptions = Readonly<{
-  processId: string;
-  tailBytes?: number;
-  abortSignal?: AbortSignal;
-}>;
+export type DockerSandboxProcessLogs = SandboxProcessLogs;
 
-export type DockerSandboxProcessLogs = Readonly<{
-  stdout: Uint8Array;
-  stderr: Uint8Array;
-  stdoutTruncated: boolean;
-  stderrTruncated: boolean;
-}>;
+export type DockerSandboxStopProcessOptions = SandboxStopProcessOptions;
 
-export type DockerSandboxStopProcessOptions = Readonly<{
-  processId: string;
-  gracePeriodMs?: number;
-  abortSignal?: AbortSignal;
-}>;
-
-export interface DockerSandboxRuntime {
-  readonly id: string;
+export interface DockerSandboxRuntime extends SandboxRuntime {
   readonly provider: "docker";
-  readonly workdir: string;
-  readonly publishedPorts: readonly DockerSandboxPublishedPort[];
-
-  exec(options: DockerSandboxExecOptions): Promise<DockerSandboxExecResult>;
-  execStream(options: DockerSandboxExecOptions): AsyncIterable<DockerSandboxExecStreamEvent>;
-  readFile(options: DockerSandboxReadFileOptions): Promise<Uint8Array>;
-  readTextFile(options: DockerSandboxReadFileOptions): Promise<string>;
-  readTextFilePage(
-    options: DockerSandboxReadTextFilePageOptions,
-  ): Promise<DockerSandboxTextFilePage>;
-  writeFile(options: DockerSandboxWriteFileOptions): Promise<void>;
-  writeTextFile(options: DockerSandboxWriteTextFileOptions): Promise<void>;
-  listFiles(options?: DockerSandboxListFilesOptions): Promise<readonly DockerSandboxFileEntry[]>;
-  startProcess(options: DockerSandboxProcessStartOptions): Promise<DockerSandboxProcessInfo>;
-  listProcesses(
-    options?: DockerSandboxListProcessesOptions,
-  ): Promise<readonly DockerSandboxProcessInfo[]>;
-  readProcessLogs(options: DockerSandboxReadProcessLogsOptions): Promise<DockerSandboxProcessLogs>;
-  stopProcess(options: DockerSandboxStopProcessOptions): Promise<DockerSandboxProcessInfo>;
-  waitForPort(options: DockerSandboxWaitForPortOptions): Promise<DockerSandboxPublishedPort>;
 }
 
 export type DockerSandboxInspectionOptions = Readonly<{

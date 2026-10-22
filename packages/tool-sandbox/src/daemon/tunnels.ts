@@ -127,7 +127,11 @@ export class ConnectionTunnels {
     entry.channel = channel;
 
     let failure: string | undefined;
+    let serviceHungUp = false;
     socket.setNoDelay(true);
+    socket.on("end", () => {
+      serviceHungUp = true;
+    });
     socket.on("data", (chunk) => channel.push(chunk));
     socket.on("error", (error) => {
       failure = error.message;
@@ -135,8 +139,12 @@ export class ConnectionTunnels {
     socket.once("close", () => {
       if (this.entries.get(tunnelId) !== entry) return; // Closed from our side; already reported.
       this.entries.delete(tunnelId);
+      // A write that fails after the service said goodbye (EPIPE) is the service closing, not a
+      // fault in the tunnel.
       channel.finish(
-        failure === undefined ? { reason: "remote" } : { reason: "error", message: failure },
+        failure === undefined || serviceHungUp
+          ? { reason: "remote" }
+          : { reason: "error", message: failure },
       );
     });
     this.deps.send({ type: "tunnel.opened", tunnelId });
@@ -212,16 +220,17 @@ async function connectLoopback(
   timeoutMs: number,
 ): Promise<net.Socket> {
   const candidates = host === undefined ? tunnelHosts : [host];
-  let lastError: Error | undefined;
+  // Report the first failure: that is 127.0.0.1, the address people mean, not the ::1 fallback.
+  let firstError: Error | undefined;
   for (const candidate of candidates) {
     try {
       return await connectOnce(candidate, port, timeoutMs);
     } catch (error) {
-      lastError = error instanceof Error ? error : new Error(String(error));
+      firstError ??= error instanceof Error ? error : new Error(String(error));
     }
   }
   throw new DockerSandboxError(
-    `Nothing accepted a connection on port ${port}: ${lastError?.message ?? "unknown error"}`,
+    `Nothing accepted a connection on port ${port}: ${firstError?.message ?? "unknown error"}`,
     "port",
   );
 }

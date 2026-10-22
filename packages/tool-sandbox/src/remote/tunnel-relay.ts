@@ -69,7 +69,8 @@ export function relayTunnel(
         const target = await opened;
         if (target !== undefined && !closed) await target.write(bytes);
       } catch {
-        closeSocket(1011, "tunnel closed");
+        // The tunnel ended while this frame was in flight. Its exit closes the socket, with the
+        // right code for why, so closing here too would only race it.
       } finally {
         queued -= bytes.byteLength;
         if (queued <= maxQueuedBytes / 2) ws.resume();

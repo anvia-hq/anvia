@@ -111,6 +111,16 @@ describe("tunnel", () => {
     expect(await handle.exit).toMatchObject({ reason: "disconnected" });
   });
 
+  it("names the 127.0.0.1 failure, not the ::1 fallback's, when nothing listens", async () => {
+    const { port, server } = await listen(echo);
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    servers.splice(servers.indexOf(server), 1);
+    const h = await harness();
+    await expect(h.hub.tunnel(sandboxId).open(port)).rejects.toMatchObject({
+      message: expect.stringContaining("127.0.0.1"),
+    });
+  });
+
   it("refuses a port nothing listens on, with a typed error", async () => {
     const { port, server } = await listen(echo);
     await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -488,6 +498,44 @@ describe("browser tunnel relay", () => {
     await second.refused;
     await eventually(() => second.state.closed !== undefined);
     expect(second.state.closed?.reason).toMatch(/^unsupported:/);
+  });
+
+  it("pauses a browser that sends faster than the service reads", async () => {
+    let received = 0;
+    let serviceSocket: net.Socket | undefined;
+    const { port } = await listen((socket) => {
+      serviceSocket = socket;
+      socket.pause();
+      socket.on("data", (chunk) => (received += chunk.byteLength));
+    });
+    const { url } = await relay({ port });
+    const viewer = browser(`${url}?ticket=ok`);
+    await viewer.refused;
+
+    const frame = Buffer.alloc(128 * 1024, 9);
+    const frames = 96; // 12 MiB, far more than the hub should hold for a service that is not reading.
+    for (let index = 0; index < frames; index += 1) viewer.socket.send(frame);
+    await sleep(1_000);
+
+    // The hub stopped reading from the browser, so the browser's own send queue is still full
+    // and the service has seen nothing. Reading it all into memory would drain the queue.
+    expect(received).toBe(0);
+    expect(viewer.socket.bufferedAmount).toBeGreaterThan(2 * 1024 * 1024);
+
+    serviceSocket?.resume();
+    await eventually(() => received === frame.byteLength * frames, 20_000);
+    expect(viewer.socket.bufferedAmount).toBe(0);
+    viewer.socket.close();
+  }, 40_000);
+
+  it("closes with the normal code when the service hangs up while the browser is still sending", async () => {
+    const { port } = await listen((socket) => socket.end("done"));
+    const { url } = await relay({ port });
+    const viewer = browser(`${url}?ticket=ok`);
+    await viewer.refused;
+    for (let index = 0; index < 20; index += 1) viewer.socket.send(Buffer.alloc(1024));
+    await eventually(() => viewer.state.closed !== undefined);
+    expect(viewer.state.closed?.code).toBe(1000);
   });
 
   it("closes a socket that sends text instead of bytes", async () => {

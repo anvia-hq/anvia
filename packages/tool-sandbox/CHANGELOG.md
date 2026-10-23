@@ -1,5 +1,118 @@
 # @anvia/sandbox
 
+## 1.3.0
+
+### Minor Changes
+
+- ba27f84: Add a provider-neutral `SandboxRuntime` interface and `createSandboxTools`. `DockerSandboxRuntime`
+  now extends `SandboxRuntime`, and `createDockerSandboxTools` wraps `createSandboxTools` with
+  identical tool names, schemas, policies, and outputs. Neutral `Sandbox*` option and policy types
+  are exported; the `DockerSandbox*` names remain as aliases.
+- ba27f84: Add a remote sandbox runtime. `RemoteSandboxHub` (`@anvia/sandbox/remote`) accepts outbound
+  WebSocket connections from `anvia-sandbox-daemon` (or the embeddable `SandboxDaemon` from
+  `@anvia/sandbox/daemon`), authorizes them with a caller-supplied `authorize(token)`, and returns a
+  `SandboxRuntime` per sandbox through `hub.runtime(id)`. The daemon owns process state and logs, so a
+  control-plane restart only needs to reconnect; calls wait up to `connectTimeoutMs` and then fail
+  with the new `sandbox_unavailable` error code. `hub.forget(id)` releases the hub's per-sandbox
+  records when a sandbox is destroyed.
+
+  Mutating runtime methods (`exec`, `writeFile`, `writeTextFile`, `startProcess`, `stopProcess`)
+  accept an optional `operationId`, which the daemon executes once through a bounded on-disk table.
+  `createSandboxTools` forwards `ToolCallContext.operationId`, so those tools can be marked
+  `idempotent` in `@anvia/durable`. `SandboxRuntime.waitForPort` now returns a `SandboxPortStatus`
+  whose `host` and `hostPort` are optional (Docker still returns both), and the `wait_for_port` tool's
+  `host` and `hostPort` output fields are optional to match. The daemon runs on POSIX hosts and adds
+  `ws` as a dependency.
+
+- df24baa: Tunnel bytes, such as a desktop's VNC stream, now travel between the daemon and the hub as binary
+  WebSocket messages instead of base64 inside JSON, once both sides list the new `binary-data`
+  capability in `hello` and `welcome`. A peer without it keeps using `tunnel.data` with base64, so
+  mixed versions work and `PROTOCOL_VERSION` does not change. Acknowledgements, open and close, and all
+  other frames stay JSON, terminal output is unchanged, and the browser relays forward the same bytes
+  through the same RFB filter. `binaryData: false` on `RemoteSandboxHub` or `SandboxDaemon` switches it
+  off for a proxy that mishandles binary messages.
+- 6af11bf: Add `createDesktopTools({ sandbox })` for agents to see and drive a remote sandbox desktop:
+  `desktop_screenshot`, `desktop_click`, `desktop_mouse_move`, `desktop_drag`, `desktop_scroll`,
+  `desktop_type`, `desktop_key`, `desktop_cursor_position` and `desktop_wait`. Arguments follow
+  Claude's computer-use tool (`coordinate`, `start_coordinate`, `text`, `scroll_direction`,
+  `scroll_amount`), and coordinates are pixels of the screenshot the model was shown, which is scaled
+  to fit Claude's image limits and translated back to display pixels with out-of-range points refused.
+
+  `desktopToolRecovery` marks screenshots, the cursor position and waiting `safe`, and every input
+  `idempotent`, since the run's `operationId` reaches the daemon. Inputs fail with `desktop_locked`
+  while a person has taken control; looking never does.
+
+  Input tools wait `settleMs` (300 ms by default) after acting, so the application can react before
+  the next input arrives; without it, keystrokes sent right after a shortcut are lost by programs
+  that are still focusing a field.
+
+- b18f13e: The desktop now runs on TigerVNC's `Xvnc` when it is installed: the display and the VNC server in one
+  process, told about changes instead of polling for them as x11vnc does, which gives a viewer lower
+  latency and smoother updates (and keeps a continuously changing screen from starving the VNC
+  server). Images that only have `Xvfb` and `x11vnc` keep working: the daemon falls back to that pair.
+  `desktop: { backend: "auto" | "xvnc" | "xvfb" }` and `desktop.binaries.{ xvnc, vncconfig }` choose or
+  locate them, and naming `xvfb` or `x11vnc` in `binaries` keeps the pair. On Xvnc the display starts
+  at the configured size and grows up to `maxResolution`, a viewer cannot resize it, and the daemon
+  runs `vncconfig -nowin` (when installed) so the clipboard syncs. The reference image installs
+  `tigervnc-standalone-server` instead of `xvfb x11vnc`.
+- 0434ea6: Add a desktop capability to remote sandboxes. `hub.desktop(sandboxId)` returns a `SandboxDesktop`
+  with `screenshot` (optionally scaled), `act` (move, click, drag, scroll, type, key), `cursorPosition`,
+  `resize`, `status`, and a control lock: `takeover` pauses the agent's inputs with a typed
+  `desktop_locked` error until `release` or the lease runs out, while watching and screenshots are
+  never blocked.
+
+  The daemon runs an X server with a VNC server (loopback only, no password) and a window manager itself: lazily on
+  first use, restarting what crashes, and advertising `desktop` only when the programs are installed.
+  The window manager defaults to `openbox-session` (openbox, which also runs `~/.config/openbox/autostart`), else `openbox`. A reference Debian image with a themed desktop and dock, Chromium and tmux is in `images/desktop/`. Viewers reach VNC through
+  a tunnel; `hub.handleDesktopUpgrade` and `authorizeDesktop` relay a browser's noVNC connection,
+  filtering the RFB stream so read-only viewers, and viewers who are not the current holder, cannot
+  send input, and offering a JSON control channel for taking over and releasing.
+
+  `SandboxDaemon` gains `desktop: false | { resolution, maxResolution, display, vncPort, windowManager,
+lock, ... }`. The new `desktop_locked` error code is added.
+
+- b18f13e: Tunnels can ask for the `interactive` flow profile, `hub.tunnel(id).open(port, { profile:
+"interactive" })`, for streams a person is watching, like a desktop's VNC. The terminal-sized
+  defaults (10 ms batching, 16 KiB frames, a 256 KiB window) allow about 2.6 MB/s over a 100 ms link;
+  the profile sends frames at once, 64 KiB at a time, with a 2 MiB window and a 4 MiB socket buffer,
+  and sizes the hub's buffer, write window (1 MiB) and ack step (128 KiB) to match. `desktop.openViewer()`
+  and the browser desktop relay use it. The profile is an optional string in `tunnel.open`, which a daemon that
+  applied it echoes in `tunnel.opened`, so there is no protocol bump: a daemon without it uses its
+  defaults and the hub does too until it is confirmed. `SandboxDaemon`'s
+  `tunnel: { flowByPort }` sets limits for one port and wins over the profile.
+- 94b3a88: Add interactive terminals to remote sandboxes. `hub.terminal(sandboxId)` returns a
+  `SandboxTerminal` with `open`, `list` and `kill`; `open` gives a typed handle with `write`,
+  `resize`, `close`, an ordered `output` iterable and an `exit` promise. The daemon runs each session
+  in tmux (3.2+), where it persists across hub disconnects and daemon restarts, or falls back to a
+  plain shell with a bounded scrollback ring. PTYs come from `node-pty`, an optional peer dependency
+  the daemon image installs, so Docker-only users install no native code.
+
+  Terminals are negotiated through an additive `capabilities` list in `hello` and `welcome` rather
+  than a protocol bump, so mixed hub and daemon versions fail with the new `unsupported` error code
+  instead of a protocol error. Output is batched, numbered and acknowledged per terminal, so a flood
+  cannot delay `exec` calls or heartbeats and a stalled viewer cannot grow memory.
+
+  `RemoteSandboxHub` also gains `handleTerminalUpgrade`, `authorizeTerminal`, `allowedOrigins` and
+  `terminalTicket` for a browser relay that checks a short-lived ticket and the request Origin and
+  enforces read-only viewers.
+
+- 485a586: Add port tunnels to remote sandboxes. `hub.tunnel(sandboxId).open(port)` returns a duplex handle
+  (`write`, an ordered `output` iterable, `close`, and an `exit` promise) that carries raw TCP to a
+  service on the sandbox's own loopback. Only `127.0.0.1` and `::1` are reachable, enforced by the
+  hub, the frame schema and the daemon, and `SandboxDaemon` accepts `tunnel: { allowedPorts,
+maxTunnels }` or `tunnel: false`. Tunnels are negotiated through the `tunnel` capability, so mixed
+  versions fail with `unsupported`.
+
+  Flow control is shared with terminals (one stream channel on the daemon, one inbound stream on the
+  hub) and runs in both directions, so a slow or stalled reader cannot grow memory and tunnel traffic
+  cannot delay `exec` calls, terminals or heartbeats.
+
+  `RemoteSandboxHub` also gains `handleTunnelUpgrade`, `authorizeTunnel`, `maxTunnelBufferBytes` and a
+  `tunnelPath` listen option for a browser relay with the same ticket and Origin rules as the terminal
+  relay. The shared helpers are exported as `relayTicket` and `originAllowed`; `terminalTicket` remains
+  as an alias. An invalid `pty.open` or `tunnel.open` frame now fails the caller immediately instead of
+  leaving it waiting.
+
 ## 1.2.2
 
 ### Patch Changes

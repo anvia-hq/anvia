@@ -171,7 +171,11 @@ export class ConnectionTunnels {
           : { reason: "error", message: failure },
       );
     });
-    this.deps.send({ type: "tunnel.opened", tunnelId });
+    this.deps.send(
+      profile === undefined || frame.profile === undefined
+        ? { type: "tunnel.opened", tunnelId }
+        : { type: "tunnel.opened", tunnelId, profile: frame.profile },
+    );
   }
 
   /** Bytes from the hub, written to the service. Acknowledged once the socket took them. */

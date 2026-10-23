@@ -482,6 +482,72 @@ describe("tunnel", () => {
       expect(held).toBeGreaterThan(free * 2);
     }, 60_000);
 
+    describe("the hub's write window", () => {
+      /**
+       * A daemon that opens tunnels and never acknowledges anything, so what the hub sent before it
+       * had to wait is the size of its window. `confirms` is whether it echoes the profile, which
+       * is what a daemon that applies profiles does.
+       */
+      async function stalledDaemon(confirms: boolean) {
+        const hub = new RemoteSandboxHub({
+          authorize: (candidate) => (candidate === token ? { sandboxId } : null),
+          connectTimeoutMs: 5_000,
+        });
+        hubs.push(hub);
+        const { port } = await hub.listen({ host: "127.0.0.1" });
+        const socket = new WebSocket(`ws://127.0.0.1:${port}`, {
+          headers: { authorization: `Bearer ${token}` },
+        });
+        sockets.push({ destroy: () => socket.terminate() } as net.Socket);
+        let received = 0;
+        socket.on("message", (data) => {
+          const frame = JSON.parse(data.toString()) as Record<string, unknown>;
+          if (frame.type === "tunnel.open") {
+            const opened: Record<string, unknown> = {
+              type: "tunnel.opened",
+              tunnelId: frame.tunnelId,
+            };
+            if (confirms && typeof frame.profile === "string") opened.profile = frame.profile;
+            socket.send(JSON.stringify(opened));
+          } else if (frame.type === "tunnel.data") {
+            received += Buffer.from(frame.data as string, "base64").byteLength;
+          }
+        });
+        await new Promise((resolve) => socket.once("open", resolve));
+        socket.send(
+          JSON.stringify({
+            type: "hello",
+            protocolVersion: 1,
+            daemonVersion: "test",
+            workdir: "/w",
+            capabilities: ["tunnel"],
+          }),
+        );
+        await eventually(() => hub.isConnected(sandboxId));
+        return { hub, sent: () => received };
+      }
+
+      it("stays at the default window until the daemon confirms the profile", async () => {
+        // An older daemon ignores the profile and cuts a tunnel off a little over 1 MiB unwritten, so
+        // the hub must not send it a 1 MiB window.
+        const { hub, sent } = await stalledDaemon(false);
+        const handle = await hub.tunnel(sandboxId).open(1, { profile: "interactive" });
+        void handle.write(new Uint8Array(2 * 1024 * 1024)).catch(() => undefined);
+        await sleep(400);
+        expect(sent()).toBeGreaterThan(0);
+        expect(sent()).toBeLessThanOrEqual(256 * 1024 + 32 * 1024);
+      });
+
+      it("uses the profile's window once the daemon says it applied it", async () => {
+        const { hub, sent } = await stalledDaemon(true);
+        const handle = await hub.tunnel(sandboxId).open(1, { profile: "interactive" });
+        void handle.write(new Uint8Array(3 * 1024 * 1024)).catch(() => undefined);
+        await sleep(400);
+        expect(sent()).toBeGreaterThan(900 * 1024);
+        expect(sent()).toBeLessThanOrEqual(1024 * 1024 + 32 * 1024);
+      });
+    });
+
     it("ignores a profile it does not know, as an older daemon would", async () => {
       const { port } = await listen(echo);
       const h = await harness();

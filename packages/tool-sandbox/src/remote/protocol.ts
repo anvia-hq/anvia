@@ -400,7 +400,15 @@ export const daemonFrameSchema = z.union([
     workdir: z.string(),
     capabilities,
   }),
-  z.object({ type: z.literal("tunnel.opened"), tunnelId }),
+  z.object({
+    type: z.literal("tunnel.opened"),
+    tunnelId,
+    /**
+     * The flow profile the daemon applied, echoed from `tunnel.open`. A daemon that predates
+     * profiles, or does not know the name, leaves it out, and the hub keeps its defaults.
+     */
+    profile: z.string().max(32).optional(),
+  }),
   z.object({
     type: z.literal("tunnel.data"),
     tunnelId,

@@ -91,8 +91,17 @@ export class RemoteSandboxTunnel implements SandboxTunnel {
     }
 
     const tunnelId = randomUUID();
-    const profile = options.profile === undefined ? undefined : flowProfiles[options.profile];
-    const handle = new RemoteTunnelHandle(tunnelId, port, connection, this.maxBufferBytes, profile);
+    const requested =
+      options.profile === undefined || flowProfiles[options.profile] === undefined
+        ? undefined
+        : { name: options.profile, profile: flowProfiles[options.profile] };
+    const handle = new RemoteTunnelHandle(
+      tunnelId,
+      port,
+      connection,
+      this.maxBufferBytes,
+      requested,
+    );
     connection.registerTunnel(tunnelId, handle.endpoint);
     try {
       connection.sendFrame({
@@ -124,7 +133,7 @@ class RemoteTunnelHandle implements TunnelHandle {
   readonly exit: Promise<TunnelExit>;
   readonly endpoint: TunnelEndpoint;
   private readonly stream: InboundStream<TunnelExit>;
-  private readonly writeWindowBytes: number;
+  private writeWindowBytes = defaultWriteWindowBytes;
   private sent = 0;
   private writeSeq = 0;
   private acknowledged = 0;
@@ -136,9 +145,9 @@ class RemoteTunnelHandle implements TunnelHandle {
     readonly port: number,
     private readonly connection: HubConnection,
     maxBufferBytes: number,
-    profile: FlowProfile | undefined,
+    requested: { name: string; profile: FlowProfile } | undefined,
   ) {
-    this.writeWindowBytes = profile?.writeWindowBytes ?? defaultWriteWindowBytes;
+    const profile = requested?.profile;
     this.stream = new InboundStream<TunnelExit>({
       // The daemon may have a whole window in flight, plus the frame that crossed the mark, so the
       // queue has to hold that much for a reader that is momentarily behind.
@@ -146,7 +155,6 @@ class RemoteTunnelHandle implements TunnelHandle {
         profile === undefined
           ? maxBufferBytes
           : Math.max(maxBufferBytes, profile.highWaterBytes + profile.frameBytes),
-      ackStepBytes: profile?.ackStepBytes,
       label: "Tunnel",
       overflowEnd: { reason: "error", message: "The tunnel consumer is too slow." },
       onConsumed: (bytes) => this.trySend({ type: "tunnel.ack", tunnelId, bytes }),
@@ -161,7 +169,17 @@ class RemoteTunnelHandle implements TunnelHandle {
     this.output = this.stream.chunks;
     this.exit = this.stream.ended;
     this.endpoint = {
-      opened: () => this.settleOpen?.resolve(),
+      opened: (confirmed) => {
+        // The write window and the ack step are the daemon's to agree to: one that predates the
+        // profile ignores it and cuts a tunnel off at the default window, so the hub keeps the
+        // default until the daemon says it applied the profile. (The inbound buffer was sized for
+        // the profile at the start, which is harmless for a daemon that does not use it.)
+        if (requested !== undefined && confirmed === requested.name) {
+          this.writeWindowBytes = requested.profile.writeWindowBytes;
+          this.stream.setAckStepBytes(requested.profile.ackStepBytes);
+        }
+        this.settleOpen?.resolve();
+      },
       failed: (error) => this.settleOpen?.reject(error),
       output: (data) => this.stream.push(data),
       acked: (total) => {

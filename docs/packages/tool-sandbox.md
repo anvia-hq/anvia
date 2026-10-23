@@ -497,7 +497,10 @@ a 100 ms link is about 2.6 MB/s however fast the service is. For a stream a pers
 pass `profile: "interactive"` to `open`: no batching, 64 KiB frames, a 2 MiB window and a 4 MiB
 socket buffer (about 20 MB/s at 100 ms), with a hub-side buffer, write window (1 MiB) and ack step
 (128 KiB) to match. `desktop.openViewer()` asks for it. The profile travels as an optional string in
-`tunnel.open`, so a daemon that predates it, or does not know the name, simply uses its defaults.
+`tunnel.open`, and a daemon that applied it echoes the name in `tunnel.opened`. One that predates
+the profile, or does not know the name, uses its defaults, and the hub keeps its default write
+window and ack step until the daemon confirms, so mixed versions never exceed what the daemon
+allows.
 On the daemon, `tunnel: { flowByPort: { 5900: { highWaterBytes, frameBytes, batchMs,
 socketBufferBytes } } }` sets limits for one port, and wins over the requested profile, which wins
 over `tunnel.flow`.

@@ -38,15 +38,22 @@ export class InboundStream<End> {
   private queued = 0;
   private consumed = 0;
   private acknowledged = 0;
+  private ackStepBytes: number;
   private finished: End | undefined;
   private failure: Error | undefined;
   private wake: (() => void) | undefined;
   private resolveEnded!: (end: End) => void;
 
   constructor(private readonly options: InboundStreamOptions<End>) {
+    this.ackStepBytes = options.ackStepBytes ?? 0;
     this.ended = new Promise((resolve) => {
       this.resolveEnded = resolve;
     });
+  }
+
+  /** Change the ack step, for a stream whose sender has just confirmed a bigger window. */
+  setAckStepBytes(bytes: number): void {
+    this.ackStepBytes = bytes;
   }
 
   get endedWith(): End | undefined {
@@ -101,7 +108,7 @@ export class InboundStream<End> {
   /** Report consumption once the reader has asked for more, i.e. after it handled the last chunk. */
   private acknowledge(drained: boolean): void {
     if (this.consumed === this.acknowledged || this.finished !== undefined) return;
-    if (!drained && this.consumed - this.acknowledged < (this.options.ackStepBytes ?? 0)) return;
+    if (!drained && this.consumed - this.acknowledged < this.ackStepBytes) return;
     this.acknowledged = this.consumed;
     this.options.onConsumed(this.consumed);
   }

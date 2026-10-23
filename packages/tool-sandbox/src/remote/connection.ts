@@ -43,7 +43,8 @@ export interface TunnelEndpoint extends StreamEndpoint<TunnelExit> {
 
 /** Receives one stream's frames (a terminal's or a tunnel's). Registered by whoever opened it. */
 export interface StreamEndpoint<Exit> {
-  opened(): void;
+  /** `profile` is the flow profile a tunnel's daemon says it applied. */
+  opened(profile?: string): void;
   /** The open was refused. */
   failed(error: Error): void;
   output(data: Uint8Array): void;
@@ -255,7 +256,7 @@ export class HubConnection {
         return;
       }
       case "tunnel.opened":
-        this.tunnels.get(frame.tunnelId)?.endpoint.opened();
+        this.tunnels.get(frame.tunnelId)?.endpoint.opened(frame.profile);
         return;
       case "tunnel.data":
         this.onTunnelBytes(frame.tunnelId, frame.seq, decodeBytes(frame.data), false);

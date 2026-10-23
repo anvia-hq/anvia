@@ -3,9 +3,10 @@ import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import net from "node:net";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import { findExecutable } from "../src/daemon/desktop/exec";
+import type { SandboxDaemonDesktopOptions } from "../src/daemon/desktop/options";
 import { DesktopService } from "../src/daemon/desktop/service";
 import { createDesktopTools, viewOf } from "../src/desktop-tools";
 import { relayTicket, type SandboxDesktop } from "../src/remote/index";
@@ -19,11 +20,31 @@ import {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const required = ["Xvfb", "x11vnc", "xdotool", "xrandr", "import"];
-const present = await Promise.all(
-  [...required, "xev"].map((name) => findExecutable(name, process.env.PATH)),
+// The desktop runs on either backend, so its tests run once on each that this machine has.
+const backends = [
+  { name: "xvnc", display: "Xvnc", vnc: "Xvnc", needs: ["Xvnc"] },
+  { name: "xvfb", display: "Xvfb", vnc: "x11vnc", needs: ["Xvfb", "x11vnc"] },
+] as const;
+type Backend = (typeof backends)[number];
+let active: Backend = backends[0];
+
+const toolsPresent = await Promise.all(
+  ["xdotool", "xrandr", "import", "xev"].map((name) => findExecutable(name, process.env.PATH)),
 );
-const hasDesktop = process.platform !== "win32" && present.every((path) => path !== undefined);
+const backendPresent = new Map<string, boolean>();
+for (const backend of backends) {
+  const found = await Promise.all(
+    backend.needs.map((name) => findExecutable(name, process.env.PATH)),
+  );
+  backendPresent.set(
+    backend.name,
+    process.platform !== "win32" &&
+      toolsPresent.every((path) => path !== undefined) &&
+      found.every((path) => path !== undefined),
+  );
+}
+const hasBackend = (backend: Backend) => backendPresent.get(backend.name) === true;
+const hasVncconfig = (await findExecutable("vncconfig", process.env.PATH)) !== undefined;
 
 const harnesses: RemoteHarness[] = [];
 afterEach(async () => {
@@ -48,6 +69,7 @@ async function start(
     ...options,
     daemon: {
       desktop: {
+        backend: active.name,
         display: `:${80 + (displayCounter += 1)}`,
         vncPort: await freePort(),
         restart: { initialDelayMs: 50, maxDelayMs: 200 },
@@ -82,346 +104,387 @@ async function startXev(h: RemoteHarness & { desktop: SandboxDesktop }) {
   return { log };
 }
 
-describe.skipIf(!hasDesktop)("desktop", () => {
-  it("starts on first use, not before", async () => {
-    const h = await start();
-    expect(await h.desktop.status()).toMatchObject({ state: "stopped", width: 1280, height: 800 });
-    expect((await h.runtime.exec({ command: "pgrep", args: ["-x", "Xvfb"] })).status).toBe(
-      "exited",
-    );
-    const before = await h.runtime.exec({ command: "pgrep", args: ["-x", "Xvfb"] });
-    expect(before).toMatchObject({ exitCode: 1 });
-
-    const status = await h.desktop.start();
-    expect(status).toMatchObject({ state: "running", restarts: 0 });
-    expect(await h.runtime.exec({ command: "pgrep", args: ["-x", "Xvfb"] })).toMatchObject({
-      exitCode: 0,
-    });
-    expect(await h.runtime.exec({ command: "pgrep", args: ["-x", "x11vnc"] })).toMatchObject({
-      exitCode: 0,
-    });
-  }, 30_000);
-
-  it("starts when something asks for a screenshot, and shares one start between callers", async () => {
-    const h = await start();
-    const results = await Promise.all([h.desktop.screenshot(), h.desktop.screenshot()]);
-    expect(results.map((shot) => pngSize(shot.png))).toEqual([
-      { width: 1280, height: 800 },
-      { width: 1280, height: 800 },
-    ]);
-    expect((await h.desktop.status()).state).toBe("running");
-  }, 30_000);
-
-  it("takes a screenshot of the expected size, optionally scaled", async () => {
-    const h = await start({ resolution: { width: 1024, height: 768 } });
-    const full = await h.desktop.screenshot();
-    expect(pngSize(full.png)).toEqual({ width: 1024, height: 768 });
-    expect(full).toMatchObject({
-      width: 1024,
-      height: 768,
-      displayWidth: 1024,
-      displayHeight: 768,
+for (const backend of backends) {
+  describe.skipIf(!hasBackend(backend))(`desktop on ${backend.name}`, () => {
+    beforeEach(() => {
+      active = backend;
     });
 
-    const half = await h.desktop.screenshot({ scale: 0.5 });
-    expect(pngSize(half.png)).toEqual({ width: 512, height: 384 });
-    expect(half).toMatchObject({ width: 512, height: 384, displayWidth: 1024, displayHeight: 768 });
-  }, 30_000);
+    it("starts on first use, not before", async () => {
+      const h = await start();
+      expect(await h.desktop.status()).toMatchObject({
+        state: "stopped",
+        width: 1280,
+        height: 800,
+      });
+      expect(
+        (await h.runtime.exec({ command: "pgrep", args: ["-x", backend.display] })).status,
+      ).toBe("exited");
+      const before = await h.runtime.exec({ command: "pgrep", args: ["-x", backend.display] });
+      expect(before).toMatchObject({ exitCode: 1 });
 
-  it("delivers clicks, typing, keys, scrolling and drags to a window", async () => {
-    const h = await start();
-    const xev = await startXev(h);
-
-    await h.desktop.act({ type: "click", x: 200, y: 200 });
-    await eventually(async () => (await xev.log()).includes("ButtonPress"));
-    expect(await h.desktop.cursorPosition()).toEqual({ x: 200, y: 200 });
-
-    await h.desktop.act({ type: "type", text: "ab" });
-    await eventually(async () => {
-      const log = await xev.log();
-      return log.includes("keysym 0x61, a") && log.includes("keysym 0x62, b");
-    });
-
-    await h.desktop.act({ type: "key", keys: "ctrl+a" });
-    await eventually(async () => (await xev.log()).includes("keysym 0xffe3, Control_L"));
-
-    await h.desktop.act({ type: "scroll", x: 220, y: 220, direction: "down", amount: 2 });
-    await eventually(async () => (await xev.log()).includes("button 5"));
-
-    await h.desktop.act({ type: "drag", fromX: 150, fromY: 150, toX: 300, toY: 250 });
-    await eventually(async () => (await xev.log()).includes("MotionNotify"));
-
-    await h.desktop.act({ type: "click", x: 210, y: 210, button: "right", count: 2 });
-    await eventually(async () => ((await xev.log()).match(/button 3/g) ?? []).length >= 2);
-  }, 60_000);
-
-  it("rejects an input outside the display, or with half a point", async () => {
-    const h = await start();
-    await expect(h.desktop.act({ type: "mouse_move", x: 5_000, y: 10 })).rejects.toThrow(
-      RangeError,
-    );
-    await expect(h.desktop.act({ type: "click", x: 10 })).rejects.toThrow(RangeError);
-    await expect(h.desktop.act({ type: "key", keys: "ctrl+c; rm -rf /" })).rejects.toThrow();
-  }, 30_000);
-
-  it("resizes without restarting, and keeps windows open", async () => {
-    const h = await start();
-    const xev = await startXev(h);
-
-    const resized = await h.desktop.resize(1024, 768);
-    expect(resized).toMatchObject({ state: "running", width: 1024, height: 768, restarts: 0 });
-    expect(pngSize((await h.desktop.screenshot()).png)).toEqual({ width: 1024, height: 768 });
-    expect(await xev.log()).not.toContain("DestroyNotify");
-
-    // Coordinates are checked against the new size.
-    await expect(h.desktop.act({ type: "mouse_move", x: 1_200, y: 100 })).rejects.toThrow(
-      RangeError,
-    );
-    // And a larger one than the display was started with is refused.
-    await expect(h.desktop.resize(8_000, 8_000)).rejects.toThrow(RangeError);
-    await h.desktop.resize(1920, 1080);
-    expect(pngSize((await h.desktop.screenshot()).png)).toEqual({ width: 1920, height: 1080 });
-  }, 60_000);
-
-  describe("agent tools", () => {
-    const callTool = (
-      tools: ReturnType<typeof createDesktopTools>,
-      name: string,
-      args: unknown,
-      context: object = {},
-    ) => {
-      const tool = tools.find((candidate) => candidate.name === name);
-      if (tool === undefined) throw new Error(name);
-      return Promise.resolve(tool.call(args as never, context));
-    };
-
-    it("click where the model pointed in a scaled screenshot, and respect the lock", async () => {
-      // Big enough that the screenshot the model sees is scaled down.
-      const h = await start({ resolution: { width: 2560, height: 1440 } });
-      const tools = createDesktopTools({ sandbox: h.desktop });
-      const view = viewOf(2560, 1440, { maxEdge: 1568, maxPixels: 1_150_000 });
-      expect(view.scale).toBeLessThan(1);
-
-      const shot = (await callTool(tools, "desktop_screenshot", {})) as {
-        content: Array<{ type: string; text?: string; data?: { data: string } }>;
-      };
-      const meta = JSON.parse(shot.content[0]?.text ?? "{}") as { width: number; height: number };
-      expect(meta).toEqual({ width: view.imageWidth, height: view.imageHeight });
-      expect(pngSize(Buffer.from(shot.content[1]?.data?.data ?? "", "base64"))).toEqual(meta);
-
-      // A window covering the display's centre, in display pixels.
       const status = await h.desktop.start();
-      const xev = await h.runtime.startProcess({
-        command: "xev",
-        args: ["-geometry", "600x400+980+520"],
-        env: { DISPLAY: status.display },
+      expect(status).toMatchObject({ state: "running", restarts: 0 });
+      expect(
+        await h.runtime.exec({ command: "pgrep", args: ["-x", backend.display] }),
+      ).toMatchObject({
+        exitCode: 0,
       });
-      const log = async () =>
-        new TextDecoder().decode((await h.runtime.readProcessLogs({ processId: xev.id })).stdout);
-      await eventually(async () => (await log()).includes("MapNotify"), 10_000);
-      await sleep(300);
+      expect(await h.runtime.exec({ command: "pgrep", args: ["-x", backend.vnc] })).toMatchObject({
+        exitCode: 0,
+      });
+    }, 30_000);
 
-      // The centre of the screenshot is the centre of the display, inside that window.
-      await callTool(
-        tools,
-        "desktop_click",
-        { coordinate: [view.imageWidth / 2, view.imageHeight / 2] },
-        { operationId: "run/click-1" },
-      );
-      await eventually(async () => (await log()).includes("ButtonPress"));
-      const clicked = /root:\((\d+),(\d+)\)/.exec(await log());
-      expect(Math.abs(Number(clicked?.[1]) - 1280)).toBeLessThanOrEqual(2);
-      expect(Math.abs(Number(clicked?.[2]) - 720)).toBeLessThanOrEqual(2);
+    it.skipIf(backend.name !== "xvnc" || !hasVncconfig)(
+      "runs vncconfig beside Xvnc, which is what syncs the clipboard, and brings it back",
+      async () => {
+        const h = await start();
+        await h.desktop.start();
+        const running = () => h.runtime.exec({ command: "pgrep", args: ["-x", "vncconfig"] });
+        expect(await running()).toMatchObject({ exitCode: 0 });
+        await h.runtime.exec({ command: "pkill", args: ["-9", "-x", "vncconfig"] });
+        await eventually(async () => {
+          const result = await running();
+          return result.status === "exited" && result.exitCode === 0;
+        }, 15_000);
+      },
+      30_000,
+    );
 
-      // The cursor comes back in the same screenshot space.
-      expect(await callTool(tools, "desktop_cursor_position", {})).toEqual({
-        coordinate: [Math.floor(view.imageWidth / 2), Math.floor(view.imageHeight / 2)],
+    it("starts when something asks for a screenshot, and shares one start between callers", async () => {
+      const h = await start();
+      const results = await Promise.all([h.desktop.screenshot(), h.desktop.screenshot()]);
+      expect(results.map((shot) => pngSize(shot.png))).toEqual([
+        { width: 1280, height: 800 },
+        { width: 1280, height: 800 },
+      ]);
+      expect((await h.desktop.status()).state).toBe("running");
+    }, 30_000);
+
+    it("takes a screenshot of the expected size, optionally scaled", async () => {
+      const h = await start({ resolution: { width: 1024, height: 768 } });
+      const full = await h.desktop.screenshot();
+      expect(pngSize(full.png)).toEqual({ width: 1024, height: 768 });
+      expect(full).toMatchObject({
+        width: 1024,
+        height: 768,
+        displayWidth: 1024,
+        displayHeight: 768,
       });
 
-      // A point beyond the screenshot is refused before anything happens.
-      await expect(
-        callTool(tools, "desktop_click", { coordinate: [view.imageWidth, 0] }),
-      ).rejects.toThrow(/outside the/);
-
-      // While a person holds control the model's inputs fail with a typed, explanatory error.
-      await h.desktop.takeover({ holder: "alice" });
-      await expect(callTool(tools, "desktop_key", { text: "a" })).rejects.toMatchObject({
-        code: "desktop_locked",
-        message: expect.stringContaining("alice"),
+      const half = await h.desktop.screenshot({ scale: 0.5 });
+      expect(pngSize(half.png)).toEqual({ width: 512, height: 384 });
+      expect(half).toMatchObject({
+        width: 512,
+        height: 384,
+        displayWidth: 1024,
+        displayHeight: 768,
       });
-      await callTool(tools, "desktop_screenshot", {});
-      await h.desktop.release({ holder: "alice" });
-      await callTool(tools, "desktop_key", { text: "a" });
-      await eventually(async () => (await log()).includes("keysym 0x61, a"));
+    }, 30_000);
+
+    it("delivers clicks, typing, keys, scrolling and drags to a window", async () => {
+      const h = await start();
+      const xev = await startXev(h);
+
+      await h.desktop.act({ type: "click", x: 200, y: 200 });
+      await eventually(async () => (await xev.log()).includes("ButtonPress"));
+      expect(await h.desktop.cursorPosition()).toEqual({ x: 200, y: 200 });
+
+      await h.desktop.act({ type: "type", text: "ab" });
+      await eventually(async () => {
+        const log = await xev.log();
+        return log.includes("keysym 0x61, a") && log.includes("keysym 0x62, b");
+      });
+
+      await h.desktop.act({ type: "key", keys: "ctrl+a" });
+      await eventually(async () => (await xev.log()).includes("keysym 0xffe3, Control_L"));
+
+      await h.desktop.act({ type: "scroll", x: 220, y: 220, direction: "down", amount: 2 });
+      await eventually(async () => (await xev.log()).includes("button 5"));
+
+      await h.desktop.act({ type: "drag", fromX: 150, fromY: 150, toX: 300, toY: 250 });
+      await eventually(async () => (await xev.log()).includes("MotionNotify"));
+
+      await h.desktop.act({ type: "click", x: 210, y: 210, button: "right", count: 2 });
+      await eventually(async () => ((await xev.log()).match(/button 3/g) ?? []).length >= 2);
     }, 60_000);
-  });
 
-  describe("control lock", () => {
-    it("blocks the agent's inputs while a human holds control, and restores them on release", async () => {
+    it("rejects an input outside the display, or with half a point", async () => {
       const h = await start();
-      await h.desktop.takeover({ holder: "alice" });
-      await expect(h.desktop.act({ type: "mouse_move", x: 10, y: 10 })).rejects.toMatchObject({
-        code: "desktop_locked",
-      });
-      // Watching is never blocked.
-      expect(pngSize((await h.desktop.screenshot()).png)).toEqual({ width: 1280, height: 800 });
-      await h.desktop.cursorPosition();
-      expect(await h.desktop.control()).toMatchObject({ held: true, holder: "alice" });
-
-      await expect(h.desktop.takeover({ holder: "bob" })).rejects.toMatchObject({
-        code: "desktop_locked",
-      });
-      await expect(h.desktop.release({ holder: "bob" })).rejects.toMatchObject({
-        code: "desktop_locked",
-      });
-
-      await h.desktop.release({ holder: "alice" });
-      await h.desktop.act({ type: "mouse_move", x: 10, y: 10 });
-      expect(await h.desktop.cursorPosition()).toEqual({ x: 10, y: 10 });
-    }, 30_000);
-
-    it("lets an operator force control back", async () => {
-      const h = await start();
-      await h.desktop.takeover({ holder: "alice" });
-      await expect(h.desktop.release({ holder: "bob" })).rejects.toMatchObject({
-        code: "desktop_locked",
-      });
-      expect(await h.desktop.release({ holder: "bob", force: true })).toEqual({ held: false });
-      await h.desktop.act({ type: "mouse_move", x: 3, y: 3 });
-    }, 30_000);
-
-    it("rejects an invalid input without starting the desktop", async () => {
-      const h = await start();
-      await expect(h.desktop.act({ type: "mouse_move", x: 9_000, y: 1 })).rejects.toThrow(
+      await expect(h.desktop.act({ type: "mouse_move", x: 5_000, y: 10 })).rejects.toThrow(
         RangeError,
       );
-      expect((await h.desktop.status()).state).toBe("stopped");
+      await expect(h.desktop.act({ type: "click", x: 10 })).rejects.toThrow(RangeError);
+      await expect(h.desktop.act({ type: "key", keys: "ctrl+c; rm -rf /" })).rejects.toThrow();
     }, 30_000);
 
-    it("gives control back when the lease runs out", async () => {
+    it("resizes without restarting, and keeps windows open", async () => {
       const h = await start();
-      await h.desktop.takeover({ holder: "alice", leaseMs: 400 });
-      await expect(h.desktop.act({ type: "mouse_move", x: 1, y: 1 })).rejects.toMatchObject({
-        code: "desktop_locked",
-      });
-      await sleep(600);
-      await h.desktop.act({ type: "mouse_move", x: 1, y: 1 });
-    }, 30_000);
+      const xev = await startXev(h);
 
-    it("keeps the hold across a hub restart", async () => {
-      const h = await start();
-      await h.desktop.takeover({ holder: "alice" });
-      await h.hub.close();
-      await eventually(() => !h.daemon.connected);
-      const { RemoteSandboxHub } = await import("../src/remote/index");
-      const hub2 = new RemoteSandboxHub({
-        authorize: () => ({ sandboxId }),
-        connectTimeoutMs: 5_000,
-      });
-      await hub2.listen({ host: "127.0.0.1", port: h.port });
-      try {
+      const resized = await h.desktop.resize(1024, 768);
+      expect(resized).toMatchObject({ state: "running", width: 1024, height: 768, restarts: 0 });
+      expect(pngSize((await h.desktop.screenshot()).png)).toEqual({ width: 1024, height: 768 });
+      expect(await xev.log()).not.toContain("DestroyNotify");
+
+      // Coordinates are checked against the new size.
+      await expect(h.desktop.act({ type: "mouse_move", x: 1_200, y: 100 })).rejects.toThrow(
+        RangeError,
+      );
+      // And a larger one than the display was started with is refused.
+      await expect(h.desktop.resize(8_000, 8_000)).rejects.toThrow(RangeError);
+      await h.desktop.resize(1920, 1080);
+      expect(pngSize((await h.desktop.screenshot()).png)).toEqual({ width: 1920, height: 1080 });
+    }, 60_000);
+
+    describe("agent tools", () => {
+      const callTool = (
+        tools: ReturnType<typeof createDesktopTools>,
+        name: string,
+        args: unknown,
+        context: object = {},
+      ) => {
+        const tool = tools.find((candidate) => candidate.name === name);
+        if (tool === undefined) throw new Error(name);
+        return Promise.resolve(tool.call(args as never, context));
+      };
+
+      it("click where the model pointed in a scaled screenshot, and respect the lock", async () => {
+        // Big enough that the screenshot the model sees is scaled down.
+        const h = await start({ resolution: { width: 2560, height: 1440 } });
+        const tools = createDesktopTools({ sandbox: h.desktop });
+        const view = viewOf(2560, 1440, { maxEdge: 1568, maxPixels: 1_150_000 });
+        expect(view.scale).toBeLessThan(1);
+
+        const shot = (await callTool(tools, "desktop_screenshot", {})) as {
+          content: Array<{ type: string; text?: string; data?: { data: string } }>;
+        };
+        const meta = JSON.parse(shot.content[0]?.text ?? "{}") as { width: number; height: number };
+        expect(meta).toEqual({ width: view.imageWidth, height: view.imageHeight });
+        expect(pngSize(Buffer.from(shot.content[1]?.data?.data ?? "", "base64"))).toEqual(meta);
+
+        // A window covering the display's centre, in display pixels.
+        const status = await h.desktop.start();
+        const xev = await h.runtime.startProcess({
+          command: "xev",
+          args: ["-geometry", "600x400+980+520"],
+          env: { DISPLAY: status.display },
+        });
+        const log = async () =>
+          new TextDecoder().decode((await h.runtime.readProcessLogs({ processId: xev.id })).stdout);
+        await eventually(async () => (await log()).includes("MapNotify"), 10_000);
+        await sleep(300);
+
+        // The centre of the screenshot is the centre of the display, inside that window.
+        await callTool(
+          tools,
+          "desktop_click",
+          { coordinate: [view.imageWidth / 2, view.imageHeight / 2] },
+          { operationId: "run/click-1" },
+        );
+        await eventually(async () => (await log()).includes("ButtonPress"));
+        const clicked = /root:\((\d+),(\d+)\)/.exec(await log());
+        expect(Math.abs(Number(clicked?.[1]) - 1280)).toBeLessThanOrEqual(2);
+        expect(Math.abs(Number(clicked?.[2]) - 720)).toBeLessThanOrEqual(2);
+
+        // The cursor comes back in the same screenshot space.
+        expect(await callTool(tools, "desktop_cursor_position", {})).toEqual({
+          coordinate: [Math.floor(view.imageWidth / 2), Math.floor(view.imageHeight / 2)],
+        });
+
+        // A point beyond the screenshot is refused before anything happens.
         await expect(
-          hub2.desktop(sandboxId).act({ type: "mouse_move", x: 1, y: 1 }),
-        ).rejects.toMatchObject({ code: "desktop_locked" });
-      } finally {
-        await hub2.close();
+          callTool(tools, "desktop_click", { coordinate: [view.imageWidth, 0] }),
+        ).rejects.toThrow(/outside the/);
+
+        // While a person holds control the model's inputs fail with a typed, explanatory error.
+        await h.desktop.takeover({ holder: "alice" });
+        await expect(callTool(tools, "desktop_key", { text: "a" })).rejects.toMatchObject({
+          code: "desktop_locked",
+          message: expect.stringContaining("alice"),
+        });
+        await callTool(tools, "desktop_screenshot", {});
+        await h.desktop.release({ holder: "alice" });
+        await callTool(tools, "desktop_key", { text: "a" });
+        await eventually(async () => (await log()).includes("keysym 0x61, a"));
+      }, 60_000);
+    });
+
+    describe("control lock", () => {
+      it("blocks the agent's inputs while a human holds control, and restores them on release", async () => {
+        const h = await start();
+        await h.desktop.takeover({ holder: "alice" });
+        await expect(h.desktop.act({ type: "mouse_move", x: 10, y: 10 })).rejects.toMatchObject({
+          code: "desktop_locked",
+        });
+        // Watching is never blocked.
+        expect(pngSize((await h.desktop.screenshot()).png)).toEqual({ width: 1280, height: 800 });
+        await h.desktop.cursorPosition();
+        expect(await h.desktop.control()).toMatchObject({ held: true, holder: "alice" });
+
+        await expect(h.desktop.takeover({ holder: "bob" })).rejects.toMatchObject({
+          code: "desktop_locked",
+        });
+        await expect(h.desktop.release({ holder: "bob" })).rejects.toMatchObject({
+          code: "desktop_locked",
+        });
+
+        await h.desktop.release({ holder: "alice" });
+        await h.desktop.act({ type: "mouse_move", x: 10, y: 10 });
+        expect(await h.desktop.cursorPosition()).toEqual({ x: 10, y: 10 });
+      }, 30_000);
+
+      it("lets an operator force control back", async () => {
+        const h = await start();
+        await h.desktop.takeover({ holder: "alice" });
+        await expect(h.desktop.release({ holder: "bob" })).rejects.toMatchObject({
+          code: "desktop_locked",
+        });
+        expect(await h.desktop.release({ holder: "bob", force: true })).toEqual({ held: false });
+        await h.desktop.act({ type: "mouse_move", x: 3, y: 3 });
+      }, 30_000);
+
+      it("rejects an invalid input without starting the desktop", async () => {
+        const h = await start();
+        await expect(h.desktop.act({ type: "mouse_move", x: 9_000, y: 1 })).rejects.toThrow(
+          RangeError,
+        );
+        expect((await h.desktop.status()).state).toBe("stopped");
+      }, 30_000);
+
+      it("gives control back when the lease runs out", async () => {
+        const h = await start();
+        await h.desktop.takeover({ holder: "alice", leaseMs: 400 });
+        await expect(h.desktop.act({ type: "mouse_move", x: 1, y: 1 })).rejects.toMatchObject({
+          code: "desktop_locked",
+        });
+        await sleep(600);
+        await h.desktop.act({ type: "mouse_move", x: 1, y: 1 });
+      }, 30_000);
+
+      it("keeps the hold across a hub restart", async () => {
+        const h = await start();
+        await h.desktop.takeover({ holder: "alice" });
+        await h.hub.close();
+        await eventually(() => !h.daemon.connected);
+        const { RemoteSandboxHub } = await import("../src/remote/index");
+        const hub2 = new RemoteSandboxHub({
+          authorize: () => ({ sandboxId }),
+          connectTimeoutMs: 5_000,
+        });
+        await hub2.listen({ host: "127.0.0.1", port: h.port });
+        try {
+          await expect(
+            hub2.desktop(sandboxId).act({ type: "mouse_move", x: 1, y: 1 }),
+          ).rejects.toMatchObject({ code: "desktop_locked" });
+        } finally {
+          await hub2.close();
+        }
+      }, 30_000);
+
+      it("can wait for a release instead of failing at once", async () => {
+        const h = await start({ lock: { waitForReleaseMs: 3_000 } });
+        await h.desktop.takeover({ holder: "alice" });
+        const acting = h.desktop.act({ type: "mouse_move", x: 20, y: 20 });
+        await sleep(300);
+        await h.desktop.release({ holder: "alice" });
+        await acting;
+        expect(await h.desktop.cursorPosition()).toEqual({ x: 20, y: 20 });
+      }, 30_000);
+    });
+
+    it("restarts a crashed display with its size and open to callers meanwhile", async () => {
+      const h = await start();
+      await h.desktop.resize(1024, 768);
+      await h.runtime.exec({ command: "pkill", args: ["-9", "-x", backend.display] });
+
+      // A caller arriving mid-restart waits for it instead of failing.
+      const shot = await h.desktop.screenshot();
+      expect(pngSize(shot.png)).toEqual({ width: 1024, height: 768 });
+      const status = await h.desktop.status();
+      expect(status.restarts).toBeGreaterThanOrEqual(1);
+      expect(status.state).toBe("running");
+    }, 60_000);
+
+    it("settles a caller waiting on a restart when the desktop is stopped", async () => {
+      // Below the hub, which would retry the dropped call itself and hide whether the daemon
+      // leaves it pending.
+      const found = await DesktopService.detect(
+        {
+          display: `:${80 + (displayCounter += 1)}`,
+          vncPort: await freePort(),
+          restart: { initialDelayMs: 5_000, maxDelayMs: 5_000 },
+          backend: backend.name,
+        },
+        { env: () => ({ ...process.env }) as Record<string, string>, log: () => undefined },
+      );
+      if (!("service" in found)) throw new Error(`missing ${found.missing.join(", ")}`);
+      const { service } = found;
+      await service.status(true);
+      execFileSync("pkill", ["-9", "-x", backend.display]);
+      await eventually(async () => (await service.status()).state === "restarting", 10_000);
+
+      // This caller is waiting for a restart that is five seconds away.
+      const waiting = service.screenshot(undefined).then(
+        () => "completed",
+        () => "rejected",
+      );
+      await sleep(200);
+      const stopped = Date.now();
+      await service.stop();
+      expect(await waiting).toBe("rejected");
+      expect(Date.now() - stopped).toBeLessThan(3_000);
+    }, 60_000);
+
+    // On Xvnc the VNC server is the display, so there is no separate VNC server to lose.
+    it.skipIf(backend.name === "xvnc")(
+      "restarts the VNC server on its own, leaving the display alone",
+      async () => {
+        const h = await start();
+        const status = await h.desktop.start();
+        await h.runtime.exec({ command: "pkill", args: ["-9", "-x", backend.vnc] });
+        await eventually(async () => (await h.desktop.status()).restarts >= 1, 15_000);
+        await eventually(async () => {
+          const viewer = await h.desktop.openViewer();
+          viewer.close();
+          return true;
+        }, 15_000);
+        expect((await h.desktop.status()).vncPort).toBe(status.vncPort);
+      },
+      60_000,
+    );
+
+    it("reaches VNC through a tunnel even when the daemon limits tunnel ports", async () => {
+      const h = await start({}, { daemon: { tunnel: { allowedPorts: [1] } } });
+      const viewer = await h.desktop.openViewer();
+      const first = await viewer.output[Symbol.asyncIterator]().next();
+      expect(new TextDecoder().decode(first.value).startsWith("RFB 003.")).toBe(true);
+      viewer.close();
+      // Other ports are still refused.
+      await expect(h.hub.tunnel(sandboxId).open(2)).rejects.toMatchObject({ code: "port" });
+    }, 30_000);
+
+    it("listens for VNC on loopback only", async () => {
+      const h = await start();
+      const { vncPort } = await h.desktop.start();
+      const listeners = execFileSync("sh", [
+        "-c",
+        `cat /proc/net/tcp /proc/net/tcp6 2>/dev/null || true`,
+      ])
+        .toString()
+        .split("\n")
+        .filter((line) =>
+          line.includes(`:${vncPort.toString(16).toUpperCase().padStart(4, "0")} `),
+        );
+      const local = listeners.map((line) => line.trim().split(/\s+/)[1] ?? "");
+      expect(local.length).toBeGreaterThan(0);
+      for (const address of local) {
+        // 0100007F is 127.0.0.1, and the IPv6 loopback is ...01000000 in /proc's byte order.
+        expect(address).toMatch(/^(0100007F|00000000000000000000000001000000):/);
       }
     }, 30_000);
-
-    it("can wait for a release instead of failing at once", async () => {
-      const h = await start({ lock: { waitForReleaseMs: 3_000 } });
-      await h.desktop.takeover({ holder: "alice" });
-      const acting = h.desktop.act({ type: "mouse_move", x: 20, y: 20 });
-      await sleep(300);
-      await h.desktop.release({ holder: "alice" });
-      await acting;
-      expect(await h.desktop.cursorPosition()).toEqual({ x: 20, y: 20 });
-    }, 30_000);
   });
-
-  it("restarts a crashed display with its size and open to callers meanwhile", async () => {
-    const h = await start();
-    await h.desktop.resize(1024, 768);
-    await h.runtime.exec({ command: "pkill", args: ["-9", "-x", "Xvfb"] });
-
-    // A caller arriving mid-restart waits for it instead of failing.
-    const shot = await h.desktop.screenshot();
-    expect(pngSize(shot.png)).toEqual({ width: 1024, height: 768 });
-    const status = await h.desktop.status();
-    expect(status.restarts).toBeGreaterThanOrEqual(1);
-    expect(status.state).toBe("running");
-  }, 60_000);
-
-  it("settles a caller waiting on a restart when the desktop is stopped", async () => {
-    // Below the hub, which would retry the dropped call itself and hide whether the daemon
-    // leaves it pending.
-    const found = await DesktopService.detect(
-      {
-        display: `:${80 + (displayCounter += 1)}`,
-        vncPort: await freePort(),
-        restart: { initialDelayMs: 5_000, maxDelayMs: 5_000 },
-      },
-      { env: () => ({ ...process.env }) as Record<string, string>, log: () => undefined },
-    );
-    if (!("service" in found)) throw new Error(`missing ${found.missing.join(", ")}`);
-    const { service } = found;
-    await service.status(true);
-    execFileSync("pkill", ["-9", "-x", "Xvfb"]);
-    await eventually(async () => (await service.status()).state === "restarting", 10_000);
-
-    // This caller is waiting for a restart that is five seconds away.
-    const waiting = service.screenshot(undefined).then(
-      () => "completed",
-      () => "rejected",
-    );
-    await sleep(200);
-    const stopped = Date.now();
-    await service.stop();
-    expect(await waiting).toBe("rejected");
-    expect(Date.now() - stopped).toBeLessThan(3_000);
-  }, 60_000);
-
-  it("restarts the VNC server on its own, leaving the display alone", async () => {
-    const h = await start();
-    const status = await h.desktop.start();
-    await h.runtime.exec({ command: "pkill", args: ["-9", "-x", "x11vnc"] });
-    await eventually(async () => (await h.desktop.status()).restarts >= 1, 15_000);
-    await eventually(async () => {
-      const viewer = await h.desktop.openViewer();
-      viewer.close();
-      return true;
-    }, 15_000);
-    expect((await h.desktop.status()).vncPort).toBe(status.vncPort);
-  }, 60_000);
-
-  it("reaches VNC through a tunnel even when the daemon limits tunnel ports", async () => {
-    const h = await start({}, { daemon: { tunnel: { allowedPorts: [1] } } });
-    const viewer = await h.desktop.openViewer();
-    const first = await viewer.output[Symbol.asyncIterator]().next();
-    expect(new TextDecoder().decode(first.value).startsWith("RFB 003.")).toBe(true);
-    viewer.close();
-    // Other ports are still refused.
-    await expect(h.hub.tunnel(sandboxId).open(2)).rejects.toMatchObject({ code: "port" });
-  }, 30_000);
-
-  it("listens for VNC on loopback only", async () => {
-    const h = await start();
-    const { vncPort } = await h.desktop.start();
-    const listeners = execFileSync("sh", [
-      "-c",
-      `cat /proc/net/tcp /proc/net/tcp6 2>/dev/null || true`,
-    ])
-      .toString()
-      .split("\n")
-      .filter((line) => line.includes(`:${vncPort.toString(16).toUpperCase().padStart(4, "0")} `));
-    const local = listeners.map((line) => line.trim().split(/\s+/)[1] ?? "");
-    expect(local.length).toBeGreaterThan(0);
-    for (const address of local) {
-      // 0100007F is 127.0.0.1, and the IPv6 loopback is ...01000000 in /proc's byte order.
-      expect(address).toMatch(/^(0100007F|00000000000000000000000001000000):/);
-    }
-  }, 30_000);
-});
+}
 
 describe("desktop capability", () => {
   it("is not offered when the programs it needs are missing, and fails with a typed error", async () => {
@@ -431,28 +494,72 @@ describe("desktop capability", () => {
     expect(h.logs.some((line) => line.includes("desktop unavailable"))).toBe(true);
   });
 
-  describe("window manager default", () => {
-    // Empty stand-ins for the programs the desktop needs, so nothing graphical runs.
-    const detectWith = async (programs: string[], windowManager?: string | false) => {
-      const dir = await mkdtemp(join(tmpdir(), "anvia-wm-"));
-      try {
-        for (const name of ["Xvfb", "x11vnc", "xdotool", "xrandr", "import", ...programs]) {
-          await writeFile(join(dir, name), "#!/bin/sh\n");
-          await chmod(join(dir, name), 0o755);
-        }
-        const logs: string[] = [];
-        const found = await DesktopService.detect(
-          windowManager === undefined ? {} : { windowManager },
-          {
-            env: () => ({ PATH: dir }),
-            log: (line) => logs.push(line),
-          },
-        );
-        expect("service" in found).toBe(true);
-        return logs;
-      } finally {
-        await rm(dir, { recursive: true, force: true });
+  /** Empty stand-ins for programs, on a PATH of their own, so nothing graphical runs. */
+  async function detectRaw(programs: string[], options: SandboxDaemonDesktopOptions = {}) {
+    const dir = await mkdtemp(join(tmpdir(), "anvia-detect-"));
+    try {
+      for (const name of programs) {
+        await writeFile(join(dir, name), "#!/bin/sh\n");
+        await chmod(join(dir, name), 0o755);
       }
+      const logs: string[] = [];
+      const found = await DesktopService.detect(options, {
+        env: () => ({ PATH: dir }),
+        log: (line) => logs.push(line),
+      });
+      return { found, logs };
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }
+
+  describe("backend choice", () => {
+    const tools = ["xdotool", "xrandr", "import"];
+    const missingOf = (found: Awaited<ReturnType<typeof detectRaw>>["found"]) =>
+      "missing" in found ? found.missing : undefined;
+
+    it("uses Xvnc when it is installed, and the Xvfb pair when it is not", async () => {
+      expect("service" in (await detectRaw([...tools, "Xvnc"])).found).toBe(true);
+      expect("service" in (await detectRaw([...tools, "Xvfb", "x11vnc"])).found).toBe(true);
+      expect("service" in (await detectRaw([...tools, "Xvnc", "Xvfb", "x11vnc"])).found).toBe(true);
+    });
+
+    it("says either backend would do when there is neither", async () => {
+      expect(missingOf((await detectRaw(tools)).found)).toEqual(["Xvnc (or Xvfb with x11vnc)"]);
+      // A half of the pair is still the pair's problem, named as such.
+      expect(missingOf((await detectRaw([...tools, "Xvfb"])).found)).toEqual([
+        "Xvnc (or Xvfb with x11vnc)",
+      ]);
+    });
+
+    it("keeps the Xvfb pair when the options name it, even with Xvnc installed", async () => {
+      const found = (await detectRaw([...tools, "Xvnc", "Xvfb"], { binaries: { xvfb: "Xvfb" } }))
+        .found;
+      // x11vnc is missing, which only matters if the pair was chosen.
+      expect(missingOf(found)).toEqual(["x11vnc"]);
+    });
+
+    it("honours an explicit backend", async () => {
+      const programs = [...tools, "Xvfb", "x11vnc"];
+      expect(missingOf((await detectRaw(programs, { backend: "xvnc" })).found)).toEqual(["Xvnc"]);
+      expect("service" in (await detectRaw([...programs, "Xvnc"], { backend: "xvfb" })).found).toBe(
+        true,
+      );
+      expect(missingOf((await detectRaw([...tools, "Xvnc"], { backend: "xvfb" })).found)).toEqual([
+        "Xvfb",
+        "x11vnc",
+      ]);
+    });
+  });
+
+  describe("window manager default", () => {
+    const detectWith = async (programs: string[], windowManager?: string | false) => {
+      const { found, logs } = await detectRaw(
+        ["Xvfb", "x11vnc", "xdotool", "xrandr", "import", ...programs],
+        windowManager === undefined ? {} : { windowManager },
+      );
+      expect("service" in found).toBe(true);
+      return logs;
     };
 
     it("prefers openbox-session, which runs the image's autostart file", async () => {
@@ -492,7 +599,7 @@ describe("browser desktop relay", () => {
     const display = `:${80 + (displayCounter += 1)}`;
     const vncPort = await freePort();
     const h = await createRemoteHarness({
-      daemon: { desktop: { display, vncPort }, ...daemon },
+      daemon: { desktop: { display, vncPort, backend: active.name }, ...daemon },
       listen: { desktopPath: "/desktop" },
       hub: {
         allowedOrigins: [origin],
@@ -556,117 +663,125 @@ describe("browser desktop relay", () => {
     expect(viewer.state.closed?.reason).toMatch(/^unsupported:/);
   });
 
-  describe.skipIf(!hasDesktop)("with a running desktop", () => {
-    /** Just enough of an RFB client to connect and send a pointer click. */
-    async function rfb(viewer: ReturnType<typeof browser>) {
-      let consumed = 0;
-      const read = async (length: number) => {
-        await eventually(() => viewer.state.received.length - consumed >= length, 10_000);
-        const bytes = viewer.state.received.subarray(consumed, consumed + length);
-        consumed += length;
-        return bytes;
-      };
-      expect((await read(12)).toString()).toMatch(/^RFB 003\.\d{3}\n$/);
-      viewer.socket.send(Buffer.from("RFB 003.008\n"));
-      const count = (await read(1))[0] ?? 0;
-      await read(count); // Security types.
-      viewer.socket.send(Buffer.from([1])); // None.
-      await read(4); // SecurityResult.
-      viewer.socket.send(Buffer.from([1])); // ClientInit: shared.
-      const init = await read(24);
-      await read(init.readUInt32BE(20)); // Desktop name.
-      return {
-        click(x: number, y: number) {
-          const event = (mask: number) => {
-            const out = Buffer.alloc(6);
-            out[0] = 5;
-            out[1] = mask;
-            out.writeUInt16BE(x, 2);
-            out.writeUInt16BE(y, 4);
-            return out;
-          };
-          viewer.socket.send(Buffer.concat([event(0), event(1), event(0)]));
-        },
-      };
-    }
-
-    it("lets a writable viewer click, and drops a read-only viewer's input", async () => {
-      const { h, desktop, url } = await relay();
-      const xev = await startXev(Object.assign(h, { desktop }));
-
-      const readOnly = browser(`${url}?ticket=ro`);
-      await readOnly.refused;
-      (await rfb(readOnly)).click(200, 200);
-      await sleep(800);
-      expect(await xev.log()).not.toContain("ButtonPress");
-
-      const writable = browser(`${url}?ticket=rw`);
-      await writable.refused;
-      (await rfb(writable)).click(200, 200);
-      await eventually(async () => (await xev.log()).includes("ButtonPress"));
-      readOnly.socket.close();
-      writable.socket.close();
-    }, 60_000);
-
-    it("lets a viewer take control, which pauses the agent and mutes other viewers", async () => {
-      const { h, desktop, url } = await relay({ holder: "alice" });
-      const xev = await startXev(Object.assign(h, { desktop }));
-
-      const alice = browser(`${url}?ticket=rw`);
-      await alice.refused;
-      const aliceRfb = await rfb(alice);
-      await eventually(() => alice.state.text.some((message) => message.type === "control"));
-
-      alice.socket.send(JSON.stringify({ type: "takeover" }));
-      await eventually(async () => (await desktop.control()).holder === "alice");
-      await expect(desktop.act({ type: "mouse_move", x: 5, y: 5 })).rejects.toMatchObject({
-        code: "desktop_locked",
+  for (const backend of backends) {
+    describe.skipIf(!hasBackend(backend))(`with a running desktop (${backend.name})`, () => {
+      beforeEach(() => {
+        active = backend;
       });
-      await eventually(() =>
-        alice.state.text.some((message) => message.type === "control" && message.you === true),
-      );
 
-      // Bob may type in general, but not while alice holds control...
-      const bob = browser(`${url}?ticket=rw2`);
-      await bob.refused;
-      const bobRfb = await rfb(bob);
-      bobRfb.click(200, 200);
-      await sleep(800);
-      expect(await xev.log()).not.toContain("ButtonPress");
+      /** Just enough of an RFB client to connect and send a pointer click. */
+      async function rfb(viewer: ReturnType<typeof browser>) {
+        let consumed = 0;
+        const read = async (length: number) => {
+          await eventually(() => viewer.state.received.length - consumed >= length, 10_000);
+          const bytes = viewer.state.received.subarray(consumed, consumed + length);
+          consumed += length;
+          return bytes;
+        };
+        expect((await read(12)).toString()).toMatch(/^RFB 003\.\d{3}\n$/);
+        viewer.socket.send(Buffer.from("RFB 003.008\n"));
+        const count = (await read(1))[0] ?? 0;
+        await read(count); // Security types.
+        viewer.socket.send(Buffer.from([1])); // None.
+        await read(4); // SecurityResult.
+        viewer.socket.send(Buffer.from([1])); // ClientInit: shared.
+        const init = await read(24);
+        await read(init.readUInt32BE(20)); // Desktop name.
+        return {
+          click(x: number, y: number) {
+            const event = (mask: number) => {
+              const out = Buffer.alloc(6);
+              out[0] = 5;
+              out[1] = mask;
+              out.writeUInt16BE(x, 2);
+              out.writeUInt16BE(y, 4);
+              return out;
+            };
+            viewer.socket.send(Buffer.concat([event(0), event(1), event(0)]));
+          },
+        };
+      }
 
-      // ...and alice, who holds it, still can.
-      aliceRfb.click(200, 200);
-      await eventually(async () => (await xev.log()).includes("ButtonPress"));
+      it("lets a writable viewer click, and drops a read-only viewer's input", async () => {
+        const { h, desktop, url } = await relay();
+        const xev = await startXev(Object.assign(h, { desktop }));
 
-      // Closing the tab hands control back to the agent.
-      alice.socket.close();
-      await eventually(async () => !(await desktop.control()).held, 10_000);
-      await desktop.act({ type: "mouse_move", x: 5, y: 5 });
+        const readOnly = browser(`${url}?ticket=ro`);
+        await readOnly.refused;
+        (await rfb(readOnly)).click(200, 200);
+        await sleep(800);
+        expect(await xev.log()).not.toContain("ButtonPress");
 
-      // Each relay learns that control is free from its next poll, and tells its viewer. Input in
-      // between is dropped rather than risk letting it through, so wait for that, as a user would.
-      await eventually(() => {
-        const controls = bob.state.text.filter((message) => message.type === "control");
-        return controls.at(-1)?.held === false;
-      });
-      const before = ((await xev.log()).match(/ButtonPress/g) ?? []).length;
-      bobRfb.click(210, 210);
-      await eventually(async () => ((await xev.log()).match(/ButtonPress/g) ?? []).length > before);
-      bob.socket.close();
-    }, 60_000);
+        const writable = browser(`${url}?ticket=rw`);
+        await writable.refused;
+        (await rfb(writable)).click(200, 200);
+        await eventually(async () => (await xev.log()).includes("ButtonPress"));
+        readOnly.socket.close();
+        writable.socket.close();
+      }, 60_000);
 
-    it("rejects takeover from a read-only viewer", async () => {
-      const { url, desktop } = await relay();
-      const viewer = browser(`${url}?ticket=ro`);
-      await viewer.refused;
-      await eventually(() => viewer.state.text.some((message) => message.type === "control"));
-      viewer.socket.send(JSON.stringify({ type: "takeover" }));
-      await eventually(() => viewer.state.text.some((message) => message.type === "error"));
-      expect(viewer.state.text.find((message) => message.type === "error")).toMatchObject({
-        code: "tool_policy",
-      });
-      expect((await desktop.control()).held).toBe(false);
-      viewer.socket.close();
-    }, 30_000);
-  });
+      it("lets a viewer take control, which pauses the agent and mutes other viewers", async () => {
+        const { h, desktop, url } = await relay({ holder: "alice" });
+        const xev = await startXev(Object.assign(h, { desktop }));
+
+        const alice = browser(`${url}?ticket=rw`);
+        await alice.refused;
+        const aliceRfb = await rfb(alice);
+        await eventually(() => alice.state.text.some((message) => message.type === "control"));
+
+        alice.socket.send(JSON.stringify({ type: "takeover" }));
+        await eventually(async () => (await desktop.control()).holder === "alice");
+        await expect(desktop.act({ type: "mouse_move", x: 5, y: 5 })).rejects.toMatchObject({
+          code: "desktop_locked",
+        });
+        await eventually(() =>
+          alice.state.text.some((message) => message.type === "control" && message.you === true),
+        );
+
+        // Bob may type in general, but not while alice holds control...
+        const bob = browser(`${url}?ticket=rw2`);
+        await bob.refused;
+        const bobRfb = await rfb(bob);
+        bobRfb.click(200, 200);
+        await sleep(800);
+        expect(await xev.log()).not.toContain("ButtonPress");
+
+        // ...and alice, who holds it, still can.
+        aliceRfb.click(200, 200);
+        await eventually(async () => (await xev.log()).includes("ButtonPress"));
+
+        // Closing the tab hands control back to the agent.
+        alice.socket.close();
+        await eventually(async () => !(await desktop.control()).held, 10_000);
+        await desktop.act({ type: "mouse_move", x: 5, y: 5 });
+
+        // Each relay learns that control is free from its next poll, and tells its viewer. Input in
+        // between is dropped rather than risk letting it through, so wait for that, as a user would.
+        await eventually(() => {
+          const controls = bob.state.text.filter((message) => message.type === "control");
+          return controls.at(-1)?.held === false;
+        });
+        const before = ((await xev.log()).match(/ButtonPress/g) ?? []).length;
+        bobRfb.click(210, 210);
+        await eventually(
+          async () => ((await xev.log()).match(/ButtonPress/g) ?? []).length > before,
+        );
+        bob.socket.close();
+      }, 60_000);
+
+      it("rejects takeover from a read-only viewer", async () => {
+        const { url, desktop } = await relay();
+        const viewer = browser(`${url}?ticket=ro`);
+        await viewer.refused;
+        await eventually(() => viewer.state.text.some((message) => message.type === "control"));
+        viewer.socket.send(JSON.stringify({ type: "takeover" }));
+        await eventually(() => viewer.state.text.some((message) => message.type === "error"));
+        expect(viewer.state.text.find((message) => message.type === "error")).toMatchObject({
+          code: "tool_policy",
+        });
+        expect((await desktop.control()).held).toBe(false);
+        viewer.socket.close();
+      }, 30_000);
+    });
+  }
 });

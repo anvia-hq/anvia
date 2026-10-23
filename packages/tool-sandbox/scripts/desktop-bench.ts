@@ -20,7 +20,8 @@ import { RemoteSandboxHub, relayTicket } from "../src/remote/index";
 //
 // Options: --image <name> (default anvia-desktop), --rtt <ms,ms,...> (default 0,100),
 // --label <text> (names the run in the output), --seconds <n> (throughput run, default 8),
-// --moves <n> (latency samples, default 30).
+// --moves <n> (latency samples, default 30), --flood move|scroll (the load for the throughput
+// runs: default move, the heavier one), --no-direct (skip the in-container path).
 
 const args = process.argv.slice(2);
 const option = (name: string, fallback: string) => {
@@ -33,6 +34,8 @@ const rtts = option("--rtt", "0,100")
   .split(",")
   .map((value) => Number(value));
 const label = option("--label", "run");
+const flood = option("--flood", "move");
+if (flood !== "move" && flood !== "scroll") throw new Error("--flood is move or scroll.");
 const throughputSeconds = Number(option("--seconds", "8"));
 const moves = Number(option("--moves", "30"));
 const sandboxId = "bench";
@@ -505,16 +508,34 @@ try {
     await settle(client, 800);
     const samples = await measureLatency(client, shell as Shell, windowId);
 
-    // Flood the screen with a maximized terminal printing random text, then measure.
+    // Flood the screen. "scroll": a maximized terminal printing random text, which is limited by
+    // how fast the terminal draws. "move": a big window of static text moved back and forth as fast
+    // as one xdotool can, so the desktop changes continuously and nothing the window draws is the
+    // limit.
     const shellRef = shell as Shell;
-    shellRef.fire(`lxterminal --geometry=200x50 -e sh -c 'base64 /dev/urandom' >/dev/null 2>&1 &`);
+    if (flood === "scroll") {
+      shellRef.fire(
+        `lxterminal --geometry=200x50 -e sh -c 'base64 /dev/urandom; sleep 99999' >/dev/null 2>&1 &`,
+      );
+    } else {
+      shellRef.fire(
+        `lxterminal --geometry=150x40 -e sh -c 'base64 /dev/urandom | head -c 30000; sleep 99999' >/dev/null 2>&1 &`,
+      );
+    }
     await sleep(2500);
-    const flood = (
+    const floodWindow = (
       await shellRef.run(`xdotool search --onlyvisible --class lxterminal | tail -1`)
     ).trim();
-    await shellRef.run(
-      `xdotool windowmove ${flood} 0 0 windowsize ${flood} ${status.width} ${status.height - 80}`,
-    );
+    if (flood === "scroll") {
+      await shellRef.run(
+        `xdotool windowmove ${floodWindow} 0 0 windowsize ${floodWindow} ${status.width} ${status.height - 80}`,
+      );
+    } else {
+      await shellRef.run(`xdotool windowsize ${floodWindow} 1000 640`);
+      shellRef.fire(
+        `rm -f /tmp/stop-flood; while [ ! -e /tmp/stop-flood ]; do xdotool $(i=0; while [ $i -lt 20 ]; do echo windowmove ${floodWindow} 0 0 windowmove ${floodWindow} 240 120; i=$((i+1)); done); done &`,
+      );
+    }
     await sleep(1000);
     if (process.env.ANVIA_BENCH_DEBUG) {
       const shot = await desktop.screenshot();
@@ -532,7 +553,8 @@ try {
     await sleep(1000);
     const raw = await measureThroughput(rawClient, shellRef);
     rawClient.close();
-    shellRef.fire(`pkill -f 'base64 /dev/urandom'`);
+    shellRef.fire(`touch /tmp/stop-flood; pkill -f 'sleep 99999'`);
+    await sleep(1500);
     await sleep(500);
     rows.push({
       path,
@@ -567,7 +589,9 @@ try {
     return value === undefined || Number.isNaN(value) ? "-" : `${value.toFixed(0)}%`;
   };
   const present = (row: Row, name: string) => row.throughput.cpu.has(name);
-  console.log(`\nDesktop benchmark: ${label}  (${image}, ${status.width}x${status.height})\n`);
+  console.log(
+    `\nDesktop benchmark: ${label}  (${image}, ${status.width}x${status.height}, ${flood} flood)\n`,
+  );
   console.log(
     "| path | update latency median / p95 / min | ZRLE flood: MB/s (updates/s) | Raw flood: MB/s (updates/s) | daemon CPU | VNC server CPU | X server CPU |",
   );

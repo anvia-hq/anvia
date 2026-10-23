@@ -5,6 +5,14 @@ export interface DesktopResolution {
 
 /** Programs the desktop needs, looked up on PATH unless given here. */
 export interface DesktopBinaries {
+  /** TigerVNC's X server, which is the display and the VNC server in one process. */
+  xvnc?: string;
+  /**
+   * TigerVNC's `vncconfig`, which Xvnc needs running to sync the clipboard with desktop programs.
+   * Optional: without it everything but the clipboard works.
+   */
+  vncconfig?: string;
+  /** With `x11vnc`: the older pair, used when there is no `Xvnc`. */
   xvfb?: string;
   x11vnc?: string;
   xdotool?: string;
@@ -13,10 +21,22 @@ export interface DesktopBinaries {
   import?: string;
 }
 
+/** How the display and its VNC server run: one `Xvnc` process, or `Xvfb` with `x11vnc`. */
+export type DesktopBackend = "xvnc" | "xvfb";
+
 export interface SandboxDaemonDesktopOptions {
+  /**
+   * `auto` (the default) uses `Xvnc` when it is installed, and `Xvfb` with `x11vnc` otherwise, so
+   * images built for the older pair keep working. Naming `xvnc` or `xvfb`/`x11vnc` in `binaries`
+   * also picks that backend.
+   */
+  backend?: "auto" | DesktopBackend;
   /** Size the display starts at. Default 1280x800. */
   resolution?: DesktopResolution;
-  /** Largest size `resize` may ask for; Xvfb is started this big. Default 3840x2160. */
+  /**
+   * Largest size `resize` may ask for. Default 3840x2160. The Xvfb backend starts this big and
+   * shrinks; Xvnc starts at `resolution` and grows.
+   */
   maxResolution?: DesktopResolution;
   /** X display. Default `:99`. */
   display?: string;

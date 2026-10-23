@@ -14,7 +14,9 @@ FROM node:22-bookworm
 ARG ANVIA_SANDBOX_PACKAGE=@anvia/sandbox
 ARG NODE_PTY_VERSION=^1.1.0
 
-# Xvfb, openbox, x11vnc: the display, a light window manager, and the VNC server (loopback only).
+# Xvnc (tigervnc-standalone-server): the display and its VNC server in one process, on loopback only.
+# Its damage tracking pushes changes instead of polling for them, which is what keeps a viewer smooth.
+# openbox: a light window manager.
 # picom and plank: a compositor and a dock, started by openbox's autostart file. lxterminal and
 # pcmanfm: the dock's terminal and file manager.
 # xdotool and ImageMagick: the agent's input and screenshots. xrandr: resizing. tmux and node-pty
@@ -22,7 +24,7 @@ ARG NODE_PTY_VERSION=^1.1.0
 # node-pty builds with on Linux.
 RUN apt-get update \
   && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-    xvfb openbox plank picom dbus-x11 x11vnc lxterminal pcmanfm feh yaru-theme-gtk yaru-theme-icon fonts-inter xdotool imagemagick x11-utils x11-xserver-utils \
+    tigervnc-standalone-server openbox plank picom dbus-x11 lxterminal pcmanfm feh yaru-theme-gtk yaru-theme-icon fonts-inter xdotool imagemagick x11-utils x11-xserver-utils \
     fonts-dejavu-core fonts-liberation fonts-noto-color-emoji \
     chromium tmux procps ca-certificates \
   && rm -rf /var/lib/apt/lists/*

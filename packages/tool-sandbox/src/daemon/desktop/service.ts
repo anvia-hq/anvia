@@ -7,7 +7,7 @@ import type {
 } from "../../remote/protocol";
 import { DesktopControlLock } from "./control";
 import { findExecutable, runTool } from "./exec";
-import type { SandboxDaemonDesktopOptions } from "./options";
+import type { DesktopBackend, SandboxDaemonDesktopOptions } from "./options";
 import { DesktopSupervisor, type ResolvedDesktopBinaries } from "./supervisor";
 
 export interface DesktopServiceDeps {
@@ -39,12 +39,14 @@ export class DesktopService {
   private constructor(
     options: SandboxDaemonDesktopOptions,
     binaries: ResolvedDesktopBinaries,
+    backend: DesktopBackend,
     windowManager: string | undefined,
     deps: DesktopServiceDeps,
   ) {
     this.binaries = binaries;
     this.control = new DesktopControlLock(options.lock);
     this.supervisor = new DesktopSupervisor({
+      backend,
       binaries,
       windowManager,
       resolution: options.resolution ?? defaultResolution,
@@ -67,23 +69,62 @@ export class DesktopService {
     deps: DesktopServiceDeps,
   ): Promise<{ service: DesktopService } | { missing: string[] }> {
     const searchPath = deps.env().PATH;
-    const wanted = {
-      xvfb: options?.binaries?.xvfb ?? "Xvfb",
-      x11vnc: options?.binaries?.x11vnc ?? "x11vnc",
-      xdotool: options?.binaries?.xdotool ?? "xdotool",
-      xrandr: options?.binaries?.xrandr ?? "xrandr",
-      import: options?.binaries?.import ?? "import",
+    const binaries = options?.binaries;
+    const choice = options?.backend ?? "auto";
+    // Naming a program picks the backend it belongs to; otherwise use Xvnc if it is there.
+    const backend: DesktopBackend =
+      choice !== "auto"
+        ? choice
+        : binaries?.xvnc !== undefined
+          ? "xvnc"
+          : binaries?.xvfb !== undefined || binaries?.x11vnc !== undefined
+            ? "xvfb"
+            : (await findExecutable("Xvnc", searchPath)) !== undefined
+              ? "xvnc"
+              : "xvfb";
+    const wanted: Partial<Record<keyof ResolvedDesktopBinaries, string>> = {
+      xdotool: binaries?.xdotool ?? "xdotool",
+      xrandr: binaries?.xrandr ?? "xrandr",
+      import: binaries?.import ?? "import",
     };
+    if (backend === "xvnc") {
+      wanted.xvnc = binaries?.xvnc ?? "Xvnc";
+    } else {
+      wanted.xvfb = binaries?.xvfb ?? "Xvfb";
+      wanted.x11vnc = binaries?.x11vnc ?? "x11vnc";
+    }
     const found: Partial<ResolvedDesktopBinaries> = {};
-    const missing: string[] = [];
+    const missing: Array<[keyof ResolvedDesktopBinaries, string]> = [];
     for (const [key, name] of Object.entries(wanted) as Array<
       [keyof ResolvedDesktopBinaries, string]
     >) {
       const path = await findExecutable(name, searchPath);
-      if (path === undefined) missing.push(name);
+      if (path === undefined) missing.push([key, name]);
       else found[key] = path;
     }
-    if (missing.length > 0) return { missing };
+    if (backend === "xvnc") {
+      // Not required: without it the clipboard does not sync, and nothing else is lost.
+      const vncconfig = await findExecutable(binaries?.vncconfig ?? "vncconfig", searchPath);
+      if (vncconfig !== undefined) found.vncconfig = vncconfig;
+    }
+    if (missing.length > 0) {
+      // With nothing chosen, say that either backend would do, not just the fallback's programs.
+      const chosen =
+        choice !== "auto" ||
+        binaries?.xvnc !== undefined ||
+        binaries?.xvfb !== undefined ||
+        binaries?.x11vnc !== undefined;
+      const isServer = ([key]: [string, string]) => key === "xvfb" || key === "x11vnc";
+      if (!chosen && missing.some(isServer)) {
+        return {
+          missing: [
+            "Xvnc (or Xvfb with x11vnc)",
+            ...missing.filter((entry) => !isServer(entry)).map(([, name]) => name),
+          ],
+        };
+      }
+      return { missing: missing.map(([, name]) => name) };
+    }
 
     // A window manager is optional: without one the desktop still works, windows just have no frame.
     // `openbox-session` is openbox that also runs ~/.config/openbox/autostart, which is how an image
@@ -104,6 +145,7 @@ export class DesktopService {
       service: new DesktopService(
         options ?? {},
         found as ResolvedDesktopBinaries,
+        backend,
         windowManager,
         deps,
       ),

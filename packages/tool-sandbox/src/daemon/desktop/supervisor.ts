@@ -3,17 +3,23 @@ import net from "node:net";
 import { DockerSandboxError } from "../../errors";
 import type { DesktopState } from "../../remote/protocol";
 import { runTool } from "./exec";
-import type { DesktopResolution, SandboxDaemonDesktopOptions } from "./options";
+import type { DesktopBackend, DesktopResolution, SandboxDaemonDesktopOptions } from "./options";
 
 export interface ResolvedDesktopBinaries {
-  xvfb: string;
-  x11vnc: string;
+  /** Present for the `xvnc` backend. */
+  xvnc?: string;
+  /** Syncs Xvnc's clipboard. Present when installed. */
+  vncconfig?: string;
+  /** Present, with `x11vnc`, for the `xvfb` backend. */
+  xvfb?: string;
+  x11vnc?: string;
   xdotool: string;
   xrandr: string;
   import: string;
 }
 
 export interface DesktopSupervisorOptions {
+  backend: DesktopBackend;
   binaries: ResolvedDesktopBinaries;
   /** Window manager command line, or undefined to run without one. */
   windowManager: string | undefined;
@@ -40,7 +46,7 @@ export interface SupervisorStatus {
   message?: string;
 }
 
-type ProcessName = "xvfb" | "window manager" | "vnc";
+type ProcessName = "xvnc" | "xvfb" | "window manager" | "vnc" | "clipboard";
 
 interface Managed {
   name: ProcessName;
@@ -56,10 +62,11 @@ const defaultMaxFailures = 5;
 const stableAfterMs = 30_000;
 
 /**
- * Runs the pieces of a desktop: Xvfb, a window manager, and x11vnc bound to loopback. Nothing
- * starts until something needs it. A crashed piece is restarted with backoff (Xvfb takes the others
- * down with it, since they hold its display), and after too many quick failures in a row it gives
- * up and reports why, until the next caller asks again.
+ * Runs the pieces of a desktop: the X display and its VNC server (one `Xvnc` process, or `Xvfb` with
+ * `x11vnc`, bound to loopback), and a window manager. Nothing starts until something needs it. A
+ * crashed piece is restarted with backoff (the display takes the others down with it, since they
+ * hold it), and after too many quick failures in a row it gives up and reports why, until the next
+ * caller asks again.
  */
 export class DesktopSupervisor {
   private state: DesktopState = "stopped";
@@ -75,6 +82,8 @@ export class DesktopSupervisor {
   /** Fails whoever is waiting on a pending restart, when the supervisor stops first. */
   private abandonRecovery: (() => void) | undefined;
   private readonly processes = new Map<ProcessName, Managed>();
+  /** The RandR output that sets the display's size: `screen` on Xvfb, `VNC-0` on Xvnc. */
+  private output: string | undefined;
 
   constructor(private readonly options: DesktopSupervisorOptions) {
     this.width = options.resolution.width;
@@ -171,8 +180,26 @@ export class DesktopSupervisor {
 
   private async startStack(): Promise<void> {
     const { options } = this;
+    this.output = undefined;
+    if (options.backend === "xvnc") {
+      // The display is the VNC server, so one process and one wait. It starts at the size asked for
+      // and grows by RandR, which Xvnc allows far past any size we let `resize` ask for.
+      const display = this.launch("xvnc", requiredBinary(options.binaries.xvnc, "Xvnc"), [
+        options.display,
+        ...xvncFlags(options),
+        "-depth",
+        "24",
+        "-geometry",
+        `${this.width}x${this.height}`,
+      ]);
+      await Promise.all([this.waitForDisplay(display), this.waitForPort(display)]);
+      await this.applyMode(this.width, this.height);
+      this.startClipboard();
+      this.startWindowManager();
+      return;
+    }
     const { width, height } = options.maxResolution;
-    const xvfb = this.launch("xvfb", options.binaries.xvfb, [
+    const xvfb = this.launch("xvfb", requiredBinary(options.binaries.xvfb, "Xvfb"), [
       options.display,
       "-screen",
       "0",
@@ -185,15 +212,25 @@ export class DesktopSupervisor {
     ]);
     await this.waitForDisplay(xvfb);
     await this.applyMode(this.width, this.height);
-    if (options.windowManager !== undefined) {
-      const [file = "", ...args] = options.windowManager.split(/\s+/).filter(Boolean);
-      this.launch("window manager", file, args);
-    }
+    this.startWindowManager();
     await this.startVnc();
   }
 
+  /** Xvnc only shares the clipboard with desktop programs while `vncconfig` is running. */
+  private startClipboard(): void {
+    const { vncconfig } = this.options.binaries;
+    if (vncconfig !== undefined) this.launch("clipboard", vncconfig, ["-nowin"]);
+  }
+
+  private startWindowManager(): void {
+    const { windowManager } = this.options;
+    if (windowManager === undefined) return;
+    const [file = "", ...args] = windowManager.split(/\s+/).filter(Boolean);
+    this.launch("window manager", file, args);
+  }
+
   private async startVnc(): Promise<void> {
-    const vnc = this.launch("vnc", this.options.binaries.x11vnc, [
+    const vnc = this.launch("vnc", requiredBinary(this.options.binaries.x11vnc, "x11vnc"), [
       "-display",
       this.options.display,
       // No password: it listens on loopback only, so it is reachable through a tunnel and nothing else.
@@ -211,7 +248,7 @@ export class DesktopSupervisor {
   }
 
   private launch(name: ProcessName, file: string, args: readonly string[]): Managed {
-    const env = name === "xvfb" ? this.options.env() : this.environment();
+    const env = name === "xvfb" || name === "xvnc" ? this.options.env() : this.environment();
     const child = spawn(file, [...args], { env, stdio: ["ignore", "ignore", "pipe"] });
     const managed: Managed = { name, child, stderr: "" };
     this.processes.set(name, managed);
@@ -265,14 +302,15 @@ export class DesktopSupervisor {
         this.abandonRecovery = undefined;
         void (async () => {
           try {
-            if (crashed === "xvfb") {
+            if (crashed === "xvfb" || crashed === "xvnc") {
               await this.killAll();
               await this.startStack();
             } else if (crashed === "vnc") {
               await this.startVnc();
+            } else if (crashed === "clipboard") {
+              this.startClipboard();
             } else {
-              const [file = "", ...args] = (this.options.windowManager ?? "").split(/\s+/);
-              this.launch("window manager", file, args);
+              this.startWindowManager();
             }
             this.state = "running";
             this.lastUpAt = Date.now();
@@ -292,7 +330,10 @@ export class DesktopSupervisor {
     waiting.catch(() => undefined);
   }
 
-  /** Make the display `width`x`height`. Needs RANDR; Xvfb can shrink and grow up to its start size. */
+  /**
+   * Make the display `width`x`height`. Needs RANDR. Xvfb can shrink and grow up to its start size;
+   * Xvnc can grow too.
+   */
   private async applyMode(width: number, height: number): Promise<void> {
     const env = this.environment();
     const { xrandr } = this.options.binaries;
@@ -312,15 +353,29 @@ export class DesktopSupervisor {
       "+vsync",
     ].map(String);
     await runTool(xrandr, ["--newmode", name, ...modeline], { env }).catch(() => undefined);
-    await runTool(xrandr, ["--addmode", "screen", name], { env }).catch(() => undefined);
-    await runTool(xrandr, ["--output", "screen", "--mode", name], { env });
+    const output = await this.outputName();
+    await runTool(xrandr, ["--addmode", output, name], { env }).catch(() => undefined);
+    await runTool(xrandr, ["--output", output, "--mode", name], { env });
   }
 
-  private async waitForDisplay(xvfb: Managed): Promise<void> {
+  /** The output the display's size is set on. Servers name it differently, so ask. */
+  private async outputName(): Promise<string> {
+    if (this.output !== undefined) return this.output;
+    const stdout = await runTool(this.options.binaries.xrandr, ["--query"], {
+      env: this.environment(),
+      timeoutMs: 5_000,
+    });
+    const name = /^(\S+) connected/m.exec(stdout.toString("utf8"))?.[1];
+    if (name === undefined) throw unavailable("The display has no RandR output to resize.");
+    this.output = name;
+    return name;
+  }
+
+  private async waitForDisplay(display: Managed): Promise<void> {
     const env = this.environment();
     await this.waitUntil(async () => {
-      if (this.processes.get("xvfb") !== xvfb)
-        throw unavailable(`Xvfb exited: ${xvfb.stderr.trim()}`);
+      if (this.processes.get(display.name) !== display)
+        throw unavailable(`${programName(display.name)} exited: ${display.stderr.trim()}`);
       try {
         await runTool(this.options.binaries.xdotool, ["getdisplaygeometry"], {
           env,
@@ -335,8 +390,8 @@ export class DesktopSupervisor {
 
   private async waitForPort(vnc: Managed): Promise<void> {
     await this.waitUntil(async () => {
-      if (this.processes.get("vnc") !== vnc)
-        throw unavailable(`x11vnc exited: ${vnc.stderr.trim()}`);
+      if (this.processes.get(vnc.name) !== vnc)
+        throw unavailable(`${programName(vnc.name)} exited: ${vnc.stderr.trim()}`);
       return new Promise<boolean>((resolve) => {
         const socket = net.connect({ host: "127.0.0.1", port: this.options.vncPort });
         socket.once("connect", () => {
@@ -375,6 +430,36 @@ export class DesktopSupervisor {
       ),
     );
   }
+}
+
+/** Flags that make Xvnc a display with a loopback-only, passwordless, shared VNC server. */
+function xvncFlags(options: DesktopSupervisorOptions): string[] {
+  return [
+    "-rfbport",
+    String(options.vncPort),
+    // No password: it listens on loopback only, so it is reachable through a tunnel and nothing else.
+    "-localhost",
+    "yes",
+    "-SecurityTypes",
+    "None",
+    "-AlwaysShared",
+    // The viewer is not in charge of the display's size: `resize` is.
+    "-AcceptSetDesktopSize=0",
+    "-nolisten",
+    "tcp",
+    "-noreset",
+    "+extension",
+    "RANDR",
+  ];
+}
+
+function programName(name: ProcessName): string {
+  return name === "xvnc" ? "Xvnc" : name === "xvfb" ? "Xvfb" : name === "vnc" ? "x11vnc" : name;
+}
+
+function requiredBinary(path: string | undefined, name: string): string {
+  if (path === undefined) throw unavailable(`${name} was not found.`);
+  return path;
 }
 
 function unavailable(message: string): DockerSandboxError {

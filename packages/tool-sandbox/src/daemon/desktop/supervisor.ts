@@ -302,7 +302,10 @@ export class DesktopSupervisor {
         this.abandonRecovery = undefined;
         void (async () => {
           try {
-            if (crashed === "xvfb" || crashed === "xvnc") {
+            // A helper that exits because the display died is noticed first as often as not, and
+            // restarting just it would leave a "running" desktop with nothing to draw on. By now the
+            // display's own exit has been seen, so check it instead of trusting who was reported.
+            if (crashed === "xvfb" || crashed === "xvnc" || !this.displayAlive()) {
               await this.killAll();
               await this.startStack();
             } else if (crashed === "vnc") {
@@ -328,6 +331,12 @@ export class DesktopSupervisor {
     });
     this.ready = waiting;
     waiting.catch(() => undefined);
+  }
+
+  /** Whether the X server process is still running. */
+  private displayAlive(): boolean {
+    const { child } = this.processes.get(this.options.backend) ?? {};
+    return child !== undefined && child.exitCode === null && child.signalCode === null;
   }
 
   /**

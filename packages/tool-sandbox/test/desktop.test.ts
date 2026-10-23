@@ -406,6 +406,20 @@ for (const backend of backends) {
       expect(status.state).toBe("running");
     }, 60_000);
 
+    it("restarts the whole desktop when the display dies while a helper is being brought back", async () => {
+      const h = await start({ restart: { initialDelayMs: 150, maxDelayMs: 150 } });
+      await h.desktop.start();
+      // The window manager exits first, so its restart is scheduled, and then the display goes too.
+      // Restarting only the window manager would report a running desktop with nothing to draw on.
+      await h.runtime.exec({ command: "pkill", args: ["-9", "-x", "openbox"] });
+      await sleep(40);
+      await h.runtime.exec({ command: "pkill", args: ["-9", "-x", backend.display] });
+
+      const shot = await h.desktop.screenshot();
+      expect(pngSize(shot.png)).toEqual({ width: 1280, height: 800 });
+      expect((await h.desktop.status()).state).toBe("running");
+    }, 30_000);
+
     it("settles a caller waiting on a restart when the desktop is stopped", async () => {
       // Below the hub, which would retry the dropped call itself and hide whether the daemon
       // leaves it pending.

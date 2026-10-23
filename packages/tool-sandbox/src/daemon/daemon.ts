@@ -57,7 +57,7 @@ export interface SandboxDaemonOptions {
    */
   tunnel?: false | SandboxDaemonTunnelOptions;
   /**
-   * A virtual display (Xvfb, a window manager, x11vnc) the agent can see and drive and a human can
+   * A virtual display (Xvnc, or Xvfb with x11vnc, plus a window manager) the agent can see and drive and a human can
    * take over. Offered automatically when the programs it needs are installed; pass false to turn
    * it off. Nothing runs until the desktop is first used.
    */

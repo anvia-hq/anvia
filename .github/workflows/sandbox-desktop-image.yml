@@ -78,7 +78,7 @@ jobs:
         run: |
           docker run --rm -i --entrypoint sh "$IMAGE:validation" -s <<'CHECK'
           set -eu
-          for program in Xvfb x11vnc xdotool xrandr import openbox-session plank picom \
+          for program in Xvnc vncconfig xdotool xrandr import openbox-session plank picom \
             chromium anvia-chromium tmux lxterminal pcmanfm anvia-sandbox-daemon; do
             command -v "$program" >/dev/null || { echo "missing: $program" >&2; exit 1; }
           done

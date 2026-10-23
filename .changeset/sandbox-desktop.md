@@ -8,7 +8,7 @@ with `screenshot` (optionally scaled), `act` (move, click, drag, scroll, type, k
 `desktop_locked` error until `release` or the lease runs out, while watching and screenshots are
 never blocked.
 
-The daemon runs Xvfb, a window manager and x11vnc (loopback only, no password) itself: lazily on
+The daemon runs an X server with a VNC server (loopback only, no password) and a window manager itself: lazily on
 first use, restarting what crashes, and advertising `desktop` only when the programs are installed.
 The window manager defaults to `openbox-session` (openbox, which also runs `~/.config/openbox/autostart`), else `openbox`. A reference Debian image with a themed desktop and dock, Chromium and tmux is in `images/desktop/`. Viewers reach VNC through
 a tunnel; `hub.handleDesktopUpgrade` and `authorizeDesktop` relay a browser's noVNC connection,

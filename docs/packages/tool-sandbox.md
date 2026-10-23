@@ -492,6 +492,16 @@ same way in reverse: it waits while 256 KiB are unconsumed by the service, so an
 service does not pile up in memory either. A handle that falls `maxTunnelBufferBytes` (1 MiB)
 behind is cut off with `error`.
 
+Those limits suit terminals. A window can carry at most its own size per round trip, so 256 KiB over
+a 100 ms link is about 2.6 MB/s however fast the service is. For a stream a person is watching,
+pass `profile: "interactive"` to `open`: no batching, 64 KiB frames, a 2 MiB window and a 4 MiB
+socket buffer (about 20 MB/s at 100 ms), with a hub-side buffer, write window (1 MiB) and ack step
+(128 KiB) to match. `desktop.openViewer()` asks for it. The profile travels as an optional string in
+`tunnel.open`, so a daemon that predates it, or does not know the name, simply uses its defaults.
+On the daemon, `tunnel: { flowByPort: { 5900: { highWaterBytes, frameBytes, batchMs,
+socketBufferBytes } } }` sets limits for one port, and wins over the requested profile, which wins
+over `tunnel.flow`.
+
 #### Browser tunnels
 
 `hub.handleTunnelUpgrade(request, socket, head)` relays a browser's WebSocket to a tunnel byte for
@@ -550,12 +560,18 @@ Coordinates are pixels of the current display; a point outside it, or an `x` wit
 
 #### Image requirements
 
-The daemon offers `desktop` only when `Xvfb`, `x11vnc`, `xdotool`, `xrandr` and ImageMagick's
-`import` are installed, and says what is missing in its log otherwise. A window manager is optional
-(`openbox-session`, which is openbox plus its autostart file, is used if it is there). `packages/tool-sandbox/images/desktop/Dockerfile` is a reference
-image with all of that plus fonts, a themed dock, Chromium, tmux, `node-pty` and the daemon. Maintainers can publish it to
-`ghcr.io/anvia-hq/sandbox-desktop` (amd64 and arm64) with the "Sandbox desktop image" workflow, which
-builds the daemon from the same commit. Until a tag is published, build it yourself:
+The daemon offers `desktop` only when it has an X server with a VNC server, `xdotool`, `xrandr` and
+ImageMagick's `import`, and says what is missing in its log otherwise. The X server is either
+**`Xvnc`** (TigerVNC's `tigervnc-standalone-server`: the display and the VNC server in one process,
+which is told about changes instead of polling for them) or the older pair **`Xvfb` with `x11vnc`**.
+The daemon uses `Xvnc` when it is installed and falls back to the pair, so images built for the pair
+keep working; `desktop: { backend: "xvnc" | "xvfb" }`, or naming a program in `binaries`, picks one.
+On `Xvnc` the daemon also runs `vncconfig -nowin` when it is installed, which is what syncs the
+clipboard. A window manager is optional (`openbox-session`, which is openbox plus its autostart file,
+is used if it is there). `packages/tool-sandbox/images/desktop/Dockerfile` is a reference image with
+all of that plus fonts, a themed dock, Chromium, tmux, `node-pty` and the daemon. Maintainers can
+publish it to `ghcr.io/anvia-hq/sandbox-desktop` (amd64 and arm64) with the "Sandbox desktop image"
+workflow, which builds the daemon from the same commit. Until a tag is published, build it yourself:
 
 ```sh
 docker build -t my-desktop-sandbox packages/tool-sandbox/images/desktop
@@ -568,23 +584,25 @@ namespaces, which Docker's default seccomp profile blocks, so the launcher start
 `--no-sandbox`: the container is already the isolation boundary. Set `ANVIA_CHROMIUM_SANDBOX=1` to
 keep Chromium's sandbox, and run the container with a seccomp profile that allows user namespaces
 (or `--cap-add SYS_ADMIN`). `@anvia/browser`'s seccomp profile is not carried over: it crashes
-`runc` on current Docker releases. For another base image, install the same packages (`xvfb x11vnc xdotool
+`runc` on current Docker releases. For another base image, install the same packages (`tigervnc-standalone-server xdotool
 imagemagick x11-xserver-utils`, optionally `openbox`).
 
 #### Starting, supervising, resizing
 
 Nothing graphical runs until the desktop is first used: `screenshot`, `act`, `resize`, `start()` or
-a viewer connecting starts it, and callers arriving together share one start. The daemon runs Xvfb,
-the window manager and x11vnc, and restarts whichever crashes, with backoff. Xvfb takes the others
-down with it, since they hold its display, and comes back at the size it was left at. A call that
+a viewer connecting starts it, and callers arriving together share one start. The daemon runs the X
+server (Xvnc, or Xvfb with x11vnc), the window manager, and on Xvnc `vncconfig`, and restarts
+whichever crashes, with backoff. The X server takes the others down with it, since they hold its
+display, and comes back at the size it was left at. A call that
 arrives while the desktop is restarting waits for it. After five quick crashes in a row it gives up
 and `status()` reports `failed` with the reason, until the next call tries again.
 
 `status()` reports `state` (`stopped`, `starting`, `running`, `restarting`, `failed`), the current
 and maximum size, the display, and how many restarts there have been. The display starts at
-1280x800 and can be resized, with windows staying open, up to the maximum Xvfb was started with
-(3840x2160). Configure all of this with `desktop: { resolution, maxResolution, display, vncPort,
-windowManager, lock }` on `SandboxDaemon`, or `desktop: false` to turn it off.
+1280x800 and can be resized, with windows staying open, up to `maxResolution` (3840x2160; Xvfb is
+started that big, Xvnc grows to it). A viewer cannot resize the display itself. Configure all of
+this with `desktop: { backend, resolution, maxResolution, display, vncPort, windowManager, lock }` on
+`SandboxDaemon`, or `desktop: false` to turn it off.
 
 #### Control
 

@@ -538,7 +538,8 @@ resumes it with `ws.resume()`. Bun replaces the `ws` package with its own WebSoc
 neither, so on such a runtime the relay asks once and does without. It cannot slow the sender, so it
 bounds the queue instead: a browser with more than 4 MiB waiting to reach the service (a viewer's
 largest clipboard message is 1 MiB) is closed with code 1008 and the reason "sending faster than
-the service reads". Everything else the relays use (ping and pong, `terminate`, `close`, the send
+the service reads". (Where Bun itself stops reading from a socket first, as it does on Linux after a
+few MB, its own backpressure is the bound and the browser stays open.) Everything else the relays use (ping and pong, `terminate`, `close`, the send
 callback, `handleUpgrade`) works on Bun, and the browser relays, the VNC stream and terminals run
 there.
 

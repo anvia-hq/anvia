@@ -40,6 +40,7 @@
     "07_multi_agent/**/*.ts",
     "08_evals/**/*.ts",
     "09_studio/**/*.ts",
-    "10_integrations/**/*.ts"
+    "10_integrations/**/*.ts",
+    "11_remote_sandbox/**/*.ts"
   ]
 }

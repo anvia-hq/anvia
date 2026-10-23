@@ -1,0 +1,6 @@
+[net/launchpad/plank/docks/dock1]
+hide-mode='none'
+theme='Transparent'
+icon-size=52
+zoom-enabled=true
+zoom-percent=130

@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Terminal
+Exec=lxterminal
+Icon=utilities-terminal
+StartupWMClass=lxterminal
+Categories=System;TerminalEmulator;

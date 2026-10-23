@@ -1,4 +1,5 @@
-# Run by openbox when the desktop starts: a wallpaper and a dock, so it looks like a desktop and a
-# minimized window can be brought back.
+# Run by openbox when the desktop starts: a wallpaper, a compositor (for the dock's rounded,
+# translucent look), and the dock, which also brings back a minimized window.
 feh --bg-fill /usr/share/anvia/wallpaper.png &
-tint2 -c /etc/anvia/tint2rc &
+picom --backend xrender &
+GSETTINGS_BACKEND=keyfile dbus-launch plank &

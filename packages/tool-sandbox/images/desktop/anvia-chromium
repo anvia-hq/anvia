@@ -16,6 +16,7 @@ else
 fi
 # shellcheck disable=SC2086  # the flags are meant to be split
 exec chromium \
+  --class=chromium \
   --no-first-run \
   --no-default-browser-check \
   --password-store=basic \

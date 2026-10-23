@@ -14,14 +14,15 @@ FROM node:22-bookworm
 ARG ANVIA_SANDBOX_PACKAGE=@anvia/sandbox
 ARG NODE_PTY_VERSION=^1.1.0
 
-# Xvfb, openbox, tint2, x11vnc: the display, a light window manager, a taskbar with launchers (a browser, terminal and file manager), and the VNC server
-# (loopback only). Openbox's autostart sets a wallpaper and starts the taskbar.
+# Xvfb, openbox, x11vnc: the display, a light window manager, and the VNC server (loopback only).
+# picom and plank: a compositor and a dock, started by openbox's autostart file. lxterminal and
+# pcmanfm: the dock's terminal and file manager.
 # xdotool and ImageMagick: the agent's input and screenshots. xrandr: resizing. tmux and node-pty
 # (below): terminals that survive reconnects. The node base image already carries the compilers
 # node-pty builds with on Linux.
 RUN apt-get update \
   && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-    xvfb openbox tint2 x11vnc lxterminal pcmanfm feh yaru-theme-gtk yaru-theme-icon fonts-inter xdotool imagemagick x11-utils x11-xserver-utils \
+    xvfb openbox plank picom dbus-x11 x11vnc lxterminal pcmanfm feh yaru-theme-gtk yaru-theme-icon fonts-inter xdotool imagemagick x11-utils x11-xserver-utils \
     fonts-dejavu-core fonts-liberation fonts-noto-color-emoji \
     chromium tmux procps ca-certificates \
   && rm -rf /var/lib/apt/lists/*
@@ -35,7 +36,9 @@ ENV NODE_PATH=/usr/local/lib/node_modules
 COPY anvia-chromium /usr/local/bin/anvia-chromium
 RUN chmod 0555 /usr/local/bin/anvia-chromium \
   && install -d -o node -g node /workspace
-COPY tint2/tint2rc /etc/anvia/tint2rc
+COPY anvia-terminal.desktop /usr/share/applications/anvia-terminal.desktop
+COPY --chown=node:node plank/ /home/node/.config/plank/
+COPY --chown=node:node glib/keyfile /home/node/.config/glib-2.0/settings/keyfile
 COPY --chown=node:node openbox/autostart /home/node/.config/openbox/autostart
 COPY --chown=node:node gtk/settings.ini /home/node/.config/gtk-3.0/settings.ini
 COPY --chown=node:node gtk/gtkrc-2.0 /home/node/.gtkrc-2.0

@@ -81,7 +81,7 @@ try {
   };
 
   const agent = createDesktopAgent({
-    desktop,
+    ...sandbox,
     lifecycle: {
       async onToolStart({ toolName, input }) {
         console.log(

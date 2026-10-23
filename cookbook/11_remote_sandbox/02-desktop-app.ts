@@ -65,22 +65,27 @@ type AppEvent =
 let events: AppEvent[] = [{ type: "sandbox", state: "starting" }];
 const listeners = new Set<ServerResponse>();
 const emit = (event: AppEvent) => {
-  // A new run clears the log; everything else is kept so a page that connects late catches up.
-  events = event.type === "reset" ? [event] : [...events, event];
+  // A new run clears the log, but not what the page needs to know about the sandbox: without that,
+  // a page loaded after a run would wait for a sandbox that is long since ready. Everything else is
+  // kept so a page that connects late catches up.
+  events =
+    event.type === "reset"
+      ? [...events.filter((kept) => kept.type === "sandbox"), event]
+      : [...events, event];
   for (const response of listeners) response.write(`data: ${JSON.stringify(event)}\n\n`);
 };
 
-let desktop: Awaited<ReturnType<typeof startDesktopSandbox>>["desktop"] | undefined;
+let sandbox: Awaited<ReturnType<typeof startDesktopSandbox>> | undefined;
 let current: AbortController | undefined;
 
 async function run(task: string): Promise<void> {
-  if (desktop === undefined) throw new Error("The sandbox is not ready yet.");
+  if (sandbox === undefined) throw new Error("The sandbox is not ready yet.");
   const controller = new AbortController();
   current = controller;
   emit({ type: "reset" });
   emit({ type: "status", state: "running" });
   const agent = createDesktopAgent({
-    desktop,
+    ...sandbox,
     lifecycle: {
       onToolStart({ toolName, input }) {
         emit({
@@ -197,9 +202,8 @@ process.once("SIGINT", () => void shutdown());
 process.once("SIGTERM", () => void shutdown());
 
 try {
-  const sandbox = await startDesktopSandbox({ hub, hubPort: port, daemonToken });
+  sandbox = await startDesktopSandbox({ hub, hubPort: port, daemonToken });
   stopSandbox = sandbox.stop;
-  desktop = sandbox.desktop;
   emit({ type: "sandbox", state: "ready" });
   emit({ type: "status", state: "idle" });
   console.log("Sandbox ready. Give the agent a task in the page, and try taking over.");

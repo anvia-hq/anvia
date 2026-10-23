@@ -1,7 +1,8 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { AnthropicClient } from "@anvia/anthropic";
 import { Agent, type AgentLifecycle } from "@anvia/core/agent";
-import { createDesktopTools, type SandboxDesktop } from "@anvia/sandbox";
+import { createDesktopTools, createSandboxTools, type SandboxDesktop } from "@anvia/sandbox";
+import type { SandboxRuntime } from "@anvia/sandbox";
 import type { RemoteSandboxHub } from "@anvia/sandbox/remote";
 
 // What the desktop examples share: starting a desktop sandbox, and an agent that can drive it.
@@ -15,6 +16,10 @@ export const defaultTask =
 
 export interface DesktopSandbox {
   desktop: SandboxDesktop;
+  /** Runs commands in the sandbox, which is how the agent can start a program again. */
+  runtime: SandboxRuntime;
+  /** The X display programs draw on, for `env.DISPLAY`. */
+  display: string;
   /** Stops the container. The hub is the caller's to close. */
   stop(): Promise<void>;
 }
@@ -66,7 +71,7 @@ export async function startDesktopSandbox(options: {
       ],
       env: { DISPLAY: status.display, HOME: "/home/node" },
     });
-    return { desktop, stop };
+    return { desktop, runtime: options.hub.runtime(sandboxId), display: status.display, stop };
   } catch (error) {
     await stop();
     throw error;
@@ -82,6 +87,8 @@ export function requireAnthropicKey(): string {
 /** An agent with the desktop tools, and instructions on how to use them. */
 export function createDesktopAgent(options: {
   desktop: SandboxDesktop;
+  runtime: SandboxRuntime;
+  display: string;
   lifecycle?: AgentLifecycle;
 }) {
   const client = new AnthropicClient({
@@ -101,10 +108,17 @@ export function createDesktopAgent(options: {
         "seconds, then take a screenshot.",
       "If an input fails saying the desktop is controlled by someone else, a person has taken " +
         "control. Do not keep trying: wait with desktop_wait, then take a screenshot and try again.",
+      "If the screen is black or the browser is gone (someone may have minimized or closed it, and " +
+        "there is no taskbar), start it again with start_process: command anvia-chromium, args " +
+        `["about:blank"], env {"DISPLAY": "${options.display}", "HOME": "/home/node"}. Then take a screenshot.`,
       "When you have the answer, reply with it plainly.",
     ].join("\n"),
     maxTurns: 40,
-    tools: createDesktopTools({ sandbox: options.desktop }),
+    tools: [
+      ...createDesktopTools({ sandbox: options.desktop }),
+      // Only the ability to start a program, so the agent can bring the browser back.
+      ...createSandboxTools({ sandbox: options.runtime, tools: ["start_process"] }),
+    ],
     lifecycle: options.lifecycle,
   });
 }

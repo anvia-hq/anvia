@@ -22,6 +22,12 @@ export function selectTunnelProtocol(protocols: Set<string>): string | false {
 
 /** Bytes a browser may have queued toward a slow service before its socket is paused. */
 const maxQueuedBytes = 1024 * 1024;
+/**
+ * Where a socket cannot be paused, the most it may have queued before it is closed instead. It is
+ * above a single clipboard message from a viewer (the desktop's filter allows 1 MiB), so pasting
+ * is not a disconnect, and still bounds a connection's memory.
+ */
+const maxQueuedBytesUnpausable = 4 * maxQueuedBytes;
 /** WebSocket close reasons are limited to 123 bytes. */
 const maxReasonBytes = 120;
 
@@ -57,6 +63,11 @@ export function bridgeTunnel(
   let handle: TunnelHandle | undefined;
   let closed = false;
   let queued = 0;
+  // `ws` can pause its socket, which is how a browser that sends faster than the service reads is
+  // slowed down. Some runtimes substitute their own WebSocket for the package (Bun does) and it has
+  // no pause or resume, so ask once. Without them the limit below ends the connection instead of
+  // slowing it, which still bounds memory.
+  const canPause = typeof ws.pause === "function" && typeof ws.resume === "function";
   const stopPing = keepAlive(ws);
   ws.on("error", () => undefined);
 
@@ -93,7 +104,13 @@ export function bridgeTunnel(
       if (bytes.byteLength === 0) return;
     }
     queued += bytes.byteLength;
-    if (queued > maxQueuedBytes) ws.pause();
+    if (canPause && queued > maxQueuedBytes) {
+      ws.pause();
+    } else if (!canPause && queued > maxQueuedBytesUnpausable) {
+      queued -= bytes.byteLength;
+      closeSocket(1008, "sending faster than the service reads");
+      return;
+    }
     const size = bytes.byteLength;
     chain = chain.then(async () => {
       try {
@@ -104,7 +121,7 @@ export function bridgeTunnel(
         // right code for why, so closing here too would only race it.
       } finally {
         queued -= size;
-        if (queued <= maxQueuedBytes / 2) ws.resume();
+        if (canPause && queued <= maxQueuedBytes / 2) ws.resume();
       }
     });
   });

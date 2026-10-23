@@ -111,7 +111,9 @@ export class HubConnection {
         socket.terminate();
         return;
       }
-      this.send({ type: "ping" });
+      // A tick can land after the socket started closing and before "close" clears this timer.
+      // `send` throws then, and an exception from a timer ends the process.
+      this.trySend({ type: "ping" });
     }, heartbeatIntervalMs);
     this.heartbeat.unref?.();
   }

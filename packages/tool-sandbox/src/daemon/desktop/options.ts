@@ -22,7 +22,7 @@ export interface SandboxDaemonDesktopOptions {
   display?: string;
   /** Loopback port for the VNC server. Default 5900. */
   vncPort?: number;
-  /** Window manager command, or false to run without one. Default `openbox`, if installed. */
+  /** Window manager command, or false to run without one. Default `openbox-session` (openbox, plus its autostart file), or `openbox`, if installed. */
   windowManager?: string | false;
   binaries?: DesktopBinaries;
   /** How long to wait for the display and VNC server after starting them. Default 15 s. */

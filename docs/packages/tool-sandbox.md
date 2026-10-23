@@ -552,7 +552,7 @@ Coordinates are pixels of the current display; a point outside it, or an `x` wit
 
 The daemon offers `desktop` only when `Xvfb`, `x11vnc`, `xdotool`, `xrandr` and ImageMagick's
 `import` are installed, and says what is missing in its log otherwise. A window manager is optional
-(`openbox` is used if it is there). `packages/tool-sandbox/images/desktop/Dockerfile` is a reference
+(`openbox-session`, which is openbox plus its autostart file, is used if it is there). `packages/tool-sandbox/images/desktop/Dockerfile` is a reference
 image with all of that plus fonts, Chromium, tmux, `node-pty` and the daemon:
 
 ```sh

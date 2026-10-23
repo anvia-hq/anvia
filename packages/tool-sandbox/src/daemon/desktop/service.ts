@@ -86,7 +86,14 @@ export class DesktopService {
     if (missing.length > 0) return { missing };
 
     // A window manager is optional: without one the desktop still works, windows just have no frame.
-    const requested = options?.windowManager === undefined ? "openbox" : options.windowManager;
+    // `openbox-session` is openbox that also runs ~/.config/openbox/autostart, which is how an image
+    // adds a wallpaper or a taskbar. It ships in the same package as `openbox`.
+    const requested =
+      options?.windowManager !== undefined
+        ? options.windowManager
+        : (await findExecutable("openbox-session", searchPath)) !== undefined
+          ? "openbox-session"
+          : "openbox";
     let windowManager: string | undefined;
     if (requested !== false) {
       const [program = ""] = requested.split(/\s+/);

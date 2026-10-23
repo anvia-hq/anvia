@@ -1,0 +1,4 @@
+# Run by openbox when the desktop starts: a wallpaper and a taskbar, so it looks like a desktop and
+# a minimized window can be brought back.
+xsetroot -solid "#2b3a4a" &
+tint2 -c /etc/anvia/tint2rc &

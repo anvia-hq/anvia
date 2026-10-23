@@ -1,0 +1,37 @@
+# A small bottom taskbar: open windows on the left, a clock on the right.
+panel_items = TC
+panel_position = bottom center horizontal
+panel_size = 100% 32
+panel_margin = 0 0
+panel_padding = 4 2 4
+panel_background_id = 1
+panel_layer = top
+wm_menu = 1
+task_text = 1
+task_maximum_size = 220 28
+task_padding = 8 4 6
+task_background_id = 2
+task_active_background_id = 3
+task_font_color = #dddddd 100
+task_active_font_color = #ffffff 100
+time1_format = %H:%M
+time1_font = sans 10
+clock_font_color = #dddddd 100
+clock_padding = 8 0
+mouse_left = toggle_iconify
+mouse_right = close
+
+rounded = 0
+border_width = 0
+background_color = #1b242e 100
+border_color = #000000 0
+
+rounded = 4
+border_width = 0
+background_color = #2f3d4c 100
+border_color = #000000 0
+
+rounded = 4
+border_width = 0
+background_color = #4a6178 100
+border_color = #000000 0

@@ -14,13 +14,14 @@ FROM node:22-bookworm
 ARG ANVIA_SANDBOX_PACKAGE=@anvia/sandbox
 ARG NODE_PTY_VERSION=^1.1.0
 
-# Xvfb, openbox, x11vnc: the display, a light window manager, and the VNC server (loopback only).
+# Xvfb, openbox, tint2, x11vnc: the display, a light window manager, a taskbar, and the VNC server
+# (loopback only). Openbox's autostart sets a wallpaper and starts the taskbar.
 # xdotool and ImageMagick: the agent's input and screenshots. xrandr: resizing. tmux and node-pty
 # (below): terminals that survive reconnects. The node base image already carries the compilers
 # node-pty builds with on Linux.
 RUN apt-get update \
   && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-    xvfb openbox x11vnc xdotool imagemagick x11-utils x11-xserver-utils \
+    xvfb openbox tint2 x11vnc xdotool imagemagick x11-utils x11-xserver-utils \
     fonts-dejavu-core fonts-liberation fonts-noto-color-emoji \
     chromium tmux procps ca-certificates \
   && rm -rf /var/lib/apt/lists/*
@@ -32,6 +33,8 @@ RUN --mount=type=bind,target=/ctx \
 ENV NODE_PATH=/usr/local/lib/node_modules
 
 COPY anvia-chromium /usr/local/bin/anvia-chromium
+COPY tint2/tint2rc /etc/anvia/tint2rc
+COPY --chown=node:node openbox/autostart /home/node/.config/openbox/autostart
 RUN chmod 0555 /usr/local/bin/anvia-chromium \
   && install -d -o node -g node /workspace
 

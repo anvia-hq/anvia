@@ -106,9 +106,12 @@ export class RfbClientFilter {
         kind = "input";
         break;
       case 6: {
-        // ClientCutText
+        // ClientCutText. The length is signed: a negative one marks an Extended Clipboard message,
+        // and its absolute value is the size of the payload that follows. noVNC sends one as soon
+        // as the server lists the extension. Either way it is clipboard data headed for the
+        // desktop, so it is input.
         if (buffer.byteLength < 8) return 0;
-        const text = readUint32(buffer, 4);
+        const text = Math.abs(readInt32(buffer, 4));
         if (text > maxVariableBytes) throw new RfbProtocolError("Clipboard text is too large.");
         length = 8 + text;
         kind = "input";
@@ -149,13 +152,8 @@ export class RfbClientFilter {
   }
 }
 
-function readUint32(bytes: Uint8Array, offset: number): number {
-  return (
-    (bytes[offset] ?? 0) * 0x1000000 +
-    ((bytes[offset + 1] ?? 0) << 16) +
-    ((bytes[offset + 2] ?? 0) << 8) +
-    (bytes[offset + 3] ?? 0)
-  );
+function readInt32(bytes: Uint8Array, offset: number): number {
+  return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getInt32(offset);
 }
 
 function concat(...parts: Uint8Array[]): Uint8Array {

@@ -14,6 +14,13 @@ const updateRequest = bytes(3, 1, 0, 0, 0, 0, 3, 0, 2, 0);
 const keyEvent = bytes(4, 1, 0, 0, 0, 0, 0, 0x61);
 const pointerEvent = bytes(5, 1, 0, 10, 0, 20);
 const cutText = (text: string) => join(bytes(6, 0, 0, 0, 0, 0, 0, text.length), ascii(text));
+// Extended Clipboard: the length is negative, and its absolute value is the payload size.
+const extendedCutText = (payload: number) =>
+  join(
+    bytes(6, 0, 0, 0),
+    bytes(...Array.from({ length: 4 }, (_, i) => (-payload >> (24 - 8 * i)) & 0xff)),
+    new Uint8Array(payload),
+  );
 const qemuKey = join(bytes(255, 0, 0, 1), new Uint8Array(8));
 const setDesktopSize = join(bytes(251, 0, 5, 0, 3, 0, 1, 0), new Uint8Array(16));
 
@@ -47,6 +54,24 @@ describe("RfbClientFilter", () => {
       updateRequest,
     );
     expect(run(false, session)).toEqual(watching);
+  });
+
+  it("measures an Extended Clipboard message, whose length is negative, and treats it as input", () => {
+    // This is what noVNC sends as soon as the server advertises the extension. Reading the length
+    // as unsigned made it look like a four-gigabyte clipboard and ended the session.
+    const clipboard = extendedCutText(8);
+    expect(clipboard.byteLength).toBe(16);
+    const stream = join(handshake(), clipboard, updateRequest);
+    expect(run(true, stream)).toEqual(stream);
+    expect(run(false, stream)).toEqual(join(handshake(), updateRequest));
+
+    for (const size of [1, 3, 7]) {
+      const chunks: Uint8Array[] = [];
+      for (let offset = 0; offset < stream.byteLength; offset += size) {
+        chunks.push(stream.subarray(offset, offset + size));
+      }
+      expect(run(false, ...chunks)).toEqual(join(handshake(), updateRequest));
+    }
   });
 
   it("removes the QEMU extended key event and any resize request", () => {
@@ -98,8 +123,10 @@ describe("RfbClientFilter", () => {
 
   it("refuses lengths that would make it buffer without end", () => {
     expect(() => run(true, handshake(), bytes(2, 0, 0xff, 0xff))).toThrow(/encodings/);
-    expect(() => run(true, handshake(), bytes(6, 0, 0, 0, 0xff, 0xff, 0xff, 0xff))).toThrow(
+    expect(() => run(true, handshake(), bytes(6, 0, 0, 0, 0x7f, 0xff, 0xff, 0xff))).toThrow(
       /too large/,
     );
+    // A huge negative length is just as large a payload.
+    expect(() => run(true, handshake(), bytes(6, 0, 0, 0, 0x80, 0, 0, 1))).toThrow(/too large/);
   });
 });

@@ -69,6 +69,8 @@ semantic attributes and behavior; it has no package stylesheet.
   when using that integration.
 - A remote sandbox terminal through `@anvia/react-ui/sandbox-terminal`; install `@xterm/xterm` and
   `@xterm/addon-fit` when using it.
+- A remote sandbox desktop viewer with take-over control through
+  `@anvia/react-ui/sandbox-desktop`; install `@novnc/novnc` when using it.
 
 ## Learn more
 

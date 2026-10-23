@@ -10,7 +10,10 @@ export class FakeSocket {
 
   readyState = FakeSocket.CONNECTING;
   binaryType = "blob";
+  protocol = "";
   readonly sent: Array<Record<string, unknown>> = [];
+  /** Binary frames the viewer sent. */
+  readonly sentBinary: unknown[] = [];
   closedWith: number | undefined;
   private readonly listeners = new Map<string, Array<(event: never) => void>>();
 
@@ -25,15 +28,16 @@ export class FakeSocket {
     this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]);
   }
 
-  send(data: string): void {
-    this.sent.push(JSON.parse(data));
+  send(data: string | ArrayBufferLike | ArrayBufferView): void {
+    if (typeof data === "string") this.sent.push(JSON.parse(data));
+    else this.sentBinary.push(data);
   }
 
   close(code?: number): void {
     if (this.readyState === FakeSocket.CLOSED) return;
     this.closedWith = code;
     this.readyState = FakeSocket.CLOSED;
-    this.emit("close", {});
+    this.emit("close", { code: code ?? 1005, reason: "" });
   }
 
   /** The server accepted the upgrade. */
@@ -50,10 +54,10 @@ export class FakeSocket {
     this.emit("message", { data: bytes.slice().buffer });
   }
 
-  /** The link dropped. */
-  serverClose(): void {
+  /** The link dropped, or the relay closed it with a reason. */
+  serverClose(code = 1006, reason = ""): void {
     this.readyState = FakeSocket.CLOSED;
-    this.emit("close", {});
+    this.emit("close", { code, reason });
   }
 
   private emit(type: string, event: unknown): void {

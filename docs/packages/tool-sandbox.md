@@ -529,8 +529,9 @@ address.
 ### Desktop
 
 A remote sandbox can have a desktop: a virtual display that an agent can see and drive and that a
-person can watch or take over. It replaces what `@anvia/browser` used to provide. Chromium is just
-a program on the desktop, so any graphical application works, and nothing is specific to browsers.
+person can watch or take over. It is the remote-sandbox counterpart to `@anvia/browser`, which
+drives Chromium in a local Docker container. Chromium is just a program on the desktop, so any
+graphical application works, and nothing is specific to browsers.
 
 ```ts
 const desktop = hub.desktop("sandbox-1");
@@ -603,7 +604,8 @@ The daemon's VNC server listens on `127.0.0.1` with no password, so the only way
 `desktop.openViewer()` opens that tunnel, and `hub.handleDesktopUpgrade` relays a browser's noVNC
 connection to it, with `authorizeDesktop` returning `{ sandboxId, readOnly?, holder? }`. Tickets,
 Origin checks and status codes are the same as for [browser terminals](#browser-terminals), and
-`hub.listen({ desktopPath: "/desktop" })` routes to it. No websockify runs in the sandbox.
+`hub.listen({ desktopPath: "/desktop" })` routes to it. No websockify runs in the sandbox. In React,
+use [`<SandboxDesktop>`](./react-ui.md#sandbox-desktop).
 
 ```ts
 authorizeDesktop(request) {

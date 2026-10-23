@@ -196,3 +196,60 @@ A `ref` exposes `focus()` and `reconnect()`.
 
 The component does not choose who may see a session. That is the job of the ticket your backend
 mints and the hub's `authorizeTerminal`, including the `readOnly` grant.
+
+## Sandbox desktop
+
+`@anvia/react-ui/sandbox-desktop` shows a remote sandbox's desktop with [noVNC](https://novnc.com)
+and lets a person take control from the agent. It talks to the desktop relay of `RemoteSandboxHub`
+(see [Desktop](./tool-sandbox.md#desktop)). Install the optional peer `@novnc/novnc`. noVNC is
+loaded on demand when the first desktop mounts, and the component lives on its own subpath so apps
+that never show a desktop never load it. noVNC is licensed MPL-2.0; it is a peer dependency, so
+your application bundles it, not this package.
+
+```tsx
+import { SandboxDesktop } from "@anvia/react-ui/sandbox-desktop";
+
+export function Desktop({ sandboxId }: { sandboxId: string }) {
+  return (
+    <div style={{ height: 600 }}>
+      <SandboxDesktop
+        url="/desktop"
+        // Single-use, so pass a function: every reconnect fetches a fresh one.
+        ticket={async () => (await fetch(`/api/sandboxes/${sandboxId}/desktop-ticket`)).text()}
+      />
+    </div>
+  );
+}
+```
+
+The component fills its parent, so give the parent a height, and scales the desktop to fit it
+(`scaleToFit={false}` shows it at its own size). The desktop's size is set through the hub's API
+(`desktop.resize`); a viewer never resizes it.
+
+| Prop                                | Purpose                                                                                                                                           |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `url`                               | The hub's desktop endpoint: `ws:`/`wss:`, `http:`/`https:`, or a path on this page.                                                               |
+| `ticket`                            | A short-lived ticket or a function returning one. It travels as the `anvia.ticket.<ticket>` subprotocol, so it must use only URL-safe characters. |
+| `readOnly`                          | Watch only. The relay enforces it too: it removes a read-only viewer's key, pointer and clipboard messages.                                       |
+| `scaleToFit`                        | Scale the desktop to the element. Default true.                                                                                                   |
+| `reconnect`                         | `{ initialDelayMs, maxDelayMs, maxAttempts }`. Defaults are 500 ms, 15 s and 10 attempts.                                                         |
+| `onStatusChange`, `onControlChange` | Called when the connection state changes, and when the relay reports who has control.                                                             |
+| `renderStatus`, `renderControls`    | Replace the default status line and take-over bar.                                                                                                |
+
+**Taking control.** The default bar shows who is driving: "The agent has control", "alice has
+control", "You have control" or "View only". "Take over" asks the relay for control, which pauses
+the agent's inputs (they fail with `desktop_locked`) until "Release". The viewer may type only
+while it holds control or while nobody does; while someone else holds it, the viewer is watch-only
+and has no take-over button. Closing the tab releases control. `renderControls` receives `{ status,
+control, readOnly, notice, takeOver, release }` to draw your own, and a `ref` exposes `focus()`,
+`reconnect()`, `takeOver()` and `release()`. A request that fails, such as taking over while someone
+else holds control, shows as `notice` until the next update.
+
+A connection is `loading`, `connecting`, `open`, `reconnecting` or `failed`, as for the
+[terminal](#sandbox-terminal), and the root element carries it as `data-state` (and `data-control`
+as `you`, `other` or `none`). A relay that cannot set the viewer up closes with a reason like
+`unsupported: ...`; the viewer shows it and stops when retrying cannot help, and retries when the
+sandbox may just be starting. Each reconnect gets a new noVNC client and a fresh ticket.
+
+Both viewers share one connection implementation: reconnect with backoff, a fresh ticket per
+attempt, and the same status line.

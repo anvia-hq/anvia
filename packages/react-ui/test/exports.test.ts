@@ -30,6 +30,7 @@ import { HumanInputPrimitive } from "../src/human-input";
 import { ImagePrimitive } from "../src/image";
 import { MessagePrimitive } from "../src/message";
 import * as root from "../src";
+import { SandboxDesktop } from "../src/sandbox-desktop";
 import { SandboxTerminal } from "../src/sandbox-terminal";
 import { SelectionToolbarPrimitive } from "../src/selection-toolbar";
 import {
@@ -116,8 +117,10 @@ describe("public entrypoints", () => {
     }>();
   });
 
-  it("keeps the terminal on its own subpath so xterm stays an optional peer", () => {
+  it("keeps the terminal and desktop on their own subpaths so their viewers stay optional peers", () => {
     expect(SandboxTerminal).toBeDefined();
+    expect(SandboxDesktop).toBeDefined();
     expect(root).not.toHaveProperty("SandboxTerminal");
+    expect(root).not.toHaveProperty("SandboxDesktop");
   });
 });

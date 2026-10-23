@@ -165,6 +165,8 @@ const server = createServer(async (request, response) => {
     request.on("close", () => listeners.delete(response));
   } else if (request.method === "POST" && path === "/api/run") {
     const { task } = await readJson(request);
+    if (sandbox === undefined)
+      return json(response, 409, { error: "The sandbox is not ready yet." });
     if (current !== undefined)
       return json(response, 409, { error: "The agent is already running." });
     if (typeof task !== "string" || task.trim() === "")

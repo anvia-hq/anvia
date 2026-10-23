@@ -41,7 +41,8 @@
     "build": "pnpm run build:deps && tsup --entry.index src/index.ts --entry.cli src/cli.ts --entry.daemon-cli src/daemon-cli.ts --entry.remote src/remote/index.ts --entry.daemon src/daemon/index.ts --format esm --dts --sourcemap --clean && chmod +x dist/cli.js dist/daemon-cli.js",
     "build:deps": "test -f ../core/dist/index.d.ts || pnpm --filter @anvia/core build",
     "test": "pnpm run build:deps && vitest run",
-    "typecheck": "pnpm run build:deps && tsc --noEmit"
+    "typecheck": "pnpm run build:deps && tsc --noEmit",
+    "bench:desktop": "tsx scripts/desktop-bench.ts"
   },
   "dependencies": {
     "@clack/prompts": "^1.8.1",
@@ -54,6 +55,7 @@
     "@types/ws": "^8.18.2",
     "node-pty": "^1.1.0",
     "tsup": "^8.5.0",
+    "tsx": "^4.23.15",
     "typescript": "^5.9.3",
     "vitest": "^4.1.11"
   },

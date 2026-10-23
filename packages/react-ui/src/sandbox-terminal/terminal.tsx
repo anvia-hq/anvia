@@ -10,6 +10,8 @@ import {
 } from "react";
 
 import { type PrimitiveProps } from "../primitives";
+import { DefaultStatus } from "../relay/status";
+import { type TicketSource, resolveTicket } from "../relay/ticket";
 import {
   type SandboxTerminalReconnectOptions,
   type SandboxTerminalStatus,
@@ -34,7 +36,7 @@ export type SandboxTerminalProps = Omit<PrimitiveProps<"div">, "children" | "onE
    * A one-time ticket, or a function returning one. Pass a function: tickets are single use, so
    * each reconnect needs a fresh one. It travels as a WebSocket subprotocol, not in the URL.
    */
-  ticket?: string | (() => string | Promise<string>);
+  ticket?: TicketSource;
   /** Show output only. The server enforces it too; this also stops the terminal taking input. */
   readOnly?: boolean;
   reconnect?: SandboxTerminalReconnectOptions;
@@ -192,59 +194,3 @@ export const SandboxTerminal = forwardRef<SandboxTerminalHandle, SandboxTerminal
     );
   },
 );
-
-function resolveTicket(
-  read: () => string | (() => string | Promise<string>) | undefined,
-): (() => string | Promise<string>) | undefined {
-  if (read() === undefined) return undefined;
-  return () => {
-    const ticket = read();
-    return typeof ticket === "function" ? ticket() : (ticket as string);
-  };
-}
-
-const statusStyle: CSSProperties = {
-  position: "absolute",
-  top: 8,
-  right: 8,
-  padding: "2px 8px",
-  borderRadius: 4,
-  fontSize: 12,
-  background: "rgba(0, 0, 0, 0.7)",
-  color: "#fff",
-};
-
-function DefaultStatus({ status, retry }: { status: SandboxTerminalStatus; retry: () => void }) {
-  if (status.state === "open") return null;
-  return (
-    <div role="status" data-sandbox-terminal-status={status.state} style={statusStyle}>
-      {describe(status)}
-      {status.state === "failed" ? (
-        <>
-          {" "}
-          <button type="button" onClick={retry}>
-            Retry
-          </button>
-        </>
-      ) : null}
-    </div>
-  );
-}
-
-function describe(status: SandboxTerminalStatus): string {
-  switch (status.state) {
-    case "loading":
-    case "connecting":
-      return "Connecting…";
-    case "reconnecting":
-      return `Reconnecting in ${Math.max(1, Math.round((status.retryInMs ?? 0) / 1_000))}s…`;
-    case "ended":
-      return status.exitCode === undefined
-        ? "Session ended"
-        : `Session ended (exit ${status.exitCode})`;
-    case "failed":
-      return status.message ?? "Disconnected";
-    case "open":
-      return "";
-  }
-}

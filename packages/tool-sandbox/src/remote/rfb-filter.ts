@@ -117,6 +117,9 @@ export class RfbClientFilter {
         kind = "input";
         break;
       }
+      case 150: // EnableContinuousUpdates: only changes how the server sends, so it is not input.
+        length = 10;
+        break;
       case 248: {
         // ClientFence
         if (buffer.byteLength < 9) return 0;

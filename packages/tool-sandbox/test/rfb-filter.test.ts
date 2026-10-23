@@ -74,6 +74,24 @@ describe("RfbClientFilter", () => {
     }
   });
 
+  it("passes what TigerVNC's extensions add, for a viewer that may only watch", () => {
+    // noVNC sends these as soon as the server advertises the extensions, and Xvnc does. Refusing
+    // one (as an unknown type) made every viewer on Xvnc fail with "unsupported message".
+    const continuousUpdates = bytes(150, 1, 0, 0, 0, 0, 5, 0, 3, 0x20);
+    const fence = join(bytes(248, 0, 0, 0, 0, 0, 0, 3, 4), ascii("ping"));
+    const xvp = bytes(250, 0, 1, 2);
+    const stream = join(handshake(), continuousUpdates, fence, xvp, updateRequest);
+    expect(run(false, stream)).toEqual(stream);
+
+    for (const size of [1, 3, 7]) {
+      const chunks: Uint8Array[] = [];
+      for (let offset = 0; offset < stream.byteLength; offset += size) {
+        chunks.push(stream.subarray(offset, offset + size));
+      }
+      expect(run(false, ...chunks)).toEqual(stream);
+    }
+  });
+
   it("removes the QEMU extended key event and any resize request", () => {
     const input = join(handshake(), qemuKey, setDesktopSize, updateRequest);
     expect(run(true, input)).toEqual(join(handshake(), qemuKey, updateRequest));

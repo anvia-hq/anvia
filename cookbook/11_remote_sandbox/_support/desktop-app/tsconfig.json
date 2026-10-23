@@ -1,0 +1,10 @@
+{
+  // The browser side of 02-desktop-app.ts. The cookbook's own tsconfig renders JSX with Hono, so
+  // this one renders it with React, and resolves @anvia/react-ui from its build.
+  "extends": "../../../tsconfig.json",
+  "compilerOptions": {
+    "jsxImportSource": "react",
+    "paths": {}
+  },
+  "include": ["client.tsx"]
+}

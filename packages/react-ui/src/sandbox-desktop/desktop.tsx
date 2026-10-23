@@ -58,6 +58,16 @@ export type SandboxDesktopProps = Omit<PrimitiveProps<"div">, "children" | "onEr
   readOnly?: boolean;
   /** Scale the desktop to fit the element. Default true. */
   scaleToFit?: boolean;
+  /**
+   * JPEG quality asked of the server, 0 (smallest, blockiest) to 9 (best, most data). Default 6.
+   * Lower it for a slow link; it applies to the live connection.
+   */
+  qualityLevel?: number;
+  /**
+   * How hard the server compresses, 0 (fastest, most data) to 9 (slowest, least data). Default 2,
+   * which keeps the server's CPU low. Raise it for a slow link; it applies to the live connection.
+   */
+  compressionLevel?: number;
   reconnect?: RelayReconnectOptions;
   onStatusChange?: (status: RelayStatus) => void;
   /** Called whenever the relay reports who has control. */
@@ -67,6 +77,15 @@ export type SandboxDesktopProps = Omit<PrimitiveProps<"div">, "children" | "onEr
   /** Replace the default take-over bar. Return null to show nothing. */
   renderControls?: (state: SandboxDesktopControlsState) => ReactNode;
 };
+
+const defaultQualityLevel = 6;
+const defaultCompressionLevel = 2;
+
+/** A level noVNC accepts: a whole number from 0 to 9. Anything else falls back to the default. */
+function level(value: number | undefined, fallback: number): number {
+  if (value === undefined || !Number.isFinite(value)) return fallback;
+  return Math.min(9, Math.max(0, Math.round(value)));
+}
 
 const rootStyle: CSSProperties = { position: "relative", width: "100%", height: "100%" };
 const screenStyle: CSSProperties = { width: "100%", height: "100%" };
@@ -83,6 +102,8 @@ export const SandboxDesktop = forwardRef<SandboxDesktopHandle, SandboxDesktopPro
       ticket,
       readOnly = false,
       scaleToFit = true,
+      qualityLevel,
+      compressionLevel,
       reconnect,
       onStatusChange,
       onControlChange,
@@ -112,8 +133,19 @@ export const SandboxDesktop = forwardRef<SandboxDesktopHandle, SandboxDesktopPro
       onControlChange,
       scaleToFit,
       viewOnly,
+      quality: level(qualityLevel, defaultQualityLevel),
+      compression: level(compressionLevel, defaultCompressionLevel),
     });
-    latest.current = { ticket, reconnect, onStatusChange, onControlChange, scaleToFit, viewOnly };
+    latest.current = {
+      ticket,
+      reconnect,
+      onStatusChange,
+      onControlChange,
+      scaleToFit,
+      viewOnly,
+      quality: level(qualityLevel, defaultQualityLevel),
+      compression: level(compressionLevel, defaultCompressionLevel),
+    };
 
     useImperativeHandle(
       ref,
@@ -132,6 +164,14 @@ export const SandboxDesktop = forwardRef<SandboxDesktopHandle, SandboxDesktopPro
     useEffect(() => {
       if (viewer.current !== undefined) viewer.current.scaleViewport = scaleToFit;
     }, [scaleToFit]);
+    useEffect(() => {
+      if (viewer.current !== undefined) viewer.current.qualityLevel = latest.current.quality;
+    }, [qualityLevel]);
+    useEffect(() => {
+      if (viewer.current !== undefined) {
+        viewer.current.compressionLevel = latest.current.compression;
+      }
+    }, [compressionLevel]);
 
     useEffect(() => {
       const container = screen.current;
@@ -166,6 +206,10 @@ export const SandboxDesktop = forwardRef<SandboxDesktopHandle, SandboxDesktopPro
             // The desktop's size is set through the hub's API, never by a viewer.
             rfb.resizeSession = false;
             rfb.viewOnly = latest.current.viewOnly;
+            // Set outright, not left to noVNC's defaults, so what a viewer asks of the server is
+            // stated here and can be changed.
+            rfb.qualityLevel = latest.current.quality;
+            rfb.compressionLevel = latest.current.compression;
             viewer.current = rfb;
           },
           onControl: (next) => {

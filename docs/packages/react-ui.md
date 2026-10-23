@@ -226,12 +226,22 @@ The component fills its parent, so give the parent a height, and scales the desk
 (`scaleToFit={false}` shows it at its own size). The desktop's size is set through the hub's API
 (`desktop.resize`); a viewer never resizes it.
 
+**Smoothness.** Everything that crosses the link is compressed pixels, so size and the two levels are
+what you tune. 1280x800 (the daemon's default) is a good size; going past 1440x900 costs the server
+CPU and the link bandwidth for little the agent or a person can use, and a screenshot is scaled to
+fit the model's image limits anyway. On a slow or distant link lower `qualityLevel` (to 3 or 4) and
+raise `compressionLevel` (to 5 or more); on a fast one the defaults are right. Over a long link,
+make sure the desktop is opened through `desktop.openViewer()` or the hub's desktop relay, which ask
+for the `interactive` tunnel profile, since the default tunnel window caps throughput near 2.6 MB/s
+at 100 ms.
+
 | Prop                                | Purpose                                                                                                                                           |
 | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `url`                               | The hub's desktop endpoint: `ws:`/`wss:`, `http:`/`https:`, or a path on this page.                                                               |
 | `ticket`                            | A short-lived ticket or a function returning one. It travels as the `anvia.ticket.<ticket>` subprotocol, so it must use only URL-safe characters. |
 | `readOnly`                          | Watch only. The relay enforces it too: it removes a read-only viewer's key, pointer and clipboard messages.                                       |
 | `scaleToFit`                        | Scale the desktop to the element. Default true.                                                                                                   |
+| `qualityLevel`, `compressionLevel`  | What the viewer asks the server for, each 0 to 9: JPEG quality (default 6) and compression (default 2). They apply to the live connection.        |
 | `reconnect`                         | `{ initialDelayMs, maxDelayMs, maxAttempts }`. Defaults are 500 ms, 15 s and 10 attempts.                                                         |
 | `onStatusChange`, `onControlChange` | Called when the connection state changes, and when the relay reports who has control.                                                             |
 | `renderStatus`, `renderControls`    | Replace the default status line and take-over bar.                                                                                                |

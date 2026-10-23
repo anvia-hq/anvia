@@ -599,7 +599,8 @@ and `status()` reports `failed` with the reason, until the next call tries again
 
 `status()` reports `state` (`stopped`, `starting`, `running`, `restarting`, `failed`), the current
 and maximum size, the display, and how many restarts there have been. The display starts at
-1280x800 and can be resized, with windows staying open, up to `maxResolution` (3840x2160; Xvfb is
+1280x800 (recommended; larger sizes cost CPU and bandwidth, and 1440x900 is a sensible ceiling for
+smoothness) and can be resized, with windows staying open, up to `maxResolution` (3840x2160; Xvfb is
 started that big, Xvnc grows to it). A viewer cannot resize the display itself. Configure all of
 this with `desktop: { backend, resolution, maxResolution, display, vncPort, windowManager, lock }` on
 `SandboxDaemon`, or `desktop: false` to turn it off.

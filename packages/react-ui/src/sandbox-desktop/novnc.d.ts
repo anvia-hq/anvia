@@ -29,6 +29,10 @@ declare module "@novnc/novnc" {
     resizeSession: boolean;
     /** Send no input. */
     viewOnly: boolean;
+    /** JPEG quality asked of the server, 0 (smallest) to 9 (best). noVNC's own default is 6. */
+    qualityLevel: number;
+    /** Compression asked of the server, 0 (fastest, most data) to 9 (least data). Default 2. */
+    compressionLevel: number;
     focusOnClick: boolean;
     background: string;
     disconnect(): void;

@@ -7,6 +7,8 @@ export class FakeRfb {
   clipViewport = true;
   resizeSession = true;
   viewOnly = false;
+  qualityLevel = -1;
+  compressionLevel = -1;
   disconnected = false;
   focused = 0;
   /** VNC frames the channel delivered. */

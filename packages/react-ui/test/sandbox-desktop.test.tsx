@@ -98,6 +98,52 @@ describe("SandboxDesktop", () => {
     expect(FakeRfb.last.scaleViewport).toBe(true);
   });
 
+  describe("picture quality", () => {
+    it("states the quality and compression it asks of the server, not left to noVNC", async () => {
+      await mount();
+      await accepted();
+      expect(FakeRfb.last).toMatchObject({ qualityLevel: 6, compressionLevel: 2 });
+    });
+
+    it("takes both as props, and applies a change to the live connection", async () => {
+      const view = await mount({ qualityLevel: 3, compressionLevel: 8 });
+      await accepted();
+      expect(FakeRfb.last).toMatchObject({ qualityLevel: 3, compressionLevel: 8 });
+
+      view.rerender(
+        <SandboxDesktop url={url} data-testid="desktop" qualityLevel={9} compressionLevel={0} />,
+      );
+      expect(FakeRfb.last).toMatchObject({ qualityLevel: 9, compressionLevel: 0 });
+      expect(FakeRfb.instances).toHaveLength(1); // The connection was not restarted for it.
+    });
+
+    it("rounds and clamps levels noVNC would refuse, and ignores nonsense", async () => {
+      const view = await mount({ qualityLevel: 12.4, compressionLevel: -3 });
+      await accepted();
+      expect(FakeRfb.last).toMatchObject({ qualityLevel: 9, compressionLevel: 0 });
+
+      view.rerender(
+        <SandboxDesktop
+          url={url}
+          data-testid="desktop"
+          qualityLevel={Number.NaN}
+          compressionLevel={4.6}
+        />,
+      );
+      expect(FakeRfb.last).toMatchObject({ qualityLevel: 6, compressionLevel: 5 });
+    });
+
+    it("gives a reconnected client the same levels", async () => {
+      await mount({ qualityLevel: 2, compressionLevel: 7 });
+      await accepted();
+      await act(async () => FakeSocket.last.serverClose());
+      await waitFor(() => expect(FakeSocket.instances.length).toBeGreaterThan(1));
+      await accepted();
+      expect(FakeRfb.instances.length).toBeGreaterThan(1);
+      expect(FakeRfb.last).toMatchObject({ qualityLevel: 2, compressionLevel: 7 });
+    });
+  });
+
   describe("taking control", () => {
     it("shows who has control and lets the viewer take over and release", async () => {
       await mount();

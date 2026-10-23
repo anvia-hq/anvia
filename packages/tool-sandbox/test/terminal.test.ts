@@ -398,7 +398,7 @@ describe("terminal capability negotiation", () => {
     try {
       daemon.start();
       await daemon.ready();
-      expect(hellos[0]?.capabilities).toEqual(["terminal", "tunnel"]);
+      expect(hellos[0]?.capabilities).toEqual(["terminal", "tunnel", "binary-data"]);
       expect(daemon.connected).toBe(true);
     } finally {
       await daemon.stop();
@@ -438,8 +438,8 @@ describe("terminal capability negotiation", () => {
       await none.ready();
       plain.start();
       await plain.ready();
-      expect(hellos[0]?.capabilities).toEqual(["tunnel"]);
-      expect(hellos[1]?.capabilities).toEqual(["terminal", "tunnel"]);
+      expect(hellos[0]?.capabilities).toEqual(["tunnel", "binary-data"]);
+      expect(hellos[1]?.capabilities).toEqual(["terminal", "tunnel", "binary-data"]);
     } finally {
       await none.stop();
       await plain.stop();

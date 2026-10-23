@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import WebSocket from "ws";
+import { type TunnelBytesFrame, decodeTunnelBytes, encodeTunnelBytes } from "./binary-frame";
 import {
   type DaemonFrame,
   type HubFrame,
@@ -11,7 +12,9 @@ import {
   daemonFrameSchema,
   decodeBytes,
   decodeError,
+  encodeBytes,
   methodResults,
+  rawDataToBytes,
   rawDataToString,
 } from "./protocol";
 
@@ -73,6 +76,14 @@ export class HubConnection {
     heartbeatIntervalMs: number,
     /** Optional features the daemon said it has. Empty for a daemon that predates them. */
     readonly capabilities: ReadonlySet<string> = new Set(),
+    /**
+     * Whether tunnel bytes may travel as binary messages: `accepts` once the hub advertised it, and
+     * `sends` only if the daemon did too.
+     */
+    private readonly binary: { accepts: boolean; sends: boolean } = {
+      accepts: false,
+      sends: false,
+    },
   ) {
     this.closed = new Promise((resolve) => {
       socket.once("close", () => {
@@ -89,9 +100,10 @@ export class HubConnection {
       });
     });
     socket.on("error", () => undefined);
-    socket.on("message", (data) => {
+    socket.on("message", (data, isBinary) => {
       this.lastSeen = Date.now();
-      this.onMessage(data);
+      if (isBinary) this.onBinary(data);
+      else this.onMessage(data);
     });
     this.heartbeat = setInterval(() => {
       if (Date.now() - this.lastSeen > heartbeatIntervalMs * 3) {
@@ -128,8 +140,8 @@ export class HubConnection {
     this.tunnels.delete(tunnelId);
   }
 
-  /** Send a terminal frame. Throws `LinkClosedError` if the link is already down. */
-  sendFrame(frame: HubFrame): void {
+  /** Send a terminal or tunnel frame. Throws `LinkClosedError` if the link is already down. */
+  sendFrame(frame: HubFrame | TunnelBytesFrame): void {
     this.send(frame);
   }
 
@@ -245,19 +257,9 @@ export class HubConnection {
       case "tunnel.opened":
         this.tunnels.get(frame.tunnelId)?.endpoint.opened();
         return;
-      case "tunnel.data": {
-        const entry = this.tunnels.get(frame.tunnelId);
-        if (entry === undefined) return;
-        if (frame.seq !== entry.nextSeq) {
-          this.tunnels.delete(frame.tunnelId);
-          this.trySend({ type: "tunnel.close", tunnelId: frame.tunnelId });
-          entry.endpoint.exit({ reason: "error", message: "Tunnel frames arrived out of order." });
-          return;
-        }
-        entry.nextSeq += 1;
-        entry.endpoint.output(decodeBytes(frame.data));
+      case "tunnel.data":
+        this.onTunnelBytes(frame.tunnelId, frame.seq, decodeBytes(frame.data), false);
         return;
-      }
       case "tunnel.ack":
         this.tunnels.get(frame.tunnelId)?.endpoint.acked(frame.bytes);
         return;
@@ -299,6 +301,31 @@ export class HubConnection {
     }
   }
 
+  /** A binary message is tunnel bytes from a daemon, or a protocol error. */
+  private onBinary(data: WebSocket.RawData): void {
+    try {
+      if (!this.binary.accepts) throw new TypeError("Binary frames were not negotiated.");
+      const frame = decodeTunnelBytes(rawDataToBytes(data), "toHub");
+      this.onTunnelBytes(frame.tunnelId, frame.seq, frame.bytes, true);
+    } catch {
+      this.socket.close(1002, "malformed frame");
+    }
+  }
+
+  private onTunnelBytes(tunnelId: string, seq: number, bytes: Uint8Array, wraps: boolean): void {
+    const entry = this.tunnels.get(tunnelId);
+    if (entry === undefined) return;
+    // A binary header carries 32 bits of the sequence number, so it is compared as such.
+    if (seq !== (wraps ? entry.nextSeq >>> 0 : entry.nextSeq)) {
+      this.tunnels.delete(tunnelId);
+      this.trySend({ type: "tunnel.close", tunnelId });
+      entry.endpoint.exit({ reason: "error", message: "Tunnel frames arrived out of order." });
+      return;
+    }
+    entry.nextSeq += 1;
+    entry.endpoint.output(bytes);
+  }
+
   private fail(requestId: string, error: Error): void {
     const pending = this.pending.get(requestId);
     if (pending === undefined) return;
@@ -307,9 +334,20 @@ export class HubConnection {
     pending.reject(error);
   }
 
-  private send(frame: HubFrame): void {
+  private send(frame: HubFrame | TunnelBytesFrame): void {
     if (!this.isOpen) throw new LinkClosedError();
-    this.socket.send(JSON.stringify(frame));
+    if (frame.type !== "tunnel.bytes") return this.socket.send(JSON.stringify(frame));
+    if (this.binary.sends) {
+      this.socket.send(encodeTunnelBytes(frame, "toDaemon"), { binary: true });
+    } else {
+      this.socket.send(
+        JSON.stringify({
+          type: "tunnel.data",
+          tunnelId: frame.tunnelId,
+          data: encodeBytes(frame.bytes),
+        } satisfies HubFrame),
+      );
+    }
   }
 
   private trySend(frame: HubFrame): void {

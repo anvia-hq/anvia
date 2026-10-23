@@ -703,7 +703,8 @@ input actions.
 
 ### Protocol
 
-One WebSocket carries versioned JSON frames (`PROTOCOL_VERSION`), validated with zod on both ends.
+One WebSocket carries versioned JSON frames (`PROTOCOL_VERSION`), validated with zod on both ends,
+and, once both peers agree (below), tunnel bytes as binary messages.
 The daemon opens with `hello` (version and workdir) and the hub answers `welcome`; a version
 mismatch closes the socket with code 1002. Requests are correlated by `requestId`. `execStream`
 output arrives as ordered `stream` frames, and a gap in the sequence aborts the call. Aborting a
@@ -713,7 +714,8 @@ Failures arrive as typed `error` frames that map to the existing error codes, pl
 is silent for three intervals.
 
 Optional features are negotiated, not versioned: `hello` and `welcome` carry an optional
-`capabilities` list (`terminal`, `terminal.tmux` when sessions persist, `tunnel`, and `desktop`). A peer that predates a
+`capabilities` list (`terminal`, `terminal.tmux` when sessions persist, `tunnel`, `desktop`, and
+`binary-data`). A peer that predates a
 feature sends none, and zod ignores fields it does not know, so mixed versions keep working and
 terminals simply report `unsupported`. `PROTOCOL_VERSION` only changes when an existing frame
 changes meaning. Terminal traffic uses its own frames (`pty.open`, `pty.opened`, `pty.input`,
@@ -723,6 +725,20 @@ changes meaning. Terminal traffic uses its own frames (`pty.open`, `pty.opened`,
 each side of the link. The desktop is plain request frames (`desktopStatus`, `desktopResize`,
 `desktopScreenshot`, `desktopCursor`, `desktopAction`, `desktopControl`, `desktopTakeover`,
 `desktopRelease`), with the VNC stream carried by a tunnel.
+
+**Binary data.** A tunnel's bytes (a desktop's VNC stream, for one) are a third of the traffic that
+matters over a slow link, and as JSON they cost a base64 encode and decode and a string copy at each
+end. When both `hello` and `welcome` list `binary-data`, tunnel bytes in both directions travel as
+binary WebSocket messages instead: `[kind: 1][idLength: 1][tunnelId][seq: uint32][payload]`, where
+`kind` says which way the bytes go. Everything else, the acknowledgements and the open and close
+frames included, stays JSON, and `tunnel.ack` counts the same raw bytes either way. Each side sends
+binary only to a peer that said it can take it, and treats a binary message it did not agree to, or
+one that does not parse, as a protocol error (the hub closes the socket with 1002; the daemon answers
+with an `error` frame). A peer without it just keeps using `tunnel.data` with base64, so there is
+no protocol bump. `binaryData: false` on `RemoteSandboxHub` or `SandboxDaemon` turns it off, for the
+rare proxy that mishandles binary messages. Terminal output stays JSON. The browser relays were
+already binary on the browser's side; they forward bytes unchanged either way, through the same RFB
+filter, so read-only viewers and the control lock hold on a binary link.
 
 A request that carries an `operationId` is not aborted when the connection drops. It finishes on
 the daemon and its result waits for the retry. Anything else is aborted, since nobody can receive

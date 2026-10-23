@@ -13,9 +13,16 @@ import {
   compact,
   hubFrameSchema,
   mutatingMethods,
+  rawDataToBytes,
   rawDataToString,
   type DaemonFrame,
 } from "../remote/protocol";
+import {
+  type DaemonOutbound,
+  binaryDataCapability,
+  decodeTunnelBytes,
+  encodeTunnelBytes,
+} from "../remote/binary-frame";
 import type { SandboxExecOptions, SandboxRuntimeLimits } from "../types";
 import { LocalSandbox } from "./local-sandbox";
 import { OperationStore, defaultMaxOperationEntries } from "./operations";
@@ -70,6 +77,12 @@ export interface SandboxDaemonOptions {
   maxStoredResultBytes?: number;
   reconnect?: { initialDelayMs?: number; maxDelayMs?: number };
   handshakeTimeoutMs?: number;
+  /**
+   * Carry tunnel bytes (a desktop's VNC stream, for one) as binary WebSocket messages when the hub
+   * can take them, which saves base64 and JSON on both ends. Default true. Turn it off if something
+   * between the daemon and the hub mishandles binary messages; tunnels then use JSON.
+   */
+  binaryData?: boolean;
   maxPayloadBytes?: number;
   version?: string;
   onLog?: (level: SandboxDaemonLogLevel, message: string) => void;
@@ -225,7 +238,11 @@ export class SandboxDaemon {
           daemonVersion: this.options.version ?? "unknown",
           workdir: this.sandbox.workdir,
         };
-        if (features.capabilities.length > 0) hello.capabilities = features.capabilities;
+        const capabilities =
+          this.options.binaryData === false
+            ? features.capabilities
+            : [...features.capabilities, binaryDataCapability];
+        if (capabilities.length > 0) hello.capabilities = capabilities;
         socket.send(JSON.stringify(hello));
       });
       socket.once("message", (data) => {
@@ -256,6 +273,10 @@ export class SandboxDaemon {
             terminalOptions: this.options.terminal === false ? undefined : this.options.terminal,
             tunnelOptions: this.options.tunnel === false ? undefined : this.options.tunnel,
             tunnelsEnabled: this.options.tunnel !== false,
+            acceptsBinary: this.options.binaryData !== false,
+            sendsBinary:
+              this.options.binaryData !== false &&
+              frame.capabilities?.includes(binaryDataCapability) === true,
             log: (level, message) => this.log(level, message),
           }),
         );
@@ -276,6 +297,9 @@ interface SessionDependencies {
   terminalOptions: SandboxDaemonTerminalOptions | undefined;
   tunnelOptions: SandboxDaemonTunnelOptions | undefined;
   tunnelsEnabled: boolean;
+  /** This daemon takes binary tunnel messages, and the hub does too, so it may send them. */
+  acceptsBinary: boolean;
+  sendsBinary: boolean;
   log: (level: SandboxDaemonLogLevel, message: string) => void;
 }
 
@@ -325,9 +349,9 @@ class DaemonSession {
       });
     });
     socket.on("error", (error) => deps.log("warn", `socket error: ${describe(error)}`));
-    socket.on("message", (data) => {
+    socket.on("message", (data, isBinary) => {
       this.lastSeen = Date.now();
-      this.onMessage(data);
+      this.onMessage(data, isBinary);
     });
     this.heartbeat = setInterval(() => {
       if (Date.now() - this.lastSeen > heartbeatIntervalMs * 3) {
@@ -345,12 +369,35 @@ class DaemonSession {
     setTimeout(() => this.socket.terminate(), 1_000).unref?.();
   }
 
-  private send(frame: DaemonFrame): void {
+  private send(frame: DaemonOutbound): void {
     if (this.socket.readyState !== WebSocket.OPEN) return;
-    this.socket.send(JSON.stringify(frame));
+    if (frame.type !== "tunnel.bytes") return this.socket.send(JSON.stringify(frame));
+    if (this.deps.sendsBinary) {
+      this.socket.send(encodeTunnelBytes(frame, "toHub"), { binary: true });
+    } else {
+      this.socket.send(
+        JSON.stringify({
+          type: "tunnel.data",
+          tunnelId: frame.tunnelId,
+          seq: frame.seq,
+          data: encodeBytes(frame.bytes),
+        } satisfies DaemonFrame),
+      );
+    }
   }
 
-  private onMessage(data: WebSocket.RawData): void {
+  private onMessage(data: WebSocket.RawData, isBinary: boolean): void {
+    if (isBinary) {
+      // Only tunnel bytes travel as binary, and only once this daemon said it could take them.
+      try {
+        if (!this.deps.acceptsBinary) throw new TypeError("Binary frames were not negotiated.");
+        const bytes = decodeTunnelBytes(rawDataToBytes(data), "toDaemon");
+        this.tunnels.data(bytes.tunnelId, bytes.bytes);
+      } catch {
+        this.send(encodeError(new TypeError("Malformed frame."), undefined));
+      }
+      return;
+    }
     const frame = parseHubFrame(data);
     if (frame === undefined) {
       // Answer under the caller's requestId when one can be recovered (an unknown method from a
@@ -389,7 +436,7 @@ class DaemonSession {
         void this.tunnels.open(frame);
         return;
       case "tunnel.data":
-        this.tunnels.data(frame.tunnelId, frame.data);
+        this.tunnels.data(frame.tunnelId, decodeBytes(frame.data));
         return;
       case "tunnel.ack":
         this.tunnels.ack(frame.tunnelId, frame.bytes);

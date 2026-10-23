@@ -8,7 +8,7 @@ import {
 } from "./connection";
 import { InboundStream } from "./inbound-stream";
 import { type FlowProfile, type FlowProfileName, flowProfiles } from "../shared/flow";
-import { encodeBytes, tunnelCapability, tunnelHosts } from "./protocol";
+import { tunnelCapability, tunnelHosts } from "./protocol";
 import type { RemoteLinkSource } from "./runtime";
 
 export type { TunnelExit };
@@ -126,6 +126,7 @@ class RemoteTunnelHandle implements TunnelHandle {
   private readonly stream: InboundStream<TunnelExit>;
   private readonly writeWindowBytes: number;
   private sent = 0;
+  private writeSeq = 0;
   private acknowledged = 0;
   private roomWaiters: Array<() => void> = [];
   private settleOpen: { resolve: () => void; reject: (error: Error) => void } | undefined;
@@ -214,9 +215,10 @@ class RemoteTunnelHandle implements TunnelHandle {
       const chunk = bytes.subarray(start, start + writeChunkBytes);
       this.sent += chunk.byteLength;
       this.connection.sendFrame({
-        type: "tunnel.data",
+        type: "tunnel.bytes",
         tunnelId: this.tunnelId,
-        data: encodeBytes(chunk),
+        seq: this.writeSeq++,
+        bytes: chunk,
       });
     }
   }

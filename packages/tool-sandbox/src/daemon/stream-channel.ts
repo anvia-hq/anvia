@@ -1,5 +1,5 @@
+import type { DaemonOutbound } from "../remote/binary-frame";
 import type { DaemonFrame } from "../remote/protocol";
-import { encodeBytes } from "../remote/protocol";
 
 export interface StreamChannelLimits {
   /** Coalescing window for output. Default 10 ms. */
@@ -34,7 +34,8 @@ export interface StreamSource {
 
 /** How a channel's frames look on the wire, which is all that differs between users of it. */
 export interface StreamFrames<Exit> {
-  output(seq: number, data: string): DaemonFrame;
+  /** The frame for one run of output. Putting bytes on the wire (base64 or not) is the frame's. */
+  output(seq: number, bytes: Uint8Array): DaemonOutbound;
   exit(info: Exit): DaemonFrame;
 }
 
@@ -68,7 +69,7 @@ export class StreamChannel<Exit> {
     private readonly source: StreamSource,
     private readonly frames: StreamFrames<Exit>,
     private readonly io: {
-      send: (frame: DaemonFrame) => void;
+      send: (frame: DaemonOutbound) => void;
       bufferedAmount: () => number;
     },
     limits: StreamChannelLimits = {},
@@ -175,7 +176,7 @@ export class StreamChannel<Exit> {
       const end = Math.min(merged.byteLength, start + this.frameBytes);
       const slice = merged.subarray(start, end);
       this.sentBytes += slice.byteLength;
-      this.io.send(this.frames.output(this.seq++, encodeBytes(slice)));
+      this.io.send(this.frames.output(this.seq++, slice));
       start = end;
     }
     if (start < merged.byteLength) {

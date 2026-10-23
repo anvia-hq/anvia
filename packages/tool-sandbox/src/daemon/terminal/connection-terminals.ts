@@ -1,5 +1,6 @@
 import { DockerSandboxError } from "../../errors";
-import { type DaemonFrame, type HubFrame, decodeBytes, encodeError } from "../../remote/protocol";
+import type { DaemonOutbound } from "../../remote/binary-frame";
+import { type HubFrame, decodeBytes, encodeError } from "../../remote/protocol";
 import type { LocalSandbox } from "../local-sandbox";
 import type { TerminalAttachment } from "./attachments";
 import { PtyChannel } from "./channel";
@@ -26,7 +27,7 @@ export class ConnectionTerminals {
       terminals: TerminalManager | undefined;
       sandbox: LocalSandbox;
       options: SandboxDaemonTerminalOptions | undefined;
-      send: (frame: DaemonFrame) => void;
+      send: (frame: DaemonOutbound) => void;
       bufferedAmount: () => number;
     },
   ) {}

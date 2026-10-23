@@ -261,11 +261,18 @@ export type MethodResult<M extends SandboxMethod> = z.infer<(typeof methodResult
 /** One terminal session, as `terminalList` reports it. */
 export type TerminalSessionInfo = MethodResult<"terminalList">["sessions"][number];
 
-/** A WebSocket message as text. Frames are JSON, so they are never binary. */
+/** A WebSocket message as text. Frames are JSON, except tunnel bytes once `binary-data` is agreed. */
 export function rawDataToString(data: WebSocket.RawData): string {
   if (Array.isArray(data)) return Buffer.concat(data).toString("utf8");
   if (Buffer.isBuffer(data)) return data.toString("utf8");
   return Buffer.from(data).toString("utf8");
+}
+
+/** A WebSocket message's bytes, whichever form `ws` handed them over in. */
+export function rawDataToBytes(data: WebSocket.RawData): Uint8Array {
+  if (Array.isArray(data)) return new Uint8Array(Buffer.concat(data));
+  if (Buffer.isBuffer(data)) return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+  return new Uint8Array(data);
 }
 
 const operationId = z.string().min(1).max(256);

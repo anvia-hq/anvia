@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { PtyChannel } from "../src/daemon/terminal/channel";
 import type { TerminalAttachment } from "../src/daemon/terminal/attachments";
+import type { DaemonOutbound } from "../src/remote/binary-frame";
 import { type DaemonFrame, decodeBytes } from "../src/remote/protocol";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function setup(options: { pausable: boolean; snapshot?: Uint8Array; bufferedAmount?: number }) {
-  const frames: DaemonFrame[] = [];
+  const frames: DaemonOutbound[] = [];
   const calls = { pause: 0, resume: 0 };
   const attachment: TerminalAttachment = {
     pausable: options.pausable,

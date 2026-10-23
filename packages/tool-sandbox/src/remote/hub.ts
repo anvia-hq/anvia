@@ -4,6 +4,7 @@ import WebSocket, { WebSocketServer } from "ws";
 import { DockerSandboxError } from "../errors";
 import type { SandboxRuntime } from "../types";
 import { HubConnection } from "./connection";
+import { binaryDataCapability } from "./binary-frame";
 import {
   CLOSE_CODE_SUPERSEDED,
   PROTOCOL_VERSION,
@@ -45,6 +46,12 @@ export interface RemoteSandboxHubOptions {
   connectTimeoutMs?: number;
   /** Application-level ping interval, also told to daemons. Default 15s. */
   heartbeatIntervalMs?: number;
+  /**
+   * Carry tunnel bytes (a desktop's VNC stream, for one) as binary WebSocket messages with daemons
+   * that can take them, which saves base64 and JSON on both ends. Default true. Turn it off if
+   * something between the hub and the daemons mishandles binary messages; tunnels then use JSON.
+   */
+  binaryData?: boolean;
   /** Largest frame accepted from a daemon. Default 64 MiB (file contents travel as base64). */
   maxPayloadBytes?: number;
   /** How long a connected socket may take to send `hello`. Default 10s. */
@@ -405,7 +412,10 @@ export class RemoteSandboxHub {
         type: "welcome",
         protocolVersion: PROTOCOL_VERSION,
         heartbeatIntervalMs: this.heartbeatIntervalMs,
-        capabilities: [terminalCapability, tunnelCapability],
+        capabilities:
+          this.options.binaryData === false
+            ? [terminalCapability, tunnelCapability]
+            : [terminalCapability, tunnelCapability, binaryDataCapability],
       };
       ws.send(JSON.stringify(welcome));
 
@@ -414,6 +424,12 @@ export class RemoteSandboxHub {
         hello.workdir,
         this.heartbeatIntervalMs,
         new Set(hello.capabilities ?? []),
+        {
+          accepts: this.options.binaryData !== false,
+          sends:
+            this.options.binaryData !== false &&
+            hello.capabilities?.includes(binaryDataCapability) === true,
+        },
       );
       // A daemon that reconnects before the hub noticed the old socket die replaces it.
       this.connections.get(sandboxId)?.close(CLOSE_CODE_SUPERSEDED, "replaced by newer connection");

@@ -1,10 +1,10 @@
 import net from "node:net";
 import { DockerSandboxError } from "../errors";
+import type { DaemonOutbound } from "../remote/binary-frame";
 import {
   type DaemonFrame,
   type HubFrame,
   type TunnelCloseReason,
-  decodeBytes,
   encodeError,
   tunnelHosts,
 } from "../remote/protocol";
@@ -69,7 +69,7 @@ export class ConnectionTunnels {
       options: SandboxDaemonTunnelOptions | undefined;
       /** Ports allowed even when `allowedPorts` is set, such as the desktop's VNC port. */
       alwaysAllowedPorts?: () => readonly number[];
-      send: (frame: DaemonFrame) => void;
+      send: (frame: DaemonOutbound) => void;
       bufferedAmount: () => number;
     },
   ) {}
@@ -138,7 +138,7 @@ export class ConnectionTunnels {
         snapshot: () => undefined,
       },
       {
-        output: (seq, data) => ({ type: "tunnel.data", tunnelId, seq, data }),
+        output: (seq, bytes) => ({ type: "tunnel.bytes", tunnelId, seq, bytes }),
         exit: (info) => {
           const closed: DaemonFrame = { type: "tunnel.close", tunnelId, reason: info.reason };
           return info.message === undefined ? closed : { ...closed, message: info.message };
@@ -175,10 +175,9 @@ export class ConnectionTunnels {
   }
 
   /** Bytes from the hub, written to the service. Acknowledged once the socket took them. */
-  data(tunnelId: string, data: string): void {
+  data(tunnelId: string, bytes: Uint8Array): void {
     const entry = this.entries.get(tunnelId);
     if (entry?.socket === undefined) return;
-    const bytes = decodeBytes(data);
     entry.received += bytes.byteLength;
     if (entry.received - entry.written > entry.maxUnwrittenBytes) {
       this.shutdown(tunnelId, entry, { reason: "error", message: "Tunnel ignored flow control." });

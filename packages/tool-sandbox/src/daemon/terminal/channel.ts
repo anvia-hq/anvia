@@ -1,5 +1,6 @@
 import { type StreamChannelLimits, StreamChannel } from "../stream-channel";
-import type { DaemonFrame } from "../../remote/protocol";
+import type { DaemonOutbound } from "../../remote/binary-frame";
+import { type DaemonFrame, encodeBytes } from "../../remote/protocol";
 import type { TerminalAttachment, TerminalExitInfo } from "./attachments";
 
 export type PtyChannelLimits = StreamChannelLimits;
@@ -9,13 +10,13 @@ export class PtyChannel extends StreamChannel<TerminalExitInfo> {
   constructor(
     ptyId: string,
     attachment: TerminalAttachment,
-    io: { send: (frame: DaemonFrame) => void; bufferedAmount: () => number },
+    io: { send: (frame: DaemonOutbound) => void; bufferedAmount: () => number },
     limits?: PtyChannelLimits,
   ) {
     super(
       attachment,
       {
-        output: (seq, data) => ({ type: "pty.output", ptyId, seq, data }),
+        output: (seq, bytes) => ({ type: "pty.output", ptyId, seq, data: encodeBytes(bytes) }),
         exit: (info) => {
           const frame: DaemonFrame = { type: "pty.exit", ptyId, reason: info.reason };
           return info.exitCode === undefined ? frame : { ...frame, exitCode: info.exitCode };

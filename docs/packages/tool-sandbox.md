@@ -553,7 +553,9 @@ Coordinates are pixels of the current display; a point outside it, or an `x` wit
 The daemon offers `desktop` only when `Xvfb`, `x11vnc`, `xdotool`, `xrandr` and ImageMagick's
 `import` are installed, and says what is missing in its log otherwise. A window manager is optional
 (`openbox-session`, which is openbox plus its autostart file, is used if it is there). `packages/tool-sandbox/images/desktop/Dockerfile` is a reference
-image with all of that plus fonts, Chromium, tmux, `node-pty` and the daemon:
+image with all of that plus fonts, a themed dock, Chromium, tmux, `node-pty` and the daemon. Maintainers can publish it to
+`ghcr.io/anvia-hq/sandbox-desktop` (amd64 and arm64) with the "Sandbox desktop image" workflow, which
+builds the daemon from the same commit. Until a tag is published, build it yourself:
 
 ```sh
 docker build -t my-desktop-sandbox packages/tool-sandbox/images/desktop

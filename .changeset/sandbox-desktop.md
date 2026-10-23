@@ -10,7 +10,7 @@ never blocked.
 
 The daemon runs Xvfb, a window manager and x11vnc (loopback only, no password) itself: lazily on
 first use, restarting what crashes, and advertising `desktop` only when the programs are installed.
-A reference Debian image with Chromium and tmux is in `images/desktop/`. Viewers reach VNC through
+The window manager defaults to `openbox-session` (openbox, which also runs `~/.config/openbox/autostart`), else `openbox`. A reference Debian image with a themed desktop and dock, Chromium and tmux is in `images/desktop/`. Viewers reach VNC through
 a tunnel; `hub.handleDesktopUpgrade` and `authorizeDesktop` relay a browser's noVNC connection,
 filtering the RFB stream so read-only viewers, and viewers who are not the current holder, cannot
 send input, and offering a JSON control channel for taking over and releasing.

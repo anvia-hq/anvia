@@ -22,6 +22,11 @@ import {
 //   - the page, bundled with esbuild at startup (needs `pnpm --filter @anvia/react-ui build`),
 //   - a small API: mint a ticket, run the agent, stop it, and stream what it does.
 //
+// Only the daemon connects from outside this machine (the container reaches it through
+// host.docker.internal, and the hub checks its token). The page, the API and the desktop relay
+// answer only to this machine: /api/run spends your API key and /desktop lets whoever connects
+// drive the desktop. To put it on a network, put real sign-in in front of /api/ticket first.
+//
 // The browser never gets a long-lived credential. Each connection of the viewer asks /api/ticket
 // for a single-use ticket, and the hub only lets the viewer in if it can redeem one. In a real app
 // that endpoint is where you check that the signed-in user may see this sandbox.
@@ -148,9 +153,14 @@ const readJson = async (request: IncomingMessage): Promise<Record<string, unknow
 const json = (response: ServerResponse, status: number, value: unknown) =>
   response.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify(value));
 
+const isLocal = (request: IncomingMessage) =>
+  ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(request.socket.remoteAddress ?? "");
+
 const server = createServer(async (request, response) => {
   const path = new URL(request.url ?? "/", "http://localhost").pathname;
-  if (request.method === "GET" && path === "/") {
+  if (!isLocal(request)) {
+    response.writeHead(403).end();
+  } else if (request.method === "GET" && path === "/") {
     response.writeHead(200, { "content-type": "text/html" }).end(html);
   } else if (request.method === "GET" && path === "/app.js") {
     response.writeHead(200, { "content-type": "text/javascript" }).end(script);
@@ -185,7 +195,7 @@ const server = createServer(async (request, response) => {
 server.on("upgrade", (request, socket, head) => {
   const path = new URL(request.url ?? "/", "http://localhost").pathname;
   if (path === "/daemon") hub.handleUpgrade(request, socket, head);
-  else if (path === "/desktop") hub.handleDesktopUpgrade(request, socket, head);
+  else if (path === "/desktop" && isLocal(request)) hub.handleDesktopUpgrade(request, socket, head);
   else socket.destroy();
 });
 await new Promise<void>((resolve) => server.listen(port, "0.0.0.0", resolve));

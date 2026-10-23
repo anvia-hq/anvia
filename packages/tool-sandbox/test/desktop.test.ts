@@ -1,4 +1,7 @@
 import { execFileSync } from "node:child_process";
+import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import net from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
@@ -426,6 +429,47 @@ describe("desktop capability", () => {
     await expect(h.desktop.start()).rejects.toMatchObject({ code: "unsupported" });
     await expect(h.desktop.screenshot()).rejects.toMatchObject({ code: "unsupported" });
     expect(h.logs.some((line) => line.includes("desktop unavailable"))).toBe(true);
+  });
+
+  describe("window manager default", () => {
+    // Empty stand-ins for the programs the desktop needs, so nothing graphical runs.
+    const detectWith = async (programs: string[], windowManager?: string | false) => {
+      const dir = await mkdtemp(join(tmpdir(), "anvia-wm-"));
+      try {
+        for (const name of ["Xvfb", "x11vnc", "xdotool", "xrandr", "import", ...programs]) {
+          await writeFile(join(dir, name), "#!/bin/sh\n");
+          await chmod(join(dir, name), 0o755);
+        }
+        const logs: string[] = [];
+        const found = await DesktopService.detect(
+          windowManager === undefined ? {} : { windowManager },
+          {
+            env: () => ({ PATH: dir }),
+            log: (line) => logs.push(line),
+          },
+        );
+        expect("service" in found).toBe(true);
+        return logs;
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    };
+
+    it("prefers openbox-session, which runs the image's autostart file", async () => {
+      // Had it fallen back to plain openbox, which is absent here, it would say so.
+      expect(await detectWith(["openbox-session"])).toEqual([]);
+    });
+
+    it("falls back to openbox, and says when there is no window manager at all", async () => {
+      expect(await detectWith(["openbox"])).toEqual([]);
+      expect(await detectWith([])).toEqual([expect.stringContaining("openbox was not found")]);
+    });
+
+    it("uses the window manager it is told to", async () => {
+      expect(await detectWith(["openbox-session"], "twm")).toEqual([
+        expect.stringContaining("twm was not found"),
+      ]);
+    });
   });
 
   it("is not offered when switched off", async () => {

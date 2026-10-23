@@ -533,6 +533,15 @@ cannot be opened, the relay closes the socket with code 1011 and a reason that s
 code, such as `port: ...` or `unsupported: ...`. A browser that sends faster than the service reads
 is paused until the service catches up.
 
+**Runtimes whose WebSocket cannot pause.** The relay pauses a browser's socket with `ws.pause()` and
+resumes it with `ws.resume()`. Bun replaces the `ws` package with its own WebSocket, which has
+neither, so on such a runtime the relay asks once and does without. It cannot slow the sender, so it
+bounds the queue instead: a browser with more than 4 MiB waiting to reach the service (a viewer's
+largest clipboard message is 1 MiB) is closed with code 1008 and the reason "sending faster than
+the service reads". Everything else the relays use (ping and pong, `terminate`, `close`, the send
+callback, `handleUpgrade`) works on Bun, and the browser relays, the VNC stream and terminals run
+there.
+
 #### Not included
 
 Preview URLs and domain routing for tunnelled services, tunnels to hosts other than the sandbox's

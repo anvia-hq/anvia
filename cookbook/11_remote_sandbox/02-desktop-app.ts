@@ -156,9 +156,23 @@ const json = (response: ServerResponse, status: number, value: unknown) =>
 const isLocal = (request: IncomingMessage) =>
   ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(request.socket.remoteAddress ?? "");
 
+// Being on this machine is not enough: any page open in your browser can also reach localhost. A
+// cross-site POST needs no preflight, so a POST must come from this page's own origin, and the Host
+// header must be ours (which stops a DNS-rebinding page from posing as same-origin).
+const ownHosts = [`localhost:${port}`, `127.0.0.1:${port}`];
+const isOwnPage = (request: IncomingMessage) => {
+  const { origin, host } = request.headers;
+  if (host === undefined || !ownHosts.includes(host)) return false;
+  return (
+    request.method === "GET" ||
+    origin === undefined ||
+    ownHosts.includes(origin.replace(/^http:\/\//, ""))
+  );
+};
+
 const server = createServer(async (request, response) => {
   const path = new URL(request.url ?? "/", "http://localhost").pathname;
-  if (!isLocal(request)) {
+  if (!isLocal(request) || !isOwnPage(request)) {
     response.writeHead(403).end();
   } else if (request.method === "GET" && path === "/") {
     response.writeHead(200, { "content-type": "text/html" }).end(html);

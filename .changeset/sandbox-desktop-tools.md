@@ -12,3 +12,7 @@ to fit Claude's image limits and translated back to display pixels with out-of-r
 `desktopToolRecovery` marks screenshots, the cursor position and waiting `safe`, and every input
 `idempotent`, since the run's `operationId` reaches the daemon. Inputs fail with `desktop_locked`
 while a person has taken control; looking never does.
+
+Input tools wait `settleMs` (300 ms by default) after acting, so the application can react before
+the next input arrives; without it, keystrokes sent right after a shortcut are lost by programs
+that are still focusing a field.

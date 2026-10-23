@@ -656,6 +656,11 @@ the centre of the pixel the model pointed at. A point outside the screenshot is 
 valid range before anything happens. A display that already fits is not scaled, and one that is
 resized between calls is noticed, because each tool reads the current size.
 
+Each input tool waits `settleMs` (300 ms by default; `0` turns it off) after acting before it
+returns. A model can send several inputs in one turn, and a program that is still reacting to one
+drops keystrokes that arrive too soon: Chromium's address bar loses the text typed right after
+`ctrl+l`. The screenshot, cursor position and wait tools do not wait.
+
 The tools are separate rather than one `computer` tool because durable recovery is decided per tool
 name. `desktopToolRecovery` is the table to use in a durable registration: screenshots, the cursor
 position and waiting are `safe` to repeat, and every input is `idempotent`, because the run's

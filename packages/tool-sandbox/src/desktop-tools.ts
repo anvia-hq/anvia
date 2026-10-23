@@ -1,6 +1,6 @@
 import { type AnyTool, createTool, ToolOutput, type ToolCallContext } from "@anvia/core/tool";
 import { z } from "zod";
-import { desktopKeyPattern } from "./remote/protocol";
+import { type DesktopAction, desktopKeyPattern } from "./remote/protocol";
 import type { SandboxDesktop } from "./remote/desktop";
 
 const allDesktopToolNames = [
@@ -44,6 +44,13 @@ export interface DesktopScreenshotPolicy {
 
 export interface CreateDesktopToolsOptions {
   sandbox: SandboxDesktop;
+  /**
+   * How long each input tool waits after acting, so the application can react before the next
+   * input or screenshot. A model can send several inputs in one turn, and a program that is still
+   * focusing a field loses keystrokes that arrive too soon (Chromium's address bar after ctrl+l
+   * does). Default 300 ms; 0 turns it off.
+   */
+  settleMs?: number;
   /** The tools to expose. Default: all of them. Pass the read-only ones to let an agent only look. */
   tools?: readonly DesktopToolName[];
   screenshot?: DesktopScreenshotPolicy;
@@ -52,6 +59,7 @@ export interface CreateDesktopToolsOptions {
 // Claude's computer-use guidance: images beyond these sizes are downscaled before the model sees
 // them, so coordinates would drift. Scaling here first keeps what the model sees and what it
 // clicks in one coordinate space.
+const defaultSettleMs = 300;
 const defaultMaxEdge = 1568;
 const defaultMaxPixels = 1_150_000;
 const maxWaitSeconds = 10;
@@ -135,10 +143,18 @@ export function createDesktopTools(options: CreateDesktopToolsOptions): readonly
   };
   /** Translate a point in the screenshot to display pixels, refusing one that is outside it. */
   const point = (current: View, [x = 0, y = 0]: readonly number[]) => toDisplay(current, x, y);
-  const input = (context: ToolCallContext) => ({
-    operationId: context.operationId,
-    abortSignal: context.abortSignal,
-  });
+  const settleMs = options.settleMs ?? defaultSettleMs;
+  if (!Number.isFinite(settleMs) || settleMs < 0) {
+    throw new RangeError("settleMs must be zero or more.");
+  }
+  /** Perform an input, then give the application a moment to react to it. */
+  const act = async (action: DesktopAction, context: ToolCallContext) => {
+    await sandbox.act(action, {
+      operationId: context.operationId,
+      abortSignal: context.abortSignal,
+    });
+    if (settleMs > 0) await delay(settleMs, context.abortSignal);
+  };
 
   const tools: Record<DesktopToolName, () => AnyTool> = {
     desktop_screenshot: () =>
@@ -178,9 +194,9 @@ export function createDesktopTools(options: CreateDesktopToolsOptions): readonly
             args.coordinate === undefined
               ? undefined
               : point(await view(context.abortSignal), args.coordinate);
-          await sandbox.act(
+          await act(
             { type: "click", x: at?.x, y: at?.y, button: args.button, count: args.click_count },
-            input(context),
+            context,
           );
           return ok;
         },
@@ -193,7 +209,7 @@ export function createDesktopTools(options: CreateDesktopToolsOptions): readonly
         outputSchema: okOutput,
         execute: async (args, context) => {
           const at = point(await view(context.abortSignal), args.coordinate);
-          await sandbox.act({ type: "mouse_move", ...at }, input(context));
+          await act({ type: "mouse_move", ...at }, context);
           return ok;
         },
       }),
@@ -209,9 +225,9 @@ export function createDesktopTools(options: CreateDesktopToolsOptions): readonly
           const to = point(current, args.coordinate);
           const from =
             args.start_coordinate === undefined ? undefined : point(current, args.start_coordinate);
-          await sandbox.act(
+          await act(
             { type: "drag", fromX: from?.x, fromY: from?.y, toX: to.x, toY: to.y },
-            input(context),
+            context,
           );
           return ok;
         },
@@ -227,7 +243,7 @@ export function createDesktopTools(options: CreateDesktopToolsOptions): readonly
             args.coordinate === undefined
               ? undefined
               : point(await view(context.abortSignal), args.coordinate);
-          await sandbox.act(
+          await act(
             {
               type: "scroll",
               x: at?.x,
@@ -235,7 +251,7 @@ export function createDesktopTools(options: CreateDesktopToolsOptions): readonly
               direction: args.scroll_direction,
               amount: args.scroll_amount,
             },
-            input(context),
+            context,
           );
           return ok;
         },
@@ -249,7 +265,7 @@ export function createDesktopTools(options: CreateDesktopToolsOptions): readonly
         inputSchema: typeInput,
         outputSchema: okOutput,
         execute: async (args, context) => {
-          await sandbox.act({ type: "type", text: args.text }, input(context));
+          await act({ type: "type", text: args.text }, context);
           return ok;
         },
       }),
@@ -261,7 +277,7 @@ export function createDesktopTools(options: CreateDesktopToolsOptions): readonly
         inputSchema: keyInput,
         outputSchema: okOutput,
         execute: async (args, context) => {
-          await sandbox.act({ type: "key", keys: args.text }, input(context));
+          await act({ type: "key", keys: args.text }, context);
           return ok;
         },
       }),

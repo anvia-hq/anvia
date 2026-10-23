@@ -35,8 +35,12 @@ function fakeDesktop(width: number, height: number) {
   return desktop as typeof desktop & SandboxDesktop;
 }
 
-function tools(desktop: SandboxDesktop, options: { tools?: readonly DesktopToolName[] } = {}) {
-  const created = createDesktopTools({ sandbox: desktop, ...options });
+function tools(
+  desktop: SandboxDesktop,
+  options: { tools?: readonly DesktopToolName[]; settleMs?: number } = {},
+) {
+  // No settle delay unless a test asks for one: it would only slow the others down.
+  const created = createDesktopTools({ sandbox: desktop, settleMs: 0, ...options });
   const call = (name: DesktopToolName, args: unknown, context: object = {}) => {
     const tool = created.find((candidate) => candidate.name === name);
     if (tool === undefined) throw new Error(`no tool ${name}`);
@@ -325,6 +329,83 @@ describe("inputs", () => {
     const { call } = tools(desktop);
     await expect(call("desktop_screenshot", {})).resolves.toBeDefined();
     await expect(call("desktop_cursor_position", {})).resolves.toBeDefined();
+  });
+});
+
+describe("letting the application react", () => {
+  it("waits 300 ms after an input by default, so the next one does not arrive too soon", async () => {
+    vi.useFakeTimers();
+    const desktop = fakeDesktop(1280, 800);
+    const created = createDesktopTools({ sandbox: desktop });
+    const key = created.find((tool) => tool.name === "desktop_key");
+    let done = false;
+    const running = Promise.resolve(key?.call({ text: "ctrl+l" } as never, {})).then(
+      () => (done = true),
+    );
+
+    // The input has gone out, but the tool has not returned yet.
+    await vi.advanceTimersByTimeAsync(0);
+    expect(desktop.act).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(299);
+    expect(done).toBe(false);
+    await vi.advanceTimersByTimeAsync(2);
+    await running;
+    expect(done).toBe(true);
+  });
+
+  it("applies to every input tool, and not to looking", async () => {
+    vi.useFakeTimers();
+    const desktop = fakeDesktop(1280, 800);
+    const created = createDesktopTools({ sandbox: desktop, settleMs: 1_000 });
+    const finished: string[] = [];
+    const run = (name: string, args: unknown) =>
+      Promise.resolve(created.find((tool) => tool.name === name)?.call(args as never, {})).then(
+        () => finished.push(name),
+      );
+    const inputs: Array<[string, unknown]> = [
+      ["desktop_click", { coordinate: [1, 1] }],
+      ["desktop_mouse_move", { coordinate: [1, 1] }],
+      ["desktop_drag", { coordinate: [2, 2] }],
+      ["desktop_scroll", { scroll_direction: "down" }],
+      ["desktop_type", { text: "a" }],
+      ["desktop_key", { text: "Return" }],
+    ];
+    const pending = inputs.map(([name, args]) => run(name, args));
+    const looking = [run("desktop_screenshot", {}), run("desktop_cursor_position", {})];
+
+    await vi.advanceTimersByTimeAsync(10);
+    // Looking is done; every input is still settling.
+    expect(finished.sort()).toEqual(["desktop_cursor_position", "desktop_screenshot"]);
+    await vi.advanceTimersByTimeAsync(1_000);
+    await Promise.all([...pending, ...looking]);
+    expect(finished).toHaveLength(8);
+  });
+
+  it("can be switched off, and stops when the run is cancelled", async () => {
+    const desktop = fakeDesktop(1280, 800);
+    const started = Date.now();
+    await tools(desktop, { settleMs: 0 }).call("desktop_key", { text: "a" });
+    expect(Date.now() - started).toBeLessThan(100);
+
+    const controller = new AbortController();
+    const slow = createDesktopTools({ sandbox: desktop, settleMs: 60_000 }).find(
+      (tool) => tool.name === "desktop_key",
+    );
+    const settling = Promise.resolve(
+      slow?.call({ text: "a" } as never, { abortSignal: controller.signal }),
+    );
+    const assertion = expect(settling).rejects.toMatchObject({ name: "AbortError" });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    controller.abort();
+    await assertion;
+  });
+
+  it("refuses a negative or non-numeric delay", () => {
+    const desktop = fakeDesktop(1280, 800);
+    expect(() => createDesktopTools({ sandbox: desktop, settleMs: -1 })).toThrow(RangeError);
+    expect(() => createDesktopTools({ sandbox: desktop, settleMs: Number.NaN })).toThrow(
+      RangeError,
+    );
   });
 });
 

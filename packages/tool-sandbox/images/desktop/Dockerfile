@@ -14,14 +14,14 @@ FROM node:22-bookworm
 ARG ANVIA_SANDBOX_PACKAGE=@anvia/sandbox
 ARG NODE_PTY_VERSION=^1.1.0
 
-# Xvfb, openbox, tint2, x11vnc: the display, a light window manager, a taskbar, and the VNC server
+# Xvfb, openbox, tint2, x11vnc: the display, a light window manager, a taskbar with launchers (a browser, terminal and file manager), and the VNC server
 # (loopback only). Openbox's autostart sets a wallpaper and starts the taskbar.
 # xdotool and ImageMagick: the agent's input and screenshots. xrandr: resizing. tmux and node-pty
 # (below): terminals that survive reconnects. The node base image already carries the compilers
 # node-pty builds with on Linux.
 RUN apt-get update \
   && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-    xvfb openbox tint2 x11vnc xdotool imagemagick x11-utils x11-xserver-utils \
+    xvfb openbox tint2 x11vnc xterm pcmanfm adwaita-icon-theme xdotool imagemagick x11-utils x11-xserver-utils \
     fonts-dejavu-core fonts-liberation fonts-noto-color-emoji \
     chromium tmux procps ca-certificates \
   && rm -rf /var/lib/apt/lists/*

@@ -1,5 +1,5 @@
 # A small bottom taskbar: open windows on the left, a clock on the right.
-panel_items = TC
+panel_items = LTC
 panel_position = bottom center horizontal
 panel_size = 100% 32
 panel_margin = 0 0
@@ -7,6 +7,13 @@ panel_padding = 4 2 4
 panel_background_id = 1
 panel_layer = top
 wm_menu = 1
+launcher_padding = 6 2 6
+launcher_background_id = 0
+launcher_icon_size = 24
+launcher_icon_theme = Adwaita
+launcher_item_app = /usr/share/applications/chromium.desktop
+launcher_item_app = /usr/share/applications/debian-xterm.desktop
+launcher_item_app = /usr/share/applications/pcmanfm.desktop
 task_text = 1
 task_maximum_size = 220 28
 task_padding = 8 4 6

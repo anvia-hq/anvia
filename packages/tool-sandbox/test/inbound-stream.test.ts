@@ -3,12 +3,13 @@ import { InboundStream } from "../src/remote/inbound-stream";
 
 const bytes = (length: number) => new Uint8Array(length);
 
-function stream(maxBufferBytes = 100) {
+function stream(maxBufferBytes = 100, ackStepBytes?: number) {
   const acks: number[] = [];
   const onOverflow = vi.fn();
   const onEnd = vi.fn();
   const inbound = new InboundStream<{ reason: string }>({
     maxBufferBytes,
+    ackStepBytes,
     label: "Test",
     overflowEnd: { reason: "error" },
     onConsumed: (total) => acks.push(total),
@@ -32,6 +33,34 @@ describe("InboundStream", () => {
     inbound.end({ reason: "done" });
     await reader.next();
     expect(acks).toEqual([10]); // Nothing is acknowledged once the stream has ended.
+  });
+
+  it("acknowledges in steps, and always once the reader has caught up", async () => {
+    const { inbound, acks } = stream(100, 25);
+    for (let index = 0; index < 4; index += 1) inbound.push(bytes(10));
+    const reader = inbound.chunks[Symbol.asyncIterator]();
+
+    for (let index = 0; index < 4; index += 1) await reader.next();
+    // After ten and twenty bytes the ack waits: under a step, and more is queued. After thirty it
+    // goes out. The fourth chunk is still being handled.
+    expect(acks).toEqual([30]);
+
+    // The reader is out of chunks and asks for more: everything it handled is acknowledged.
+    const waiting = reader.next();
+    expect(acks).toEqual([30, 40]);
+    inbound.end({ reason: "done" });
+    await waiting;
+  });
+
+  it("acknowledges a small tail even though it is under a step, so a stopped sender restarts", async () => {
+    const { inbound, acks } = stream(100, 1_000);
+    const reader = inbound.chunks[Symbol.asyncIterator]();
+    inbound.push(bytes(5));
+    await reader.next();
+    const waiting = reader.next(); // The reader is out of chunks and asks for more.
+    expect(acks).toEqual([5]);
+    inbound.end({ reason: "done" });
+    await waiting;
   });
 
   it("delivers what is queued before reporting the end", async () => {

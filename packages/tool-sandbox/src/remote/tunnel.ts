@@ -7,6 +7,7 @@ import {
   type TunnelExit,
 } from "./connection";
 import { InboundStream } from "./inbound-stream";
+import { type FlowProfile, type FlowProfileName, flowProfiles } from "../shared/flow";
 import { encodeBytes, tunnelCapability, tunnelHosts } from "./protocol";
 import type { RemoteLinkSource } from "./runtime";
 
@@ -15,6 +16,12 @@ export type { TunnelExit };
 export interface TunnelOpenOptions {
   /** Loopback address inside the sandbox. Omit to try 127.0.0.1 and then ::1. */
   host?: (typeof tunnelHosts)[number] | undefined;
+  /**
+   * `interactive` for a stream a person is watching and driving, such as a desktop's VNC: bigger
+   * windows and frames, no batching, so it stays fast over a slow link. A daemon that does not
+   * know the profile uses its defaults. Default: the terminal-sized defaults.
+   */
+  profile?: FlowProfileName | undefined;
   abortSignal?: AbortSignal | undefined;
 }
 
@@ -53,7 +60,7 @@ export interface RemoteSandboxTunnelOptions {
 const defaultMaxBufferBytes = 1024 * 1024;
 const defaultOpenTimeoutMs = 15_000;
 /** Bytes sent to the daemon but not yet consumed by the service. Writes wait beyond this. */
-const writeWindowBytes = 256 * 1024;
+const defaultWriteWindowBytes = 256 * 1024;
 const writeChunkBytes = 32 * 1024;
 
 export class RemoteSandboxTunnel implements SandboxTunnel {
@@ -84,7 +91,8 @@ export class RemoteSandboxTunnel implements SandboxTunnel {
     }
 
     const tunnelId = randomUUID();
-    const handle = new RemoteTunnelHandle(tunnelId, port, connection, this.maxBufferBytes);
+    const profile = options.profile === undefined ? undefined : flowProfiles[options.profile];
+    const handle = new RemoteTunnelHandle(tunnelId, port, connection, this.maxBufferBytes, profile);
     connection.registerTunnel(tunnelId, handle.endpoint);
     try {
       connection.sendFrame({
@@ -92,6 +100,7 @@ export class RemoteSandboxTunnel implements SandboxTunnel {
         tunnelId,
         port,
         host: options.host,
+        profile: options.profile,
       });
       await handle.opened(this.openTimeoutMs, options.abortSignal);
     } catch (error) {
@@ -115,6 +124,7 @@ class RemoteTunnelHandle implements TunnelHandle {
   readonly exit: Promise<TunnelExit>;
   readonly endpoint: TunnelEndpoint;
   private readonly stream: InboundStream<TunnelExit>;
+  private readonly writeWindowBytes: number;
   private sent = 0;
   private acknowledged = 0;
   private roomWaiters: Array<() => void> = [];
@@ -125,9 +135,17 @@ class RemoteTunnelHandle implements TunnelHandle {
     readonly port: number,
     private readonly connection: HubConnection,
     maxBufferBytes: number,
+    profile: FlowProfile | undefined,
   ) {
+    this.writeWindowBytes = profile?.writeWindowBytes ?? defaultWriteWindowBytes;
     this.stream = new InboundStream<TunnelExit>({
-      maxBufferBytes,
+      // The daemon may have a whole window in flight, plus the frame that crossed the mark, so the
+      // queue has to hold that much for a reader that is momentarily behind.
+      maxBufferBytes:
+        profile === undefined
+          ? maxBufferBytes
+          : Math.max(maxBufferBytes, profile.highWaterBytes + profile.frameBytes),
+      ackStepBytes: profile?.ackStepBytes,
       label: "Tunnel",
       overflowEnd: { reason: "error", message: "The tunnel consumer is too slow." },
       onConsumed: (bytes) => this.trySend({ type: "tunnel.ack", tunnelId, bytes }),
@@ -210,7 +228,7 @@ class RemoteTunnelHandle implements TunnelHandle {
   }
 
   private async waitForRoom(): Promise<void> {
-    while (this.sent - this.acknowledged >= writeWindowBytes) {
+    while (this.sent - this.acknowledged >= this.writeWindowBytes) {
       if (this.stream.endedWith !== undefined) break;
       await new Promise<void>((resolve) => this.roomWaiters.push(resolve));
     }

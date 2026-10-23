@@ -338,6 +338,11 @@ const tunnelOpen = z.object({
   port: z.number().int().min(1).max(65_535),
   /** Omit to try 127.0.0.1 and then ::1. */
   host: z.enum(tunnelHosts).optional(),
+  /**
+   * A named flow-control profile the hub is ready for, such as `interactive`. A daemon that does
+   * not know the name, or predates profiles, uses its defaults, which every hub copes with.
+   */
+  profile: z.string().max(32).optional(),
 });
 const tunnelData = z.object({
   type: z.literal("tunnel.data"),

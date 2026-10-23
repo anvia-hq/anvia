@@ -5,6 +5,12 @@ export interface InboundStreamOptions<End> {
   maxBufferBytes: number;
   /** The reader consumed this many bytes in total. Tell the sender, so it can send more. */
   onConsumed: (totalBytes: number) => void;
+  /**
+   * Tell the sender only once this many more bytes have been consumed, or the queue has run dry.
+   * Default 0: after every chunk. A stepped ack is less chatty, which matters for a stream of many
+   * small chunks over a window big enough to leave room for the delay.
+   */
+  ackStepBytes?: number | undefined;
   /** The sender ignored flow control. Tell it to stop; the stream ends right after. */
   onOverflow: () => void;
   /**
@@ -74,7 +80,9 @@ export class InboundStream<End> {
 
   private async *read(): AsyncGenerator<Uint8Array, void, void> {
     while (true) {
-      this.acknowledge();
+      // With a step, hold the ack back while there is more to read, but never leave the last bytes
+      // unacknowledged, or a sender stopped at its window would wait for them forever.
+      this.acknowledge(this.queue.length === 0);
       const chunk = this.queue.shift();
       if (chunk !== undefined) {
         this.queued -= chunk.byteLength;
@@ -91,8 +99,9 @@ export class InboundStream<End> {
   }
 
   /** Report consumption once the reader has asked for more, i.e. after it handled the last chunk. */
-  private acknowledge(): void {
+  private acknowledge(drained: boolean): void {
     if (this.consumed === this.acknowledged || this.finished !== undefined) return;
+    if (!drained && this.consumed - this.acknowledged < (this.options.ackStepBytes ?? 0)) return;
     this.acknowledged = this.consumed;
     this.options.onConsumed(this.consumed);
   }

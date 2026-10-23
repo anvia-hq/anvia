@@ -1,8 +1,8 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import net from "node:net";
 import WebSocket from "ws";
 import { RemoteSandboxHub, relayTicket } from "../src/remote/index";
+import { DelayProxy } from "../test/support/delay-proxy";
 
 // Measures how smooth the reference desktop is, on three paths to the same VNC server:
 //
@@ -42,40 +42,6 @@ const sandboxId = "bench";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const now = () => performance.now();
-
-// ---- a link with a delay you can change ---------------------------------------------------------
-class DelayProxy {
-  /** One-way delay in ms, read for every chunk, so it can change under open connections. */
-  oneWayMs = 0;
-  private readonly server = net.createServer((client) => {
-    const upstream = net.connect({ host: "127.0.0.1", port: this.target });
-    const forward = (from: net.Socket, to: net.Socket) => {
-      from.on("data", (chunk) => {
-        // Equal delays keep timers in order, so bytes stay in order.
-        if (this.oneWayMs === 0) to.write(chunk);
-        else setTimeout(() => to.writable && to.write(chunk), this.oneWayMs);
-      });
-      from.on("close", () => setTimeout(() => to.destroy(), this.oneWayMs));
-      from.on("error", () => to.destroy());
-    };
-    forward(client, upstream);
-    forward(upstream, client);
-  });
-
-  constructor(private readonly target: number) {}
-
-  listen(): Promise<number> {
-    return new Promise((resolve) => {
-      this.server.listen(0, "0.0.0.0", () =>
-        resolve((this.server.address() as net.AddressInfo).port),
-      );
-    });
-  }
-
-  close() {
-    this.server.close();
-  }
-}
 
 // ---- a minimal RFB client: just enough to know where each update ends ---------------------------
 interface Transport {
@@ -456,7 +422,7 @@ const { port: hubPort } = await hub.listen({
   desktopPath: "/desktop",
 });
 const proxy = new DelayProxy(hubPort);
-const proxyPort = await proxy.listen();
+const proxyPort = await proxy.listen("0.0.0.0");
 
 const containerName = `anvia-bench-${process.pid}`;
 const container = spawn(

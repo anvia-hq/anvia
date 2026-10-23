@@ -134,6 +134,8 @@ export class RemoteSandboxDesktop implements SandboxDesktop {
     const status = await this.start(options);
     return this.options.tunnel.open(status.vncPort, {
       host: "127.0.0.1",
+      // A person is watching this, over a link of unknown length.
+      profile: "interactive",
       abortSignal: options.abortSignal,
     });
   }
@@ -149,8 +151,9 @@ export class RemoteSandboxDesktop implements SandboxDesktop {
         capability: desktopCapability,
         error: () =>
           new DockerSandboxError(
-            `Sandbox ${this.options.id} does not support a desktop. Its image needs Xvfb, ` +
-              "x11vnc, xdotool and ImageMagick, and its daemon needs a version that supports it.",
+            `Sandbox ${this.options.id} does not support a desktop. Its image needs an X server ` +
+              "with VNC (Xvnc, or Xvfb with x11vnc), xdotool and ImageMagick, and its daemon needs a " +
+              "version that supports it.",
             "unsupported",
           ),
       },

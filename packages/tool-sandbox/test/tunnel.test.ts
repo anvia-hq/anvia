@@ -3,6 +3,7 @@ import net from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 import WebSocket, { WebSocketServer } from "ws";
 import { RemoteSandboxHub, relayTicket, type TunnelHandle } from "../src/remote/index";
+import { DelayProxy } from "./support/delay-proxy";
 import {
   type RemoteHarness,
   type RemoteHarnessOptions,
@@ -54,6 +55,55 @@ async function listen(
 }
 
 const echo = (socket: net.Socket) => socket.pipe(socket);
+
+const proxies: DelayProxy[] = [];
+afterEach(() => {
+  for (const proxy of proxies.splice(0)) proxy.close();
+});
+
+/** A harness whose daemon reaches the hub over a link with this round-trip time. */
+async function harnessOverSlowLink(rttMs: number, options: RemoteHarnessOptions = {}) {
+  const probe = net.createServer();
+  await new Promise<void>((resolve) => probe.listen(0, "127.0.0.1", () => resolve()));
+  const hubPort = (probe.address() as net.AddressInfo).port;
+  await new Promise<void>((resolve) => probe.close(() => resolve()));
+  const proxy = new DelayProxy(hubPort);
+  proxy.oneWayMs = rttMs / 2;
+  proxies.push(proxy);
+  const proxyPort = await proxy.listen();
+  return harness({
+    ...options,
+    listen: { port: hubPort },
+    daemon: { ...options.daemon, controlUrl: `ws://127.0.0.1:${proxyPort}` },
+  });
+}
+
+/** A service that writes `total` bytes as fast as it is read, then closes. */
+const sendsBytes = (total: number) => (socket: net.Socket) => {
+  let left = total;
+  const pump = () => {
+    while (left > 0) {
+      const chunk = Buffer.alloc(Math.min(64 * 1024, left), 5);
+      left -= chunk.byteLength;
+      if (!socket.write(chunk)) return void socket.once("drain", pump);
+    }
+    socket.end();
+  };
+  pump();
+};
+
+/** How long a tunnel takes to deliver `total` bytes. */
+async function timeTransfer(handle: TunnelHandle, total: number): Promise<number> {
+  const started = Date.now();
+  let bytes = 0;
+  for await (const chunk of handle.output) {
+    bytes += chunk.byteLength;
+    if (bytes >= total) break;
+  }
+  expect(bytes).toBe(total);
+  handle.close();
+  return Date.now() - started;
+}
 
 /** Read from a handle until `predicate` says the text so far is enough. */
 async function readUntil(handle: TunnelHandle, enough: (text: string) => boolean) {
@@ -326,6 +376,120 @@ describe("tunnel", () => {
       }
       expect(h.hub.isConnected(sandboxId)).toBe(true);
       expect(slowest).toBeLessThan(1_000);
+      handle.close();
+    }, 30_000);
+  });
+
+  describe("flow profiles", () => {
+    const total = 6 * 1024 * 1024;
+
+    it("moves data several times faster over a 100 ms link with the interactive profile", async () => {
+      const { port } = await listen(sendsBytes(total));
+      const h = await harnessOverSlowLink(100);
+      const tunnel = h.hub.tunnel(sandboxId);
+
+      const plain = await timeTransfer(await tunnel.open(port), total);
+      const interactive = await timeTransfer(
+        await tunnel.open(port, { profile: "interactive" }),
+        total,
+      );
+      // 256 KiB per 100 ms is about 2.6 MB/s, so the default needs over two seconds; a 2 MiB
+      // window is ten times that. Compare, so a slow machine does not decide it.
+      expect(plain).toBeGreaterThan(1_500);
+      expect(interactive * 2.5).toBeLessThan(plain);
+    }, 60_000);
+
+    it("does not delay a concurrent exec or the heartbeat while an interactive tunnel floods", async () => {
+      const { port } = await listen((socket) => {
+        const pump = () => {
+          while (socket.write(Buffer.alloc(64 * 1024, 7))) continue;
+          socket.once("drain", pump);
+        };
+        pump();
+      });
+      const h = await harness({ hub: { heartbeatIntervalMs: 200 } });
+      const handle = await h.hub.tunnel(sandboxId).open(port, { profile: "interactive" });
+      let bytes = 0;
+      void (async () => {
+        for await (const chunk of handle.output) bytes += chunk.byteLength;
+      })();
+      await eventually(() => bytes > 4 * 1024 * 1024, 10_000);
+
+      const started = Date.now();
+      let slowest = 0;
+      while (Date.now() - started < 2_000) {
+        const before = Date.now();
+        const result = await h.runtime.exec({ command: "echo", args: ["alive"] });
+        slowest = Math.max(slowest, Date.now() - before);
+        expect(result).toMatchObject({ status: "exited", exitCode: 0 });
+      }
+      expect(h.hub.isConnected(sandboxId)).toBe(true);
+      expect(slowest).toBeLessThan(1_000);
+      handle.close();
+    }, 30_000);
+
+    it("lets a reader fall a whole window behind without being cut off", async () => {
+      const { port } = await listen((socket) => {
+        const pump = () => {
+          while (socket.write(Buffer.alloc(64 * 1024, 7))) continue;
+          socket.once("drain", pump);
+        };
+        pump();
+      });
+      const h = await harness();
+      const handle = await h.hub.tunnel(sandboxId).open(port, { profile: "interactive" });
+      // Nobody reads: the daemon sends its whole 2 MiB window and stops. Over the default 1 MiB
+      // buffer that would end the tunnel as "too slow".
+      await sleep(1_000);
+      let ended = false;
+      void handle.exit.then(() => {
+        ended = true;
+      });
+      await sleep(100);
+      expect(ended).toBe(false);
+
+      let bytes = 0;
+      for await (const chunk of handle.output) {
+        bytes += chunk.byteLength;
+        if (bytes >= 3 * 1024 * 1024) break;
+      }
+      expect(bytes).toBeGreaterThanOrEqual(3 * 1024 * 1024);
+      handle.close();
+    }, 30_000);
+
+    it("lets the operator's per-port limits win over the requested profile", async () => {
+      const smaller = 512 * 1024;
+      const { port } = await listen(sendsBytes(smaller));
+      const h = await harnessOverSlowLink(100, {
+        daemon: { tunnel: { flowByPort: {} } },
+      });
+      const open = (profile?: "interactive") =>
+        h.hub.tunnel(sandboxId).open(port, profile === undefined ? {} : { profile });
+      const free = await timeTransfer(await open("interactive"), smaller);
+
+      // Same daemon settings, but this port is held to a 32 KiB window.
+      const limited = await harnessOverSlowLink(100, {
+        daemon: {
+          tunnel: {
+            flowByPort: { [port]: { highWaterBytes: 32 * 1024, frameBytes: 8 * 1024 } },
+          },
+        },
+      });
+      const held = await timeTransfer(
+        await limited.hub.tunnel(sandboxId).open(port, { profile: "interactive" }),
+        smaller,
+      );
+      expect(held).toBeGreaterThan(free * 2);
+    }, 60_000);
+
+    it("ignores a profile it does not know, as an older daemon would", async () => {
+      const { port } = await listen(echo);
+      const h = await harness();
+      const handle = await h.hub
+        .tunnel(sandboxId)
+        .open(port, { profile: "from-the-future" as never });
+      await handle.write("hello");
+      expect(await readUntil(handle, (text) => text.length >= 5)).toBe("hello");
       handle.close();
     }, 30_000);
   });

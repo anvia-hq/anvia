@@ -8,6 +8,7 @@ import {
   encodeError,
   tunnelHosts,
 } from "../remote/protocol";
+import { type FlowProfile, flowProfile } from "../shared/flow";
 import { type StreamChannelLimits, StreamChannel } from "./stream-channel";
 
 export interface SandboxDaemonTunnelOptions {
@@ -19,6 +20,12 @@ export interface SandboxDaemonTunnelOptions {
   connectTimeoutMs?: number;
   /** Output batching and flow-control bounds. */
   flow?: StreamChannelLimits;
+  /**
+   * Bounds for particular ports, which win over everything else. A tunnel to a port with no entry
+   * uses the profile the hub asked for (a desktop viewer asks for `interactive`), and otherwise
+   * `flow`.
+   */
+  flowByPort?: Readonly<Record<number, StreamChannelLimits>>;
 }
 
 interface TunnelExitInfo {
@@ -34,13 +41,19 @@ interface Entry {
   received: number;
   written: number;
   acknowledged: number;
+  /** Acknowledge hub bytes in steps of this size, and tolerate this much unwritten. */
+  ackStepBytes: number;
+  maxUnwrittenBytes: number;
 }
 
 const defaultMaxTunnels = 64;
 const defaultConnectTimeoutMs = 5_000;
-/** The hub stops at 256 KiB unacked; this much more than that means it is not listening to acks. */
-const maxUnwrittenBytes = 1024 * 1024;
-const ackStepBytes = 32 * 1024;
+/**
+ * By default the hub stops at 256 KiB unacked; this much more than that means it is not listening
+ * to acks. A profile with a bigger window gets four times it.
+ */
+const defaultMaxUnwrittenBytes = 1024 * 1024;
+const defaultAckStepBytes = 32 * 1024;
 
 /**
  * The tunnels one hub connection has open: raw TCP streams to services on the sandbox's own
@@ -87,7 +100,18 @@ export class ConnectionTunnels {
       return;
     }
 
-    const entry: Entry = { closing: false, received: 0, written: 0, acknowledged: 0 };
+    const profile = flowProfile(frame.profile);
+    const entry: Entry = {
+      closing: false,
+      received: 0,
+      written: 0,
+      acknowledged: 0,
+      ackStepBytes: profile?.ackStepBytes ?? defaultAckStepBytes,
+      maxUnwrittenBytes:
+        profile === undefined
+          ? defaultMaxUnwrittenBytes
+          : Math.max(defaultMaxUnwrittenBytes, profile.writeWindowBytes * 4),
+    };
     this.entries.set(tunnelId, entry);
     let socket: net.Socket;
     try {
@@ -121,7 +145,7 @@ export class ConnectionTunnels {
         },
       },
       { send: this.deps.send, bufferedAmount: this.deps.bufferedAmount },
-      options?.flow,
+      outputLimits(port, profile, options),
     );
     entry.socket = socket;
     entry.channel = channel;
@@ -156,7 +180,7 @@ export class ConnectionTunnels {
     if (entry?.socket === undefined) return;
     const bytes = decodeBytes(data);
     entry.received += bytes.byteLength;
-    if (entry.received - entry.written > maxUnwrittenBytes) {
+    if (entry.received - entry.written > entry.maxUnwrittenBytes) {
       this.shutdown(tunnelId, entry, { reason: "error", message: "Tunnel ignored flow control." });
       return;
     }
@@ -193,7 +217,7 @@ export class ConnectionTunnels {
     if (entry.closing) return;
     const unacked = entry.written - entry.acknowledged;
     // Step acks to keep traffic down, but never leave the hub waiting on the last few bytes.
-    if (unacked < ackStepBytes && entry.written < entry.received) return;
+    if (unacked < entry.ackStepBytes && entry.written < entry.received) return;
     if (unacked === 0) return;
     entry.acknowledged = entry.written;
     this.deps.send({ type: "tunnel.ack", tunnelId, bytes: entry.written });
@@ -211,6 +235,23 @@ export class ConnectionTunnels {
     entry.channel?.dispose();
     entry.socket?.destroy();
   }
+}
+
+/** Bounds for a tunnel's output: the operator's for this port, else the hub's profile, else `flow`. */
+function outputLimits(
+  port: number,
+  profile: FlowProfile | undefined,
+  options: SandboxDaemonTunnelOptions | undefined,
+): StreamChannelLimits | undefined {
+  const forPort = options?.flowByPort?.[port];
+  if (forPort !== undefined) return { ...options?.flow, ...forPort };
+  if (profile === undefined) return options?.flow;
+  return {
+    batchMs: profile.batchMs,
+    frameBytes: profile.frameBytes,
+    highWaterBytes: profile.highWaterBytes,
+    socketBufferBytes: profile.socketBufferBytes,
+  };
 }
 
 /** Connect to a service on this machine's own loopback, and nowhere else. */

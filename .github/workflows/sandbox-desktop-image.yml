@@ -76,16 +76,16 @@ jobs:
 
       - name: Check the image carries what the desktop needs
         run: |
-          docker run --rm --entrypoint sh "$IMAGE:validation" -c '
-            set -eu
-            for program in Xvfb x11vnc xdotool xrandr import openbox-session plank picom \
-              chromium anvia-chromium tmux lxterminal pcmanfm anvia-sandbox-daemon; do
-              command -v "$program" >/dev/null || { echo "missing: $program" >&2; exit 1; }
-            done
-            node -e "require('node-pty')"
-            # Started without its settings, the daemon loads and says what it needs.
-            anvia-sandbox-daemon 2>&1 | grep -q ANVIA_CONTROL_URL
-          '
+          docker run --rm -i --entrypoint sh "$IMAGE:validation" -s <<'CHECK'
+          set -eu
+          for program in Xvfb x11vnc xdotool xrandr import openbox-session plank picom \
+            chromium anvia-chromium tmux lxterminal pcmanfm anvia-sandbox-daemon; do
+            command -v "$program" >/dev/null || { echo "missing: $program" >&2; exit 1; }
+          done
+          node -e "require('node-pty')"
+          # Started without its settings, the daemon loads and says what it needs.
+          anvia-sandbox-daemon 2>&1 | grep -q ANVIA_CONTROL_URL
+          CHECK
 
   publish:
     name: Publish sandbox desktop image

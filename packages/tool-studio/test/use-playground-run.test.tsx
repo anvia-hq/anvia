@@ -67,10 +67,10 @@ function Harness() {
   return null;
 }
 
-async function emitRun(streamIndex: number, events: unknown[]) {
-  const stream = streams[streamIndex];
-  if (stream === undefined) throw new Error(`Missing stream ${streamIndex}`);
-  const streamId = `stream_${streamIndex}`;
+async function emitRun(events: unknown[]) {
+  const stream = streams.at(-1);
+  if (stream === undefined) throw new Error("Missing stream");
+  const streamId = `stream_${streams.length}`;
   const frames = [
     {
       type: "stream_start",
@@ -99,7 +99,7 @@ async function suspendFirstRun() {
     promptDone = run.runPrompt("Delete the account");
   });
   expect(fetchMock).toHaveBeenCalledTimes(1);
-  await emitRun(0, [
+  await emitRun([
     { type: "run_start", runId: "run_1", source: "agent" },
     {
       type: "interaction",
@@ -159,6 +159,35 @@ describe("usePlaygroundRun suspended runs", () => {
     expect(runStates.at(-1)).toBe("suspended");
   });
 
+  it("returns to idle when the server no longer has the pending interaction", async () => {
+    await suspendFirstRun();
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ error: { message: "Interaction continuation is unavailable" } }),
+        {
+          status: 404,
+        },
+      ),
+    );
+
+    await act(async () => {
+      run.decideToolApproval("interaction_1", true);
+    });
+    await act(async () => {});
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(runStates.at(-1)).toBe("idle");
+
+    await act(async () => {
+      void run.runPrompt("Start over");
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    await emitRun([
+      { type: "run_start", runId: "run_3", source: "agent" },
+      { type: "run_end", runId: "run_3", status: "completed" },
+    ]);
+    expect(runStates.at(-1)).toBe("idle");
+  });
+
   it("unblocks prompts after the approval decision completes", async () => {
     await suspendFirstRun();
 
@@ -166,7 +195,7 @@ describe("usePlaygroundRun suspended runs", () => {
       run.decideToolApproval("interaction_1", true);
     });
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    await emitRun(1, [
+    await emitRun([
       { type: "run_start", runId: "run_2", source: "agent" },
       { type: "run_end", runId: "run_2", status: "completed" },
     ]);
@@ -177,7 +206,7 @@ describe("usePlaygroundRun suspended runs", () => {
       void run.runPrompt("Thanks");
     });
     expect(fetchMock).toHaveBeenCalledTimes(3);
-    await emitRun(2, [
+    await emitRun([
       { type: "run_start", runId: "run_3", source: "agent" },
       { type: "run_end", runId: "run_3", status: "completed" },
     ]);

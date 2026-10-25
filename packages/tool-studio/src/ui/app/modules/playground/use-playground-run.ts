@@ -1,5 +1,6 @@
 import type { ClientStreamEvent, ClientStreamRequest, ClientTransport } from "@anvia/client";
 import { createHttpClientTransport } from "@anvia/client";
+import { EventStreamHttpError } from "@anvia/client/transport";
 import type { Message } from "@anvia/core/completion";
 import { useChat } from "@anvia/react";
 import { type RefObject, useMemo, useRef } from "react";
@@ -297,7 +298,15 @@ export function usePlaygroundRun(props: {
         transcript.resolveToolApproval(interactionId, approved);
         finishInteractionPhase();
       })
-      .catch((decisionError) => onError(errorMessage(decisionError)));
+      .catch((decisionError) => {
+        onError(errorMessage(decisionError));
+        if (
+          isPermanentInteractionError(decisionError) ||
+          isPermanentInteractionError(playgroundRunErrorRef.current)
+        ) {
+          finishInteractionPhase();
+        }
+      });
   }
 
   function answerToolQuestion(
@@ -321,7 +330,15 @@ export function usePlaygroundRun(props: {
         transcript.resolveToolQuestion(interactionId, answers);
         finishInteractionPhase();
       })
-      .catch((answerError) => onError(errorMessage(answerError)));
+      .catch((answerError) => {
+        onError(errorMessage(answerError));
+        if (
+          isPermanentInteractionError(answerError) ||
+          isPermanentInteractionError(playgroundRunErrorRef.current)
+        ) {
+          finishInteractionPhase();
+        }
+      });
   }
 
   function finishInteractionPhase() {
@@ -457,6 +474,24 @@ export function usePlaygroundRun(props: {
     runPrompt,
     stopPrompt,
   };
+}
+
+/**
+ * Permanent rejection of an interaction response: the server no longer holds the
+ * continuation (404/409) or the client has no pending interaction to answer. Retrying
+ * can never succeed, so the suspended run is abandoned and the playground unblocked.
+ * useChat reports transport failures through its onError option and rejects
+ * respondToInteraction with a generic "not accepted" error instead, so the caller
+ * checks both the rejection and the last recorded chat error.
+ */
+function isPermanentInteractionError(error: unknown): boolean {
+  if (error instanceof TypeError && error.message.startsWith("No pending interaction exists")) {
+    return true;
+  }
+  return (
+    error instanceof EventStreamHttpError &&
+    (error.response.status === 404 || error.response.status === 409)
+  );
 }
 
 function runRequestFromContext(

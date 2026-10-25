@@ -1,5 +1,11 @@
 # @anvia/react-ui
 
+## 1.2.1
+
+### Patch Changes
+
+- b3de58d: `SandboxDesktop` now ignores the viewer's keyboard and pointer until the viewer takes over. While the agent had control the viewer was still interactive, so a person's input mixed with the agent's even though the controls said "The agent has control".
+
 ## 1.2.0
 
 ### Minor Changes

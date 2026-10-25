@@ -1,6 +1,6 @@
 {
   "name": "@anvia/studio",
-  "version": "1.3.20",
+  "version": "1.3.21",
   "description": "Studio UI and HTTP runtime for Anvia agents.",
   "author": "anvia",
   "license": "MIT",

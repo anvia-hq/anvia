@@ -1,5 +1,13 @@
 # @anvia/studio
 
+## 1.3.21
+
+### Patch Changes
+
+- e2448de: Guard the playground while a run is suspended waiting for approval or a question. Composer submit, new chat, agent switch, and session load/delete are now blocked until the pending interaction is answered, so a new prompt can no longer clear pending interactions and orphan the server-side suspended run.
+- Updated dependencies [b3de58d]
+  - @anvia/react-ui@1.2.1
+
 ## 1.3.20
 
 ### Patch Changes

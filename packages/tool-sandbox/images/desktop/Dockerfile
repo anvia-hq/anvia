@@ -36,7 +36,10 @@ RUN --mount=type=bind,target=/ctx \
 ENV NODE_PATH=/usr/local/lib/node_modules
 
 COPY anvia-chromium /usr/local/bin/anvia-chromium
+# The dock and links open Chromium through its stock launcher, which would start it without
+# --no-sandbox and fail inside Docker's default seccomp profile, so point it at the wrapper.
 RUN chmod 0555 /usr/local/bin/anvia-chromium \
+  && sed -i 's|^Exec=/usr/bin/chromium|Exec=/usr/local/bin/anvia-chromium|' /usr/share/applications/chromium.desktop \
   && install -d -o node -g node /workspace
 COPY anvia-terminal.desktop /usr/share/applications/anvia-terminal.desktop
 COPY --chown=node:node plank/ /home/node/.config/plank/

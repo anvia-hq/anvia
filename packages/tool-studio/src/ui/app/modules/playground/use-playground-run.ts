@@ -159,7 +159,7 @@ export function usePlaygroundRun(props: {
     if (
       (trimmed.length === 0 && promptAttachments.length === 0) ||
       agentId.length === 0 ||
-      runState === "running" ||
+      runState !== "idle" ||
       playgroundChat.status === "submitted" ||
       playgroundChat.status === "streaming"
     ) {
@@ -408,7 +408,7 @@ export function usePlaygroundRun(props: {
     if (event.type === "run_end") {
       if (event.status === "suspended") {
         playgroundWaitingRef.current = true;
-        onRunStateChange("idle");
+        onRunStateChange("suspended");
         onStatus("Waiting for input");
         return true;
       }

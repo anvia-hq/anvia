@@ -132,7 +132,7 @@ export function useStudioSessions(props: {
 
   const loadSession = useCallback(
     async (sessionId: string, options: { updatePath?: boolean } = {}) => {
-      if (runState === "running") {
+      if (runState !== "idle") {
         return;
       }
 
@@ -170,7 +170,7 @@ export function useStudioSessions(props: {
 
   const deleteSession = useCallback(
     async (session: StudioSessionSummary) => {
-      if (runState === "running") {
+      if (runState !== "idle") {
         return;
       }
 

@@ -373,7 +373,7 @@ export function StudioConsole() {
 
   const startNewChat = useCallback(
     (options: { updatePath?: boolean } = {}) => {
-      if (runState === "running") {
+      if (runState !== "idle") {
         return;
       }
       resetTranscriptSequence();
@@ -397,7 +397,7 @@ export function StudioConsole() {
 
   const selectPlaygroundAgent = useCallback(
     (agentId: string) => {
-      if (runState === "running" || agentId === selectedAgentId) {
+      if (runState !== "idle" || agentId === selectedAgentId) {
         return;
       }
 

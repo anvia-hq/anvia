@@ -10,7 +10,6 @@ import { eventStreamResponseErrorMessage } from "../../app-errors";
 import { isErrorStreamEvent, isPipelineFinalEvent, isPipelineLogEvent } from "../../app-helpers";
 import { errorMessage } from "../shared/format";
 import { nextPaint } from "../shared/transcript";
-import type { RunState } from "../shared/types";
 
 type PipelineRunStreamRequest = {
   endpoint: string;
@@ -44,7 +43,7 @@ export function usePipelines(props: {
   );
   const [pipelineLogLoadState, setPipelineLogLoadState] = useState<"idle" | "loading">("idle");
   const [pipelineRunLoadState, setPipelineRunLoadState] = useState<"idle" | "loading">("idle");
-  const [pipelineRunState, setPipelineRunState] = useState<RunState>("idle");
+  const [pipelineRunState, setPipelineRunState] = useState<"idle" | "running">("idle");
   const pipelineDetailRequestRef = useRef(0);
   const pipelineLogRequestRef = useRef(0);
 

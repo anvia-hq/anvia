@@ -23,7 +23,7 @@ export type ToolQuestionUpdate = ToolQuestion & {
   callId?: string;
 };
 export type TraceObservationItem = StudioTrace["observations"][number];
-export type RunState = "idle" | "running";
+export type RunState = "idle" | "running" | "suspended";
 export type SessionLoadState = "idle" | "loading";
 export type TraceLoadState = "idle" | "loading";
 export type ActivePage =

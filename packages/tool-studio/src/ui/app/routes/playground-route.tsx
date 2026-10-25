@@ -19,7 +19,7 @@ export function PlaygroundRoute() {
     if (!studio.pageEnabled("playground")) {
       return;
     }
-    if (studio.runState === "running") {
+    if (studio.runState !== "idle") {
       handledSessionIdRef.current = sessionId;
       return;
     }
@@ -52,7 +52,7 @@ export function PlaygroundRoute() {
             agents={studio.agents}
             teams={studio.teams}
             value={`agent:${studio.selectedAgentId}`}
-            disabled={studio.runState === "running"}
+            disabled={studio.runState !== "idle"}
             onSelect={(kind, id) => {
               if (kind === "agent") studio.selectPlaygroundAgent(id);
               else void navigate({ to: "/playground/teams/$teamId", params: { teamId: id } });

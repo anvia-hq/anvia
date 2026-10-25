@@ -45,6 +45,34 @@ describe("PlaygroundPage run action", () => {
     expect(attachmentButton).not.toContain("border-0");
   });
 
+  it("disables the composer and sessions while a run is suspended", () => {
+    const html = render({
+      runState: "suspended",
+      agents: [agent, { id: "writer", quickPrompts: [] }],
+      allSessions: [
+        {
+          id: "session-1",
+          agentId: "support",
+          title: "Font review",
+          createdAt: "2026-08-12T00:00:00.000Z",
+          updatedAt: "2026-08-12T00:00:00.000Z",
+          messageCount: 1,
+        },
+      ],
+    });
+
+    const sendButton = runAction(html);
+    expect(sendButton).toContain('aria-label="Send message"');
+    expect(sendButton).toMatch(/\sdisabled(?:=""|(?=[\s>]))/);
+    expect(buttonWithLabel(html, "Attach image or document")).toMatch(
+      /\sdisabled(?:=""|(?=[\s>]))/,
+    );
+    expect(buttonWithLabel(html, "Select agent")).toMatch(/\sdisabled(?:=""|(?=[\s>]))/);
+    const sessionButton = buttons(html).find((button) => button.includes(">Font review</span>"));
+    expect(sessionButton).toMatch(/\sdisabled(?:=""|(?=[\s>]))/);
+    expect(buttonWithLabel(html, "Delete Font review")).toMatch(/\sdisabled(?:=""|(?=[\s>]))/);
+  });
+
   it("does not render the removed working indicator", () => {
     const html = render({
       hasMessages: true,

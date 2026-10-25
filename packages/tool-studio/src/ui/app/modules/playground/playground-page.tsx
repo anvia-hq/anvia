@@ -171,7 +171,7 @@ export function PlaygroundPage(props: {
                     className="h-auto min-h-16 justify-start whitespace-normal rounded-lg border border-hair bg-card px-3 py-2.5 text-left text-sm font-medium leading-5 text-foreground shadow-none hover:border-foreground hover:bg-transparent hover:text-foreground"
                     type="button"
                     variant="ghost"
-                    disabled={props.runState === "running" || props.selectedAgentId.length === 0}
+                    disabled={props.runState !== "idle" || props.selectedAgentId.length === 0}
                     onClick={() => props.onRunPrompt(quickPrompt)}
                     key={quickPrompt}
                   >
@@ -232,7 +232,7 @@ export function PlaygroundPage(props: {
                     size="icon"
                     type="button"
                     variant="ghost"
-                    disabled={props.runState === "running"}
+                    disabled={props.runState !== "idle"}
                     onClick={() => props.attachmentInputRef.current?.click()}
                   >
                     <StudioIcon icon={Paperclip} aria-hidden="true" />
@@ -267,7 +267,7 @@ export function PlaygroundPage(props: {
                             : value.slice(explicitControlValuePrefix.length),
                         )
                       }
-                      disabled={props.runState === "running"}
+                      disabled={props.runState !== "idle"}
                     >
                       <SelectTrigger
                         aria-label={control.label}
@@ -295,7 +295,7 @@ export function PlaygroundPage(props: {
                     <Select
                       value={props.selectedModelRef}
                       onValueChange={props.onSelectModel}
-                      disabled={props.runState === "running"}
+                      disabled={props.runState !== "idle"}
                     >
                       <SelectTrigger
                         aria-label="Select model"
@@ -322,7 +322,7 @@ export function PlaygroundPage(props: {
                       <Select
                         value={props.selectedAgent?.id ?? props.selectedAgentId}
                         onValueChange={props.onSelectAgent}
-                        disabled={props.runState === "running"}
+                        disabled={props.runState !== "idle"}
                       >
                         <SelectTrigger
                           aria-label="Select agent"
@@ -352,7 +352,7 @@ export function PlaygroundPage(props: {
                     type={props.isStreaming ? "button" : "submit"}
                     disabled={
                       !props.isStreaming &&
-                      (props.runState === "running" || props.selectedAgentId.length === 0)
+                      (props.runState !== "idle" || props.selectedAgentId.length === 0)
                     }
                     onClick={props.isStreaming ? props.onStopPrompt : undefined}
                   >
@@ -459,7 +459,7 @@ function PlaygroundSessionsPanel(props: {
           <PlaygroundSessionRow
             session={session}
             active={session.id === props.selectedSessionId}
-            disabled={props.runState === "running"}
+            disabled={props.runState !== "idle"}
             onDeleteSession={props.onDeleteSession}
             onLoadSession={props.onLoadSession}
             key={session.id}

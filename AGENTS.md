@@ -137,11 +137,6 @@ behavior belongs in `packages/tool-studio`.
 - `packages/server`: JSONL, SSE, and UI stream response helpers.
 - `packages/tool-sandbox`: Docker-backed sandbox tools. Docker integration tests
   are gated by `ANVIA_SANDBOX_DOCKER_TESTS=1`.
-- `packages/tool-browser` (**deprecated**; scheduled for removal in the next release cycle —
-  superseded by the `@anvia/sandbox` desktop image): caller-owned Docker browser lifecycle,
-  visible Chromium, and semantic browser tools. Studio noVNC views work from sandbox view metadata
-  and do not depend on this package. Docker integration tests are gated by
-  `ANVIA_BROWSER_DOCKER_TESTS=1`.
 - `packages/tool-studio`: local Studio runtime, HTTP routes, storage, trace
   handling, and Vite/React UI. Its build compiles both the package and UI assets.
 

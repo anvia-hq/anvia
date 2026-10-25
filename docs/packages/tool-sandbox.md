@@ -83,8 +83,8 @@ commands, so the command policy does not restrict what those programs can execut
 
 `resources.sharedMemoryMb` maps to a private Docker `/dev/shm` size. A security configuration may use
 explicit `dropCapabilities` and `addCapabilities` arrays, plus
-`seccompProfile: { type: "path", path }` with an absolute host path. The deprecated
-`@anvia/browser` used these options to keep Chromium's own process sandbox enabled.
+`seccompProfile: { type: "path", path }` with an absolute host path. A hardened browser workload
+can use them to keep Chromium's own process sandbox enabled.
 
 `createSandbox()` accepts `containerRuntime` — the runtime name registered in the Docker daemon (for
 example `runsc` for gVisor). The runtime must already be registered (`runsc install` followed by a
@@ -552,8 +552,8 @@ address.
 ### Desktop
 
 A remote sandbox can have a desktop: a virtual display that an agent can see and drive and that a
-person can watch or take over. It replaces the deprecated `@anvia/browser`, which drove Chromium in
-a local Docker container. Chromium is just a program on the desktop, so any
+person can watch or take over. It succeeds the retired `@anvia/browser` package, which drove
+Chromium in a local Docker container. Chromium is just a program on the desktop, so any
 graphical application works, and nothing is specific to browsers.
 
 ```ts
@@ -596,7 +596,7 @@ Inside it, `anvia-chromium` starts Chromium on the desktop. Chromium's own sandb
 namespaces, which Docker's default seccomp profile blocks, so the launcher starts it with
 `--no-sandbox`: the container is already the isolation boundary. Set `ANVIA_CHROMIUM_SANDBOX=1` to
 keep Chromium's sandbox, and run the container with a seccomp profile that allows user namespaces
-(or `--cap-add SYS_ADMIN`). `@anvia/browser`'s seccomp profile is not carried over: it crashes
+(or `--cap-add SYS_ADMIN`). The retired `@anvia/browser` package's seccomp profile is not carried over: it crashes
 `runc` on current Docker releases. For another base image, install the same packages (`tigervnc-standalone-server xdotool
 imagemagick x11-xserver-utils`, optionally `openbox`).
 
@@ -711,8 +711,8 @@ tools keep working so the agent can watch and wait.
 #### Not included
 
 Wayland and WebRTC streaming, audio, CDP-based browser automation tools, preview URLs and domain
-routing, and desktops for the local Docker runtime are out of scope. `@anvia/browser`'s semantic
-page snapshots and per-tab scheduling are not carried over; the agent works from screenshots and
+routing, and desktops for the local Docker runtime are out of scope. The retired `@anvia/browser`
+package's semantic page snapshots and per-tab scheduling are not carried over; the agent works from screenshots and
 input actions.
 
 ### Protocol

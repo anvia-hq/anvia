@@ -6,8 +6,9 @@
  * to the provider, so tool configurations cannot point at loopback, private, or
  * link-local destinations (including cloud metadata addresses).
  *
- * Blocked ranges follow the IANA IPv4/IPv6 special-purpose address registries and
- * mirror packages/tool-browser/src/internal/ip-check.ts; addresses that IANA marks
+ * Blocked ranges follow the IANA IPv4/IPv6 special-purpose address registries
+ * (this list originally mirrored @anvia/browser's ip-check, a package that has
+ * since been removed); addresses that IANA marks
  * globally reachable inside otherwise special-purpose space stay reachable.
  *
  * IPv4 spellings are normalized by the WHATWG URL parser before this guard runs

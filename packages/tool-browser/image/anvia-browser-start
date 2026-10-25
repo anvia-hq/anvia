@@ -1,3 +1,0 @@
-#!/bin/sh
-set -eu
-exec node /opt/anvia-browser/start.mjs

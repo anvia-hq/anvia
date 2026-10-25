@@ -1,3 +1,6 @@
+// Deprecated: @anvia/browser will be removed in the next release cycle. This recipe stays for the
+// current release; new work should use the @anvia/sandbox desktop image with createDesktopTools,
+// which Studio's noVNC Playground panel supports the same way.
 import { createBrowserTools, DockerBrowserClient } from "@anvia/browser";
 import { Agent } from "@anvia/core/agent";
 import { OpenAIClient } from "@anvia/openai";

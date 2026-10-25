@@ -1,5 +1,12 @@
 # @anvia/browser
 
+> **Deprecated.** `@anvia/browser` is deprecated and will be removed in the next release cycle.
+> For a visible desktop with Chromium that an agent can see and drive — and that a person can
+> watch or take over — use the `@anvia/sandbox` desktop image with `createDesktopTools` (see the
+> [`@anvia/sandbox` guide](https://github.com/anvia-hq/anvia/blob/main/docs/packages/tool-sandbox.md#desktop)).
+> The semantic `browser_*` tools have no direct replacement; agents drive the desktop with
+> screenshot, click, and type tools instead.
+
 Let agents work in a visible Chromium browser that people can inspect and take over. Share a browser across agents, give each task a tab, and bring the live desktop into Anvia Studio.
 
 ## Installation

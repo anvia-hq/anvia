@@ -1,5 +1,9 @@
 # `@anvia/browser` migration notes
 
+> **Deprecated.** `@anvia/browser` is deprecated and will be removed in the next release cycle.
+> New work should use the `@anvia/sandbox` desktop image with `createDesktopTools`; see the
+> deprecation note in the README. The notes below remain for existing installations.
+
 ## Selected-tab tools to explicit tabs
 
 Existing tools remain source compatible and connections still default to serial scheduling. Calls that

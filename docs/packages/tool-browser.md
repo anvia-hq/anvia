@@ -4,6 +4,12 @@ Visible Chromium ownership and semantic browser tools for concurrent Anvia agent
 Docker infrastructure remains owned by `@anvia/sandbox`; this package owns the browser workload,
 capability readiness, isolated Playwright connection, action scheduling, and control arbitration.
 
+> **Deprecated.** This package is deprecated and will be removed in the next release cycle. For a
+> visible desktop with Chromium that an agent can see and drive, use the `@anvia/sandbox`
+> [desktop](./tool-sandbox.md#desktop) with `createDesktopTools`. The semantic `browser_*` tools
+> have no direct replacement; agents drive the desktop with screenshot, click, and type tools
+> instead.
+
 ```ts
 import { DockerBrowserClient, createBrowserTools } from "@anvia/browser";
 import { Agent } from "@anvia/core/agent";

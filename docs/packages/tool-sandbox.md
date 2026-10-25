@@ -83,8 +83,8 @@ commands, so the command policy does not restrict what those programs can execut
 
 `resources.sharedMemoryMb` maps to a private Docker `/dev/shm` size. A security configuration may use
 explicit `dropCapabilities` and `addCapabilities` arrays, plus
-`seccompProfile: { type: "path", path }` with an absolute host path. These options are used by
-`@anvia/browser` to keep Chromium's own process sandbox enabled.
+`seccompProfile: { type: "path", path }` with an absolute host path. The deprecated
+`@anvia/browser` used these options to keep Chromium's own process sandbox enabled.
 
 `createSandbox()` accepts `containerRuntime` — the runtime name registered in the Docker daemon (for
 example `runsc` for gVisor). The runtime must already be registered (`runsc install` followed by a
@@ -110,8 +110,8 @@ const studio = new Studio([agent], {
 ```
 
 The `anvia-sandbox create-image` CLI only builds images. It does not create, resume, stop, or destroy
-sandboxes. Its `playwright` feature remains a general code-sandbox image; the visible Chromium/CDP/
-noVNC appliance is source-controlled and owned by `@anvia/browser`.
+sandboxes. Its `playwright` feature remains a general code-sandbox image; it does not build a
+visible browser or desktop appliance (the desktop image under `images/desktop` is that).
 
 ## Remote sandboxes
 
@@ -552,8 +552,8 @@ address.
 ### Desktop
 
 A remote sandbox can have a desktop: a virtual display that an agent can see and drive and that a
-person can watch or take over. It is the remote-sandbox counterpart to `@anvia/browser`, which
-drives Chromium in a local Docker container. Chromium is just a program on the desktop, so any
+person can watch or take over. It replaces the deprecated `@anvia/browser`, which drove Chromium in
+a local Docker container. Chromium is just a program on the desktop, so any
 graphical application works, and nothing is specific to browsers.
 
 ```ts

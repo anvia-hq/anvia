@@ -121,9 +121,9 @@ export const SandboxDesktop = forwardRef<SandboxDesktopHandle, SandboxDesktopPro
     const [control, setControl] = useState<SandboxDesktopControl | undefined>(undefined);
     const [notice, setNotice] = useState<SandboxDesktopNotice | undefined>(undefined);
 
-    // The viewer may send input unless it is read-only, or someone else holds control.
-    const viewOnly =
-      readOnly || control?.readOnly === true || (control?.held === true && !control.you);
+    // The viewer sends input only while this viewer holds control, so the agent's input and a
+    // person's never mix. Until the relay says who has control, nobody does.
+    const viewOnly = readOnly || control?.readOnly === true || control?.you !== true;
 
     // The latest props, read by long-lived callbacks without restarting the connection.
     const latest = useRef({

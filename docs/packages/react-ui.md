@@ -248,9 +248,9 @@ at 100 ms.
 
 **Taking control.** The default bar shows who is driving: "The agent has control", "alice has
 control", "You have control" or "View only". "Take over" asks the relay for control, which pauses
-the agent's inputs (they fail with `desktop_locked`) until "Release". The viewer may type only
-while it holds control or while nobody does; while someone else holds it, the viewer is watch-only
-and has no take-over button. Closing the tab releases control. `renderControls` receives `{ status,
+the agent's inputs (they fail with `desktop_locked`) until "Release". The viewer is watch-only
+until it holds control, so a person's input never mixes with the agent's; while someone else holds
+control it also has no take-over button. Closing the tab releases control. `renderControls` receives `{ status,
 control, readOnly, notice, takeOver, release }` to draw your own, and a `ref` exposes `focus()`,
 `reconnect()`, `takeOver()` and `release()`. A request that fails, such as taking over while someone
 else holds control, shows as `notice` until the next update.

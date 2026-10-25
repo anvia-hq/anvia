@@ -151,6 +151,7 @@ describe("SandboxDesktop", () => {
       await act(async () => FakeSocket.last.serverMessage(control()));
       expect(screen.getByText("The agent has control")).toBeTruthy();
       expect(root().getAttribute("data-control")).toBe("none");
+      expect(FakeRfb.last.viewOnly).toBe(true);
 
       fireEvent.click(screen.getByRole("button", { name: "Take over" }));
       expect(FakeSocket.last.sent.at(-1)).toEqual({ type: "takeover" });
@@ -177,9 +178,9 @@ describe("SandboxDesktop", () => {
       expect(FakeRfb.last.viewOnly).toBe(true);
       expect(root().getAttribute("data-control")).toBe("other");
 
-      // Control frees up, and the viewer may type again.
+      // Control frees up, but the viewer types only after it takes over.
       await act(async () => FakeSocket.last.serverMessage(control()));
-      expect(FakeRfb.last.viewOnly).toBe(false);
+      expect(FakeRfb.last.viewOnly).toBe(true);
     });
 
     it("surfaces a refused request and clears it on the next update", async () => {

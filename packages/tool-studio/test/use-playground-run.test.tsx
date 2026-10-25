@@ -162,6 +162,19 @@ describe("usePlaygroundRun suspended runs", () => {
   it("returns to idle when the server no longer has the pending interaction", async () => {
     await suspendFirstRun();
     fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: { message: "Temporary failure" } }), { status: 500 }),
+    );
+
+    // A transient failure keeps the run suspended and the approval retryable.
+    await act(async () => {
+      run.decideToolApproval("interaction_1", true);
+    });
+    await act(async () => {});
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(runStates.at(-1)).toBe("suspended");
+
+    // A permanent failure (continuation gone) abandons the suspended run.
+    fetchMock.mockResolvedValueOnce(
       new Response(
         JSON.stringify({ error: { message: "Interaction continuation is unavailable" } }),
         {
@@ -169,18 +182,17 @@ describe("usePlaygroundRun suspended runs", () => {
         },
       ),
     );
-
     await act(async () => {
       run.decideToolApproval("interaction_1", true);
     });
     await act(async () => {});
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(runStates.at(-1)).toBe("idle");
 
     await act(async () => {
       void run.runPrompt("Start over");
     });
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
     await emitRun([
       { type: "run_start", runId: "run_3", source: "agent" },
       { type: "run_end", runId: "run_3", status: "completed" },

@@ -289,6 +289,8 @@ export function usePlaygroundRun(props: {
   function decideToolApproval(interactionId: string, approved: boolean) {
     onError("");
     playgroundWaitingRef.current = false;
+    playgroundRunTerminalRef.current = false;
+    playgroundRunErrorRef.current = undefined;
     const decision = playgroundChat.respondToInteraction({
       interactionId,
       response: { type: "tool-approval", approved },
@@ -315,6 +317,8 @@ export function usePlaygroundRun(props: {
   ) {
     onError("");
     playgroundWaitingRef.current = false;
+    playgroundRunTerminalRef.current = false;
+    playgroundRunErrorRef.current = undefined;
     void playgroundChat
       .respondToInteraction({
         interactionId,

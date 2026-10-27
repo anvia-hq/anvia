@@ -1,12 +1,20 @@
 #!/usr/bin/env node
 import os from "node:os";
 import path from "node:path";
+import { checkDaemon, requiredFeatures } from "./daemon-check";
 import { desktopOptionsFromEnv } from "./daemon-config";
 import { SandboxDaemon, type SandboxDaemonOptions } from "./daemon/index";
 
 const usage = `anvia-sandbox-daemon
 
 Runs inside a sandbox, dials out to a control plane, and executes sandbox operations locally.
+
+Options:
+  --check                  Report what this image offers (terminals, desktop) and exit, without
+                           connecting. No hub URL or token needed.
+  --require=<features>     With --check: exit 1 unless these are available (terminal, desktop,
+                           comma-separated).
+  -h, --help               Show this help.
 
 Environment:
   ANVIA_CONTROL_URL        ws:// or wss:// URL of the hub (required)
@@ -35,9 +43,37 @@ function integer(name: string): number | undefined {
   return value;
 }
 
+async function check(): Promise<void> {
+  const required = requiredFeatures(process.argv);
+  const options: Parameters<typeof checkDaemon>[0] = {
+    terminal: process.env.ANVIA_SANDBOX_TERMINAL === "0" ? false : {},
+  };
+  const desktop = desktopOptionsFromEnv(process.env);
+  if (desktop !== undefined) options.desktop = desktop;
+  const result = await checkDaemon(
+    options,
+    path.resolve(process.env.ANVIA_SANDBOX_WORKDIR ?? process.cwd()),
+    required,
+  );
+  const lines = [
+    `capabilities: ${result.capabilities.join(", ") || "none"}`,
+    ...result.notes.map((note) => `  ${note}`),
+  ];
+  for (const name of result.missing) lines.push(`missing: ${name} is required but not available`);
+  process.stdout.write(`${lines.join("\n")}\n`);
+  if (result.missing.length > 0) process.exitCode = 1;
+}
+
 function main(): void {
   if (process.argv.includes("--help") || process.argv.includes("-h")) {
     process.stdout.write(usage);
+    return;
+  }
+  if (process.argv.includes("--check")) {
+    check().catch((error: unknown) => {
+      process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+      process.exitCode = 2;
+    });
     return;
   }
   const controlUrl = process.env.ANVIA_CONTROL_URL;

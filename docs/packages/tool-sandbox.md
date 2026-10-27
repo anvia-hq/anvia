@@ -633,6 +633,17 @@ entrypoint of its own to change them. `lock` has no variable.
 
 A malformed value stops the daemon at startup instead of falling back to a default.
 
+To see what an image offers before running it against a hub, use `--check`. It looks for terminals
+and the desktop the way the daemon does at its first connection, prints what it found and what is
+missing, and exits without connecting, so it needs no URL or token. `--require=desktop` (or
+`terminal`, or both, comma-separated) makes it exit 1 when a feature is not available, which suits
+a `RUN` step in a Dockerfile or a health check.
+
+```sh
+docker run --rm my-desktop-sandbox anvia-sandbox-daemon --check --require=desktop
+# capabilities: terminal, tunnel, desktop
+```
+
 #### Control
 
 A person takes over with `desktop.takeover({ holder: "alice" })`. While they hold control, the

@@ -78,11 +78,26 @@ export function resolveMemoryOptions(options: MemoryOptions = {}): ResolvedMemor
   return resolved;
 }
 
-/** Lightweight provider-neutral estimate used when no model-specific counter is supplied. */
+/** Characters (about 2,000 tokens) an inline media payload counts for, however large its base64. */
+const MEDIA_PAYLOAD_ESTIMATE_CHARS = 8_000;
+
+/** Replaces inline base64 media with a bounded placeholder so it is not counted as text. */
+function boundInlineMedia(this: unknown, key: string, value: unknown): unknown {
+  const parent = this as { type?: unknown } | null;
+  return key === "data" && typeof value === "string" && parent?.type === "data"
+    ? "x".repeat(Math.min(value.length, MEDIA_PAYLOAD_ESTIMATE_CHARS))
+    : value;
+}
+
+/**
+ * Lightweight provider-neutral estimate used when no model-specific counter is supplied. Inline
+ * image and file data counts for a bounded amount; supply `tokenCounter` for exact counts.
+ */
 export function estimateMemoryTokens(messages: readonly Message[]): number {
   const characters = messages.reduce(
     (total, message) =>
-      total + JSON.stringify({ role: message.role, content: message.content }).length,
+      total +
+      JSON.stringify({ role: message.role, content: message.content }, boundInlineMedia).length,
     0,
   );
   return messages.length === 0 ? 0 : Math.max(messages.length, Math.ceil(characters / 4));

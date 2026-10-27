@@ -195,7 +195,7 @@ export type CreateSummaryMemoryCompactorOptions = {
   model: CompletionModel;
   instructions?: string | undefined;
   maxTokens?: number | undefined;
-  /** Defaults to 0 (including undefined). Set null to omit temperature from the model request. */
+  /** Sent only when set, so models that reject `temperature` work by default. */
   temperature?: number | null | undefined;
   providerOptions?: JsonObject | undefined;
   retries?: RetrySetting | undefined;

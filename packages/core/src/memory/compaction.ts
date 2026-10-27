@@ -39,7 +39,7 @@ export function createSummaryMemoryCompactor(
   options: CreateSummaryMemoryCompactorOptions,
 ): MemoryCompactor {
   const maxTokens = options.maxTokens ?? 1024;
-  const temperature = options.temperature === undefined ? 0 : options.temperature;
+  const temperature = options.temperature ?? null;
   assertPositiveInteger(maxTokens, "maxTokens");
   if (temperature !== null) assertFiniteNumber(temperature, "temperature");
 
@@ -72,7 +72,10 @@ export function createSummaryMemoryCompactor(
       if (error instanceof MemoryCompactionError) {
         throw error;
       }
-      throw new MemoryCompactionError("Memory compaction model request failed.", { cause: error });
+      const reason = error instanceof Error && error.message ? `: ${error.message}` : ".";
+      throw new MemoryCompactionError(`Memory compaction model request failed${reason}`, {
+        cause: error,
+      });
     }
   };
 }

@@ -1413,8 +1413,8 @@ describe("memory compaction", () => {
 
 describe("summary compactor temperature", () => {
   it.each([
-    [{}, 0],
-    [{ temperature: undefined }, 0],
+    [{}, undefined],
+    [{ temperature: undefined }, undefined],
     [{ temperature: null }, undefined],
     [{ temperature: 0 }, 0],
     [{ temperature: 0.7 }, 0.7],
@@ -1441,7 +1441,10 @@ describe("summary compactor temperature", () => {
         scope: { sessionId: "test" },
         messages: [Message.user("Remember this")],
       }),
-    ).rejects.toMatchObject({ message: "Memory compaction model request failed.", cause: error });
+    ).rejects.toMatchObject({
+      message: "Memory compaction model request failed: Unsupported temperature",
+      cause: error,
+    });
     expect(completion).toHaveBeenCalledTimes(1);
     expect(completion.mock.calls[0]![0].temperature).toBe(0.7);
   });

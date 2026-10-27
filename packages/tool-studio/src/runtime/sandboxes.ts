@@ -284,9 +284,6 @@ function validateViews(
   if (views === undefined) return;
   if (!Array.isArray(views))
     throw new TypeError(`sandboxes[${registrationIndex}].views must be an array.`);
-  if (!supportsPorts(inspector)) {
-    throw new TypeError(`sandboxes[${registrationIndex}] views require published port inspection.`);
-  }
   const ids = new Set<string>();
   for (const [viewIndex, view] of views.entries()) {
     const prefix = `sandboxes[${registrationIndex}].views[${viewIndex}]`;
@@ -307,19 +304,32 @@ function validateViews(
     if (
       !isRecord(source) ||
       source.protocol !== "novnc" ||
-      !isPort(source.containerPort) ||
       !isRecord(source.control) ||
       typeof source.control.snapshot !== "function" ||
       typeof source.control.acquireHumanControl !== "function"
     ) {
       throw new TypeError(`${prefix}.source must be a valid noVNC view source.`);
     }
-    const port = inspector.publishedPorts?.find(
-      (candidate) =>
-        candidate.containerPort === source.containerPort && candidate.protocol === "tcp",
-    );
-    if (port === undefined || !isLoopbackHost(port.host)) {
-      throw new TypeError(`${prefix}.source must resolve to a loopback-published TCP port.`);
+    if (typeof source.connect === "function") {
+      if (source.containerPort !== undefined) {
+        throw new TypeError(`${prefix}.source must have either connect or containerPort.`);
+      }
+    } else {
+      if (!isPort(source.containerPort)) {
+        throw new TypeError(`${prefix}.source must be a valid noVNC view source.`);
+      }
+      if (!supportsPorts(inspector)) {
+        throw new TypeError(
+          `${prefix} needs published port inspection for a containerPort source.`,
+        );
+      }
+      const port = inspector.publishedPorts?.find(
+        (candidate) =>
+          candidate.containerPort === source.containerPort && candidate.protocol === "tcp",
+      );
+      if (port === undefined || !isLoopbackHost(port.host)) {
+        throw new TypeError(`${prefix}.source must resolve to a loopback-published TCP port.`);
+      }
     }
     const access = candidate.access;
     if (!isRecord(access) || (access.mode !== "local" && access.mode !== "authorize")) {

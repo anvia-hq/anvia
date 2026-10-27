@@ -422,12 +422,14 @@ export type StudioSandboxViewControlLease = Readonly<{
   id: string;
   ownerId: string;
   expiresAt: string;
-  renew(options: Readonly<{ leaseTimeoutMs: number }>): StudioSandboxViewControlSnapshot;
-  release(): void;
+  renew(
+    options: Readonly<{ leaseTimeoutMs: number }>,
+  ): StudioSandboxViewControlSnapshot | Promise<StudioSandboxViewControlSnapshot>;
+  release(): void | Promise<void>;
 }>;
 
 export type StudioSandboxViewControl = Readonly<{
-  snapshot(): StudioSandboxViewControlSnapshot;
+  snapshot(): StudioSandboxViewControlSnapshot | Promise<StudioSandboxViewControlSnapshot>;
   acquireHumanControl(
     options: Readonly<{
       ownerId: string;
@@ -437,11 +439,32 @@ export type StudioSandboxViewControl = Readonly<{
   ): Promise<StudioSandboxViewControlLease>;
 }>;
 
-export type StudioSandboxViewSource = Readonly<{
-  protocol: "novnc";
-  containerPort: number;
-  control: StudioSandboxViewControl;
+/**
+ * A raw byte connection to a desktop's VNC server, for sources that are not reachable on a published
+ * port. It has the shape of a tunnel handle, so one can be returned as is.
+ */
+export type StudioSandboxViewStream = Readonly<{
+  /** Send bytes from the viewer to the VNC server. Settles once there is room for more. */
+  write(data: Uint8Array): Promise<void>;
+  /** Bytes from the VNC server, in order. */
+  readonly output: AsyncIterable<Uint8Array>;
+  close(): void;
+  /** Settles when the connection ends. It must not reject. */
+  readonly exit: Promise<unknown>;
 }>;
+
+/**
+ * Where a noVNC view's desktop is: a TCP port the inspector publishes on loopback, or a source that
+ * opens its own connection (for example through a tunnel into a remote sandbox).
+ */
+export type StudioSandboxViewSource = Readonly<
+  { protocol: "novnc"; control: StudioSandboxViewControl } & (
+    | { containerPort: number }
+    | {
+        connect(options: Readonly<{ abortSignal?: AbortSignal }>): Promise<StudioSandboxViewStream>;
+      }
+  )
+>;
 
 export type StudioSandboxViewAuthorizeArgs = Readonly<{
   request: Request;

@@ -7,6 +7,7 @@ import type {
   StudioSandboxViewConnection,
   StudioSandboxViewControlLease,
   StudioSandboxViewRegistration,
+  StudioSandboxViewStream,
 } from "../types";
 import { errorResponse } from "./http";
 import type { StudioSandboxRegistry, StudioSandboxRegistryEntry } from "./sandboxes";
@@ -18,19 +19,20 @@ const maxPendingWebSocketBytes = 1024 * 1024;
 type ResolvedView = {
   entry: StudioSandboxRegistryEntry;
   view: StudioSandboxViewRegistration;
-  host: string;
-  port: number;
+  /** Where a published-port source listens. Absent for a source that connects itself. */
+  upstream: { host: string; port: number } | undefined;
 };
 
 export function registerSandboxViewRoutes(app: Hono, registry: StudioSandboxRegistry): () => void {
   const leases = new Map<string, StudioSandboxViewControlLease>();
   const upstreamSockets = new Set<WebSocket>();
+  const upstreamStreams = new Set<StudioSandboxViewStream>();
 
   app.get("/sandboxes/:sandboxRef/views/:viewId/control", async (c) => {
     const resolved = await authorizedView(c, registry);
     if (resolved instanceof Response) return resolved;
-    pruneExpiredLease(leases, viewKey(resolved));
-    return c.json(resolved.view.source.control.snapshot());
+    await pruneExpiredLease(leases, viewKey(resolved));
+    return c.json(await resolved.view.source.control.snapshot());
   });
 
   app.get("/sandboxes/:sandboxRef/views/:viewId/connection", async (c) => {
@@ -56,7 +58,7 @@ export function registerSandboxViewRoutes(app: Hono, registry: StudioSandboxRegi
     const body = await readControlBody(c);
     if (body instanceof Response) return body;
     const key = viewKey(resolved);
-    pruneExpiredLease(leases, key);
+    await pruneExpiredLease(leases, key);
     if (leases.has(key)) {
       return errorResponse(c, 409, "conflict", "Browser view is already controlled");
     }
@@ -79,13 +81,13 @@ export function registerSandboxViewRoutes(app: Hono, registry: StudioSandboxRegi
     const body = await readLeaseBody(c);
     if (body instanceof Response) return body;
     const key = viewKey(resolved);
-    pruneExpiredLease(leases, key);
+    await pruneExpiredLease(leases, key);
     const lease = leases.get(key);
     if (lease === undefined || lease.id !== body.leaseId) {
       return errorResponse(c, 409, "conflict", "Browser control lease is not active");
     }
     try {
-      lease.renew({ leaseTimeoutMs: body.leaseTimeoutMs });
+      await lease.renew({ leaseTimeoutMs: body.leaseTimeoutMs });
       return c.json(leaseResponse(lease));
     } catch (error) {
       leases.delete(key);
@@ -103,26 +105,115 @@ export function registerSandboxViewRoutes(app: Hono, registry: StudioSandboxRegi
     if (lease === undefined || lease.id !== body.leaseId) {
       return errorResponse(c, 409, "conflict", "Browser control lease is not active");
     }
-    lease.release();
     leases.delete(key);
+    try {
+      await lease.release();
+    } catch (error) {
+      return controlErrorResponse(c, error);
+    }
     return c.json({ released: true });
   });
 
   app.get("/sandboxes/:sandboxRef/views/:viewId/ws", async (c) => {
     const resolved = await authorizedView(c, registry);
     if (resolved instanceof Response) return resolved;
-    const upstreamUrl = `ws://${hostForUrl(resolved.host)}:${resolved.port}/websockify`;
-    return upgradeWebSocket(c, createProxyEvents(upstreamUrl, upstreamSockets), {
-      onError: () => undefined,
-    });
+    const { source } = resolved.view;
+    const events =
+      "connect" in source
+        ? createStreamEvents(source.connect, upstreamStreams)
+        : createProxyEvents(upstreamUrl(resolved), upstreamSockets);
+    return upgradeWebSocket(c, events, { onError: () => undefined });
   });
 
   return () => {
-    for (const lease of leases.values()) lease.release();
+    for (const lease of leases.values()) void Promise.resolve(lease.release()).catch(() => {});
     leases.clear();
     for (const socket of upstreamSockets) socket.close(1001, "Studio closed");
     upstreamSockets.clear();
+    for (const stream of upstreamStreams) stream.close();
+    upstreamStreams.clear();
   };
+}
+
+/** Bridge the viewer's WebSocket to a connection the source opened itself, byte for byte. */
+function createStreamEvents(
+  connect: (options: { abortSignal?: AbortSignal }) => Promise<StudioSandboxViewStream>,
+  streams: Set<StudioSandboxViewStream>,
+): WSEvents {
+  const abort = new AbortController();
+  let opening: Promise<StudioSandboxViewStream | undefined> = Promise.resolve(undefined);
+  let closed = false;
+  let pendingBytes = 0;
+  let writes: Promise<void> = Promise.resolve();
+  return {
+    onOpen(_event: Event, downstream: WSContext) {
+      opening = connect({ abortSignal: abort.signal }).then(
+        (stream) => {
+          if (closed) {
+            stream.close();
+            return undefined;
+          }
+          streams.add(stream);
+          void stream.exit.then(() => {
+            streams.delete(stream);
+            if (!closed) downstream.close(1000, "Desktop connection ended");
+          });
+          void (async () => {
+            try {
+              for await (const chunk of stream.output) downstream.send(chunk.slice());
+            } catch {
+              // The connection ended; `exit` closes the viewer with the reason.
+            }
+          })();
+          return stream;
+        },
+        () => {
+          if (!closed) downstream.close(1011, "noVNC upstream failed");
+          return undefined;
+        },
+      );
+    },
+    onMessage(event, downstream) {
+      void normalizeWebSocketMessage(event.data)
+        .then((message) => {
+          if (typeof message === "string") {
+            downstream.close(1003, "Unsupported noVNC message");
+            return;
+          }
+          pendingBytes += message.byteLength;
+          if (pendingBytes > maxPendingWebSocketBytes) {
+            downstream.close(1009, "Pending noVNC messages exceeded the limit");
+            return;
+          }
+          writes = writes.then(async () => {
+            try {
+              await (await opening)?.write(message);
+            } catch {
+              // The connection ended while this message was in flight; `exit` closes the viewer.
+            } finally {
+              pendingBytes -= message.byteLength;
+            }
+          });
+        })
+        .catch(() => downstream.close(1003, "Unsupported noVNC message"));
+    },
+    onClose() {
+      closed = true;
+      abort.abort();
+      void opening.then((stream) => {
+        stream?.close();
+        if (stream !== undefined) streams.delete(stream);
+      });
+    },
+    onError() {
+      void opening.then((stream) => stream?.close());
+    },
+  };
+}
+
+function upstreamUrl(resolved: ResolvedView): string {
+  const { host, port } = resolved.upstream ?? { host: "127.0.0.1", port: 0 };
+  return `ws://${hostForUrl(host)}:${port}/websockify`;
 }
 
 function createProxyEvents(upstreamUrl: string, sockets: Set<WebSocket>): WSEvents {
@@ -193,16 +284,18 @@ async function authorizedView(
   if (!(await authorize(c, entry, view))) {
     return errorResponse(c, 403, "forbidden", "Sandbox view access denied");
   }
+  if ("connect" in view.source) return { entry, view, upstream: undefined };
+  const { containerPort } = view.source;
   const published = entry.inspector.publishedPorts?.find(
     (port) =>
-      port.containerPort === view.source.containerPort &&
+      port.containerPort === containerPort &&
       port.protocol === "tcp" &&
       isLoopbackAddress(port.host),
   );
   if (published === undefined) {
     return errorResponse(c, 503, "internal_error", "Sandbox view port is unavailable");
   }
-  return { entry, view, host: published.host, port: published.hostPort };
+  return { entry, view, upstream: { host: published.host, port: published.hostPort } };
 }
 
 async function authorize(
@@ -303,11 +396,14 @@ function leaseResponse(lease: StudioSandboxViewControlLease) {
   return { id: lease.id, ownerId: lease.ownerId, expiresAt: lease.expiresAt };
 }
 
-function pruneExpiredLease(leases: Map<string, StudioSandboxViewControlLease>, key: string): void {
+async function pruneExpiredLease(
+  leases: Map<string, StudioSandboxViewControlLease>,
+  key: string,
+): Promise<void> {
   const lease = leases.get(key);
   if (lease !== undefined && Date.parse(lease.expiresAt) <= Date.now()) {
-    lease.release();
     leases.delete(key);
+    await Promise.resolve(lease.release()).catch(() => {});
   }
 }
 

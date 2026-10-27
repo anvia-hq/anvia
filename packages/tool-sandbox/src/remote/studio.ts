@@ -160,10 +160,16 @@ export function studioDesktopView(
           return expiresAt;
         },
         async renew({ leaseTimeoutMs: ms }) {
-          const renewed = await takeover(desktop, ownerId, ms, undefined, "invalid_state");
-          remember(ownerId, renewed);
-          expiresAt = renewed.expiresAt ?? expiresAt;
-          return snapshotOf(renewed);
+          try {
+            const renewed = await takeover(desktop, ownerId, ms, undefined, "invalid_state");
+            remember(ownerId, renewed);
+            expiresAt = renewed.expiresAt ?? expiresAt;
+            return snapshotOf(renewed);
+          } catch (error) {
+            // Studio drops a lease whose renewal failed, so the viewer must stop typing too.
+            forget();
+            throw error;
+          }
         },
         async release() {
           forget();

@@ -153,6 +153,27 @@ describe("studioDesktopView stream", () => {
     expect(desktop.tunnel.written).toEqual([]);
   });
 
+  it("stops passing input when a renewal fails", async () => {
+    const desktop = fakeDesktop();
+    const { source } = studioDesktopView(desktop);
+    const stream = await source.connect({});
+    await stream.write(handshake);
+    const lease = await source.control.acquireHumanControl({
+      ownerId: "alice",
+      leaseTimeoutMs: 30_000,
+    });
+    await stream.write(keyEvent);
+    expect(desktop.tunnel.written.at(-1)).toEqual(keyEvent);
+
+    desktop.lockedBy = "bob";
+    await expect(lease.renew({ leaseTimeoutMs: 30_000 })).rejects.toMatchObject({
+      code: "invalid_state",
+    });
+    const writes = desktop.tunnel.written.length;
+    await stream.write(keyEvent);
+    expect(desktop.tunnel.written).toHaveLength(writes);
+  });
+
   it("ends the connection when the viewer sends something the filter cannot follow", async () => {
     const desktop = fakeDesktop();
     const stream = await studioDesktopView(desktop).source.connect({});

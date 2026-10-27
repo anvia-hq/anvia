@@ -256,8 +256,8 @@ Compaction never deletes or rewrites canonical history,
 and does not reduce journal storage requirements or bypass payload limits. Omitting compaction
 on a future registration sends the full canonical history again.
 
-`createSummaryMemoryCompactor` defaults to `temperature: 0`. Use `temperature: null` to
-omit the parameter; `undefined` retains the default. Upgrade `@anvia/core` to a release
+`createSummaryMemoryCompactor` sends no `temperature` unless one is set; `undefined` and
+`null` both omit it. Pass `temperature: 0` to keep deterministic summaries. Upgrade `@anvia/core` to a release
 containing this option and configure it on the summary compactor (main-agent sampling
 settings do not control summary requests). No durable storage migration is required.
 

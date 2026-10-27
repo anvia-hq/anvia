@@ -765,7 +765,7 @@ declare const compactionMemory: MemoryStore & { compaction: MemoryCompactionCapa
 
 const compactor = createSummaryMemoryCompactor({
   model: summaryModel,
-  temperature: null, // Omit temperature for models that do not support it.
+  temperature: 0, // Optional: omit it (the default) for models that do not support temperature.
   maxTokens: 1024,
   retries: { maxAttempts: 2 },
 });
@@ -797,9 +797,9 @@ for await (const event of agent.stream({ prompt: "What did we decide?", session 
 }
 ```
 
-The summary compactor defaults `temperature` to `0`, including when it is `undefined`.
-Set `temperature: null` to omit the parameter from the actual model request, allowing models
-that reject temperature to use their own behavior. Explicit numeric values are forwarded
+The summary compactor sends no `temperature` unless you set one, so models that reject the
+parameter work by default. `undefined` and `null` both omit it; set `temperature: 0` for more
+deterministic summaries. Explicit numeric values are forwarded
 unchanged and still validated as finite numbers; provider rejections are not silently suppressed.
 This option applies to the summary model independently of the main agent's sampling settings,
 including when the compactor is used by `@anvia/durable`.

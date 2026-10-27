@@ -40,3 +40,10 @@ export {
   type SandboxDesktop,
 } from "./desktop";
 export { type DesktopAuthorization, desktopSubprotocol } from "./desktop-relay";
+export {
+  studioDesktopView,
+  studioSandbox,
+  type StudioDesktopView,
+  type StudioSandbox,
+  type StudioSandboxOptions,
+} from "./studio";

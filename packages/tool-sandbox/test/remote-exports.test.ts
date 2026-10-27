@@ -14,6 +14,8 @@ describe("subpath exports", () => {
       "desktopSubprotocol",
       "originAllowed",
       "relayTicket",
+      "studioDesktopView",
+      "studioSandbox",
       "terminalSubprotocol",
       "terminalTicket",
       "tunnelSubprotocol",

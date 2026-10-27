@@ -28,7 +28,7 @@ Environment:
   ANVIA_SANDBOX_DESKTOP_MAX_RESOLUTION   Largest size a resize may ask for (default 3840x2160)
   ANVIA_SANDBOX_DESKTOP_DISPLAY          X display, like :99 (default)
   ANVIA_SANDBOX_DESKTOP_VNC_PORT         Loopback VNC port (default 5900)
-  ANVIA_SANDBOX_DESKTOP_WINDOW_MANAGER   Window manager command, or "none" (default: openbox)
+  ANVIA_SANDBOX_DESKTOP_WINDOW_MANAGER   Window manager command, or "none" (default: openbox-session, or openbox)
   ANVIA_SANDBOX_COMMAND_TIMEOUT_MS, ANVIA_SANDBOX_MAX_OUTPUT_BYTES,
   ANVIA_SANDBOX_MAX_FILE_BYTES, ANVIA_SANDBOX_MAX_PROCESSES   Optional limits
 `;

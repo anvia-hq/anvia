@@ -6,7 +6,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { WebSocket, WebSocketServer } from "ws";
 import { registerSandboxViewRoutes } from "../src/runtime/sandbox-views";
 import { createStudioSandboxRegistry } from "../src/runtime/sandboxes";
-import type { StudioSandboxViewControlLease, StudioSandboxViewControlSnapshot } from "../src/types";
+import type {
+  StudioSandboxViewControl,
+  StudioSandboxViewControlLease,
+  StudioSandboxViewControlSnapshot,
+} from "../src/types";
 
 afterEach(() => {
   vi.useRealTimers();
@@ -390,10 +394,7 @@ function createFakeStream() {
 
 function connectRegistration(
   connect: () => Promise<ReturnType<typeof createFakeStream>>,
-  control: Pick<
-    ReturnType<typeof createControl>,
-    "snapshot" | "acquireHumanControl"
-  > = createControl(),
+  control: StudioSandboxViewControl = createControl(),
 ) {
   return {
     id: "desktop",
@@ -406,7 +407,7 @@ function connectRegistration(
 
 function createConnectApp(
   connect: () => Promise<ReturnType<typeof createFakeStream>>,
-  control?: Pick<ReturnType<typeof createControl>, "snapshot" | "acquireHumanControl">,
+  control?: StudioSandboxViewControl,
 ) {
   const registry = createStudioSandboxRegistry(
     [],

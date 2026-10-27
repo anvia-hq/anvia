@@ -970,6 +970,49 @@ describe("Chat primitives", () => {
     });
   });
 
+  it("renders mention tokens with renderEntity without changing the saved text", async () => {
+    const renderEntity = vi.fn((entity: { label: string; data?: unknown }) => (
+      <b data-testid="chip">{entity.label}!</b>
+    ));
+    const onEntitiesChange = vi.fn();
+
+    render(
+      <ChatProvider controller={createChatController()}>
+        <Composer.Root
+          triggers={[{ id: "people", char: "@", items: () => [] }]}
+          onEntitiesChange={onEntitiesChange}
+        >
+          <Composer.Input renderEntity={(entity) => renderEntity(entity)} />
+        </Composer.Root>
+      </ChatProvider>,
+    );
+
+    act(() => {
+      composerTiptapEditor().commands.insertContent({
+        type: "composerEntity",
+        attrs: {
+          id: "main",
+          label: "main",
+          triggerId: "people",
+          mentionSuggestionChar: "@",
+          data: { name: "Main" },
+        },
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("chip").textContent).toBe("main!");
+    });
+    expect(renderEntity.mock.calls[0]?.[0]).toMatchObject({
+      id: "main",
+      text: "@main",
+      data: { name: "Main" },
+    });
+    expect(onEntitiesChange).toHaveBeenLastCalledWith([
+      expect.objectContaining({ id: "main", text: "@main", range: { from: 0, to: 5 } }),
+    ]);
+  });
+
   it("handles trigger recreation and conditional remounts safely in Strict Mode", async () => {
     const sendMessage = vi.fn(async () => {});
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});

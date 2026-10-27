@@ -18,6 +18,10 @@ export type {
   ThreadContextValue,
 } from "../contexts";
 export { ChatProvider, useChatContext, useComposer, useThread } from "../contexts";
-export type { ComposerSubmitMessage, ComposerSubmitMessageArgs } from "./composer";
+export type {
+  ComposerInputEntity,
+  ComposerSubmitMessage,
+  ComposerSubmitMessageArgs,
+} from "./composer";
 export { ComposerPrimitive } from "./composer";
 export { ThreadPrimitive } from "./thread";

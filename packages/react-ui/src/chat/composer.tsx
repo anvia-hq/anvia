@@ -13,7 +13,13 @@ import Paragraph from "@tiptap/extension-paragraph";
 import Placeholder from "@tiptap/extension-placeholder";
 import Text from "@tiptap/extension-text";
 import { PluginKey } from "@tiptap/pm/state";
-import { EditorContent, useEditor } from "@tiptap/react";
+import {
+  EditorContent,
+  type NodeViewProps,
+  NodeViewWrapper,
+  ReactNodeViewRenderer,
+  useEditor,
+} from "@tiptap/react";
 import type {
   SuggestionKeyDownProps,
   SuggestionOptions,
@@ -428,12 +434,20 @@ const ComposerClearQuote = forwardRef<HTMLButtonElement, PrimitiveProps<"button"
   },
 );
 
+/** A mention token as the editor knows it; `range` is meaningful only in the saved message. */
+export type ComposerInputEntity = Omit<ComposerEntity, "range">;
+
 type ComposerInputProps = PrimitiveProps<"div"> & {
   autoResize?: boolean;
   disabled?: boolean | undefined;
   maxRows?: number;
   minRows?: number;
   placeholder?: string | undefined;
+  /**
+   * Customises how a mention token displays in the editor. The saved text and entities are
+   * unchanged. Return `null` or `undefined` to show the entity's text.
+   */
+  renderEntity?: ((entity: ComposerInputEntity) => ReactNode) | undefined;
 };
 
 const ComposerInput = forwardRef<HTMLDivElement, ComposerInputProps>(function ComposerInput(
@@ -444,6 +458,7 @@ const ComposerInput = forwardRef<HTMLDivElement, ComposerInputProps>(function Co
     minRows: minRowsProp,
     onKeyDown,
     placeholder,
+    renderEntity,
     style,
     ...props
   },
@@ -452,6 +467,10 @@ const ComposerInput = forwardRef<HTMLDivElement, ComposerInputProps>(function Co
   const composer = useComposer();
   const composerRef = useRef(composer);
   composerRef.current = composer;
+  // Read through a ref so an inline function does not rebuild the editor on every render.
+  const renderEntityRef = useRef(renderEntity);
+  renderEntityRef.current = renderEntity;
+  const customEntityView = renderEntity !== undefined;
   const editorReadyRef = useRef(false);
   const syncingFromEditorRef = useRef(false);
   const triggers = composer.triggers;
@@ -462,9 +481,10 @@ const ComposerInput = forwardRef<HTMLDivElement, ComposerInputProps>(function Co
       composerInputExtensions({
         composerRef,
         placeholder,
+        renderEntityRef: customEntityView ? renderEntityRef : undefined,
         triggers,
       }),
-    [placeholder, triggers],
+    [customEntityView, placeholder, triggers],
   );
   const editor = useEditor(
     {
@@ -685,6 +705,7 @@ type ComposerEntityAttrs = {
 type ComposerInputExtensionsOptions = {
   composerRef: ComposerRef;
   placeholder?: string | undefined;
+  renderEntityRef?: { current: ComposerInputProps["renderEntity"] } | undefined;
   triggers: ComposerTriggerDefinition[];
 };
 
@@ -754,18 +775,49 @@ const ComposerEntityExtension = Mention.extend<
   },
 });
 
+function composerEntityView(
+  renderEntityRef: { current: ComposerInputProps["renderEntity"] },
+  composerRef: ComposerRef,
+) {
+  return function ComposerEntityView({ node }: NodeViewProps) {
+    const attrs = node.attrs as ComposerEntityAttrs;
+    const { range: _range, ...entity } = composerEntityFromAttrs(
+      attrs,
+      0,
+      composerRef.current.entities,
+      composerRef.current.triggers,
+    );
+    return (
+      <NodeViewWrapper as="span">
+        {renderEntityRef.current?.(entity) ?? entity.text}
+      </NodeViewWrapper>
+    );
+  };
+}
+
 function composerInputExtensions({
   composerRef,
   placeholder,
+  renderEntityRef,
   triggers,
 }: ComposerInputExtensionsOptions): Extensions {
+  const EntityExtension =
+    renderEntityRef === undefined
+      ? ComposerEntityExtension
+      : ComposerEntityExtension.extend({
+          addNodeView() {
+            return ReactNodeViewRenderer(composerEntityView(renderEntityRef, composerRef), {
+              as: "span",
+            });
+          },
+        });
   return [
     Document,
     Paragraph,
     Text,
     HardBreak,
     Placeholder.configure(placeholder === undefined ? {} : { placeholder }),
-    ComposerEntityExtension.configure({
+    EntityExtension.configure({
       HTMLAttributes: {},
       deleteTriggerWithBackspace: true,
       renderText: ({ node }) => composerEntityText(node.attrs as ComposerEntityAttrs),

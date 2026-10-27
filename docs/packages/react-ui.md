@@ -70,7 +70,9 @@ wrappers are useful for layout.
 support inline `@`, `/`, `$`, or other entity chips; selected entities are submitted under
 `metadata.composer.entities`. Entity `data` must be finite strict JSON; class instances, sparse or
 custom-prototype arrays, accessors, symbols, cycles, `undefined`, and non-finite numbers are
-rejected. Use `ComposerPrimitive.TextareaInput` when you need the previous native textarea behavior.
+rejected. Pass `renderEntity={(entity) => <Chip {...entity} />}` to change how a token displays in the
+editor (for example an avatar or display name from `entity.data`); the saved text and entities are
+unchanged, and returning `null` or `undefined` falls back to `entity.text`. Use `ComposerPrimitive.TextareaInput` when you need the previous native textarea behavior.
 
 Streaming smoothing is opt-in and display-only. Keep `useChat` as the owner of transport and
 `UIMessage[]` state. Keep the lifecycle mounted after streaming stops so its buffered tail drains;

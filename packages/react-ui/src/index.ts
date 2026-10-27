@@ -1,5 +1,9 @@
 export { AttachmentPrimitive, useAttachment } from "./attachment/index";
-export type { ComposerSubmitMessage, ComposerSubmitMessageArgs } from "./chat/index";
+export type {
+  ComposerInputEntity,
+  ComposerSubmitMessage,
+  ComposerSubmitMessageArgs,
+} from "./chat/index";
 export {
   ChatProvider,
   ComposerPrimitive,

@@ -1,5 +1,11 @@
 # @anvia/react-ui
 
+## 1.3.0
+
+### Minor Changes
+
+- 6a0a5c6: Add `renderEntity` to `ComposerPrimitive.Input` to customise how a mention token renders in the editor without changing the saved text or entities.
+
 ## 1.2.2
 
 ### Patch Changes

@@ -1,5 +1,11 @@
 # @anvia/cli
 
+## 1.5.4
+
+### Patch Changes
+
+- 46e6f4f: Update upstream runtime dependencies to their latest releases, including `@anthropic-ai/sdk` and `@anthropic-ai/vertex-sdk` 1.x, `@mistralai/mistralai` 3.x and `@langfuse/otel` and `@langfuse/tracing` 6.x. The `zod` peer range is now `^4.6.7`. `@anvia/jev` adapts to `@typesafe-ai/sdk` 0.7, which no longer accepts a `null` state.
+
 ## 1.5.3
 
 ### Patch Changes

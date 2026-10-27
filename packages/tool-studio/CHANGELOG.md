@@ -1,5 +1,18 @@
 # @anvia/studio
 
+## 1.3.22
+
+### Patch Changes
+
+- 6017b39: A sandbox desktop view can now open its own connection instead of naming a published Docker port. A view source is either `{ containerPort }` as before or `{ connect() }`, which returns a byte stream (the shape of a tunnel handle), so a desktop reached through a tunnel can be shown in the Playground. The view's `control` may now be asynchronous: `snapshot`, `lease.renew` and `lease.release` can return promises. A `connect` view no longer needs the inspector to publish ports.
+- 46e6f4f: Update upstream runtime dependencies to their latest releases, including `@anthropic-ai/sdk` and `@anthropic-ai/vertex-sdk` 1.x, `@mistralai/mistralai` 3.x and `@langfuse/otel` and `@langfuse/tracing` 6.x. The `zod` peer range is now `^4.6.7`. `@anvia/jev` adapts to `@typesafe-ai/sdk` 0.7, which no longer accepts a `null` state.
+- Updated dependencies [46e6f4f]
+  - @anvia/graph@1.1.6
+  - @anvia/react-ui@1.2.2
+  - @anvia/client@1.6.0
+  - @anvia/react@1.1.5
+  - @anvia/server@1.3.5
+
 ## 1.3.21
 
 ### Patch Changes

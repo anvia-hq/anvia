@@ -1,5 +1,15 @@
 # @anvia/sandbox
 
+## 1.3.2
+
+### Patch Changes
+
+- 0737071: `anvia-sandbox-daemon --check` reports what an image offers (terminals, desktop) and which programs are missing, without connecting to a hub. `--require=desktop,terminal` makes it exit 1 when a feature is unavailable, so a Dockerfile can fail the build for an image that is missing a desktop program instead of finding out when the hub connects.
+- 0737071: `anvia-sandbox-daemon` now reads the desktop's settings from the environment: `ANVIA_SANDBOX_DESKTOP=0` turns it off, and `ANVIA_SANDBOX_DESKTOP_BACKEND`, `_RESOLUTION`, `_MAX_RESOLUTION`, `_DISPLAY`, `_VNC_PORT` and `_WINDOW_MANAGER` configure it. Before, changing any of them meant writing your own `SandboxDaemon` entrypoint.
+- 04b26ba: `anvia-sandbox create-image` has a `desktop` feature (`--feature desktop`). It generates a Debian image with `Xvnc`, `openbox`, `xdotool`, ImageMagick, tmux and the Anvia daemon, running as a non-root user, for the remote runtime. Add your own programs with `--apt`. Before, a custom desktop image meant adapting the reference Dockerfile by hand.
+- 6017b39: `studioSandbox(hub, sandboxId, { agentIds, toolNames })` from `@anvia/sandbox/remote` returns what Studio's `sandboxes` option takes for a remote sandbox: an inspector for its files, processes and logs, and a live desktop view that a person can watch and take over. Taking control pauses the agent's desktop tools, and the person's input reaches the desktop only while they hold it. `studioDesktopView(desktop)` gives just the view. Studio and the hub must run in the same process.
+- 46e6f4f: Update upstream runtime dependencies to their latest releases, including `@anthropic-ai/sdk` and `@anthropic-ai/vertex-sdk` 1.x, `@mistralai/mistralai` 3.x and `@langfuse/otel` and `@langfuse/tracing` 6.x. The `zod` peer range is now `^4.6.7`. `@anvia/jev` adapts to `@typesafe-ai/sdk` 0.7, which no longer accepts a `null` state.
+
 ## 1.3.1
 
 ### Patch Changes

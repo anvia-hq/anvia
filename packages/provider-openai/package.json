@@ -1,6 +1,6 @@
 {
   "name": "@anvia/openai",
-  "version": "1.3.5",
+  "version": "1.3.6",
   "description": "OpenAI provider adapter for Anvia.",
   "author": "anvia",
   "license": "MIT",

@@ -593,6 +593,14 @@ docker run --rm -e ANVIA_CONTROL_URL=wss://hub.example.com/daemon \
   -e ANVIA_SANDBOX_TOKEN=... my-desktop-sandbox
 ```
 
+Inside the reference image, `anvia-chromium` starts Chromium on the desktop. Chromium's own sandbox needs user
+namespaces, which Docker's default seccomp profile blocks, so the launcher starts it with
+`--no-sandbox`: the container is already the isolation boundary. Set `ANVIA_CHROMIUM_SANDBOX=1` to
+keep Chromium's sandbox, and run the container with a seccomp profile that allows user namespaces
+(or `--cap-add SYS_ADMIN`). The retired `@anvia/browser` package's seccomp profile is not carried over: it crashes
+`runc` on current Docker releases. For another base image, install the same packages (`tigervnc-standalone-server xdotool
+imagemagick x11-xserver-utils`, optionally `openbox`).
+
 #### Building a desktop image
 
 `create-image` can generate one for you: `--feature desktop` (or `features: ["desktop"]`) adds Node.js
@@ -611,17 +619,9 @@ docker run --rm -e ANVIA_CONTROL_URL=wss://hub.example.com/daemon \
 The generated image starts the daemon, which needs a hub, so it is for the remote runtime and not
 for `DockerSandboxClient`. It builds on Debian bookworm, where `chromium` installs as a real
 package (tested); on Ubuntu it is a snap wrapper, which does not run in Docker. A browser in Docker needs
-`--no-sandbox` unless the container allows user namespaces (see below), and unlike the reference
+`--no-sandbox` unless the container allows user namespaces (see above), and unlike the reference
 image the generated one has no launcher that adds it. It cannot be combined with `playwright`.
 Compilers (`g++`, `make`) stay in the image because `node-pty` builds from source.
-
-Inside it, `anvia-chromium` starts Chromium on the desktop. Chromium's own sandbox needs user
-namespaces, which Docker's default seccomp profile blocks, so the launcher starts it with
-`--no-sandbox`: the container is already the isolation boundary. Set `ANVIA_CHROMIUM_SANDBOX=1` to
-keep Chromium's sandbox, and run the container with a seccomp profile that allows user namespaces
-(or `--cap-add SYS_ADMIN`). The retired `@anvia/browser` package's seccomp profile is not carried over: it crashes
-`runc` on current Docker releases. For another base image, install the same packages (`tigervnc-standalone-server xdotool
-imagemagick x11-xserver-utils`, optionally `openbox`).
 
 #### Starting, supervising, resizing
 

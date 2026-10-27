@@ -295,6 +295,44 @@ describe("Studio sandbox views with a connect source", () => {
     fixture.close();
   });
 
+  it("keeps the lease when a release fails, so the release can be retried", async () => {
+    let fail = true;
+    let released = 0;
+    const lease = {
+      id: "lease-1",
+      ownerId: "viewer",
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      async renew() {
+        return { mode: "human" as const, ownerId: "viewer" };
+      },
+      async release() {
+        if (fail) throw new Error("daemon unreachable");
+        released += 1;
+      },
+    };
+    const fixture = createConnectApp(async () => createFakeStream(), {
+      snapshot: () => ({ mode: "agent" as const }),
+      acquireHumanControl: async () => lease,
+    });
+    const base = `http://studio.test/sandboxes/${fixture.ref}/views/desktop/control`;
+    const post = (path: string, body: unknown) =>
+      fixture.app.request(`${base}${path}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+    await post("/acquire", { ownerId: "viewer", leaseTimeoutMs: 30_000 });
+    expect((await post("/release", { leaseId: "lease-1" })).status).toBe(500);
+    expect((await post("/acquire", { ownerId: "other", leaseTimeoutMs: 30_000 })).status).toBe(409);
+
+    fail = false;
+    expect((await post("/release", { leaseId: "lease-1" })).status).toBe(200);
+    expect(released).toBe(1);
+    expect((await post("/acquire", { ownerId: "other", leaseTimeoutMs: 30_000 })).status).toBe(201);
+    fixture.close();
+  });
+
   it("registers a connect source without published ports, and refuses an ambiguous one", () => {
     const registry = createStudioSandboxRegistry(
       [],

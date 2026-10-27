@@ -105,12 +105,13 @@ export function registerSandboxViewRoutes(app: Hono, registry: StudioSandboxRegi
     if (lease === undefined || lease.id !== body.leaseId) {
       return errorResponse(c, 409, "conflict", "Browser control lease is not active");
     }
-    leases.delete(key);
     try {
       await lease.release();
     } catch (error) {
+      // Keep the lease: the desktop may still be held, and the release can be tried again.
       return controlErrorResponse(c, error);
     }
+    leases.delete(key);
     return c.json({ released: true });
   });
 

@@ -95,7 +95,10 @@ writable rootfs outside the workspace do not survive a resume, and `security.sec
 enforced the way it is on the default runtime because the gVisor sentry mediates application
 syscalls itself.
 
-Studio does not discover sandboxes through tool metadata. Register a read-only inspector explicitly:
+Studio does not discover sandboxes through tool metadata. Register a read-only inspector explicitly.
+This works for the local Docker runtime; a [remote sandbox](#remote-sandboxes) has no Studio inspector
+yet, and its desktop is not shown in Studio (see
+[Sandbox desktop views](./tool-studio.md#sandbox-desktop-views)).
 
 ```ts
 const studio = new Studio([agent], {

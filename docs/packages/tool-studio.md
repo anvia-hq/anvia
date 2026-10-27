@@ -293,23 +293,34 @@ pnpm --filter @anvia/studio test
 pnpm --filter @anvia/studio build
 ```
 
-## Browser sandbox views
+## Sandbox desktop views
 
 Sandbox registrations may include explicit noVNC views. Studio resolves the upstream only through the
 inspector's loopback-published port and exposes an authorized, same-origin WebSocket bridge. Studio's
 programmatic noVNC client renders the desktop directly, so the stock noVNC splash, toolbar, and password
 prompt are not part of the UI.
 
+> **Not connected to `@anvia/sandbox` yet.** The view contract was built for the retired
+> `@anvia/browser` package, and no package ships a source for it now. The `@anvia/sandbox` desktop
+> (`RemoteSandboxHub`, `hub.desktop()`) reaches its VNC server through the hub's tunnel, not a
+> published Docker port, and has its own takeover API, so it cannot be registered here, and a remote
+> runtime has no Studio inspector either. To watch a sandbox desktop today, use `<SandboxDesktop>` from
+> [`@anvia/react-ui`](./react-ui.md#sandbox-desktop). The contract below is for a source you
+> implement yourself.
+
+A view's `source` names a `containerPort` that the inspector publishes on loopback, and a `control`
+that Studio calls when a person takes over:
+
 ```ts
 const studio = new Studio([agent], {
   sandboxes: [
     {
-      inspector: browser.inspector({ files: true, ports: true, processes: true }),
+      inspector, // its publishedPorts must include source.containerPort over tcp
       views: [
         {
           id: "desktop",
-          label: "Browser",
-          source: browser.desktop,
+          label: "Desktop",
+          source: { protocol: "novnc", containerPort: 6080, control },
           access: { mode: "local" },
           authentication: { type: "password", password },
         },
@@ -325,9 +336,11 @@ the viewer connection, WebSocket upgrade, and every takeover operation. Studio d
 an application authentication system. View credentials are omitted from sandbox discovery metadata and
 URLs and returned only by the authorized, non-cacheable viewer-connection endpoint.
 
-When a registered agent emits a matching browser tool call, Playground replaces its Sessions sidebar
-with a larger resizable desktop panel. The embedded desktop remains view-only until the user explicitly
-takes control. That lease blocks Anvia browser tools, is renewed by the UI, and expires when abandoned.
-It is a coordination boundary rather than a replacement for application authorization. The Sandboxes
-page continues to expose the registered view as inspectable runtime metadata. Closing the Playground
-panel restores Sessions without forgetting the current browser; use **Open browser** to show it again.
+When a registered agent emits a tool call listed in the registration's `toolNames` for an agent in its
+`agentIds`, Playground replaces its Sessions sidebar with a larger resizable desktop panel. The embedded
+desktop remains view-only until the user explicitly takes control. That lease is held through
+`control.acquireHumanControl`, is renewed by the UI, and expires when abandoned; the source decides
+what it blocks, such as the agent's input tools. It is a coordination boundary rather than a
+replacement for application authorization. The Sandboxes page continues to expose the registered view
+as inspectable runtime metadata. Closing the Playground panel restores Sessions without forgetting the
+current desktop; use the **Browser** button beside the composer to show it again.

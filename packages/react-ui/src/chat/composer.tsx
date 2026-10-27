@@ -445,7 +445,8 @@ type ComposerInputProps = PrimitiveProps<"div"> & {
   placeholder?: string | undefined;
   /**
    * Customises how a mention token displays in the editor. The saved text and entities are
-   * unchanged. Return `null` or `undefined` to show the entity's text.
+   * unchanged. Return `null` or `undefined` to show the entity's text. Keep it a pure function of
+   * `entity`: a token re-renders only when its node changes, not when the function's closure does.
    */
   renderEntity?: ((entity: ComposerInputEntity) => ReactNode) | undefined;
 };

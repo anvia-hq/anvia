@@ -72,7 +72,9 @@ support inline `@`, `/`, `$`, or other entity chips; selected entities are submi
 custom-prototype arrays, accessors, symbols, cycles, `undefined`, and non-finite numbers are
 rejected. Pass `renderEntity={(entity) => <Chip {...entity} />}` to change how a token displays in the
 editor (for example an avatar or display name from `entity.data`); the saved text and entities are
-unchanged, and returning `null` or `undefined` falls back to `entity.text`. Use `ComposerPrimitive.TextareaInput` when you need the previous native textarea behavior.
+unchanged, and returning `null` or `undefined` falls back to `entity.text`. Keep `renderEntity` a
+pure function of `entity`: a token re-renders only when its node changes, not when state the function
+closes over changes. Use `ComposerPrimitive.TextareaInput` when you need the previous native textarea behavior.
 
 Streaming smoothing is opt-in and display-only. Keep `useChat` as the owner of transport and
 `UIMessage[]` state. Keep the lifecycle mounted after streaming stops so its buffered tail drains;

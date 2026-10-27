@@ -109,6 +109,9 @@ const studio = new Studio([agent], {
 });
 ```
 
+For a [remote sandbox](#remote-sandboxes), use [`studioSandbox`](#in-studio) instead; it also
+shows the desktop.
+
 The `anvia-sandbox create-image` CLI only builds images. It does not create, resume, stop, or destroy
 sandboxes. Its `playwright` feature remains a general code-sandbox image; it does not build a
 visible browser or desktop appliance. The `desktop` feature does, for the
@@ -710,6 +713,37 @@ fails. The relay renews its viewer's hold while connected and releases it on dis
 Anyone who can run commands inside the sandbox can also connect to the VNC port directly. That is
 the same access the sandbox already gives them, but it means the desktop is not a boundary against
 code running in the sandbox.
+
+#### In Studio
+
+`studioSandbox` from `@anvia/sandbox/remote` returns the registration Studio's `sandboxes` option
+takes for a remote sandbox: a read-only inspector (files, processes, logs) and a live desktop view.
+Studio and the hub must run in the same process, since the desktop is streamed through the hub's
+link.
+
+```ts
+import { createDesktopTools } from "@anvia/sandbox";
+import { RemoteSandboxHub, studioSandbox } from "@anvia/sandbox/remote";
+
+const tools = createDesktopTools({ sandbox: hub.desktop("sandbox-1") });
+const studio = new Studio([agent], {
+  sandboxes: [
+    studioSandbox(hub, "sandbox-1", {
+      agentIds: [agent.id],
+      toolNames: tools.map((tool) => tool.name),
+    }),
+  ],
+});
+```
+
+When the agent calls one of `toolNames`, the Playground opens a desktop panel. A person who takes
+control there pauses the agent's desktop tools (they fail with `desktop_locked`) until they release
+it or stop renewing, and the panel's input reaches the desktop only while they hold control. Pass
+`desktop: false` to register the inspector alone, or `desktop: { id, label }` to name the view.
+`studioDesktopView(hub.desktop(id))` gives just the view. The view is registered with local access
+and no authentication, so keep Studio on localhost or behind your own access control. See
+[Sandbox desktop views](./tool-studio.md#sandbox-desktop-views) and the `cookbook/09_studio` recipe
+`16-sandbox-desktop.ts`.
 
 #### Agent tools
 

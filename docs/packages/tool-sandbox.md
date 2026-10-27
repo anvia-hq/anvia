@@ -111,7 +111,8 @@ const studio = new Studio([agent], {
 
 The `anvia-sandbox create-image` CLI only builds images. It does not create, resume, stop, or destroy
 sandboxes. Its `playwright` feature remains a general code-sandbox image; it does not build a
-visible browser or desktop appliance (the desktop image under `images/desktop` is that).
+visible browser or desktop appliance. The `desktop` feature does, for the
+[remote runtime](#desktop) (see [Building a desktop image](#building-a-desktop-image)).
 
 ## Remote sandboxes
 
@@ -591,6 +592,28 @@ docker build -t my-desktop-sandbox packages/tool-sandbox/images/desktop
 docker run --rm -e ANVIA_CONTROL_URL=wss://hub.example.com/daemon \
   -e ANVIA_SANDBOX_TOKEN=... my-desktop-sandbox
 ```
+
+#### Building a desktop image
+
+`create-image` can generate one for you: `--feature desktop` (or `features: ["desktop"]`) adds Node.js
+and writes a Dockerfile that installs `Xvnc`, `openbox`, `xdotool`, ImageMagick, `xterm`, tmux, and
+`@anvia/sandbox` (at the version of the CLI that generated it) with `node-pty`, then runs
+`anvia-sandbox-daemon` as a non-root `sandbox` user. Add your own programs with `--apt`.
+
+```sh
+pnpm dlx @anvia/sandbox create-image --name desk --feature desktop --apt chromium
+docker run --rm anvia-sandbox-desk:latest \
+  /opt/anvia-daemon/node_modules/.bin/anvia-sandbox-daemon --check --require=desktop
+docker run --rm -e ANVIA_CONTROL_URL=wss://hub.example.com/daemon \
+  -e ANVIA_SANDBOX_TOKEN=... anvia-sandbox-desk:latest
+```
+
+The generated image starts the daemon, which needs a hub, so it is for the remote runtime and not
+for `DockerSandboxClient`. It builds on Debian bookworm, where `chromium` installs as a real
+package (tested); on Ubuntu it is a snap wrapper, which does not run in Docker. A browser in Docker needs
+`--no-sandbox` unless the container allows user namespaces (see below), and unlike the reference
+image the generated one has no launcher that adds it. It cannot be combined with `playwright`.
+Compilers (`g++`, `make`) stay in the image because `node-pty` builds from source.
 
 Inside it, `anvia-chromium` starts Chromium on the desktop. Chromium's own sandbox needs user
 namespaces, which Docker's default seccomp profile blocks, so the launcher starts it with

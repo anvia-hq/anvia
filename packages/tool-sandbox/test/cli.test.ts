@@ -72,6 +72,23 @@ describe("anvia-sandbox CLI", () => {
     expect(output.logs.join("\n")).toContain("matplotlib==3.11.1");
   });
 
+  it("tells desktop image users to connect it to a hub instead of a Docker snippet", async () => {
+    const directory = await temporaryDirectory();
+    const output = captureIo();
+    const code = await runCli(
+      ["create-image", "--name", "desk", "--feature", "desktop", "--no-build"],
+      directory,
+      output.io,
+      dependencies(),
+    );
+
+    const logs = output.logs.join("\n");
+    expect(code).toBe(0);
+    expect(logs).toContain("ANVIA_CONTROL_URL");
+    expect(logs).toContain("--check --require=desktop");
+    expect(logs).not.toContain("DockerSandboxClient");
+  });
+
   it("writes the context, builds it, and prints the constructor snippet", async () => {
     const directory = await temporaryDirectory();
     const output = captureIo();

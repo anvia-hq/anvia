@@ -113,6 +113,52 @@ describe("sandbox image builder", () => {
     );
   });
 
+  it("renders a desktop image that runs the daemon as a non-root user", () => {
+    const spec = resolveSandboxImageSpec({
+      name: "desk",
+      features: ["desktop"],
+      packages: { apt: ["chromium"] },
+    });
+    const dockerfile = renderSandboxImageContext(spec, "1.4.0").files.get("Dockerfile") ?? "";
+
+    expect(spec.runtimes).toEqual(["node"]);
+    expect(spec.features).toEqual(["desktop"]);
+    for (const name of ["tigervnc-standalone-server", "xdotool", "imagemagick", "chromium"]) {
+      expect(dockerfile).toContain(`'${name}'`);
+    }
+    expect(dockerfile).toContain("'python3'");
+    expect(dockerfile).toContain("'@anvia/sandbox@1.4.0' 'node-pty@^1.1.0'");
+    expect(dockerfile).toContain("USER sandbox");
+    expect(dockerfile).toContain(
+      'CMD ["/opt/anvia-daemon/node_modules/.bin/anvia-sandbox-daemon"]',
+    );
+    expect(dockerfile).not.toContain("sleep 3600");
+  });
+
+  it("leaves the idle command alone for images without the desktop", () => {
+    const spec = resolveSandboxImageSpec({ name: "plain", runtimes: ["node"] });
+    const dockerfile = renderSandboxImageContext(spec, "1.4.0").files.get("Dockerfile") ?? "";
+
+    expect(dockerfile).toContain("sleep 3600");
+    expect(dockerfile).not.toContain("anvia-daemon");
+    expect(dockerfile).not.toContain("USER sandbox");
+  });
+
+  it("builds the desktop on Python without a second python3", () => {
+    const spec = resolveSandboxImageSpec({ name: "desk", features: ["desktop", "artifacts"] });
+    const dockerfile = renderSandboxImageContext(spec, "1.4.0").files.get("Dockerfile") ?? "";
+
+    expect(spec.runtimes).toEqual(["node", "python"]);
+    expect(dockerfile).toContain("FROM python-runtime AS final");
+    expect(dockerfile).not.toContain("'python3'");
+  });
+
+  it("does not combine the desktop with Playwright", () => {
+    expect(() =>
+      resolveSandboxImageSpec({ name: "x", features: ["desktop", "playwright"] }),
+    ).toThrow("cannot be combined with playwright");
+  });
+
   it("reports custom packages whose versions can drift", () => {
     const spec = resolveSandboxImageSpec({
       name: "unpinned",

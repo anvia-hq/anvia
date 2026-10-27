@@ -191,7 +191,7 @@ export async function runCli(
       io.log("");
       io.log("Build later:");
       io.log(`  ${shellCommand([options.dockerPath, "build", "--tag", spec.tag, displayPath])}`);
-      printUsageSnippet(spec.tag, io);
+      printUsageSnippet(spec.tag, spec.features.includes("desktop"), io);
       return 0;
     }
 
@@ -203,7 +203,7 @@ export async function runCli(
       io,
     });
     io.log(`Built ${spec.tag}`);
-    printUsageSnippet(spec.tag, io);
+    printUsageSnippet(spec.tag, spec.features.includes("desktop"), io);
     return 0;
   } catch (error) {
     io.error(errorMessage(error));
@@ -247,6 +247,11 @@ async function promptForImage(
         { value: "bun", label: "Bun", hint: "Includes bun and bunx" },
         { value: "python", label: "Python", hint: "Includes uv and uvx" },
         { value: "artifacts", label: "Reporting and artifacts", hint: "Adds Python automatically" },
+        {
+          value: "desktop",
+          label: "Remote desktop",
+          hint: "Adds Node.js; runs the daemon for the remote runtime",
+        },
         { value: "playwright", label: "Playwright + Chromium", hint: "Adds Node.js automatically" },
       ],
     });
@@ -458,8 +463,19 @@ function printDryRun(
   io.log(`Would build ${tag}`);
 }
 
-function printUsageSnippet(tag: string, io: SandboxImageCliIo): void {
+function printUsageSnippet(tag: string, desktop: boolean, io: SandboxImageCliIo): void {
   io.log("");
+  if (desktop) {
+    io.log("This image runs the Anvia daemon, which dials out to a RemoteSandboxHub:");
+    io.log(`  docker run --rm -e ANVIA_CONTROL_URL=wss://hub.example.com/daemon \\`);
+    io.log(`    -e ANVIA_SANDBOX_TOKEN=... ${tag}`);
+    io.log(
+      "Check it first with: docker run --rm " +
+        tag +
+        " /opt/anvia-daemon/node_modules/.bin/anvia-sandbox-daemon --check --require=desktop",
+    );
+    return;
+  }
   io.log("Use with @anvia/sandbox:");
   io.log('  import { DockerSandboxClient } from "@anvia/sandbox";');
   io.log("");
@@ -602,7 +618,7 @@ function parseRuntime(value: string): SandboxImageRuntime {
 
 function parseFeature(value: string): SandboxImageFeature {
   if (isFeature(value)) return value;
-  throw new Error(`Unknown feature: ${value}. Expected artifacts or playwright.`);
+  throw new Error(`Unknown feature: ${value}. Expected artifacts, desktop, or playwright.`);
 }
 
 function isRuntime(value: string): value is SandboxImageRuntime {
@@ -610,7 +626,7 @@ function isRuntime(value: string): value is SandboxImageRuntime {
 }
 
 function isFeature(value: string): value is SandboxImageFeature {
-  return value === "artifacts" || value === "playwright";
+  return value === "artifacts" || value === "desktop" || value === "playwright";
 }
 
 function assertInteractiveNodeVersion(): void {
@@ -669,7 +685,7 @@ function helpText(): string {
 Options:
   --name <slug>                  Image profile name
   --runtime <node|bun|python>    Runtime to include; repeatable
-  --feature <artifacts|playwright>
+  --feature <artifacts|desktop|playwright>
                                  Curated feature to include; repeatable
   --apt <package>                Additional apt package; repeatable
   --npm <package[@version]>      Additional npm package; repeatable

@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import os from "node:os";
 import path from "node:path";
-import { SandboxDaemon } from "./daemon/index";
+import { desktopOptionsFromEnv } from "./daemon-config";
+import { SandboxDaemon, type SandboxDaemonOptions } from "./daemon/index";
 
 const usage = `anvia-sandbox-daemon
 
@@ -13,6 +14,13 @@ Environment:
   ANVIA_SANDBOX_WORKDIR    Workspace directory (default: current directory)
   ANVIA_SANDBOX_STATE_DIR  Operation dedup table (default: <tmpdir>/anvia-sandbox-daemon)
   ANVIA_SANDBOX_TERMINAL   Set to 0 to turn interactive terminals off (default: on when node-pty loads)
+  ANVIA_SANDBOX_DESKTOP    Set to 0 to turn the desktop off (default: on when its programs are installed)
+  ANVIA_SANDBOX_DESKTOP_BACKEND          auto (default), xvnc, or xvfb
+  ANVIA_SANDBOX_DESKTOP_RESOLUTION       Starting size, like 1440x900 (default 1280x800)
+  ANVIA_SANDBOX_DESKTOP_MAX_RESOLUTION   Largest size a resize may ask for (default 3840x2160)
+  ANVIA_SANDBOX_DESKTOP_DISPLAY          X display, like :99 (default)
+  ANVIA_SANDBOX_DESKTOP_VNC_PORT         Loopback VNC port (default 5900)
+  ANVIA_SANDBOX_DESKTOP_WINDOW_MANAGER   Window manager command, or "none" (default: openbox)
   ANVIA_SANDBOX_COMMAND_TIMEOUT_MS, ANVIA_SANDBOX_MAX_OUTPUT_BYTES,
   ANVIA_SANDBOX_MAX_FILE_BYTES, ANVIA_SANDBOX_MAX_PROCESSES   Optional limits
 `;
@@ -46,7 +54,7 @@ function main(): void {
     ...optional("maxFileBytes", integer("ANVIA_SANDBOX_MAX_FILE_BYTES")),
     ...optional("maxProcesses", integer("ANVIA_SANDBOX_MAX_PROCESSES")),
   };
-  const daemon = new SandboxDaemon({
+  const options: SandboxDaemonOptions = {
     controlUrl,
     token,
     workdir: path.resolve(process.env.ANVIA_SANDBOX_WORKDIR ?? process.cwd()),
@@ -57,7 +65,10 @@ function main(): void {
     terminal: process.env.ANVIA_SANDBOX_TERMINAL === "0" ? false : {},
     onLog: (level, message) =>
       process.stderr.write(`[anvia-sandbox-daemon] ${level}: ${message}\n`),
-  });
+  };
+  const desktop = desktopOptionsFromEnv(process.env);
+  if (desktop !== undefined) options.desktop = desktop;
+  const daemon = new SandboxDaemon(options);
   daemon.start();
 
   let stopping = false;

@@ -618,6 +618,21 @@ started that big, Xvnc grows to it). A viewer cannot resize the display itself. 
 this with `desktop: { backend, resolution, maxResolution, display, vncPort, windowManager, lock }` on
 `SandboxDaemon`, or `desktop: false` to turn it off.
 
+The `anvia-sandbox-daemon` CLI reads the same settings from the environment, so an image needs no
+entrypoint of its own to change them. `lock` has no variable.
+
+| Variable                               | Option                                   |
+| -------------------------------------- | ---------------------------------------- |
+| `ANVIA_SANDBOX_DESKTOP=0`              | `desktop: false`                         |
+| `ANVIA_SANDBOX_DESKTOP_BACKEND`        | `backend`: `auto`, `xvnc` or `xvfb`      |
+| `ANVIA_SANDBOX_DESKTOP_RESOLUTION`     | `resolution`, like `1440x900`            |
+| `ANVIA_SANDBOX_DESKTOP_MAX_RESOLUTION` | `maxResolution`, like `1920x1080`        |
+| `ANVIA_SANDBOX_DESKTOP_DISPLAY`        | `display`, like `:99`                    |
+| `ANVIA_SANDBOX_DESKTOP_VNC_PORT`       | `vncPort`                                |
+| `ANVIA_SANDBOX_DESKTOP_WINDOW_MANAGER` | `windowManager`; `none` runs without one |
+
+A malformed value stops the daemon at startup instead of falling back to a default.
+
 #### Control
 
 A person takes over with `desktop.takeover({ holder: "alice" })`. While they hold control, the

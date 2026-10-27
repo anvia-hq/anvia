@@ -4,7 +4,7 @@ import { generatedSchemaHeader } from "./schema.js";
 // avoids imposing a Temporal implementation on the caller. The adapter explicitly
 // supplies UTC timestamps on writes rather than relying on the database defaults.
 export const prisma8MemorySchema = `model AgentMemorySession {
-  id              String @id @default(cuid(2))
+  id              String @id @onCreate(cuid(2))
   scopeKey        String @unique
   sessionId       String
   userId          String?
@@ -21,7 +21,7 @@ export const prisma8MemorySchema = `model AgentMemorySession {
 }
 
 model AgentMemoryMessage {
-  id              String @id @default(cuid(2))
+  id              String @id @onCreate(cuid(2))
   memorySessionId String
   memorySession   AgentMemorySession @relation(fields: [memorySessionId], references: [id], onDelete: Cascade, onUpdate: Cascade)
   runId           String
@@ -37,7 +37,7 @@ model AgentMemoryMessage {
 }
 
 model AgentMemoryError {
-  id              String @id @default(cuid(2))
+  id              String @id @onCreate(cuid(2))
   memorySessionId String
   memorySession   AgentMemorySession @relation(fields: [memorySessionId], references: [id], onDelete: Cascade, onUpdate: Cascade)
   runId           String
@@ -50,6 +50,8 @@ model AgentMemoryError {
 }
 `;
 
+// Prisma 8 CLI (rc.24+) only loads PSL files that opt in with this directive.
+export const prisma8Directive = "// use prisma-8";
 export const prisma8StartMarker = "// BEGIN ANVIA MEMORY PRISMA 8 MODELS";
 export const prisma8EndMarker = "// END ANVIA MEMORY PRISMA 8 MODELS";
 

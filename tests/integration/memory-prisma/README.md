@@ -1,7 +1,7 @@
 # Prisma memory compatibility
 
-Tests the built package with Prisma 7.10.0 and Prisma 8 PostgreSQL 8.0.0-rc.11
-(CLI 8.0.0-rc.15). Run with Node 24.11+ and PostgreSQL 17:
+Tests the built package with Prisma 7.10.1 and Prisma 8 PostgreSQL 8.0.0-rc.20
+(CLI 8.0.0-rc.27). Run with Node 24.11+ and PostgreSQL 17:
 
 ```sh
 pnpm --filter @anvia/core build

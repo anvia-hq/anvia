@@ -52,10 +52,10 @@
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",
     "vitest": "^4.1.11",
-    "zod": "^4.6.5"
+    "zod": "^4.6.7"
   },
   "peerDependencies": {
     "@anvia/core": "workspace:^",
-    "zod": "^4.6.5"
+    "zod": "^4.6.7"
   }
 }

@@ -280,6 +280,21 @@ describe("Prisma 8 init", () => {
     expect(messages(events)).toContain("Jsonb");
     expect(messages(events)).toContain("TimestampString(3)");
     expect(messages(events)).toContain("prisma contract emit");
+    expect(messages(events)).toContain("@onCreate(cuid(2))");
+  });
+
+  it("opts new contracts into the Prisma 8 CLI and warns when an existing one has not", async () => {
+    const cwd = createPrismaProject();
+    const path = join(cwd, "db/contract.prisma");
+    expect(await runCli([...args, "--write"], cwd, io([]))).toBe(0);
+    expect(readFileSync(path, "utf8").startsWith("// use prisma-8\n")).toBe(true);
+
+    const bare = createPrismaProject();
+    mkdirSync(join(bare, "db"));
+    writeFileSync(join(bare, "db/contract.prisma"), "model User {\n  id String @id\n}\n");
+    const events: Event[] = [];
+    expect(await runCli([...args, "--write", "--append-to-contract"], bare, io(events))).toBe(0);
+    expect(messages(events)).toContain('has no "// use prisma-8" line');
   });
 
   it("requires explicit append and force before replacing a generated block", async () => {

@@ -32,8 +32,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@modelcontextprotocol/client": "^2.3.1",
-    "undici": "^8.12.1"
+    "@modelcontextprotocol/client": "^2.4.0",
+    "undici": "^8.12.3"
   },
   "devDependencies": {
     "@anvia/core": "workspace:*",

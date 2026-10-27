@@ -1,7 +1,12 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
 import { prismaMemoryModelNames } from "./schema.js";
-import { prisma8EndMarker, prisma8SchemaBlock, prisma8StartMarker } from "./schema-v8.js";
+import {
+  prisma8Directive,
+  prisma8EndMarker,
+  prisma8SchemaBlock,
+  prisma8StartMarker,
+} from "./schema-v8.js";
 
 export function initPrisma8Memory(
   options: {
@@ -53,13 +58,20 @@ export function initPrisma8Memory(
   if (conflicts.length > 0)
     throw new Error(`Existing Prisma models conflict: ${conflicts.join(", ")}`);
   const block = prisma8SchemaBlock();
+  const hasDirective = /^[ \t]*\/\/[ \t]*use prisma-8\b/m.test(current);
   const next = hasBlock
     ? `${prefix}${block.trimEnd()}${suffix}`
-    : `${current}${current.length > 0 ? "\n\n" : ""}${block}`;
+    : exists
+      ? `${current}${current.length > 0 ? "\n\n" : ""}${block}`
+      : `${prisma8Directive}\n\n${block}`;
 
   if (exists)
     io.warn(
       "Warning: appending modifies your existing Prisma 8 contract. Review before migrating.",
+    );
+  if (exists && !hasDirective)
+    io.warn(
+      `Warning: ${displayPath} has no "${prisma8Directive}" line. Add it at the top; the Prisma 8 CLI ignores contracts without it.`,
     );
   if (options.write) {
     mkdirSync(dirname(path), { recursive: true });

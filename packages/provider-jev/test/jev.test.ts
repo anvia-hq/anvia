@@ -130,6 +130,17 @@ describe("Jev decisions", () => {
     expect(JSON.parse(String(init.body)).state).toEqual({ value: true });
   });
 
+  it("wraps null state because the SDK no longer accepts a bare null", async () => {
+    const { client, fetch } = clientWithResponse(fixture({ q0: { type: "noul", noul: 0.5 } }));
+    await decide({
+      model: client.decisionModel({ modelId: "custom-jev" }),
+      state: null,
+      questions: { urgent: check({ instructions: "Urgent?" }) },
+    });
+    const [, init] = vi.mocked(fetch).mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(String(init.body)).state).toEqual({ value: null });
+  });
+
   it.each([
     fixture({}),
     fixture({ q0: { type: "noul", noul: 1.1 } }),

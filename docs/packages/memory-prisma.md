@@ -7,10 +7,10 @@ Use this package when an application already uses Prisma and wants Anvia session
 | Prisma version | Import                    | Runtime peer                       |
 | -------------- | ------------------------- | ---------------------------------- |
 | 7              | `@anvia/memory-prisma`    | `@prisma/client >=7.10.0 <8.0.0`   |
-| 8 (PostgreSQL) | `@anvia/memory-prisma/v8` | `@prisma/orm-postgres 8.0.0-rc.11` |
+| 8 (PostgreSQL) | `@anvia/memory-prisma/v8` | `@prisma/orm-postgres 8.0.0-rc.20` |
 
 Each Prisma peer is optional independently: install the runtime for your chosen entrypoint.
-Prisma 8 support is pinned to the tested release candidate, with CLI `prisma@8.0.0-rc.15`.
+Prisma 8 support is pinned to the tested release candidate, with CLI `prisma@8.0.0-rc.27`.
 The instructions immediately below are for Prisma 7; see [Prisma 8](#prisma-8-postgresql)
 for its contract and client setup.
 
@@ -149,15 +149,17 @@ runtime, query API, and contract workflow. The `/v8` store provides the same mem
 including inspection and compaction, through a caller-owned PostgreSQL client.
 
 ```sh
-pnpm add @anvia/memory-prisma @anvia/core @prisma/orm-postgres@8.0.0-rc.11
-pnpm add -D prisma@8.0.0-rc.15
+pnpm add @anvia/memory-prisma @anvia/core @prisma/orm-postgres@8.0.0-rc.20
+pnpm add -D prisma@8.0.0-rc.27
 pnpm exec anvia-memory-prisma init --prisma-version 8 --contract src/prisma/contract.prisma
 ```
 
 The command previews a single PSL contract. Add `--write` to create it. If your contract
 already exists, also pass `--append-to-contract`. Replacing an existing generated block
 requires `--force`; content outside that block is preserved. Existing conflicting models
-and malformed markers are rejected. TypeScript contracts are not edited by this CLI.
+and malformed markers are rejected. A new contract starts with the `// use prisma-8` directive
+that the Prisma 8 CLI requires; add that line to the top of an existing contract that lacks it.
+TypeScript contracts are not edited by this CLI.
 
 Configure the local Prisma 8 CLI:
 
@@ -187,13 +189,14 @@ Create the client and store (relative paths below assume `src/prisma/db.ts`):
 
 ```ts
 import postgres from "@prisma/orm-postgres/runtime";
+import { contractFromJson } from "@prisma/orm-postgres/static";
 import { PrismaMemoryStore } from "@anvia/memory-prisma/v8";
 import type { Contract } from "./generated/contract.js";
 import contractJson from "./generated/contract.json" with { type: "json" };
 
-export const db = postgres<Contract>({
+export const db = postgres({
   url: process.env.DATABASE_URL!,
-  contractJson,
+  contract: contractFromJson<Contract>(contractJson),
 });
 export const memory = new PrismaMemoryStore({
   client: db,
@@ -211,8 +214,8 @@ in your TypeScript project. Re-run `contract emit` after contract changes.
 
 ### Prisma CLI dependency warnings
 
-Prisma CLI `8.0.0-rc.15` includes Composer `0.20.0`, whose Alchemy dependency can
-resolve Effect packages newer than Composer's pinned `4.0.0-rc.112`. If pnpm reports
+Prisma CLI `8.0.0-rc.27` includes Composer `0.34.0`, whose Alchemy dependency can
+resolve Effect packages newer than Composer's pinned `4.0.3`. If pnpm reports
 Effect or Vitest peer conflicts from that dependency, follow
 [Prisma's version-alignment guidance](https://github.com/prisma/composer/blob/main/docs/guides/deploying.md).
 For this tested CLI version, add these scoped overrides to your `pnpm-workspace.yaml`
@@ -221,9 +224,9 @@ and reinstall:
 ```yaml
 packages: [] # For a standalone app; preserve existing workspace package globs.
 overrides:
-  "alchemy@2.0.0-beta.74>@effect/sql-d1": 4.0.0-rc.112
-  "alchemy@2.0.0-beta.74>@effect/sql-sqlite-do": 4.0.0-rc.112
-  "alchemy@2.0.0-beta.74>@effect/vitest": 4.0.0-rc.112
+  "alchemy@2.0.0-beta.83>@effect/sql-d1": 4.0.3
+  "alchemy@2.0.0-beta.83>@effect/sql-sqlite-do": 4.0.3
+  "alchemy@2.0.0-beta.83>@effect/vitest": 4.0.3
 ```
 
 These pins apply to CLI tooling, not the memory-store runtime. Reassess them when
@@ -245,7 +248,7 @@ to separate the CLIs and configs. Anvia's default `init` recognizes `prisma7.con
    the generated memory contract; model names may be customized below.
 3. Preserve the existing PostgreSQL types: text IDs, `Jsonb` fields, nullable
    `compactionState`, and `TimestampString(3)` for `createdAt` and `updatedAt`.
-   Use `@default(cuid(2))` for new IDs and keep existing IDs unchanged. Retain
+   Use `@onCreate(cuid(2))` for new IDs and keep existing IDs unchanged. Retain
    `@default(now())` on `createdAt` for schema compatibility. Anvia explicitly supplies
    UTC `createdAt` values for new sessions, messages, and errors, and UTC `updatedAt`
    values on every session upsert, independently of PostgreSQL's session timezone.

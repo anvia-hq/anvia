@@ -38,7 +38,7 @@
   },
   "devDependencies": {
     "@anvia/core": "workspace:*",
-    "@prisma/orm-postgres": "8.0.0-rc.11",
+    "@prisma/orm-postgres": "8.0.0-rc.20",
     "@types/node": "^24.9.1",
     "tsup": "^8.5.0",
     "typescript": "^5.9.3",
@@ -47,7 +47,7 @@
   "peerDependencies": {
     "@anvia/core": "workspace:^",
     "@prisma/client": ">=7.10.0 <8.0.0",
-    "@prisma/orm-postgres": "8.0.0-rc.11"
+    "@prisma/orm-postgres": "8.0.0-rc.20"
   },
   "peerDependenciesMeta": {
     "@prisma/client": {

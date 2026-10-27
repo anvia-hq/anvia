@@ -1,11 +1,14 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { prismaMemorySchema } from "../../../../packages/memory-prisma/src/schema.js";
-import { prisma8SchemaBlock } from "../../../../packages/memory-prisma/src/schema-v8.js";
+import {
+  prisma8Directive,
+  prisma8SchemaBlock,
+} from "../../../../packages/memory-prisma/src/schema-v8.js";
 
 mkdirSync("generated/v7", { recursive: true });
 mkdirSync("generated/v8", { recursive: true });
-writeFileSync("generated/v8/contract.prisma", prisma8SchemaBlock());
+writeFileSync("generated/v8/contract.prisma", `${prisma8Directive}\n${prisma8SchemaBlock()}`);
 writeFileSync(
   "generated/v7/schema.prisma",
   `generator client {
@@ -26,7 +29,7 @@ execFileSync("pnpm", ["exec", "prisma", "contract", "emit"], { stdio: "inherit" 
 mkdirSync("generated/custom", { recursive: true });
 writeFileSync(
   "generated/custom/contract.prisma",
-  prisma8SchemaBlock()
+  `${prisma8Directive}\n${prisma8SchemaBlock()}`
     .replace(/\bAgentMemorySession\b(?!")/g, "CustomSession")
     .replace(/\bAgentMemoryMessage\b(?!")/g, "CustomMessage")
     .replace(/\bAgentMemoryError\b(?!")/g, "CustomError"),

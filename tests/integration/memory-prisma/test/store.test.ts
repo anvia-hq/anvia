@@ -4,6 +4,7 @@ import { beforeAll, afterAll, describe, expect, it } from "vitest";
 import { Client } from "pg";
 import { PrismaPg } from "@prisma/adapter-pg";
 import postgres from "@prisma/orm-postgres/runtime";
+import { contractFromJson } from "@prisma/orm-postgres/static";
 import type { MemoryCompactionMessage, Message, MemoryScope } from "@anvia/core";
 import { PrismaMemoryStore as Store7 } from "@anvia/memory-prisma";
 import { PrismaMemoryStore as Store8 } from "@anvia/memory-prisma/v8";
@@ -12,6 +13,9 @@ import type { Contract } from "../generated/v8/contract.js";
 import type { Contract as CustomContract } from "../generated/custom/contract.js";
 import contractJson from "../generated/v8/contract.json" with { type: "json" };
 import customJson from "../generated/custom/contract.json" with { type: "json" };
+
+const contract = contractFromJson<Contract>(contractJson);
+const customContract = contractFromJson<CustomContract>(customJson);
 
 const baseUrl = process.env.ANVIA_PRISMA_TEST_URL;
 const user = (content: string): Message => ({ role: "user", content });
@@ -32,7 +36,7 @@ for (const schemaOwner of [7, 8]) {
     const url = connection.toString();
     const admin = new Client({ connectionString: baseUrl });
     const client7 = new PrismaClient({ adapter: new PrismaPg({ connectionString: url }) });
-    const client8 = postgres<Contract>({ contractJson, url, verifyMarker: false });
+    const client8 = postgres({ contract, url, verifyMarker: false });
     const store7 = new Store7({ client: client7 });
     const store8 = new Store8({ client: client8 });
     let created = false;
@@ -138,7 +142,7 @@ for (const schemaOwner of [7, 8]) {
         await connection.query("SELECT set_config('TimeZone', $1, false)", [timezone]);
         expect((await connection.query("SHOW TimeZone")).rows[0].TimeZone).toBe(timezone);
         const zonedClient = postgres<Contract>({
-          contractJson,
+          contract,
           pg: connection,
           verifyMarker: false,
         });
@@ -351,13 +355,13 @@ for (const schemaOwner of [7, 8]) {
       });
       const timer = setTimeout(release, 3000);
       const racing = postgres<Contract>({
-        contractJson,
+        contract,
         url,
         verifyMarker: false,
         middleware: [
           {
             name: "compaction-write-barrier",
-            async beforeQuery(plan) {
+            async beforeEncode(plan) {
               if (plan.sql.startsWith("INSERT INTO") && plan.sql.includes('"AgentMemorySession"')) {
                 arrived += 1;
                 if (arrived === 2) release();
@@ -403,7 +407,7 @@ for (const schemaOwner of [7, 8]) {
 
     it("supports custom model names in reads, writes, and transactions", async () => {
       const custom = postgres<CustomContract>({
-        contractJson: customJson,
+        contract: customContract,
         url,
         verifyMarker: false,
       });

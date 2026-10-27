@@ -33,7 +33,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@pinecone-database/pinecone": "^9.0.0"
+    "@pinecone-database/pinecone": "^9.1.0"
   },
   "devDependencies": {
     "@anvia/core": "workspace:*",

@@ -34,7 +34,7 @@ overrides:
   protobufjs: 7.6.5
   sharp: 0.35.4
   tar: 7.5.21
-  # Prisma Composer 0.20.0 pins Effect rc.112; Alchemy otherwise floats to incompatible RCs.
-  "alchemy@2.0.0-beta.74>@effect/sql-d1": 4.0.0-rc.112
-  "alchemy@2.0.0-beta.74>@effect/sql-sqlite-do": 4.0.0-rc.112
-  "alchemy@2.0.0-beta.74>@effect/vitest": 4.0.0-rc.112
+  # Prisma Composer 0.34.0 pins Effect 4.0.3; Alchemy otherwise floats to newer, incompatible Effect releases.
+  "alchemy@2.0.0-beta.83>@effect/sql-d1": 4.0.3
+  "alchemy@2.0.0-beta.83>@effect/sql-sqlite-do": 4.0.3
+  "alchemy@2.0.0-beta.83>@effect/vitest": 4.0.3

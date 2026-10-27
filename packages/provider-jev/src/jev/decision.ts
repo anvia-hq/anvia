@@ -81,7 +81,7 @@ export class JevDecisionModel implements DecisionModel<unknown> {
     try {
       const body = {
         ...request.providerOptions,
-        state: toEntry(request.state),
+        state: toEntry(request.state) ?? { value: null },
         model: this.modelId,
         questions: Object.fromEntries(questions),
       };
@@ -182,7 +182,7 @@ export class JevDecisionModel implements DecisionModel<unknown> {
         const levelKeys = question.rubric.map((_, index) => String(index));
         const expectedLegend = Object.fromEntries(
           question.rubric.map((level, index) => [String(index), toEntry(level)]),
-        );
+        ) as Record<string, JsonValue>;
         if (!isDataObject(answer.legend) || !jsonEqual(answer.legend, expectedLegend)) {
           return fail("Jev returned a legend that does not match the requested rubric.", name);
         }

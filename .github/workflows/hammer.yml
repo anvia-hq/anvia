@@ -1,0 +1,20 @@
+name: Hammer Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: anvia-hq/hammer@v1
+        with:
+          client: anthropic
+          model: claude-sonnet-5-5
+          api-key: ${{ secrets.MODEL_API_KEY }}
+          hammer-api-key: ${{ secrets.HAMMER_API_KEY }}

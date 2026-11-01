@@ -62,3 +62,17 @@ describe("filterToQdrantFilter", () => {
     );
   });
 });
+
+describe("adversarial filter inputs (security)", () => {
+  it("keeps adversarial keys and values as inert data in the match object", () => {
+    const malicious = `a" } , { "match": { "value": "x`;
+    expect(filterToQdrantFilter({ type: "eq", key: malicious, value: malicious })).toEqual({
+      must: [{ key: malicious, match: { value: malicious } }],
+    });
+  });
+  it("keeps adversarial in values as inert data", () => {
+    expect(filterToQdrantFilter({ type: "in", key: "tenant", values: [`a", "b`] })).toEqual({
+      must: [{ key: "tenant", match: { any: [`a", "b`] } }],
+    });
+  });
+});

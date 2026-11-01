@@ -39,3 +39,15 @@ describe("filterToChromaWhere", () => {
     );
   });
 });
+
+describe("adversarial filter inputs (security)", () => {
+  it("keeps adversarial keys and values as inert data in the where object", () => {
+    const malicious = `a" } , { "$where": "1=1`;
+    const where = filterToChromaWhere({ type: "eq", key: malicious, value: malicious }) as Record<
+      string,
+      unknown
+    >;
+    expect(where).toEqual({ [malicious]: { $eq: malicious } });
+    expect(JSON.parse(JSON.stringify(where))).toEqual({ [malicious]: { $eq: malicious } });
+  });
+});

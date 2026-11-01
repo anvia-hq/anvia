@@ -62,3 +62,14 @@ describe("filterToRedisQuery", () => {
     ).toThrow(/Redis "in" filter/);
   });
 });
+
+describe("adversarial filter inputs (security)", () => {
+  it("escapes adversarial tag values so they cannot break out of the query", () => {
+    expect(
+      filterToRedisQuery({
+        filter: { type: "eq", key: "tenant", value: "a} | @other:{b" },
+        metadataSchema,
+      }),
+    ).toBe("(@tenant:{s\\:a\\}\\ \\|\\ \\@other\\:\\{b})");
+  });
+});

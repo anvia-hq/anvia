@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# Anvia thread setup.
+#
+# Versions (CI wins over everything else):
+# - Node.js 24: .github/workflows/ci.yml uses actions/setup-node with node-version 24.
+# - pnpm 11.0.4: package.json "packageManager" and ci.yml (pnpm/action-setup 11.0.4).
+# - Build tools python3/make/g++: node-pty (packages/tool-sandbox) has no Linux
+#   prebuild and compiles at install time; the repo's own docs
+#   (docs/packages/tool-sandbox.md) name python3, make and g++ for this.
+#
+# No database or background service is installed: the default unit tests mock
+# external services (vitest aliases map @anvia/core to src), live integrations
+# (Memgraph, Neo4j, Azure, Chroma/Qdrant compose services, Prisma Postgres) are
+# all gated behind opt-in env vars and skip without them. Provider API keys are
+# never needed here; they come from the project's environment variables.
+set -euo pipefail
+
+echo "Ensuring Node.js 24..."
+if ! command -v node >/dev/null 2>&1 || [ "$(node -p 'process.versions.node.split(".")[0]')" != "24" ]; then
+  sudo apt-get update
+  sudo apt-get install -y --no-install-recommends ca-certificates curl gnupg
+  curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
+  sudo apt-get install -y --no-install-recommends nodejs
+fi
+node --version
+
+echo "Ensuring pnpm 11.0.4..."
+if ! command -v pnpm >/dev/null 2>&1 || [ "$(pnpm --version)" != "11.0.4" ]; then
+  sudo npm install -g pnpm@11.0.4 --no-audit --no-fund
+fi
+pnpm --version
+
+echo "Installing native-module build tools..."
+sudo apt-get update
+sudo apt-get install -y --no-install-recommends build-essential python3
+
+# node-pty runs `node-gyp rebuild` at install time. pnpm puts its own node-gyp
+# shim on scripts' PATH, but that shim has been seen without its exec bit in
+# some containers ("node-gyp: Permission denied"), which fails the whole
+# install. A working node-gyp earlier on PATH takes precedence, so install one
+# globally only when none already works.
+echo "Ensuring a working node-gyp for native modules..."
+if ! command -v node-gyp >/dev/null 2>&1 || ! node-gyp --version >/dev/null 2>&1; then
+  sudo npm install -g node-gyp --no-audit --no-fund
+fi
+for npm_prefix in "$(npm prefix -g 2>/dev/null)" "$(sudo npm prefix -g 2>/dev/null)"; do
+  if [ -x "$npm_prefix/bin/node-gyp" ]; then
+    export PATH="$npm_prefix/bin:$PATH"
+    break
+  fi
+done
+
+# Keep pnpm's content-addressable store out of the repository (with the
+# workspace mounted from the host, a store inside the repo costs disk and
+# snapshot time). This is outside git; existing checkouts keep working.
+echo "Configuring pnpm store outside the repository..."
+pnpm config set store-dir "$HOME/.local/share/pnpm/store" >/dev/null
+
+echo "Installing dependencies from the lockfile..."
+pnpm install --frozen-lockfile --reporter=append-only
+
+# Non-secret local template only; real keys come from project env variables.
+echo "Ensuring .env exists from the template..."
+[ -f .env ] || cp .env.example .env
+
+# Cross-package typecheck/test resolve @anvia/core through dist (its exports
+# map points at dist/), while vitest aliases map it to src. Building core once
+# here unblocks filtered typecheck/test in dependent packages; packages with
+# further build needs (e.g. @anvia/studio) build their own deps on demand via
+# their build:deps scripts.
+echo "Building @anvia/core..."
+pnpm --filter @anvia/core build >"$HOME/core-build.log" 2>&1 || {
+  tail -30 "$HOME/core-build.log"
+  exit 1
+}
+
+echo "Setup complete."

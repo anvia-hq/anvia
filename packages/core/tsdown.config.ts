@@ -1,11 +1,25 @@
-import type { Options } from "tsup";
+import { defineConfig, type UserConfig } from "tsdown";
 
-export default {
-  // Keep source module boundaries so unrelated initializers can be tree-shaken.
-  entry: ["src/**/*.ts"],
+const shared: UserConfig = {
   format: ["esm"],
-  splitting: true,
-  dts: {
+  sourcemap: true,
+  fixedExtension: false,
+};
+
+// Keep source module boundaries so unrelated initializers can be tree-shaken.
+export const sourceEntries: string[] = ["src/**/*.ts"];
+
+export default defineConfig([
+  {
+    ...shared,
+    entry: sourceEntries,
+    unbundle: true,
+    dts: false,
+    clean: true,
+  },
+  {
+    ...shared,
+    // Declarations only for the public entrypoints listed in package.json exports.
     entry: [
       "src/index.ts",
       "src/agent/index.ts",
@@ -32,7 +46,7 @@ export default {
       "src/transcription/index.ts",
       "src/vector-store/index.ts",
     ],
+    dts: { emitDtsOnly: true },
+    clean: false,
   },
-  sourcemap: true,
-  clean: true,
-} satisfies Options;
+]);

@@ -153,8 +153,9 @@ request), `packages/durable/src/compaction.ts:56` (the projected history is re-d
 **Impact.** A "1 MB prompt" is not accepted end to end. The canonical prompt is counted in
 `run.prompt`, again in `run.input`, again in the model operation request (which also contains the
 provider/model envelope), and later in `history` and `outcome` after the run completes. A prompt of
-~0.9 MB passes submission but makes every model call exceed the operation limit once any history
-exists; the run fails with a generic payload error. Base64 inflates images by ~4/3, so a 1 MB image
+~0.9 MB passes submission but makes the model operation exceed the limit once roughly 100 KB of
+history accumulates (the same content is counted again in the request); the run fails with a
+generic payload error. Base64 inflates images by ~4/3, so a 1 MB image
 becomes ~1.4 MB before JSON overhead and is rejected (`packages/durable/test/multimodal.test.ts:177`
 covers the scaled case). The error text never says which field or by how much.
 

@@ -1,0 +1,37 @@
+name: Dependency drift
+
+on:
+  schedule:
+    # Weekly check; upstream runtime dependencies move continuously on npm.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  upstream-deps:
+    name: Upstream dependency drift
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      # Report-only on a schedule: npm updates land continuously, so a
+      # --fail-on-update run would stay red. The report is surfaced in the
+      # job summary; pass --fail-on-update to make a manual run block.
+      - name: Check upstream dependency drift
+        run: |
+          bash bin/check-upstream-deps.sh | tee /tmp/drift.txt
+          {
+            echo "## Upstream dependency drift"
+            echo ""
+            echo '```'
+            cat /tmp/drift.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

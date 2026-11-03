@@ -123,7 +123,7 @@ Package manifests follow a consistent shape:
 - Tests usually live under `test/`.
 - Build output goes to `dist/`.
 - Public package entry points are declared in `exports`.
-- Build scripts use `tsup` for package output.
+- Build scripts use `tsdown` for package output.
 - Typechecking uses `tsc --noEmit`.
 - Tests use `vitest run`.
 

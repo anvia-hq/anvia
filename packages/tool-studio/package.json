@@ -25,7 +25,7 @@
     }
   },
   "scripts": {
-    "build": "pnpm run build:deps && tsup && vite build --config vite.config.ts",
+    "build": "pnpm run build:deps && tsdown && vite build --config vite.config.ts",
     "build:deps": "(test -f ../core/dist/index.d.ts || pnpm --filter @anvia/core build) && pnpm --filter @anvia/graph build && pnpm --filter @anvia/client build && pnpm --filter @anvia/server --filter @anvia/react --filter @anvia/react-ui build",
     "coverage": "pnpm run build:deps && vitest run --coverage",
     "test": "pnpm run build:deps && vitest run",
@@ -69,7 +69,7 @@
     "@types/ws": "^8.18.2",
     "@vitejs/plugin-react": "^6.1.2",
     "tailwindcss": "^4.3.3",
-    "tsup": "^8.5.0",
+    "tsdown": "^0.23.4",
     "typescript": "^5.9.3",
     "vite": "^8.3.4",
     "vitest": "^4.1.11",

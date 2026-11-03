@@ -26,7 +26,7 @@
   },
   "scripts": {
     "prebuild": "pnpm --filter @anvia/otel build",
-    "build": "tsup src/index.ts --format esm --dts --sourcemap --clean",
+    "build": "tsdown src/index.ts --format esm --dts --sourcemap --clean --no-fixed-extension",
     "test": "vitest run",
     "pretypecheck": "pnpm --filter @anvia/otel build",
     "typecheck": "tsc --noEmit"
@@ -44,7 +44,7 @@
     "@anvia/core": "workspace:*",
     "@anvia/durable": "workspace:*",
     "@types/node": "^24.9.1",
-    "tsup": "^8.5.0",
+    "tsdown": "^0.23.4",
     "typescript": "^5.9.3",
     "vitest": "^4.1.11",
     "zod": "^4.6.7"

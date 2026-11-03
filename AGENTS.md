@@ -85,7 +85,7 @@ Most publishable packages expose `./dist/index.js` and `./dist/index.d.ts`.
 `@anvia/core` has many subpath exports; when adding or moving a public entrypoint:
 
 1. Add or update the source file.
-2. Update the package `build` command if a new tsup entry is needed.
+2. Update the package `build` command if a new tsdown entry is needed.
 3. Update `exports` in the package `package.json`.
 4. Update public re-exports from the relevant `src/index.ts` or subpath index.
 5. Add or update tests.

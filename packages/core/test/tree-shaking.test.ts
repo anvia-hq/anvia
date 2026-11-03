@@ -3,25 +3,29 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
-import { build } from "tsup";
+import { build } from "tsdown";
 import { expect, it } from "vitest";
-import config from "../tsup.config";
+import config, { sourceEntries } from "../tsdown.config";
 
 const execFileAsync = promisify(execFile);
 const packageDir = fileURLToPath(new URL("../", import.meta.url));
+// The first config builds the unbundled JavaScript; the second only emits declarations.
+const [sourceConfig] = config;
+if (sourceConfig === undefined) throw new Error("Expected a source tsdown config.");
 
 it("tree-shakes createTool from root and tool entrypoints without changing execution", async () => {
   const temporaryDir = await mkdtemp(join(packageDir, ".tree-shaking-"));
   try {
     const outDir = join(temporaryDir, "dist");
     await build({
-      ...config,
-      // tsup glob expansion requires forward slashes; Windows joins produce backslashes.
-      entry: config.entry.map((entry) => join(packageDir, entry).replaceAll("\\", "/")),
+      ...sourceConfig,
+      // Glob expansion requires forward slashes; Windows joins produce backslashes.
+      entry: sourceEntries.map((entry) => join(packageDir, entry).replaceAll("\\", "/")),
       outDir,
       dts: false,
+      clean: false,
       config: false,
-      silent: true,
+      logLevel: "silent",
     });
 
     for (const [name, entry] of [
@@ -40,10 +44,12 @@ it("tree-shakes createTool from root and tool entrypoints without changing execu
         format: ["esm"],
         platform: "node",
         minify: true,
-        splitting: false,
         noExternal: [/.*/],
+        fixedExtension: false,
+        dts: false,
+        clean: false,
         config: false,
-        silent: true,
+        logLevel: "silent",
       });
       const bundle = join(consumerDir, `${name}.js`);
       // Include dependencies: this ceiling catches both namespace retention and

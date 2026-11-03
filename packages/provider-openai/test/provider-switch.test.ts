@@ -25,11 +25,17 @@ function assistantFrom(
 }
 
 describe("OpenAI Responses history after a provider switch", () => {
-  it("keeps the function_call id only when it is an OpenAI item id", () => {
+  it("keeps the function_call id for OpenAI-origin history", () => {
     expect(
       openaiMessageHelpers.messageToResponsesInput(
         assistantFrom("openai", [
-          { type: "tool-call", toolCallId: "fc_1", callId: "call_1", toolName: "lookup", input: {} },
+          {
+            type: "tool-call",
+            toolCallId: "fc_1",
+            callId: "call_1",
+            toolName: "lookup",
+            input: {},
+          },
         ]),
       ),
     ).toEqual([

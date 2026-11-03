@@ -18,6 +18,7 @@ import {
   type JsonValue,
   type Message as MessageType,
   type ModelCallOptions,
+  getAssistantGenerationMetadata,
   type ProviderTool,
   type ProviderToolCall,
   type ReasoningDetail,
@@ -846,6 +847,7 @@ function messageToResponsesInput(message: MessageType): ResponsesInputItem[] {
   if (typeof message.content === "string") {
     return [{ role: "assistant", content: message.content }];
   }
+  const origin = getAssistantGenerationMetadata(message)?.provider;
   const text = message.content
     .flatMap((content) => (content.type === "text" ? [content.text] : []))
     .join("\n");
@@ -858,13 +860,18 @@ function messageToResponsesInput(message: MessageType): ResponsesInputItem[] {
       items.push(reasoningToOpenAIInput(content));
     }
     if (content.type === "tool-call") {
-      items.push({
+      const item: ResponsesInputItem = {
         type: "function_call",
-        id: content.toolCallId,
         call_id: content.callId ?? content.toolCallId,
         name: content.toolName,
         arguments: JSON.stringify(content.input),
-      });
+      };
+      // Item ids from another provider (for example Anthropic's toolu_...) are not valid here.
+      // They are left out; call_id still links the result. Unknown origin keeps the id.
+      if (originIsOpenAIFamily(origin)) {
+        item.id = content.toolCallId;
+      }
+      items.push(item);
     }
     if (content.type === "image" || content.type === "file") {
       throw new Error(
@@ -874,6 +881,11 @@ function messageToResponsesInput(message: MessageType): ResponsesInputItem[] {
   }
 
   return items;
+}
+
+/** True when the turn came from OpenAI (or Azure OpenAI), or when its origin is unknown. */
+function originIsOpenAIFamily(origin: string | undefined): boolean {
+  return origin === undefined || origin.startsWith("openai") || origin.startsWith("azure");
 }
 
 function toolContentToOpenAIResponsesItem(content: ToolResultPart): ResponsesInputItem {

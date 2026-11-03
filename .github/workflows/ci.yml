@@ -63,7 +63,9 @@ jobs:
         run: pnpm --workspace-concurrency=1 --filter './packages/**' typecheck
 
       - name: Typecheck cookbook and internal tests
-        run: pnpm --filter cookbook --filter './tests/**' typecheck
+        # tests/compat/peer-core rebuilds openai and studio (with --clean) before its typecheck;
+        # run serially so other typechecks never read a dist that is being rebuilt.
+        run: pnpm --workspace-concurrency=1 --filter cookbook --filter './tests/**' typecheck
 
       - name: Test packages
         run: pnpm --filter './packages/**' test

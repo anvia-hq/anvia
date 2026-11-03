@@ -28,7 +28,7 @@
     }
   },
   "scripts": {
-    "build": "tsup src/index.ts src/cli.ts --format esm --dts --sourcemap --clean",
+    "build": "tsdown src/index.ts src/cli.ts --format esm --dts --sourcemap --clean --no-fixed-extension",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
@@ -36,7 +36,7 @@
     "@anvia/core": "workspace:*",
     "@types/node": "^24.9.1",
     "drizzle-orm": "^0.45.4",
-    "tsup": "^8.5.0",
+    "tsdown": "^0.23.4",
     "typescript": "^5.9.3",
     "vitest": "^4.1.11"
   },

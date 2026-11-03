@@ -77,7 +77,7 @@
     }
   },
   "scripts": {
-    "build": "tsup src/index.ts src/attachment/index.ts src/chat/index.ts src/completion/index.ts src/graph-explorer/index.ts src/human-input/index.ts src/image/index.ts src/message/index.ts src/sandbox-desktop/index.ts src/sandbox-terminal/index.ts src/selection-toolbar/index.ts src/shared.ts src/stream/index.ts src/thread-list/index.ts --format esm --dts --sourcemap --clean --external react --external react-dom --external @xterm/xterm --external @xterm/addon-fit --external @novnc/novnc",
+    "build": "tsdown src/index.ts src/attachment/index.ts src/chat/index.ts src/completion/index.ts src/graph-explorer/index.ts src/human-input/index.ts src/image/index.ts src/message/index.ts src/sandbox-desktop/index.ts src/sandbox-terminal/index.ts src/selection-toolbar/index.ts src/shared.ts src/stream/index.ts src/thread-list/index.ts --format esm --dts --sourcemap --clean --external react --external react-dom --external @xterm/xterm --external @xterm/addon-fit --external @novnc/novnc --no-fixed-extension",
     "coverage": "vitest run --coverage",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
@@ -137,7 +137,7 @@
     "happy-dom": "20.9.0",
     "react": "19.3.1",
     "react-dom": "19.3.1",
-    "tsup": "^8.5.0",
+    "tsdown": "^0.23.4",
     "typescript": "^5.9.3",
     "vitest": "^4.1.11"
   }

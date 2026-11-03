@@ -228,8 +228,9 @@ body.
 `input`), `packages/durable/src/limits.ts:55` (both fields are checked), `:64` (the write is
 rejected), `packages/durable/src/runtime.ts:641` (a `DurableLimitError` outside `execute`'s own
 try/catch becomes `needs_attention`), `:645` (`setStatus(..., "needs_attention")`),
-`packages/durable/src/run.ts:44` (`result()` polls only terminal statuses), `:52` (it waits
-forever otherwise), `packages/durable/src/run.ts:24` (the stream ends only on terminal status).
+`packages/durable/src/run.ts:52` (`result()` polls the run), `:57` and `:60` (only failed,
+cancelled, or completed settle), `:66` (every other status waits), and
+`packages/durable/src/run.ts:46` (the stream ends only on a terminal status).
 
 **Impact.** Verified: with `maxPayloadBytes: 2000` and four 300-character turns, turn 5 never
 starts. The run record stays at `history: 0` (the transaction rolls back), the status is
@@ -454,7 +455,7 @@ surface. Compare in DUR-13.
 sends the whole UI history every turn), `:302` (interaction responses reuse the same transport
 call), `:341` (`stop()` aborts the fetch and clears resume state), `packages/client/src/durable.ts:221`
 (submission needs `agentId`, `sessionId`, `requestId` and a single `prompt`),
-`packages/client/src/durable.ts:298` (respond needs `runId`), `packages/server/src/durable-http.ts:30`
+`packages/client/src/durable.ts:298` (respond needs `runId`), `packages/server/src/durable-http.ts:40`
 (SSE cancellation detaches only the subscriber), `packages/durable/src/runtime.ts:330` (a second
 submission into a busy session is a 409).
 
@@ -473,7 +474,7 @@ submission into a busy session is a 409).
    Durable's `respond` needs `runId`, which the hook never sees. The adapter must remember the run it
    last streamed and reject responses when it has none.
 4. **Disconnect semantics.** `stop()` aborts the fetch. For durable that only closes the SSE
-   subscription; the run keeps going (`docs/packages/durable.md:544`). The hook then clears its
+   subscription; the run keeps going (`docs/packages/durable.md:543`). The hook then clears its
    resume state, so the client forgets a run that is still executing. The next send hits 409
    "Session already has unfinished work", which the hook renders as a generic error. Durable's
    `cancel()` is a separate, explicit operation that the hook has no button for.
@@ -587,8 +588,8 @@ the original request, which the adapter can ignore for streaming but needs for i
 responses; the active run id must be recoverable from `streamId`, which it is.
 
 **Disconnect semantics.** A client disconnect must never cancel the run. Durable already guarantees
-this: `durableEventsResponse` aborts only its detached controller (`packages/server/src/durable-http.ts:30`),
-and `run.stream()` closing does not touch execution (`packages/durable/src/run.ts:24`). The adapter
+this: `durableEventsResponse` aborts only its detached controller (`packages/server/src/durable-http.ts:40`),
+and `run.stream()` closing does not touch execution (`packages/durable/src/run.ts:31`). The adapter
 must not translate `stop()` into `cancel()`. The UI should show "running in background" and offer
 "reconnect" (stream from the stored cursor) and "cancel" (explicit, confirmed).
 
@@ -772,8 +773,8 @@ matrix.
 
 #### DUR-32 — Limit failures are not observable as such
 
-**Evidence:** `packages/durable/src/metrics.ts:5` (status counts only), `:8` (operation and event
-totals), `packages/durable/src/runtime.ts:644` (the limit error is stored as free text),
+**Evidence:** `packages/durable/src/metrics.ts:5` (status counts only), `:8` and `:9` (operation
+and event totals), `packages/durable/src/runtime.ts:644` (the limit error is stored as free text),
 `packages/durable/src/runtime.ts:736` (other failures likewise), `packages/durable/src/types.ts:193`
 (no limit event type).
 

@@ -102,8 +102,10 @@ Reproduction tests were added first (they fail on the baseline, except where not
 - Reproduce: `pnpm --filter @anvia/openai test -- provider-switch`, test "does not send an
   Anthropic tool id as a Responses function_call id".
 - Severity: high for Anthropic-to-OpenAI Responses switches that use tools.
-- Planned fix: send `id` only when it starts with `fc`. `call_id` stays. (`id` is optional
-  on input `function_call` items.)
+- Planned fix: send `id` only when the turn's origin is OpenAI or Azure, or unknown. A
+  prefix test (`fc_`) was tried first and rejected: the Azure test
+  `tags messages for Foundry without altering tool items` keeps `item_1`, so Azure uses its
+  own id prefixes. `call_id` stays. (`id` is optional on input `function_call` items.)
 
 ## 7. Session-persisted controls rejected by the newly selected model
 
@@ -201,11 +203,31 @@ Reproduction tests were added first (they fail on the baseline, except where not
 
 ---
 
-## Summary of fixes planned in this change
+## Status after the fix
 
-- Anthropic adapter: origin gate for reasoning (1, 2, 5), empty assistant messages (4),
-  duplicate tool ids (8).
-- Gemini adapter: strip foreign signatures (3).
-- OpenAI Responses adapter: `function_call.id` only when it starts with `fc` (6).
-- Tool Studio: filter persisted controls for the selected model (7).
-- Not changed: 9 (design decision), 10 (app configuration), 11-16 (not applicable or not confirmed).
+Fixed (each has a test that failed before the change and passes after it):
+
+- 1, 2, 5: Anthropic replays reasoning only when it is its own or of unknown origin, and
+  then only signed thinking. Test: `provider-anthropic/test/provider-switch.test.ts`.
+- 4: an assistant turn left with no content is omitted. Same file.
+- 8: duplicate tool-call ids in one Anthropic request are renamed, and each result follows
+  its call. Same file, "keeps tool_use ids unique ...".
+- 3: Gemini drops signatures from another provider's reasoning. Test:
+  `provider-gemini/test/provider-switch.test.ts`.
+- 6: OpenAI Responses sends `function_call.id` only when the turn came from OpenAI or Azure
+  (or its origin is unknown). Test: `provider-openai/test/provider-switch.test.ts`.
+- 7: Studio keeps only the persisted controls the selected model offers, and records the
+  result. Test: `tool-studio/test/runner.test.ts`, "does not replay session controls ...".
+
+Not fixed:
+
+- 9: provider-hosted tools on a model that does not support them. The run fails with a clear
+  error. Dropping the tool or failing is a product decision.
+- 10: application-level `providerOptions` that name another provider's keys. Not in Studio.
+- 11-16: not applicable or not confirmed (see each item).
+
+Not verified live: all Anthropic, OpenAI and Gemini rejection behaviour above is taken from
+their API rules and was checked against the request bodies in tests, not against the live APIs.
+
+Pre-existing, unrelated: `tool-studio/test/runner.test.ts` "replays persisted pipeline runs
+outside the first runs page" times out at 5 s on the unchanged source as well.

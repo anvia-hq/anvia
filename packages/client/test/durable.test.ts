@@ -106,6 +106,56 @@ describe("durable browser client", () => {
     );
   });
 
+  it("surfaces the server's status, code, field, and message from error bodies", async () => {
+    const submission = {
+      agentId: "agent",
+      sessionId: "session",
+      requestId: "request",
+      prompt: "hello",
+    };
+    const failing = (response: Response) =>
+      new DurableClient({
+        endpoint: "https://example.test/durable",
+        fetch: async () => response,
+      }).submit(submission);
+
+    const payload = {
+      error: "Durable payload byte limit exceeded: run.prompt is 3002 bytes; limit is 1000 bytes.",
+      code: "payload_too_large",
+      field: "run.prompt",
+    };
+    await expect(failing(Response.json(payload, { status: 413 }))).rejects.toMatchObject({
+      name: "DurableHttpError",
+      status: 413,
+      code: "payload_too_large",
+      field: "run.prompt",
+      message: payload.error,
+    });
+    await expect(
+      failing(
+        Response.json(
+          { error: "Pending durable run limit reached.", code: "capacity_exceeded" },
+          {
+            status: 429,
+          },
+        ),
+      ),
+    ).rejects.toMatchObject({ status: 429, code: "capacity_exceeded", field: undefined });
+
+    // A non-JSON body must not mask the status.
+    await expect(
+      failing(new Response("<html>unavailable</html>", { status: 503 })),
+    ).rejects.toMatchObject({
+      status: 503,
+      code: undefined,
+      message: "Durable request failed with HTTP 503.",
+    });
+    await expect(failing(new Response(null, { status: 403 }))).rejects.toMatchObject({
+      status: 403,
+      message: "Durable request failed with HTTP 403.",
+    });
+  });
+
   it.each([undefined, false, true])(
     "preserves enqueue=%s in submission payloads",
     async (enqueue) => {

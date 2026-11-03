@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DurableRuntime, type DurableAgentRegistration } from "@anvia/durable";
 import { SqliteDurableStore } from "@anvia/durable/sqlite";
-import { DurableClient } from "@anvia/client/durable";
+import { DurableClient, DurableHttpError } from "@anvia/client/durable";
 import { createDurableHandler } from "../src/durable";
 import {
   done,
@@ -168,6 +168,60 @@ describe("durable HTTP bridge", () => {
     expect((await client.snapshot(initial.run.id)).run.status).toBe("running");
     await client.cancel(initial.run.id);
     expect((await client.snapshot(initial.run.id)).run.status).toBe("cancelled");
+  });
+
+  it("maps payload limits to 413 and capacity limits to 429 with codes", async () => {
+    const failure = async (request: Promise<unknown>): Promise<DurableHttpError> => {
+      try {
+        await request;
+      } catch (error) {
+        return error as DurableHttpError;
+      }
+      throw new Error("Expected the durable request to fail.");
+    };
+    const model = vi.fn(
+      async (_request, signal) =>
+        new Promise<never>((_resolve, reject) => {
+          signal!.addEventListener("abort", () => reject(signal!.reason), { once: true });
+        }),
+    );
+    const runtime = await DurableRuntime.open({
+      store: new SqliteDurableStore(":memory:"),
+      agents: [{ agent: makeAgent(model), version: "1" }],
+      limits: { maxPayloadBytes: 1_000, maxPendingRuns: 1 },
+    });
+    runtimes.push(runtime);
+    const handler = createDurableHandler({ runtime, authorize: () => true, maxBodyBytes: 65_536 });
+    const client = new DurableClient({
+      endpoint: "http://anvia.test/durable",
+      fetch: async (url, init) => handler(new Request(url, init)),
+    });
+
+    const payload = await failure(client.submit({ ...submission, prompt: "x".repeat(3_000) }));
+    expect(payload).toBeInstanceOf(DurableHttpError);
+    expect(payload).toMatchObject({ status: 413, code: "payload_too_large", field: "run.prompt" });
+    expect(payload.message).toContain("run.prompt is");
+    expect(payload.message).toContain("limit is 1000 bytes");
+
+    await client.submit(submission);
+    await vi.waitFor(() => expect(model).toHaveBeenCalledTimes(1));
+    const capacity = await failure(client.submit({ ...submission, sessionId: "other" }));
+    expect(capacity).toMatchObject({ status: 429, code: "capacity_exceeded" });
+    expect(capacity.message).toContain("Pending durable run limit reached");
+
+    const oversized = await handler(
+      new Request("http://anvia.test/durable/runs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ...submission, prompt: "x".repeat(70_000) }),
+      }),
+    );
+    expect(oversized.status).toBe(413);
+    expect(await oversized.json()).toMatchObject({
+      error: "Durable request body is too large",
+      code: "payload_too_large",
+      limit: 65_536,
+    });
   });
 
   it("returns validation/conflict errors and hides internal failures", async () => {

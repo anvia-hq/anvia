@@ -26,31 +26,38 @@ export function limitedTransaction(
   tx: DurableTransaction,
   limits: DurableLimits,
 ): DurableTransaction {
-  const payload = (value: unknown) => {
-    if (
-      value !== undefined &&
-      new TextEncoder().encode(JSON.stringify(value)).byteLength > limits.maxPayloadBytes
-    )
-      throw new DurableLimitError("Durable payload byte limit exceeded.");
+  const payload = (field: string, value: unknown) => {
+    if (value === undefined) return;
+    const actual = new TextEncoder().encode(JSON.stringify(value)).byteLength;
+    if (actual > limits.maxPayloadBytes)
+      throw new DurableLimitError(
+        "payload_too_large",
+        `Durable payload byte limit exceeded: ${field} is ${actual} bytes; limit is ${limits.maxPayloadBytes} bytes.`,
+        { field, limit: limits.maxPayloadBytes, actual },
+      );
   };
+  const capacity = (kind: string, limit: number, count: number) =>
+    new DurableLimitError(
+      "capacity_exceeded",
+      `Pending durable ${kind} limit reached: ${count} are unfinished; limit is ${limit}.`,
+      { limit },
+    );
   const terminal = (status: string) => ["completed", "failed", "cancelled"].includes(status);
   return {
     ...tx,
     appendEvent(id, type, data) {
-      if (type === "model_delta") payload(data);
+      if (type === "model_delta") payload("event.model_delta", data);
       tx.appendEvent(id, type, data);
     },
     putRun(run) {
       const previous = tx.getRun(run.id);
-      if (
-        !terminal(run.status) &&
-        (previous === undefined || terminal(previous.status)) &&
-        tx.pendingCounts().runs >= limits.maxPendingRuns
-      )
-        throw new DurableLimitError("Pending durable run limit reached.");
+      if (!terminal(run.status) && (previous === undefined || terminal(previous.status))) {
+        const pending = tx.pendingCounts().runs;
+        if (pending >= limits.maxPendingRuns) throw capacity("run", limits.maxPendingRuns, pending);
+      }
       if (previous === undefined) {
-        payload(run.prompt);
-        payload(run.trace);
+        payload("run.prompt", run.prompt);
+        payload("run.trace", run.trace);
       }
       for (const key of [
         "input",
@@ -61,38 +68,46 @@ export function limitedTransaction(
         "contextCheckpoint",
         "exhaustion",
       ] as const)
-        if (JSON.stringify(previous?.[key]) !== JSON.stringify(run[key])) payload(run[key]);
+        if (JSON.stringify(previous?.[key]) !== JSON.stringify(run[key]))
+          payload(`run.${key}`, run[key]);
       tx.putRun(run);
     },
     putTask(task) {
       const previous = tx.getTask(task.id);
-      if (
-        !terminal(task.status) &&
-        (previous === undefined || terminal(previous.status)) &&
-        tx.pendingCounts().tasks >= limits.maxPendingTasks
-      )
-        throw new DurableLimitError("Pending durable task limit reached.");
-      if (previous === undefined) payload(task.trace);
+      if (!terminal(task.status) && (previous === undefined || terminal(previous.status))) {
+        const pending = tx.pendingCounts().tasks;
+        if (pending >= limits.maxPendingTasks)
+          throw capacity("task", limits.maxPendingTasks, pending);
+      }
+      if (previous === undefined) payload("task.trace", task.trace);
       // Allow control/status transitions after limits are lowered on restart.
       for (const key of ["input", "checkpoint", "signals"] as const)
-        if (JSON.stringify(previous?.[key]) !== JSON.stringify(task[key])) payload(task[key]);
+        if (JSON.stringify(previous?.[key]) !== JSON.stringify(task[key]))
+          payload(`task.${key}`, task[key]);
       // Owned-agent output was admitted with its run; copying it must survive lower quotas.
       if (
         task.agentRunId === undefined &&
         task.outcome?.status === "completed" &&
         JSON.stringify(previous?.outcome) !== JSON.stringify(task.outcome)
       )
-        payload(task.outcome.output);
+        payload("task.outcome", task.outcome.output);
       tx.putTask(task);
     },
     putOperation(id, operation) {
       const previous = tx.getOperation(id, operation.key);
-      if (previous === undefined && tx.operationCount(id) >= limits.maxOperations)
-        throw new DurableLimitError("Durable operation count limit reached.");
+      if (previous === undefined) {
+        const count = tx.operationCount(id);
+        if (count >= limits.maxOperations)
+          throw new DurableLimitError(
+            "capacity_exceeded",
+            `Durable operation count limit reached: ${count} operations; limit is ${limits.maxOperations}.`,
+            { limit: limits.maxOperations },
+          );
+      }
       if (JSON.stringify(previous?.input) !== JSON.stringify(operation.input))
-        payload(operation.input);
+        payload("operation.input", operation.input);
       if (JSON.stringify(previous?.result) !== JSON.stringify(operation.result))
-        payload(operation.result);
+        payload("operation.result", operation.result);
       tx.putOperation(id, operation);
     },
   };

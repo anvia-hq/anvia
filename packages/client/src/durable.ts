@@ -45,10 +45,43 @@ export type DurableClientOptions = {
   credentials?: RequestCredentials;
 };
 export class DurableHttpError extends Error {
-  constructor(readonly status: number) {
-    super(`Durable request failed with HTTP ${status}.`);
+  constructor(
+    readonly status: number,
+    /** Server-provided machine-readable code, such as `payload_too_large`. */
+    readonly code?: string,
+    /** Server-provided field name that exceeded a limit. */
+    readonly field?: string,
+    message?: string,
+  ) {
+    super(message ?? `Durable request failed with HTTP ${status}.`);
     this.name = "DurableHttpError";
   }
+}
+
+/** Error bodies are best-effort: a non-JSON or oversized body must not mask the status. */
+async function durableErrorBody(
+  response: Response,
+): Promise<{ message?: string; code?: string; field?: string }> {
+  let text: string;
+  try {
+    text = await response.text();
+  } catch {
+    return {};
+  }
+  if (text.length === 0 || text.length > 8_192) return {};
+  let body: unknown;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    return {};
+  }
+  if (typeof body !== "object" || body === null) return {};
+  const record = body as Record<string, unknown>;
+  const details: { message?: string; code?: string; field?: string } = {};
+  if (typeof record.error === "string") details.message = record.error;
+  if (typeof record.code === "string") details.code = record.code;
+  if (typeof record.field === "string") details.field = record.field;
+  return details;
 }
 
 /** Browser-safe HTTP client. Reconnect explicitly using a snapshot or last applied event cursor. */
@@ -367,8 +400,8 @@ export class DurableClient {
 
     const response = await fetch(url, init);
     if (!response.ok) {
-      await response.body?.cancel();
-      throw new DurableHttpError(response.status);
+      const details = await durableErrorBody(response);
+      throw new DurableHttpError(response.status, details.code, details.field, details.message);
     }
     return response;
   }

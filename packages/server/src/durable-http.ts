@@ -48,6 +48,8 @@ export class HttpInputError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    /** Machine-readable details included in the JSON error body. */
+    readonly details: { code?: string; field?: string; limit?: number } = {},
   ) {
     super(message);
   }
@@ -76,7 +78,11 @@ export async function readJson(request: Request, maxBytes: number): Promise<unkn
       bytes += next.value.byteLength;
       if (bytes > maxBytes) {
         await reader.cancel();
-        throw new HttpInputError(413, "Durable request body is too large");
+        throw new HttpInputError(413, "Durable request body is too large", {
+          code: "payload_too_large",
+          field: "request.body",
+          limit: maxBytes,
+        });
       }
       text += decoder.decode(next.value, { stream: true });
     }

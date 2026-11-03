@@ -172,10 +172,19 @@ export function createDurableHandler(
       }
       return new Response(null, { status: 204, headers: { "cache-control": "no-store" } });
     } catch (error) {
-      if (error instanceof HttpInputError) return json({ error: error.message }, error.status);
+      if (error instanceof HttpInputError)
+        return json({ error: error.message, ...error.details }, error.status);
       if (error instanceof DurableNotFoundError)
         return json({ error: "Durable resource not found" }, 404);
-      if (error instanceof DurableLimitError) return json({ error: error.message }, 429);
+      // A payload limit can never succeed for the same request; capacity may clear later.
+      if (error instanceof DurableLimitError) {
+        const body: { error: string; code: string; field?: string } = {
+          error: error.message,
+          code: error.code,
+        };
+        if (error.field !== undefined) body.field = error.field;
+        return json(body, error.code === "payload_too_large" ? 413 : 429);
+      }
       if (error instanceof DurableStorageError)
         return json({ error: "Durable runtime unavailable" }, 503);
       if (error instanceof DurableConflictError) return json({ error: error.message }, 409);

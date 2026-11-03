@@ -115,7 +115,8 @@ export class RelayConnection {
 
   /** Send bytes, if the socket is open. */
   sendBinary(data: ArrayBufferLike | ArrayBufferView): void {
-    if (this.socketInUse?.readyState === WebSocket.OPEN) this.socketInUse.send(data);
+    if (this.socketInUse?.readyState === WebSocket.OPEN)
+      this.socketInUse.send(data as BufferSource);
   }
 
   dispose(): void {

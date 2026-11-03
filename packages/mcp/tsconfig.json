@@ -1,8 +1,8 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
+    "rootDir": "..",
     "outDir": "dist",
-    "baseUrl": ".",
     "paths": {
       "@anvia/core": ["../core/src/index.ts"],
       "@anvia/core/*": ["../core/src/*/index.ts"]

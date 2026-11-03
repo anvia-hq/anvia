@@ -185,7 +185,7 @@ export function studioDesktopView(
     source: {
       protocol: "novnc",
       control,
-      async connect({ abortSignal } = {}) {
+      async connect({ abortSignal }: { abortSignal?: AbortSignal } = {}) {
         const handle = await desktop.openViewer({ abortSignal });
         return filteredStream(handle, new RfbClientFilter(mayType));
       },

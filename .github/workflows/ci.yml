@@ -59,8 +59,9 @@ jobs:
         run: pnpm releases:verify-packs
 
       - name: Typecheck packages
-        # Some typecheck scripts rebuild dependencies with --clean; avoid concurrent readers.
-        run: pnpm --workspace-concurrency=1 --filter './packages/**' typecheck
+        # tsrs reads the dist output built above, so it skips the per-package build:deps
+        # rebuilds that forced --workspace-concurrency=1 with tsc.
+        run: pnpm typecheck:tsrs
 
       - name: Typecheck cookbook and internal tests
         # tests/compat/peer-core rebuilds openai and studio (with --clean) before its typecheck;

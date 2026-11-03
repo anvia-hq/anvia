@@ -178,6 +178,7 @@
     "test:lens-integration": "node scripts/test-lens-integration.mjs",
     "test:lens-integration:full": "node scripts/test-lens-integration.mjs --rebuild --durability",
     "typecheck": "pnpm -r typecheck",
+    "typecheck:tsrs": "pnpm --filter './packages/**' exec tsrs --noEmit && pnpm --filter @anvia/cli exec tsrs --project registry/tsconfig.json --noEmit",
     "prepare": "husky"
   },
   "devDependencies": {
@@ -186,6 +187,7 @@
     "husky": "^9.1.7",
     "oxfmt": "0.64.0",
     "oxlint": "^1.79.0",
+    "tsrs": "0.20.1-ts7.1.0-beta",
     "tsx": "^4.23.12",
     "typescript": "^5.9.3",
     "vitest": "^4.1.11"

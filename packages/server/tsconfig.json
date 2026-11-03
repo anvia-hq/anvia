@@ -2,8 +2,8 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "rootDir": "..",
     "outDir": "dist",
-    "baseUrl": ".",
     "paths": {
       "@anvia/client": ["../client/src/index.ts"]
     }

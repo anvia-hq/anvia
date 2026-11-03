@@ -63,7 +63,7 @@ export class DesktopConnection {
       open: (socket) => {
         accepted = false;
         channel = new VncChannel(
-          { send: (data) => socket.send(data), close: () => socket.close(1000) },
+          { send: (data) => socket.send(data as BufferSource), close: () => socket.close(1000) },
           socket.protocol,
         );
       },

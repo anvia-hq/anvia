@@ -3,7 +3,6 @@
   "compilerOptions": {
     "jsx": "react-jsx",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "baseUrl": ".",
     "paths": {
       "@anvia/client": ["../../client/src/index.ts"],
       "@anvia/core": ["../../core/src/index.ts"],

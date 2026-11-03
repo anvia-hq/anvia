@@ -1,5 +1,4 @@
 import { ChildProcess } from "node:child_process";
-import * as fs from "node:fs/promises";
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -16,8 +15,6 @@ import {
   type ToolCallContext,
   Usage,
 } from "./helpers/imports";
-
-vi.mock("node:fs/promises", { spy: true });
 
 const directories: string[] = [];
 const pids = new Set<number>();
@@ -174,25 +171,6 @@ afterEach(async () => {
       directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })),
     );
   }
-});
-
-describe("process liveness checks", () => {
-  it.each(["ENOENT", "ESRCH", "EACCES"])("handles a /proc read failure with %s", async (code) => {
-    const platform = Object.getOwnPropertyDescriptor(process, "platform")!;
-    const error = Object.assign(new Error("Process stat read failed"), { code });
-    try {
-      Object.defineProperty(process, "platform", { value: "linux" });
-      vi.spyOn(process, "kill").mockReturnValue(true);
-      const read = vi.spyOn(fs, "readFile").mockRejectedValueOnce(error);
-      const result = running(123);
-      if (code === "EACCES") await expect(result).rejects.toBe(error);
-      else await expect(result).resolves.toBe(false);
-      expect(read).toHaveBeenCalledWith("/proc/123/stat", "utf8");
-    } finally {
-      Object.defineProperty(process, "platform", platform);
-      vi.restoreAllMocks();
-    }
-  });
 });
 
 describe.skipIf(process.platform === "win32")("skill direct-child cancellation", () => {

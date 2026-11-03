@@ -435,9 +435,6 @@ describe("Agent tool execution", () => {
     expect(() => agentWithTools([addTool, addTool, echoTool])).toThrow(
       'Duplicate local tool name "add"',
     );
-  });
-
-  it("rejects distinct tools with the same name", () => {
     const replacement = createTool({
       name: "add",
       description: "Replace add",

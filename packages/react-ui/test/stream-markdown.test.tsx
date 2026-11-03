@@ -117,24 +117,15 @@ describe("StreamMarkdown", () => {
     rerender(<StreamMarkdown content={`${content}XYZ`} live />);
 
     const nextNodes = revealElements(container);
-    const retained = nextNodes.filter(
-      (element) => element.style.getPropertyValue("--anvia-stream-reveal-duration") === "120ms",
-    );
-    const fresh = nextNodes.filter(
-      (element) => element.style.getPropertyValue("--anvia-stream-reveal-duration") === "180ms",
-    );
-    const retainedDurations = retained.map((element) =>
-      element.style.getPropertyValue("--anvia-stream-reveal-duration"),
-    );
-    const freshDurations = fresh.map((element) =>
-      element.style.getPropertyValue("--anvia-stream-reveal-duration"),
-    );
     clock.mockRestore();
 
-    expect(retained.length).toBeGreaterThan(0);
-    expect(retainedDurations.every((duration) => duration === "120ms")).toBe(true);
-    expect(fresh.map((element) => element.textContent).join("")).toBe("XYZ");
-    expect(freshDurations.every((duration) => duration === "180ms")).toBe(true);
+    // 60 ms into a 180 ms reveal leaves 120 ms on the tail still showing; "XYZ" starts a fresh 180 ms lifecycle.
+    expect(
+      nextNodes.map((element) => element.style.getPropertyValue("--anvia-stream-reveal-duration")),
+    ).toEqual([...Array<string>(21).fill("120ms"), "180ms", "180ms", "180ms"]);
+    expect(nextNodes.map((element) => element.textContent).join("")).toBe(
+      "pqrstuvwxyz0123456789XYZ",
+    );
   });
 
   it("does not reanimate the existing tail for a one-grapheme append", () => {

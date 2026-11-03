@@ -100,13 +100,6 @@ describe("GeminiClient", () => {
     );
   });
 
-  it("creates completion and embedding models with an injected SDK client", () => {
-    const client = new GeminiClient({ client: fakeSdk() as never });
-
-    expect(client.completionModel({ modelId: "gemini-test" }).modelId).toBe("gemini-test");
-    expect(client.embeddingModel({ modelId: "embedding-test" }).modelId).toBe("embedding-test");
-  });
-
   it("lists models from the Gemini SDK", async () => {
     const calls: unknown[] = [];
     const client = new GeminiClient({

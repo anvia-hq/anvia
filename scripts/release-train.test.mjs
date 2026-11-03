@@ -4,6 +4,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   symlinkSync,
@@ -35,9 +36,14 @@ const versionScript = path.join(repositoryRoot, "scripts", "version-packages.mjs
 
 test("repository config versions every public package independently", () => {
   const packages = findPublicPackages(repositoryRoot);
-  assert.equal(packages.length, 37);
-  assert.ok(packages.some(({ packageJson }) => packageJson.name === "@anvia/azure"));
-  assert.ok(packages.some(({ packageJson }) => packageJson.name === "@anvia/jev"));
+  const config = readJson(path.join(repositoryRoot, ".changeset", "config.json"));
+  const ignored = new Set(config.ignore ?? []);
+  const discovered = new Set(packages.map(({ packageJson }) => packageJson.name));
+  for (const name of publicWorkspacePackageNames(repositoryRoot)) {
+    assert.equal(ignored.has(name), false, `${name} is a public package and must not be ignored`);
+    assert.equal(discovered.has(name), true, `${name} is missing from public package discovery`);
+  }
+  assert.equal(discovered.size, packages.length);
   assert.doesNotThrow(() => assertIndependentVersioning(repositoryRoot, packages));
   assert.doesNotThrow(() => assertWorkspaceInternalDependencies(packages));
 });
@@ -362,8 +368,14 @@ test("stable validation permits different package versions and rejects pending c
   try {
     assert.equal(assertStableReleaseState(fixture).length, 2);
     writeChangeset(fixture, "pending", "patch", "A pending fix.", ["a"]);
-    assert.throws(() => assertStableReleaseState(fixture), /Pending changesets/);
-    assert.throws(() => assertNoPendingChangesets(fixture), /pending/);
+    assert.throws(
+      () => assertStableReleaseState(fixture),
+      /Pending changesets must be versioned first: pending/,
+    );
+    assert.throws(
+      () => assertNoPendingChangesets(fixture),
+      /Pending changesets must be versioned first: pending/,
+    );
     assert.doesNotThrow(() =>
       assertReleasableChangesets(
         readPendingChangesets(fixture),
@@ -374,6 +386,35 @@ test("stable validation permits different package versions and rejects pending c
     rmSync(fixture, { recursive: true, force: true });
   }
 });
+
+function publicWorkspacePackageNames(root) {
+  const workspace = readFileSync(path.join(root, "pnpm-workspace.yaml"), "utf8");
+  const globs = [...workspace.matchAll(/^ {2}- ["']?([^"'\n]+)["']?\s*$/gm)].map(
+    ([, glob]) => glob,
+  );
+  const names = [];
+  for (const glob of globs) {
+    for (const manifestPath of workspaceManifests(root, glob.split("/"))) {
+      const manifest = readJson(manifestPath);
+      if (manifest.private === true || typeof manifest.name !== "string") continue;
+      names.push(manifest.name);
+    }
+  }
+  return names;
+}
+
+function workspaceManifests(dir, segments) {
+  if (segments.length === 0) {
+    const manifestPath = path.join(dir, "package.json");
+    return existsSync(manifestPath) ? [manifestPath] : [];
+  }
+  const [segment, ...rest] = segments;
+  if (segment !== "*") return workspaceManifests(path.join(dir, segment), rest);
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .sort()
+    .flatMap((entry) => workspaceManifests(path.join(dir, entry), rest));
+}
 
 function createReleaseFixture() {
   const root = mkdtempSync(path.join(os.tmpdir(), "anvia-independent-release-test-"));

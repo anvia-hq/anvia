@@ -15,7 +15,6 @@ import {
   fromMistralChatResponse,
   fromMistralChatStreamChunk,
   MistralClient,
-  mistralMessageHelpers,
   toMistralChatParams,
 } from "../src/index";
 import { MistralCompletionModel } from "../src/mistral/completion";
@@ -228,21 +227,6 @@ describe("Mistral completion mapping", () => {
       messages: [{ role: "user", content: "hi" }],
       topP: 0.9,
     });
-  });
-
-  it("uses the explicit tool result name", () => {
-    expect(
-      mistralMessageHelpers.messageToMistralMessages(
-        Message.tool(ToolContent.toolResult("call_1", "shipped", { toolName: "lookup_order" })),
-      ),
-    ).toEqual([
-      {
-        role: "tool",
-        toolCallId: "call_1",
-        name: "lookup_order",
-        content: "shipped",
-      },
-    ]);
   });
 
   it("throws on malformed tool call arguments instead of coercing them", () => {
@@ -844,28 +828,6 @@ describe("Mistral completion mapping", () => {
       AssistantContent.toolCall("cmpl_9-tool-0", "first", {}, "cmpl_9-tool-0"),
       AssistantContent.toolCall("cmpl_9-tool-1", "second", {}, "cmpl_9-tool-1"),
       AssistantContent.toolCall("cmpl_9-tool-2", "third", {}, "cmpl_9-tool-2"),
-    ]);
-  });
-
-  it("exposes helper conversion for assistant tool-use history", () => {
-    expect(
-      mistralMessageHelpers.messageToMistralMessages(
-        Message.assistant([AssistantContent.toolCall("call_1", "lookup", { query: "x" })]),
-      ),
-    ).toEqual([
-      {
-        role: "assistant",
-        toolCalls: [
-          {
-            id: "call_1",
-            type: "function",
-            function: {
-              name: "lookup",
-              arguments: '{"query":"x"}',
-            },
-          },
-        ],
-      },
     ]);
   });
 

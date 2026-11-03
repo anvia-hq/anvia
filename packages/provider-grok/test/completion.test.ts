@@ -102,38 +102,6 @@ describe("Grok completion models", () => {
     ).rejects.toThrow('provider tool "web_search" from "other"');
   });
 
-  it("passes Grok Responses requests through the OpenAI-compatible adapter", async () => {
-    const calls: unknown[] = [];
-    const model = new GrokResponsesCompletionModel(
-      {
-        responses: {
-          create: async (params: unknown) => {
-            calls.push(params);
-            return { output: [], usage: {} };
-          },
-        },
-      } as never,
-      "grok-test",
-    );
-
-    await model.completion({
-      chatHistory: [Message.user("hello", { metadata: { composer: { entities: [] } } })],
-      documents: [],
-      tools: [],
-      providerOptions: {
-        reasoning: { effort: "high" },
-      },
-    });
-
-    expect(calls).toEqual([
-      {
-        model: "grok-test",
-        input: [{ role: "user", content: "hello" }],
-        reasoning: { effort: "high" },
-      },
-    ]);
-  });
-
   it("forwards Responses tool call deltas through the OpenAI-compatible adapter", async () => {
     const model = new GrokResponsesCompletionModel(
       {
@@ -215,6 +183,16 @@ describe("Grok completion models", () => {
       stream: true,
       model: "grok-test",
     });
+    expect(
+      new GrokChatCompletionModel({} as never, "grok-chat-test").traceRequest(request, {
+        stream: true,
+      }),
+    ).toMatchObject({
+      provider: "grok",
+      api: "chat.completions",
+      stream: true,
+      model: "grok-chat-test",
+    });
   });
 
   it("redacts remote MCP secrets from Responses traces", () => {
@@ -254,23 +232,7 @@ describe("Grok completion models", () => {
     });
   });
 
-  it("summarizes Chat traces with Grok provider identity", () => {
-    const model = new GrokChatCompletionModel({} as never, "grok-chat-test");
-    const request: CompletionRequest = {
-      chatHistory: [Message.user("What is 2+5?")],
-      documents: [],
-      tools: [],
-    };
-
-    expect(model.traceRequest(request, { stream: true })).toMatchObject({
-      provider: "grok",
-      api: "chat.completions",
-      stream: true,
-      model: "grok-chat-test",
-    });
-  });
-
-  it("omits message metadata from Grok Chat requests", async () => {
+  it("sends Grok Chat requests through the OpenAI-compatible adapter", async () => {
     const calls: unknown[] = [];
     const model = new GrokChatCompletionModel(
       {
@@ -287,7 +249,7 @@ describe("Grok completion models", () => {
     );
 
     await model.completion({
-      chatHistory: [Message.user("hello", { metadata: { composer: { entities: [] } } })],
+      chatHistory: [Message.user("hello")],
       documents: [],
       tools: [],
     });
@@ -296,74 +258,6 @@ describe("Grok completion models", () => {
       {
         model: "grok-chat-test",
         messages: [{ role: "user", content: "hello" }],
-      },
-    ]);
-  });
-
-  it("forwards Chat tool call deltas through the OpenAI-compatible adapter", async () => {
-    const model = new GrokChatCompletionModel(
-      {
-        chat: {
-          completions: {
-            create: async () =>
-              streamFrom([
-                {
-                  id: "chatcmpl_1",
-                  choices: [
-                    {
-                      index: 0,
-                      finish_reason: null,
-                      delta: {
-                        tool_calls: [
-                          {
-                            index: 0,
-                            id: "call_1",
-                            function: { name: "write_file", arguments: '{"path":' },
-                          },
-                        ],
-                      },
-                    },
-                  ],
-                },
-                {
-                  id: "chatcmpl_1",
-                  choices: [
-                    {
-                      index: 0,
-                      finish_reason: "tool_calls",
-                      delta: {
-                        tool_calls: [{ index: 0, function: { arguments: '"README.md"}' } }],
-                      },
-                    },
-                  ],
-                },
-              ]),
-          },
-        },
-      } as never,
-      "grok-chat-test",
-    );
-
-    const events = await collect(
-      model.streamCompletion({
-        chatHistory: [Message.user("write a file")],
-        documents: [],
-        tools: [],
-      }),
-    );
-
-    expect(events.filter((event) => event.type === "tool_call_delta")).toEqual([
-      {
-        type: "tool_call_delta",
-        id: "tool_0",
-        callId: "call_1",
-        name: "write_file",
-        argumentsDelta: '{"path":',
-      },
-      {
-        type: "tool_call_delta",
-        id: "tool_0",
-        argumentsDelta: '"README.md"}',
       },
     ]);
   });

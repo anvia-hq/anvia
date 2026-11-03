@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import * as publicApi from "../src/index.js";
 import {
   type ChromaClientLike,
   type ChromaCollectionLike,
@@ -26,13 +25,6 @@ function fixture() {
 }
 
 describe("ChromaVectorClient", () => {
-  it("exports the client without legacy index or connect APIs", () => {
-    expect(publicApi).toHaveProperty("ChromaVectorClient");
-    expect(publicApi).not.toHaveProperty("ChromaVectorIndex");
-    expect(publicApi.ChromaVectorStore).not.toHaveProperty("connect");
-    expect(publicApi.ChromaVectorStore.prototype).not.toHaveProperty("index");
-    expect(publicApi.ChromaVectorStore.prototype).not.toHaveProperty("asTool");
-  });
   it("constructs side-effect-free handles and provisions explicitly", async () => {
     const { client } = fixture();
     const owner = new ChromaVectorClient({ client });

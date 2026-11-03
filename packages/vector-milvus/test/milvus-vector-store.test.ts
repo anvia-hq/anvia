@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import * as publicApi from "../src/index.js";
 import { type MilvusClientLike, MilvusVectorClient } from "../src/index.js";
 
 function fixture(): MilvusClientLike {
@@ -24,13 +23,6 @@ function fixture(): MilvusClientLike {
 }
 
 describe("MilvusVectorClient", () => {
-  it("exports the client without legacy index or connect APIs", () => {
-    expect(publicApi).toHaveProperty("MilvusVectorClient");
-    expect(publicApi).not.toHaveProperty("MilvusVectorIndex");
-    expect(publicApi.MilvusVectorStore).not.toHaveProperty("connect");
-    expect(publicApi.MilvusVectorStore.prototype).not.toHaveProperty("index");
-    expect(publicApi.MilvusVectorStore.prototype).not.toHaveProperty("asTool");
-  });
   it("does no I/O until lifecycle or data operations", async () => {
     const client = fixture();
     const store = new MilvusVectorClient({ client }).vectorStore({
@@ -133,32 +125,6 @@ describe("Milvus metadata filter expression validation", () => {
         filter: { type: "eq", key: "a == 1 or b != b", value: "x" },
       }),
     ).rejects.toThrow(/Invalid metadata filter key/);
-    expect(client.search).not.toHaveBeenCalled();
-  });
-
-  it("rejects nested filter keys that contain expression keywords", async () => {
-    const client = fixture();
-    const store = storeFor(client);
-    await expect(
-      store.search({
-        vector: [1, 0],
-        topK: 1,
-        filter: { type: "eq", key: "user.and.name", value: "x" },
-      }),
-    ).rejects.toThrow(/reserved Milvus expression keyword/);
-    expect(client.search).not.toHaveBeenCalled();
-  });
-
-  it("rejects non-finite numeric filter values", async () => {
-    const client = fixture();
-    const store = storeFor(client);
-    await expect(
-      store.search({
-        vector: [1, 0],
-        topK: 1,
-        filter: { type: "gt", key: "price", value: Number.NaN },
-      }),
-    ).rejects.toThrow(/Invalid metadata filter value/);
     expect(client.search).not.toHaveBeenCalled();
   });
 

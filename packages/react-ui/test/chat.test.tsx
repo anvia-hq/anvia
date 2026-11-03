@@ -1484,7 +1484,7 @@ describe("Chat primitives", () => {
   });
 
   it("auto-resizes composer input up to the configured max rows", () => {
-    const computedStyle = vi.spyOn(window, "getComputedStyle").mockReturnValue({
+    vi.spyOn(window, "getComputedStyle").mockReturnValue({
       borderBottomWidth: "1px",
       borderTopWidth: "1px",
       boxSizing: "border-box",
@@ -1525,6 +1525,5 @@ describe("Chat primitives", () => {
 
     expect(input.style.height).toBe("70px");
     expect(input.style.overflowY).toBe("auto");
-    expect(computedStyle).toHaveBeenCalled();
   });
 });

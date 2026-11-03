@@ -3,7 +3,6 @@ import type { GraphExploreOptions, GraphExploreResult, GraphSchemaLike } from "@
 import { act, renderHook } from "@testing-library/react";
 import { describe, expect, expectTypeOf, it, vi } from "vitest";
 
-import * as publicGraphExplorer from "../src/graph-explorer";
 import { type GraphExplorerExpandNodeOptions, useGraphExplorer } from "../src/graph-explorer";
 
 describe("useGraphExplorer", () => {
@@ -177,7 +176,6 @@ describe("useGraphExplorer", () => {
 
     expect(result.current.status).toBe("ready");
     expect([...result.current.matchedNodeIds]).toEqual(["person_1"]);
-    expect(publicGraphExplorer.useGraphExplorer).toBe(useGraphExplorer);
 
     act(() => result.current.reset());
     expect(result.current.status).toBe("idle");

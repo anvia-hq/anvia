@@ -13,10 +13,11 @@ describe("trace browser metadata formatting", () => {
     ]);
   });
 
-  it("formats metadata as raw JSON", () => {
-    expect(rawTraceJson({ agentName: "Support Operations", toolCount: 1 })).toBe(
-      '{\n  "agentName": "Support Operations",\n  "toolCount": 1\n}',
-    );
+  it("renders values that cannot be serialized", () => {
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    expect(rawTraceJson(circular)).toBe("[object Object]");
+    expect(rawTraceJson(undefined)).toBe("undefined");
   });
 
   it("classifies JSON tokens for syntax highlighting", () => {

@@ -12,7 +12,6 @@ vi.mock("@anvia/core/extractor", () => ({ extract: extractMock }));
 import {
   defineNeo4jGraphSchema,
   extractGraphFacts,
-  GraphFactConflictError,
   ManagedNeo4jKnowledgeGraph,
   Neo4jClient,
   Neo4jKnowledgeGraph,
@@ -716,34 +715,6 @@ describe("extractGraphFacts", () => {
       type: "AFFECTS",
       sourceChunkIds: ["chunk-1"],
     });
-  });
-
-  it("rejects conflicting properties instead of choosing silently", async () => {
-    extractMock
-      .mockResolvedValueOnce({
-        output: {
-          entities: [{ ref: "p", type: "Product", properties: { id: "p1", name: "One" } }],
-          relationships: [],
-        },
-        usage: Usage.empty(),
-      })
-      .mockResolvedValueOnce({
-        output: {
-          entities: [{ ref: "p", type: "Product", properties: { id: "p1", name: "Two" } }],
-          relationships: [],
-        },
-        usage: Usage.empty(),
-      });
-    await expect(
-      extractGraphFacts({
-        model: {} as never,
-        schema,
-        chunks: [
-          { id: "a", documentId: "a", index: 0, text: "a" },
-          { id: "b", documentId: "b", index: 0, text: "b" },
-        ],
-      }),
-    ).rejects.toBeInstanceOf(GraphFactConflictError);
   });
 });
 

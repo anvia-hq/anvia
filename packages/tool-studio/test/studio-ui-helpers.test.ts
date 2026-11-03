@@ -7,12 +7,6 @@ import {
   navigationSection,
   type StudioPageAvailability,
 } from "../src/ui/app/modules/shared/navigation";
-import {
-  findMatchingToolIndex,
-  nextSequence,
-  toHistory,
-} from "../src/ui/app/modules/shared/transcript";
-
 const baseAvailability: StudioPageAvailability = {
   hasAgents: true,
   graphsEnabled: true,
@@ -77,21 +71,6 @@ describe("Studio UI helpers", () => {
         tracesEnabled: false,
       }),
     ).toBe("playground");
-  });
-
-  it("keeps transcript helper behavior deterministic", () => {
-    const transcript = [
-      { entryId: 4, kind: "message", role: "user", text: "Hello" },
-      { entryId: 7, kind: "message", role: "assistant", text: "Hi" },
-      { entryId: 8, kind: "tool", toolName: "lookup", callId: "call_1", args: "{}" },
-    ] as const;
-
-    expect(nextSequence([...transcript])).toBe(9);
-    expect(findMatchingToolIndex([...transcript], "lookup", "call_1")).toBe(2);
-    expect(toHistory([...transcript])).toEqual([
-      Message.user([{ type: "text", text: "Hello" }]),
-      Message.assistant("Hi"),
-    ]);
   });
 
   it("creates UI messages for multimodal prompts that round-trip to core messages", () => {

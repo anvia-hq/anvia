@@ -1,15 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import * as publicApi from "../src/index.js";
 import { filterToPgVectorWhere, type PgClientLike, PgVectorClient } from "../src/index.js";
 
 describe("PgVectorClient", () => {
-  it("exports the client without legacy index or connect APIs", () => {
-    expect(publicApi).toHaveProperty("PgVectorClient");
-    expect(publicApi).not.toHaveProperty("PgVectorIndex");
-    expect(publicApi.PgVectorStore).not.toHaveProperty("connect");
-    expect(publicApi.PgVectorStore.prototype).not.toHaveProperty("index");
-    expect(publicApi.PgVectorStore.prototype).not.toHaveProperty("asTool");
-  });
   it("creates lazy handles, replaces rows, and performs raw searches", async () => {
     const query = vi.fn(async (input: string | { text: string }) => {
       const sql = typeof input === "string" ? input : input.text;

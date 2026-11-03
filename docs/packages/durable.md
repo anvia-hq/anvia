@@ -555,6 +555,46 @@ On a connection failure, reconnect explicitly from a new snapshot, or from the l
 cursor your application successfully applied. It does not retry HTTP mutations automatically.
 Durable progress is not the existing token-delta chat protocol.
 
+## Chat UI adapter
+
+`@anvia/client/durable-chat` adapts a durable endpoint to the `ClientTransport` contract used by
+`useChat` from `@anvia/react` and the `@anvia/react-ui` chat primitives. Create one transport per
+chat session: the agent and session identity live in the transport because a chat request carries
+only messages.
+
+```ts
+import { useChat } from "@anvia/react";
+import { DurableClient } from "@anvia/client/durable";
+import { createDurableChatTransport } from "@anvia/client/durable-chat";
+
+const client = new DurableClient({ endpoint: "https://your-app.example/durable" });
+const transport = createDurableChatTransport({
+  client,
+  agentId: "researcher",
+  sessionId: "research-session",
+});
+
+const chat = useChat({ transport });
+```
+
+The adapter submits the last user message with `enqueue: true` by default and maps committed
+durable events to `anvia.client.v3` frames. Durable keeps the transcript, so earlier messages in
+the hook's array are not sent. Interaction responses (`tool-approval`, `tool-question`) are routed
+to the run that produced them. A stored `{ streamId, after }` resume cursor is the durable run id
+and event sequence.
+
+Known limitations:
+
+- Client-side history is discarded; durable's session history is authoritative. After a reset or a
+  reconnect, the hook's messages can diverge from the stored session.
+- `stop()` aborts the subscription only. The run keeps executing; use
+  `transport.controller.cancel()` to cancel it, `retry()` for a failed run, and
+  `reattach(runId, after)` to resume streaming.
+- A 409 from a busy session is reported as `DurableBusyError` with the active run id; call
+  `reattach()` instead of submitting again.
+- `regenerate()` and `reset()` are approximate; submit a new turn with a fresh request id.
+- Thread lists are not covered; durable sessions are server data (`runtime.listRuns`).
+
 ## Shutdown and current scope
 
 - `runtime.resume()` schedules pending and interrupted runs without waiting for completion.

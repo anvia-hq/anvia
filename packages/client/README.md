@@ -75,6 +75,26 @@ These committed progress events are separate from token-delta chat streams.
 
 See the [durable HTTP guide](../../docs/packages/durable.md#http-server-and-client).
 
+### Chat UI transport
+
+The optional `@anvia/client/durable-chat` entrypoint exports `createDurableChatTransport`, which
+adapts a durable endpoint to the `ClientTransport` contract used by `useChat` from `@anvia/react`
+and the `@anvia/react-ui` primitives. Create one transport per chat session; the agent, session and
+request identity live there, not in an individual message request.
+
+```ts
+const transport = createDurableChatTransport({ client, agentId, sessionId });
+const chat = useChat({ transport });
+```
+
+The adapter submits the last user message with `enqueue: true` by default, maps durable journal
+events to `anvia.client.v3` frames, routes interaction responses to the run that produced them, and
+uses the durable run id and sequence as `{ streamId, after }` for resume. Aborting the subscription
+detaches only; use `transport.controller.cancel()`, `retry()`, `resolveTool()` or
+`reattach(runId, after)` for explicit run control. A busy session is reported as
+`DurableBusyError` with the run to reattach to. Client history is discarded in favour of the
+durable transcript, so `regenerate()` and `reset()` are approximate; thread lists are not covered.
+
 `DurableClient` also exposes `submitGraph`, `listGraphs`, `graphSnapshot`, `streamGraph`, and
 `cancelGraph`. Graph snapshots contain renderable nodes/edges and explicit waiting reasons.
 Use each node's `runId` with the existing response/retry/reconciliation methods. Graph streams

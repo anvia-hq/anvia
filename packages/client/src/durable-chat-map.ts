@@ -28,20 +28,20 @@ import type { ClientStreamError, ClientStreamEvent } from "./types";
  * sequence itself as the event id, which is also the cursor `stream({ after })` expects. Callers
  * must not wrap the resulting frames in the standard contiguous frame validator.
  *
- * Message and part ids are synthesized as `${runId}:${operationId}:${attemptId}` plus a part
+ * Message ids are one per model operation (`${runId}:${operationId}`); part ids add a suffix.
  * suffix. Replaying the same journal on reconnect assigns the same identities.
  */
 export type DurableChatMapState = {
   /** Assistant message open for the model operation currently streaming. */
   messageId?: string | undefined;
-  /** Attempt id of the open message. Part ids include it; the message id does not. */
-  attemptId?: string | undefined;
   /** Last durable sequence applied. The next resume starts after this cursor. */
   sequence: number;
   /** Model operations that already opened a message, so a later attempt resets it. */
   openedOperations: Set<string>;
   /** Parts that already emitted their `*_start`, so a replay of one event does not repeat it. */
   openedParts: Set<string>;
+  /** Tool calls seen on `tool_started`, keyed by operation id, so `tool_completed` can match them. */
+  tools: Map<string, ToolCallPart>;
   /** True once `run_start` has been emitted for this projection. */
   runOpened: boolean;
 };
@@ -50,7 +50,13 @@ export type DurableChatMapState = {
 type WithoutRunId<T> = T extends unknown ? Omit<T, "runId"> : never;
 
 export function createDurableChatMapState(sequence = 0): DurableChatMapState {
-  return { sequence, openedOperations: new Set(), openedParts: new Set(), runOpened: false };
+  return {
+    sequence,
+    openedOperations: new Set(),
+    openedParts: new Set(),
+    tools: new Map(),
+    runOpened: false,
+  };
 }
 
 export type DurableChatMapped = {
@@ -74,13 +80,12 @@ export function mapDurableChatEvent(
   return { events, state: draft };
 }
 
-/** `${runId}:${operationId}:${attemptId}` — stable across reconnects for one model attempt. */
-export function durableChatMessageId(
-  runId: string,
-  operationId: string,
-  attemptId: string,
-): string {
-  return `${runId}:${operationId}:${attemptId}`;
+/**
+ * One assistant message per model operation. Retries keep the identity and reset its parts, so a
+ * streamed journal never leaves the empty placeholders that per-attempt ids would create.
+ */
+export function durableChatMessageId(runId: string, operationId: string): string {
+  return `${runId}:${operationId}`;
 }
 
 function project(event: DurableEvent, state: DurableChatMapState): ClientStreamEvent[] {
@@ -135,12 +140,9 @@ function mapStatus(
 
 function openRun(runId: string, state: DurableChatMapState): ClientStreamEvent[] {
   state.runOpened = true;
-  const messageId = `${runId}:assistant:pending`;
-  state.messageId = messageId;
-  return [
-    { type: "run_start", source: "agent", runId },
-    { type: "message_start", messageId, role: "assistant", runId },
-  ];
+  // The first model operation opens the assistant message; opening one here would leave an
+  // empty message ahead of the real one on every turn.
+  return [{ type: "run_start", source: "agent", runId }];
 }
 
 function mapModelStarted(
@@ -149,7 +151,7 @@ function mapModelStarted(
   state: DurableChatMapState,
 ): ClientStreamEvent[] {
   const operationId = text(data, "operationId") ?? "model";
-  const messageId = durableChatMessageId(event.runId, operationId, "1");
+  const messageId = durableChatMessageId(event.runId, operationId);
   state.openedOperations.add(operationId);
   state.messageId = messageId;
   const generation: ClientStreamEvent = { type: "generation_start", runId: event.runId };
@@ -176,15 +178,16 @@ function mapAttemptStarted(
 ): ClientStreamEvent[] {
   const operationId = text(data, "operationId");
   if (operationId === undefined) return [];
-  const attemptId = text(data, "attemptId") ?? String(number(data, "attempt") ?? 1);
   const attempt = number(data, "attempt");
-  const messageId = durableChatMessageId(event.runId, operationId, attemptId);
-  const retried = state.openedOperations.has(operationId) && (attempt === undefined || attempt > 1);
+  const messageId = state.messageId ?? durableChatMessageId(event.runId, operationId);
+  const opened = state.openedOperations.has(operationId);
+  const retried = opened && (attempt === undefined || attempt > 1);
   const events: ClientStreamEvent[] = [];
   if (retried && state.messageId !== undefined) {
     // Discard the partial attempt but keep the message identity the reducer already holds.
     events.push({ type: "message_reset", messageId: state.messageId, runId: event.runId });
-  } else {
+  } else if (!opened) {
+    // A replay can start at the attempt rather than at `model_started`.
     events.push({ type: "message_start", messageId, role: "assistant", runId: event.runId });
   }
   state.openedOperations.add(operationId);
@@ -201,8 +204,7 @@ function mapModelDelta(
   const kind = text(nested, "type");
   if (nested === undefined || kind === undefined) return [];
   const operationId = text(data, "operationId") ?? "model";
-  const attemptId = text(data, "attemptId") ?? "1";
-  const messageId = state.messageId ?? durableChatMessageId(event.runId, operationId, attemptId);
+  const messageId = state.messageId ?? durableChatMessageId(event.runId, operationId);
   state.messageId = messageId;
   const turn = number(nested, "turn");
 
@@ -346,8 +348,7 @@ function mapModelCompleted(
   state: DurableChatMapState,
 ): ClientStreamEvent[] {
   const operationId = text(data, "operationId") ?? "model";
-  const attemptId = text(data, "attemptId") ?? "1";
-  const messageId = state.messageId ?? durableChatMessageId(event.runId, operationId, attemptId);
+  const messageId = state.messageId ?? durableChatMessageId(event.runId, operationId);
   state.messageId = messageId;
   const result = asRecord(data?.result);
   const choice = assistantParts(result?.choice);
@@ -395,9 +396,11 @@ function mapToolStarted(
   data: JsonObject | undefined,
   state: DurableChatMapState,
 ): ClientStreamEvent[] {
+  const operationId = text(data, "operationId");
   const call = asToolCall(asRecord(data?.input)?.toolCall);
-  if (call === undefined) return [];
-  const messageId = state.messageId ?? durableChatMessageId(event.runId, "tools", "1");
+  if (operationId === undefined || call === undefined) return [];
+  state.tools.set(operationId, call);
+  const messageId = state.messageId ?? durableChatMessageId(event.runId, operationId);
   return [toolCallEnd(event.runId, messageId, call)];
 }
 
@@ -406,12 +409,14 @@ function mapToolCompleted(
   data: JsonObject | undefined,
   state: DurableChatMapState,
 ): ClientStreamEvent[] {
-  const call = asToolCall(asRecord(data?.input)?.toolCall);
+  const operationId = text(data, "operationId");
+  // `tool_completed` carries only the result; the call was recorded by `tool_started`.
+  const call = operationId === undefined ? undefined : state.tools.get(operationId);
   const saved = asRecord(data?.result);
   const output = asToolOutput(saved?.output);
   if (output === undefined) return [];
-  const messageId = state.messageId ?? durableChatMessageId(event.runId, "tools", "1");
-  const toolCallId = call?.toolCallId ?? text(data, "operationId") ?? "tool";
+  const messageId = state.messageId ?? durableChatMessageId(event.runId, operationId ?? "tools");
+  const toolCallId = call?.toolCallId ?? operationId ?? "tool";
   const failed = saved?.failed === true;
   const result: ClientStreamEvent = {
     type: "tool_result",
@@ -589,6 +594,7 @@ function fork(state: DurableChatMapState, sequence: number): DurableChatMapState
     sequence,
     openedOperations: new Set(state.openedOperations),
     openedParts: new Set(state.openedParts),
+    tools: new Map(state.tools),
     runOpened: state.runOpened,
   };
 }

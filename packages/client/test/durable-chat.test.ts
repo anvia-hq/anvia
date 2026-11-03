@@ -69,14 +69,13 @@ function types(events: readonly ClientStreamEvent[]): string[] {
 describe("durable chat event mapping", () => {
   it("opens the run and an assistant message on submit", () => {
     const mapped = mapAll([event(1, "submitted", { prompt: "hi" })]);
-    expect(types(mapped)).toEqual(["run_start", "message_start"]);
+    expect(types(mapped)).toEqual(["run_start"]);
     expect(mapped[0]).toMatchObject({ type: "run_start", source: "agent", runId });
-    expect(mapped[1]).toMatchObject({ type: "message_start", role: "assistant", runId });
   });
 
   it("opens the run from the first status when no submitted event is in the journal", () => {
     const mapped = mapAll([event(1, "status", { status: "running" })]);
-    expect(types(mapped)).toEqual(["run_start", "message_start"]);
+    expect(types(mapped)).toEqual(["run_start"]);
   });
 
   it("starts a turn, generation and message on model_started", () => {
@@ -87,17 +86,44 @@ describe("durable chat event mapping", () => {
         input: { provider: "openai", modelId: "gpt-5", request: {} },
       }),
     ]);
-    expect(types(mapped)).toEqual([
-      "run_start",
-      "message_start",
-      "turn_start",
-      "generation_start",
-      "message_start",
-    ]);
-    expect(mapped[3]).toMatchObject({
+    expect(types(mapped)).toEqual(["run_start", "turn_start", "generation_start", "message_start"]);
+    expect(mapped[2]).toMatchObject({
       type: "generation_start",
       model: { provider: "openai", modelId: "gpt-5" },
     });
+  });
+
+  it("opens exactly one assistant message for a streamed model operation", () => {
+    const mapped = mapAll([
+      event(1, "submitted", {}),
+      event(2, "model_started", { operationId: "0:model:1", input: {} }),
+      event(3, "model_attempt_started", {
+        operationId: "0:model:1",
+        attemptId: "a1",
+        attempt: 1,
+      }),
+      event(4, "model_delta", {
+        operationId: "0:model:1",
+        attemptId: "a1",
+        event: { type: "text_delta", delta: "Hi", turn: 1 },
+      }),
+      event(5, "model_completed", {
+        operationId: "0:model:1",
+        attemptId: "a1",
+        result: { choice: [{ type: "text", text: "Hi" }] },
+      }),
+    ]);
+    const starts = mapped.filter((value) => value.type === "message_start");
+    expect(starts).toHaveLength(1);
+    const delta = mapped.find((value) => value.type === "text_delta");
+    expect(delta?.messageId).toBe(
+      starts[0]?.type === "message_start" ? starts[0].messageId : undefined,
+    );
+    expect(
+      mapped.some(
+        (value) => "messageId" in value && value.messageId === `${runId}:assistant:pending`,
+      ),
+    ).toBe(false);
   });
 
   it("maps text deltas and emits the start only once per part", () => {
@@ -227,33 +253,42 @@ describe("durable chat event mapping", () => {
     });
   });
 
-  it("maps tool_started and tool_completed into a call and its result", () => {
-    const started = mapAll([
+  it("maps tool_started and tool_completed into a matching call and result", () => {
+    const mapped = mapAll([
       event(1, "tool_started", { operationId: "0:tool:1", input: { toolCall } }),
-    ]);
-    expect(types(started)).toEqual(["tool_call_end"]);
-    expect(started[0]).toMatchObject({ toolCallId: "call-1", toolName: "echo" });
-
-    const completed = mapAll([
-      event(1, "tool_completed", {
+      event(2, "tool_completed", {
         operationId: "0:tool:1",
         result: { output: { type: "json", value: { ok: true } }, failed: false },
       }),
     ]);
-    expect(types(completed)).toEqual(["tool_result"]);
-    expect(completed[0]).toMatchObject({
-      type: "tool_result",
+    expect(types(mapped)).toEqual(["tool_call_end", "tool_result"]);
+    const end = mapped[0];
+    const result = mapped[1];
+    if (end?.type !== "tool_call_end" || result?.type !== "tool_result") {
+      throw new Error("Expected a tool call and its result.");
+    }
+    expect(result).toMatchObject({
+      toolCallId: "call-1",
+      toolName: "echo",
       result: { status: "success", output: { ok: true } },
     });
+    expect(result.partId).toBe(end.partId);
+    expect(result.messageId).toBe(end.messageId);
+  });
 
-    const failed = mapAll([
-      event(1, "tool_completed", {
+  it("maps a failed tool result with the recorded call identity", () => {
+    const mapped = mapAll([
+      event(1, "tool_started", { operationId: "0:tool:1", input: { toolCall } }),
+      event(2, "tool_completed", {
         operationId: "0:tool:1",
         result: { output: { type: "error-text", value: "boom" }, failed: true, error: "boom" },
       }),
     ]);
-    expect(failed[0]).toMatchObject({
-      type: "tool_result",
+    const result = mapped[1];
+    if (result?.type !== "tool_result") throw new Error("Expected a tool result.");
+    expect(result).toMatchObject({
+      toolCallId: "call-1",
+      toolName: "echo",
       result: { status: "error", error: { message: "boom" } },
     });
   });
@@ -340,7 +375,7 @@ describe("durable chat event mapping", () => {
   });
 
   it("keeps message identities stable across a replay", () => {
-    const id = durableChatMessageId(runId, "0:model:1", "1");
+    const id = durableChatMessageId(runId, "0:model:1");
     const first = mapAll([
       event(1, "model_started", { operationId: "0:model:1", input: {} }),
       event(2, "model_delta", {
@@ -565,7 +600,6 @@ describe("durable chat transport", () => {
     const iterator = transport
       .send({ request: request("messages"), abortSignal: controller.signal })
       [Symbol.asyncIterator]();
-    await iterator.next();
     await iterator.next();
     await iterator.next();
     controller.abort();

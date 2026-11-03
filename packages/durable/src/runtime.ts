@@ -571,7 +571,13 @@ export class DurableRuntime {
         throw new DurableConflictError("Session already has unfinished work.");
       if (tx.hasLaterStartedRun(id))
         throw new DurableConflictError("Session has advanced; create a new submission.");
-      for (const operation of tx.operations(id)) {
+      const operations = tx.operations(id);
+      // A run whose admission transaction rolled back has no committed history. Rebuild it from
+      // the session before execution so a retry never runs with less context than the original
+      // attempt; an over-limit history rejects the retry and leaves the run failed.
+      if (run.graphId === undefined && run.history.length === 0 && operations.length === 0)
+        inheritSessionHistory(tx, run);
+      for (const operation of operations) {
         if (
           (operation.kind === "model" ||
             operation.kind === "compaction" ||
@@ -639,10 +645,14 @@ export class DurableRuntime {
       .then(() => this.execute(id, controller.signal))
       .catch((error: unknown) => {
         if (!(error instanceof DurableLimitError)) throw error;
+        // Admission failed, so no work is pending: settle terminally so result() and the
+        // event stream end instead of waiting for an operator action that cannot help.
         this.store.transaction((tx) => {
           const run = requireRun(tx, id);
+          if (SETTLED.includes(run.status)) return;
           run.error = error.message;
-          setStatus(tx, run, "needs_attention");
+          delete run.nextAttemptAt;
+          setStatus(tx, run, "failed");
         });
       })
       .finally(() => {
@@ -668,29 +678,7 @@ export class DurableRuntime {
       const current = requireRun(tx, id);
       if (!["queued", "pending", "running", "retry_wait"].includes(current.status))
         return undefined;
-      if (current.status === "queued") {
-        if (current.graphId !== undefined) {
-          current.input = { messages: [promptMessage(graphInput(tx, current))] };
-        } else {
-          // A continued run picks up that run's whole conversation; a turn-limited one keeps
-          // its partial work. Others continue their session's latest settled run.
-          const previous =
-            current.continueFrom === undefined
-              ? tx.latestCompleted(current.sessionId)
-              : requireRun(tx, current.continueFrom);
-          current.history =
-            previous === undefined
-              ? []
-              : previous.status === "completed"
-                ? [...previous.history, ...(previous.outcome?.messages ?? [])]
-                : settledHistory(tx, previous);
-          if (previous?.contextCheckpoint !== undefined)
-            current.contextCheckpoint = previous.contextCheckpoint;
-          current.input = {
-            messages: [...current.history, promptMessage(current.prompt)],
-          };
-        }
-      }
+      if (current.status === "queued") inheritSessionHistory(tx, current);
       current.startedAt ??= new Date().toISOString();
       delete current.nextAttemptAt;
       delete current.error;
@@ -803,6 +791,33 @@ function requireRun(tx: DurableTransaction, id: string): DurableRunRecord {
   const run = tx.getRun(id);
   if (run === undefined) throw new DurableNotFoundError(`Unknown durable run: ${id}`);
   return run;
+}
+
+const SETTLED: readonly string[] = ["completed", "failed", "cancelled"];
+
+/**
+ * Copy a run's inherited conversation into the record before execution. A continued run picks up
+ * that run's whole conversation; a turn-limited one keeps its partial work. Others continue their
+ * session's latest settled run. Persisting this here keeps the invariant that a run record always
+ * holds the history it will execute with, including after a rolled-back admission.
+ */
+function inheritSessionHistory(tx: DurableTransaction, run: DurableRunRecord): void {
+  if (run.graphId !== undefined) {
+    run.input = { messages: [promptMessage(graphInput(tx, run))] };
+    return;
+  }
+  const previous =
+    run.continueFrom === undefined
+      ? tx.latestCompleted(run.sessionId)
+      : requireRun(tx, run.continueFrom);
+  run.history =
+    previous === undefined
+      ? []
+      : previous.status === "completed"
+        ? [...previous.history, ...(previous.outcome?.messages ?? [])]
+        : settledHistory(tx, previous);
+  if (previous?.contextCheckpoint !== undefined) run.contextCheckpoint = previous.contextCheckpoint;
+  run.input = { messages: [...run.history, promptMessage(run.prompt)] };
 }
 
 function setStatus(

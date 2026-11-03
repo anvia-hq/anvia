@@ -187,7 +187,7 @@ describe("durable observability", () => {
         prompt: "hi",
         trace: { metadata: { note: "x".repeat(200) } },
       }),
-    ).rejects.toThrow("Durable payload byte limit exceeded.");
+    ).rejects.toThrow(/Durable payload byte limit exceeded: run\.trace is \d+ bytes; limit is 100/);
   });
 
   it("traces task-owned agent runs under the task's session and trace options", async () => {

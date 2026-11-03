@@ -125,6 +125,14 @@ retries and future turns.
 Set the runtime's `limits.maxPayloadBytes` and, when using the HTTP bridge,
 `maxBodyBytes` to fit your application's upload policy. Base64 encoding increases
 payload size, and history/model checkpoints also count toward runtime payload limits.
+The payload limit is per persisted field, so a large session history consumes it
+alongside the prompt, and the model request (which repeats the prompt and history
+plus the provider envelope) is usually the first value to overflow. The HTTP body
+limit is the binding ceiling for uploads: the 64 KiB default rejects most images
+and long documents before the payload limit applies. An over-limit admission is a
+terminal failure, not a blocked run: `result()` rejects with `DurableRunError`
+(`status: "failed"`) and the event stream ends. Retrying recomputes the inherited
+history, so raise the limit and restart before retrying.
 This release reads existing text-only journals; older releases cannot read journals
 containing structured prompts. Hosts reading `run.prompt` must handle both strings
 and user messages.

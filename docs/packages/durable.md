@@ -84,7 +84,10 @@ if (snapshot.run.status === "needs_attention" && snapshot.run.blockedOperation) 
 does not override manual recovery. Retry is rejected if a later submission has started and advanced the
 session. Cancelling a successor before it starts does not advance the session. Explicit
 retry resets the attempt counters of unfinished model operations; completed results remain
-intact. Model requests use one core attempt per execution. Model-turn limits and committed usage span approval resumptions and restarts.
+intact. A run whose admission never committed has no saved history, so retry recomputes it from
+the session's latest settled run before executing and fails with the same `DurableLimitError` if
+it still does not fit; a retry never runs with less context than the original attempt.
+Model requests use one core attempt per execution. Model-turn limits and committed usage span approval resumptions and restarts.
 
 ## Run discovery and inspection
 
@@ -508,10 +511,16 @@ const handleRequest = createDurableHandler({
 | POST   | `/durable/runs/:id/cancel`           | Persist cancellation                                                              |
 
 Mutation endpoints other than submit and steer return 204. JSON bodies default to a 64 KiB limit,
-configurable through `maxBodyBytes`. Validation errors return 400, denial 403, missing runs
+configurable through `maxBodyBytes`. That body limit is the binding ceiling for uploads: it rejects
+base64 images and long documents long before the runtime's payload limit applies, so configure it
+for the largest request you accept. Validation errors return 400, denial 403, missing runs
 404, conflicts 409, oversized bodies 413, unsupported media types 415, and unexpected errors
-500 without internal diagnostics. Responses disable caching. SSE frames include the durable
-event sequence as `id`; transport errors close the stream without cancelling execution.
+500 without internal diagnostics. Admission over the payload limit returns 413 with
+`{ error, code: "payload_too_large", field }`; capacity returns 429 with
+`{ error, code: "capacity_exceeded" }`. An over-limit admission is a terminal run failure, so
+`result()` rejects and the event stream ends instead of waiting. Responses disable caching. SSE
+frames include the durable event sequence as `id`; transport errors close the stream without
+cancelling execution.
 
 ```ts
 import { DurableClient } from "@anvia/client/durable";

@@ -54,26 +54,62 @@ must enforce its own shutdown grace period, then terminate a stuck process.
 
 ## Admission and payload limits
 
-The defaults above are finite and configurable positive integers. Pending limits include all
-unfinished states and owned children. Capacity checks and insertion happen in one transaction;
-repeating an identical existing submission still succeeds at capacity. A graph or child-agent
-creation that exceeds capacity rolls back atomically. Terminal executions release capacity.
+The defaults above are finite and configurable positive integers. Each one applies to a different
+thing:
 
-The payload limit measures UTF-8 encoded JSON, separately for run prompt/input/history/responses/
-outcome, task input/checkpoint/signals/successful output, and operation input/result. Operation count is per
-execution. These limits bound persisted values; they do not prevent application code from first
-allocating a large object. HTTP request bodies retain their independent `maxBodyBytes` limit.
-Changes to control/status alone remain possible when limits are lowered on restart. Failure
-diagnostics use a separate 4,096-character bound so a small payload quota cannot prevent
-cancellation or failure propagation through an owned tree. Copying an owned agent output that
-was already admitted with its run preserves that admission even after quotas are lowered.
+- `maxPayloadBytes` (1,048,576 bytes) bounds each persisted value, measured as UTF-8 encoded JSON:
+  run prompt, trace, input, history, responses, steering, outcome, context checkpoint, and
+  exhaustion; task trace, input, checkpoint, signals, and successful output; operation input and
+  result; and `model_delta` events.
+- `maxPendingRuns` and `maxPendingTasks` (10,000 each) bound unfinished work, including owned
+  children.
+- `maxOperations` (10,000) bounds journal operations per run or task.
+- HTTP `maxBodyBytes` (65,536 bytes) bounds each request body, measured as received bytes.
 
-Admission rejects with `DurableLimitError` (HTTP 429). An oversized external effect result leaves
-its started intent and blocks for reconciliation, rather than silently running the effect again.
-An oversized checkpoint/transition blocks the task for operator attention. Increase the limit
-and explicitly retry, or cancel it. Limits do not expire old data: automatic retention and durable
-execution deadlines remain separate work. Do not delete journal rows manually; deduplication,
-session history, event cursors, and recovery depend on them.
+The payload limit is a per-field cap on a single write, not a session budget. The same content is
+counted again wherever it is persisted: a prompt lives in `run.prompt`, again in `run.input`, again
+in the model operation request with the provider/model envelope, and later in `history` and
+`outcome`. A session therefore stops fitting well before any single prompt reaches
+`maxPayloadBytes`. Budget for "prompt + history + request envelope ≤ `maxPayloadBytes`"; `run.input`
+is usually the field that crosses first, and the error names it.
+
+The HTTP body limit is the binding ceiling for uploads. Base64 images and long documents must fit
+`maxBodyBytes` before the runtime sees them, and the default 64 KiB is far below the default payload
+limit, so any image over about 48 KiB binary is rejected with 413 before the payload limit is
+consulted. Raise `maxBodyBytes` to at least the largest encoded request you accept; the payload
+limit still applies afterwards. This release does not warn at startup when the two limits disagree;
+configure and review them together.
+
+Pending limits include all unfinished states and owned children. Capacity checks and insertion
+happen in one transaction; repeating an identical existing submission still succeeds at capacity. A
+graph or child-agent creation that exceeds capacity rolls back atomically. Terminal executions
+release capacity. Limits bound persisted values; they do not prevent application code from first
+allocating a large object. Changes to control/status alone remain possible when limits are lowered
+on restart. Failure diagnostics use a separate 4,096-character bound so a small payload quota cannot
+prevent cancellation or failure propagation through an owned tree. Copying an owned agent output
+that was already admitted with its run preserves that admission even after quotas are lowered.
+
+Admission rejects with `DurableLimitError`, which carries a `code` and, for payload limits, the
+`field` plus the `limit`/`actual` byte counts in the message and on the error. `payload_too_large`
+can never succeed for the same request; `capacity_exceeded` clears as unfinished work settles. Over
+the HTTP bridge, payload limits return 413 and capacity returns 429, both with
+`{ error, code, field? }`; a request body over `maxBodyBytes` also returns 413 and includes the
+limit. `DurableHttpError` in `@anvia/client` exposes `status`, `code`, `field`, and the server
+message.
+
+A run that cannot start because its prompt, input, or inherited history exceeds the payload limit
+ends in terminal `failed`, not `needs_attention`: no work is pending, so there is nothing for an
+operator to unblock. `run.result()` rejects with `DurableRunError` (`status: "failed"`) and the
+event stream ends. Retrying such a run recomputes the inherited history from the session's latest
+settled run before executing, so a retry never runs with less context than the original attempt;
+when the history still does not fit, `retry()` rejects with the same `DurableLimitError` and the run
+stays failed. Raise `maxPayloadBytes`, restart, and retry to continue the session.
+
+An oversized external effect result leaves its started intent and blocks for reconciliation, rather
+than silently running the effect again. An oversized checkpoint/transition blocks the task for
+operator attention. Increase the limit and explicitly retry, or cancel it. Limits do not expire old
+data: automatic retention and durable execution deadlines remain separate work. Do not delete
+journal rows manually; deduplication, session history, event cursors, and recovery depend on them.
 
 Custom stores now implement `pendingCounts()` and `operationCount()` inside transactions,
 and `metrics()` outside them. All store failures are fatal; perform request validation before

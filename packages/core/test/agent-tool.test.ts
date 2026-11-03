@@ -426,21 +426,6 @@ describe("Agent construction", () => {
     expect(agent).not.toHaveProperty("build");
   });
 
-  it("rejects invalid run limits before execution", () => {
-    const model = new QueueModel([]);
-    const agent = new Agent({ id: "agent", model });
-
-    expect(() => new Agent({ id: "agent", model, maxTurns: Number.NaN })).toThrow(
-      "maxTurns must be a nonnegative safe integer",
-    );
-    expect(() => agent.generate({ prompt: "hello", toolConcurrency: Number.NaN })).toThrow(
-      "toolConcurrency must be a positive safe integer",
-    );
-    expect(() => agent.stream({ prompt: "hello", toolConcurrency: 0 })).toThrow(
-      "toolConcurrency must be a positive safe integer",
-    );
-  });
-
   it("rejects duplicate executable names across tool indexes", () => {
     const first = emptyToolIndex([{ ...addTool, name: "shared" }]);
     const second = emptyToolIndex([{ ...addTool, name: "shared" }]);
@@ -550,13 +535,6 @@ describe("Agent construction", () => {
 });
 
 describe("Agent.asTool", () => {
-  it("stores a stable trimmed agent id", () => {
-    const model = new QueueModel([]);
-    const agent = new Agent({ id: " support ", model });
-
-    expect(agent.id).toBe("support");
-  });
-
   it("rejects empty agent ids", () => {
     const model = new QueueModel([]);
 
@@ -666,18 +644,5 @@ describe("Agent.asTool", () => {
     const tool = agent.asTool({ name: "ask_agent", maxTurns: 0, suspension: "reject" });
 
     await expect(tool.call({ prompt: "loop" })).rejects.toBeInstanceOf(MaxTurnsError);
-  });
-
-  it("registers multiple wrapped agents as distinct tools", async () => {
-    const first = new Agent({
-      id: "test-agent",
-      model: new QueueModel([response([AssistantContent.text("one")])]),
-    }).asTool({ name: "ask_one", suspension: "reject" });
-    const second = new Agent({
-      id: "test-agent",
-      model: new QueueModel([response([AssistantContent.text("two")])]),
-    }).asTool({ name: "ask_two", suspension: "reject" });
-    await expect(first.call({ prompt: "run" })).resolves.toBe("one");
-    await expect(second.call({ prompt: "run" })).resolves.toBe("two");
   });
 });

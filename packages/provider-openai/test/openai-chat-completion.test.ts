@@ -99,17 +99,6 @@ describe("OpenAI chat-completions client path", () => {
     });
   });
 
-  it("keeps protocol selection explicit for custom base URLs", () => {
-    const openai = new OpenAIClient({
-      apiKey: "test",
-      baseUrl: "https://provider.example.com/v1",
-    });
-
-    expect(openai.completionModel({ modelId: "custom-chat-model", api: "chat" })).toBeInstanceOf(
-      OpenAIChatCompletionModel,
-    );
-  });
-
   it("preserves assistant reasoning and provider tool call ids across tool turns", () => {
     const params = toOpenAIChatCompletionParams("kimi-k2.6", {
       chatHistory: [

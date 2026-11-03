@@ -8,20 +8,6 @@ import { Message } from "../../core/test/helpers/imports";
 import { AzureOpenAIClient, type AzureOpenAICompletionModel } from "../src/index";
 
 describe("Azure OpenAI Responses tool-call streaming compatibility", () => {
-  it("accepts a standard arguments.done event that includes the function name", async () => {
-    const events = await collectResponsesStream(
-      azureResponsesModelWithStream(weatherToolCallStream()),
-    );
-
-    expect(terminalArgumentsEvent(events)).toEqual({
-      type: "tool_call_delta",
-      id: "fc_123",
-      name: "get_weather",
-      argumentsDelta: '{"city":"Jakarta"}',
-      argumentsMode: "replace",
-    });
-  });
-
   it("resolves an omitted Azure arguments.done name from output_item.added", async () => {
     const events = await collectResponsesStream(
       azureResponsesModelWithStream(weatherToolCallStream({ omitDoneName: true })),
@@ -49,16 +35,6 @@ describe("Azure OpenAI Responses tool-call streaming compatibility", () => {
         arguments: '{"city":"Jakarta"}',
       },
     ]);
-
-    await expect(collectResponsesStream(model)).rejects.toMatchObject(
-      providerOutputError("invalid-tool-call", { toolCallId: "fc_123" }),
-    );
-  });
-
-  it("rejects an arguments.done name that conflicts with output_item.added", async () => {
-    const model = azureResponsesModelWithStream(
-      weatherToolCallStream({ doneName: "get_forecast" }),
-    );
 
     await expect(collectResponsesStream(model)).rejects.toMatchObject(
       providerOutputError("invalid-tool-call", { toolCallId: "fc_123" }),

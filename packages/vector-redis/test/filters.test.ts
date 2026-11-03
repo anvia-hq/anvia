@@ -60,5 +60,11 @@ describe("filterToRedisQuery", () => {
     expect(() =>
       filterToRedisQuery({ filter: { type: "in", key: "tenant", values: [] }, metadataSchema }),
     ).toThrow(/Redis "in" filter/);
+    expect(() =>
+      filterToRedisQuery({
+        filter: { type: "eq", key: "tenantId", value: "tenant-1" },
+        metadataSchema,
+      }),
+    ).toThrow(/metadataSchema/);
   });
 });

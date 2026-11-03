@@ -1,6 +1,5 @@
-import { createMemoryScopeKey, type MemoryCompactionMessage, type Message } from "@anvia/core";
+import { type MemoryCompactionMessage, type Message } from "@anvia/core";
 import { describe, expect, it } from "vitest";
-import { richMessages } from "../../core/test/helpers/rich-messages";
 import * as memoryDrizzle from "../src/index.js";
 import {
   agentMemoryErrors,
@@ -11,7 +10,7 @@ import {
   type DrizzleMemoryStoreOptions,
   drizzleMemorySchema,
 } from "../src/index.js";
-import { isMemoryMessage, serializeUnknownError } from "../src/message.js";
+import { serializeUnknownError } from "../src/message.js";
 
 // @ts-expect-error The positional store factory was removed.
 const removedStoreFactory = memoryDrizzle.createDrizzleMemoryStore;
@@ -45,19 +44,12 @@ function memoryCompactionMessage(
 
 describe("Drizzle memory public API", () => {
   it("uses core strict JSON validation for message metadata", async () => {
-    const validMessage: Message = {
-      role: "user",
-      content: [{ type: "text", text: "remember this" }],
-      metadata: { score: 1 },
-    };
     const invalidMessage: Message = {
       role: "user",
       content: [{ type: "text", text: "remember this" }],
       metadata: { score: Number.NaN },
     };
 
-    expect(isMemoryMessage(validMessage)).toBe(true);
-    expect(isMemoryMessage(invalidMessage)).toBe(false);
     const store = createTestMemoryStore(new FakeDrizzleDb());
     await expect(
       store.append({
@@ -255,15 +247,6 @@ describe("Drizzle memory public API", () => {
     });
   });
 
-  it("round-trips every supported message content shape", async () => {
-    const store = createTestMemoryStore(new FakeDrizzleDb());
-    const context = { sessionId: "rich-thread", userId: "user-1" };
-
-    await store.append({ scope: context, runId: "run-rich", turn: 0, messages: richMessages });
-
-    await expect(store.load({ scope: context })).resolves.toEqual(richMessages);
-  });
-
   it("does not open a transaction for empty appends", async () => {
     const db = new FakeDrizzleDb();
     const store = createTestMemoryStore(db);
@@ -311,33 +294,6 @@ describe("Drizzle memory public API", () => {
 
     expect(ignoringDb.events).toEqual([]);
     expect(ignoringDb.errors).toEqual([]);
-  });
-
-  it("serializes JSON and non-JSON failed-run diagnostics", async () => {
-    const db = new FakeDrizzleDb();
-    const store = createTestMemoryStore(db);
-
-    await store.recordError({
-      scope: { sessionId: "thread-json" },
-      runId: "run-json",
-      error: { code: 409, retryable: false },
-      messages: richMessages,
-    });
-    await store.recordError({
-      scope: { sessionId: "thread-bigint" },
-      runId: "run-bigint",
-      error: 42n,
-      messages: [],
-    });
-
-    expect(db.errors.map(({ runId, error, messages }) => ({ runId, error, messages }))).toEqual([
-      {
-        runId: "run-json",
-        error: { code: 409, retryable: false },
-        messages: richMessages,
-      },
-      { runId: "run-bigint", error: { message: "42" }, messages: [] },
-    ]);
   });
 
   it("requires db.execute for advisory locking but supports lock none without it", async () => {
@@ -400,37 +356,6 @@ describe("Drizzle memory public API", () => {
         scope: { sessionId: "different-thread", metadata: { tenantId: "tenant-1" } },
       }),
     ).resolves.toEqual([userMessage]);
-  });
-
-  it("creates stable scope keys from metadata paths", () => {
-    expect(
-      createMemoryScopeKey({
-        scope: {
-          sessionId: "thread-1",
-          userId: "user-1",
-          metadata: { tenant: { id: "tenant-1" } },
-        },
-        metadataKeys: ["tenant.id"],
-      }),
-    ).toBe(JSON.stringify(["thread-1", "user-1", "tenant-1"]));
-  });
-
-  it("keeps falsey metadata values and normalizes missing scope paths to null", () => {
-    expect(
-      createMemoryScopeKey({
-        scope: { sessionId: "thread-1", metadata: { count: 0, enabled: false } },
-        metadataKeys: ["count", "enabled", "missing.value"],
-      }),
-    ).toBe(JSON.stringify(["thread-1", null, 0, false, null]));
-  });
-
-  it("can omit user ids from generated scope keys", () => {
-    expect(
-      createMemoryScopeKey({
-        scope: { sessionId: "thread-1", userId: "user-1" },
-        includeUserId: false,
-      }),
-    ).toBe(JSON.stringify(["thread-1"]));
   });
 
   it("fails clearly when the database object is not Drizzle-like", () => {

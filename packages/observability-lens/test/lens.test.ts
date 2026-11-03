@@ -1,7 +1,7 @@
 import { defineEvalSuite, exactMatch, selectPromptOutput } from "@anvia/core/evals";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { resolveLensConfig } from "../src/config";
-import { createLensRedactor, DEFAULT_PATTERNS, passesLuhn } from "../src/redaction";
+import { createLensRedactor } from "../src/redaction";
 import { LensClient } from "../src/tracing";
 import { startOtlpServer } from "./otlp-server";
 
@@ -91,23 +91,6 @@ describe("createLensRedactor", () => {
     expect(createLensRedactor().redact({ order: "1234 5678 9012 3456" })).toEqual({
       order: "1234 5678 9012 3456",
     });
-  });
-
-  it("exposes the shared pattern set and Luhn helper", () => {
-    expect(DEFAULT_PATTERNS.map((pattern) => pattern.name)).toEqual([
-      "googleApiKey",
-      "githubToken",
-      "awsAccessKeyId",
-      "slackToken",
-      "email",
-      "creditCard",
-      "ipv4",
-      "phone",
-      "jwt",
-      "apiKey",
-      "bearer",
-    ]);
-    expect(passesLuhn("4111111111111111")).toBe(true);
   });
 });
 

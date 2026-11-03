@@ -18,6 +18,7 @@ import {
   defineGuardrailPolicy,
   defineInputGuardrail,
   getAssistantGenerationMetadata,
+  createMemoryScopeKey,
   type MemoryAppendOptions,
   type MemoryErrorOptions,
   type MemorySavePolicy,
@@ -260,108 +261,69 @@ describe("agent memory", () => {
     expect(store.appendCalls[0]?.messages).toEqual([prompt]);
   });
 
-  it("exposes stored history to lifecycle, observers, and input guardrails before a buffered run", async () => {
-    const previous = [Message.user("Previous question"), Message.assistant("Previous answer")];
-    const store = new RecordingMemoryStore({ session_1: previous });
-    const model = new QueueModel([response([AssistantContent.text("done")])]);
-    let lifecycleHistory: unknown;
-    let observerHistory: readonly unknown[] | undefined;
-    let guardrailHistory: MessageType[] | undefined;
-    const agent = new Agent({
-      id: "test-agent",
-      model,
-      memory: { store },
-      lifecycle: {
-        onStart({ history }) {
-          lifecycleHistory = history;
+  it.each(["buffered", "streaming"] as const)(
+    "exposes stored history to lifecycle, observers, and input guardrails before a %s run exactly once",
+    async (mode) => {
+      const previous = [Message.user("Previous question"), Message.assistant("Previous answer")];
+      const store = new RecordingMemoryStore({ session_1: previous });
+      const model =
+        mode === "buffered"
+          ? new QueueModel([response([AssistantContent.text("done")])])
+          : new StreamingQueueModel([successfulTextStream("done")]);
+      let lifecycleHistory: unknown;
+      let observerHistory: readonly unknown[] | undefined;
+      let guardrailHistory: MessageType[] | undefined;
+      const agent = new Agent({
+        id: "test-agent",
+        model,
+        memory: { store },
+        lifecycle: {
+          onStart({ history }) {
+            lifecycleHistory = history;
+          },
         },
-      },
-      observability: {
-        observers: {
-          test: createObserver({
-            startRun({ history }) {
-              observerHistory = history;
-              return { end() {} };
-            },
-          }),
+        observability: {
+          observers: {
+            test: createObserver({
+              startRun({ history }) {
+                observerHistory = history;
+                return { end() {} };
+              },
+            }),
+          },
         },
-      },
-      guardrails: defineGuardrailPolicy({
-        id: "history-policy",
-        input: [
-          defineInputGuardrail({
-            id: "history-guardrail",
-            check({ history }, { allow }) {
-              guardrailHistory = history;
-              return allow();
-            },
-          }),
-        ],
-      }),
-    });
+        guardrails: defineGuardrailPolicy({
+          id: "history-policy",
+          input: [
+            defineInputGuardrail({
+              id: "history-guardrail",
+              check({ history }, { allow }) {
+                guardrailHistory = history;
+                return allow();
+              },
+            }),
+          ],
+        }),
+      });
 
-    await agent.generate({ prompt: "next", session: { sessionId: "session_1" } });
+      if (mode === "buffered") {
+        await agent.generate({ prompt: "next", session: { sessionId: "session_1" } });
+      } else {
+        for await (const _event of agent.stream({
+          prompt: "next",
+          session: { sessionId: "session_1" },
+        })) {
+          // exhaust the stream
+        }
+      }
 
-    expect(lifecycleHistory).toEqual(previous);
-    expect(observerHistory).toEqual(previous);
-    expect(guardrailHistory).toEqual(previous);
-    expect(store.loadCalls).toHaveLength(1);
-    expect(model.requests[0]?.chatHistory).toEqual([...previous, Message.user("next")]);
-  });
-
-  it("exposes stored history before a streaming run without loading it twice", async () => {
-    const previous = [Message.user("Previous question"), Message.assistant("Previous answer")];
-    const store = new RecordingMemoryStore({ session_1: previous });
-    const model = new StreamingQueueModel([successfulTextStream("done")]);
-    let lifecycleHistory: unknown;
-    let observerHistory: readonly unknown[] | undefined;
-    let guardrailHistory: MessageType[] | undefined;
-    const agent = new Agent({
-      id: "test-agent",
-      model,
-      memory: { store },
-      lifecycle: {
-        onStart({ history }) {
-          lifecycleHistory = history;
-        },
-      },
-      observability: {
-        observers: {
-          test: createObserver({
-            startRun({ history }) {
-              observerHistory = history;
-              return { end() {} };
-            },
-          }),
-        },
-      },
-      guardrails: defineGuardrailPolicy({
-        id: "history-policy",
-        input: [
-          defineInputGuardrail({
-            id: "history-guardrail",
-            check({ history }, { allow }) {
-              guardrailHistory = history;
-              return allow();
-            },
-          }),
-        ],
-      }),
-    });
-
-    for await (const _event of agent.stream({
-      prompt: "next",
-      session: { sessionId: "session_1" },
-    })) {
-      // exhaust the stream
-    }
-
-    expect(lifecycleHistory).toEqual(previous);
-    expect(observerHistory).toEqual(previous);
-    expect(guardrailHistory).toEqual(previous);
-    expect(store.loadCalls).toHaveLength(1);
-    expect(model.requests[0]?.chatHistory).toEqual([...previous, Message.user("next")]);
-  });
+      expect(lifecycleHistory).toEqual(previous);
+      expect(observerHistory).toEqual(previous);
+      expect(guardrailHistory).toEqual(previous);
+      expect(store.loadCalls).toHaveLength(1);
+      expect(model.requests[0]?.chatHistory).toEqual([...previous, Message.user("next")]);
+    },
+  );
 
   it("does not persist a session prompt rejected by an input guardrail", async () => {
     const previous = [Message.user("Previous question"), Message.assistant("Previous answer")];
@@ -924,5 +886,38 @@ describe("agent memory", () => {
         }) => unknown
       )({ messages: [Message.user("hello")], session: { sessionId: "session_1" } }),
     ).toThrow("cannot be combined");
+  });
+});
+
+describe("createMemoryScopeKey", () => {
+  it("creates stable scope keys from metadata paths", () => {
+    expect(
+      createMemoryScopeKey({
+        scope: {
+          sessionId: "thread-1",
+          userId: "user-1",
+          metadata: { tenant: { id: "tenant-1" } },
+        },
+        metadataKeys: ["tenant.id"],
+      }),
+    ).toBe(JSON.stringify(["thread-1", "user-1", "tenant-1"]));
+  });
+
+  it("keeps falsey metadata values and normalizes missing scope paths to null", () => {
+    expect(
+      createMemoryScopeKey({
+        scope: { sessionId: "thread-1", metadata: { count: 0, enabled: false } },
+        metadataKeys: ["count", "enabled", "missing.value"],
+      }),
+    ).toBe(JSON.stringify(["thread-1", null, 0, false, null]));
+  });
+
+  it("can omit user ids from generated scope keys", () => {
+    expect(
+      createMemoryScopeKey({
+        scope: { sessionId: "thread-1", userId: "user-1" },
+        includeUserId: false,
+      }),
+    ).toBe(JSON.stringify(["thread-1"]));
   });
 });

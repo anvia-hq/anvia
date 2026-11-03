@@ -13,7 +13,6 @@ import {
   nextPaint,
   nextSequence,
   nextTranscriptId,
-  readJsonl,
   resetTranscriptSequence,
   resizeTextarea,
   setTranscriptSequence,
@@ -211,24 +210,6 @@ describe("Studio transcript helpers", () => {
         ],
       }),
     ).toBe('plain\nnested\nlookup({\n  "id": 1\n})\nresult\nimage');
-  });
-
-  it("reads jsonl streams and awaits async event handlers", async () => {
-    const events: unknown[] = [];
-    const stream = new ReadableStream<Uint8Array>({
-      start(controller) {
-        const encoder = new TextEncoder();
-        controller.enqueue(encoder.encode('{"type":"first"}\n{"type":"second"}\n'));
-        controller.close();
-      },
-    });
-
-    await readJsonl(stream, async (event) => {
-      await Promise.resolve();
-      events.push(event);
-    });
-
-    expect(events).toEqual([{ type: "first" }, { type: "second" }]);
   });
 
   it("handles textarea values, resizing, and next paint", async () => {

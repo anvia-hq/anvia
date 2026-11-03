@@ -1,4 +1,3 @@
-import { readJsonlStream } from "@anvia/client/transport";
 import type { Message } from "@anvia/core/completion";
 import type { ChangeEvent } from "react";
 import { formatToolValue } from "./format";
@@ -125,15 +124,6 @@ function contentText(value: unknown): string {
     return value.content.map(contentText).filter(Boolean).join("\n");
   }
   return typeof value.type === "string" ? value.type : "";
-}
-
-export async function readJsonl(
-  stream: ReadableStream<Uint8Array>,
-  onEvent: (event: unknown) => void | Promise<void>,
-): Promise<void> {
-  for await (const event of readJsonlStream(stream)) {
-    await onEvent(event);
-  }
 }
 
 export function nextPaint(): Promise<void> {

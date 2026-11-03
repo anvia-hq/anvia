@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import * as publicApi from "../src/index.js";
 import { type WeaviateClientLike, WeaviateVectorClient } from "../src/index.js";
 
 const connectToCustom = vi.hoisted(() =>
@@ -15,13 +14,6 @@ const connectToCustom = vi.hoisted(() =>
 vi.mock("weaviate-client", () => ({ default: { connectToCustom } }));
 
 describe("WeaviateVectorClient", () => {
-  it("exports the client without legacy index or connect APIs", () => {
-    expect(publicApi).toHaveProperty("WeaviateVectorClient");
-    expect(publicApi).not.toHaveProperty("WeaviateVectorIndex");
-    expect(publicApi.WeaviateVectorStore).not.toHaveProperty("connect");
-    expect(publicApi.WeaviateVectorStore.prototype).not.toHaveProperty("index");
-    expect(publicApi.WeaviateVectorStore.prototype).not.toHaveProperty("asTool");
-  });
   it("uses explicit lifecycle, replacement, and raw-vector search", async () => {
     const deleteMany = vi.fn(async () => undefined);
     const insertMany = vi.fn(async () => undefined);

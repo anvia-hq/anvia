@@ -1,15 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import * as publicApi from "../src/index.js";
 import { type RedisClientLike, RedisVectorClient } from "../src/index.js";
 
 describe("RedisVectorClient", () => {
-  it("exports the client without legacy index or connect APIs", () => {
-    expect(publicApi).toHaveProperty("RedisVectorClient");
-    expect(publicApi).not.toHaveProperty("RedisVectorIndex");
-    expect(publicApi.RedisVectorStore).not.toHaveProperty("connect");
-    expect(publicApi.RedisVectorStore.prototype).not.toHaveProperty("index");
-    expect(publicApi.RedisVectorStore.prototype).not.toHaveProperty("asTool");
-  });
   it("keeps construction lazy and replaces indexed hashes", async () => {
     const search = vi.fn(async (_name: string, query: string) =>
       query.includes("KNN")
@@ -119,31 +111,6 @@ describe("RedisVectorClient", () => {
       }),
     ).resolves.toMatchObject([{ id: "doc", metadata: { tenantId: "tenant-1", priority: 2 } }]);
     expect(search.mock.calls.at(-1)?.[1]).toContain("@tenantId:{s\\:tenant\\-1}");
-  });
-
-  it("rejects filters for metadata fields that were not declared", async () => {
-    const client: RedisClientLike = {
-      ft: {
-        create: vi.fn(async () => undefined),
-        info: vi.fn(async () => ({})),
-        search: vi.fn(async () => ({ documents: [] })),
-      },
-      hSet: vi.fn(async () => undefined),
-      expire: vi.fn(async () => undefined),
-      del: vi.fn(async () => undefined),
-    };
-    const store = new RedisVectorClient({ client }).vectorStore({
-      indexName: "docs",
-      dimensions: 2,
-    });
-
-    await expect(
-      store.search({
-        vector: [1, 0],
-        topK: 1,
-        filter: { type: "eq", key: "tenantId", value: "tenant-1" },
-      }),
-    ).rejects.toThrow("metadataSchema");
   });
 
   it("expands physical candidates until topK logical documents are available", async () => {

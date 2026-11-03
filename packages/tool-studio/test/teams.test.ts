@@ -192,9 +192,7 @@ describe("Studio teams", () => {
         .status,
     ).toBe(200);
     expect((await post(studio, route, { type: "tool-approval", approved: true })).status).toBe(200);
-    expect([404, 409]).toContain(
-      (await post(studio, route, { type: "tool-approval", approved: true })).status,
-    );
+    expect((await post(studio, route, { type: "tool-approval", approved: true })).status).toBe(409);
     const emitted = [];
     for await (const event of iterator) emitted.push(event);
     expect(emitted.at(-1)).toMatchObject({ type: "response", members: [{ status: "idle" }] });

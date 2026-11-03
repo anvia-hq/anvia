@@ -125,20 +125,23 @@ describe("CLI command groups", () => {
   });
 
   it.for([
-    ["unknown"],
-    ["ui", "unknown"],
-    ["ui", "constructor"],
-    ["skills", "add"],
-    ["ui", "update", "--aply"],
-    ["skills", "update", "--overwrite"],
-    ["skills", "init", "--apply"],
-    ["ui", "init", "--dir", "skills"],
-    ["ui", "update", "--cwd"],
-    ["skills", "update", "--dir", "--apply"],
-    ["skills", "list", "anvia-agent"],
-    ["ui", "add", "unknown"],
-  ])("rejects invalid arguments before invoking a writer: %j", (args) => {
-    expect(() => runCli(args)).toThrow();
+    [["unknown"], 'Unknown command "unknown". Run `anvia --help`.'],
+    [["ui", "unknown"], 'Unknown command "ui unknown". Run `anvia --help`.'],
+    [["ui", "constructor"], 'Unknown command "ui constructor". Run `anvia --help`.'],
+    [["skills", "add"], 'Unknown command "skills add". Run `anvia --help`.'],
+    [["ui", "update", "--aply"], 'Unknown option "--aply". Run `anvia --help`.'],
+    [["skills", "update", "--overwrite"], 'Unknown option "--overwrite". Run `anvia --help`.'],
+    [["skills", "init", "--apply"], 'Unknown option "--apply". Run `anvia --help`.'],
+    [["ui", "init", "--dir", "skills"], 'Unknown option "--dir". Run `anvia --help`.'],
+    [["ui", "update", "--cwd"], "--cwd requires a value."],
+    [["skills", "update", "--dir", "--apply"], "--dir requires a value."],
+    [["skills", "list", "anvia-agent"], "Choose a skills action: init, update, list."],
+    [
+      ["ui", "add", "unknown"],
+      "Choose an item: chat, thread, message, composer, attachment, markdown, tool-fallback.",
+    ],
+  ] as const)("rejects invalid arguments before invoking a writer: %j", ([args, message]) => {
+    expect(() => runCli([...args])).toThrow(message);
     expect(handlers.initializeProject).not.toHaveBeenCalled();
     expect(handlers.addRegistryItem).not.toHaveBeenCalled();
     expect(handlers.updateInstalledItems).not.toHaveBeenCalled();

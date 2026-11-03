@@ -43,16 +43,6 @@ describe("MistralClient", () => {
     );
   });
 
-  it("creates completion, embedding, and OCR models with an injected SDK client", () => {
-    const client = new MistralClient({ client: fakeSdk() as never });
-
-    expect(client.completionModel({ modelId: "mistral-large-latest" }).modelId).toBe(
-      "mistral-large-latest",
-    );
-    expect(client.embeddingModel({ modelId: "mistral-embed" }).modelId).toBe("mistral-embed");
-    expect(client.ocrModel({ modelId: "mistral-ocr-latest" }).modelId).toBe("mistral-ocr-latest");
-  });
-
   it("lists models from the Mistral SDK", async () => {
     const client = new MistralClient({
       client: {

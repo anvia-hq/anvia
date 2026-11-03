@@ -73,19 +73,6 @@ describe("PlaygroundPage run action", () => {
     expect(buttonWithLabel(html, "Delete Font review")).toMatch(/\sdisabled(?:=""|(?=[\s>]))/);
   });
 
-  it("does not render the removed working indicator", () => {
-    const html = render({
-      hasMessages: true,
-      messages: [
-        { entryId: 1, kind: "message", role: "user", text: "Investigate" },
-        { entryId: 2, kind: "reasoning", text: "Checking" },
-      ],
-    });
-
-    expect(html).not.toContain("Working");
-    expect(html).not.toContain("animate-spin");
-  });
-
   it("renders session rows without chat icons", () => {
     const html = render({
       selectedSessionId: "session-1",

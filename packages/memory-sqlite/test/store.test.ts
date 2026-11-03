@@ -11,7 +11,7 @@ import {
   type SqliteMemoryStore,
   type SqliteMemoryStoreOptions,
 } from "../src/index.js";
-import { isMemoryMessage, serializeUnknownError } from "../src/message.js";
+import { serializeUnknownError } from "../src/message.js";
 
 const userMessage: Message = {
   role: "user",
@@ -49,19 +49,12 @@ afterEach(async () => {
 
 describe("SqliteMemoryStore", () => {
   it("uses core strict JSON validation for message metadata", async () => {
-    const validMessage: Message = {
-      role: "user",
-      content: [{ type: "text", text: "remember this" }],
-      metadata: { score: 1 },
-    };
     const invalidMessage: Message = {
       role: "user",
       content: [{ type: "text", text: "remember this" }],
       metadata: { score: Number.NaN },
     };
 
-    expect(isMemoryMessage(validMessage)).toBe(true);
-    expect(isMemoryMessage(invalidMessage)).toBe(false);
     const store = await createTestMemoryStore();
     await expect(
       store.append({
@@ -449,37 +442,6 @@ describe("SqliteMemoryStore", () => {
     const store = await createTestMemoryStore({ path, ensure: false });
 
     await expect(store.load({ scope: { sessionId: "thread-1" } })).rejects.toThrow("no such table");
-  });
-
-  it("creates stable scope keys from metadata paths", () => {
-    expect(
-      createMemoryScopeKey({
-        scope: {
-          sessionId: "thread-1",
-          userId: "user-1",
-          metadata: { tenant: { id: "tenant-1" } },
-        },
-        metadataKeys: ["tenant.id"],
-      }),
-    ).toBe(JSON.stringify(["thread-1", "user-1", "tenant-1"]));
-  });
-
-  it("keeps falsey metadata values and normalizes missing scope paths to null", () => {
-    expect(
-      createMemoryScopeKey({
-        scope: { sessionId: "thread-1", metadata: { count: 0, enabled: false } },
-        metadataKeys: ["count", "enabled", "missing.value"],
-      }),
-    ).toBe(JSON.stringify(["thread-1", null, 0, false, null]));
-  });
-
-  it("can omit user ids from generated scope keys", () => {
-    expect(
-      createMemoryScopeKey({
-        scope: { sessionId: "thread-1", userId: "user-1" },
-        includeUserId: false,
-      }),
-    ).toBe(JSON.stringify(["thread-1"]));
   });
 });
 

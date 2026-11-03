@@ -42,12 +42,7 @@ function fixture(hybrid = false): QdrantClientLike {
 }
 
 describe("QdrantVectorClient", () => {
-  it("exports dense and hybrid stores without legacy index or connect APIs", () => {
-    expect(publicApi).toHaveProperty("QdrantVectorClient");
-    expect(publicApi).not.toHaveProperty("QdrantVectorIndex");
-    expect(publicApi.QdrantVectorStore).not.toHaveProperty("connect");
-    expect(publicApi.QdrantVectorStore.prototype).not.toHaveProperty("index");
-    expect(publicApi.QdrantVectorStore.prototype).not.toHaveProperty("asTool");
+  it("exports the hybrid store", () => {
     expect(publicApi).toHaveProperty("QdrantHybridVectorStore");
   });
   it("creates side-effect-free handles and validates explicitly", async () => {

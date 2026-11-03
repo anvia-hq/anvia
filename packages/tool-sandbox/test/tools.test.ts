@@ -654,7 +654,7 @@ describe("createDockerSandboxTools", () => {
       tools: selected,
       exec: { commands: { mode: "allow", values: allowed } },
     });
-    selected[0] = "exec_command";
+    selected[0] = "read_file";
     allowed[0] = "python";
 
     await expect(tools[0]?.call({ command: "node" })).resolves.toMatchObject({

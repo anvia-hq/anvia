@@ -43,5 +43,8 @@ describe("filterToMilvusExpr", () => {
     expect(() => filterToMilvusExpr({ type: "gte", key: "n", value: Number.NaN })).toThrow(
       /Invalid metadata filter value/,
     );
+    expect(() => filterToMilvusExpr({ type: "eq", key: "user.and.name", value: "x" })).toThrow(
+      /reserved Milvus expression keyword/,
+    );
   });
 });

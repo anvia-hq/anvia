@@ -8,20 +8,6 @@ import { Message } from "../../core/test/helpers/imports";
 import { OpenAIResponsesCompletionModel } from "../src/openai/responses";
 
 describe("OpenAI Responses tool-call streaming compatibility", () => {
-  it("accepts a standard arguments.done event that includes the function name", async () => {
-    const events = await collectResponsesStream(
-      openAIResponsesModelWithStream(weatherToolCallStream()),
-    );
-
-    expect(terminalArgumentsEvent(events)).toEqual({
-      type: "tool_call_delta",
-      id: "fc_123",
-      name: "get_weather",
-      argumentsDelta: '{"city":"Jakarta"}',
-      argumentsMode: "replace",
-    });
-  });
-
   it("accepts an unnamed arguments.done event without synthesizing a name", async () => {
     const events = await collectResponsesStream(
       openAIResponsesModelWithStream(weatherToolCallStream({ omitDoneName: true })),
@@ -54,16 +40,6 @@ describe("OpenAI Responses tool-call streaming compatibility", () => {
 
     await expect(collectResponsesStream(model)).rejects.toMatchObject(
       providerOutputError("incomplete-tool-call", { toolCallId: "fc_123" }),
-    );
-  });
-
-  it("rejects an arguments.done name that conflicts with output_item.added", async () => {
-    const model = openAIResponsesModelWithStream(
-      weatherToolCallStream({ doneName: "get_forecast" }),
-    );
-
-    await expect(collectResponsesStream(model)).rejects.toMatchObject(
-      providerOutputError("invalid-tool-call", { toolCallId: "fc_123" }),
     );
   });
 

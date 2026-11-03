@@ -118,19 +118,6 @@ describe("OpenAI embedding models", () => {
         .embedTexts(["first", "second"]),
     ).rejects.toThrow("Embedding response item 1 contained an invalid embedding");
   });
-
-  it("maps OpenAI-compatible embedding requests", async () => {
-    const compatibleClient = mockOpenAIClient();
-
-    await new OpenAIClient({ client: compatibleClient as never })
-      .embeddingModel({ modelId: "compatible-embed" })
-      .embedTexts(["hello"]);
-
-    expect(compatibleClient.embeddings.createCalls[0]).toMatchObject({
-      model: "compatible-embed",
-      input: ["hello"],
-    });
-  });
 });
 
 function mockOpenAIClient(options: { embeddingResponse?: unknown } = {}) {

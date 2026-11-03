@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import * as publicApi from "../src/index.js";
 import {
   type PineconeClientLike,
   type PineconeNamespaceLike,
@@ -7,13 +6,6 @@ import {
 } from "../src/index.js";
 
 describe("PineconeVectorClient", () => {
-  it("exports the client without legacy index or connect APIs", () => {
-    expect(publicApi).toHaveProperty("PineconeVectorClient");
-    expect(publicApi).not.toHaveProperty("PineconeVectorIndex");
-    expect(publicApi.PineconeVectorStore).not.toHaveProperty("connect");
-    expect(publicApi.PineconeVectorStore.prototype).not.toHaveProperty("index");
-    expect(publicApi.PineconeVectorStore.prototype).not.toHaveProperty("asTool");
-  });
   it("provisions explicitly and uses raw-vector store operations", async () => {
     const namespace: PineconeNamespaceLike = {
       deleteMany: vi.fn(async () => undefined),

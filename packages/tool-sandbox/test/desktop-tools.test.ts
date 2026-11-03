@@ -3,8 +3,8 @@ import {
   createDesktopTools,
   desktopToolRecovery,
   type DesktopToolName,
+  viewOf,
 } from "../src/desktop-tools";
-import { viewOf } from "../src/desktop-tools";
 import { DockerSandboxError } from "../src/errors";
 import type { DesktopAction, SandboxDesktop } from "../src/remote/desktop";
 
@@ -124,15 +124,15 @@ describe("screenshots", () => {
     const { call } = tools(desktop);
     const output = await call("desktop_screenshot", {});
 
-    const view = viewOf(2560, 1440, { maxEdge: 1568, maxPixels: 1_150_000 });
-    expect(view.imageWidth).toBeLessThanOrEqual(1568);
-    expect(view.imageWidth * view.imageHeight).toBeLessThanOrEqual(1_150_000);
-    expect(desktop.screenshot).toHaveBeenCalledWith(expect.objectContaining({ scale: view.scale }));
+    // 2560x1440 is 3.7 MP, so the 1.15 MP budget bites before the 1568 edge and the daemon scales to 1430x804.
+    expect(desktop.screenshot).toHaveBeenCalledWith(
+      expect.objectContaining({ scale: 0.5585315257689379 }),
+    );
 
     const content = (output as { content: Array<Record<string, unknown>> }).content;
     expect(JSON.parse(content[0]?.text as string)).toEqual({
-      width: view.imageWidth,
-      height: view.imageHeight,
+      width: 1430,
+      height: 804,
     });
     expect(content[1]).toMatchObject({
       type: "file",
@@ -240,11 +240,9 @@ describe("coordinates", () => {
 
   it("reports the cursor in screenshot coordinates", async () => {
     const desktop = fakeDesktop(2560, 1440);
-    const view = viewOf(2560, 1440, { maxEdge: 1568, maxPixels: 1_150_000 });
     const output = await tools(desktop).call("desktop_cursor_position", {});
-    expect(output).toEqual({
-      coordinate: [Math.round(view.imageWidth / 2), Math.round(view.imageHeight / 2)],
-    });
+    // Display centre (1280, 720) falls in screenshot pixel (715, 402) of the 1430x804 view.
+    expect(output).toEqual({ coordinate: [715, 402] });
   });
 });
 

@@ -62,12 +62,6 @@ describe("GrokClient", () => {
     expect(() => new GrokClient({} as never)).toThrow("Missing Grok credentials");
   });
 
-  it("binds managed clients to explicit model handles", () => {
-    const client = new GrokClient({ apiKey: "key" });
-
-    expect(client.completionModel({ modelId: GROK_4_5, api: "responses" }).modelId).toBe(GROK_4_5);
-  });
-
   it("accepts custom transport configuration without exposing the native client", () => {
     const fetchFn = (async () => new Response()) as typeof fetch;
     const client = new GrokClient({ apiKey: "key", fetch: fetchFn });
@@ -107,14 +101,6 @@ describe("GrokClient", () => {
       client.completionModel({ modelId: "grok-4.20-multi-agent-0309", api: "responses" }).controls
         ?.reasoningEffort.options,
     ).toEqual(["low", "medium", "high", "xhigh"]);
-  });
-
-  it("creates image generation models", () => {
-    const client = injectedClient(fakeSdk());
-
-    expect(client.imageGenerationModel({ modelId: "grok-imagine-image" }).modelId).toBe(
-      "grok-imagine-image",
-    );
   });
 
   it("creates batch speech generation and transcription models", () => {

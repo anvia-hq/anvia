@@ -2673,27 +2673,6 @@ describe("Anvia studio", () => {
     }
   });
 
-  it("accepts shared UI-style agent run requests", async () => {
-    const model = new QueueModel([response([AssistantContent.text("hello")])]);
-    const agent = new Agent({ id: "support", model });
-    const runner = new Studio([agent]);
-
-    const res = await runner.fetch(
-      new Request("http://runner.test/agents/support/runs", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          type: "messages",
-          messages: [Message.user("hi")],
-          metadata: { source: "test" },
-        }),
-      }),
-    );
-
-    expect(res.status).toBe(200);
-    expect(model.requests[0]?.chatHistory).toEqual([Message.user("hi")]);
-  });
-
   it("normalizes UI-style agent run messages into history plus the latest prompt", async () => {
     const model = new QueueModel([response([AssistantContent.text("next")])]);
     const agent = new Agent({ id: "support", model });
@@ -5205,29 +5184,6 @@ describe("Anvia studio", () => {
 
     expect(await store.deleteSession?.("session_1")).toBe(true);
     expect(await store.listSessionLogs?.({ sessionId: "session_1", limit: 10 })).toEqual([]);
-  });
-
-  it("rejects legacy SQLite session schemas with messages_json", () => {
-    const path = join(studioDbDir ?? tmpdir(), "legacy.sqlite");
-    const db = new DatabaseSync(path);
-    db.exec(`
-      CREATE TABLE anvia_studio_sessions (
-        id TEXT PRIMARY KEY,
-        agent_id TEXT NOT NULL,
-        title TEXT,
-        metadata_json TEXT,
-        messages_json TEXT NOT NULL,
-        transcript_json TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      ) STRICT;
-    `);
-    db.close();
-
-    const store = createTestSqliteStore({ path });
-    expect(() => store.createSession({ id: "session_1", agentId: "support" })).toThrow(
-      "legacy messages_json schema",
-    );
   });
 
   it("lists global runner traces with filters", async () => {

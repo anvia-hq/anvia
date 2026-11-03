@@ -541,9 +541,7 @@ describe("Message primitives", () => {
 
     const element = container.querySelector('[data-role="entity"]');
     expect(element?.textContent).toBe("@Guide.pdf");
-    expect(element?.getAttribute("data-role")).toBe("entity");
     expect(element?.hasAttribute("data-anvia-entity-index")).toBe(false);
-    expect(container.querySelectorAll('[data-role="entity"]')).toHaveLength(1);
   });
 
   it("renders multiple and adjacent entities without changing normal Markdown links", () => {

@@ -3,7 +3,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, expectTypeOf, it, vi } from "vitest";
 import type { VectorFilter } from "@anvia/core/vector-store";
-import * as publicApi from "../src/index.js";
 import {
   type LanceDBConnectionLike,
   type LanceDBTableLike,
@@ -47,14 +46,8 @@ function fixture() {
 }
 
 describe("LanceDBVectorClient", () => {
-  it("exports the client without legacy index or connect APIs", () => {
+  it("does not export the removed filter translator", () => {
     expectTypeOf<RemovedFilterTranslator>().toBeAny();
-    expect(publicApi).toHaveProperty("LanceDBVectorClient");
-    expect(publicApi).not.toHaveProperty("filterToLanceExpr");
-    expect(publicApi).not.toHaveProperty("LanceDBVectorIndex");
-    expect(publicApi.LanceDBVectorStore).not.toHaveProperty("connect");
-    expect(publicApi.LanceDBVectorStore.prototype).not.toHaveProperty("index");
-    expect(publicApi.LanceDBVectorStore.prototype).not.toHaveProperty("asTool");
   });
   it("keeps construction lazy and uses explicit lifecycle", async () => {
     const { client } = fixture();

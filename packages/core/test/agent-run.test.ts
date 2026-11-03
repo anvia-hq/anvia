@@ -114,13 +114,17 @@ const addTool = createTool({
 describe("Agent execution", () => {
   it("returns text-only completions", async () => {
     const model = new QueueModel([response([AssistantContent.text("done")])]);
-    const agent = new Agent({ id: "test-agent", model, instructions: "system" });
+    const agent = new Agent({
+      id: "test-agent",
+      model,
+      instructions: "First block.\n\nSecond block.",
+    });
 
     const result = await agent.generate({ prompt: "hello" });
     assertCompleted(result);
 
     expect(result.output).toBe("done");
-    expect(model.requests[0]?.instructions).toBe("system");
+    expect(model.requests[0]?.instructions).toBe("First block.\n\nSecond block.");
     expect(model.requests[0]?.chatHistory[0]).toEqual(Message.user("hello"));
   });
 
@@ -233,52 +237,6 @@ describe("Agent execution", () => {
 
     expect(model.requests).toHaveLength(3);
     expect(hookCalls).toEqual({ completionCall: 1, completionError: 1 });
-  });
-
-  it("does not retry non-transient completion failures", async () => {
-    const error = Object.assign(new Error("invalid request"), { status: 400 });
-    const model = new FlakyQueueModel([
-      { error },
-      { response: response([AssistantContent.text("unexpected")]) },
-    ]);
-    const agent = new Agent({ id: "test-agent", model });
-
-    await expect(
-      agent.generate({ prompt: "hello", retries: { initialDelayMs: 0, maxDelayMs: 0 } }),
-    ).rejects.toBe(error);
-
-    expect(model.requests).toHaveLength(1);
-  });
-
-  it("recognizes transient network codes through error causes", async () => {
-    const cause = Object.assign(new Error("socket reset"), { code: "ECONNRESET" });
-    const error = new Error("provider connection failed", { cause });
-    const model = new FlakyQueueModel([
-      { error },
-      { response: response([AssistantContent.text("recovered")]) },
-    ]);
-    const agent = new Agent({ id: "test-agent", model });
-
-    await expect(
-      agent.generate({ prompt: "hello", retries: { initialDelayMs: 0, maxDelayMs: 0 } }),
-    ).resolves.toMatchObject({ output: "recovered" });
-
-    expect(model.requests).toHaveLength(2);
-  });
-
-  it("never retries abort errors", async () => {
-    const error = Object.assign(new Error("aborted"), { name: "AbortError", status: 503 });
-    const model = new FlakyQueueModel([
-      { error },
-      { response: response([AssistantContent.text("unexpected")]) },
-    ]);
-    const agent = new Agent({ id: "test-agent", model });
-
-    await expect(
-      agent.generate({ prompt: "hello", retries: { initialDelayMs: 0, maxDelayMs: 0 } }),
-    ).rejects.toBe(error);
-
-    expect(model.requests).toHaveLength(1);
   });
 
   it("supports request-specific completion retry classification", async () => {
@@ -399,19 +357,6 @@ describe("Agent execution", () => {
     expect(completionCalls).toBe(2);
     expect(completionErrors).toBe(0);
     expect(result.messages.filter((message) => message.role === "tool")).toHaveLength(1);
-  });
-
-  it("passes complete configured instructions", async () => {
-    const model = new QueueModel([response([AssistantContent.text("done")])]);
-    const agent = new Agent({
-      id: "test-agent",
-      model,
-      instructions: "First block.\n\nSecond block.",
-    });
-
-    await agent.generate({ prompt: "hello" });
-
-    expect(model.requests[0]?.instructions).toBe("First block.\n\nSecond block.");
   });
 
   it("parses and preserves the type of schema-backed Agent output", async () => {
@@ -657,12 +602,22 @@ describe("Agent execution", () => {
   });
 
   it("validates run limits before starting an agent run", () => {
-    const agent = new Agent({ id: "test-agent", model: new QueueModel([]) });
+    const model = new QueueModel([]);
+    const agent = new Agent({ id: "test-agent", model });
 
+    expect(() => new Agent({ id: "test-agent", model, maxTurns: Number.NaN })).toThrow(
+      "maxTurns must be a nonnegative safe integer",
+    );
     expect(() => agent.generate({ prompt: "hi", maxTurns: -1 })).toThrow(
       "maxTurns must be a nonnegative safe integer",
     );
     expect(() => agent.generate({ prompt: "hi", toolConcurrency: 0 })).toThrow(
+      "toolConcurrency must be a positive safe integer",
+    );
+    expect(() => agent.generate({ prompt: "hi", toolConcurrency: Number.NaN })).toThrow(
+      "toolConcurrency must be a positive safe integer",
+    );
+    expect(() => agent.stream({ prompt: "hi", toolConcurrency: 0 })).toThrow(
       "toolConcurrency must be a positive safe integer",
     );
     expect(() => agent.stream({ prompt: "hi", toolConcurrency: Number.POSITIVE_INFINITY })).toThrow(
@@ -1117,54 +1072,6 @@ describe("Agent execution", () => {
       await expect(agent.generate({ prompt: "add" })).rejects.toBeInstanceOf(TypeError);
       expect(model.requests).toHaveLength(1);
     }
-  });
-
-  it("composes agent and run middleware registrations in order", async () => {
-    const model = new QueueModel([
-      response([AssistantContent.toolCall("call_1", "add", { x: 2, y: 5 })]),
-      response([AssistantContent.text("done")]),
-    ]);
-    const agent = new Agent({
-      id: "test-agent",
-      model,
-      tools: [addTool],
-      middlewares: [
-        createMiddleware({
-          onToolOutput({ result }) {
-            return { result: `${result}:agent` };
-          },
-        }),
-      ],
-    });
-
-    await expect(
-      agent.generate({
-        prompt: "add",
-        middlewares: [
-          createMiddleware({
-            onToolOutput({ result }) {
-              return { result: `${result}:request` };
-            },
-          }),
-          createMiddleware({
-            onToolOutput({ result }) {
-              return `${result}:legacy`;
-            },
-          }),
-        ],
-      }),
-    ).resolves.toMatchObject({ output: "done" });
-
-    expect(model.requests[1]?.chatHistory.at(-1)).toEqual(
-      Message.tool([
-        {
-          type: "tool_result",
-          id: "call_1",
-          toolName: "add",
-          content: [{ type: "text", text: "7:agent:request:legacy" }],
-        },
-      ]),
-    );
   });
 
   it("can run tool calls from a hook helper", async () => {

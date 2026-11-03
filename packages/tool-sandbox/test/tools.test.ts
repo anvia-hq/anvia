@@ -647,11 +647,11 @@ describe("createDockerSandboxTools", () => {
   });
 
   it("snapshots selection and command policy inputs", async () => {
-    const selected: ["exec_command"] = ["exec_command"];
+    const selected = ["exec_command"];
     const allowed = ["node"];
     const tools = createDockerSandboxTools({
       sandbox: createRuntime(),
-      tools: selected,
+      tools: selected as ["exec_command"],
       exec: { commands: { mode: "allow", values: allowed } },
     });
     selected[0] = "read_file";

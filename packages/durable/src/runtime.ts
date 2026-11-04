@@ -82,6 +82,7 @@ export class DurableRuntime {
   private failure: unknown;
   private wakeTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly tasks: TaskScheduler;
+  private readonly limitValues: DurableLimits;
 
   private constructor(
     store: DurableStore,
@@ -95,6 +96,7 @@ export class DurableRuntime {
   ) {
     this.agents = agents;
     this.store = guardStore(store, (error) => this.fail(error), limits);
+    this.limitValues = { ...limits };
     this.tasks = new TaskScheduler(
       this.store,
       definitions,
@@ -162,6 +164,11 @@ export class DurableRuntime {
       if (this.agents.has(id)) throw new DurableConflictError(`Agent already registered: ${id}`);
     for (const [id, registration] of added) this.agents.set(id, registration);
     this.notifyCompatibility();
+  }
+
+  /** Effective admission and payload budgets, after defaults. Returns a detached copy. */
+  limits(): DurableLimits {
+    return { ...this.limitValues };
   }
 
   /** Detached, immutable compatibility report for every current registration. */

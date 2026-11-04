@@ -137,10 +137,17 @@ describe("durable browser client", () => {
           { error: "Pending durable run limit reached.", code: "capacity_exceeded" },
           {
             status: 429,
+            headers: { "Retry-After": "2" },
           },
         ),
       ),
-    ).rejects.toMatchObject({ status: 429, code: "capacity_exceeded", field: undefined });
+    ).rejects.toMatchObject({
+      status: 429,
+      code: "capacity_exceeded",
+      field: undefined,
+      message: "Pending durable run limit reached.",
+      retryAfterSeconds: 2,
+    });
 
     // A non-JSON body must not mask the status.
     await expect(

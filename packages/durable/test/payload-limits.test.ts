@@ -141,3 +141,23 @@ it("never parks a session that grows past the payload limit in needs_attention",
   expect(blocked).toBeDefined();
   expect(runtime.health().ready).toBe(true);
 });
+
+it("reports effective limits with defaults applied and a detached copy", async () => {
+  const defaults = await DurableRuntime.open({
+    store: new SqliteDurableStore(":memory:"),
+    agents: [{ agent: makeAgent(async () => done()), version: "1" }],
+  });
+  runtimes.push(defaults);
+  expect(defaults.limits()).toEqual({
+    maxPendingRuns: 10_000,
+    maxPendingTasks: 10_000,
+    maxPayloadBytes: 1_048_576,
+    maxOperations: 10_000,
+  });
+
+  const runtime = await open(database(), 2_048);
+  const limits = runtime.limits();
+  expect(limits.maxPayloadBytes).toBe(2_048);
+  limits.maxPayloadBytes = 1;
+  expect(runtime.limits().maxPayloadBytes).toBe(2_048);
+});

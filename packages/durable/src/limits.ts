@@ -55,6 +55,10 @@ export function limitedTransaction(
     ...tx,
     appendEvent(id, type, data) {
       if (type === "model_delta") payload("event.model_delta", JSON.stringify(data));
+      // Status events are deliberately not checked. A status event is the only record of a
+      // failure or a blocked run, and its `error` text is not checked anywhere else, so a limit
+      // here would stop a run from reaching `failed` or `needs_attention` (the trap in DUR-03).
+      // Their size is bounded by construction: no outcome, only ids, status and error text.
       tx.appendEvent(id, type, data);
     },
     putRun(run) {

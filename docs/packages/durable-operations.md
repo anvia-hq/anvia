@@ -83,10 +83,11 @@ Effective budget per persisted field, with the default `maxPayloadBytes` of 1,04
 | `run.history`, `run.outcome` | the settled conversation and final output       | every completed turn                       |
 | `event.model_delta`          | one streamed chunk                              | very large single chunks                   |
 
-Status events are not checked. Each `status` event embeds the run's `outcome`, so a settled outcome
-near the limit is stored twice (once on the run, once in the event) and the event is slightly
-larger than the outcome. Keep outcomes comfortably below the limit. Shrinking status events is
-tracked as DUR-07 and needs a client contract change first.
+Status events are not payload-checked. They are small by construction: they carry `status`,
+`error`, `blockedOperation` and `nextAttemptAt`, but not the run's `outcome`. The outcome is stored
+once, on the run, and clients read it from the run snapshot when a settled status arrives. A limit
+on status events would stop a run from reaching `failed` or `needs_attention`. Journals written by
+older versions still carry `outcome` on the event, and clients read that too.
 
 Per-field limit overrides are not available yet. Raising `maxPayloadBytes` raises every field at
 once.

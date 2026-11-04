@@ -71,13 +71,32 @@ export type DurableChatMapped = {
 export function mapDurableChatEvent(
   event: DurableEvent,
   state: DurableChatMapState,
+  settledOutcome?: JsonObject,
 ): DurableChatMapped {
   if (!Number.isSafeInteger(event.sequence) || event.sequence <= state.sequence) {
     return { events: [], state };
   }
   const draft = fork(state, event.sequence);
-  const events = project(event, draft);
+  const events = project(event, draft, settledOutcome);
   return { events, state: draft };
+}
+
+/**
+ * True when a status event needs the run's outcome, which the event itself no longer carries
+ * (DUR-07). The caller reads it from the run snapshot and passes it to `mapDurableChatEvent`.
+ * Journals written before the change still carry `data.outcome`, so nothing is fetched for them.
+ */
+export function needsSettledOutcome(event: DurableEvent): boolean {
+  if (event.type !== "status") return false;
+  const data = asRecord(event.data);
+  if (data === undefined || data.outcome !== undefined) return false;
+  const status = text(data, "status");
+  return status === "completed" || status === "waiting" || status === "failed";
+}
+
+/** The status a status event reports, so a caller can check a snapshot is still at that point. */
+export function statusEventStatus(event: DurableEvent): string | undefined {
+  return event.type === "status" ? text(asRecord(event.data), "status") : undefined;
 }
 
 /**
@@ -88,13 +107,17 @@ export function durableChatMessageId(runId: string, operationId: string): string
   return `${runId}:${operationId}`;
 }
 
-function project(event: DurableEvent, state: DurableChatMapState): ClientStreamEvent[] {
+function project(
+  event: DurableEvent,
+  state: DurableChatMapState,
+  settledOutcome: JsonObject | undefined,
+): ClientStreamEvent[] {
   const data = asRecord(event.data);
   switch (event.type) {
     case "submitted":
       return openRun(event.runId, state);
     case "status":
-      return mapStatus(event, data, state);
+      return mapStatus(event, data, state, settledOutcome);
     case "model_started":
       return mapModelStarted(event, data, state);
     case "model_attempt_started":
@@ -125,12 +148,15 @@ function mapStatus(
   event: DurableEvent,
   data: JsonObject | undefined,
   state: DurableChatMapState,
+  settledOutcome: JsonObject | undefined,
 ): ClientStreamEvent[] {
   const status = text(data, "status");
+  // Older journals embed the outcome in the event; newer ones rely on the caller's snapshot.
+  const outcome = asRecord(data?.outcome) ?? settledOutcome;
   if (status === "needs_attention") return needsAttention(event, data);
-  if (status === "failed") return failed(event, data);
+  if (status === "failed") return failed(event, data, outcome);
   if (status === "cancelled") return [located(event, { type: "run_end", status: "cancelled" })];
-  if (status === "waiting" || status === "completed") return settled(event, data, status);
+  if (status === "waiting" || status === "completed") return settled(event, outcome, status);
   // The first non-terminal status stands in for `submitted` when a replay starts mid-journal.
   if (!state.runOpened && (status === "queued" || status === "pending" || status === "running")) {
     return openRun(event.runId, state);
@@ -466,8 +492,11 @@ function needsAttention(event: DurableEvent, data: JsonObject | undefined): Clie
   ];
 }
 
-function failed(event: DurableEvent, data: JsonObject | undefined): ClientStreamEvent[] {
-  const outcome = asRecord(data?.outcome);
+function failed(
+  event: DurableEvent,
+  data: JsonObject | undefined,
+  outcome: JsonObject | undefined,
+): ClientStreamEvent[] {
   const error = located(event, {
     type: "error",
     error: {
@@ -484,10 +513,9 @@ function failed(event: DurableEvent, data: JsonObject | undefined): ClientStream
 
 function settled(
   event: DurableEvent,
-  data: JsonObject | undefined,
+  outcome: JsonObject | undefined,
   status: "waiting" | "completed",
 ): ClientStreamEvent[] {
-  const outcome = asRecord(data?.outcome);
   const outcomeType = text(outcome, "type");
   if (status === "waiting" || outcomeType === "interaction") {
     const interaction = asInteraction(outcome?.interaction);

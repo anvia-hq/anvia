@@ -1,5 +1,5 @@
 import { afterEach, expect, it } from "vitest";
-import { Agent } from "@anvia/core/agent";
+import { Agent, createVectorContext } from "@anvia/core/agent";
 import type { CompletionModelStreamEvent } from "@anvia/core/completion";
 import { defineGuardrailPolicy } from "@anvia/core/guardrails";
 import type { MemoryStore } from "@anvia/core/memory";
@@ -38,6 +38,20 @@ const toolIndex: ToolIndex = {
   search: async () => [],
 };
 
+// Live retrieval is still rejected; static documents are supported and covered below.
+const vectorContext = createVectorContext({
+  model: { provider: "test", modelId: "embedding", embedTexts: async () => [] },
+  store: {
+    async ensure() {},
+    async validate() {},
+    async upsert() {},
+    async search() {
+      return [];
+    },
+  },
+  topK: 1,
+});
+
 const model = makeAgent(async () => done()).model;
 const agentWith = (
   id: string,
@@ -72,7 +86,7 @@ it.each([
     "guardrails",
     () => agentWith("with-guardrails", { guardrails: defineGuardrailPolicy({ id: "policy" }) }),
   ],
-  ["context", () => agentWith("with-context", { context: [{ id: "doc", text: "Static" }] })],
+  ["context", () => agentWith("with-context", { context: [vectorContext] })],
   ["MCP servers", () => agentWith("with-mcp", { mcpServers: [{ name: "server", tools: [] }] })],
   [
     "provider tools",
@@ -94,7 +108,7 @@ it("lists every feature the agent actually sets, in a stable order", async () =>
   const agent = agentWith("with-several", {
     memory: { store: memoryStore },
     guardrails: defineGuardrailPolicy({ id: "policy" }),
-    context: [{ id: "doc", text: "Static" }],
+    context: [vectorContext],
   });
   expect(rejectedFeatures({ agent, version: "1" })).toEqual(["memory", "guardrails", "context"]);
 });

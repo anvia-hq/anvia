@@ -51,6 +51,7 @@ export function spawnAgent(
       requestId: child.id,
     },
     registration,
+    tx,
   );
   if (input.maxModelTurns !== undefined)
     run.maxModelTurns = Math.min(run.maxModelTurns, input.maxModelTurns);

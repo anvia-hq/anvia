@@ -1,4 +1,5 @@
 import { AGENT_RUN_EXECUTION_VERSION, getResolvedAgentOptions } from "@anvia/core/internal/agent";
+import { isVectorContext } from "@anvia/core/agent";
 import { isStreamingCompletionModel } from "@anvia/core/completion";
 import { compactionPolicySchema, modelRetrySchema } from "./schema.js";
 import { nonblank } from "./json.js";
@@ -32,7 +33,7 @@ export function registrations(
     const unsupported = unsupportedFeatures(options);
     if (unsupported.length > 0) {
       throw new TypeError(
-        `Durable agent "${agent.id}" (version ${JSON.stringify(registration.version)}) uses features that require additional checkpoint support: ${unsupported.join(", ")}. Durable agents support static local tools and instructions only.`,
+        `Durable agent "${agent.id}" (version ${JSON.stringify(registration.version)}) uses features that require additional checkpoint support: ${unsupported.join(", ")}. Durable agents support static local tools, static context documents, and instructions only.`,
       );
     }
     for (const [name, policy] of Object.entries(registration.toolRecovery ?? {})) {
@@ -106,7 +107,9 @@ function unsupportedFeatures(options: ResolvedOptions): string[] {
   if (options.lifecycle !== undefined) features.push("lifecycle");
   if ((options.middlewares?.length ?? 0) > 0) features.push("middleware");
   if ((options.guardrails?.length ?? 0) > 0) features.push("guardrails");
-  if ((options.context?.length ?? 0) > 0) features.push("context");
+  // Static documents are snapshotted into each run record at submission; live vector retrieval
+  // is still not checkpointed.
+  if ((options.context ?? []).some((input) => isVectorContext(input))) features.push("context");
   if ((options.mcpServers?.length ?? 0) > 0) features.push("MCP servers");
   if ((options.providerTools?.length ?? 0) > 0) features.push("provider tools");
   if ((options.toolIndexes?.length ?? 0) > 0) features.push("tool indexes");

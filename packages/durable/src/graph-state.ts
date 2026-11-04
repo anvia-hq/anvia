@@ -38,6 +38,7 @@ export function createGraph(
           prompt: task.prompt,
         },
         registration,
+        tx,
       ),
     };
   });

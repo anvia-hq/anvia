@@ -160,6 +160,7 @@ export function limitedTransaction(
         "steering",
         "outcome",
         "contextCheckpoint",
+        "contextDocuments",
         "exhaustion",
       ] as const)
         payload(`run.${key}`, changed(previous?.[key], run[key]));

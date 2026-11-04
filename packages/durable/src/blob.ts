@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import type { JsonObject, JsonValue, Message } from "@anvia/core/completion";
-import { canonicalJson } from "./json.js";
+import { canonicalJson, json } from "./json.js";
 
 /**
  * Large payload leaves (tool results, media, long texts) are stored in the blob table and replaced
@@ -397,6 +397,19 @@ export function externalizeContextResult(io: DurableBlobIO, result: JsonValue): 
   const record = result as JsonObject;
   if (!Array.isArray(record.messages)) return result;
   return { ...record, messages: externalizeMessages(io, record.messages as Message[]) };
+}
+
+/**
+ * The frozen `{ hash, documents }` context snapshot. The hash stays inline so replay verification
+ * never needs the blob; a large document set moves behind a whole-value reference.
+ */
+export function externalizeContextDocuments(
+  io: DurableBlobIO,
+  value: { hash: string; documents: JsonValue },
+): JsonValue {
+  const full = json(value);
+  if (sizeOf(full) <= BLOB_THRESHOLD_BYTES) return full;
+  return { hash: value.hash, [WHOLE_VALUE_MARKER]: { ...ioMarker(io, full) } };
 }
 
 /** A run outcome: messages walk, oversized `text` moves out, continuation state is walked. */

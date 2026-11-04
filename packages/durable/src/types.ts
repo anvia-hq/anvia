@@ -7,7 +7,14 @@ import type {
 } from "./graph-types.js";
 import type { RegisteredTask, TaskListOptions, TaskPage, TaskTransaction } from "./tasks/types.js";
 import type { Agent, AgentInput, AgentOutcome, AgentPrompt } from "@anvia/core/agent";
-import type { JsonObject, JsonValue, Message, Usage, UserMessage } from "@anvia/core/completion";
+import type {
+  Document,
+  JsonObject,
+  JsonValue,
+  Message,
+  Usage,
+  UserMessage,
+} from "@anvia/core/completion";
 import type { MemoryCompactor, MemoryTokenCounter } from "@anvia/core/memory";
 
 /** Serializable policy captured when a run is submitted. */
@@ -167,6 +174,12 @@ export type DurableRunRecord = DurableSubmission & {
   continueFrom?: string;
   compaction?: DurableCompactionPolicy;
   contextCheckpoint?: DurableContextCheckpoint;
+  /**
+   * Static context documents frozen at submission: a content hash plus the resolved documents.
+   * Replay verifies the registration still resolves to the same hash. Large document sets persist
+   * as a blob reference; readers through the runtime API always see the hydrated form.
+   */
+  contextDocuments?: { hash: string; documents?: Document[] };
   /** Freezes even a skipped compaction decision across retries. */
   contextPrepared?: boolean;
   /** Captured on new submissions; legacy in-flight runs retain their original request sequence. */

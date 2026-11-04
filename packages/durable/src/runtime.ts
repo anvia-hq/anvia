@@ -49,6 +49,7 @@ import {
   externalizeToolResult,
   hydrateValue,
 } from "./blob.js";
+import { contextDocumentsOf } from "./documents.js";
 import { createExecution } from "./execution.js";
 import { runTrace } from "./trace.js";
 import { parseTraceOptions } from "./trace-schema.js";
@@ -376,7 +377,7 @@ export class DurableRuntime {
       ) {
         throw new DurableConflictError("Previous session execution is still settling.");
       }
-      const run = createRunRecord(submission, registration);
+      const run = createRunRecord(submission, registration, tx);
       tx.putRun(run);
       tx.appendEvent(run.id, "submitted", json(submission));
       return run.id;
@@ -751,6 +752,7 @@ export class DurableRuntime {
           "The saved agent version is not registered. Restore it before retrying.",
         );
       }
+      verifyContextDocuments(run, registration);
       await prepareContext(this.store, run, registration, signal);
       const trace = this.store.transaction((tx) => runTrace(tx, run));
       // Stored records may carry blob references; the agent loop always sees restored content.
@@ -857,6 +859,22 @@ function requireRun(tx: DurableTransaction, id: string): DurableRunRecord {
   const run = tx.getRun(id);
   if (run === undefined) throw new DurableNotFoundError(`Unknown durable run: ${id}`);
   return run;
+}
+
+/**
+ * A run replays with the context documents frozen at submission. A registration resolving to a
+ * different set under the same version fails the run instead of silently changing context.
+ */
+function verifyContextDocuments(
+  run: DurableRunRecord,
+  registration: DurableAgentRegistration,
+): void {
+  const current = contextDocumentsOf(registration.agent);
+  const expected = run.contextDocuments?.hash;
+  if (expected !== current?.hash)
+    throw new DurableRecoveryError(
+      `Context documents changed for durable agent "${run.agentId}": the run recorded hash ${expected ?? "none"}, but the registration now resolves ${current?.hash ?? "none"}. Restore the original documents, or bump the registration version.`,
+    );
 }
 
 const SETTLED: readonly string[] = ["completed", "failed", "cancelled"];

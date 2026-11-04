@@ -610,9 +610,14 @@ setting.
   ineffective. Configure `modelRetry` on the registration instead, or remove `retries` from the
   agent. `retries: false`, `retries: 0`, and `retries: { maxAttempts: 1 }` are accepted because they
   never retry.
-- Registering an agent that sets `memory`, `lifecycle`, `middlewares`, `guardrails`, `context`,
-  `mcpServers`, provider tools, or dynamic tool indexes throws a `TypeError` naming exactly the
-  features that agent uses.
+- Static `Document` entries in `context` are supported. The resolved documents are frozen into the
+  run record at submission, so restarts and retries replay identical context. If the registration's
+  documents change under the same `version`, the run fails with `needs_attention` naming both
+  content hashes; restore the original documents and `retry()`, or bump the version for a context
+  change. Live `VectorContext` retrieval is still rejected.
+- Registering an agent that sets `memory`, `lifecycle`, `middlewares`, `guardrails`, vector
+  `context`, `mcpServers`, provider tools, or dynamic tool indexes throws a `TypeError` naming
+  exactly the features that agent uses.
 
 These per-run settings are not exposed: `retries`, `maxTurns`, and `controls` (the runtime captures
 the agent-level values at submission), plus `lifecycle`, `guardrails`, `middlewares`,

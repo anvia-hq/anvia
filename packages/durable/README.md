@@ -332,7 +332,7 @@ the agent-level values at submission), plus `lifecycle`, `guardrails`, `middlewa
 ### Logging the compatibility report
 
 `runtime.compatibility()` and the `onCompatibility` option report what the runtime honours for each
-registration:
+registration. The callback is advisory: throws and rejected promises are ignored.
 
 ```ts
 const runtime = await DurableRuntime.open({

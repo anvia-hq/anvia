@@ -316,7 +316,7 @@ export type DurableRuntimeOptions = {
    * Receives a detached compatibility report after `open()` and after each successful
    * `registerAgents()` call, so a host can log what the runtime does and does not honour.
    */
-  onCompatibility?: (report: readonly DurableAgentCompatibility[]) => void;
+  onCompatibility?: (report: readonly DurableAgentCompatibility[]) => void | Promise<void>;
   agents?: readonly DurableAgentRegistration[];
   tasks?: readonly { readonly registration: RegisteredTask }[];
   /** Independent capacity for custom task phases. Waiting phases release their slot. */

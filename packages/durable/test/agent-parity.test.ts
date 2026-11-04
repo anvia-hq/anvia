@@ -211,7 +211,9 @@ it("calls onCompatibility on open and after each registerAgents with a detached 
   const reports: Array<readonly DurableAgentCompatibility[]> = [];
   const runtime = await open({
     agents: [{ agent: agentWith("first"), version: "1" }],
-    onCompatibility: (report) => reports.push(report),
+    onCompatibility: (report) => {
+      reports.push(report);
+    },
   });
   expect(reports).toHaveLength(1);
   expect(reports[0]?.map((entry) => entry.agentId)).toEqual(["first"]);
@@ -230,4 +232,44 @@ it("calls onCompatibility on open and after each registerAgents with a detached 
     "already registered",
   );
   expect(reports).toHaveLength(2);
+});
+
+it("ignores a throwing onCompatibility callback and keeps the runtime usable", async () => {
+  const runtime = await open({
+    agents: [{ agent: agentWith("first"), version: "1" }],
+    onCompatibility: () => {
+      throw new Error("logger failed");
+    },
+  });
+  expect(runtime.compatibility().map((entry) => entry.agentId)).toEqual(["first"]);
+});
+
+it("ignores a rejecting onCompatibility callback on open and registerAgents", async () => {
+  let calls = 0;
+  const runtime = await open({
+    agents: [{ agent: agentWith("first"), version: "1" }],
+    onCompatibility: async () => {
+      calls += 1;
+      throw new Error("logger failed");
+    },
+  });
+  runtime.registerAgents([{ agent: agentWith("second"), version: "2" }]);
+  await Promise.resolve();
+  expect(calls).toBe(2);
+  expect(runtime.compatibility().map((entry) => entry.agentId)).toEqual(["first", "second"]);
+});
+
+it("keeps a registration when onCompatibility throws during registerAgents", async () => {
+  let fail = false;
+  const runtime = await open({
+    agents: [{ agent: agentWith("first"), version: "1" }],
+    onCompatibility: () => {
+      if (fail) throw new Error("logger failed");
+    },
+  });
+  fail = true;
+  expect(() =>
+    runtime.registerAgents([{ agent: agentWith("second"), version: "2" }]),
+  ).not.toThrow();
+  expect(runtime.compatibility().map((entry) => entry.agentId)).toEqual(["first", "second"]);
 });

@@ -172,7 +172,12 @@ export class DurableRuntime {
 
   private notifyCompatibility(): void {
     if (this.onCompatibility === undefined) return;
-    this.onCompatibility(compatibilityReport(this.agents));
+    // A host logging hook must never change whether open or registerAgents succeeds.
+    try {
+      void Promise.resolve(this.onCompatibility(compatibilityReport(this.agents))).catch(() => {});
+    } catch {
+      // Ignore: the report is advisory.
+    }
   }
 
   /** Release an idle registration, preserving journal history and outcomes.

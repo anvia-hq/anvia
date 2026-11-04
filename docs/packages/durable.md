@@ -622,7 +622,8 @@ the agent-level values at submission), plus `lifecycle`, `guardrails`, `middlewa
 
 `runtime.compatibility()` returns a detached, immutable report per registered agent, and
 `onCompatibility` receives the same report after `open()` and after each successful
-`registerAgents()`:
+`registerAgents()`. The hook is advisory: a throw or rejected promise is ignored, so a logging
+failure cannot change whether open or registration succeeds.
 
 ```ts
 const runtime = await DurableRuntime.open({

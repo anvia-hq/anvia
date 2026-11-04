@@ -884,14 +884,14 @@ function messageToResponsesInput(message: MessageType): ResponsesInputItem[] {
 }
 
 /**
- * Chat Completions and Responses both report the provider as "openai", and Chat Completions
- * call ids (call_...) are not valid Responses item ids. So for OpenAI-origin turns the id is
- * kept only when it looks like a Responses item id (fc...). Azure keeps its ids as before,
- * and an unknown origin keeps the id.
+ * Chat Completions and Responses both report the provider as "openai" (Azure reports
+ * "azure-openai" for both), and Chat Completions call ids (call_...) are not valid Responses
+ * item ids. So for OpenAI and Azure turns the id is kept only when it looks like a Responses
+ * item id (fc...). An unknown origin keeps the id.
  */
 function keepsFunctionCallItemId(origin: string | undefined, toolCallId: string): boolean {
-  if (origin === undefined || origin.startsWith("azure")) return true;
-  return origin.startsWith("openai") && toolCallId.startsWith("fc");
+  if (origin === undefined) return true;
+  return (origin.startsWith("openai") || origin.startsWith("azure")) && toolCallId.startsWith("fc");
 }
 
 function toolContentToOpenAIResponsesItem(content: ToolResultPart): ResponsesInputItem {

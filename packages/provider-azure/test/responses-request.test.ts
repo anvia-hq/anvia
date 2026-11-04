@@ -11,13 +11,13 @@ const request: CompletionRequest = {
     Message.assistant([
       {
         type: "tool-call",
-        toolCallId: "item_1",
+        toolCallId: "fc_1",
         callId: "call_1",
         toolName: "weather",
         input: {},
       },
     ]),
-    Message.toolResult("item_1", "Sunny", { callId: "call_1", toolName: "weather" }),
+    Message.toolResult("fc_1", "Sunny", { callId: "call_1", toolName: "weather" }),
   ],
   documents: [],
   tools: [],
@@ -47,7 +47,7 @@ describe("Azure Responses requests", () => {
           { type: "message", role: "assistant", content: "Checking." },
           {
             type: "function_call",
-            id: "item_1",
+            id: "fc_1",
             call_id: "call_1",
             name: "weather",
             arguments: "{}",

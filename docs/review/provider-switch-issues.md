@@ -102,12 +102,12 @@ Reproduction tests were added first (they fail on the baseline, except where not
 - Reproduce: `pnpm --filter @anvia/openai test -- provider-switch`, test "does not send an
   Anthropic tool id as a Responses function_call id".
 - Severity: high for Anthropic-to-OpenAI Responses switches that use tools.
-- Fix: send `id` when the origin is Azure or unknown, or when the origin is OpenAI and the id
-  starts with `fc`. The origin alone is not enough: Chat Completions also reports provider
-  `openai`, and its `call_...` ids would still be sent as `function_call.id` (found in review
-  by the hammer bot on PR #617). A plain `fc_` prefix check for every origin was rejected: the
-  Azure test `tags messages for Foundry without altering tool items` keeps `item_1`, so Azure
-  keeps its own ids. `call_id` stays. (`id` is optional on input `function_call` items.)
+- Fix: send `id` when the origin is unknown, or when the origin is OpenAI or Azure and the id
+  starts with `fc`. The origin alone is not enough: Chat Completions reports provider `openai`
+  and Azure reports `azure-openai` for both its Chat Completions and Responses models, so their
+  `call_...` ids would still be sent as `function_call.id` (found in review by the hammer bot
+  on PR #617, twice). The Azure test fixture used `item_1`; it now uses `fc_1`, a realistic
+  Responses id. `call_id` stays. (`id` is optional on input `function_call` items.)
 
 ## 7. Session-persisted controls rejected by the newly selected model
 
@@ -216,7 +216,7 @@ Fixed (each has a test that failed before the change and passes after it):
   its call. Same file, "keeps tool_use ids unique ...".
 - 3: Gemini drops signatures from another provider's reasoning. Test:
   `provider-gemini/test/provider-switch.test.ts`.
-- 6: OpenAI Responses sends `function_call.id` only for Azure or unknown origins, or OpenAI-origin ids starting with `fc`
+- 6: OpenAI Responses sends `function_call.id` only for unknown origins, or OpenAI and Azure origins with ids starting with `fc`
   (or its origin is unknown). Test: `provider-openai/test/provider-switch.test.ts`.
 - 7: Studio keeps only the persisted controls the selected model offers, and records the
   result. Test: `tool-studio/test/runner.test.ts`, "does not replay session controls ...".

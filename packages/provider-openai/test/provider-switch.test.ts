@@ -99,6 +99,30 @@ describe("OpenAI Responses history after a provider switch", () => {
     ]);
   });
 
+  it("does not send an Azure Chat Completions call id as a Responses function_call id", () => {
+    // Azure reports provider "azure-openai" for both its Chat Completions and Responses models.
+    const items = openaiMessageHelpers.messageToResponsesInput(
+      assistantFrom("azure-openai", [
+        {
+          type: "tool-call",
+          toolCallId: "call_1",
+          callId: "call_1",
+          toolName: "lookup",
+          input: {},
+        },
+      ]),
+    );
+
+    expect(items).toEqual([
+      {
+        type: "function_call",
+        call_id: "call_1",
+        name: "lookup",
+        arguments: "{}",
+      },
+    ]);
+  });
+
   it("does not replay Anthropic thinking as a Responses reasoning item", () => {
     const items = openaiMessageHelpers.messageToResponsesInput(
       assistantFrom("anthropic", [

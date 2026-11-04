@@ -298,8 +298,8 @@ Existing `/runs/:id` routes authorize graph children against the graph's owning 
 not their generated execution session. Graph listing requires owning-session access.
 
 SQLite schema version 2 added graph records and dependency-aware scheduling. The current
-schema version 7 includes persisted context projections and typed turn exhaustion. Version 1–6 stores upgrade
-on ownership acquisition, preserving existing runs. Older engines reject the upgraded database.
+schema version 9 is the current version. Earlier stores (versions 1–8) upgrade on ownership
+acquisition, preserving existing runs. Older engines reject the upgraded database.
 Downgrading the database is unsupported.
 
 `submitGraph()` remains a static agent-task DAG. For dynamic children, custom work, timers,
@@ -659,7 +659,8 @@ retaining one cannot change the runtime's registrations.
 - `run.cancel()` persists explicit cancellation. It cannot undo an external effect. A new
   run in the same session is rejected while the cancelled callback is still settling.
 - Each session executes one run at a time; opt-in persisted successors wait in FIFO order.
-  The runtime bounds cross-session concurrency. Mid-run steering is not supported.
+  The runtime bounds cross-session concurrency. Steering applies at the next safe boundary (see
+  "Steering an active run").
 - Supported: static local tools, approvals/questions, JSON-serializable structured output,
   provider-neutral completion models, persisted session history, and `skills` (flattened into
   static instructions and tools).

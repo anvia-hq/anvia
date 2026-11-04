@@ -52,10 +52,19 @@ export class DurableHttpError extends Error {
     /** Server-provided field name that exceeded a limit. */
     readonly field?: string,
     message?: string,
+    /** Seconds from the `Retry-After` header on a rejection, when the server sent one. */
+    readonly retryAfterSeconds?: number,
   ) {
     super(message ?? `Durable request failed with HTTP ${status}.`);
     this.name = "DurableHttpError";
   }
+}
+
+/** Parses an integer-seconds `Retry-After` value. HTTP-date values are ignored. */
+function parseRetryAfter(value: string | null): number | undefined {
+  if (value === null || !/^\d+$/.test(value.trim())) return undefined;
+  const seconds = Number(value.trim());
+  return Number.isSafeInteger(seconds) ? seconds : undefined;
 }
 
 /** Error bodies are best-effort: a non-JSON or oversized body must not mask the status. */
@@ -401,7 +410,13 @@ export class DurableClient {
     const response = await fetch(url, init);
     if (!response.ok) {
       const details = await durableErrorBody(response);
-      throw new DurableHttpError(response.status, details.code, details.field, details.message);
+      throw new DurableHttpError(
+        response.status,
+        details.code,
+        details.field,
+        details.message,
+        parseRetryAfter(response.headers.get("retry-after")),
+      );
     }
     return response;
   }

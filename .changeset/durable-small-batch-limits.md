@@ -1,6 +1,7 @@
 ---
 "@anvia/server": patch
 "@anvia/durable": patch
+"@anvia/client": patch
 ---
 
 Warn when the durable HTTP body limit is below the payload limit, and send `Retry-After` on capacity
@@ -16,3 +17,5 @@ rejections.
   do not send it.
 - `@anvia/durable`: add a read-only `runtime.limits()` that returns a copy of the effective limits
   after defaults. The server uses it for the startup check. This is additive, so it is a patch.
+- `@anvia/client`: `DurableHttpError` gains `retryAfterSeconds`, read from an integer `Retry-After`
+  header, so callers can back off on capacity 429s.

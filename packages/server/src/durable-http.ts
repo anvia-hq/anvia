@@ -1,7 +1,11 @@
 import { createEventStreamResponse } from "./response";
 
-export function jsonResponse(value: unknown, status = 200): Response {
-  return Response.json(value, { status, headers: { "cache-control": "no-store" } });
+export function jsonResponse(
+  value: unknown,
+  status = 200,
+  headers: Record<string, string> = {},
+): Response {
+  return Response.json(value, { status, headers: { "cache-control": "no-store", ...headers } });
 }
 export function listQuery(url: URL): Record<string, unknown> {
   const query: Record<string, unknown> = {};

@@ -63,6 +63,39 @@ export type DurableHandlerOptions = {
   maxBodyBytes?: number;
 };
 
+/** Seconds sent in `Retry-After` on capacity 429s. A conservative hint, not a guarantee. */
+const CAPACITY_RETRY_AFTER_SECONDS = 1;
+
+/**
+ * Warning text when the HTTP body limit is below the runtime payload limit, so a request can be
+ * rejected with 413 although the runtime would accept it. Returns `undefined` when the limits are
+ * equal or larger, or when the payload limit is unknown (for example an older runtime).
+ */
+export function durableBodyLimitWarning(
+  maxBodyBytes: number,
+  maxPayloadBytes: number | undefined,
+): string | undefined {
+  if (maxPayloadBytes === undefined || maxBodyBytes >= maxPayloadBytes) return undefined;
+  return (
+    `Durable HTTP body limit (${maxBodyBytes} bytes) is below the runtime payload limit ` +
+    `(${maxPayloadBytes} bytes). Requests between the two are rejected with 413 before the ` +
+    `runtime sees them, so multimodal prompts may not fit. Pass a larger maxBodyBytes to ` +
+    `createDurableHandler if the agent accepts images or documents.`
+  );
+}
+
+/** Emits the startup warning once. Never throws: a logging or old-runtime problem must not block startup. */
+function warnIfBodyLimitBelowPayloadLimit(runtime: DurableRuntime, maxBodyBytes: number): void {
+  try {
+    // Runtimes before `limits()` throw here; the payload limit is then unknown and nothing is warned.
+    const maxPayloadBytes = runtime.limits().maxPayloadBytes;
+    const message = durableBodyLimitWarning(maxBodyBytes, maxPayloadBytes);
+    if (message !== undefined) console.warn(message);
+  } catch {
+    // Ignore: the warning is advisory.
+  }
+}
+
 /** Fetch-compatible routes. The application owns runtime startup, shutdown, and authentication. */
 export function createDurableHandler(
   options: DurableHandlerOptions,
@@ -76,6 +109,7 @@ export function createDurableHandler(
   if (!Number.isSafeInteger(maxBodyBytes) || maxBodyBytes < 1)
     throw new TypeError("Invalid body limit.");
   const runtime = options.runtime;
+  warnIfBodyLimitBelowPayloadLimit(runtime, maxBodyBytes);
   const json = jsonResponse;
   const denied = () => json({ error: "Forbidden" }, 403);
 
@@ -183,7 +217,8 @@ export function createDurableHandler(
           code: error.code,
         };
         if (error.field !== undefined) body.field = error.field;
-        return json(body, error.code === "payload_too_large" ? 413 : 429);
+        if (error.code === "payload_too_large") return json(body, 413);
+        return json(body, 429, { "retry-after": String(CAPACITY_RETRY_AFTER_SECONDS) });
       }
       if (error instanceof DurableStorageError)
         return json({ error: "Durable runtime unavailable" }, 503);

@@ -52,3 +52,20 @@ describe("filterToWeaviateWhere", () => {
     );
   });
 });
+
+describe("adversarial filter inputs (security)", () => {
+  it("keeps adversarial property names and values as inert data", () => {
+    const malicious = `x" , "operator": "And`;
+    const where = filterToWeaviateWhere({ type: "eq", key: malicious, value: malicious });
+    expect(where).toEqual({
+      operator: "Equal",
+      target: { property: malicious },
+      value: malicious,
+    });
+    expect(JSON.parse(JSON.stringify(where))).toEqual({
+      operator: "Equal",
+      target: { property: malicious },
+      value: malicious,
+    });
+  });
+});

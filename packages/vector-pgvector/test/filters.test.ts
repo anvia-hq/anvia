@@ -78,3 +78,19 @@ describe("filterToPgVectorWhere", () => {
     );
   });
 });
+
+describe("adversarial filter inputs (security)", () => {
+  it("binds adversarial keys and values as parameters, never inline SQL", () => {
+    const where = filterToPgVectorWhere({
+      type: "eq",
+      key: `tenant' OR '1'='1`,
+      value: `'; DROP TABLE documents; --`,
+    });
+    expect(where).toEqual({
+      sql: "(metadata ->> $1) = $2",
+      values: [`tenant' OR '1'='1`, `'; DROP TABLE documents; --`],
+    });
+    expect(where?.sql).not.toContain("DROP");
+    expect(where?.sql).not.toContain("OR");
+  });
+});

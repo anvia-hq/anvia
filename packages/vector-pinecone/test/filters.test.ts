@@ -36,3 +36,16 @@ describe("filterToPineconeFilter", () => {
     );
   });
 });
+
+describe("adversarial filter inputs (security)", () => {
+  it("keeps adversarial keys and values as inert data in the filter object", () => {
+    const malicious = `a" } , { "$and": [{}]`;
+    const filter = filterToPineconeFilter({
+      type: "eq",
+      key: malicious,
+      value: malicious,
+    }) as Record<string, unknown>;
+    expect(filter).toEqual({ [malicious]: { $eq: malicious } });
+    expect(JSON.parse(JSON.stringify(filter))).toEqual({ [malicious]: { $eq: malicious } });
+  });
+});

@@ -48,3 +48,17 @@ describe("filterToMilvusExpr", () => {
     );
   });
 });
+
+describe("adversarial filter inputs (security)", () => {
+  it("escapes adversarial string values so they cannot break out of the expression", () => {
+    expect(filterToMilvusExpr({ type: "eq", key: "tenant", value: '"] or 1=1 --' })).toBe(
+      'tenant == "\\"] or 1=1 --"',
+    );
+    expect(filterToMilvusExpr({ type: "eq", key: "tenant", value: "x\\" })).toBe(
+      'tenant == "x\\\\"',
+    );
+    expect(filterToMilvusExpr({ type: "in", key: "tenant", values: ['a"b'] })).toBe(
+      'tenant in ["a\\"b"]',
+    );
+  });
+});

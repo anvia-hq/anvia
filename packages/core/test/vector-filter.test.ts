@@ -123,4 +123,10 @@ describe("vector filters", () => {
     });
     expect(results.map((result) => result.id).sort()).toEqual(["doc-2", "doc-4"]);
   });
+
+  it("treats adversarial keys and values as inert property lookups", () => {
+    const metadata = { tenant: "a", payload: `x" or "1"="1` };
+    expect(matchesVectorFilter(metadata, vectorFilter.eq(`tenant" or "1`, "a"))).toBe(false);
+    expect(matchesVectorFilter(metadata, vectorFilter.eq("payload", `x" or "1"="1`))).toBe(true);
+  });
 });

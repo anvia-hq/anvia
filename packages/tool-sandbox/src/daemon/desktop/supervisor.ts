@@ -249,7 +249,13 @@ export class DesktopSupervisor {
 
   private launch(name: ProcessName, file: string, args: readonly string[]): Managed {
     const env = name === "xvfb" || name === "xvnc" ? this.options.env() : this.environment();
-    const child = spawn(file, [...args], { env, stdio: ["ignore", "ignore", "pipe"] });
+    // Its own process group, so stopping it also stops the helpers it starts (a window manager's
+    // autostart launches dbus, at-spi, ssh-agent and gvfs). Those would otherwise outlive it.
+    const child = spawn(file, [...args], {
+      env,
+      stdio: ["ignore", "ignore", "pipe"],
+      detached: true,
+    });
     const managed: Managed = { name, child, stderr: "" };
     this.processes.set(name, managed);
     child.stderr?.on("data", (chunk: Buffer) => {
@@ -424,21 +430,40 @@ export class DesktopSupervisor {
   private async killAll(): Promise<void> {
     const running = Array.from(this.processes.values());
     this.processes.clear();
-    await Promise.all(
-      running.map(
-        ({ child }) =>
-          new Promise<void>((resolve) => {
-            if (child.exitCode !== null || child.signalCode !== null) return resolve();
-            const force = setTimeout(() => child.kill("SIGKILL"), 3_000);
-            child.once("exit", () => {
-              clearTimeout(force);
-              resolve();
-            });
-            child.kill("SIGTERM");
-          }),
-      ),
-    );
+    await Promise.all(running.map(({ child }) => stopGroup(child)));
   }
+}
+
+/** Sends a signal to a managed process's group. Falls back to the child alone if the group is gone. */
+function signalGroup(child: ChildProcess, signal: NodeJS.Signals): void {
+  const pid = child.pid;
+  if (pid === undefined) return;
+  try {
+    process.kill(-pid, signal);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ESRCH") child.kill(signal);
+  }
+}
+
+/**
+ * Stops a managed process and everything in its group. It gets SIGTERM and three seconds to exit;
+ * then the group gets SIGKILL, which also catches helpers that outlived their leader.
+ */
+async function stopGroup(child: ChildProcess): Promise<void> {
+  const exited =
+    child.exitCode !== null || child.signalCode !== null
+      ? Promise.resolve()
+      : new Promise<void>((resolve) => child.once("exit", () => resolve()));
+  signalGroup(child, "SIGTERM");
+  let force: ReturnType<typeof setTimeout> | undefined;
+  await Promise.race([
+    exited,
+    new Promise<void>((resolve) => {
+      force = setTimeout(resolve, 3_000);
+    }),
+  ]);
+  clearTimeout(force);
+  signalGroup(child, "SIGKILL");
 }
 
 /** Flags that make Xvnc a display with a loopback-only, passwordless, shared VNC server. */

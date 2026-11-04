@@ -1383,7 +1383,9 @@ describe("Anvia studio", () => {
       pipelineId: "audit-pipeline",
       output: { reply: "SEED 0" },
     });
-  });
+    // The 1,001 seed inserts each commit on their own, and WAL fsyncs every commit. That takes
+    // about 9 seconds on a loaded disk, so the default 5-second budget is not enough here.
+  }, 30_000);
 
   it("loads pipeline runs by exact id from built-in stores", () => {
     const stores = [

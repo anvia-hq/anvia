@@ -502,7 +502,9 @@ for (const backend of backends) {
 
 describe("desktop capability", () => {
   it("is not offered when the programs it needs are missing, and fails with a typed error", async () => {
-    const h = await start({ binaries: { xvfb: "/nonexistent/Xvfb" } });
+    // The backend is pinned: `start` defaults to the one under test, and on a machine with Xvnc
+    // that would select Xvnc, which never looks at the Xvfb path.
+    const h = await start({ backend: "xvfb", binaries: { xvfb: "/nonexistent/Xvfb" } });
     await expect(h.desktop.start()).rejects.toMatchObject({ code: "unsupported" });
     await expect(h.desktop.screenshot()).rejects.toMatchObject({ code: "unsupported" });
     expect(h.logs.some((line) => line.includes("desktop unavailable"))).toBe(true);

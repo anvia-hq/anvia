@@ -51,6 +51,46 @@ export type DurableAgentRegistration = {
   compaction?: DurableCompactionOptions;
 };
 
+/** Agent-level options the runtime freezes for the life of a registration. */
+export type DurableFrozenAgentOption =
+  | "maxTurns"
+  | "controls"
+  | "toolChoice"
+  | "temperature"
+  | "maxTokens"
+  | "providerOptions"
+  | "outputSchema";
+
+/** Per-run `AgentRunSettings` fields that durable manages itself or does not expose. */
+export type DurableUnavailableRunSetting =
+  | "retries"
+  | "maxTurns"
+  | "controls"
+  | "lifecycle"
+  | "guardrails"
+  | "middlewares"
+  | "toolConcurrency"
+  | "session";
+
+/**
+ * Detached description of one registered agent's durable compatibility. It reports what the
+ * runtime actually honours; it never implies support for a rejected feature.
+ */
+export type DurableAgentCompatibility = {
+  agentId: string;
+  version: string;
+  /** Static local tool names, including tools flattened from `skills`. */
+  tools: readonly string[];
+  streaming: boolean;
+  compaction: boolean;
+  /** Undefined when the registration has no model retry policy. */
+  modelRetry: DurableModelRetry | undefined;
+  /** Agent-level options captured by the runtime and not overridable per run. */
+  frozen: readonly DurableFrozenAgentOption[];
+  /** Per-run settings durable does not expose; see the package docs. */
+  unavailable: readonly DurableUnavailableRunSetting[];
+};
+
 export type DurableRunStatus =
   | "queued"
   | "retry_wait"
@@ -272,6 +312,11 @@ export type DurableRuntimeOptions = {
   limits?: Partial<DurableLimits>;
   /** Called once after a fatal storage/scheduler failure; never includes task payloads automatically. */
   onFatalError?: (error: unknown) => void;
+  /**
+   * Receives a detached compatibility report after `open()` and after each successful
+   * `registerAgents()` call, so a host can log what the runtime does and does not honour.
+   */
+  onCompatibility?: (report: readonly DurableAgentCompatibility[]) => void | Promise<void>;
   agents?: readonly DurableAgentRegistration[];
   tasks?: readonly { readonly registration: RegisteredTask }[];
   /** Independent capacity for custom task phases. Waiting phases release their slot. */

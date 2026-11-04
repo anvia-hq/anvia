@@ -301,6 +301,73 @@ empty summary fails before the main model call and leaves canonical history inta
 `run.retry()` resets unfinished model and compaction attempt budgets while preserving committed
 results. Compaction does not enable the otherwise unsupported agent memory/lifecycle callbacks.
 
+## Agent feature compatibility
+
+A registration runs only the parts of `AgentOptions` that replay deterministically. Everything
+else is reported instead of being silently dropped.
+
+Supported beyond static local tools and instructions:
+
+- `skills` are flattened into static instructions and static tools when the agent is constructed,
+  so they replay exactly like hand-written instructions and tools. Nothing is re-read on replay.
+- `temperature`, `maxTokens`, `providerOptions`, `controls`, `toolChoice`, and `outputSchema` are
+  fixed by the registration and sent with every request.
+- Observers registered through `observability` still run, and model retries use the registration's
+  `modelRetry` policy.
+
+Registering an agent whose resolved options define `retries` throws a `TypeError`. The runtime
+executes every run with retries disabled so a replay never repeats an attempt that was not
+recorded, which would make an agent-level retry setting silently ineffective. Configure
+`modelRetry` on the registration instead, or remove `retries` from the agent. `retries: false`,
+`retries: 0`, and `retries: { maxAttempts: 1 }` are accepted because they never retry.
+
+Registering an agent that sets `memory`, `lifecycle`, `middlewares`, `guardrails`, `context`,
+`mcpServers`, provider tools, or dynamic tool indexes throws a `TypeError` that names exactly the
+features that agent uses.
+
+These per-run settings are not exposed: `retries`, `maxTurns`, and `controls` (the runtime captures
+the agent-level values at submission), plus `lifecycle`, `guardrails`, `middlewares`,
+`toolConcurrency`, and the memory-scoped `session`. Durable session history replaces agent memory.
+
+### Logging the compatibility report
+
+`runtime.compatibility()` and the `onCompatibility` option report what the runtime honours for each
+registration. The callback is advisory: throws and rejected promises are ignored.
+
+```ts
+const runtime = await DurableRuntime.open({
+  store: new SqliteDurableStore("./anvia-runs.sqlite"),
+  agents: [
+    {
+      agent: researcher,
+      version: "1",
+      modelRetry: { maxAttempts: 2, initialDelayMs: 100, maxDelayMs: 1_000 },
+    },
+  ],
+  onCompatibility: (report) => {
+    for (const entry of report)
+      console.log(
+        entry.agentId,
+        entry.version,
+        entry.tools,
+        entry.streaming,
+        entry.compaction,
+        entry.frozen,
+        entry.unavailable,
+      );
+  },
+});
+
+// Or inspect the current registrations at any time.
+console.log(runtime.compatibility());
+```
+
+Each entry has `agentId`, `version`, `tools` (static tool names, including skill tools),
+`streaming`, `compaction`, `modelRetry`, `frozen` (agent options the runtime fixes, such as
+`maxTurns` and `controls`), and `unavailable` (the per-run settings above). `onCompatibility` fires
+once after `open()` and after each successful `registerAgents()`. Reports are detached copies, so
+retaining or logging one cannot change what the runtime executes.
+
 ## What survives a restart
 
 - Submissions, deduplicated by `(sessionId, requestId)`; changed content with the same ID is rejected.

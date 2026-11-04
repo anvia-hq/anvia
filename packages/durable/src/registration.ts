@@ -21,20 +21,18 @@ export function registrations(
       throw new TypeError("Durable streaming requires a streaming-capable model.");
     const options = getResolvedAgentOptions(agent);
     if (result.has(agent.id)) throw new TypeError(`Duplicate durable agent: ${agent.id}`);
+    // Agent-level retries would restart a model request without a persisted attempt, so the
+    // runtime executes with retries disabled. Reject the setting instead of silently disabling it.
+    if (retriesEnabled(options.retries))
+      throw new TypeError(
+        `Durable agent "${agent.id}" defines retries, which the durable runtime cannot honour: every run executes with retries disabled so a replay never repeats an unrecorded attempt. Configure modelRetry on the registration instead, or remove retries from the agent.`,
+      );
     // These callbacks can perform effects or change requests during reconstruction.
     // Add them only with their own persistence boundaries, never silently replay them.
-    if (
-      agent.memory !== undefined ||
-      agent.lifecycle !== undefined ||
-      agent.middlewares.length > 0 ||
-      agent.guardrails.length > 0 ||
-      agent.context.length > 0 ||
-      agent.mcpServers.length > 0 ||
-      (options.providerTools?.length ?? 0) > 0 ||
-      (options.toolIndexes?.length ?? 0) > 0
-    ) {
+    const unsupported = unsupportedFeatures(options);
+    if (unsupported.length > 0) {
       throw new TypeError(
-        "Durable agents currently support static local tools and instructions; memory, lifecycle, middleware, guardrails, context, MCP, provider tools, and tool indexes require additional checkpoint support.",
+        `Durable agent "${agent.id}" (version ${JSON.stringify(registration.version)}) uses features that require additional checkpoint support: ${unsupported.join(", ")}. Durable agents support static local tools and instructions only.`,
       );
     }
     for (const [name, policy] of Object.entries(registration.toolRecovery ?? {})) {
@@ -90,4 +88,27 @@ export function registrations(
     result.set(agent.id, normalized);
   }
   return result;
+}
+
+type ResolvedOptions = ReturnType<typeof getResolvedAgentOptions>;
+
+/** `false`, `0`, and a one-attempt policy all mean the runtime would not retry anyway. */
+function retriesEnabled(retries: ResolvedOptions["retries"]): boolean {
+  if (retries === undefined || retries === false) return false;
+  if (typeof retries !== "object" || retries === null) return false;
+  return retries.maxAttempts === undefined || retries.maxAttempts > 1;
+}
+
+/** Names only the features this agent actually sets, so the error stays actionable. */
+function unsupportedFeatures(options: ResolvedOptions): string[] {
+  const features: string[] = [];
+  if (options.memory !== undefined) features.push("memory");
+  if (options.lifecycle !== undefined) features.push("lifecycle");
+  if ((options.middlewares?.length ?? 0) > 0) features.push("middleware");
+  if ((options.guardrails?.length ?? 0) > 0) features.push("guardrails");
+  if ((options.context?.length ?? 0) > 0) features.push("context");
+  if ((options.mcpServers?.length ?? 0) > 0) features.push("MCP servers");
+  if ((options.providerTools?.length ?? 0) > 0) features.push("provider tools");
+  if ((options.toolIndexes?.length ?? 0) > 0) features.push("tool indexes");
+  return features;
 }

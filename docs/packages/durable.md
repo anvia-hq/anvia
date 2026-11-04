@@ -595,6 +595,60 @@ Known limitations:
 - `regenerate()` and `reset()` are approximate; submit a new turn with a fresh request id.
 - Thread lists are not covered; durable sessions are server data (`runtime.listRuns`).
 
+## Agent feature compatibility
+
+Durable registrations execute only the `AgentOptions` that replay deterministically. The runtime
+names what it accepts and reports what it does not expose, so a registration never silently loses a
+setting.
+
+- `skills` are supported: they are flattened into static instructions and static tools when the
+  agent is constructed, so they replay exactly like hand-written instructions and tools.
+- `temperature`, `maxTokens`, `providerOptions`, `controls`, `toolChoice`, and `outputSchema` are
+  fixed by the registration and sent with every request.
+- Agent-level `retries` is rejected. The runtime executes every run with retries disabled so a
+  replay never repeats an attempt that was not recorded, which would make the setting silently
+  ineffective. Configure `modelRetry` on the registration instead, or remove `retries` from the
+  agent. `retries: false`, `retries: 0`, and `retries: { maxAttempts: 1 }` are accepted because they
+  never retry.
+- Registering an agent that sets `memory`, `lifecycle`, `middlewares`, `guardrails`, `context`,
+  `mcpServers`, provider tools, or dynamic tool indexes throws a `TypeError` naming exactly the
+  features that agent uses.
+
+These per-run settings are not exposed: `retries`, `maxTurns`, and `controls` (the runtime captures
+the agent-level values at submission), plus `lifecycle`, `guardrails`, `middlewares`,
+`toolConcurrency`, and the memory-scoped `session`.
+
+### Reporting compatibility
+
+`runtime.compatibility()` returns a detached, immutable report per registered agent, and
+`onCompatibility` receives the same report after `open()` and after each successful
+`registerAgents()`:
+
+```ts
+const runtime = await DurableRuntime.open({
+  store: new SqliteDurableStore("./anvia-runs.sqlite"),
+  agents: [
+    {
+      agent: researcher,
+      version: "1",
+      modelRetry: { maxAttempts: 2, initialDelayMs: 100, maxDelayMs: 1_000 },
+    },
+  ],
+  onCompatibility: (report) => console.log("durable agents", report),
+});
+
+const reports = runtime.compatibility();
+for (const entry of reports) {
+  console.log(entry.agentId, entry.version, entry.tools); // static tool names, including skill tools
+  console.log(entry.frozen); // e.g. ["maxTurns", "controls"]
+  console.log(entry.unavailable); // per-run settings durable does not expose
+}
+```
+
+Each entry has `agentId`, `version`, `tools`, `streaming`, `compaction`, `modelRetry`, `frozen`
+(agent options fixed for the life of the registration), and `unavailable`. Reports are copies:
+retaining one cannot change the runtime's registrations.
+
 ## Shutdown and current scope
 
 - `runtime.resume()` schedules pending and interrupted runs without waiting for completion.
@@ -606,10 +660,14 @@ Known limitations:
 - Each session executes one run at a time; opt-in persisted successors wait in FIFO order.
   The runtime bounds cross-session concurrency. Mid-run steering is not supported.
 - Supported: static local tools, approvals/questions, JSON-serializable structured output,
-  provider-neutral completion models, and persisted session history.
+  provider-neutral completion models, persisted session history, and `skills` (flattened into
+  static instructions and tools).
 - Agent memory, lifecycle callbacks, middleware, guardrails, context sources, MCP, provider
   tools, and dynamic tool indexes are rejected at registration because they need additional
-  persistence boundaries. Durable session history replaces the agent's memory store here.
+  persistence boundaries. Agent-level `retries` is rejected too: use the registration's
+  `modelRetry`. Durable session history replaces the agent's memory store here. See
+  [agent feature compatibility](#agent-feature-compatibility) for the supported surface, the
+  per-run settings that are not exposed, and the compatibility report.
 - Each execution of a run starts a new observer run. Replayed checkpointed model, tool, and
   context steps are not observed again, but other callbacks may repeat during
   reconstruction. Observers are not the authoritative execution journal.

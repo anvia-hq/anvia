@@ -33,7 +33,6 @@ export class DurableBusyError extends Error {
   }
 }
 
-const BUSY_MESSAGE = "Session already has unfinished work.";
 const UNFINISHED = new Set([
   "queued",
   "retry_wait",
@@ -236,9 +235,8 @@ function lastUserPrompt(messages: readonly Message[]): AgentPrompt {
 }
 
 function isSessionBusy(error: unknown): error is DurableHttpError {
-  return (
-    error instanceof DurableHttpError && error.status === 409 && error.message === BUSY_MESSAGE
-  );
+  // A submit conflict means this session already has an unfinished run.
+  return error instanceof DurableHttpError && error.status === 409;
 }
 
 async function findBusyRun(

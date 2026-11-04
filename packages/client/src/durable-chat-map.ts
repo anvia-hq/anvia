@@ -16,7 +16,7 @@ import { isJsonValue } from "@anvia/core/completion";
 import type { CompletionSource } from "@anvia/core/completion";
 import type { MemoryCompactionInfo } from "@anvia/core/memory";
 import type { DurableEvent } from "@anvia/durable/protocol";
-import type { ClientStreamError, ClientStreamEvent } from "./types";
+import type { ClientStreamEvent } from "./types";
 
 /**
  * Pure projection from durable journal events to `anvia.client.v3` stream events.
@@ -29,7 +29,7 @@ import type { ClientStreamError, ClientStreamEvent } from "./types";
  * must not wrap the resulting frames in the standard contiguous frame validator.
  *
  * Message ids are one per model operation (`${runId}:${operationId}`); part ids add a suffix.
- * suffix. Replaying the same journal on reconnect assigns the same identities.
+ * Replaying the same journal on reconnect assigns the same identities.
  */
 export type DurableChatMapState = {
   /** Assistant message open for the model operation currently streaming. */
@@ -328,18 +328,23 @@ function mapAttemptFailed(
   data: JsonObject | undefined,
   state: DurableChatMapState,
 ): ClientStreamEvent[] {
-  const operationId = text(data, "operationId");
-  // `retry_wait` may follow, so the message stays open for the next attempt.
-  const details: JsonObject = {};
-  if (operationId !== undefined) details.operationId = operationId;
-  if (state.messageId !== undefined) details.messageId = state.messageId;
-  const error: ClientStreamError = {
-    name: "DurableModelAttemptError",
-    message: text(data, "error") ?? "Durable model attempt failed.",
-    retryable: true,
-  };
-  if (Object.keys(details).length > 0) error.details = details;
-  return [located(event, { type: "error", error })];
+  // A failed attempt is not a failed run: `retry_wait` may follow. Emit a transient data
+  // event instead of `error`, which would leave `useChat` in a sticky error state even when
+  // the next attempt succeeds. The next `message_reset` clears the partial attempt.
+  const attemptId = text(data, "attemptId");
+  return [
+    located(event, {
+      type: "data",
+      name: "durable_model_attempt_failed",
+      data: {
+        operationId: text(data, "operationId") ?? null,
+        attemptId: attemptId ?? null,
+        messageId: state.messageId ?? null,
+        error: text(data, "error") ?? "Durable model attempt failed.",
+      },
+      transient: true,
+    }),
+  ];
 }
 
 function mapModelCompleted(

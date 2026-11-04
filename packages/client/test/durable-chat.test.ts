@@ -221,14 +221,20 @@ describe("durable chat event mapping", () => {
     ]);
   });
 
-  it("reports a retryable error for a failed model attempt", () => {
+  it("reports a failed attempt as transient data, not a sticky error", () => {
     const mapped = mapAll([
-      event(1, "model_attempt_failed", { operationId: "0:model:1", error: "rate limited" }),
+      event(1, "model_attempt_failed", {
+        operationId: "0:model:1",
+        attemptId: "a1",
+        error: "rate limited",
+      }),
     ]);
-    expect(types(mapped)).toEqual(["error"]);
+    expect(types(mapped)).toEqual(["data"]);
     expect(mapped[0]).toMatchObject({
-      type: "error",
-      error: { name: "DurableModelAttemptError", retryable: true },
+      type: "data",
+      name: "durable_model_attempt_failed",
+      transient: true,
+      data: { operationId: "0:model:1", attemptId: "a1", error: "rate limited" },
     });
   });
 
@@ -609,12 +615,7 @@ describe("durable chat transport", () => {
 
   it("reports a busy session with the run to reattach to", async () => {
     const fake = new FakeClient();
-    fake.failSubmit = new DurableHttpError(
-      409,
-      undefined,
-      undefined,
-      "Session already has unfinished work.",
-    );
+    fake.failSubmit = new DurableHttpError(409, undefined, undefined, "Session is busy.");
     fake.busyRunId = "busy-run";
     const transport = createDurableChatTransport({
       client: clientOf(fake),

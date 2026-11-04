@@ -1,24 +1,103 @@
 import { DurableLimitError } from "./errors.js";
 import type { DurableTransaction } from "./types.js";
 
+/** Default byte budget for each persisted field (UTF-8 JSON). */
+export const DEFAULT_PAYLOAD_BYTES = 1_048_576;
+
+/** Budget groups that `maxPayloadBytes` can override separately. See `payloadBucket` for fields. */
+export type DurablePayloadField = "prompt" | "operation" | "event" | "outcome";
+
+/**
+ * Per-field payload budgets. Each omitted group falls back to `default`, which itself defaults to
+ * 1,048,576 bytes. The effective limits returned by `runtime.limits()` have every key filled in.
+ */
+export type DurablePayloadLimits = {
+  default?: number;
+  prompt?: number;
+  operation?: number;
+  event?: number;
+  outcome?: number;
+};
+
+/** A single byte budget for every field, or per-field budgets. */
+export type DurablePayloadBudget = number | DurablePayloadLimits;
+
 export type DurableLimits = {
   maxPendingRuns: number;
   maxPendingTasks: number;
-  maxPayloadBytes: number;
+  maxPayloadBytes: DurablePayloadBudget;
   maxOperations: number;
 };
+
+const PAYLOAD_KEYS = ["default", "prompt", "operation", "event", "outcome"] as const;
+
 export function durableLimits(input: Partial<DurableLimits> = {}): DurableLimits {
-  const limits = {
+  const limits: DurableLimits = {
     maxPendingRuns: 10_000,
     maxPendingTasks: 10_000,
-    maxPayloadBytes: 1_048_576,
+    maxPayloadBytes: DEFAULT_PAYLOAD_BYTES,
     maxOperations: 10_000,
     ...input,
   };
-  for (const [name, value] of Object.entries(limits))
-    if (!Number.isSafeInteger(value) || value < 1)
-      throw new TypeError(`Invalid durable limit: ${name}`);
+  for (const name of ["maxPendingRuns", "maxPendingTasks", "maxOperations"] as const)
+    assertLimit(limits[name], name);
+  limits.maxPayloadBytes = payloadBudget(limits.maxPayloadBytes);
   return limits;
+}
+
+/** Accepts a number (one budget for every field) or per-field overrides, and fills the gaps. */
+function payloadBudget(value: unknown): DurablePayloadBudget {
+  if (typeof value === "number") {
+    assertLimit(value, "maxPayloadBytes");
+    return value;
+  }
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    throw new TypeError("Invalid durable limit: maxPayloadBytes");
+  for (const key of Object.keys(value))
+    if (!(PAYLOAD_KEYS as readonly string[]).includes(key))
+      throw new TypeError(`Invalid durable limit: maxPayloadBytes.${key}`);
+  const given = value as DurablePayloadLimits;
+  for (const key of PAYLOAD_KEYS) {
+    if (given[key] !== undefined) assertLimit(given[key], `maxPayloadBytes.${key}`);
+  }
+  const fallback = given.default ?? DEFAULT_PAYLOAD_BYTES;
+  return {
+    default: fallback,
+    prompt: given.prompt ?? fallback,
+    operation: given.operation ?? fallback,
+    event: given.event ?? fallback,
+    outcome: given.outcome ?? fallback,
+  };
+}
+
+function assertLimit(value: unknown, name: string): void {
+  if (!Number.isSafeInteger(value) || (value as number) < 1)
+    throw new TypeError(`Invalid durable limit: ${name}`);
+}
+
+/**
+ * Which budget group a persisted field counts against. Fields not listed here use `default`.
+ * `run.input` is the submitted prompt plus inherited history, so it belongs with the prompt;
+ * `run.history` is the settled conversation, so it belongs with the outcome.
+ */
+const FIELD_GROUPS: Readonly<Record<string, DurablePayloadField>> = {
+  "run.prompt": "prompt",
+  "run.input": "prompt",
+  "run.history": "outcome",
+  "run.outcome": "outcome",
+  "task.outcome": "outcome",
+  "operation.input": "operation",
+  "operation.result": "operation",
+  "event.model_delta": "event",
+};
+
+/** Effective byte limit for one persisted field. */
+export function payloadLimitFor(budget: DurablePayloadBudget, field: string): number {
+  if (typeof budget === "number") return budget;
+  const group = FIELD_GROUPS[field];
+  return group === undefined
+    ? (budget.default ?? DEFAULT_PAYLOAD_BYTES)
+    : (budget[group] ?? budget.default ?? DEFAULT_PAYLOAD_BYTES);
 }
 
 /** Runs inside the journal transaction; capacity decisions and writes are atomic. */
@@ -31,12 +110,13 @@ export function limitedTransaction(
   // check measures the same string instead of serializing it again.
   const payload = (field: string, serialized: string | undefined) => {
     if (serialized === undefined) return;
+    const limit = payloadLimitFor(limits.maxPayloadBytes, field);
     const actual = new TextEncoder().encode(serialized).byteLength;
-    if (actual > limits.maxPayloadBytes)
+    if (actual > limit)
       throw new DurableLimitError(
         "payload_too_large",
-        `Durable payload byte limit exceeded: ${field} is ${actual} bytes; limit is ${limits.maxPayloadBytes} bytes.`,
-        { field, limit: limits.maxPayloadBytes, actual },
+        `Durable payload byte limit exceeded: ${field} is ${actual} bytes; limit is ${limit} bytes.`,
+        { field, limit, actual },
       );
   };
   const capacity = (kind: string, limit: number, count: number) =>
@@ -55,6 +135,10 @@ export function limitedTransaction(
     ...tx,
     appendEvent(id, type, data) {
       if (type === "model_delta") payload("event.model_delta", JSON.stringify(data));
+      // Status events are deliberately not checked. A status event is the only record of a
+      // failure or a blocked run, and its `error` text is not checked anywhere else, so a limit
+      // here would stop a run from reaching `failed` or `needs_attention` (the trap in DUR-03).
+      // Their size is bounded by construction: no outcome, only ids, status and error text.
       tx.appendEvent(id, type, data);
     },
     putRun(run) {

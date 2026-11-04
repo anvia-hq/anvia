@@ -60,7 +60,8 @@ thing:
 - `maxPayloadBytes` (1,048,576 bytes) bounds each persisted value, measured as UTF-8 encoded JSON:
   run prompt, trace, input, history, responses, steering, outcome, context checkpoint, and
   exhaustion; task trace, input, checkpoint, signals, and successful output; operation input and
-  result; and `model_delta` events.
+  result; and `model_delta` events. It takes either one number for every field, or per-field
+  budgets (see below).
 - `maxPendingRuns` and `maxPendingTasks` (10,000 each) bound unfinished work, including owned
   children.
 - `maxOperations` (10,000) bounds journal operations per run or task.
@@ -88,8 +89,29 @@ near the limit is stored twice (once on the run, once in the event) and the even
 larger than the outcome. Keep outcomes comfortably below the limit. Shrinking status events is
 tracked as DUR-07 and needs a client contract change first.
 
-Per-field limit overrides are not available yet. Raising `maxPayloadBytes` raises every field at
-once.
+`maxPayloadBytes` also accepts per-field budgets. A number applies to every field, as before. An
+object sets budgets by group and falls back to `default` (1,048,576 bytes) for each group it omits:
+
+```ts
+limits: {
+  maxPayloadBytes: { default: 1_048_576, prompt: 4_194_304, operation: 8_388_608, outcome: 4_194_304 },
+}
+```
+
+| Key         | Fields it covers                                                                                |
+| ----------- | ----------------------------------------------------------------------------------------------- |
+| `prompt`    | `run.prompt`, `run.input` (the submitted prompt plus inherited history)                         |
+| `operation` | `operation.input` (the model request), `operation.result` (model results and tool results)      |
+| `event`     | `event.model_delta` (one streamed chunk)                                                        |
+| `outcome`   | `run.outcome`, `run.history` (the settled conversation), `task.outcome`                         |
+| `default`   | every other persisted field, including trace, responses, steering, checkpoints and task signals |
+
+Groups are independent. Raising `prompt` does not raise `operation`, so a larger prompt still
+fails on its model request unless `operation` is raised too. A prompt is also copied into
+`run.history` and `run.outcome` after its turn, so raise `outcome` with `prompt` for the same
+text. The error names the field and its effective limit, so the table is enough to find the
+budget to raise. Status events are not checked (see above). Unknown keys and values that are not
+positive integers are rejected when the runtime opens.
 
 The HTTP body limit is the binding ceiling for uploads. Base64 images and long documents must fit
 `maxBodyBytes` before the runtime sees them, and the default 64 KiB is far below the default payload

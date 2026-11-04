@@ -4,6 +4,7 @@ import {
   DurableNotFoundError,
   DurableLimitError,
   DurableStorageError,
+  type DurablePayloadBudget,
   type DurableRuntime,
   type DurableTraceOptions,
 } from "@anvia/durable";
@@ -68,19 +69,27 @@ const CAPACITY_RETRY_AFTER_SECONDS = 1;
 
 /**
  * Warning text when the HTTP body limit is below the runtime payload limit, so a request can be
- * rejected with 413 although the runtime would accept it. Returns `undefined` when the limits are
- * equal or larger, or when the payload limit is unknown (for example an older runtime).
+ * rejected with 413 although the runtime would accept it. A per-field budget is compared by its
+ * largest group, because a request must fit the largest field it can fill. Returns `undefined`
+ * when the limits are equal or larger, or when the payload limit is unknown (for example an older
+ * runtime).
  */
 export function durableBodyLimitWarning(
   maxBodyBytes: number,
-  maxPayloadBytes: number | undefined,
+  maxPayloadBytes: DurablePayloadBudget | undefined,
 ): string | undefined {
-  if (maxPayloadBytes === undefined || maxBodyBytes >= maxPayloadBytes) return undefined;
+  if (maxPayloadBytes === undefined) return undefined;
+  const payloadBytes =
+    typeof maxPayloadBytes === "number"
+      ? maxPayloadBytes
+      : Math.max(...Object.values(maxPayloadBytes).filter((value) => value !== undefined));
+  if (maxBodyBytes >= payloadBytes) return undefined;
   return (
     `Durable HTTP body limit (${maxBodyBytes} bytes) is below the runtime payload limit ` +
-    `(${maxPayloadBytes} bytes). Requests between the two are rejected with 413 before the ` +
-    `runtime sees them, so multimodal prompts may not fit. Pass a larger maxBodyBytes to ` +
-    `createDurableHandler if the agent accepts images or documents.`
+    `(${payloadBytes} bytes${typeof maxPayloadBytes === "number" ? "" : ", the largest per-field limit"}). ` +
+    `Requests between the two are rejected with 413 before the runtime sees them, so multimodal ` +
+    `prompts may not fit. Pass a larger maxBodyBytes to createDurableHandler if the agent accepts ` +
+    `images or documents.`
   );
 }
 

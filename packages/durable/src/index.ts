@@ -94,5 +94,10 @@ export type {
   DurableGraphRecord,
 } from "./graph-types.js";
 
-export type { DurableLimits } from "./limits.js";
+export type {
+  DurableLimits,
+  DurablePayloadBudget,
+  DurablePayloadField,
+  DurablePayloadLimits,
+} from "./limits.js";
 export type { DurableMetrics } from "./metrics.js";

@@ -168,7 +168,12 @@ export class DurableRuntime {
 
   /** Effective admission and payload budgets, after defaults. Returns a detached copy. */
   limits(): DurableLimits {
-    return { ...this.limitValues };
+    const { maxPayloadBytes, ...rest } = this.limitValues;
+    return {
+      ...rest,
+      maxPayloadBytes:
+        typeof maxPayloadBytes === "number" ? maxPayloadBytes : { ...maxPayloadBytes },
+    };
   }
 
   /** Detached, immutable compatibility report for every current registration. */

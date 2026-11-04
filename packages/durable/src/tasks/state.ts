@@ -1,4 +1,6 @@
 import { DurableConflictError, DurableNotFoundError } from "../errors.js";
+import { hydrateValue } from "../blob.js";
+import type { JsonValue } from "@anvia/core/completion";
 import { json, nonblank, sameJson } from "../json.js";
 import type { DurableTraceOptions, DurableTransaction } from "../types.js";
 import type { RegisteredTask, TaskRecord } from "./types.js";
@@ -179,7 +181,10 @@ export function reconcileTree(
         if (["completed", "failed", "cancelled"].includes(run.status)) {
           task.outcome =
             run.status === "completed" && run.outcome?.type === "response"
-              ? { status: "completed", output: json(run.outcome.output) }
+              ? {
+                  status: "completed",
+                  output: json(hydrateValue(tx, run.outcome.output as JsonValue)),
+                }
               : {
                   status: run.status === "cancelled" ? "cancelled" : "failed",
                   error: run.error ?? "Agent did not return a successful response.",

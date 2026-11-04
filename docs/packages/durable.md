@@ -298,9 +298,9 @@ Existing `/runs/:id` routes authorize graph children against the graph's owning 
 not their generated execution session. Graph listing requires owning-session access.
 
 SQLite schema version 2 added graph records and dependency-aware scheduling. The current
-schema version 9 is the current version. Earlier stores (versions 1–8) upgrade on ownership
-acquisition, preserving existing runs. Older engines reject the upgraded database.
-Downgrading the database is unsupported.
+schema version 10 adds the blob table for oversized payloads. Earlier stores (versions 1–9)
+upgrade on ownership acquisition, preserving existing runs. Older engines reject the upgraded
+database. Downgrading the database is unsupported.
 
 `submitGraph()` remains a static agent-task DAG. For dynamic children, custom work, timers,
 and external signals, use the [custom task API](./durable-tasks.md). Editing submitted DAGs,

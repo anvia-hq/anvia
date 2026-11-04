@@ -114,6 +114,23 @@ text. The error names the field and its effective limit, so the table is enough 
 budget to raise. Status events are not checked (see above). Unknown keys and values that are not
 positive integers are rejected when the runtime opens.
 
+### Oversized payloads move to blob storage
+
+A single payload leaf larger than 64 KiB — a tool result, a model response, an outcome's text or
+output, or a large message part (text, reasoning, image or file data, tool-call input) — is stored
+in a content-addressed blob table and replaced by a bounded reference in the journal record. The
+payload checks above run on the stored form, so one oversized artifact no longer fails the run or
+inflates the history that later runs in the session inherit. Models, tools, compaction, and
+reconciliation always operate on the fully restored content; `run()`, `snapshot()`,
+`operationRequest()`, and event reads restore references as well.
+
+References are content-addressed and written in the same transaction as the record that points at
+them, so a committed reference is never dangling and a replay produces byte-identical records. The
+threshold is fixed at 64 KiB and does not follow `maxPayloadBytes`; a field made of many
+below-threshold values is still bounded by its field budget, exactly as before. Blobs are never
+garbage-collected: stores grow by the full size of every oversized payload. Media in a submitted
+prompt is not externalized; it counts against the prompt budget at admission.
+
 The HTTP body limit is the binding ceiling for uploads. Base64 images and long documents must fit
 `maxBodyBytes` before the runtime sees them, and the default 64 KiB is far below the default payload
 limit, so any image over about 48 KiB binary is rejected with 413 before the payload limit is

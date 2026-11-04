@@ -1,6 +1,7 @@
 import type { AgentPrompt } from "@anvia/core/agent";
 import type { JsonValue } from "@anvia/core/completion";
 import { DurableConflictError, DurableNotFoundError } from "./errors.js";
+import { hydrateValue } from "./blob.js";
 import { json, sameJson } from "./json.js";
 import { GRAPH_SESSION_PREFIX, createRunRecord } from "./run-record.js";
 import type { DurableAgentRegistration, DurableRunRecord, DurableTransaction } from "./types.js";
@@ -117,7 +118,7 @@ export function graphSnapshot(tx: DurableTransaction, id: string): DurableGraphS
     }
 
     if (run.outcome?.type === "response") {
-      node.output = json(run.outcome.output);
+      node.output = json(hydrateValue(tx, run.outcome.output as JsonValue));
     }
 
     if (run.outcome?.type === "interaction") {
@@ -178,7 +179,7 @@ export function graphInput(tx: DurableTransaction, run: DurableRunRecord): Agent
       prerequisite.outcome?.type !== "response"
     )
       throw new DurableConflictError("Task dependencies are not successful.");
-    values[prerequisite.taskId!] = json(prerequisite.outcome.output);
+    values[prerequisite.taskId!] = json(hydrateValue(tx, prerequisite.outcome.output as JsonValue));
   }
   if (Object.keys(values).length === 0) return run.prompt;
   const suffix = `\n\nTask dependency results (JSON):\n${JSON.stringify(values)}`;

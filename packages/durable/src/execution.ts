@@ -15,6 +15,12 @@ import type {
 } from "@anvia/core/internal/agent";
 import { AgentObserverDispatchError } from "@anvia/core/observability";
 import { DurableModelError, DurableRecoveryError, DurableStorageError } from "./errors.js";
+import {
+  externalizeModelInput,
+  externalizeModelResult,
+  externalizeToolResult,
+  hydrateValue,
+} from "./blob.js";
 import { errorMessage, json, sameJson } from "./json.js";
 import type {
   DurableAgentRegistration,
@@ -45,9 +51,12 @@ export function createExecution(
   ): DurableOperation {
     check();
     return store.transaction((tx) => {
+      // The journal stores a bounded form; content addressing makes it deterministic, so the
+      // replay comparison below can run on stored forms directly.
+      const stored = kind === "model" ? externalizeModelInput(tx, input) : input;
       const previous = tx.getOperation(run.id, key);
       if (previous !== undefined) {
-        if (!sameJson(previous.input, input) || previous.kind !== kind) {
+        if (!sameJson(previous.input, stored) || previous.kind !== kind) {
           throw new DurableRecoveryError(
             "Execution changed at a saved checkpoint; restore the registered agent version.",
             key,
@@ -59,7 +68,10 @@ export function createExecution(
             key,
           );
         }
-        return previous;
+        // Restored results are handed back to the agent loop fully hydrated.
+        return previous.status === "completed"
+          ? { ...previous, result: hydrateValue(tx, previous.result!) }
+          : previous;
       }
       const current = tx.getRun(run.id)!;
       if (kind === "model") {
@@ -70,11 +82,11 @@ export function createExecution(
         current.modelTurns += 1;
         tx.putRun(current);
       }
-      const operation: DurableOperation = { key, kind, input, recovery, status: "started" };
+      const operation: DurableOperation = { key, kind, input: stored, recovery, status: "started" };
       tx.putOperation(run.id, operation);
       tx.appendEvent(run.id, kind === "model" ? "model_started" : "tool_started", {
         operationId: key,
-        input,
+        input: stored,
       });
       return operation;
     });
@@ -85,7 +97,14 @@ export function createExecution(
     store.transaction((tx) => {
       const current = tx.getRun(run.id)!;
       if (current.status !== "running") throw new Error("Durable run is no longer running.");
-      tx.putOperation(run.id, { ...operation, status: "completed", result });
+      // Oversized results move to the blob table here, atomically with the referencing write.
+      const stored =
+        operation.kind === "tool"
+          ? externalizeToolResult(tx, result)
+          : operation.kind === "model"
+            ? externalizeModelResult(tx, result)
+            : result;
+      tx.putOperation(run.id, { ...operation, status: "completed", result: stored });
       if (usage !== undefined) {
         current.usage = Usage.add(current.usage, usage);
         tx.putRun(current);
@@ -93,7 +112,7 @@ export function createExecution(
 
       const data: JsonObject = {
         operationId: operation.key,
-        result,
+        result: stored,
       };
 
       if (operation.attemptId !== undefined) {

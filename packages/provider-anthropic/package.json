@@ -1,6 +1,6 @@
 {
   "name": "@anvia/anthropic",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Anthropic provider adapter for Anvia.",
   "author": "anvia",
   "license": "MIT",

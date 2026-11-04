@@ -868,7 +868,7 @@ function messageToResponsesInput(message: MessageType): ResponsesInputItem[] {
       };
       // Item ids from another provider (for example Anthropic's toolu_...) are not valid here.
       // They are left out; call_id still links the result. Unknown origin keeps the id.
-      if (originIsOpenAIFamily(origin)) {
+      if (keepsFunctionCallItemId(origin, content.toolCallId)) {
         item.id = content.toolCallId;
       }
       items.push(item);
@@ -883,9 +883,15 @@ function messageToResponsesInput(message: MessageType): ResponsesInputItem[] {
   return items;
 }
 
-/** True when the turn came from OpenAI (or Azure OpenAI), or when its origin is unknown. */
-function originIsOpenAIFamily(origin: string | undefined): boolean {
-  return origin === undefined || origin.startsWith("openai") || origin.startsWith("azure");
+/**
+ * Chat Completions and Responses both report the provider as "openai", and Chat Completions
+ * call ids (call_...) are not valid Responses item ids. So for OpenAI-origin turns the id is
+ * kept only when it looks like a Responses item id (fc...). Azure keeps its ids as before,
+ * and an unknown origin keeps the id.
+ */
+function keepsFunctionCallItemId(origin: string | undefined, toolCallId: string): boolean {
+  if (origin === undefined || origin.startsWith("azure")) return true;
+  return origin.startsWith("openai") && toolCallId.startsWith("fc");
 }
 
 function toolContentToOpenAIResponsesItem(content: ToolResultPart): ResponsesInputItem {

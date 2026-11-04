@@ -169,10 +169,14 @@ jobs:
         run: pnpm releases:verify-packs
 
       - name: Typecheck packages
-        run: pnpm --filter './packages/**' typecheck
+        # tsrs reads the dist output built above, so it skips the per-package build:deps
+        # rebuilds that raced with other typechecks.
+        run: pnpm typecheck:tsrs
 
       - name: Typecheck cookbook and internal tests
-        run: pnpm --filter cookbook --filter './tests/**' typecheck
+        # tests/compat/peer-core rebuilds openai and studio (with --clean) before its typecheck;
+        # run serially so other typechecks never read a dist that is being rebuilt.
+        run: pnpm --workspace-concurrency=1 --filter cookbook --filter './tests/**' typecheck
 
       - name: Test packages
         run: pnpm --filter './packages/**' test

@@ -858,6 +858,8 @@ function setStatus(
   run.status = status;
   run.updatedAt = new Date().toISOString();
   tx.putRun(run);
+  // Status events stay small: the outcome lives on the run record and clients read it from the
+  // snapshot. Embedding it here duplicated every completed outcome in the journal (DUR-07).
   tx.appendEvent(
     run.id,
     "status",
@@ -866,7 +868,6 @@ function setStatus(
       error: run.error,
       blockedOperation: run.blockedOperation,
       nextAttemptAt: run.nextAttemptAt,
-      outcome: run.outcome,
     }),
   );
 }

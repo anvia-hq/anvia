@@ -1,5 +1,5 @@
 import type { AgentInteractionResponse } from "@anvia/core/agent/interactions";
-import type { Message, ToolResultOutput } from "@anvia/core/completion";
+import type { JsonObject, Message, ToolResultOutput } from "@anvia/core/completion";
 import type {
   DurableEvent,
   DurableRunPage,
@@ -18,6 +18,7 @@ import {
   createDurableChatMapState,
   durableChatMessageId,
   mapDurableChatEvent,
+  needsSettledOutcome,
 } from "../src/durable-chat-map";
 import type { ClientStreamEvent, ClientStreamFrame, ClientStreamRequest } from "../src/types";
 
@@ -373,6 +374,52 @@ describe("durable chat event mapping", () => {
     expect(cancelled[0]).toMatchObject({ type: "run_end", status: "cancelled" });
   });
 
+  it("maps settled statuses the same whether the outcome is on the event or supplied", () => {
+    const response = { type: "response", text: "done", usage };
+    const interaction = {
+      type: "interaction",
+      interaction: {
+        id: "interaction-1",
+        type: "tool-approval",
+        toolName: "echo",
+        toolCallId: "call-1",
+        internalCallId: "call-1",
+        input: {},
+      },
+      continuation: { state: { step: 2 }, messages: [] },
+    };
+    const cases: Array<{ status: string; outcome: unknown; error?: string }> = [
+      { status: "completed", outcome: response },
+      { status: "waiting", outcome: interaction },
+      { status: "failed", outcome: { usage }, error: "boom" },
+    ];
+    for (const { status, outcome, error } of cases) {
+      const compact: JsonObject = { status };
+      if (error !== undefined) compact.error = error;
+      const legacy: JsonObject = { ...compact, outcome: outcome as JsonObject };
+      const embedded = mapAll([event(1, "status", legacy)]);
+      const snapshotted = mapDurableChatEvent(
+        event(1, "status", compact),
+        createDurableChatMapState(),
+        outcome as JsonObject,
+      );
+      expect(snapshotted.events).toEqual(embedded);
+      expect(embedded.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("asks for a snapshot only for settled statuses without an embedded outcome", () => {
+    expect(needsSettledOutcome(event(1, "status", { status: "completed" }))).toBe(true);
+    expect(needsSettledOutcome(event(1, "status", { status: "waiting" }))).toBe(true);
+    expect(needsSettledOutcome(event(1, "status", { status: "failed", error: "x" }))).toBe(true);
+    expect(needsSettledOutcome(event(1, "status", { status: "running" }))).toBe(false);
+    expect(needsSettledOutcome(event(1, "status", { status: "needs_attention" }))).toBe(false);
+    expect(needsSettledOutcome(event(1, "status", { status: "completed", outcome: {} }))).toBe(
+      false,
+    );
+    expect(needsSettledOutcome(event(1, "model_delta", {}))).toBe(false);
+  });
+
   it("ignores a sequence at or behind the projection cursor", () => {
     const state = { ...createDurableChatMapState(5) };
     const mapped = mapDurableChatEvent(event(5, "submitted", {}), state);
@@ -417,6 +464,18 @@ class FakeClient {
   resolveCalls: Array<{ runId: string; operationId: string; output: ToolResultOutput }> = [];
   failSubmit?: Error;
   busyRunId?: string;
+  /** The run as a snapshot reports it. Settled status events read their outcome from here. */
+  snapshotRun: { status: string; outcome?: unknown } = { status: "completed" };
+  snapshotCalls: string[] = [];
+
+  async snapshot(id: string): Promise<DurableSnapshot> {
+    this.snapshotCalls.push(id);
+    return {
+      run: { id, ...this.snapshotRun },
+      operations: [],
+      cursor: 0,
+    } as unknown as DurableSnapshot;
+  }
 
   async submit(
     submission: DurableSubmission,
@@ -519,6 +578,53 @@ describe("durable chat transport", () => {
     expect(fake.submitCalls[0]?.options.enqueue).toBe(true);
     expect(frames[0]).toMatchObject({ type: "stream_start", streamId: runId });
     expect(transport.controller.activeRunId).toBe(runId);
+    expect(frames.at(-1)).toMatchObject({ type: "stream_end", status: "completed" });
+  });
+
+  it("reads a settled outcome from the snapshot when the status event omits it", async () => {
+    const fake = new FakeClient();
+    fake.events = [
+      event(1, "submitted", {}),
+      event(2, "status", { status: "running" }),
+      event(3, "status", { status: "completed" }),
+    ];
+    fake.snapshotRun = {
+      status: "completed",
+      outcome: { type: "response", text: "from-snapshot" },
+    };
+    const transport = createDurableChatTransport({
+      client: clientOf(fake),
+      agentId: "agent-1",
+      sessionId: "session-1",
+    });
+    const frames = await collect(transport.send({ request: request("messages") }));
+    expect(fake.snapshotCalls).toEqual([runId]);
+    const end = frames.find(
+      (frame) => frame.type === "stream_event" && frame.event.type === "run_end",
+    );
+    expect(end).toMatchObject({
+      event: { type: "run_end", status: "completed", text: "from-snapshot" },
+    });
+    expect(frames.at(-1)).toMatchObject({ type: "stream_end", status: "completed" });
+  });
+
+  it("does not use a snapshot outcome from a later point than the status event", async () => {
+    const fake = new FakeClient();
+    fake.events = [event(1, "status", { status: "waiting" })];
+    // The run has already moved on, so its current outcome is not the waiting one.
+    fake.snapshotRun = { status: "running" };
+    const transport = createDurableChatTransport({
+      client: clientOf(fake),
+      agentId: "agent-1",
+      sessionId: "session-1",
+    });
+    const frames = await collect(transport.send({ request: request("messages") }));
+    expect(fake.snapshotCalls).toEqual([runId]);
+    // No interaction is shown for a point the run has already left; the run still ends suspended.
+    const types = frames
+      .filter((frame) => frame.type === "stream_event")
+      .map((frame) => (frame.type === "stream_event" ? frame.event.type : ""));
+    expect(types).toEqual(["run_end"]);
     expect(frames.at(-1)).toMatchObject({ type: "stream_end", status: "completed" });
   });
 

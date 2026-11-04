@@ -1,9 +1,13 @@
 import type { AgentPrompt } from "@anvia/core/agent";
-import type { Message, ToolResultOutput } from "@anvia/core/completion";
+import type { JsonObject, Message, ToolResultOutput } from "@anvia/core/completion";
+import { isJsonValue } from "@anvia/core/completion";
+import type { DurableEvent } from "@anvia/durable/protocol";
 import { DurableHttpError, type DurableClient } from "./durable";
 import {
   createDurableChatMapState,
   mapDurableChatEvent,
+  needsSettledOutcome,
+  statusEventStatus,
   type DurableChatMapState,
 } from "./durable-chat-map";
 import { createClientId } from "./messages";
@@ -45,7 +49,7 @@ const UNFINISHED = new Set([
 /** Methods the adapter needs. A structural subset of `DurableClient`, so tests can fake it. */
 export type DurableChatClient = Pick<
   DurableClient,
-  "submit" | "stream" | "respond" | "resolveTool" | "retry" | "cancel" | "listRuns"
+  "submit" | "stream" | "snapshot" | "respond" | "resolveTool" | "retry" | "cancel" | "listRuns"
 >;
 
 /**
@@ -204,7 +208,10 @@ async function* streamFrames(
     abortSignal === undefined ? { after: session.cursor } : { after: session.cursor, abortSignal };
   try {
     for await (const event of client.stream(runId, streamOptions)) {
-      const mapped = mapDurableChatEvent(event, session.map);
+      const settled = needsSettledOutcome(event)
+        ? await snapshotOutcome(client, runId, event, abortSignal)
+        : undefined;
+      const mapped = mapDurableChatEvent(event, session.map, settled);
       session.map = mapped.state;
       session.cursor = mapped.state.sequence;
       lastEventId = mapped.state.sequence;
@@ -224,6 +231,28 @@ async function* streamFrames(
     throw error;
   }
   yield { type: "stream_end", streamId: runId, eventId: lastEventId, status: "completed" };
+}
+
+/**
+ * The outcome for a settled status event, read from the run snapshot (DUR-07 keeps it out of the
+ * event). If the run has moved past that status, the snapshot describes a later point, so nothing
+ * is returned and the event maps without its outcome.
+ */
+async function snapshotOutcome(
+  client: DurableChatClient,
+  runId: string,
+  event: DurableEvent,
+  abortSignal: AbortSignal | undefined,
+): Promise<JsonObject | undefined> {
+  const snapshot = await client.snapshot(runId, abortSignal === undefined ? {} : { abortSignal });
+  if (snapshot.run.status !== statusEventStatus(event)) return undefined;
+  const outcome: unknown = snapshot.run.outcome;
+  return typeof outcome === "object" &&
+    outcome !== null &&
+    !Array.isArray(outcome) &&
+    isJsonValue(outcome)
+    ? (outcome as JsonObject)
+    : undefined;
 }
 
 function lastUserPrompt(messages: readonly Message[]): AgentPrompt {

@@ -49,9 +49,11 @@ import { parseTraceOptions } from "./trace-schema.js";
 import { errorMessage, json, nonblank, sameJson } from "./json.js";
 import { listOptionsSchema } from "./schema.js";
 import { registrations } from "./registration.js";
+import { compatibilityReport } from "./compatibility.js";
 import { DurableRun } from "./run.js";
 import type {
   DurableSteerOptions,
+  DurableAgentCompatibility,
   DurableAgentRegistration,
   DurableListOptions,
   DurableRunPage,
@@ -89,6 +91,7 @@ export class DurableRuntime {
     maxConcurrentTasks: number,
     limits: DurableLimits,
     private readonly onFatalError?: (error: unknown) => void,
+    private readonly onCompatibility?: (report: readonly DurableAgentCompatibility[]) => void,
   ) {
     this.agents = agents;
     this.store = guardStore(store, (error) => this.fail(error), limits);
@@ -135,7 +138,7 @@ export class DurableRuntime {
     const agents = registrations(options.agents ?? []);
     const limits = durableLimits(options.limits);
     options.store.acquire();
-    return new DurableRuntime(
+    const runtime = new DurableRuntime(
       options.store,
       agents,
       maxConcurrentRuns,
@@ -143,7 +146,10 @@ export class DurableRuntime {
       maxConcurrentTasks,
       limits,
       options.onFatalError,
+      options.onCompatibility,
     );
+    runtime.notifyCompatibility();
+    return runtime;
   }
 
   /** Validate and add immutable registrations without restarting running work.
@@ -155,6 +161,18 @@ export class DurableRuntime {
     for (const id of added.keys())
       if (this.agents.has(id)) throw new DurableConflictError(`Agent already registered: ${id}`);
     for (const [id, registration] of added) this.agents.set(id, registration);
+    this.notifyCompatibility();
+  }
+
+  /** Detached, immutable compatibility report for every current registration. */
+  compatibility(): readonly DurableAgentCompatibility[] {
+    this.assertOpen();
+    return compatibilityReport(this.agents);
+  }
+
+  private notifyCompatibility(): void {
+    if (this.onCompatibility === undefined) return;
+    this.onCompatibility(compatibilityReport(this.agents));
   }
 
   /** Release an idle registration, preserving journal history and outcomes.

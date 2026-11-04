@@ -195,21 +195,30 @@ async function prepareAgentRun(
     return session;
   }
 
-  const persistedControls = sessionControlValues(session?.metadata);
-  const runBody =
-    body.controls === undefined && persistedControls !== undefined
-      ? { ...body, controls: persistedControls }
-      : body;
-  const selectedModel = selectRunModel(c, props, agent, runBody, session);
+  // Validate only the controls this request sent. Controls remembered from earlier runs may
+  // belong to another model, so they are filtered for the selected model below.
+  const selectedModel = selectRunModel(c, props, agent, body, session);
   if (selectedModel instanceof Response) {
     return selectedModel;
   }
+  const persistedControls = sessionControlValues(session?.metadata);
+  const runBody =
+    body.controls === undefined && persistedControls !== undefined
+      ? {
+          ...body,
+          // Record the outcome even when nothing is compatible, so the session stops replaying
+          // controls that the model no longer offers.
+          controls:
+            compatibleControlValues(persistedControls, selectedModel.model ?? agent.agent.model) ??
+            {},
+        }
+      : body;
   const runAgent =
     selectedModel.model === undefined
       ? agent.agent
       : cloneAgent(agent.agent, {
           model: selectedModel.model,
-          controls: compatibleAgentControls(agent.agent.controls, selectedModel.model),
+          controls: compatibleControlValues(agent.agent.controls, selectedModel.model),
         });
   const runId = globalThis.crypto.randomUUID();
   const runStartedAt = Date.now();
@@ -275,7 +284,8 @@ async function prepareAgentRun(
   };
 }
 
-function compatibleAgentControls(
+/** Keeps only control values the model declares, so a switched model never receives others. */
+function compatibleControlValues(
   controls: Readonly<Record<string, string | undefined>> | undefined,
   model: CompletionModel,
 ): Readonly<Record<string, string>> | undefined {

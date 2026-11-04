@@ -10,6 +10,7 @@ import {
   CompletionProviderOutputError,
   type CompletionRequest,
   type CompletionResponse,
+  getAssistantGenerationMetadata,
   isJsonValue,
   type JsonObject,
   type JsonValue,
@@ -353,6 +354,10 @@ function toolMessageToGeminiContent(
 function assistantMessageToGeminiContent(
   message: Extract<MessageType, { role: "assistant" }>,
 ): GeminiContent {
+  // Thought signatures are only valid for the provider that issued them. Keep them for Gemini's
+  // own turns (or history with unknown origin); drop them when another provider produced the turn.
+  const origin = getAssistantGenerationMetadata(message)?.provider;
+  const replaySignatures = origin === undefined || origin === "gemini";
   return {
     role: "model",
     parts:
@@ -386,7 +391,11 @@ function assistantMessageToGeminiContent(
                   return [];
                 }
                 const part: GeminiPart = { text: reasoning.text, thought: true };
-                if (reasoning.type === "text" && reasoning.signature !== undefined) {
+                if (
+                  replaySignatures &&
+                  reasoning.type === "text" &&
+                  reasoning.signature !== undefined
+                ) {
                   part.thoughtSignature = reasoning.signature;
                 }
                 return [part];

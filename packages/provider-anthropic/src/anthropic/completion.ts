@@ -14,6 +14,7 @@ import {
   type CompletionRequest,
   type CompletionResponse,
   type FilePart,
+  getAssistantGenerationMetadata,
   type ImagePart,
   isJsonValue,
   type JsonObject,
@@ -544,7 +545,7 @@ export function toAnthropicMessagesParams(
     ...providerOptions,
     model: modelId,
     max_tokens: request.maxTokens ?? DEFAULT_MAX_TOKENS,
-    messages: messages.flatMap(messageToAnthropicMessages),
+    messages: anthropicHistory(messages),
   };
 
   const reasoningEffort = request.controls?.reasoningEffort;
@@ -964,7 +965,43 @@ export function fromAnthropicStreamEvent(event: unknown): CompletionModelStreamE
   return [];
 }
 
-function messageToAnthropicMessages(message: MessageType): AnthropicMessage[] {
+/**
+ * Maps the whole history in order. Tool-call ids are made unique across the request,
+ * because another provider may reuse an id (Gemini numbers unnamed calls per response).
+ */
+function anthropicHistory(messages: MessageType[]): AnthropicMessage[] {
+  const toolUseIds = new AnthropicToolUseIds();
+  return messages.flatMap((message) => messageToAnthropicMessages(message, toolUseIds));
+}
+
+/**
+ * Assigns Anthropic `tool_use` ids. The first call with an id keeps it. A later call
+ * with the same id gets a numbered suffix. Each tool result uses the id of the latest
+ * call it answers, which is the call that came just before it.
+ */
+class AnthropicToolUseIds {
+  private readonly used = new Set<string>();
+  private readonly latest = new Map<string, string>();
+
+  forCall(baseId: string): string {
+    let id = baseId;
+    for (let suffix = 1; this.used.has(id); suffix += 1) {
+      id = `${baseId}_${suffix.toString()}`;
+    }
+    this.used.add(id);
+    this.latest.set(baseId, id);
+    return id;
+  }
+
+  forResult(baseId: string): string {
+    return this.latest.get(baseId) ?? baseId;
+  }
+}
+
+function messageToAnthropicMessages(
+  message: MessageType,
+  toolUseIds: AnthropicToolUseIds = new AnthropicToolUseIds(),
+): AnthropicMessage[] {
   if (message.role === "system") {
     return [];
   }
@@ -991,54 +1028,63 @@ function messageToAnthropicMessages(message: MessageType): AnthropicMessage[] {
               "Anvia interaction responses must be resolved by Agent before provider calls.",
             );
           }
-          return toolContentToAnthropicBlock(content);
+          return toolContentToAnthropicBlock(content, toolUseIds);
         }),
       },
     ];
   }
 
-  return [
-    {
-      role: "assistant",
-      content:
-        typeof message.content === "string"
-          ? message.content
-          : message.content.flatMap((content): AnthropicContentBlock[] => {
-              if (content.type === "text") {
-                return [{ type: "text", text: content.text }];
-              }
+  // Reasoning from another provider cannot be replayed: its signatures and encrypted
+  // payloads are only valid for the provider that produced them. History that carries
+  // no generation metadata is treated as unknown origin.
+  const origin = getAssistantGenerationMetadata(message)?.provider;
+  const replayReasoning = origin === undefined || origin === "anthropic";
+  const content =
+    typeof message.content === "string"
+      ? message.content
+      : message.content.flatMap((content): AnthropicContentBlock[] => {
+          if (content.type === "text") {
+            return [{ type: "text", text: content.text }];
+          }
 
-              if (content.type === "tool-call") {
-                return [
-                  {
-                    type: "tool_use",
-                    id: content.callId ?? content.toolCallId,
-                    name: content.toolName,
-                    input: content.input,
-                  },
-                ];
-              }
+          if (content.type === "tool-call") {
+            return [
+              {
+                type: "tool_use",
+                id: toolUseIds.forCall(content.callId ?? content.toolCallId),
+                name: content.toolName,
+                input: content.input,
+              },
+            ];
+          }
 
-              if (content.type === "reasoning" && content.details !== undefined) {
-                return content.details.flatMap(reasoningContentToAnthropicBlocks);
-              }
+          if (content.type === "reasoning" && content.details !== undefined && replayReasoning) {
+            return content.details.flatMap(reasoningContentToAnthropicBlocks);
+          }
 
-              if (content.type === "image" || content.type === "file") {
-                throw new Error(
-                  "Anthropic Messages does not support image or file content in assistant history",
-                );
-              }
+          if (content.type === "image" || content.type === "file") {
+            throw new Error(
+              "Anthropic Messages does not support image or file content in assistant history",
+            );
+          }
 
-              return [];
-            }),
-    },
-  ];
+          return [];
+        });
+
+  // Anthropic rejects an empty assistant turn, for example one that held only reasoning.
+  if (Array.isArray(content) && content.length === 0) {
+    return [];
+  }
+  return [{ role: "assistant", content }];
 }
 
-function toolContentToAnthropicBlock(content: ToolResultPart): AnthropicContentBlock {
+function toolContentToAnthropicBlock(
+  content: ToolResultPart,
+  toolUseIds: AnthropicToolUseIds,
+): AnthropicContentBlock {
   const block: AnthropicContentBlock = {
     type: "tool_result",
-    tool_use_id: content.callId ?? content.toolCallId,
+    tool_use_id: toolUseIds.forResult(content.callId ?? content.toolCallId),
     content: toolResultToAnthropicContent(content),
   };
   if (
@@ -1081,15 +1127,10 @@ function toolResultToAnthropicContent(content: ToolResultPart): string | Anthrop
 }
 
 function reasoningContentToAnthropicBlocks(content: ReasoningDetail): AnthropicContentBlock[] {
-  if (content.type === "text" || content.type === "summary") {
-    const block: AnthropicContentBlock = {
-      type: "thinking",
-      thinking: content.text,
-    };
-    if (content.type === "text" && content.signature !== undefined) {
-      block.signature = content.signature;
-    }
-    return [block];
+  // Anthropic only accepts thinking blocks that carry the signature it issued. Summaries and
+  // unsigned text cannot be replayed, so they are dropped instead of sent.
+  if (content.type === "text" && content.signature !== undefined) {
+    return [{ type: "thinking", thinking: content.text, signature: content.signature }];
   }
 
   if (content.type === "redacted") {

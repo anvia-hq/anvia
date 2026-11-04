@@ -18,6 +18,7 @@ import {
   type JsonValue,
   type Message as MessageType,
   type ModelCallOptions,
+  getAssistantGenerationMetadata,
   type ProviderTool,
   type ProviderToolCall,
   type ReasoningDetail,
@@ -846,6 +847,7 @@ function messageToResponsesInput(message: MessageType): ResponsesInputItem[] {
   if (typeof message.content === "string") {
     return [{ role: "assistant", content: message.content }];
   }
+  const origin = getAssistantGenerationMetadata(message)?.provider;
   const text = message.content
     .flatMap((content) => (content.type === "text" ? [content.text] : []))
     .join("\n");
@@ -858,13 +860,18 @@ function messageToResponsesInput(message: MessageType): ResponsesInputItem[] {
       items.push(reasoningToOpenAIInput(content));
     }
     if (content.type === "tool-call") {
-      items.push({
+      const item: ResponsesInputItem = {
         type: "function_call",
-        id: content.toolCallId,
         call_id: content.callId ?? content.toolCallId,
         name: content.toolName,
         arguments: JSON.stringify(content.input),
-      });
+      };
+      // Item ids from another provider (for example Anthropic's toolu_...) are not valid here.
+      // They are left out; call_id still links the result. Unknown origin keeps the id.
+      if (keepsFunctionCallItemId(origin, content.toolCallId)) {
+        item.id = content.toolCallId;
+      }
+      items.push(item);
     }
     if (content.type === "image" || content.type === "file") {
       throw new Error(
@@ -874,6 +881,17 @@ function messageToResponsesInput(message: MessageType): ResponsesInputItem[] {
   }
 
   return items;
+}
+
+/**
+ * Chat Completions and Responses both report the provider as "openai" (Azure reports
+ * "azure-openai" for both), and Chat Completions call ids (call_...) are not valid Responses
+ * item ids. So for OpenAI and Azure turns the id is kept only when it looks like a Responses
+ * item id (fc...). An unknown origin keeps the id.
+ */
+function keepsFunctionCallItemId(origin: string | undefined, toolCallId: string): boolean {
+  if (origin === undefined) return true;
+  return (origin.startsWith("openai") || origin.startsWith("azure")) && toolCallId.startsWith("fc");
 }
 
 function toolContentToOpenAIResponsesItem(content: ToolResultPart): ResponsesInputItem {

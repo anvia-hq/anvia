@@ -779,6 +779,79 @@ describe("Anvia studio", () => {
     });
   });
 
+  it("does not replay session controls the switched-to model does not offer", async () => {
+    const baseModel = new QueueModel([]);
+    const controlled = new ControlledQueueModel([
+      response([AssistantContent.text("First answer")]),
+    ]);
+    const plain = new QueueModel([response([AssistantContent.text("Second answer")])]);
+    const agent = new Agent({ id: "support", model: baseModel });
+    const runner = new Studio([agent], {
+      models: {
+        providers: [
+          {
+            id: "test",
+            defaultModelId: "primary",
+            models: [
+              { id: "primary", modalities: { input: ["text"], output: ["text"] } },
+              { id: "secondary", modalities: { input: ["text"], output: ["text"] } },
+            ],
+            createCompletionModel: ({ modelId }) => {
+              if (modelId === "primary") return controlled;
+              if (modelId === "secondary") return plain;
+              throw new Error(`Unexpected model: ${modelId}`);
+            },
+          },
+        ],
+        agents: {
+          support: {
+            allowed: [
+              { providerId: "test", modelId: "primary" },
+              { providerId: "test", modelId: "secondary" },
+            ],
+          },
+        },
+      },
+    });
+    const created = await runner.fetch(
+      new Request("http://runner.test/sessions", {
+        method: "POST",
+        body: JSON.stringify({ agentId: "support", title: "Support" }),
+      }),
+    );
+    const session = (await created.json()) as { id: string };
+
+    const firstRun = await runner.fetch(
+      new Request("http://runner.test/agents/support/runs", {
+        method: "POST",
+        body: JSON.stringify({
+          type: "messages",
+          sessionId: session.id,
+          messages: [Message.user("first")],
+          model: { providerId: "test", modelId: "primary" },
+          controls: { reasoningEffort: "high" },
+        }),
+      }),
+    );
+    expect(firstRun.status).toBe(200);
+
+    // The user switches to a model with no reasoningEffort control and sends no controls.
+    const secondRun = await runner.fetch(
+      new Request("http://runner.test/agents/support/runs", {
+        method: "POST",
+        body: JSON.stringify({
+          type: "messages",
+          sessionId: session.id,
+          messages: [Message.user("second")],
+          model: { providerId: "test", modelId: "secondary" },
+        }),
+      }),
+    );
+    expect(secondRun.status).toBe(200);
+    expect(plain.requests).toHaveLength(1);
+    expect(plain.requests[0]?.controls).toBeUndefined();
+  });
+
   it("drops incompatible Agent control defaults when Studio switches models", async () => {
     const baseModel = new ControlledQueueModel([]);
     const selectedModel = new QueueModel([response([AssistantContent.text("answer")])]);

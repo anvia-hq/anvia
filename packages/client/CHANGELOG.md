@@ -1,5 +1,43 @@
 # @anvia/client
 
+## 1.7.0
+
+### Minor Changes
+
+- 7337a42: Add `@anvia/client/durable-chat`, a `ClientTransport` adapter that lets `useChat` from
+  `@anvia/react` and the `@anvia/react-ui` chat primitives talk to `@anvia/durable`.
+
+  - `createDurableChatTransport({ client, agentId, sessionId, requestId?, enqueue? })` submits the
+    last user message, maps durable journal events to `anvia.client.v3` frames, routes interaction
+    responses to the active run, and uses the durable run id and sequence for resume.
+  - The transport exposes `controller` with `activeRunId`, `reattach`, `cancel`, `retry`, and
+    `resolveTool`. Aborting the stream detaches only and never cancels the run.
+  - A busy session (HTTP 409) surfaces as `DurableBusyError` with the run to reattach to.
+  - The pure event mapping is exported from the same entry point for reuse by a future server bridge.
+
+- 3eca2cb: Make payload-limit admission honest and stop losing session history.
+
+  - A run that cannot start because its prompt, input, or inherited history exceeds
+    `maxPayloadBytes` now ends in terminal `failed` instead of parking in
+    `needs_attention`. `run.result()` rejects with `DurableRunError` (`status: "failed"`) and
+    the event stream ends, so no supervisor action or stuck SSE subscription is left behind.
+  - `retry()` of a run whose admission rolled back recomputes the inherited history from the
+    session's latest settled run and persists it before execution. If the history still does
+    not fit, `retry()` rejects with the same `DurableLimitError` and the run stays failed; a
+    retry never executes with a shorter history (previously it ran with only the prompt and
+    silently truncated the session).
+  - `DurableLimitError` gains `code` (`"payload_too_large" | "capacity_exceeded"`), `field`,
+    `limit`, and `actual`. Messages name the offending field and byte counts, for example
+    `Durable payload byte limit exceeded: run.input is 2048 bytes; limit is 2000 bytes.`
+  - `createDurableHandler` maps payload limits to HTTP 413 and capacity to 429, returning
+    `{ error, code, field? }`. The body-too-large 413 also reports the `maxBodyBytes` limit.
+  - `DurableHttpError` in `@anvia/client` now exposes `status`, `code`, `field`, and the
+    server's error message instead of discarding the response body.
+  - Docs state which limit applies to what, that the HTTP body limit is the binding ceiling for
+    uploads, and that an over-limit admission is a terminal failure.
+  - `@anvia/server` and `@anvia/client` widen their optional `@anvia/durable` peer range to
+    `^0.13.0` so the new minor line stays resolvable.
+
 ## 1.6.0
 
 ### Minor Changes

@@ -1,5 +1,12 @@
 # @anvia/azure
 
+## 0.1.9
+
+### Patch Changes
+
+- Updated dependencies [5487ec2]
+  - @anvia/openai@1.3.7
+
 ## 0.1.8
 
 ### Patch Changes

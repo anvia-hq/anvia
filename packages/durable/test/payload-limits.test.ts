@@ -161,3 +161,22 @@ it("reports effective limits with defaults applied and a detached copy", async (
   limits.maxPayloadBytes = 1;
   expect(runtime.limits().maxPayloadBytes).toBe(2_048);
 });
+
+it("names the field, limit, and actual size when a single write is over the payload limit", async () => {
+  const runtime = await open(database(), 2_000);
+  const prompt = "p".repeat(3_000);
+  const error = await runtime.submit({ ...submission, requestId: "big", prompt }).then(
+    () => undefined,
+    (caught: unknown) => caught,
+  );
+  expect(error).toBeInstanceOf(DurableLimitError);
+  expect(error).toMatchObject({
+    code: "payload_too_large",
+    field: "run.prompt",
+    limit: 2_000,
+  });
+  const actual = (error as DurableLimitError).actual;
+  expect(actual).toBeGreaterThan(3_000);
+  expect((error as DurableLimitError).message).toContain("run.prompt");
+  expect((error as DurableLimitError).message).toContain("limit is 2000");
+});

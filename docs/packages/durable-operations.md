@@ -73,12 +73,31 @@ in the model operation request with the provider/model envelope, and later in `h
 `maxPayloadBytes`. Budget for "prompt + history + request envelope ≤ `maxPayloadBytes`"; `run.input`
 is usually the field that crosses first, and the error names it.
 
+Effective budget per persisted field, with the default `maxPayloadBytes` of 1,048,576 bytes:
+
+| Field                        | Counts                                          | What fills it                              |
+| ---------------------------- | ----------------------------------------------- | ------------------------------------------ |
+| `run.prompt`                 | the new user message                            | the submitted prompt                       |
+| `run.input`                  | prompt plus inherited session history           | history; usually the first field to cross  |
+| `operation.input`            | the model request, including provider and model | history, system instructions, tool schemas |
+| `run.history`, `run.outcome` | the settled conversation and final output       | every completed turn                       |
+| `event.model_delta`          | one streamed chunk                              | very large single chunks                   |
+
+Status events are not checked. Each `status` event embeds the run's `outcome`, so a settled outcome
+near the limit is stored twice (once on the run, once in the event) and the event is slightly
+larger than the outcome. Keep outcomes comfortably below the limit. Shrinking status events is
+tracked as DUR-07 and needs a client contract change first.
+
+Per-field limit overrides are not available yet. Raising `maxPayloadBytes` raises every field at
+once.
+
 The HTTP body limit is the binding ceiling for uploads. Base64 images and long documents must fit
 `maxBodyBytes` before the runtime sees them, and the default 64 KiB is far below the default payload
 limit, so any image over about 48 KiB binary is rejected with 413 before the payload limit is
 consulted. Raise `maxBodyBytes` to at least the largest encoded request you accept; the payload
-limit still applies afterwards. This release does not warn at startup when the two limits disagree;
-configure and review them together.
+limit still applies afterwards. `createDurableHandler` logs one startup warning when `maxBodyBytes`
+is below the runtime's `maxPayloadBytes`, which is the case for the default setup. The warning is
+advisory; configure and review the two limits together.
 
 Pending limits include all unfinished states and owned children. Capacity checks and insertion
 happen in one transaction; repeating an identical existing submission still succeeds at capacity. A

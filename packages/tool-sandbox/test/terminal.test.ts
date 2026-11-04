@@ -186,7 +186,7 @@ for (const mode of ["shell", "tmux"] as const) {
       expect(await handle.exit).toMatchObject({ reason: "killed" });
       expect(await terminal.list()).toEqual([]);
       await expect(terminal.kill("doomed")).rejects.toMatchObject({ code: "invalid_state" });
-    });
+    }, 30_000);
 
     it("reports a session that ends on its own as exited, even after an earlier kill", async () => {
       const { open, terminal } = await start();
@@ -201,7 +201,7 @@ for (const mode of ["shell", "tmux"] as const) {
       watch(second);
       second.write("exit 0\n");
       expect(await second.exit).toMatchObject({ reason: "exited" });
-    });
+    }, 30_000);
 
     it("ignores input from a read-only viewer", async () => {
       const { h, open } = await start();

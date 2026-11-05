@@ -80,6 +80,14 @@ export type DurableAgentRegistration = {
    * Without this marker, provider tools are rejected. Experimental.
    */
   providerTools?: DurableStatelessProviderTools;
+  /**
+   * Admits the agent's `mcpServers`. The servers' discovered tool lists and definitions are
+   * fingerprinted at submission and checked at every execution start, so a changed server under the
+   * same version fails the run. Each call is a tool operation with the registration's
+   * `toolRecovery` policy (default `manual`). Without this marker, MCP servers are rejected.
+   * Experimental.
+   */
+  mcpServers?: DurablePinnedMcpServers;
 };
 
 /** The only lifecycle mode durable admits: hooks that observe the run and do not change it. */
@@ -93,6 +101,9 @@ export type DurableRecordedGuardrails = { mode: "record" };
 
 /** The only provider-tool mode durable admits: the provider keeps no state between calls. */
 export type DurableStatelessProviderTools = { mode: "stateless" };
+
+/** The only MCP mode durable admits: the servers discovered at registration are pinned per run. */
+export type DurablePinnedMcpServers = { mode: "pinned" };
 
 /** Agent-level options the runtime freezes for the life of a registration. */
 export type DurableFrozenAgentOption =
@@ -218,6 +229,8 @@ export type DurableRunRecord = DurableSubmission & {
    * as a blob reference; readers through the runtime API always see the hydrated form.
    */
   contextDocuments?: { hash: string; documents?: Document[] };
+  /** Fingerprint of the pinned MCP servers at submission; see mcp-servers.ts. */
+  mcpServers?: { hash: string };
   /** Freezes even a skipped compaction decision across retries. */
   contextPrepared?: boolean;
   /** Captured on new submissions; legacy in-flight runs retain their original request sequence. */

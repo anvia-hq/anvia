@@ -51,6 +51,7 @@ import {
   hydrateValue,
 } from "./blob.js";
 import { contextDocumentsOf } from "./documents.js";
+import { mcpServersByAgent, mcpServersOf } from "./mcp-servers.js";
 import { createExecution } from "./execution.js";
 import { createObservedLifecycle } from "./observed-lifecycle.js";
 import { createRecordedGuardrails } from "./recorded-guardrails.js";
@@ -364,6 +365,8 @@ export class DurableRuntime {
     const registration = this.agents.get(input.agentId);
     if (registration === undefined)
       throw new DurableNotFoundError(`Unknown durable agent: ${input.agentId}`);
+    // Fingerprinted before the transaction: server metadata is read asynchronously.
+    const mcpServers = await mcpServersByAgent(this.agents, [input.agentId]);
     const id = this.store.transaction((tx) => {
       const existing = tx.findRequest(input.sessionId, input.requestId);
       if (existing !== undefined) {
@@ -380,7 +383,7 @@ export class DurableRuntime {
       ) {
         throw new DurableConflictError("Previous session execution is still settling.");
       }
-      const run = createRunRecord(submission, registration, tx);
+      const run = createRunRecord(submission, registration, tx, mcpServers.get(input.agentId));
       tx.putRun(run);
       tx.appendEvent(run.id, "submitted", json(externalizeSubmittedEvent(tx, submission)));
       return run.id;
@@ -392,7 +395,11 @@ export class DurableRuntime {
   async submitGraph(input: DurableGraphSubmission): Promise<DurableTaskGraph> {
     this.assertOpen();
     const submission = parseDurableGraphSubmission(input);
-    const id = this.store.transaction((tx) => createGraph(tx, submission, this.agents));
+    const mcpServers = await mcpServersByAgent(
+      this.agents,
+      submission.tasks.map((task) => task.agentId),
+    );
+    const id = this.store.transaction((tx) => createGraph(tx, submission, this.agents, mcpServers));
     this.pump();
     return new DurableTaskGraph(id, this);
   }
@@ -757,6 +764,7 @@ export class DurableRuntime {
         );
       }
       verifyContextDocuments(run, registration);
+      await verifyMcpServers(run, registration);
       await prepareContext(this.store, run, registration, signal);
       const trace = this.store.transaction((tx) => runTrace(tx, run));
       // Stored records may carry blob references; the agent loop always sees restored content.
@@ -883,6 +891,22 @@ function verifyContextDocuments(
   if (expected !== current?.hash)
     throw new DurableRecoveryError(
       `Context documents changed for durable agent "${run.agentId}": the run recorded hash ${expected ?? "none"}, but the registration now resolves ${current?.hash ?? "none"}. Restore the original documents, or bump the registration version.`,
+    );
+}
+
+/**
+ * A run calls the MCP servers it was submitted with. A registration whose servers (tool lists or
+ * definitions) fingerprint differently under the same version fails the run before any model call.
+ */
+async function verifyMcpServers(
+  run: DurableRunRecord,
+  registration: DurableAgentRegistration,
+): Promise<void> {
+  const current = await mcpServersOf(registration.agent);
+  const expected = run.mcpServers?.hash;
+  if (expected !== current?.hash)
+    throw new DurableRecoveryError(
+      `MCP servers changed for durable agent "${run.agentId}": the run recorded fingerprint ${expected ?? "none"}, but the registration now resolves ${current?.hash ?? "none"}. Restore the original servers and tool lists, or bump the registration version.`,
     );
 }
 

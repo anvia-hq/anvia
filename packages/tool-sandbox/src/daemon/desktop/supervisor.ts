@@ -1,7 +1,9 @@
 import { type ChildProcess, spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import net from "node:net";
 import { DockerSandboxError } from "../../errors";
 import type { DesktopState } from "../../remote/protocol";
+import { desktopSessionVariable, stopDesktopAgents } from "./agents";
 import { runTool } from "./exec";
 import type { DesktopBackend, DesktopResolution, SandboxDaemonDesktopOptions } from "./options";
 
@@ -82,6 +84,8 @@ export class DesktopSupervisor {
   /** Fails whoever is waiting on a pending restart, when the supervisor stops first. */
   private abandonRecovery: (() => void) | undefined;
   private readonly processes = new Map<ProcessName, Managed>();
+  /** Identifies this desktop's programs, so the agents they start can be found when it stops. */
+  private readonly session = randomBytes(12).toString("hex");
   /** The RandR output that sets the display's size: `screen` on Xvfb, `VNC-0` on Xvnc. */
   private output: string | undefined;
 
@@ -149,12 +153,18 @@ export class DesktopSupervisor {
     clearTimeout(this.recovery);
     this.abandonRecovery?.();
     await this.killAll();
+    // An ssh-agent or gpg-agent the autostart started daemonizes, so the group kill above missed it.
+    await stopDesktopAgents(this.session);
     this.state = "stopped";
   }
 
   /** Where a desktop program should draw. */
   environment(): Record<string, string> {
-    return { ...this.options.env(), DISPLAY: this.options.display };
+    return {
+      ...this.options.env(),
+      DISPLAY: this.options.display,
+      [desktopSessionVariable]: this.session,
+    };
   }
 
   private bringUp(state: "starting" | "restarting"): Promise<void> {

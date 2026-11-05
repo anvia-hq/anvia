@@ -10,6 +10,7 @@ import {
   type CompletionResponse,
 } from "./helpers/imports";
 import type { AgentRunExecution } from "../src/internal/agent-runtime/execution";
+import type { ToolDefinition } from "../src/completion";
 
 function agentWithTool(execute: () => string) {
   let turn = 0;
@@ -224,4 +225,25 @@ it("does not observe or count usage for steps the execution runtime replays", as
       toolCall: expect.objectContaining({ toolCallId: "call" }),
     }),
   );
+});
+
+it("lets an execution runtime wrap the tool selection made for each model call", async () => {
+  const agent = agentWithTool(() => "written");
+  const selected: ToolDefinition[] = [
+    { name: "recorded", description: "Recorded", parameters: {} },
+  ];
+  const selectTools = vi.fn(
+    async (_turn: number, _select: () => Promise<ToolDefinition[]>) => selected,
+  );
+  const execution: AgentRunExecution = {
+    completion: (_turn, _request, execute) => execute(),
+    tool: async () => ({ failed: false, output: { type: "text", value: "saved" } }),
+    selectTools,
+  };
+  await agent.generate(withInternalAgentRunOptions({ prompt: "write" }, { execution }));
+  expect(selectTools).toHaveBeenCalledTimes(2);
+  // Turns are numbered as the model operation keys are, starting at 1.
+  expect(selectTools.mock.calls.map(([turn]) => turn)).toEqual([1, 2]);
+  const request = vi.mocked(agent.model.completion).mock.calls[0]![0] as { tools?: unknown[] };
+  expect(request.tools).toEqual(selected);
 });

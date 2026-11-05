@@ -56,6 +56,13 @@ export function registrations(
       throw new TypeError(
         `Durable agent "${agent.id}" has an unknown providerTools mode. Only { mode: "stateless" } is supported.`,
       );
+    if (
+      registration.toolIndexes !== undefined &&
+      (registration.toolIndexes as { mode?: unknown }).mode !== "recorded"
+    )
+      throw new TypeError(
+        `Durable agent "${agent.id}" has an unknown toolIndexes mode. Only { mode: "recorded" } is supported.`,
+      );
     if (registration.guardrails !== undefined) assertUniqueGuardrailIds(agent);
     // Core does not classify a provider tool with non-JSON configuration as a provider tool, so it
     // is checked in the configured tool list, where it is still visible. Provider tool configuration
@@ -84,6 +91,9 @@ export function registrations(
           : "",
         unsupported.includes("provider tools")
           ? `provider tools need { providerTools: { mode: "stateless" } }`
+          : "",
+        unsupported.includes("tool indexes")
+          ? `tool indexes need { toolIndexes: { mode: "recorded" } }`
           : "",
       ].filter((hint) => hint !== "");
       throw new TypeError(
@@ -146,6 +156,10 @@ export function registrations(
       normalized.providerTools = { mode: "stateless" };
     }
 
+    if (registration.toolIndexes !== undefined) {
+      normalized.toolIndexes = { mode: "recorded" };
+    }
+
     normalized.toolRecovery = { ...registration.toolRecovery };
 
     if (compaction !== undefined) {
@@ -191,7 +205,8 @@ function unsupportedFeatures(
   if ((options.mcpServers?.length ?? 0) > 0) features.push("MCP servers");
   if ((options.providerTools?.length ?? 0) > 0 && registration.providerTools === undefined)
     features.push("provider tools");
-  if ((options.toolIndexes?.length ?? 0) > 0) features.push("tool indexes");
+  if ((options.toolIndexes?.length ?? 0) > 0 && registration.toolIndexes === undefined)
+    features.push("tool indexes");
   return features;
 }
 

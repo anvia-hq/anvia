@@ -80,6 +80,13 @@ export type DurableAgentRegistration = {
    * Without this marker, provider tools are rejected. Experimental.
    */
   providerTools?: DurableStatelessProviderTools;
+  /**
+   * Admits the agent's `toolIndexes`. Each model call's selected tools are recorded before the
+   * model call and reused on replay, so the search does not run again. The registration's index
+   * fingerprint is frozen at submission and checked at each execution start. Without this marker,
+   * tool indexes are rejected. Experimental.
+   */
+  toolIndexes?: DurableRecordedToolIndexes;
 };
 
 /** The only lifecycle mode durable admits: hooks that observe the run and do not change it. */
@@ -93,6 +100,9 @@ export type DurableRecordedGuardrails = { mode: "record" };
 
 /** The only provider-tool mode durable admits: the provider keeps no state between calls. */
 export type DurableStatelessProviderTools = { mode: "stateless" };
+
+/** The only tool-index mode durable admits: each model call's selection is recorded and reused. */
+export type DurableRecordedToolIndexes = { mode: "recorded" };
 
 /** Agent-level options the runtime freezes for the life of a registration. */
 export type DurableFrozenAgentOption =
@@ -218,6 +228,8 @@ export type DurableRunRecord = DurableSubmission & {
    * as a blob reference; readers through the runtime API always see the hydrated form.
    */
   contextDocuments?: { hash: string; documents?: Document[] };
+  /** Fingerprint of the tool indexes at submission; see tool-indexes.ts. */
+  toolIndexes?: { hash: string };
   /** Freezes even a skipped compaction decision across retries. */
   contextPrepared?: boolean;
   /** Captured on new submissions; legacy in-flight runs retain their original request sequence. */

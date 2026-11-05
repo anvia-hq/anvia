@@ -126,17 +126,28 @@ export function limitedTransaction(
       { limit },
     );
   const terminal = (status: string) => ["completed", "failed", "cancelled"].includes(status);
+  // Each object is serialized at most once per check: the memo is keyed by identity, so the change
+  // check and the size check of a value measure the same string.
+  const texts = new WeakMap<object, string>();
+  const textOf = (value: unknown): string | undefined => {
+    if (typeof value !== "object" || value === null) return JSON.stringify(value);
+    const known = texts.get(value);
+    if (known !== undefined) return known;
+    const text = JSON.stringify(value);
+    if (text !== undefined) texts.set(value, text);
+    return text;
+  };
   /** Serialized `next` when it differs from `previous`, otherwise undefined (nothing to check). */
   const changed = (previous: unknown, next: unknown): string | undefined => {
-    const nextText = JSON.stringify(next);
-    return JSON.stringify(previous) === nextText ? undefined : nextText;
+    const nextText = textOf(next);
+    return textOf(previous) === nextText ? undefined : nextText;
   };
   // `putBlob`/`getBlob` pass through unchecked by design: the blob table is the overflow area, and
   // the bounded reference that replaces the payload is what the checks below measure.
   return {
     ...tx,
     appendEvent(id, type, data) {
-      if (type === "model_delta") payload("event.model_delta", JSON.stringify(data));
+      if (type === "model_delta") payload("event.model_delta", textOf(data));
       // Status events are deliberately not checked. A status event is the only record of a
       // failure or a blocked run, and its `error` text is not checked anywhere else, so a limit
       // here would stop a run from reaching `failed` or `needs_attention` (the trap in DUR-03).
@@ -150,8 +161,8 @@ export function limitedTransaction(
         if (pending >= limits.maxPendingRuns) throw capacity("run", limits.maxPendingRuns, pending);
       }
       if (previous === undefined) {
-        payload("run.prompt", JSON.stringify(run.prompt));
-        payload("run.trace", JSON.stringify(run.trace));
+        payload("run.prompt", textOf(run.prompt));
+        payload("run.trace", textOf(run.trace));
       }
       for (const key of [
         "input",
@@ -173,17 +184,18 @@ export function limitedTransaction(
         if (pending >= limits.maxPendingTasks)
           throw capacity("task", limits.maxPendingTasks, pending);
       }
-      if (previous === undefined) payload("task.trace", JSON.stringify(task.trace));
+      if (previous === undefined) payload("task.trace", textOf(task.trace));
       // Allow control/status transitions after limits are lowered on restart.
       for (const key of ["input", "checkpoint", "signals"] as const)
         payload(`task.${key}`, changed(previous?.[key], task[key]));
-      // Owned-agent output was admitted with its run; copying it must survive lower quotas.
-      if (
-        task.agentRunId === undefined &&
-        task.outcome?.status === "completed" &&
-        changed(previous?.outcome, task.outcome) !== undefined
-      )
-        payload("task.outcome", JSON.stringify(task.outcome.output));
+      // Owned-agent output was admitted with its run; copying it must survive lower quotas. Only the
+      // output is measured, so its bytes are serialized once, not once inside the outcome as well.
+      if (task.agentRunId === undefined && task.outcome?.status === "completed") {
+        const output = textOf(task.outcome.output);
+        const previousOutput =
+          previous?.outcome?.status === "completed" ? previous.outcome.output : undefined;
+        if (output !== textOf(previousOutput)) payload("task.outcome", output);
+      }
       tx.putTask(task);
     },
     putOperation(id, operation) {

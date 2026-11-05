@@ -747,6 +747,23 @@ new Agent({
 Without `session`, the same Agent is stateless. Pass `{ messages }` when the caller already owns a
 complete transcript; transcripts cannot be combined with persisted sessions.
 
+Stores that need safe retries or version checks can opt in to two additions. Both are optional, so
+a store that returns `void` from `append()` keeps working:
+
+- `loadVersioned({ scope })` returns the same messages as `load()` plus a `version` string. The
+  version changes on every committed append and on `clear()`.
+- `append()` accepts `idempotencyKey` and `expectedVersion`, and returns a `MemoryAppendResult`:
+  - `committed`: the messages were written.
+  - `duplicate`: the key was already committed with the same content, so nothing was written. This
+    is checked before the version, so a retry after a successful write is not a conflict.
+  - `conflict`: the key was committed with different content, or `expectedVersion` is not the
+    current version. Nothing was written.
+
+The key is supplied by the caller and must be stable across retries of the same write. Keys are
+scoped to the memory scope and survive `clear()`. `InMemoryMemoryStore` implements the full
+contract in process for tests and prototypes; it does not persist data. The core runtime does not
+yet send keys or versions, so the default save path behaves as before.
+
 Compaction is an explicit Agent policy over a store capability. The store preserves the canonical
 message history for `load()` and inspectors, and persists one latest compaction checkpoint
 separately. Future model calls receive the checkpoint summary (a system message tagged with

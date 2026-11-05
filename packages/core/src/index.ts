@@ -184,6 +184,7 @@ export type {
   MemoryCompactorInput,
   MemoryCompactorResult,
   MemoryConversation,
+  MemoryAppendResult,
   MemoryConversationGetOptions,
   MemoryConversationListOptions,
   MemoryConversationMessage,
@@ -198,9 +199,11 @@ export type {
   MemoryScopeKeyResolver,
   MemoryStore,
   MemoryTokenCounter,
+  MemoryVersionedHistory,
 } from "./memory";
 export {
   createMemoryScopeKey,
+  InMemoryMemoryStore,
   createSummaryMemoryCompactor,
   estimateMemoryTokens,
   isMemoryCompactionMessage,

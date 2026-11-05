@@ -110,6 +110,25 @@ export const contextCheckpointSchema = z
   })
   .strict();
 
+const contentHash = z.string().regex(/^[a-f0-9]{64}$/);
+const contextDocumentSchema = z
+  .object({
+    id: z.string(),
+    text: z.string(),
+    additionalProps: z.record(z.string(), z.string()).optional(),
+  })
+  .strict();
+/** Inline documents, or a whole-value blob reference when the set exceeds the inline threshold. */
+const contextDocumentsSchema = z.union([
+  z.object({ hash: contentHash, documents: z.array(contextDocumentSchema) }).strict(),
+  z
+    .object({
+      hash: contentHash,
+      "anvia:blob": z.object({ v: z.literal(1), hash: contentHash, bytes: count }).strict(),
+    })
+    .strict(),
+]);
+
 export const listOptionsSchema = z
   .object({
     sessionId: id.optional(),
@@ -145,6 +164,7 @@ const runSchema = z
     continueFrom: id.optional(),
     compaction: compactionPolicySchema.optional(),
     contextCheckpoint: contextCheckpointSchema.optional(),
+    contextDocuments: contextDocumentsSchema.optional(),
     contextPrepared: z.boolean().optional(),
     loopCompaction: z.boolean().optional(),
     responses: z.record(z.string(), jsonValue),

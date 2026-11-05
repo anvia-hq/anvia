@@ -1,6 +1,7 @@
 import { Usage, type Message } from "@anvia/core/completion";
 import { estimateMemoryTokens, type MemoryCompactionInfo } from "@anvia/core/memory";
 import { DurableModelError, DurableRecoveryError } from "./errors.js";
+import { hydrateMessages } from "./blob.js";
 import { json, sameJson } from "./json.js";
 import { promptMessage } from "./prompt.js";
 import { contextCheckpointSchema } from "./schema.js";
@@ -54,9 +55,11 @@ export async function prepareContext(
     return value;
   };
   const history = projection(run);
+  // Counting and summarizing see restored content; the journal keeps the bounded stored form.
+  const expanded = store.transaction((tx) => hydrateMessages(tx, history));
   const prompt = promptMessage(run.prompt);
-  const originalTokenCount = await count(history);
-  const inputTokens = await count([...history, prompt]);
+  const originalTokenCount = await count(expanded);
+  const inputTokens = await count([...expanded, prompt]);
   const keep = run.compaction.retention?.recentTurns ?? 1;
   const starts = history.flatMap((message, index) => (message.role === "user" ? [index] : []));
   const end = keep === 0 ? history.length : (starts[Math.max(0, starts.length - keep)] ?? 0);
@@ -69,8 +72,8 @@ export async function prepareContext(
   }
   const prefix = history.slice(0, end);
   const tail = history.slice(end);
-  const retainedTokenCount = await count(tail);
-  const compactedTokenCount = await count(prefix);
+  const retainedTokenCount = await count(expanded.slice(end));
+  const compactedTokenCount = await count(expanded.slice(0, end));
   const input = json({ policy: run.compaction, messages: prefix, compactedMessageCount: covered });
   const operation = store.transaction((tx): DurableOperation => {
     const saved = tx.getOperation(run.id, "compaction");
@@ -109,7 +112,7 @@ export async function prepareContext(
   try {
     const result = await options.compactor({
       scope: { sessionId: run.sessionId },
-      messages: structuredClone(prefix),
+      messages: structuredClone(expanded.slice(0, end)),
       abortSignal: signal,
     });
     signal.throwIfAborted();

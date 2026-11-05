@@ -40,6 +40,11 @@ export function sameJson(left: unknown, right: unknown): boolean {
   return canonical(json(left)) === canonical(json(right));
 }
 
+/** Key-order-independent JSON text, so identical content hashes and compares identically. */
+export function canonicalJson(value: JsonValue): string {
+  return canonical(value);
+}
+
 function canonical(value: JsonValue): string {
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
   if (value !== null && typeof value === "object") {

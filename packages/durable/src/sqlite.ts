@@ -1,4 +1,5 @@
 import { messageLog, messageLogTables } from "./message-log.js";
+import { blobStatements, hydrateValue } from "./blob.js";
 import { sqliteMetrics } from "./metrics.js";
 import { graphListSchema, parseGraphRecord } from "./graph-schema.js";
 import {
@@ -34,6 +35,7 @@ import type {
 export class SqliteDurableStore implements DurableStore {
   private readonly database: DatabaseSync;
   private readonly histories: ReturnType<typeof messageLog>;
+  private readonly blobs: ReturnType<typeof blobStatements>;
   private readonly token = globalThis.crypto.randomUUID();
   private acquired = false;
   private closed = false;
@@ -57,7 +59,10 @@ export class SqliteDurableStore implements DurableStore {
           singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
           version INTEGER NOT NULL, token TEXT, pid INTEGER, host TEXT
         );
-        INSERT OR IGNORE INTO anvia_durable_owner(singleton, version) VALUES (1, 9);
+        INSERT OR IGNORE INTO anvia_durable_owner(singleton, version) VALUES (1, 10);
+        CREATE TABLE IF NOT EXISTS anvia_durable_blobs (
+          hash TEXT PRIMARY KEY, bytes INTEGER NOT NULL, record TEXT NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS anvia_durable_runs (
           id TEXT PRIMARY KEY, session_id TEXT NOT NULL, request_id TEXT NOT NULL,
           status TEXT NOT NULL, record TEXT NOT NULL,
@@ -97,10 +102,12 @@ export class SqliteDurableStore implements DurableStore {
         version?.version !== 6 &&
         version?.version !== 7 &&
         version?.version !== 8 &&
-        version?.version !== 9
+        version?.version !== 9 &&
+        version?.version !== 10
       )
         throw new Error("Unsupported durable database schema version.");
       this.histories = messageLog(this.database);
+      this.blobs = blobStatements(this.database);
     } catch (error) {
       this.database.close();
       throw error;
@@ -138,7 +145,7 @@ export class SqliteDurableStore implements DurableStore {
       }
       this.database
         .prepare(
-          "UPDATE anvia_durable_owner SET token = ?, pid = ?, host = ?, version = 9 WHERE singleton = 1",
+          "UPDATE anvia_durable_owner SET token = ?, pid = ?, host = ?, version = 10 WHERE singleton = 1",
         )
         .run(this.token, process.pid, hostname());
     });
@@ -377,15 +384,24 @@ export class SqliteDurableStore implements DurableStore {
   }
 
   private eventData(row: Record<string, unknown>) {
-    const data = json(JSON.parse(String(row.data)));
-    if (row.history_encoding === null || row.history_encoding === undefined) return data;
-    if (row.history_encoding !== "linked-v1" || row.type !== "model_started")
-      throw new Error("Unsupported durable event history encoding.");
-    return this.histories.unpackEvent(data);
+    // Events are terminal, so their readers always see fully restored payloads.
+    if (row.history_encoding !== null && row.history_encoding !== undefined) {
+      if (row.history_encoding !== "linked-v1" || row.type !== "model_started")
+        throw new Error("Unsupported durable event history encoding.");
+      // Packed histories may carry references inside message-log records, so always restore.
+      return json(
+        hydrateValue(this.blobs, this.histories.unpackEvent(json(JSON.parse(String(row.data))))),
+      );
+    }
+    const text = String(row.data);
+    if (!text.includes("anvia:blob") && !text.includes("durableBlobs"))
+      return json(JSON.parse(text));
+    return json(hydrateValue(this.blobs, json(JSON.parse(text))));
   }
 
   private transactionApi(assertActive: () => void): DurableTransaction {
     const histories = this.histories;
+    const blobs = this.blobs;
     const readRun = (sql: string, ...parameters: string[]): DurableRunRecord | undefined => {
       assertActive();
       const row = this.database.prepare(sql).get(...parameters);
@@ -535,6 +551,14 @@ export class SqliteDurableStore implements DurableStore {
             .prepare("SELECT COALESCE(MAX(sequence), 0) AS cursor FROM anvia_durable_events")
             .get()!.cursor,
         );
+      },
+      putBlob: (value) => {
+        assertActive();
+        return blobs.putBlob(value);
+      },
+      getBlob: (hash) => {
+        assertActive();
+        return blobs.getBlob(hash);
       },
     };
   }

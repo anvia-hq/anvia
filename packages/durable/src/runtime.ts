@@ -1,5 +1,5 @@
 import { queueSteering } from "./steering.js";
-import type { AgentSteerInput, AgentSteerReceipt } from "@anvia/core/agent";
+import type { AgentOutcome, AgentSteerInput, AgentSteerReceipt } from "@anvia/core/agent";
 import { parsePrompt, promptMessage } from "./prompt.js";
 import { MaxTurnsError } from "@anvia/core/agent";
 import type { DefinedGoal } from "./goals/definition.js";
@@ -43,6 +43,13 @@ import {
 } from "./errors.js";
 import { prepareContext } from "./compaction.js";
 import { settledHistory } from "./settled-progress.js";
+import {
+  externalizeMessages,
+  externalizeOutcome,
+  externalizeToolResult,
+  hydrateValue,
+} from "./blob.js";
+import { contextDocumentsOf } from "./documents.js";
 import { createExecution } from "./execution.js";
 import { runTrace } from "./trace.js";
 import { parseTraceOptions } from "./trace-schema.js";
@@ -56,6 +63,7 @@ import type {
   DurableAgentCompatibility,
   DurableAgentRegistration,
   DurableListOptions,
+  DurableOperation,
   DurableRunPage,
   DurableSubmitOptions,
   DurableRunRecord,
@@ -369,7 +377,7 @@ export class DurableRuntime {
       ) {
         throw new DurableConflictError("Previous session execution is still settling.");
       }
-      const run = createRunRecord(submission, registration);
+      const run = createRunRecord(submission, registration, tx);
       tx.putRun(run);
       tx.appendEvent(run.id, "submitted", json(submission));
       return run.id;
@@ -471,7 +479,9 @@ export class DurableRuntime {
   /** Read only the run record, without decoding any operation records. */
   run(id: string): DurableRunRecord {
     this.assertOpen();
-    return this.store.transaction((tx) => requireRun(tx, id));
+    return this.store.transaction(
+      (tx) => hydrateValue(tx, json(requireRun(tx, id))) as DurableRunRecord,
+    );
   }
 
   /** Bounded status projection, independent of transcript and operation count. */
@@ -492,15 +502,23 @@ export class DurableRuntime {
       const operation = tx.getOperation(id, key);
       if (operation === undefined) throw new DurableNotFoundError("Durable operation not found.");
       if (operation.kind !== "model") throw new TypeError("Operation is not a model request.");
-      return (operation.input as unknown as { request: CompletionRequest }).request;
+      return hydrateValue(
+        tx,
+        json((operation.input as unknown as { request: CompletionRequest }).request),
+      ) as CompletionRequest;
     });
   }
 
   snapshot(id: string, options: { operations?: boolean } = {}): DurableSnapshot {
     this.assertOpen();
     return this.store.transaction((tx) => ({
-      run: requireRun(tx, id),
-      operations: options.operations === false ? [] : tx.operations(id),
+      run: hydrateValue(tx, json(requireRun(tx, id))) as DurableRunRecord,
+      operations:
+        options.operations === false
+          ? []
+          : tx
+              .operations(id)
+              .map((operation) => hydrateValue(tx, json(operation)) as DurableOperation),
       cursor: tx.cursor(),
     }));
   }
@@ -581,7 +599,11 @@ export class DurableRuntime {
       });
       if (checked.role !== "tool" || checked.content[0]?.type !== "tool-result")
         throw new TypeError("Invalid tool result.");
-      const result = json({ output: checked.content[0].output, failed: false });
+      // A reconciled output gets the same bounded-reference treatment as a live tool result.
+      const result = externalizeToolResult(
+        tx,
+        json({ output: checked.content[0].output, failed: false }),
+      );
       tx.putOperation(id, { ...operation, status: "completed", result });
       tx.appendEvent(id, "tool_completed", { operationId, result, reconciled: true });
       delete run.blockedOperation;
@@ -730,11 +752,16 @@ export class DurableRuntime {
           "The saved agent version is not registered. Restore it before retrying.",
         );
       }
+      verifyContextDocuments(run, registration);
       await prepareContext(this.store, run, registration, signal);
       const trace = this.store.transaction((tx) => runTrace(tx, run));
+      // Stored records may carry blob references; the agent loop always sees restored content.
+      const input = this.store.transaction((tx) =>
+        hydrateValue(tx, json(run.input)),
+      ) as DurableRunRecord["input"];
       const options = withInternalAgentRunOptions(
         {
-          ...run.input,
+          ...input,
           trace,
           abortSignal: signal,
           retries: false as const,
@@ -748,7 +775,10 @@ export class DurableRuntime {
       signal.throwIfAborted();
       this.store.transaction((tx) => {
         const current = requireRun(tx, id);
-        current.outcome = { ...outcome, usage: current.usage };
+        current.outcome = externalizeOutcome(
+          tx,
+          json({ ...outcome, usage: current.usage }),
+        ) as AgentOutcome<unknown>;
         setStatus(tx, current, outcome.type === "interaction" ? "waiting" : "completed");
       });
     } catch (error) {
@@ -758,7 +788,10 @@ export class DurableRuntime {
         const current = requireRun(tx, id);
         current.error = errorMessage(error);
         if (error instanceof MaxTurnsError)
-          current.exhaustion = { reason: "max_turns", messages: error.chatHistory };
+          current.exhaustion = {
+            reason: "max_turns",
+            messages: externalizeMessages(tx, error.chatHistory),
+          };
         if (error instanceof DurableRecoveryError && error.operationId !== undefined)
           current.blockedOperation = error.operationId;
         if (
@@ -826,6 +859,22 @@ function requireRun(tx: DurableTransaction, id: string): DurableRunRecord {
   const run = tx.getRun(id);
   if (run === undefined) throw new DurableNotFoundError(`Unknown durable run: ${id}`);
   return run;
+}
+
+/**
+ * A run replays with the context documents frozen at submission. A registration resolving to a
+ * different set under the same version fails the run instead of silently changing context.
+ */
+function verifyContextDocuments(
+  run: DurableRunRecord,
+  registration: DurableAgentRegistration,
+): void {
+  const current = contextDocumentsOf(registration.agent);
+  const expected = run.contextDocuments?.hash;
+  if (expected !== current?.hash)
+    throw new DurableRecoveryError(
+      `Context documents changed for durable agent "${run.agentId}": the run recorded hash ${expected ?? "none"}, but the registration now resolves ${current?.hash ?? "none"}. Restore the original documents, or bump the registration version.`,
+    );
 }
 
 const SETTLED: readonly string[] = ["completed", "failed", "cancelled"];

@@ -28,9 +28,10 @@ function validate(db: DatabaseSync): void {
     version !== 6 &&
     version !== 7 &&
     version !== 8 &&
-    version !== 9
+    version !== 9 &&
+    version !== 10
   )
-    throw new Error("Maintenance requires durable schema version 3, 4, 5, 6, 7, 8, or 9.");
+    throw new Error("Maintenance requires durable schema version 3, 4, 5, 6, 7, 8, 9, or 10.");
 }
 function sync(path: string): void {
   // Windows maps fsync to _commit(), which fails with EPERM on a read-only handle;
@@ -101,7 +102,7 @@ export async function backupSqlite(
   try {
     owner.acquire();
     const db = new DatabaseSync(source, { readOnly: true });
-    const info = { createdAt: new Date().toISOString(), schemaVersion: 9 };
+    const info = { createdAt: new Date().toISOString(), schemaVersion: 10 };
     try {
       await copy(db, destination, (snapshot) => {
         snapshot.exec(
@@ -135,7 +136,8 @@ export async function restoreSqlite(
         info.schemaVersion !== 6 &&
         info.schemaVersion !== 7 &&
         info.schemaVersion !== 8 &&
-        info.schemaVersion !== 9) ||
+        info.schemaVersion !== 9 &&
+        info.schemaVersion !== 10) ||
       info.schemaVersion !==
         db.prepare("SELECT version FROM anvia_durable_owner WHERE singleton = 1").get()?.version ||
       typeof info.createdAt !== "string" ||

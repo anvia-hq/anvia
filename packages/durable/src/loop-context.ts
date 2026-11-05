@@ -8,6 +8,7 @@ import {
   type PreparedLoopContext,
 } from "@anvia/core/internal/agent";
 import { DurableModelError, DurableRecoveryError } from "./errors.js";
+import { externalizeContextResult, externalizeMessages, hydrateValue } from "./blob.js";
 import { json, sameJson } from "./json.js";
 import { preparedLoopContextSchema } from "./schema.js";
 import type {
@@ -33,14 +34,20 @@ export function createContextPreparation(
       return { messages: [...messages] };
     signal.throwIfAborted();
     const key = `${run.epoch}:context:${turn}`;
-    const input = json(messages);
+    // The journal stores a bounded form of the transcript; content addressing keeps it
+    // deterministic, so the checkpoint comparison below uses stored forms directly.
+    const input = store.transaction((tx) => json(externalizeMessages(tx, messages)));
     let operation = store.transaction((tx) => tx.getOperation(run.id, key));
     if (operation !== undefined) {
-      if (operation.kind !== "context" || !sameJson(operation.input, input))
+      // Restored form, so journals from before blob references compare equal to the same transcript.
+      const saved = store.transaction((tx) => hydrateValue(tx, json(operation!.input)));
+      if (operation.kind !== "context" || !sameJson(saved, json(messages)))
         throw new DurableRecoveryError("Context changed at a saved checkpoint.", key);
       if (operation.status === "completed") {
         const prepared = preparedLoopContextSchema.parse(operation.result);
-        return prepared;
+        return store.transaction(
+          (tx) => hydrateValue(tx, json(prepared)) as unknown as PreparedLoopContext,
+        );
       }
     }
     // A started operation is retryable intent. Its unfinished projection has never
@@ -126,7 +133,10 @@ export function createContextPreparation(
     store.transaction((tx) => {
       const current = tx.getRun(run.id)!;
       if (current.status !== "running") throw new Error("Durable run is no longer running.");
-      tx.putOperation(run.id, completed);
+      tx.putOperation(run.id, {
+        ...completed,
+        result: externalizeContextResult(tx, completed.result!),
+      });
       if (prepared.compaction !== undefined) {
         current.usage = Usage.add(current.usage, prepared.compaction.usage);
         tx.putRun(current);

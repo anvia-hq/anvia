@@ -133,6 +133,15 @@ and long documents before the payload limit applies. An over-limit admission is 
 terminal failure, not a blocked run: `result()` rejects with `DurableRunError`
 (`status: "failed"`) and the event stream ends. Retrying recomputes the inherited
 history, so raise the limit and restart before retrying.
+
+A single payload leaf over 64 KiB — a tool result, a model response, outcome text or
+output, or a large message part — is stored in a content-addressed blob table and
+replaced by a bounded reference in the journal record, so one oversized artifact no
+longer fails a run or inflates the history later runs inherit. Models and tools always
+receive the fully restored content, and `run()`, `snapshot()`, `operationRequest()`,
+and event streams restore references for readers. References are written in the same
+transaction as the record that points at them and are never dangling. Blobs are not
+garbage-collected: stores grow by the full size of every oversized payload.
 This release reads existing text-only journals; older releases cannot read journals
 containing structured prompts. Hosts reading `run.prompt` must handle both strings
 and user messages.
@@ -205,8 +214,8 @@ exposed before schema validation, and the saved result arrives in `model_complet
 
 Persisting each exposed delta adds SQLite writes and retained event data. The payload limit
 applies to each delta; configure model output limits and database retention in the host application.
-SQLite schema 9 persists steering boundaries alongside shared model histories and context projections; schemas 1–8 upgrade on acquisition.
-Older engines reject schema 9. Upgrade core and durable together: this runtime requires execution protocol version 4.
+SQLite schema 10 adds the blob table for oversized payloads alongside shared model histories and context projections; schemas 1–9 upgrade on acquisition.
+Older engines reject schema 10. Upgrade core and durable together: this runtime requires execution protocol version 4.
 
 ## Conversation compaction
 

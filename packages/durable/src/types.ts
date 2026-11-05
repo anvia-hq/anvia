@@ -7,7 +7,14 @@ import type {
 } from "./graph-types.js";
 import type { RegisteredTask, TaskListOptions, TaskPage, TaskTransaction } from "./tasks/types.js";
 import type { Agent, AgentInput, AgentOutcome, AgentPrompt } from "@anvia/core/agent";
-import type { JsonObject, JsonValue, Message, Usage, UserMessage } from "@anvia/core/completion";
+import type {
+  Document,
+  JsonObject,
+  JsonValue,
+  Message,
+  Usage,
+  UserMessage,
+} from "@anvia/core/completion";
 import type { MemoryCompactor, MemoryTokenCounter } from "@anvia/core/memory";
 
 /** Serializable policy captured when a run is submitted. */
@@ -167,6 +174,12 @@ export type DurableRunRecord = DurableSubmission & {
   continueFrom?: string;
   compaction?: DurableCompactionPolicy;
   contextCheckpoint?: DurableContextCheckpoint;
+  /**
+   * Static context documents frozen at submission: a content hash plus the resolved documents.
+   * Replay verifies the registration still resolves to the same hash. Large document sets persist
+   * as a blob reference; readers through the runtime API always see the hydrated form.
+   */
+  contextDocuments?: { hash: string; documents?: Document[] };
   /** Freezes even a skipped compaction decision across retries. */
   contextPrepared?: boolean;
   /** Captured on new submissions; legacy in-flight runs retain their original request sequence. */
@@ -280,6 +293,14 @@ export interface DurableTransaction extends TaskTransaction {
   putOperation(runId: string, operation: DurableOperation): void;
   appendEvent(runId: string, type: DurableEvent["type"], data: JsonValue): void;
   cursor(): number;
+  /**
+   * Stores an immutable JSON value in the overflow area and returns its content hash. Blob writes
+   * share the caller's transaction and are not payload-checked; the bounded reference written
+   * beside them is. A committed reference is never dangling.
+   */
+  putBlob(value: JsonValue): string;
+  /** Reads a blob back by content hash; a missing or corrupt blob throws. */
+  getBlob(hash: string): JsonValue;
 }
 
 /** A store is exclusively owned by one open runtime. All returned values must be detached copies. */

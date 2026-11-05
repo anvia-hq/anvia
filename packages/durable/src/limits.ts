@@ -131,6 +131,8 @@ export function limitedTransaction(
     const nextText = JSON.stringify(next);
     return JSON.stringify(previous) === nextText ? undefined : nextText;
   };
+  // `putBlob`/`getBlob` pass through unchecked by design: the blob table is the overflow area, and
+  // the bounded reference that replaces the payload is what the checks below measure.
   return {
     ...tx,
     appendEvent(id, type, data) {
@@ -158,6 +160,7 @@ export function limitedTransaction(
         "steering",
         "outcome",
         "contextCheckpoint",
+        "contextDocuments",
         "exhaustion",
       ] as const)
         payload(`run.${key}`, changed(previous?.[key], run[key]));

@@ -177,7 +177,7 @@
     "test:release-scripts": "node --test scripts/release-train.test.mjs",
     "test:lens-integration": "node scripts/test-lens-integration.mjs",
     "test:lens-integration:full": "node scripts/test-lens-integration.mjs --rebuild --durability",
-    "typecheck": "pnpm -r typecheck",
+    "typecheck": "pnpm typecheck:tsrs && pnpm --workspace-concurrency=1 --filter cookbook --filter './tests/**' typecheck",
     "typecheck:tsrs": "pnpm --filter './packages/**' exec tsrs --noEmit && pnpm --filter @anvia/cli exec tsrs --project registry/tsconfig.json --noEmit",
     "prepare": "husky"
   },

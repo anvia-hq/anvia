@@ -67,12 +67,10 @@ on its own, and a value must be a positive safe integer.
 - Everything else (run trace, responses, steering, context documents, task input and checkpoints)
   uses `default`.
 
-Values above 64 KiB are not stored inline. A tool result, model response, media part, context
-document, or prompt moves to a blob table, and its journal record keeps a bounded reference. The
+Values above 64 KiB are not stored inline. A tool result, model response, media part, or context
+document moves to a blob table, and its journal record keeps a bounded reference. The
 reference is content-addressed, and it is written in the same transaction as the record that names
-it. Reads restore the value before the runtime uses it, including after a restart. A prompt is
-still checked against its budget as the caller submitted it, so the budget does not change when a
-prompt is stored as a reference.
+it. Reads restore the value before the runtime uses it, including after a restart.
 
 User data is escaped when it is written. A key that starts with `~` or `anvia:`, or that is named
 `durableBlobs`, is stored with one extra leading `~`, so user data that looks like a reference is
@@ -325,10 +323,9 @@ Existing `/runs/:id` routes authorize graph children against the graph's owning 
 not their generated execution session. Graph listing requires owning-session access.
 
 SQLite schema version 2 added graph records and dependency-aware scheduling. Schema version 10
-added the blob table for oversized payloads, and version 12 moves oversized prompts behind blob
-references. Stores from versions 1–11 upgrade on ownership acquisition, preserving existing runs;
-a version 11 store has its oversized prompts moved once. Older engines reject the upgraded
-database. Downgrading the database is unsupported.
+added the blob table for oversized payloads, and version 11 escapes user keys that look like blob
+markers. Stores from versions 1–10 upgrade on ownership acquisition, preserving existing runs.
+Older engines reject the upgraded database. Downgrading the database is unsupported.
 
 `submitGraph()` remains a static agent-task DAG. For dynamic children, custom work, timers,
 and external signals, use the [custom task API](./durable-tasks.md). Editing submitted DAGs,

@@ -149,6 +149,25 @@ describe("durable browser client", () => {
       retryAfterSeconds: 2,
     });
 
+    // A gateway's 429 carries its text in `message`; the Retry-After hint still applies.
+    await expect(
+      failing(
+        Response.json(
+          { message: "Too many requests from this client.", code: "rate_limited" },
+          { status: 429, headers: { "Retry-After": "7" } },
+        ),
+      ),
+    ).rejects.toMatchObject({
+      status: 429,
+      code: "rate_limited",
+      message: "Too many requests from this client.",
+      retryAfterSeconds: 7,
+    });
+    // When both are present, Anvia's `error` wins.
+    await expect(
+      failing(Response.json({ error: "Server text.", message: "Gateway text." }, { status: 429 })),
+    ).rejects.toMatchObject({ message: "Server text." });
+
     // A non-JSON body must not mask the status.
     await expect(
       failing(new Response("<html>unavailable</html>", { status: 503 })),

@@ -81,6 +81,14 @@ export type DurableAgentRegistration = {
    */
   providerTools?: DurableStatelessProviderTools;
   /**
+   * Admits the agent's `mcpServers`. The servers' discovered tool lists and definitions are
+   * fingerprinted at submission and checked at every execution start, so a changed server under the
+   * same version fails the run. Each call is a tool operation with the registration's
+   * `toolRecovery` policy (default `manual`). Without this marker, MCP servers are rejected.
+   * Experimental.
+   */
+  mcpServers?: DurablePinnedMcpServers;
+  /**
    * Admits the agent's `toolIndexes`. Each model call's selected tools are recorded before the
    * model call and reused on replay, so the search does not run again. The registration's index
    * fingerprint is frozen at submission and checked at each execution start. Without this marker,
@@ -101,6 +109,8 @@ export type DurableRecordedGuardrails = { mode: "record" };
 /** The only provider-tool mode durable admits: the provider keeps no state between calls. */
 export type DurableStatelessProviderTools = { mode: "stateless" };
 
+/** The only MCP mode durable admits: the servers discovered at registration are pinned per run. */
+export type DurablePinnedMcpServers = { mode: "pinned" };
 /** The only tool-index mode durable admits: each model call's selection is recorded and reused. */
 export type DurableRecordedToolIndexes = { mode: "recorded" };
 
@@ -228,6 +238,8 @@ export type DurableRunRecord = DurableSubmission & {
    * as a blob reference; readers through the runtime API always see the hydrated form.
    */
   contextDocuments?: { hash: string; documents?: Document[] };
+  /** Fingerprint of the pinned MCP servers at submission; see mcp-servers.ts. */
+  mcpServers?: { hash: string };
   /** Fingerprint of the tool indexes at submission; see tool-indexes.ts. */
   toolIndexes?: { hash: string };
   /** Freezes even a skipped compaction decision across retries. */

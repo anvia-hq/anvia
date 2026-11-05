@@ -63,6 +63,13 @@ export function registrations(
       throw new TypeError(
         `Durable agent "${agent.id}" has an unknown toolIndexes mode. Only { mode: "recorded" } is supported.`,
       );
+    if (
+      registration.mcpServers !== undefined &&
+      (registration.mcpServers as { mode?: unknown }).mode !== "pinned"
+    )
+      throw new TypeError(
+        `Durable agent "${agent.id}" has an unknown mcpServers mode. Only { mode: "pinned" } is supported.`,
+      );
     if (registration.guardrails !== undefined) assertUniqueGuardrailIds(agent);
     // Core does not classify a provider tool with non-JSON configuration as a provider tool, so it
     // is checked in the configured tool list, where it is still visible. Provider tool configuration
@@ -91,6 +98,9 @@ export function registrations(
           : "",
         unsupported.includes("provider tools")
           ? `provider tools need { providerTools: { mode: "stateless" } }`
+          : "",
+        unsupported.includes("MCP servers")
+          ? `MCP servers need { mcpServers: { mode: "pinned" } }`
           : "",
         unsupported.includes("tool indexes")
           ? `tool indexes need { toolIndexes: { mode: "recorded" } }`
@@ -156,6 +166,10 @@ export function registrations(
       normalized.providerTools = { mode: "stateless" };
     }
 
+    if (registration.mcpServers !== undefined) {
+      normalized.mcpServers = { mode: "pinned" };
+    }
+
     if (registration.toolIndexes !== undefined) {
       normalized.toolIndexes = { mode: "recorded" };
     }
@@ -202,7 +216,8 @@ function unsupportedFeatures(
   // Static documents are snapshotted into each run record at submission; live vector retrieval
   // is still not checkpointed.
   if ((options.context ?? []).some((input) => isVectorContext(input))) features.push("context");
-  if ((options.mcpServers?.length ?? 0) > 0) features.push("MCP servers");
+  if ((options.mcpServers?.length ?? 0) > 0 && registration.mcpServers === undefined)
+    features.push("MCP servers");
   if ((options.providerTools?.length ?? 0) > 0 && registration.providerTools === undefined)
     features.push("provider tools");
   if ((options.toolIndexes?.length ?? 0) > 0 && registration.toolIndexes === undefined)

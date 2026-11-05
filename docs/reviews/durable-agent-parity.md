@@ -31,7 +31,7 @@ Status meanings:
 | 5   | `instructions`    | supported        | Static instructions persisted with core's resolved options.                                                                                                                                                                              | `packages/core/src/agent/types.ts:45`, `packages/core/src/agent/resolve-options.ts:56`                                                                      |
 | 6   | `context`         | **partial**      | Static `Document` entries are supported: snapshotted into the run record at submission and verified by content hash at every execution start. `VectorContext` entries are still rejected because live retrieval is not checkpointed.     | `packages/core/src/agent/types.ts:46`, `packages/durable/src/registration.ts`, `packages/durable/src/documents.ts`                                          |
 | 7   | `tools`           | **partial**      | Static local tools are supported, including approvals. `ProviderTool` entries need `providerTools: { mode: "stateless" }` (Phase 4, experimental); `ToolIndex` entries need `toolIndexes: { mode: "recorded" }` (Phase 5, experimental). | `packages/core/src/agent/types.ts:47`, `packages/durable/src/registration.ts:33`, `packages/durable/src/registration.ts:34`                                 |
-| 8   | `mcpServers`      | **rejected**     | MCP discovery and tool execution are not checkpointed.                                                                                                                                                                                   | `packages/core/src/agent/types.ts:48`, `packages/durable/src/registration.ts:32`                                                                            |
+| 8   | `mcpServers`      | **experimental** | Admitted with `mcpServers: { mode: "pinned" }` (Phase 6): the discovered servers are fingerprinted at submission and checked at each execution start; each call is a tool operation (`manual` by default).                               | `packages/core/src/agent/types.ts:48`, `packages/durable/src/registration.ts`, `packages/durable/src/mcp-servers.ts`                                        |
 | 9   | `skills`          | supported        | Skills are flattened into static instructions and static tools at construction, so they replay deterministically. Documented in the durable guide (`docs/packages/durable.md:598`).                                                      | `packages/core/src/agent/types.ts:49`, `packages/core/src/agent/resolve-options.ts:45`                                                                      |
 | 10  | `temperature`     | supported        | Static model setting included in every request.                                                                                                                                                                                          | `packages/core/src/agent/types.ts:50`                                                                                                                       |
 | 11  | `maxTokens`       | supported        | Static model setting.                                                                                                                                                                                                                    | `packages/core/src/agent/types.ts:51`                                                                                                                       |
@@ -81,7 +81,7 @@ Status meanings:
 | Graph DAG (agents as nodes)   | supported    | Additive surface; not part of `Agent()` but part of durable's orchestration. `docs/packages/durable.md:257`                                                                                                                                                                                                     |
 | Tasks, goals, owned subagents | supported    | Additive surface (`defineTask`, `defineGoal`, `ctx.spawnAgent`), with their own checkpoint boundaries. `packages/durable/src/index.ts:2`, `docs/packages/durable.md:559`                                                                                                                                        |
 | Pipeline / team recovery      | rejected     | Explicitly out of scope in the docs. `docs/packages/durable.md:567`                                                                                                                                                                                                                                             |
-| MCP servers                   | rejected     | Discovery and calls are external effects without a durable boundary. `packages/durable/src/registration.ts:32`                                                                                                                                                                                                  |
+| MCP servers                   | experimental | Admitted with `mcpServers: { mode: "pinned" }` (Phase 6): discovery stays in the application; the server fingerprint is checked per run and each call is a tool operation. `packages/durable/src/mcp-servers.ts`, `packages/durable/src/runtime.ts`                                                             |
 | Provider tools                | experimental | Admitted with `providerTools: { mode: "stateless" }` (Phase 4): part of the persisted model request, so a changed definition fails replay. `packages/durable/src/registration.ts:33`                                                                                                                            |
 | Dynamic tool indexes          | experimental | Admitted with `toolIndexes: { mode: "recorded" }` (Phase 5): each model call's selection is recorded before the call and reused on replay; the index fingerprint is checked at each execution start. `packages/durable/src/tool-indexes.ts`, `packages/durable/src/execution.ts`                                |
 | Memory store / save policies  | rejected     | No transactional boundary with the external store. `packages/durable/src/registration.ts:27`                                                                                                                                                                                                                    |
@@ -300,6 +300,37 @@ the effect classification open. Settled here:
 - **Effort/risk:** M / medium. The main risk is silent quality drift, not correctness.
 
 ### Phase 6 — MCP servers
+
+**Status (session 6, experimental): implemented without a core change.**
+
+**Design decisions (session 6, experimental).** The plan assumed discovery runs inside the run in
+core, which would need a core hook. Reading the code shows it does not:
+
+- **Discovery happens in the application, before the agent is built.** `McpClient.connect()`
+  (`packages/mcp/src/client.ts`) lists the server's tools and returns an `McpServer` snapshot. Core
+  freezes that snapshot into the agent (`packages/core/src/agent/tool-catalog.ts`). Each tool's
+  `definition()` returns the schema copied at connect, so the definitions are static for the life
+  of the agent. Durable therefore needs no core change.
+- **MCP tools are static tools.** Core puts them in the same tool list as local tools, so each call is
+  already a tool operation, and the registration's `toolRecovery` (default `manual`) applies. An
+  interrupted call blocks for reconciliation through the existing path.
+- **Marker: `mcpServers: { mode: "pinned" }`.** Without it, `mcpServers` is rejected and the error
+  names the marker. With it, the run record stores a fingerprint of the servers at submission: each
+  server's name, `serverInfo`, `capabilities`, `instructions`, and each tool's exposed name, remote
+  name, server name and definition. The fingerprint is checked at every execution start. A different
+  tool list under the same version fails the run with `needs_attention`, before any model call.
+- **Restart:** durable does not call `listTools` itself. A restart reuses the completed calls and
+  the persisted model requests, and a changed server fails the run instead of silently changing the
+  tools.
+- **Not covered:** a changed `requiresApproval` predicate or call implementation is not detected
+  (functions cannot be fingerprinted). Transport and auth failures are tool failures and follow the
+  existing retry taxonomy; they are not tested offline. The remote server's behaviour is outside
+  the journal: an uncertain `manual` call blocks, and `resolveTool` reconciles it.
+- **Checkpoint boundary:** the fingerprint is committed with the submission. Each call is a tool
+  operation as before.
+- **Tests:** `packages/durable/test/mcp-servers.test.ts`: marker rejection, restart with an
+  identical server reuses completed calls, a changed server tool list is a recovery error under the
+  same version, and an uncertain call blocks for reconciliation.
 
 - Treat MCP tool discovery like a persisted registration artifact: discover once, persist the tool
   list and schemas, and require a version/hash. Execute each call as an ordinary tool operation with

@@ -665,12 +665,25 @@ setting.
   an error decision instead.
 - Registering an agent that sets `memory`, `lifecycle` (without the observational marker),
   `middlewares` (without `mode: "pure"`), `guardrails` (without `mode: "record"`), vector `context`,
-  `mcpServers`, provider tools (without `providerTools: { mode: "stateless" }`), or tool indexes
-  (without `toolIndexes: { mode: "recorded" }`) throws a `TypeError` naming exactly the features that agent uses, with the marker to set
+  `mcpServers` (without `mcpServers: { mode: "pinned" }`), provider tools (without
+  `providerTools: { mode: "stateless" }`), or tool indexes (without `toolIndexes: { mode: "recorded" }`)
+  throws a `TypeError` naming exactly the features that agent uses, with the marker to set where one
+  exists. Provider tools are experimental: the provider must keep no state between calls. Pinned
+  agents must be passed to `DurableRuntime.open()`; `registerAgents()` rejects them.
   where one exists. Provider tools are experimental: the provider must keep no state between calls.
   Their definitions are part of the persisted model request, so a changed definition under the same
   version fails replay with `needs_attention`, and a restart reuses the persisted provider response.
   Provider tool `configuration` must be JSON; anything else is rejected at registration.
+- Experimental: `mcpServers` with `mcpServers: { mode: "pinned" }` on the registration. Pinned agents
+  must be passed to `DurableRuntime.open()`; `registerAgents()` rejects them. Discovery
+  happens in the application (`McpClient.connect()`) before the agent is built, and durable does not
+  call `listTools` itself. At submission the run stores a fingerprint of the servers: each server's
+  name, `serverInfo`, `capabilities`, `instructions`, and each tool's exposed and remote names and
+  definition. Every execution start checks it; a different tool list under the same version fails
+  the run with `needs_attention` before any model call. Each call is an ordinary tool operation with
+  the registration's `toolRecovery` policy (default `manual`), so an interrupted call blocks for
+  reconciliation. Functions such as `requiresApproval` cannot be fingerprinted, and transport and
+  auth failures follow the normal tool-failure path.
 - Experimental: `toolIndexes` with `toolIndexes: { mode: "recorded" }` on the registration. Each
   model call's tool selection (the static tools plus the index search results, with their
   definitions) is recorded as an effect operation `${epoch}:tools:${turn}` before the model call. A
@@ -731,10 +744,10 @@ retaining one cannot change the runtime's registrations.
   provider-neutral completion models, persisted session history, and `skills` (flattened into
   static instructions and tools).
 - Agent memory, lifecycle callbacks (unless declared observational), middleware (unless declared
-  `mode: "pure"`), guardrails (unless declared `mode: "record"`), context sources, MCP, provider
-  tools, and dynamic tool indexes (without their recorded marker) are rejected at registration
-  because they need additional persistence boundaries. The pure middleware, recorded guardrail,
-  and recorded tool index markers are experimental. Agent-level `retries` is rejected too: use the registration's
+  `mode: "pure"`), guardrails (unless declared `mode: "record"`), context sources, MCP (unless
+  pinned), provider tools, and dynamic tool indexes (without their recorded marker) are rejected at
+  registration because they need additional persistence boundaries. The pure middleware, recorded
+  guardrail, and recorded tool index markers are experimental. Agent-level `retries` is rejected too: use the registration's
   `modelRetry`. Durable session history replaces the agent's memory store here. See
   [agent feature compatibility](#agent-feature-compatibility) for the supported surface, the
   per-run settings that are not exposed, and the compatibility report.

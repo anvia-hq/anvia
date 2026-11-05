@@ -51,7 +51,8 @@ import {
   hydrateValue,
 } from "./blob.js";
 import { contextDocumentsOf } from "./documents.js";
-import { toolIndexesByAgent, toolIndexesOf } from "./tool-indexes.js";
+import { mcpServersByAgent, mcpServersOf, type DurableMcpServers } from "./mcp-servers.js";
+import { toolIndexesByAgent, toolIndexesOf, type DurableToolIndexes } from "./tool-indexes.js";
 import { createExecution } from "./execution.js";
 import { createObservedLifecycle } from "./observed-lifecycle.js";
 import { createRecordedGuardrails } from "./recorded-guardrails.js";
@@ -95,6 +96,14 @@ export class DurableRuntime {
   private wakeTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly tasks: TaskScheduler;
   private readonly limitValues: DurableLimits;
+  /**
+   * MCP fingerprints for pinned registrations, computed once when an agent is opened. The owned
+   * agent task path (spawnAgent) runs inside a synchronous transaction and reads this map, so no
+   * path can create a run without the fingerprint the registration is checked against.
+   */
+  private readonly mcpServers = new Map<string, DurableMcpServers>();
+  /** Tool-index fingerprints for the same synchronous path; see `mcpServers`. */
+  private readonly toolIndexes = new Map<string, DurableToolIndexes>();
 
   private constructor(
     store: DurableStore,
@@ -115,6 +124,8 @@ export class DurableRuntime {
       maxConcurrentTasks,
       (error) => this.fail(error),
       agents,
+      this.mcpServers,
+      this.toolIndexes,
       (id) => this.active.has(id),
       (root) => {
         const tasks = this.store.transaction((tx) => tx.taskTree(root));
@@ -162,6 +173,12 @@ export class DurableRuntime {
       options.onFatalError,
       options.onCompatibility,
     );
+    try {
+      await runtime.fingerprintPinnedAgents([...agents.keys()]);
+    } catch (error) {
+      await runtime.close();
+      throw error;
+    }
     runtime.notifyCompatibility();
     return runtime;
   }
@@ -174,8 +191,23 @@ export class DurableRuntime {
     const added = registrations(values);
     for (const id of added.keys())
       if (this.agents.has(id)) throw new DurableConflictError(`Agent already registered: ${id}`);
+    // A pinned MCP fingerprint reads tool definitions, which may be asynchronous. It cannot be
+    // computed here without making registration async, so pinned servers are registered at open().
+    for (const [id, registration] of added)
+      if (registration.mcpServers !== undefined)
+        throw new TypeError(
+          `Durable agent "${id}" pins MCP servers. Register it in DurableRuntime.open() so its server fingerprint is computed before any run starts.`,
+        );
     for (const [id, registration] of added) this.agents.set(id, registration);
     this.notifyCompatibility();
+  }
+
+  /** Stores the MCP and tool-index fingerprints of the given agents for the synchronous paths. */
+  private async fingerprintPinnedAgents(agentIds: readonly string[]): Promise<void> {
+    const servers = await mcpServersByAgent(this.agents, agentIds);
+    for (const [id, value] of servers) this.mcpServers.set(id, value);
+    const indexes = await toolIndexesByAgent(this.agents, agentIds);
+    for (const [id, value] of indexes) this.toolIndexes.set(id, value);
   }
 
   /** Effective admission and payload budgets, after defaults. Returns a detached copy. */
@@ -365,7 +397,8 @@ export class DurableRuntime {
     const registration = this.agents.get(input.agentId);
     if (registration === undefined)
       throw new DurableNotFoundError(`Unknown durable agent: ${input.agentId}`);
-    // Fingerprinted before the transaction: index metadata is read asynchronously.
+    // Fingerprinted before the transaction: server and index metadata is read asynchronously.
+    const mcpServers = await mcpServersByAgent(this.agents, [input.agentId]);
     const toolIndexes = await toolIndexesByAgent(this.agents, [input.agentId]);
     const id = this.store.transaction((tx) => {
       const existing = tx.findRequest(input.sessionId, input.requestId);
@@ -383,7 +416,13 @@ export class DurableRuntime {
       ) {
         throw new DurableConflictError("Previous session execution is still settling.");
       }
-      const run = createRunRecord(submission, registration, tx, toolIndexes.get(input.agentId));
+      const run = createRunRecord(
+        submission,
+        registration,
+        tx,
+        mcpServers.get(input.agentId),
+        toolIndexes.get(input.agentId),
+      );
       tx.putRun(run);
       tx.appendEvent(run.id, "submitted", json(externalizeSubmittedEvent(tx, submission)));
       return run.id;
@@ -395,12 +434,11 @@ export class DurableRuntime {
   async submitGraph(input: DurableGraphSubmission): Promise<DurableTaskGraph> {
     this.assertOpen();
     const submission = parseDurableGraphSubmission(input);
-    const toolIndexes = await toolIndexesByAgent(
-      this.agents,
-      submission.tasks.map((task) => task.agentId),
-    );
+    const agentIds = submission.tasks.map((task) => task.agentId);
+    const mcpServers = await mcpServersByAgent(this.agents, agentIds);
+    const toolIndexes = await toolIndexesByAgent(this.agents, agentIds);
     const id = this.store.transaction((tx) =>
-      createGraph(tx, submission, this.agents, toolIndexes),
+      createGraph(tx, submission, this.agents, mcpServers, toolIndexes),
     );
     this.pump();
     return new DurableTaskGraph(id, this);
@@ -766,6 +804,7 @@ export class DurableRuntime {
         );
       }
       verifyContextDocuments(run, registration);
+      await verifyMcpServers(run, registration);
       await verifyToolIndexes(run, registration);
       await prepareContext(this.store, run, registration, signal);
       const trace = this.store.transaction((tx) => runTrace(tx, run));
@@ -893,6 +932,22 @@ function verifyContextDocuments(
   if (expected !== current?.hash)
     throw new DurableRecoveryError(
       `Context documents changed for durable agent "${run.agentId}": the run recorded hash ${expected ?? "none"}, but the registration now resolves ${current?.hash ?? "none"}. Restore the original documents, or bump the registration version.`,
+    );
+}
+
+/**
+ * A run calls the MCP servers it was submitted with. A registration whose servers (tool lists or
+ * definitions) fingerprint differently under the same version fails the run before any model call.
+ */
+async function verifyMcpServers(
+  run: DurableRunRecord,
+  registration: DurableAgentRegistration,
+): Promise<void> {
+  const current = await mcpServersOf(registration.agent);
+  const expected = run.mcpServers?.hash;
+  if (expected !== current?.hash)
+    throw new DurableRecoveryError(
+      `MCP servers changed for durable agent "${run.agentId}": the run recorded fingerprint ${expected ?? "none"}, but the registration now resolves ${current?.hash ?? "none"}. Restore the original servers and tool lists, or bump the registration version.`,
     );
 }
 

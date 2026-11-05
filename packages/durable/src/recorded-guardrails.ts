@@ -3,7 +3,7 @@ import { DurableRecoveryError } from "./errors.js";
 import { errorMessage, json } from "./json.js";
 import type { DurableAgentRegistration, DurableRunRecord, DurableStore } from "./types.js";
 
-type Outcome = { ok: true; result: unknown } | { ok: false; error: string };
+type Outcome = { ok: true; result: unknown } | { ok: false; error: string; retries: number };
 
 /**
  * The agent's guardrail policies, with every check's outcome recorded before core applies it. The
@@ -38,8 +38,19 @@ export function createRecordedGuardrails(
     guardrailId: string,
     check: () => unknown,
   ): Promise<unknown> {
-    const key = `${run.epoch}:guardrail:${boundary}:${slot}:${policy.id}:${guardrailId}`;
-    const existing = store.transaction((tx) => tx.getOperation(run.id, key));
+    const base = `${run.epoch}:guardrail:${boundary}:${slot}:${policy.id}:${guardrailId}`;
+    const retries = store.transaction((tx) => tx.getRun(run.id)?.retries ?? 0);
+    // An errored check (for example a moderation timeout) is run again after retry(). Its error
+    // stays recorded under the earlier key; the re-run gets the next key. A decision that was
+    // recorded (allow, block, rewrite) is reused as it was, so it stays terminal.
+    let key = base;
+    let existing = store.transaction((tx) => tx.getOperation(run.id, key));
+    for (let attempt = 1; existing?.status === "completed"; attempt++) {
+      const previous = existing.result as unknown as Outcome;
+      if (previous.ok || previous.retries >= retries) break;
+      key = `${base}:attempt${attempt}`;
+      existing = store.transaction((tx) => tx.getOperation(run.id, key));
+    }
     if (existing?.status === "completed") {
       const outcome = existing.result as unknown as Outcome;
       if (outcome.ok) return outcome.result;
@@ -66,7 +77,7 @@ export function createRecordedGuardrails(
     try {
       outcome = { ok: true, result: json((await check()) ?? null) };
     } catch (error) {
-      outcome = { ok: false, error: errorMessage(error) };
+      outcome = { ok: false, error: errorMessage(error), retries };
     }
     store.transaction((tx) => {
       tx.putOperation(run.id, {

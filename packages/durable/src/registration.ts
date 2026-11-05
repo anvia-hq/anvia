@@ -1,6 +1,7 @@
 import { AGENT_RUN_EXECUTION_VERSION, getResolvedAgentOptions } from "@anvia/core/internal/agent";
 import { isVectorContext } from "@anvia/core/agent";
 import { isStreamingCompletionModel } from "@anvia/core/completion";
+import type { GuardrailPolicy } from "@anvia/core/guardrails";
 import { compactionPolicySchema, modelRetrySchema } from "./schema.js";
 import { nonblank } from "./json.js";
 import type { DurableAgentRegistration } from "./types.js";
@@ -48,6 +49,7 @@ export function registrations(
       throw new TypeError(
         `Durable agent "${agent.id}" has an unknown guardrails mode. Only { mode: "record" } is supported.`,
       );
+    if (registration.guardrails !== undefined) assertUniqueGuardrailIds(agent);
     const unsupported = unsupportedFeatures(options, registration);
     if (unsupported.length > 0) {
       const hints = [
@@ -160,4 +162,32 @@ function unsupportedFeatures(
   if ((options.providerTools?.length ?? 0) > 0) features.push("provider tools");
   if ((options.toolIndexes?.length ?? 0) > 0) features.push("tool indexes");
   return features;
+}
+
+/**
+ * Recorded guardrails key each check by its policy and guardrail id, so two checks with the same id
+ * in one list would share a recorded outcome. Reject that at registration instead.
+ */
+function assertUniqueGuardrailIds(agent: { id: string; guardrails: readonly GuardrailPolicy[] }) {
+  const policyIds = new Set<string>();
+  for (const policy of agent.guardrails) {
+    if (policyIds.has(policy.id))
+      throw new TypeError(
+        `Durable agent "${agent.id}" has two guardrail policies named "${policy.id}".`,
+      );
+    policyIds.add(policy.id);
+    for (const [boundary, checks] of [
+      ["input", policy.input],
+      ["output", policy.output],
+    ] as const) {
+      const ids = new Set<string>();
+      for (const check of checks) {
+        if (ids.has(check.id))
+          throw new TypeError(
+            `Durable agent "${agent.id}" has two ${boundary} guardrails named "${check.id}" in policy "${policy.id}".`,
+          );
+        ids.add(check.id);
+      }
+    }
+  }
 }

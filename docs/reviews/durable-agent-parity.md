@@ -207,6 +207,11 @@ the effect classification open. Settled here:
   input boundary and `${modelTurns}:${retries}` for output. Replay returns the recorded outcome
   (an action, or the thrown message) without calling the check. Core gains an internal run option
   that replaces the agent's policies for the run with these wrapped policies.
+- **Errors are retryable, decisions are not.** A check that threw is recorded as an error with the
+  run's retry count. After `retry()`, that check runs again and its new outcome is recorded under
+  `:attemptN`; the earlier error stays in the journal. Allow, block and rewrite decisions are reused
+  as they were, so they stay terminal. Registration rejects two checks with the same id in one
+  policy, because they would share a key.
 - **Decisions are terminal.** A blocking input decision completes the run with a `blocked` outcome,
   which is persisted, so a restart returns it and never calls the model. A check that was started
   but never recorded (a crash inside it) is not re-run: an enforced policy fails the run with a

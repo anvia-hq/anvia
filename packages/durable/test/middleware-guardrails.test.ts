@@ -338,6 +338,62 @@ describe("recorded guardrails", () => {
     expect(JSON.stringify(snapshot.run.outcome ?? snapshot)).toContain("redacted");
   });
 
+  it("runs an input check again after it failed with an error and the run is retried", async () => {
+    let fail = true;
+    const check = vi.fn(async () => {
+      if (fail) throw new Error("moderation timeout");
+      return undefined;
+    });
+    const path = database();
+    const first = vi.fn(async (_request: CompletionRequest) => done());
+    const runtime = await open(
+      path,
+      agentWith(first, {
+        guardrails: { id: "policy", input: [{ id: "scan", check: check as never }] },
+      }),
+      recorded,
+    );
+    const submitted = await runtime.submit({ ...submission, prompt: "hello" });
+    expect((await settled(submitted)).run.status).toBe("failed");
+    expect(check).toHaveBeenCalledTimes(1);
+    await runtime.close();
+    runtimes.splice(runtimes.indexOf(runtime), 1);
+
+    // The moderation service recovers. The retry runs the check once more, and the run completes.
+    fail = false;
+    const second = vi.fn(async (_request: CompletionRequest) => done());
+    const reopened = await open(
+      path,
+      agentWith(second, {
+        guardrails: { id: "policy", input: [{ id: "scan", check: check as never }] },
+      }),
+      recorded,
+    );
+    await (await reopened.getRun(submitted.id)).retry();
+    expect((await settled(await reopened.getRun(submitted.id))).run.status).toBe("completed");
+    expect(check).toHaveBeenCalledTimes(2);
+    expect(second).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects two checks with the same id in one policy at registration", async () => {
+    const path = database();
+    const duplicate = agentWith(async () => done(), {
+      guardrails: {
+        id: "policy",
+        input: [
+          { id: "scan", check: (() => undefined) as never },
+          { id: "scan", check: (() => undefined) as never },
+        ],
+      },
+    });
+    await expect(
+      DurableRuntime.open({
+        store: new SqliteDurableStore(path),
+        agents: [{ agent: duplicate, version: "1", guardrails: recorded.guardrails }],
+      }),
+    ).rejects.toThrow(/two input guardrails named "scan"/);
+  });
+
   it("blocks the run for reconciliation when a check stopped before its outcome was recorded", async () => {
     const path = database();
     const check = vi.fn(async () => undefined);

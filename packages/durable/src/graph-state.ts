@@ -5,6 +5,7 @@ import { externalizeSubmittedEvent, hydratedOutcomeOutput } from "./blob.js";
 import { json, sameJson } from "./json.js";
 import { GRAPH_SESSION_PREFIX, createRunRecord } from "./run-record.js";
 import type { DurableAgentRegistration, DurableRunRecord, DurableTransaction } from "./types.js";
+import type { DurableToolIndexes } from "./tool-indexes.js";
 import type {
   DurableGraphRecord,
   DurableGraphSnapshot,
@@ -16,6 +17,7 @@ export function createGraph(
   tx: DurableTransaction,
   submission: DurableGraphSubmission,
   agents: ReadonlyMap<string, DurableAgentRegistration>,
+  toolIndexes: ReadonlyMap<string, DurableToolIndexes>,
 ): string {
   const existing = tx.findGraphRequest(submission.sessionId, submission.requestId);
   if (existing !== undefined) {
@@ -39,6 +41,7 @@ export function createGraph(
         },
         registration,
         tx,
+        toolIndexes.get(task.agentId),
       ),
     };
   });

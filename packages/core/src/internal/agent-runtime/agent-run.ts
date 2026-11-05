@@ -1228,7 +1228,11 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     const ragText = extractRagText(prompt);
     const abortSignal = this.abortController.signal;
     const documents = await fetchContextDocuments(this.agent, ragText, abortSignal);
-    const toolDefinitions = await fetchToolDefinitions(this.agent, ragText, abortSignal);
+    const selectTools = () => fetchToolDefinitions(this.agent, ragText, abortSignal);
+    const toolDefinitions =
+      this.execution?.selectTools !== undefined
+        ? await this.execution.selectTools(turn, selectTools)
+        : await selectTools();
     const request = createCompletionRequest(providerMessages(messages), {
       instructions: this.agent.instructions,
       documents,

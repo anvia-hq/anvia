@@ -2,6 +2,7 @@ import { promptMessage } from "./prompt.js";
 import { Usage } from "@anvia/core/completion";
 import { externalizeContextDocuments } from "./blob.js";
 import { contextDocumentsOf } from "./documents.js";
+import type { DurableToolIndexes } from "./tool-indexes.js";
 import type {
   DurableAgentRegistration,
   DurableRunRecord,
@@ -13,12 +14,14 @@ export const GRAPH_SESSION_PREFIX = "__anvia_graph__:";
 
 /**
  * `tx` enables blob externalization for a large context snapshot; without it the snapshot is
- * stored inline, which the payload budget still bounds.
+ * stored inline, which the payload budget still bounds. `toolIndexes` is the fingerprint computed
+ * by the caller before the transaction (see toolIndexesOf).
  */
 export function createRunRecord(
   submission: DurableSubmission,
   registration: DurableAgentRegistration,
   tx?: DurableTransaction,
+  toolIndexes?: DurableToolIndexes,
 ): DurableRunRecord {
   const now = new Date().toISOString();
 
@@ -62,6 +65,8 @@ export function createRunRecord(
             documents?: typeof contextDocuments.documents;
           });
   }
+
+  if (toolIndexes !== undefined) record.toolIndexes = { ...toolIndexes };
 
   if (registration.modelRetry !== undefined) {
     record.modelRetry = { ...registration.modelRetry };

@@ -412,6 +412,19 @@ export function externalizeContextDocuments(
   return { hash: value.hash, [WHOLE_VALUE_MARKER]: { ...ioMarker(io, full) } };
 }
 
+/**
+ * The output of a stored run outcome, restored. The reference for an oversized output sits on the
+ * outcome envelope (`anvia:blobs`), not on `output`, which is stored as `null`; so the envelope is
+ * hydrated first and only then is `output` read. Reading `outcome.output` directly yields `null`.
+ */
+export function hydratedOutcomeOutput(
+  io: Pick<DurableBlobIO, "getBlob">,
+  outcome: JsonValue,
+): JsonValue | undefined {
+  const hydrated = hydrateValue(io, outcome) as JsonObject;
+  return hydrated.output;
+}
+
 /** A run outcome: messages walk, oversized `text` moves out, continuation state is walked. */
 export function externalizeOutcome<T extends JsonValue>(io: DurableBlobIO, outcome: T): T {
   if (typeof outcome !== "object" || outcome === null || Array.isArray(outcome)) return outcome;

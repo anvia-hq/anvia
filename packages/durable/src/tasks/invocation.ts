@@ -5,8 +5,9 @@ import {
   DurableStorageError,
   DurableLimitError,
 } from "../errors.js";
+import { hydrateValue } from "../blob.js";
 import { json, sameJson } from "../json.js";
-import type { DurableStore, DurableTransaction, ToolRecovery } from "../types.js";
+import type { DurableRunRecord, DurableStore, DurableTransaction, ToolRecovery } from "../types.js";
 import { createTask, requireTask, taskKey } from "./state.js";
 import type { RegisteredTask, TaskAgentInput, TaskContext, TaskRecord } from "./types.js";
 
@@ -144,7 +145,8 @@ export function taskInvocation(
           throw new DurableConflictError("Expected a direct owned agent child.");
         const run = tx.getRun(child.agentRunId);
         if (run === undefined) throw new DurableRecoveryError("Owned agent run is missing.");
-        return run;
+        // Goal rounds read outcomes and transcripts from this record, so restore any references.
+        return hydrateValue(tx, json(run)) as DurableRunRecord;
       });
     },
     signalValue: (name) => {

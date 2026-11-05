@@ -1,6 +1,5 @@
 import { DurableConflictError, DurableNotFoundError } from "../errors.js";
-import { hydrateValue } from "../blob.js";
-import type { JsonValue } from "@anvia/core/completion";
+import { hydratedOutcomeOutput } from "../blob.js";
 import { json, nonblank, sameJson } from "../json.js";
 import type { DurableTraceOptions, DurableTransaction } from "../types.js";
 import type { RegisteredTask, TaskRecord } from "./types.js";
@@ -183,7 +182,7 @@ export function reconcileTree(
             run.status === "completed" && run.outcome?.type === "response"
               ? {
                   status: "completed",
-                  output: json(hydrateValue(tx, run.outcome.output as JsonValue)),
+                  output: json(hydratedOutcomeOutput(tx, json(run.outcome)) ?? null),
                 }
               : {
                   status: run.status === "cancelled" ? "cancelled" : "failed",

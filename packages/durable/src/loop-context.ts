@@ -39,7 +39,9 @@ export function createContextPreparation(
     const input = store.transaction((tx) => json(externalizeMessages(tx, messages)));
     let operation = store.transaction((tx) => tx.getOperation(run.id, key));
     if (operation !== undefined) {
-      if (operation.kind !== "context" || !sameJson(operation.input, input))
+      // Restored form, so journals from before blob references compare equal to the same transcript.
+      const saved = store.transaction((tx) => hydrateValue(tx, json(operation!.input)));
+      if (operation.kind !== "context" || !sameJson(saved, json(messages)))
         throw new DurableRecoveryError("Context changed at a saved checkpoint.", key);
       if (operation.status === "completed") {
         const prepared = preparedLoopContextSchema.parse(operation.result);

@@ -56,7 +56,9 @@ export function createExecution(
       const stored = kind === "model" ? externalizeModelInput(tx, input) : input;
       const previous = tx.getOperation(run.id, key);
       if (previous !== undefined) {
-        if (!sameJson(previous.input, stored) || previous.kind !== kind) {
+        // Compare restored forms: a journal written before blob references stores the input
+        // inline, and the same input now externalizes differently. Both restore to `input`.
+        if (!sameJson(hydrateValue(tx, previous.input), input) || previous.kind !== kind) {
           throw new DurableRecoveryError(
             "Execution changed at a saved checkpoint; restore the registered agent version.",
             key,

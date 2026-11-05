@@ -670,6 +670,7 @@ setting.
   where one exists. Provider tools are experimental: the provider must keep no state between calls.
   Their definitions are part of the persisted model request, so a changed definition under the same
   version fails replay with `needs_attention`, and a restart reuses the persisted provider response.
+  Provider tool `configuration` must be JSON; anything else is rejected at registration.
 
 These per-run settings are not exposed: `retries`, `maxTurns`, and `controls` (the runtime captures
 the agent-level values at submission), plus `lifecycle`, `guardrails`, `middlewares`,

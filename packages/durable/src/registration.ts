@@ -1,6 +1,6 @@
 import { AGENT_RUN_EXECUTION_VERSION, getResolvedAgentOptions } from "@anvia/core/internal/agent";
 import { isVectorContext } from "@anvia/core/agent";
-import { isStreamingCompletionModel } from "@anvia/core/completion";
+import { isJsonValue, isStreamingCompletionModel } from "@anvia/core/completion";
 import type { GuardrailPolicy } from "@anvia/core/guardrails";
 import { compactionPolicySchema, modelRetrySchema } from "./schema.js";
 import { nonblank } from "./json.js";
@@ -57,6 +57,21 @@ export function registrations(
         `Durable agent "${agent.id}" has an unknown providerTools mode. Only { mode: "stateless" } is supported.`,
       );
     if (registration.guardrails !== undefined) assertUniqueGuardrailIds(agent);
+    // Core does not classify a provider tool with non-JSON configuration as a provider tool, so it
+    // is checked in the configured tool list, where it is still visible. Provider tool configuration
+    // is persisted with the model request, so it must be JSON.
+    if (registration.providerTools !== undefined)
+      for (const tool of options.tools ?? []) {
+        const candidate = tool as { kind?: unknown; name?: unknown; configuration?: unknown };
+        if (
+          candidate.kind === "provider" &&
+          candidate.configuration !== undefined &&
+          !isJsonValue(candidate.configuration)
+        )
+          throw new TypeError(
+            `Durable agent "${agent.id}" has provider tool "${String(candidate.name)}" whose configuration is not JSON. Provider tool configuration is persisted with the model request, so it must be JSON.`,
+          );
+      }
     const unsupported = unsupportedFeatures(options, registration);
     if (unsupported.length > 0) {
       // Each feature with a marker names it, so the fix is one line away.

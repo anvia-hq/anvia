@@ -24,3 +24,4 @@ export {
   finishLoopContext,
 } from "./agent-runtime/loop-context";
 export type { LoopContextCheckpoint, PreparedLoopContext } from "./agent-runtime/loop-context";
+export { lifecycleSnapshot } from "../agent/lifecycle";

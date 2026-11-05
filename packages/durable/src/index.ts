@@ -55,6 +55,7 @@ export {
 export type {
   DurableAgentCompatibility,
   DurableAgentRegistration,
+  DurableObservationalLifecycle,
   DurableCompactionOptions,
   DurableCompactionPolicy,
   DurableContextCheckpoint,

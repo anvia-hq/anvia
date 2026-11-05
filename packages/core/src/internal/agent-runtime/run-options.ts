@@ -1,3 +1,4 @@
+import type { AgentLifecycle } from "../../agent/lifecycle";
 import type { Message } from "../../completion";
 import type { AgentHook } from "../../hooks";
 import type { MemoryCompactionInfo } from "../../memory";
@@ -14,6 +15,11 @@ export type InternalAgentRunOptions = {
   runId?: string | undefined;
   beforeFinish?: (() => void | Promise<void>) | undefined;
   onSteeringApplied?: ((id: string) => void) | undefined;
+  /**
+   * Replaces the agent's own lifecycle hooks and any per-run lifecycle for this run. Durable uses
+   * it to gate observational hooks so a replayed step does not fire them again.
+   */
+  lifecycle?: AgentLifecycle<never, never> | undefined;
 };
 
 type AgentRunOptionsWithInternal = {

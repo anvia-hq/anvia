@@ -158,6 +158,7 @@ const runSchema = z
     taskId: id.optional(),
     dependencies: z.array(id).max(100).optional(),
     epoch: count,
+    retries: count.optional(),
     modelTurns: count,
     maxModelTurns: count,
     usage,

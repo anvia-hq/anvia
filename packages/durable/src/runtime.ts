@@ -52,6 +52,7 @@ import {
 } from "./blob.js";
 import { contextDocumentsOf } from "./documents.js";
 import { createExecution } from "./execution.js";
+import { createObservedLifecycle } from "./observed-lifecycle.js";
 import { runTrace } from "./trace.js";
 import { parseTraceOptions } from "./trace-schema.js";
 import { errorMessage, json, nonblank, sameJson } from "./json.js";
@@ -647,6 +648,7 @@ export class DurableRuntime {
       delete run.error;
       delete run.blockedOperation;
       delete run.exhaustion;
+      run.retries = (run.retries ?? 0) + 1;
       setStatus(tx, run, "pending");
     });
     this.pump();
@@ -767,7 +769,11 @@ export class DurableRuntime {
           abortSignal: signal,
           retries: false as const,
         },
-        { runId: id, execution: createExecution(this.store, run, registration, signal) },
+        {
+          runId: id,
+          execution: createExecution(this.store, run, registration, signal),
+          lifecycle: createObservedLifecycle(this.store, run, registration),
+        },
       );
       const outcome =
         run.stream === true

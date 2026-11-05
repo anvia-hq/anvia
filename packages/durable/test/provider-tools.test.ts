@@ -113,6 +113,16 @@ describe("registration of provider tools", () => {
     ).rejects.toThrow(/provider tools.*\{ providerTools: \{ mode: "stateless" \} \}/);
   });
 
+  it("rejects a provider tool whose configuration is not JSON, naming the tool", async () => {
+    const notJson = webSearch({ filter: undefined as never, sizes: [1n as never] } as never);
+    await expect(
+      DurableRuntime.open({
+        store: new SqliteDurableStore(":memory:"),
+        agents: [{ agent: agentWith(async () => done(), notJson), version: "1", ...stateless }],
+      }),
+    ).rejects.toThrow(/provider tool "web_search" whose configuration is not JSON/);
+  });
+
   it("rejects an unknown providerTools mode", async () => {
     await expect(
       DurableRuntime.open({

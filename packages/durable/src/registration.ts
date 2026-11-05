@@ -44,7 +44,7 @@ export function registrations(
     // Core does not classify a provider tool with non-JSON configuration as a provider tool, so it
     // is checked in the configured tool list, where it is still visible.
     if (registration.providerTools !== undefined)
-      for (const tool of options.tools) {
+      for (const tool of options.tools ?? []) {
         const candidate = tool as { kind?: unknown; name?: unknown; configuration?: unknown };
         if (
           candidate.kind === "provider" &&

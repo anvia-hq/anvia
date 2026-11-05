@@ -1,4 +1,5 @@
 import { steeringStateSchema } from "./steering.js";
+import { carryReferences } from "./references.js";
 import { promptSchema } from "./prompt.js";
 import { traceOptionsSchema } from "./trace-schema.js";
 import { z } from "zod";
@@ -190,7 +191,7 @@ const runSchema = z
 
 export function parseRun(value: unknown): DurableRunRecord {
   // The core owns richer optional outcome fields; the envelope and execution state are checked here.
-  const run = runSchema.parse(value) as DurableRunRecord;
+  const run = carryReferences(value, runSchema.parse(value) as DurableRunRecord);
   if (
     (run.graphId === undefined) !== (run.taskId === undefined) ||
     (run.graphId === undefined) !== (run.dependencies === undefined)
@@ -236,7 +237,7 @@ const operationSchema = z
   .strict();
 
 export function parseOperation(value: unknown): DurableOperation {
-  const operation = operationSchema.parse(value);
+  const operation = carryReferences(value, operationSchema.parse(value));
   if (operation.historyEncoding !== undefined) {
     if (operation.kind === "model") {
       z.object({ request: z.object({ chatHistory: historyReferenceSchema }) }).parse(

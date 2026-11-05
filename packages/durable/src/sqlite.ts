@@ -1,5 +1,7 @@
 import { messageLog, messageLogTables } from "./message-log.js";
 import { blobStatements, hydrateValue } from "./blob.js";
+import { readStored, writeStored } from "./references.js";
+import { migrateLegacyRows } from "./legacy-rows.js";
 import { sqliteMetrics } from "./metrics.js";
 import { graphListSchema, parseGraphRecord } from "./graph-schema.js";
 import {
@@ -59,7 +61,7 @@ export class SqliteDurableStore implements DurableStore {
           singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
           version INTEGER NOT NULL, token TEXT, pid INTEGER, host TEXT
         );
-        INSERT OR IGNORE INTO anvia_durable_owner(singleton, version) VALUES (1, 10);
+        INSERT OR IGNORE INTO anvia_durable_owner(singleton, version) VALUES (1, 11);
         CREATE TABLE IF NOT EXISTS anvia_durable_blobs (
           hash TEXT PRIMARY KEY, bytes INTEGER NOT NULL, record TEXT NOT NULL
         );
@@ -103,7 +105,8 @@ export class SqliteDurableStore implements DurableStore {
         version?.version !== 7 &&
         version?.version !== 8 &&
         version?.version !== 9 &&
-        version?.version !== 10
+        version?.version !== 10 &&
+        version?.version !== 11
       )
         throw new Error("Unsupported durable database schema version.");
       this.histories = messageLog(this.database);
@@ -133,19 +136,24 @@ export class SqliteDurableStore implements DurableStore {
           .some((column) => column.name === "history_encoding")
       )
         this.database.exec("ALTER TABLE anvia_durable_events ADD COLUMN history_encoding TEXT");
+      // Rows from schema versions 10 and older store user data unescaped; rewrite them first.
+      const stored = this.database
+        .prepare("SELECT version FROM anvia_durable_owner WHERE singleton = 1")
+        .get()!.version;
+      if (Number(stored) < 11) migrateLegacyRows(this.database);
       // Populate only legacy rows, under the exclusive owner transaction.
       for (const row of this.database
         .prepare(`SELECT r.record FROM anvia_durable_runs r
         LEFT JOIN anvia_durable_run_summaries s ON s.id = r.id WHERE s.id IS NULL`)
         .iterate()) {
-        const summary = runSummary(parseRun(JSON.parse(String(row.record))));
+        const summary = runSummary(parseRun(readStored(String(row.record))));
         this.database
           .prepare("INSERT INTO anvia_durable_run_summaries VALUES (?, ?)")
           .run(summary.id, JSON.stringify(summary));
       }
       this.database
         .prepare(
-          "UPDATE anvia_durable_owner SET token = ?, pid = ?, host = ?, version = 10 WHERE singleton = 1",
+          "UPDATE anvia_durable_owner SET token = ?, pid = ?, host = ?, version = 11 WHERE singleton = 1",
         )
         .run(this.token, process.pid, hostname());
     });
@@ -390,13 +398,13 @@ export class SqliteDurableStore implements DurableStore {
         throw new Error("Unsupported durable event history encoding.");
       // Packed histories may carry references inside message-log records, so always restore.
       return json(
-        hydrateValue(this.blobs, this.histories.unpackEvent(json(JSON.parse(String(row.data))))),
+        hydrateValue(this.blobs, this.histories.unpackEvent(json(readStored(String(row.data))))),
       );
     }
     const text = String(row.data);
     if (!text.includes("anvia:blob") && !text.includes("durableBlobs"))
-      return json(JSON.parse(text));
-    return json(hydrateValue(this.blobs, json(JSON.parse(text))));
+      return json(readStored(text));
+    return json(hydrateValue(this.blobs, json(readStored(text))));
   }
 
   private transactionApi(assertActive: () => void): DurableTransaction {
@@ -405,7 +413,7 @@ export class SqliteDurableStore implements DurableStore {
     const readRun = (sql: string, ...parameters: string[]): DurableRunRecord | undefined => {
       assertActive();
       const row = this.database.prepare(sql).get(...parameters);
-      return row === undefined ? undefined : parseRun(JSON.parse(String(row.record)));
+      return row === undefined ? undefined : parseRun(readStored(String(row.record)));
     };
     return {
       ...taskTransaction(this.database, assertActive),
@@ -434,7 +442,7 @@ export class SqliteDurableStore implements DurableStore {
         const row = this.database
           .prepare("SELECT record FROM anvia_durable_graphs WHERE id = ?")
           .get(id);
-        return row === undefined ? undefined : parseGraphRecord(JSON.parse(String(row.record)));
+        return row === undefined ? undefined : parseGraphRecord(readStored(String(row.record)));
       },
       findGraphRequest: (session, request) => {
         assertActive();
@@ -443,7 +451,7 @@ export class SqliteDurableStore implements DurableStore {
             "SELECT record FROM anvia_durable_graphs WHERE session_id = ? AND request_id = ?",
           )
           .get(session, request);
-        return row === undefined ? undefined : parseGraphRecord(JSON.parse(String(row.record)));
+        return row === undefined ? undefined : parseGraphRecord(readStored(String(row.record)));
       },
       putGraph: (graph) => {
         assertActive();
@@ -454,7 +462,7 @@ export class SqliteDurableStore implements DurableStore {
             graph.id,
             graph.submission.sessionId,
             graph.submission.requestId,
-            JSON.stringify(parseGraphRecord(json(graph))),
+            writeStored(parseGraphRecord(json(graph))),
           );
       },
       getRunSummary: (id) => {
@@ -493,7 +501,7 @@ export class SqliteDurableStore implements DurableStore {
       },
       putRun: (run) => {
         assertActive();
-        const serialized = JSON.stringify(parseRun(json(run)));
+        const serialized = writeStored(parseRun(json(run)));
         this.database
           .prepare(`INSERT INTO anvia_durable_runs(id, session_id, request_id, status, record)
           VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET status = excluded.status, record = excluded.record`)
@@ -510,25 +518,21 @@ export class SqliteDurableStore implements DurableStore {
           .get(runId, key);
         return row === undefined
           ? undefined
-          : parseOperation(histories.unpack(parseOperation(JSON.parse(String(row.record)))));
+          : parseOperation(histories.unpack(parseOperation(readStored(String(row.record)))));
       },
       operations: (runId) => {
         assertActive();
         return this.database
           .prepare("SELECT record FROM anvia_durable_operations WHERE run_id = ? ORDER BY rowid")
           .all(runId)
-          .map((row) => parseOperation(JSON.parse(String(row.record))));
+          .map((row) => parseOperation(readStored(String(row.record))));
       },
       putOperation: (runId, operation) => {
         assertActive();
         this.database
           .prepare(`INSERT INTO anvia_durable_operations(run_id, key, record) VALUES (?, ?, ?)
           ON CONFLICT(run_id, key) DO UPDATE SET record = excluded.record`)
-          .run(
-            runId,
-            operation.key,
-            JSON.stringify(histories.pack(parseOperation(json(operation)))),
-          );
+          .run(runId, operation.key, writeStored(histories.pack(parseOperation(json(operation)))));
       },
       appendEvent: (runId, type, data) => {
         assertActive();
@@ -540,7 +544,7 @@ export class SqliteDurableStore implements DurableStore {
             runId,
             new Date().toISOString(),
             type,
-            JSON.stringify(type === "model_started" ? histories.packEvent(json(data)) : json(data)),
+            writeStored(type === "model_started" ? histories.packEvent(json(data)) : json(data)),
             type === "model_started" ? "linked-v1" : null,
           );
       },

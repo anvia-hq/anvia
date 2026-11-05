@@ -142,6 +142,12 @@ receive the fully restored content, and `run()`, `snapshot()`, `operationRequest
 and event streams restore references for readers. References are written in the same
 transaction as the record that points at them and are never dangling. Blobs are not
 garbage-collected: stores grow by the full size of every oversized payload.
+
+Reference markers are reserved JSON: `anvia:blob`, `anvia:blobs`, and `metadata.anvia.durableBlobs`.
+Only the runtime writes them, so user data that happens to use these keys is escaped on
+write and read back unchanged. The stored form adds one leading `~` to any key that starts
+with `~` or `anvia:` or equals `durableBlobs`; a real reference is written as-is. Blob
+content is stored as the value you wrote, and is never read as a marker.
 This release reads existing text-only journals; older releases cannot read journals
 containing structured prompts. Hosts reading `run.prompt` must handle both strings
 and user messages.
@@ -214,8 +220,8 @@ exposed before schema validation, and the saved result arrives in `model_complet
 
 Persisting each exposed delta adds SQLite writes and retained event data. The payload limit
 applies to each delta; configure model output limits and database retention in the host application.
-SQLite schema 10 adds the blob table for oversized payloads alongside shared model histories and context projections; schemas 1–9 upgrade on acquisition.
-Older engines reject schema 10. Upgrade core and durable together: this runtime requires execution protocol version 4.
+SQLite schema 11 adds the blob table for oversized payloads, shared model histories and context projections, and escapes user keys that look like reference markers. Schemas 1–10 upgrade on acquisition; the upgrade rewrites journal rows once. One known gap: a user object that copies an existing blob's marker (same hash and size) in a row written before schema 11 is still read as that reference.
+Older engines reject schema 11. Upgrade core and durable together: this runtime requires execution protocol version 4.
 
 ## Conversation compaction
 

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import type { JsonObject, JsonValue, Message } from "@anvia/core/completion";
 import { canonicalJson, json } from "./json.js";
+import { reference, isReference } from "./references.js";
 
 /**
  * Large payload leaves (tool results, media, long texts) are stored in the blob table and replaced
@@ -70,11 +71,11 @@ export function blobStatements(database: DatabaseSync): DurableBlobIO {
 
 function marker(value: JsonValue): BlobMarker {
   const record = canonicalJson(value);
-  return {
+  return reference({
     v: 1,
     hash: createHash("sha256").update(record).digest("hex"),
     bytes: byteLength(record),
-  };
+  });
 }
 
 function isHash(value: unknown): value is string {
@@ -89,9 +90,16 @@ function readMarker(value: unknown): BlobMarker | undefined {
   return candidate as unknown as BlobMarker;
 }
 
+/** A whole-value marker, only when the carrier's marker is a registered object (see references.ts). */
 function isWholeValueReference(value: unknown): BlobMarker | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
-  return readMarker((value as Record<string, unknown>)[WHOLE_VALUE_MARKER]);
+  const mark = (value as Record<string, unknown>)[WHOLE_VALUE_MARKER];
+  return isReference(mark) ? readMarker(mark) : undefined;
+}
+
+/** Path markers, only when the array itself is a registered object. */
+function registeredPathMarkers(value: unknown): PathMarker[] | undefined {
+  return isReference(value) ? readPathMarkers(value) : undefined;
 }
 
 function readPathMarkers(value: unknown): PathMarker[] | undefined {
@@ -109,7 +117,7 @@ function readPathMarkers(value: unknown): PathMarker[] | undefined {
 
 /** A whole `{ "anvia:blob" }` carrier, valid anywhere a JSON value is allowed. */
 function wholeValueReference(io: DurableBlobIO, value: JsonValue): JsonObject {
-  return { [WHOLE_VALUE_MARKER]: { ...ioMarker(io, value) } };
+  return { [WHOLE_VALUE_MARKER]: ioMarker(io, value) };
 }
 
 function ioMarker(io: DurableBlobIO, value: JsonValue): BlobMarker {
@@ -153,7 +161,7 @@ function setPath(value: JsonValue, path: string, leaf: JsonValue): JsonValue {
 export function hydrateValue<T extends JsonValue>(io: Pick<DurableBlobIO, "getBlob">, value: T): T {
   if (Array.isArray(value)) return value.map((entry) => hydrateValue(io, entry)) as unknown as T;
   if (typeof value !== "object" || value === null) return value;
-  let object = value as JsonObject;
+  const object = value as JsonObject;
   // A whole `{ "anvia:blob" }` carrier is replaced by the blob, whatever it sits inside.
   const whole = isWholeValueReference(object);
   if (whole !== undefined) return io.getBlob(whole.hash) as T;
@@ -162,28 +170,31 @@ export function hydrateValue<T extends JsonValue>(io: Pick<DurableBlobIO, "getBl
     const wrapped = isWholeValueReference(object.value);
     if (wrapped !== undefined) return io.getBlob(wrapped.hash) as T;
   }
+  // Restored leaves are placed after the walk, so blob content is never interpreted as a marker.
+  const restores: PathMarker[] = [];
+  let rest = object;
   if (isMessageShape(object)) {
     const anvia =
       typeof object.metadata === "object" && object.metadata !== null
         ? ((object.metadata as JsonObject).anvia as JsonObject | undefined)
         : undefined;
-    const markers = readPathMarkers(anvia?.[MESSAGE_MARKER]);
+    const markers = registeredPathMarkers(anvia?.[MESSAGE_MARKER]);
     if (markers !== undefined) {
-      let restored: JsonValue = object;
-      for (const mark of markers) restored = setPath(restored, mark.path, io.getBlob(mark.hash));
-      object = clearMessageMarker(restored as JsonObject) as JsonObject;
+      restores.push(...markers);
+      rest = clearMessageMarker(rest) as JsonObject;
     }
   }
-  const pathMarkers = readPathMarkers(object[PATH_MARKER]);
+  const pathMarkers = registeredPathMarkers(rest[PATH_MARKER]);
   if (pathMarkers !== undefined) {
-    let restored: JsonValue = object;
-    for (const mark of pathMarkers) restored = setPath(restored, mark.path, io.getBlob(mark.hash));
-    const { [PATH_MARKER]: _dropped, ...rest } = restored as JsonObject;
-    object = rest;
+    restores.push(...pathMarkers);
+    const { [PATH_MARKER]: _dropped, ...others } = rest;
+    rest = others;
   }
-  return Object.fromEntries(
-    Object.entries(object).map(([key, entry]) => [key, hydrateValue(io, entry)]),
-  ) as T;
+  let result: JsonValue = Object.fromEntries(
+    Object.entries(rest).map(([key, entry]) => [key, hydrateValue(io, entry)]),
+  );
+  for (const mark of restores) result = setPath(result, mark.path, io.getBlob(mark.hash));
+  return result as T;
 }
 
 function isMessageShape(value: JsonObject): boolean {
@@ -314,7 +325,7 @@ export function externalizeMessage(io: DurableBlobIO, message: Message): Message
     return message; // The marker namespace is taken; the payload limit applies as before.
   metadata.anvia = {
     ...(anvia as JsonObject | undefined),
-    [MESSAGE_MARKER]: markers,
+    [MESSAGE_MARKER]: reference(markers),
   };
   return { ...message, content, metadata } as Message;
 }
@@ -359,7 +370,7 @@ export function externalizeModelResult(io: DurableBlobIO, result: JsonValue): Js
       cacheCreationInputTokens: 0,
     },
     rawResponse: null,
-    [WHOLE_VALUE_MARKER]: { ...ioMarker(io, result) },
+    [WHOLE_VALUE_MARKER]: ioMarker(io, result),
   };
 }
 
@@ -387,7 +398,7 @@ function externalizeDocument(io: DurableBlobIO, document: JsonObject): JsonValue
   return {
     ...document,
     text: PLACEHOLDER_TEXT,
-    [PATH_MARKER]: [{ ...mark, path: "text" }],
+    [PATH_MARKER]: reference([{ ...mark, path: "text" }]),
   };
 }
 
@@ -409,7 +420,7 @@ export function externalizeContextDocuments(
 ): JsonValue {
   const full = json(value);
   if (sizeOf(full) <= BLOB_THRESHOLD_BYTES) return full;
-  return { hash: value.hash, [WHOLE_VALUE_MARKER]: { ...ioMarker(io, full) } };
+  return { hash: value.hash, [WHOLE_VALUE_MARKER]: ioMarker(io, full) };
 }
 
 /**
@@ -451,7 +462,7 @@ export function externalizeOutcome<T extends JsonValue>(io: DurableBlobIO, outco
         state: externalizeContinuationState(io, state as JsonObject),
       };
   }
-  if (markers.length > 0) record[PATH_MARKER] = markers;
+  if (markers.length > 0) record[PATH_MARKER] = reference(markers);
   return record as T;
 }
 

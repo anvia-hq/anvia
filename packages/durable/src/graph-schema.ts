@@ -1,4 +1,5 @@
 import { json } from "./json.js";
+import { carryReferences } from "./references.js";
 import { promptSchema } from "./prompt.js";
 import { z } from "zod";
 import type { DurableGraphRecord, DurableGraphSubmission } from "./graph-types.js";
@@ -78,5 +79,5 @@ export function parseGraphRecord(value: unknown): DurableGraphRecord {
     throw new TypeError("Graph task/run mapping is incomplete.");
   if (new Set(Object.values(envelope.runIds)).size !== submission.tasks.length)
     throw new TypeError("Graph contains duplicate run IDs.");
-  return { ...envelope, submission };
+  return carryReferences(value, { ...envelope, submission });
 }

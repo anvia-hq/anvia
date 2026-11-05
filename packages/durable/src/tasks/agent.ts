@@ -1,3 +1,4 @@
+import type { DurableMcpServers } from "../mcp-servers.js";
 import { promptSchema } from "../prompt.js";
 import { z } from "zod";
 import { isJsonValue, type JsonValue } from "@anvia/core/completion";
@@ -33,6 +34,7 @@ export const agentTask = defineTask({
 export function spawnAgent(
   tx: DurableTransaction,
   agents: ReadonlyMap<string, DurableAgentRegistration>,
+  mcpServers: ReadonlyMap<string, DurableMcpServers>,
   parent: TaskRecord,
   key: string,
   input: TaskAgentInput,
@@ -53,6 +55,7 @@ export function spawnAgent(
     },
     registration,
     tx,
+    mcpServers.get(input.agentId),
   );
   if (input.maxModelTurns !== undefined)
     run.maxModelTurns = Math.min(run.maxModelTurns, input.maxModelTurns);

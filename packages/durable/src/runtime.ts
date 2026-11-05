@@ -51,7 +51,7 @@ import {
   hydrateValue,
 } from "./blob.js";
 import { contextDocumentsOf } from "./documents.js";
-import { mcpServersByAgent, mcpServersOf } from "./mcp-servers.js";
+import { mcpServersByAgent, mcpServersOf, type DurableMcpServers } from "./mcp-servers.js";
 import { createExecution } from "./execution.js";
 import { createObservedLifecycle } from "./observed-lifecycle.js";
 import { createRecordedGuardrails } from "./recorded-guardrails.js";
@@ -95,6 +95,12 @@ export class DurableRuntime {
   private wakeTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly tasks: TaskScheduler;
   private readonly limitValues: DurableLimits;
+  /**
+   * MCP fingerprints for pinned registrations, computed once when an agent is registered. Every
+   * run-creation path reads this map synchronously, so no path can create a run without the
+   * fingerprint the registration will be checked against.
+   */
+  private readonly mcpServers = new Map<string, DurableMcpServers>();
 
   private constructor(
     store: DurableStore,
@@ -115,6 +121,7 @@ export class DurableRuntime {
       maxConcurrentTasks,
       (error) => this.fail(error),
       agents,
+      this.mcpServers,
       (id) => this.active.has(id),
       (root) => {
         const tasks = this.store.transaction((tx) => tx.taskTree(root));
@@ -162,6 +169,12 @@ export class DurableRuntime {
       options.onFatalError,
       options.onCompatibility,
     );
+    try {
+      await runtime.fingerprintMcpServers([...agents.keys()]);
+    } catch (error) {
+      await runtime.close();
+      throw error;
+    }
     runtime.notifyCompatibility();
     return runtime;
   }
@@ -174,8 +187,21 @@ export class DurableRuntime {
     const added = registrations(values);
     for (const id of added.keys())
       if (this.agents.has(id)) throw new DurableConflictError(`Agent already registered: ${id}`);
+    // A pinned MCP fingerprint reads tool definitions, which may be asynchronous. It cannot be
+    // computed here without making registration async, so pinned agents are registered at open().
+    for (const [id, registration] of added)
+      if (registration.mcpServers !== undefined)
+        throw new TypeError(
+          `Durable agent "${id}" pins MCP servers. Register it in DurableRuntime.open() so its server fingerprint is computed before any run starts.`,
+        );
     for (const [id, registration] of added) this.agents.set(id, registration);
     this.notifyCompatibility();
+  }
+
+  /** Stores the MCP fingerprint of each pinned agent. Reads the server metadata once per agent. */
+  private async fingerprintMcpServers(agentIds: readonly string[]): Promise<void> {
+    const fingerprints = await mcpServersByAgent(this.agents, agentIds);
+    for (const [id, value] of fingerprints) this.mcpServers.set(id, value);
   }
 
   /** Effective admission and payload budgets, after defaults. Returns a detached copy. */
@@ -365,8 +391,6 @@ export class DurableRuntime {
     const registration = this.agents.get(input.agentId);
     if (registration === undefined)
       throw new DurableNotFoundError(`Unknown durable agent: ${input.agentId}`);
-    // Fingerprinted before the transaction: server metadata is read asynchronously.
-    const mcpServers = await mcpServersByAgent(this.agents, [input.agentId]);
     const id = this.store.transaction((tx) => {
       const existing = tx.findRequest(input.sessionId, input.requestId);
       if (existing !== undefined) {
@@ -383,7 +407,7 @@ export class DurableRuntime {
       ) {
         throw new DurableConflictError("Previous session execution is still settling.");
       }
-      const run = createRunRecord(submission, registration, tx, mcpServers.get(input.agentId));
+      const run = createRunRecord(submission, registration, tx, this.mcpServers.get(input.agentId));
       tx.putRun(run);
       tx.appendEvent(run.id, "submitted", json(externalizeSubmittedEvent(tx, submission)));
       return run.id;
@@ -395,11 +419,9 @@ export class DurableRuntime {
   async submitGraph(input: DurableGraphSubmission): Promise<DurableTaskGraph> {
     this.assertOpen();
     const submission = parseDurableGraphSubmission(input);
-    const mcpServers = await mcpServersByAgent(
-      this.agents,
-      submission.tasks.map((task) => task.agentId),
+    const id = this.store.transaction((tx) =>
+      createGraph(tx, submission, this.agents, this.mcpServers),
     );
-    const id = this.store.transaction((tx) => createGraph(tx, submission, this.agents, mcpServers));
     this.pump();
     return new DurableTaskGraph(id, this);
   }

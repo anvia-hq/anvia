@@ -12,3 +12,6 @@ Admit MCP servers behind an explicit marker (experimental, parity phase 6).
 - Each MCP call is an ordinary tool operation with the registration's `toolRecovery` policy (default
   `manual`). An interrupted call blocks for reconciliation.
 - Discovery stays in the application (`McpClient.connect()`); durable does not call `listTools`.
+- Pinned agents are registered in `DurableRuntime.open()`, which computes their fingerprint before any
+  run starts. `registerAgents()` rejects a pinned agent, because the fingerprint reads tool definitions
+  that may be asynchronous. Owned agent task children and graph tasks record the same fingerprint.

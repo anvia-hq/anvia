@@ -671,7 +671,8 @@ setting.
   Their definitions are part of the persisted model request, so a changed definition under the same
   version fails replay with `needs_attention`, and a restart reuses the persisted provider response.
   Provider tool `configuration` must be JSON; anything else is rejected at registration.
-- Experimental: `mcpServers` with `mcpServers: { mode: "pinned" }` on the registration. Discovery
+- Experimental: `mcpServers` with `mcpServers: { mode: "pinned" }` on the registration. Pinned agents
+  must be passed to `DurableRuntime.open()`; `registerAgents()` rejects them. Discovery
   happens in the application (`McpClient.connect()`) before the agent is built, and durable does not
   call `listTools` itself. At submission the run stores a fingerprint of the servers: each server's
   name, `serverInfo`, `capabilities`, `instructions`, and each tool's exposed and remote names and

@@ -6,7 +6,8 @@ import { Agent } from "@anvia/core/agent";
 import type { CompletionRequest, ToolDefinition } from "@anvia/core/completion";
 import type { McpServer, McpTool } from "@anvia/core/mcp";
 import type { ToolCallContext } from "@anvia/core/tool";
-import { DurableRuntime, type DurableAgentRegistration } from "../src/index.js";
+import { DurableRuntime, defineTask, type DurableAgentRegistration } from "../src/index.js";
+import { z } from "zod";
 import type { DurableRun } from "../src/run.js";
 import { SqliteDurableStore } from "../src/sqlite.js";
 import { capabilities, done, hasToolResult, response } from "./helpers.js";
@@ -109,6 +110,58 @@ it("rejects MCP servers without the marker and names it", async () => {
       ),
     ]),
   ).toThrow(/MCP servers need \{ mcpServers: \{ mode: "pinned" \} \}/);
+  expect(runtime.compatibility()).toEqual([]);
+});
+
+it("records the MCP fingerprint on an owned agent task child, so it is not blocked as changed", async () => {
+  const call = vi.fn(async (_args: unknown, _context?: ToolCallContext) => "docs found");
+  const model = vi.fn(async (request: CompletionRequest) =>
+    hasToolResult(request) ? done() : askForSearch(),
+  );
+  const parent = defineTask({
+    name: "pinned-spawn",
+    version: 1,
+    input: z.null(),
+    checkpoint: z.boolean(),
+    output: z.string(),
+    initial: () => false,
+    run: async (ctx) => {
+      if (!ctx.checkpoint)
+        return {
+          status: "waiting",
+          checkpoint: true,
+          wait: {
+            type: "children",
+            ids: [ctx.spawnAgent("agent", { agentId: "researcher", prompt: "find the docs" })],
+            policy: "allSettled",
+          },
+        };
+      return { status: "completed", output: ctx.children()[0]!.status };
+    },
+  });
+  const runtime = await DurableRuntime.open({
+    store: new SqliteDurableStore(database()),
+    tasks: [parent],
+    agents: [registration(mcpAgent(model, docsServer(mcpTool(call))))],
+  });
+  runtimes.push(runtime);
+  const handle = await runtime.submitTask(parent, {
+    sessionId: "task",
+    requestId: "one",
+    input: null,
+  });
+  // Before the fix the child run had no fingerprint, so its first execution failed as "changed".
+  expect(await handle.result()).toBe("completed");
+  expect(call).toHaveBeenCalledTimes(1);
+});
+
+it("rejects a pinned agent passed to registerAgents and points to open()", async () => {
+  const runtime = await DurableRuntime.open({ store: new SqliteDurableStore(":memory:") });
+  runtimes.push(runtime);
+  const server = docsServer(mcpTool(async () => "result"));
+  expect(() =>
+    runtime.registerAgents([registration(mcpAgent(async () => done(), server))]),
+  ).toThrow(/pins MCP servers.*DurableRuntime.open\(\)/);
   expect(runtime.compatibility()).toEqual([]);
 });
 

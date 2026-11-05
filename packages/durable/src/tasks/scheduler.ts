@@ -11,6 +11,7 @@ import type { DurableStore, DurableAgentRegistration, DurableTraceOptions } from
 import { taskWaitSchema } from "./schema.js";
 import { taskInvocation } from "./invocation.js";
 import { spawnAgent } from "./agent.js";
+import type { DurableMcpServers } from "../mcp-servers.js";
 import {
   cancelTree,
   createTask,
@@ -43,6 +44,7 @@ export class TaskScheduler {
     private readonly capacity: number,
     private readonly fatal: (error: unknown) => void,
     private readonly agents: ReadonlyMap<string, DurableAgentRegistration>,
+    private readonly mcpServers: ReadonlyMap<string, DurableMcpServers>,
     private readonly agentActive: (id: string) => boolean,
     private readonly syncAgents: (root: string) => void,
   ) {}
@@ -337,7 +339,7 @@ export class TaskScheduler {
         this.syncAgents(task.rootId);
         this.pump();
       },
-      (tx, parent, key, input) => spawnAgent(tx, this.agents, parent, key, input),
+      (tx, parent, key, input) => spawnAgent(tx, this.agents, this.mcpServers, parent, key, input),
     );
     let transition: TaskTransition<JsonValue, JsonValue> | undefined;
     let failure: unknown;

@@ -89,6 +89,10 @@ export function registrations(
     const unsupported = unsupportedFeatures(options, registration);
     if (unsupported.length > 0) {
       // Each feature with a marker names it, so the fix is one line away.
+      // Memory has no marker: its store has no idempotent writes or conflict checks to checkpoint.
+      const memoryNote = unsupported.includes("memory")
+        ? " Memory needs a store with idempotent writes and conflict handling, which durable does not checkpoint; use durable sessions instead."
+        : "";
       const hints = [
         unsupported.includes("middleware")
           ? `middleware needs { middlewares: { mode: "pure" } }`
@@ -107,7 +111,7 @@ export function registrations(
           : "",
       ].filter((hint) => hint !== "");
       throw new TypeError(
-        `Durable agent "${agent.id}" (version ${JSON.stringify(registration.version)}) uses features that require additional checkpoint support: ${unsupported.join(", ")}. Durable agents support static local tools, static context documents, and instructions only.${hints.length > 0 ? ` To admit them, set the registration marker: ${hints.join("; ")}.` : ""}`,
+        `Durable agent "${agent.id}" (version ${JSON.stringify(registration.version)}) uses features that require additional checkpoint support: ${unsupported.join(", ")}. Durable agents support static local tools, static context documents, and instructions only.${memoryNote}${hints.length > 0 ? ` To admit them, set the registration marker: ${hints.join("; ")}.` : ""}`,
       );
     }
     for (const [name, policy] of Object.entries(registration.toolRecovery ?? {})) {

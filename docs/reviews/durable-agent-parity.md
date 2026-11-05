@@ -84,7 +84,7 @@ Status meanings:
 | MCP servers                   | experimental | Admitted with `mcpServers: { mode: "pinned" }` (Phase 6): discovery stays in the application; the server fingerprint is checked per run and each call is a tool operation. `packages/durable/src/mcp-servers.ts`, `packages/durable/src/runtime.ts`                                                             |
 | Provider tools                | experimental | Admitted with `providerTools: { mode: "stateless" }` (Phase 4): part of the persisted model request, so a changed definition fails replay. `packages/durable/src/registration.ts:33`                                                                                                                            |
 | Dynamic tool indexes          | experimental | Admitted with `toolIndexes: { mode: "recorded" }` (Phase 5): each model call's selection is recorded before the call and reused on replay; the index fingerprint is checked at each execution start. `packages/durable/src/tool-indexes.ts`, `packages/durable/src/execution.ts`                                |
-| Memory store / save policies  | rejected     | No transactional boundary with the external store. `packages/durable/src/registration.ts:27`                                                                                                                                                                                                                    |
+| Memory store / save policies  | rejected     | No idempotent write or version on the store contract (design note, Phase 7). `packages/durable/src/registration.ts`                                                                                                                                                                                             |
 | Lifecycle callbacks           | experimental | Admitted with `lifecycle: { mode: "observe" }` (Phase 2): hooks run at most once per step, recorded before they run.                                                                                                                                                                                            |
 | Guardrails                    | experimental | Admitted with `guardrails: { mode: "record" }` (Phase 3): outcomes recorded before use, replay reuses them. `packages/durable/src/registration.ts:30`                                                                                                                                                           |
 | Middleware                    | experimental | Admitted with `middlewares: { mode: "pure" }` (Phase 3): replay compares transformed requests and tool inputs. `packages/durable/src/registration.ts:29`                                                                                                                                                        |
@@ -343,6 +343,35 @@ core, which would need a core hook. Reading the code shows it does not:
 - **Effort/risk:** L / high. This is the largest external surface and should come last.
 
 ### Phase 7 — Memory store
+
+**Status (session 6): rejected; design note only. No store API was invented.** The rejection stays,
+and its message names the `memory` field and the boundary it needs.
+
+Findings from `packages/core/src/memory/types.ts`:
+
+- `MemoryStore` has `load({ scope })`, `append({ scope, runId, turn, messages })`, `clear({ scope })`,
+  and optional `recordError`, `inspector` and `compaction`.
+- `append` carries `runId` and `turn`, but it has no idempotency key and returns nothing, so a
+  caller cannot tell a write that was committed from one that was not, or a duplicate from a new
+  write.
+- `load` has no version, etag or hash, so a read snapshot cannot be checked later for changes.
+- The save policy (`message`, `turn`, `run`) decides when `append` runs, outside any durable
+  checkpoint.
+
+So the plan's contract (idempotency keys, conflict handling, a read snapshot with a hash) does not
+exist. Admitting `memory` would need all of the following first:
+
+1. A store method that takes an idempotency key and reports `committed` or `duplicate`.
+2. A version on `load` so a changed read is detected on replay.
+3. A durable boundary: each write recorded as a `memory` operation before it runs, and the save
+   policy evaluated after the terminal checkpoint.
+
+Each of these changes a public core interface. That is an owner decision; this phase does not make
+it. Until then, durable sessions are the supported replacement (see `docs/packages/durable.md`).
+
+- **Checkpoint boundary:** none (rejected).
+- **Tests:** `packages/durable/test/agent-parity.test.ts` rejects `memory` and checks that the message
+  names the field, the idempotent-write and conflict-handling contract, and durable sessions.
 
 - Persist a memory read snapshot before the first model call; use it on replay.
 - Model writes as explicit `memory` operations with idempotency keys and a recovery policy; evaluate

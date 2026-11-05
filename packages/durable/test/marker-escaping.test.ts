@@ -256,7 +256,7 @@ describe("rows written before schema version 11", () => {
       expect(
         verify.prepare("SELECT version FROM anvia_durable_owner WHERE singleton = 1").get()!
           .version,
-      ).toBe(11);
+      ).toBe(12);
     } finally {
       verify.close();
     }

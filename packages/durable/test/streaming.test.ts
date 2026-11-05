@@ -510,8 +510,8 @@ it("preserves persisted deltas and attempt identities through backup and restore
   await runtime.close();
   const archive = `${path}.backup`;
   const restored = `${path}.restored`;
-  expect((await backupSqlite(path, archive)).schemaVersion).toBe(11);
-  expect((await restoreSqlite(archive, restored)).schemaVersion).toBe(11);
+  expect((await backupSqlite(path, archive)).schemaVersion).toBe(12);
+  expect((await restoreSqlite(archive, restored)).schemaVersion).toBe(12);
   const reopened = await open(agent, restored);
   await reopened.resume();
   expect(await events(await reopened.getRun(run.id))).toEqual(saved);

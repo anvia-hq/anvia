@@ -1,7 +1,7 @@
 import { messageLog, messageLogTables } from "./message-log.js";
-import { blobStatements, hydrateValue } from "./blob.js";
+import { blobStatements, externalizeRunRecord, hydrateValue } from "./blob.js";
 import { readStored, writeStored } from "./references.js";
-import { migrateLegacyRows } from "./legacy-rows.js";
+import { migrateLegacyRows, migrateOversizedPrompts } from "./legacy-rows.js";
 import { sqliteMetrics } from "./metrics.js";
 import { graphListSchema, parseGraphRecord } from "./graph-schema.js";
 import {
@@ -16,6 +16,7 @@ import type { DurableGraphListOptions, DurableGraphPage } from "./graph-types.js
 import { hostname } from "node:os";
 import { DatabaseSync } from "node:sqlite";
 import { json, nonblank } from "./json.js";
+import type { JsonValue } from "@anvia/core/completion";
 import {
   eventTypeSchema,
   listOptionsSchema,
@@ -61,7 +62,7 @@ export class SqliteDurableStore implements DurableStore {
           singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
           version INTEGER NOT NULL, token TEXT, pid INTEGER, host TEXT
         );
-        INSERT OR IGNORE INTO anvia_durable_owner(singleton, version) VALUES (1, 11);
+        INSERT OR IGNORE INTO anvia_durable_owner(singleton, version) VALUES (1, 12);
         CREATE TABLE IF NOT EXISTS anvia_durable_blobs (
           hash TEXT PRIMARY KEY, bytes INTEGER NOT NULL, record TEXT NOT NULL
         );
@@ -106,7 +107,8 @@ export class SqliteDurableStore implements DurableStore {
         version?.version !== 8 &&
         version?.version !== 9 &&
         version?.version !== 10 &&
-        version?.version !== 11
+        version?.version !== 11 &&
+        version?.version !== 12
       )
         throw new Error("Unsupported durable database schema version.");
       this.histories = messageLog(this.database);
@@ -141,19 +143,21 @@ export class SqliteDurableStore implements DurableStore {
         .prepare("SELECT version FROM anvia_durable_owner WHERE singleton = 1")
         .get()!.version;
       if (Number(stored) < 11) migrateLegacyRows(this.database);
+      // Version 11 and older store oversized prompts inline; move them behind blob references.
+      if (Number(stored) < 12) migrateOversizedPrompts(this.database);
       // Populate only legacy rows, under the exclusive owner transaction.
       for (const row of this.database
         .prepare(`SELECT r.record FROM anvia_durable_runs r
         LEFT JOIN anvia_durable_run_summaries s ON s.id = r.id WHERE s.id IS NULL`)
         .iterate()) {
-        const summary = runSummary(parseRun(readStored(String(row.record))));
+        const summary = runSummary(this.decodeRun(String(row.record)));
         this.database
           .prepare("INSERT INTO anvia_durable_run_summaries VALUES (?, ?)")
           .run(summary.id, JSON.stringify(summary));
       }
       this.database
         .prepare(
-          "UPDATE anvia_durable_owner SET token = ?, pid = ?, host = ?, version = 11 WHERE singleton = 1",
+          "UPDATE anvia_durable_owner SET token = ?, pid = ?, host = ?, version = 12 WHERE singleton = 1",
         )
         .run(this.token, process.pid, hostname());
     });
@@ -391,6 +395,16 @@ export class SqliteDurableStore implements DurableStore {
       }));
   }
 
+  /**
+   * Parses a stored run record. Only the prompt is restored from its blob: the rest of the record
+   * keeps its references, so a read-modify-write does not write history back inline.
+   */
+  private decodeRun(text: string): DurableRunRecord {
+    const value = readStored(text) as Record<string, JsonValue>;
+    if (!text.includes("anvia:blob") && !text.includes("durableBlobs")) return parseRun(value);
+    return parseRun({ ...value, prompt: hydrateValue(this.blobs, json(value.prompt)) });
+  }
+
   private eventData(row: Record<string, unknown>) {
     // Events are terminal, so their readers always see fully restored payloads.
     if (row.history_encoding !== null && row.history_encoding !== undefined) {
@@ -413,7 +427,7 @@ export class SqliteDurableStore implements DurableStore {
     const readRun = (sql: string, ...parameters: string[]): DurableRunRecord | undefined => {
       assertActive();
       const row = this.database.prepare(sql).get(...parameters);
-      return row === undefined ? undefined : parseRun(readStored(String(row.record)));
+      return row === undefined ? undefined : this.decodeRun(String(row.record));
     };
     return {
       ...taskTransaction(this.database, assertActive),
@@ -501,7 +515,8 @@ export class SqliteDurableStore implements DurableStore {
       },
       putRun: (run) => {
         assertActive();
-        const serialized = writeStored(parseRun(json(run)));
+        // Validate the logical record, then store its prompt and input behind blob references.
+        const serialized = writeStored(externalizeRunRecord(this.blobs, parseRun(json(run))));
         this.database
           .prepare(`INSERT INTO anvia_durable_runs(id, session_id, request_id, status, record)
           VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET status = excluded.status, record = excluded.record`)

@@ -1,7 +1,7 @@
 import type { AgentPrompt } from "@anvia/core/agent";
 import type { JsonValue } from "@anvia/core/completion";
 import { DurableConflictError, DurableNotFoundError } from "./errors.js";
-import { hydratedOutcomeOutput } from "./blob.js";
+import { externalizeSubmittedEvent, hydratedOutcomeOutput } from "./blob.js";
 import { json, sameJson } from "./json.js";
 import { GRAPH_SESSION_PREFIX, createRunRecord } from "./run-record.js";
 import type { DurableAgentRegistration, DurableRunRecord, DurableTransaction } from "./types.js";
@@ -59,7 +59,7 @@ export function createGraph(
     tx.appendEvent(
       run.id,
       "submitted",
-      json({ graphId: id, taskId: task.id, prompt: task.prompt }),
+      externalizeSubmittedEvent(tx, { graphId: id, taskId: task.id, prompt: task.prompt }),
     );
   }
   return id;

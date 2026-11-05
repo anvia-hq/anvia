@@ -46,6 +46,7 @@ import { settledHistory } from "./settled-progress.js";
 import {
   externalizeMessages,
   externalizeOutcome,
+  externalizeSubmittedEvent,
   externalizeToolResult,
   hydrateValue,
 } from "./blob.js";
@@ -379,7 +380,7 @@ export class DurableRuntime {
       }
       const run = createRunRecord(submission, registration, tx);
       tx.putRun(run);
-      tx.appendEvent(run.id, "submitted", json(submission));
+      tx.appendEvent(run.id, "submitted", json(externalizeSubmittedEvent(tx, submission)));
       return run.id;
     });
     this.pump();

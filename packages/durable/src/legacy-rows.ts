@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
-import { escapeKey, RESERVED_KEYS } from "./references.js";
+import { blobStatements, externalizeRunRecord, externalizeSubmittedEvent } from "./blob.js";
+import type { JsonObject } from "@anvia/core/completion";
+import { escapeKey, readStored, RESERVED_KEYS, writeStored } from "./references.js";
 
 /**
  * One-time rewrite of journal rows written before schema version 11 (see references.ts).
@@ -192,5 +194,34 @@ export function migrateLegacyRows(database: DatabaseSync): void {
       link.previous === null ? null : heads.get(link.previous)!,
       message.hash,
     );
+  }
+}
+
+/**
+ * One-time move of oversized prompts out of version 11 rows (see blob.ts). Run records get their
+ * prompt and input messages externalized; `submitted` events get their prompt externalized. Rows
+ * that do not change are not rewritten, and every blob is written before the rows that name it.
+ */
+export function migrateOversizedPrompts(database: DatabaseSync): void {
+  const io = blobStatements(database);
+  const runs = database.prepare("SELECT id, record FROM anvia_durable_runs").all();
+  const updateRun = database.prepare("UPDATE anvia_durable_runs SET record = ? WHERE id = ?");
+  for (const row of runs) {
+    const text = String(row.record);
+    const next = writeStored(externalizeRunRecord(io, readStored(text) as JsonObject));
+    if (next !== text) updateRun.run(next, String(row.id));
+  }
+  const events = database
+    .prepare("SELECT sequence, data FROM anvia_durable_events WHERE type = 'submitted'")
+    .all();
+  const updateEvent = database.prepare(
+    "UPDATE anvia_durable_events SET data = ? WHERE sequence = ?",
+  );
+  for (const row of events) {
+    const text = String(row.data);
+    const value = readStored(text);
+    if (typeof value !== "object" || value === null || Array.isArray(value)) continue;
+    const next = writeStored(externalizeSubmittedEvent(io, value as JsonObject));
+    if (next !== text) updateEvent.run(next, Number(row.sequence));
   }
 }

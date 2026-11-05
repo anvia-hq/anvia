@@ -235,7 +235,7 @@ it("opens a schema version 9 store, migrates it, and keeps its runs readable", a
   try {
     expect(
       verify.prepare("SELECT version FROM anvia_durable_owner WHERE singleton = 1").get()!.version,
-    ).toBe(11);
+    ).toBe(12);
     expect(
       verify
         .prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE name = 'anvia_durable_blobs'")

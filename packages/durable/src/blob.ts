@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
+import type { AgentPrompt } from "@anvia/core/agent";
 import type { JsonObject, JsonValue, Message } from "@anvia/core/completion";
 import { canonicalJson, json } from "./json.js";
 import { reference, isReference } from "./references.js";
@@ -482,4 +483,43 @@ function externalizeContinuationState(io: DurableBlobIO, state: JsonObject): Jso
       return queued;
     });
   return result;
+}
+
+/**
+ * A submitted prompt as stored. A string prompt above the threshold moves behind a whole-value
+ * reference (`{ "anvia:blob" }`); a message prompt moves its oversized leaves, like any message.
+ * The stored form is restored before the run record is parsed, so readers only see the prompt.
+ */
+export function externalizePrompt(io: DurableBlobIO, prompt: AgentPrompt): JsonValue {
+  if (sizeOf(prompt as JsonValue) <= BLOB_THRESHOLD_BYTES) return prompt as JsonValue;
+  if (typeof prompt === "string") return wholeValueReference(io, prompt);
+  return externalizeMessage(io, prompt) as JsonValue;
+}
+
+/**
+ * The stored form of a run record: the prompt and the messages of `input` (the prompt is its last
+ * message, and history is content addressed) are externalized. Callers validate the logical record
+ * first; the result is only ever written, never parsed.
+ */
+export function externalizeRunRecord<T extends object>(io: DurableBlobIO, run: T): T {
+  const record = { ...run } as Record<string, JsonValue | undefined>;
+  if (record.prompt !== undefined)
+    record.prompt = externalizePrompt(io, record.prompt as AgentPrompt);
+  const input = record.input;
+  if (typeof input === "object" && input !== null && !Array.isArray(input)) {
+    const messages = (input as JsonObject).messages;
+    if (Array.isArray(messages))
+      record.input = {
+        ...(input as JsonObject),
+        messages: externalizeMessages(io, messages as unknown as Message[]) as JsonValue,
+      };
+  }
+  return record as T;
+}
+
+/** A `submitted` event (run or graph task): its `prompt` moves out like the run's prompt. */
+export function externalizeSubmittedEvent<T extends object>(io: DurableBlobIO, data: T): T {
+  const record = data as { prompt?: AgentPrompt };
+  if (record.prompt === undefined) return data;
+  return { ...data, prompt: externalizePrompt(io, record.prompt) } as unknown as T;
 }

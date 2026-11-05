@@ -56,7 +56,16 @@ export type DurableAgentRegistration = {
   modelRetry?: DurableModelRetry;
   /** Bump registration.version when the compactor or token counter changes. */
   compaction?: DurableCompactionOptions;
+  /**
+   * Declares the agent's `lifecycle` hooks observational. Each hook then runs once per step: a
+   * record is committed before the hook, and a replayed step never fires it again. Hook failures
+   * are recorded and do not fail the run. Without this marker, `lifecycle` is rejected.
+   */
+  lifecycle?: DurableObservationalLifecycle;
 };
+
+/** The only lifecycle mode durable admits: hooks that observe the run and do not change it. */
+export type DurableObservationalLifecycle = { mode: "observe" };
 
 /** Agent-level options the runtime freezes for the life of a registration. */
 export type DurableFrozenAgentOption =

@@ -13,6 +13,10 @@ export function registrations(
   for (const registration of values) {
     nonblank(registration.version, "Agent version");
     const { agent } = registration;
+    if (registration.lifecycle !== undefined && registration.lifecycle?.mode !== "observe")
+      throw new TypeError(
+        `Durable agent "${agent.id}" has an unknown lifecycle mode. Only { mode: "observe" } is supported.`,
+      );
     if (registration.stream !== undefined && typeof registration.stream !== "boolean")
       throw new TypeError("Durable stream option must be a boolean.");
     if (
@@ -30,7 +34,7 @@ export function registrations(
       );
     // These callbacks can perform effects or change requests during reconstruction.
     // Add them only with their own persistence boundaries, never silently replay them.
-    const unsupported = unsupportedFeatures(options);
+    const unsupported = unsupportedFeatures(options, registration.lifecycle !== undefined);
     if (unsupported.length > 0) {
       throw new TypeError(
         `Durable agent "${agent.id}" (version ${JSON.stringify(registration.version)}) uses features that require additional checkpoint support: ${unsupported.join(", ")}. Durable agents support static local tools, static context documents, and instructions only.`,
@@ -76,6 +80,10 @@ export function registrations(
       normalized.stream = registration.stream;
     }
 
+    if (registration.lifecycle !== undefined) {
+      normalized.lifecycle = { mode: "observe" };
+    }
+
     normalized.toolRecovery = { ...registration.toolRecovery };
 
     if (compaction !== undefined) {
@@ -101,10 +109,11 @@ function retriesEnabled(retries: ResolvedOptions["retries"]): boolean {
 }
 
 /** Names only the features this agent actually sets, so the error stays actionable. */
-function unsupportedFeatures(options: ResolvedOptions): string[] {
+function unsupportedFeatures(options: ResolvedOptions, observedLifecycle: boolean): string[] {
   const features: string[] = [];
   if (options.memory !== undefined) features.push("memory");
-  if (options.lifecycle !== undefined) features.push("lifecycle");
+  // Observational hooks are gated by the registration's marker; anything else can change the run.
+  if (options.lifecycle !== undefined && !observedLifecycle) features.push("lifecycle");
   if ((options.middlewares?.length ?? 0) > 0) features.push("middleware");
   if ((options.guardrails?.length ?? 0) > 0) features.push("guardrails");
   // Static documents are snapshotted into each run record at submission; live vector retrieval

@@ -615,9 +615,16 @@ setting.
   documents change under the same `version`, the run fails with `needs_attention` naming both
   content hashes; restore the original documents and `retry()`, or bump the version for a context
   change. Live `VectorContext` retrieval is still rejected.
-- Registering an agent that sets `memory`, `lifecycle`, `middlewares`, `guardrails`, vector
-  `context`, `mcpServers`, provider tools, or dynamic tool indexes throws a `TypeError` naming
-  exactly the features that agent uses.
+- Observational lifecycle: set `lifecycle: { mode: "observe" }` on the registration to admit the
+  agent's `lifecycle` hooks. Each of `onStart`, `onStepFinish`, `onToolStart`, `onToolFinish`,
+  `onFinish` and `onError` runs at most once per step. A record is committed before each hook,
+  so a restart or retry never repeats a recorded hook; a hook that was started and never finished
+  (a crash inside it) is not run again either, so delivery is at most once. A hook that throws is
+  recorded and does not change the run outcome. Events are deep-frozen snapshots, so a hook cannot
+  change the request. Without the marker, `lifecycle` is rejected.
+- Registering an agent that sets `memory`, `lifecycle` (without the observational marker),
+  `middlewares`, `guardrails`, vector `context`, `mcpServers`, provider tools, or dynamic tool
+  indexes throws a `TypeError` naming exactly the features that agent uses.
 
 These per-run settings are not exposed: `retries`, `maxTurns`, and `controls` (the runtime captures
 the agent-level values at submission), plus `lifecycle`, `guardrails`, `middlewares`,
@@ -669,7 +676,7 @@ retaining one cannot change the runtime's registrations.
 - Supported: static local tools, approvals/questions, JSON-serializable structured output,
   provider-neutral completion models, persisted session history, and `skills` (flattened into
   static instructions and tools).
-- Agent memory, lifecycle callbacks, middleware, guardrails, context sources, MCP, provider
+- Agent memory, lifecycle callbacks (unless declared observational), middleware, guardrails, context sources, MCP, provider
   tools, and dynamic tool indexes are rejected at registration because they need additional
   persistence boundaries. Agent-level `retries` is rejected too: use the registration's
   `modelRetry`. Durable session history replaces the agent's memory store here. See

@@ -153,6 +153,24 @@ Shipped in `@anvia/durable` 0.14.0:
 
 ### Phase 2 — Observational lifecycle
 
+**Design decisions (session 2).** The plan left these open; they are settled here.
+
+- **Marker:** `registration.lifecycle: { mode: "observe" }`. The agent keeps its normal
+  `lifecycle` hooks; the marker is the registration's declaration that they are observational. An
+  agent with `lifecycle` and no marker is still rejected, with the same message.
+- **Mechanism:** core gains one internal run option, `lifecycle`. When durable passes it, it
+  replaces the agent's composed lifecycle for that run, so each hook fires once through durable's
+  gate and never twice (agent hooks plus a per-run wrapper). Public core API is unchanged.
+- **Record:** an operation of kind `effect`, key `${epoch}:lifecycle:${hook}:${step}:${toolCallId}`
+  (`start` uses step 0; `finish` and `error` use the run's `modelTurns`, so a second failure after a
+  retry gets a new key). It is written as `started` before the hook runs and becomes `completed` with
+  `{ failed, error? }` after it. Replay skips any hook whose record exists, including a `started`
+  one, so a crash during a hook is at-most-once and is never re-run.
+- **Failures:** a throwing hook is recorded in its record and never changes the run outcome.
+- **Inputs:** each event is a structured-clone snapshot, deep-frozen before the hook sees it.
+- **Not covered:** `toolCallId` is optional in core; a tool event without one shares a key with
+  other such events of the same step. Hook output is not persisted.
+
 - Admit only hooks that are declared observational (`onStart`, `onStepFinish`, `onToolStart`,
   `onToolFinish`, `onFinish`, `onError`), with an explicit `lifecycle: { mode: "observe" }` marker.
 - Persist an invocation record keyed by `runId:epoch:step:kind:toolCallId` before invoking the hook;

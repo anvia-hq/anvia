@@ -246,9 +246,12 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     this.onSteeringApplied = internalOptions?.onSteeringApplied;
     this.onInternalMemoryCompaction = internalOptions?.onMemoryCompaction;
     this.requestedRunId = normalizeRequestedRunId(internalOptions?.runId);
-    this.activeLifecycle = composeAgentLifecycle(agent.lifecycle, options.lifecycle) as
-      | AgentLifecycle<Output, unknown>
-      | undefined;
+    this.activeLifecycle =
+      internalOptions?.lifecycle !== undefined
+        ? (internalOptions.lifecycle as AgentLifecycle<Output, unknown>)
+        : (composeAgentLifecycle(agent.lifecycle, options.lifecycle) as
+            | AgentLifecycle<Output, unknown>
+            | undefined);
     this.guardrailPolicies =
       options.guardrails === undefined
         ? [...agent.guardrails]

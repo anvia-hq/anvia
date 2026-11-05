@@ -647,6 +647,7 @@ export class DurableRuntime {
       delete run.error;
       delete run.blockedOperation;
       delete run.exhaustion;
+      run.retries = (run.retries ?? 0) + 1;
       setStatus(tx, run, "pending");
     });
     this.pump();

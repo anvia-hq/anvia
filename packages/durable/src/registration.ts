@@ -13,7 +13,7 @@ export function registrations(
   for (const registration of values) {
     nonblank(registration.version, "Agent version");
     const { agent } = registration;
-    if (registration.lifecycle !== undefined && registration.lifecycle?.mode !== "observe")
+    if (registration.lifecycle !== undefined && registration.lifecycle.mode !== "observe")
       throw new TypeError(
         `Durable agent "${agent.id}" has an unknown lifecycle mode. Only { mode: "observe" } is supported.`,
       );

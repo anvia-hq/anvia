@@ -170,6 +170,8 @@ export type DurableRunRecord = DurableSubmission & {
   taskId?: string;
   dependencies?: string[];
   epoch: number;
+  /** Explicit retry() count. Keys the failure hooks, so each failure after a retry is observed. */
+  retries?: number | undefined;
   input: AgentInput;
   modelTurns: number;
   maxModelTurns: number;

@@ -1,3 +1,4 @@
+import { DatabaseSync } from "node:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -136,6 +137,58 @@ describe("observational lifecycle", () => {
     const sent = JSON.stringify(model.mock.calls[0]![0]);
     expect(sent).toContain("original prompt");
     expect(sent).not.toContain("changed by a hook");
+  });
+
+  it("observes a second failure after an explicit retry at the same model turn", async () => {
+    const hooks = { onStart: vi.fn(), onStepFinish: vi.fn(), onError: vi.fn(), onFinish: vi.fn() };
+    const failing = vi.fn(async (_request: CompletionRequest) => {
+      throw new Error("provider down");
+    });
+    const path = database();
+    const first = await open(path, agentWith(failing, hooks));
+    const submitted = await first.submit({ ...submission, prompt: "hello" });
+    expect((await settled(submitted)).run.status).toBe("failed");
+    expect(hooks.onError).toHaveBeenCalledTimes(1);
+
+    // The retry fails again with no model turn in between, so only the retry count tells them apart.
+    const run = await first.getRun(submitted.id);
+    await run.retry();
+    expect((await settled(submitted)).run.status).toBe("failed");
+    expect(hooks.onError).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not run a hook again when its start was recorded before a crash", async () => {
+    const hooks = { onStart: vi.fn(), onStepFinish: vi.fn(), onError: vi.fn(), onFinish: vi.fn() };
+    const failing = vi.fn(async (_request: CompletionRequest) => {
+      throw new Error("provider down");
+    });
+    const path = database();
+    const first = await open(path, agentWith(failing, hooks));
+    const submitted = await first.submit({ ...submission, prompt: "hello" });
+    expect((await settled(submitted)).run.status).toBe("failed");
+    await first.close();
+
+    // Simulate a crash inside onStart: its record is left at "started" with no completion.
+    const db = new DatabaseSync(path);
+    const rows = db
+      .prepare("SELECT key, record FROM anvia_durable_operations WHERE run_id = ?")
+      .all(submitted.id) as Array<{ key: string; record: string }>;
+    const start = rows.find((row) => row.key.includes(":lifecycle:onStart:"))!;
+    const record = JSON.parse(start.record) as { status: string; result?: unknown };
+    db.prepare("UPDATE anvia_durable_operations SET record = ? WHERE run_id = ? AND key = ?").run(
+      JSON.stringify({ ...record, status: "started", result: undefined }),
+      submitted.id,
+      start.key,
+    );
+    db.close();
+
+    const runtime = await open(
+      path,
+      agentWith(async () => done(), hooks),
+    );
+    await (await runtime.getRun(submitted.id)).retry();
+    expect((await settled(await runtime.getRun(submitted.id))).run.status).toBe("completed");
+    expect(hooks.onStart).toHaveBeenCalledTimes(1);
   });
 
   it("rejects an unknown lifecycle mode at registration", async () => {

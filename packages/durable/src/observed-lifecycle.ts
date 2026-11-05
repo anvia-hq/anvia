@@ -24,11 +24,16 @@ export function createObservedLifecycle(
   const hooks = registration.agent.lifecycle as AgentLifecycle<unknown, unknown> | undefined;
   if (hooks === undefined) return undefined;
 
-  const modelTurns = () => store.transaction((tx) => tx.getRun(run.id)?.modelTurns ?? 0);
+  // Model turns alone repeat when a failed run is retried, so a retry count is part of the key.
+  const failureSlot = () =>
+    store.transaction((tx) => {
+      const current = tx.getRun(run.id);
+      return `${current?.modelTurns ?? 0}:${current?.retries ?? 0}`;
+    });
 
   async function observe<Event>(
     hook: Hook,
-    step: number,
+    step: number | string,
     toolCallId: string | undefined,
     event: Event,
     call: (snapshot: Event) => unknown,
@@ -74,11 +79,11 @@ export function createObservedLifecycle(
       observe("onToolStart", event.step, event.toolCallId, event, (e) => hooks.onToolStart?.(e)),
     onToolFinish: (event) =>
       observe("onToolFinish", event.step, event.toolCallId, event, (e) => hooks.onToolFinish?.(e)),
-    // The run's model-turn count tells a second failure after a retry apart from the first.
+    // The model-turn count and retry count tell a later failure apart from an earlier one.
     onFinish: (event) =>
-      observe("onFinish", modelTurns(), undefined, event, (e) => hooks.onFinish?.(e)),
+      observe("onFinish", failureSlot(), undefined, event, (e) => hooks.onFinish?.(e)),
     onError: (event) =>
-      observe("onError", modelTurns(), undefined, event, (e) => hooks.onError?.(e)),
+      observe("onError", failureSlot(), undefined, event, (e) => hooks.onError?.(e)),
   };
 }
 

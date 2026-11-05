@@ -1,6 +1,7 @@
 import { AGENT_RUN_EXECUTION_VERSION, getResolvedAgentOptions } from "@anvia/core/internal/agent";
 import { isVectorContext } from "@anvia/core/agent";
 import { isJsonValue, isStreamingCompletionModel } from "@anvia/core/completion";
+import type { GuardrailPolicy } from "@anvia/core/guardrails";
 import { compactionPolicySchema, modelRetrySchema } from "./schema.js";
 import { nonblank } from "./json.js";
 import type { DurableAgentRegistration } from "./types.js";
@@ -32,8 +33,22 @@ export function registrations(
       throw new TypeError(
         `Durable agent "${agent.id}" defines retries, which the durable runtime cannot honour: every run executes with retries disabled so a replay never repeats an unrecorded attempt. Configure modelRetry on the registration instead, or remove retries from the agent.`,
       );
-    // Provider tools are part of the persisted model request, so their configuration must be JSON.
-    // Reject anything else here rather than failing at the first model call.
+    // Hooks, middleware, guardrails and provider tools each need their own marker and persistence
+    // boundary, so none of them is replayed silently.
+    if (
+      registration.middlewares !== undefined &&
+      (registration.middlewares as { mode?: unknown }).mode !== "pure"
+    )
+      throw new TypeError(
+        `Durable agent "${agent.id}" has an unknown middlewares mode. Only { mode: "pure" } is supported.`,
+      );
+    if (
+      registration.guardrails !== undefined &&
+      (registration.guardrails as { mode?: unknown }).mode !== "record"
+    )
+      throw new TypeError(
+        `Durable agent "${agent.id}" has an unknown guardrails mode. Only { mode: "record" } is supported.`,
+      );
     if (
       registration.providerTools !== undefined &&
       (registration.providerTools as { mode?: unknown }).mode !== "stateless"
@@ -41,8 +56,10 @@ export function registrations(
       throw new TypeError(
         `Durable agent "${agent.id}" has an unknown providerTools mode. Only { mode: "stateless" } is supported.`,
       );
+    if (registration.guardrails !== undefined) assertUniqueGuardrailIds(agent);
     // Core does not classify a provider tool with non-JSON configuration as a provider tool, so it
-    // is checked in the configured tool list, where it is still visible.
+    // is checked in the configured tool list, where it is still visible. Provider tool configuration
+    // is persisted with the model request, so it must be JSON.
     if (registration.providerTools !== undefined)
       for (const tool of options.tools ?? []) {
         const candidate = tool as { kind?: unknown; name?: unknown; configuration?: unknown };
@@ -55,20 +72,22 @@ export function registrations(
             `Durable agent "${agent.id}" has provider tool "${String(candidate.name)}" whose configuration is not JSON. Provider tool configuration is persisted with the model request, so it must be JSON.`,
           );
       }
-    // These callbacks can perform effects or change requests during reconstruction.
-    // Add them only with their own persistence boundaries, never silently replay them.
-    const unsupported = unsupportedFeatures(
-      options,
-      registration.lifecycle !== undefined,
-      registration.providerTools !== undefined,
-    );
+    const unsupported = unsupportedFeatures(options, registration);
     if (unsupported.length > 0) {
       // Each feature with a marker names it, so the fix is one line away.
-      const hint = unsupported.includes("provider tools")
-        ? ` To admit provider tools, set { providerTools: { mode: "stateless" } } on the registration.`
-        : "";
+      const hints = [
+        unsupported.includes("middleware")
+          ? `middleware needs { middlewares: { mode: "pure" } }`
+          : "",
+        unsupported.includes("guardrails")
+          ? `guardrails need { guardrails: { mode: "record" } }`
+          : "",
+        unsupported.includes("provider tools")
+          ? `provider tools need { providerTools: { mode: "stateless" } }`
+          : "",
+      ].filter((hint) => hint !== "");
       throw new TypeError(
-        `Durable agent "${agent.id}" (version ${JSON.stringify(registration.version)}) uses features that require additional checkpoint support: ${unsupported.join(", ")}. Durable agents support static local tools, static context documents, and instructions only.${hint}`,
+        `Durable agent "${agent.id}" (version ${JSON.stringify(registration.version)}) uses features that require additional checkpoint support: ${unsupported.join(", ")}. Durable agents support static local tools, static context documents, and instructions only.${hints.length > 0 ? ` To admit them, set the registration marker: ${hints.join("; ")}.` : ""}`,
       );
     }
     for (const [name, policy] of Object.entries(registration.toolRecovery ?? {})) {
@@ -115,6 +134,14 @@ export function registrations(
       normalized.lifecycle = { mode: "observe" };
     }
 
+    if (registration.middlewares !== undefined) {
+      normalized.middlewares = { mode: "pure" };
+    }
+
+    if (registration.guardrails !== undefined) {
+      normalized.guardrails = { mode: "record" };
+    }
+
     if (registration.providerTools !== undefined) {
       normalized.providerTools = { mode: "stateless" };
     }
@@ -146,21 +173,52 @@ function retriesEnabled(retries: ResolvedOptions["retries"]): boolean {
 /** Names only the features this agent actually sets, so the error stays actionable. */
 function unsupportedFeatures(
   options: ResolvedOptions,
-  observedLifecycle: boolean,
-  statelessProviderTools: boolean,
+  registration: DurableAgentRegistration,
 ): string[] {
   const features: string[] = [];
   if (options.memory !== undefined) features.push("memory");
   // Observational hooks are gated by the registration's marker; anything else can change the run.
-  if (options.lifecycle !== undefined && !observedLifecycle) features.push("lifecycle");
-  if ((options.middlewares?.length ?? 0) > 0) features.push("middleware");
-  if ((options.guardrails?.length ?? 0) > 0) features.push("guardrails");
+  if (options.lifecycle !== undefined && registration.lifecycle === undefined)
+    features.push("lifecycle");
+  // Pure middleware and recorded guardrails are gated by their markers, like lifecycle hooks.
+  if ((options.middlewares?.length ?? 0) > 0 && registration.middlewares === undefined)
+    features.push("middleware");
+  if ((options.guardrails?.length ?? 0) > 0 && registration.guardrails === undefined)
+    features.push("guardrails");
   // Static documents are snapshotted into each run record at submission; live vector retrieval
   // is still not checkpointed.
   if ((options.context ?? []).some((input) => isVectorContext(input))) features.push("context");
   if ((options.mcpServers?.length ?? 0) > 0) features.push("MCP servers");
-  if ((options.providerTools?.length ?? 0) > 0 && !statelessProviderTools)
+  if ((options.providerTools?.length ?? 0) > 0 && registration.providerTools === undefined)
     features.push("provider tools");
   if ((options.toolIndexes?.length ?? 0) > 0) features.push("tool indexes");
   return features;
+}
+
+/**
+ * Recorded guardrails key each check by its policy and guardrail id, so two checks with the same id
+ * in one list would share a recorded outcome. Reject that at registration instead.
+ */
+function assertUniqueGuardrailIds(agent: { id: string; guardrails: readonly GuardrailPolicy[] }) {
+  const policyIds = new Set<string>();
+  for (const policy of agent.guardrails) {
+    if (policyIds.has(policy.id))
+      throw new TypeError(
+        `Durable agent "${agent.id}" has two guardrail policies named "${policy.id}".`,
+      );
+    policyIds.add(policy.id);
+    for (const [boundary, checks] of [
+      ["input", policy.input],
+      ["output", policy.output],
+    ] as const) {
+      const ids = new Set<string>();
+      for (const check of checks) {
+        if (ids.has(check.id))
+          throw new TypeError(
+            `Durable agent "${agent.id}" has two ${boundary} guardrails named "${check.id}" in policy "${policy.id}".`,
+          );
+        ids.add(check.id);
+      }
+    }
+  }
 }

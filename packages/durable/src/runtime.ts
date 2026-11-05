@@ -53,6 +53,7 @@ import {
 import { contextDocumentsOf } from "./documents.js";
 import { createExecution } from "./execution.js";
 import { createObservedLifecycle } from "./observed-lifecycle.js";
+import { createRecordedGuardrails } from "./recorded-guardrails.js";
 import { runTrace } from "./trace.js";
 import { parseTraceOptions } from "./trace-schema.js";
 import { errorMessage, json, nonblank, sameJson } from "./json.js";
@@ -773,6 +774,7 @@ export class DurableRuntime {
           runId: id,
           execution: createExecution(this.store, run, registration, signal),
           lifecycle: createObservedLifecycle(this.store, run, registration),
+          guardrails: createRecordedGuardrails(this.store, run, registration),
         },
       );
       const outcome =

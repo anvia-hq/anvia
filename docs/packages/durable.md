@@ -652,14 +652,25 @@ setting.
   (a crash inside it) is not run again either, so delivery is at most once. A hook that throws is
   recorded and does not change the run outcome. Events are deep-frozen snapshots, so a hook cannot
   change the request. Without the marker, `lifecycle` is rejected.
+- Experimental: `middlewares` with `middlewares: { mode: "pure" }` on the registration. Declare
+  the hooks deterministic and free of external effects; durable cannot check that. Middleware runs
+  again on replay before each model or tool step, and its result is compared with the persisted
+  request or tool input. A different transformation under the same step fails with a recovery error
+  (`needs_attention`). Tool output middleware runs inside the tool and is not re-run.
+- Experimental: `guardrails` with `guardrails: { mode: "record" }`. Each check's outcome is recorded
+  before core applies it, so a restart or retry reuses it and does not call the check again. A
+  blocking input decision is a terminal `blocked` outcome. A check that was started and never
+  recorded (a crash inside it) is not run again: an enforced policy fails the run with
+  `needs_attention`, and recovering it needs an operator decision. Observe-mode policies record it as
+  an error decision instead.
 - Registering an agent that sets `memory`, `lifecycle` (without the observational marker),
-  `middlewares`, `guardrails`, vector `context`, `mcpServers`, provider tools (without
-  `providerTools: { mode: "stateless" }`), or dynamic tool indexes throws a `TypeError` naming
-  exactly the features that agent uses. Provider tools are experimental: the provider must keep no
-  state between calls. Their definitions are part of the persisted model request, so a changed
-  definition under the same version fails replay with `needs_attention`, and a restart reuses the
-  persisted provider response. Provider tool `configuration` must be JSON; anything else is rejected at
-  registration.
+  `middlewares` (without `mode: "pure"`), `guardrails` (without `mode: "record"`), vector `context`,
+  `mcpServers`, provider tools (without `providerTools: { mode: "stateless" }`), or dynamic tool
+  indexes throws a `TypeError` naming exactly the features that agent uses, with the marker to set
+  where one exists. Provider tools are experimental: the provider must keep no state between calls.
+  Their definitions are part of the persisted model request, so a changed definition under the same
+  version fails replay with `needs_attention`, and a restart reuses the persisted provider response.
+  Provider tool `configuration` must be JSON; anything else is rejected at registration.
 
 These per-run settings are not exposed: `retries`, `maxTurns`, and `controls` (the runtime captures
 the agent-level values at submission), plus `lifecycle`, `guardrails`, `middlewares`,
@@ -711,9 +722,10 @@ retaining one cannot change the runtime's registrations.
 - Supported: static local tools, approvals/questions, JSON-serializable structured output,
   provider-neutral completion models, persisted session history, and `skills` (flattened into
   static instructions and tools).
-- Agent memory, lifecycle callbacks (unless declared observational), middleware, guardrails, context sources, MCP, provider
+- Agent memory, lifecycle callbacks (unless declared observational), middleware (unless declared
+  `mode: "pure"`), guardrails (unless declared `mode: "record"`), context sources, MCP, provider
   tools, and dynamic tool indexes are rejected at registration because they need additional
-  persistence boundaries. Agent-level `retries` is rejected too: use the registration's
+  persistence boundaries. The pure middleware and recorded guardrail markers are experimental. Agent-level `retries` is rejected too: use the registration's
   `modelRetry`. Durable session history replaces the agent's memory store here. See
   [agent feature compatibility](#agent-feature-compatibility) for the supported surface, the
   per-run settings that are not exposed, and the compatibility report.

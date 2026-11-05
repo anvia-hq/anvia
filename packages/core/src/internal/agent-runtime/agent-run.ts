@@ -252,10 +252,14 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         : (composeAgentLifecycle(agent.lifecycle, options.lifecycle) as
             | AgentLifecycle<Output, unknown>
             | undefined);
-    this.guardrailPolicies =
-      options.guardrails === undefined
-        ? [...agent.guardrails]
-        : appendGuardrailPolicies([...agent.guardrails], options.guardrails);
+    if (internalOptions?.guardrails !== undefined) {
+      this.guardrailPolicies = [...internalOptions.guardrails];
+    } else {
+      this.guardrailPolicies =
+        options.guardrails === undefined
+          ? [...agent.guardrails]
+          : appendGuardrailPolicies([...agent.guardrails], options.guardrails);
+    }
     const configuredConcurrency = assertPositiveSafeInteger(
       options.toolConcurrency ?? 1,
       "toolConcurrency",

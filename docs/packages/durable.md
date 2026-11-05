@@ -51,6 +51,33 @@ The database contains prompts, normalized responses, tool arguments/results, and
 state. Keep it in application-private storage. Provider SDK raw responses are not persisted.
 Retention, encryption, authentication, and authorization belong to the hosting application.
 
+### Payload limits and blob references
+
+Each persisted field is checked against a byte budget. `limits.maxPayloadBytes` takes one number
+for every field, or an object with per-group budgets: `default` (1,048,576 bytes when unset),
+`prompt`, `operation`, `event`, and `outcome`; unset groups use `default`. Each budget is checked
+on its own, and a value must be a positive safe integer.
+
+- `prompt`: `run.prompt` and `run.input` (the submitted prompt plus inherited history).
+- `outcome`: `run.history`, `run.outcome`, and a completed task's `output`.
+- `operation`: `operation.input` and `operation.result`.
+- `event`: `model_delta` events. Status events are not checked. They stay small by construction
+  (status, error text, blocked operation, and retry time; the outcome is read from the run
+  snapshot), so a limit there could block a run from reaching `failed` or `needs_attention`.
+- Everything else (run trace, responses, steering, context documents, task input and checkpoints)
+  uses `default`.
+
+Values above 64 KiB are not stored inline. A tool result, model response, media part, context
+document, or prompt moves to a blob table, and its journal record keeps a bounded reference. The
+reference is content-addressed, and it is written in the same transaction as the record that names
+it. Reads restore the value before the runtime uses it, including after a restart. A prompt is
+still checked against its budget as the caller submitted it, so the budget does not change when a
+prompt is stored as a reference.
+
+User data is escaped when it is written. A key that starts with `~` or `anvia:`, or that is named
+`durableBlobs`, is stored with one extra leading `~`, so user data that looks like a reference is
+never read as one. Reads undo the escape, so stored data round-trips unchanged.
+
 ## Tool recovery
 
 | Policy             | Interrupted operation                                                                                               |
@@ -297,9 +324,10 @@ The authorization context includes its agent and task IDs, plus graph/run IDs wh
 Existing `/runs/:id` routes authorize graph children against the graph's owning `sessionId`,
 not their generated execution session. Graph listing requires owning-session access.
 
-SQLite schema version 2 added graph records and dependency-aware scheduling. The current
-schema version 10 adds the blob table for oversized payloads. Earlier stores (versions 1–9)
-upgrade on ownership acquisition, preserving existing runs. Older engines reject the upgraded
+SQLite schema version 2 added graph records and dependency-aware scheduling. Schema version 10
+added the blob table for oversized payloads, and version 12 moves oversized prompts behind blob
+references. Stores from versions 1–11 upgrade on ownership acquisition, preserving existing runs;
+a version 11 store has its oversized prompts moved once. Older engines reject the upgraded
 database. Downgrading the database is unsupported.
 
 `submitGraph()` remains a static agent-task DAG. For dynamic children, custom work, timers,
@@ -517,7 +545,9 @@ for the largest request you accept. Validation errors return 400, denial 403, mi
 404, conflicts 409, oversized bodies 413, unsupported media types 415, and unexpected errors
 500 without internal diagnostics. Admission over the payload limit returns 413 with
 `{ error, code: "payload_too_large", field }`; capacity returns 429 with
-`{ error, code: "capacity_exceeded" }`. An over-limit admission is a terminal run failure, so
+`{ error, code: "capacity_exceeded" }` and a `Retry-After: 1` header. `DurableClient` rejects
+with a `DurableHttpError` that carries `status`, `code`, `field`, the server's message (`error`, or
+`message` from a gateway), and `retryAfterSeconds` from `Retry-After`. An over-limit admission is a terminal run failure, so
 `result()` rejects and the event stream ends instead of waiting. Responses disable caching. SSE
 frames include the durable event sequence as `id`; transport errors close the stream without
 cancelling execution.
@@ -680,7 +710,8 @@ retaining one cannot change the runtime's registrations.
   reconstruction. Observers are not the authoritative execution journal.
 - Pipeline/team recovery, Studio integration,
   Postgres, retention, general migration tooling, and distributed worker deployment are follow-up work.
-  Database records are experimental; the task-aware engine upgrades schema 1–8 to 9 on acquisition. Older engines reject schema 9. Core execution protocol 4 is required.
+  Database records are experimental. Upgrades on acquisition are described in
+  [storage and ownership](#storage-and-ownership). Core execution protocol 4 is required.
 
 ## Operational readiness
 

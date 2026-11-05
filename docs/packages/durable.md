@@ -653,8 +653,12 @@ setting.
   recorded and does not change the run outcome. Events are deep-frozen snapshots, so a hook cannot
   change the request. Without the marker, `lifecycle` is rejected.
 - Registering an agent that sets `memory`, `lifecycle` (without the observational marker),
-  `middlewares`, `guardrails`, vector `context`, `mcpServers`, provider tools, or dynamic tool
-  indexes throws a `TypeError` naming exactly the features that agent uses.
+  `middlewares`, `guardrails`, vector `context`, `mcpServers`, provider tools (without
+  `providerTools: { mode: "stateless" }`), or dynamic tool indexes throws a `TypeError` naming
+  exactly the features that agent uses. Provider tools are experimental: the provider must keep no
+  state between calls. Their definitions are part of the persisted model request, so a changed
+  definition under the same version fails replay with `needs_attention`, and a restart reuses the
+  persisted provider response.
 
 These per-run settings are not exposed: `retries`, `maxTurns`, and `controls` (the runtime captures
 the agent-level values at submission), plus `lifecycle`, `guardrails`, `middlewares`,

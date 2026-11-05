@@ -62,10 +62,27 @@ export type DurableAgentRegistration = {
    * are recorded and do not fail the run. Without this marker, `lifecycle` is rejected.
    */
   lifecycle?: DurableObservationalLifecycle;
+  /**
+   * Declares the agent's `middlewares` pure: deterministic, no external effects. Replay runs them
+   * again and compares the transformed request or tool input with the persisted one. Without this
+   * marker, `middlewares` is rejected. Experimental.
+   */
+  middlewares?: DurablePureMiddleware;
+  /**
+   * Admits the agent's `guardrails`. Each check's outcome is recorded before it is applied, and a
+   * replayed check is never run again. Without this marker, `guardrails` is rejected. Experimental.
+   */
+  guardrails?: DurableRecordedGuardrails;
 };
 
 /** The only lifecycle mode durable admits: hooks that observe the run and do not change it. */
 export type DurableObservationalLifecycle = { mode: "observe" };
+
+/** The only middleware mode durable admits: deterministic transforms without external effects. */
+export type DurablePureMiddleware = { mode: "pure" };
+
+/** The only guardrail mode durable admits: checks whose outcomes are recorded before use. */
+export type DurableRecordedGuardrails = { mode: "record" };
 
 /** Agent-level options the runtime freezes for the life of a registration. */
 export type DurableFrozenAgentOption =

@@ -34,10 +34,32 @@ export function registrations(
       );
     // These callbacks can perform effects or change requests during reconstruction.
     // Add them only with their own persistence boundaries, never silently replay them.
-    const unsupported = unsupportedFeatures(options, registration.lifecycle !== undefined);
-    if (unsupported.length > 0) {
+    if (
+      registration.middlewares !== undefined &&
+      (registration.middlewares as { mode?: unknown }).mode !== "pure"
+    )
       throw new TypeError(
-        `Durable agent "${agent.id}" (version ${JSON.stringify(registration.version)}) uses features that require additional checkpoint support: ${unsupported.join(", ")}. Durable agents support static local tools, static context documents, and instructions only.`,
+        `Durable agent "${agent.id}" has an unknown middlewares mode. Only { mode: "pure" } is supported.`,
+      );
+    if (
+      registration.guardrails !== undefined &&
+      (registration.guardrails as { mode?: unknown }).mode !== "record"
+    )
+      throw new TypeError(
+        `Durable agent "${agent.id}" has an unknown guardrails mode. Only { mode: "record" } is supported.`,
+      );
+    const unsupported = unsupportedFeatures(options, registration);
+    if (unsupported.length > 0) {
+      const hints = [
+        unsupported.includes("middleware")
+          ? `middleware needs { middlewares: { mode: "pure" } }`
+          : "",
+        unsupported.includes("guardrails")
+          ? `guardrails need { guardrails: { mode: "record" } }`
+          : "",
+      ].filter((hint) => hint !== "");
+      throw new TypeError(
+        `Durable agent "${agent.id}" (version ${JSON.stringify(registration.version)}) uses features that require additional checkpoint support: ${unsupported.join(", ")}. Durable agents support static local tools, static context documents, and instructions only.${hints.length > 0 ? ` To admit them, set the registration marker: ${hints.join("; ")}.` : ""}`,
       );
     }
     for (const [name, policy] of Object.entries(registration.toolRecovery ?? {})) {
@@ -84,6 +106,14 @@ export function registrations(
       normalized.lifecycle = { mode: "observe" };
     }
 
+    if (registration.middlewares !== undefined) {
+      normalized.middlewares = { mode: "pure" };
+    }
+
+    if (registration.guardrails !== undefined) {
+      normalized.guardrails = { mode: "record" };
+    }
+
     normalized.toolRecovery = { ...registration.toolRecovery };
 
     if (compaction !== undefined) {
@@ -109,13 +139,20 @@ function retriesEnabled(retries: ResolvedOptions["retries"]): boolean {
 }
 
 /** Names only the features this agent actually sets, so the error stays actionable. */
-function unsupportedFeatures(options: ResolvedOptions, observedLifecycle: boolean): string[] {
+function unsupportedFeatures(
+  options: ResolvedOptions,
+  registration: DurableAgentRegistration,
+): string[] {
   const features: string[] = [];
   if (options.memory !== undefined) features.push("memory");
   // Observational hooks are gated by the registration's marker; anything else can change the run.
-  if (options.lifecycle !== undefined && !observedLifecycle) features.push("lifecycle");
-  if ((options.middlewares?.length ?? 0) > 0) features.push("middleware");
-  if ((options.guardrails?.length ?? 0) > 0) features.push("guardrails");
+  if (options.lifecycle !== undefined && registration.lifecycle === undefined)
+    features.push("lifecycle");
+  // Pure middleware and recorded guardrails are gated by their markers, like lifecycle hooks.
+  if ((options.middlewares?.length ?? 0) > 0 && registration.middlewares === undefined)
+    features.push("middleware");
+  if ((options.guardrails?.length ?? 0) > 0 && registration.guardrails === undefined)
+    features.push("guardrails");
   // Static documents are snapshotted into each run record at submission; live vector retrieval
   // is still not checkpointed.
   if ((options.context ?? []).some((input) => isVectorContext(input))) features.push("context");

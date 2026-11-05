@@ -8,8 +8,9 @@ import type {
 
 /**
  * Per-run `AgentRunSettings` / memory-scoped `AgentInput` fields that durable does not expose.
- * Durable replaces `session` with its own session history and rejects `lifecycle`, `guardrails`,
- * and `middlewares` at registration; `retries`, `maxTurns`, and `controls` are runtime-managed.
+ * Durable replaces `session` with its own session history. The per-run `lifecycle`, `guardrails`,
+ * and `middlewares` are not exposed; their agent-level forms are admitted only with a registration
+ * marker. `retries`, `maxTurns`, and `controls` are runtime-managed.
  */
 const UNAVAILABLE_RUN_SETTINGS: readonly DurableUnavailableRunSetting[] = Object.freeze([
   "retries",

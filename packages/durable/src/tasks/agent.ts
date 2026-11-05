@@ -2,6 +2,7 @@ import { promptSchema } from "../prompt.js";
 import { z } from "zod";
 import { isJsonValue, type JsonValue } from "@anvia/core/completion";
 import { DurableConflictError, DurableNotFoundError } from "../errors.js";
+import { externalizeSubmittedEvent } from "../blob.js";
 import { json } from "../json.js";
 import { createRunRecord } from "../run-record.js";
 import type { DurableAgentRegistration, DurableTransaction } from "../types.js";
@@ -57,7 +58,11 @@ export function spawnAgent(
     run.maxModelTurns = Math.min(run.maxModelTurns, input.maxModelTurns);
   if (continued !== undefined) run.continueFrom = continued;
   tx.putRun(run);
-  tx.appendEvent(run.id, "submitted", json({ taskId: child.id, prompt: input.prompt }));
+  tx.appendEvent(
+    run.id,
+    "submitted",
+    json(externalizeSubmittedEvent(tx, { taskId: child.id, prompt: input.prompt })),
+  );
   child.agentRunId = run.id;
   child.status = "waiting";
   child.wait = { type: "agent", runId: run.id, status: run.status };

@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import type { CompletionRequest } from "@anvia/core/completion";
-import { DurableRuntime } from "../src/index.js";
+import { z } from "zod";
+import { DurableRuntime, defineTask } from "../src/index.js";
 import type { DurableRun } from "../src/run.js";
 import { SqliteDurableStore } from "../src/sqlite.js";
 import { done, makeAgent } from "./helpers.js";
@@ -18,7 +19,10 @@ function database(): string {
   return join(directory, "runs.sqlite");
 }
 
-async function open(path: string, model: (request: CompletionRequest) => Promise<unknown>) {
+async function open(
+  path: string,
+  model: (request: CompletionRequest, signal?: AbortSignal) => Promise<unknown>,
+) {
   const runtime = await DurableRuntime.open({
     store: new SqliteDurableStore(path),
     agents: [{ agent: makeAgent(model as never), version: "1" }],
@@ -215,3 +219,75 @@ it("moves oversized prompts of a schema version 11 store behind blob references"
     verify.close();
   }
 });
+
+it("keeps the submitted event of a task-spawned agent small and the model still receives the prompt", async () => {
+  const path = database();
+  const model = vi.fn(async (_request: CompletionRequest) => done());
+  const parent = defineTask({
+    name: "spawn-big-prompt",
+    version: 1,
+    input: z.null(),
+    checkpoint: z.boolean(),
+    output: z.string(),
+    initial: () => false,
+    run: async (ctx) => {
+      if (!ctx.checkpoint)
+        return {
+          status: "waiting",
+          checkpoint: true,
+          wait: {
+            type: "children",
+            ids: [ctx.spawnAgent("agent", { agentId: "researcher", prompt: big })],
+            policy: "allSettled",
+          },
+        };
+      return { status: "completed", output: ctx.children()[0]!.status };
+    },
+  });
+  const runtime = await DurableRuntime.open({
+    store: new SqliteDurableStore(path),
+    tasks: [parent],
+    agents: [{ agent: makeAgent(model as never), version: "1" }],
+  });
+  runtimes.push(runtime);
+  const handle = await runtime.submitTask(parent, {
+    sessionId: "task",
+    requestId: "one",
+    input: null,
+  });
+  expect(await handle.result()).toBe("completed");
+  expect(blobCount(path)).toBeGreaterThan(0);
+  for (const data of raw(path, "SELECT data FROM anvia_durable_events WHERE type = 'submitted'"))
+    expect(data.length).toBeLessThan(10_000);
+  expect(JSON.stringify(model.mock.calls[0]![0].chatHistory)).toContain(big);
+});
+
+it("resumes a run that was in flight with an oversized prompt after a restart", async () => {
+  const path = database();
+  const started = vi.fn();
+  const first = await open(path, async (_request, signal) => {
+    started();
+    // Hold the model call open until the runtime closes, as if the process went down mid-turn.
+    await new Promise<void>((_resolve, reject) =>
+      signal?.addEventListener("abort", () => reject(new Error("closed"))),
+    );
+    return done();
+  });
+  const run = await first.submit({
+    agentId: "researcher",
+    sessionId: "inflight",
+    requestId: "one",
+    prompt: big,
+  });
+  await vi.waitFor(() => expect(started).toHaveBeenCalled());
+  await first.close();
+  runtimes.splice(runtimes.indexOf(first), 1);
+
+  const model = vi.fn(async (_request: CompletionRequest) => done());
+  const restarted = await open(path, model);
+  await restarted.resume();
+  const restored = await restarted.getRun(run.id);
+  expect((await restored.snapshot()).run.prompt).toBe(big);
+  expect(await settled(restored)).toMatchObject({ output: "done" });
+  expect(JSON.stringify(model.mock.calls.at(-1)?.[0].chatHistory ?? [])).toContain(big);
+}, 30_000);

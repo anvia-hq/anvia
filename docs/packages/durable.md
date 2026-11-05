@@ -297,9 +297,10 @@ The authorization context includes its agent and task IDs, plus graph/run IDs wh
 Existing `/runs/:id` routes authorize graph children against the graph's owning `sessionId`,
 not their generated execution session. Graph listing requires owning-session access.
 
-SQLite schema version 2 added graph records and dependency-aware scheduling. The current
-schema version 10 adds the blob table for oversized payloads. Earlier stores (versions 1–9)
-upgrade on ownership acquisition, preserving existing runs. Older engines reject the upgraded
+SQLite schema version 2 added graph records and dependency-aware scheduling. Schema version 10
+adds the blob table for oversized payloads, and version 12 (the current version) moves oversized
+prompts behind blob references. Earlier stores (versions 1–11) upgrade on ownership acquisition,
+preserving existing runs. Stores at version 11 have their oversized prompts moved once. Older engines reject the upgraded
 database. Downgrading the database is unsupported.
 
 `submitGraph()` remains a static agent-task DAG. For dynamic children, custom work, timers,

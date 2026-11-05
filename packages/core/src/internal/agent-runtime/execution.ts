@@ -3,6 +3,7 @@ import type {
   CompletionRequest,
   CompletionResponse,
   ToolCallPart,
+  ToolDefinition,
   Message,
   UserMessage,
 } from "../../completion";
@@ -53,6 +54,11 @@ export interface AgentRunExecution {
     messages: readonly Message[],
     checkpoint?: LoopContextCheckpoint,
   ): Promise<PreparedLoopContext>;
+  /**
+   * Wraps the tool definitions selected for a model call, including dynamic tool-index search. A
+   * runtime that replays a turn can return its persisted selection without calling `select`.
+   */
+  selectTools?(turn: number, select: () => Promise<ToolDefinition[]>): Promise<ToolDefinition[]>;
   completion(
     turn: number,
     request: CompletionRequest,

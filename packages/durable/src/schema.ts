@@ -167,6 +167,7 @@ const runSchema = z
     compaction: compactionPolicySchema.optional(),
     contextCheckpoint: contextCheckpointSchema.optional(),
     contextDocuments: contextDocumentsSchema.optional(),
+    toolIndexes: z.object({ hash: contentHash }).strict().optional(),
     contextPrepared: z.boolean().optional(),
     loopCompaction: z.boolean().optional(),
     responses: z.record(z.string(), jsonValue),

@@ -1,6 +1,6 @@
 import { AGENT_RUN_EXECUTION_VERSION, getResolvedAgentOptions } from "@anvia/core/internal/agent";
 import { isVectorContext } from "@anvia/core/agent";
-import { isStreamingCompletionModel } from "@anvia/core/completion";
+import { isJsonValue, isStreamingCompletionModel } from "@anvia/core/completion";
 import { compactionPolicySchema, modelRetrySchema } from "./schema.js";
 import { nonblank } from "./json.js";
 import type { DurableAgentRegistration } from "./types.js";
@@ -32,8 +32,8 @@ export function registrations(
       throw new TypeError(
         `Durable agent "${agent.id}" defines retries, which the durable runtime cannot honour: every run executes with retries disabled so a replay never repeats an unrecorded attempt. Configure modelRetry on the registration instead, or remove retries from the agent.`,
       );
-    // These callbacks can perform effects or change requests during reconstruction.
-    // Add them only with their own persistence boundaries, never silently replay them.
+    // Provider tools are part of the persisted model request, so their configuration must be JSON.
+    // Reject anything else here rather than failing at the first model call.
     if (
       registration.providerTools !== undefined &&
       (registration.providerTools as { mode?: unknown }).mode !== "stateless"
@@ -41,6 +41,22 @@ export function registrations(
       throw new TypeError(
         `Durable agent "${agent.id}" has an unknown providerTools mode. Only { mode: "stateless" } is supported.`,
       );
+    // Core does not classify a provider tool with non-JSON configuration as a provider tool, so it
+    // is checked in the configured tool list, where it is still visible.
+    if (registration.providerTools !== undefined)
+      for (const tool of options.tools) {
+        const candidate = tool as { kind?: unknown; name?: unknown; configuration?: unknown };
+        if (
+          candidate.kind === "provider" &&
+          candidate.configuration !== undefined &&
+          !isJsonValue(candidate.configuration)
+        )
+          throw new TypeError(
+            `Durable agent "${agent.id}" has provider tool "${String(candidate.name)}" whose configuration is not JSON. Provider tool configuration is persisted with the model request, so it must be JSON.`,
+          );
+      }
+    // These callbacks can perform effects or change requests during reconstruction.
+    // Add them only with their own persistence boundaries, never silently replay them.
     const unsupported = unsupportedFeatures(
       options,
       registration.lifecycle !== undefined,

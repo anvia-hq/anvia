@@ -34,10 +34,25 @@ export function registrations(
       );
     // These callbacks can perform effects or change requests during reconstruction.
     // Add them only with their own persistence boundaries, never silently replay them.
-    const unsupported = unsupportedFeatures(options, registration.lifecycle !== undefined);
-    if (unsupported.length > 0) {
+    if (
+      registration.providerTools !== undefined &&
+      (registration.providerTools as { mode?: unknown }).mode !== "stateless"
+    )
       throw new TypeError(
-        `Durable agent "${agent.id}" (version ${JSON.stringify(registration.version)}) uses features that require additional checkpoint support: ${unsupported.join(", ")}. Durable agents support static local tools, static context documents, and instructions only.`,
+        `Durable agent "${agent.id}" has an unknown providerTools mode. Only { mode: "stateless" } is supported.`,
+      );
+    const unsupported = unsupportedFeatures(
+      options,
+      registration.lifecycle !== undefined,
+      registration.providerTools !== undefined,
+    );
+    if (unsupported.length > 0) {
+      // Each feature with a marker names it, so the fix is one line away.
+      const hint = unsupported.includes("provider tools")
+        ? ` To admit provider tools, set { providerTools: { mode: "stateless" } } on the registration.`
+        : "";
+      throw new TypeError(
+        `Durable agent "${agent.id}" (version ${JSON.stringify(registration.version)}) uses features that require additional checkpoint support: ${unsupported.join(", ")}. Durable agents support static local tools, static context documents, and instructions only.${hint}`,
       );
     }
     for (const [name, policy] of Object.entries(registration.toolRecovery ?? {})) {
@@ -84,6 +99,10 @@ export function registrations(
       normalized.lifecycle = { mode: "observe" };
     }
 
+    if (registration.providerTools !== undefined) {
+      normalized.providerTools = { mode: "stateless" };
+    }
+
     normalized.toolRecovery = { ...registration.toolRecovery };
 
     if (compaction !== undefined) {
@@ -109,7 +128,11 @@ function retriesEnabled(retries: ResolvedOptions["retries"]): boolean {
 }
 
 /** Names only the features this agent actually sets, so the error stays actionable. */
-function unsupportedFeatures(options: ResolvedOptions, observedLifecycle: boolean): string[] {
+function unsupportedFeatures(
+  options: ResolvedOptions,
+  observedLifecycle: boolean,
+  statelessProviderTools: boolean,
+): string[] {
   const features: string[] = [];
   if (options.memory !== undefined) features.push("memory");
   // Observational hooks are gated by the registration's marker; anything else can change the run.
@@ -120,7 +143,8 @@ function unsupportedFeatures(options: ResolvedOptions, observedLifecycle: boolea
   // is still not checkpointed.
   if ((options.context ?? []).some((input) => isVectorContext(input))) features.push("context");
   if ((options.mcpServers?.length ?? 0) > 0) features.push("MCP servers");
-  if ((options.providerTools?.length ?? 0) > 0) features.push("provider tools");
+  if ((options.providerTools?.length ?? 0) > 0 && !statelessProviderTools)
+    features.push("provider tools");
   if ((options.toolIndexes?.length ?? 0) > 0) features.push("tool indexes");
   return features;
 }

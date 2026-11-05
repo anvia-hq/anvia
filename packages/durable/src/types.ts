@@ -62,10 +62,20 @@ export type DurableAgentRegistration = {
    * are recorded and do not fail the run. Without this marker, `lifecycle` is rejected.
    */
   lifecycle?: DurableObservationalLifecycle;
+  /**
+   * Admits the agent's provider-executed tools. The marker declares that the provider keeps no
+   * state between calls, so a replayed model request reproduces the provider's behaviour. The
+   * definitions are part of the persisted model request, so a changed definition fails replay.
+   * Without this marker, provider tools are rejected. Experimental.
+   */
+  providerTools?: DurableStatelessProviderTools;
 };
 
 /** The only lifecycle mode durable admits: hooks that observe the run and do not change it. */
 export type DurableObservationalLifecycle = { mode: "observe" };
+
+/** The only provider-tool mode durable admits: the provider keeps no state between calls. */
+export type DurableStatelessProviderTools = { mode: "stateless" };
 
 /** Agent-level options the runtime freezes for the life of a registration. */
 export type DurableFrozenAgentOption =

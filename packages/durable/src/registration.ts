@@ -57,6 +57,13 @@ export function registrations(
         `Durable agent "${agent.id}" has an unknown providerTools mode. Only { mode: "stateless" } is supported.`,
       );
     if (
+      registration.toolIndexes !== undefined &&
+      (registration.toolIndexes as { mode?: unknown }).mode !== "recorded"
+    )
+      throw new TypeError(
+        `Durable agent "${agent.id}" has an unknown toolIndexes mode. Only { mode: "recorded" } is supported.`,
+      );
+    if (
       registration.mcpServers !== undefined &&
       (registration.mcpServers as { mode?: unknown }).mode !== "pinned"
     )
@@ -94,6 +101,9 @@ export function registrations(
           : "",
         unsupported.includes("MCP servers")
           ? `MCP servers need { mcpServers: { mode: "pinned" } }`
+          : "",
+        unsupported.includes("tool indexes")
+          ? `tool indexes need { toolIndexes: { mode: "recorded" } }`
           : "",
       ].filter((hint) => hint !== "");
       throw new TypeError(
@@ -160,6 +170,10 @@ export function registrations(
       normalized.mcpServers = { mode: "pinned" };
     }
 
+    if (registration.toolIndexes !== undefined) {
+      normalized.toolIndexes = { mode: "recorded" };
+    }
+
     normalized.toolRecovery = { ...registration.toolRecovery };
 
     if (compaction !== undefined) {
@@ -206,7 +220,8 @@ function unsupportedFeatures(
     features.push("MCP servers");
   if ((options.providerTools?.length ?? 0) > 0 && registration.providerTools === undefined)
     features.push("provider tools");
-  if ((options.toolIndexes?.length ?? 0) > 0) features.push("tool indexes");
+  if ((options.toolIndexes?.length ?? 0) > 0 && registration.toolIndexes === undefined)
+    features.push("tool indexes");
   return features;
 }
 

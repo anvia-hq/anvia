@@ -88,6 +88,13 @@ export type DurableAgentRegistration = {
    * Experimental.
    */
   mcpServers?: DurablePinnedMcpServers;
+  /**
+   * Admits the agent's `toolIndexes`. Each model call's selected tools are recorded before the
+   * model call and reused on replay, so the search does not run again. The registration's index
+   * fingerprint is frozen at submission and checked at each execution start. Without this marker,
+   * tool indexes are rejected. Experimental.
+   */
+  toolIndexes?: DurableRecordedToolIndexes;
 };
 
 /** The only lifecycle mode durable admits: hooks that observe the run and do not change it. */
@@ -104,6 +111,8 @@ export type DurableStatelessProviderTools = { mode: "stateless" };
 
 /** The only MCP mode durable admits: the servers discovered at registration are pinned per run. */
 export type DurablePinnedMcpServers = { mode: "pinned" };
+/** The only tool-index mode durable admits: each model call's selection is recorded and reused. */
+export type DurableRecordedToolIndexes = { mode: "recorded" };
 
 /** Agent-level options the runtime freezes for the life of a registration. */
 export type DurableFrozenAgentOption =
@@ -231,6 +240,8 @@ export type DurableRunRecord = DurableSubmission & {
   contextDocuments?: { hash: string; documents?: Document[] };
   /** Fingerprint of the pinned MCP servers at submission; see mcp-servers.ts. */
   mcpServers?: { hash: string };
+  /** Fingerprint of the tool indexes at submission; see tool-indexes.ts. */
+  toolIndexes?: { hash: string };
   /** Freezes even a skipped compaction decision across retries. */
   contextPrepared?: boolean;
   /** Captured on new submissions; legacy in-flight runs retain their original request sequence. */

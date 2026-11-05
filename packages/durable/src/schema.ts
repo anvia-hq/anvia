@@ -168,6 +168,7 @@ const runSchema = z
     contextCheckpoint: contextCheckpointSchema.optional(),
     contextDocuments: contextDocumentsSchema.optional(),
     mcpServers: z.object({ hash: contentHash }).strict().optional(),
+    toolIndexes: z.object({ hash: contentHash }).strict().optional(),
     contextPrepared: z.boolean().optional(),
     loopCompaction: z.boolean().optional(),
     responses: z.record(z.string(), jsonValue),

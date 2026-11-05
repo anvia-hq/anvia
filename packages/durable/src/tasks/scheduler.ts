@@ -12,6 +12,7 @@ import { taskWaitSchema } from "./schema.js";
 import { taskInvocation } from "./invocation.js";
 import { spawnAgent } from "./agent.js";
 import type { DurableMcpServers } from "../mcp-servers.js";
+import type { DurableToolIndexes } from "../tool-indexes.js";
 import {
   cancelTree,
   createTask,
@@ -45,6 +46,7 @@ export class TaskScheduler {
     private readonly fatal: (error: unknown) => void,
     private readonly agents: ReadonlyMap<string, DurableAgentRegistration>,
     private readonly mcpServers: ReadonlyMap<string, DurableMcpServers>,
+    private readonly toolIndexes: ReadonlyMap<string, DurableToolIndexes>,
     private readonly agentActive: (id: string) => boolean,
     private readonly syncAgents: (root: string) => void,
   ) {}
@@ -339,7 +341,8 @@ export class TaskScheduler {
         this.syncAgents(task.rootId);
         this.pump();
       },
-      (tx, parent, key, input) => spawnAgent(tx, this.agents, this.mcpServers, parent, key, input),
+      (tx, parent, key, input) =>
+        spawnAgent(tx, this.agents, this.mcpServers, this.toolIndexes, parent, key, input),
     );
     let transition: TaskTransition<JsonValue, JsonValue> | undefined;
     let failure: unknown;

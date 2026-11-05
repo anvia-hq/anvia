@@ -7,7 +7,9 @@ import {
   type CompletionResponse,
   type JsonValue,
   type JsonObject,
+  type ToolDefinition,
 } from "@anvia/core/completion";
+import { getResolvedAgentOptions } from "@anvia/core/internal/agent";
 import type {
   AgentCompletionStreamEvent,
   AgentRunExecution,
@@ -299,6 +301,41 @@ export function createExecution(
 
   if (run.steering !== undefined) {
     execution.drainSteering = createSteeringDrain(store, run, signal);
+  }
+
+  // Tool-index search is a read of an external index: its selection is recorded once, before the
+  // model call that uses it, so a replayed turn offers the same tools without searching again.
+  if (
+    registration.toolIndexes !== undefined &&
+    (getResolvedAgentOptions(registration.agent).toolIndexes?.length ?? 0) > 0
+  ) {
+    execution.selectTools = async (turn, select) => {
+      const key = `${prefix}tools:${turn}`;
+      const recorded = (operation: DurableOperation | undefined) =>
+        (operation!.result as unknown as { tools: ToolDefinition[] }).tools;
+      const previous = store.transaction((tx) => tx.getOperation(run.id, key));
+      if (previous?.status === "completed") return recorded(previous);
+      check();
+      const selected = await select();
+      check();
+      return store.transaction((tx) => {
+        const current = tx.getOperation(run.id, key);
+        if (current?.status === "completed") return recorded(current);
+        if (tx.getRun(run.id)?.status !== "running")
+          throw new Error("Durable run is no longer running.");
+        // Stored in JSON form, so the first run and every replay hand the agent the same value.
+        const operation: DurableOperation = {
+          key,
+          kind: "effect",
+          input: json({ turn }),
+          status: "completed",
+          recovery: "manual",
+          result: json({ tools: selected }),
+        };
+        tx.putOperation(run.id, operation);
+        return recorded(operation);
+      });
+    };
   }
 
   return execution;

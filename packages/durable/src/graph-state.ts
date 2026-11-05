@@ -6,6 +6,7 @@ import { json, sameJson } from "./json.js";
 import { GRAPH_SESSION_PREFIX, createRunRecord } from "./run-record.js";
 import type { DurableAgentRegistration, DurableRunRecord, DurableTransaction } from "./types.js";
 import type { DurableMcpServers } from "./mcp-servers.js";
+import type { DurableToolIndexes } from "./tool-indexes.js";
 import type {
   DurableGraphRecord,
   DurableGraphSnapshot,
@@ -18,6 +19,7 @@ export function createGraph(
   submission: DurableGraphSubmission,
   agents: ReadonlyMap<string, DurableAgentRegistration>,
   mcpServers: ReadonlyMap<string, DurableMcpServers>,
+  toolIndexes: ReadonlyMap<string, DurableToolIndexes>,
 ): string {
   const existing = tx.findGraphRequest(submission.sessionId, submission.requestId);
   if (existing !== undefined) {
@@ -42,6 +44,7 @@ export function createGraph(
         registration,
         tx,
         mcpServers.get(task.agentId),
+        toolIndexes.get(task.agentId),
       ),
     };
   });

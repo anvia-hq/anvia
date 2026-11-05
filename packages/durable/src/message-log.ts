@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import type { JsonObject, JsonValue } from "@anvia/core/completion";
 import type { DurableOperation } from "./types.js";
+import { readStored, writeStored } from "./references.js";
 
 export const messageLogTables = `
   CREATE TABLE IF NOT EXISTS anvia_durable_messages (
@@ -34,7 +35,7 @@ export function messageLog(database: DatabaseSync) {
     if (!Array.isArray(messages)) throw new Error("Invalid operation history.");
     let head: string | null = null;
     for (const message of messages) {
-      const record = JSON.stringify(message);
+      const record = writeStored(message);
       const hash = digest(record);
       putMessage.run(hash, record);
       const next = digest(JSON.stringify([head, hash]));
@@ -66,7 +67,7 @@ export function messageLog(database: DatabaseSync) {
         digest(JSON.stringify([row.previous, row.message])) !== head
       )
         throw new Error("Corrupt operation history content.");
-      messages.push(JSON.parse(String(row.record)) as JsonValue);
+      messages.push(readStored(String(row.record)));
       head = row.previous as string | null;
     }
     if (head !== null) throw new Error("Invalid operation history length.");

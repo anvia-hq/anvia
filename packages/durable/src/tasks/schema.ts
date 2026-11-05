@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { isJsonValue, type JsonValue } from "@anvia/core/completion";
 import { json } from "../json.js";
+import { carryReferences } from "../references.js";
 import type { TaskRecord } from "./types.js";
 import { runStatusSchema } from "../schema.js";
 import { traceOptionsSchema } from "../trace-schema.js";
@@ -86,5 +87,5 @@ const record = z
       context.addIssue({ code: "custom", message: "Task outcome and status disagree." });
   });
 export function parseTask(value: unknown): TaskRecord {
-  return record.parse(json(value)) as TaskRecord;
+  return carryReferences(value, record.parse(json(value)) as TaskRecord);
 }

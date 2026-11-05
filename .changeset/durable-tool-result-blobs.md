@@ -4,9 +4,9 @@
 
 Store oversized payloads as blob references instead of failing the run (DUR-05).
 
-- The SQLite schema moves from version 9 to 10, adding an `anvia_durable_blobs` table. The table is
-  created on open and existing stores (versions 1–9) migrate on ownership acquisition, keeping all
-  runs readable. Backup/restore accepts version 10.
+- The SQLite schema moves from version 9 to 11, adding an `anvia_durable_blobs` table. The table is
+  created on open and existing stores (versions 1–10) migrate on ownership acquisition, keeping all
+  runs readable. Backup/restore accepts versions up to 11.
 - Tool results, model results, run outcomes (text, output, and messages), exhaustion transcripts,
   context-operation transcripts, and large message leaves (text, reasoning, image/file data,
   tool-call inputs, tool-result outputs) larger than 64 KiB move to the blob table, inside the same

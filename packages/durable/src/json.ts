@@ -1,4 +1,5 @@
 import { isJsonValue, type JsonValue, type JsonObject } from "@anvia/core/completion";
+import { isReference } from "./references.js";
 
 /** Omit optional object fields, but reject values that JSON would silently corrupt. */
 export function json(value: unknown): JsonValue {
@@ -9,6 +10,8 @@ export function json(value: unknown): JsonValue {
 
 function normalize(value: unknown, ancestors: Set<object>): unknown {
   if (typeof value !== "object" || value === null) return value;
+  // Blob markers keep their identity, so the store can tell them from user data (references.ts).
+  if (isReference(value)) return value;
   if (ancestors.has(value)) throw new TypeError("Durable state contains a cycle.");
   const prototype = Object.getPrototypeOf(value);
   if (prototype !== Object.prototype && prototype !== null && prototype !== Array.prototype) {

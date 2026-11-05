@@ -1,5 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 import { parseTask, taskListSchema } from "./schema.js";
+import { readStored, writeStored } from "../references.js";
 import type { TaskListOptions, TaskPage, TaskRecord, TaskTransaction } from "./types.js";
 
 export const taskTables = `
@@ -19,7 +20,7 @@ export function taskTransaction(db: DatabaseSync, assertActive: () => void): Tas
     return db
       .prepare(sql)
       .all(...parameters)
-      .map((row) => parseTask(JSON.parse(String(row.record))));
+      .map((row) => parseTask(readStored(String(row.record))));
   };
   return {
     getTask: (id) => read("SELECT record FROM anvia_durable_tasks WHERE id = ?", id)[0],
@@ -46,7 +47,7 @@ export function taskTransaction(db: DatabaseSync, assertActive: () => void): Tas
         task.sessionId,
         task.key,
         task.status,
-        JSON.stringify(task),
+        writeStored(task),
       );
     },
   };
@@ -65,7 +66,7 @@ export function listTasks(db: DatabaseSync, input: TaskListOptions): TaskPage {
     );
   const page = rows.slice(0, limit);
   const result: TaskPage = {
-    tasks: page.map((row) => parseTask(JSON.parse(String(row.record)))),
+    tasks: page.map((row) => parseTask(readStored(String(row.record)))),
   };
 
   if (rows.length > limit) {

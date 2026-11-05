@@ -73,6 +73,13 @@ export type DurableAgentRegistration = {
    * replayed check is never run again. Without this marker, `guardrails` is rejected. Experimental.
    */
   guardrails?: DurableRecordedGuardrails;
+  /**
+   * Admits the agent's provider-executed tools. The marker declares that the provider keeps no
+   * state between calls, so a replayed model request reproduces the provider's behaviour. The
+   * definitions are part of the persisted model request, so a changed definition fails replay.
+   * Without this marker, provider tools are rejected. Experimental.
+   */
+  providerTools?: DurableStatelessProviderTools;
 };
 
 /** The only lifecycle mode durable admits: hooks that observe the run and do not change it. */
@@ -83,6 +90,9 @@ export type DurablePureMiddleware = { mode: "pure" };
 
 /** The only guardrail mode durable admits: checks whose outcomes are recorded before use. */
 export type DurableRecordedGuardrails = { mode: "record" };
+
+/** The only provider-tool mode durable admits: the provider keeps no state between calls. */
+export type DurableStatelessProviderTools = { mode: "stateless" };
 
 /** Agent-level options the runtime freezes for the life of a registration. */
 export type DurableFrozenAgentOption =

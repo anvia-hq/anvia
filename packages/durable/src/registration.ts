@@ -33,8 +33,8 @@ export function registrations(
       throw new TypeError(
         `Durable agent "${agent.id}" defines retries, which the durable runtime cannot honour: every run executes with retries disabled so a replay never repeats an unrecorded attempt. Configure modelRetry on the registration instead, or remove retries from the agent.`,
       );
-    // These callbacks can perform effects or change requests during reconstruction.
-    // Add them only with their own persistence boundaries, never silently replay them.
+    // Hooks, middleware, guardrails and provider tools each need their own marker and persistence
+    // boundary, so none of them is replayed silently.
     if (
       registration.middlewares !== undefined &&
       (registration.middlewares as { mode?: unknown }).mode !== "pure"
@@ -49,15 +49,26 @@ export function registrations(
       throw new TypeError(
         `Durable agent "${agent.id}" has an unknown guardrails mode. Only { mode: "record" } is supported.`,
       );
+    if (
+      registration.providerTools !== undefined &&
+      (registration.providerTools as { mode?: unknown }).mode !== "stateless"
+    )
+      throw new TypeError(
+        `Durable agent "${agent.id}" has an unknown providerTools mode. Only { mode: "stateless" } is supported.`,
+      );
     if (registration.guardrails !== undefined) assertUniqueGuardrailIds(agent);
     const unsupported = unsupportedFeatures(options, registration);
     if (unsupported.length > 0) {
+      // Each feature with a marker names it, so the fix is one line away.
       const hints = [
         unsupported.includes("middleware")
           ? `middleware needs { middlewares: { mode: "pure" } }`
           : "",
         unsupported.includes("guardrails")
           ? `guardrails need { guardrails: { mode: "record" } }`
+          : "",
+        unsupported.includes("provider tools")
+          ? `provider tools need { providerTools: { mode: "stateless" } }`
           : "",
       ].filter((hint) => hint !== "");
       throw new TypeError(
@@ -116,6 +127,10 @@ export function registrations(
       normalized.guardrails = { mode: "record" };
     }
 
+    if (registration.providerTools !== undefined) {
+      normalized.providerTools = { mode: "stateless" };
+    }
+
     normalized.toolRecovery = { ...registration.toolRecovery };
 
     if (compaction !== undefined) {
@@ -159,7 +174,8 @@ function unsupportedFeatures(
   // is still not checkpointed.
   if ((options.context ?? []).some((input) => isVectorContext(input))) features.push("context");
   if ((options.mcpServers?.length ?? 0) > 0) features.push("MCP servers");
-  if ((options.providerTools?.length ?? 0) > 0) features.push("provider tools");
+  if ((options.providerTools?.length ?? 0) > 0 && registration.providerTools === undefined)
+    features.push("provider tools");
   if ((options.toolIndexes?.length ?? 0) > 0) features.push("tool indexes");
   return features;
 }

@@ -338,7 +338,7 @@ recorded, which would make an agent-level retry setting silently ineffective. Co
 
 Registering an agent that sets `memory`, `lifecycle` (without `mode: "observe"` on the
 registration), `middlewares` (without `mode: "pure"`), `guardrails` (without `mode: "record"`),
-`context`, `mcpServers`, provider tools, or dynamic tool
+`context`, `mcpServers`, provider tools (without `providerTools: { mode: "stateless" }`), or dynamic tool
 indexes throws a `TypeError` that names exactly the features that agent uses. With
 `lifecycle: { mode: "observe" }`, the agent's lifecycle hooks run once per step, recorded before
 each call; a hook that throws is recorded and does not fail the run.

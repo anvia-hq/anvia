@@ -2,7 +2,7 @@
 "@anvia/durable": minor
 ---
 
-Admit MCP servers behind an explicit marker (experimental, parity phase 6).
+Admit MCP servers behind an explicit marker (parity phase 6).
 
 - Registration accepts `mcpServers: { mode: "pinned" }`. Without it, MCP servers are still rejected,
   and the error names the marker.

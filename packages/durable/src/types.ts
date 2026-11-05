@@ -65,19 +65,19 @@ export type DurableAgentRegistration = {
   /**
    * Declares the agent's `middlewares` pure: deterministic, no external effects. Replay runs them
    * again and compares the transformed request or tool input with the persisted one. Without this
-   * marker, `middlewares` is rejected. Experimental.
+   * marker, `middlewares` is rejected.
    */
   middlewares?: DurablePureMiddleware;
   /**
    * Admits the agent's `guardrails`. Each check's outcome is recorded before it is applied, and a
-   * replayed check is never run again. Without this marker, `guardrails` is rejected. Experimental.
+   * replayed check is never run again. Without this marker, `guardrails` is rejected.
    */
   guardrails?: DurableRecordedGuardrails;
   /**
    * Admits the agent's provider-executed tools. The marker declares that the provider keeps no
    * state between calls, so a replayed model request reproduces the provider's behaviour. The
    * definitions are part of the persisted model request, so a changed definition fails replay.
-   * Without this marker, provider tools are rejected. Experimental.
+   * Without this marker, provider tools are rejected.
    */
   providerTools?: DurableStatelessProviderTools;
   /**
@@ -85,14 +85,13 @@ export type DurableAgentRegistration = {
    * fingerprinted at submission and checked at every execution start, so a changed server under the
    * same version fails the run. Each call is a tool operation with the registration's
    * `toolRecovery` policy (default `manual`). Without this marker, MCP servers are rejected.
-   * Experimental.
    */
   mcpServers?: DurablePinnedMcpServers;
   /**
    * Admits the agent's `toolIndexes`. Each model call's selected tools are recorded before the
    * model call and reused on replay, so the search does not run again. The registration's index
    * fingerprint is frozen at submission and checked at each execution start. Without this marker,
-   * tool indexes are rejected. Experimental.
+   * tool indexes are rejected.
    */
   toolIndexes?: DurableRecordedToolIndexes;
 };

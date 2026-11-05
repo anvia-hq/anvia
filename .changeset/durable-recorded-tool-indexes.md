@@ -2,7 +2,7 @@
 "@anvia/durable": minor
 ---
 
-Admit dynamic tool indexes behind an explicit marker (experimental, parity phase 5).
+Admit dynamic tool indexes behind an explicit marker (parity phase 5).
 
 - Registration accepts `toolIndexes: { mode: "recorded" }`. Without it, tool indexes are still
   rejected, and the error names the marker.

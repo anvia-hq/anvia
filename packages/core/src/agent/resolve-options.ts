@@ -1,5 +1,5 @@
 import type { CompletionModel, ProviderTool } from "../completion";
-import { isProviderTool } from "../completion/types";
+import { assertProviderToolShape, isProviderTool } from "../completion/types";
 import { appendGuardrailPolicies } from "../guardrails";
 import { isMcpTool } from "../mcp";
 import { resolveMemoryOptions } from "../memory/options";
@@ -28,6 +28,7 @@ export function resolveAgentOptions<Output, M extends CompletionModel, ContextDo
   const providerTools: ProviderTool[] = [];
   const toolIndexes: ToolIndex[] = [];
   for (const tool of options.tools ?? []) {
+    assertProviderToolShape(tool);
     if (isProviderTool(tool)) {
       providerTools.push(tool);
     } else if (isToolIndex(tool)) {

@@ -273,6 +273,20 @@ export function isProviderTool(value: unknown): value is ProviderTool {
   );
 }
 
+/**
+ * Throws a TypeError when a value declares itself a provider tool (`kind: "provider"`) but is not
+ * well formed. Without this check such a value would fall through to the local tool list.
+ */
+export function assertProviderToolShape(value: unknown): void {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return;
+  if ((value as { kind?: unknown }).kind !== "provider" || isProviderTool(value)) return;
+  const name = (value as { name?: unknown }).name;
+  const label = typeof name === "string" && name.length > 0 ? `"${name}"` : "(unnamed)";
+  throw new TypeError(
+    `Provider tool ${label} is invalid: provider and name must be non-empty strings, and configuration must be a JSON object.`,
+  );
+}
+
 /** A grounding source (e.g. web result) returned by the provider, with optional text offsets. */
 export type CompletionSource = {
   type: "url";

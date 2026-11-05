@@ -7,7 +7,8 @@ export interface PtyProcess {
   /** Stop reading the PTY so the kernel buffer fills and the child blocks. */
   pause(): void;
   resume(): void;
-  kill(): void;
+  /** Send a signal to the child. Without one, SIGHUP, which an interactive shell should obey. */
+  kill(signal?: "SIGHUP" | "SIGKILL"): void;
 }
 
 export interface PtySpawnOptions {
@@ -28,7 +29,7 @@ interface NodePtyProcess {
   resize(cols: number, rows: number): void;
   pause(): void;
   resume(): void;
-  kill(): void;
+  kill(signal?: string): void;
 }
 
 interface NodePtyModule {
@@ -77,7 +78,7 @@ export async function loadNodePty(): Promise<PtySpawner | undefined> {
         resize: (cols, rows) => child.resize(cols, rows),
         pause: () => child.pause(),
         resume: () => child.resume(),
-        kill: () => child.kill(),
+        kill: (signal) => child.kill(signal),
       };
     };
   } catch {

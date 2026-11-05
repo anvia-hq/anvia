@@ -7,6 +7,10 @@ export class FakePty implements PtyProcess {
   pauses = 0;
   resumes = 0;
   killed = false;
+  /** Signals the fake was sent, in order. */
+  readonly signals: string[] = [];
+  /** When true, SIGHUP is ignored like a shell stuck in a read, so only SIGKILL ends the child. */
+  ignoreHangup = false;
   private dataListener: ((chunk: Uint8Array) => void) | undefined;
   private exitListener: ((event: { exitCode: number }) => void) | undefined;
 
@@ -30,9 +34,11 @@ export class FakePty implements PtyProcess {
   resume(): void {
     this.resumes += 1;
   }
-  kill(): void {
+  kill(signal: "SIGHUP" | "SIGKILL" = "SIGHUP"): void {
+    this.signals.push(signal);
+    if (this.ignoreHangup && signal !== "SIGKILL") return;
     this.killed = true;
-    this.exitListener?.({ exitCode: 0 });
+    this.exitListener?.({ exitCode: signal === "SIGKILL" ? 137 : 0 });
   }
 
   emit(data: string | Uint8Array): void {

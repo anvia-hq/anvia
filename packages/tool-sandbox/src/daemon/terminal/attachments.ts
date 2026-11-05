@@ -6,6 +6,22 @@ export interface TerminalExitInfo {
   exitCode?: number;
 }
 
+/**
+ * How long a killed PTY may take to exit after SIGHUP before it is sent SIGKILL. An interactive
+ * shell can take SIGHUP and go back to waiting for input (seen under load, with the handler
+ * installed and nothing pending), so one SIGHUP is not a kill on its own.
+ */
+export const hangupGraceMs = 1_000;
+
+/** Ask the PTY to hang up, and kill it outright if it is still running after the grace period. */
+export function killPty(pty: PtyProcess, hasExited: () => boolean): void {
+  pty.kill();
+  const timer = setTimeout(() => {
+    if (!hasExited()) pty.kill("SIGKILL");
+  }, hangupGraceMs);
+  timer.unref?.();
+}
+
 /** One viewer of a session. Data is held back until {@link start}, so the first bytes are not lost. */
 export interface TerminalAttachment {
   /**
@@ -89,7 +105,7 @@ export class PtyAttachment implements TerminalAttachment {
   close(): void {
     if (this.exited !== undefined || this.closing) return;
     this.closing = true;
-    this.pty.kill();
+    killPty(this.pty, () => this.exited !== undefined);
   }
 }
 
@@ -133,7 +149,7 @@ export class ShellSession {
   kill(): void {
     if (this.ended) return;
     this.killed = true;
-    this.pty.kill();
+    killPty(this.pty, () => this.ended);
   }
 
   snapshot(): Uint8Array {

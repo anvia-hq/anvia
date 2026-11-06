@@ -34,6 +34,7 @@ export type PostgresMemoryTableNames = {
   sessions?: string | undefined;
   messages?: string | undefined;
   errors?: string | undefined;
+  idempotencyKeys?: string | undefined;
 };
 
 export type PostgresMemorySchemaOptions = {

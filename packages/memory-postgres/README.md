@@ -49,3 +49,5 @@ if (result.type === "response") console.log(result.output);
 - [Usage guide](https://github.com/anvia-hq/anvia/blob/main/docs/packages/memory-postgres.md)
 - [Anvia](https://github.com/anvia-hq/anvia/blob/main/README.md)
 - [Contributing](https://github.com/anvia-hq/anvia/blob/main/CONTRIBUTING.md)
+
+The store also implements the versioned, idempotent append contract (`loadVersioned()`, `idempotencyKey`, `expectedVersion`). Keys live in the `anvia_memory_idempotency_keys` table, which `ensure()` creates and `clear()` leaves in place. Without that table, plain `load()` and `append()` keep working and a keyed append throws an error naming it.

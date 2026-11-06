@@ -1,6 +1,8 @@
+import { createHash } from "node:crypto";
 import type { JsonObject, MemoryCompactionMessage, MemoryStore, Message } from "@anvia/core";
 import type {
   MemoryAppendOptions,
+  MemoryAppendResult,
   MemoryCompactionCapability,
   MemoryCompactionReplacePrefixOptions,
   MemoryCompactionReplacePrefixResult,
@@ -11,6 +13,7 @@ import type {
   MemoryErrorOptions,
   MemoryInspector,
   MemoryScope,
+  MemoryVersionedHistory,
 } from "@anvia/core/memory";
 import { createMemoryScopeKey, isMemoryCompactionMessage } from "@anvia/core/memory";
 import type { PostgresMemoryClient } from "./client.js";
@@ -32,6 +35,7 @@ type ResolvedPostgresMemoryTables = {
   sessions: string;
   messages: string;
   errors: string;
+  idempotencyKeys: string;
   messagesPositionIndex: string;
 };
 
@@ -48,6 +52,23 @@ type StoredCompactionState = {
   generation: number;
   summary: MemoryCompactionMessage;
   summarizedThroughPosition: number;
+};
+
+type VersionRow = {
+  id: string;
+  compaction_state: unknown;
+  max_position: number | string | null;
+};
+
+type VersionedLoadRow = {
+  session_id: string;
+  compaction_state: unknown;
+  position: number | string | null;
+  message: unknown;
+};
+
+type FingerprintRow = {
+  fingerprint: string;
 };
 
 type PositionRow = {
@@ -121,6 +142,14 @@ CREATE TABLE IF NOT EXISTS ${tables.errors} (
   error jsonb NOT NULL,
   messages jsonb NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS ${tables.idempotencyKeys} (
+  scope_key text NOT NULL,
+  idempotency_key text NOT NULL,
+  fingerprint text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (scope_key, idempotency_key)
 );`;
 }
 
@@ -181,31 +210,160 @@ export class PostgresMemoryStore implements MemoryStore {
     return result.rows.map((row) => this.messageFromValue((row as MessageRow).message));
   }
 
-  async append(input: MemoryAppendOptions): Promise<void> {
-    if (input.messages.length === 0) {
-      return;
+  /**
+   * The version is `<session row id>:<max message position>:<compaction generation>`, or `none`
+   * when no session exists. A session row id is unique per creation, so `clear()` followed by new
+   * writes can never reproduce an earlier version; positions only grow and the generation only
+   * increases, so every append and compaction yields a new value. Deriving it from existing columns
+   * keeps plain load/append working on databases that have not created the key table yet.
+   */
+  async loadVersioned({ scope }: { scope: MemoryScope }): Promise<MemoryVersionedHistory> {
+    // One statement reads one snapshot, so the messages and the version cannot disagree.
+    const result = await (
+      await this.client()
+    ).query(
+      `SELECT s.id AS session_id, s.compaction_state, m.position, m.message
+       FROM ${this.tables.sessions} s
+       LEFT JOIN ${this.tables.messages} m ON m.memory_session_id = s.id
+       WHERE s.scope_key = $1
+       ORDER BY m.position ASC`,
+      [this.scopeKey(scope)],
+    );
+    const rows = result.rows as VersionedLoadRow[];
+    const first = rows[0];
+    if (first === undefined) return { messages: [], version: NO_SESSION_VERSION };
+    const last = rows[rows.length - 1];
+    return {
+      messages: rows
+        .filter((row) => row.message !== null && row.message !== undefined)
+        .map((row) => this.messageFromValue(row.message)),
+      version: formatVersion(first.session_id, last?.position ?? null, first.compaction_state),
+    };
+  }
+
+  async append(input: MemoryAppendOptions): Promise<MemoryAppendResult> {
+    const guarded = input.idempotencyKey !== undefined || input.expectedVersion !== undefined;
+    if (input.messages.length === 0 && !guarded) {
+      return { status: "committed" };
     }
     this.validateInputMessages(input.messages);
 
     const scopeKey = this.scopeKey(input.scope);
 
-    await this.transaction(async (tx) => {
-      if (this.options.lock === "advisory") {
-        await tx.query("SELECT pg_advisory_xact_lock(hashtext($1))", [scopeKey]);
-      }
+    try {
+      return await this.transaction(async (tx) => {
+        if (this.options.lock === "advisory") {
+          await tx.query("SELECT pg_advisory_xact_lock(hashtext($1))", [scopeKey]);
+        }
 
-      const session = await this.upsertSession(tx, input.scope, scopeKey);
-      const last = await tx.query(
-        `SELECT position
-         FROM ${this.tables.messages}
-         WHERE memory_session_id = $1
-         ORDER BY position DESC
-         LIMIT 1`,
-        [session.id],
-      );
-      const start = Number(((last.rows[0] as PositionRow | undefined)?.position ?? -1) as number);
-      await this.insertMessages(tx, session.id, input, start + 1);
-    });
+        const fingerprint =
+          input.idempotencyKey === undefined ? undefined : appendFingerprint(input);
+        if (input.idempotencyKey !== undefined && fingerprint !== undefined) {
+          const committed = await this.committedFingerprint(tx, scopeKey, input.idempotencyKey);
+          if (committed !== undefined) {
+            return this.replayResult(tx, scopeKey, committed, fingerprint);
+          }
+        }
+
+        const current = await this.currentVersion(tx, scopeKey);
+        if (input.expectedVersion !== undefined && input.expectedVersion !== current.version) {
+          return { status: "conflict", version: current.version };
+        }
+
+        if (input.idempotencyKey !== undefined && fingerprint !== undefined) {
+          // The primary key is the backstop when `lock: "none"` lets two writers pass the check.
+          const inserted = await tx.query(
+            `INSERT INTO ${this.tables.idempotencyKeys} (scope_key, idempotency_key, fingerprint)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (scope_key, idempotency_key) DO NOTHING
+             RETURNING idempotency_key`,
+            [scopeKey, input.idempotencyKey, fingerprint],
+          );
+          if (inserted.rows.length === 0) {
+            const committed = await this.committedFingerprint(tx, scopeKey, input.idempotencyKey);
+            if (committed !== undefined) {
+              return this.replayResult(tx, scopeKey, committed, fingerprint);
+            }
+          }
+        }
+
+        if (input.messages.length === 0) {
+          return { status: "committed", version: current.version };
+        }
+
+        const session = await this.upsertSession(tx, input.scope, scopeKey);
+        const last = await tx.query(
+          `SELECT position
+           FROM ${this.tables.messages}
+           WHERE memory_session_id = $1
+           ORDER BY position DESC
+           LIMIT 1`,
+          [session.id],
+        );
+        const start = Number(((last.rows[0] as PositionRow | undefined)?.position ?? -1) as number);
+        await this.insertMessages(tx, session.id, input, start + 1);
+        return {
+          status: "committed",
+          version: formatVersion(
+            session.id,
+            start + input.messages.length,
+            current.compactionState,
+          ),
+        };
+      });
+    } catch (error) {
+      if (input.idempotencyKey !== undefined && isUndefinedTableError(error)) {
+        throw new Error(
+          `PostgresMemoryStore idempotency table ${this.tables.idempotencyKeys} does not exist. Run ensure() or apply the schema from createPostgresMemorySchemaSql().`,
+          { cause: error },
+        );
+      }
+      throw error;
+    }
+  }
+
+  private async committedFingerprint(
+    tx: PostgresMemoryClientLike,
+    scopeKey: string,
+    idempotencyKey: string,
+  ): Promise<string | undefined> {
+    const result = await tx.query(
+      `SELECT fingerprint
+       FROM ${this.tables.idempotencyKeys}
+       WHERE scope_key = $1 AND idempotency_key = $2`,
+      [scopeKey, idempotencyKey],
+    );
+    return (result.rows[0] as FingerprintRow | undefined)?.fingerprint;
+  }
+
+  private async replayResult(
+    tx: PostgresMemoryClientLike,
+    scopeKey: string,
+    committed: string,
+    fingerprint: string,
+  ): Promise<MemoryAppendResult> {
+    const { version } = await this.currentVersion(tx, scopeKey);
+    return { status: committed === fingerprint ? "duplicate" : "conflict", version };
+  }
+
+  private async currentVersion(
+    tx: PostgresMemoryClientLike,
+    scopeKey: string,
+  ): Promise<{ version: string; compactionState: unknown }> {
+    const result = await tx.query(
+      `SELECT s.id, s.compaction_state, (
+         SELECT MAX(m.position) FROM ${this.tables.messages} m WHERE m.memory_session_id = s.id
+       ) AS max_position
+       FROM ${this.tables.sessions} s
+       WHERE s.scope_key = $1`,
+      [scopeKey],
+    );
+    const row = result.rows[0] as VersionRow | undefined;
+    if (row === undefined) return { version: NO_SESSION_VERSION, compactionState: null };
+    return {
+      version: formatVersion(row.id, row.max_position, row.compaction_state),
+      compactionState: row.compaction_state,
+    };
   }
 
   async clear({ scope }: { scope: MemoryScope }): Promise<void> {
@@ -568,6 +726,36 @@ function resolveOptions(options: PostgresMemoryStoreOptions): ResolvedPostgresMe
   };
 }
 
+const NO_SESSION_VERSION = "none";
+
+function formatVersion(
+  sessionId: string,
+  maxPosition: number | string | null,
+  compactionState: unknown,
+): string {
+  return `${sessionId}:${maxPosition === null ? -1 : Number(maxPosition)}:${compactionGeneration(compactionState)}`;
+}
+
+function compactionGeneration(value: unknown): number {
+  const parsed = typeof value === "string" ? (JSON.parse(value) as unknown) : value;
+  if (typeof parsed !== "object" || parsed === null) return 0;
+  const generation = (parsed as { generation?: unknown }).generation;
+  return typeof generation === "number" ? generation : 0;
+}
+
+// Keys are compared by digest so the key table never stores message payloads.
+function appendFingerprint(input: MemoryAppendOptions): string {
+  return createHash("sha256")
+    .update(JSON.stringify({ runId: input.runId, turn: input.turn, messages: input.messages }))
+    .digest("hex");
+}
+
+function isUndefinedTableError(error: unknown): boolean {
+  return (
+    typeof error === "object" && error !== null && (error as { code?: unknown }).code === "42P01"
+  );
+}
+
 function compactionRevision(
   rows: CompactionMessageRow[],
   state: StoredCompactionState | undefined,
@@ -639,6 +827,9 @@ function resolveTables(options: PostgresMemorySchemaOptions): ResolvedPostgresMe
     sessions: quoteQualifiedIdentifier(options.tableNames?.sessions ?? `${prefix}memory_sessions`),
     messages: quoteQualifiedIdentifier(options.tableNames?.messages ?? `${prefix}memory_messages`),
     errors: quoteQualifiedIdentifier(options.tableNames?.errors ?? `${prefix}memory_errors`),
+    idempotencyKeys: quoteQualifiedIdentifier(
+      options.tableNames?.idempotencyKeys ?? `${prefix}memory_idempotency_keys`,
+    ),
     messagesPositionIndex: quoteIdentifier(`${prefix}memory_messages_session_position_idx`),
   };
 }

@@ -65,11 +65,13 @@ type FakePgState = {
     }>
   >;
   errors: Array<{ memorySessionId: string; runId: string; error: unknown; messages: unknown }>;
+  keys: Map<string, string>;
 };
 
 class FakePgClient implements PostgresMemoryClientLike {
   readonly calls: FakePgCall[] = [];
   failMessageInsert = false;
+  missingKeyTable = false;
 
   constructor(
     private readonly state: FakePgState = {
@@ -77,6 +79,7 @@ class FakePgClient implements PostgresMemoryClientLike {
       sessions: new Map(),
       messages: new Map(),
       errors: [],
+      keys: new Map(),
     },
   ) {}
 
@@ -110,6 +113,52 @@ class FakePgClient implements PostgresMemoryClientLike {
       text.includes("pg_advisory_xact_lock")
     ) {
       return { rows: [] };
+    }
+
+    if (text.includes("memory_idempotency_keys") && this.missingKeyTable) {
+      throw Object.assign(new Error("relation does not exist"), { code: "42P01" });
+    }
+
+    if (text.includes('FROM "anvia_memory_idempotency_keys"')) {
+      const fingerprint = this.state.keys.get(`${values[0] as string}\u0000${values[1] as string}`);
+      return { rows: fingerprint === undefined ? [] : [{ fingerprint }] };
+    }
+
+    if (text.startsWith("INSERT INTO") && text.includes("memory_idempotency_keys")) {
+      const id = `${values[0] as string}\u0000${values[1] as string}`;
+      if (this.state.keys.has(id)) return { rows: [] };
+      this.state.keys.set(id, values[2] as string);
+      return { rows: [{ idempotency_key: values[1] }] };
+    }
+
+    if (text.includes("AS max_position")) {
+      const session = this.state.sessions.get(values[0] as string);
+      if (session === undefined) return { rows: [] };
+      const positions = (this.state.messages.get(session.id) ?? []).map((row) => row.position);
+      return {
+        rows: [
+          {
+            id: session.id,
+            compaction_state: session.compactionState,
+            max_position: positions.length === 0 ? null : Math.max(...positions),
+          },
+        ],
+      };
+    }
+
+    if (text.includes("AS session_id, s.compaction_state, m.position")) {
+      const session = this.state.sessions.get(values[0] as string);
+      if (session === undefined) return { rows: [] };
+      const messages = [...(this.state.messages.get(session.id) ?? [])].sort(
+        (left, right) => left.position - right.position,
+      );
+      const base = { session_id: session.id, compaction_state: session.compactionState };
+      return {
+        rows:
+          messages.length === 0
+            ? [{ ...base, position: null, message: null }]
+            : messages.map((row) => ({ ...base, position: row.position, message: row.message })),
+      };
     }
 
     if (text.startsWith("INSERT INTO") && text.includes("memory_sessions")) {
@@ -296,6 +345,7 @@ class FakePgPool extends FakePgClient {
       sessions: new Map(),
       messages: new Map(),
       errors: [],
+      keys: new Map(),
     };
     super(state);
     this.transactionClient = new FakePgTransactionClient(state);
@@ -685,6 +735,181 @@ describe("PostgresMemoryStore", () => {
       validateMessages: false,
     });
     await expect(unsafeStore.load({ scope: context })).resolves.toEqual([malformed]);
+  });
+
+  describe("versioned, idempotent appends", () => {
+    const scope = { sessionId: "thread-1" };
+    const write = (runId: string, messages: Message[] = [userMessage]) => ({
+      scope,
+      runId,
+      turn: 0,
+      messages,
+    });
+
+    it("commits, then reports a retry as a duplicate and a changed payload as a conflict", async () => {
+      const client = new FakePgClient();
+      const store = await createTestMemoryStore({ client });
+
+      const first = await store.append({ ...write("run-1"), idempotencyKey: "k1" });
+      expect(first.status).toBe("committed");
+      const retry = await store.append({ ...write("run-1"), idempotencyKey: "k1" });
+      expect(retry).toEqual({ status: "duplicate", version: first.version });
+      const changed = await store.append({
+        ...write("run-1", [assistantMessage]),
+        idempotencyKey: "k1",
+      });
+      expect(changed).toEqual({ status: "conflict", version: first.version });
+
+      expect(await store.load({ scope })).toEqual([userMessage]);
+    });
+
+    it("checks expectedVersion, and checks a duplicate before the version", async () => {
+      const store = await createTestMemoryStore({ client: new FakePgClient() });
+      const { version: empty } = await store.loadVersioned({ scope });
+      expect(empty).toBe("none");
+
+      const first = await store.append({
+        ...write("run-1"),
+        idempotencyKey: "k1",
+        expectedVersion: empty,
+      });
+      expect(first.status).toBe("committed");
+      const loaded = await store.loadVersioned({ scope });
+      expect(loaded).toEqual({ messages: [userMessage], version: first.version });
+
+      const stale = await store.append({ ...write("run-2"), expectedVersion: empty });
+      expect(stale).toEqual({ status: "conflict", version: first.version });
+      const retry = await store.append({
+        ...write("run-1"),
+        idempotencyKey: "k1",
+        expectedVersion: empty,
+      });
+      expect(retry).toEqual({ status: "duplicate", version: first.version });
+      const current = await store.append({
+        ...write("run-2", [assistantMessage]),
+        expectedVersion: first.version,
+      });
+      expect(current.status).toBe("committed");
+      expect(await store.load({ scope })).toEqual([userMessage, assistantMessage]);
+    });
+
+    it("changes version on append, clear and compaction, and never reuses one", async () => {
+      const store = await createTestMemoryStore({ client: new FakePgClient() });
+      const seen = new Set<string>();
+      const record = (version: string | undefined) => {
+        expect(version).toBeDefined();
+        expect(seen.has(version as string)).toBe(false);
+        seen.add(version as string);
+      };
+
+      record((await store.append(write("run-1", [userMessage, assistantMessage]))).version);
+      record((await store.append(write("run-2"))).version);
+      const before = (await store.loadVersioned({ scope })).version;
+      const replaced = await store.compaction.replacePrefix({
+        scope,
+        runId: "run-compact",
+        revision: (await store.compaction.snapshot({ scope })).revision,
+        messageCount: 2,
+        replacement: memoryCompactionMessage("summary", 2),
+      });
+      expect(replaced.status).toBe("committed");
+      const compacted = (await store.loadVersioned({ scope })).version;
+      expect(compacted).not.toBe(before);
+
+      await store.clear({ scope });
+      expect((await store.loadVersioned({ scope })).version).toBe("none");
+      const recreated = await store.append(write("run-3", [userMessage, assistantMessage]));
+      expect(seen.has(recreated.version as string)).toBe(false);
+      expect(recreated.version).not.toBe(compacted);
+    });
+
+    it("keeps idempotency keys across clear", async () => {
+      const store = await createTestMemoryStore({ client: new FakePgClient() });
+      await store.append({ ...write("run-1"), idempotencyKey: "k1" });
+      await store.clear({ scope });
+
+      const retry = await store.append({ ...write("run-1"), idempotencyKey: "k1" });
+      expect(retry.status).toBe("duplicate");
+      expect(await store.load({ scope })).toEqual([]);
+    });
+
+    it("scopes keys to the memory scope", async () => {
+      const store = await createTestMemoryStore({ client: new FakePgClient() });
+      await store.append({ ...write("run-1"), idempotencyKey: "k1" });
+      const other = await store.append({
+        ...write("run-1"),
+        scope: { sessionId: "thread-2" },
+        idempotencyKey: "k1",
+      });
+      expect(other.status).toBe("committed");
+    });
+
+    it("records a key for an empty append so a repeat is a duplicate", async () => {
+      const store = await createTestMemoryStore({ client: new FakePgClient() });
+      const first = await store.append({ ...write("run-1", []), idempotencyKey: "k1" });
+      expect(first.status).toBe("committed");
+      const retry = await store.append({ ...write("run-1", []), idempotencyKey: "k1" });
+      expect(retry.status).toBe("duplicate");
+      expect(await store.load({ scope })).toEqual([]);
+    });
+
+    it("writes nothing on duplicate or conflict", async () => {
+      const client = new FakePgClient();
+      const store = await createTestMemoryStore({ client });
+      await store.append({ ...write("run-1"), idempotencyKey: "k1" });
+      const inserts = () =>
+        client.queries.filter(
+          (query) => query.startsWith("INSERT INTO") && query.includes("memory_messages"),
+        ).length;
+      const before = inserts();
+
+      await store.append({ ...write("run-1"), idempotencyKey: "k1" });
+      await store.append({ ...write("run-9"), idempotencyKey: "k1" });
+      await store.append({ ...write("run-2"), expectedVersion: "stale" });
+      expect(inserts()).toBe(before);
+    });
+
+    it("keeps plain load and append working when the key table is missing", async () => {
+      const client = new FakePgClient();
+      client.missingKeyTable = true;
+      const store = await createTestMemoryStore({ client });
+
+      await expect(store.append(write("run-1"))).resolves.toMatchObject({ status: "committed" });
+      expect(await store.load({ scope })).toEqual([userMessage]);
+      const { version } = await store.loadVersioned({ scope });
+      await expect(
+        store.append({ ...write("run-2"), expectedVersion: version }),
+      ).resolves.toMatchObject({ status: "committed" });
+    });
+
+    it("names the key table when a keyed append finds it missing", async () => {
+      const client = new FakePgClient();
+      client.missingKeyTable = true;
+      const store = await createTestMemoryStore({ client });
+
+      await expect(store.append({ ...write("run-1"), idempotencyKey: "k1" })).rejects.toThrow(
+        '"anvia_memory_idempotency_keys"',
+      );
+      expect(client.queries).toContain("ROLLBACK");
+    });
+
+    it("lets only one concurrent writer commit a shared key", async () => {
+      // The fake does not model locking, so this exercises the key-insert backstop only.
+      const store = await createTestMemoryStore({ client: new FakePgClient() });
+      const results = await Promise.all([
+        store.append({ ...write("run-1"), idempotencyKey: "k1" }),
+        store.append({ ...write("run-1"), idempotencyKey: "k1" }),
+      ]);
+      expect(results.map((result) => result.status).sort()).toEqual(["committed", "duplicate"]);
+      expect(await store.load({ scope })).toEqual([userMessage]);
+    });
+
+    it("creates the key table with ensure", async () => {
+      const client = new FakePgClient();
+      await createTestMemoryStore({ client, ensure: true });
+      expect(client.queries[0]).toContain('"anvia_memory_idempotency_keys"');
+      expect(client.queries[0]).toContain("PRIMARY KEY (scope_key, idempotency_key)");
+    });
   });
 
   it("creates quoted schema SQL and rejects invalid identifiers", () => {

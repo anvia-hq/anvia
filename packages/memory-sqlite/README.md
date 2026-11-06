@@ -40,6 +40,7 @@ if (result.type === "response") console.log(result.output);
 - Persistent session history with optional tenant-scoped keys.
 - Read-only memory inspection in Anvia Studio.
 - Atomic compaction checkpoints while retaining canonical message history.
+- Optional versioned, idempotent writes (`loadVersioned()`, `idempotencyKey`, `expectedVersion`).
 - Built-in Node.js and Bun drivers, plus caller-owned database support.
 
 `ensure()` provisions missing tables; use `validate()` when application migrations own the schema. Reuse the same session identifiers to continue a conversation. Keep the client open for the lifetime of your application; `await using` closes owned resources at scope exit. Injected connections remain caller-owned.

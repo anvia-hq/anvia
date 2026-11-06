@@ -51,3 +51,41 @@ The session schema includes nullable `compaction_state_json`. `ensure()` adds th
 existing managed schema; `validate()` requires it without mutating application-owned schema.
 
 Use `createSqliteMemorySchemaSql({ ... })` when schema SQL belongs in an application migration.
+
+## Versioned and idempotent writes
+
+The store implements the optional versioned, idempotent memory contract from `@anvia/core`:
+
+```ts
+const { messages, version } = await store.loadVersioned({ scope });
+
+const result = await store.append({
+  scope,
+  runId: "run-1",
+  turn: 0,
+  messages: [message],
+  idempotencyKey: "run-1:turn-0", // stable across retries of the same write
+  expectedVersion: version, // reject the write if the history moved
+});
+// result.status is "committed", "duplicate" or "conflict"; result.version is the new version.
+```
+
+- A repeat of a committed key with the same `runId`, `turn` and `messages` is a `duplicate`. This
+  is checked before the version, so a retry after success is not a conflict. The same key with
+  different content, or a stale `expectedVersion`, is a `conflict`. Nothing is written in either
+  case.
+- The check and the insert run in one `BEGIN IMMEDIATE` transaction, so two writers that share an
+  `expectedVersion` cannot both commit.
+- The version is an opaque string. It changes on every committed append, on a `clear()` that
+  removes data, and on a compaction `replacePrefix`.
+- An empty `messages` array with a key still records the key.
+- Without a key or `expectedVersion`, `append()` behaves as before. It now returns
+  `{ status: "committed" }` instead of `undefined`.
+
+Keys are scoped to the memory scope and survive `clear()`, so they live in their own table,
+`anvia_memory_idempotency_keys` (`scope_key`, `idempotency_key`, `fingerprint`, `created_at`;
+primary key on the first two). Override the name with `tableNames.idempotencyKeys` or
+`tablePrefix`. `ensure()` and `createSqliteMemorySchemaSql()` create it. `validate()` does not
+require it, so a database created before this table keeps working for plain load and append; a
+keyed append against it throws an error that names the missing table. Run `ensure()` or add the
+table to your migration to enable keys.

@@ -514,7 +514,9 @@ export class DrizzleMemoryStore implements MemoryStore {
     const generation = isRecord(session.compactionState)
       ? Number(session.compactionState.generation ?? 0)
       : 0;
-    return `v1:${session.id}:${last[0]?.position ?? -1}:${generation}`;
+    // An empty history has one version whether or not recordError created a session row for it.
+    if (last[0]?.position === undefined) return "v1:empty";
+    return `v1:${session.id}:${last[0].position}:${generation}`;
   }
 
   private async transaction<T>(operation: (tx: DrizzleRuntimeDatabase) => Promise<T>): Promise<T> {

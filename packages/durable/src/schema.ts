@@ -229,7 +229,7 @@ const operationSchema = z
   .object({
     historyEncoding: z.literal("linked-v1").optional(),
     key: id,
-    kind: z.enum(["model", "tool", "effect", "compaction", "context"]),
+    kind: z.enum(["model", "tool", "effect", "compaction", "context", "memory"]),
     input: jsonValue,
     status: z.enum(["started", "completed"]),
     recovery: z.enum(["safe", "idempotent", "manual"]),

@@ -2,7 +2,7 @@ import type { AgentLifecycle } from "../../agent/lifecycle";
 import type { Message } from "../../completion";
 import type { GuardrailPolicy } from "../../guardrails";
 import type { AgentHook } from "../../hooks";
-import type { MemoryCompactionInfo } from "../../memory";
+import type { MemoryCompactionInfo, MemoryScope, MemoryStore } from "../../memory";
 import type { AgentRunExecution } from "./execution";
 
 const internalAgentRunOptions = Symbol("internalAgentRunOptions");
@@ -26,6 +26,11 @@ export type InternalAgentRunOptions = {
    * outcome before core applies it, so a replayed check is not run again.
    */
   guardrails?: readonly GuardrailPolicy[] | undefined;
+  /**
+   * Replaces the agent's memory store and session scope for this run. Durable uses it so every
+   * read and write goes through its recording store, and the run needs no session in its input.
+   */
+  memory?: { store: MemoryStore; scope: MemoryScope } | undefined;
 };
 
 type AgentRunOptionsWithInternal = {

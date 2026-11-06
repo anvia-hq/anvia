@@ -70,6 +70,13 @@ export function registrations(
       throw new TypeError(
         `Durable agent "${agent.id}" has an unknown mcpServers mode. Only { mode: "pinned" } is supported.`,
       );
+    if (
+      registration.memory !== undefined &&
+      (registration.memory as { mode?: unknown }).mode !== "recorded"
+    )
+      throw new TypeError(
+        `Durable agent "${agent.id}" has an unknown memory mode. Only { mode: "recorded" } is supported.`,
+      );
     if (registration.guardrails !== undefined) assertUniqueGuardrailIds(agent);
     // Core does not classify a provider tool with non-JSON configuration as a provider tool, so it
     // is checked in the configured tool list, where it is still visible. Provider tool configuration
@@ -86,14 +93,13 @@ export function registrations(
             `Durable agent "${agent.id}" has provider tool "${String(candidate.name)}" whose configuration is not JSON. Provider tool configuration is persisted with the model request, so it must be JSON.`,
           );
       }
+    if (options.memory !== undefined && registration.memory !== undefined)
+      assertRecordableMemory(agent.id, options.memory);
     const unsupported = unsupportedFeatures(options, registration);
     if (unsupported.length > 0) {
       // Each feature with a marker names it, so the fix is one line away.
-      // Memory has no marker: its store has no idempotent writes or conflict checks to checkpoint.
-      const memoryNote = unsupported.includes("memory")
-        ? " Memory needs a store with idempotent writes and conflict handling, which durable does not checkpoint; use durable sessions instead."
-        : "";
       const hints = [
+        unsupported.includes("memory") ? `memory needs { memory: { mode: "recorded" } }` : "",
         unsupported.includes("middleware")
           ? `middleware needs { middlewares: { mode: "pure" } }`
           : "",
@@ -111,7 +117,7 @@ export function registrations(
           : "",
       ].filter((hint) => hint !== "");
       throw new TypeError(
-        `Durable agent "${agent.id}" (version ${JSON.stringify(registration.version)}) uses features that require additional checkpoint support: ${unsupported.join(", ")}. Durable agents support static local tools, static context documents, and instructions only.${memoryNote}${hints.length > 0 ? ` To admit them, set the registration marker: ${hints.join("; ")}.` : ""}`,
+        `Durable agent "${agent.id}" (version ${JSON.stringify(registration.version)}) uses features that require additional checkpoint support: ${unsupported.join(", ")}. Durable agents support static local tools, static context documents, and instructions only.${hints.length > 0 ? ` To admit them, set the registration marker: ${hints.join("; ")}.` : ""}`,
       );
     }
     for (const [name, policy] of Object.entries(registration.toolRecovery ?? {})) {
@@ -178,6 +184,10 @@ export function registrations(
       normalized.toolIndexes = { mode: "recorded" };
     }
 
+    if (registration.memory !== undefined) {
+      normalized.memory = { mode: "recorded" };
+    }
+
     normalized.toolRecovery = { ...registration.toolRecovery };
 
     if (compaction !== undefined) {
@@ -195,6 +205,23 @@ export function registrations(
 
 type ResolvedOptions = ReturnType<typeof getResolvedAgentOptions>;
 
+/**
+ * A recorded memory run reads its history once and writes each append under a derived key, with
+ * the read version as the write's expected version. A store without versions cannot detect a
+ * concurrent writer, and compaction rewrites history outside the recorded writes, so both are
+ * rejected here, naming the field.
+ */
+function assertRecordableMemory(agentId: string, memory: NonNullable<ResolvedOptions["memory"]>) {
+  if (memory.compaction !== undefined)
+    throw new TypeError(
+      `Durable agent "${agentId}" sets memory.compaction, which recorded memory does not support yet. Remove memory.compaction to admit memory.`,
+    );
+  if (typeof memory.store.loadVersioned !== "function")
+    throw new TypeError(
+      `Durable agent "${agentId}" sets memory.store without loadVersioned(). Recorded memory needs a store that returns a version with each load, so a concurrent write is detected as a conflict.`,
+    );
+}
+
 /** `false`, `0`, and a one-attempt policy all mean the runtime would not retry anyway. */
 function retriesEnabled(retries: ResolvedOptions["retries"]): boolean {
   if (retries === undefined || retries === false) return false;
@@ -208,7 +235,7 @@ function unsupportedFeatures(
   registration: DurableAgentRegistration,
 ): string[] {
   const features: string[] = [];
-  if (options.memory !== undefined) features.push("memory");
+  if (options.memory !== undefined && registration.memory === undefined) features.push("memory");
   // Observational hooks are gated by the registration's marker; anything else can change the run.
   if (options.lifecycle !== undefined && registration.lifecycle === undefined)
     features.push("lifecycle");

@@ -45,7 +45,7 @@ Status meanings:
 | 19  | `observability`   | supported     | Agent observers still run; durable adds its own run trace and metadata. Observer errors are ignored by core.                                                                                                                         | `packages/core/src/agent/types.ts:59`, `packages/durable/src/trace.ts:11`                                                                                   |
 | 20  | `guardrails`      | **supported** | Admitted with `guardrails: { mode: "record" }`: each check's outcome is recorded before core applies it, so replay reuses it (Phase 3).                                                                                              | `packages/core/src/agent/types.ts:60`, `packages/durable/src/registration.ts:30`                                                                            |
 | 21  | `middlewares`     | **supported** | Admitted with `middlewares: { mode: "pure" }`: replay compares the transformed request or tool input with the persisted one (Phase 3).                                                                                               | `packages/core/src/agent/types.ts:61`, `packages/durable/src/registration.ts:29`                                                                            |
-| 22  | `memory`          | **rejected**  | Memory store reads/writes and memory compaction are not durable operations; the durable guide directs users to registration compaction instead.                                                                                      | `packages/core/src/agent/types.ts:62`, `packages/durable/src/registration.ts:27`, `packages/durable/README.md:255`                                          |
+| 22  | `memory`          | **supported** | Admitted with `memory: { mode: "recorded" }` (Phase 7). Memory compaction is still rejected.                                                                                                                                         | `packages/core/src/agent/types.ts:62`, `packages/durable/src/registration.ts:27`, `packages/durable/README.md:255`                                          |
 
 ## Parity matrix — `AgentRunSettings` / `AgentInput`
 
@@ -84,7 +84,7 @@ Status meanings:
 | MCP servers                   | supported | Admitted with `mcpServers: { mode: "pinned" }` (Phase 6): discovery stays in the application; the server fingerprint is checked per run and each call is a tool operation. `packages/durable/src/mcp-servers.ts`, `packages/durable/src/runtime.ts`                                                             |
 | Provider tools                | supported | Admitted with `providerTools: { mode: "stateless" }` (Phase 4): part of the persisted model request, so a changed definition fails replay. `packages/durable/src/registration.ts:33`                                                                                                                            |
 | Dynamic tool indexes          | supported | Admitted with `toolIndexes: { mode: "recorded" }` (Phase 5): each model call's selection is recorded before the call and reused on replay; the index fingerprint is checked at each execution start. `packages/durable/src/tool-indexes.ts`, `packages/durable/src/execution.ts`                                |
-| Memory store / save policies  | rejected  | No idempotent write or version on the store contract (design note, Phase 7). `packages/durable/src/registration.ts`                                                                                                                                                                                             |
+| Memory store / save policies  | supported | Admitted with `memory: { mode: "recorded" }` (Phase 7): read snapshot before the first model call, writes after the terminal checkpoint as keyed `memory` operations. `packages/durable/src/recorded-memory.ts`                                                                                                 |
 | Lifecycle callbacks           | supported | Admitted with `lifecycle: { mode: "observe" }` (Phase 2): hooks run at most once per step, recorded before they run.                                                                                                                                                                                            |
 | Guardrails                    | supported | Admitted with `guardrails: { mode: "record" }` (Phase 3): outcomes recorded before use, replay reuses them. `packages/durable/src/registration.ts:30`                                                                                                                                                           |
 | Middleware                    | supported | Admitted with `middlewares: { mode: "pure" }` (Phase 3): replay compares transformed requests and tool inputs. `packages/durable/src/registration.ts:29`                                                                                                                                                        |
@@ -344,8 +344,26 @@ core, which would need a core hook. Reading the code shows it does not:
 
 ### Phase 7 — Memory store
 
-**Status (session 6): rejected; design note only. No store API was invented.** The rejection stays,
-and its message names the `memory` field and the boundary it needs.
+**Status: admitted with `memory: { mode: "recorded" }` (parity phase 7, part C2).** Without the marker,
+memory is still rejected, and the error names the `memory` field and the marker. The store contract is
+the versioned one in `@anvia/core` (`loadVersioned()`, and `append()` with `idempotencyKey` and
+`expectedVersion`, PR #643). Durable admits it as follows:
+
+- The read snapshot (`loadVersioned()`) is recorded as a `memory` operation before the first model
+  call, and a replay reuses it.
+- Core's appends are captured during the run. They are written only after the terminal checkpoint, in
+  order, each as a `memory` operation with recovery `manual`. A crash between the checkpoint and the
+  writes keeps the run `running` until they finish.
+- The idempotency key is derived by the runtime as `${runId}/${epoch}:memory:write:${seq}`; callers
+  cannot set it. Each write's `expectedVersion` is the version the previous step left behind, so a
+  concurrent writer makes the run `needs_attention` with a conflict, and nothing is written.
+- An interrupted write is uncertain. The run needs attention, and `retry()` sends it again under the
+  same key.
+- Rejected under the marker: `memory.compaction`, and a store without `loadVersioned()`. A run that pauses
+  for a human interaction fails with an explicit error, because a resume would offer its messages twice.
+- Not covered: the adapter packages (`memory-sqlite`, `memory-postgres`, `memory-prisma`,
+  `memory-drizzle`) do not implement the new contract yet; an operator path to reconcile a
+  conflicting or uncertain write is not built yet.
 
 Findings from `packages/core/src/memory/types.ts`:
 
@@ -370,8 +388,9 @@ Each of these changes a public core interface. That is an owner decision; this p
 it. Until then, durable sessions are the supported replacement (see `docs/packages/durable.md`).
 
 - **Checkpoint boundary:** none (rejected).
-- **Tests:** `packages/durable/test/agent-parity.test.ts` rejects `memory` and checks that the message
-  names the field, the idempotent-write and conflict-handling contract, and durable sessions.
+- **Tests:** `packages/durable/test/recorded-memory.test.ts` (replay, duplicate writes, conflicts,
+  the write-after-checkpoint order, crash resume) and `packages/durable/test/agent-parity.test.ts`
+  (rejection without the marker).
 
 - Persist a memory read snapshot before the first model call; use it on replay.
 - Model writes as explicit `memory` operations with idempotency keys and a recovery policy; evaluate

@@ -19,6 +19,7 @@ import type {
   MemoryCompactionResult,
   MemorySavePolicy,
   MemoryScope,
+  MemoryStore,
   MemoryTokenCounter,
 } from "../../memory/types";
 import { throwIfAborted } from "../abort";
@@ -60,6 +61,7 @@ export class AgentRunMemory {
     private readonly agent: MemoryAgent,
     private readonly memoryScope: MemoryScope | undefined,
     private readonly initialHistory: MessageType[],
+    private readonly storeOverride?: MemoryStore | undefined,
   ) {}
 
   memoryPolicy(): MemorySavePolicy | undefined {
@@ -220,7 +222,10 @@ export class AgentRunMemory {
   }
 
   private memory(): AgentMemory | undefined {
-    return this.memoryScope === undefined ? undefined : this.agent.memory;
+    if (this.memoryScope === undefined) return undefined;
+    const memory = this.agent.memory;
+    if (memory === undefined || this.storeOverride === undefined) return memory;
+    return { ...memory, store: this.storeOverride };
   }
 
   private async prepareStoredHistory(

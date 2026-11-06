@@ -32,6 +32,7 @@ import {
   type CompletionRequest,
   type ToolResultOutput,
 } from "@anvia/core/completion";
+import type { MemoryAppendOptions } from "@anvia/core/memory";
 import { withInternalAgentRunOptions } from "@anvia/core/internal/agent";
 import {
   DurableConflictError,
@@ -56,6 +57,13 @@ import { toolIndexesByAgent, toolIndexesOf, type DurableToolIndexes } from "./to
 import { createExecution } from "./execution.js";
 import { createObservedLifecycle } from "./observed-lifecycle.js";
 import { createRecordedGuardrails } from "./recorded-guardrails.js";
+import {
+  flushRecordedMemory,
+  isRecordedMemoryWrite,
+  recordMemoryWrites,
+  recordedMemoryOf,
+  recordedMemoryStore,
+} from "./recorded-memory.js";
 import { runTrace } from "./trace.js";
 import { parseTraceOptions } from "./trace-schema.js";
 import { errorMessage, json, nonblank, sameJson } from "./json.js";
@@ -683,14 +691,17 @@ export class DurableRuntime {
       // the session before execution so a retry never runs with less context than the original
       // attempt; an over-limit history rejects the retry and leaves the run failed.
       if (run.graphId === undefined && run.history.length === 0 && operations.length === 0)
-        inheritSessionHistory(tx, run);
+        inheritSessionHistory(tx, run, this.recordsMemory(run.agentId));
       for (const operation of operations) {
         if (
           (operation.kind === "model" ||
             operation.kind === "compaction" ||
-            operation.kind === "context") &&
+            operation.kind === "context" ||
+            isRecordedMemoryWrite(operation)) &&
           operation.status === "started"
         )
+          // An uncertain memory write is sent again only here, on an explicit retry; its key
+          // makes a repeat of a committed write a duplicate.
           tx.putOperation(id, { ...operation, attempts: 0 });
       }
       delete run.error;
@@ -780,13 +791,20 @@ export class DurableRuntime {
     this.active.set(id, { agentId, sessionId, controller, task });
   }
 
+  /** Recorded memory supplies a run's history, so the previous run's history is not copied in. */
+  private recordsMemory(agentId: string): boolean {
+    const registration = this.agents.get(agentId);
+    return registration !== undefined && recordedMemoryOf(registration) !== undefined;
+  }
+
   private async execute(id: string, signal: AbortSignal): Promise<void> {
     signal.throwIfAborted();
     const run = this.store.transaction((tx) => {
       const current = requireRun(tx, id);
       if (!["queued", "pending", "running", "retry_wait"].includes(current.status))
         return undefined;
-      if (current.status === "queued") inheritSessionHistory(tx, current);
+      if (current.status === "queued")
+        inheritSessionHistory(tx, current, this.recordsMemory(current.agentId));
       current.startedAt ??= new Date().toISOString();
       delete current.nextAttemptAt;
       delete current.error;
@@ -806,39 +824,79 @@ export class DurableRuntime {
       verifyContextDocuments(run, registration);
       await verifyMcpServers(run, registration);
       await verifyToolIndexes(run, registration);
-      await prepareContext(this.store, run, registration, signal);
-      const trace = this.store.transaction((tx) => runTrace(tx, run));
-      // Stored records may carry blob references; the agent loop always sees restored content.
-      const input = this.store.transaction((tx) =>
-        hydrateValue(tx, json(run.input)),
-      ) as DurableRunRecord["input"];
-      const options = withInternalAgentRunOptions(
-        {
-          ...input,
-          trace,
-          abortSignal: signal,
-          retries: false as const,
-        },
-        {
-          runId: id,
-          execution: createExecution(this.store, run, registration, signal),
-          lifecycle: createObservedLifecycle(this.store, run, registration),
-          guardrails: createRecordedGuardrails(this.store, run, registration),
-        },
-      );
-      const outcome =
-        run.stream === true
-          ? await registration.agent.stream(options).result
-          : await registration.agent.generate(options);
-      signal.throwIfAborted();
-      this.store.transaction((tx) => {
-        const current = requireRun(tx, id);
-        current.outcome = externalizeOutcome(
-          tx,
-          json({ ...outcome, usage: current.usage }),
-        ) as AgentOutcome<unknown>;
-        setStatus(tx, current, outcome.type === "interaction" ? "waiting" : "completed");
-      });
+      const memory = recordedMemoryOf(registration);
+      // A checkpoint from an earlier attempt means the model work is finished: only the memory
+      // writes after it can remain, so the agent is not run again.
+      if (run.outcome === undefined) {
+        await prepareContext(this.store, run, registration, signal);
+        const trace = this.store.transaction((tx) => runTrace(tx, run));
+        // Stored records may carry blob references; the agent loop always sees restored content.
+        const input = this.store.transaction((tx) =>
+          hydrateValue(tx, json(run.input)),
+        ) as DurableRunRecord["input"];
+        // Core's appends are captured here and written only after the checkpoint below.
+        const captured: MemoryAppendOptions[] = [];
+        const options = withInternalAgentRunOptions(
+          {
+            ...input,
+            trace,
+            abortSignal: signal,
+            retries: false as const,
+          },
+          {
+            runId: id,
+            execution: createExecution(this.store, run, registration, signal),
+            lifecycle: createObservedLifecycle(this.store, run, registration),
+            guardrails: createRecordedGuardrails(this.store, run, registration),
+            memory:
+              memory === undefined
+                ? undefined
+                : {
+                    store: recordedMemoryStore({
+                      store: this.store,
+                      run,
+                      source: memory.store,
+                      captured,
+                      signal,
+                    }),
+                    scope: { sessionId: run.sessionId },
+                  },
+          },
+        );
+        const outcome =
+          run.stream === true
+            ? await registration.agent.stream(options).result
+            : await registration.agent.generate(options);
+        signal.throwIfAborted();
+        // A paused run's messages are only partly committed to memory, and a resume would offer
+        // them to the model twice (from memory and from the run's history). Refuse it explicitly.
+        if (memory !== undefined && outcome.type === "interaction")
+          throw new TypeError(
+            `Durable agent "${run.agentId}" paused for a human interaction, which recorded memory does not support yet. Remove the interaction tool or the memory marker.`,
+          );
+        this.store.transaction((tx) => {
+          const current = requireRun(tx, id);
+          current.outcome = externalizeOutcome(
+            tx,
+            json({ ...outcome, usage: current.usage }),
+          ) as AgentOutcome<unknown>;
+          if (captured.length === 0) {
+            setStatus(tx, current, outcome.type === "interaction" ? "waiting" : "completed");
+            return;
+          }
+          // The run stays running until its memory writes finish, so a crash here resumes them.
+          recordMemoryWrites(tx, current, captured);
+          tx.putRun(current);
+        });
+      }
+      if (memory !== undefined) {
+        await flushRecordedMemory({ store: this.store, run, source: memory.store, signal });
+        this.store.transaction((tx) => {
+          const current = requireRun(tx, id);
+          if (current.status !== "running") return;
+          setStatus(tx, current, current.outcome?.type === "interaction" ? "waiting" : "completed");
+        });
+      }
     } catch (error) {
       if (error instanceof DurableStorageError) throw error;
       if (signal.aborted) return;
@@ -976,9 +1034,19 @@ const SETTLED: readonly string[] = ["completed", "failed", "cancelled"];
  * session's latest settled run. Persisting this here keeps the invariant that a run record always
  * holds the history it will execute with, including after a rolled-back admission.
  */
-function inheritSessionHistory(tx: DurableTransaction, run: DurableRunRecord): void {
+function inheritSessionHistory(
+  tx: DurableTransaction,
+  run: DurableRunRecord,
+  recordsMemory: boolean,
+): void {
   if (run.graphId !== undefined) {
     run.input = { messages: [promptMessage(graphInput(tx, run))] };
+    return;
+  }
+  // Recorded memory holds the session's conversation; copying the previous run in would repeat it.
+  if (recordsMemory) {
+    run.history = [];
+    run.input = { messages: [promptMessage(run.prompt)] };
     return;
   }
   const previous =

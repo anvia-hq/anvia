@@ -94,6 +94,13 @@ export type DurableAgentRegistration = {
    * tool indexes are rejected.
    */
   toolIndexes?: DurableRecordedToolIndexes;
+  /**
+   * Admits the agent's `memory`. The read snapshot is recorded before the first model call and
+   * reused on replay. Each write is recorded as a memory operation keyed by a runtime-derived
+   * idempotency key, and the save policy runs after the run's terminal checkpoint. Without this
+   * marker, memory is rejected.
+   */
+  memory?: DurableRecordedMemory;
 };
 
 /** The only lifecycle mode durable admits: hooks that observe the run and do not change it. */
@@ -112,6 +119,9 @@ export type DurableStatelessProviderTools = { mode: "stateless" };
 export type DurablePinnedMcpServers = { mode: "pinned" };
 /** The only tool-index mode durable admits: each model call's selection is recorded and reused. */
 export type DurableRecordedToolIndexes = { mode: "recorded" };
+
+/** The only memory mode durable admits: reads and writes are recorded by the runtime. */
+export type DurableRecordedMemory = { mode: "recorded" };
 
 /** Agent-level options the runtime freezes for the life of a registration. */
 export type DurableFrozenAgentOption =
@@ -263,7 +273,7 @@ export type DurableOperation = {
   /** SQLite snapshot histories are immutable linked-log references; use operationRequest(). */
   historyEncoding?: "linked-v1" | undefined;
   key: string;
-  kind: "model" | "tool" | "effect" | "compaction" | "context";
+  kind: "model" | "tool" | "effect" | "compaction" | "context" | "memory";
   input: JsonValue;
   status: "started" | "completed";
   recovery: ToolRecovery;

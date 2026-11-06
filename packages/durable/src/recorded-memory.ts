@@ -45,6 +45,21 @@ export function recordedMemoryOf(registration: DurableAgentRegistration) {
   return getResolvedAgentOptions(registration.agent).memory;
 }
 
+/**
+ * Graph nodes and owned agent tasks run under a synthetic session id, so recorded memory would
+ * read an empty history and write into a scope no caller names. Refuse them at admission.
+ */
+export function assertMemoryFreeTask(
+  registration: DurableAgentRegistration,
+  agentId: string,
+  where: "graph tasks" | "owned agent tasks",
+): void {
+  if (registration.memory !== undefined)
+    throw new TypeError(
+      `Durable agent "${agentId}" records memory, which ${where} do not support yet. Submit it directly with runtime.submit().`,
+    );
+}
+
 type ReadSnapshot = MemoryVersionedHistory;
 
 /**

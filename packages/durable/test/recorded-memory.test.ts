@@ -5,7 +5,9 @@ import { afterEach, expect, it, vi } from "vitest";
 import { Agent } from "@anvia/core/agent";
 import type { CompletionRequest } from "@anvia/core/completion";
 import { InMemoryMemoryStore, type MemoryStore } from "@anvia/core/memory";
-import { DurableRuntime, type DurableAgentRegistration } from "../src/index.js";
+import { z } from "zod";
+import type { CompletionModelStreamEvent } from "@anvia/core/completion";
+import { DurableRuntime, defineTask, type DurableAgentRegistration } from "../src/index.js";
 import type { DurableRun } from "../src/run.js";
 import { SqliteDurableStore } from "../src/sqlite.js";
 import { capabilities, done, lookup, toolResponse } from "./helpers.js";
@@ -425,4 +427,102 @@ it("rejects a resolution for a run that is not blocked", async () => {
   await expect(submitted.resolveMemoryWrite("0:memory:write:0", "discarded")).rejects.toThrow(
     /No matching memory write/,
   );
+});
+
+it("records memory for a streaming run and writes the reply once", async () => {
+  const store = new InMemoryMemoryStore();
+  const appendSpy = vi.spyOn(store, "append");
+  const agent = new Agent({
+    id: "remembering",
+    memory: { store, savePolicy: "run" },
+    model: {
+      provider: "test",
+      modelId: "test",
+      capabilities: { ...capabilities, streaming: true },
+      completion: async () => done(),
+      async *streamCompletion(): AsyncIterable<CompletionModelStreamEvent> {
+        yield { type: "text_delta", delta: "do" };
+        yield { type: "text_delta", delta: "ne" };
+        yield { type: "final", response: done() };
+      },
+    },
+  } as ConstructorParameters<typeof Agent>[0]);
+  const runtime = await DurableRuntime.open({
+    store: new SqliteDurableStore(database()),
+    agents: [{ ...registration(agent), stream: true }],
+  });
+  runtimes.push(runtime);
+
+  const submitted = await runtime.submit({ ...submission, prompt: "hello" });
+  const snapshot = await settled(submitted);
+
+  expect(snapshot.run.status).toBe("completed");
+  expect(appendSpy).toHaveBeenCalledTimes(1);
+  expect((await store.load({ scope })).map((message) => message.role)).toEqual([
+    "user",
+    "assistant",
+  ]);
+});
+
+it("leaves memory unwritten and does not call recordError when the run fails", async () => {
+  const store = new InMemoryMemoryStore();
+  const recordError = vi.fn(async () => {});
+  Object.assign(store, { recordError });
+  const appendSpy = vi.spyOn(store, "append");
+  const runtime = await open(
+    database(),
+    agentWith(async () => {
+      throw new Error("provider down");
+    }, store),
+  );
+  const submitted = await runtime.submit({ ...submission, prompt: "hello" });
+
+  expect((await settled(submitted)).run.status).toBe("failed");
+  expect(appendSpy).not.toHaveBeenCalled();
+  expect(recordError).not.toHaveBeenCalled();
+  expect(await storedCount(store)).toBe(0);
+});
+
+it("rejects a graph that uses a recorded memory agent and creates nothing", async () => {
+  const runtime = await open(
+    database(),
+    agentWith(async () => done(), new InMemoryMemoryStore()),
+  );
+
+  await expect(
+    runtime.submitGraph({
+      sessionId: "project",
+      requestId: "graph",
+      tasks: [{ id: "one", agentId: "remembering", prompt: "hi" }],
+    }),
+  ).rejects.toThrow(/records memory, which graph tasks do not support/);
+  expect((await runtime.listGraphs()).graphs).toHaveLength(0);
+  expect((await runtime.listRuns()).runs).toHaveLength(0);
+});
+
+it("fails an owned agent task that spawns a recorded memory agent, naming the limit", async () => {
+  const store = new InMemoryMemoryStore();
+  const parent = defineTask({
+    name: "parent",
+    version: 1,
+    input: z.null(),
+    checkpoint: z.null(),
+    output: z.null(),
+    initial: () => null,
+    run: async (ctx) => {
+      ctx.spawnAgent("child", { agentId: "remembering", prompt: "hi" });
+      return { status: "completed", output: null };
+    },
+  });
+  const runtime = await DurableRuntime.open({
+    store: new SqliteDurableStore(database()),
+    tasks: [parent],
+    agents: [registration(agentWith(async () => done(), store))],
+  });
+  runtimes.push(runtime);
+
+  const task = await runtime.submitTask(parent, { sessionId: "s", requestId: "1", input: null });
+
+  await expect(task.result()).rejects.toThrow(/owned agent tasks do not support/);
+  expect(await storedCount(store)).toBe(0);
 });

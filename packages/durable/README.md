@@ -351,6 +351,11 @@ run's terminal checkpoint. A concurrent change to the memory history makes the r
 with a conflict. Adapter packages (`memory-sqlite`, `memory-postgres`, `memory-prisma`,
 `memory-drizzle`) do not implement the versioned contract yet, so they cannot be used with recorded memory.
 
+Recorded memory works for runs submitted with `runtime.submit()`, streaming or not. Graph tasks and
+owned agent tasks (`spawnAgent`) run under a synthetic session, so registering a recorded memory
+agent for them is rejected at admission: `submitGraph()` throws, and an owned agent task fails with
+a message that names the limit.
+
 A blocked memory write (a conflict, or a write whose outcome is unknown) is settled with
 `run.resolveMemoryWrite(operationKey, resolution)`. `"applied"` records that the store already holds
 the messages; `"discarded"` drops them. The run then sends its remaining writes without a version

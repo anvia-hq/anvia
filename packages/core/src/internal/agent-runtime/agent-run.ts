@@ -280,7 +280,12 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     this.requestMiddlewares = [...(options.middlewares ?? [])];
     this.controls = mergeCompletionControlValues(agent.controls, options.controls);
     this.memoryScope = options.memoryScope;
-    this.memoryRecorder = new AgentRunMemory(agent, options.memoryScope, initialHistory);
+    this.memoryRecorder = new AgentRunMemory(
+      agent,
+      options.memoryScope,
+      initialHistory,
+      internalOptions?.memory?.store,
+    );
     this.continuationState = options.continuationState;
     this.loopContextCheckpoint = options.continuationState?.loopContextCheckpoint;
     this.interactionResponse = options.interactionResponse;
@@ -309,7 +314,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     }
     return new AgentRun(agent, normalized.prompt, normalized.history, {
       ...options,
-      memoryScope: normalized.scope,
+      memoryScope: normalized.scope ?? getInternalAgentRunOptions(options)?.memory?.scope,
       continuationState: normalized.continuationState,
       interactionResponse: normalized.interactionResponse,
       sourceRunId: normalized.sourceRunId,

@@ -149,6 +149,10 @@ export class PrismaMemoryStore implements MemoryStore {
     const scopeKey = this.scopeKey(input.scope);
 
     return this.delegates.transaction(async (tx): Promise<MemoryAppendResult> => {
+      // The upsert takes the session row's lock until commit, so writers on one scope run in turn
+      // and each checks the version the previous one left. An empty history keeps one version
+      // whether or not this row exists, so creating it here changes nothing a caller can see.
+      let session = versioned ? await upsertSession(tx, input.scope, scopeKey) : undefined;
       if (input.idempotencyKey !== undefined) {
         if (tx.writes === undefined) {
           throw new Error(
@@ -175,16 +179,16 @@ export class PrismaMemoryStore implements MemoryStore {
       }
 
       if (input.messages.length > 0) {
-        const session = await upsertSession(tx, input.scope, scopeKey);
+        const target = session ?? (await upsertSession(tx, input.scope, scopeKey));
         const tail = await tx.messages.findFirst({
-          where: { memorySessionId: session.id },
+          where: { memorySessionId: target.id },
           orderBy: { position: "desc" },
           select: { position: true },
         });
         const start = (tail?.position ?? -1) + 1;
         await tx.messages.createMany({
           data: input.messages.map((message, index) => ({
-            memorySessionId: session.id,
+            memorySessionId: target.id,
             runId: input.runId,
             turn: input.turn,
             position: start + index,
@@ -195,8 +199,8 @@ export class PrismaMemoryStore implements MemoryStore {
       }
 
       if (input.idempotencyKey !== undefined) {
-        // The unique (scopeKey, idempotencyKey) constraint backstops a concurrent writer that
-        // passed the lookup above: its insert fails and the whole transaction rolls back.
+        // The session row lock already serializes writers; the unique (scopeKey, idempotencyKey)
+        // constraint backstops a writer that reaches here without it.
         await tx.writes!.create({
           data: {
             scopeKey,

@@ -405,6 +405,80 @@ for (const schemaOwner of [7, 8]) {
       }
     });
 
+    it("keeps versions and idempotency keys consistent across both clients and clear()", async () => {
+      const context = scope();
+      const empty = (await store7.loadVersioned!({ scope: context })).version;
+      const first = await store7.append({
+        scope: context,
+        runId: "run",
+        turn: 1,
+        messages: [user("one")],
+        idempotencyKey: "k1",
+        expectedVersion: empty,
+      });
+      expect(first.status).toBe("committed");
+      expect(await store8.loadVersioned!({ scope: context })).toMatchObject({
+        version: first.version,
+      });
+      const retry = await store8.append({
+        scope: context,
+        runId: "run",
+        turn: 1,
+        messages: [user("one")],
+        idempotencyKey: "k1",
+        expectedVersion: empty,
+      });
+      expect(retry).toEqual({ status: "duplicate", version: first.version });
+
+      await store7.clear({ scope: context });
+      expect((await store8.loadVersioned!({ scope: context })).version).toBe(empty);
+      const afterClear = await store8.append({
+        scope: context,
+        runId: "run",
+        turn: 1,
+        messages: [user("one")],
+        idempotencyKey: "k1",
+      });
+      expect(afterClear.status).toBe("duplicate");
+      expect(await store8.load({ scope: context })).toEqual([]);
+    });
+
+    it("reports a conflict, never an error, when writers race on one expectedVersion", async () => {
+      const context = scope();
+      const { version } = await store7.loadVersioned!({ scope: context });
+      const results = await Promise.all(
+        Array.from({ length: 8 }, (_, index) =>
+          (index % 2 === 0 ? store7 : store8).append({
+            scope: context,
+            runId: `run-${index}`,
+            turn: 1,
+            messages: [user(`writer ${index}`)],
+            expectedVersion: version,
+          }),
+        ),
+      );
+      expect(results.filter((result) => result.status === "committed")).toHaveLength(1);
+      expect(results.filter((result) => result.status === "conflict")).toHaveLength(7);
+      expect(await store7.load({ scope: context })).toHaveLength(1);
+    });
+
+    it("reports duplicates, never an error, when the same keyed write races itself", async () => {
+      const context = scope();
+      const write = {
+        scope: context,
+        runId: "run",
+        turn: 1,
+        messages: [user("once")],
+        idempotencyKey: "same-key",
+      };
+      const results = await Promise.all(
+        Array.from({ length: 6 }, (_, index) => (index % 2 === 0 ? store7 : store8).append(write)),
+      );
+      expect(results.filter((result) => result.status === "committed")).toHaveLength(1);
+      expect(results.filter((result) => result.status === "duplicate")).toHaveLength(5);
+      expect(await store7.load({ scope: context })).toEqual([user("once")]);
+    });
+
     it("supports custom model names in reads, writes, and transactions", async () => {
       const custom = postgres<CustomContract>({
         contract: customContract,

@@ -121,11 +121,12 @@ The store implements core's optional versioned, idempotent contract (see
   either. Without a key or version, `append()` behaves as before.
 - Keys are scoped to the memory scope and kept in a separate `AgentMemoryWrite` table, so they
   survive `clear()`. An empty keyed append still records the key.
-- The key check and the insert run in one transaction, and a unique `(scopeKey, idempotencyKey)`
-  constraint rejects a concurrent writer that raced past the lookup. That writer's transaction
-  fails with a database error rather than returning `conflict`; retry the append and it will
-  report `duplicate` or `conflict`. Likewise, two writers holding the same `expectedVersion` may
-  see one fail on the message position constraint instead of a `conflict` result.
+- A keyed or versioned append first upserts the session row, which holds its row lock until the
+  transaction commits. Writers on one scope therefore run in turn, and each checks the version the
+  previous one left, so racing writers get one `committed` and the rest `duplicate` or `conflict`.
+  A unique `(scopeKey, idempotencyKey)` constraint backstops a writer that bypasses the lock. The
+  upsert can create a session row with no messages; an empty history keeps the same version either
+  way. Plain appends take no extra lock.
 
 ### Migrating an existing schema
 

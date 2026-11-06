@@ -1002,7 +1002,7 @@ describe("PrismaMemoryStore versioned, idempotent appends", () => {
 
     expect((await store.append(input)).status).toBe("committed");
     expect(prisma.writes).toHaveLength(1);
-    expect(prisma.sessions.size).toBe(0);
+    expect(await store.load({ scope: base.scope })).toEqual([]);
     expect((await store.append(input)).status).toBe("duplicate");
   });
 

@@ -5,7 +5,6 @@
 "@anvia/grok": patch
 "@anvia/lancedb": patch
 "@anvia/langfuse": patch
-"@anvia/lens": patch
 "@anvia/mcp": patch
 "@anvia/memgraph": patch
 "@anvia/mistral": patch

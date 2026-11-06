@@ -31,7 +31,7 @@
   },
   "dependencies": {
     "pg": "^8.23.1",
-    "pgvector": "^0.3.0"
+    "pgvector": "^0.3.1"
   },
   "devDependencies": {
     "@anvia/core": "workspace:*",

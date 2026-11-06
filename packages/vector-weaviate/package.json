@@ -30,7 +30,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "weaviate-client": "^3.15.1"
+    "weaviate-client": "^3.15.3"
   },
   "devDependencies": {
     "@anvia/core": "workspace:*",

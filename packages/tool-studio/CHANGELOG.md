@@ -1,5 +1,13 @@
 # @anvia/studio
 
+## 1.3.26
+
+### Patch Changes
+
+- cae22f9: Update runtime dependencies to their latest compatible minor and patch releases.
+- Updated dependencies [cae22f9]
+  - @anvia/react-ui@1.3.1
+
 ## 1.3.25
 
 ### Patch Changes

@@ -1,5 +1,11 @@
 # @anvia/pgvector
 
+## 1.2.1
+
+### Patch Changes
+
+- cae22f9: Update runtime dependencies to their latest compatible minor and patch releases.
+
 ## 1.2.0
 
 ### Minor Changes

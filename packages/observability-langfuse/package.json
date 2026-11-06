@@ -1,6 +1,6 @@
 {
   "name": "@anvia/langfuse",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "Langfuse tracing adapter for Anvia.",
   "author": "anvia",
   "license": "MIT",

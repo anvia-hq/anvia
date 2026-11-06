@@ -369,6 +369,8 @@ A blocked memory write (a conflict, or a write whose outcome is unknown) is sett
 the messages; `"discarded"` drops them. The run then sends its remaining writes without a version
 check, because the operator has accepted the divergence, and completes. `retry()` only sends the
 same write again, so it clears an unknown outcome but not a conflict.
+`@anvia/server` exposes it as `POST /durable/runs/:id/resolve-memory-write`, and
+`DurableClient.resolveMemoryWrite()` calls it.
 
 These per-run settings are not exposed: `retries`, `maxTurns`, and `controls` (the runtime captures
 the agent-level values at submission), plus `lifecycle`, `guardrails`, `middlewares`,

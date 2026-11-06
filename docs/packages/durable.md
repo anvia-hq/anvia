@@ -652,12 +652,12 @@ setting.
   (a crash inside it) is not run again either, so delivery is at most once. A hook that throws is
   recorded and does not change the run outcome. Events are deep-frozen snapshots, so a hook cannot
   change the request. Without the marker, `lifecycle` is rejected.
-- Experimental: `middlewares` with `middlewares: { mode: "pure" }` on the registration. Declare
+- `middlewares` with `middlewares: { mode: "pure" }` on the registration. Declare
   the hooks deterministic and free of external effects; durable cannot check that. Middleware runs
   again on replay before each model or tool step, and its result is compared with the persisted
   request or tool input. A different transformation under the same step fails with a recovery error
   (`needs_attention`). Tool output middleware runs inside the tool and is not re-run.
-- Experimental: `guardrails` with `guardrails: { mode: "record" }`. Each check's outcome is recorded
+- `guardrails` with `guardrails: { mode: "record" }`. Each check's outcome is recorded
   before core applies it, so a restart or retry reuses it and does not call the check again. A
   blocking input decision is a terminal `blocked` outcome. A check that was started and never
   recorded (a crash inside it) is not run again: an enforced policy fails the run with
@@ -668,13 +668,11 @@ setting.
   `mcpServers` (without `mcpServers: { mode: "pinned" }`), provider tools (without
   `providerTools: { mode: "stateless" }`), or tool indexes (without `toolIndexes: { mode: "recorded" }`)
   throws a `TypeError` naming exactly the features that agent uses, with the marker to set where one
-  exists. Provider tools are experimental: the provider must keep no state between calls. Pinned
-  agents must be passed to `DurableRuntime.open()`; `registerAgents()` rejects them.
-  where one exists. Provider tools are experimental: the provider must keep no state between calls.
-  Their definitions are part of the persisted model request, so a changed definition under the same
+  exists. Pinned agents must be passed to `DurableRuntime.open()`; `registerAgents()` rejects them.
+  Provider tools require that the provider keeps no state between calls. Their definitions are part of the persisted model request, so a changed definition under the same
   version fails replay with `needs_attention`, and a restart reuses the persisted provider response.
   Provider tool `configuration` must be JSON; anything else is rejected at registration.
-- Experimental: `mcpServers` with `mcpServers: { mode: "pinned" }` on the registration. Pinned agents
+- `mcpServers` with `mcpServers: { mode: "pinned" }` on the registration. Pinned agents
   must be passed to `DurableRuntime.open()`; `registerAgents()` rejects them. Discovery
   happens in the application (`McpClient.connect()`) before the agent is built, and durable does not
   call `listTools` itself. At submission the run stores a fingerprint of the servers: each server's
@@ -684,7 +682,7 @@ setting.
   the registration's `toolRecovery` policy (default `manual`), so an interrupted call blocks for
   reconciliation. Functions such as `requiresApproval` cannot be fingerprinted, and transport and
   auth failures follow the normal tool-failure path.
-- Experimental: `toolIndexes` with `toolIndexes: { mode: "recorded" }` on the registration. Each
+- `toolIndexes` with `toolIndexes: { mode: "recorded" }` on the registration. Each
   model call's tool selection (the static tools plus the index search results, with their
   definitions) is recorded as an effect operation `${epoch}:tools:${turn}` before the model call. A
   restart or retry offers the recorded tools and does not run the search again. The run stores a
@@ -746,9 +744,8 @@ retaining one cannot change the runtime's registrations.
 - Agent memory, lifecycle callbacks (unless declared observational), middleware (unless declared
   `mode: "pure"`), guardrails (unless declared `mode: "record"`), context sources, MCP (unless
   pinned), provider tools, and dynamic tool indexes (without their recorded marker) are rejected at
-  registration because they need additional persistence boundaries. The pure middleware, recorded
-  guardrail, and recorded tool index markers are experimental. Agent-level `retries` is rejected too: use the registration's
-  `modelRetry`. Durable session history replaces the agent's memory store here. See
+  registration because they need additional persistence boundaries. Agent-level `retries` is
+  rejected too: use the registration's `modelRetry`. Durable session history replaces the agent's memory store here. See
   [agent feature compatibility](#agent-feature-compatibility) for the supported surface, the
   per-run settings that are not exposed, and the compatibility report.
 - Each execution of a run starts a new observer run. Replayed checkpointed model, tool, and

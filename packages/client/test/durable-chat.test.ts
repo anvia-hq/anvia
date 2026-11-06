@@ -519,6 +519,16 @@ class FakeClient {
     this.resolveCalls.push({ runId: id, operationId, output });
   }
 
+  readonly memoryCalls: Array<{ runId: string; operationKey: string; resolution: string }> = [];
+
+  async resolveMemoryWrite(
+    id: string,
+    operationKey: string,
+    resolution: "applied" | "discarded",
+  ): Promise<void> {
+    this.memoryCalls.push({ runId: id, operationKey, resolution });
+  }
+
   async listRuns(): Promise<DurableRunPage> {
     return {
       runs:
@@ -746,11 +756,15 @@ describe("durable chat transport", () => {
     await transport.controller.cancel();
     await transport.controller.retry();
     await transport.controller.resolveTool("0:tool:1", { type: "text", value: "ok" });
+    await transport.controller.resolveMemoryWrite("0:memory:write:0", "discarded");
     transport.controller.reattach("other-run", 9);
     expect(transport.controller.activeRunId).toBe("other-run");
     expect(fake.cancelCalls).toEqual([runId]);
     expect(fake.retryCalls).toEqual([runId]);
     expect(fake.resolveCalls[0]).toMatchObject({ runId, operationId: "0:tool:1" });
+    expect(fake.memoryCalls).toEqual([
+      { runId, operationKey: "0:memory:write:0", resolution: "discarded" },
+    ]);
   });
 
   it("uses a caller-provided request id", async () => {

@@ -49,7 +49,15 @@ const UNFINISHED = new Set([
 /** Methods the adapter needs. A structural subset of `DurableClient`, so tests can fake it. */
 export type DurableChatClient = Pick<
   DurableClient,
-  "submit" | "stream" | "snapshot" | "respond" | "resolveTool" | "retry" | "cancel" | "listRuns"
+  | "submit"
+  | "stream"
+  | "snapshot"
+  | "respond"
+  | "resolveTool"
+  | "resolveMemoryWrite"
+  | "retry"
+  | "cancel"
+  | "listRuns"
 >;
 
 /**
@@ -64,6 +72,12 @@ export type DurableChatController = {
   cancel(runId?: string): Promise<void>;
   retry(runId?: string): Promise<void>;
   resolveTool(operationId: string, output: ToolResultOutput, runId?: string): Promise<void>;
+  /** Settle a blocked recorded memory write: `applied` says the store holds it, `discarded` drops it. */
+  resolveMemoryWrite(
+    operationKey: string,
+    resolution: "applied" | "discarded",
+    runId?: string,
+  ): Promise<void>;
 };
 
 export type CreateDurableChatTransportOptions = {
@@ -118,6 +132,13 @@ export function createDurableChatTransport(
     },
     resolveTool(operationId, output, runId) {
       return options.client.resolveTool(resolveRun(session, runId), operationId, output);
+    },
+    resolveMemoryWrite(operationKey, resolution, runId) {
+      return options.client.resolveMemoryWrite(
+        resolveRun(session, runId),
+        operationKey,
+        resolution,
+      );
     },
   };
 

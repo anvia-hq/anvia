@@ -526,17 +526,18 @@ const handleRequest = createDurableHandler({
 });
 ```
 
-| Method | Path                                 | Result                                                                            |
-| ------ | ------------------------------------ | --------------------------------------------------------------------------------- |
-| POST   | `/durable/runs`                      | Submit `{agentId, sessionId, requestId, prompt, enqueue?}`; return snapshot (202) |
-| GET    | `/durable/runs?sessionId=...`        | List summaries; optional `agentId`, `status`, `after`, `limit`                    |
-| GET    | `/durable/runs/:id`                  | Atomic snapshot                                                                   |
-| GET    | `/durable/runs/:id/events?after=...` | SSE committed events; `Last-Event-ID` is the fallback cursor                      |
-| POST   | `/durable/runs/:id/steer`            | `{input: {prompt} or {messages}, requestId?}`; returns a receipt (202)            |
-| POST   | `/durable/runs/:id/respond`          | `{interactionId, response}`                                                       |
-| POST   | `/durable/runs/:id/resolve-tool`     | `{operationId, output}`                                                           |
-| POST   | `/durable/runs/:id/retry`            | Explicitly retry                                                                  |
-| POST   | `/durable/runs/:id/cancel`           | Persist cancellation                                                              |
+| Method | Path                                     | Result                                                                            |
+| ------ | ---------------------------------------- | --------------------------------------------------------------------------------- |
+| POST   | `/durable/runs`                          | Submit `{agentId, sessionId, requestId, prompt, enqueue?}`; return snapshot (202) |
+| GET    | `/durable/runs?sessionId=...`            | List summaries; optional `agentId`, `status`, `after`, `limit`                    |
+| GET    | `/durable/runs/:id`                      | Atomic snapshot                                                                   |
+| GET    | `/durable/runs/:id/events?after=...`     | SSE committed events; `Last-Event-ID` is the fallback cursor                      |
+| POST   | `/durable/runs/:id/steer`                | `{input: {prompt} or {messages}, requestId?}`; returns a receipt (202)            |
+| POST   | `/durable/runs/:id/respond`              | `{interactionId, response}`                                                       |
+| POST   | `/durable/runs/:id/resolve-tool`         | `{operationId, output}`                                                           |
+| POST   | `/durable/runs/:id/resolve-memory-write` | `{operationKey, resolution: "applied" \| "discarded"}`                            |
+| POST   | `/durable/runs/:id/retry`                | Explicitly retry                                                                  |
+| POST   | `/durable/runs/:id/cancel`               | Persist cancellation                                                              |
 
 Mutation endpoints other than submit and steer return 204. JSON bodies default to a 64 KiB limit,
 configurable through `maxBodyBytes`. That body limit is the binding ceiling for uploads: it rejects

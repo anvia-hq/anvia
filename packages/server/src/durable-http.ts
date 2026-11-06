@@ -96,3 +96,20 @@ export async function readJson(request: Request, maxBytes: number): Promise<unkn
     reader.releaseLock();
   }
 }
+
+export function parseMemoryResolution(value: unknown): {
+  operationKey: string;
+  resolution: "applied" | "discarded";
+} {
+  const body =
+    typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
+  const { operationKey, resolution } = body;
+  if (
+    Object.keys(body).length !== 2 ||
+    typeof operationKey !== "string" ||
+    operationKey.trim().length === 0 ||
+    (resolution !== "applied" && resolution !== "discarded")
+  )
+    throw new TypeError("Invalid durable memory write resolution.");
+  return { operationKey, resolution };
+}

@@ -22,6 +22,7 @@ import {
   listQuery,
   readJson,
   rejectClientTrace,
+  parseMemoryResolution,
 } from "./durable-http";
 import { handleDurableGraphRequest } from "./durable-graph";
 
@@ -33,6 +34,7 @@ export type DurableHttpAction =
   | "respond"
   | "steer"
   | "resolve-tool"
+  | "resolve-memory-write"
   | "retry"
   | "cancel"
   | "signal"
@@ -179,7 +181,15 @@ export function createDurableHandler(
       if (
         parts.length > 2 ||
         (suffix !== undefined &&
-          !["events", "steer", "respond", "resolve-tool", "retry", "cancel"].includes(suffix))
+          ![
+            "events",
+            "steer",
+            "respond",
+            "resolve-tool",
+            "resolve-memory-write",
+            "retry",
+            "cancel",
+          ].includes(suffix))
       )
         return json({ error: "Not found" }, 404);
       const action: DurableHttpAction =
@@ -208,6 +218,10 @@ export function createDurableHandler(
       } else if (action === "resolve-tool") {
         const body = parseDurableResolution(await readJson(request, maxBodyBytes));
         await run.resolveTool(body.operationId, body.output);
+      } else if (action === "resolve-memory-write") {
+        const body = parseMemoryResolution(await readJson(request, maxBodyBytes));
+        if (typeof run.resolveMemoryWrite !== "function") return json({ error: "Not found" }, 404);
+        await run.resolveMemoryWrite(body.operationKey, body.resolution);
       } else if (action === "retry") {
         await run.retry();
       } else if (action === "cancel") {

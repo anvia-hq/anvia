@@ -9,6 +9,7 @@ import {
   hasToolResult,
   lookup,
   makeAgent,
+  makeMemoryAgent,
   makeStreamingAgent,
   toolResponse,
 } from "../../durable/test/helpers.js";
@@ -108,6 +109,7 @@ describe("durable HTTP bridge", () => {
       () => client.retry(privateRun.id),
       () => client.respond(privateRun.id, "approval", { type: "tool-approval", approved: true }),
       () => client.resolveTool(privateRun.id, "operation", { type: "text", value: "ok" }),
+      () => client.resolveMemoryWrite(privateRun.id, "0:memory:write:0", "discarded"),
     ]) {
       await expect(action()).rejects.toMatchObject({ status: 403 });
     }
@@ -409,4 +411,59 @@ it("steers remotely with authorization, deduplication, validation, and persisted
     if (event.type === "steering_applied") applied.push(event);
   expect(applied).toHaveLength(1);
   await expect(client.steer(run.id, { prompt: "too late" })).rejects.toMatchObject({ status: 409 });
+});
+
+it("settles a conflicted memory write over HTTP", async () => {
+  const scope = { sessionId: "allowed" };
+  const { agent, store } = makeMemoryAgent(async (memory) => {
+    // Another writer commits while the run is in its model call.
+    await memory.append({
+      scope,
+      runId: "other",
+      turn: 1,
+      messages: [{ role: "user", content: [{ type: "text", text: "concurrent" }] }],
+    });
+    return done();
+  });
+  const runtime = await DurableRuntime.open({
+    store: new SqliteDurableStore(":memory:"),
+    agents: [{ agent, version: "1", memory: { mode: "recorded" } }],
+  });
+  runtimes.push(runtime);
+  const handler = createDurableHandler({
+    runtime,
+    authorize: (_request, resource) => resource.sessionId === "allowed",
+    maxBodyBytes: 1024,
+  });
+  const client = new DurableClient({
+    endpoint: "http://anvia.test/durable",
+    fetch: async (url, init) => handler(new Request(url, init)),
+  });
+  const accepted = await client.submit(submission);
+  await vi.waitFor(async () =>
+    expect((await client.snapshot(accepted.run.id)).run.status).toBe("needs_attention"),
+  );
+
+  await expect(
+    client.resolveMemoryWrite(accepted.run.id, "0:memory:write:9", "discarded"),
+  ).rejects.toMatchObject({ status: 409 });
+  const post = (body: unknown) =>
+    handler(
+      new Request(`http://anvia.test/durable/runs/${accepted.run.id}/resolve-memory-write`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      }),
+    );
+  expect((await post({ operationKey: "0:memory:write:0", resolution: "retry" })).status).toBe(400);
+  expect((await post({ operationKey: "0:memory:write:0" })).status).toBe(400);
+  expect(
+    (await post({ operationKey: "0:memory:write:0", resolution: "applied", extra: 1 })).status,
+  ).toBe(400);
+
+  await client.resolveMemoryWrite(accepted.run.id, "0:memory:write:0", "discarded");
+  await vi.waitFor(async () =>
+    expect((await client.snapshot(accepted.run.id)).run.status).toBe("completed"),
+  );
+  expect(await store.load({ scope })).toHaveLength(1);
 });

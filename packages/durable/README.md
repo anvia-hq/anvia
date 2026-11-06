@@ -348,8 +348,9 @@ With `memory: { mode: "recorded" }`, the run reads the agent's memory store once
 model call, and reuses that snapshot on replay. Each write is recorded as a `memory` operation with
 an idempotency key the runtime derives from the run and the write's position. Writes happen after the
 run's terminal checkpoint. A concurrent change to the memory history makes the run `needs_attention`
-with a conflict. Adapter packages (`memory-sqlite`, `memory-postgres`, `memory-prisma`,
-`memory-drizzle`) do not implement the versioned contract yet, so they cannot be used with recorded memory.
+with a conflict. `@anvia/memory-sqlite`, `@anvia/memory-postgres`, `@anvia/memory-prisma` and
+`@anvia/memory-drizzle` implement the versioned contract. Each needs its idempotency-key table, so
+follow that package's migration notes before you enable recorded memory.
 
 Recorded memory works for runs submitted with `runtime.submit()`, streaming or not. Graph tasks and
 owned agent tasks (`spawnAgent`) run under a synthetic session, so registering a recorded memory

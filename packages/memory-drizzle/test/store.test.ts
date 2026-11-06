@@ -5,6 +5,7 @@ import {
   agentMemoryErrors,
   agentMemoryMessages,
   agentMemorySessions,
+  agentMemoryWrites,
   type DrizzleMemoryDatabaseLike,
   DrizzleMemoryStore,
   type DrizzleMemoryStoreOptions,
@@ -59,6 +60,169 @@ describe("Drizzle memory public API", () => {
         messages: [invalidMessage],
       }),
     ).rejects.toThrow("valid Anvia Message");
+  });
+
+  describe("versioned and idempotent appends", () => {
+    const scope = { sessionId: "thread-versioned", userId: "user-1" };
+    const write = { scope, runId: "run-1", turn: 0, messages: [userMessage] };
+
+    it("commits once and reports a duplicate for the same key and content", async () => {
+      const db = new FakeDrizzleDb();
+      const store = createTestMemoryStore(db);
+
+      const first = await store.append({ ...write, idempotencyKey: "k1" });
+      const retry = await store.append({ ...write, idempotencyKey: "k1" });
+
+      expect(first.status).toBe("committed");
+      expect(retry).toEqual({ status: "duplicate", version: first.version });
+      expect(await store.load({ scope })).toEqual([userMessage]);
+    });
+
+    it("conflicts when a key is reused with different content and writes nothing", async () => {
+      const store = createTestMemoryStore(new FakeDrizzleDb());
+      const first = await store.append({ ...write, idempotencyKey: "k1" });
+
+      const result = await store.append({
+        ...write,
+        messages: [assistantMessage],
+        idempotencyKey: "k1",
+      });
+
+      expect(result).toEqual({ status: "conflict", version: first.version });
+      expect(await store.load({ scope })).toEqual([userMessage]);
+    });
+
+    it("rejects a stale expectedVersion and accepts the current one", async () => {
+      const store = createTestMemoryStore(new FakeDrizzleDb());
+      const empty = await store.loadVersioned({ scope });
+      const first = await store.append({ ...write, expectedVersion: empty.version });
+      expect(first.status).toBe("committed");
+
+      const stale = await store.append({
+        ...write,
+        messages: [assistantMessage],
+        expectedVersion: empty.version,
+      });
+      expect(stale).toEqual({ status: "conflict", version: first.version });
+
+      const current = await store.loadVersioned({ scope });
+      expect(current).toEqual({ messages: [userMessage], version: first.version });
+      const next = await store.append({
+        ...write,
+        messages: [assistantMessage],
+        expectedVersion: current.version,
+      });
+      expect(next.status).toBe("committed");
+      expect(await store.load({ scope })).toEqual([userMessage, assistantMessage]);
+    });
+
+    it("checks the key before the version so a retry after success is a duplicate", async () => {
+      const store = createTestMemoryStore(new FakeDrizzleDb());
+      const empty = await store.loadVersioned({ scope });
+      await store.append({ ...write, idempotencyKey: "k1", expectedVersion: empty.version });
+
+      const retry = await store.append({
+        ...write,
+        idempotencyKey: "k1",
+        expectedVersion: empty.version,
+      });
+
+      expect(retry.status).toBe("duplicate");
+      expect(await store.load({ scope })).toEqual([userMessage]);
+    });
+
+    it("changes the version on append, clear and compaction", async () => {
+      const store = createTestMemoryStore(new FakeDrizzleDb());
+      const empty = (await store.loadVersioned({ scope })).version;
+      await store.append(write);
+      const appended = (await store.loadVersioned({ scope })).version;
+      await store.append({ ...write, messages: [assistantMessage] });
+      const appendedAgain = (await store.loadVersioned({ scope })).version;
+      const snapshot = await store.compaction.snapshot({ scope });
+      await store.compaction.replacePrefix({
+        scope,
+        revision: snapshot.revision,
+        messageCount: 1,
+        replacement: memoryCompactionMessage("summary", 1),
+        runId: "run-compact",
+      });
+      const compacted = (await store.loadVersioned({ scope })).version;
+      await store.clear({ scope });
+      const cleared = (await store.loadVersioned({ scope })).version;
+      await store.append(write);
+      const recreated = (await store.loadVersioned({ scope })).version;
+
+      expect(new Set([empty, appended, appendedAgain, compacted, recreated]).size).toBe(5);
+      expect(cleared).toBe(empty);
+    });
+
+    it("keeps idempotency keys across clear", async () => {
+      const store = createTestMemoryStore(new FakeDrizzleDb());
+      await store.append({ ...write, idempotencyKey: "k1" });
+      await store.clear({ scope });
+
+      const retry = await store.append({ ...write, idempotencyKey: "k1" });
+
+      expect(retry.status).toBe("duplicate");
+      expect(await store.load({ scope })).toEqual([]);
+    });
+
+    it("scopes keys to the memory scope", async () => {
+      const store = createTestMemoryStore(new FakeDrizzleDb());
+      await store.append({ ...write, idempotencyKey: "k1" });
+
+      const other = await store.append({
+        ...write,
+        scope: { sessionId: "other", userId: "user-1" },
+        idempotencyKey: "k1",
+      });
+
+      expect(other.status).toBe("committed");
+    });
+
+    it("records a key for an empty append so a repeat is a duplicate", async () => {
+      const db = new FakeDrizzleDb();
+      const store = createTestMemoryStore(db);
+      const empty = { ...write, messages: [], idempotencyKey: "k-empty" };
+
+      expect((await store.append(empty)).status).toBe("committed");
+      expect((await store.append(empty)).status).toBe("duplicate");
+      expect(db.sessions.size).toBe(0);
+    });
+
+    it("leaves plain appends unchanged", async () => {
+      const db = new FakeDrizzleDb();
+      const store = createTestMemoryStore(db);
+
+      expect(await store.append(write)).toEqual({ status: "committed" });
+      expect(await store.append({ ...write, messages: [] })).toEqual({ status: "committed" });
+      expect(db.events).toEqual(["transaction", "lock"]);
+      expect(db.writes.size).toBe(0);
+    });
+
+    it("keeps plain load, append and validate working without the writes table", async () => {
+      const { agentMemoryWrites: _writes, ...legacy } = drizzleMemorySchema;
+      const store = createTestMemoryStore(new FakeDrizzleDb(), { schema: legacy });
+
+      await expect(store.validate()).resolves.toBeUndefined();
+      await store.append(write);
+      expect(await store.load({ scope })).toEqual([userMessage]);
+      expect((await store.loadVersioned({ scope })).messages).toEqual([userMessage]);
+      await expect(
+        store.append({ ...write, expectedVersion: (await store.loadVersioned({ scope })).version }),
+      ).resolves.toMatchObject({ status: "committed" });
+    });
+
+    it("names the missing table for a keyed append without it", async () => {
+      const db = new FakeDrizzleDb();
+      const { agentMemoryWrites: _writes, ...legacy } = drizzleMemorySchema;
+      const store = createTestMemoryStore(db, { schema: legacy });
+
+      await expect(store.append({ ...write, idempotencyKey: "k1" })).rejects.toThrow(
+        "agent_memory_writes",
+      );
+      expect(db.messages.size).toBe(0);
+    });
   });
 
   it("serializes Error stacks only when present", () => {
@@ -418,6 +582,7 @@ class FakeDrizzleDb {
   readonly sessions = new Map<string, SessionRow>();
   readonly messages = new Map<string, MessageRow[]>();
   readonly errors: ErrorRow[] = [];
+  readonly writes = new Map<string, string>();
   private nextSessionId = 1;
   private nextMessageId = 1;
 
@@ -455,6 +620,12 @@ class FakeDrizzleDb {
   }
 
   selectRows(selection: unknown, fromTable: unknown, condition: unknown): unknown[] {
+    if (fromTable === agentMemoryWrites) {
+      const [scopeKey, key] = extractParams(condition).map(String);
+      const fingerprint = this.writes.get(`${scopeKey}\u0000${key}`);
+      return fingerprint === undefined ? [] : [{ fingerprint }];
+    }
+
     if (fromTable === agentMemorySessions && hasSelection(selection, "compactionState")) {
       const scopeKey = String(extractParam(condition));
       const session = this.sessions.get(scopeKey);
@@ -677,7 +848,7 @@ class FakeInsertBuilder {
 
   values(value: unknown): this {
     this.value = value;
-    if (this.table !== agentMemorySessions) {
+    if (this.table !== agentMemorySessions && this.table !== agentMemoryWrites) {
       this.db.insertRows(this.table, this.value);
     }
     return this;
@@ -687,7 +858,18 @@ class FakeInsertBuilder {
     return this;
   }
 
+  onConflictDoNothing(_config?: unknown): this {
+    return this;
+  }
+
   async returning(_selection?: unknown): Promise<unknown[]> {
+    if (this.table === agentMemoryWrites) {
+      const record = assertRecord(this.value);
+      const id = `${String(record.scopeKey)}\u0000${String(record.idempotencyKey)}`;
+      if (this.db.writes.has(id)) return [];
+      this.db.writes.set(id, String(record.fingerprint));
+      return [{ id }];
+    }
     if (this.table !== agentMemorySessions) {
       return [];
     }

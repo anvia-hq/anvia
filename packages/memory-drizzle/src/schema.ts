@@ -60,8 +60,26 @@ export const agentMemoryErrors = pgTable("agent_memory_errors", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const agentMemoryWrites = pgTable(
+  "agent_memory_writes",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    scopeKey: text("scope_key").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    fingerprint: text("fingerprint").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("agent_memory_writes_scope_key_idempotency_key_key").on(
+      table.scopeKey,
+      table.idempotencyKey,
+    ),
+  ],
+);
+
 export const drizzleMemorySchema = {
   agentMemorySessions,
   agentMemoryMessages,
   agentMemoryErrors,
+  agentMemoryWrites,
 } as const;

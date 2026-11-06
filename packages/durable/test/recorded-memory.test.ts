@@ -1,6 +1,9 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { fork, type ChildProcess } from "node:child_process";
+import { once } from "node:events";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, expect, it, vi } from "vitest";
 import { Agent } from "@anvia/core/agent";
 import type { CompletionRequest } from "@anvia/core/completion";
@@ -10,16 +13,19 @@ import type { CompletionModelStreamEvent } from "@anvia/core/completion";
 import { DurableRuntime, defineTask, type DurableAgentRegistration } from "../src/index.js";
 import type { DurableRun } from "../src/run.js";
 import { SqliteDurableStore } from "../src/sqlite.js";
+import { FileMemoryStore } from "./fixtures/file-memory-store.js";
 import { capabilities, done, lookup, toolResponse } from "./helpers.js";
 
 type AnyAgent = DurableAgentRegistration["agent"];
 
 const directories: string[] = [];
 const runtimes: DurableRuntime[] = [];
+const children: ChildProcess[] = [];
 const scope = { sessionId: "session" };
 const submission = { agentId: "remembering", sessionId: "session", requestId: "one" };
 
 afterEach(async () => {
+  for (const child of children.splice(0)) child.kill("SIGKILL");
   for (const runtime of runtimes.splice(0)) await runtime.close();
   for (const directory of directories.splice(0))
     rmSync(directory, { recursive: true, force: true });
@@ -526,3 +532,63 @@ it("fails an owned agent task that spawns a recorded memory agent, naming the li
   await expect(task.result()).rejects.toThrow(/owned agent tasks do not support/);
   expect(await storedCount(store)).toBe(0);
 });
+
+/** Starts a worker that halts at `crashAt` inside a memory write, then kills the whole process. */
+async function crashedWorker(crashAt: "before-commit" | "after-commit") {
+  const path = database();
+  const memoryPath = `${path}.memory.json`;
+  const modelCalls = `${path}.calls`;
+  const child = fork(
+    fileURLToPath(new URL("./fixtures/memory-worker.ts", import.meta.url)),
+    [path, memoryPath, modelCalls, crashAt],
+    {
+      execArgv: ["--import", import.meta.resolve("tsx")],
+      stdio: ["ignore", "ignore", "pipe", "ipc"],
+    },
+  );
+  children.push(child);
+  let stderr = "";
+  child.stderr!.on("data", (chunk) => {
+    stderr += String(chunk);
+  });
+  const { id } = await new Promise<{ id: string }>((resolve, reject) => {
+    child.once("message", (message) => resolve(message as { id: string }));
+    child.once("error", reject);
+    child.once("exit", () => reject(new Error(`Worker exited before the write: ${stderr}`)));
+  });
+  const exited = once(child, "exit");
+  child.kill("SIGKILL");
+  await exited;
+  return { path, memoryPath, modelCalls, id };
+}
+
+async function recover(path: string, memoryPath: string, id: string) {
+  const store = new FileMemoryStore(memoryPath);
+  const model = vi.fn(async (_request: CompletionRequest) => done());
+  const runtime = await open(path, agentWith(model, store));
+  await runtime.resume();
+  return { store, model, run: await runtime.getRun(id) };
+}
+
+it.each([
+  ["before-commit", 0],
+  ["after-commit", 2],
+] as const)(
+  "recovers a memory write after SIGKILL %s without running the model again or writing twice",
+  async (crashAt, storedAtCrash) => {
+    const { path, memoryPath, modelCalls, id } = await crashedWorker(crashAt);
+    const { store, model, run } = await recover(path, memoryPath, id);
+    expect(await storedCount(store)).toBe(storedAtCrash);
+
+    // The attempt was persisted before the store call, so its outcome is unknown either way.
+    const blocked = await settled(run);
+    expect(blocked.run.status).toBe("needs_attention");
+    expect(blocked.run.blockedOperation).toBe("0:memory:write:0");
+
+    await run.retry();
+    expect((await settled(run)).run.status).toBe("completed");
+    expect(await store.load({ scope })).toHaveLength(2);
+    expect(model).not.toHaveBeenCalled();
+    expect(readFileSync(modelCalls, "utf8")).toBe("call\n");
+  },
+);

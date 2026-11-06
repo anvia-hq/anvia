@@ -39,6 +39,7 @@ if (result.type === "response") console.log(result.output);
 
 - Exported Drizzle tables and a schema scaffolding CLI.
 - Durable conversations with optional tenant-scoped keys.
+- Optional versioned, idempotent appends (`loadVersioned`, `idempotencyKey`, `expectedVersion`).
 - Studio memory inspection and atomic compaction checkpoints.
 - Application-owned connections and migrations.
 

@@ -1,5 +1,48 @@
 # @anvia/client
 
+## 1.8.0
+
+### Minor Changes
+
+- bf0a3bc: Add `POST /durable/runs/:id/resolve-memory-write` to `createDurableHandler`, with body `{ operationKey, resolution: "applied" | "discarded" }`, and `DurableClient.resolveMemoryWrite()` plus `controller.resolveMemoryWrite()` on the durable chat transport. They settle a recorded memory write that blocked a run. The route returns 404 when the registered `@anvia/durable` predates `resolveMemoryWrite`, 409 when no matching blocked write exists, and uses the same authorization callback as the other mutations under the action `"resolve-memory-write"`.
+
+### Patch Changes
+
+- 2190826: Surface the `message` of a durable error response when it has no `error` field.
+
+  - `DurableClient` already copied Anvia's `error` text and `Retry-After` into `DurableHttpError`. A
+    rejection from a gateway or proxy that sends its text as `message` lost that text; it now keeps it.
+  - When both fields are present, `error` still wins.
+
+- 887dd02: Keep `status` events small: they no longer embed the run's outcome.
+
+  - `@anvia/durable`: a `status` event carries `status`, `error`, `blockedOperation` and
+    `nextAttemptAt`. The run's `outcome` is stored once, on the run, and is read from the run
+    snapshot. Status events are not payload-checked, so a limit cannot block a run from reaching a
+    terminal status. Journals written by older versions still carry `outcome` on the event, and
+    clients still read it.
+  - `@anvia/client`: the durable chat transport reads the outcome from the snapshot when a settled
+    (`completed`, `waiting`, `failed`) status event has none. If the run has already moved past that
+    status, the event maps without an outcome. The chat output for completed, waiting and failed
+    runs is unchanged.
+  - `@anvia/server`: peer range updated for `@anvia/durable` 0.14.
+
+- 4a3aa88: Warn when the durable HTTP body limit is below the payload limit, and send `Retry-After` on capacity
+  rejections.
+
+  - `@anvia/server`: `createDurableHandler` logs one warning at creation when `maxBodyBytes` is below
+    the runtime's `maxPayloadBytes`. The default 64 KiB body limit is below the default 1 MiB payload
+    limit, so the warning appears for default setups. It is advisory only: it never throws and the
+    defaults are unchanged. The check is exported as `durableBodyLimitWarning` for tests and tooling.
+    No warning is given when the runtime does not report its payload limit (older `@anvia/durable`).
+  - `@anvia/server`: capacity rejections (`code: "capacity_exceeded"`) return `429` with an integer
+    `Retry-After: 1` header. This is a conservative hint, not a guarantee. Payload rejections (`413`)
+    do not send it.
+  - `@anvia/durable`: add a read-only `runtime.limits()` that returns a copy of the effective limits
+    after defaults. The server uses it for the startup check. This is additive, so it is a patch.
+  - `@anvia/client`: `DurableHttpError` gains `retryAfterSeconds`, read from an integer `Retry-After`
+    header, so callers can back off on capacity 429s.
+
 ## 1.7.0
 
 ### Minor Changes

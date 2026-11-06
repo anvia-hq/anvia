@@ -1,5 +1,15 @@
 # @anvia/memory-prisma
 
+## 1.4.0
+
+### Minor Changes
+
+- 2ab41f5: Implement core's versioned, idempotent memory store contract. `loadVersioned()` returns the history with a version, and `append()` accepts `idempotencyKey` and `expectedVersion` and returns `committed`, `duplicate` or `conflict`. Keys live in a new `AgentMemoryWrite` model (generated for Prisma 7 and Prisma 8) that survives `clear()`; add it and run a migration to use keyed appends. Plain load, append and `validate()` keep working on schemas without it, and a keyed append then throws an error naming the model.
+
+### Patch Changes
+
+- bf0a3bc: Serialize keyed and versioned appends on the session row. Writers racing on one `expectedVersion` could all commit, and a keyed write racing itself could fail with a unique-constraint error. They now get one `committed` and the rest `conflict` or `duplicate`. Plain appends are unchanged.
+
 ## 1.3.0
 
 ### Minor Changes

@@ -48,6 +48,17 @@ model AgentMemoryError {
   @@index([runId])
   @@map("AgentMemoryError")
 }
+
+model AgentMemoryWrite {
+  id             String @id @onCreate(cuid(2))
+  scopeKey       String
+  idempotencyKey String
+  fingerprint    String
+  createdAt      TimestampString(3) @default(now())
+
+  @@unique([scopeKey, idempotencyKey])
+  @@map("AgentMemoryWrite")
+}
 `;
 
 // Prisma 8 CLI (rc.24+) only loads PSL files that opt in with this directive.

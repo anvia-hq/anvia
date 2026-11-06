@@ -73,6 +73,8 @@ describe("memory-prisma init CLI", () => {
     expect(existsSync(join(cwd, "prisma/models/anvia-memory.prisma"))).toBe(false);
     expect(messages(events)).toContain("Would create prisma/models/anvia-memory.prisma");
     expect(messages(events)).toContain("model AgentMemorySession");
+    expect(messages(events)).toContain("model AgentMemoryWrite");
+    expect(messages(events)).toContain("@@unique([scopeKey, idempotencyKey])");
     expect(messages(events)).toContain("npx prisma@7.10.0 migrate dev --name add_anvia_memory");
   });
 
@@ -281,6 +283,9 @@ describe("Prisma 8 init", () => {
     expect(messages(events)).toContain("TimestampString(3)");
     expect(messages(events)).toContain("prisma contract emit");
     expect(messages(events)).toContain("@onCreate(cuid(2))");
+    expect(messages(events)).toContain("model AgentMemoryWrite");
+    expect(messages(events)).toContain('@@map("AgentMemoryWrite")');
+    expect(messages(events)).toContain("@@unique([scopeKey, idempotencyKey])");
   });
 
   it("opts new contracts into the Prisma 8 CLI and warns when an existing one has not", async () => {

@@ -55,10 +55,25 @@ export type PrismaMemoryErrorDelegate = {
   create(args: unknown): Promise<unknown>;
 };
 
+export type PrismaMemoryWriteRow = {
+  fingerprint: string;
+};
+
+/**
+ * Idempotency-key ledger. It has no relation to the session, so keys survive `clear()`.
+ * Optional: without it, only keyless appends are available.
+ */
+export type PrismaMemoryWriteDelegate = {
+  findFirst(args: unknown): Promise<PrismaMemoryWriteRow | null>;
+  create(args: unknown): Promise<unknown>;
+};
+
 export type PrismaMemoryDelegates = {
   sessions: PrismaMemorySessionDelegate;
   messages: PrismaMemoryMessageDelegate;
   errors?: PrismaMemoryErrorDelegate | undefined;
+  /** Required only for appends that pass an `idempotencyKey`. */
+  writes?: PrismaMemoryWriteDelegate | undefined;
   transaction<T>(
     operation: (tx: PrismaMemoryDelegates) => Promise<T>,
     options?: PrismaMemoryTransactionOptions | undefined,
@@ -69,6 +84,8 @@ export type PrismaMemoryConventionalDelegates = {
   agentMemorySession: PrismaMemorySessionDelegate;
   agentMemoryMessage: PrismaMemoryMessageDelegate;
   agentMemoryError?: PrismaMemoryErrorDelegate | undefined;
+  /** Present once the application has migrated the `AgentMemoryWrite` model. */
+  agentMemoryWrite?: PrismaMemoryWriteDelegate | undefined;
 };
 
 export type PrismaMemoryClientLike = PrismaMemoryConventionalDelegates & {

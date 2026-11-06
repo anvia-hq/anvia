@@ -60,6 +60,7 @@ export function prisma8Delegates(options: PrismaMemoryStoreOptions): PrismaMemor
     sessions: options.models?.sessions ?? "AgentMemorySession",
     messages: options.models?.messages ?? "AgentMemoryMessage",
     errors: options.models?.errors === null ? null : (options.models?.errors ?? "AgentMemoryError"),
+    writes: options.models?.writes === null ? null : (options.models?.writes ?? "AgentMemoryWrite"),
   };
   const schema = options.schema ?? "public";
 
@@ -71,6 +72,12 @@ export function prisma8Delegates(options: PrismaMemoryStoreOptions): PrismaMemor
       names.errors === null || namespace[names.errors] === undefined
         ? undefined
         : collection(namespace[names.errors], names.errors);
+
+    // Missing in contracts that predate the idempotency ledger; keyed appends then fail by name.
+    const writes =
+      names.writes === null || namespace[names.writes] === undefined
+        ? undefined
+        : collection(namespace[names.writes], names.writes);
 
     function sessionQuery(args: QueryArgs): Collection {
       let query = refine(sessions, args);
@@ -146,6 +153,21 @@ export function prisma8Delegates(options: PrismaMemoryStoreOptions): PrismaMemor
           : {
               async create(input) {
                 return errors.create({ ...(input as { data: Row }).data, createdAt: utcNow() });
+              },
+            },
+      writes:
+        writes === undefined
+          ? undefined
+          : {
+              async findFirst(input) {
+                const row = await refine(writes, input as QueryArgs).first();
+                if (row === null) return null;
+                if (typeof row.fingerprint !== "string")
+                  throw new TypeError("Prisma 8 memory write fingerprint must be a string.");
+                return { fingerprint: row.fingerprint };
+              },
+              async create(input) {
+                return writes.create({ ...(input as { data: Row }).data, createdAt: utcNow() });
               },
             },
       // The shared store never opens nested transactions. All delegates rebound

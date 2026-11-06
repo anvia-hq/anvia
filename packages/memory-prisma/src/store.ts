@@ -1,6 +1,8 @@
+import { createHash } from "node:crypto";
 import type { JsonObject, MemoryCompactionMessage, MemoryStore, Message } from "@anvia/core";
 import type {
   MemoryAppendOptions,
+  MemoryAppendResult,
   MemoryCompactionCapability,
   MemoryCompactionReplacePrefixOptions,
   MemoryCompactionReplacePrefixResult,
@@ -11,6 +13,7 @@ import type {
   MemoryErrorOptions,
   MemoryInspector,
   MemoryScope,
+  MemoryVersionedHistory,
 } from "@anvia/core/memory";
 import { createMemoryScopeKey, isMemoryCompactionMessage } from "@anvia/core/memory";
 import { parseMemoryMessage, serializeUnknownError } from "./message.js";
@@ -68,6 +71,7 @@ export class PrismaMemoryStore implements MemoryStore {
   readonly kind = "prisma";
   readonly inspector: MemoryInspector | undefined;
   readonly compaction: MemoryCompactionCapability | undefined;
+  readonly loadVersioned?: (options: { scope: MemoryScope }) => Promise<MemoryVersionedHistory>;
 
   private readonly delegates: PrismaMemoryDelegates;
   private readonly options: ResolvedPrismaMemoryStoreOptions;
@@ -90,6 +94,10 @@ export class PrismaMemoryStore implements MemoryStore {
             replacePrefix: (options) => this.replaceCompactionPrefix(options),
           }
         : undefined;
+    // The version is built from the session row, so it needs the sessions findUnique delegate.
+    if (typeof delegates.sessions.findUnique === "function") {
+      this.loadVersioned = (options) => this.readVersioned(options.scope);
+    }
   }
 
   async validate(): Promise<void> {
@@ -131,31 +139,75 @@ export class PrismaMemoryStore implements MemoryStore {
     );
   }
 
-  async append(input: MemoryAppendOptions): Promise<void> {
-    if (input.messages.length === 0) {
-      return;
+  async append(input: MemoryAppendOptions): Promise<MemoryAppendResult> {
+    const keyed = input.idempotencyKey !== undefined;
+    const versioned = keyed || input.expectedVersion !== undefined;
+    if (input.messages.length === 0 && !keyed && input.expectedVersion === undefined) {
+      return { status: "committed" };
     }
     this.validateInputMessages(input.messages);
+    const scopeKey = this.scopeKey(input.scope);
 
-    await this.delegates.transaction(async (tx) => {
-      const session = await upsertSession(tx, input.scope, this.scopeKey(input.scope));
-      const last = await tx.messages.findFirst({
-        where: { memorySessionId: session.id },
-        orderBy: { position: "desc" },
-        select: { position: true },
-      });
-      const start = (last?.position ?? -1) + 1;
+    return this.delegates.transaction(async (tx): Promise<MemoryAppendResult> => {
+      if (input.idempotencyKey !== undefined) {
+        if (tx.writes === undefined) {
+          throw new Error(
+            "PrismaMemoryStore idempotencyKey requires the AgentMemoryWrite model. Add it to your Prisma schema and run a migration.",
+          );
+        }
+        const committed = await tx.writes.findFirst({
+          where: { scopeKey, idempotencyKey: input.idempotencyKey },
+          select: { fingerprint: true },
+        });
+        // Checked before the version so a retry after success is a duplicate, not a conflict.
+        if (committed !== null) {
+          const status =
+            committed.fingerprint === writeFingerprint(input) ? "duplicate" : "conflict";
+          return { status, version: await currentVersion(tx, scopeKey) };
+        }
+      }
 
-      await tx.messages.createMany({
-        data: input.messages.map((message, index) => ({
-          memorySessionId: session.id,
-          runId: input.runId,
-          turn: input.turn,
-          position: start + index,
-          role: message.role,
-          message,
-        })),
-      });
+      if (versioned) {
+        const current = await currentVersion(tx, scopeKey);
+        if (input.expectedVersion !== undefined && input.expectedVersion !== current) {
+          return { status: "conflict", version: current };
+        }
+      }
+
+      if (input.messages.length > 0) {
+        const session = await upsertSession(tx, input.scope, scopeKey);
+        const tail = await tx.messages.findFirst({
+          where: { memorySessionId: session.id },
+          orderBy: { position: "desc" },
+          select: { position: true },
+        });
+        const start = (tail?.position ?? -1) + 1;
+        await tx.messages.createMany({
+          data: input.messages.map((message, index) => ({
+            memorySessionId: session.id,
+            runId: input.runId,
+            turn: input.turn,
+            position: start + index,
+            role: message.role,
+            message,
+          })),
+        });
+      }
+
+      if (input.idempotencyKey !== undefined) {
+        // The unique (scopeKey, idempotencyKey) constraint backstops a concurrent writer that
+        // passed the lookup above: its insert fails and the whole transaction rolls back.
+        await tx.writes!.create({
+          data: {
+            scopeKey,
+            idempotencyKey: input.idempotencyKey,
+            fingerprint: writeFingerprint(input),
+          },
+        });
+      }
+
+      if (!versioned) return { status: "committed" };
+      return { status: "committed", version: await currentVersion(tx, scopeKey) };
     }, this.options.transaction);
   }
 
@@ -163,6 +215,13 @@ export class PrismaMemoryStore implements MemoryStore {
     await this.delegates.sessions.deleteMany({
       where: { scopeKey: this.scopeKey(scope) },
     });
+  }
+
+  private async readVersioned(scope: MemoryScope): Promise<MemoryVersionedHistory> {
+    // Version first: a write that lands between the two reads makes the version stale, which
+    // fails safe as a conflict, whereas the reverse order could hide a newer commit.
+    const version = await currentVersion(this.delegates, this.scopeKey(scope));
+    return { messages: await this.load({ scope }), version };
   }
 
   async recordError(input: MemoryErrorOptions): Promise<void> {
@@ -354,6 +413,47 @@ export class PrismaMemoryStore implements MemoryStore {
   }
 }
 
+/**
+ * Version = session row id + last message position + compaction generation. Appends move the
+ * position, compaction moves the generation, and `clear()` deletes the session so a recreated one
+ * gets a new id and can never reproduce an earlier version. Without a session the version is the
+ * fixed value "none", which equals the state of a scope that never held data.
+ */
+async function currentVersion(delegates: PrismaMemoryDelegates, scopeKey: string): Promise<string> {
+  if (delegates.sessions.findUnique === undefined) {
+    throw new Error("Prisma memory versioning requires a sessions findUnique delegate.");
+  }
+  const session = (await delegates.sessions.findUnique({
+    where: { scopeKey },
+    select: { id: true, compactionState: true },
+  })) as PrismaCompactionSessionRow | null;
+  if (session === null) return "none";
+  const tail = await delegates.messages.findFirst({
+    where: { memorySessionId: session.id },
+    orderBy: { position: "desc" },
+    select: { position: true },
+  });
+  return formatVersion(session.id, tail?.position ?? -1, generationOf(session.compactionState));
+}
+
+function formatVersion(sessionId: string, last: number, generation: number): string {
+  return `${sessionId}:${last}:${generation}`;
+}
+
+function generationOf(state: unknown): number {
+  if (typeof state === "object" && state !== null) {
+    const generation = (state as { generation?: unknown }).generation;
+    if (typeof generation === "number") return generation;
+  }
+  return 0;
+}
+
+function writeFingerprint(input: MemoryAppendOptions): string {
+  return createHash("sha256")
+    .update(JSON.stringify({ runId: input.runId, turn: input.turn, messages: input.messages }))
+    .digest("hex");
+}
+
 function resolveOptions(options: PrismaMemoryStoreOptions): ResolvedPrismaMemoryStoreOptions {
   return {
     scopeKey: options.scopeKey,
@@ -426,6 +526,7 @@ function conventionalDelegates(client: unknown): PrismaMemoryDelegates {
     sessions: models.sessions,
     messages: models.messages,
     errors: models.errors,
+    writes: models.writes,
     transaction: (operation, options) =>
       client.$transaction(
         async (tx) => operation(transactionDelegates(conventionalModelDelegates(tx))),
@@ -453,6 +554,10 @@ function assertConventionalClient(client: unknown): asserts client is PrismaMemo
   if (client.agentMemoryError !== undefined) {
     assertDelegate(client.agentMemoryError, "agentMemoryError", ["create"]);
   }
+
+  if (client.agentMemoryWrite !== undefined) {
+    assertDelegate(client.agentMemoryWrite, "agentMemoryWrite", ["findFirst", "create"]);
+  }
 }
 
 function assertDelegate(delegate: unknown, name: string, methods: string[]): void {
@@ -476,17 +581,19 @@ function conventionalModelDelegates(client: PrismaMemoryConventionalDelegates) {
     sessions: client.agentMemorySession,
     messages: client.agentMemoryMessage,
     errors: client.agentMemoryError,
+    writes: client.agentMemoryWrite,
   };
 }
 
 function transactionDelegates(
-  models: Pick<PrismaMemoryDelegates, "sessions" | "messages" | "errors">,
+  models: Pick<PrismaMemoryDelegates, "sessions" | "messages" | "errors" | "writes">,
 ): PrismaMemoryDelegates {
   let delegates: PrismaMemoryDelegates;
   delegates = {
     sessions: models.sessions,
     messages: models.messages,
     errors: models.errors,
+    writes: models.writes,
     transaction: (operation) => operation(delegates),
   };
   return delegates;

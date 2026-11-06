@@ -12,4 +12,6 @@ export type {
   PrismaMemorySessionRow,
   PrismaMemoryStoreOptions,
   PrismaMemoryTransactionOptions,
+  PrismaMemoryWriteDelegate,
+  PrismaMemoryWriteRow,
 } from "./types.js";

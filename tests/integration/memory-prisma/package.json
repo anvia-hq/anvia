@@ -20,7 +20,7 @@
     "@prisma/client": "7.10.1",
     "@prisma/orm-postgres": "8.0.0-rc.20",
     "@types/pg": "8.20.4",
-    "pg": "8.22.0",
+    "pg": "8.23.1",
     "prisma": "8.0.0-rc.27",
     "prisma7": "npm:prisma@7.10.1",
     "tsx": "4.23.12",

@@ -233,4 +233,49 @@ describe("provider-executed tools", () => {
       providerToolCalls: [{ id: "search_1", name: "web_search", status: "completed" }],
     });
   });
+
+  it("rejects a provider tool with non-JSON configuration at Agent construction", () => {
+    const model = new ProviderToolModel();
+    const badTool = {
+      kind: "provider",
+      provider: "test",
+      name: "web_search",
+      configuration: { allowed_domains: undefined, when: new Date(0) },
+    } as unknown as ProviderTool;
+
+    expect(() => new Agent({ id: "researcher", model, tools: [badTool] })).toThrow(TypeError);
+    expect(() => new Agent({ id: "researcher", model, tools: [badTool] })).toThrow(
+      /Provider tool "web_search" is invalid/,
+    );
+  });
+
+  it("does not send a non-JSON provider tool to the local tool list", () => {
+    const badTool = {
+      kind: "provider",
+      provider: "test",
+      name: "web_search",
+      configuration: { build: () => "not json" },
+    } as unknown as ProviderTool;
+
+    expect(() =>
+      createCompletionRequest(Message.user("research"), {
+        tools: [badTool as unknown as CompletionTool],
+      }),
+    ).toThrow(/Provider tool "web_search" is invalid/);
+  });
+
+  it("rejects a provider tool with a non-object configuration in generateCompletion", async () => {
+    const model = new ProviderToolModel();
+    const badTool = {
+      kind: "provider",
+      provider: "test",
+      name: "web_search",
+      configuration: "allowed",
+    } as unknown as ProviderTool;
+
+    await expect(
+      generateCompletion({ model, prompt: "research", tools: [badTool] }),
+    ).rejects.toThrow(TypeError);
+    expect(model.requests).toHaveLength(0);
+  });
 });

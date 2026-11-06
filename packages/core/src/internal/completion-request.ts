@@ -10,7 +10,7 @@ import type {
   ToolChoice,
   ToolDefinition,
 } from "../completion/types";
-import { isProviderTool } from "../completion/types";
+import { assertProviderToolShape, isProviderTool } from "../completion/types";
 import { assertJsonObject } from "./json-object";
 
 export type CompletionRequestOptions = {
@@ -30,6 +30,7 @@ export function createCompletionRequest(
   options: CompletionRequestOptions,
 ): CompletionRequest {
   const configuredTools = options.tools ?? [];
+  for (const tool of configuredTools) assertProviderToolShape(tool);
   const chatHistory = messagesFromInput(input);
   assertNoAgentInteractionParts(chatHistory);
   const request: CompletionRequest = {

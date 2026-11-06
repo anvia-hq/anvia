@@ -44,6 +44,7 @@ export type SqliteMemoryTableNames = {
   sessions?: string | undefined;
   messages?: string | undefined;
   errors?: string | undefined;
+  idempotencyKeys?: string | undefined;
   messagesPositionIndex?: string | undefined;
 };
 

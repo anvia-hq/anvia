@@ -2,6 +2,7 @@ export const prismaMemoryModelNames = [
   "AgentMemorySession",
   "AgentMemoryMessage",
   "AgentMemoryError",
+  "AgentMemoryWrite",
 ] as const;
 
 export const prismaMemorySchema = `model AgentMemorySession {
@@ -45,6 +46,16 @@ model AgentMemoryError {
   createdAt       DateTime           @default(now())
 
   @@index([runId])
+}
+
+model AgentMemoryWrite {
+  id             String   @id @default(cuid())
+  scopeKey       String
+  idempotencyKey String
+  fingerprint    String
+  createdAt      DateTime @default(now())
+
+  @@unique([scopeKey, idempotencyKey])
 }
 `;
 

@@ -1,3 +1,4 @@
+import { assertMemoryFreeTask } from "./recorded-memory.js";
 import type { AgentPrompt } from "@anvia/core/agent";
 import type { JsonValue } from "@anvia/core/completion";
 import { DurableConflictError, DurableNotFoundError } from "./errors.js";
@@ -32,6 +33,7 @@ export function createGraph(
     const registration = agents.get(task.agentId);
     if (registration === undefined)
       throw new DurableNotFoundError(`Unknown durable agent: ${task.agentId}`);
+    assertMemoryFreeTask(registration, task.agentId, "graph tasks");
     return {
       task,
       run: createRunRecord(

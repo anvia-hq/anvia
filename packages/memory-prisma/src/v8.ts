@@ -7,6 +7,11 @@ export type PrismaMemoryModelNames = {
   messages?: string | undefined;
   /** Set to null when failed-run storage is disabled and the model is absent. */
   errors?: string | null | undefined;
+  /**
+   * Idempotency-key model. Optional: when it is absent from the contract, keyed appends fail with
+   * an error naming the model while plain appends keep working.
+   */
+  writes?: string | null | undefined;
 };
 
 export type PrismaMemoryStoreOptions = Pick<

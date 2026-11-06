@@ -97,7 +97,11 @@ type CreateErrorArgs = {
   data: ErrorRow;
 };
 
+type WriteRow = { scopeKey: string; idempotencyKey: string; fingerprint: string };
+
 class FakePrisma {
+  readonly writes: WriteRow[] = [];
+  withWrites = true;
   readonly sessions = new Map<string, SessionRow>();
   readonly messages: MessageRow[] = [];
   readonly errors: ErrorRow[] = [];
@@ -252,11 +256,34 @@ class FakePrisma {
     },
   };
 
+  readonly agentMemoryWrite = {
+    findFirst: async (rawArgs: unknown) => {
+      const { where } = rawArgs as { where: { scopeKey: string; idempotencyKey: string } };
+      const row = this.writes.find(
+        (item) => item.scopeKey === where.scopeKey && item.idempotencyKey === where.idempotencyKey,
+      );
+      return row === undefined ? null : { fingerprint: row.fingerprint };
+    },
+    create: async (rawArgs: unknown) => {
+      const { data } = rawArgs as { data: WriteRow };
+      if (
+        this.writes.some(
+          (item) => item.scopeKey === data.scopeKey && item.idempotencyKey === data.idempotencyKey,
+        )
+      ) {
+        throw new Error("Unique constraint failed on (scopeKey, idempotencyKey)");
+      }
+      this.writes.push({ ...data });
+      return data;
+    },
+  };
+
   get client(): PrismaMemoryClientLike {
     return {
       agentMemorySession: this.agentMemorySession,
       agentMemoryMessage: this.agentMemoryMessage,
       agentMemoryError: this.agentMemoryError,
+      agentMemoryWrite: this.withWrites ? this.agentMemoryWrite : undefined,
       $transaction: async (operation, options) => {
         this.transactionOptions.push(options);
         const snapshot = this.snapshotState();
@@ -275,6 +302,7 @@ class FakePrisma {
       sessions: this.agentMemorySession,
       messages: this.agentMemoryMessage,
       errors: this.agentMemoryError,
+      writes: this.agentMemoryWrite,
       transaction: async (operation, options) => {
         this.transactionOptions.push(options);
         const snapshot = this.snapshotState();
@@ -295,6 +323,7 @@ class FakePrisma {
       ),
       messages: this.messages.map((message) => ({ ...message })),
       errors: this.errors.map((error) => ({ ...error })),
+      writes: this.writes.map((write) => ({ ...write })),
       nextSessionId: this.nextSessionId,
       nextMessageId: this.nextMessageId,
     };
@@ -309,6 +338,8 @@ class FakePrisma {
     this.messages.push(...snapshot.messages);
     this.errors.length = 0;
     this.errors.push(...snapshot.errors);
+    this.writes.length = 0;
+    this.writes.push(...snapshot.writes);
     this.nextSessionId = snapshot.nextSessionId;
     this.nextMessageId = snapshot.nextMessageId;
   }
@@ -803,6 +834,230 @@ describe("PrismaMemoryStore", () => {
 });
 
 type PrismaTestStoreOptions = Omit<PrismaMemoryStoreOptions, "client" | "delegates">;
+
+describe("PrismaMemoryStore versioned, idempotent appends", () => {
+  const scope = { sessionId: "thread-versioned", userId: "user-1" };
+  const base = { scope, runId: "run-1", turn: 1 };
+
+  async function loadedVersion(store: PrismaMemoryStore): Promise<string> {
+    const history = await store.loadVersioned?.({ scope });
+    if (history === undefined) throw new Error("Expected loadVersioned");
+    return history.version;
+  }
+
+  it("commits a keyed append, treats a repeat as a duplicate and a changed repeat as a conflict", async () => {
+    const prisma = new FakePrisma();
+    const store = createTestMemoryStore(prisma.client);
+
+    const first = await store.append({
+      ...base,
+      messages: [Message.user("hi")],
+      idempotencyKey: "k1",
+    });
+    expect(first.status).toBe("committed");
+
+    const repeat = await store.append({
+      ...base,
+      messages: [Message.user("hi")],
+      idempotencyKey: "k1",
+    });
+    expect(repeat).toEqual({ status: "duplicate", version: first.version });
+
+    const changed = await store.append({
+      ...base,
+      messages: [Message.user("different")],
+      idempotencyKey: "k1",
+    });
+    expect(changed).toEqual({ status: "conflict", version: first.version });
+    expect(prisma.messages).toHaveLength(1);
+    expect(prisma.writes).toHaveLength(1);
+  });
+
+  it("checks the key before the version so a retry after success is a duplicate", async () => {
+    const store = createTestMemoryStore(new FakePrisma().client);
+    const before = await loadedVersion(store);
+    const input = { ...base, messages: [Message.user("hi")], idempotencyKey: "k1" };
+
+    expect((await store.append({ ...input, expectedVersion: before })).status).toBe("committed");
+    const retry = await store.append({ ...input, expectedVersion: before });
+    expect(retry.status).toBe("duplicate");
+  });
+
+  it("rejects a stale expected version and accepts the current one", async () => {
+    const prisma = new FakePrisma();
+    const store = createTestMemoryStore(prisma.client);
+    await store.append({ ...base, messages: [Message.user("one")] });
+    const stale = await loadedVersion(store);
+    await store.append({ ...base, messages: [Message.user("two")] });
+    const current = await loadedVersion(store);
+    expect(current).not.toBe(stale);
+
+    const rejected = await store.append({
+      ...base,
+      messages: [Message.user("three")],
+      expectedVersion: stale,
+    });
+    expect(rejected).toEqual({ status: "conflict", version: current });
+    expect(prisma.messages).toHaveLength(2);
+
+    const accepted = await store.append({
+      ...base,
+      messages: [Message.user("three")],
+      expectedVersion: current,
+    });
+    expect(accepted.status).toBe("committed");
+    expect(accepted.version).toBe(await loadedVersion(store));
+    expect(prisma.messages).toHaveLength(3);
+  });
+
+  it("does not record the key when the version check fails", async () => {
+    const prisma = new FakePrisma();
+    const store = createTestMemoryStore(prisma.client);
+    await store.append({ ...base, messages: [Message.user("one")] });
+    const result = await store.append({
+      ...base,
+      messages: [Message.user("two")],
+      idempotencyKey: "k1",
+      expectedVersion: "stale",
+    });
+    expect(result.status).toBe("conflict");
+    expect(prisma.writes).toHaveLength(0);
+    expect(prisma.messages).toHaveLength(1);
+  });
+
+  it("keeps the empty version when recordError creates a session, so a write is not a conflict", async () => {
+    const prisma = new FakePrisma();
+    const store = createTestMemoryStore(prisma.client);
+    const empty = await loadedVersion(store);
+
+    await store.recordError({
+      scope,
+      runId: "failed-run",
+      error: new Error("failed"),
+      messages: [Message.user("hi")],
+    });
+
+    expect(await loadedVersion(store)).toBe(empty);
+    const result = await store.append({
+      ...base,
+      messages: [Message.user("a")],
+      expectedVersion: empty,
+    });
+    expect(result.status).toBe("committed");
+  });
+
+  it("changes the version on append, clear and compaction replacePrefix", async () => {
+    const prisma = new FakePrisma();
+    const store = createTestMemoryStore(prisma.client);
+    const empty = await loadedVersion(store);
+    await store.append({ ...base, messages: [Message.user("a"), Message.assistant("b")] });
+    const afterFirst = await loadedVersion(store);
+    await store.append({ ...base, messages: [Message.user("c")] });
+    const afterSecond = await loadedVersion(store);
+    expect(new Set([empty, afterFirst, afterSecond]).size).toBe(3);
+
+    const snapshot = await store.compaction!.snapshot({ scope });
+    const replaced = await store.compaction!.replacePrefix({
+      scope,
+      runId: "run-compact",
+      revision: snapshot.revision,
+      messageCount: 2,
+      replacement: memoryCompactionMessage("summary", 2),
+    });
+    expect(replaced.status).toBe("committed");
+    const afterCompaction = await loadedVersion(store);
+    expect(afterCompaction).not.toBe(afterSecond);
+
+    await store.clear({ scope });
+    expect(await loadedVersion(store)).toBe(empty);
+    await store.append({ ...base, messages: [Message.user("a"), Message.assistant("b")] });
+    const recreated = await loadedVersion(store);
+    expect([afterFirst, afterSecond, afterCompaction]).not.toContain(recreated);
+  });
+
+  it("keeps idempotency keys across clear", async () => {
+    const prisma = new FakePrisma();
+    const store = createTestMemoryStore(prisma.client);
+    const input = { ...base, messages: [Message.user("hi")], idempotencyKey: "k1" };
+    await store.append(input);
+    await store.clear({ scope });
+
+    expect(prisma.writes).toHaveLength(1);
+    expect((await store.append(input)).status).toBe("duplicate");
+    await expect(store.load({ scope })).resolves.toEqual([]);
+  });
+
+  it("scopes keys to the memory scope", async () => {
+    const store = createTestMemoryStore(new FakePrisma().client);
+    const input = { ...base, messages: [Message.user("hi")], idempotencyKey: "k1" };
+    await store.append(input);
+    const other = await store.append({ ...input, scope: { sessionId: "other", userId: "user-1" } });
+    expect(other.status).toBe("committed");
+  });
+
+  it("records the key for an empty keyed append so a repeat is a duplicate", async () => {
+    const prisma = new FakePrisma();
+    const store = createTestMemoryStore(prisma.client);
+    const input = { ...base, messages: [], idempotencyKey: "empty" };
+
+    expect((await store.append(input)).status).toBe("committed");
+    expect(prisma.writes).toHaveLength(1);
+    expect(prisma.sessions.size).toBe(0);
+    expect((await store.append(input)).status).toBe("duplicate");
+  });
+
+  it("leaves plain appends and loads unchanged", async () => {
+    const prisma = new FakePrisma();
+    const store = createTestMemoryStore(prisma.client);
+
+    expect(await store.append({ ...base, messages: [Message.user("hi")] })).toEqual({
+      status: "committed",
+    });
+    expect(await store.append({ ...base, messages: [] })).toEqual({ status: "committed" });
+    expect(prisma.writes).toHaveLength(0);
+    expect(prisma.messages.map((row) => row.position)).toEqual([0]);
+    const versioned = await store.loadVersioned?.({ scope });
+    expect(versioned?.messages).toEqual(await store.load({ scope }));
+  });
+
+  it("keeps plain load, append and validate working without the write model", async () => {
+    const prisma = new FakePrisma();
+    prisma.withWrites = false;
+    const store = createTestMemoryStore(prisma.client);
+
+    await expect(store.validate()).resolves.toBeUndefined();
+    await store.append({ ...base, messages: [Message.user("hi")] });
+    await expect(store.load({ scope })).resolves.toEqual([Message.user("hi")]);
+  });
+
+  it("names the missing model when a keyed append has no write delegate", async () => {
+    const prisma = new FakePrisma();
+    prisma.withWrites = false;
+    const store = createTestMemoryStore(prisma.client);
+
+    await expect(
+      store.append({ ...base, messages: [Message.user("hi")], idempotencyKey: "k1" }),
+    ).rejects.toThrow(/AgentMemoryWrite/);
+    expect(prisma.messages).toHaveLength(0);
+  });
+
+  it("rolls back the messages when recording the key fails", async () => {
+    const prisma = new FakePrisma();
+    const store = createTestMemoryStore(prisma.client);
+    // A concurrent writer committed the key after our lookup: the unique constraint rejects ours.
+    const create = prisma.agentMemoryWrite.create;
+    prisma.agentMemoryWrite.create = async (args: unknown) => {
+      await create(args);
+      return create(args);
+    };
+
+    await expect(
+      store.append({ ...base, messages: [Message.user("hi")], idempotencyKey: "k1" }),
+    ).rejects.toThrow(/Unique constraint/);
+    expect(prisma.messages).toHaveLength(0);
+    expect(prisma.writes).toHaveLength(0);
+  });
+});
 
 function createTestMemoryStore(
   client: object,

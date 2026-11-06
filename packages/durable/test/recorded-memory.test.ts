@@ -1,23 +1,31 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { fork, type ChildProcess } from "node:child_process";
+import { once } from "node:events";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, expect, it, vi } from "vitest";
 import { Agent } from "@anvia/core/agent";
 import type { CompletionRequest } from "@anvia/core/completion";
 import { InMemoryMemoryStore, type MemoryStore } from "@anvia/core/memory";
-import { DurableRuntime, type DurableAgentRegistration } from "../src/index.js";
+import { z } from "zod";
+import type { CompletionModelStreamEvent } from "@anvia/core/completion";
+import { DurableRuntime, defineTask, type DurableAgentRegistration } from "../src/index.js";
 import type { DurableRun } from "../src/run.js";
 import { SqliteDurableStore } from "../src/sqlite.js";
+import { FileMemoryStore } from "./fixtures/file-memory-store.js";
 import { capabilities, done, lookup, toolResponse } from "./helpers.js";
 
 type AnyAgent = DurableAgentRegistration["agent"];
 
 const directories: string[] = [];
 const runtimes: DurableRuntime[] = [];
+const children: ChildProcess[] = [];
 const scope = { sessionId: "session" };
 const submission = { agentId: "remembering", sessionId: "session", requestId: "one" };
 
 afterEach(async () => {
+  for (const child of children.splice(0)) child.kill("SIGKILL");
   for (const runtime of runtimes.splice(0)) await runtime.close();
   for (const directory of directories.splice(0))
     rmSync(directory, { recursive: true, force: true });
@@ -325,3 +333,262 @@ it("fails a run that pauses for a human interaction instead of replaying memory 
   expect(snapshot.run.status).toBe("failed");
   expect(snapshot.run.error).toMatch(/paused for a human interaction/);
 });
+
+async function conflicted() {
+  const store = new InMemoryMemoryStore();
+  const model = vi.fn(async (_request: CompletionRequest) => {
+    // A concurrent writer commits while the run is in its model call.
+    await store.append({
+      scope,
+      runId: "other",
+      turn: 1,
+      messages: [{ role: "user", content: [{ type: "text", text: "concurrent" }] }],
+    });
+    return done();
+  });
+  const runtime = await open(database(), agentWith(model, store));
+  const submitted = await runtime.submit({ ...submission, prompt: "hello" });
+  expect((await settled(submitted)).run.status).toBe("needs_attention");
+  return { store, runtime, run: await runtime.getRun(submitted.id), model };
+}
+
+it("completes a conflicted run when the operator discards the write", async () => {
+  const { store, run, model } = await conflicted();
+
+  await run.resolveMemoryWrite("0:memory:write:0", "discarded");
+  const snapshot = await settled(run);
+
+  expect(snapshot.run.status).toBe("completed");
+  expect(snapshot.run.blockedOperation).toBeUndefined();
+  expect(snapshot.run.error).toBeUndefined();
+  expect(model).toHaveBeenCalledTimes(1);
+  expect(await storedCount(store)).toBe(1);
+  const write = snapshot.operations.find((operation) => operation.key === "0:memory:write:0");
+  expect(write?.result).toEqual({ status: "discarded", version: null });
+});
+
+it("completes a conflicted run when the operator marks the write applied, without sending it", async () => {
+  const { store, run } = await conflicted();
+  const appendSpy = vi.spyOn(store, "append");
+
+  await run.resolveMemoryWrite("0:memory:write:0", "applied");
+
+  expect((await settled(run)).run.status).toBe("completed");
+  expect(appendSpy).not.toHaveBeenCalled();
+});
+
+it("sends the remaining writes without a version check after a resolution", async () => {
+  const store = new InMemoryMemoryStore();
+  const runtime = await open(
+    database(),
+    agentWith(
+      async () => {
+        await store.append({
+          scope,
+          runId: "other",
+          turn: 1,
+          messages: [{ role: "user", content: [{ type: "text", text: "concurrent" }] }],
+        });
+        return done();
+      },
+      store,
+      "message",
+    ),
+  );
+  const submitted = await runtime.submit({ ...submission, prompt: "hello" });
+  expect((await settled(submitted)).run.status).toBe("needs_attention");
+  const appendSpy = vi.spyOn(store, "append");
+
+  const run = await runtime.getRun(submitted.id);
+  await run.resolveMemoryWrite("0:memory:write:0", "discarded");
+  expect((await settled(run)).run.status).toBe("completed");
+
+  expect(appendSpy.mock.calls.map((call) => call[0].expectedVersion)).toEqual([undefined]);
+  expect(await storedCount(store)).toBe(2);
+});
+
+it("rejects a resolution that does not match the blocked memory write", async () => {
+  const { run } = await conflicted();
+
+  await expect(run.resolveMemoryWrite("0:memory:write:9", "discarded")).rejects.toThrow(
+    /No matching memory write/,
+  );
+  await expect(run.resolveMemoryWrite("0:memory:read", "discarded")).rejects.toThrow(
+    /No matching memory write/,
+  );
+  await expect(run.resolveMemoryWrite("0:memory:write:0", "retry" as never)).rejects.toThrow(
+    /resolution must be/,
+  );
+  expect((await run.snapshot()).run.status).toBe("needs_attention");
+});
+
+it("rejects a resolution for a run that is not blocked", async () => {
+  const runtime = await open(
+    database(),
+    agentWith(async () => done(), new InMemoryMemoryStore()),
+  );
+  const submitted = await runtime.submit({ ...submission, prompt: "hello" });
+  expect((await settled(submitted)).run.status).toBe("completed");
+
+  await expect(submitted.resolveMemoryWrite("0:memory:write:0", "discarded")).rejects.toThrow(
+    /No matching memory write/,
+  );
+});
+
+it("records memory for a streaming run and writes the reply once", async () => {
+  const store = new InMemoryMemoryStore();
+  const appendSpy = vi.spyOn(store, "append");
+  const agent = new Agent({
+    id: "remembering",
+    memory: { store, savePolicy: "run" },
+    model: {
+      provider: "test",
+      modelId: "test",
+      capabilities: { ...capabilities, streaming: true },
+      completion: async () => done(),
+      async *streamCompletion(): AsyncIterable<CompletionModelStreamEvent> {
+        yield { type: "text_delta", delta: "do" };
+        yield { type: "text_delta", delta: "ne" };
+        yield { type: "final", response: done() };
+      },
+    },
+  } as ConstructorParameters<typeof Agent>[0]);
+  const runtime = await DurableRuntime.open({
+    store: new SqliteDurableStore(database()),
+    agents: [{ ...registration(agent), stream: true }],
+  });
+  runtimes.push(runtime);
+
+  const submitted = await runtime.submit({ ...submission, prompt: "hello" });
+  const snapshot = await settled(submitted);
+
+  expect(snapshot.run.status).toBe("completed");
+  expect(appendSpy).toHaveBeenCalledTimes(1);
+  expect((await store.load({ scope })).map((message) => message.role)).toEqual([
+    "user",
+    "assistant",
+  ]);
+});
+
+it("leaves memory unwritten and does not call recordError when the run fails", async () => {
+  const store = new InMemoryMemoryStore();
+  const recordError = vi.fn(async () => {});
+  Object.assign(store, { recordError });
+  const appendSpy = vi.spyOn(store, "append");
+  const runtime = await open(
+    database(),
+    agentWith(async () => {
+      throw new Error("provider down");
+    }, store),
+  );
+  const submitted = await runtime.submit({ ...submission, prompt: "hello" });
+
+  expect((await settled(submitted)).run.status).toBe("failed");
+  expect(appendSpy).not.toHaveBeenCalled();
+  expect(recordError).not.toHaveBeenCalled();
+  expect(await storedCount(store)).toBe(0);
+});
+
+it("rejects a graph that uses a recorded memory agent and creates nothing", async () => {
+  const runtime = await open(
+    database(),
+    agentWith(async () => done(), new InMemoryMemoryStore()),
+  );
+
+  await expect(
+    runtime.submitGraph({
+      sessionId: "project",
+      requestId: "graph",
+      tasks: [{ id: "one", agentId: "remembering", prompt: "hi" }],
+    }),
+  ).rejects.toThrow(/records memory, which graph tasks do not support/);
+  expect((await runtime.listGraphs()).graphs).toHaveLength(0);
+  expect((await runtime.listRuns()).runs).toHaveLength(0);
+});
+
+it("fails an owned agent task that spawns a recorded memory agent, naming the limit", async () => {
+  const store = new InMemoryMemoryStore();
+  const parent = defineTask({
+    name: "parent",
+    version: 1,
+    input: z.null(),
+    checkpoint: z.null(),
+    output: z.null(),
+    initial: () => null,
+    run: async (ctx) => {
+      ctx.spawnAgent("child", { agentId: "remembering", prompt: "hi" });
+      return { status: "completed", output: null };
+    },
+  });
+  const runtime = await DurableRuntime.open({
+    store: new SqliteDurableStore(database()),
+    tasks: [parent],
+    agents: [registration(agentWith(async () => done(), store))],
+  });
+  runtimes.push(runtime);
+
+  const task = await runtime.submitTask(parent, { sessionId: "s", requestId: "1", input: null });
+
+  await expect(task.result()).rejects.toThrow(/owned agent tasks do not support/);
+  expect(await storedCount(store)).toBe(0);
+});
+
+/** Starts a worker that halts at `crashAt` inside a memory write, then kills the whole process. */
+async function crashedWorker(crashAt: "before-commit" | "after-commit") {
+  const path = database();
+  const memoryPath = `${path}.memory.json`;
+  const modelCalls = `${path}.calls`;
+  const child = fork(
+    fileURLToPath(new URL("./fixtures/memory-worker.ts", import.meta.url)),
+    [path, memoryPath, modelCalls, crashAt],
+    {
+      execArgv: ["--import", import.meta.resolve("tsx")],
+      stdio: ["ignore", "ignore", "pipe", "ipc"],
+    },
+  );
+  children.push(child);
+  let stderr = "";
+  child.stderr!.on("data", (chunk) => {
+    stderr += String(chunk);
+  });
+  const { id } = await new Promise<{ id: string }>((resolve, reject) => {
+    child.once("message", (message) => resolve(message as { id: string }));
+    child.once("error", reject);
+    child.once("exit", () => reject(new Error(`Worker exited before the write: ${stderr}`)));
+  });
+  const exited = once(child, "exit");
+  child.kill("SIGKILL");
+  await exited;
+  return { path, memoryPath, modelCalls, id };
+}
+
+async function recover(path: string, memoryPath: string, id: string) {
+  const store = new FileMemoryStore(memoryPath);
+  const model = vi.fn(async (_request: CompletionRequest) => done());
+  const runtime = await open(path, agentWith(model, store));
+  await runtime.resume();
+  return { store, model, run: await runtime.getRun(id) };
+}
+
+it.each([
+  ["before-commit", 0],
+  ["after-commit", 2],
+] as const)(
+  "recovers a memory write after SIGKILL %s without running the model again or writing twice",
+  async (crashAt, storedAtCrash) => {
+    const { path, memoryPath, modelCalls, id } = await crashedWorker(crashAt);
+    const { store, model, run } = await recover(path, memoryPath, id);
+    expect(await storedCount(store)).toBe(storedAtCrash);
+
+    // The attempt was persisted before the store call, so its outcome is unknown either way.
+    const blocked = await settled(run);
+    expect(blocked.run.status).toBe("needs_attention");
+    expect(blocked.run.blockedOperation).toBe("0:memory:write:0");
+
+    await run.retry();
+    expect((await settled(run)).run.status).toBe("completed");
+    expect(await store.load({ scope })).toHaveLength(2);
+    expect(model).not.toHaveBeenCalled();
+    expect(readFileSync(modelCalls, "utf8")).toBe("call\n");
+  },
+);

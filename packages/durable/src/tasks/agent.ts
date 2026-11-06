@@ -1,3 +1,4 @@
+import { assertMemoryFreeTask } from "../recorded-memory.js";
 import type { DurableMcpServers } from "../mcp-servers.js";
 import type { DurableToolIndexes } from "../tool-indexes.js";
 import { promptSchema } from "../prompt.js";
@@ -47,6 +48,7 @@ export function spawnAgent(
   const registration = agents.get(input.agentId);
   if (registration === undefined)
     throw new DurableNotFoundError(`Unknown durable agent: ${input.agentId}`);
+  assertMemoryFreeTask(registration, input.agentId, "owned agent tasks");
   const continued = input.continueFrom === undefined ? undefined : continuable(tx, parent, input);
   const run = createRunRecord(
     {

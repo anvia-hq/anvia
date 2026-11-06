@@ -2,6 +2,7 @@ export const drizzleMemoryExportNames = [
   "agentMemoryErrors",
   "agentMemoryMessages",
   "agentMemorySessions",
+  "agentMemoryWrites",
 ] as const;
 
 export const generatedSchemaHeader =
@@ -30,5 +31,6 @@ function schemaExportBlock(): string {
   agentMemoryErrors,
   agentMemoryMessages,
   agentMemorySessions,
+  agentMemoryWrites,
 } from "@anvia/memory-drizzle";`;
 }

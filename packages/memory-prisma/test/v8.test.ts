@@ -99,4 +99,65 @@ describe("Prisma 8 boundary", () => {
       /invalid timestamp/,
     );
   });
+
+  describe("idempotency ledger", () => {
+    const scope = { sessionId: "thread" };
+    const input = {
+      scope,
+      runId: "run",
+      turn: 1,
+      messages: [{ role: "user" as const, content: "hi" }],
+      idempotencyKey: "k1",
+    };
+
+    function transactional(withWrites: boolean, ledger: Record<string, unknown>[] = []) {
+      const { client, sessions, messages } = fixture([{ id: "session", compactionState: null }]);
+      const writes = model(ledger);
+      const models: Record<string, unknown> = {
+        AgentMemorySession: sessions,
+        AgentMemoryMessage: messages,
+      };
+      if (withWrites) models.AgentMemoryWrite = writes;
+      const orm = { public: models };
+      Object.assign(client, { orm });
+      client.transaction.mockImplementation(async (operation: (tx: unknown) => unknown) =>
+        operation({ orm, execute: vi.fn() }),
+      );
+      return { client, writes, messages };
+    }
+
+    it("names the write model when the contract lacks it", async () => {
+      const { client } = transactional(false);
+      await expect(new PrismaMemoryStore({ client }).append(input)).rejects.toThrow(
+        /AgentMemoryWrite/,
+      );
+    });
+
+    it("records a new key and reports a matching stored fingerprint as a duplicate", async () => {
+      const { client, writes, messages } = transactional(true);
+      const store = new PrismaMemoryStore({ client });
+      expect((await store.append(input)).status).toBe("committed");
+      expect(writes.create).toHaveBeenCalledWith(
+        expect.objectContaining({ scopeKey: expect.any(String), idempotencyKey: "k1" }),
+      );
+      expect(messages.createAndCount).toHaveBeenCalledTimes(1);
+
+      const fingerprint = (writes.create.mock.calls[0] as unknown as [{ fingerprint: string }])[0]
+        .fingerprint;
+      const replay = transactional(true, [{ fingerprint }]);
+      const result = await new PrismaMemoryStore({ client: replay.client }).append(input);
+      expect(result.status).toBe("duplicate");
+      expect(replay.messages.createAndCount).not.toHaveBeenCalled();
+    });
+
+    it("lets plain appends work when the contract lacks the write model", async () => {
+      const { client, messages } = transactional(false);
+      const result = await new PrismaMemoryStore({ client }).append({
+        ...input,
+        idempotencyKey: undefined,
+      });
+      expect(result.status).toBe("committed");
+      expect(messages.createAndCount).toHaveBeenCalledTimes(1);
+    });
+  });
 });

@@ -106,6 +106,56 @@ summary plus its unsummarized tail for model context. The generated session mode
 `compactionState`; add it through the application's normal Prisma migration workflow. With narrower
 custom delegates the capability is absent, rather than pretending checkpoint updates are atomic.
 
+## Versioned and idempotent appends
+
+The store implements core's optional versioned, idempotent contract (see
+[`@anvia/core` memory](core.md)):
+
+- `loadVersioned({ scope })` returns `{ messages, version }`. The version is an opaque string
+  that changes on every committed append, on a `clear()` that removes data, and on a compaction
+  `replacePrefix`.
+- `append()` returns `{ status, version }` and accepts `idempotencyKey` and `expectedVersion`.
+  A repeated key with the same content (run id, turn, and messages) is a `duplicate`; the key is
+  checked before the version, so a retry after success is not a conflict. The same key with
+  different content, or a stale `expectedVersion`, is a `conflict`. Nothing is written for
+  either. Without a key or version, `append()` behaves as before.
+- Keys are scoped to the memory scope and kept in a separate `AgentMemoryWrite` table, so they
+  survive `clear()`. An empty keyed append still records the key.
+- The key check and the insert run in one transaction, and a unique `(scopeKey, idempotencyKey)`
+  constraint rejects a concurrent writer that raced past the lookup. That writer's transaction
+  fails with a database error rather than returning `conflict`; retry the append and it will
+  report `duplicate` or `conflict`. Likewise, two writers holding the same `expectedVersion` may
+  see one fail on the message position constraint instead of a `conflict` result.
+
+### Migrating an existing schema
+
+`AgentMemoryWrite` is a new model. Applications that upgraded the package without migrating keep
+working: plain `load()`, `append()`, and `validate()` do not need the table, and a keyed append
+throws an error naming `AgentMemoryWrite`. To enable keyed appends, add the model and migrate:
+
+```sh
+npx @anvia/memory-prisma init --write --force   # regenerates the generated file or block
+npx prisma@7.10.0 migrate dev --name add_anvia_memory_write
+```
+
+If you maintain the schema by hand, add:
+
+```prisma
+model AgentMemoryWrite {
+  id             String   @id @default(cuid())
+  scopeKey       String
+  idempotencyKey String
+  fingerprint    String
+  createdAt      DateTime @default(now())
+
+  @@unique([scopeKey, idempotencyKey])
+}
+```
+
+`init --force` only replaces the generated file or marker block; it refuses to touch models you
+wrote yourself. For Prisma 8, add the equivalent model to your contract (the Prisma 8 `init`
+output shows it) and re-run `prisma contract emit` and `prisma db update`.
+
 ## Custom delegates
 
 The default client path expects Prisma delegates named `agentMemorySession`, `agentMemoryMessage`, and `agentMemoryError`. If your app uses custom model names, pass delegates explicitly:
@@ -139,7 +189,9 @@ const memory = new PrismaMemoryStore({
 });
 ```
 
-Custom delegates continue to work without inspection. To make them discoverable by Studio, the
+Pass an optional `writes` delegate (`findFirst` and `create` on the `AgentMemoryWrite` model,
+also inside transactions) to enable idempotency keys; `loadVersioned` and `expectedVersion` need
+the sessions `findUnique` method. Custom delegates continue to work without inspection. To make them discoverable by Studio, the
 sessions delegate must also expose Prisma-compatible `findMany(...)` and `findUnique(...)` methods.
 
 ## Prisma 8 (PostgreSQL)
@@ -275,6 +327,7 @@ const memory = new PrismaMemoryStore({
     sessions: "CustomSession",
     messages: "CustomMessage",
     errors: "CustomError",
+    writes: "CustomWrite",
   },
 });
 ```
@@ -282,7 +335,8 @@ const memory = new PrismaMemoryStore({
 Mappings select models from `db.orm[schema]` and are also applied inside transactions.
 Keep field names and the `messages`/`memorySession` relations compatible with the generated
 contract. For a contract without an error model, set `models.errors: null` and
-`errorPolicy: "ignore"`. Prisma 7 custom `delegates` remain available through the root
+`errorPolicy: "ignore"`. A contract without the write model still supports plain appends;
+keyed appends throw an error naming it (set `models.writes: null` to disable it explicitly). Prisma 7 custom `delegates` remain available through the root
 entrypoint; the Prisma 8 entrypoint uses model mappings instead.
 
 `transaction.isolationLevel` accepts `ReadUncommitted`, `ReadCommitted`, `RepeatableRead`,

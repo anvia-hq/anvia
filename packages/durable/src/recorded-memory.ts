@@ -16,6 +16,7 @@ import type {
   DurableRunRecord,
   DurableStore,
   DurableTransaction,
+  MemoryWriteResolution,
 } from "./types.js";
 
 /**
@@ -42,6 +43,21 @@ export function memoryIdempotencyKey(runId: string, operationKey: string): strin
 export function recordedMemoryOf(registration: DurableAgentRegistration) {
   if (registration.memory === undefined) return undefined;
   return getResolvedAgentOptions(registration.agent).memory;
+}
+
+/**
+ * Graph nodes and owned agent tasks run under a synthetic session id, so recorded memory would
+ * read an empty history and write into a scope no caller names. Refuse them at admission.
+ */
+export function assertMemoryFreeTask(
+  registration: DurableAgentRegistration,
+  agentId: string,
+  where: "graph tasks" | "owned agent tasks",
+): void {
+  if (registration.memory !== undefined)
+    throw new TypeError(
+      `Durable agent "${agentId}" records memory, which ${where} do not support yet. Submit it directly with runtime.submit().`,
+    );
 }
 
 type ReadSnapshot = MemoryVersionedHistory;
@@ -214,6 +230,24 @@ export async function flushRecordedMemory(options: {
     });
     version = recorded.version ?? undefined;
   }
+}
+
+/**
+ * Settles a blocked memory write. `applied` records that the operator confirmed the store already
+ * holds the messages; `discarded` drops them. The write is marked completed without a version, so
+ * the next write is sent without a version check: the operator has accepted the divergence.
+ */
+export function resolveRecordedMemoryWrite(
+  tx: DurableTransaction,
+  run: DurableRunRecord,
+  operation: DurableOperation,
+  resolution: MemoryWriteResolution,
+): void {
+  tx.putOperation(run.id, {
+    ...operation,
+    status: "completed",
+    result: json({ status: resolution, version: null }),
+  });
 }
 
 /** Retry resets an uncertain write so the next flush sends it again under the same key. */

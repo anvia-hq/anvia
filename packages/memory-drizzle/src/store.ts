@@ -1,6 +1,8 @@
+import { createHash } from "node:crypto";
 import type { JsonObject, MemoryCompactionMessage, MemoryStore, Message } from "@anvia/core";
 import type {
   MemoryAppendOptions,
+  MemoryAppendResult,
   MemoryCompactionCapability,
   MemoryCompactionReplacePrefixOptions,
   MemoryCompactionReplacePrefixResult,
@@ -11,6 +13,7 @@ import type {
   MemoryErrorOptions,
   MemoryInspector,
   MemoryScope,
+  MemoryVersionedHistory,
 } from "@anvia/core/memory";
 import { createMemoryScopeKey, isMemoryCompactionMessage } from "@anvia/core/memory";
 import { and, asc, desc, eq, gte, sql } from "drizzle-orm";
@@ -49,6 +52,7 @@ type DrizzleSelectBuilder = PromiseLike<unknown[]> & {
 type DrizzleInsertBuilder = PromiseLike<unknown[]> & {
   values(value: unknown): DrizzleInsertBuilder;
   onConflictDoUpdate(config: unknown): DrizzleInsertBuilder;
+  onConflictDoNothing(config?: unknown): DrizzleInsertBuilder;
   returning(selection?: unknown): Promise<unknown[]>;
 };
 
@@ -69,6 +73,10 @@ type StoredCompactionState = {
   generation: number;
   summary: MemoryCompactionMessage;
   summarizedThroughPosition: number;
+};
+
+type WriteRow = {
+  fingerprint: string;
 };
 
 type PositionRow = {
@@ -176,36 +184,88 @@ export class DrizzleMemoryStore implements MemoryStore {
     );
   }
 
-  async append(input: MemoryAppendOptions): Promise<void> {
-    if (input.messages.length === 0) {
-      return;
+  async loadVersioned({ scope }: { scope: MemoryScope }): Promise<MemoryVersionedHistory> {
+    // The version is read first: a write landing in between leaves the version older than the
+    // messages, so a later expectedVersion write conflicts instead of silently overwriting.
+    const scopeKey = this.scopeKey(scope);
+    const version = await this.currentVersion(runtimeDatabase(this.db), scopeKey);
+    return { messages: await this.load({ scope }), version };
+  }
+
+  async append(input: MemoryAppendOptions): Promise<MemoryAppendResult> {
+    const { idempotencyKey, expectedVersion } = input;
+    if (
+      input.messages.length === 0 &&
+      idempotencyKey === undefined &&
+      expectedVersion === undefined
+    ) {
+      return { status: "committed" };
     }
     this.validateInputMessages(input.messages);
+    const writes = idempotencyKey === undefined ? undefined : this.writesTable();
+    const versioned = idempotencyKey !== undefined || expectedVersion !== undefined;
 
     const scopeKey = this.scopeKey(input.scope);
 
-    await this.transaction(async (tx) => {
+    return this.transaction(async (tx): Promise<MemoryAppendResult> => {
       await this.lock(tx, scopeKey);
-      const session = await this.upsertSession(tx, input.scope, scopeKey);
-      const { agentMemoryMessages: messages } = this.schema;
-      const last = (await tx
-        .select({ position: messages.position })
-        .from(messages)
-        .where(eq(messages.memorySessionId, session.id))
-        .orderBy(desc(messages.position))
-        .limit(1)) as PositionRow[];
-      const start = (last[0]?.position ?? -1) + 1;
+      let fingerprint: string | undefined;
+      if (writes !== undefined && idempotencyKey !== undefined) {
+        fingerprint = writeFingerprint(input);
+        const existing = await this.committedFingerprint(tx, scopeKey, idempotencyKey);
+        if (existing !== undefined) {
+          // Checked before the version so a retry after success is a duplicate, not a conflict.
+          return {
+            status: existing === fingerprint ? "duplicate" : "conflict",
+            version: await this.currentVersion(tx, scopeKey),
+          };
+        }
+      }
+      if (expectedVersion !== undefined) {
+        const version = await this.currentVersion(tx, scopeKey);
+        if (version !== expectedVersion) return { status: "conflict", version };
+      }
+      if (writes !== undefined && idempotencyKey !== undefined && fingerprint !== undefined) {
+        // The unique index is the backstop when lock is "none" and two writers race past the read.
+        const inserted = await tx
+          .insert(writes)
+          .values({ scopeKey, idempotencyKey, fingerprint })
+          .onConflictDoNothing()
+          .returning({ id: writes.id });
+        if (inserted.length === 0) {
+          const existing = await this.committedFingerprint(tx, scopeKey, idempotencyKey);
+          return {
+            status: existing === fingerprint ? "duplicate" : "conflict",
+            version: await this.currentVersion(tx, scopeKey),
+          };
+        }
+      }
 
-      await tx.insert(messages).values(
-        input.messages.map((message, index) => ({
-          memorySessionId: session.id,
-          runId: input.runId,
-          turn: input.turn,
-          position: start + index,
-          role: message.role,
-          message,
-        })),
-      );
+      if (input.messages.length > 0) {
+        const session = await this.upsertSession(tx, input.scope, scopeKey);
+        const { agentMemoryMessages: messages } = this.schema;
+        const last = (await tx
+          .select({ position: messages.position })
+          .from(messages)
+          .where(eq(messages.memorySessionId, session.id))
+          .orderBy(desc(messages.position))
+          .limit(1)) as PositionRow[];
+        const start = (last[0]?.position ?? -1) + 1;
+
+        await tx.insert(messages).values(
+          input.messages.map((message, index) => ({
+            memorySessionId: session.id,
+            runId: input.runId,
+            turn: input.turn,
+            position: start + index,
+            role: message.role,
+            message,
+          })),
+        );
+      }
+      return versioned
+        ? { status: "committed", version: await this.currentVersion(tx, scopeKey) }
+        : { status: "committed" };
     });
   }
 
@@ -406,6 +466,59 @@ export class DrizzleMemoryStore implements MemoryStore {
     };
   }
 
+  private writesTable(): NonNullable<DrizzleMemorySchema["agentMemoryWrites"]> {
+    const writes = this.schema.agentMemoryWrites;
+    if (writes === undefined) {
+      throw new Error(
+        "DrizzleMemoryStore needs the agent_memory_writes table (schema.agentMemoryWrites) for idempotencyKey. Regenerate the schema with `anvia-memory-drizzle init --force` and run drizzle-kit generate and migrate.",
+      );
+    }
+    return writes;
+  }
+
+  private async committedFingerprint(
+    db: DrizzleRuntimeDatabase,
+    scopeKey: string,
+    idempotencyKey: string,
+  ): Promise<string | undefined> {
+    const writes = this.writesTable();
+    const rows = (await db
+      .select({ fingerprint: writes.fingerprint })
+      .from(writes)
+      .where(and(eq(writes.scopeKey, scopeKey), eq(writes.idempotencyKey, idempotencyKey)))
+      .limit(1)) as WriteRow[];
+    return rows[0]?.fingerprint;
+  }
+
+  /**
+   * Version = session row id + highest message position + compaction generation. Appends raise the
+   * position and compaction raises the generation. `clear()` deletes the session, and a recreated
+   * session gets a fresh random id, so a version from before a clear can never match again. No
+   * session yields a distinct constant.
+   */
+  private async currentVersion(db: DrizzleRuntimeDatabase, scopeKey: string): Promise<string> {
+    const { agentMemorySessions: sessions, agentMemoryMessages: messages } = this.schema;
+    const sessionRows = (await db
+      .select({ id: sessions.id, compactionState: sessions.compactionState })
+      .from(sessions)
+      .where(eq(sessions.scopeKey, scopeKey))
+      .limit(1)) as CompactionSessionRow[];
+    const session = sessionRows[0];
+    if (session === undefined) return "v1:empty";
+    const last = (await db
+      .select({ position: messages.position })
+      .from(messages)
+      .where(eq(messages.memorySessionId, session.id))
+      .orderBy(desc(messages.position))
+      .limit(1)) as PositionRow[];
+    const generation = isRecord(session.compactionState)
+      ? Number(session.compactionState.generation ?? 0)
+      : 0;
+    // An empty history has one version whether or not recordError created a session row for it.
+    if (last[0]?.position === undefined) return "v1:empty";
+    return `v1:${session.id}:${last[0].position}:${generation}`;
+  }
+
   private async transaction<T>(operation: (tx: DrizzleRuntimeDatabase) => Promise<T>): Promise<T> {
     const db = runtimeDatabase(this.db);
     if (typeof db.transaction !== "function") {
@@ -507,6 +620,12 @@ function runtimeDatabase(db: DrizzleMemoryDatabaseLike): DrizzleRuntimeDatabase 
     }
   }
   return db as DrizzleRuntimeDatabase;
+}
+
+function writeFingerprint(input: MemoryAppendOptions): string {
+  return createHash("sha256")
+    .update(JSON.stringify({ runId: input.runId, turn: input.turn, messages: input.messages }))
+    .digest("hex");
 }
 
 function metadata(context: MemoryScope): JsonObject {

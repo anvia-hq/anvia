@@ -82,6 +82,48 @@ context. The exported session table includes nullable `compactionState`; add the
 through the application's normal migration workflow. This adapter never chooses retention, calls a
 model, or retries mutations.
 
+## Versioned and idempotent appends
+
+The store implements the optional versioned, idempotent contract from `@anvia/core`.
+
+```ts
+const { messages, version } = await memory.loadVersioned({ scope });
+const result = await memory.append({
+  scope,
+  runId,
+  turn,
+  messages: produced,
+  idempotencyKey: `${runId}:${turn}`,
+  expectedVersion: version,
+});
+// result.status is "committed", "duplicate" or "conflict"; result.version is the current version.
+```
+
+- A repeat of a committed key with the same `runId`, `turn` and messages is a `duplicate`. The key
+  is checked before the version, so a retry after success is not a conflict. The same key with
+  different content, or a stale `expectedVersion`, is a `conflict`. Nothing is written for either.
+- Keys are stored in the new `agent_memory_writes` table (`agentMemoryWrites`), unique per memory
+  scope and key. They survive `clear()`.
+- A version is an opaque string. It changes on every committed append, on a `clear()` that removes
+  data, and on a compaction `replacePrefix()`.
+- `append()` without a key or `expectedVersion` behaves as before.
+
+### Migrating an existing install
+
+The new table is additive. Existing installs keep working for plain `load()`, `append()` and
+`validate()` without it, and a keyed append throws an error naming `agent_memory_writes` if the
+table was not supplied in the `schema` option. To enable keys, regenerate the schema exports and
+migrate:
+
+```sh
+npx @anvia/memory-drizzle init --write --force   # add --append-to-schema if you used it before
+npx drizzle-kit generate
+npx drizzle-kit migrate
+```
+
+If you pass `schema: drizzleMemorySchema` the new table is already included. `validate()` does not
+check the writes table, so a missing migration surfaces on the first keyed append.
+
 ## Development
 
 ```sh

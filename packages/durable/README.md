@@ -348,8 +348,20 @@ With `memory: { mode: "recorded" }`, the run reads the agent's memory store once
 model call, and reuses that snapshot on replay. Each write is recorded as a `memory` operation with
 an idempotency key the runtime derives from the run and the write's position. Writes happen after the
 run's terminal checkpoint. A concurrent change to the memory history makes the run `needs_attention`
-with a conflict. Adapter packages (`memory-sqlite`, `memory-postgres`, `memory-prisma`,
-`memory-drizzle`) do not implement the versioned contract yet, so they cannot be used with recorded memory.
+with a conflict. `@anvia/memory-sqlite`, `@anvia/memory-postgres`, `@anvia/memory-prisma` and
+`@anvia/memory-drizzle` implement the versioned contract. Each needs its idempotency-key table, so
+follow that package's migration notes before you enable recorded memory.
+
+Recorded memory works for runs submitted with `runtime.submit()`, streaming or not. Graph tasks and
+owned agent tasks (`spawnAgent`) run under a synthetic session, so registering a recorded memory
+agent for them is rejected at admission: `submitGraph()` throws, and an owned agent task fails with
+a message that names the limit.
+
+A blocked memory write (a conflict, or a write whose outcome is unknown) is settled with
+`run.resolveMemoryWrite(operationKey, resolution)`. `"applied"` records that the store already holds
+the messages; `"discarded"` drops them. The run then sends its remaining writes without a version
+check, because the operator has accepted the divergence, and completes. `retry()` only sends the
+same write again, so it clears an unknown outcome but not a conflict.
 
 These per-run settings are not exposed: `retries`, `maxTurns`, and `controls` (the runtime captures
 the agent-level values at submission), plus `lifecycle`, `guardrails`, `middlewares`,

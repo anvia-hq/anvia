@@ -2,6 +2,7 @@ export {
   agentMemoryErrors,
   agentMemoryMessages,
   agentMemorySessions,
+  agentMemoryWrites,
   drizzleMemorySchema,
 } from "./schema.js";
 export { DrizzleMemoryStore } from "./store.js";

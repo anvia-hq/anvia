@@ -270,6 +270,9 @@ importers:
       '@anvia/core':
         specifier: workspace:*
         version: link:../core
+      '@anvia/memory-sqlite':
+        specifier: workspace:*
+        version: link:../memory-sqlite
       '@types/node':
         specifier: ^24.12.2
         version: 24.12.2

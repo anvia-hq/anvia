@@ -206,7 +206,7 @@ describe("SqliteMemoryClient", () => {
           { role: "user", content: [{ type: "text", text: "remember this" }] } satisfies Message,
         ],
       }),
-    ).resolves.toBeUndefined();
+    ).resolves.toMatchObject({ status: "committed" });
     await expect(store.load({ scope: context })).resolves.toHaveLength(1);
     await expect(store.compaction.snapshot({ scope: { sessionId: "missing" } })).resolves.toEqual({
       revision: JSON.stringify([0, []]),

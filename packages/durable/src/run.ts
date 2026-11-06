@@ -9,6 +9,7 @@ import type {
   DurableSnapshot,
   DurableRunSummary,
   DurableSteerOptions,
+  MemoryWriteResolution,
 } from "./types.js";
 
 export type DurableStreamOptions = { after?: number; abortSignal?: AbortSignal };
@@ -80,6 +81,10 @@ export class DurableRun {
 
   async resolveTool(operationId: string, output: ToolResultOutput): Promise<void> {
     this.runtime.resolveTool(this.id, operationId, output);
+  }
+
+  async resolveMemoryWrite(operationKey: string, resolution: MemoryWriteResolution): Promise<void> {
+    this.runtime.resolveMemoryWrite(this.id, operationKey, resolution);
   }
 
   async retry(): Promise<void> {

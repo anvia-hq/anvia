@@ -1,6 +1,6 @@
 {
   "name": "@anvia/mistral",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Mistral provider adapter for Anvia.",
   "author": "anvia",
   "license": "MIT",

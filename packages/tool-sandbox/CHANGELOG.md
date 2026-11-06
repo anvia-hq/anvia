@@ -1,5 +1,11 @@
 # @anvia/sandbox
 
+## 1.3.4
+
+### Patch Changes
+
+- cae22f9: Update runtime dependencies to their latest compatible minor and patch releases.
+
 ## 1.3.3
 
 ### Patch Changes

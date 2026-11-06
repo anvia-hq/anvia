@@ -1,5 +1,11 @@
 # @anvia/react-ui
 
+## 1.3.1
+
+### Patch Changes
+
+- cae22f9: Update runtime dependencies to their latest compatible minor and patch releases.
+
 ## 1.3.0
 
 ### Minor Changes

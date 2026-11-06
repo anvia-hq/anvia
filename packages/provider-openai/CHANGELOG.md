@@ -1,5 +1,11 @@
 # @anvia/openai
 
+## 1.3.8
+
+### Patch Changes
+
+- cae22f9: Update runtime dependencies to their latest compatible minor and patch releases.
+
 ## 1.3.7
 
 ### Patch Changes

@@ -1,5 +1,13 @@
 # @anvia/grok
 
+## 1.1.18
+
+### Patch Changes
+
+- cae22f9: Update runtime dependencies to their latest compatible minor and patch releases.
+- Updated dependencies [cae22f9]
+  - @anvia/openai@1.3.8
+
 ## 1.1.17
 
 ### Patch Changes

@@ -352,6 +352,10 @@ with a conflict. `@anvia/memory-sqlite`, `@anvia/memory-postgres`, `@anvia/memor
 `@anvia/memory-drizzle` implement the versioned contract. Each needs its idempotency-key table, so
 follow that package's migration notes before you enable recorded memory.
 
+Recorded memory cannot be combined with `memory.compaction` or the registration's `compaction`:
+both are rejected at registration, because compaction would rewrite history outside the recorded
+writes, or act on a run history that recorded memory leaves empty.
+
 Recorded memory works for runs submitted with `runtime.submit()`, streaming or not. A run that pauses for
 an approval or a question writes the paused segment's messages before it waits, and the resumed
 segment's writes are based on the version the paused one left behind, so a writer that commits

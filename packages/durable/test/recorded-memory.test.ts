@@ -138,6 +138,21 @@ it("rejects memory compaction under the recorded marker and names the field", as
   expect(() => runtime.registerAgents([registration(agent)])).toThrow(/memory\.compaction/);
 });
 
+it("rejects registration compaction together with recorded memory", async () => {
+  const runtime = await DurableRuntime.open({ store: new SqliteDurableStore(":memory:") });
+  runtimes.push(runtime);
+  const agent = agentWith(async () => done(), new InMemoryMemoryStore());
+  expect(() =>
+    runtime.registerAgents([
+      {
+        ...registration(agent),
+        compaction: { trigger: { afterTokens: 10 }, compactor: async () => ({ summary: "s" }) },
+      },
+    ]),
+  ).toThrow(/both compaction and memory/);
+  expect(runtime.compatibility()).toEqual([]);
+});
+
 it("reads the stored history and writes the reply under a runtime-derived key", async () => {
   const store = new InMemoryMemoryStore();
   await store.append({

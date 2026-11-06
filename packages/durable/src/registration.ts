@@ -128,6 +128,12 @@ export function registrations(
 
     let compaction: DurableAgentRegistration["compaction"];
     if (registration.compaction !== undefined) {
+      // Registration compaction projects the run's own history, which recorded memory leaves empty:
+      // the conversation lives in the memory store, so the policy would silently do nothing.
+      if (registration.memory !== undefined)
+        throw new TypeError(
+          `Durable agent "${agent.id}" sets both compaction and memory: { mode: "recorded" }. Registration compaction works on the run's history, which recorded memory keeps in the memory store, so it would not apply. Remove one of them.`,
+        );
       const { compactor, tokenCounter, ...policy } = registration.compaction;
       if (
         typeof compactor !== "function" ||

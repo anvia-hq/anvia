@@ -371,7 +371,6 @@ the versioned one in `@anvia/core` (`loadVersioned()`, and `append()` with `idem
 - Rejected at admission: a recorded memory agent in a graph task or an owned agent task
   (`spawnAgent`, including `continueFrom`). Both run under a synthetic session, so the agent would
   read an empty history and write into a scope nobody names.
-- Not covered: `resolveMemoryWrite` has no HTTP route or client method yet.
 
 Findings that shaped the contract (`packages/core/src/memory/types.ts` before #643):
 
@@ -388,8 +387,13 @@ Findings that shaped the contract (`packages/core/src/memory/types.ts` before #6
   and a SIGKILL of a real worker process); `recorded-memory-sqlite.test.ts` runs it against the
   SQLite adapter and `packages/durable/test/agent-parity.test.ts`
   (rejection without the marker).
-- **Follow-up:** an HTTP route and client method for `resolveMemoryWrite`; recorded memory for graph
-  and owned agent tasks needs a decision on which session scope they use.
+- **Decisions:** graph tasks and owned agent tasks stay rejected. Each would need a stable memory
+  scope of its own, a task child that continues another (`continueFrom`) would need that scope
+  carried across runs, and parallel nodes sharing one scope would conflict on every write. A
+  recorded memory agent is submitted directly, where the session id names the scope. Memory
+  compaction and the registration's `compaction` stay rejected for the reasons in the README.
+- **HTTP:** `POST /durable/runs/:id/resolve-memory-write`, `DurableClient.resolveMemoryWrite()` and the
+  chat controller method settle a blocked write.
 
 ## Checkpoint boundaries
 

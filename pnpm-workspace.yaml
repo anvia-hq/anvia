@@ -15,25 +15,39 @@ allowBuilds:
   workerd: true
 overrides:
   "@anvia/core": "workspace:*"
-  "@grpc/grpc-js": 1.14.4
-  "@modelcontextprotocol/sdk>@hono/node-server": 1.19.17
+  "@grpc/grpc-js": 1.14.7
+  "@hono/node-server@<2": 1.19.18
+  "@vitest/mocker": 4.1.12
   adm-zip: 0.6.1
-  "ajv>fast-uri": 3.1.6
   apache-arrow: 18.1.0
-  "body-parser>qs": 6.16.0
+  "body-parser>qs": 6.17.1
+  brace-expansion: 5.0.12
   "cosmiconfig>js-yaml": 4.3.2
-  "express-rate-limit>ip-address": 10.5.0
-  "express>body-parser": 2.3.0
-  "express>qs": 6.16.0
+  ip-address: 10.7.6
+  "express>body-parser": 2.4.0
+  "express>qs": 6.17.1
   esbuild: 0.28.2
+  fast-uri: 3.1.9
+  happy-dom: 21.0.4
+  hono: 4.13.16
   "js-yaml@^3.0.0": 3.15.2
   "js-yaml@^4.0.0": 4.3.2
+  lodash: 4.18.1
   postcss: 8.5.26
   "postcss>nanoid": 3.3.18
+  postcss-selector-parser: 6.1.5
+  proxy-addr: 2.0.8
   prosemirror-model: 1.25.11
   protobufjs: 7.6.5
-  sharp: 0.35.4
+  seroval: 1.7.7
+  sharp: 0.35.5
+  "shadcn>zod": 4.6.7
+  source-map-js: 1.2.2
+  systeminformation: 5.33.19
   tar: 7.5.21
+  tinypool: 2.2.0
+  "undici@<8": 7.30.2
+  valibot: 1.5.0
   # Prisma Composer 0.34.0 pins Effect 4.0.3; Alchemy otherwise floats to newer, incompatible Effect releases.
   "alchemy@2.0.0-beta.83>@effect/sql-d1": 4.0.3
   "alchemy@2.0.0-beta.83>@effect/sql-sqlite-do": 4.0.3

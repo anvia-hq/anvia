@@ -359,8 +359,11 @@ the versioned one in `@anvia/core` (`loadVersioned()`, and `append()` with `idem
   concurrent writer makes the run `needs_attention` with a conflict, and nothing is written.
 - An interrupted write is uncertain. The run needs attention, and `retry()` sends it again under the
   same key.
-- Rejected under the marker: `memory.compaction`, and a store without `loadVersioned()`. A run that pauses
-  for a human interaction fails with an explicit error, because a resume would offer its messages twice.
+- Rejected under the marker: `memory.compaction`, and a store without `loadVersioned()`.
+- A run that pauses for a human interaction is supported. The paused segment's writes are flushed
+  before the run waits; core does not read memory on resume, so nothing is offered twice. The
+  resumed segment's writes use keys under the next epoch and are based on the version the previous
+  segment left behind, so a writer that commits during the pause makes the resume `needs_attention`.
 - Adapters: `memory-sqlite`, `memory-postgres`, `memory-prisma` and `memory-drizzle` implement the
   versioned contract, each with an idempotency-key table that survives `clear()`.
 - Operator path: `run.resolveMemoryWrite(operationKey, "applied" | "discarded")` settles a blocked

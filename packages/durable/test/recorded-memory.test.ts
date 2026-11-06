@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Agent } from "@anvia/core/agent";
 import type { CompletionRequest } from "@anvia/core/completion";
 import { InMemoryMemoryStore, type MemoryStore } from "@anvia/core/memory";
@@ -67,11 +67,13 @@ async function open(path: string, agent: AnyAgent) {
   return runtime;
 }
 
-async function settled(run: DurableRun) {
+async function settled(
+  run: DurableRun,
+  statuses = ["completed", "failed", "cancelled", "needs_attention"],
+) {
   for (let attempt = 0; attempt < 250; attempt++) {
     const snapshot = await run.snapshot();
-    if (["completed", "failed", "cancelled", "needs_attention"].includes(snapshot.run.status))
-      return snapshot;
+    if (statuses.includes(snapshot.run.status)) return snapshot;
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
   throw new Error("The durable run did not settle.");
@@ -315,24 +317,82 @@ it("resumes after a crash between the terminal checkpoint and the writes, withou
   expect(await storedCount(store)).toBe(2);
 });
 
-it("fails a run that pauses for a human interaction instead of replaying memory twice", async () => {
-  const store = new InMemoryMemoryStore();
-  const approval = { ...lookup(async () => "approved"), requiresApproval: true };
-  const model = vi.fn(async (request: CompletionRequest) =>
-    request.chatHistory.some((message) => message.role === "tool") ? done() : toolResponse(),
-  );
-  const agent = new Agent({
-    id: "remembering",
-    tools: [approval],
-    memory: { store, savePolicy: "message" },
-    model: { provider: "test", modelId: "test", capabilities, completion: model },
-  } as ConstructorParameters<typeof Agent>[0]);
-  const runtime = await open(database(), agent);
-  const submitted = await runtime.submit({ ...submission, prompt: "hello" });
-  const snapshot = await settled(submitted);
-  expect(snapshot.run.status).toBe("failed");
-  expect(snapshot.run.error).toMatch(/paused for a human interaction/);
-});
+describe.each(["message", "run"] as const)(
+  "a human interaction with savePolicy %s",
+  (savePolicy) => {
+    function approvalAgent(
+      store: MemoryStore,
+      model: (request: CompletionRequest) => Promise<ReturnType<typeof done>>,
+    ) {
+      const approval = { ...lookup(async () => "approved"), requiresApproval: true };
+      return new Agent({
+        id: "remembering",
+        tools: [approval],
+        memory: { store, savePolicy },
+        model: { provider: "test", modelId: "test", capabilities, completion: model },
+      } as ConstructorParameters<typeof Agent>[0]);
+    }
+    const answer = (request: CompletionRequest) =>
+      request.chatHistory.some((message) => message.role === "tool") ? done() : toolResponse();
+
+    it("stores the paused segment, then the resumed one, each message once", async () => {
+      const store = new InMemoryMemoryStore();
+      const model = vi.fn(async (request: CompletionRequest) => answer(request));
+      const appendSpy = vi.spyOn(store, "append");
+      const runtime = await open(database(), approvalAgent(store, model));
+      const submitted = await runtime.submit({ ...submission, prompt: "hello" });
+
+      const paused = await settled(submitted, ["waiting"]);
+      expect(paused.run.status).toBe("waiting");
+      const outcome = paused.run.outcome;
+      if (outcome?.type !== "interaction") throw new Error("Expected an interaction.");
+      const afterPause = (await store.load({ scope })).map((message) => message.role);
+      expect(afterPause).toEqual(["user", "assistant"]);
+
+      await submitted.respond(outcome.interaction.id, { type: "tool-approval", approved: true });
+      const finished = await settled(submitted);
+
+      expect(finished.run.status).toBe("completed");
+      expect((await store.load({ scope })).map((message) => message.role)).toEqual([
+        "user",
+        "assistant",
+        "tool", // the approval response, which is the resumed run's input
+        "tool", // the tool result
+        "assistant",
+      ]);
+      // The resumed segment's writes are based on the version the paused segment left behind.
+      const versions = appendSpy.mock.calls.map((call) => call[0].expectedVersion);
+      expect(versions.every((version) => version !== undefined)).toBe(true);
+      const keys = appendSpy.mock.calls.map((call) => call[0].idempotencyKey);
+      expect(new Set(keys).size).toBe(keys.length);
+      expect(keys.some((key) => key?.includes("/1:memory:write:"))).toBe(true);
+    });
+
+    it("flags a conflict in the resumed segment when another writer commits during the pause", async () => {
+      const store = new InMemoryMemoryStore();
+      const runtime = await open(
+        database(),
+        approvalAgent(store, async (request) => answer(request)),
+      );
+      const submitted = await runtime.submit({ ...submission, prompt: "hello" });
+      const paused = await settled(submitted, ["waiting"]);
+      const outcome = paused.run.outcome;
+      if (outcome?.type !== "interaction") throw new Error("Expected an interaction.");
+      await store.append({
+        scope,
+        runId: "other",
+        turn: 1,
+        messages: [{ role: "user", content: [{ type: "text", text: "during the pause" }] }],
+      });
+
+      await submitted.respond(outcome.interaction.id, { type: "tool-approval", approved: true });
+      const blocked = await settled(submitted);
+
+      expect(blocked.run.status).toBe("needs_attention");
+      expect(blocked.run.error).toMatch(/conflicts with the memory store/);
+    });
+  },
+);
 
 async function conflicted() {
   const store = new InMemoryMemoryStore();

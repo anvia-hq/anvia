@@ -900,12 +900,6 @@ export class DurableRuntime {
             ? await registration.agent.stream(options).result
             : await registration.agent.generate(options);
         signal.throwIfAborted();
-        // A paused run's messages are only partly committed to memory, and a resume would offer
-        // them to the model twice (from memory and from the run's history). Refuse it explicitly.
-        if (memory !== undefined && outcome.type === "interaction")
-          throw new TypeError(
-            `Durable agent "${run.agentId}" paused for a human interaction, which recorded memory does not support yet. Remove the interaction tool or the memory marker.`,
-          );
         this.store.transaction((tx) => {
           const current = requireRun(tx, id);
           current.outcome = externalizeOutcome(

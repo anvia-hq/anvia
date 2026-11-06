@@ -352,7 +352,10 @@ with a conflict. `@anvia/memory-sqlite`, `@anvia/memory-postgres`, `@anvia/memor
 `@anvia/memory-drizzle` implement the versioned contract. Each needs its idempotency-key table, so
 follow that package's migration notes before you enable recorded memory.
 
-Recorded memory works for runs submitted with `runtime.submit()`, streaming or not. Graph tasks and
+Recorded memory works for runs submitted with `runtime.submit()`, streaming or not. A run that pauses for
+an approval or a question writes the paused segment's messages before it waits, and the resumed
+segment's writes are based on the version the paused one left behind, so a writer that commits
+during the pause makes the resume `needs_attention`. Graph tasks and
 owned agent tasks (`spawnAgent`) run under a synthetic session, so registering a recorded memory
 agent for them is rejected at admission: `submitGraph()` throws, and an owned agent task fails with
 a message that names the limit.

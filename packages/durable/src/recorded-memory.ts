@@ -172,12 +172,16 @@ export async function flushRecordedMemory(options: {
   const { store, run, source, signal } = options;
   const prefix = memoryPrefix(run);
   const writePrefix = `${prefix}:${WRITE_PREFIX}`;
-  // Each write is based on the version the previous step left behind.
+  // Each write is based on the version the previous step left behind, across the segments of a run
+  // that paused for an interaction: the last completed memory operation of any epoch decides it.
   let version = store.transaction((tx) => {
-    const read = tx.getOperation(run.id, `${prefix}:${READ_SUFFIX}`);
-    return read?.status === "completed"
-      ? (read.result as unknown as { version: string }).version
-      : undefined;
+    const settled = tx
+      .operations(run.id)
+      .filter((operation) => operation.kind === "memory" && operation.status === "completed")
+      .sort(compareMemoryOperations);
+    const last = settled.at(-1);
+    const result = last?.result as unknown as { version?: string | null } | undefined;
+    return result?.version ?? undefined;
   });
   const writes = store
     .transaction((tx) => tx.operations(run.id))
@@ -253,6 +257,18 @@ export function resolveRecordedMemoryWrite(
 /** Retry resets an uncertain write so the next flush sends it again under the same key. */
 export function isRecordedMemoryWrite(operation: DurableOperation): boolean {
   return operation.kind === "memory" && operation.key.includes(`:${WRITE_PREFIX}`);
+}
+
+/** Orders memory operations by epoch, then the read before the writes, then write position. */
+function compareMemoryOperations(left: DurableOperation, right: DurableOperation): number {
+  const [leftEpoch, leftSeq] = memoryPosition(left);
+  const [rightEpoch, rightSeq] = memoryPosition(right);
+  return leftEpoch - rightEpoch || leftSeq - rightSeq;
+}
+
+function memoryPosition(operation: DurableOperation): [number, number] {
+  const epoch = Number(operation.key.slice(0, operation.key.indexOf(":")));
+  return [epoch, operation.key.endsWith(`:${READ_SUFFIX}`) ? -1 : sequence(operation)];
 }
 
 function sequence(operation: DurableOperation): number {

@@ -1,5 +1,18 @@
 # @anvia/sandbox
 
+## 1.3.3
+
+### Patch Changes
+
+- 51ba7b2: Stop the ssh-agent and gpg-agent that a desktop started when the desktop stops. These agents daemonize, so stopping the desktop's process group left them running. Only agents started with that desktop's environment are stopped; agents started elsewhere are left alone.
+- 284c13d: Stop a desktop's helper processes when the desktop stops or restarts.
+
+  The window manager's autostart starts helpers such as dbus, at-spi, gvfs and ssh-agent. Stopping
+  the desktop only signalled its own process, so these helpers kept running after every stop or
+  restart. Each desktop now runs in its own process group, and stopping it signals the whole group.
+
+- 3b6323e: Kill a terminal session that ignores SIGHUP. The daemon now sends SIGKILL to a shell that is still running one second after SIGHUP, so `kill` ends the session instead of leaving it waiting for input.
+
 ## 1.3.2
 
 ### Patch Changes

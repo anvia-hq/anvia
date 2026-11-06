@@ -1,5 +1,15 @@
 # @anvia/memory-drizzle
 
+## 1.2.0
+
+### Minor Changes
+
+- 2ab41f5: Implement the versioned, idempotent memory store contract. `DrizzleMemoryStore` adds `loadVersioned()` and `append()` now accepts `idempotencyKey` and `expectedVersion` and returns a `MemoryAppendResult`. Idempotency keys live in a new `agent_memory_writes` table (`agentMemoryWrites`); regenerate the schema exports and run your Drizzle migrations to enable keyed appends. Plain `load()`, `append()` and `validate()` keep working without the new table.
+
+### Patch Changes
+
+- bf0a3bc: Make keyed and versioned appends safe under `lock: "none"`. Writers racing on one `expectedVersion` could all commit. The append now upserts the session row first, so its row lock keeps writers on one scope in turn. The default advisory lock is unchanged.
+
 ## 1.1.5
 
 ### Patch Changes

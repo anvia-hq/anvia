@@ -1,5 +1,164 @@
 # @anvia/durable
 
+## 0.14.0
+
+### Minor Changes
+
+- 887dd02: Keep `status` events small: they no longer embed the run's outcome.
+
+  - `@anvia/durable`: a `status` event carries `status`, `error`, `blockedOperation` and
+    `nextAttemptAt`. The run's `outcome` is stored once, on the run, and is read from the run
+    snapshot. Status events are not payload-checked, so a limit cannot block a run from reaching a
+    terminal status. Journals written by older versions still carry `outcome` on the event, and
+    clients still read it.
+  - `@anvia/client`: the durable chat transport reads the outcome from the snapshot when a settled
+    (`completed`, `waiting`, `failed`) status event has none. If the run has already moved past that
+    status, the event maps without an outcome. The chat output for completed, waiting and failed
+    runs is unchanged.
+  - `@anvia/server`: peer range updated for `@anvia/durable` 0.14.
+
+- bf0a3bc: Allow a recorded memory run to pause for a human interaction. The paused segment's memory writes are flushed before the run waits. Core does not read memory on resume, so no message is offered twice. The resumed segment's writes use keys under the next epoch and are based on the version the previous segment left behind, so a writer that commits during the pause makes the resume `needs_attention` instead of overwriting it. Such a run used to fail with a `TypeError`.
+- 01f9f4c: Admit observational lifecycle hooks. Set `lifecycle: { mode: "observe" }` on a registration and the agent's `onStart`, `onStepFinish`, `onToolStart`, `onToolFinish`, `onFinish` and `onError` hooks run at most once per step. Each invocation is recorded before the hook runs, so a restart or retry does not repeat it. A throwing hook is recorded and does not fail the run. Without the marker, `lifecycle` is still rejected at registration.
+- 803c42f: Accept per-field payload budgets in `maxPayloadBytes`.
+
+  - `@anvia/durable`: `maxPayloadBytes` takes either a number (one budget for every field, as before)
+    or an object with `prompt`, `operation`, `event`, and `outcome` budgets. Each omitted group falls
+    back to `default`, which defaults to 1,048,576 bytes. `runtime.limits()` returns the resolved
+    object. Payload errors keep their fields (`code`, `field`, `limit`, `actual`), and `limit` is the
+    effective budget for that field. Unknown keys and non-positive values are rejected at open.
+  - `@anvia/server`: the startup body-limit warning compares `maxBodyBytes` with the largest per-field
+    budget, so it reads the new shape. The warning text for a number is unchanged.
+  - Docs: `durable-operations.md` has the field-to-budget table and notes that a prompt is also
+    copied into the history and outcome.
+
+- 1edefb8: Admit MCP servers behind an explicit marker (parity phase 6).
+
+  - Registration accepts `mcpServers: { mode: "pinned" }`. Without it, MCP servers are still rejected,
+    and the error names the marker.
+  - The run stores a fingerprint of each server (name, server info, capabilities, instructions, and
+    each tool's names and definition) at submission. A changed tool list under the same registration
+    version fails the run with `needs_attention` before any model call.
+  - Each MCP call is an ordinary tool operation with the registration's `toolRecovery` policy (default
+    `manual`). An interrupted call blocks for reconciliation.
+  - Discovery stays in the application (`McpClient.connect()`); durable does not call `listTools`.
+  - Pinned agents are registered in `DurableRuntime.open()`, which computes their fingerprint before any
+    run starts. `registerAgents()` rejects a pinned agent, because the fingerprint reads tool definitions
+    that may be asynchronous. Owned agent task children and graph tasks record the same fingerprint.
+
+- b64163d: Admit middleware and guardrails. Set `middlewares: { mode: "pure" }` on a registration to admit the agent's middleware, which must be deterministic and free of external effects; replay compares the transformed request or tool input with the persisted one and fails with a recovery error if it changed. Set `guardrails: { mode: "record" }` to admit guardrail policies: each check's outcome is recorded before it is applied, and a restart reuses it. A blocking input decision is a terminal outcome. A check that threw is run again after `retry()`. Two checks with the same id in one policy are rejected at registration. Without the markers both features are still rejected at registration, and the error names the marker.
+- 4482e82: Admit agent memory behind an explicit marker (parity phase 7).
+
+  - Registration accepts `memory: { mode: "recorded" }`. Without it, memory is still rejected, and the error names the `memory` field and the marker.
+  - The run reads the memory store once, before the first model call, and reuses that snapshot on replay.
+  - Each write is a `memory` operation keyed by an idempotency key the runtime derives from the run and the write's position. Writes run after the terminal checkpoint, and a crash before they finish keeps the run open until they do.
+  - A concurrent change to the memory history fails the run with `needs_attention` and writes nothing.
+  - Rejected under the marker: `memory.compaction`, and a store without `loadVersioned()`. A run that pauses for a human interaction fails under the marker. Adapter packages do not implement the versioned contract yet.
+
+- bea47fa: Admit dynamic tool indexes behind an explicit marker (parity phase 5).
+
+  - Registration accepts `toolIndexes: { mode: "recorded" }`. Without it, tool indexes are still
+    rejected, and the error names the marker.
+  - Each model call's tool selection is recorded before the call. A restart or retry offers the
+    recorded tools and does not run the index search again.
+  - The run stores a fingerprint of the indexes (search settings and tool definitions) at submission.
+    A change under the same registration version fails the run with `needs_attention`. The embedding
+    model is not part of the fingerprint, so bump the version when it changes.
+
+- 2ab41f5: Add `run.resolveMemoryWrite(operationKey, "applied" | "discarded")` and `DurableRuntime.resolveMemoryWrite()`. A recorded memory write that blocked a run, because the store reported a conflict or its outcome is unknown, can now be settled by an operator. `"applied"` says the store already holds the messages, `"discarded"` drops them, and the run sends its remaining writes without a version check and completes. `retry()` still only sends the same write again.
+- 519d170: Admit provider-executed tools. Set `providerTools: { mode: "stateless" }` on a registration to admit the agent's `ProviderTool` entries; the provider must keep no state between calls. The definitions are part of the persisted model request, so a changed definition under the same version fails replay with `needs_attention`, and a restart reuses the persisted provider response. A provider tool whose configuration is not JSON is rejected at registration. Without the marker, provider tools are still rejected at registration, and the error names the marker.
+- b9e98c5: Accept static `Document` context in durable agents (parity Phase 1).
+
+  - Registration no longer rejects an agent `context` that contains only static `Document` entries.
+    `VectorContext` entries are still rejected, with the same message naming `context`.
+  - The resolved documents are snapshotted into the run record at submission (`contextDocuments`,
+    with a content hash), so a restart or retry replays exactly the same context. Large document sets
+    persist through the blob table; the hash stays inline.
+  - At every execution start the runtime re-hashes the registration's current documents and compares
+    them with the run's snapshot. A mismatch under the same registration version fails the run with a
+    `DurableRecoveryError` (status `needs_attention`) naming both hashes, instead of silently changing
+    context. Restoring the original documents and calling `retry()` resumes the run.
+
+- b9e98c5: Store oversized payloads as blob references instead of failing the run (DUR-05).
+
+  - The SQLite schema moves from version 9 to 11, adding an `anvia_durable_blobs` table. The table is
+    created on open and existing stores (versions 1–10) migrate on ownership acquisition, keeping all
+    runs readable. Backup/restore accepts versions up to 11.
+  - Tool results, model results, run outcomes (text, output, and messages), exhaustion transcripts,
+    context-operation transcripts, and large message leaves (text, reasoning, image/file data,
+    tool-call inputs, tool-result outputs) larger than 64 KiB move to the blob table, inside the same
+    transaction as the record that references them. Journal records keep a bounded, content-addressed
+    reference (`anvia:blob` markers), so an oversized tool result or model outcome no longer fails a
+    run or inflates session history.
+  - Execution is unchanged for models and tools: requests sent to the provider and results returned
+    to the agent loop are always fully restored from the blob table. `run()`, `snapshot()`,
+    `operationRequest()`, and event reads hydrate references as well. Replay comparisons run on the
+    deterministic stored forms, so a replayed run produces byte-identical references.
+  - `DurableTransaction` gains `putBlob`/`getBlob`. Payload limits still apply to the stored
+    (bounded) forms; blob writes themselves are not limit-checked.
+  - Not covered: media in submitted prompts still counts against the prompt budget at admission, and
+    blobs are never garbage-collected (there is no retention yet).
+
+### Patch Changes
+
+- 393e691: Stop user data shaped like blob references from being read as references.
+
+  - Data containing `anvia:blob`, `anvia:blobs`, or `metadata.anvia.durableBlobs` used to be
+    interpreted as a reference: a missing blob threw, and an existing hash returned another blob's
+    content. Those keys are now escaped when a record is written (a leading `~`) and restored when
+    it is read, so the data round-trips unchanged. Only runtime-created references are interpreted.
+  - The SQLite schema moves from version 10 to 11. Opening a version 10 or older store rewrites its
+    journal rows once: user keys are escaped, well-formed references whose blobs exist are kept, and
+    message histories are re-hashed with their references renamed. Maintenance and backup accept
+    version 11.
+  - Known limit: in rows written before this version, a user object that copies an existing blob's
+    marker (same hash and size) cannot be told apart from a real reference.
+
+- 2c5dc61: Drop the "experimental" label from the lifecycle, middleware, guardrail, provider tool, MCP and tool index marker docs. The markers are unchanged and their behaviour is the same.
+- b693331: Serialize each payload once per limit check.
+
+  - A completed task output is measured once. The change check used to serialize the whole outcome,
+    and the size check then serialized the output again.
+  - Every value is serialized at most once per check, and the change check and size check share that
+    string. No stored format or limit changes. Status events are still not payload-checked.
+
+- 2ab41f5: Document that the SQLite, Postgres, Prisma and Drizzle memory adapters implement the versioned contract that recorded memory needs. Adds end-to-end tests of recorded memory against the SQLite adapter and a process-kill test of a memory write. No behaviour changes.
+- bf0a3bc: Reject a registration that sets both `compaction` and `memory: { mode: "recorded" }`. Registration compaction works on the run's history, which recorded memory keeps in the memory store, so the policy would silently do nothing.
+- 7bd64bf: Correct the recorded memory docs. The README no longer says durable session history always replaces agent memory, and the bundled `anvia-durable` skill names the `memory: { mode: "recorded" }` marker. No behaviour changes.
+- 2ab41f5: Reject recorded memory agents in graph tasks and owned agent tasks at admission. They run under a synthetic session id, so the agent would read an empty history and write to a scope no caller names. `submitGraph()` throws a `TypeError` naming the agent, and `spawnAgent` fails the task with the same message. Submit the agent with `runtime.submit()` instead.
+- d1127b7: Document the effective payload budget per field, and stringify each field once per write.
+
+  - Docs: `durable-operations.md` gains a per-field budget table and says that status events are not
+    payload-checked and duplicate the outcome. The stale "no startup warning" sentence is replaced
+    with the current `createDurableHandler` warning.
+  - Limit checks serialize each persisted field once per write, not up to three times. Behaviour and
+    error metadata are unchanged.
+  - Test: a single over-limit write names the field, the limit, and the actual size.
+
+- acd260a: Store oversized prompts as blob references instead of inline JSON.
+
+  - A submitted prompt above 64 KiB is written to the blob table. The run record, its `input`
+    messages, and the `submitted` event keep a bounded reference. The run and its events read back the
+    full prompt, after a restart too. Prompts below the threshold stay inline, as before.
+  - Prompt byte budgets still apply to the logical prompt, so admission does not change.
+  - The SQLite schema moves from version 11 to 12. Opening a version 11 or older store rewrites its
+    oversized prompts once. Maintenance and backup accept version 12.
+
+- 4a3aa88: Warn when the durable HTTP body limit is below the payload limit, and send `Retry-After` on capacity
+  rejections.
+
+  - `@anvia/server`: `createDurableHandler` logs one warning at creation when `maxBodyBytes` is below
+    the runtime's `maxPayloadBytes`. The default 64 KiB body limit is below the default 1 MiB payload
+    limit, so the warning appears for default setups. It is advisory only: it never throws and the
+    defaults are unchanged. The check is exported as `durableBodyLimitWarning` for tests and tooling.
+    No warning is given when the runtime does not report its payload limit (older `@anvia/durable`).
+  - `@anvia/server`: capacity rejections (`code: "capacity_exceeded"`) return `429` with an integer
+    `Retry-After: 1` header. This is a conservative hint, not a guarantee. Payload rejections (`413`)
+    do not send it.
+  - `@anvia/durable`: add a read-only `runtime.limits()` that returns a copy of the effective limits
+    after defaults. The server uses it for the startup check. This is additive, so it is a patch.
+  - `@anvia/client`: `DurableHttpError` gains `retryAfterSeconds`, read from an integer `Retry-After`
+    header, so callers can back off on capacity 429s.
+
 ## 0.13.0
 
 ### Minor Changes

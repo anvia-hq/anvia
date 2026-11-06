@@ -1,5 +1,17 @@
 # @anvia/core
 
+## 1.18.0
+
+### Minor Changes
+
+- 86bf97f: Add an optional versioned, idempotent memory store contract. `MemoryStore.loadVersioned()` returns the history with a version, and `append()` accepts `idempotencyKey` and `expectedVersion` and returns a `MemoryAppendResult` (`committed`, `duplicate` or `conflict`). Existing stores that return `void` from `append()` keep working. Adds `InMemoryMemoryStore`, a process-local reference implementation for tests and prototypes.
+
+### Patch Changes
+
+- 5c4535b: Reject a provider tool whose configuration is not JSON. Agent construction and completion requests now throw a `TypeError` that names the tool, instead of sending the malformed entry to the local tool list where it was silently dropped.
+- 4482e82: Let an internal run option replace the memory store and session scope for one run. Durable uses it to record memory reads and writes. The option is internal; the public `Agent` API does not change.
+- bea47fa: Add an internal execution hook that wraps each model call's tool selection, so a durable runtime can record and replay tool-index results. The public API is unchanged.
+
 ## 1.17.3
 
 ### Patch Changes

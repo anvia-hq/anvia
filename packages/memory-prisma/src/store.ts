@@ -433,7 +433,9 @@ async function currentVersion(delegates: PrismaMemoryDelegates, scopeKey: string
     orderBy: { position: "desc" },
     select: { position: true },
   });
-  return formatVersion(session.id, tail?.position ?? -1, generationOf(session.compactionState));
+  // An empty history has one version whether or not recordError created a session row for it.
+  if (tail === null || tail === undefined) return "none";
+  return formatVersion(session.id, tail.position, generationOf(session.compactionState));
 }
 
 function formatVersion(sessionId: string, last: number, generation: number): string {

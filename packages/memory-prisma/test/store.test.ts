@@ -925,6 +925,27 @@ describe("PrismaMemoryStore versioned, idempotent appends", () => {
     expect(prisma.messages).toHaveLength(1);
   });
 
+  it("keeps the empty version when recordError creates a session, so a write is not a conflict", async () => {
+    const prisma = new FakePrisma();
+    const store = createTestMemoryStore(prisma.client);
+    const empty = await loadedVersion(store);
+
+    await store.recordError({
+      scope,
+      runId: "failed-run",
+      error: new Error("failed"),
+      messages: [Message.user("hi")],
+    });
+
+    expect(await loadedVersion(store)).toBe(empty);
+    const result = await store.append({
+      ...base,
+      messages: [Message.user("a")],
+      expectedVersion: empty,
+    });
+    expect(result.status).toBe("committed");
+  });
+
   it("changes the version on append, clear and compaction replacePrefix", async () => {
     const prisma = new FakePrisma();
     const store = createTestMemoryStore(prisma.client);

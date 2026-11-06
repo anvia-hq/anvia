@@ -763,6 +763,22 @@ describe("PostgresMemoryStore", () => {
       expect(await store.load({ scope })).toEqual([userMessage]);
     });
 
+    it("keeps the empty version when recordError creates a session, so a write is not a conflict", async () => {
+      const store = await createTestMemoryStore({ client: new FakePgClient() });
+      const { version: empty } = await store.loadVersioned({ scope });
+
+      await store.recordError({
+        scope,
+        runId: "failed-run",
+        error: new Error("failed"),
+        messages: [userMessage],
+      });
+
+      expect((await store.loadVersioned({ scope })).version).toBe(empty);
+      const result = await store.append({ ...write("run-1"), expectedVersion: empty });
+      expect(result.status).toBe("committed");
+    });
+
     it("checks expectedVersion, and checks a duplicate before the version", async () => {
       const store = await createTestMemoryStore({ client: new FakePgClient() });
       const { version: empty } = await store.loadVersioned({ scope });

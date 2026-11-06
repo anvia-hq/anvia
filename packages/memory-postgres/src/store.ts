@@ -733,7 +733,9 @@ function formatVersion(
   maxPosition: number | string | null,
   compactionState: unknown,
 ): string {
-  return `${sessionId}:${maxPosition === null ? -1 : Number(maxPosition)}:${compactionGeneration(compactionState)}`;
+  // An empty history has one version whether or not recordError created a session row for it.
+  if (maxPosition === null) return NO_SESSION_VERSION;
+  return `${sessionId}:${Number(maxPosition)}:${compactionGeneration(compactionState)}`;
 }
 
 function compactionGeneration(value: unknown): number {

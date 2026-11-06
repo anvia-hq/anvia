@@ -34,7 +34,7 @@
     "typecheck": "tsc --noEmit && tsc --project registry/tsconfig.json --noEmit"
   },
   "dependencies": {
-    "shadcn": "^4.22.1"
+    "shadcn": "^4.23.0"
   },
   "devDependencies": {
     "@anvia/react-ui": "workspace:*",

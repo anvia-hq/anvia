@@ -31,7 +31,7 @@
   },
   "dependencies": {
     "@anvia/graph": "workspace:*",
-    "neo4j-driver": "^6.2.0"
+    "neo4j-driver": "^6.3.0"
   },
   "devDependencies": {
     "@anvia/core": "workspace:*",

@@ -352,7 +352,14 @@ with a conflict. `@anvia/memory-sqlite`, `@anvia/memory-postgres`, `@anvia/memor
 `@anvia/memory-drizzle` implement the versioned contract. Each needs its idempotency-key table, so
 follow that package's migration notes before you enable recorded memory.
 
-Recorded memory works for runs submitted with `runtime.submit()`, streaming or not. Graph tasks and
+Recorded memory cannot be combined with `memory.compaction` or the registration's `compaction`:
+both are rejected at registration, because compaction would rewrite history outside the recorded
+writes, or act on a run history that recorded memory leaves empty.
+
+Recorded memory works for runs submitted with `runtime.submit()`, streaming or not. A run that pauses for
+an approval or a question writes the paused segment's messages before it waits, and the resumed
+segment's writes are based on the version the paused one left behind, so a writer that commits
+during the pause makes the resume `needs_attention`. Graph tasks and
 owned agent tasks (`spawnAgent`) run under a synthetic session, so registering a recorded memory
 agent for them is rejected at admission: `submitGraph()` throws, and an owned agent task fails with
 a message that names the limit.
@@ -362,6 +369,8 @@ A blocked memory write (a conflict, or a write whose outcome is unknown) is sett
 the messages; `"discarded"` drops them. The run then sends its remaining writes without a version
 check, because the operator has accepted the divergence, and completes. `retry()` only sends the
 same write again, so it clears an unknown outcome but not a conflict.
+`@anvia/server` exposes it as `POST /durable/runs/:id/resolve-memory-write`, and
+`DurableClient.resolveMemoryWrite()` calls it.
 
 These per-run settings are not exposed: `retries`, `maxTurns`, and `controls` (the runtime captures
 the agent-level values at submission), plus `lifecycle`, `guardrails`, `middlewares`,

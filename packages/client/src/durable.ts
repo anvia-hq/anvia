@@ -360,6 +360,19 @@ export class DurableClient {
       options,
     );
   }
+  async resolveMemoryWrite(
+    runId: string,
+    operationKey: string,
+    resolution: "applied" | "discarded",
+    options: DurableRequestOptions = {},
+  ): Promise<void> {
+    await this.request(
+      `${this.path(runId)}/resolve-memory-write`,
+      "POST",
+      { operationKey, resolution },
+      options,
+    );
+  }
   async retry(runId: string, options: DurableRequestOptions = {}): Promise<void> {
     await this.request(`${this.path(runId)}/retry`, "POST", undefined, options);
   }

@@ -50,7 +50,9 @@ const UNFINISHED = new Set([
 export type DurableChatClient = Pick<
   DurableClient,
   "submit" | "stream" | "snapshot" | "respond" | "resolveTool" | "retry" | "cancel" | "listRuns"
->;
+> &
+  // Optional so a client written before this method existed still satisfies the type.
+  Partial<Pick<DurableClient, "resolveMemoryWrite">>;
 
 /**
  * Run controls that `useChat` does not expose. `stop()` only aborts the subscription; cancellation
@@ -64,6 +66,12 @@ export type DurableChatController = {
   cancel(runId?: string): Promise<void>;
   retry(runId?: string): Promise<void>;
   resolveTool(operationId: string, output: ToolResultOutput, runId?: string): Promise<void>;
+  /** Settle a blocked recorded memory write: `applied` says the store holds it, `discarded` drops it. */
+  resolveMemoryWrite(
+    operationKey: string,
+    resolution: "applied" | "discarded",
+    runId?: string,
+  ): Promise<void>;
 };
 
 export type CreateDurableChatTransportOptions = {
@@ -118,6 +126,14 @@ export function createDurableChatTransport(
     },
     resolveTool(operationId, output, runId) {
       return options.client.resolveTool(resolveRun(session, runId), operationId, output);
+    },
+    resolveMemoryWrite(operationKey, resolution, runId) {
+      const resolve = options.client.resolveMemoryWrite;
+      if (resolve === undefined)
+        return Promise.reject(
+          new TypeError("The durable client does not support resolveMemoryWrite."),
+        );
+      return resolve.call(options.client, resolveRun(session, runId), operationKey, resolution);
     },
   };
 

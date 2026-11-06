@@ -209,6 +209,12 @@ export class DrizzleMemoryStore implements MemoryStore {
 
     return this.transaction(async (tx): Promise<MemoryAppendResult> => {
       await this.lock(tx, scopeKey);
+      // Without the advisory lock, the session upsert's row lock is what makes writers on one scope
+      // run in turn. An empty history keeps one version whether or not this row exists.
+      const locked =
+        versioned && this.options.lock === "none"
+          ? await this.upsertSession(tx, input.scope, scopeKey)
+          : undefined;
       let fingerprint: string | undefined;
       if (writes !== undefined && idempotencyKey !== undefined) {
         fingerprint = writeFingerprint(input);
@@ -242,7 +248,7 @@ export class DrizzleMemoryStore implements MemoryStore {
       }
 
       if (input.messages.length > 0) {
-        const session = await this.upsertSession(tx, input.scope, scopeKey);
+        const session = locked ?? (await this.upsertSession(tx, input.scope, scopeKey));
         const { agentMemoryMessages: messages } = this.schema;
         const last = (await tx
           .select({ position: messages.position })

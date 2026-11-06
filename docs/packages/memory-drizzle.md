@@ -70,7 +70,8 @@ The Drizzle database and its shutdown lifecycle remain caller-owned. `validate()
 non-mutating read-path check; schema creation remains in the application's Drizzle migrations.
 The database must support `transaction()` because writes and compaction are atomic. The default
 `lock: "advisory"` mode also requires `execute()`; use `lock: "none"` only when the database
-provides equivalent write serialization.
+provides equivalent write serialization. Keyed and versioned appends upsert the session row first under `lock: "none"`, so the row
+lock keeps writers on one scope in turn; plain appends rely on the unique position index.
 
 Its optional read-only memory inspector lets `@anvia/studio` discover existing conversations and
 ordered message records directly from these tables.

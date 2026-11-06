@@ -7,6 +7,7 @@ import {
   type CompletionResponse,
   type StreamingCompletionModel,
 } from "@anvia/core/completion";
+import { InMemoryMemoryStore } from "@anvia/core/memory";
 import type { AnyTool } from "@anvia/core/tool";
 
 export const capabilities: CompletionModel["capabilities"] = {
@@ -63,6 +64,19 @@ export function makeStreamingAgent(
       streamCompletion,
     },
   });
+}
+
+/** An agent whose recorded memory is an in-process store; `completion` sees that store. */
+export function makeMemoryAgent(
+  completion: (store: InMemoryMemoryStore) => Promise<ReturnType<typeof done>>,
+) {
+  const store = new InMemoryMemoryStore();
+  const agent = new Agent({
+    id: "researcher",
+    memory: { store, savePolicy: "run" },
+    model: { provider: "test", modelId: "test", capabilities, completion: () => completion(store) },
+  } as ConstructorParameters<typeof Agent>[0]);
+  return { agent, store };
 }
 
 export const done = () => response([{ type: "text", text: "done" }]);

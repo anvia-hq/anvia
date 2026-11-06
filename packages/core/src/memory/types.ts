@@ -49,6 +49,35 @@ export type MemoryAppendOptions = {
   runId: string;
   turn: number;
   messages: Message[];
+  /**
+   * Stable key for this write. A store must commit a write under a key at most once: a repeat with
+   * the same content is a `duplicate` and writes nothing, and a repeat with different content is a
+   * `conflict`. Keys are scoped to the memory scope. Omit it for a plain append.
+   */
+  idempotencyKey?: string | undefined;
+  /**
+   * Version returned by `loadVersioned` that this write is based on. When the store's current
+   * version differs, the write is rejected with `conflict` and nothing is written. Omit it to append
+   * without a version check.
+   */
+  expectedVersion?: string | undefined;
+};
+
+/**
+ * Outcome of an append. `committed`: the messages were written. `duplicate`: the idempotency key was
+ * already committed with the same content, so nothing was written. `conflict`: the key was committed
+ * with different content, or `expectedVersion` is stale, so nothing was written.
+ */
+export type MemoryAppendResult = {
+  status: "committed" | "duplicate" | "conflict";
+  /** The store version after this call. Stores that do not version their history may omit it. */
+  version?: string | undefined;
+};
+
+/** The canonical history together with the version that a later write can be checked against. */
+export type MemoryVersionedHistory = {
+  messages: Message[];
+  version: string;
 };
 
 export type MemoryClearOptions = {
@@ -113,7 +142,18 @@ export interface MemoryStore {
   readonly compaction?: MemoryCompactionCapability | undefined;
   /** Loads the canonical, replayable conversation history. */
   load(options: MemoryLoadOptions): Promise<Message[]>;
-  append(options: MemoryAppendOptions): Promise<void>;
+  /**
+   * Optional. Loads the same history as `load` together with its version, so a caller can pass the
+   * version back as `expectedVersion` and detect a change made in between. Stores without versions
+   * omit it; the runtime does not require it.
+   */
+  loadVersioned?(options: MemoryLoadOptions): Promise<MemoryVersionedHistory>;
+  /**
+   * Appends messages. Stores written before idempotency keys may return `void`, which means
+   * `committed`. Stores that support `idempotencyKey` or `expectedVersion` return a
+   * {@link MemoryAppendResult}.
+   */
+  append(options: MemoryAppendOptions): Promise<MemoryAppendResult | void>;
   clear(options: MemoryClearOptions): Promise<void>;
   /** Records a failed run for debugging; unsupported stores may omit it. */
   recordError?(options: MemoryErrorOptions): Promise<void>;

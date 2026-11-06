@@ -663,7 +663,7 @@ setting.
   recorded (a crash inside it) is not run again: an enforced policy fails the run with
   `needs_attention`, and recovering it needs an operator decision. Observe-mode policies record it as
   an error decision instead.
-- Registering an agent that sets `memory`, `lifecycle` (without the observational marker),
+- Registering an agent that sets `memory` (without `memory: { mode: "recorded" }`), `lifecycle` (without the observational marker),
   `middlewares` (without `mode: "pure"`), `guardrails` (without `mode: "record"`), vector `context`,
   `mcpServers` (without `mcpServers: { mode: "pinned" }`), provider tools (without
   `providerTools: { mode: "stateless" }`), or tool indexes (without `toolIndexes: { mode: "recorded" }`)
@@ -741,11 +741,11 @@ retaining one cannot change the runtime's registrations.
 - Supported: static local tools, approvals/questions, JSON-serializable structured output,
   provider-neutral completion models, persisted session history, and `skills` (flattened into
   static instructions and tools).
-- Agent memory, lifecycle callbacks (unless declared observational), middleware (unless declared
+- Agent memory (unless declared `mode: "recorded"`, and never with `memory.compaction`), lifecycle callbacks (unless declared observational), middleware (unless declared
   `mode: "pure"`), guardrails (unless declared `mode: "record"`), context sources, MCP (unless
   pinned), provider tools, and dynamic tool indexes (without their recorded marker) are rejected at
   registration because they need additional persistence boundaries. Agent-level `retries` is
-  rejected too: use the registration's `modelRetry`. Durable session history replaces the agent's memory store here. See
+  rejected too: use the registration's `modelRetry`. With `memory: { mode: "recorded" }`, the agent's memory store holds the session conversation instead, and durable does not copy the previous run's history in. See
   [agent feature compatibility](#agent-feature-compatibility) for the supported surface, the
   per-run settings that are not exposed, and the compatibility report.
 - Each execution of a run starts a new observer run. Replayed checkpointed model, tool, and
@@ -789,6 +789,6 @@ Durable registrations accept an opt-in `compaction` policy with `trigger.afterTo
 It summarizes completed history before a new session run and completed exchanges inside tool loops,
 then persists the model-facing
 projection separately from canonical history. Summary results, usage, and progress commit
-atomically and survive replay. Agent memory remains unsupported.
+atomically and survive replay. Agent memory compaction remains unsupported; agent memory is admitted with `memory: { mode: "recorded" }`.
 
 See the [configuration, recovery, and budgeting details](../../packages/durable/README.md#conversation-compaction).

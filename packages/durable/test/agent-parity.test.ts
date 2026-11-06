@@ -103,11 +103,11 @@ it.each([
   expect(runtime.compatibility()).toEqual([]);
 });
 
-it("rejects memory by name and states the store contract durable needs", async () => {
+it("rejects memory without the recorded marker and names the marker", async () => {
   const runtime = await open();
   const agent = agentWith("with-memory", { memory: { store: memoryStore } });
   expect(() => runtime.registerAgents([{ agent, version: "1" }])).toThrow(
-    /checkpoint support: memory\. .*idempotent writes and conflict handling.*durable sessions/,
+    /checkpoint support: memory\. .*memory needs \{ memory: \{ mode: "recorded" \} \}/,
   );
   expect(runtime.compatibility()).toEqual([]);
 });

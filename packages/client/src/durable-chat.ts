@@ -49,16 +49,10 @@ const UNFINISHED = new Set([
 /** Methods the adapter needs. A structural subset of `DurableClient`, so tests can fake it. */
 export type DurableChatClient = Pick<
   DurableClient,
-  | "submit"
-  | "stream"
-  | "snapshot"
-  | "respond"
-  | "resolveTool"
-  | "resolveMemoryWrite"
-  | "retry"
-  | "cancel"
-  | "listRuns"
->;
+  "submit" | "stream" | "snapshot" | "respond" | "resolveTool" | "retry" | "cancel" | "listRuns"
+> &
+  // Optional so a client written before this method existed still satisfies the type.
+  Partial<Pick<DurableClient, "resolveMemoryWrite">>;
 
 /**
  * Run controls that `useChat` does not expose. `stop()` only aborts the subscription; cancellation
@@ -134,11 +128,12 @@ export function createDurableChatTransport(
       return options.client.resolveTool(resolveRun(session, runId), operationId, output);
     },
     resolveMemoryWrite(operationKey, resolution, runId) {
-      return options.client.resolveMemoryWrite(
-        resolveRun(session, runId),
-        operationKey,
-        resolution,
-      );
+      const resolve = options.client.resolveMemoryWrite;
+      if (resolve === undefined)
+        return Promise.reject(
+          new TypeError("The durable client does not support resolveMemoryWrite."),
+        );
+      return resolve.call(options.client, resolveRun(session, runId), operationKey, resolution);
     },
   };
 

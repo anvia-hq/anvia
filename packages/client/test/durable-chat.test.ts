@@ -796,3 +796,15 @@ describe("durable chat transport", () => {
     expect(fake.submitCalls).toHaveLength(0);
   });
 });
+
+it("rejects resolveMemoryWrite when the client predates it", async () => {
+  const transport = createDurableChatTransport({
+    // A client from before resolveMemoryWrite existed: it has no such method.
+    client: {} as unknown as DurableChatClient,
+    agentId: "agent-1",
+    sessionId: "session-1",
+  });
+  await expect(
+    transport.controller.resolveMemoryWrite("0:memory:write:0", "discarded", "run-1"),
+  ).rejects.toThrow(/does not support resolveMemoryWrite/);
+});

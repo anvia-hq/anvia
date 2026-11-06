@@ -30,12 +30,12 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@langfuse/otel": "^6.0.2",
-    "@langfuse/tracing": "^6.0.2",
-    "@opentelemetry/api": "^1.9.1",
+    "@langfuse/otel": "^6.1.1",
+    "@langfuse/tracing": "^6.1.1",
+    "@opentelemetry/api": "^1.10.0",
     "@opentelemetry/resources": "^2.12.0",
     "@opentelemetry/sdk-trace-node": "^2.12.0",
-    "@opentelemetry/semantic-conventions": "^1.43.0"
+    "@opentelemetry/semantic-conventions": "^1.44.0"
   },
   "devDependencies": {
     "@anvia/core": "workspace:*",

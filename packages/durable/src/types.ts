@@ -123,6 +123,12 @@ export type DurableRecordedToolIndexes = { mode: "recorded" };
 /** The only memory mode durable admits: reads and writes are recorded by the runtime. */
 export type DurableRecordedMemory = { mode: "recorded" };
 
+/**
+ * How an operator settles a blocked memory write: `applied` says the store already holds the
+ * messages, `discarded` drops them.
+ */
+export type MemoryWriteResolution = "applied" | "discarded";
+
 /** Agent-level options the runtime freezes for the life of a registration. */
 export type DurableFrozenAgentOption =
   | "maxTurns"

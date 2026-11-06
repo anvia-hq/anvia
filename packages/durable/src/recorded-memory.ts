@@ -16,6 +16,7 @@ import type {
   DurableRunRecord,
   DurableStore,
   DurableTransaction,
+  MemoryWriteResolution,
 } from "./types.js";
 
 /**
@@ -214,6 +215,24 @@ export async function flushRecordedMemory(options: {
     });
     version = recorded.version ?? undefined;
   }
+}
+
+/**
+ * Settles a blocked memory write. `applied` records that the operator confirmed the store already
+ * holds the messages; `discarded` drops them. The write is marked completed without a version, so
+ * the next write is sent without a version check: the operator has accepted the divergence.
+ */
+export function resolveRecordedMemoryWrite(
+  tx: DurableTransaction,
+  run: DurableRunRecord,
+  operation: DurableOperation,
+  resolution: MemoryWriteResolution,
+): void {
+  tx.putOperation(run.id, {
+    ...operation,
+    status: "completed",
+    result: json({ status: resolution, version: null }),
+  });
 }
 
 /** Retry resets an uncertain write so the next flush sends it again under the same key. */

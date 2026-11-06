@@ -60,6 +60,7 @@ import { createRecordedGuardrails } from "./recorded-guardrails.js";
 import {
   flushRecordedMemory,
   isRecordedMemoryWrite,
+  resolveRecordedMemoryWrite,
   recordMemoryWrites,
   recordedMemoryOf,
   recordedMemoryStore,
@@ -80,6 +81,7 @@ import type {
   DurableRunPage,
   DurableSubmitOptions,
   DurableRunRecord,
+  MemoryWriteResolution,
   DurableRuntimeOptions,
   DurableSnapshot,
   DurableRunSummary,
@@ -664,6 +666,36 @@ export class DurableRuntime {
       );
       tx.putOperation(id, { ...operation, status: "completed", result });
       tx.appendEvent(id, "tool_completed", { operationId, result, reconciled: true });
+      delete run.blockedOperation;
+      delete run.error;
+      setStatus(tx, run, "pending");
+    });
+    this.pump();
+  }
+
+  /**
+   * Settles a memory write that blocked a run, either because the store reported a conflict or
+   * because the write's outcome is unknown. `applied` says the store already holds the messages;
+   * `discarded` drops them. The run then continues with its remaining writes. `retry()` only sends
+   * the same write again, so it cannot clear a conflict.
+   */
+  resolveMemoryWrite(id: string, operationKey: string, resolution: MemoryWriteResolution): void {
+    this.assertOpen();
+    if (resolution !== "applied" && resolution !== "discarded")
+      throw new TypeError('resolution must be "applied" or "discarded".');
+    this.store.transaction((tx) => {
+      const run = requireRun(tx, id);
+      assertOwnedTaskMutable(tx, run);
+      if (run.status !== "needs_attention" || run.blockedOperation !== operationKey)
+        throw new DurableConflictError("No matching memory write awaiting resolution.");
+      const operation = tx.getOperation(id, operationKey);
+      if (
+        operation === undefined ||
+        !isRecordedMemoryWrite(operation) ||
+        operation.status !== "started"
+      )
+        throw new DurableConflictError("Operation cannot be resolved.");
+      resolveRecordedMemoryWrite(tx, run, operation, resolution);
       delete run.blockedOperation;
       delete run.error;
       setStatus(tx, run, "pending");

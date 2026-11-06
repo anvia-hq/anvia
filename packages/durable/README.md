@@ -351,6 +351,12 @@ run's terminal checkpoint. A concurrent change to the memory history makes the r
 with a conflict. Adapter packages (`memory-sqlite`, `memory-postgres`, `memory-prisma`,
 `memory-drizzle`) do not implement the versioned contract yet, so they cannot be used with recorded memory.
 
+A blocked memory write (a conflict, or a write whose outcome is unknown) is settled with
+`run.resolveMemoryWrite(operationKey, resolution)`. `"applied"` records that the store already holds
+the messages; `"discarded"` drops them. The run then sends its remaining writes without a version
+check, because the operator has accepted the divergence, and completes. `retry()` only sends the
+same write again, so it clears an unknown outcome but not a conflict.
+
 These per-run settings are not exposed: `retries`, `maxTurns`, and `controls` (the runtime captures
 the agent-level values at submission), plus `lifecycle`, `guardrails`, `middlewares`,
 `toolConcurrency`, and the memory-scoped `session`. Without `memory: { mode: "recorded" }`, durable

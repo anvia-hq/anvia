@@ -61,6 +61,7 @@ export type {
   DurableContextCheckpoint,
   DurableFrozenAgentOption,
   DurableListOptions,
+  MemoryWriteResolution,
   DurableRunPage,
   DurableRunScope,
   DurableRunSummary,

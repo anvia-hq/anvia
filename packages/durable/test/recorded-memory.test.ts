@@ -325,3 +325,104 @@ it("fails a run that pauses for a human interaction instead of replaying memory 
   expect(snapshot.run.status).toBe("failed");
   expect(snapshot.run.error).toMatch(/paused for a human interaction/);
 });
+
+async function conflicted() {
+  const store = new InMemoryMemoryStore();
+  const model = vi.fn(async (_request: CompletionRequest) => {
+    // A concurrent writer commits while the run is in its model call.
+    await store.append({
+      scope,
+      runId: "other",
+      turn: 1,
+      messages: [{ role: "user", content: [{ type: "text", text: "concurrent" }] }],
+    });
+    return done();
+  });
+  const runtime = await open(database(), agentWith(model, store));
+  const submitted = await runtime.submit({ ...submission, prompt: "hello" });
+  expect((await settled(submitted)).run.status).toBe("needs_attention");
+  return { store, runtime, run: await runtime.getRun(submitted.id), model };
+}
+
+it("completes a conflicted run when the operator discards the write", async () => {
+  const { store, run, model } = await conflicted();
+
+  await run.resolveMemoryWrite("0:memory:write:0", "discarded");
+  const snapshot = await settled(run);
+
+  expect(snapshot.run.status).toBe("completed");
+  expect(snapshot.run.blockedOperation).toBeUndefined();
+  expect(snapshot.run.error).toBeUndefined();
+  expect(model).toHaveBeenCalledTimes(1);
+  expect(await storedCount(store)).toBe(1);
+  const write = snapshot.operations.find((operation) => operation.key === "0:memory:write:0");
+  expect(write?.result).toEqual({ status: "discarded", version: null });
+});
+
+it("completes a conflicted run when the operator marks the write applied, without sending it", async () => {
+  const { store, run } = await conflicted();
+  const appendSpy = vi.spyOn(store, "append");
+
+  await run.resolveMemoryWrite("0:memory:write:0", "applied");
+
+  expect((await settled(run)).run.status).toBe("completed");
+  expect(appendSpy).not.toHaveBeenCalled();
+});
+
+it("sends the remaining writes without a version check after a resolution", async () => {
+  const store = new InMemoryMemoryStore();
+  const runtime = await open(
+    database(),
+    agentWith(
+      async () => {
+        await store.append({
+          scope,
+          runId: "other",
+          turn: 1,
+          messages: [{ role: "user", content: [{ type: "text", text: "concurrent" }] }],
+        });
+        return done();
+      },
+      store,
+      "message",
+    ),
+  );
+  const submitted = await runtime.submit({ ...submission, prompt: "hello" });
+  expect((await settled(submitted)).run.status).toBe("needs_attention");
+  const appendSpy = vi.spyOn(store, "append");
+
+  const run = await runtime.getRun(submitted.id);
+  await run.resolveMemoryWrite("0:memory:write:0", "discarded");
+  expect((await settled(run)).run.status).toBe("completed");
+
+  expect(appendSpy.mock.calls.map((call) => call[0].expectedVersion)).toEqual([undefined]);
+  expect(await storedCount(store)).toBe(2);
+});
+
+it("rejects a resolution that does not match the blocked memory write", async () => {
+  const { run } = await conflicted();
+
+  await expect(run.resolveMemoryWrite("0:memory:write:9", "discarded")).rejects.toThrow(
+    /No matching memory write/,
+  );
+  await expect(run.resolveMemoryWrite("0:memory:read", "discarded")).rejects.toThrow(
+    /No matching memory write/,
+  );
+  await expect(run.resolveMemoryWrite("0:memory:write:0", "retry" as never)).rejects.toThrow(
+    /resolution must be/,
+  );
+  expect((await run.snapshot()).run.status).toBe("needs_attention");
+});
+
+it("rejects a resolution for a run that is not blocked", async () => {
+  const runtime = await open(
+    database(),
+    agentWith(async () => done(), new InMemoryMemoryStore()),
+  );
+  const submitted = await runtime.submit({ ...submission, prompt: "hello" });
+  expect((await settled(submitted)).run.status).toBe("completed");
+
+  await expect(submitted.resolveMemoryWrite("0:memory:write:0", "discarded")).rejects.toThrow(
+    /No matching memory write/,
+  );
+});

@@ -314,7 +314,7 @@ need not be deterministic. The replay guarantee begins at the atomic context-ope
 persisted attempts/backoff. Counter, quota, and journal errors are not provider retries. An
 empty summary fails before the main model call and leaves canonical history intact. Explicit
 `run.retry()` resets unfinished model and compaction attempt budgets while preserving committed
-results. Compaction does not enable the otherwise unsupported agent memory/lifecycle callbacks.
+results. Compaction does not enable the otherwise unsupported agent memory or lifecycle callbacks; use the registration markers for those.
 
 ## Agent feature compatibility
 
@@ -353,7 +353,8 @@ with a conflict. Adapter packages (`memory-sqlite`, `memory-postgres`, `memory-p
 
 These per-run settings are not exposed: `retries`, `maxTurns`, and `controls` (the runtime captures
 the agent-level values at submission), plus `lifecycle`, `guardrails`, `middlewares`,
-`toolConcurrency`, and the memory-scoped `session`. Durable session history replaces agent memory.
+`toolConcurrency`, and the memory-scoped `session`. Without `memory: { mode: "recorded" }`, durable
+session history replaces agent memory.
 
 ### Logging the compatibility report
 

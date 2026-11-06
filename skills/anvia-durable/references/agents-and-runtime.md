@@ -128,7 +128,10 @@ explicitly retry it; assigning an old version label to changed code is not a mig
 
 Agent execution permits static local tools and instructions. Registration rejects memory,
 lifecycle callbacks, middleware, guardrails, context sources, MCP servers, provider tools, and
-dynamic tool indexes. Durable history replaces the agent's separate memory option. Resolve
+dynamic tool indexes unless the registration sets the marker for that feature (for memory,
+`memory: { mode: "recorded" }`, which needs a store with `loadVersioned()` and no
+`memory.compaction`). Without the marker, durable history replaces the agent's separate memory
+option. Resolve
 needed application input before submission through an appropriate trusted boundary; do not
 silently insert nondurable context lookups into replay-sensitive tool definitions or schemas.
 Observability callbacks can repeat during reconstruction and must not drive business effects.

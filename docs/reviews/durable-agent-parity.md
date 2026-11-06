@@ -63,7 +63,7 @@ Status meanings:
 | 10  | `AgentInput.prompt`                    | supported    | The normal submission path; text or a structured user message, including media.                                                                                                | `packages/core/src/agent/run-types.ts:48`, `packages/durable/src/prompt.ts:13`       |
 | 11  | `AgentInput.messages`                  | **partial**  | Used internally for history, graph inputs, and compaction projections; not accepted as a public submission. The HTTP/client contract sends a prompt only.                      | `packages/core/src/agent/run-types.ts:57`, `packages/durable/src/types.ts:84`        |
 | 12  | `AgentInput.continuation` + `response` | supported    | `run.respond()` persists the response, appends the suspended outcome's messages to history, increments the epoch, and resumes.                                                 | `packages/core/src/agent/run-types.ts:64`, `packages/durable/src/runtime.ts:492`     |
-| 13  | `AgentInput.session` (memory scope)    | **rejected** | Rejected with `Agent.memory`; durable sessions are its replacement.                                                                                                            | `packages/core/src/agent/run-types.ts:52`, `packages/durable/src/registration.ts:27` |
+| 13  | `AgentInput.session` (memory scope)    | **rejected** | Rejected unless the registration sets `memory: { mode: "recorded" }`; the run then scopes memory to the durable session id.                                                    | `packages/core/src/agent/run-types.ts:52`, `packages/durable/src/registration.ts:27` |
 
 ## Parity matrix — features
 
@@ -365,41 +365,22 @@ the versioned one in `@anvia/core` (`loadVersioned()`, and `append()` with `idem
   `memory-drizzle`) do not implement the new contract yet; an operator path to reconcile a
   conflicting or uncertain write is not built yet.
 
-Findings from `packages/core/src/memory/types.ts`:
+Findings that shaped the contract (`packages/core/src/memory/types.ts` before #643):
 
-- `MemoryStore` has `load({ scope })`, `append({ scope, runId, turn, messages })`, `clear({ scope })`,
-  and optional `recordError`, `inspector` and `compaction`.
-- `append` carries `runId` and `turn`, but it has no idempotency key and returns nothing, so a
-  caller cannot tell a write that was committed from one that was not, or a duplicate from a new
-  write.
-- `load` has no version, etag or hash, so a read snapshot cannot be checked later for changes.
+- `append` had no idempotency key and returned nothing, so a caller could not tell a committed write
+  from an unsent one, or a duplicate from a new write.
+- `load` had no version, so a read snapshot could not be checked later for changes.
 - The save policy (`message`, `turn`, `run`) decides when `append` runs, outside any durable
-  checkpoint.
+  checkpoint; durable captures the appends and writes them after the terminal checkpoint instead.
 
-So the plan's contract (idempotency keys, conflict handling, a read snapshot with a hash) does not
-exist. Admitting `memory` would need all of the following first:
-
-1. A store method that takes an idempotency key and reports `committed` or `duplicate`.
-2. A version on `load` so a changed read is detected on replay.
-3. A durable boundary: each write recorded as a `memory` operation before it runs, and the save
-   policy evaluated after the terminal checkpoint.
-
-Each of these changes a public core interface. That is an owner decision; this phase does not make
-it. Until then, durable sessions are the supported replacement (see `docs/packages/durable.md`).
-
-- **Checkpoint boundary:** none (rejected).
+- **Checkpoint boundary:** the read before the first model call; each write as a `memory` operation
+  after the terminal checkpoint.
 - **Tests:** `packages/durable/test/recorded-memory.test.ts` (replay, duplicate writes, conflicts,
   the write-after-checkpoint order, crash resume) and `packages/durable/test/agent-parity.test.ts`
   (rejection without the marker).
-
-- Persist a memory read snapshot before the first model call; use it on replay.
-- Model writes as explicit `memory` operations with idempotency keys and a recovery policy; evaluate
-  the save policy only after the run's terminal checkpoint.
-- **Checkpoint boundary:** read before the first model call; writes as operations; save-policy
-  decision after the outcome commit.
-- **Tests:** replay does not duplicate writes; a failed write blocks for reconciliation; a changed
-  memory snapshot does not silently alter a replay.
-- **Effort/risk:** L / high. Only worth it if applications ask for `Agent.memory` specifically.
+- **Follow-up:** adapter packages implement the versioned contract; an operator path resolves a
+  conflicting or uncertain write; `recordError`, `continueFrom`, streaming, graphs and `spawnAgent`
+  need recorded-memory tests.
 
 ## Checkpoint boundaries
 
@@ -429,8 +410,8 @@ journal's replay guarantees.
 3. **Guardrails that call external moderation services.** These are external effects with latency
    and non-determinism. Keep them out until an effect-operation boundary and an idempotency contract
    exist.
-4. **Memory stores with free-form write policies.** Without an idempotent write API, replay duplicates
-   writes. Keep rejected until the store contract supports keys and conflict handling.
+4. **Memory stores without versions or idempotent writes.** Without them, replay duplicates writes
+   and a concurrent writer goes unnoticed. Keep rejected: recorded memory requires `loadVersioned()`.
 5. **Provider-hosted tools that keep server-side state.** The journal can persist the request and
    response but cannot replay the provider's internal state. Admit only stateless provider tools.
 6. **Pipeline/team recovery, Studio integration, Postgres, retention, distributed owners.** These are
@@ -450,7 +431,7 @@ journal's replay guarantees.
    definitions; they can ship together.
 6. **Phase 6** — MCP is the largest external surface; defer until the tool-operation recovery story
    is proven in production.
-7. **Phase 7** — memory has the weakest cost/benefit until a store contract with idempotency exists.
+7. **Phase 7** — memory came last, after a versioned, idempotent store contract existed in core.
 
 Each phase should ship behind a registration flag while the docs name its marker, and each
 should add its own changeset: `@anvia/durable` **minor** for new accepted features (pre-1.0), with

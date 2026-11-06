@@ -130,7 +130,8 @@ Agent execution permits static local tools and instructions. Registration reject
 lifecycle callbacks, middleware, guardrails, context sources, MCP servers, provider tools, and
 dynamic tool indexes unless the registration sets the marker for that feature (for memory,
 `memory: { mode: "recorded" }`, which needs a store with `loadVersioned()` and no
-`memory.compaction`). Without the marker, durable history replaces the agent's separate memory
+`memory.compaction`; not available in graph tasks or owned agent tasks; a blocked write is settled
+with `run.resolveMemoryWrite(key, "applied" | "discarded")`). Without the marker, durable history replaces the agent's separate memory
 option. Resolve
 needed application input before submission through an appropriate trusted boundary; do not
 silently insert nondurable context lookups into replay-sensitive tool definitions or schemas.

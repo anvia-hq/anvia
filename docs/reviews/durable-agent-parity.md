@@ -361,9 +361,14 @@ the versioned one in `@anvia/core` (`loadVersioned()`, and `append()` with `idem
   same key.
 - Rejected under the marker: `memory.compaction`, and a store without `loadVersioned()`. A run that pauses
   for a human interaction fails with an explicit error, because a resume would offer its messages twice.
-- Not covered: the adapter packages (`memory-sqlite`, `memory-postgres`, `memory-prisma`,
-  `memory-drizzle`) do not implement the new contract yet; an operator path to reconcile a
-  conflicting or uncertain write is not built yet.
+- Adapters: `memory-sqlite`, `memory-postgres`, `memory-prisma` and `memory-drizzle` implement the
+  versioned contract, each with an idempotency-key table that survives `clear()`.
+- Operator path: `run.resolveMemoryWrite(operationKey, "applied" | "discarded")` settles a blocked
+  write. `retry()` only sends the same write again, so it cannot clear a conflict.
+- Rejected at admission: a recorded memory agent in a graph task or an owned agent task
+  (`spawnAgent`, including `continueFrom`). Both run under a synthetic session, so the agent would
+  read an empty history and write into a scope nobody names.
+- Not covered: `resolveMemoryWrite` has no HTTP route or client method yet.
 
 Findings that shaped the contract (`packages/core/src/memory/types.ts` before #643):
 
@@ -376,11 +381,12 @@ Findings that shaped the contract (`packages/core/src/memory/types.ts` before #6
 - **Checkpoint boundary:** the read before the first model call; each write as a `memory` operation
   after the terminal checkpoint.
 - **Tests:** `packages/durable/test/recorded-memory.test.ts` (replay, duplicate writes, conflicts,
-  the write-after-checkpoint order, crash resume) and `packages/durable/test/agent-parity.test.ts`
+  resolution, streaming, graph and task rejection, the write-after-checkpoint order, crash resume,
+  and a SIGKILL of a real worker process); `recorded-memory-sqlite.test.ts` runs it against the
+  SQLite adapter and `packages/durable/test/agent-parity.test.ts`
   (rejection without the marker).
-- **Follow-up:** adapter packages implement the versioned contract; an operator path resolves a
-  conflicting or uncertain write; `recordError`, `continueFrom`, streaming, graphs and `spawnAgent`
-  need recorded-memory tests.
+- **Follow-up:** an HTTP route and client method for `resolveMemoryWrite`; recorded memory for graph
+  and owned agent tasks needs a decision on which session scope they use.
 
 ## Checkpoint boundaries
 

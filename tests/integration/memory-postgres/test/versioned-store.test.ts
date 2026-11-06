@@ -72,6 +72,7 @@ describe.skipIf(!baseUrl)("versioned memory against PostgreSQL", () => {
   const url = connection.toString();
   const admin = new Client({ connectionString: baseUrl });
   const pool = new Pool({ connectionString: url, max: 12 });
+  pool.on("error", () => {});
   const postgres = new PostgresMemoryClient({ client: pool });
   const stores: Record<string, Versioned> = {};
   let created = false;
@@ -98,8 +99,10 @@ describe.skipIf(!baseUrl)("versioned memory against PostgreSQL", () => {
   }, 30_000);
 
   afterAll(async () => {
+    // Ending the pool first and dropping without FORCE keeps the server from killing a connection
+    // that is still closing, which surfaces as an uncaught "terminating connection" error.
     await pool.end();
-    if (created) await admin.query(`DROP DATABASE "${database}" WITH (FORCE)`);
+    if (created) await admin.query(`DROP DATABASE "${database}"`);
     await admin.end();
   });
 

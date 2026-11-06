@@ -1,7 +1,8 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { JsonObject, MemoryCompactionMessage, MemoryStore, Message } from "@anvia/core";
 import type {
   MemoryAppendOptions,
+  MemoryAppendResult,
   MemoryCompactionCapability,
   MemoryCompactionReplacePrefixOptions,
   MemoryCompactionReplacePrefixResult,
@@ -12,6 +13,7 @@ import type {
   MemoryErrorOptions,
   MemoryInspector,
   MemoryScope,
+  MemoryVersionedHistory,
 } from "@anvia/core/memory";
 import { createMemoryScopeKey, isMemoryCompactionMessage } from "@anvia/core/memory";
 import { type SqliteMemoryClient, sqliteMemoryExistingClient } from "./client.js";
@@ -31,6 +33,8 @@ type ResolvedSqliteMemoryTables = {
   sessions: string;
   messages: string;
   errors: string;
+  idempotencyKeys: string;
+  idempotencyKeysName: string;
   messagesPositionIndex: string;
   messagesPositionIndexName: string;
 };
@@ -62,6 +66,10 @@ type StoredCompactionState = {
   generation: number;
   summary: MemoryCompactionMessage;
   summarizedThroughPosition: number;
+};
+
+type FingerprintRow = {
+  fingerprint: string;
 };
 
 type PositionRow = {
@@ -153,9 +161,35 @@ export class SqliteMemoryStore implements MemoryStore {
     return rows.map((row) => this.messageFromJson(row.message_json));
   }
 
-  async append(input: MemoryAppendOptions): Promise<void> {
-    if (input.messages.length === 0) {
-      return;
+  async loadVersioned({ scope }: { scope: MemoryScope }): Promise<MemoryVersionedHistory> {
+    const db = await this.database();
+    const scopeKey = this.scopeKey(scope);
+    // Messages and version are read in one transaction so the version always describes the
+    // returned history, even when another connection writes in between.
+    try {
+      db.exec("BEGIN");
+      const rows = db
+        .prepare(
+          `SELECT m.message_json
+           FROM ${this.tables.messages} m
+           INNER JOIN ${this.tables.sessions} s ON s.id = m.memory_session_id
+           WHERE s.scope_key = $scopeKey
+           ORDER BY m.position ASC`,
+        )
+        .all({ $scopeKey: scopeKey }) as unknown as MessageRow[];
+      const version = this.currentVersion(db, scopeKey);
+      db.exec("COMMIT");
+      return { messages: rows.map((row) => this.messageFromJson(row.message_json)), version };
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  async append(input: MemoryAppendOptions): Promise<MemoryAppendResult> {
+    const keyed = input.idempotencyKey !== undefined;
+    if (input.messages.length === 0 && !keyed && input.expectedVersion === undefined) {
+      return { status: "committed" };
     }
     this.validateInputMessages(input.messages);
 
@@ -164,56 +198,158 @@ export class SqliteMemoryStore implements MemoryStore {
 
     try {
       db.exec("BEGIN IMMEDIATE");
-      const sessionId = this.upsertSession(db, input.scope, scopeKey);
-      const last = db
-        .prepare(
-          `SELECT MAX(position) AS position
-           FROM ${this.tables.messages}
-           WHERE memory_session_id = $memorySessionId`,
-        )
-        .get({ $memorySessionId: sessionId }) as unknown as PositionRow | null | undefined;
-      const start = (last?.position ?? -1) + 1;
-      const insertMessage = db.prepare(
-        `INSERT INTO ${this.tables.messages} (
-          id,
-          memory_session_id,
-          run_id,
-          turn,
-          position,
-          role,
-          message_json,
-          created_at
-        ) VALUES (
-          $id,
-          $memorySessionId,
-          $runId,
-          $turn,
-          $position,
-          $role,
-          $messageJson,
-          $now
-        )`,
-      );
-      const now = new Date().toISOString();
 
-      input.messages.forEach((message, index) => {
-        insertMessage.run({
-          $id: randomUUID(),
-          $memorySessionId: sessionId,
-          $runId: input.runId,
-          $turn: input.turn,
-          $position: start + index,
-          $role: message.role,
-          $messageJson: JSON.stringify(message),
-          $now: now,
+      // The duplicate check runs before the version check so a retry after success is not a
+      // conflict. Both run inside the write lock, which makes check-and-insert atomic.
+      const fingerprint = keyed ? writeFingerprint(input) : undefined;
+      if (input.idempotencyKey !== undefined && fingerprint !== undefined) {
+        const committed = this.committedFingerprint(db, scopeKey, input.idempotencyKey);
+        if (committed !== undefined) {
+          const version = this.currentVersion(db, scopeKey);
+          db.exec("ROLLBACK");
+          return { status: committed === fingerprint ? "duplicate" : "conflict", version };
+        }
+      }
+      if (input.expectedVersion !== undefined) {
+        const version = this.currentVersion(db, scopeKey);
+        if (version !== input.expectedVersion) {
+          db.exec("ROLLBACK");
+          return { status: "conflict", version };
+        }
+      }
+
+      if (input.messages.length > 0) {
+        const sessionId = this.upsertSession(db, input.scope, scopeKey);
+        const last = db
+          .prepare(
+            `SELECT MAX(position) AS position
+             FROM ${this.tables.messages}
+             WHERE memory_session_id = $memorySessionId`,
+          )
+          .get({ $memorySessionId: sessionId }) as unknown as PositionRow | null | undefined;
+        const start = (last?.position ?? -1) + 1;
+        const insertMessage = db.prepare(
+          `INSERT INTO ${this.tables.messages} (
+            id,
+            memory_session_id,
+            run_id,
+            turn,
+            position,
+            role,
+            message_json,
+            created_at
+          ) VALUES (
+            $id,
+            $memorySessionId,
+            $runId,
+            $turn,
+            $position,
+            $role,
+            $messageJson,
+            $now
+          )`,
+        );
+        const now = new Date().toISOString();
+
+        input.messages.forEach((message, index) => {
+          insertMessage.run({
+            $id: randomUUID(),
+            $memorySessionId: sessionId,
+            $runId: input.runId,
+            $turn: input.turn,
+            $position: start + index,
+            $role: message.role,
+            $messageJson: JSON.stringify(message),
+            $now: now,
+          });
         });
-      });
+      }
 
+      // An empty keyed write still records its key so a repeat is a duplicate.
+      if (input.idempotencyKey !== undefined && fingerprint !== undefined) {
+        db.prepare(
+          `INSERT INTO ${this.tables.idempotencyKeys} (
+            scope_key,
+            idempotency_key,
+            fingerprint,
+            created_at
+          ) VALUES ($scopeKey, $idempotencyKey, $fingerprint, $now)`,
+        ).run({
+          $scopeKey: scopeKey,
+          $idempotencyKey: input.idempotencyKey,
+          $fingerprint: fingerprint,
+          $now: new Date().toISOString(),
+        });
+      }
+
+      const version = this.currentVersion(db, scopeKey);
       db.exec("COMMIT");
+      return { status: "committed", version };
     } catch (error) {
       db.exec("ROLLBACK");
       throw error;
     }
+  }
+
+  private committedFingerprint(
+    db: SqliteMemoryDatabaseLike,
+    scopeKey: string,
+    idempotencyKey: string,
+  ): string | undefined {
+    try {
+      const row = db
+        .prepare(
+          `SELECT fingerprint
+           FROM ${this.tables.idempotencyKeys}
+           WHERE scope_key = $scopeKey AND idempotency_key = $idempotencyKey`,
+        )
+        .get({
+          $scopeKey: scopeKey,
+          $idempotencyKey: idempotencyKey,
+        }) as unknown as FingerprintRow | null | undefined;
+      return row?.fingerprint;
+    } catch (error) {
+      // Databases created before idempotency keys lack the table; plain appends keep working, but
+      // a keyed append must fail loudly rather than silently skip the guarantee.
+      if (error instanceof Error && /no such table/i.test(error.message)) {
+        throw new Error(
+          `Sqlite memory idempotency table is missing: ${this.tables.idempotencyKeysName}. Run ensure() or add the table to your migrations.`,
+          { cause: error },
+        );
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * The version combines the session row id, the highest message position and the compaction
+   * generation. Appends raise the position, compaction raises the generation, and clear deletes
+   * the session so a recreated one gets a fresh id and can never reproduce an earlier version.
+   * An empty history, with or without a session row (failed-run diagnostics create one), is
+   * always "empty" so that recording an error does not invalidate a caller's version.
+   */
+  private currentVersion(db: SqliteMemoryDatabaseLike, scopeKey: string): string {
+    const session = db
+      .prepare(
+        `SELECT id, compaction_state_json
+         FROM ${this.tables.sessions}
+         WHERE scope_key = $scopeKey`,
+      )
+      .get({ $scopeKey: scopeKey }) as unknown as CompactionSessionRow | null | undefined;
+    if (session == null) return "empty";
+    const last = db
+      .prepare(
+        `SELECT MAX(position) AS position
+         FROM ${this.tables.messages}
+         WHERE memory_session_id = $memorySessionId`,
+      )
+      .get({ $memorySessionId: session.id }) as unknown as PositionRow | null | undefined;
+    if (last?.position == null) return "empty";
+    const generation =
+      session.compaction_state_json === null
+        ? 0
+        : (JSON.parse(session.compaction_state_json) as { generation?: number }).generation;
+    return `${session.id}:${last.position}:${generation ?? 0}`;
   }
 
   async clear({ scope }: { scope: MemoryScope }): Promise<void> {
@@ -634,6 +770,14 @@ CREATE TABLE IF NOT EXISTS ${tables.messages} (
 CREATE INDEX IF NOT EXISTS ${tables.messagesPositionIndex}
   ON ${tables.messages}(memory_session_id, position);
 
+CREATE TABLE IF NOT EXISTS ${tables.idempotencyKeys} (
+  scope_key TEXT NOT NULL,
+  idempotency_key TEXT NOT NULL,
+  fingerprint TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (scope_key, idempotency_key)
+);
+
 CREATE TABLE IF NOT EXISTS ${tables.errors} (
   id TEXT PRIMARY KEY,
   memory_session_id TEXT NOT NULL REFERENCES ${tables.sessions}(id) ON DELETE CASCADE,
@@ -657,13 +801,23 @@ function resolveTables(options: SqliteMemorySchemaOptions): ResolvedSqliteMemory
   const prefix = options.tablePrefix ?? "anvia_";
   const messagesPositionIndexName =
     options.tableNames?.messagesPositionIndex ?? `${prefix}memory_messages_session_position_idx`;
+  const idempotencyKeysName =
+    options.tableNames?.idempotencyKeys ?? `${prefix}memory_idempotency_keys`;
   return {
     sessions: quoteIdentifier(options.tableNames?.sessions ?? `${prefix}memory_sessions`),
     messages: quoteIdentifier(options.tableNames?.messages ?? `${prefix}memory_messages`),
     errors: quoteIdentifier(options.tableNames?.errors ?? `${prefix}memory_errors`),
+    idempotencyKeys: quoteIdentifier(idempotencyKeysName),
+    idempotencyKeysName,
     messagesPositionIndex: quoteIdentifier(messagesPositionIndexName),
     messagesPositionIndexName,
   };
+}
+
+function writeFingerprint(input: MemoryAppendOptions): string {
+  return createHash("sha256")
+    .update(JSON.stringify({ runId: input.runId, turn: input.turn, messages: input.messages }))
+    .digest("hex");
 }
 
 function quoteIdentifier(identifier: string): string {

@@ -98,6 +98,22 @@ test("workspace validation requires compatible peers and exact ordinary dependen
     () => assertWorkspaceInternalDependencies([a, b]),
     /peerDependencies.*must use workspace:\^/,
   );
+  for (const range of ["workspace:^0.8.0 || ^0.9.0", "workspace:>=0.8.0 <1.0.0"]) {
+    b.packageJson.peerDependencies["@fixture/a"] = range;
+    assert.doesNotThrow(() => assertWorkspaceInternalDependencies([a, b]), range);
+  }
+  for (const range of [
+    "workspace:>=0.8.0",
+    "workspace:>=0.8.0 <1.0.0 || ^2.0.0",
+    ">=0.8.0 <1.0.0",
+  ]) {
+    b.packageJson.peerDependencies["@fixture/a"] = range;
+    assert.throws(
+      () => assertWorkspaceInternalDependencies([a, b]),
+      /must use workspace:\^/,
+      range,
+    );
+  }
   b.packageJson.peerDependencies["@fixture/a"] = "workspace:^";
   b.packageJson.dependencies["@fixture/a"] = "workspace:^";
   assert.throws(

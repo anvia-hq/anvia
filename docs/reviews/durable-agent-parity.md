@@ -45,7 +45,7 @@ Status meanings:
 | 19  | `observability`   | supported     | Agent observers still run; durable adds its own run trace and metadata. Observer errors are ignored by core.                                                                                                                         | `packages/core/src/agent/types.ts:59`, `packages/durable/src/trace.ts:11`                                                                                   |
 | 20  | `guardrails`      | **supported** | Admitted with `guardrails: { mode: "record" }`: each check's outcome is recorded before core applies it, so replay reuses it (Phase 3).                                                                                              | `packages/core/src/agent/types.ts:60`, `packages/durable/src/registration.ts:30`                                                                            |
 | 21  | `middlewares`     | **supported** | Admitted with `middlewares: { mode: "pure" }`: replay compares the transformed request or tool input with the persisted one (Phase 3).                                                                                               | `packages/core/src/agent/types.ts:61`, `packages/durable/src/registration.ts:29`                                                                            |
-| 22  | `memory`          | **supported** | Admitted with `memory: { mode: "recorded" }` (Phase 7). Memory compaction is still rejected.                                                                                                                                         | `packages/core/src/agent/types.ts:62`, `packages/durable/src/registration.ts:27`, `packages/durable/README.md:255`                                          |
+| 22  | `memory`          | **supported** | Admitted with `memory: { mode: "recorded" }` (Phase 7). Memory compaction is still rejected; see "Agent memory compaction under recorded memory" for why and the proposed design.                                                    | `packages/core/src/agent/types.ts:62`, `packages/durable/src/registration.ts:27`, `packages/durable/README.md:255`                                          |
 
 ## Parity matrix — `AgentRunSettings` / `AgentInput`
 
@@ -394,6 +394,63 @@ Findings that shaped the contract (`packages/core/src/memory/types.ts` before #6
   compaction and the registration's `compaction` stay rejected for the reasons in the README.
 - **HTTP:** `POST /durable/runs/:id/resolve-memory-write`, `DurableClient.resolveMemoryWrite()` and the
   chat controller method settle a blocked write.
+
+### Agent memory compaction under recorded memory (not implemented)
+
+`memory.compaction` stays rejected under `memory: { mode: "recorded" }`. This section says exactly
+why it cannot be admitted safely today, and what would have to exist first. Nothing here is built.
+
+**How core compacts.** `AgentRunMemory.prepareStoredHistory` (`packages/core/src/internal/agent-runtime/memory.ts`)
+runs one unjournaled unit before the first model call: `capability.snapshot({ scope })` returns a
+projection plus an opaque `revision`; the token counter selects a prefix; the `compactor` (usually a
+model call) returns a summary; then `capability.replacePrefix({ scope, revision, messageCount,
+replacement, runId: "memory-compaction:<runId>:<attempt>" })` swaps the prefix for the summary. A
+`conflict` result (stale revision) loops back to a new snapshot, up to `conflictRetries` times.
+
+**What cannot be made idempotent or replayable.**
+
+1. **`replacePrefix` has no outcome lookup.** It returns only `committed | conflict`. If the process
+   stops after the store committed and before durable records it, the retry finds a newer
+   `revision` and gets `conflict`. That is indistinguishable from a foreign writer, so durable
+   cannot tell "my write landed" from "someone else changed the history". The `runId` argument is
+   not defined by `MemoryCompactionCapability` as an idempotency key (stores are not required to
+   dedupe on it), and core derives it from an attempt counter that restarts at 1 on every
+   execution, so a replay would reuse a key the store never promised to honour.
+2. **The compactor is a non-deterministic model call.** Its summary and `usage` must be recorded
+   before `replacePrefix` so a restart sends the same summary, not a new one. Core offers no seam
+   between the compactor and `replacePrefix`, so durable cannot record in between.
+3. **It writes the store mid-run, against recorded memory's rule.** Recorded memory reads once,
+   records the snapshot, and defers every write until after the terminal checkpoint, with each
+   write's `expectedVersion` chained from that snapshot's `version`. `replacePrefix` changes the
+   store during the run, before any checkpoint. A run that then fails, is retried, or is
+   abandoned leaves a compacted store behind while its recorded read snapshot still shows the
+   old history, and the later flush may conflict on its own compaction (the relation between a
+   compaction `revision` and the `loadVersioned` `version` is not defined either).
+4. **The recorded store hides the capability.** `recordedMemoryStore` implements only
+   `load`/`loadVersioned`/`append`/`clear`, so core sees no `compaction` capability on it and
+   would silently skip compaction instead of recording it.
+
+**Proposed design (needs core and store contract changes first).**
+
+- Core: split compaction into recordable steps behind the internal execution seam, like
+  `selectTools`: `execution.compactMemory(plan)` that receives the snapshot, selected prefix, and
+  a `compact()` callback for the compactor, and a separate `apply()` for `replacePrefix`.
+- Store contract: make `replacePrefix` idempotent on `runId` (a repeat of a committed call returns
+  `committed`), or return the new `revision` and add a way to ask whether a given `runId`
+  committed. Add the new `revision` to `loadVersioned` versions so the append chain stays valid.
+- Durable: before the first model call, record `memory:compaction:snapshot` (revision, messages),
+  then `memory:compaction:summary` (summary and usage) as completed effects, then write
+  `memory:compaction:replace` as `started` with a stable key derived from the run (not the
+  attempt) and resolve it to `completed` with the outcome. A `started` replace with no outcome
+  asks the store, by key, whether it committed; a store that cannot answer sends the run to
+  `needs_attention`. After it, take the recorded read snapshot from the compacted projection so
+  the version chain starts from the store's post-compaction state.
+- Tests required: a SIGKILL between the store commit and the record (no second summary, no false
+  conflict), a SIGKILL between summary and replace, a concurrent writer during the replace, and a
+  retry of a failed run after compaction.
+
+Until the store contract has an idempotent or queryable `replacePrefix`, durable would have to
+guess after a crash, which breaks its rule of only admitting what it can replay safely.
 
 ## Checkpoint boundaries
 

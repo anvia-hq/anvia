@@ -6,6 +6,7 @@ import type {
   DurableGraphPage,
 } from "./graph-types.js";
 import type { RegisteredTask, TaskListOptions, TaskPage, TaskTransaction } from "./tasks/types.js";
+import type { AgentHook } from "@anvia/core/internal/agent";
 import type { Agent, AgentInput, AgentOutcome, AgentPrompt } from "@anvia/core/agent";
 import type {
   Document,
@@ -80,6 +81,14 @@ export type DurableAgentRegistration = {
    */
   guardrails?: DurableRecordedGuardrails;
   /**
+   * Admits a control hook: `onToolCall` (skip, terminate, approval_request), `onRunStart` and
+   * `onCompletionCall` (cancel). Each decision is recorded before core applies it, and a replay
+   * reuses it without calling the hook. Core runs tools one at a time while a hook is active. The
+   * hook is given here because an agent has no public hook option. Without this marker, no hook
+   * is installed.
+   */
+  hooks?: DurableRecordedHooks;
+  /**
    * Admits the agent's provider-executed tools. The marker declares that the provider keeps no
    * state between calls, so a replayed model request reproduces the provider's behaviour. The
    * definitions are part of the persisted model request, so a changed definition fails replay.
@@ -111,6 +120,12 @@ export type DurableAgentRegistration = {
 
 /** The only lifecycle mode durable admits: hooks that observe the run and do not change it. */
 export type DurableObservationalLifecycle = { mode: "observe" };
+
+/**
+ * The only hook mode durable admits: control decisions recorded before use. `hook` may define
+ * `onToolCall`, `onRunStart` and `onCompletionCall`; any other callback is rejected.
+ */
+export type DurableRecordedHooks = { mode: "record"; hook: AgentHook };
 
 /** The only middleware mode durable admits: deterministic transforms without external effects. */
 export type DurablePureMiddleware = { mode: "pure" };
@@ -172,6 +187,8 @@ export type DurableAgentCompatibility = {
   /** Effective registered tool concurrency (1 when unset). Core may still lower it per agent. */
   toolConcurrency: number;
   compaction: boolean;
+  /** Recorded control hooks the registration installs (empty without the `hooks` marker). */
+  recordedHooks: readonly ("onRunStart" | "onCompletionCall" | "onToolCall")[];
   /** Undefined when the registration has no model retry policy. */
   modelRetry: DurableModelRetry | undefined;
   /** Agent-level options captured by the runtime and not overridable per run. */

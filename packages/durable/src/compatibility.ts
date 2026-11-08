@@ -1,4 +1,5 @@
 import { getResolvedAgentOptions } from "@anvia/core/internal/agent";
+import { recordedHookNames } from "./recorded-hooks.js";
 import type {
   DurableAgentCompatibility,
   DurableAgentRegistration,
@@ -52,6 +53,7 @@ function describeRegistration(registration: DurableAgentRegistration): DurableAg
     streaming: registration.stream === true,
     toolConcurrency: registration.toolConcurrency ?? 1,
     compaction: registration.compaction !== undefined,
+    recordedHooks: Object.freeze(recordedHookNames(registration)),
     modelRetry:
       registration.modelRetry === undefined
         ? undefined

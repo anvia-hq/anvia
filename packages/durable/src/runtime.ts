@@ -56,6 +56,7 @@ import { mcpServersByAgent, mcpServersOf, type DurableMcpServers } from "./mcp-s
 import { toolIndexesByAgent, toolIndexesOf, type DurableToolIndexes } from "./tool-indexes.js";
 import { createExecution } from "./execution.js";
 import { createObservedLifecycle } from "./observed-lifecycle.js";
+import { createRecordedHooks } from "./recorded-hooks.js";
 import { createRecordedGuardrails } from "./recorded-guardrails.js";
 import {
   flushRecordedMemory,
@@ -879,6 +880,7 @@ export class DurableRuntime {
           {
             runId: id,
             execution: createExecution(this.store, run, registration, signal),
+            hook: createRecordedHooks(this.store, run, registration),
             lifecycle: createObservedLifecycle(this.store, run, registration),
             guardrails: createRecordedGuardrails(this.store, run, registration),
             memory:

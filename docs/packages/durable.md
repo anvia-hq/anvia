@@ -653,6 +653,19 @@ setting.
   (a crash inside it) is not run again either, so delivery is at most once. A hook that throws is
   recorded and does not change the run outcome. Events are deep-frozen snapshots, so a hook cannot
   change the request. Without the marker, `lifecycle` is rejected.
+- Control hooks: set `hooks: { mode: "record", hook }` on the registration to install a core
+  `AgentHook` (an agent has no public hook option, so the registration carries it). Durable
+  records and replays only the hooks that steer a run: `onToolCall` (`skip`, `terminate`,
+  `approval_request`), and `onRunStart` / `onCompletionCall` (cancel). Any other callback in the
+  object is rejected by name. Each decision is an `effect` operation committed before core applies
+  it (key `epoch:hook:name:position:toolCallId`), so a restart or retry reuses it and never calls
+  the hook again. A hook that started and never recorded (a crash inside it) is not run again: the
+  run fails with `needs_attention` naming the operation. A hook that throws is recorded and fails
+  the run, because carrying on could skip a block or an approval the hook meant to apply; `retry()`
+  calls it once more under a new key. A `terminate` decision fails the run with the reason and is
+  final, and an approval request suspends the run like a tool that requires approval. Core runs
+  tools one at a time while a hook is active, so `toolConcurrency` has no effect on these agents.
+  `compatibility()` lists the recorded hooks in `recordedHooks`.
 - `middlewares` with `middlewares: { mode: "pure" }` on the registration. Declare
   the hooks deterministic and free of external effects; durable cannot check that. Middleware runs
   again on replay before each model or tool step, and its result is compared with the persisted

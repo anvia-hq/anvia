@@ -3,6 +3,7 @@ import type {
   CompletionRequest,
   CompletionResponse,
   ToolCallPart,
+  Document,
   ToolDefinition,
   Message,
   UserMessage,
@@ -11,7 +12,7 @@ import type { NormalizedToolOutput, ToolCallContext } from "../../tool";
 import type { AgentStreamEvent } from "../../agent/run-types";
 
 /** Runtime capability marker: older core versions must fail before accepting durable work. */
-export const AGENT_RUN_EXECUTION_VERSION = 4;
+export const AGENT_RUN_EXECUTION_VERSION = 5;
 
 /** Normalized generation progress; never includes raw provider responses. */
 export type AgentCompletionStreamEvent = Extract<
@@ -59,6 +60,16 @@ export interface AgentRunExecution {
    * runtime that replays a turn can return its persisted selection without calling `select`.
    */
   selectTools?(turn: number, select: () => Promise<ToolDefinition[]>): Promise<ToolDefinition[]>;
+  /**
+   * Wraps the documents a vector context retrieves for a model call (`index` is the context's
+   * position in the agent's context list). A runtime that replays a turn can return its persisted
+   * documents without calling `retrieve`.
+   */
+  selectContext?(
+    turn: number,
+    index: number,
+    retrieve: () => Promise<Document[]>,
+  ): Promise<Document[]>;
   completion(
     turn: number,
     request: CompletionRequest,

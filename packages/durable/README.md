@@ -339,7 +339,7 @@ recorded, which would make an agent-level retry setting silently ineffective. Co
 Registering an agent that sets `memory` (without `memory: { mode: "recorded" }`, or with
 `memory.compaction` or a store without `loadVersioned()`), `lifecycle` (without `mode: "observe"` on the
 registration), `middlewares` (without `mode: "pure"`), `guardrails` (without `mode: "record"`),
-`context`, `mcpServers` (without `mcpServers: { mode: "pinned" }`), provider tools (without
+`context` (without `context: { mode: "recorded" }`), `mcpServers` (without `mcpServers: { mode: "pinned" }`), provider tools (without
 `providerTools: { mode: "stateless" }`), or dynamic tool indexes throws a `TypeError` that names exactly the features that agent uses. With
 `lifecycle: { mode: "observe" }`, the agent's lifecycle hooks run once per step, recorded before
 each call; a hook that throws is recorded and does not fail the run.
@@ -351,6 +351,13 @@ core applies it, so a restart or retry reuses it and never calls the hook again.
 before recording is not run again (`needs_attention`), a hook that throws fails the run (`retry()`
 calls it once more), and a `terminate` decision fails the run with its reason. Core runs tools one
 at a time while a hook is active. `compatibility()` reports the hooks in `recordedHooks`.
+
+With `context: { mode: "recorded" }`, an agent with a `createVectorContext(...)` is admitted. Each
+retrieval's documents are recorded before the model call that uses them, so a restart or retry
+reuses them and does not query the store again. The context settings and embedding model identity
+are fingerprinted at submission and checked at every execution start (a change fails the run with
+`needs_attention`). The fingerprint cannot cover the embedding model's internals or the store's
+contents: bump `version` when they change. `compatibility()` reports `recordedContext`.
 
 With `memory: { mode: "recorded" }`, the run reads the agent's memory store once, before the first
 model call, and reuses that snapshot on replay. Each write is recorded as a `memory` operation with

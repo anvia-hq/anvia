@@ -7,6 +7,7 @@ import {
   type CompletionResponse,
   type JsonValue,
   type JsonObject,
+  type Document,
   type ToolDefinition,
 } from "@anvia/core/completion";
 import { getResolvedAgentOptions } from "@anvia/core/internal/agent";
@@ -331,6 +332,37 @@ export function createExecution(
           status: "completed",
           recovery: "manual",
           result: json({ tools: selected }),
+        };
+        tx.putOperation(run.id, operation);
+        return recorded(operation);
+      });
+    };
+  }
+
+  // Vector retrieval reads an external store: each context's documents are recorded once, before the
+  // model call that uses them, so a replayed turn sees the same documents without querying again.
+  if (registration.context !== undefined) {
+    execution.selectContext = async (turn, index, retrieve) => {
+      const key = `${prefix}context-docs:${turn}:${index}`;
+      const recorded = (operation: DurableOperation | undefined) =>
+        (operation!.result as unknown as { documents: Document[] }).documents;
+      const previous = store.transaction((tx) => tx.getOperation(run.id, key));
+      if (previous?.status === "completed") return recorded(previous);
+      check();
+      const retrieved = await retrieve();
+      check();
+      return store.transaction((tx) => {
+        const current = tx.getOperation(run.id, key);
+        if (current?.status === "completed") return recorded(current);
+        if (tx.getRun(run.id)?.status !== "running")
+          throw new Error("Durable run is no longer running.");
+        const operation: DurableOperation = {
+          key,
+          kind: "effect",
+          input: json({ turn, index }),
+          status: "completed",
+          recovery: "manual",
+          result: json({ documents: retrieved }),
         };
         tx.putOperation(run.id, operation);
         return recorded(operation);

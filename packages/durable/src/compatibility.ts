@@ -50,6 +50,7 @@ function describeRegistration(registration: DurableAgentRegistration): DurableAg
     version: registration.version,
     tools: Object.freeze((options.tools ?? []).map((tool) => tool.name)),
     streaming: registration.stream === true,
+    toolConcurrency: registration.toolConcurrency ?? 1,
     compaction: registration.compaction !== undefined,
     modelRetry:
       registration.modelRetry === undefined

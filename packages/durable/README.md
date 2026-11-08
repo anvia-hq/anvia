@@ -374,7 +374,24 @@ same write again, so it clears an unknown outcome but not a conflict.
 
 These per-run settings are not exposed: `retries`, `maxTurns`, and `controls` (the runtime captures
 the agent-level values at submission), plus `lifecycle`, `guardrails`, `middlewares`,
-`toolConcurrency`, and the memory-scoped `session`. Without `memory: { mode: "recorded" }`, durable
+`toolConcurrency` (set it on the registration instead, see below), and the memory-scoped `session`.
+
+### Concurrent tools
+
+Set `toolConcurrency` on an agent registration to run the tool calls of one model turn at once:
+
+```ts
+await DurableRuntime.open({
+  store,
+  agents: [{ agent, version: "1", toolConcurrency: 4, toolRecovery: { search: "safe" } }],
+});
+```
+
+It defaults to 1 and must be a positive integer. It is fixed per registration, not per run. Core
+still keeps 1 for an agent with a question tool or a tool that may require approval. Each tool call
+is journaled under its own operation, so after a crash the committed calls are replayed and only
+the interrupted ones follow their `toolRecovery` policy. `compatibility()` reports the effective
+value as `toolConcurrency`. Without `memory: { mode: "recorded" }`, durable
 session history replaces agent memory.
 
 ### Logging the compatibility report

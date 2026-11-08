@@ -100,7 +100,6 @@ import { createAsyncQueue } from "../async-queue";
 import { createCompletionRequest } from "../completion-request";
 import { assertJsonObject } from "../json-object";
 import { extractRagText } from "../rag-text";
-import { toolMayRequireApproval } from "./approval-requirement";
 import {
   type AgentContinuationState,
   parseContinuationState,
@@ -264,13 +263,10 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       options.toolConcurrency ?? 1,
       "toolConcurrency",
     );
-    this.concurrency =
-      this.activeHook !== undefined ||
-      agent.tools.some(
-        (tool) => toolMayRequireApproval(tool.requiresApproval) || isQuestionTool(tool),
-      )
-        ? 1
-        : configuredConcurrency;
+    // Approval and question tools suspend a turn, which needs ordered, resumable execution. That
+    // is decided per turn by ToolCallExecutor, so other turns of the same agent still run
+    // concurrently. Hooks can request approval for any call, so they keep the whole run ordered.
+    this.concurrency = this.activeHook !== undefined ? 1 : configuredConcurrency;
     this.traceOptions = options.trace;
     const retrySetting = options.retries === undefined ? agent.retries : options.retries;
     this.completionRetryOptions =

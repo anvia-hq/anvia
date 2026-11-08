@@ -25,6 +25,11 @@ export function registrations(
       (!agent.model.capabilities.streaming || !isStreamingCompletionModel(agent.model))
     )
       throw new TypeError("Durable streaming requires a streaming-capable model.");
+    if (
+      registration.toolConcurrency !== undefined &&
+      (!Number.isSafeInteger(registration.toolConcurrency) || registration.toolConcurrency < 1)
+    )
+      throw new TypeError("Durable toolConcurrency must be a positive integer.");
     const options = getResolvedAgentOptions(agent);
     if (result.has(agent.id)) throw new TypeError(`Duplicate durable agent: ${agent.id}`);
     // Agent-level retries would restart a model request without a persisted attempt, so the
@@ -164,6 +169,10 @@ export function registrations(
 
     if (registration.stream !== undefined) {
       normalized.stream = registration.stream;
+    }
+
+    if (registration.toolConcurrency !== undefined) {
+      normalized.toolConcurrency = registration.toolConcurrency;
     }
 
     if (registration.lifecycle !== undefined) {

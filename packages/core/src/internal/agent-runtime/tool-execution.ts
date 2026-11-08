@@ -423,7 +423,7 @@ export class ToolCallExecutor {
       }
     };
 
-    if (this.concurrency === 1) {
+    if (this.concurrency === 1 || this.maySuspend(toolCalls)) {
       const results: ToolResultPart[] = [];
       for (const toolCall of toolCalls) {
         try {
@@ -439,6 +439,20 @@ export class ToolCallExecutor {
       return results;
     }
     return mapWithConcurrency(toolCalls, this.concurrency, executeOne);
+  }
+
+  /**
+   * A turn that calls a tool that may ask for approval or a question can suspend part-way, and
+   * resuming needs the ordered completed/remaining split. Such a turn runs sequentially.
+   */
+  private maySuspend(toolCalls: readonly ToolCallPart[]): boolean {
+    return toolCalls.some((toolCall) => {
+      const tool = this.agent.getTool(toolCall.toolName);
+      return (
+        tool !== undefined &&
+        (toolMayRequireApproval(tool.requiresApproval) || isQuestionTool(tool))
+      );
+    });
   }
 
   async executeResumed(

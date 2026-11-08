@@ -51,6 +51,12 @@ export type DurableAgentRegistration = {
   version: string;
   /** Use agent.stream() and persist normalized generation deltas. Defaults to false. */
   stream?: boolean;
+  /**
+   * How many tool calls of one model turn may run at once. Defaults to 1. A turn that calls a
+   * question tool or a tool that may require approval still runs in order. Fixed per registration, not
+   * per run.
+   */
+  toolConcurrency?: number;
   /** Unlisted tools require reconciliation if interrupted after their intent was committed. */
   toolRecovery?: Readonly<Record<string, ToolRecovery>>;
   modelRetry?: DurableModelRetry;
@@ -139,7 +145,10 @@ export type DurableFrozenAgentOption =
   | "providerOptions"
   | "outputSchema";
 
-/** Per-run `AgentRunSettings` fields that durable manages itself or does not expose. */
+/**
+ * Per-run `AgentRunSettings` fields that durable manages itself or does not expose. `toolConcurrency`
+ * is only configurable per registration (`DurableAgentRegistration.toolConcurrency`).
+ */
 export type DurableUnavailableRunSetting =
   | "retries"
   | "maxTurns"
@@ -160,6 +169,8 @@ export type DurableAgentCompatibility = {
   /** Static local tool names, including tools flattened from `skills`. */
   tools: readonly string[];
   streaming: boolean;
+  /** Effective registered tool concurrency (1 when unset). Core may still lower it per agent. */
+  toolConcurrency: number;
   compaction: boolean;
   /** Undefined when the registration has no model retry policy. */
   modelRetry: DurableModelRetry | undefined;

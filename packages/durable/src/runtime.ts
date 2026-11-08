@@ -874,6 +874,7 @@ export class DurableRuntime {
             trace,
             abortSignal: signal,
             retries: false as const,
+            toolConcurrency: registration.toolConcurrency,
           },
           {
             runId: id,

@@ -55,6 +55,18 @@ export function assertIndependentVersioning(root, packages = findPublicPackages(
   }
 }
 
+const VERSION = String.raw`\d+\.\d+\.\d+(?:-[\w.-]+)?`;
+const CARET_UNION = new RegExp(String.raw`^workspace:\^${VERSION}(?: \|\| \^${VERSION})*$`);
+const BOUNDED_RANGE = new RegExp(String.raw`^workspace:>=${VERSION} <${VERSION}$`);
+
+/**
+ * Peer ranges other than `workspace:^`: a caret union (`workspace:^0.8.0 || ^0.9.0`), or one
+ * bounded range (`workspace:>=0.8.0 <1.0.0`) that needs no edit for each pre-1.0 minor release.
+ */
+export function isCompatiblePeerRange(range) {
+  return CARET_UNION.test(range) || BOUNDED_RANGE.test(range);
+}
+
 export function assertWorkspaceInternalDependencies(packages) {
   const packageNames = new Set(packages.map(({ packageJson }) => packageJson.name));
 
@@ -62,11 +74,7 @@ export function assertWorkspaceInternalDependencies(packages) {
     for (const field of DEPENDENCY_FIELDS) {
       for (const [name, range] of Object.entries(packageJson[field] ?? {})) {
         const expected = field === "peerDependencies" ? "workspace:^" : "workspace:*";
-        const compatiblePeer =
-          field === "peerDependencies" &&
-          /^workspace:\^\d+\.\d+\.\d+(?:-[\w.-]+)?(?: \|\| \^\d+\.\d+\.\d+(?:-[\w.-]+)?)*$/.test(
-            range,
-          );
+        const compatiblePeer = field === "peerDependencies" && isCompatiblePeerRange(range);
         if (packageNames.has(name) && range !== expected && !compatiblePeer) {
           throw new Error(
             `${packageJson.name} ${field}.${name} must use ${expected} (received ${range}).`,

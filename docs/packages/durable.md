@@ -708,7 +708,7 @@ await DurableRuntime.open({
 ```
 
 It defaults to 1 and must be a positive integer. It is fixed per registration, not per run. Core
-still keeps 1 for an agent with a question tool or a tool that may require approval. Each tool call
+still runs a turn in order when it calls a question tool or a tool that may require approval, so it can suspend and resume; other turns of the same agent stay concurrent. Each tool call
 is journaled under its own operation, so after a crash the committed calls are replayed and only
 the interrupted ones follow their `toolRecovery` policy. `compatibility()` reports the effective
 value as `toolConcurrency`.

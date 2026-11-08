@@ -52,8 +52,8 @@ export type DurableAgentRegistration = {
   /** Use agent.stream() and persist normalized generation deltas. Defaults to false. */
   stream?: boolean;
   /**
-   * How many tool calls of one model turn may run at once. Defaults to 1. Core keeps 1 for an
-   * agent with a question tool or a tool that may require approval. Fixed per registration, not
+   * How many tool calls of one model turn may run at once. Defaults to 1. A turn that calls a
+   * question tool or a tool that may require approval still runs in order. Fixed per registration, not
    * per run.
    */
   toolConcurrency?: number;

@@ -601,6 +601,78 @@ describe("Agent execution", () => {
     expect(maxActive).toBe(1);
   });
 
+  describe("tool concurrency with approval tools", () => {
+    let active = 0;
+    let maxActive = 0;
+    const tracked = (name: string, requiresApproval = false) =>
+      createTool({
+        name,
+        description: name,
+        inputSchema: z.object({}),
+        requiresApproval,
+        async execute() {
+          active += 1;
+          maxActive = Math.max(maxActive, active);
+          await new Promise((resolve) => setTimeout(resolve, 10));
+          active -= 1;
+          return name;
+        },
+      });
+    const reset = () => {
+      active = 0;
+      maxActive = 0;
+    };
+
+    it("runs a turn concurrently when none of its calls may need approval", async () => {
+      reset();
+      const model = new QueueModel([
+        response([
+          AssistantContent.toolCall("call_1", "first", {}),
+          AssistantContent.toolCall("call_2", "second", {}),
+        ]),
+        response([AssistantContent.text("done")]),
+      ]);
+      const agent = new Agent({
+        id: "test-agent",
+        model,
+        tools: [tracked("first"), tracked("second"), tracked("guarded", true)],
+      });
+      await expect(agent.generate({ prompt: "go", toolConcurrency: 2 })).resolves.toMatchObject({
+        output: "done",
+      });
+      expect(maxActive).toBe(2);
+    });
+
+    it("keeps a turn ordered and resumable when one call may need approval", async () => {
+      reset();
+      const model = new QueueModel([
+        response([
+          AssistantContent.toolCall("call_1", "first", {}),
+          AssistantContent.toolCall("call_2", "guarded", {}),
+          AssistantContent.toolCall("call_3", "second", {}),
+        ]),
+        response([AssistantContent.text("done")]),
+      ]);
+      const agent = new Agent({
+        id: "test-agent",
+        model,
+        tools: [tracked("first"), tracked("second"), tracked("guarded", true)],
+      });
+      const pending = await agent.generate({ prompt: "go", toolConcurrency: 3 });
+      if (pending.type !== "interaction" || pending.interaction.type !== "tool-approval") {
+        throw new Error("Expected approval suspension");
+      }
+      await expect(
+        agent.resume(pending.continuation, { type: "tool-approval", approved: true }),
+      ).resolves.toMatchObject({ type: "response", output: "done" });
+      expect(maxActive).toBe(1);
+      const results = (model.requests[1]?.chatHistory ?? []).flatMap((message) =>
+        message.role === "tool" ? message.content : [],
+      );
+      expect(results.map((part) => part.toolCallId)).toEqual(["call_1", "call_2", "call_3"]);
+    });
+  });
+
   it("validates run limits before starting an agent run", () => {
     const model = new QueueModel([]);
     const agent = new Agent({ id: "test-agent", model });

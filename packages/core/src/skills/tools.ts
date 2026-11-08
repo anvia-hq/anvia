@@ -24,7 +24,7 @@ export function createSkillTools(skills: Skill[]): AnyTool[] {
           skillName: z.string().describe("The name of the skill to load."),
         }),
         outputSchema: z.string(),
-        execute: ({ skillName }) => registry.get(skillName).instructions,
+        handler: ({ skillName }) => registry.get(skillName).instructions,
       }),
     ),
     markSkillTool(
@@ -36,7 +36,7 @@ export function createSkillTools(skills: Skill[]): AnyTool[] {
           referencePath: z.string().describe("A path listed in the skill references."),
         }),
         outputSchema: z.string(),
-        execute: ({ skillName, referencePath }) => registry.readReference(skillName, referencePath),
+        handler: ({ skillName, referencePath }) => registry.readReference(skillName, referencePath),
       }),
     ),
     markSkillTool(
@@ -48,7 +48,7 @@ export function createSkillTools(skills: Skill[]): AnyTool[] {
           scriptPath: z.string().describe("A path listed in the skill scripts."),
         }),
         outputSchema: z.string(),
-        execute: ({ skillName, scriptPath }) => registry.readScript(skillName, scriptPath),
+        handler: ({ skillName, scriptPath }) => registry.readScript(skillName, scriptPath),
       }),
     ),
     markSkillTool(
@@ -62,7 +62,7 @@ export function createSkillTools(skills: Skill[]): AnyTool[] {
           timeoutMs: z.number().int().positive().optional().describe("Execution timeout in ms."),
         }),
         outputSchema: z.string(),
-        execute: ({ skillName, scriptPath, args = [], timeoutMs = DEFAULT_TIMEOUT_MS }, context) =>
+        handler: ({ skillName, scriptPath, args = [], timeoutMs = DEFAULT_TIMEOUT_MS }, context) =>
           registry.runScript(skillName, scriptPath, args, timeoutMs, context.abortSignal),
       }),
     ),

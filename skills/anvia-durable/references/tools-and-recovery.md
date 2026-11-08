@@ -46,7 +46,7 @@ export function createTicketTool(tickets: TicketService) {
     inputSchema: z.object({ title: z.string().min(1) }),
     outputSchema: z.object({ ticketId: z.string() }),
     requiresApproval: true, // Choose approval requirements from the application's policy.
-    execute: async ({ title }, context) => {
+    handler: async ({ title }, context) => {
       if (context.operationId === undefined)
         throw new Error("This tool requires durable execution with an operation ID.");
       return tickets.create({

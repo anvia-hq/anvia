@@ -8,23 +8,54 @@ import {
 import { toProviderJsonSchema, type ZodSchema } from "../schema/zod-schema";
 import type { Tool, ToolCallContext, ToolRequiresApproval } from "./tool";
 
-export type CreateToolOptions<
+type CreateToolResult<
+  OutputSchema extends ZodSchema | undefined,
+  Output,
+> = OutputSchema extends ZodSchema
+  ? z.input<OutputSchema> | Promise<z.input<OutputSchema>>
+  : Output | Promise<Output>;
+
+type CreateToolBaseOptions<
   InputSchema extends ZodSchema,
-  OutputSchema extends ZodSchema | undefined = undefined,
-  Output = unknown,
+  OutputSchema extends ZodSchema | undefined,
 > = {
   name: string;
   description: string;
   inputSchema: InputSchema;
   outputSchema?: OutputSchema;
   requiresApproval?: ToolRequiresApproval<z.output<InputSchema>>;
-  execute(
-    args: z.output<InputSchema>,
-    context: ToolCallContext,
-  ): OutputSchema extends ZodSchema
-    ? z.input<OutputSchema> | Promise<z.input<OutputSchema>>
-    : Output | Promise<Output>;
 };
+
+/**
+ * Pass exactly one of `handler` or the deprecated `execute`. They have the same signature, so
+ * migrating is a rename.
+ */
+export type CreateToolOptions<
+  InputSchema extends ZodSchema,
+  OutputSchema extends ZodSchema | undefined = undefined,
+  Output = unknown,
+> = CreateToolBaseOptions<InputSchema, OutputSchema> &
+  (
+    | {
+        /** Runs the tool with the validated input. */
+        handler(
+          args: z.output<InputSchema>,
+          context: ToolCallContext,
+        ): CreateToolResult<OutputSchema, Output>;
+        execute?: never;
+      }
+    | {
+        /**
+         * @deprecated Use `handler`, which has the same signature. `execute` will be removed in
+         * the next major release.
+         */
+        execute(
+          args: z.output<InputSchema>,
+          context: ToolCallContext,
+        ): CreateToolResult<OutputSchema, Output>;
+        handler?: never;
+      }
+  );
 
 type CreateToolOutput<
   OutputSchema extends ZodSchema | undefined,
@@ -46,7 +77,8 @@ export function createTool<
 >(
   options: CreateToolOptions<InputSchema, OutputSchema, Output>,
 ): Tool<z.output<InputSchema>, CreateToolOutput<OutputSchema, Output>> {
-  const { name, description, inputSchema, outputSchema, execute } = options;
+  const { name, description, inputSchema, outputSchema } = options;
+  const run = resolveHandler(name, options);
   const requiresApproval = snapshotApprovalRequirement(options.requiresApproval);
   if (requiresApproval !== undefined) {
     assertToolApprovalRequirement(requiresApproval, { allowFunction: true });
@@ -66,7 +98,7 @@ export function createTool<
     const parsedArgs =
       prepared === undefined ? inputSchema.parse(args) : (prepared.input as z.output<InputSchema>);
     const executionContext = prepared === undefined ? context : withoutPreparedToolInput(context);
-    const result = await execute(parsedArgs, executionContext);
+    const result = await run(parsedArgs, executionContext);
     return (outputSchema === undefined ? result : outputSchema.parse(result)) as CreateToolOutput<
       OutputSchema,
       Output
@@ -97,4 +129,21 @@ function snapshotApprovalRequirement<Args>(
   return typeof requirement === "object" && requirement !== null
     ? Object.freeze({ ...requirement })
     : requirement;
+}
+
+function resolveHandler<Args, Context, Result>(
+  name: string,
+  options: { handler?: unknown; execute?: unknown },
+): (args: Args, context: Context) => Result {
+  const { handler, execute } = options;
+  if (handler !== undefined && execute !== undefined) {
+    throw new TypeError(
+      `Tool "${name}" sets both "handler" and "execute". Use "handler"; "execute" is deprecated.`,
+    );
+  }
+  const run = handler ?? execute;
+  if (typeof run !== "function") {
+    throw new TypeError(`Tool "${name}" requires a "handler" function.`);
+  }
+  return run as (args: Args, context: Context) => Result;
 }

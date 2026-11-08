@@ -59,7 +59,7 @@ const lookupOrder = createTool({
   name: "lookup_order",
   description: "Look up an order by id.",
   inputSchema: z.object({ orderId: z.string() }),
-  execute: async ({ orderId }) => ({ orderId, status: "processing" }),
+  handler: async ({ orderId }) => ({ orderId, status: "processing" }),
 });
 
 const agent = new Agent({
@@ -73,6 +73,10 @@ const agent = new Agent({
 const result = await agent.generate({ prompt: "What is happening with order A123?" });
 if (result.type === "response") console.log(result.output);
 ```
+
+`createTool` takes its implementation as `handler`. The older `execute` option has the same
+signature and still works, but it is deprecated and will be removed in the next major release.
+Migrating is a rename. Setting both, or neither, throws a `TypeError`.
 
 ## Typed decisions
 

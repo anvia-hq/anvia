@@ -19,6 +19,6 @@ export function createThinkTool(options: CreateThinkToolOptions = {}) {
     description: options.description ?? defaultThinkToolDescription,
     inputSchema: thinkToolInput,
     outputSchema: z.string(),
-    execute: (args) => args.thought,
+    handler: (args) => args.thought,
   });
 }

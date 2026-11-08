@@ -23,7 +23,7 @@ export function createAgentTool<Output, M extends CompletionModel, ContextDocume
     inputSchema: z.object({
       prompt: z.string().describe("The prompt to send to the agent."),
     }),
-    execute: async ({ prompt }, context: ToolCallContext) => {
+    handler: async ({ prompt }, context: ToolCallContext) => {
       if (
         options.stream === true &&
         context.emitStreamEvent !== undefined &&

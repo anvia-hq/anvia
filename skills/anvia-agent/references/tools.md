@@ -1,7 +1,7 @@
 # Tools
 
 Tools are created with `createTool` from `@anvia/core/tool`. Every tool needs a
-`name`, a routing `description`, a zod `inputSchema`, and an `execute`
+`name`, a routing `description`, a zod `inputSchema`, and a `handler`
 implementation. Input and output are validated at the boundary — describe every
 schema field so the model fills it correctly.
 
@@ -13,8 +13,8 @@ const tool = createTool({
     x: z.number().describe("The first number."),
     y: z.number().describe("The second number."),
   }),
-  outputSchema: z.number(), // optional; when present, execute results are parsed against it
-  execute: (args) => args.x + args.y,
+  outputSchema: z.number(), // optional; when present, handler results are parsed against it
+  handler: (args) => args.x + args.y,
 });
 ```
 
@@ -31,7 +31,7 @@ const tool = createTool({
   inputSchema: z.object({ accountId: z.string() }),
   outputSchema: z.string(),
   requiresApproval: ({ accountId }) => ({ reason: `Permanently delete ${accountId}?` }),
-  execute: ({ accountId }) => `Deleted account ${accountId}`,
+  handler: ({ accountId }) => `Deleted account ${accountId}`,
 });
 
 let result = await agent.generate({ prompt: "..." });
@@ -58,7 +58,7 @@ approvals. The same interaction loop applies to `createQuestionTool` prompts.
   resolves tools at call time instead of listing them all in the prompt.
 - `createMiddleware()` — observe or map around requests, responses, and tool
   input/output; prefer it over re-implementing retry or mapping inside
-  `execute`.
+  `handler`.
 - `createHook()` (from `@anvia/core/internal/agent`) — lifecycle actions
   (continue, skip, terminate, approval). Per-run tool concurrency is the
   `toolConcurrency` setting, not a middleware or hook concern.

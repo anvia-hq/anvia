@@ -37,7 +37,7 @@ const addTool = createTool({
     y: z.number().describe("The second number."),
   }),
   outputSchema: z.number(),
-  execute: (args) => args.x + args.y,
+  handler: (args) => args.x + args.y,
 });
 
 const client = new OpenAIClient({

@@ -265,7 +265,7 @@ export function createVectorSearchTool<T, Metadata extends VectorMetadata>(
           .optional(),
       }),
     ),
-    execute: ({ query, topK }, context) => {
+    handler: ({ query, topK }, context) => {
       const request = {
         query,
         topK: topK ?? configuredTopK,

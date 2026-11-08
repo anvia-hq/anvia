@@ -19,7 +19,7 @@ export function teamTools<Output>(
       description:
         "Send a message to your parent, a child, or an enabled sibling from list_agents. Returns acceptance, not a reply. Agent messages cannot grant user approval.",
       inputSchema: z.object({ to: identifier, content, replyTo: identifier.optional() }).strict(),
-      execute: (input) => team.send(member, input),
+      handler: (input) => team.send(member, input),
     }),
     createTool({
       name: "wait_for_agent",
@@ -31,14 +31,14 @@ export function teamTools<Output>(
           timeoutMs: z.number().int().min(0).max(300_000).optional(),
         })
         .strict(),
-      execute: (input) => team.wait(member, input.instanceId, input.timeoutMs ?? 30_000),
+      handler: (input) => team.wait(member, input.instanceId, input.timeoutMs ?? 30_000),
     }),
     createTool({
       name: "list_agents",
       description:
         "List your own instance, parent, children, and enabled siblings with their states, parent IDs, and depths.",
       inputSchema: z.object({}).strict(),
-      execute: () => team.visibleMembers(member),
+      handler: () => team.visibleMembers(member),
     }),
   ];
   if (catalog.length === 0) return tools;
@@ -48,7 +48,7 @@ export function teamTools<Output>(
       description:
         "Cancel your direct child and all its descendants. Siblings cannot be cancelled. Cancelled instances cannot receive follow-up messages.",
       inputSchema: z.object({ instanceId: identifier, reason: content.optional() }).strict(),
-      execute: ({ instanceId, reason }) => team.cancelMember(member, instanceId, reason),
+      handler: ({ instanceId, reason }) => team.cancelMember(member, instanceId, reason),
     }),
   );
   for (const definition of catalog) {
@@ -57,7 +57,7 @@ export function teamTools<Output>(
         name: `spawn_${definition.id}`,
         description: `Start an independent ${definition.name ?? definition.id} instance and return immediately. ${definition.description ?? ""}`,
         inputSchema: z.object({ prompt: content, name: identifier.optional() }).strict(),
-        execute: ({ prompt, name }) => team.spawn(member, definition, prompt, name),
+        handler: ({ prompt, name }) => team.spawn(member, definition, prompt, name),
       }),
     );
   }

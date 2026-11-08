@@ -125,7 +125,7 @@ export function createQuestionTool(
           }),
       })
       .strict(),
-    execute(): never {
+    handler(): never {
       throw new Error("Question tools can only be resolved through an Agent interaction.");
     },
   }) as unknown as MarkedQuestionTool;

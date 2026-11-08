@@ -28,7 +28,7 @@ const lookupOrder = createTool({
   name: "lookup_order",
   description: "Look up an order by ID.",
   inputSchema: z.object({ orderId: z.string() }),
-  execute: async ({ orderId }) => ({ orderId, status: "processing" }),
+  handler: async ({ orderId }) => ({ orderId, status: "processing" }),
 });
 
 const agent = new Agent({

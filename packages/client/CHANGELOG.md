@@ -1,5 +1,12 @@
 # @anvia/client
 
+## 1.8.1
+
+### Patch Changes
+
+- 9c5bf31: Declare the optional `@anvia/durable` peer as `>=0.8.0 <1.0.0` instead of a list of caret ranges, so each durable minor release no longer needs a peer-range edit.
+- 14a3e9c: Accept `@anvia/durable` 0.15 as an optional peer, so the durable minor release does not force a major bump of these packages.
+
 ## 1.8.0
 
 ### Minor Changes

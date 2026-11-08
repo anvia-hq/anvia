@@ -1,5 +1,12 @@
 # @anvia/core
 
+## 1.19.0
+
+### Minor Changes
+
+- d6708db: Add `handler` to `createTool()` as the tool implementation. `execute` keeps working with the same signature but is deprecated and will be removed in the next major release. Pass exactly one of them: setting both, or neither, throws a `TypeError`.
+- 14a3e9c: `toolConcurrency` is now applied per turn. An agent with a question tool or a tool that may require approval used to run every tool call in order. Now only a turn that calls such a tool runs in order, so it can still suspend and resume. Other turns of the same agent run their tool calls concurrently. Runs with an active internal hook stay ordered.
+
 ## 1.18.0
 
 ### Minor Changes

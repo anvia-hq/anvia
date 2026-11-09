@@ -654,7 +654,9 @@ setting.
   `format` source, embedding model provider, id and dimensions, store class name) are fingerprinted
   at submission and checked at every execution start; a change under the same `version` fails the
   run with `needs_attention`. The fingerprint cannot see the embedding model's internals or the
-  store's contents, so bump `version` when the model or index changes. Without the marker, vector
+  store's contents, so bump `version` when the model or index changes. An oversized document set
+  is stored in the blob table behind a whole-value reference, so a large retrieval counts against
+  the blob store, not the operation payload limit. Without the marker, vector
   `context` is rejected. The runtime needs `@anvia/core` execution protocol 5.
 - Observational lifecycle: set `lifecycle: { mode: "observe" }` on the registration to admit the
   agent's `lifecycle` hooks. Each of `onStart`, `onStepFinish`, `onToolStart`, `onToolFinish`,
@@ -795,7 +797,7 @@ retaining one cannot change the runtime's registrations.
 - Pipeline/team recovery, Studio integration,
   Postgres, retention, general migration tooling, and distributed worker deployment are follow-up work.
   Database records are experimental. Upgrades on acquisition are described in
-  [storage and ownership](#storage-and-ownership). Core execution protocol 4 is required.
+  [storage and ownership](#storage-and-ownership). Core execution protocol 5 is required.
 
 ## Operational readiness
 

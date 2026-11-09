@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { afterEach, expect, it, vi } from "vitest";
 import { Agent, createVectorContext } from "@anvia/core/agent";
 import type { CompletionRequest } from "@anvia/core/completion";
@@ -195,6 +196,34 @@ it("blocks a retry whose vector context settings changed under the same version"
   await run.retry();
   await run.result();
   expect(model).toHaveBeenCalledTimes(1);
+});
+
+it("externalizes an oversized document set into the blob table", async () => {
+  const large = "x".repeat(80_000);
+  const { store, search } = storeWith(large);
+  const model = vi.fn(async (request: CompletionRequest) => {
+    expect(request.documents![0]!.text).toBe(large);
+    return done();
+  });
+  const path = database();
+  const runtime = await open(path, agentWith(model, store));
+  const run = await runtime.submit(submission);
+  await run.result();
+
+  expect(search).toHaveBeenCalledTimes(1);
+  // The stored operation stays bounded; the documents live behind a whole-value blob reference.
+  const raw = new DatabaseSync(path);
+  try {
+    const row = raw
+      .prepare("SELECT record FROM anvia_durable_operations WHERE key = '0:context-docs:1:0'")
+      .get() as { record: string };
+    expect(row.record.length).toBeLessThan(large.length);
+    expect(row.record).toContain("anvia:blob");
+    expect(row.record).not.toContain(large.slice(0, 64));
+  } finally {
+    raw.close();
+  }
+  expect(JSON.stringify(model.mock.calls[0]![0].documents)).toContain(large.slice(0, 64));
 });
 
 it("records nothing for an agent without vector context", async () => {

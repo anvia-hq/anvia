@@ -221,7 +221,7 @@ exposed before schema validation, and the saved result arrives in `model_complet
 Persisting each exposed delta adds SQLite writes and retained event data. The payload limit
 applies to each delta; configure model output limits and database retention in the host application.
 SQLite schema 11 adds the blob table for oversized payloads, shared model histories and context projections, and escapes user keys that look like reference markers. Schemas 1–10 upgrade on acquisition; the upgrade rewrites journal rows once. One known gap: a user object that copies an existing blob's marker (same hash and size) in a row written before schema 11 is still read as that reference.
-Older engines reject schema 11. Upgrade core and durable together: this runtime requires execution protocol version 4.
+Older engines reject schema 11. Upgrade core and durable together: this runtime requires execution protocol version 5.
 
 ## Conversation compaction
 
@@ -357,7 +357,9 @@ retrieval's documents are recorded before the model call that uses them, so a re
 reuses them and does not query the store again. The context settings and embedding model identity
 are fingerprinted at submission and checked at every execution start (a change fails the run with
 `needs_attention`). The fingerprint cannot cover the embedding model's internals or the store's
-contents: bump `version` when they change. `compatibility()` reports `recordedContext`.
+contents: bump `version` when they change. An oversized document set is stored in the blob table
+behind a whole-value reference, so a large retrieval counts against the blob store, not the
+operation payload limit. `compatibility()` reports `recordedContext`.
 
 With `memory: { mode: "recorded" }`, the run reads the agent's memory store once, before the first
 model call, and reuses that snapshot on replay. Each write is recorded as a `memory` operation with

@@ -89,6 +89,10 @@ reconciliation should persist their own ingestion status and retry the incomplet
 callers can use `prepareGraphDocuments()` to run chunking, extraction, and embedding without writing,
 then pass its graph fields to `graph.replaceDocuments()` and its `vectorDocuments` to a vector store.
 
+Entity embedding text is the entity type plus its properties, which can outgrow a model's input
+limit for a property-heavy entity. Set `maxEntityTextLength` to truncate it, for the default text
+and for a custom `entityText` function alike. Chunk text is unaffected.
+
 ## Search tool
 
 Create the same Agent tool for any graph adapter implementing `GraphContextRetriever`:

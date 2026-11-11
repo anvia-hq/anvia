@@ -35,6 +35,13 @@ type GraphPreparationOptions<
   embeddingModel: EmbeddingModel;
   chunking?: TextDocumentChunkingOptions | undefined;
   entityText?: ((entity: GraphEntity<Schema>) => string) | undefined;
+  /**
+   * Maximum length of the text embedded for each entity. Applies to
+   * `defaultGraphEntityText` and to a custom `entityText` function, so a
+   * property-heavy entity cannot exceed the embedding model's input limit.
+   * Unset means no cap.
+   */
+  maxEntityTextLength?: number | undefined;
   instructions?: string | undefined;
   retries?: RetrySetting | undefined;
   concurrency?: number | undefined;
@@ -141,6 +148,7 @@ export async function ingestGraphText<
     embeddingModel: options.embeddingModel,
     chunking: options.chunking,
     entityText: options.entityText,
+    maxEntityTextLength: options.maxEntityTextLength,
     instructions: options.instructions,
     retries: options.retries,
     concurrency: options.concurrency,
@@ -218,12 +226,24 @@ export async function prepareGraphDocuments<
   if (options.revision !== undefined && options.revision.trim().length === 0) {
     throw new TypeError("Graph ingestion revision must be a non-empty string.");
   }
+  if (
+    options.maxEntityTextLength !== undefined &&
+    (!Number.isSafeInteger(options.maxEntityTextLength) || options.maxEntityTextLength < 1)
+  ) {
+    throw new RangeError("Graph maxEntityTextLength must be a positive safe integer.");
+  }
   validatePortableMetadata(options.documents);
   const chunks = chunkTextDocuments({
     documents: options.documents,
     chunking: options.chunking,
   });
   const graphChunks: GraphChunk<TextDocumentMetadata>[] = chunks.map((chunk) => graphChunk(chunk));
+  const entityText = options.entityText ?? defaultGraphEntityText;
+  const maxEntityTextLength = options.maxEntityTextLength;
+  const entityContent =
+    maxEntityTextLength === undefined
+      ? entityText
+      : (entity: GraphEntity<Schema>) => entityText(entity).slice(0, maxEntityTextLength);
   const [facts, embeddedChunks] = await Promise.all([
     extractGraphFacts({
       model: options.extractionModel,
@@ -250,7 +270,7 @@ export async function prepareGraphDocuments<
     model: options.embeddingModel,
     documents: [...facts.output.entities],
     id: (entity) => entity.key,
-    content: options.entityText ?? defaultGraphEntityText,
+    content: entityContent,
     retries: options.retries,
     concurrency: options.concurrency,
     abortSignal: options.abortSignal,

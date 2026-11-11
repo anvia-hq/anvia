@@ -228,6 +228,54 @@ describe("provider-neutral graph primitives", () => {
     );
   });
 
+  it("truncates entity embedding text to maxEntityTextLength", async () => {
+    extractMock.mockResolvedValue({
+      output: {
+        entities: [
+          {
+            ref: "p",
+            type: "Product",
+            properties: { id: "one", name: "A very long product name" },
+          },
+        ],
+        relationships: [],
+      },
+      usage: Usage.empty(),
+    });
+    const embeddedTexts: string[] = [];
+    const embeddingModel = {
+      provider: "test",
+      modelId: "test",
+      async embedTexts(texts: string[]) {
+        embeddedTexts.push(...texts);
+        return texts.map((document) => ({ document, vector: [document.length] }));
+      },
+    };
+
+    await prepareGraphDocuments({
+      graph: { schema },
+      documents: [{ id: "incident", text: "Product One" }],
+      extractionModel: {} as never,
+      embeddingModel,
+      maxEntityTextLength: 12,
+    });
+
+    expect(embeddedTexts).toContain("Product\nid: ");
+    expect(embeddedTexts).toContain("Product One");
+  });
+
+  it("rejects a non-positive maxEntityTextLength", async () => {
+    await expect(
+      prepareGraphDocuments({
+        graph: { schema },
+        documents: [{ id: "incident", text: "Product One" }],
+        extractionModel: {} as never,
+        embeddingModel: {} as never,
+        maxEntityTextLength: 0,
+      }),
+    ).rejects.toThrow(RangeError);
+  });
+
   it("prepares and writes text with reusable vector documents", async () => {
     extractMock.mockResolvedValue({
       output: {

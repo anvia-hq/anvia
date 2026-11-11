@@ -47,4 +47,9 @@ export type StudioRuntimeOptions = {
    * without extra config.
    */
   hostname?: string;
+  /**
+   * Largest JSON request body Studio accepts, in bytes. Populated from
+   * `StudioOptions.maxBodyBytes` or `StudioServeOptions.maxBodyBytes`.
+   */
+  maxBodyBytes?: number;
 };

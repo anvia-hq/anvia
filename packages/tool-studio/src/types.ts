@@ -1104,6 +1104,12 @@ export type StudioOptions = {
   models?: StudioModelConfig;
   sandboxes?: readonly StudioSandboxRegistration[];
   graphs?: readonly StudioGraphRegistration[];
+  /**
+   * Largest JSON request body Studio accepts, in bytes. Defaults to 10 MiB,
+   * which leaves room for full transcripts and inline images. Raise it for
+   * applications that send larger payloads to Studio.
+   */
+  maxBodyBytes?: number;
 };
 
 export type StudioServeOptions = {
@@ -1116,6 +1122,12 @@ export type StudioServeOptions = {
    * every hostname clients use to reach Studio, for example `["studio.lan"]`.
    */
   allowedHosts?: readonly string[];
+  /**
+   * Largest JSON request body Studio accepts, in bytes. Defaults to 10 MiB.
+   * Applied when Studio starts, so it can also be set through
+   * `StudioOptions.maxBodyBytes`.
+   */
+  maxBodyBytes?: number;
   log?: boolean;
   handleSignals?: boolean;
   shutdownTimeoutMs?: number;

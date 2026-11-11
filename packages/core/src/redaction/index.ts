@@ -61,6 +61,20 @@ export const DEFAULT_PATTERNS: RedactionPattern[] = [
       /\b(?:gh[pour]_[A-Za-z0-9]{36}\b|ghs_[A-Za-z0-9_.-]{20,}|github_pat_[A-Za-z0-9_]{20,}\b)/g,
   },
   { name: "awsAccessKeyId", regex: /\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g },
+  // PEM blocks are unambiguous, so the whole block goes. A header without its footer (a
+  // truncated log or message) still redacts everything that follows it.
+  {
+    name: "pemPrivateKey",
+    regex: /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z0-9 ]*PRIVATE KEY-----/g,
+  },
+  { name: "pemPrivateKeyTruncated", regex: /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*/g },
+  // AWS pairs a 40-character secret with its access key id. A bare 40-character base64 run is
+  // too common to replace, so the pattern requires the setting name in front of the value.
+  {
+    name: "awsSecretAccessKey",
+    regex:
+      /\b(?:aws_secret_access_key|secret_access_key|secretAccessKey)["']?\s*[:=]\s*["']?[A-Za-z0-9/+=]{40}(?![A-Za-z0-9/+=])["']?/gi,
+  },
   // Slack's documented families: bot/user tokens (xoxb/xoxa/xoxp/xoxs/xoxr), rotating access
   // tokens (xoxe-, xoxe.xapp-, xoxe.xoxb-, xoxe.xoxp-), workflow (xwfp), and app-level (xapp).
   {

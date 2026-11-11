@@ -5,6 +5,9 @@ export function quoteIdentifier(value: string): string {
   if (typeof value !== "string" || value.length === 0) {
     throw new TypeError("Memgraph identifier must be a non-empty string.");
   }
+  if (value.includes("\u0000")) {
+    throw new TypeError("Memgraph identifiers must not contain NUL.");
+  }
   return `\`${value.replaceAll("`", "``")}\``;
 }
 

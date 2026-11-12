@@ -1,77 +1,105 @@
 #!/usr/bin/env bash
-# Anvia thread setup.
+# Anvia thread setup: check the machine, then install what the project needs.
 #
-# Versions (CI wins over everything else):
-# - Node.js 24: .github/workflows/ci.yml uses actions/setup-node with node-version 24.
-# - pnpm 11.0.4: package.json "packageManager" and ci.yml (pnpm/action-setup 11.0.4).
-# - Build tools python3/make/g++: node-pty (packages/tool-sandbox) has no Linux
-#   prebuild and compiles at install time; the repo's own docs
-#   (docs/packages/tool-sandbox.md) name python3, make and g++ for this.
+# Versions, and where the repository names them (CI wins over the docs):
+# - Node.js 24      .github/workflows/ci.yml, actions/setup-node node-version 24.
+#                   (DEVELOPMENT.md still says "20 or newer"; CI is the newer statement.)
+# - pnpm 11.0.4     package.json "packageManager", ci.yml pnpm/action-setup 11.0.4.
+# - make, g++, python3
+#                   node-pty compiles from source on Linux (no prebuild in the
+#                   package), packages/tool-sandbox depends on it, and
+#                   pnpm-workspace.yaml lists it under allowBuilds.
 #
-# No database or background service is installed: the default unit tests mock
-# external services (vitest aliases map @anvia/core to src), live integrations
-# (Memgraph, Neo4j, Azure, Chroma/Qdrant compose services, Prisma Postgres) are
-# all gated behind opt-in env vars and skip without them. Provider API keys are
-# never needed here; they come from the project's environment variables.
+# Toolchain: mise installs Node into the home folder, so nothing here needs root.
+# The machine had no Node, npm or pnpm when this script was written.
+#
+# No service is started and none is needed: unit tests mock the provider SDKs,
+# and every live integration (Postgres, Prisma, ChromaDB, Qdrant, Memgraph,
+# Langfuse, Docker sandbox) is gated behind an opt-in variable and skips.
+# Docker is only for cookbook retrieval examples and sandbox tests.
+# No secret is read or written here; keys come from the project's variables.
 set -euo pipefail
+cd "$(dirname "$0")/.."
 
-echo "Ensuring Node.js 24..."
-if ! command -v node >/dev/null 2>&1 || [ "$(node -p 'process.versions.node.split(".")[0]')" != "24" ]; then
-  sudo apt-get update
-  sudo apt-get install -y --no-install-recommends ca-certificates curl gnupg
-  curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
-  sudo apt-get install -y --no-install-recommends nodejs
+# A command gets a bare shell with the runner service's PATH, so put the usual
+# per-user install locations on it ourselves.
+export PATH="$HOME/.local/bin:$HOME/.local/share/mise/shims:$PATH"
+
+missing=0
+fail() {
+  echo "missing  $1"
+  echo "         $2"
+  missing=1
+}
+
+echo "step     checking the machine"
+if command -v git >/dev/null 2>&1; then
+  echo "ok       git $(git --version | cut -d' ' -f3)"
+else
+  fail git "install git: sudo apt-get install -y git"
 fi
-node --version
 
-echo "Ensuring pnpm 11.0.4..."
-if ! command -v pnpm >/dev/null 2>&1 || [ "$(pnpm --version)" != "11.0.4" ]; then
-  sudo npm install -g pnpm@11.0.4 --no-audit --no-fund
+if command -v mise >/dev/null 2>&1; then
+  echo "ok       mise $(mise --version)"
+else
+  fail mise "run: curl https://mise.run | sh   (installs into your home folder, no root, no sudo)"
 fi
-pnpm --version
 
-echo "Installing native-module build tools..."
-sudo apt-get update
-sudo apt-get install -y --no-install-recommends build-essential python3
-
-# node-pty runs `node-gyp rebuild` at install time. pnpm puts its own node-gyp
-# shim on scripts' PATH, but that shim has been seen without its exec bit in
-# some containers ("node-gyp: Permission denied"), which fails the whole
-# install. A working node-gyp earlier on PATH takes precedence, so install one
-# globally only when none already works.
-echo "Ensuring a working node-gyp for native modules..."
-if ! command -v node-gyp >/dev/null 2>&1 || ! node-gyp --version >/dev/null 2>&1; then
-  sudo npm install -g node-gyp --no-audit --no-fund
-fi
-for npm_prefix in "$(npm prefix -g 2>/dev/null)" "$(sudo npm prefix -g 2>/dev/null)"; do
-  if [ -x "$npm_prefix/bin/node-gyp" ]; then
-    export PATH="$npm_prefix/bin:$PATH"
-    break
+for tool in python3 make g++; do
+  if command -v "$tool" >/dev/null 2>&1; then
+    echo "ok       $tool"
+  else
+    fail "$tool" "run: sudo apt-get install -y build-essential python3   (node-pty compiles at install)"
   fi
 done
 
-# Keep pnpm's content-addressable store out of the repository (with the
-# workspace mounted from the host, a store inside the repo costs disk and
-# snapshot time). This is outside git; existing checkouts keep working.
-echo "Configuring pnpm store outside the repository..."
-pnpm config set store-dir "$HOME/.local/share/pnpm/store" >/dev/null
+if command -v docker >/dev/null 2>&1; then
+  echo "ok       docker $(docker --version | cut -d' ' -f3 | tr -d ',') (optional: cookbook retrieval and sandbox tests)"
+else
+  echo "note     docker not found (optional, only for cookbook retrieval examples and ANVIA_SANDBOX_DOCKER_TESTS)"
+fi
 
-echo "Installing dependencies from the lockfile..."
-pnpm install --frozen-lockfile --reporter=append-only
-
-# Non-secret local template only; real keys come from project env variables.
-echo "Ensuring .env exists from the template..."
-[ -f .env ] || cp .env.example .env
-
-# Cross-package typecheck/test resolve @anvia/core through dist (its exports
-# map points at dist/), while vitest aliases map it to src. Building core once
-# here unblocks filtered typecheck/test in dependent packages; packages with
-# further build needs (e.g. @anvia/studio) build their own deps on demand via
-# their build:deps scripts.
-echo "Building @anvia/core..."
-pnpm --filter @anvia/core build >"$HOME/core-build.log" 2>&1 || {
-  tail -30 "$HOME/core-build.log"
+if [ "$missing" -ne 0 ]; then
+  echo "fail     install what is missing above, then run this again"
   exit 1
-}
+fi
 
-echo "Setup complete."
+echo "step     node 24 via mise"
+mise use -g node@24 >/dev/null
+mise reshim >/dev/null 2>&1 || true
+node_major="$(node -p 'process.versions.node.split(".")[0]')"
+if [ "$node_major" != "24" ]; then
+  echo "fail     mise gave node $node_major, expected 24 (the version CI uses)"
+  exit 1
+fi
+echo "         node $(node -v)"
+
+echo "step     pnpm 11.0.4"
+if ! command -v pnpm >/dev/null 2>&1 || [ "$(pnpm --version)" != "11.0.4" ]; then
+  npm install -g pnpm@11.0.4 --no-audit --no-fund --silent
+  mise reshim >/dev/null 2>&1 || true
+fi
+if [ "$(pnpm --version)" != "11.0.4" ]; then
+  echo "fail     pnpm $(pnpm --version), expected 11.0.4 (package.json packageManager)"
+  exit 1
+fi
+echo "         pnpm $(pnpm --version)"
+
+echo "step     dependencies from the lockfile"
+pnpm install --frozen-lockfile --silent
+
+if [ -f .env.example ] && [ ! -f .env ]; then
+  cp .env.example .env
+  echo "step     .env made from .env.example (empty values, not secrets)"
+fi
+
+# Dependent packages resolve @anvia/core through dist in typecheck/build, while
+# vitest maps it to src. Building core here makes package-scoped typecheck work
+# right after setup, the same order CI uses.
+echo "step     build @anvia/core"
+pnpm --filter @anvia/core build >/dev/null
+
+echo "done     ready. pnpm check | typecheck | test | build"
+echo "note     live provider examples need keys as project variables (Settings > Variables):"
+echo "         OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY, MISTRAL_API_KEY, XAI_API_KEY,"
+echo "         OPENROUTER_API_KEY, AZURE_OPENAI_API_KEY. Nothing above needs them."

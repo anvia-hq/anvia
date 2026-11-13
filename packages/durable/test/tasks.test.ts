@@ -60,11 +60,11 @@ describe("durable task orchestration", () => {
             checkpoint: true,
             wait: {
               type: "children",
-              ids: [ctx.spawnAgent("agent", { agentId: "researcher", prompt: "approval" })],
+              ids: [await ctx.spawnAgent("agent", { agentId: "researcher", prompt: "approval" })],
               policy: "allSettled",
             },
           };
-        return { status: "completed", output: ctx.children()[0]!.status };
+        return { status: "completed", output: (await ctx.children())[0]!.status };
       },
     });
     const runtime = await open({
@@ -144,11 +144,11 @@ describe("durable task orchestration", () => {
             checkpoint: true,
             wait: {
               type: "children",
-              ids: [ctx.spawnAgent("research", { agentId: "researcher", prompt: ctx.input })],
+              ids: [await ctx.spawnAgent("research", { agentId: "researcher", prompt: ctx.input })],
               policy: "allSettled",
             },
           };
-        const child = ctx.children()[0]!;
+        const child = (await ctx.children())[0]!;
         return child.outcome?.status === "completed"
           ? { status: "completed", output: String(child.outcome.output) }
           : { status: "failed", error: "Research failed" };
@@ -231,13 +231,15 @@ describe("durable task orchestration", () => {
     "makes %s effect persistence failures fatal while draining concurrent effects",
     async (status) => {
       class FailingStore extends SqliteDurableStore {
-        override transaction<T>(callback: Parameters<SqliteDurableStore["transaction"]>[0]): T {
-          return super.transaction((tx) =>
+        override async transaction<T>(
+          callback: Parameters<SqliteDurableStore["transaction"]>[0],
+        ): Promise<T> {
+          return (await super.transaction((tx) =>
             callback(
               new Proxy(tx, {
                 get(target, key) {
                   if (key === "putOperation")
-                    return (...args: Parameters<DurableTransaction["putOperation"]>) => {
+                    return async (...args: Parameters<DurableTransaction["putOperation"]>) => {
                       if (args[1].key === "write" && args[1].status === status)
                         throw new Error("disk failed");
                       return target.putOperation(...args);
@@ -246,7 +248,7 @@ describe("durable task orchestration", () => {
                 },
               }),
             ),
-          ) as T;
+          )) as T;
         }
       }
       let caught = false;
@@ -305,20 +307,20 @@ describe("durable task orchestration", () => {
       initial: () => "spawn" as const,
       run: async (ctx) => {
         if (ctx.checkpoint === "spawn") {
-          const ids = ctx.input.map((input, index) => ctx.spawn(String(index), increment, input));
+          const ids: string[] = [];
+          for (const [index, input] of ctx.input.entries())
+            ids.push(await ctx.spawn(String(index), increment, input));
           return {
             status: "waiting",
             checkpoint: "sum" as const,
             wait: { type: "children", ids, policy: "allSettled" },
           };
         }
-        const total = ctx
-          .children()
-          .reduce(
-            (sum, child) =>
-              sum + (child.outcome?.status === "completed" ? Number(child.outcome.output) : 0),
-            0,
-          );
+        const total = (await ctx.children()).reduce(
+          (sum, child) =>
+            sum + (child.outcome?.status === "completed" ? Number(child.outcome.output) : 0),
+          0,
+        );
         return { status: "completed", output: total };
       },
     });
@@ -357,7 +359,7 @@ describe("durable task orchestration", () => {
       output: z.string(),
       initial: () => null,
       run: async (ctx) => {
-        ctx.spawn("child", increment, 2);
+        await ctx.spawn("child", increment, 2);
         return { status: "completed", output: "parent" };
       },
     });
@@ -393,7 +395,7 @@ describe("durable task orchestration", () => {
             checkpoint: "done" as const,
             wait: { type: "signal", name: "approval" },
           };
-        return { status: "completed", output: String(ctx.signalValue("approval")) };
+        return { status: "completed", output: String(await ctx.signalValue("approval")) };
       },
     });
     const runtime = await open({ tasks: [task], maxConcurrentTasks: 1 }, path);
@@ -526,11 +528,11 @@ describe("durable task orchestration", () => {
             checkpoint: true,
             wait: {
               type: "children",
-              ids: [ctx.spawn("slow", slow, null), ctx.spawn("fail", failure, null)],
+              ids: [await ctx.spawn("slow", slow, null), await ctx.spawn("fail", failure, null)],
               policy: "failFast",
             },
           };
-        return { status: "completed", output: ctx.children().map((child) => child.status) };
+        return { status: "completed", output: (await ctx.children()).map((child) => child.status) };
       },
     });
     const runtime = await open({ tasks: [parent, slow, failure], maxConcurrentTasks: 3 });
@@ -565,7 +567,7 @@ describe("durable task orchestration", () => {
           continueRun = resolve;
         });
         try {
-          ctx.spawn("late-child", increment, 1);
+          await ctx.spawn("late-child", increment, 1);
         } catch {
           blocked = true;
         }

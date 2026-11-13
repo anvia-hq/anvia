@@ -79,10 +79,10 @@ export async function openResearch(model: CompletionModel, databasePath: string)
     initial: () => ({ phase: "plan" as const }),
     run: async (ctx) => {
       const state = ctx.checkpoint;
-      const children = ctx.children();
+      const children = await ctx.children();
       switch (state.phase) {
         case "plan": {
-          const plannerId = ctx.spawnAgent("plan", {
+          const plannerId = await ctx.spawnAgent("plan", {
             agentId: "planner",
             prompt: ctx.input.topic,
           });
@@ -98,12 +98,14 @@ export async function openResearch(model: CompletionModel, databasePath: string)
             return { status: "failed", error: "Planner did not succeed." };
           const plan = planSchema.safeParse(outcome.output);
           if (!plan.success) return { status: "failed", error: "Invalid saved plan." };
-          const researcherIds = plan.data.questions.map((question, index) =>
-            ctx.spawnAgent(`research-${index}`, {
-              agentId: "researcher",
-              prompt: JSON.stringify({ topic: ctx.input.topic, question }),
-            }),
-          );
+          const researcherIds: string[] = [];
+          for (const [index, question] of plan.data.questions.entries())
+            researcherIds.push(
+              await ctx.spawnAgent(`research-${index}`, {
+                agentId: "researcher",
+                prompt: JSON.stringify({ topic: ctx.input.topic, question }),
+              }),
+            );
           return {
             status: "waiting",
             checkpoint: { phase: "write" as const, researcherIds },
@@ -118,7 +120,7 @@ export async function openResearch(model: CompletionModel, databasePath: string)
               return { status: "failed", error: "A researcher did not succeed." };
             findings.push(outcome.output);
           }
-          const writerId = ctx.spawnAgent("write", {
+          const writerId = await ctx.spawnAgent("write", {
             agentId: "writer",
             prompt: JSON.stringify({ topic: ctx.input.topic, findings }),
           });

@@ -13,7 +13,7 @@ export class DurableTaskGraph {
     return this.runtime.graphSnapshot(this.id);
   }
   async cancel(): Promise<void> {
-    this.runtime.cancelGraph(this.id);
+    await this.runtime.cancelGraph(this.id);
   }
   async *stream(options: DurableStreamOptions = {}): AsyncIterable<DurableGraphEvent> {
     let cursor = options.after ?? 0;
@@ -23,7 +23,9 @@ export class DurableTaskGraph {
     const taskIds = new Map(initial.nodes.map((node) => [node.runId, node.id]));
     while (true) {
       options.abortSignal?.throwIfAborted();
-      const events = this.runtime.graphEvents(this.id, cursor);
+      // Status first: events read after a terminal observation are complete.
+      const snapshot = await this.snapshot();
+      const events = await this.runtime.graphEvents(this.id, cursor);
       for (const event of events) {
         options.abortSignal?.throwIfAborted();
         const taskId = taskIds.get(event.runId);
@@ -32,7 +34,6 @@ export class DurableTaskGraph {
         yield { ...event, graphId: this.id, taskId };
       }
       if (events.length > 0) continue;
-      const snapshot = await this.snapshot();
       if (snapshot.status === "completed" || snapshot.status === "cancelled") return;
       await delay(options.abortSignal);
     }

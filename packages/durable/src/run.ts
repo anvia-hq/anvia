@@ -36,14 +36,16 @@ export class DurableRun {
       throw new TypeError("Event cursor is ahead of the store.");
     while (true) {
       options.abortSignal?.throwIfAborted();
-      const events = this.runtime.events(this.id, cursor);
+      // Read the status first: a terminal status is committed with its last event, so events read
+      // after it are complete. Reading in the other order could miss a final event.
+      const run = await this.status();
+      const events = await this.runtime.events(this.id, cursor);
       for (const event of events) {
         options.abortSignal?.throwIfAborted();
         cursor = event.sequence;
         yield event;
       }
       if (events.length > 0) continue;
-      const run = await this.status();
       if (run.status === "completed" || run.status === "failed" || run.status === "cancelled")
         return;
       await delay(options.abortSignal);
@@ -59,7 +61,7 @@ export class DurableRun {
         throw new DurableRunError(run.id, run.status, run.error ?? run.status);
       }
       if (run.status === "completed") {
-        const { outcome } = this.runtime.run(this.id);
+        const { outcome } = await this.runtime.run(this.id);
         if (outcome === undefined) throw new Error("Completed durable run has no outcome.");
         return outcome;
       }
@@ -76,22 +78,22 @@ export class DurableRun {
   }
 
   async respond(interactionId: string, response: AgentInteractionResponse): Promise<void> {
-    this.runtime.respond(this.id, interactionId, response);
+    await this.runtime.respond(this.id, interactionId, response);
   }
 
   async resolveTool(operationId: string, output: ToolResultOutput): Promise<void> {
-    this.runtime.resolveTool(this.id, operationId, output);
+    await this.runtime.resolveTool(this.id, operationId, output);
   }
 
   async resolveMemoryWrite(operationKey: string, resolution: MemoryWriteResolution): Promise<void> {
-    this.runtime.resolveMemoryWrite(this.id, operationKey, resolution);
+    await this.runtime.resolveMemoryWrite(this.id, operationKey, resolution);
   }
 
   async retry(): Promise<void> {
-    this.runtime.retry(this.id);
+    await this.runtime.retry(this.id);
   }
 
   async cancel(): Promise<void> {
-    this.runtime.cancel(this.id);
+    await this.runtime.cancel(this.id);
   }
 }

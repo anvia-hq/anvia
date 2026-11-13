@@ -106,11 +106,13 @@ async function readSnapshot(
 ): Promise<ReadSnapshot> {
   const { store, run, source, signal } = options;
   const key = `${memoryPrefix(run)}:${READ_SUFFIX}`;
-  const recorded = store.transaction((tx) => tx.getOperation(run.id, key));
+  const recorded = await store.transaction(async (tx) => tx.getOperation(run.id, key));
   if (recorded?.status === "completed") {
     const value = recorded.result as unknown as { messages: Message[]; version: string };
-    return store.transaction((tx) => ({
-      messages: hydrateValue(tx, json(value.messages)) as unknown as Message[],
+    return store.transaction(async (tx) => ({
+      messages: (await tx.blobs((io) =>
+        hydrateValue(io, json(value.messages)),
+      )) as unknown as Message[],
       version: value.version,
     }));
   }
@@ -118,15 +120,18 @@ async function readSnapshot(
   if (source.loadVersioned === undefined)
     throw new TypeError("Recorded memory needs a store with loadVersioned().");
   const loaded = await source.loadVersioned({ scope: loadOptions.scope });
-  store.transaction((tx) => {
-    tx.putOperation(run.id, {
+  await store.transaction(async (tx) => {
+    await tx.putOperation(run.id, {
       key,
       kind: "memory",
       input: json({ scope: loadOptions.scope }),
       status: "completed",
       // A read has no effect, so an interrupted one is simply read again.
       recovery: "safe",
-      result: json({ messages: externalizeMessages(tx, loaded.messages), version: loaded.version }),
+      result: json({
+        messages: await tx.blobs((io) => externalizeMessages(io, loaded.messages)),
+        version: loaded.version,
+      }),
     });
   });
   return loaded;
@@ -136,26 +141,26 @@ async function readSnapshot(
  * Records the captured writes as `started` memory operations with no attempt yet. Called in the
  * terminal checkpoint transaction, so the writes survive a crash that follows it.
  */
-export function recordMemoryWrites(
+export async function recordMemoryWrites(
   tx: DurableTransaction,
   run: DurableRunRecord,
   writes: readonly MemoryAppendOptions[],
-): void {
-  writes.forEach((write, seq) => {
-    tx.putOperation(run.id, {
+): Promise<void> {
+  for (const [seq, write] of writes.entries()) {
+    await tx.putOperation(run.id, {
       key: `${memoryPrefix(run)}:${WRITE_PREFIX}${seq}`,
       kind: "memory",
       input: json({
         scope: write.scope,
         runId: write.runId,
         turn: write.turn,
-        messages: externalizeMessages(tx, write.messages),
+        messages: await tx.blobs((io) => externalizeMessages(io, write.messages)),
       }),
       status: "started",
       recovery: "manual",
       attempts: 0,
     });
-  });
+  }
 }
 
 /**
@@ -174,17 +179,15 @@ export async function flushRecordedMemory(options: {
   const writePrefix = `${prefix}:${WRITE_PREFIX}`;
   // Each write is based on the version the previous step left behind, across the segments of a run
   // that paused for an interaction: the last completed memory operation of any epoch decides it.
-  let version = store.transaction((tx) => {
-    const settled = tx
-      .operations(run.id)
+  let version = await store.transaction(async (tx) => {
+    const settled = (await tx.operations(run.id))
       .filter((operation) => operation.kind === "memory" && operation.status === "completed")
       .sort(compareMemoryOperations);
     const last = settled.at(-1);
     const result = last?.result as unknown as { version?: string | null } | undefined;
     return result?.version ?? undefined;
   });
-  const writes = store
-    .transaction((tx) => tx.operations(run.id))
+  const writes = (await store.transaction(async (tx) => tx.operations(run.id)))
     .filter((operation) => operation.kind === "memory" && operation.key.startsWith(writePrefix))
     .sort((left, right) => sequence(left) - sequence(right));
 
@@ -199,10 +202,10 @@ export async function flushRecordedMemory(options: {
         write.key,
       );
     signal.throwIfAborted();
-    const input = store.transaction((tx) => {
+    const input = await store.transaction(async (tx) => {
       // Persisted before the store call, so a crash inside the call leaves the attempt visible.
-      tx.putOperation(run.id, { ...write, attempts: 1 });
-      return hydrateValue(tx, write.input) as unknown as {
+      await tx.putOperation(run.id, { ...write, attempts: 1 });
+      return (await tx.blobs((io) => hydrateValue(io, write.input))) as unknown as {
         scope: MemoryAppendOptions["scope"];
         runId: string;
         turn: number;
@@ -224,8 +227,8 @@ export async function flushRecordedMemory(options: {
         write.key,
       );
     const recorded = { status, version: result?.version ?? null };
-    store.transaction((tx) => {
-      tx.putOperation(run.id, {
+    await store.transaction(async (tx) => {
+      await tx.putOperation(run.id, {
         ...write,
         attempts: 1,
         status: "completed",
@@ -241,13 +244,13 @@ export async function flushRecordedMemory(options: {
  * holds the messages; `discarded` drops them. The write is marked completed without a version, so
  * the next write is sent without a version check: the operator has accepted the divergence.
  */
-export function resolveRecordedMemoryWrite(
+export async function resolveRecordedMemoryWrite(
   tx: DurableTransaction,
   run: DurableRunRecord,
   operation: DurableOperation,
   resolution: MemoryWriteResolution,
-): void {
-  tx.putOperation(run.id, {
+): Promise<void> {
+  await tx.putOperation(run.id, {
     ...operation,
     status: "completed",
     result: json({ status: resolution, version: null }),

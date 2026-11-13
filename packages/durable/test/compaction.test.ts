@@ -29,6 +29,7 @@ import {
   makeStreamingAgent,
   toolResponse,
 } from "./helpers.js";
+import { itSqlite } from "./helpers/backend.js";
 
 const runtimes: DurableRuntime[] = [];
 const directories: string[] = [];
@@ -108,7 +109,7 @@ it("advances summary checkpoints while preserving canonical history, usage and e
   expect(JSON.stringify(requests[2]!.chatHistory)).not.toContain("Question 1");
   expect(JSON.stringify(requests[2]!.chatHistory)).toContain("Question 2");
   expect(snapshot.run.outcome?.messages.some(isMemoryCompactionMessage)).toBe(false);
-  const events = runtime.events(third.id, 0).map(parseDurableEvent);
+  const events = (await runtime.events(third.id, 0)).map(parseDurableEvent);
   expect(events.filter((event) => event.type === "compaction_completed")).toHaveLength(1);
   expect(events.find((event) => event.type === "compaction_completed")?.data).toMatchObject({
     compactedMessageCount: 2,
@@ -301,12 +302,12 @@ it("compacts streaming registrations before persisting model deltas", async () =
   await turn(runtime, "1");
   const run = await turn(runtime, "2");
   expect(compactor).toHaveBeenCalledTimes(1);
-  expect(runtime.events(run.id, 0).some((event) => event.type === "compaction_completed")).toBe(
-    true,
-  );
+  expect(
+    (await runtime.events(run.id, 0)).some((event) => event.type === "compaction_completed"),
+  ).toBe(true);
 });
 
-it.each(["summary", "model"])(
+itSqlite.each(["summary", "model"])(
   "recovers after SIGKILL during %s without losing canonical history",
   async (stage) => {
     const dir = directory();
@@ -356,7 +357,7 @@ it.each(["summary", "model"])(
       stage === "summary" ? 2 : 1,
     );
     expect(
-      runtime.events(id, 0).filter((event) => event.type === "compaction_completed"),
+      (await runtime.events(id, 0)).filter((event) => event.type === "compaction_completed"),
     ).toHaveLength(1);
   },
   15000,
@@ -440,20 +441,20 @@ it("aborts summarization on cancellation without committing a partial projection
   expect((await run.snapshot()).run.contextCheckpoint).toBeUndefined();
   expect(model).toHaveBeenCalledTimes(1);
   expect(
-    runtime.events(run.id, 0).filter((event) => event.type === "compaction_completed"),
+    (await runtime.events(run.id, 0)).filter((event) => event.type === "compaction_completed"),
   ).toHaveLength(0);
 });
 
 it("rolls back the summary, usage, event and prepared input together on a storage failure", async () => {
   const path = join(directory(), "runs.sqlite");
   class FailingStore extends SqliteDurableStore {
-    override transaction<T>(callback: (tx: DurableTransaction) => T): T {
+    override async transaction<T>(callback: (tx: DurableTransaction) => Promise<T>): Promise<T> {
       return super.transaction((tx) =>
         callback({
           ...tx,
-          putRun(run) {
+          async putRun(run) {
             if (run.contextCheckpoint !== undefined) throw new Error("Injected write failure");
-            tx.putRun(run);
+            await tx.putRun(run);
           },
         }),
       );
@@ -483,39 +484,42 @@ it("rolls back the summary, usage, event and prepared input together on a storag
   expect(before.operations.find((operation) => operation.kind === "compaction")?.status).toBe(
     "started",
   );
-  expect(reopened.events(run.id, 0).some((event) => event.type === "compaction_completed")).toBe(
-    false,
-  );
+  expect(
+    (await reopened.events(run.id, 0)).some((event) => event.type === "compaction_completed"),
+  ).toBe(false);
   await reopened.resume();
   await recovered.result();
   expect(compactor).toHaveBeenCalledTimes(2);
   expect((await recovered.snapshot()).run.usage.totalTokens).toBe(10);
 });
 
-it("preserves compaction checkpoints and complete history through backup and restore", async () => {
-  const dir = directory();
-  const path = join(dir, "live.sqlite");
-  const compactor = summarize();
-  const registration = {
-    agent: makeAgent(async () => done()),
-    version: "1",
-    compaction: { ...policy(compactor), retention: { recentTurns: 0 } },
-  };
-  const runtime = await open(registration, path);
-  await turn(runtime, "1");
-  const run = await turn(runtime, "2");
-  const before = await run.snapshot();
-  await runtime.close();
-  const archive = join(dir, "backup.sqlite");
-  const restored = join(dir, "restored.sqlite");
-  expect((await backupSqlite(path, archive)).schemaVersion).toBe(12);
-  expect((await restoreSqlite(archive, restored)).schemaVersion).toBe(12);
-  const reopened = await open(registration, restored);
-  expect(await (await reopened.getRun(run.id)).snapshot()).toEqual(before);
-  const next = await turn(reopened, "3");
-  expect((await next.snapshot()).run.history).toHaveLength(4);
-  expect((await next.snapshot()).run.contextCheckpoint?.compactedMessageCount).toBe(4);
-});
+itSqlite(
+  "preserves compaction checkpoints and complete history through backup and restore",
+  async () => {
+    const dir = directory();
+    const path = join(dir, "live.sqlite");
+    const compactor = summarize();
+    const registration = {
+      agent: makeAgent(async () => done()),
+      version: "1",
+      compaction: { ...policy(compactor), retention: { recentTurns: 0 } },
+    };
+    const runtime = await open(registration, path);
+    await turn(runtime, "1");
+    const run = await turn(runtime, "2");
+    const before = await run.snapshot();
+    await runtime.close();
+    const archive = join(dir, "backup.sqlite");
+    const restored = join(dir, "restored.sqlite");
+    expect((await backupSqlite(path, archive)).schemaVersion).toBe(12);
+    expect((await restoreSqlite(archive, restored)).schemaVersion).toBe(12);
+    const reopened = await open(registration, restored);
+    expect(await (await reopened.getRun(run.id)).snapshot()).toEqual(before);
+    const next = await turn(reopened, "3");
+    expect((await next.snapshot()).run.history).toHaveLength(4);
+    expect((await next.snapshot()).run.contextCheckpoint?.compactedMessageCount).toBe(4);
+  },
+);
 
 it("accepts the built-in core summary compactor without agent memory", async () => {
   const summaryModel = vi.fn(async () => done());

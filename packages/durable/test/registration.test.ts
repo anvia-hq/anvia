@@ -60,7 +60,7 @@ it("registers another agent while a model is running without aborting or replayi
   runtime.registerAgents([{ agent: agent("second"), version: "1" }]);
   expect((await (await runtime.submit(input("second"))).result()).type).toBe("response");
   expect(interrupted).toBe(false);
-  expect(() => runtime.unregisterAgent("researcher")).toThrow("active attempt");
+  await expect(async () => runtime.unregisterAgent("researcher")).rejects.toThrow("active attempt");
   release();
   await first.result();
   expect(completion).toHaveBeenCalledTimes(1);
@@ -80,17 +80,19 @@ it("keeps approval registrations pinned while unrelated agents can be added and 
   ]);
   const pending = await runtime.submit(input("researcher"));
   await vi.waitFor(async () => expect((await pending.snapshot()).run.status).toBe("waiting"));
-  expect(() => runtime.unregisterAgent("researcher")).toThrow(/unfinished work|active attempt/);
+  await expect(async () => runtime.unregisterAgent("researcher")).rejects.toThrow(
+    /unfinished work|active attempt/,
+  );
   runtime.registerAgents([{ agent: agent("other"), version: "1" }]);
   const other = await runtime.submit(input("other"));
   await other.result();
-  await vi.waitFor(() => expect(runtime.unregisterAgent("other")).toBe(true));
+  await vi.waitFor(async () => expect(await runtime.unregisterAgent("other")).toBe(true));
   expect((await other.snapshot()).run.status).toBe("completed");
   const outcome = (await pending.snapshot()).run.outcome;
   if (outcome?.type !== "interaction") throw new Error("Expected approval");
   await pending.respond(outcome.interaction.id, { type: "tool-approval", approved: true });
   await pending.result();
-  await vi.waitFor(() => expect(runtime.unregisterAgent("researcher")).toBe(true));
+  await vi.waitFor(async () => expect(await runtime.unregisterAgent("researcher")).toBe(true));
 });
 
 it("validates the complete batch before adding anything and never overwrites existing IDs", async () => {
@@ -122,10 +124,10 @@ it("validates the complete batch before adding anything and never overwrites exi
     ]),
   ).toThrow("Unknown recovery tool");
   expect((await (await runtime.submit(input("existing"))).snapshot()).run.version).toBe("1");
-  expect(runtime.unregisterAgent("absent")).toBe(false);
+  expect(await runtime.unregisterAgent("absent")).toBe(false);
   await runtime.close();
   expect(() => runtime.registerAgents([])).toThrow("closed");
-  expect(() => runtime.unregisterAgent("existing")).toThrow("closed");
+  await expect(async () => runtime.unregisterAgent("existing")).rejects.toThrow("closed");
 });
 
 it("restores registrations after open, preserves history, across unloaded configurations", async () => {
@@ -138,7 +140,7 @@ it("restores registrations after open, preserves history, across unloaded config
   await run.result();
   await first.close();
   const next = await open(path);
-  expect(next.snapshot(run.id).run.status).toBe("completed");
+  expect((await next.snapshot(run.id)).run.status).toBe("completed");
   next.registerAgents([{ agent: agent("second"), version: "1" }]);
   const followup = await next.submit({ ...input("second", "conversation"), requestId: "two" });
   await followup.result();
@@ -161,7 +163,7 @@ it("shares added registrations with custom tasks that spawn owned agents", async
           wait: {
             type: "children",
             policy: "failFast",
-            ids: [ctx.spawnAgent("child", { agentId: "dynamic", prompt: "Hello" })],
+            ids: [await ctx.spawnAgent("child", { agentId: "dynamic", prompt: "Hello" })],
           },
         };
       return { status: "completed", output: "done" };
@@ -193,11 +195,13 @@ it("does not unload a cancelled attempt until its callback has settled", async (
     await vi.waitFor(() => expect(completion).toHaveBeenCalledTimes(1));
     await run.cancel();
     expect((await run.snapshot()).run.status).toBe("cancelled");
-    expect(() => runtime.unregisterAgent("researcher")).toThrow("active attempt");
+    await expect(async () => runtime.unregisterAgent("researcher")).rejects.toThrow(
+      "active attempt",
+    );
   } finally {
     release();
   }
-  await vi.waitFor(() => expect(runtime.unregisterAgent("researcher")).toBe(true));
+  await vi.waitFor(async () => expect(await runtime.unregisterAgent("researcher")).toBe(true));
 });
 
 it("leaves missing-version recovery blocked until explicitly retried after registration", async () => {
@@ -221,11 +225,15 @@ it("leaves missing-version recovery blocked until explicitly retried after regis
   await first.close();
   const next = await open(path);
   await next.resume();
-  await vi.waitFor(() => expect(next.snapshot(run.id).run.status).toBe("needs_attention"));
+  await vi.waitFor(async () =>
+    expect((await next.snapshot(run.id)).run.status).toBe("needs_attention"),
+  );
   next.registerAgents([{ agent: makeAgent(async () => done()), version: "1" }]);
-  expect(next.snapshot(run.id).run.status).toBe("needs_attention");
-  expect(() => next.unregisterAgent("researcher")).toThrow(/unfinished work|active attempt/);
-  await vi.waitFor(() => next.retry(run.id));
+  expect((await next.snapshot(run.id)).run.status).toBe("needs_attention");
+  await expect(async () => next.unregisterAgent("researcher")).rejects.toThrow(
+    /unfinished work|active attempt/,
+  );
+  await vi.waitFor(async () => next.retry(run.id));
   expect((await (await next.getRun(run.id)).result()).type).toBe("response");
 });
 
@@ -238,7 +246,7 @@ it("replays a completed owned spawn after unloading its registration", async () 
     output: z.string(),
     initial: () => 0,
     run: async (ctx) => {
-      const child = ctx.spawnAgent("child", { agentId: "dynamic", prompt: "Hello" });
+      const child = await ctx.spawnAgent("child", { agentId: "dynamic", prompt: "Hello" });
       if (ctx.checkpoint === 0)
         return {
           status: "waiting",
@@ -261,7 +269,7 @@ it("replays a completed owned spawn after unloading its registration", async () 
     expect((await task.snapshot()).task.wait).toMatchObject({ type: "signal" }),
   );
   const child = (await task.graph()).nodes.find((node) => node.name === "anvia.agent")!;
-  await vi.waitFor(() => expect(runtime.unregisterAgent("dynamic")).toBe(true));
+  await vi.waitFor(async () => expect(await runtime.unregisterAgent("dynamic")).toBe(true));
   await task.signal("continue", "one", true);
   expect(await task.result()).toBe(child.id);
 });

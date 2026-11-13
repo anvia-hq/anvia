@@ -8,7 +8,7 @@ export const waiting = defineTask({
   output: z.string(),
   initial: () => null,
   run: async (ctx) =>
-    ctx.signalValue("go") === undefined
+    (await ctx.signalValue("go")) === undefined
       ? { status: "waiting", checkpoint: null, wait: { type: "signal", name: "go" } }
       : { status: "completed", output: "done" },
 });
@@ -20,7 +20,7 @@ export const parent = defineTask({
   output: z.null(),
   initial: () => null,
   run: async (ctx) => {
-    ctx.spawnAgent("agent", { agentId: "researcher", prompt: "hi" });
+    await ctx.spawnAgent("agent", { agentId: "researcher", prompt: "hi" });
     return { status: "waiting", checkpoint: null, wait: { type: "signal", name: "go" } };
   },
 });
@@ -35,7 +35,7 @@ export function deferredParent(released: Promise<void>) {
     initial: () => null,
     run: async (ctx) => {
       await released;
-      ctx.spawnAgent("late", { agentId: "researcher", prompt: "hi" });
+      await ctx.spawnAgent("late", { agentId: "researcher", prompt: "hi" });
       return { status: "waiting", checkpoint: null, wait: { type: "signal", name: "go" } };
     },
   });

@@ -600,7 +600,11 @@ it("rejects continuing from a run that is not a finished sibling of the same age
     initial: () => null,
     run: async (ctx) => {
       try {
-        ctx.spawnAgent("second", { agentId: "researcher", prompt: "Go", continueFrom: "missing" });
+        await ctx.spawnAgent("second", {
+          agentId: "researcher",
+          prompt: "Go",
+          continueFrom: "missing",
+        });
         return { status: "completed", output: "spawned" };
       } catch (error) {
         return { status: "completed", output: (error as Error).message };

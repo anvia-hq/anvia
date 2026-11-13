@@ -11,6 +11,7 @@ import { DurableRuntime, type DurableAgentRegistration } from "../src/index.js";
 import type { DurableRun } from "../src/run.js";
 import { SqliteDurableStore } from "../src/sqlite.js";
 import { capabilities, done, hasToolResult, lookup, toolResponse } from "./helpers.js";
+import { itSqlite } from "./helpers/backend.js";
 
 const directories: string[] = [];
 const runtimes: DurableRuntime[] = [];
@@ -198,7 +199,7 @@ it("blocks a retry whose vector context settings changed under the same version"
   expect(model).toHaveBeenCalledTimes(1);
 });
 
-it("externalizes an oversized document set into the blob table", async () => {
+itSqlite("externalizes an oversized document set into the blob table", async () => {
   const large = "x".repeat(80_000);
   const { store, search } = storeWith(large);
   const model = vi.fn(async (request: CompletionRequest) => {

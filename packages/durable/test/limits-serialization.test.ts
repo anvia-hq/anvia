@@ -40,10 +40,10 @@ afterEach(() => {
 });
 
 describe("limit checks serialize each payload once", () => {
-  it("serializes a completed task output once for the size and change checks", () => {
+  it("serializes a completed task output once for the size and change checks", async () => {
     const spy = vi.spyOn(JSON, "stringify");
     const limited = limitedTransaction(fakeTransaction(), durableLimits());
-    limited.putTask({
+    await limited.putTask({
       id: "task",
       status: "completed",
       outcome: { status: "completed", output: big },
@@ -51,18 +51,18 @@ describe("limit checks serialize each payload once", () => {
     expect(serializationsOf(spy, marker)).toBe(1);
   });
 
-  it("serializes an operation input once", () => {
+  it("serializes an operation input once", async () => {
     const spy = vi.spyOn(JSON, "stringify");
     const limited = limitedTransaction(fakeTransaction(), durableLimits());
-    limited.putOperation("run", { key: "op", input: { text: big } } as never);
+    await limited.putOperation("run", { key: "op", input: { text: big } } as never);
     expect(serializationsOf(spy, marker)).toBe(1);
   });
 
-  it("still rejects an oversized payload with the field and limit", () => {
+  it("still rejects an oversized payload with the field and limit", async () => {
     const limited = limitedTransaction(fakeTransaction(), durableLimits());
-    const error = (() => {
+    const error = await (async () => {
       try {
-        limited.putOperation("run", { key: "op", input: { text: huge } } as never);
+        await limited.putOperation("run", { key: "op", input: { text: huge } } as never);
       } catch (caught) {
         return caught;
       }
@@ -77,7 +77,7 @@ describe("status events", () => {
   it("are not serialized or payload-checked", () => {
     const spy = vi.spyOn(JSON, "stringify");
     const limited = limitedTransaction(fakeTransaction(), durableLimits({ maxPayloadBytes: 10 }));
-    expect(() =>
+    expect(async () =>
       limited.appendEvent("run", "status", { status: "failed", error: huge }),
     ).not.toThrow();
     expect(spy).not.toHaveBeenCalled();

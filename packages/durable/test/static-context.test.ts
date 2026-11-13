@@ -9,6 +9,7 @@ import { DurableRuntime } from "../src/index.js";
 import type { DurableRun } from "../src/run.js";
 import { SqliteDurableStore } from "../src/sqlite.js";
 import { capabilities, done } from "./helpers.js";
+import { itSqlite } from "./helpers/backend.js";
 
 const directories: string[] = [];
 const runtimes: DurableRuntime[] = [];
@@ -126,25 +127,28 @@ it("blocks a retry whose registration documents changed under the same version",
   expect(model).toHaveBeenCalledTimes(1);
 });
 
-it("stores a large document set as a blob reference and hydrates it for readers", async () => {
-  const path = database();
-  const big = "fact-".repeat(30_000); // 150 KB, over the 64 KiB inline threshold
-  const model = vi.fn(async (_request: CompletionRequest) => done());
-  const runtime = await open(path, contextAgent(model, [{ id: "big", text: big }]));
-  const run = await runtime.submit({ ...submission, prompt: "summarize" });
-  await run.result();
-  // The model received the full document text.
-  expect(model.mock.calls[0]![0].documents?.[0]?.text).toBe(big);
-  const snapshot = await run.snapshot();
-  expect(snapshot.run.contextDocuments?.documents).toEqual([{ id: "big", text: big }]);
-  await runtime.close();
+itSqlite(
+  "stores a large document set as a blob reference and hydrates it for readers",
+  async () => {
+    const path = database();
+    const big = "fact-".repeat(30_000); // 150 KB, over the 64 KiB inline threshold
+    const model = vi.fn(async (_request: CompletionRequest) => done());
+    const runtime = await open(path, contextAgent(model, [{ id: "big", text: big }]));
+    const run = await runtime.submit({ ...submission, prompt: "summarize" });
+    await run.result();
+    // The model received the full document text.
+    expect(model.mock.calls[0]![0].documents?.[0]?.text).toBe(big);
+    const snapshot = await run.snapshot();
+    expect(snapshot.run.contextDocuments?.documents).toEqual([{ id: "big", text: big }]);
+    await runtime.close();
 
-  const db = new DatabaseSync(path, { readOnly: true });
-  try {
-    const record = String(db.prepare("SELECT record FROM anvia_durable_runs").get()!.record);
-    expect(record).toContain("anvia:blob");
-    expect(record.length).toBeLessThan(10_000);
-  } finally {
-    db.close();
-  }
-});
+    const db = new DatabaseSync(path, { readOnly: true });
+    try {
+      const record = String(db.prepare("SELECT record FROM anvia_durable_runs").get()!.record);
+      expect(record).toContain("anvia:blob");
+      expect(record.length).toBeLessThan(10_000);
+    } finally {
+      db.close();
+    }
+  },
+);

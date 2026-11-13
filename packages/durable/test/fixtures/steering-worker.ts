@@ -9,7 +9,7 @@ let id: string;
 const agent = makeAgent(
   async (request) => {
     if (!hasToolResult(request)) return toolResponse();
-    runtime.steer(id, { prompt: "queued before crash" }, { requestId: "pending" });
+    await runtime.steer(id, { prompt: "queued before crash" }, { requestId: "pending" });
     process.send?.({ id, request });
     await new Promise<void>(() => {
       setInterval(() => {}, 1000);
@@ -19,7 +19,7 @@ const agent = makeAgent(
   [
     lookup(async () => {
       appendFileSync(effects, "effect\n");
-      runtime.steer(id, { prompt: "applied before crash" }, { requestId: "applied" });
+      await runtime.steer(id, { prompt: "applied before crash" }, { requestId: "applied" });
       return "stored result";
     }),
   ],

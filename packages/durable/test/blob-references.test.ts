@@ -8,6 +8,7 @@ import { DurableRuntime, type DurableRunRecord } from "../src/index.js";
 import type { DurableRun } from "../src/run.js";
 import { SqliteDurableStore } from "../src/sqlite.js";
 import { done, hasToolResult, lookup, makeAgent, response, toolResponse } from "./helpers.js";
+import { itSqlite } from "./helpers/backend.js";
 
 const directories: string[] = [];
 const runtimes: DurableRuntime[] = [];
@@ -59,43 +60,46 @@ afterEach(async () => {
 
 const big = "result-".repeat(20_000); // 140 KB, over the 64 KiB inline threshold
 
-it("stores an oversized tool result externally; the model still receives the full result", async () => {
-  const path = database();
-  const tool = vi.fn(async () => big);
-  const model = vi.fn(async (request: CompletionRequest) =>
-    hasToolResult(request) ? done() : toolResponse(),
-  );
-  const runtime = await open(path, makeAgent(model, [lookup(tool)]));
-  const run = await runtime.submit({
-    agentId: "researcher",
-    sessionId: "session",
-    requestId: "one",
-    prompt: "look it up",
-  });
-  expect(await run.result()).toMatchObject({ type: "response", output: "done" });
-  expect(tool).toHaveBeenCalledTimes(1);
-  expect(model).toHaveBeenCalledTimes(2);
-  // The provider saw the full result, not a reference.
-  const second = model.mock.calls[1]![0];
-  expect(JSON.stringify(second.chatHistory)).toContain(big);
-  await runtime.close();
+itSqlite(
+  "stores an oversized tool result externally; the model still receives the full result",
+  async () => {
+    const path = database();
+    const tool = vi.fn(async () => big);
+    const model = vi.fn(async (request: CompletionRequest) =>
+      hasToolResult(request) ? done() : toolResponse(),
+    );
+    const runtime = await open(path, makeAgent(model, [lookup(tool)]));
+    const run = await runtime.submit({
+      agentId: "researcher",
+      sessionId: "session",
+      requestId: "one",
+      prompt: "look it up",
+    });
+    expect(await run.result()).toMatchObject({ type: "response", output: "done" });
+    expect(tool).toHaveBeenCalledTimes(1);
+    expect(model).toHaveBeenCalledTimes(2);
+    // The provider saw the full result, not a reference.
+    const second = model.mock.calls[1]![0];
+    expect(JSON.stringify(second.chatHistory)).toContain(big);
+    await runtime.close();
 
-  // The journal holds a bounded reference, with the payload in the blob table.
-  const operations = stored(path, "SELECT record FROM anvia_durable_operations");
-  const toolRecord = operations.find((record) => record.includes('"kind":"tool"'))!;
-  expect(toolRecord).toContain("anvia:blob");
-  expect(toolRecord).not.toContain(big.slice(0, 500));
-  for (const record of stored(path, "SELECT record FROM anvia_durable_runs"))
-    expect(record.length).toBeLessThan(10_000);
-  const blobs = new DatabaseSync(path, { readOnly: true });
-  try {
-    expect(
-      Number(blobs.prepare("SELECT COUNT(*) AS n FROM anvia_durable_blobs").get()!.n),
-    ).toBeGreaterThan(0);
-  } finally {
-    blobs.close();
-  }
-});
+    // The journal holds a bounded reference, with the payload in the blob table.
+    const operations = stored(path, "SELECT record FROM anvia_durable_operations");
+    const toolRecord = operations.find((record) => record.includes('"kind":"tool"'))!;
+    expect(toolRecord).toContain("anvia:blob");
+    expect(toolRecord).not.toContain(big.slice(0, 500));
+    for (const record of stored(path, "SELECT record FROM anvia_durable_runs"))
+      expect(record.length).toBeLessThan(10_000);
+    const blobs = new DatabaseSync(path, { readOnly: true });
+    try {
+      expect(
+        Number(blobs.prepare("SELECT COUNT(*) AS n FROM anvia_durable_blobs").get()!.n),
+      ).toBeGreaterThan(0);
+    } finally {
+      blobs.close();
+    }
+  },
+);
 
 it("restores an externalized tool result after a restart without re-running the tool", async () => {
   const path = database();
@@ -131,7 +135,7 @@ it("restores an externalized tool result after a restart without re-running the 
   expect(JSON.stringify(retried.chatHistory)).toContain(big);
 });
 
-it("hydrates externalized history for the next run of the session", async () => {
+itSqlite("hydrates externalized history for the next run of the session", async () => {
   const path = database();
   const tool = vi.fn(async () => big);
   const model = vi.fn(async (request: CompletionRequest) =>
@@ -162,7 +166,7 @@ it("hydrates externalized history for the next run of the session", async () => 
     expect(record.length).toBeLessThan(10_000);
 });
 
-it("externalizes an oversized outcome and reads it back after a restart", async () => {
+itSqlite("externalizes an oversized outcome and reads it back after a restart", async () => {
   const path = database();
   const runtime = await open(
     path,
@@ -193,7 +197,7 @@ it("externalizes an oversized outcome and reads it back after a restart", async 
   expect(JSON.stringify(snapshot.run.outcome?.messages)).toContain(big);
 });
 
-it("opens a schema version 9 store, migrates it, and keeps its runs readable", async () => {
+itSqlite("opens a schema version 9 store, migrates it, and keeps its runs readable", async () => {
   const path = database();
   const runtime = await open(
     path,
@@ -248,19 +252,19 @@ it("opens a schema version 9 store, migrates it, and keeps its runs readable", a
 
 it("round-trips blob values by content hash, writing each once", async () => {
   const store = new SqliteDurableStore(":memory:");
-  store.acquire();
+  await store.acquire();
   try {
-    store.transaction((tx) => {
+    await store.transaction(async (tx) => {
       const value = { text: big };
-      const hash = tx.putBlob(value);
+      const hash = await tx.putBlob(value);
       expect(hash).toMatch(/^[a-f0-9]{64}$/);
-      expect(tx.putBlob(value)).toBe(hash);
-      expect(tx.getBlob(hash)).toEqual(value);
+      expect(await tx.putBlob(value)).toBe(hash);
+      expect(await tx.getBlob(hash)).toEqual(value);
     });
-    expect(() => store.transaction((tx) => tx.getBlob("0".repeat(64)))).toThrow(
-      "Missing durable blob content.",
-    );
+    await expect(async () =>
+      store.transaction(async (tx) => tx.getBlob("0".repeat(64))),
+    ).rejects.toThrow("Missing durable blob content.");
   } finally {
-    store.close();
+    await store.close();
   }
 });

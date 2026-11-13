@@ -74,7 +74,9 @@ const sum = defineTask({
   initial: () => "spawn" as const,
   run: async (ctx) => {
     if (ctx.checkpoint === "spawn") {
-      const ids = ctx.input.map((value, index) => ctx.spawn(`item-${index}`, increment, value));
+      const ids: string[] = [];
+      for (const [index, value] of ctx.input.entries())
+        ids.push(await ctx.spawn(`item-${index}`, increment, value));
       return {
         status: "waiting",
         checkpoint: "sum" as const,
@@ -82,7 +84,7 @@ const sum = defineTask({
       };
     }
     let output = 0;
-    for (const child of ctx.children()) {
+    for (const child of await ctx.children()) {
       if (child.outcome?.status !== "completed") {
         return { status: "failed", error: "A child did not complete successfully." };
       }
@@ -99,6 +101,11 @@ that parent's entire lifetime. Replaying the same spawn reuses the child; changi
 version, or normalized input conflicts. Include an iteration ID in keys for repeated work.
 Child creation and the parent's next transition are separate commits, deliberately made
 safe to replay by these keys.
+
+Every `TaskContext` method that touches the store is async: `await ctx.spawn(...)`,
+`await ctx.spawnAgent(...)`, `await ctx.children()`, `await ctx.agentRun(id)` and
+`await ctx.signalValue(name)`. Awaiting each spawn keeps child creation in order; do not fire
+spawns concurrently.
 
 A task can wait only on distinct direct children. This prevents dependency cycles. Trees
 are limited to 1000 total nodes and depth 32; exceeding either limit fails creation without

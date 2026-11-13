@@ -16,19 +16,19 @@ export function taskInvocation(
   task: TaskRecord,
   definitions: ReadonlyMap<string, RegisteredTask>,
   controller: AbortController,
-  changed: () => void,
+  changed: () => Promise<void>,
   spawnAgent: (
     tx: DurableTransaction,
     parent: TaskRecord,
     key: string,
     input: TaskAgentInput,
-  ) => string,
+  ) => Promise<string>,
 ) {
   let open = true;
   let fatal: unknown;
-  const transaction = <T>(callback: (tx: DurableTransaction) => T): T => {
+  const transaction = async <T>(callback: (tx: DurableTransaction) => Promise<T>): Promise<T> => {
     try {
-      return store.transaction(callback);
+      return await store.transaction(callback);
     } catch (error) {
       if (error instanceof DurableStorageError) fatal = error;
       throw error;
@@ -36,12 +36,12 @@ export function taskInvocation(
   };
   const effects = new Set<Promise<JsonValue>>();
   const keys = new Set<string>();
-  const assertActive = () => {
+  const assertActive = async () => {
     if (fatal !== undefined) throw fatal;
     controller.signal.throwIfAborted();
     if (!open) throw new DurableConflictError("Task invocation has finished.");
-    transaction((tx) => {
-      if (requireTask(tx, task.id).status !== "running")
+    await transaction(async (tx) => {
+      if ((await requireTask(tx, task.id)).status !== "running")
         throw new DurableConflictError("Task is no longer running.");
     });
   };
@@ -51,7 +51,7 @@ export function taskInvocation(
     execute: (operationId: string, signal: AbortSignal) => Promise<T>,
     recovery: ToolRecovery = "manual",
   ): Promise<T> => {
-    assertActive();
+    await assertActive();
     taskKey(key);
     if (!["manual", "safe", "idempotent"].includes(recovery))
       throw new TypeError("Invalid effect recovery policy.");
@@ -59,8 +59,8 @@ export function taskInvocation(
       throw new DurableConflictError("Concurrent use of one effect key is not allowed.");
     keys.add(key);
     try {
-      const saved = transaction((tx) => {
-        const existing = tx.getOperation(task.id, key);
+      const saved = await transaction(async (tx) => {
+        const existing = await tx.getOperation(task.id, key);
         if (existing !== undefined) {
           if (!sameJson(existing.input, input) || existing.recovery !== recovery)
             throw new DurableRecoveryError("Effect input or recovery policy changed.", key);
@@ -73,7 +73,7 @@ export function taskInvocation(
           status: "started" as const,
           recovery,
         };
-        tx.putOperation(task.id, operation);
+        await tx.putOperation(task.id, operation);
         return undefined;
       });
       if (saved?.status === "completed") return json(saved.result) as T;
@@ -89,11 +89,11 @@ export function taskInvocation(
           key,
         );
       }
-      assertActive();
+      await assertActive();
       try {
-        transaction((tx) => {
-          const operation = tx.getOperation(task.id, key)!;
-          tx.putOperation(task.id, { ...operation, status: "completed", result });
+        await transaction(async (tx) => {
+          const operation = (await tx.getOperation(task.id, key))!;
+          await tx.putOperation(task.id, { ...operation, status: "completed", result });
         });
       } catch (error) {
         if (error instanceof DurableLimitError)
@@ -116,42 +116,42 @@ export function taskInvocation(
     input: json(task.input),
     checkpoint: json(task.checkpoint),
     signal: controller.signal,
-    spawn: (key, definition, input) => {
-      assertActive();
+    spawn: async (key, definition, input) => {
+      await assertActive();
       const registered = definitions.get(definition.name);
       if (registered === undefined || registered.version !== definition.version)
         throw new DurableRecoveryError(`Task definition is not registered: ${definition.name}`);
-      const child = transaction((tx) =>
+      const child = await transaction(async (tx) =>
         createTask(tx, registered, input, task.sessionId, key, task.id),
       );
-      changed();
+      await changed();
       return child.id;
     },
-    spawnAgent: (key, input) => {
-      assertActive();
-      const id = transaction((tx) => spawnAgent(tx, task, key, input));
-      changed();
+    spawnAgent: async (key, input) => {
+      await assertActive();
+      const id = await transaction((tx) => spawnAgent(tx, task, key, input));
+      await changed();
       return id;
     },
-    children: () => {
-      assertActive();
-      return transaction((tx) => tx.taskChildren(task.id));
+    children: async () => {
+      await assertActive();
+      return transaction(async (tx) => tx.taskChildren(task.id));
     },
-    agentRun: (childId) => {
-      assertActive();
-      return transaction((tx) => {
-        const child = requireTask(tx, childId);
+    agentRun: async (childId) => {
+      await assertActive();
+      return transaction(async (tx) => {
+        const child = await requireTask(tx, childId);
         if (child.parentId !== task.id || child.agentRunId === undefined)
           throw new DurableConflictError("Expected a direct owned agent child.");
-        const run = tx.getRun(child.agentRunId);
+        const run = await tx.getRun(child.agentRunId);
         if (run === undefined) throw new DurableRecoveryError("Owned agent run is missing.");
         // Goal rounds read outcomes and transcripts from this record, so restore any references.
-        return hydrateValue(tx, json(run)) as DurableRunRecord;
+        return (await tx.blobs((io) => hydrateValue(io, json(run)))) as DurableRunRecord;
       });
     },
-    signalValue: (name) => {
-      assertActive();
-      const signals = transaction((tx) => requireTask(tx, task.id).signals);
+    signalValue: async (name) => {
+      await assertActive();
+      const signals = await transaction(async (tx) => (await requireTask(tx, task.id)).signals);
       return Object.hasOwn(signals, name) ? json(signals[name]!.value) : undefined;
     },
     effect: (key, input, execute, recovery) => {

@@ -1,5 +1,5 @@
-import { messageLog, messageLogTables } from "./message-log.js";
-import { blobStatements, externalizeRunRecord, hydrateValue } from "./blob.js";
+import { messageLog, messageLogTables, sqliteMessageBackend } from "./message-log.js";
+import { blobStatements, externalizeRunRecord, type DurableBlobIO, hydrateValue } from "./blob.js";
 import { readStored, writeStored } from "./references.js";
 import { migrateLegacyRows, migrateOversizedPrompts } from "./legacy-rows.js";
 import { sqliteMetrics } from "./metrics.js";
@@ -13,6 +13,9 @@ import {
 } from "./tasks/sqlite.js";
 import type { TaskListOptions } from "./tasks/types.js";
 import type { DurableGraphListOptions, DurableGraphPage } from "./graph-types.js";
+import { runSummary } from "./run-summary.js";
+import { SerialGate } from "./serial.js";
+import { promisify, type SyncApi } from "./sync-api.js";
 import { hostname } from "node:os";
 import { DatabaseSync } from "node:sqlite";
 import { json, nonblank } from "./json.js";
@@ -29,7 +32,6 @@ import type {
   DurableListOptions,
   DurableRunPage,
   DurableRunRecord,
-  DurableRunSummary,
   DurableStore,
   DurableTransaction,
 } from "./types.js";
@@ -43,6 +45,7 @@ export class SqliteDurableStore implements DurableStore {
   private acquired = false;
   private closed = false;
   private inTransaction = false;
+  private readonly gate = new SerialGate();
 
   constructor(path: string) {
     nonblank(path, "SQLite path");
@@ -111,7 +114,7 @@ export class SqliteDurableStore implements DurableStore {
         version?.version !== 12
       )
         throw new Error("Unsupported durable database schema version.");
-      this.histories = messageLog(this.database);
+      this.histories = messageLog(sqliteMessageBackend(this.database));
       this.blobs = blobStatements(this.database);
     } catch (error) {
       this.database.close();
@@ -119,7 +122,7 @@ export class SqliteDurableStore implements DurableStore {
     }
   }
 
-  acquire(): void {
+  async acquire(): Promise<void> {
     if (this.closed || this.acquired)
       throw new Error("Durable store is closed or already acquired.");
     this.atomic(() => {
@@ -164,8 +167,9 @@ export class SqliteDurableStore implements DurableStore {
     this.acquired = true;
   }
 
-  close(): void {
+  async close(): Promise<void> {
     if (this.closed) return;
+    await this.gate.read(() => undefined);
     try {
       if (this.acquired) {
         this.atomic(() => {
@@ -183,29 +187,41 @@ export class SqliteDurableStore implements DurableStore {
     }
   }
 
-  transaction<T>(callback: (tx: DurableTransaction) => T): T {
+  async transaction<T>(callback: (tx: DurableTransaction) => Promise<T>): Promise<T> {
     this.assertOpen();
-    return this.atomic(() => {
-      this.assertOwner();
+    return this.gate.transaction(async () => {
+      this.assertOpen();
+      this.begin();
       let active = true;
       try {
-        return callback(
-          this.transactionApi(() => {
+        this.assertOwner();
+        const api = promisify<DurableTransaction>({
+          ...this.transactionApi(() => {
             if (!active) throw new Error("Durable transaction has finished.");
           }),
-        );
+          blobs: (fn: (io: DurableBlobIO) => unknown) => fn(this.blobs),
+        } as SyncApi<DurableTransaction>);
+        const result = await callback(api);
+        this.database.exec("COMMIT");
+        return result;
+      } catch (error) {
+        this.database.exec("ROLLBACK");
+        throw error;
       } finally {
         active = false;
+        this.inTransaction = false;
       }
     });
   }
 
   metrics() {
-    this.assertOpen();
-    return sqliteMetrics(this.database);
+    return this.gate.read(() => {
+      this.assertOpen();
+      return sqliteMetrics(this.database);
+    });
   }
 
-  listGraphs(input: DurableGraphListOptions): DurableGraphPage {
+  private listGraphsSync(input: DurableGraphListOptions): DurableGraphPage {
     this.assertOpen();
     const options = graphListSchema.parse(input);
     const limit = options.limit ?? 50;
@@ -235,22 +251,22 @@ export class SqliteDurableStore implements DurableStore {
     return result;
   }
 
-  listTasks(options: TaskListOptions) {
+  private listTasksSync(options: TaskListOptions) {
     this.assertOpen();
     return listTasks(this.database, options);
   }
 
-  scheduleTasks(excluded: readonly string[], limit: number) {
+  private scheduleTasksSync(excluded: readonly string[], limit: number) {
     this.assertOpen();
     return scheduleTasks(this.database, excluded, limit);
   }
 
-  unsettledTaskRoots(after: number) {
+  private unsettledTaskRootsSync(after: number) {
     this.assertOpen();
     return unsettledTaskRoots(this.database, after);
   }
 
-  taskEvents(rootId: string, after: number, limit: number): DurableEvent[] {
+  private taskEventsSync(rootId: string, after: number, limit: number): DurableEvent[] {
     this.assertOpen();
     if (
       !Number.isSafeInteger(after) ||
@@ -273,7 +289,7 @@ export class SqliteDurableStore implements DurableStore {
       }));
   }
 
-  graphEvents(graphId: string, after: number, limit: number): DurableEvent[] {
+  private graphEventsSync(graphId: string, after: number, limit: number): DurableEvent[] {
     this.assertOpen();
     if (
       !Number.isSafeInteger(after) ||
@@ -296,7 +312,7 @@ export class SqliteDurableStore implements DurableStore {
       }));
   }
 
-  list(input: DurableListOptions): DurableRunPage {
+  private listSync(input: DurableListOptions): DurableRunPage {
     this.assertOpen();
     const options = listOptionsSchema.parse(input);
     const conditions = ["r.rowid > ?"];
@@ -331,7 +347,7 @@ export class SqliteDurableStore implements DurableStore {
     return result;
   }
 
-  schedule(
+  private scheduleSync(
     now: string,
     limit: number,
     excludedSessions: readonly string[],
@@ -370,7 +386,7 @@ export class SqliteDurableStore implements DurableStore {
     return result;
   }
 
-  events(runId: string, after: number, limit: number): DurableEvent[] {
+  private eventsSync(runId: string, after: number, limit: number): DurableEvent[] {
     this.assertOpen();
     if (
       !Number.isSafeInteger(after) ||
@@ -393,6 +409,42 @@ export class SqliteDurableStore implements DurableStore {
         type: eventTypeSchema.parse(row.type),
         data: this.eventData(row),
       }));
+  }
+
+  listGraphs(input: DurableGraphListOptions) {
+    return this.gate.read(() => this.listGraphsSync(input));
+  }
+
+  listTasks(options: TaskListOptions) {
+    return this.gate.read(() => this.listTasksSync(options));
+  }
+
+  scheduleTasks(excluded: readonly string[], limit: number) {
+    return this.gate.read(() => this.scheduleTasksSync(excluded, limit));
+  }
+
+  unsettledTaskRoots(after: number) {
+    return this.gate.read(() => this.unsettledTaskRootsSync(after));
+  }
+
+  taskEvents(rootId: string, after: number, limit: number) {
+    return this.gate.read(() => this.taskEventsSync(rootId, after, limit));
+  }
+
+  graphEvents(graphId: string, after: number, limit: number) {
+    return this.gate.read(() => this.graphEventsSync(graphId, after, limit));
+  }
+
+  list(input: DurableListOptions) {
+    return this.gate.read(() => this.listSync(input));
+  }
+
+  events(runId: string, after: number, limit: number) {
+    return this.gate.read(() => this.eventsSync(runId, after, limit));
+  }
+
+  schedule(now: string, limit: number, excludedSessions: readonly string[]) {
+    return this.gate.read(() => this.scheduleSync(now, limit, excludedSessions));
   }
 
   /**
@@ -421,7 +473,7 @@ export class SqliteDurableStore implements DurableStore {
     return json(hydrateValue(this.blobs, json(readStored(text))));
   }
 
-  private transactionApi(assertActive: () => void): DurableTransaction {
+  private transactionApi(assertActive: () => void): Omit<SyncApi<DurableTransaction>, "blobs"> {
     const histories = this.histories;
     const blobs = this.blobs;
     const readRun = (sql: string, ...parameters: string[]): DurableRunRecord | undefined => {
@@ -582,6 +634,12 @@ export class SqliteDurableStore implements DurableStore {
     };
   }
 
+  private begin(): void {
+    if (this.inTransaction) throw new Error("Nested durable transactions are not supported.");
+    this.database.exec("BEGIN IMMEDIATE");
+    this.inTransaction = true;
+  }
+
   private atomic<T>(callback: () => T): T {
     if (this.inTransaction) throw new Error("Nested durable transactions are not supported.");
     this.database.exec("BEGIN IMMEDIATE");
@@ -622,42 +680,4 @@ function processExists(pid: number): boolean {
   } catch (error) {
     return (error as NodeJS.ErrnoException).code !== "ESRCH";
   }
-}
-
-function runSummary(run: DurableRunRecord): DurableRunSummary {
-  const {
-    id,
-    agentId,
-    sessionId,
-    requestId,
-    status,
-    createdAt,
-    updatedAt,
-    error,
-    blockedOperation,
-    nextAttemptAt,
-  } = run;
-  const summary: DurableRunSummary = {
-    id,
-    agentId,
-    sessionId,
-    requestId,
-    status,
-    createdAt,
-    updatedAt,
-  };
-
-  if (error !== undefined) {
-    summary.error = error;
-  }
-
-  if (blockedOperation !== undefined) {
-    summary.blockedOperation = blockedOperation;
-  }
-
-  if (nextAttemptAt !== undefined) {
-    summary.nextAttemptAt = nextAttemptAt;
-  }
-
-  return summary;
 }

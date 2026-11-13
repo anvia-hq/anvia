@@ -1,5 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 import { parseTask, taskListSchema } from "./schema.js";
+import type { SyncApi } from "../sync-api.js";
 import { readStored, writeStored } from "../references.js";
 import type { TaskListOptions, TaskPage, TaskRecord, TaskTransaction } from "./types.js";
 
@@ -14,7 +15,10 @@ export const taskTables = `
   CREATE INDEX IF NOT EXISTS anvia_durable_task_status ON anvia_durable_tasks(status);
 `;
 
-export function taskTransaction(db: DatabaseSync, assertActive: () => void): TaskTransaction {
+export function taskTransaction(
+  db: DatabaseSync,
+  assertActive: () => void,
+): SyncApi<TaskTransaction> {
   const read = (sql: string, ...parameters: string[]): TaskRecord[] => {
     assertActive();
     return db

@@ -2,13 +2,14 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, expect, vi } from "vitest";
 import { Agent } from "@anvia/core/agent";
 import type { CompletionRequest, UserMessage } from "@anvia/core/completion";
 import { DurableRuntime } from "../src/index.js";
 import { SqliteDurableStore } from "../src/sqlite.js";
 import type { DurableRun } from "../src/run.js";
 import { capabilities, done, lookup, makeAgent, response } from "./helpers.js";
+import { itSqlite } from "./helpers/backend.js";
 
 const directories: string[] = [];
 const runtimes: DurableRuntime[] = [];
@@ -87,53 +88,56 @@ const mediaAgent = (completion: (request: CompletionRequest) => Promise<unknown>
     },
   });
 
-it("stores image and file parts as blob references and restores them intact for later turns", async () => {
-  const path = database();
-  const model = vi.fn(async (_request: CompletionRequest) => done());
-  const runtime = await open(path, mediaAgent(model));
-  const run = await runtime.submit({
-    agentId: "researcher",
-    sessionId: "session",
-    requestId: "one",
-    prompt: media,
-  });
-  await run.result();
-  // The provider sees the full media, not a reference.
-  expect(model.mock.calls[0]![0].chatHistory).toContainEqual(media);
-  await runtime.close();
+itSqlite(
+  "stores image and file parts as blob references and restores them intact for later turns",
+  async () => {
+    const path = database();
+    const model = vi.fn(async (_request: CompletionRequest) => done());
+    const runtime = await open(path, mediaAgent(model));
+    const run = await runtime.submit({
+      agentId: "researcher",
+      sessionId: "session",
+      requestId: "one",
+      prompt: media,
+    });
+    await run.result();
+    // The provider sees the full media, not a reference.
+    expect(model.mock.calls[0]![0].chatHistory).toContainEqual(media);
+    await runtime.close();
 
-  // The journal keeps neither the image nor the file bytes inline in operations or messages.
-  // The submission (run record and its `submitted` event) keeps the prompt inline, as before this
-  // change; the check covers the model input and the history rows that hold the media.
-  for (const text of [
-    ...stored(path, "SELECT record FROM anvia_durable_operations"),
-    ...stored(path, "SELECT record FROM anvia_durable_messages"),
-    ...stored(path, "SELECT data FROM anvia_durable_events WHERE type = 'model_started'"),
-  ]) {
-    expect(text).not.toContain(big);
-  }
-  const db = new DatabaseSync(path, { readOnly: true });
-  try {
-    expect(
-      db.prepare("SELECT COUNT(*) AS n FROM anvia_durable_blobs").get()!.n as number,
-    ).toBeGreaterThan(0);
-  } finally {
-    db.close();
-  }
+    // The journal keeps neither the image nor the file bytes inline in operations or messages.
+    // The submission (run record and its `submitted` event) keeps the prompt inline, as before this
+    // change; the check covers the model input and the history rows that hold the media.
+    for (const text of [
+      ...stored(path, "SELECT record FROM anvia_durable_operations"),
+      ...stored(path, "SELECT record FROM anvia_durable_messages"),
+      ...stored(path, "SELECT data FROM anvia_durable_events WHERE type = 'model_started'"),
+    ]) {
+      expect(text).not.toContain(big);
+    }
+    const db = new DatabaseSync(path, { readOnly: true });
+    try {
+      expect(
+        db.prepare("SELECT COUNT(*) AS n FROM anvia_durable_blobs").get()!.n as number,
+      ).toBeGreaterThan(0);
+    } finally {
+      db.close();
+    }
 
-  // A fresh owner runs a follow-up turn; the earlier media comes back from the blob table.
-  const restarted = await open(path, mediaAgent(model));
-  const followup = await restarted.submit({
-    agentId: "researcher",
-    sessionId: "session",
-    requestId: "two",
-    prompt: "What did the document say?",
-  });
-  await followup.result();
-  expect(model.mock.calls[1]![0].chatHistory).toContainEqual(media);
-  const restored = await restarted.getRun(run.id);
-  expect((await restored.snapshot()).run.outcome?.messages).toContainEqual(media);
-});
+    // A fresh owner runs a follow-up turn; the earlier media comes back from the blob table.
+    const restarted = await open(path, mediaAgent(model));
+    const followup = await restarted.submit({
+      agentId: "researcher",
+      sessionId: "session",
+      requestId: "two",
+      prompt: "What did the document say?",
+    });
+    await followup.result();
+    expect(model.mock.calls[1]![0].chatHistory).toContainEqual(media);
+    const restored = await restarted.getRun(run.id);
+    expect((await restored.snapshot()).run.outcome?.messages).toContainEqual(media);
+  },
+);
 
 /** A tool that returns oversized output first, then a tool that needs approval. */
 function fetchThenApprove(seen: CompletionRequest[], fetched: string) {
@@ -163,38 +167,41 @@ function fetchThenApprove(seen: CompletionRequest[], fetched: string) {
   return { agent, fetch, approve };
 }
 
-it("keeps an interaction continuation with oversized history restorable across a restart", async () => {
-  const path = database();
-  const seen: CompletionRequest[] = [];
-  const fetched = `context-${"x".repeat(140_000)}`;
-  const { agent, fetch, approve } = fetchThenApprove(seen, fetched);
-  const runtime = await open(path, agent);
-  const run = await runtime.submit({
-    agentId: "researcher",
-    sessionId: "session",
-    requestId: "one",
-    prompt: "fetch it, then ask me",
-  });
-  const pending = await waiting(run);
-  expect(pending.type).toBe("interaction");
-  expect(approve).not.toHaveBeenCalled();
-  await runtime.close();
+itSqlite(
+  "keeps an interaction continuation with oversized history restorable across a restart",
+  async () => {
+    const path = database();
+    const seen: CompletionRequest[] = [];
+    const fetched = `context-${"x".repeat(140_000)}`;
+    const { agent, fetch, approve } = fetchThenApprove(seen, fetched);
+    const runtime = await open(path, agent);
+    const run = await runtime.submit({
+      agentId: "researcher",
+      sessionId: "session",
+      requestId: "one",
+      prompt: "fetch it, then ask me",
+    });
+    const pending = await waiting(run);
+    expect(pending.type).toBe("interaction");
+    expect(approve).not.toHaveBeenCalled();
+    await runtime.close();
 
-  // The waiting record keeps the oversized transcript out of line.
-  for (const record of stored(path, "SELECT record FROM anvia_durable_runs")) {
-    expect(record.length).toBeLessThan(10_000);
-    expect(record).not.toContain("x".repeat(1_000));
-  }
+    // The waiting record keeps the oversized transcript out of line.
+    for (const record of stored(path, "SELECT record FROM anvia_durable_runs")) {
+      expect(record.length).toBeLessThan(10_000);
+      expect(record).not.toContain("x".repeat(1_000));
+    }
 
-  const restarted = await open(path, agent);
-  const restored = await restarted.getRun(run.id);
-  if (pending.type !== "interaction") throw new Error("Missing approval");
-  await restored.respond(pending.interaction.id, { type: "tool-approval", approved: true });
-  expect(await restored.result()).toMatchObject({ type: "response", output: "done" });
-  expect(fetch).toHaveBeenCalledTimes(1);
-  expect(approve).toHaveBeenCalledTimes(1);
-  const snapshot = await restored.snapshot();
-  expect(snapshot.run.status).toBe("completed");
-  // The last model call after the restart received the full fetched output from the continuation.
-  expect(JSON.stringify(seen.at(-1)!.chatHistory)).toContain(fetched);
-});
+    const restarted = await open(path, agent);
+    const restored = await restarted.getRun(run.id);
+    if (pending.type !== "interaction") throw new Error("Missing approval");
+    await restored.respond(pending.interaction.id, { type: "tool-approval", approved: true });
+    expect(await restored.result()).toMatchObject({ type: "response", output: "done" });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(approve).toHaveBeenCalledTimes(1);
+    const snapshot = await restored.snapshot();
+    expect(snapshot.run.status).toBe("completed");
+    // The last model call after the restart received the full fetched output from the continuation.
+    expect(JSON.stringify(seen.at(-1)!.chatHistory)).toContain(fetched);
+  },
+);

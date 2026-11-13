@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { DurableRuntime, type DurableGraphSubmission } from "../src/index.js";
 import { SqliteDurableStore } from "../src/sqlite.js";
 import { done, hasToolResult, lookup, makeAgent, response, toolResponse } from "./helpers.js";
+import { itSqlite } from "./helpers/backend.js";
 
 const runtimes: DurableRuntime[] = [];
 const directories: string[] = [];
@@ -207,7 +208,7 @@ describe("durable task graphs", () => {
     expect(model).toHaveBeenCalledTimes(1);
   });
 
-  it.each([1, 2, 3, 4, 5])(
+  itSqlite.each([1, 2, 3, 4, 5])(
     "upgrades schema version %s on acquisition while preserving old runs",
     async (version) => {
       const path = database();

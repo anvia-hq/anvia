@@ -27,11 +27,11 @@ if (binding === "legacy") {
 const store = new SqliteDurableStore(database);
 const transaction = store.transaction.bind(store);
 let stopped = false;
-store.transaction = <T>(callback: (tx: DurableTransaction) => T): T =>
+store.transaction = async <T>(callback: (tx: DurableTransaction) => Promise<T>): Promise<T> =>
   transaction((tx) =>
     callback({
       ...tx,
-      putTask(task) {
+      async putTask(task) {
         // Reproduce the original persisted goal shape, including its assessment journal.
         const persisted =
           binding === "legacy" && task.name === goal.name
@@ -56,7 +56,7 @@ store.transaction = <T>(callback: (tx: DurableTransaction) => T): T =>
           // Roll back this phase only. The earlier spawn/assessment transaction is committed.
           throw new DurableStorageError("Injected interruption at goal boundary");
         }
-        tx.putTask(persisted);
+        await tx.putTask(persisted);
       },
     }),
   );

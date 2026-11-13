@@ -15,6 +15,7 @@ import type { DurableRun } from "../src/run.js";
 import { SqliteDurableStore } from "../src/sqlite.js";
 import { FileMemoryStore } from "./fixtures/file-memory-store.js";
 import { capabilities, done, lookup, toolResponse } from "./helpers.js";
+import { itSqlite } from "./helpers/backend.js";
 
 type AnyAgent = DurableAgentRegistration["agent"];
 
@@ -194,7 +195,7 @@ it("writes only after the terminal checkpoint, and keeps the run open until then
   const seen: Array<{ status: string; hasOutcome: boolean }> = [];
   const real = store.append.bind(store);
   store.append = async (options) => {
-    const { run: current } = runtime.snapshot(submitted.id, { operations: false });
+    const { run: current } = await runtime.snapshot(submitted.id, { operations: false });
     seen.push({ status: current.status, hasOutcome: current.outcome !== undefined });
     return real(options);
   };
@@ -591,7 +592,7 @@ it("fails an owned agent task that spawns a recorded memory agent, naming the li
     output: z.null(),
     initial: () => null,
     run: async (ctx) => {
-      ctx.spawnAgent("child", { agentId: "remembering", prompt: "hi" });
+      await ctx.spawnAgent("child", { agentId: "remembering", prompt: "hi" });
       return { status: "completed", output: null };
     },
   });
@@ -645,7 +646,7 @@ async function recover(path: string, memoryPath: string, id: string) {
   return { store, model, run: await runtime.getRun(id) };
 }
 
-it.each([
+itSqlite.each([
   ["before-commit", 0],
   ["after-commit", 2],
 ] as const)(

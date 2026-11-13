@@ -7,8 +7,13 @@ version changes; backup and release gates.
 
 - `@anvia/durable`: runtime, custom task definitions/handles, graph handles, errors, and types.
 - `@anvia/durable/sqlite`: local `SqliteDurableStore`, Node.js 22.16+.
+- `@anvia/durable/postgres`: `PostgresDurableStore` over a `pg` pool (optional peer `pg`).
+- `@anvia/durable/drizzle` and `@anvia/durable/prisma`: `DrizzleDurableStore` / `PrismaDurableStore`
+  over your own client, with user-owned schema (generators `anvia-durable-drizzle init` and
+  `anvia-durable-prisma init`; optional peers `drizzle-orm`, `@prisma/client`).
 - `@anvia/durable/protocol`: browser-safe types and validators.
-- `@anvia/durable/maintenance`: offline `backupSqlite` / `restoreSqlite`.
+- `@anvia/durable/maintenance`: offline `backupSqlite` / `restoreSqlite` (SQLite only; use `pg_dump`
+  or provider snapshots for Postgres).
 - `@anvia/server/durable`: Fetch-compatible `createDurableHandler`.
 - `@anvia/client/durable`: browser-safe `DurableClient`.
 

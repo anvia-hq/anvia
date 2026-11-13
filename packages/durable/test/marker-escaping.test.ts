@@ -10,6 +10,7 @@ import { DurableRuntime } from "../src/index.js";
 import { SqliteDurableStore } from "../src/sqlite.js";
 import type { DurableOperation } from "../src/types.js";
 import { done, hasToolResult, lookup, makeAgent, toolResponse } from "./helpers.js";
+import { itSqlite } from "./helpers/backend.js";
 
 /** User data shaped exactly like the blob markers. No blob with these hashes exists. */
 const missing = "0".repeat(64);
@@ -65,39 +66,42 @@ afterEach(async () => {
 });
 
 describe("user data shaped like blob markers", () => {
-  it("round-trips a tool result and a tool input unchanged, without a missing-blob error", async () => {
-    const path = database();
-    const tool = vi.fn(async () => spoof);
-    const model = vi.fn(async (request: CompletionRequest) =>
-      hasToolResult(request) ? done() : toolResponse(),
-    );
-    const runtime = await open(path, makeAgent(model, [lookup(tool)]));
-    const run = await runtime.submit({
-      agentId: "researcher",
-      sessionId: "session",
-      requestId: "one",
-      prompt: "look it up",
-    });
-    expect(await run.result()).toMatchObject({ type: "response", output: "done" });
-    // The provider saw the tool output exactly as the tool returned it.
-    const second = model.mock.calls[1]![0];
-    expect(JSON.stringify(second.chatHistory)).toContain(JSON.stringify(spoof));
-    expect(JSON.stringify(second.chatHistory.at(-1))).toContain(JSON.stringify(spoof));
-    await runtime.close();
+  itSqlite(
+    "round-trips a tool result and a tool input unchanged, without a missing-blob error",
+    async () => {
+      const path = database();
+      const tool = vi.fn(async () => spoof);
+      const model = vi.fn(async (request: CompletionRequest) =>
+        hasToolResult(request) ? done() : toolResponse(),
+      );
+      const runtime = await open(path, makeAgent(model, [lookup(tool)]));
+      const run = await runtime.submit({
+        agentId: "researcher",
+        sessionId: "session",
+        requestId: "one",
+        prompt: "look it up",
+      });
+      expect(await run.result()).toMatchObject({ type: "response", output: "done" });
+      // The provider saw the tool output exactly as the tool returned it.
+      const second = model.mock.calls[1]![0];
+      expect(JSON.stringify(second.chatHistory)).toContain(JSON.stringify(spoof));
+      expect(JSON.stringify(second.chatHistory.at(-1))).toContain(JSON.stringify(spoof));
+      await runtime.close();
 
-    // After a restart the journal still reads the same data.
-    const reopened = await open(
-      path,
-      makeAgent(async () => done(), [lookup(tool)]),
-    );
-    const restored = await reopened.getRun(run.id);
-    const messages = (await restored.snapshot()).run.outcome?.messages;
-    expect(JSON.stringify(messages)).toContain(JSON.stringify(spoof));
-    // Stored form escapes the reserved keys, so no plain marker key is on disk.
-    const raw = stored(path, "SELECT record FROM anvia_durable_operations");
-    expect(raw.join("\n")).not.toContain('"anvia:blob"');
-    expect(raw.join("\n")).toContain('"~anvia:blob"');
-  });
+      // After a restart the journal still reads the same data.
+      const reopened = await open(
+        path,
+        makeAgent(async () => done(), [lookup(tool)]),
+      );
+      const restored = await reopened.getRun(run.id);
+      const messages = (await restored.snapshot()).run.outcome?.messages;
+      expect(JSON.stringify(messages)).toContain(JSON.stringify(spoof));
+      // Stored form escapes the reserved keys, so no plain marker key is on disk.
+      const raw = stored(path, "SELECT record FROM anvia_durable_operations");
+      expect(raw.join("\n")).not.toContain('"anvia:blob"');
+      expect(raw.join("\n")).toContain('"~anvia:blob"');
+    },
+  );
 
   it("round-trips a user message whose metadata uses the durableBlobs shape", async () => {
     const path = database();
@@ -128,10 +132,10 @@ describe("user data shaped like blob markers", () => {
     await next.result();
   });
 
-  it("keeps user data unchanged through the store's operation and history writes", () => {
+  it("keeps user data unchanged through the store's operation and history writes", async () => {
     const path = database();
     const store = new SqliteDurableStore(path);
-    store.acquire();
+    await store.acquire();
     try {
       const operation: DurableOperation = {
         key: "op",
@@ -141,31 +145,35 @@ describe("user data shaped like blob markers", () => {
         status: "completed",
         result: { output: { type: "json", value: spoof }, failed: false },
       };
-      store.transaction((tx) => tx.putOperation("run-x", operation));
-      const read = store.transaction((tx) => tx.getOperation("run-x", "op"));
+      await store.transaction(async (tx) => tx.putOperation("run-x", operation));
+      const read = await store.transaction(async (tx) => tx.getOperation("run-x", "op"));
       expect(read).toEqual(operation);
       // Hydration of plain user data is the identity.
-      expect(store.transaction((tx) => hydrateValue(tx, read!.result as JsonValue))).toEqual({
+      expect(
+        await store.transaction(
+          async (tx) => await tx.blobs((io) => hydrateValue(io, read!.result as JsonValue)),
+        ),
+      ).toEqual({
         output: { type: "json", value: spoof },
         failed: false,
       });
     } finally {
-      store.close();
+      await store.close();
     }
   });
 });
 
 describe("rows written before schema version 11", () => {
-  it("reads legacy user data unchanged and keeps real references", () => {
+  itSqlite("reads legacy user data unchanged and keeps real references", async () => {
     const path = database();
     const big = { text: "legacy-".repeat(20_000) }; // over the inline threshold
     const store = new SqliteDurableStore(path);
-    store.acquire();
-    const legit = store.transaction((tx) => {
-      const hash = tx.putBlob(big);
+    await store.acquire();
+    const legit = await store.transaction(async (tx) => {
+      const hash = await tx.putBlob(big);
       return { hash, bytes: Buffer.byteLength(JSON.stringify(big)) };
     });
-    store.close();
+    await store.close();
 
     // Rewrite the journal the way schema version 10 stored it: no escaping, markers unchecked.
     const message = spoofMessage as unknown as JsonValue;
@@ -234,22 +242,26 @@ describe("rows written before schema version 11", () => {
     // Opening migrates the rows. The spoofed user data reads back unchanged, and the real
     // reference still restores its blob. The history rehash keeps the chain valid.
     const migrated = new SqliteDurableStore(path);
-    migrated.acquire();
+    await migrated.acquire();
     try {
-      const spoofed = migrated.transaction((tx) => tx.getOperation("legacy-run", "legacy:spoof"));
+      const spoofed = await migrated.transaction(async (tx) =>
+        tx.getOperation("legacy-run", "legacy:spoof"),
+      );
       expect((spoofed?.result as { output?: unknown } | undefined)?.output).toEqual({
         type: "json",
         value: spoof,
       });
-      const real = migrated.transaction((tx) => {
-        const operation = tx.getOperation("legacy-run", "legacy:real");
-        return hydrateValue(tx, operation!.result!);
+      const real = await migrated.transaction(async (tx) => {
+        const operation = await tx.getOperation("legacy-run", "legacy:real");
+        return await tx.blobs((io) => hydrateValue(io, operation!.result!));
       });
       expect(real).toEqual({ output: big, failed: false });
-      const history = migrated.transaction((tx) => tx.getOperation("legacy-run", "legacy:history"));
+      const history = await migrated.transaction(async (tx) =>
+        tx.getOperation("legacy-run", "legacy:history"),
+      );
       expect(history?.input).toEqual([spoofMessage]);
     } finally {
-      migrated.close();
+      await migrated.close();
     }
     const verify = new DatabaseSync(path, { readOnly: true });
     try {

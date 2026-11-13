@@ -15,28 +15,29 @@ import type {
   DurableTaskWait,
 } from "./graph-types.js";
 
-export function createGraph(
+export async function createGraph(
   tx: DurableTransaction,
   submission: DurableGraphSubmission,
   agents: ReadonlyMap<string, DurableAgentRegistration>,
   mcpServers: ReadonlyMap<string, DurableMcpServers>,
   toolIndexes: ReadonlyMap<string, DurableToolIndexes>,
-): string {
-  const existing = tx.findGraphRequest(submission.sessionId, submission.requestId);
+): Promise<string> {
+  const existing = await tx.findGraphRequest(submission.sessionId, submission.requestId);
   if (existing !== undefined) {
     if (!sameJson(existing.submission, submission))
       throw new DurableConflictError("Graph requestId already belongs to a different submission.");
     return existing.id;
   }
   const id = globalThis.crypto.randomUUID();
-  const runs = submission.tasks.map((task) => {
+  const runs: { task: (typeof submission.tasks)[number]; run: DurableRunRecord }[] = [];
+  for (const task of submission.tasks) {
     const registration = agents.get(task.agentId);
     if (registration === undefined)
       throw new DurableNotFoundError(`Unknown durable agent: ${task.agentId}`);
     assertMemoryFreeTask(registration, task.agentId, "graph tasks");
-    return {
+    runs.push({
       task,
-      run: createRunRecord(
+      run: await createRunRecord(
         {
           agentId: task.agentId,
           sessionId: `${GRAPH_SESSION_PREFIX}${id}:${task.id}`,
@@ -48,8 +49,8 @@ export function createGraph(
         mcpServers.get(task.agentId),
         toolIndexes.get(task.agentId),
       ),
-    };
-  });
+    });
+  }
   const runIds = Object.fromEntries(runs.map(({ task, run }) => [task.id, run.id]));
   const graph: DurableGraphRecord = {
     id,
@@ -58,33 +59,42 @@ export function createGraph(
     cancelled: false,
     runIds,
   };
-  tx.putGraph(graph);
+  await tx.putGraph(graph);
   for (const { task, run } of runs) {
     run.graphId = id;
     run.taskId = task.id;
     run.dependencies = (task.dependsOn ?? []).map((dependency) => runIds[dependency]!);
-    tx.putRun(run);
-    tx.appendEvent(
+    await tx.putRun(run);
+    await tx.appendEvent(
       run.id,
       "submitted",
-      externalizeSubmittedEvent(tx, { graphId: id, taskId: task.id, prompt: task.prompt }),
+      await tx.blobs((io) =>
+        externalizeSubmittedEvent(io, { graphId: id, taskId: task.id, prompt: task.prompt }),
+      ),
     );
   }
   return id;
 }
 
-export function requireGraph(tx: DurableTransaction, id: string): DurableGraphRecord {
-  const graph = tx.getGraph(id);
+export async function requireGraph(
+  tx: DurableTransaction,
+  id: string,
+): Promise<DurableGraphRecord> {
+  const graph = await tx.getGraph(id);
   if (graph === undefined) throw new DurableNotFoundError(`Unknown durable graph: ${id}`);
   return graph;
 }
 
-export function graphSnapshot(tx: DurableTransaction, id: string): DurableGraphSnapshot {
-  const graph = requireGraph(tx, id);
-  const runs = new Map(
-    graph.submission.tasks.map((task) => [task.id, tx.getRun(graph.runIds[task.id]!)!]),
-  );
-  const nodes = graph.submission.tasks.map((task) => {
+export async function graphSnapshot(
+  tx: DurableTransaction,
+  id: string,
+): Promise<DurableGraphSnapshot> {
+  const graph = await requireGraph(tx, id);
+  const runs = new Map<string, DurableRunRecord>();
+  for (const task of graph.submission.tasks)
+    runs.set(task.id, (await tx.getRun(graph.runIds[task.id]!))!);
+  const nodes: DurableGraphSnapshot["nodes"] = [];
+  for (const task of graph.submission.tasks) {
     const run = runs.get(task.id)!;
     if (run === undefined || run.graphId !== id || run.taskId !== task.id)
       throw new Error("Graph task/run mapping changed.");
@@ -127,15 +137,17 @@ export function graphSnapshot(tx: DurableTransaction, id: string): DurableGraphS
     }
 
     if (run.outcome?.type === "response") {
-      node.output = json(hydratedOutcomeOutput(tx, json(run.outcome)) ?? null);
+      node.output = json(
+        (await tx.blobs((io) => hydratedOutcomeOutput(io, json(run.outcome)))) ?? null,
+      );
     }
 
     if (run.outcome?.type === "interaction") {
       node.interaction = run.outcome.interaction;
     }
 
-    return node;
-  });
+    nodes.push(node);
+  }
   const all = [...runs.values()];
   const status = graph.cancelled
     ? "cancelled"
@@ -161,7 +173,7 @@ export function graphSnapshot(tx: DurableTransaction, id: string): DurableGraphS
     edges: graph.submission.tasks.flatMap((task) =>
       (task.dependsOn ?? []).map((source) => ({ source, target: task.id })),
     ),
-    cursor: tx.cursor(),
+    cursor: await tx.cursor(),
   };
 }
 
@@ -177,10 +189,13 @@ function dependencyFailed(run: DurableRunRecord): boolean {
 }
 
 /** Resolve dependency outputs once, in the same transaction that activates the task. */
-export function graphInput(tx: DurableTransaction, run: DurableRunRecord): AgentPrompt {
+export async function graphInput(
+  tx: DurableTransaction,
+  run: DurableRunRecord,
+): Promise<AgentPrompt> {
   const values: Record<string, JsonValue> = {};
   for (const dependency of run.dependencies ?? []) {
-    const prerequisite = tx.getRun(dependency);
+    const prerequisite = await tx.getRun(dependency);
     if (
       prerequisite === undefined ||
       prerequisite.graphId !== run.graphId ||
@@ -189,7 +204,7 @@ export function graphInput(tx: DurableTransaction, run: DurableRunRecord): Agent
     )
       throw new DurableConflictError("Task dependencies are not successful.");
     values[prerequisite.taskId!] = json(
-      hydratedOutcomeOutput(tx, json(prerequisite.outcome)) ?? null,
+      (await tx.blobs((io) => hydratedOutcomeOutput(io, json(prerequisite.outcome)))) ?? null,
     );
   }
   if (Object.keys(values).length === 0) return run.prompt;

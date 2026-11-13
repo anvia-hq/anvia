@@ -488,7 +488,11 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         await this.runTurnStartHook(currentTurns, prompt, historyForRequest, newMessages);
         await this.runCompletionCallHook(prompt, historyForRequest, newMessages);
 
-        const contextReplayed = this.replayed({ kind: "context", turn: currentTurns });
+        const contextReplayedPending = this.replayed({ kind: "context", turn: currentTurns });
+        const contextReplayed =
+          typeof contextReplayedPending === "boolean"
+            ? contextReplayedPending
+            : await contextReplayedPending;
         const prepared =
           this.execution?.prepareMessages !== undefined ||
           this.agent.memory?.compaction !== undefined
@@ -502,7 +506,11 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         }
         const request = await this.createTurnRequest(prompt, prepared.messages, currentTurns);
 
-        const modelReplayed = this.replayed({ kind: "model", turn: currentTurns });
+        const modelReplayedPending = this.replayed({ kind: "model", turn: currentTurns });
+        const modelReplayed =
+          typeof modelReplayedPending === "boolean"
+            ? modelReplayedPending
+            : await modelReplayedPending;
         let response: CompletionResponse;
         try {
           response = await this.runCompletion(request, currentTurns, runObservers);
@@ -829,7 +837,11 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         await this.runTurnStartHook(currentTurns, prompt, historyForRequest, newMessages);
         await this.runCompletionCallHook(prompt, historyForRequest, newMessages);
 
-        const contextReplayed = this.replayed({ kind: "context", turn: currentTurns });
+        const contextReplayedPending = this.replayed({ kind: "context", turn: currentTurns });
+        const contextReplayed =
+          typeof contextReplayedPending === "boolean"
+            ? contextReplayedPending
+            : await contextReplayedPending;
         const prepared =
           this.execution?.prepareMessages !== undefined ||
           this.agent.memory?.compaction !== undefined
@@ -851,7 +863,11 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
           request,
           providerRequest,
         );
-        const modelReplayed = this.replayed({ kind: "model", turn: currentTurns });
+        const modelReplayedPending = this.replayed({ kind: "model", turn: currentTurns });
+        const modelReplayed =
+          typeof modelReplayedPending === "boolean"
+            ? modelReplayedPending
+            : await modelReplayedPending;
         // A restored response was observed when it was generated; observing it again duplicates it.
         const generationObservers = modelReplayed
           ? new ActiveGenerationObservers([], "ignore")
@@ -2130,8 +2146,8 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     return context;
   }
 
-  private replayed(step: AgentRunExecutionStep): boolean {
-    return this.execution?.replayed?.(step) === true;
+  private replayed(step: AgentRunExecutionStep): boolean | Promise<boolean> {
+    return this.execution?.replayed?.(step) ?? false;
   }
 
   private async startRunObservers(runId: string): Promise<ActiveAgentRunObservers> {
@@ -2345,10 +2361,12 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     pendingTurnMessages: MessageType[],
     options: { closeWhenEmpty?: boolean } = {},
   ): Promise<QueuedSteering[]> {
-    const receipts = [
-      ...(this.execution?.drainSteering?.(turn, options.closeWhenEmpty === true) ?? []),
-      ...this.steeringMessages.splice(0),
-    ];
+    const drainedPending = this.execution?.drainSteering?.(turn, options.closeWhenEmpty === true);
+    const drained =
+      drainedPending === undefined || Array.isArray(drainedPending)
+        ? (drainedPending ?? [])
+        : await drainedPending;
+    const receipts = [...drained, ...this.steeringMessages.splice(0)];
     if (receipts.length === 0) {
       if (options.closeWhenEmpty === true) {
         this.runState = "closing";

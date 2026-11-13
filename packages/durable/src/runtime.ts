@@ -139,12 +139,12 @@ export class DurableRuntime {
       this.mcpServers,
       this.toolIndexes,
       (id) => this.active.has(id),
-      (root) => {
-        const tasks = this.store.transaction((tx) => tx.taskTree(root));
+      async (root) => {
+        const tasks = await this.store.transaction(async (tx) => tx.taskTree(root));
         for (const task of tasks)
           if (task.agentRunId !== undefined && task.status === "cancelling")
             this.active.get(task.agentRunId)?.controller.abort(new Error("Owner task cancelled."));
-        this.pump();
+        await this.pump();
       },
     );
   }
@@ -174,7 +174,7 @@ export class DurableRuntime {
     }
     const agents = registrations(options.agents ?? []);
     const limits = durableLimits(options.limits);
-    options.store.acquire();
+    await options.store.acquire();
     const runtime = new DurableRuntime(
       options.store,
       agents,
@@ -251,7 +251,7 @@ export class DurableRuntime {
   /** Release an idle registration, preserving journal history and outcomes.
    * Re-register compatible code before retrying a failed run or spawning new work.
    */
-  unregisterAgent(id: string): boolean {
+  async unregisterAgent(id: string): Promise<boolean> {
     this.assertOpen();
     nonblank(id, "Agent ID");
     if (!this.agents.has(id)) return false;
@@ -265,7 +265,7 @@ export class DurableRuntime {
       "waiting",
       "needs_attention",
     ] as const)
-      if (this.store.list({ agentId: id, status, limit: 1 }).runs.length)
+      if ((await this.store.list({ agentId: id, status, limit: 1 })).runs.length)
         throw new DurableConflictError(`Agent still has unfinished work: ${id}`);
     return this.agents.delete(id);
   }
@@ -294,7 +294,7 @@ export class DurableRuntime {
     },
   ): Promise<DurableTaskHandle<R>> {
     this.assertOpen();
-    const id = this.tasks.submit(
+    const id = await this.tasks.submit(
       definition.name,
       definition.version,
       input.input,
@@ -307,11 +307,11 @@ export class DurableRuntime {
   }
 
   /** Resolve effective agents for authorization without persisting or scheduling a task. */
-  taskSubmissionScope(input: TaskSubmission): {
+  async taskSubmissionScope(input: TaskSubmission): Promise<{
     sessionId: string;
     taskName: string;
     agentIds: string[];
-  } {
+  }> {
     this.assertOpen();
     const submission = parseTaskSubmission(input);
     return this.tasks.submissionScope(
@@ -329,7 +329,7 @@ export class DurableRuntime {
   ): Promise<DurableTaskHandle> {
     this.assertOpen();
     const submission = parseTaskSubmission(input);
-    const id = this.tasks.submit(
+    const id = await this.tasks.submit(
       submission.name,
       submission.version,
       submission.input,
@@ -342,20 +342,20 @@ export class DurableRuntime {
   }
 
   /** Owning scope for authorization without loading operation journals or graph results. */
-  runScope(runId: string): DurableRunScope {
+  async runScope(runId: string): Promise<DurableRunScope> {
     this.assertOpen();
-    return this.store.transaction((tx) => {
-      const run = requireRun(tx, runId);
+    return this.store.transaction(async (tx) => {
+      const run = await requireRun(tx, runId);
       const base = { runId, agentId: run.agentId, sessionId: run.sessionId };
       if (run.graphId !== undefined)
         return {
           ...base,
-          sessionId: requireGraph(tx, run.graphId).submission.sessionId,
+          sessionId: (await requireGraph(tx, run.graphId)).submission.sessionId,
           graphId: run.graphId,
           taskId: run.taskId!,
         };
       if (!run.sessionId.startsWith(TASK_SESSION_PREFIX)) return base;
-      const task = tx.getTask(run.sessionId.slice(TASK_SESSION_PREFIX.length));
+      const task = await tx.getTask(run.sessionId.slice(TASK_SESSION_PREFIX.length));
       if (task === undefined || task.agentRunId !== runId)
         throw new DurableNotFoundError("Owned task is missing.");
       return {
@@ -370,7 +370,7 @@ export class DurableRuntime {
 
   async getTask(id: string): Promise<DurableTaskHandle> {
     this.assertOpen();
-    this.tasks.snapshot(id);
+    await this.tasks.snapshot(id);
     return new DurableTaskHandle(id, this.tasks, this.store, () => this.assertOpen());
   }
 
@@ -412,15 +412,15 @@ export class DurableRuntime {
     // Fingerprinted before the transaction: server and index metadata is read asynchronously.
     const mcpServers = await mcpServersByAgent(this.agents, [input.agentId]);
     const toolIndexes = await toolIndexesByAgent(this.agents, [input.agentId]);
-    const id = this.store.transaction((tx) => {
-      const existing = tx.findRequest(input.sessionId, input.requestId);
+    const id = await this.store.transaction(async (tx) => {
+      const existing = await tx.findRequest(input.sessionId, input.requestId);
       if (existing !== undefined) {
         if (existing.agentId !== input.agentId || !sameJson(existing.prompt, submission.prompt)) {
           throw new DurableConflictError("requestId already belongs to a different submission.");
         }
         return existing.id;
       }
-      if (!options.enqueue && tx.activeRun(input.sessionId) !== undefined)
+      if (!options.enqueue && (await tx.activeRun(input.sessionId)) !== undefined)
         throw new DurableConflictError("Session already has unfinished work.");
       if (
         !options.enqueue &&
@@ -428,18 +428,22 @@ export class DurableRuntime {
       ) {
         throw new DurableConflictError("Previous session execution is still settling.");
       }
-      const run = createRunRecord(
+      const run = await createRunRecord(
         submission,
         registration,
         tx,
         mcpServers.get(input.agentId),
         toolIndexes.get(input.agentId),
       );
-      tx.putRun(run);
-      tx.appendEvent(run.id, "submitted", json(externalizeSubmittedEvent(tx, submission)));
+      await tx.putRun(run);
+      await tx.appendEvent(
+        run.id,
+        "submitted",
+        json(await tx.blobs((io) => externalizeSubmittedEvent(io, submission))),
+      );
       return run.id;
     });
-    this.pump();
+    await this.pump();
     return new DurableRun(id, this);
   }
 
@@ -449,15 +453,15 @@ export class DurableRuntime {
     const agentIds = submission.tasks.map((task) => task.agentId);
     const mcpServers = await mcpServersByAgent(this.agents, agentIds);
     const toolIndexes = await toolIndexesByAgent(this.agents, agentIds);
-    const id = this.store.transaction((tx) =>
+    const id = await this.store.transaction(async (tx) =>
       createGraph(tx, submission, this.agents, mcpServers, toolIndexes),
     );
-    this.pump();
+    await this.pump();
     return new DurableTaskGraph(id, this);
   }
 
   async getGraph(id: string): Promise<DurableTaskGraph> {
-    this.graphSnapshot(id);
+    await this.graphSnapshot(id);
     return new DurableTaskGraph(id, this);
   }
 
@@ -466,39 +470,39 @@ export class DurableRuntime {
     return this.store.listGraphs(graphListSchema.parse(options));
   }
 
-  graphSnapshot(id: string): DurableGraphSnapshot {
+  async graphSnapshot(id: string): Promise<DurableGraphSnapshot> {
     this.assertOpen();
-    return this.store.transaction((tx) => graphSnapshot(tx, id));
+    return this.store.transaction(async (tx) => graphSnapshot(tx, id));
   }
 
-  graphEvents(id: string, after: number) {
+  async graphEvents(id: string, after: number) {
     this.assertOpen();
     if (!Number.isSafeInteger(after) || after < 0) throw new TypeError("Invalid event cursor.");
     return this.store.graphEvents(id, after, 100);
   }
 
-  cancelGraph(id: string): void {
+  async cancelGraph(id: string): Promise<void> {
     this.assertOpen();
-    const ids = this.store.transaction((tx) => {
-      const graph = requireGraph(tx, id);
-      if (graph.cancelled || graphSnapshot(tx, id).status === "completed") return [];
+    const ids = await this.store.transaction(async (tx) => {
+      const graph = await requireGraph(tx, id);
+      if (graph.cancelled || (await graphSnapshot(tx, id)).status === "completed") return [];
       graph.cancelled = true;
-      tx.putGraph(graph);
+      await tx.putGraph(graph);
       const runIds = Object.values(graph.runIds);
       for (const runId of runIds) {
-        const run = requireRun(tx, runId);
+        const run = await requireRun(tx, runId);
         if (["completed", "failed", "cancelled"].includes(run.status)) continue;
         delete run.nextAttemptAt;
         run.error = "Durable graph cancelled.";
-        setStatus(tx, run, "cancelled");
+        await setStatus(tx, run, "cancelled");
       }
       // Cancellation remains observable even when every task had already failed.
-      tx.appendEvent(runIds[0]!, "status", { graphCancelled: true });
+      await tx.appendEvent(runIds[0]!, "status", { graphCancelled: true });
       return runIds;
     });
     for (const runId of ids)
       this.active.get(runId)?.controller.abort(new Error("Durable graph cancelled."));
-    this.pump();
+    await this.pump();
   }
 
   async listRuns(options: DurableListOptions = {}): Promise<DurableRunPage> {
@@ -507,15 +511,15 @@ export class DurableRuntime {
   }
 
   async getRun(id: string): Promise<DurableRun> {
-    this.run(id);
+    await this.run(id);
     return new DurableRun(id, this);
   }
 
   /** Discover recoverable work. This does not wait for runs or approvals to finish. */
   async resume(): Promise<void> {
     this.assertOpen();
-    this.pump();
-    this.tasks.resume();
+    await this.pump();
+    await this.tasks.resume();
   }
 
   /** Abort in-flight attempts, retain checkpoints, and release ownership after callbacks settle. */
@@ -528,9 +532,9 @@ export class DurableRuntime {
     this.closePromise = Promise.all([
       this.tasks.close(),
       ...[...this.active.values()].map(({ task }) => task),
-    ]).then(() => {
+    ]).then(async () => {
       try {
-        this.store.close();
+        await this.store.close();
       } finally {
         this.closed = true;
       }
@@ -539,85 +543,93 @@ export class DurableRuntime {
   }
 
   /** Read only the run record, without decoding any operation records. */
-  run(id: string): DurableRunRecord {
+  async run(id: string): Promise<DurableRunRecord> {
     this.assertOpen();
-    return this.store.transaction(
-      (tx) => hydrateValue(tx, json(requireRun(tx, id))) as DurableRunRecord,
-    );
+    return this.store.transaction(async (tx) => {
+      const stored = await requireRun(tx, id);
+      return (await tx.blobs((io) => hydrateValue(io, json(stored)))) as DurableRunRecord;
+    });
   }
 
   /** Bounded status projection, independent of transcript and operation count. */
-  status(id: string): DurableRunSummary {
+  async status(id: string): Promise<DurableRunSummary> {
     this.assertOpen();
-    return this.store.transaction((tx) => {
-      const summary = tx.getRunSummary(id);
+    return this.store.transaction(async (tx) => {
+      const summary = await tx.getRunSummary(id);
       if (summary === undefined) throw new DurableNotFoundError("Durable run not found.");
       return summary;
     });
   }
 
   /** Rebuild one model request, including legacy embedded requests. */
-  operationRequest(id: string, key: string): CompletionRequest {
+  async operationRequest(id: string, key: string): Promise<CompletionRequest> {
     this.assertOpen();
-    return this.store.transaction((tx) => {
-      requireRun(tx, id);
-      const operation = tx.getOperation(id, key);
+    return this.store.transaction(async (tx) => {
+      await requireRun(tx, id);
+      const operation = await tx.getOperation(id, key);
       if (operation === undefined) throw new DurableNotFoundError("Durable operation not found.");
       if (operation.kind !== "model") throw new TypeError("Operation is not a model request.");
-      return hydrateValue(
-        tx,
-        json((operation.input as unknown as { request: CompletionRequest }).request),
-      ) as CompletionRequest;
+      return (await tx.blobs((io) =>
+        hydrateValue(
+          io,
+          json((operation.input as unknown as { request: CompletionRequest }).request),
+        ),
+      )) as CompletionRequest;
     });
   }
 
-  snapshot(id: string, options: { operations?: boolean } = {}): DurableSnapshot {
+  async snapshot(id: string, options: { operations?: boolean } = {}): Promise<DurableSnapshot> {
     this.assertOpen();
-    return this.store.transaction((tx) => ({
-      run: hydrateValue(tx, json(requireRun(tx, id))) as DurableRunRecord,
-      operations:
-        options.operations === false
-          ? []
-          : tx
-              .operations(id)
-              .map((operation) => hydrateValue(tx, json(operation)) as DurableOperation),
-      cursor: tx.cursor(),
-    }));
+    return this.store.transaction(async (tx) => {
+      const stored = await requireRun(tx, id);
+      const run = (await tx.blobs((io) => hydrateValue(io, json(stored)))) as DurableRunRecord;
+      const operations: DurableOperation[] = [];
+      if (options.operations !== false)
+        for (const operation of await tx.operations(id))
+          operations.push(
+            (await tx.blobs((io) => hydrateValue(io, json(operation)))) as DurableOperation,
+          );
+      return { run, operations, cursor: await tx.cursor() };
+    });
   }
 
-  events(id: string, after: number) {
+  async events(id: string, after: number) {
     this.assertOpen();
     if (!Number.isSafeInteger(after) || after < 0) throw new TypeError("Invalid event cursor.");
     return this.store.events(id, after, 100);
   }
 
-  steer(id: string, input: AgentSteerInput, options: DurableSteerOptions = {}): AgentSteerReceipt {
+  async steer(
+    id: string,
+    input: AgentSteerInput,
+    options: DurableSteerOptions = {},
+  ): Promise<AgentSteerReceipt> {
     this.assertOpen();
-    const receipt = this.store.transaction((tx) => {
-      const run = requireRun(tx, id);
-      assertOwnedTaskMutable(tx, run);
-      if (run.graphId !== undefined && requireGraph(tx, run.graphId).cancelled)
+    const receipt = await this.store.transaction(async (tx) => {
+      const run = await requireRun(tx, id);
+      await assertOwnedTaskMutable(tx, run);
+      if (run.graphId !== undefined && (await requireGraph(tx, run.graphId)).cancelled)
         throw new DurableConflictError("Graph is cancelled.");
       return queueSteering(tx, run, input, options);
     });
-    this.pump();
+    await this.pump();
     return receipt;
   }
 
-  respond(id: string, interactionId: string, value: AgentInteractionResponse): void {
+  async respond(id: string, interactionId: string, value: AgentInteractionResponse): Promise<void> {
     this.assertOpen();
     nonblank(interactionId, "Interaction ID");
     const response = parseAgentInteractionResponse(value);
-    this.store.transaction((tx) => {
-      const run = requireRun(tx, id);
-      if (run.graphId !== undefined && requireGraph(tx, run.graphId).cancelled)
+    await this.store.transaction(async (tx) => {
+      const run = await requireRun(tx, id);
+      if (run.graphId !== undefined && (await requireGraph(tx, run.graphId)).cancelled)
         throw new DurableConflictError("Graph is cancelled.");
       if (Object.hasOwn(run.responses, interactionId)) {
         if (!sameJson(run.responses[interactionId], response))
           throw new DurableConflictError("Interaction already received a different response.");
         return;
       }
-      assertOwnedTaskMutable(tx, run);
+      await assertOwnedTaskMutable(tx, run);
       if (
         run.status !== "waiting" ||
         run.outcome?.type !== "interaction" ||
@@ -637,22 +649,22 @@ export class DurableRuntime {
       run.input = { continuation, response };
       run.epoch += 1;
       delete run.outcome;
-      setStatus(tx, run, "pending");
+      await setStatus(tx, run, "pending");
     });
-    this.pump();
+    await this.pump();
   }
 
-  resolveTool(id: string, operationId: string, output: ToolResultOutput): void {
+  async resolveTool(id: string, operationId: string, output: ToolResultOutput): Promise<void> {
     this.assertOpen();
-    this.store.transaction((tx) => {
-      const run = requireRun(tx, id);
-      assertOwnedTaskMutable(tx, run);
-      if (run.graphId !== undefined && requireGraph(tx, run.graphId).cancelled)
+    await this.store.transaction(async (tx) => {
+      const run = await requireRun(tx, id);
+      await assertOwnedTaskMutable(tx, run);
+      if (run.graphId !== undefined && (await requireGraph(tx, run.graphId)).cancelled)
         throw new DurableConflictError("Graph is cancelled.");
       if (run.status !== "needs_attention" || run.blockedOperation !== operationId) {
         throw new DurableConflictError("No matching tool awaiting reconciliation.");
       }
-      const operation = tx.getOperation(id, operationId);
+      const operation = await tx.getOperation(id, operationId);
       if (operation?.kind !== "tool" || operation.status !== "started")
         throw new DurableConflictError("Operation cannot be reconciled.");
       const checked = parseMessage({
@@ -662,17 +674,17 @@ export class DurableRuntime {
       if (checked.role !== "tool" || checked.content[0]?.type !== "tool-result")
         throw new TypeError("Invalid tool result.");
       // A reconciled output gets the same bounded-reference treatment as a live tool result.
-      const result = externalizeToolResult(
-        tx,
-        json({ output: checked.content[0].output, failed: false }),
+      const reconciledOutput = checked.content[0].output;
+      const result = await tx.blobs((io) =>
+        externalizeToolResult(io, json({ output: reconciledOutput, failed: false })),
       );
-      tx.putOperation(id, { ...operation, status: "completed", result });
-      tx.appendEvent(id, "tool_completed", { operationId, result, reconciled: true });
+      await tx.putOperation(id, { ...operation, status: "completed", result });
+      await tx.appendEvent(id, "tool_completed", { operationId, result, reconciled: true });
       delete run.blockedOperation;
       delete run.error;
-      setStatus(tx, run, "pending");
+      await setStatus(tx, run, "pending");
     });
-    this.pump();
+    await this.pump();
   }
 
   /**
@@ -681,51 +693,55 @@ export class DurableRuntime {
    * `discarded` drops them. The run then continues with its remaining writes. `retry()` only sends
    * the same write again, so it cannot clear a conflict.
    */
-  resolveMemoryWrite(id: string, operationKey: string, resolution: MemoryWriteResolution): void {
+  async resolveMemoryWrite(
+    id: string,
+    operationKey: string,
+    resolution: MemoryWriteResolution,
+  ): Promise<void> {
     this.assertOpen();
     if (resolution !== "applied" && resolution !== "discarded")
       throw new TypeError('resolution must be "applied" or "discarded".');
-    this.store.transaction((tx) => {
-      const run = requireRun(tx, id);
-      assertOwnedTaskMutable(tx, run);
+    await this.store.transaction(async (tx) => {
+      const run = await requireRun(tx, id);
+      await assertOwnedTaskMutable(tx, run);
       if (run.status !== "needs_attention" || run.blockedOperation !== operationKey)
         throw new DurableConflictError("No matching memory write awaiting resolution.");
-      const operation = tx.getOperation(id, operationKey);
+      const operation = await tx.getOperation(id, operationKey);
       if (
         operation === undefined ||
         !isRecordedMemoryWrite(operation) ||
         operation.status !== "started"
       )
         throw new DurableConflictError("Operation cannot be resolved.");
-      resolveRecordedMemoryWrite(tx, run, operation, resolution);
+      await resolveRecordedMemoryWrite(tx, run, operation, resolution);
       delete run.blockedOperation;
       delete run.error;
-      setStatus(tx, run, "pending");
+      await setStatus(tx, run, "pending");
     });
-    this.pump();
+    await this.pump();
   }
 
-  retry(id: string): void {
+  async retry(id: string): Promise<void> {
     this.assertOpen();
     if (this.active.has(id)) throw new DurableConflictError("Run is still settling.");
-    this.store.transaction((tx) => {
-      const run = requireRun(tx, id);
-      assertOwnedTaskMutable(tx, run);
-      if (run.graphId !== undefined && requireGraph(tx, run.graphId).cancelled)
+    await this.store.transaction(async (tx) => {
+      const run = await requireRun(tx, id);
+      await assertOwnedTaskMutable(tx, run);
+      if (run.graphId !== undefined && (await requireGraph(tx, run.graphId)).cancelled)
         throw new DurableConflictError("Graph is cancelled.");
       if (run.status !== "failed" && run.status !== "needs_attention")
         throw new DurableConflictError("Only failed or blocked runs can be retried.");
-      const other = tx.activeRun(run.sessionId);
+      const other = await tx.activeRun(run.sessionId);
       if (other !== undefined && other.id !== id && other.status !== "queued")
         throw new DurableConflictError("Session already has unfinished work.");
-      if (tx.hasLaterStartedRun(id))
+      if (await tx.hasLaterStartedRun(id))
         throw new DurableConflictError("Session has advanced; create a new submission.");
-      const operations = tx.operations(id);
+      const operations = await tx.operations(id);
       // A run whose admission transaction rolled back has no committed history. Rebuild it from
       // the session before execution so a retry never runs with less context than the original
       // attempt; an over-limit history rejects the retry and leaves the run failed.
       if (run.graphId === undefined && run.history.length === 0 && operations.length === 0)
-        inheritSessionHistory(tx, run, this.recordsMemory(run.agentId));
+        await inheritSessionHistory(tx, run, this.recordsMemory(run.agentId));
       for (const operation of operations) {
         if (
           (operation.kind === "model" ||
@@ -736,49 +752,56 @@ export class DurableRuntime {
         )
           // An uncertain memory write is sent again only here, on an explicit retry; its key
           // makes a repeat of a committed write a duplicate.
-          tx.putOperation(id, { ...operation, attempts: 0 });
+          await tx.putOperation(id, { ...operation, attempts: 0 });
       }
       delete run.error;
       delete run.blockedOperation;
       delete run.exhaustion;
       run.retries = (run.retries ?? 0) + 1;
-      setStatus(tx, run, "pending");
+      await setStatus(tx, run, "pending");
     });
-    this.pump();
+    await this.pump();
   }
 
-  cancel(id: string): void {
+  async cancel(id: string): Promise<void> {
     this.assertOpen();
-    const sessionId = this.store.transaction((tx) => {
-      const run = requireRun(tx, id);
+    const sessionId = await this.store.transaction(async (tx) => {
+      const run = await requireRun(tx, id);
       if (["completed", "failed", "cancelled"].includes(run.status)) return run.sessionId;
       delete run.nextAttemptAt;
       run.error = "Durable run cancelled.";
-      setStatus(tx, run, "cancelled");
+      await setStatus(tx, run, "cancelled");
       return run.sessionId;
     });
     this.active.get(id)?.controller.abort(new Error("Durable run cancelled."));
     if (sessionId.startsWith(TASK_SESSION_PREFIX))
-      this.tasks.agentChanged(sessionId.slice(TASK_SESSION_PREFIX.length));
-    this.pump();
+      await this.tasks.agentChanged(sessionId.slice(TASK_SESSION_PREFIX.length));
+    await this.pump();
   }
 
-  private pump(): void {
+  /** Pumps run one at a time: scheduling reads the store, so two overlapping pumps could launch one run twice. */
+  private pump(): Promise<void> {
+    const next = this.pumpTail.then(() => this.pumpOnce());
+    this.pumpTail = next.catch(() => undefined);
+    return next;
+  }
+
+  private async pumpOnce(): Promise<void> {
     if (this.closing || this.failure !== undefined) return;
     clearTimeout(this.wakeTimer);
     const capacity = this.maxConcurrentRuns - this.active.size;
     if (capacity <= 0) return;
-    const candidates = this.store.schedule(
+    const candidates = await this.store.schedule(
       new Date().toISOString(),
       capacity,
       [...this.active.values()].map((active) => active.sessionId),
     );
-    for (const id of candidates.ids) this.launch(id);
+    for (const id of candidates.ids) await this.launch(id);
     if (candidates.nextAttemptAt !== undefined) {
       this.wakeTimer = setTimeout(
-        () => {
+        async () => {
           try {
-            this.pump();
+            await this.pump();
           } catch (error) {
             this.fail(error);
           }
@@ -789,34 +812,37 @@ export class DurableRuntime {
     }
   }
 
-  private launch(id: string): void {
+  private pumpTail: Promise<void> = Promise.resolve();
+
+  private async launch(id: string): Promise<void> {
     if (this.active.has(id) || this.closing) return;
-    const { status, sessionId, agentId } = this.run(id);
+    const { status, sessionId, agentId } = await this.run(id);
+    if (this.closing || this.active.has(id)) return;
     if (!["queued", "pending", "running", "retry_wait"].includes(status)) return;
     const controller = new AbortController();
     const task = Promise.resolve()
       .then(() => this.execute(id, controller.signal))
-      .catch((error: unknown) => {
+      .catch(async (error: unknown) => {
         if (!(error instanceof DurableLimitError)) throw error;
         // Admission failed, so no work is pending: settle terminally so result() and the
         // event stream end instead of waiting for an operator action that cannot help.
-        this.store.transaction((tx) => {
-          const run = requireRun(tx, id);
+        await this.store.transaction(async (tx) => {
+          const run = await requireRun(tx, id);
           if (SETTLED.includes(run.status)) return;
           run.error = error.message;
           delete run.nextAttemptAt;
-          setStatus(tx, run, "failed");
+          await setStatus(tx, run, "failed");
         });
       })
-      .finally(() => {
+      .finally(async () => {
         this.active.delete(id);
         if (
           !this.closing &&
           this.failure === undefined &&
           sessionId.startsWith(TASK_SESSION_PREFIX)
         )
-          this.tasks.agentChanged(sessionId.slice(TASK_SESSION_PREFIX.length));
-        if (!this.closing && this.failure === undefined) this.pump();
+          await this.tasks.agentChanged(sessionId.slice(TASK_SESSION_PREFIX.length));
+        if (!this.closing && this.failure === undefined) await this.pump();
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
@@ -833,21 +859,21 @@ export class DurableRuntime {
 
   private async execute(id: string, signal: AbortSignal): Promise<void> {
     signal.throwIfAborted();
-    const run = this.store.transaction((tx) => {
-      const current = requireRun(tx, id);
+    const run = await this.store.transaction(async (tx) => {
+      const current = await requireRun(tx, id);
       if (!["queued", "pending", "running", "retry_wait"].includes(current.status))
         return undefined;
       if (current.status === "queued")
-        inheritSessionHistory(tx, current, this.recordsMemory(current.agentId));
+        await inheritSessionHistory(tx, current, this.recordsMemory(current.agentId));
       current.startedAt ??= new Date().toISOString();
       delete current.nextAttemptAt;
       delete current.error;
-      setStatus(tx, current, "running");
+      await setStatus(tx, current, "running");
       return current;
     });
     if (run === undefined) return;
     if (run.sessionId.startsWith(TASK_SESSION_PREFIX))
-      this.tasks.agentChanged(run.sessionId.slice(TASK_SESSION_PREFIX.length));
+      await this.tasks.agentChanged(run.sessionId.slice(TASK_SESSION_PREFIX.length));
     try {
       const registration = this.agents.get(run.agentId);
       if (registration === undefined || registration.version !== run.version) {
@@ -864,11 +890,11 @@ export class DurableRuntime {
       // writes after it can remain, so the agent is not run again.
       if (run.outcome === undefined) {
         await prepareContext(this.store, run, registration, signal);
-        const trace = this.store.transaction((tx) => runTrace(tx, run));
+        const trace = await this.store.transaction(async (tx) => runTrace(tx, run));
         // Stored records may carry blob references; the agent loop always sees restored content.
-        const input = this.store.transaction((tx) =>
-          hydrateValue(tx, json(run.input)),
-        ) as DurableRunRecord["input"];
+        const input = (await this.store.transaction(
+          async (tx) => await tx.blobs((io) => hydrateValue(io, json(run.input))),
+        )) as DurableRunRecord["input"];
         // Core's appends are captured here and written only after the checkpoint below.
         const captured: MemoryAppendOptions[] = [];
         const options = withInternalAgentRunOptions(
@@ -905,39 +931,42 @@ export class DurableRuntime {
             ? await registration.agent.stream(options).result
             : await registration.agent.generate(options);
         signal.throwIfAborted();
-        this.store.transaction((tx) => {
-          const current = requireRun(tx, id);
-          current.outcome = externalizeOutcome(
-            tx,
-            json({ ...outcome, usage: current.usage }),
-          ) as AgentOutcome<unknown>;
+        await this.store.transaction(async (tx) => {
+          const current = await requireRun(tx, id);
+          current.outcome = (await tx.blobs((io) =>
+            externalizeOutcome(io, json({ ...outcome, usage: current.usage })),
+          )) as AgentOutcome<unknown>;
           if (captured.length === 0) {
-            setStatus(tx, current, outcome.type === "interaction" ? "waiting" : "completed");
+            await setStatus(tx, current, outcome.type === "interaction" ? "waiting" : "completed");
             return;
           }
           // The run stays running until its memory writes finish, so a crash here resumes them.
-          recordMemoryWrites(tx, current, captured);
-          tx.putRun(current);
+          await recordMemoryWrites(tx, current, captured);
+          await tx.putRun(current);
         });
       }
       if (memory !== undefined) {
         await flushRecordedMemory({ store: this.store, run, source: memory.store, signal });
-        this.store.transaction((tx) => {
-          const current = requireRun(tx, id);
+        await this.store.transaction(async (tx) => {
+          const current = await requireRun(tx, id);
           if (current.status !== "running") return;
-          setStatus(tx, current, current.outcome?.type === "interaction" ? "waiting" : "completed");
+          await setStatus(
+            tx,
+            current,
+            current.outcome?.type === "interaction" ? "waiting" : "completed",
+          );
         });
       }
     } catch (error) {
       if (error instanceof DurableStorageError) throw error;
       if (signal.aborted) return;
-      this.store.transaction((tx) => {
-        const current = requireRun(tx, id);
+      await this.store.transaction(async (tx) => {
+        const current = await requireRun(tx, id);
         current.error = errorMessage(error);
         if (error instanceof MaxTurnsError)
           current.exhaustion = {
             reason: "max_turns",
-            messages: externalizeMessages(tx, error.chatHistory),
+            messages: await tx.blobs((io) => externalizeMessages(io, error.chatHistory)),
           };
         if (error instanceof DurableRecoveryError && error.operationId !== undefined)
           current.blockedOperation = error.operationId;
@@ -951,9 +980,9 @@ export class DurableRuntime {
             current.modelRetry.initialDelayMs * 2 ** (error.attempts - 1),
           );
           current.nextAttemptAt = new Date(Date.now() + delay).toISOString();
-          setStatus(tx, current, "retry_wait");
+          await setStatus(tx, current, "retry_wait");
         } else {
-          setStatus(
+          await setStatus(
             tx,
             current,
             error instanceof DurableRecoveryError ? "needs_attention" : "failed",
@@ -963,7 +992,7 @@ export class DurableRuntime {
     }
   }
 
-  metrics() {
+  async metrics() {
     this.assertOpen();
     return this.store.metrics();
   }
@@ -1002,8 +1031,8 @@ export class DurableRuntime {
   }
 }
 
-function requireRun(tx: DurableTransaction, id: string): DurableRunRecord {
-  const run = tx.getRun(id);
+async function requireRun(tx: DurableTransaction, id: string): Promise<DurableRunRecord> {
+  const run = await tx.getRun(id);
   if (run === undefined) throw new DurableNotFoundError(`Unknown durable run: ${id}`);
   return run;
 }
@@ -1080,13 +1109,13 @@ const SETTLED: readonly string[] = ["completed", "failed", "cancelled"];
  * session's latest settled run. Persisting this here keeps the invariant that a run record always
  * holds the history it will execute with, including after a rolled-back admission.
  */
-function inheritSessionHistory(
+async function inheritSessionHistory(
   tx: DurableTransaction,
   run: DurableRunRecord,
   recordsMemory: boolean,
-): void {
+): Promise<void> {
   if (run.graphId !== undefined) {
-    run.input = { messages: [promptMessage(graphInput(tx, run))] };
+    run.input = { messages: [promptMessage(await graphInput(tx, run))] };
     return;
   }
   // Recorded memory holds the session's conversation; copying the previous run in would repeat it.
@@ -1097,29 +1126,29 @@ function inheritSessionHistory(
   }
   const previous =
     run.continueFrom === undefined
-      ? tx.latestCompleted(run.sessionId)
-      : requireRun(tx, run.continueFrom);
+      ? await tx.latestCompleted(run.sessionId)
+      : await requireRun(tx, run.continueFrom);
   run.history =
     previous === undefined
       ? []
       : previous.status === "completed"
         ? [...previous.history, ...(previous.outcome?.messages ?? [])]
-        : settledHistory(tx, previous);
+        : await settledHistory(tx, previous);
   if (previous?.contextCheckpoint !== undefined) run.contextCheckpoint = previous.contextCheckpoint;
   run.input = { messages: [...run.history, promptMessage(run.prompt)] };
 }
 
-function setStatus(
+async function setStatus(
   tx: DurableTransaction,
   run: DurableRunRecord,
   status: DurableRunRecord["status"],
-): void {
+): Promise<void> {
   run.status = status;
   run.updatedAt = new Date().toISOString();
-  tx.putRun(run);
+  await tx.putRun(run);
   // Status events stay small: the outcome lives on the run record and clients read it from the
   // snapshot. Embedding it here duplicated every completed outcome in the journal (DUR-07).
-  tx.appendEvent(
+  await tx.appendEvent(
     run.id,
     "status",
     json({
@@ -1131,9 +1160,12 @@ function setStatus(
   );
 }
 
-function assertOwnedTaskMutable(tx: DurableTransaction, run: DurableRunRecord): void {
+async function assertOwnedTaskMutable(
+  tx: DurableTransaction,
+  run: DurableRunRecord,
+): Promise<void> {
   if (!run.sessionId.startsWith(TASK_SESSION_PREFIX)) return;
-  const task = tx.getTask(run.sessionId.slice(TASK_SESSION_PREFIX.length));
+  const task = await tx.getTask(run.sessionId.slice(TASK_SESSION_PREFIX.length));
   if (
     task === undefined ||
     ["completing", "cancelling", "completed", "failed", "cancelled"].includes(task.status)

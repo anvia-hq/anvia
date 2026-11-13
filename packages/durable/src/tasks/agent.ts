@@ -33,7 +33,7 @@ export const agentTask = defineTask({
   },
 });
 
-export function spawnAgent(
+export async function spawnAgent(
   tx: DurableTransaction,
   agents: ReadonlyMap<string, DurableAgentRegistration>,
   mcpServers: ReadonlyMap<string, DurableMcpServers>,
@@ -41,16 +41,24 @@ export function spawnAgent(
   parent: TaskRecord,
   key: string,
   input: TaskAgentInput,
-): string {
-  const child = createTask(tx, agentTask.registration, input, parent.sessionId, key, parent.id);
+): Promise<string> {
+  const child = await createTask(
+    tx,
+    agentTask.registration,
+    input,
+    parent.sessionId,
+    key,
+    parent.id,
+  );
   // Replaying a committed spawn needs its saved identity, not executable agent code.
   if (child.agentRunId !== undefined) return child.id;
   const registration = agents.get(input.agentId);
   if (registration === undefined)
     throw new DurableNotFoundError(`Unknown durable agent: ${input.agentId}`);
   assertMemoryFreeTask(registration, input.agentId, "owned agent tasks");
-  const continued = input.continueFrom === undefined ? undefined : continuable(tx, parent, input);
-  const run = createRunRecord(
+  const continued =
+    input.continueFrom === undefined ? undefined : await continuable(tx, parent, input);
+  const run = await createRunRecord(
     {
       agentId: input.agentId,
       prompt: input.prompt,
@@ -65,23 +73,33 @@ export function spawnAgent(
   if (input.maxModelTurns !== undefined)
     run.maxModelTurns = Math.min(run.maxModelTurns, input.maxModelTurns);
   if (continued !== undefined) run.continueFrom = continued;
-  tx.putRun(run);
-  tx.appendEvent(
+  await tx.putRun(run);
+  await tx.appendEvent(
     run.id,
     "submitted",
-    json(externalizeSubmittedEvent(tx, { taskId: child.id, prompt: input.prompt })),
+    json(
+      await tx.blobs((io) =>
+        externalizeSubmittedEvent(io, { taskId: child.id, prompt: input.prompt }),
+      ),
+    ),
   );
   child.agentRunId = run.id;
   child.status = "waiting";
   child.wait = { type: "agent", runId: run.id, status: run.status };
-  saveTask(tx, child);
+  await saveTask(tx, child);
   return child.id;
 }
 
 /** The run of a finished sibling agent whose conversation a new child may continue. */
-function continuable(tx: DurableTransaction, parent: TaskRecord, input: TaskAgentInput): string {
-  const sibling = tx.taskChildren(parent.id).find((child) => child.key === input.continueFrom);
-  const run = sibling?.agentRunId === undefined ? undefined : tx.getRun(sibling.agentRunId);
+async function continuable(
+  tx: DurableTransaction,
+  parent: TaskRecord,
+  input: TaskAgentInput,
+): Promise<string> {
+  const sibling = (await tx.taskChildren(parent.id)).find(
+    (child) => child.key === input.continueFrom,
+  );
+  const run = sibling?.agentRunId === undefined ? undefined : await tx.getRun(sibling.agentRunId);
   if (run === undefined)
     throw new TypeError("continueFrom must name an agent child of the same task.");
   if (run.agentId !== input.agentId)

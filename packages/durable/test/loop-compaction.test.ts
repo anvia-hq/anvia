@@ -30,6 +30,7 @@ import {
   makeStreamingAgent,
   toolResponse,
 } from "./helpers.js";
+import { itSqlite } from "./helpers/backend.js";
 
 const large = "payload".repeat(1000);
 const submission = {
@@ -97,7 +98,7 @@ it("compacts newly approved tool output while keeping the continuation and trans
   if (outcome?.type !== "interaction") throw new Error("Expected approval");
   await run.respond(outcome.interaction.id, { type: "tool-approval", approved: true });
   await run.result();
-  expectJournalRequests(runtime, run.id);
+  await expectJournalRequests(runtime, run.id);
   expect(compactor).toHaveBeenCalledTimes(1);
   expect(tool).toHaveBeenCalledTimes(1);
   expect(requests[1]!.chatHistory.some(isMemoryCompactionMessage)).toBe(true);
@@ -139,9 +140,9 @@ it("cancels an in-flight summary without committing its projection or usage", as
   await run.cancel();
   await vi.waitFor(() => expect(runtime.health().activeRuns).toBe(0));
   expect((await run.snapshot()).run.usage.totalTokens).toBe(3);
-  expect(runtime.events(run.id, 0).some((event) => event.type === "compaction_completed")).toBe(
-    false,
-  );
+  expect(
+    (await runtime.events(run.id, 0)).some((event) => event.type === "compaction_completed"),
+  ).toBe(false);
   expect(model).toHaveBeenCalledTimes(1);
 });
 
@@ -188,7 +189,7 @@ it.each([false, true])(
     });
     const run = await runtime.submit(submission);
     await run.result();
-    expectJournalRequests(runtime, run.id);
+    await expectJournalRequests(runtime, run.id);
     const snapshot = parseDurableSnapshot(await run.snapshot());
     expect(snapshot.run.usage.totalTokens).toBe(23);
     expect(
@@ -200,7 +201,7 @@ it.each([false, true])(
     expect(tool).toHaveBeenCalledTimes(2);
     expect(requests[1]!.chatHistory.map((message) => message.role)).toEqual(["system", "user"]);
     expect(
-      runtime.events(run.id, 0).filter((event) => event.type === "compaction_completed"),
+      (await runtime.events(run.id, 0)).filter((event) => event.type === "compaction_completed"),
     ).toHaveLength(2);
     // A single previous user-led turn can itself be too large for the next submission.
     await (await runtime.submit({ ...submission, requestId: "2", prompt: "Continue" })).result();
@@ -212,7 +213,7 @@ it.each([false, true])(
   },
 );
 
-it.each(["summary", "prepared", "model"])(
+itSqlite.each(["summary", "prepared", "model"])(
   "recovers after SIGKILL during %s without changing a committed projection or usage",
   async (stage) => {
     const dir = directory();
@@ -268,7 +269,7 @@ it.each(["summary", "prepared", "model"])(
     expect(before.run.usage.totalTokens).toBe(stage === "model" ? 10 : 3);
     await runtime.resume();
     await run.result();
-    expectJournalRequests(runtime, run.id);
+    await expectJournalRequests(runtime, run.id);
     expect(readFileSync(calls, "utf8")).toBe("tool\nsummary\n");
     expect(tool).not.toHaveBeenCalled();
     expect(compactor).toHaveBeenCalledTimes(stage === "model" ? 0 : 1);
@@ -285,7 +286,7 @@ it.each(["summary", "prepared", "model"])(
       }),
     );
     expect(
-      runtime.events(id, 0).filter((event) => event.type === "compaction_completed"),
+      (await runtime.events(id, 0)).filter((event) => event.type === "compaction_completed"),
     ).toHaveLength(1);
   },
   15000,
@@ -312,20 +313,20 @@ it("bounds invalid in-loop summaries and resets their attempts on explicit retry
     await run.retry();
   });
   await run.result();
-  expectJournalRequests(runtime, run.id);
+  await expectJournalRequests(runtime, run.id);
   expect(compactor).toHaveBeenCalledTimes(3);
   expect(tool).toHaveBeenCalledTimes(1);
 });
 
 it("rolls back projected context, usage, and progress together on a journal failure", async () => {
   class FailingStore extends SqliteDurableStore {
-    override transaction<T>(callback: (tx: DurableTransaction) => T): T {
+    override async transaction<T>(callback: (tx: DurableTransaction) => Promise<T>): Promise<T> {
       return super.transaction((tx) =>
         callback({
           ...tx,
-          appendEvent(id, type, data) {
+          async appendEvent(id, type, data) {
             if (type === "compaction_completed") throw new Error("Injected journal failure");
-            tx.appendEvent(id, type, data);
+            await tx.appendEvent(id, type, data);
           },
         }),
       );
@@ -355,9 +356,9 @@ it("rolls back projected context, usage, and progress together on a journal fail
   expect(before.operations.find((operation) => operation.key === "0:context:2")?.status).toBe(
     "started",
   );
-  expect(recovered.events(run.id, 0).some((event) => event.type === "compaction_completed")).toBe(
-    false,
-  );
+  expect(
+    (await recovered.events(run.id, 0)).some((event) => event.type === "compaction_completed"),
+  ).toBe(false);
   await recovered.resume();
   await handle.result();
   expect(compactor).toHaveBeenCalledTimes(2);
@@ -365,7 +366,7 @@ it("rolls back projected context, usage, and progress together on a journal fail
   expect((await handle.snapshot()).run.usage.totalTokens).toBe(13);
 });
 
-it("preserves legacy pending requests when upgrading schema five", async () => {
+itSqlite("preserves legacy pending requests when upgrading schema five", async () => {
   const path = join(directory(), "legacy.sqlite");
   let calls = 0;
   const requests: CompletionRequest[] = [];
@@ -401,7 +402,7 @@ it("preserves legacy pending requests when upgrading schema five", async () => {
   ).toBe(false);
 });
 
-it("backs up and restores per-call projections with their usage and progress", async () => {
+itSqlite("backs up and restores per-call projections with their usage and progress", async () => {
   const dir = directory();
   const path = join(dir, "runs.sqlite");
   let calls = 0;
@@ -416,7 +417,7 @@ it("backs up and restores per-call projections with their usage and progress", a
   const runtime = await open(registration, path);
   const run = await runtime.submit(submission);
   await run.result();
-  expectJournalRequests(runtime, run.id);
+  await expectJournalRequests(runtime, run.id);
   const before = await run.snapshot();
   await runtime.close();
   const archive = join(dir, "backup.sqlite");

@@ -18,6 +18,7 @@ import {
   makeStreamingAgent,
   toolResponse,
 } from "./helpers.js";
+import { itSqlite } from "./helpers/backend.js";
 
 const children: ChildProcess[] = [];
 const runtimes: DurableRuntime[] = [];
@@ -177,7 +178,9 @@ it("replays applied steering and committed tools without duplicating them", asyn
     content: "One more thing",
   });
   expect(outcome.messages.filter((message) => message.content === input.prompt)).toHaveLength(1);
-  const applied = second.events(run.id, 0).filter((event) => event.type === "steering_applied");
+  const applied = (await second.events(run.id, 0)).filter(
+    (event) => event.type === "steering_applied",
+  );
   expect(applied.map((event) => (event.data as { id: string }).id)).toEqual(["first", "second"]);
 });
 
@@ -255,54 +258,58 @@ it("does not extend the model-turn budget", async () => {
   });
 });
 
-it("survives SIGKILL with applied and pending input without repeating a committed effect", async () => {
-  const path = database();
-  const effects = `${path}.effects`;
-  const child = fork(
-    fileURLToPath(new URL("./fixtures/steering-worker.ts", import.meta.url)),
-    [path, effects],
-    {
-      execArgv: ["--import", import.meta.resolve("tsx")],
-      stdio: ["ignore", "ignore", "pipe", "ipc"],
-    },
-  );
-  children.push(child);
-  let stderr = "";
-  child.stderr!.on("data", (chunk) => {
-    stderr += String(chunk);
-  });
-  const { id, request } = await new Promise<{ id: string; request: CompletionRequest }>(
-    (resolve, reject) => {
-      child.once("message", (message) =>
-        resolve(message as { id: string; request: CompletionRequest }),
-      );
-      child.once("error", reject);
-      child.once("exit", () => reject(new Error(`Worker exited before checkpoint: ${stderr}`)));
-    },
-  );
-  const exited = once(child, "exit");
-  child.kill("SIGKILL");
-  await exited;
-  const model = vi.fn(async (_request: CompletionRequest) => done());
-  const tool = vi.fn(async () => "stored result");
-  const runtime = await open(makeAgent(model, [lookup(tool)]), path);
-  await runtime.resume();
-  const run = await runtime.getRun(id);
-  const outcome = await run.result();
-  expect(model).toHaveBeenCalledTimes(2);
-  expect(model.mock.calls[0]![0]).toEqual(request);
-  expect(tool).not.toHaveBeenCalled();
-  expect(readFileSync(effects, "utf8")).toBe("effect\n");
-  expect(
-    outcome.messages.filter((message) => message.content === "applied before crash"),
-  ).toHaveLength(1);
-  expect(
-    outcome.messages.filter((message) => message.content === "queued before crash"),
-  ).toHaveLength(1);
-  expect(runtime.events(id, 0).filter((event) => event.type === "steering_applied")).toHaveLength(
-    2,
-  );
-}, 15000);
+itSqlite(
+  "survives SIGKILL with applied and pending input without repeating a committed effect",
+  async () => {
+    const path = database();
+    const effects = `${path}.effects`;
+    const child = fork(
+      fileURLToPath(new URL("./fixtures/steering-worker.ts", import.meta.url)),
+      [path, effects],
+      {
+        execArgv: ["--import", import.meta.resolve("tsx")],
+        stdio: ["ignore", "ignore", "pipe", "ipc"],
+      },
+    );
+    children.push(child);
+    let stderr = "";
+    child.stderr!.on("data", (chunk) => {
+      stderr += String(chunk);
+    });
+    const { id, request } = await new Promise<{ id: string; request: CompletionRequest }>(
+      (resolve, reject) => {
+        child.once("message", (message) =>
+          resolve(message as { id: string; request: CompletionRequest }),
+        );
+        child.once("error", reject);
+        child.once("exit", () => reject(new Error(`Worker exited before checkpoint: ${stderr}`)));
+      },
+    );
+    const exited = once(child, "exit");
+    child.kill("SIGKILL");
+    await exited;
+    const model = vi.fn(async (_request: CompletionRequest) => done());
+    const tool = vi.fn(async () => "stored result");
+    const runtime = await open(makeAgent(model, [lookup(tool)]), path);
+    await runtime.resume();
+    const run = await runtime.getRun(id);
+    const outcome = await run.result();
+    expect(model).toHaveBeenCalledTimes(2);
+    expect(model.mock.calls[0]![0]).toEqual(request);
+    expect(tool).not.toHaveBeenCalled();
+    expect(readFileSync(effects, "utf8")).toBe("effect\n");
+    expect(
+      outcome.messages.filter((message) => message.content === "applied before crash"),
+    ).toHaveLength(1);
+    expect(
+      outcome.messages.filter((message) => message.content === "queued before crash"),
+    ).toHaveLength(1);
+    expect(
+      (await runtime.events(id, 0)).filter((event) => event.type === "steering_applied"),
+    ).toHaveLength(2);
+  },
+  15000,
+);
 
 it("rejects input in the gap between the final core drain and the outcome commit", async () => {
   const agent = makeAgent(async () => done());

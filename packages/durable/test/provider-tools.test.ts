@@ -9,6 +9,7 @@ import { DurableRuntime, type DurableAgentRegistration } from "../src/index.js";
 import type { DurableRun } from "../src/run.js";
 import { SqliteDurableStore } from "../src/sqlite.js";
 import { capabilities, done, hasToolResult, lookup, response, toolResponse } from "./helpers.js";
+import { itSqlite } from "./helpers/backend.js";
 
 const directories: string[] = [];
 const runtimes: DurableRuntime[] = [];
@@ -138,30 +139,33 @@ describe("registration of provider tools", () => {
 });
 
 describe("provider tools replay", () => {
-  it("reuses the persisted provider response after a restart instead of asking again", async () => {
-    const path = database();
-    const first = vi.fn(async (request: CompletionRequest) => {
-      if (!hasToolResult(request)) return searchingTurn();
-      throw new Error("provider down");
-    });
-    const runtime = await open(path, agentWith(first, webSearch({ searchContextSize: "low" })));
-    const submitted = await runtime.submit({ ...submission, prompt: "hello" });
-    expect((await settled(submitted)).run.status).toBe("failed");
-    expect(first).toHaveBeenCalledTimes(2);
-    // The provider's own tool call is part of the persisted response for turn 1.
-    expect(storedModelRecord(path, submitted.id, 1)).toContain("ws_1");
-    await runtime.close();
-    runtimes.splice(runtimes.indexOf(runtime), 1);
+  itSqlite(
+    "reuses the persisted provider response after a restart instead of asking again",
+    async () => {
+      const path = database();
+      const first = vi.fn(async (request: CompletionRequest) => {
+        if (!hasToolResult(request)) return searchingTurn();
+        throw new Error("provider down");
+      });
+      const runtime = await open(path, agentWith(first, webSearch({ searchContextSize: "low" })));
+      const submitted = await runtime.submit({ ...submission, prompt: "hello" });
+      expect((await settled(submitted)).run.status).toBe("failed");
+      expect(first).toHaveBeenCalledTimes(2);
+      // The provider's own tool call is part of the persisted response for turn 1.
+      expect(storedModelRecord(path, submitted.id, 1)).toContain("ws_1");
+      await runtime.close();
+      runtimes.splice(runtimes.indexOf(runtime), 1);
 
-    const second = vi.fn(async (_request: CompletionRequest) => done());
-    const reopened = await open(path, agentWith(second, webSearch({ searchContextSize: "low" })));
-    await (await reopened.getRun(submitted.id)).retry();
-    expect((await settled(await reopened.getRun(submitted.id))).run.status).toBe("completed");
+      const second = vi.fn(async (_request: CompletionRequest) => done());
+      const reopened = await open(path, agentWith(second, webSearch({ searchContextSize: "low" })));
+      await (await reopened.getRun(submitted.id)).retry();
+      expect((await settled(await reopened.getRun(submitted.id))).run.status).toBe("completed");
 
-    // Turn 1 was restored from the journal; only the second model turn ran again.
-    expect(second).toHaveBeenCalledTimes(1);
-    expect(hasToolResult(second.mock.calls[0]![0])).toBe(true);
-  });
+      // Turn 1 was restored from the journal; only the second model turn ran again.
+      expect(second).toHaveBeenCalledTimes(1);
+      expect(hasToolResult(second.mock.calls[0]![0])).toBe(true);
+    },
+  );
 
   it("fails replay when a provider tool definition changed under the same version", async () => {
     const path = database();

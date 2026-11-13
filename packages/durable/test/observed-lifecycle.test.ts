@@ -9,6 +9,7 @@ import { DurableRuntime, type DurableAgentRegistration } from "../src/index.js";
 import type { DurableRun } from "../src/run.js";
 import { SqliteDurableStore } from "../src/sqlite.js";
 import { capabilities, done } from "./helpers.js";
+import { itSqlite } from "./helpers/backend.js";
 
 const directories: string[] = [];
 const runtimes: DurableRuntime[] = [];
@@ -157,7 +158,7 @@ describe("observational lifecycle", () => {
     expect(hooks.onError).toHaveBeenCalledTimes(2);
   });
 
-  it("does not run a hook again when its start was recorded before a crash", async () => {
+  itSqlite("does not run a hook again when its start was recorded before a crash", async () => {
     const hooks = { onStart: vi.fn(), onStepFinish: vi.fn(), onError: vi.fn(), onFinish: vi.fn() };
     const failing = vi.fn(async (_request: CompletionRequest) => {
       throw new Error("provider down");

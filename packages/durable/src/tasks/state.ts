@@ -10,18 +10,18 @@ export function taskKey(value: string): void {
     throw new TypeError("Task keys must be trimmed and at most 256 characters.");
   if (value === "__proto__") throw new TypeError("Reserved task key.");
 }
-export function requireTask(tx: DurableTransaction, id: string): TaskRecord {
-  const task = tx.getTask(id);
+export async function requireTask(tx: DurableTransaction, id: string): Promise<TaskRecord> {
+  const task = await tx.getTask(id);
   if (task === undefined) throw new DurableNotFoundError(`Unknown durable task: ${id}`);
   return task;
 }
 export function terminal(task: TaskRecord): boolean {
   return ["completed", "failed", "cancelled"].includes(task.status);
 }
-export function saveTask(tx: DurableTransaction, task: TaskRecord): void {
+export async function saveTask(tx: DurableTransaction, task: TaskRecord): Promise<void> {
   task.updatedAt = new Date().toISOString();
-  tx.putTask(task);
-  tx.appendEvent(
+  await tx.putTask(task);
+  await tx.appendEvent(
     task.id,
     "status",
     json({
@@ -33,7 +33,7 @@ export function saveTask(tx: DurableTransaction, task: TaskRecord): void {
     }),
   );
 }
-export function createTask(
+export async function createTask(
   tx: DurableTransaction,
   definition: RegisteredTask,
   input: unknown,
@@ -41,17 +41,29 @@ export function createTask(
   key: string,
   parentId?: string,
   trace?: DurableTraceOptions,
-): TaskRecord {
-  const { task, created } = prepareTask(tx, definition, input, sessionId, key, parentId, trace);
+): Promise<TaskRecord> {
+  const { task, created } = await prepareTask(
+    tx,
+    definition,
+    input,
+    sessionId,
+    key,
+    parentId,
+    trace,
+  );
   if (created) {
-    tx.putTask(task);
-    tx.appendEvent(task.id, "submitted", json({ name: task.name, parentId, rootId: task.rootId }));
+    await tx.putTask(task);
+    await tx.appendEvent(
+      task.id,
+      "submitted",
+      json({ name: task.name, parentId, rootId: task.rootId }),
+    );
   }
   return task;
 }
 
 /** Resolve an idempotent submission without persisting or scheduling work. */
-export function prepareTask(
+export async function prepareTask(
   tx: DurableTransaction,
   definition: RegisteredTask,
   input: unknown,
@@ -59,7 +71,7 @@ export function prepareTask(
   key: string,
   parentId?: string,
   trace?: DurableTraceOptions,
-): { task: TaskRecord; created: boolean } {
+): Promise<{ task: TaskRecord; created: boolean }> {
   taskKey(key);
   taskKey(sessionId);
   let parsed;
@@ -69,10 +81,10 @@ export function prepareTask(
     if (cause instanceof TypeError) throw cause;
     throw new TypeError("Invalid task input.", { cause });
   }
-  const parent = parentId === undefined ? undefined : requireTask(tx, parentId);
+  const parent = parentId === undefined ? undefined : await requireTask(tx, parentId);
   if (parent !== undefined && parent.status !== "running")
     throw new DurableConflictError("Parent task is no longer running.");
-  const existing = tx.findTask(sessionId, parentId, key);
+  const existing = await tx.findTask(sessionId, parentId, key);
   if (existing !== undefined) {
     if (
       existing.name !== definition.name ||
@@ -82,7 +94,10 @@ export function prepareTask(
       throw new DurableConflictError("Task key already belongs to a different submission.");
     return { task: existing, created: false };
   }
-  if (parent !== undefined && (parent.depth >= 32 || tx.taskTree(parent.rootId).length >= 1000))
+  if (
+    parent !== undefined &&
+    (parent.depth >= 32 || (await tx.taskTree(parent.rootId)).length >= 1000)
+  )
     throw new DurableConflictError("Task trees support at most 1000 nodes and depth 32.");
   const id = globalThis.crypto.randomUUID();
   const now = new Date().toISOString();
@@ -116,73 +131,80 @@ export function prepareTask(
 }
 
 /** Fence the whole owned subtree in one transaction before aborting invocations. */
-export function cancelTree(tx: DurableTransaction, id: string, error: string): string[] {
+export async function cancelTree(
+  tx: DurableTransaction,
+  id: string,
+  error: string,
+): Promise<string[]> {
   const ids: string[] = [];
-  const pending = [requireTask(tx, id)];
+  const pending = [await requireTask(tx, id)];
   for (const task of pending) {
     if (terminal(task)) continue;
     ids.push(task.id);
-    pending.push(...tx.taskChildren(task.id));
+    pending.push(...(await tx.taskChildren(task.id)));
     task.status = "cancelling";
     task.outcome = { status: "cancelled", error };
     if (task.agentRunId !== undefined) {
-      const run = tx.getRun(task.agentRunId)!;
+      const run = (await tx.getRun(task.agentRunId))!;
       if (!["completed", "failed", "cancelled"].includes(run.status)) {
         run.status = "cancelled";
         run.error = error;
         run.updatedAt = new Date().toISOString();
         delete run.nextAttemptAt;
-        tx.putRun(run);
-        tx.appendEvent(run.id, "status", { status: "cancelled", error });
+        await tx.putRun(run);
+        await tx.appendEvent(run.id, "status", { status: "cancelled", error });
       }
     }
     delete task.wait;
     delete task.error;
     delete task.blockedOperation;
-    saveTask(tx, task);
+    await saveTask(tx, task);
   }
   return ids;
 }
 
-export function reconcileTree(
+export async function reconcileTree(
   tx: DurableTransaction,
   rootId: string,
   active: ReadonlySet<string>,
   agentActive: (id: string) => boolean,
-): { abort: string[]; deadline?: number } {
+): Promise<{ abort: string[]; deadline?: number }> {
   const abort: string[] = [];
   let deadline: number | undefined;
-  const nodes = tx.taskTree(rootId).reverse();
+  const nodes = (await tx.taskTree(rootId)).reverse();
   for (const node of nodes) {
-    const task = requireTask(tx, node.id);
+    const task = await requireTask(tx, node.id);
     if (terminal(task)) continue;
     if (task.status === "waiting") {
       const wait = task.wait!;
       let ready = false;
       if (wait.type === "children") {
-        const children = wait.ids.map((id) => requireTask(tx, id));
+        const children: TaskRecord[] = [];
+        for (const id of wait.ids) children.push(await requireTask(tx, id));
         if (
           wait.policy === "failFast" &&
           children.some((child) => terminal(child) && child.status !== "completed")
         ) {
           for (const child of children)
             if (!terminal(child) && child.status !== "cancelling")
-              abort.push(...cancelTree(tx, child.id, "Sibling task failed."));
+              abort.push(...(await cancelTree(tx, child.id, "Sibling task failed.")));
         }
         ready = children.every(terminal);
       } else if (wait.type === "agent") {
-        const run = tx.getRun(wait.runId);
+        const run = await tx.getRun(wait.runId);
         if (run === undefined) throw new Error("Owned agent run is missing.");
         if (wait.status !== run.status) {
           wait.status = run.status;
-          saveTask(tx, task);
+          await saveTask(tx, task);
         }
         if (["completed", "failed", "cancelled"].includes(run.status)) {
           task.outcome =
             run.status === "completed" && run.outcome?.type === "response"
               ? {
                   status: "completed",
-                  output: json(hydratedOutcomeOutput(tx, json(run.outcome)) ?? null),
+                  output: json(
+                    (await tx.blobs((io) => hydratedOutcomeOutput(io, json(run.outcome)))) ?? null,
+                  ),
                 }
               : {
                   status: run.status === "cancelled" ? "cancelled" : "failed",
@@ -190,7 +212,7 @@ export function reconcileTree(
                 };
           task.status = "completing";
           delete task.wait;
-          saveTask(tx, task);
+          await saveTask(tx, task);
         }
       } else if (wait.type === "signal") ready = Object.hasOwn(task.signals, wait.name);
       else {
@@ -201,17 +223,17 @@ export function reconcileTree(
       if (ready) {
         task.status = "pending";
         delete task.wait;
-        saveTask(tx, task);
+        await saveTask(tx, task);
       }
     }
     if (
       ["completing", "cancelling"].includes(task.status) &&
       !active.has(task.id) &&
       (task.agentRunId === undefined || !agentActive(task.agentRunId)) &&
-      tx.taskChildren(task.id).every(terminal)
+      (await tx.taskChildren(task.id)).every(terminal)
     ) {
       task.status = task.outcome!.status;
-      saveTask(tx, task);
+      await saveTask(tx, task);
     }
   }
 

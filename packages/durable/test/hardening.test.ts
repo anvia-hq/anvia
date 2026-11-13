@@ -25,7 +25,7 @@ const waiting = defineTask({
   output: z.null(),
   initial: () => null,
   run: async (ctx) =>
-    ctx.signalValue("go") === undefined
+    (await ctx.signalValue("go")) === undefined
       ? { status: "waiting", checkpoint: null, wait: { type: "signal", name: "go" } }
       : { status: "completed", output: null },
 });
@@ -64,7 +64,7 @@ it.each(
     db.close();
   }
   if (read === "status") {
-    expect(() => runtime.status(run.id)).toThrow("Durable storage failed");
+    await expect(async () => runtime.status(run.id)).rejects.toThrow("Durable storage failed");
   } else {
     await expect(runtime.listRuns()).rejects.toThrow("Durable storage failed");
   }
@@ -77,14 +77,14 @@ it("poisons the runtime after a model checkpoint failure and recovers from the s
   dirs.push(dir);
   const path = join(dir, "live.sqlite");
   class FailingStore extends SqliteDurableStore {
-    override transaction<T>(callback: (tx: DurableTransaction) => T): T {
+    override async transaction<T>(callback: (tx: DurableTransaction) => Promise<T>): Promise<T> {
       return super.transaction((tx) =>
         callback({
           ...tx,
-          putOperation(id, operation) {
+          async putOperation(id, operation) {
             if (operation.kind === "model" && operation.status === "completed")
               throw new Error("simulated SQLITE_FULL");
-            tx.putOperation(id, operation);
+            await tx.putOperation(id, operation);
           },
         }),
       );
@@ -128,8 +128,8 @@ it("keeps validation errors healthy and enforces atomic admission with deduplica
   });
   runtimes.push(runtime);
   await expect(runtime.listTasks({ limit: 0 })).rejects.toThrow();
-  expect(() => runtime.graphEvents("graph", -1)).toThrow(TypeError);
-  expect(() => runtime.events("run", Number.NaN)).toThrow(TypeError);
+  await expect(async () => runtime.graphEvents("graph", -1)).rejects.toThrow(TypeError);
+  await expect(async () => runtime.events("run", Number.NaN)).rejects.toThrow(TypeError);
   const task = await runtime.submitTask(waiting, { sessionId: "s", requestId: "1", input: null });
   await expect(
     runtime.submitTask(waiting, { sessionId: "s", requestId: "2", input: null }),
@@ -139,7 +139,7 @@ it("keeps validation errors healthy and enforces atomic admission with deduplica
   ).toBe(task.id);
   expect(runtime.health().ready).toBe(true);
   await vi.waitFor(async () => expect((await task.snapshot()).task.status).toBe("waiting"));
-  expect(runtime.metrics()).toMatchObject({ tasks: { waiting: 1 }, operations: 0 });
+  expect(await runtime.metrics()).toMatchObject({ tasks: { waiting: 1 }, operations: 0 });
   await task.cancel();
   await runtime.submitTask(waiting, { sessionId: "s", requestId: "2", input: null });
 });
@@ -280,7 +280,7 @@ it("drains bounded concurrent tasks while preserving all results", async () => {
   expect(await Promise.all(handles.map((handle) => handle.result()))).toEqual(
     Array.from({ length: 200 }, (_, n) => n),
   );
-  expect(runtime.metrics()).toMatchObject({ tasks: { completed: 200 }, operations: 200 });
+  expect(await runtime.metrics()).toMatchObject({ tasks: { completed: 200 }, operations: 200 });
   await runtime.close();
   expect(runtime.health()).toMatchObject({ status: "closed", activeRuns: 0, activeTasks: 0 });
 }, 20_000);
@@ -341,7 +341,7 @@ it("propagates an owned agent failure without poisoning the runtime at a small p
     output: z.null(),
     initial: () => null,
     run: async (ctx) => {
-      const child = ctx.spawnAgent("agent", { agentId: "researcher", prompt: "hi" });
+      const child = await ctx.spawnAgent("agent", { agentId: "researcher", prompt: "hi" });
       return {
         status: "waiting",
         checkpoint: null,
@@ -384,14 +384,14 @@ it("finishes copying a committed owned-agent output after restart with lower quo
   dirs.push(dir);
   const path = join(dir, "live.sqlite");
   class FailingStore extends SqliteDurableStore {
-    override transaction<T>(callback: (tx: DurableTransaction) => T): T {
+    override async transaction<T>(callback: (tx: DurableTransaction) => Promise<T>): Promise<T> {
       return super.transaction((tx) =>
         callback({
           ...tx,
-          putTask(task) {
+          async putTask(task) {
             if (task.agentRunId !== undefined && task.outcome?.status === "completed")
               throw new Error("crash before owned output copy");
-            tx.putTask(task);
+            await tx.putTask(task);
           },
         }),
       );
@@ -405,7 +405,7 @@ it("finishes copying a committed owned-agent output after restart with lower quo
     output: z.null(),
     initial: () => null,
     run: async (ctx) => {
-      ctx.spawnAgent("agent", { agentId: "researcher", prompt: "hi" });
+      await ctx.spawnAgent("agent", { agentId: "researcher", prompt: "hi" });
       return { status: "completed", output: null };
     },
   });

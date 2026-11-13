@@ -48,22 +48,26 @@ export function createExecution(
   const toolKey = (toolCallId: string) =>
     `${prefix}tool:${modelPhase === 0 ? "resume" : modelPhase}:${toolCallId}`;
 
-  function start(
+  async function start(
     key: string,
     kind: DurableOperation["kind"],
     input: JsonValue,
     recovery: DurableOperation["recovery"],
-  ): DurableOperation {
+  ): Promise<DurableOperation> {
     check();
-    return store.transaction((tx) => {
+    return store.transaction(async (tx) => {
       // The journal stores a bounded form; content addressing makes it deterministic, so the
       // replay comparison below can run on stored forms directly.
-      const stored = kind === "model" ? externalizeModelInput(tx, input) : input;
-      const previous = tx.getOperation(run.id, key);
+      const stored =
+        kind === "model" ? await tx.blobs((io) => externalizeModelInput(io, input)) : input;
+      const previous = await tx.getOperation(run.id, key);
       if (previous !== undefined) {
         // Compare restored forms: a journal written before blob references stores the input
         // inline, and the same input now externalizes differently. Both restore to `input`.
-        if (!sameJson(hydrateValue(tx, previous.input), input) || previous.kind !== kind) {
+        if (
+          !sameJson(await tx.blobs((io) => hydrateValue(io, previous.input)), input) ||
+          previous.kind !== kind
+        ) {
           throw new DurableRecoveryError(
             "Execution changed at a saved checkpoint; restore the registered agent version.",
             key,
@@ -77,21 +81,21 @@ export function createExecution(
         }
         // Restored results are handed back to the agent loop fully hydrated.
         return previous.status === "completed"
-          ? { ...previous, result: hydrateValue(tx, previous.result!) }
+          ? { ...previous, result: await tx.blobs((io) => hydrateValue(io, previous.result!)) }
           : previous;
       }
-      const current = tx.getRun(run.id)!;
+      const current = (await tx.getRun(run.id))!;
       if (kind === "model") {
         // Core's maxTurns counts tool-loop continuations in addition to the initial response.
         if (current.modelTurns >= current.maxModelTurns) {
           throw new Error("Durable run exhausted its model-turn budget.");
         }
         current.modelTurns += 1;
-        tx.putRun(current);
+        await tx.putRun(current);
       }
       const operation: DurableOperation = { key, kind, input: stored, recovery, status: "started" };
-      tx.putOperation(run.id, operation);
-      tx.appendEvent(run.id, kind === "model" ? "model_started" : "tool_started", {
+      await tx.putOperation(run.id, operation);
+      await tx.appendEvent(run.id, kind === "model" ? "model_started" : "tool_started", {
         operationId: key,
         input: stored,
       });
@@ -99,22 +103,26 @@ export function createExecution(
     });
   }
 
-  function complete(operation: DurableOperation, result: JsonValue, usage?: Usage): void {
+  async function complete(
+    operation: DurableOperation,
+    result: JsonValue,
+    usage?: Usage,
+  ): Promise<void> {
     check();
-    store.transaction((tx) => {
-      const current = tx.getRun(run.id)!;
+    await store.transaction(async (tx) => {
+      const current = (await tx.getRun(run.id))!;
       if (current.status !== "running") throw new Error("Durable run is no longer running.");
       // Oversized results move to the blob table here, atomically with the referencing write.
       const stored =
         operation.kind === "tool"
-          ? externalizeToolResult(tx, result)
+          ? await tx.blobs((io) => externalizeToolResult(io, result))
           : operation.kind === "model"
-            ? externalizeModelResult(tx, result)
+            ? await tx.blobs((io) => externalizeModelResult(io, result))
             : result;
-      tx.putOperation(run.id, { ...operation, status: "completed", result: stored });
+      await tx.putOperation(run.id, { ...operation, status: "completed", result: stored });
       if (usage !== undefined) {
         current.usage = Usage.add(current.usage, usage);
-        tx.putRun(current);
+        await tx.putRun(current);
       }
 
       const data: JsonObject = {
@@ -126,7 +134,7 @@ export function createExecution(
         data.attemptId = operation.attemptId;
       }
 
-      tx.appendEvent(
+      await tx.appendEvent(
         run.id,
         operation.kind === "model" ? "model_completed" : "tool_completed",
         data,
@@ -134,7 +142,10 @@ export function createExecution(
     });
   }
 
-  function modelOperation(turn: number, request: CompletionRequest): DurableOperation {
+  async function modelOperation(
+    turn: number,
+    request: CompletionRequest,
+  ): Promise<DurableOperation> {
     modelPhase = turn;
     return start(
       `${prefix}model:${turn}`,
@@ -148,7 +159,7 @@ export function createExecution(
     );
   }
 
-  function beginAttempt(operation: DurableOperation, streaming = false): void {
+  async function beginAttempt(operation: DurableOperation, streaming = false): Promise<void> {
     if (run.modelRetry !== undefined && (operation.attempts ?? 0) >= run.modelRetry.maxAttempts) {
       throw new DurableModelError(
         operation.key,
@@ -158,10 +169,10 @@ export function createExecution(
     }
     operation.attempts = (operation.attempts ?? 0) + 1;
     if (streaming) operation.attemptId = globalThis.crypto.randomUUID();
-    store.transaction((tx) => {
-      tx.putOperation(run.id, operation);
+    await store.transaction(async (tx) => {
+      await tx.putOperation(run.id, operation);
       if (streaming)
-        tx.appendEvent(run.id, "model_attempt_started", {
+        await tx.appendEvent(run.id, "model_attempt_started", {
           operationId: operation.key,
           attemptId: operation.attemptId!,
           attempt: operation.attempts!,
@@ -169,34 +180,37 @@ export function createExecution(
     });
   }
 
-  function saveResponse(
+  async function saveResponse(
     operation: DurableOperation,
     response: CompletionResponse,
-  ): CompletionResponse {
+  ): Promise<CompletionResponse> {
     // SDK response objects can contain classes, cycles, or credentials. Persist normalized fields only.
     const { rawResponse: _raw, ...normalized } = response;
     const saved = json({ ...normalized, rawResponse: null });
-    complete(operation, saved, response.usage);
+    await complete(operation, saved, response.usage);
     return saved as unknown as CompletionResponse;
   }
 
   const execution: AgentRunExecution = {
     // Status only: tool args are not final yet, and a changed input fails in start() with a
     // recovery error that the run's own span records.
-    replayed(step) {
+    async replayed(step) {
       const key =
         step.kind === "tool"
           ? toolKey(step.toolCall.toolCallId)
           : `${prefix}${step.kind}:${step.turn}`;
-      return store.transaction((tx) => tx.getOperation(run.id, key))?.status === "completed";
+      return (
+        (await store.transaction(async (tx) => tx.getOperation(run.id, key)))?.status ===
+        "completed"
+      );
     },
     async prepareMessages(turn, messages, checkpoint) {
       // Check before compaction too: an exhausted session must not spend another model call.
-      const exhausted = store.transaction((tx) => {
-        const current = tx.getRun(run.id)!;
+      const exhausted = await store.transaction(async (tx) => {
+        const current = (await tx.getRun(run.id))!;
         return (
           current.modelTurns >= current.maxModelTurns &&
-          tx.getOperation(run.id, `${prefix}model:${turn}`) === undefined
+          (await tx.getOperation(run.id, `${prefix}model:${turn}`)) === undefined
         );
       });
       if (exhausted)
@@ -204,10 +218,10 @@ export function createExecution(
       return prepare(turn, messages, checkpoint);
     },
     async completion(turn, request, execute) {
-      const operation = modelOperation(turn, request);
+      const operation = await modelOperation(turn, request);
       if (operation.status === "completed")
         return operation.result as unknown as CompletionResponse;
-      beginAttempt(operation);
+      await beginAttempt(operation);
       let response: CompletionResponse;
       try {
         response = await execute();
@@ -219,10 +233,10 @@ export function createExecution(
       return saveResponse(operation, response);
     },
     async *streamCompletion(turn, request, execute) {
-      const operation = modelOperation(turn, request);
+      const operation = await modelOperation(turn, request);
       if (operation.status === "completed")
         return operation.result as unknown as CompletionResponse;
-      beginAttempt(operation, true);
+      await beginAttempt(operation, true);
       const stream: AsyncIterator<AgentCompletionStreamEvent, CompletionResponse> = execute();
       let finished = false;
       let failed = false;
@@ -242,10 +256,10 @@ export function createExecution(
             finished = true;
             return saveResponse(operation, next.value);
           }
-          store.transaction((tx) => {
-            if (tx.getRun(run.id)?.status !== "running")
+          await store.transaction(async (tx) => {
+            if ((await tx.getRun(run.id))?.status !== "running")
               throw new Error("Durable run is no longer running.");
-            tx.appendEvent(
+            await tx.appendEvent(
               run.id,
               "model_delta",
               json({
@@ -260,7 +274,7 @@ export function createExecution(
       } catch (error) {
         failed = true;
         check();
-        store.transaction((tx) =>
+        await store.transaction(async (tx) =>
           tx.appendEvent(run.id, "model_attempt_failed", {
             operationId: operation.key,
             attemptId: operation.attemptId!,
@@ -275,7 +289,7 @@ export function createExecution(
     },
     async tool(call, execute) {
       const key = toolKey(call.toolCall.toolCallId);
-      const operation = start(
+      const operation = await start(
         key,
         "tool",
         json(call),
@@ -290,7 +304,7 @@ export function createExecution(
             ? { output: result.output, failed: true, error: errorMessage(result.error) }
             : result,
         );
-        complete(operation, saved);
+        await complete(operation, saved);
         return restoreToolResult(saved);
       } catch (error) {
         if (error instanceof DurableStorageError) throw error;
@@ -316,15 +330,15 @@ export function createExecution(
       const key = `${prefix}tools:${turn}`;
       const recorded = (operation: DurableOperation | undefined) =>
         (operation!.result as unknown as { tools: ToolDefinition[] }).tools;
-      const previous = store.transaction((tx) => tx.getOperation(run.id, key));
+      const previous = await store.transaction(async (tx) => tx.getOperation(run.id, key));
       if (previous?.status === "completed") return recorded(previous);
       check();
       const selected = await select();
       check();
-      return store.transaction((tx) => {
-        const current = tx.getOperation(run.id, key);
+      return store.transaction(async (tx) => {
+        const current = await tx.getOperation(run.id, key);
         if (current?.status === "completed") return recorded(current);
-        if (tx.getRun(run.id)?.status !== "running")
+        if ((await tx.getRun(run.id))?.status !== "running")
           throw new Error("Durable run is no longer running.");
         // Stored in JSON form, so the first run and every replay hand the agent the same value.
         const operation: DurableOperation = {
@@ -335,7 +349,7 @@ export function createExecution(
           recovery: "manual",
           result: json({ tools: selected }),
         };
-        tx.putOperation(run.id, operation);
+        await tx.putOperation(run.id, operation);
         return recorded(operation);
       });
     };
@@ -346,15 +360,19 @@ export function createExecution(
   if (registration.context !== undefined) {
     execution.selectContext = async (turn, index, retrieve) => {
       const key = `${prefix}context-docs:${turn}:${index}`;
-      const recorded = (
+      const recorded = async (
         tx: DurableTransaction,
         operation: DurableOperation | undefined,
-      ): Document[] =>
-        (hydrateValue(tx, operation!.result!) as unknown as { documents: Document[] }).documents;
-      const previous = store.transaction((tx) => {
-        const operation = tx.getOperation(run.id, key);
+      ): Promise<Document[]> =>
+        (
+          (await tx.blobs((io) => hydrateValue(io, operation!.result!))) as unknown as {
+            documents: Document[];
+          }
+        ).documents;
+      const previous = await store.transaction(async (tx) => {
+        const operation = await tx.getOperation(run.id, key);
         return operation?.status === "completed"
-          ? { ...operation, result: hydrateValue(tx, operation.result!) }
+          ? { ...operation, result: await tx.blobs((io) => hydrateValue(io, operation.result!)) }
           : operation;
       });
       if (previous?.status === "completed")
@@ -362,10 +380,10 @@ export function createExecution(
       check();
       const retrieved = await retrieve();
       check();
-      return store.transaction((tx) => {
-        const current = tx.getOperation(run.id, key);
+      return store.transaction(async (tx) => {
+        const current = await tx.getOperation(run.id, key);
         if (current?.status === "completed") return recorded(tx, current);
-        if (tx.getRun(run.id)?.status !== "running")
+        if ((await tx.getRun(run.id))?.status !== "running")
           throw new Error("Durable run is no longer running.");
         const operation: DurableOperation = {
           key,
@@ -375,9 +393,11 @@ export function createExecution(
           recovery: "manual",
           // An oversized document set moves to the blob table here, like an oversized tool result,
           // so one retrieval cannot exceed the operation payload limit.
-          result: externalizeContextDocsResult(tx, json({ documents: retrieved })),
+          result: await tx.blobs((io) =>
+            externalizeContextDocsResult(io, json({ documents: retrieved })),
+          ),
         };
-        tx.putOperation(run.id, operation);
+        await tx.putOperation(run.id, operation);
         return recorded(tx, operation);
       });
     };

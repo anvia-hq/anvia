@@ -184,7 +184,10 @@ export class ToolCallExecutor {
       }
       if (toolDefinition !== undefined) toolStartArgs = { ...toolStartArgs, toolDefinition };
       if (toolMetadata !== undefined) toolStartArgs = { ...toolStartArgs, toolMetadata };
-      const toolObservers = this.replayed(toolCall)
+      const replayedPending = this.replayed(toolCall);
+      const replayed =
+        typeof replayedPending === "boolean" ? replayedPending : await replayedPending;
+      const toolObservers = replayed
         ? undefined
         : await observation?.runObservers.startTool(toolStartArgs);
       const toolObservation = new ToolObserverScope(toolObservers);
@@ -496,7 +499,9 @@ export class ToolCallExecutor {
     }
     if (toolDefinition !== undefined) toolStartArgs = { ...toolStartArgs, toolDefinition };
     if (toolMetadata !== undefined) toolStartArgs = { ...toolStartArgs, toolMetadata };
-    const observers = this.replayed(toolCall)
+    const replayedPending = this.replayed(toolCall);
+    const replayed = typeof replayedPending === "boolean" ? replayedPending : await replayedPending;
+    const observers = replayed
       ? undefined
       : await observation?.runObservers.startTool(toolStartArgs);
     const toolObservation = new ToolObserverScope(observers);
@@ -723,8 +728,8 @@ export class ToolCallExecutor {
   }
 
   /** A restored result was observed when the tool ran; observing it again duplicates it. */
-  private replayed(toolCall: ToolCallPart): boolean {
-    return this.execution?.replayed?.({ kind: "tool", toolCall }) === true;
+  private replayed(toolCall: ToolCallPart): boolean | Promise<boolean> {
+    return this.execution?.replayed?.({ kind: "tool", toolCall }) ?? false;
   }
 
   private runApprovedToolCall(

@@ -33,7 +33,7 @@ become `needs_attention` without executing tools or calling models.
 ## Storage and ownership
 
 Import `SqliteDurableStore` from `@anvia/durable/sqlite`; the package root does not import
-Node's SQLite module. Use a dedicated database on a local filesystem. The adapter uses WAL,
+Node's SQLite module. (Postgres, Drizzle and Prisma stores follow below.) Use a dedicated database on a local filesystem. The adapter uses WAL,
 full synchronous commits, and atomic transactions for run state, operation results, and events.
 
 One runtime owns a database. A second live owner is rejected. After a crash on the same host,
@@ -42,10 +42,93 @@ recovery. Cross-host filesystems, shared PID namespaces with ambiguous host iden
 leases, and distributed execution are unsupported. Memory-only SQLite (`:memory:`) is useful
 for tests but does not survive restart.
 
-`DurableStore` is a synchronous transactional contract. A custom implementation must provide
-exclusive ownership, atomic writes, detached read values, validation, ordered event cursors,
-and the same deduplication and history semantics. Transaction callbacks must not perform
-external work, return promises, or retain their transaction handle.
+`DurableStore` is an async transactional contract (changed in 0.17; before, it was
+synchronous). A custom implementation must provide exclusive ownership, atomic writes, detached
+read values, validation, ordered event cursors, and the same deduplication and history
+semantics. `store.transaction(async (tx) => ...)` must run its callback atomically and one at a
+time, reject a nested `transaction()` call, and roll back when the callback throws. Every method
+of the transaction returns a promise and must be awaited. Callbacks may await only transaction
+calls: never external work, and never retain the transaction handle after the callback settles.
+Blob-aware code runs through `tx.blobs((io) => ...)`, a synchronous callback over the
+transaction's blob area. `TaskContext` methods (`spawn`, `spawnAgent`, `children`, `agentRun`,
+`signalValue`) are async for the same reason.
+
+### Postgres, Drizzle and Prisma
+
+Three more stores run on PostgreSQL. They share one SQL layer, one schema (schema version 12),
+and the same guarantees; pick the one that matches how your application talks to the database.
+
+| Import                    | Use it when                                 | Who owns the schema                                                               |
+| ------------------------- | ------------------------------------------- | --------------------------------------------------------------------------------- |
+| `@anvia/durable/postgres` | you have a `pg` pool or a connection string | the store can create it (`schema: "create"`) or verify it                         |
+| `@anvia/durable/drizzle`  | the application uses Drizzle                | you: table definitions plus `anvia-durable-drizzle init`, migrated by drizzle-kit |
+| `@anvia/durable/prisma`   | the application uses Prisma                 | you: models plus `anvia-durable-prisma init`, migrated by Prisma                  |
+
+`pg`, `drizzle-orm` and `@prisma/client` are optional peer dependencies: install only the one
+you use.
+
+```ts
+import { Pool } from "pg";
+import { DurableRuntime } from "@anvia/durable";
+import { PostgresDurableStore } from "@anvia/durable/postgres";
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const runtime = await DurableRuntime.open({
+  // schema: "create" runs CREATE TABLE IF NOT EXISTS; the default "verify" only checks.
+  store: new PostgresDurableStore({ pool }, { schema: "create" }),
+  agents: [{ agent, version: "1" }],
+});
+```
+
+```ts
+// Drizzle: run `npx anvia-durable-drizzle init --write`, then drizzle-kit generate and migrate.
+import { DrizzleDurableStore } from "@anvia/durable/drizzle";
+const store = new DrizzleDurableStore(db); // any drizzle-orm Postgres database
+
+// Prisma: run `npx anvia-durable-prisma init --write`, then prisma migrate and generate.
+import { PrismaDurableStore } from "@anvia/durable/prisma";
+const store = new PrismaDurableStore(prisma); // a PrismaClient on PostgreSQL
+```
+
+`anvia-durable-drizzle init` writes `anvia-durable.ts` next to your schema, re-exporting the
+tables from `@anvia/durable/drizzle`; `anvia-durable-prisma init` writes `anvia-durable.prisma`
+with the models (`AnviaDurable*`, mapped to the `anvia_durable_*` tables). Both are dry runs
+unless you pass `--write`; `--append-to-schema` appends a marked block to your own schema file
+instead, `--schema <path>` points at it, and `--force` replaces a generated file or block.
+
+The Drizzle and Prisma stores never create or alter tables. On `acquire()` they check that every
+table exists and that the schema version matches, and throw an error that names the missing
+tables and the generator to run. The Postgres store does the same when `schema` is `"verify"`.
+
+**Single owner on Postgres.** One runtime owns a database, as on SQLite, but ownership is a
+lease because PIDs mean nothing across hosts. The owner row holds a random token and a lease
+expiry. `acquire()` fails with "live owner" while another lease is unexpired; the owner renews it
+in the background (`heartbeatMs`, default a third of `leaseMs`; `leaseMs` defaults to 30 seconds);
+`close()` releases it at once. After a crash, a replacement waits at most `leaseMs`. Every
+transaction begins with `SELECT ... FOR UPDATE` on the owner row and checks the token, so an
+owner that stalled past its lease cannot commit once a new owner has taken over: it fails with
+"ownership was lost". Writes are serialized by that lock, so event cursors commit in order. The
+lease cannot fence external effects (a model call or tool already in flight in the stalled
+process); keep `leaseMs` well above your worst event-loop pause.
+
+Other differences from SQLite: ordering columns are `BIGSERIAL`; the fields the scheduler and
+listings filter on (`agent_id`, `graph_id`, `dependencies`, `next_attempt_at`, `outcome_type`,
+`started_at`) are real columns; record bodies stay `TEXT`, so key order is preserved exactly. A
+new database starts at schema version 12, with none of the SQLite upgrade paths. Metrics report
+the size of the durable tables. `backupSqlite` and `restoreSqlite` in `@anvia/durable/maintenance`
+are SQLite-only: back up Postgres with `pg_dump` or your provider's snapshots, and do not run the
+original and a restored copy together. The Prisma store passes `maxWait` and `timeout` to
+`$transaction` (10 and 60 seconds by default) because Prisma's five-second default is too short.
+
+Verification: the scenarios in `packages/durable/test` run unchanged against the Postgres store
+on PGlite (in-process Postgres), and against a real PostgreSQL 17 server when
+`ANVIA_DURABLE_TEST_POSTGRES_URL` is set. A subset runs against the Drizzle and Prisma stores.
+Tests that inspect SQLite files, back up databases or kill child processes holding the file are
+SQLite-only. Prisma is tested with a Prisma-shaped client over Postgres; **no real Prisma engine
+or generated client has been run**, so check `$queryRawUnsafe` result types (BigInt) and
+transaction behaviour against your Prisma version. The Drizzle store is tested with real
+`drizzle-orm` on PGlite, and with Drizzle's SQL rendering over `pg`; other Drizzle drivers
+(postgres-js, Neon) are untested.
 
 The database contains prompts, normalized responses, tool arguments/results, and interaction
 state. Keep it in application-private storage. Provider SDK raw responses are not persisted.

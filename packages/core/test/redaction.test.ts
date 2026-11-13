@@ -200,6 +200,25 @@ describe("createRedactor", () => {
     );
   });
 
+  it("redacts PEM private key blocks and AWS secret access keys", () => {
+    const pem = [
+      "-----BEGIN RSA PRIVATE KEY-----",
+      "MIIEowIBAAKCAQEA1234567890",
+      "-----END RSA PRIVATE KEY-----",
+    ].join("\n");
+
+    expect(createRedactor().redactString(`key:\n${pem}\ndone`)).toBe("key:\n<redacted>\ndone");
+    expect(createRedactor().redactString("-----BEGIN PRIVATE KEY-----\nMIIEow")).toBe("<redacted>");
+    expect(
+      createRedactor().redactString(
+        'aws_secret_access_key = "abcdEFGH1234ijklMNOP5678qrstUVWX90yzABCD"',
+      ),
+    ).toBe("<redacted>");
+    expect(createRedactor().redactString("token abcdEFGH1234ijklMNOP5678qrstUVWX90yzABCD")).toBe(
+      "token abcdEFGH1234ijklMNOP5678qrstUVWX90yzABCD",
+    );
+  });
+
   it("uses the configured replacement and lets custom patterns replace the defaults", () => {
     const custom = createRedactor({
       patterns: [{ name: "ssn", regex: /\b\d{3}-\d{2}-\d{4}\b/g }],

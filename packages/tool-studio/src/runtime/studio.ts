@@ -5,6 +5,7 @@ import { Pipeline } from "@anvia/core/pipeline";
 import { serve, type WebSocketServerLike } from "@hono/node-server";
 import type { Hono } from "hono";
 import { Hono as HonoApp } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { WebSocketServer } from "ws";
 import { StudioTraceObserver } from "../traces/trace-observer";
 import type {
@@ -67,6 +68,12 @@ type StudioApp = AnviaStudio & {
   readonly traceStore?: StudioTraceStore;
 };
 
+/**
+ * Generous default for a local UI that sends full transcripts and inline
+ * images, while still bounding what a single request can allocate.
+ */
+const defaultStudioMaxBodyBytes = 10 * 1024 * 1024;
+
 export class Studio implements AnviaStudio {
   private readonly options: StudioRuntimeOptions;
   private studio: StudioApp;
@@ -100,11 +107,18 @@ export class Studio implements AnviaStudio {
 
   start(serveOptions: StudioServeOptions = {}): this {
     this.close();
-    const serveHostOptions: { allowedHosts?: readonly string[]; hostname?: string } = {};
+    const serveHostOptions: {
+      allowedHosts?: readonly string[];
+      hostname?: string;
+      maxBodyBytes?: number;
+    } = {};
     if (serveOptions.allowedHosts !== undefined) {
       serveHostOptions.allowedHosts = serveOptions.allowedHosts;
     }
     if (serveOptions.hostname !== undefined) serveHostOptions.hostname = serveOptions.hostname;
+    if (serveOptions.maxBodyBytes !== undefined) {
+      serveHostOptions.maxBodyBytes = serveOptions.maxBodyBytes;
+    }
     this.studio = createStudioApp({ ...this.options, ...serveHostOptions });
     this.shutdownPromise = undefined;
 
@@ -323,6 +337,7 @@ function studioOptionsFromTargets(
   if (options.models !== undefined) runtimeOptions.models = options.models;
   if (options.stores !== undefined) runtimeOptions.stores = options.stores;
   if (options.ui !== undefined) runtimeOptions.ui = options.ui;
+  if (options.maxBodyBytes !== undefined) runtimeOptions.maxBodyBytes = options.maxBodyBytes;
   if (options.sandboxes !== undefined) {
     runtimeOptions.sandboxes = options.sandboxes.map((registration) => {
       let snapshot: StudioSandboxRegistration = { inspector: registration.inspector };
@@ -420,6 +435,25 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
   if (options.allowedHosts !== undefined) guardOptions.allowedHosts = options.allowedHosts;
   if (options.hostname !== undefined) guardOptions.hostname = options.hostname;
   app.use(createStudioHostGuard(guardOptions));
+  // Bound request bodies before any handler parses or persists them. Studio
+  // accepts rich transcripts, so the default stays generous, but an unbounded
+  // body lets a caller that passes the host guard grow memory and the stores.
+  const maxBodyBytes = options.maxBodyBytes ?? defaultStudioMaxBodyBytes;
+  if (!Number.isSafeInteger(maxBodyBytes) || maxBodyBytes < 1) {
+    throw new RangeError("Studio maxBodyBytes must be a positive safe integer.");
+  }
+  app.use(
+    bodyLimit({
+      maxSize: maxBodyBytes,
+      onError: (c) =>
+        errorResponse(
+          c,
+          413,
+          "payload_too_large",
+          `Request body exceeds the Studio limit of ${maxBodyBytes} bytes.`,
+        ),
+    }),
+  );
   const uiOptions = isStudioUiEnabled(options.ui) ? resolveStudioUiOptions(options.ui) : undefined;
 
   if (uiOptions !== undefined && !uiOptions.protectShell) {

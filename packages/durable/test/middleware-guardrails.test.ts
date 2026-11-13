@@ -11,6 +11,7 @@ import { DurableRuntime, type DurableAgentRegistration } from "../src/index.js";
 import type { DurableRun } from "../src/run.js";
 import { SqliteDurableStore } from "../src/sqlite.js";
 import { capabilities, done, hasToolResult, lookup, toolResponse } from "./helpers.js";
+import { itSqlite } from "./helpers/backend.js";
 
 const directories: string[] = [];
 const runtimes: DurableRuntime[] = [];
@@ -394,53 +395,59 @@ describe("recorded guardrails", () => {
     ).rejects.toThrow(/two input guardrails named "scan"/);
   });
 
-  it("blocks the run for reconciliation when a check stopped before its outcome was recorded", async () => {
-    const path = database();
-    const check = vi.fn(async () => undefined);
-    const guardrails = { id: "policy", input: [{ id: "scan", check: check as never }] };
-    const first = vi.fn(async (_request: CompletionRequest) => {
-      throw new Error("provider down");
-    });
-    const runtime = await open(path, agentWith(first, { guardrails }), recorded);
-    const submitted = await runtime.submit({ ...submission, prompt: "hello" });
-    expect((await settled(submitted)).run.status).toBe("failed");
-    await runtime.close();
-    runtimes.splice(runtimes.indexOf(runtime), 1);
-    leaveStarted(path, submitted.id, ":guardrail:input:0:policy:scan");
+  itSqlite(
+    "blocks the run for reconciliation when a check stopped before its outcome was recorded",
+    async () => {
+      const path = database();
+      const check = vi.fn(async () => undefined);
+      const guardrails = { id: "policy", input: [{ id: "scan", check: check as never }] };
+      const first = vi.fn(async (_request: CompletionRequest) => {
+        throw new Error("provider down");
+      });
+      const runtime = await open(path, agentWith(first, { guardrails }), recorded);
+      const submitted = await runtime.submit({ ...submission, prompt: "hello" });
+      expect((await settled(submitted)).run.status).toBe("failed");
+      await runtime.close();
+      runtimes.splice(runtimes.indexOf(runtime), 1);
+      leaveStarted(path, submitted.id, ":guardrail:input:0:policy:scan");
 
-    const second = vi.fn(async (_request: CompletionRequest) => done());
-    const reopened = await open(path, agentWith(second, { guardrails }), recorded);
-    await (await reopened.getRun(submitted.id)).retry();
-    const snapshot = await settled(await reopened.getRun(submitted.id));
-    expect(snapshot.run.status).toBe("needs_attention");
-    expect(snapshot.run.error).toContain("was interrupted before its outcome was recorded");
-    expect(second).not.toHaveBeenCalled();
-    expect(check).toHaveBeenCalledTimes(1);
-  });
+      const second = vi.fn(async (_request: CompletionRequest) => done());
+      const reopened = await open(path, agentWith(second, { guardrails }), recorded);
+      await (await reopened.getRun(submitted.id)).retry();
+      const snapshot = await settled(await reopened.getRun(submitted.id));
+      expect(snapshot.run.status).toBe("needs_attention");
+      expect(snapshot.run.error).toContain("was interrupted before its outcome was recorded");
+      expect(second).not.toHaveBeenCalled();
+      expect(check).toHaveBeenCalledTimes(1);
+    },
+  );
 
-  it("records an interrupted observe-mode check as an error and lets the run continue", async () => {
-    const path = database();
-    const check = vi.fn(async () => undefined);
-    const guardrails = {
-      id: "policy",
-      mode: "observe" as const,
-      input: [{ id: "scan", check: check as never }],
-    };
-    const first = vi.fn(async (_request: CompletionRequest) => {
-      throw new Error("provider down");
-    });
-    const runtime = await open(path, agentWith(first, { guardrails }), recorded);
-    const submitted = await runtime.submit({ ...submission, prompt: "hello" });
-    expect((await settled(submitted)).run.status).toBe("failed");
-    await runtime.close();
-    runtimes.splice(runtimes.indexOf(runtime), 1);
-    leaveStarted(path, submitted.id, ":guardrail:input:0:policy:scan");
+  itSqlite(
+    "records an interrupted observe-mode check as an error and lets the run continue",
+    async () => {
+      const path = database();
+      const check = vi.fn(async () => undefined);
+      const guardrails = {
+        id: "policy",
+        mode: "observe" as const,
+        input: [{ id: "scan", check: check as never }],
+      };
+      const first = vi.fn(async (_request: CompletionRequest) => {
+        throw new Error("provider down");
+      });
+      const runtime = await open(path, agentWith(first, { guardrails }), recorded);
+      const submitted = await runtime.submit({ ...submission, prompt: "hello" });
+      expect((await settled(submitted)).run.status).toBe("failed");
+      await runtime.close();
+      runtimes.splice(runtimes.indexOf(runtime), 1);
+      leaveStarted(path, submitted.id, ":guardrail:input:0:policy:scan");
 
-    const second = vi.fn(async (_request: CompletionRequest) => done());
-    const reopened = await open(path, agentWith(second, { guardrails }), recorded);
-    await (await reopened.getRun(submitted.id)).retry();
-    expect((await settled(await reopened.getRun(submitted.id))).run.status).toBe("completed");
-    expect(second).toHaveBeenCalledTimes(1);
-    expect(check).toHaveBeenCalledTimes(1);
-  });
+      const second = vi.fn(async (_request: CompletionRequest) => done());
+      const reopened = await open(path, agentWith(second, { guardrails }), recorded);
+      await (await reopened.getRun(submitted.id)).retry();
+      expect((await settled(await reopened.getRun(submitted.id))).run.status).toBe("completed");
+      expect(second).toHaveBeenCalledTimes(1);
+      expect(check).toHaveBeenCalledTimes(1);
+    },
+  );
 });

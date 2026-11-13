@@ -16,7 +16,7 @@ export function taskInvocation(
   task: TaskRecord,
   definitions: ReadonlyMap<string, RegisteredTask>,
   controller: AbortController,
-  changed: () => void,
+  changed: () => Promise<void>,
   spawnAgent: (
     tx: DurableTransaction,
     parent: TaskRecord,
@@ -124,13 +124,13 @@ export function taskInvocation(
       const child = await transaction(async (tx) =>
         createTask(tx, registered, input, task.sessionId, key, task.id),
       );
-      changed();
+      await changed();
       return child.id;
     },
     spawnAgent: async (key, input) => {
       await assertActive();
       const id = await transaction((tx) => spawnAgent(tx, task, key, input));
-      changed();
+      await changed();
       return id;
     },
     children: async () => {

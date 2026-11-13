@@ -9,6 +9,7 @@ import { z } from "zod";
 import { DurableRuntime, defineTask, type DurableGraphSubmission } from "../src/index.js";
 import { SqliteDurableStore } from "../src/sqlite.js";
 import { Agent, capabilities, done, makeAgent, response } from "./helpers.js";
+import { itSqlite } from "./helpers/backend.js";
 
 /** Over the 64 KiB inline threshold, so every reader below reads it back from the blob table. */
 const big = "result-".repeat(20_000);
@@ -70,86 +71,89 @@ it("passes an oversized graph dependency result, intact, into the downstream pro
   expect(model).toHaveBeenCalledTimes(2);
 });
 
-it("replays an interrupted model call whose journal input is stored inline, as schema version 9 did", async () => {
-  // A model call that never returns is in flight when the runtime closes. On reopen it is re-run
-  // in the same epoch, so its saved input is compared with the new request. The saved input is
-  // rewritten here to the inline form that version 9 stored; the comparison must still match.
-  const path = database();
-  const context = [{ id: "doc-1", text: big }];
-  const hangs = new Agent({
-    id: "researcher",
-    context,
-    model: {
-      provider: "test",
-      modelId: "test",
-      capabilities,
-      completion: (_request, options) =>
-        new Promise((_resolve, reject) => {
-          options?.abortSignal?.addEventListener("abort", () =>
-            reject(new Error("Interrupted by close.")),
-          );
-        }),
-    },
-  });
-  const runtime = await open(path, hangs);
-  const run = await runtime.submit({
-    agentId: "researcher",
-    sessionId: "session",
-    requestId: "inline-replay",
-    prompt: "hello",
-  });
-  await vi.waitFor(async () => {
-    const db = new DatabaseSync(path, { readOnly: true });
-    try {
-      const rows = db.prepare("SELECT record FROM anvia_durable_operations").all() as Array<{
-        record: string;
-      }>;
-      expect(rows.some((row) => row.record.includes('"status":"started"'))).toBe(true);
-    } finally {
-      db.close();
-    }
-  });
-  await runtime.close();
+itSqlite(
+  "replays an interrupted model call whose journal input is stored inline, as schema version 9 did",
+  async () => {
+    // A model call that never returns is in flight when the runtime closes. On reopen it is re-run
+    // in the same epoch, so its saved input is compared with the new request. The saved input is
+    // rewritten here to the inline form that version 9 stored; the comparison must still match.
+    const path = database();
+    const context = [{ id: "doc-1", text: big }];
+    const hangs = new Agent({
+      id: "researcher",
+      context,
+      model: {
+        provider: "test",
+        modelId: "test",
+        capabilities,
+        completion: (_request, options) =>
+          new Promise((_resolve, reject) => {
+            options?.abortSignal?.addEventListener("abort", () =>
+              reject(new Error("Interrupted by close.")),
+            );
+          }),
+      },
+    });
+    const runtime = await open(path, hangs);
+    const run = await runtime.submit({
+      agentId: "researcher",
+      sessionId: "session",
+      requestId: "inline-replay",
+      prompt: "hello",
+    });
+    await vi.waitFor(async () => {
+      const db = new DatabaseSync(path, { readOnly: true });
+      try {
+        const rows = db.prepare("SELECT record FROM anvia_durable_operations").all() as Array<{
+          record: string;
+        }>;
+        expect(rows.some((row) => row.record.includes('"status":"started"'))).toBe(true);
+      } finally {
+        db.close();
+      }
+    });
+    await runtime.close();
 
-  const db = new DatabaseSync(path);
-  const blobs = blobStatements(db);
-  const rows = db
-    .prepare("SELECT run_id, key, record FROM anvia_durable_operations WHERE run_id = ?")
-    .all(run.id) as Array<{ run_id: string; key: string; record: string }>;
-  const modelRows = rows.filter(
-    (row) => (JSON.parse(row.record) as { kind: string }).kind === "model",
-  );
-  expect(modelRows.length).toBeGreaterThan(0);
-  // The stored form must really be externalized, or this test proves nothing.
-  expect(modelRows.some((row) => row.record.includes("anvia:blob"))).toBe(true);
-  for (const row of modelRows) {
-    const record = JSON.parse(row.record) as { input: JsonValue };
-    const inline = hydrateValue(blobs, record.input);
-    db.prepare("UPDATE anvia_durable_operations SET record = ? WHERE run_id = ? AND key = ?").run(
-      JSON.stringify({ ...record, input: inline }),
-      row.run_id,
-      row.key,
+    const db = new DatabaseSync(path);
+    const blobs = blobStatements(db);
+    const rows = db
+      .prepare("SELECT run_id, key, record FROM anvia_durable_operations WHERE run_id = ?")
+      .all(run.id) as Array<{ run_id: string; key: string; record: string }>;
+    const modelRows = rows.filter(
+      (row) => (JSON.parse(row.record) as { kind: string }).kind === "model",
     );
-  }
-  db.close();
+    expect(modelRows.length).toBeGreaterThan(0);
+    // The stored form must really be externalized, or this test proves nothing.
+    expect(modelRows.some((row) => row.record.includes("anvia:blob"))).toBe(true);
+    for (const row of modelRows) {
+      const record = JSON.parse(row.record) as { input: JsonValue };
+      const inline = hydrateValue(blobs, record.input);
+      db.prepare("UPDATE anvia_durable_operations SET record = ? WHERE run_id = ? AND key = ?").run(
+        JSON.stringify({ ...record, input: inline }),
+        row.run_id,
+        row.key,
+      );
+    }
+    db.close();
 
-  const finished = new Agent({
-    id: "researcher",
-    context,
-    model: {
-      provider: "test",
-      modelId: "test",
-      capabilities,
-      completion: async () => done(),
-    },
-  });
-  const restarted = await open(path, finished);
-  await restarted.resume();
-  const restored = await restarted.getRun(run.id);
-  const outcome = await restored.result();
-  expect(outcome.text).toBe("done");
-  expect((await restored.snapshot()).run.status).toBe("completed");
-});
+    const finished = new Agent({
+      id: "researcher",
+      context,
+      model: {
+        provider: "test",
+        modelId: "test",
+        capabilities,
+        completion: async () => done(),
+      },
+    });
+    const restarted = await open(path, finished);
+    await restarted.resume();
+    const restored = await restarted.getRun(run.id);
+    const outcome = await restored.result();
+    expect(outcome.text).toBe("done");
+    expect((await restored.snapshot()).run.status).toBe("completed");
+  },
+);
 
 it("hands an oversized owned-agent output to its parent task intact", async () => {
   const parent = defineTask({

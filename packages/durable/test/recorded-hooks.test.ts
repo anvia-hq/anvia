@@ -10,6 +10,7 @@ import type { AgentHook } from "@anvia/core/internal/agent";
 import { DurableRuntime, type DurableAgentRegistration, type DurableRun } from "../src/index.js";
 import { SqliteDurableStore } from "../src/sqlite.js";
 import { done, hasToolResult, lookup, makeAgent, toolResponse } from "./helpers.js";
+import { itSqlite } from "./helpers/backend.js";
 
 const children: ChildProcess[] = [];
 const runtimes: DurableRuntime[] = [];
@@ -201,31 +202,39 @@ async function crash(crashAt: "hook" | "model") {
 }
 
 describe("recorded control hooks after SIGKILL", () => {
-  it("reuses the recorded decision without calling the hook again", async () => {
-    const { id, database, effects } = await crash("model");
-    expect(readFileSync(effects, "utf8")).toBe("hook\n");
-    const onToolCall = vi.fn(({ tool }: Parameters<NonNullable<AgentHook["onToolCall"]>>[0]) =>
-      tool.cancel("the hook must not run again"),
-    );
-    const { runtime, tool } = await open({ onToolCall }, undefined, { path: database });
-    await runtime.resume();
-    const run = await runtime.getRun(id);
-    expect(await run.result()).toMatchObject({ output: "done" });
-    expect(onToolCall).not.toHaveBeenCalled();
-    expect(tool).not.toHaveBeenCalled();
-    expect(readFileSync(effects, "utf8")).toBe("hook\n");
-  }, 15000);
+  itSqlite(
+    "reuses the recorded decision without calling the hook again",
+    async () => {
+      const { id, database, effects } = await crash("model");
+      expect(readFileSync(effects, "utf8")).toBe("hook\n");
+      const onToolCall = vi.fn(({ tool }: Parameters<NonNullable<AgentHook["onToolCall"]>>[0]) =>
+        tool.cancel("the hook must not run again"),
+      );
+      const { runtime, tool } = await open({ onToolCall }, undefined, { path: database });
+      await runtime.resume();
+      const run = await runtime.getRun(id);
+      expect(await run.result()).toMatchObject({ output: "done" });
+      expect(onToolCall).not.toHaveBeenCalled();
+      expect(tool).not.toHaveBeenCalled();
+      expect(readFileSync(effects, "utf8")).toBe("hook\n");
+    },
+    15000,
+  );
 
-  it("does not run a hook that stopped before recording; the run needs attention", async () => {
-    const { id, database } = await crash("hook");
-    const onToolCall = vi.fn(() => undefined);
-    const { runtime, tool } = await open({ onToolCall }, undefined, { path: database });
-    await runtime.resume();
-    const run = await runtime.getRun(id);
-    await status(run, "needs_attention");
-    const snapshot = await run.snapshot();
-    expect(snapshot.run.blockedOperation).toMatch(/:hook:onToolCall:0:call-1$/);
-    expect(onToolCall).not.toHaveBeenCalled();
-    expect(tool).not.toHaveBeenCalled();
-  }, 15000);
+  itSqlite(
+    "does not run a hook that stopped before recording; the run needs attention",
+    async () => {
+      const { id, database } = await crash("hook");
+      const onToolCall = vi.fn(() => undefined);
+      const { runtime, tool } = await open({ onToolCall }, undefined, { path: database });
+      await runtime.resume();
+      const run = await runtime.getRun(id);
+      await status(run, "needs_attention");
+      const snapshot = await run.snapshot();
+      expect(snapshot.run.blockedOperation).toMatch(/:hook:onToolCall:0:call-1$/);
+      expect(onToolCall).not.toHaveBeenCalled();
+      expect(tool).not.toHaveBeenCalled();
+    },
+    15000,
+  );
 });

@@ -36,6 +36,9 @@ export class DurableRun {
       throw new TypeError("Event cursor is ahead of the store.");
     while (true) {
       options.abortSignal?.throwIfAborted();
+      // Read the status first: a terminal status is committed with its last event, so events read
+      // after it are complete. Reading in the other order could miss a final event.
+      const run = await this.status();
       const events = await this.runtime.events(this.id, cursor);
       for (const event of events) {
         options.abortSignal?.throwIfAborted();
@@ -43,7 +46,6 @@ export class DurableRun {
         yield event;
       }
       if (events.length > 0) continue;
-      const run = await this.status();
       if (run.status === "completed" || run.status === "failed" || run.status === "cancelled")
         return;
       await delay(options.abortSignal);

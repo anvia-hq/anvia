@@ -15,6 +15,7 @@ import type { DurableRun } from "../src/run.js";
 import { SqliteDurableStore } from "../src/sqlite.js";
 import { FileMemoryStore } from "./fixtures/file-memory-store.js";
 import { capabilities, done, lookup, toolResponse } from "./helpers.js";
+import { itSqlite } from "./helpers/backend.js";
 
 type AnyAgent = DurableAgentRegistration["agent"];
 
@@ -645,7 +646,7 @@ async function recover(path: string, memoryPath: string, id: string) {
   return { store, model, run: await runtime.getRun(id) };
 }
 
-it.each([
+itSqlite.each([
   ["before-commit", 0],
   ["after-commit", 2],
 ] as const)(

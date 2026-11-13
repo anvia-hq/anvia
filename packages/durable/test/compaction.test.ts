@@ -29,6 +29,7 @@ import {
   makeStreamingAgent,
   toolResponse,
 } from "./helpers.js";
+import { itSqlite } from "./helpers/backend.js";
 
 const runtimes: DurableRuntime[] = [];
 const directories: string[] = [];
@@ -306,7 +307,7 @@ it("compacts streaming registrations before persisting model deltas", async () =
   ).toBe(true);
 });
 
-it.each(["summary", "model"])(
+itSqlite.each(["summary", "model"])(
   "recovers after SIGKILL during %s without losing canonical history",
   async (stage) => {
     const dir = directory();
@@ -492,30 +493,33 @@ it("rolls back the summary, usage, event and prepared input together on a storag
   expect((await recovered.snapshot()).run.usage.totalTokens).toBe(10);
 });
 
-it("preserves compaction checkpoints and complete history through backup and restore", async () => {
-  const dir = directory();
-  const path = join(dir, "live.sqlite");
-  const compactor = summarize();
-  const registration = {
-    agent: makeAgent(async () => done()),
-    version: "1",
-    compaction: { ...policy(compactor), retention: { recentTurns: 0 } },
-  };
-  const runtime = await open(registration, path);
-  await turn(runtime, "1");
-  const run = await turn(runtime, "2");
-  const before = await run.snapshot();
-  await runtime.close();
-  const archive = join(dir, "backup.sqlite");
-  const restored = join(dir, "restored.sqlite");
-  expect((await backupSqlite(path, archive)).schemaVersion).toBe(12);
-  expect((await restoreSqlite(archive, restored)).schemaVersion).toBe(12);
-  const reopened = await open(registration, restored);
-  expect(await (await reopened.getRun(run.id)).snapshot()).toEqual(before);
-  const next = await turn(reopened, "3");
-  expect((await next.snapshot()).run.history).toHaveLength(4);
-  expect((await next.snapshot()).run.contextCheckpoint?.compactedMessageCount).toBe(4);
-});
+itSqlite(
+  "preserves compaction checkpoints and complete history through backup and restore",
+  async () => {
+    const dir = directory();
+    const path = join(dir, "live.sqlite");
+    const compactor = summarize();
+    const registration = {
+      agent: makeAgent(async () => done()),
+      version: "1",
+      compaction: { ...policy(compactor), retention: { recentTurns: 0 } },
+    };
+    const runtime = await open(registration, path);
+    await turn(runtime, "1");
+    const run = await turn(runtime, "2");
+    const before = await run.snapshot();
+    await runtime.close();
+    const archive = join(dir, "backup.sqlite");
+    const restored = join(dir, "restored.sqlite");
+    expect((await backupSqlite(path, archive)).schemaVersion).toBe(12);
+    expect((await restoreSqlite(archive, restored)).schemaVersion).toBe(12);
+    const reopened = await open(registration, restored);
+    expect(await (await reopened.getRun(run.id)).snapshot()).toEqual(before);
+    const next = await turn(reopened, "3");
+    expect((await next.snapshot()).run.history).toHaveLength(4);
+    expect((await next.snapshot()).run.contextCheckpoint?.compactedMessageCount).toBe(4);
+  },
+);
 
 it("accepts the built-in core summary compactor without agent memory", async () => {
   const summaryModel = vi.fn(async () => done());

@@ -30,6 +30,7 @@ import {
   makeStreamingAgent,
   toolResponse,
 } from "./helpers.js";
+import { itSqlite } from "./helpers/backend.js";
 
 const large = "payload".repeat(1000);
 const submission = {
@@ -212,7 +213,7 @@ it.each([false, true])(
   },
 );
 
-it.each(["summary", "prepared", "model"])(
+itSqlite.each(["summary", "prepared", "model"])(
   "recovers after SIGKILL during %s without changing a committed projection or usage",
   async (stage) => {
     const dir = directory();
@@ -365,7 +366,7 @@ it("rolls back projected context, usage, and progress together on a journal fail
   expect((await handle.snapshot()).run.usage.totalTokens).toBe(13);
 });
 
-it("preserves legacy pending requests when upgrading schema five", async () => {
+itSqlite("preserves legacy pending requests when upgrading schema five", async () => {
   const path = join(directory(), "legacy.sqlite");
   let calls = 0;
   const requests: CompletionRequest[] = [];
@@ -401,7 +402,7 @@ it("preserves legacy pending requests when upgrading schema five", async () => {
   ).toBe(false);
 });
 
-it("backs up and restores per-call projections with their usage and progress", async () => {
+itSqlite("backs up and restores per-call projections with their usage and progress", async () => {
   const dir = directory();
   const path = join(dir, "runs.sqlite");
   let calls = 0;

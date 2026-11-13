@@ -19,7 +19,16 @@ const digest = (value: string) => createHash("sha256").update(value).digest("hex
  * Writes share the operation's transaction: a committed reference can never be dangling.
  * JSON text (including object key order) is retained exactly, without semantic normalization.
  */
-export function messageLog(database: DatabaseSync) {
+export type MessageBackend = {
+  putMessage(hash: string, record: string): void;
+  putHistory(hash: string, previous: string | null, message: string): void;
+  getHistory(
+    hash: string,
+  ): { previous: string | null; message: string; record: string } | undefined;
+};
+
+/** Message-log rows of one SQLite database, read and written synchronously. */
+export function sqliteMessageBackend(database: DatabaseSync): MessageBackend {
   const putMessage = database.prepare(
     "INSERT OR IGNORE INTO anvia_durable_messages(hash, record) VALUES (?, ?)",
   );
@@ -30,16 +39,32 @@ export function messageLog(database: DatabaseSync) {
     `SELECT h.previous, h.message, m.record FROM anvia_durable_histories h
      JOIN anvia_durable_messages m ON m.hash = h.message WHERE h.hash = ?`,
   );
+  return {
+    putMessage: (hash, record) => void putMessage.run(hash, record),
+    putHistory: (hash, previous, message) => void putHistory.run(hash, previous, message),
+    getHistory: (hash) => {
+      const row = getHistory.get(hash);
+      return row === undefined
+        ? undefined
+        : {
+            previous: row.previous === null ? null : String(row.previous),
+            message: String(row.message),
+            record: String(row.record),
+          };
+    },
+  };
+}
 
+export function messageLog(backend: MessageBackend) {
   function pack(messages: JsonValue): JsonValue {
     if (!Array.isArray(messages)) throw new Error("Invalid operation history.");
     let head: string | null = null;
     for (const message of messages) {
       const record = writeStored(message);
       const hash = digest(record);
-      putMessage.run(hash, record);
+      backend.putMessage(hash, record);
       const next = digest(JSON.stringify([head, hash]));
-      putHistory.run(next, head, hash);
+      backend.putHistory(next, head, hash);
       head = next;
     }
     return { head, length: messages.length };
@@ -60,7 +85,7 @@ export function messageLog(database: DatabaseSync) {
     let head = ref.head;
     for (let index = 0; index < Number(ref.length); index++) {
       if (typeof head !== "string") throw new Error("Truncated operation history.");
-      const row = getHistory.get(head);
+      const row = backend.getHistory(head);
       if (row === undefined) throw new Error("Missing operation history content.");
       if (
         digest(String(row.record)) !== row.message ||
@@ -68,7 +93,7 @@ export function messageLog(database: DatabaseSync) {
       )
         throw new Error("Corrupt operation history content.");
       messages.push(readStored(String(row.record)));
-      head = row.previous as string | null;
+      head = row.previous;
     }
     if (head !== null) throw new Error("Invalid operation history length.");
     return messages.reverse();

@@ -48,7 +48,11 @@
   "devDependencies": {
     "@anvia/core": "workspace:*",
     "@anvia/memory-sqlite": "workspace:*",
+    "@electric-sql/pglite": "^0.5.16",
     "@types/node": "^24.12.2",
+    "@types/pg": "^8.23.1",
+    "drizzle-orm": "^0.45.4",
+    "pg": "^8.23.1",
     "tsdown": "^0.23.4",
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",

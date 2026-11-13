@@ -23,6 +23,7 @@ import {
   response,
   toolResponse,
 } from "./helpers.js";
+import { itSqlite } from "./helpers/backend.js";
 
 const runtimes: DurableRuntime[] = [];
 const directories: string[] = [];
@@ -357,51 +358,55 @@ it("never checkpoints an invalid structured streamed response", async () => {
   expect((await events(run)).some((event) => event.type === "model_completed")).toBe(false);
 });
 
-it("recovers persisted partial tokens and completed tools after SIGKILL", async () => {
-  const path = database();
-  const effects = `${path}.effects`;
-  const child = fork(
-    fileURLToPath(new URL("./fixtures/stream-worker.ts", import.meta.url)),
-    [path, effects],
-    {
-      execArgv: ["--import", import.meta.resolve("tsx")],
-      stdio: ["ignore", "ignore", "pipe", "ipc"],
-    },
-  );
-  children.push(child);
-  let stderr = "";
-  child.stderr!.on("data", (chunk) => {
-    stderr += String(chunk);
-  });
-  const { id } = await new Promise<{ id: string }>((resolve, reject) => {
-    child.once("message", (message) => resolve(message as { id: string }));
-    child.once("error", reject);
-    child.once("exit", () => reject(new Error(`Worker exited before checkpoint: ${stderr}`)));
-  });
-  const exited = once(child, "exit");
-  child.kill("SIGKILL");
-  await exited;
-  const tool = vi.fn(async () => "saved result");
-  const { agent, stream, completion } = streamingAgent(textStream, [lookup(tool)]);
-  const runtime = await open(agent, path);
-  await runtime.resume();
-  const run = await runtime.getRun(id);
-  expect(await run.result()).toMatchObject({ output: "done" });
-  await expectJournalRequests(runtime, run.id);
-  const saved = await events(run);
-  const partial = saved.find(
-    (event) => event.type === "model_delta" && JSON.stringify(event.data).includes("partial"),
-  );
-  expect(partial).toBeDefined();
-  const completed = saved.filter((event) => event.type === "model_completed").at(-1)!;
-  expect((partial!.data as { attemptId: string }).attemptId).not.toBe(
-    (completed.data as { attemptId: string }).attemptId,
-  );
-  expect(stream).toHaveBeenCalledTimes(1);
-  expect(tool).not.toHaveBeenCalled();
-  expect(completion).not.toHaveBeenCalled();
-  expect(readFileSync(effects, "utf8")).toBe("effect\n");
-}, 15000);
+itSqlite(
+  "recovers persisted partial tokens and completed tools after SIGKILL",
+  async () => {
+    const path = database();
+    const effects = `${path}.effects`;
+    const child = fork(
+      fileURLToPath(new URL("./fixtures/stream-worker.ts", import.meta.url)),
+      [path, effects],
+      {
+        execArgv: ["--import", import.meta.resolve("tsx")],
+        stdio: ["ignore", "ignore", "pipe", "ipc"],
+      },
+    );
+    children.push(child);
+    let stderr = "";
+    child.stderr!.on("data", (chunk) => {
+      stderr += String(chunk);
+    });
+    const { id } = await new Promise<{ id: string }>((resolve, reject) => {
+      child.once("message", (message) => resolve(message as { id: string }));
+      child.once("error", reject);
+      child.once("exit", () => reject(new Error(`Worker exited before checkpoint: ${stderr}`)));
+    });
+    const exited = once(child, "exit");
+    child.kill("SIGKILL");
+    await exited;
+    const tool = vi.fn(async () => "saved result");
+    const { agent, stream, completion } = streamingAgent(textStream, [lookup(tool)]);
+    const runtime = await open(agent, path);
+    await runtime.resume();
+    const run = await runtime.getRun(id);
+    expect(await run.result()).toMatchObject({ output: "done" });
+    await expectJournalRequests(runtime, run.id);
+    const saved = await events(run);
+    const partial = saved.find(
+      (event) => event.type === "model_delta" && JSON.stringify(event.data).includes("partial"),
+    );
+    expect(partial).toBeDefined();
+    const completed = saved.filter((event) => event.type === "model_completed").at(-1)!;
+    expect((partial!.data as { attemptId: string }).attemptId).not.toBe(
+      (completed.data as { attemptId: string }).attemptId,
+    );
+    expect(stream).toHaveBeenCalledTimes(1);
+    expect(tool).not.toHaveBeenCalled();
+    expect(completion).not.toHaveBeenCalled();
+    expect(readFileSync(effects, "utf8")).toBe("effect\n");
+  },
+  15000,
+);
 
 it("fails oversized delta persistence without retrying the provider", async () => {
   const { agent, stream } = streamingAgent(async function* () {
@@ -500,23 +505,26 @@ it("treats a delta write failure as fatal storage failure and recovers with a ne
   expect(saved.filter((event) => event.type === "model_delta")).toHaveLength(2);
 });
 
-it("preserves persisted deltas and attempt identities through backup and restore", async () => {
-  const path = database();
-  const { agent, stream } = streamingAgent(textStream);
-  const runtime = await open(agent, path);
-  const run = await runtime.submit(submission);
-  await run.result();
-  const saved = await events(run);
-  await runtime.close();
-  const archive = `${path}.backup`;
-  const restored = `${path}.restored`;
-  expect((await backupSqlite(path, archive)).schemaVersion).toBe(12);
-  expect((await restoreSqlite(archive, restored)).schemaVersion).toBe(12);
-  const reopened = await open(agent, restored);
-  await reopened.resume();
-  expect(await events(await reopened.getRun(run.id))).toEqual(saved);
-  expect(stream).toHaveBeenCalledTimes(1);
-});
+itSqlite(
+  "preserves persisted deltas and attempt identities through backup and restore",
+  async () => {
+    const path = database();
+    const { agent, stream } = streamingAgent(textStream);
+    const runtime = await open(agent, path);
+    const run = await runtime.submit(submission);
+    await run.result();
+    const saved = await events(run);
+    await runtime.close();
+    const archive = `${path}.backup`;
+    const restored = `${path}.restored`;
+    expect((await backupSqlite(path, archive)).schemaVersion).toBe(12);
+    expect((await restoreSqlite(archive, restored)).schemaVersion).toBe(12);
+    const reopened = await open(agent, restored);
+    await reopened.resume();
+    expect(await events(await reopened.getRun(run.id))).toEqual(saved);
+    expect(stream).toHaveBeenCalledTimes(1);
+  },
+);
 
 it("keeps a committed streamed response when generation observers fail without retrying the provider", async () => {
   const model = streamingAgent(textStream);

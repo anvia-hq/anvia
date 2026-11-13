@@ -1,4 +1,4 @@
-import { messageLog, messageLogTables } from "./message-log.js";
+import { messageLog, messageLogTables, sqliteMessageBackend } from "./message-log.js";
 import { blobStatements, externalizeRunRecord, type DurableBlobIO, hydrateValue } from "./blob.js";
 import { readStored, writeStored } from "./references.js";
 import { migrateLegacyRows, migrateOversizedPrompts } from "./legacy-rows.js";
@@ -13,6 +13,7 @@ import {
 } from "./tasks/sqlite.js";
 import type { TaskListOptions } from "./tasks/types.js";
 import type { DurableGraphListOptions, DurableGraphPage } from "./graph-types.js";
+import { runSummary } from "./run-summary.js";
 import { SerialGate } from "./serial.js";
 import { promisify, type SyncApi } from "./sync-api.js";
 import { hostname } from "node:os";
@@ -31,7 +32,6 @@ import type {
   DurableListOptions,
   DurableRunPage,
   DurableRunRecord,
-  DurableRunSummary,
   DurableStore,
   DurableTransaction,
 } from "./types.js";
@@ -114,7 +114,7 @@ export class SqliteDurableStore implements DurableStore {
         version?.version !== 12
       )
         throw new Error("Unsupported durable database schema version.");
-      this.histories = messageLog(this.database);
+      this.histories = messageLog(sqliteMessageBackend(this.database));
       this.blobs = blobStatements(this.database);
     } catch (error) {
       this.database.close();
@@ -680,42 +680,4 @@ function processExists(pid: number): boolean {
   } catch (error) {
     return (error as NodeJS.ErrnoException).code !== "ESRCH";
   }
-}
-
-function runSummary(run: DurableRunRecord): DurableRunSummary {
-  const {
-    id,
-    agentId,
-    sessionId,
-    requestId,
-    status,
-    createdAt,
-    updatedAt,
-    error,
-    blockedOperation,
-    nextAttemptAt,
-  } = run;
-  const summary: DurableRunSummary = {
-    id,
-    agentId,
-    sessionId,
-    requestId,
-    status,
-    createdAt,
-    updatedAt,
-  };
-
-  if (error !== undefined) {
-    summary.error = error;
-  }
-
-  if (blockedOperation !== undefined) {
-    summary.blockedOperation = blockedOperation;
-  }
-
-  if (nextAttemptAt !== undefined) {
-    summary.nextAttemptAt = nextAttemptAt;
-  }
-
-  return summary;
 }

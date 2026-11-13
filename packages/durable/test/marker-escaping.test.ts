@@ -10,6 +10,7 @@ import { DurableRuntime } from "../src/index.js";
 import { SqliteDurableStore } from "../src/sqlite.js";
 import type { DurableOperation } from "../src/types.js";
 import { done, hasToolResult, lookup, makeAgent, toolResponse } from "./helpers.js";
+import { itSqlite } from "./helpers/backend.js";
 
 /** User data shaped exactly like the blob markers. No blob with these hashes exists. */
 const missing = "0".repeat(64);
@@ -65,39 +66,42 @@ afterEach(async () => {
 });
 
 describe("user data shaped like blob markers", () => {
-  it("round-trips a tool result and a tool input unchanged, without a missing-blob error", async () => {
-    const path = database();
-    const tool = vi.fn(async () => spoof);
-    const model = vi.fn(async (request: CompletionRequest) =>
-      hasToolResult(request) ? done() : toolResponse(),
-    );
-    const runtime = await open(path, makeAgent(model, [lookup(tool)]));
-    const run = await runtime.submit({
-      agentId: "researcher",
-      sessionId: "session",
-      requestId: "one",
-      prompt: "look it up",
-    });
-    expect(await run.result()).toMatchObject({ type: "response", output: "done" });
-    // The provider saw the tool output exactly as the tool returned it.
-    const second = model.mock.calls[1]![0];
-    expect(JSON.stringify(second.chatHistory)).toContain(JSON.stringify(spoof));
-    expect(JSON.stringify(second.chatHistory.at(-1))).toContain(JSON.stringify(spoof));
-    await runtime.close();
+  itSqlite(
+    "round-trips a tool result and a tool input unchanged, without a missing-blob error",
+    async () => {
+      const path = database();
+      const tool = vi.fn(async () => spoof);
+      const model = vi.fn(async (request: CompletionRequest) =>
+        hasToolResult(request) ? done() : toolResponse(),
+      );
+      const runtime = await open(path, makeAgent(model, [lookup(tool)]));
+      const run = await runtime.submit({
+        agentId: "researcher",
+        sessionId: "session",
+        requestId: "one",
+        prompt: "look it up",
+      });
+      expect(await run.result()).toMatchObject({ type: "response", output: "done" });
+      // The provider saw the tool output exactly as the tool returned it.
+      const second = model.mock.calls[1]![0];
+      expect(JSON.stringify(second.chatHistory)).toContain(JSON.stringify(spoof));
+      expect(JSON.stringify(second.chatHistory.at(-1))).toContain(JSON.stringify(spoof));
+      await runtime.close();
 
-    // After a restart the journal still reads the same data.
-    const reopened = await open(
-      path,
-      makeAgent(async () => done(), [lookup(tool)]),
-    );
-    const restored = await reopened.getRun(run.id);
-    const messages = (await restored.snapshot()).run.outcome?.messages;
-    expect(JSON.stringify(messages)).toContain(JSON.stringify(spoof));
-    // Stored form escapes the reserved keys, so no plain marker key is on disk.
-    const raw = stored(path, "SELECT record FROM anvia_durable_operations");
-    expect(raw.join("\n")).not.toContain('"anvia:blob"');
-    expect(raw.join("\n")).toContain('"~anvia:blob"');
-  });
+      // After a restart the journal still reads the same data.
+      const reopened = await open(
+        path,
+        makeAgent(async () => done(), [lookup(tool)]),
+      );
+      const restored = await reopened.getRun(run.id);
+      const messages = (await restored.snapshot()).run.outcome?.messages;
+      expect(JSON.stringify(messages)).toContain(JSON.stringify(spoof));
+      // Stored form escapes the reserved keys, so no plain marker key is on disk.
+      const raw = stored(path, "SELECT record FROM anvia_durable_operations");
+      expect(raw.join("\n")).not.toContain('"anvia:blob"');
+      expect(raw.join("\n")).toContain('"~anvia:blob"');
+    },
+  );
 
   it("round-trips a user message whose metadata uses the durableBlobs shape", async () => {
     const path = database();
@@ -160,7 +164,7 @@ describe("user data shaped like blob markers", () => {
 });
 
 describe("rows written before schema version 11", () => {
-  it("reads legacy user data unchanged and keeps real references", async () => {
+  itSqlite("reads legacy user data unchanged and keeps real references", async () => {
     const path = database();
     const big = { text: "legacy-".repeat(20_000) }; // over the inline threshold
     const store = new SqliteDurableStore(path);

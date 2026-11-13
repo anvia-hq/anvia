@@ -48,7 +48,7 @@ export class TaskScheduler {
     private readonly mcpServers: ReadonlyMap<string, DurableMcpServers>,
     private readonly toolIndexes: ReadonlyMap<string, DurableToolIndexes>,
     private readonly agentActive: (id: string) => boolean,
-    private readonly syncAgents: (root: string) => void,
+    private readonly syncAgents: (root: string) => Promise<void>,
   ) {}
 
   get activeCount(): number {
@@ -252,7 +252,7 @@ export class TaskScheduler {
       if (result.deadline === undefined) this.deadlines.delete(root);
       else this.deadlines.set(root, result.deadline);
     }
-    this.syncAgents(root);
+    await this.syncAgents(root);
   }
 
   private async pump(): Promise<void> {
@@ -346,7 +346,7 @@ export class TaskScheduler {
       this.definitions,
       controller,
       async () => {
-        this.syncAgents(task.rootId);
+        await this.syncAgents(task.rootId);
         await this.pump();
       },
       async (tx, parent, key, input) =>

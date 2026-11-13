@@ -45,21 +45,23 @@ type PathMarker = { path: string; hash: string; bytes: number };
 
 const byteLength = (value: string): number => Buffer.byteLength(value, "utf8");
 
-/** Prepared blob statements for one database. Mirrors the message-log pattern. */
-export function blobStatements(database: DatabaseSync): DurableBlobIO {
-  const put = database.prepare(
-    "INSERT OR IGNORE INTO anvia_durable_blobs(hash, bytes, record) VALUES (?, ?, ?)",
-  );
-  const get = database.prepare("SELECT bytes, record FROM anvia_durable_blobs WHERE hash = ?");
+/** Where blob rows live. SQLite reads and writes synchronously; async stores stage them. */
+export type BlobBackend = {
+  put(hash: string, bytes: number, record: string): void;
+  get(hash: string): { bytes: number; record: string } | undefined;
+};
+
+/** Blob channel over a backend. Mirrors the message-log pattern. */
+export function blobIO(backend: BlobBackend): DurableBlobIO {
   return {
     putBlob(value) {
       const record = canonicalJson(value);
       const hash = createHash("sha256").update(record).digest("hex");
-      put.run(hash, byteLength(record), record);
+      backend.put(hash, byteLength(record), record);
       return hash;
     },
     getBlob(hash) {
-      const row = get.get(hash);
+      const row = backend.get(hash);
       if (row === undefined) throw new Error("Missing durable blob content.");
       const record = String(row.record);
       if (byteLength(record) !== Number(row.bytes)) throw new Error("Corrupt durable blob record.");
@@ -68,6 +70,23 @@ export function blobStatements(database: DatabaseSync): DurableBlobIO {
       return JSON.parse(record) as JsonValue;
     },
   };
+}
+
+/** Prepared blob statements for one SQLite database. */
+export function blobStatements(database: DatabaseSync): DurableBlobIO {
+  const put = database.prepare(
+    "INSERT OR IGNORE INTO anvia_durable_blobs(hash, bytes, record) VALUES (?, ?, ?)",
+  );
+  const get = database.prepare("SELECT bytes, record FROM anvia_durable_blobs WHERE hash = ?");
+  return blobIO({
+    put: (hash, bytes, record) => void put.run(hash, bytes, record),
+    get: (hash) => {
+      const row = get.get(hash);
+      return row === undefined
+        ? undefined
+        : { bytes: Number(row.bytes), record: String(row.record) };
+    },
+  });
 }
 
 function marker(value: JsonValue): BlobMarker {

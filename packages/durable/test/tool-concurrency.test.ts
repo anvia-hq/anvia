@@ -11,6 +11,7 @@ import type { AnyTool } from "@anvia/core/tool";
 import { DurableRuntime, type DurableAgentRegistration } from "../src/index.js";
 import { SqliteDurableStore } from "../src/sqlite.js";
 import { done, hasToolResult, makeAgent, response } from "./helpers.js";
+import { itSqlite } from "./helpers/backend.js";
 
 const runtimes: DurableRuntime[] = [];
 afterEach(async () => {
@@ -99,62 +100,66 @@ it("rejects an invalid toolConcurrency", async () => {
   }
 });
 
-it("recovers a SIGKILL in the middle of a concurrent turn without repeating committed tools", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "anvia-durable-parallel-"));
-  const database = join(directory, "runs.sqlite");
-  const effects = join(directory, "effects.txt");
-  const child = fork(
-    fileURLToPath(new URL("./fixtures/parallel-crash-worker.ts", import.meta.url)),
-    [database, effects],
-    {
-      execArgv: ["--import", import.meta.resolve("tsx")],
-      stdio: ["ignore", "ignore", "pipe", "ipc"],
-    },
-  );
-  try {
-    let stderr = "";
-    child.stderr!.on("data", (chunk) => {
-      stderr += String(chunk);
-    });
-    const { id } = await new Promise<{ id: string }>((resolve, reject) => {
-      child.once("message", (message) => resolve(message as { id: string }));
-      child.once("exit", () => reject(new Error(`Worker exited early: ${stderr}`)));
-    });
-    const exited = once(child, "exit");
-    child.kill("SIGKILL");
-    await exited;
-    expect(readFileSync(effects, "utf8").split("\n").sort()).toEqual(["", "fast", "stuck"]);
-
-    const model = vi.fn(async (request: CompletionRequest) =>
-      hasToolResult(request) ? done() : parallelCalls(),
+itSqlite(
+  "recovers a SIGKILL in the middle of a concurrent turn without repeating committed tools",
+  async () => {
+    const directory = mkdtempSync(join(tmpdir(), "anvia-durable-parallel-"));
+    const database = join(directory, "runs.sqlite");
+    const effects = join(directory, "effects.txt");
+    const child = fork(
+      fileURLToPath(new URL("./fixtures/parallel-crash-worker.ts", import.meta.url)),
+      [database, effects],
+      {
+        execArgv: ["--import", import.meta.resolve("tsx")],
+        stdio: ["ignore", "ignore", "pipe", "ipc"],
+      },
     );
-    const runtime = await DurableRuntime.open({
-      store: new SqliteDurableStore(database),
-      agents: [
-        {
-          agent: makeAgent(
-            model,
-            tools(effects, () => {}),
-          ),
-          version: "1",
-          toolConcurrency: 2,
-          toolRecovery: recovery,
-        },
-      ],
-    });
-    runtimes.push(runtime);
-    await runtime.resume();
-    expect(await (await runtime.getRun(id)).result()).toMatchObject({ output: "done" });
-    // The committed `fast` call is replayed from the journal; only `stuck` runs again.
-    expect(readFileSync(effects, "utf8").split("\n").sort()).toEqual([
-      "",
-      "fast",
-      "stuck",
-      "stuck",
-    ]);
-    expect(model).toHaveBeenCalledTimes(1);
-  } finally {
-    if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
-    rmSync(directory, { recursive: true, force: true });
-  }
-}, 20000);
+    try {
+      let stderr = "";
+      child.stderr!.on("data", (chunk) => {
+        stderr += String(chunk);
+      });
+      const { id } = await new Promise<{ id: string }>((resolve, reject) => {
+        child.once("message", (message) => resolve(message as { id: string }));
+        child.once("exit", () => reject(new Error(`Worker exited early: ${stderr}`)));
+      });
+      const exited = once(child, "exit");
+      child.kill("SIGKILL");
+      await exited;
+      expect(readFileSync(effects, "utf8").split("\n").sort()).toEqual(["", "fast", "stuck"]);
+
+      const model = vi.fn(async (request: CompletionRequest) =>
+        hasToolResult(request) ? done() : parallelCalls(),
+      );
+      const runtime = await DurableRuntime.open({
+        store: new SqliteDurableStore(database),
+        agents: [
+          {
+            agent: makeAgent(
+              model,
+              tools(effects, () => {}),
+            ),
+            version: "1",
+            toolConcurrency: 2,
+            toolRecovery: recovery,
+          },
+        ],
+      });
+      runtimes.push(runtime);
+      await runtime.resume();
+      expect(await (await runtime.getRun(id)).result()).toMatchObject({ output: "done" });
+      // The committed `fast` call is replayed from the journal; only `stuck` runs again.
+      expect(readFileSync(effects, "utf8").split("\n").sort()).toEqual([
+        "",
+        "fast",
+        "stuck",
+        "stuck",
+      ]);
+      expect(model).toHaveBeenCalledTimes(1);
+    } finally {
+      if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+      rmSync(directory, { recursive: true, force: true });
+    }
+  },
+  20000,
+);

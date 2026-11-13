@@ -255,7 +255,16 @@ export class TaskScheduler {
     await this.syncAgents(root);
   }
 
-  private async pump(): Promise<void> {
+  /** Pumps run one at a time: scheduling reads the store, so overlapping pumps could launch one task twice. */
+  private pump(): Promise<void> {
+    const next = this.pumpTail.then(() => this.pumpOnce());
+    this.pumpTail = next.catch(() => undefined);
+    return next;
+  }
+
+  private pumpTail: Promise<void> = Promise.resolve();
+
+  private async pumpOnce(): Promise<void> {
     if (this.closing) return;
     clearTimeout(this.timer);
     for (const [root, deadline] of this.deadlines)
@@ -263,7 +272,7 @@ export class TaskScheduler {
     const capacity = this.capacity - this.active.size;
     if (capacity > 0)
       for (const id of await this.store.scheduleTasks([...this.active.keys()], capacity))
-        this.launch(id);
+        if (!this.active.has(id)) this.launch(id);
     if (this.deadlines.size > 0) {
       const deadline = Math.min(...this.deadlines.values());
       this.timer = setTimeout(

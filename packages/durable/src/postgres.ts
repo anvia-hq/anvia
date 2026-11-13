@@ -41,6 +41,10 @@ export function postgresDriver(connection: PostgresStoreConnection): SqlDriver {
   const owned = connection.pool === undefined;
   const pool: PostgresPoolLike =
     connection.pool ?? new pg.Pool({ connectionString: connection.connectionString });
+  // An idle pooled client can error (server restart, network drop); without a listener that
+  // would crash the process. The next query on the pool surfaces the failure instead.
+  if (owned)
+    (pool as { on?: (event: "error", listener: () => void) => unknown }).on?.("error", () => {});
   const run = (client: Pick<PostgresPoolLike, "query">): SqlQuery => {
     return async (text, params = []) => (await client.query(text, [...params])).rows;
   };

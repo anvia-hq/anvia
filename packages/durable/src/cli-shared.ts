@@ -1,5 +1,13 @@
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 export type CliIo = {
   log(message: string): void;
@@ -185,5 +193,11 @@ function stripGenerated(spec: GeneratorSpec, content: string): string {
 
 /** True when this module is the process entry point. */
 export function isMain(metaUrl: string): boolean {
-  return process.argv[1] !== undefined && metaUrl === `file://${process.argv[1]}`;
+  const entry = process.argv[1];
+  if (entry === undefined) return false;
+  try {
+    return metaUrl === pathToFileURL(realpathSync(entry)).href;
+  } catch {
+    return false;
+  }
 }

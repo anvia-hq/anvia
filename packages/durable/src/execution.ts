@@ -7,6 +7,7 @@ import {
   type CompletionResponse,
   type JsonValue,
   type JsonObject,
+  type Document,
   type ToolDefinition,
 } from "@anvia/core/completion";
 import { getResolvedAgentOptions } from "@anvia/core/internal/agent";
@@ -18,6 +19,7 @@ import type {
 import { AgentObserverDispatchError } from "@anvia/core/observability";
 import { DurableModelError, DurableRecoveryError, DurableStorageError } from "./errors.js";
 import {
+  externalizeContextDocsResult,
   externalizeModelInput,
   externalizeModelResult,
   externalizeToolResult,
@@ -29,6 +31,7 @@ import type {
   DurableOperation,
   DurableRunRecord,
   DurableStore,
+  DurableTransaction,
 } from "./types.js";
 
 /** Reconstruct the agent loop from committed operation results, never repeating completed effects. */
@@ -334,6 +337,48 @@ export function createExecution(
         };
         tx.putOperation(run.id, operation);
         return recorded(operation);
+      });
+    };
+  }
+
+  // Vector retrieval reads an external store: each context's documents are recorded once, before the
+  // model call that uses them, so a replayed turn sees the same documents without querying again.
+  if (registration.context !== undefined) {
+    execution.selectContext = async (turn, index, retrieve) => {
+      const key = `${prefix}context-docs:${turn}:${index}`;
+      const recorded = (
+        tx: DurableTransaction,
+        operation: DurableOperation | undefined,
+      ): Document[] =>
+        (hydrateValue(tx, operation!.result!) as unknown as { documents: Document[] }).documents;
+      const previous = store.transaction((tx) => {
+        const operation = tx.getOperation(run.id, key);
+        return operation?.status === "completed"
+          ? { ...operation, result: hydrateValue(tx, operation.result!) }
+          : operation;
+      });
+      if (previous?.status === "completed")
+        return (previous.result as unknown as { documents: Document[] }).documents;
+      check();
+      const retrieved = await retrieve();
+      check();
+      return store.transaction((tx) => {
+        const current = tx.getOperation(run.id, key);
+        if (current?.status === "completed") return recorded(tx, current);
+        if (tx.getRun(run.id)?.status !== "running")
+          throw new Error("Durable run is no longer running.");
+        const operation: DurableOperation = {
+          key,
+          kind: "effect",
+          input: json({ turn, index }),
+          status: "completed",
+          recovery: "manual",
+          // An oversized document set moves to the blob table here, like an oversized tool result,
+          // so one retrieval cannot exceed the operation payload limit.
+          result: externalizeContextDocsResult(tx, json({ documents: retrieved })),
+        };
+        tx.putOperation(run.id, operation);
+        return recorded(tx, operation);
       });
     };
   }

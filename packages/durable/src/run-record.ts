@@ -3,6 +3,7 @@ import { Usage } from "@anvia/core/completion";
 import { externalizeContextDocuments } from "./blob.js";
 import { contextDocumentsOf } from "./documents.js";
 import type { DurableMcpServers } from "./mcp-servers.js";
+import { vectorContextOf } from "./vector-context.js";
 import type { DurableToolIndexes } from "./tool-indexes.js";
 import type {
   DurableAgentRegistration,
@@ -72,6 +73,12 @@ export function createRunRecord(
 
   if (mcpServers !== undefined) record.mcpServers = { ...mcpServers };
   if (toolIndexes !== undefined) record.toolIndexes = { ...toolIndexes };
+
+  // Live vector retrieval is recorded per model call; the settings freeze with the run.
+  if (registration.context !== undefined) {
+    const vectorContext = vectorContextOf(registration.agent);
+    if (vectorContext !== undefined) record.vectorContext = vectorContext;
+  }
 
   if (registration.modelRetry !== undefined) {
     record.modelRetry = { ...registration.modelRetry };

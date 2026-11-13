@@ -645,7 +645,19 @@ setting.
   run record at submission, so restarts and retries replay identical context. If the registration's
   documents change under the same `version`, the run fails with `needs_attention` naming both
   content hashes; restore the original documents and `retry()`, or bump the version for a context
-  change. Live `VectorContext` retrieval is still rejected.
+  change.
+- Live vector context: set `context: { mode: "recorded" }` to admit an agent whose `context`
+  holds a `createVectorContext(...)`. Each context's retrieved documents (after `format`) are
+  recorded as an `effect` operation (`epoch:context-docs:turn:index`) before the model call that
+  uses them, so a restart or retry shows the model the same documents and does not query the
+  store again. The settings (position, `topK`, `minScore`, `filter`, `retries`, `fusion`, the
+  `format` source, embedding model provider, id and dimensions, store class name) are fingerprinted
+  at submission and checked at every execution start; a change under the same `version` fails the
+  run with `needs_attention`. The fingerprint cannot see the embedding model's internals or the
+  store's contents, so bump `version` when the model or index changes. An oversized document set
+  is stored in the blob table behind a whole-value reference, so a large retrieval counts against
+  the blob store, not the operation payload limit. Without the marker, vector
+  `context` is rejected. The runtime needs `@anvia/core` execution protocol 5.
 - Observational lifecycle: set `lifecycle: { mode: "observe" }` on the registration to admit the
   agent's `lifecycle` hooks. Each of `onStart`, `onStepFinish`, `onToolStart`, `onToolFinish`,
   `onFinish` and `onError` runs at most once per step. A record is committed before each hook,
@@ -678,7 +690,7 @@ setting.
   `needs_attention`, and recovering it needs an operator decision. Observe-mode policies record it as
   an error decision instead.
 - Registering an agent that sets `memory` (without `memory: { mode: "recorded" }`), `lifecycle` (without the observational marker),
-  `middlewares` (without `mode: "pure"`), `guardrails` (without `mode: "record"`), vector `context`,
+  `middlewares` (without `mode: "pure"`), `guardrails` (without `mode: "record"`), vector `context` (without `context: { mode: "recorded" }`),
   `mcpServers` (without `mcpServers: { mode: "pinned" }`), provider tools (without
   `providerTools: { mode: "stateless" }`), or tool indexes (without `toolIndexes: { mode: "recorded" }`)
   throws a `TypeError` naming exactly the features that agent uses, with the marker to set where one
@@ -785,7 +797,7 @@ retaining one cannot change the runtime's registrations.
 - Pipeline/team recovery, Studio integration,
   Postgres, retention, general migration tooling, and distributed worker deployment are follow-up work.
   Database records are experimental. Upgrades on acquisition are described in
-  [storage and ownership](#storage-and-ownership). Core execution protocol 4 is required.
+  [storage and ownership](#storage-and-ownership). Core execution protocol 5 is required.
 
 ## Operational readiness
 

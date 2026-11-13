@@ -110,6 +110,14 @@ export type DurableAgentRegistration = {
    */
   toolIndexes?: DurableRecordedToolIndexes;
   /**
+   * Admits the agent's live vector context (`createVectorContext`). Each retrieval is recorded
+   * before the model call that uses it and reused on replay, so a restart or retry does not query
+   * the store again. The context settings are fingerprinted at submission and checked at every
+   * execution start. The fingerprint cannot cover the embedding model's internals or the store's
+   * contents: bump `version` when either changes. Without this marker, vector context is rejected.
+   */
+  context?: DurableRecordedContext;
+  /**
    * Admits the agent's `memory`. The read snapshot is recorded before the first model call and
    * reused on replay. Each write is recorded as a memory operation keyed by a runtime-derived
    * idempotency key, and the save policy runs after the run's terminal checkpoint. Without this
@@ -140,6 +148,9 @@ export type DurableStatelessProviderTools = { mode: "stateless" };
 export type DurablePinnedMcpServers = { mode: "pinned" };
 /** The only tool-index mode durable admits: each model call's selection is recorded and reused. */
 export type DurableRecordedToolIndexes = { mode: "recorded" };
+
+/** The only vector-context mode durable admits: each retrieval is recorded and reused. */
+export type DurableRecordedContext = { mode: "recorded" };
 
 /** The only memory mode durable admits: reads and writes are recorded by the runtime. */
 export type DurableRecordedMemory = { mode: "recorded" };
@@ -189,6 +200,8 @@ export type DurableAgentCompatibility = {
   compaction: boolean;
   /** Recorded control hooks the registration installs (empty without the `hooks` marker). */
   recordedHooks: readonly ("onRunStart" | "onCompletionCall" | "onToolCall")[];
+  /** Whether live vector retrieval is admitted and recorded (`context: { mode: "recorded" }`). */
+  recordedContext: boolean;
   /** Undefined when the registration has no model retry policy. */
   modelRetry: DurableModelRetry | undefined;
   /** Agent-level options captured by the runtime and not overridable per run. */
@@ -285,6 +298,7 @@ export type DurableRunRecord = DurableSubmission & {
   mcpServers?: { hash: string };
   /** Fingerprint of the tool indexes at submission; see tool-indexes.ts. */
   toolIndexes?: { hash: string };
+  vectorContext?: { hash: string };
   /** Freezes even a skipped compaction decision across retries. */
   contextPrepared?: boolean;
   /** Captured on new submissions; legacy in-flight runs retain their original request sequence. */

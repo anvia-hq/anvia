@@ -54,6 +54,7 @@ import {
 import { contextDocumentsOf } from "./documents.js";
 import { mcpServersByAgent, mcpServersOf, type DurableMcpServers } from "./mcp-servers.js";
 import { toolIndexesByAgent, toolIndexesOf, type DurableToolIndexes } from "./tool-indexes.js";
+import { vectorContextOf } from "./vector-context.js";
 import { createExecution } from "./execution.js";
 import { createObservedLifecycle } from "./observed-lifecycle.js";
 import { createRecordedHooks } from "./recorded-hooks.js";
@@ -857,6 +858,7 @@ export class DurableRuntime {
       verifyContextDocuments(run, registration);
       await verifyMcpServers(run, registration);
       await verifyToolIndexes(run, registration);
+      verifyVectorContext(run, registration);
       const memory = recordedMemoryOf(registration);
       // A checkpoint from an earlier attempt means the model work is finished: only the memory
       // writes after it can remain, so the agent is not run again.
@@ -1052,6 +1054,21 @@ async function verifyToolIndexes(
   if (expected !== current?.hash)
     throw new DurableRecoveryError(
       `Tool indexes changed for durable agent "${run.agentId}": the run recorded fingerprint ${expected ?? "none"}, but the registration now resolves ${current?.hash ?? "none"}. Restore the original tool indexes, or bump the registration version.`,
+    );
+}
+
+/**
+ * A run retrieves with the vector context settings frozen at submission. A registration that
+ * fingerprints differently under the same version fails the run instead of silently changing what
+ * the model is shown. The fingerprint does not cover the embedding model's internals.
+ */
+function verifyVectorContext(run: DurableRunRecord, registration: DurableAgentRegistration): void {
+  const current =
+    registration.context === undefined ? undefined : vectorContextOf(registration.agent);
+  const expected = run.vectorContext?.hash;
+  if (expected !== current?.hash)
+    throw new DurableRecoveryError(
+      `Vector context changed for durable agent "${run.agentId}": the run recorded fingerprint ${expected ?? "none"}, but the registration now resolves ${current?.hash ?? "none"}. Restore the original vector context, or bump the registration version.`,
     );
 }
 

@@ -280,6 +280,10 @@ importers:
         version: 4.6.7
 
   packages/durable:
+    dependencies:
+      '@prisma/client':
+        specifier: '>=7.10.0 <8.0.0'
+        version: 7.10.1(prisma@7.10.1(@types/node@24.12.2)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(magicast@0.5.3)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(typescript@5.9.3))(typescript@5.9.3)
     devDependencies:
       '@anvia/core':
         specifier: workspace:*
@@ -10636,7 +10640,6 @@ snapshots:
     optionalDependencies:
       prisma: 7.10.1(@types/node@24.12.2)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(magicast@0.5.3)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(typescript@5.9.3)
       typescript: 5.9.3
-    optional: true
 
   '@prisma/client@7.10.1(prisma@8.0.0-rc.27(@effect/vitest@4.0.3(effect@4.0.3)(vitest@4.1.11))(@prisma/orm-postgres@8.0.0-rc.20(@prisma/cli-engine@0.9.0(@prisma/management-api-sdk@1.80.0)(magicast@0.5.3))(magicast@0.5.3)(temporal-polyfill@1.0.6)(typanion@3.14.0)(typescript@5.9.3)(vite@8.3.4(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.1)))(@types/node@26.1.2)(@types/react@19.3.0)(@vercel/nft@1.11.0)(hono@4.13.16)(magicast@0.5.3)(mysql2@3.24.4(@types/node@26.1.2))(pg@8.23.1)(typanion@3.14.0)(typescript@5.9.3)(vite@8.3.4(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.1))(vitest@4.1.11)(ws@8.22.1))(typescript@5.9.3)':
     dependencies:
@@ -12219,7 +12222,7 @@ snapshots:
       obug: 2.1.1
       std-env: 4.1.0
       tinyrainbow: 3.1.0
-      vitest: 4.1.11(@opentelemetry/api@1.10.0)(@types/node@24.12.2)(@vitest/coverage-v8@4.1.11)(happy-dom@21.0.4)(vite@8.3.4(@types/node@24.12.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+      vitest: 4.1.11(@opentelemetry/api@1.10.0)(@types/node@24.12.2)(@vitest/coverage-v8@4.1.11)(happy-dom@21.0.4)(vite@8.3.4(@types/node@24.12.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.1))
 
   '@vitest/expect@4.1.11':
     dependencies:

@@ -3,6 +3,7 @@ import { forwardRef, type MouseEvent, type ReactNode, useCallback } from "react"
 
 import { useAttachment } from "../contexts";
 import { type PrimitiveProps, renderPrimitive } from "../primitives";
+import { safeImageSrc, safeLinkHref } from "../url";
 
 type AttachmentChildren = ReactNode | ((attachment: UIAttachment) => ReactNode);
 
@@ -101,14 +102,15 @@ function defaultAttachment(remove: (() => void) | undefined): ReactNode {
 
 function defaultPreview(attachment: UIAttachment): ReactNode {
   if (isImageAttachment(attachment)) {
-    const source = attachment.url ?? attachmentDataUrl(attachment);
+    const source = safeImageSrc(attachment.url ?? attachmentDataUrl(attachment));
     if (source !== undefined) {
       return <img alt={attachment.name ?? "Attachment"} src={source} />;
     }
   }
 
-  if (attachment.url !== undefined) {
-    return <a href={attachment.url}>{attachmentLabel(attachment)}</a>;
+  const href = safeLinkHref(attachment.url);
+  if (href !== undefined) {
+    return <a href={href}>{attachmentLabel(attachment)}</a>;
   }
 
   return <span>{attachment.mediaType ?? attachment.type}</span>;

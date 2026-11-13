@@ -19,6 +19,7 @@ import {
   useOptionalAttachment,
 } from "../contexts";
 import { composeRefs, type PrimitiveProps, renderPrimitive } from "../primitives";
+import { safeImageSrc } from "../url";
 
 type ImageRootChildren = ReactNode | ((image: ImageContextValue) => ReactNode);
 type ImageRenderWhen = "image" | "always";
@@ -372,13 +373,13 @@ function isImageAttachment(attachment: UIAttachment): boolean {
 
 function imageSource(attachment: UIAttachment): string | undefined {
   if (!isImageAttachment(attachment)) {
-    return attachment.url;
+    return safeImageSrc(attachment.url);
   }
   if (attachment.url !== undefined) {
-    return attachment.url;
+    return safeImageSrc(attachment.url);
   }
   if (attachment.data !== undefined && attachment.mediaType !== undefined) {
-    return `data:${attachment.mediaType};base64,${attachment.data}`;
+    return safeImageSrc(`data:${attachment.mediaType};base64,${attachment.data}`);
   }
   return undefined;
 }

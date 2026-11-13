@@ -344,6 +344,14 @@ registration), `middlewares` (without `mode: "pure"`), `guardrails` (without `mo
 `lifecycle: { mode: "observe" }`, the agent's lifecycle hooks run once per step, recorded before
 each call; a hook that throws is recorded and does not fail the run.
 
+With `hooks: { mode: "record", hook }`, a core `AgentHook` is installed for the run. Durable records
+and replays `onToolCall` (`skip`, `terminate`, `approval_request`), `onRunStart` and
+`onCompletionCall` (cancel); other callbacks are rejected by name. Each decision is committed before
+core applies it, so a restart or retry reuses it and never calls the hook again. A hook that crashed
+before recording is not run again (`needs_attention`), a hook that throws fails the run (`retry()`
+calls it once more), and a `terminate` decision fails the run with its reason. Core runs tools one
+at a time while a hook is active. `compatibility()` reports the hooks in `recordedHooks`.
+
 With `memory: { mode: "recorded" }`, the run reads the agent's memory store once, before the first
 model call, and reuses that snapshot on replay. Each write is recorded as a `memory` operation with
 an idempotency key the runtime derives from the run and the write's position. Writes happen after the

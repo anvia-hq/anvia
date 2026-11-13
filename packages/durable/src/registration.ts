@@ -3,6 +3,7 @@ import { isVectorContext } from "@anvia/core/agent";
 import { isJsonValue, isStreamingCompletionModel } from "@anvia/core/completion";
 import type { GuardrailPolicy } from "@anvia/core/guardrails";
 import { compactionPolicySchema, modelRetrySchema } from "./schema.js";
+import { RECORDED_HOOKS } from "./recorded-hooks.js";
 import { nonblank } from "./json.js";
 import type { DurableAgentRegistration } from "./types.js";
 
@@ -54,6 +55,7 @@ export function registrations(
       throw new TypeError(
         `Durable agent "${agent.id}" has an unknown guardrails mode. Only { mode: "record" } is supported.`,
       );
+    if (registration.hooks !== undefined) assertRecordedHooks(agent.id, registration.hooks);
     if (
       registration.providerTools !== undefined &&
       (registration.providerTools as { mode?: unknown }).mode !== "stateless"
@@ -187,6 +189,10 @@ export function registrations(
       normalized.guardrails = { mode: "record" };
     }
 
+    if (registration.hooks !== undefined) {
+      normalized.hooks = { mode: "record", hook: registration.hooks.hook };
+    }
+
     if (registration.providerTools !== undefined) {
       normalized.providerTools = { mode: "stateless" };
     }
@@ -234,6 +240,28 @@ function assertRecordableMemory(agentId: string, memory: NonNullable<ResolvedOpt
   if (typeof memory.store.loadVersioned !== "function")
     throw new TypeError(
       `Durable agent "${agentId}" sets memory.store without loadVersioned(). Recorded memory needs a store that returns a version with each load, so a concurrent write is detected as a conflict.`,
+    );
+}
+
+/**
+ * Only the hooks whose decision durable records are admitted. Any other callback could change a
+ * run (or observe it) without a record, so it is rejected by name.
+ */
+function assertRecordedHooks(agentId: string, hooks: unknown) {
+  const { mode, hook } = hooks as { mode?: unknown; hook?: unknown };
+  if (mode !== "record")
+    throw new TypeError(
+      `Durable agent "${agentId}" has an unknown hooks mode. Only { mode: "record", hook } is supported.`,
+    );
+  if (typeof hook !== "object" || hook === null)
+    throw new TypeError(`Durable agent "${agentId}" sets hooks without a hook object.`);
+  const unsupported = Object.entries(hook)
+    .filter(([, value]) => value !== undefined)
+    .map(([name]) => name)
+    .filter((name) => !(RECORDED_HOOKS as readonly string[]).includes(name));
+  if (unsupported.length > 0)
+    throw new TypeError(
+      `Durable agent "${agentId}" has hook callbacks durable does not record: ${unsupported.join(", ")}. Only ${RECORDED_HOOKS.join(", ")} are supported.`,
     );
 }
 

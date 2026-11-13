@@ -213,3 +213,25 @@ can still acknowledge earlier acceptance. Owned runs also obey their parent task
 Steering is available on runs submitted by this release, including graph and owned-agent
 runs. Legacy runs keep their old replay boundaries and reject steering. Custom task handlers
 continue to use `signal()`. Steering state counts toward `limits.maxPayloadBytes`.
+
+## Choosing a store
+
+All stores implement the same **async** `DurableStore`: `store.transaction(async (tx) => ...)`
+and every `tx.*` method return promises and must be awaited; callbacks do database work only
+(no model calls, no nested transactions). `TaskContext` methods (`ctx.spawn`, `ctx.spawnAgent`,
+`ctx.children`, `ctx.agentRun`, `ctx.signalValue`) are async too.
+
+- Local, one host: `new SqliteDurableStore(path)` from `@anvia/durable/sqlite`.
+- Postgres with `pg`: `new PostgresDurableStore({ pool }, { schema: "create" })` from
+  `@anvia/durable/postgres`. Default `schema: "verify"` only checks the tables.
+- Drizzle: `npx anvia-durable-drizzle init --write`, migrate with drizzle-kit, then
+  `new DrizzleDurableStore(db)` from `@anvia/durable/drizzle`.
+- Prisma (PostgreSQL): `npx anvia-durable-prisma init --write`, `prisma migrate`, then
+  `new PrismaDurableStore(prisma)` from `@anvia/durable/prisma`. Not yet run against a real
+  Prisma engine in this repository's tests.
+
+Single-owner rule on Postgres: one runtime per database, enforced by a lease row (`leaseMs`,
+default 30 s, renewed by a heartbeat; `close()` releases it). A second `acquire()` fails with
+"live owner" until the lease expires or the owner closes. Every transaction locks the owner row
+and fails with "ownership was lost" if another runtime took over. Never run two runtimes on one
+database, and keep `leaseMs` above the longest event-loop stall.

@@ -12,6 +12,13 @@ static local tools, and committed progress events, with opt-in persisted token s
 pnpm add @anvia/durable @anvia/core @anvia/openai zod
 ```
 
+**Storage backends.** `@anvia/durable/sqlite` (local file), `@anvia/durable/postgres` (a `pg` pool),
+`@anvia/durable/drizzle` and `@anvia/durable/prisma` (your Drizzle database or Prisma client, with
+a schema you own: run `anvia-durable-drizzle init` or `anvia-durable-prisma init`). `pg`,
+`drizzle-orm` and `@prisma/client` are optional peer dependencies. One runtime owns a database; on
+Postgres that is a lease with a heartbeat. The store interfaces are async. See
+[docs/packages/durable.md](../../docs/packages/durable.md#postgres-drizzle-and-prisma).
+
 SQLite requires Node.js 22.16 or newer. Use the accompanying core release with the
 durable execution protocol; older core versions are rejected when importing this package.
 
@@ -499,9 +506,9 @@ full record with `runtime.run(id)`, or obtain a handle with `runtime.getRun(id)`
 For frequent status polling, use the bounded summary rather than decoding a transcript:
 
 ```ts
-const status = runtime.status(runId); // DurableRunSummary; independent of turn count
-const record = runtime.run(runId); // DurableRunRecord; no operation reads
-const view = runtime.snapshot(runId, { operations: false }); // record + cursor, operations: []
+const status = await runtime.status(runId); // DurableRunSummary; independent of turn count
+const record = await runtime.run(runId); // DurableRunRecord; no operation reads
+const view = await runtime.snapshot(runId, { operations: false }); // record + cursor, operations: []
 const request = runtime.operationRequest(runId, "0:model:2"); // complete CompletionRequest
 ```
 

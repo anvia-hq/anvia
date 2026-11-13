@@ -28,7 +28,7 @@ export async function handleDurableTaskRequest(
   const runtime = options.runtime;
   const authorize = async (task: TaskRecord, action: DurableHttpAction) => {
     const agent =
-      task.agentRunId === undefined ? undefined : runtime.runScope(task.agentRunId).agentId;
+      task.agentRunId === undefined ? undefined : (await runtime.runScope(task.agentRunId)).agentId;
     const resource: DurableAuthorization = {
       action,
       sessionId: task.sessionId,
@@ -57,7 +57,7 @@ export async function handleDurableTaskRequest(
           503,
           "Task submission authorization requires @anvia/durable 0.6 or newer.",
         );
-      const { sessionId, taskName, agentIds } = runtime.taskSubmissionScope(input);
+      const { sessionId, taskName, agentIds } = await runtime.taskSubmissionScope(input);
       for (const agentId of agentIds.length === 0 ? [undefined] : agentIds) {
         const resource: DurableAuthorization = {
           action: "submit",

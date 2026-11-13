@@ -152,7 +152,10 @@ export function createDurableHandler(
           const page = await runtime.listRuns(filter);
           for (const run of page.runs)
             if (
-              !(await options.authorize(request, { action: "list", ...runtime.runScope(run.id) }))
+              !(await options.authorize(request, {
+                action: "list",
+                ...(await runtime.runScope(run.id)),
+              }))
             )
               return denied();
           return json(page);
@@ -198,7 +201,8 @@ export function createDurableHandler(
       if (request.method !== method) return json({ error: "Method not allowed" }, 405);
       const run = await runtime.getRun(id);
       const snapshot = await run.snapshot();
-      if (!(await options.authorize(request, { action, ...runtime.runScope(id) }))) return denied();
+      if (!(await options.authorize(request, { action, ...(await runtime.runScope(id)) })))
+        return denied();
       if (action === "inspect") return json(snapshot);
       if (action === "events")
         return durableEventsResponse(request, snapshot.cursor, (options) => run.stream(options));

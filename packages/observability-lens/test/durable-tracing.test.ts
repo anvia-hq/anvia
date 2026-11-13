@@ -490,7 +490,7 @@ describe("native durable tracing through LensClient", () => {
               checkpoint: true,
               wait: {
                 type: "children",
-                ids: [ctx.spawnAgent("child", { agentId: "researcher", prompt: ctx.input })],
+                ids: [await ctx.spawnAgent("child", { agentId: "researcher", prompt: ctx.input })],
                 policy: "allSettled",
               },
             },
@@ -632,7 +632,7 @@ describe("observability sessions through LensClient", () => {
               checkpoint: true,
               wait: {
                 type: "children",
-                ids: [ctx.spawnAgent("child", { agentId: "worker", prompt: ctx.input })],
+                ids: [await ctx.spawnAgent("child", { agentId: "worker", prompt: ctx.input })],
                 policy: "allSettled",
               },
             },

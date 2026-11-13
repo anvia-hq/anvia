@@ -70,7 +70,7 @@ it.each(["override", "default"])(
       ...submission,
       input,
     };
-    expect(runtime.taskSubmissionScope(denied).agentIds).toEqual(["private-agent"]);
+    expect((await runtime.taskSubmissionScope(denied)).agentIds).toEqual(["private-agent"]);
     await expect(client.submitTask(denied)).rejects.toMatchObject({ status: 403 });
     expect(authorize).toHaveBeenCalledExactlyOnceWith(expect.any(Request), {
       action: "submit",
@@ -79,7 +79,7 @@ it.each(["override", "default"])(
       agentId: "private-agent",
     });
     expect((await runtime.listTasks()).tasks).toHaveLength(0);
-    expect(store.transaction((tx) => tx.cursor())).toBe(0);
+    expect(await store.transaction(async (tx) => tx.cursor())).toBe(0);
     const accepted = await client.submitTask({
       ...submission,
       input: { ...goalInput, agentId: "allowed-agent" },

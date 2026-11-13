@@ -272,7 +272,7 @@ export class TaskScheduler {
     const capacity = this.capacity - this.active.size;
     if (capacity > 0)
       for (const id of await this.store.scheduleTasks([...this.active.keys()], capacity))
-        if (!this.active.has(id)) this.launch(id);
+        if (!this.closing && !this.active.has(id)) this.launch(id);
     if (this.deadlines.size > 0) {
       const deadline = Math.min(...this.deadlines.values());
       this.timer = setTimeout(

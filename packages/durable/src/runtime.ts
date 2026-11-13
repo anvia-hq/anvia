@@ -817,6 +817,7 @@ export class DurableRuntime {
   private async launch(id: string): Promise<void> {
     if (this.active.has(id) || this.closing) return;
     const { status, sessionId, agentId } = await this.run(id);
+    if (this.closing || this.active.has(id)) return;
     if (!["queued", "pending", "running", "retry_wait"].includes(status)) return;
     const controller = new AbortController();
     const task = Promise.resolve()

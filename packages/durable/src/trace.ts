@@ -8,13 +8,16 @@ import type { DurableRunRecord, DurableTransaction } from "./types.js";
  * the caller's observability session, or else the session the application submitted rather than an
  * internal task or graph session. Task-owned runs use the root task's trace options.
  */
-export function runTrace(tx: DurableTransaction, run: DurableRunRecord): AgentTraceOptions {
+export async function runTrace(
+  tx: DurableTransaction,
+  run: DurableRunRecord,
+): Promise<AgentTraceOptions> {
   const task = run.sessionId.startsWith(TASK_SESSION_PREFIX)
-    ? tx.getTask(run.sessionId.slice(TASK_SESSION_PREFIX.length))
+    ? await tx.getTask(run.sessionId.slice(TASK_SESSION_PREFIX.length))
     : undefined;
   const root =
-    task === undefined ? undefined : task.rootId === task.id ? task : tx.getTask(task.rootId);
-  const graph = run.graphId === undefined ? undefined : tx.getGraph(run.graphId);
+    task === undefined ? undefined : task.rootId === task.id ? task : await tx.getTask(task.rootId);
+  const graph = run.graphId === undefined ? undefined : await tx.getGraph(run.graphId);
   const options = root?.trace ?? run.trace;
   const executionSessionId = task?.sessionId ?? graph?.submission.sessionId ?? run.sessionId;
   const sessionId = options?.sessionId ?? executionSessionId;

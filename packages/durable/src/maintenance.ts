@@ -102,7 +102,7 @@ export async function backupSqlite(
   }
   const owner = new SqliteDurableStore(source);
   try {
-    owner.acquire();
+    await owner.acquire();
     const db = new DatabaseSync(source, { readOnly: true });
     const info = { createdAt: new Date().toISOString(), schemaVersion: 12 };
     try {
@@ -117,7 +117,7 @@ export async function backupSqlite(
     }
     return info;
   } finally {
-    owner.close();
+    await owner.close();
   }
 }
 

@@ -128,10 +128,10 @@ describe("user data shaped like blob markers", () => {
     await next.result();
   });
 
-  it("keeps user data unchanged through the store's operation and history writes", () => {
+  it("keeps user data unchanged through the store's operation and history writes", async () => {
     const path = database();
     const store = new SqliteDurableStore(path);
-    store.acquire();
+    await store.acquire();
     try {
       const operation: DurableOperation = {
         key: "op",
@@ -141,31 +141,35 @@ describe("user data shaped like blob markers", () => {
         status: "completed",
         result: { output: { type: "json", value: spoof }, failed: false },
       };
-      store.transaction((tx) => tx.putOperation("run-x", operation));
-      const read = store.transaction((tx) => tx.getOperation("run-x", "op"));
+      await store.transaction(async (tx) => tx.putOperation("run-x", operation));
+      const read = await store.transaction(async (tx) => tx.getOperation("run-x", "op"));
       expect(read).toEqual(operation);
       // Hydration of plain user data is the identity.
-      expect(store.transaction((tx) => hydrateValue(tx, read!.result as JsonValue))).toEqual({
+      expect(
+        await store.transaction(
+          async (tx) => await tx.blobs((io) => hydrateValue(io, read!.result as JsonValue)),
+        ),
+      ).toEqual({
         output: { type: "json", value: spoof },
         failed: false,
       });
     } finally {
-      store.close();
+      await store.close();
     }
   });
 });
 
 describe("rows written before schema version 11", () => {
-  it("reads legacy user data unchanged and keeps real references", () => {
+  it("reads legacy user data unchanged and keeps real references", async () => {
     const path = database();
     const big = { text: "legacy-".repeat(20_000) }; // over the inline threshold
     const store = new SqliteDurableStore(path);
-    store.acquire();
-    const legit = store.transaction((tx) => {
-      const hash = tx.putBlob(big);
+    await store.acquire();
+    const legit = await store.transaction(async (tx) => {
+      const hash = await tx.putBlob(big);
       return { hash, bytes: Buffer.byteLength(JSON.stringify(big)) };
     });
-    store.close();
+    await store.close();
 
     // Rewrite the journal the way schema version 10 stored it: no escaping, markers unchecked.
     const message = spoofMessage as unknown as JsonValue;
@@ -234,22 +238,26 @@ describe("rows written before schema version 11", () => {
     // Opening migrates the rows. The spoofed user data reads back unchanged, and the real
     // reference still restores its blob. The history rehash keeps the chain valid.
     const migrated = new SqliteDurableStore(path);
-    migrated.acquire();
+    await migrated.acquire();
     try {
-      const spoofed = migrated.transaction((tx) => tx.getOperation("legacy-run", "legacy:spoof"));
+      const spoofed = await migrated.transaction(async (tx) =>
+        tx.getOperation("legacy-run", "legacy:spoof"),
+      );
       expect((spoofed?.result as { output?: unknown } | undefined)?.output).toEqual({
         type: "json",
         value: spoof,
       });
-      const real = migrated.transaction((tx) => {
-        const operation = tx.getOperation("legacy-run", "legacy:real");
-        return hydrateValue(tx, operation!.result!);
+      const real = await migrated.transaction(async (tx) => {
+        const operation = await tx.getOperation("legacy-run", "legacy:real");
+        return await tx.blobs((io) => hydrateValue(io, operation!.result!));
       });
       expect(real).toEqual({ output: big, failed: false });
-      const history = migrated.transaction((tx) => tx.getOperation("legacy-run", "legacy:history"));
+      const history = await migrated.transaction(async (tx) =>
+        tx.getOperation("legacy-run", "legacy:history"),
+      );
       expect(history?.input).toEqual([spoofMessage]);
     } finally {
-      migrated.close();
+      await migrated.close();
     }
     const verify = new DatabaseSync(path, { readOnly: true });
     try {

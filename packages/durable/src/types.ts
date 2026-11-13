@@ -1,3 +1,4 @@
+import type { DurableBlobIO } from "./blob.js";
 import type { DurableLimits } from "./limits.js";
 import type { DurableMetrics } from "./metrics.js";
 import type {
@@ -391,60 +392,64 @@ export type DurableSnapshot = {
   cursor: number;
 };
 
-/** Synchronous, atomic transaction. Never perform external work inside its callback. */
+/** Atomic transaction. Never perform external work inside its callback. */
 export interface DurableTransaction extends TaskTransaction {
-  pendingCounts(): { runs: number; tasks: number };
-  operationCount(id: string): number;
-  getGraph(id: string): DurableGraphRecord | undefined;
-  findGraphRequest(sessionId: string, requestId: string): DurableGraphRecord | undefined;
-  putGraph(graph: DurableGraphRecord): void;
-  getRunSummary(id: string): DurableRunSummary | undefined;
-  getRun(id: string): DurableRunRecord | undefined;
-  findRequest(sessionId: string, requestId: string): DurableRunRecord | undefined;
-  activeRun(sessionId: string): DurableRunRecord | undefined;
-  latestCompleted(sessionId: string): DurableRunRecord | undefined;
-  hasLaterStartedRun(id: string): boolean;
-  putRun(run: DurableRunRecord): void;
+  pendingCounts(): Promise<{ runs: number; tasks: number }>;
+  operationCount(id: string): Promise<number>;
+  getGraph(id: string): Promise<DurableGraphRecord | undefined>;
+  findGraphRequest(sessionId: string, requestId: string): Promise<DurableGraphRecord | undefined>;
+  putGraph(graph: DurableGraphRecord): Promise<void>;
+  getRunSummary(id: string): Promise<DurableRunSummary | undefined>;
+  getRun(id: string): Promise<DurableRunRecord | undefined>;
+  findRequest(sessionId: string, requestId: string): Promise<DurableRunRecord | undefined>;
+  activeRun(sessionId: string): Promise<DurableRunRecord | undefined>;
+  latestCompleted(sessionId: string): Promise<DurableRunRecord | undefined>;
+  hasLaterStartedRun(id: string): Promise<boolean>;
+  putRun(run: DurableRunRecord): Promise<void>;
   /** Expands shared histories for deterministic execution and checkpoint validation. */
-  getOperation(runId: string, key: string): DurableOperation | undefined;
+  getOperation(runId: string, key: string): Promise<DurableOperation | undefined>;
   /** Stored operation envelopes; does not expand shared histories. */
-  operations(runId: string): DurableOperation[];
-  putOperation(runId: string, operation: DurableOperation): void;
-  appendEvent(runId: string, type: DurableEvent["type"], data: JsonValue): void;
-  cursor(): number;
+  operations(runId: string): Promise<DurableOperation[]>;
+  putOperation(runId: string, operation: DurableOperation): Promise<void>;
+  appendEvent(runId: string, type: DurableEvent["type"], data: JsonValue): Promise<void>;
+  cursor(): Promise<number>;
   /**
-   * Stores an immutable JSON value in the overflow area and returns its content hash. Blob writes
-   * share the caller's transaction and are not payload-checked; the bounded reference written
-   * beside them is. A committed reference is never dangling.
+   * Runs blob-aware pure code (the helpers in blob.ts) against this transaction's blob area.
+   * Blob writes share the caller's transaction and are not payload-checked; the bounded reference
+   * written beside them is. A committed reference is never dangling. `fn` runs synchronously, may
+   * run more than once, and must have no effect beyond the blob reads and writes it performs.
    */
-  putBlob(value: JsonValue): string;
+  blobs<T>(fn: (io: DurableBlobIO) => T): Promise<T>;
+  /** Stores one immutable JSON value in the overflow area and returns its content hash. */
+  putBlob(value: JsonValue): Promise<string>;
   /** Reads a blob back by content hash; a missing or corrupt blob throws. */
-  getBlob(hash: string): JsonValue;
+  getBlob(hash: string): Promise<JsonValue>;
 }
 
 /** A store is exclusively owned by one open runtime. All returned values must be detached copies. */
 export interface DurableStore {
-  metrics(): DurableMetrics;
-  listTasks(options: TaskListOptions): TaskPage;
-  scheduleTasks(excluded: readonly string[], limit: number): string[];
-  unsettledTaskRoots(after: number): { ids: string[]; cursor?: number };
-  taskEvents(rootId: string, after: number, limit: number): DurableEvent[];
-  acquire(): void;
-  close(): void;
-  transaction<T>(callback: (tx: DurableTransaction) => T): T;
-  listGraphs(options: DurableGraphListOptions): DurableGraphPage;
-  graphEvents(graphId: string, after: number, limit: number): DurableEvent[];
-  list(options: DurableListOptions): DurableRunPage;
+  metrics(): Promise<DurableMetrics>;
+  listTasks(options: TaskListOptions): Promise<TaskPage>;
+  scheduleTasks(excluded: readonly string[], limit: number): Promise<string[]>;
+  unsettledTaskRoots(after: number): Promise<{ ids: string[]; cursor?: number }>;
+  taskEvents(rootId: string, after: number, limit: number): Promise<DurableEvent[]>;
+  acquire(): Promise<void>;
+  close(): Promise<void>;
+  /** Runs `callback` atomically and serially; nested transactions are rejected. */
+  transaction<T>(callback: (tx: DurableTransaction) => Promise<T>): Promise<T>;
+  listGraphs(options: DurableGraphListOptions): Promise<DurableGraphPage>;
+  graphEvents(graphId: string, after: number, limit: number): Promise<DurableEvent[]>;
+  list(options: DurableListOptions): Promise<DurableRunPage>;
   /** Oldest eligible unfinished run per session, excluding executions still settling. */
   schedule(
     now: string,
     limit: number,
     excludedSessions: readonly string[],
-  ): {
+  ): Promise<{
     ids: string[];
     nextAttemptAt?: string;
-  };
-  events(runId: string, after: number, limit: number): DurableEvent[];
+  }>;
+  events(runId: string, after: number, limit: number): Promise<DurableEvent[]>;
 }
 
 export type DurableRuntimeOptions = {

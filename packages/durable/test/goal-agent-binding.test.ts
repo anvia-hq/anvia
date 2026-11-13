@@ -116,7 +116,7 @@ it.each(["goal", "registered"])(
     expect(await handle.result()).toMatchObject({ sessions: 1 });
     expect((await submit("captured")).id).toBe(handle.id);
     expect(assess.mock.calls[0]?.[0]).toMatchObject({ agentId: "captured" });
-    runtime.unregisterAgent("captured");
+    await runtime.unregisterAgent("captured");
     await expect(submit("captured")).rejects.toThrow("Unknown durable agent: captured");
   },
 );
@@ -171,13 +171,15 @@ it.each([false, true])(
     restored.registerAgents([registration("original")]);
     const { sessionId, requestId, ...submittedInput } = submission;
     expect(
-      restored.taskSubmissionScope({
-        name: restoredGoal.name,
-        version: restoredGoal.version,
-        sessionId,
-        requestId,
-        input: submittedInput,
-      }).agentIds,
+      (
+        await restored.taskSubmissionScope({
+          name: restoredGoal.name,
+          version: restoredGoal.version,
+          sessionId,
+          requestId,
+          input: submittedInput,
+        })
+      ).agentIds,
     ).toEqual(["original"]);
     // Deduplication uses the original submission and saved binding, not the changed default.
     expect((await restored.submitGoal(restoredGoal, submission)).id).toBe(saved.id);

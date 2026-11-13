@@ -46,9 +46,12 @@ export interface AgentRunExecution {
    * Whether a step is already committed and will be restored rather than executed. Queried before
    * the step starts; replayed steps are not observed or counted as run usage again.
    */
-  replayed?(step: AgentRunExecutionStep): boolean;
-  /** Synchronously checkpoint queued input at a safe boundary, including empty/closing drains. */
-  drainSteering?(turn: number, closing: boolean): { id: string; messages: UserMessage[] }[];
+  replayed?(step: AgentRunExecutionStep): boolean | Promise<boolean>;
+  /** Checkpoint queued input at a safe boundary, including empty/closing drains. */
+  drainSteering?(
+    turn: number,
+    closing: boolean,
+  ): { id: string; messages: UserMessage[] }[] | Promise<{ id: string; messages: UserMessage[] }[]>;
   /** Persist the context selected before each model call, including skipped compaction decisions. */
   prepareMessages?(
     turn: number,

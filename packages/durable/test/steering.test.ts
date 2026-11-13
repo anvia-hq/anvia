@@ -177,7 +177,9 @@ it("replays applied steering and committed tools without duplicating them", asyn
     content: "One more thing",
   });
   expect(outcome.messages.filter((message) => message.content === input.prompt)).toHaveLength(1);
-  const applied = second.events(run.id, 0).filter((event) => event.type === "steering_applied");
+  const applied = (await second.events(run.id, 0)).filter(
+    (event) => event.type === "steering_applied",
+  );
   expect(applied.map((event) => (event.data as { id: string }).id)).toEqual(["first", "second"]);
 });
 
@@ -299,9 +301,9 @@ it("survives SIGKILL with applied and pending input without repeating a committe
   expect(
     outcome.messages.filter((message) => message.content === "queued before crash"),
   ).toHaveLength(1);
-  expect(runtime.events(id, 0).filter((event) => event.type === "steering_applied")).toHaveLength(
-    2,
-  );
+  expect(
+    (await runtime.events(id, 0)).filter((event) => event.type === "steering_applied"),
+  ).toHaveLength(2);
 }, 15000);
 
 it("rejects input in the gap between the final core drain and the outcome commit", async () => {

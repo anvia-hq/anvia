@@ -146,18 +146,18 @@ export function limitedTransaction(
   // the bounded reference that replaces the payload is what the checks below measure.
   return {
     ...tx,
-    appendEvent(id, type, data) {
+    async appendEvent(id, type, data) {
       if (type === "model_delta") payload("event.model_delta", textOf(data));
       // Status events are deliberately not checked. A status event is the only record of a
       // failure or a blocked run, and its `error` text is not checked anywhere else, so a limit
       // here would stop a run from reaching `failed` or `needs_attention` (the trap in DUR-03).
       // Their size is bounded by construction: no outcome, only ids, status and error text.
-      tx.appendEvent(id, type, data);
+      await tx.appendEvent(id, type, data);
     },
-    putRun(run) {
-      const previous = tx.getRun(run.id);
+    async putRun(run) {
+      const previous = await tx.getRun(run.id);
       if (!terminal(run.status) && (previous === undefined || terminal(previous.status))) {
-        const pending = tx.pendingCounts().runs;
+        const pending = (await tx.pendingCounts()).runs;
         if (pending >= limits.maxPendingRuns) throw capacity("run", limits.maxPendingRuns, pending);
       }
       if (previous === undefined) {
@@ -175,12 +175,12 @@ export function limitedTransaction(
         "exhaustion",
       ] as const)
         payload(`run.${key}`, changed(previous?.[key], run[key]));
-      tx.putRun(run);
+      await tx.putRun(run);
     },
-    putTask(task) {
-      const previous = tx.getTask(task.id);
+    async putTask(task) {
+      const previous = await tx.getTask(task.id);
       if (!terminal(task.status) && (previous === undefined || terminal(previous.status))) {
-        const pending = tx.pendingCounts().tasks;
+        const pending = (await tx.pendingCounts()).tasks;
         if (pending >= limits.maxPendingTasks)
           throw capacity("task", limits.maxPendingTasks, pending);
       }
@@ -196,12 +196,12 @@ export function limitedTransaction(
           previous?.outcome?.status === "completed" ? previous.outcome.output : undefined;
         if (output !== textOf(previousOutput)) payload("task.outcome", output);
       }
-      tx.putTask(task);
+      await tx.putTask(task);
     },
-    putOperation(id, operation) {
-      const previous = tx.getOperation(id, operation.key);
+    async putOperation(id, operation) {
+      const previous = await tx.getOperation(id, operation.key);
       if (previous === undefined) {
-        const count = tx.operationCount(id);
+        const count = await tx.operationCount(id);
         if (count >= limits.maxOperations)
           throw new DurableLimitError(
             "capacity_exceeded",
@@ -211,7 +211,7 @@ export function limitedTransaction(
       }
       payload("operation.input", changed(previous?.input, operation.input));
       payload("operation.result", changed(previous?.result, operation.result));
-      tx.putOperation(id, operation);
+      await tx.putOperation(id, operation);
     },
   };
 }

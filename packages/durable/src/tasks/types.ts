@@ -39,12 +39,12 @@ export type TaskContext<I, S> = {
   readonly checkpoint: S;
   readonly signal: AbortSignal;
   /** The key is unique for this parent's lifetime. Replay returns the same child. */
-  spawn<CI, CS, CR>(key: string, task: TaskDefinition<CI, CS, CR>, input: CI): string;
-  spawnAgent(key: string, input: TaskAgentInput): string;
+  spawn<CI, CS, CR>(key: string, task: TaskDefinition<CI, CS, CR>, input: CI): Promise<string>;
+  spawnAgent(key: string, input: TaskAgentInput): Promise<string>;
   /** Read a direct owned agent child's persisted execution state. */
-  agentRun(childId: string): DurableRunRecord;
-  children(): TaskRecord[];
-  signalValue(name: string): JsonValue | undefined;
+  agentRun(childId: string): Promise<DurableRunRecord>;
+  children(): Promise<TaskRecord[]>;
+  signalValue(name: string): Promise<JsonValue | undefined>;
   /** Effects default to manual reconciliation after an uncertain interruption. */
   effect<T extends JsonValue>(
     key: string,
@@ -157,9 +157,13 @@ export type TaskEvent = {
 };
 
 export interface TaskTransaction {
-  getTask(id: string): TaskRecord | undefined;
-  findTask(sessionId: string, parentId: string | undefined, key: string): TaskRecord | undefined;
-  putTask(task: TaskRecord): void;
-  taskChildren(id: string): TaskRecord[];
-  taskTree(rootId: string): TaskRecord[];
+  getTask(id: string): Promise<TaskRecord | undefined>;
+  findTask(
+    sessionId: string,
+    parentId: string | undefined,
+    key: string,
+  ): Promise<TaskRecord | undefined>;
+  putTask(task: TaskRecord): Promise<void>;
+  taskChildren(id: string): Promise<TaskRecord[]>;
+  taskTree(rootId: string): Promise<TaskRecord[]>;
 }

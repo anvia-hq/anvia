@@ -25,9 +25,9 @@ export function createRecordedGuardrails(
   if (policies.length === 0) return undefined;
 
   // Output checks run once per final response; a retry of the same turn gets a new key.
-  const outputSlot = () =>
-    store.transaction((tx) => {
-      const current = tx.getRun(run.id);
+  const outputSlot = async () =>
+    store.transaction(async (tx) => {
+      const current = await tx.getRun(run.id);
       return `${current?.modelTurns ?? 0}:${current?.retries ?? 0}`;
     });
 
@@ -39,17 +39,17 @@ export function createRecordedGuardrails(
     check: () => unknown,
   ): Promise<unknown> {
     const base = `${run.epoch}:guardrail:${boundary}:${slot}:${policy.id}:${guardrailId}`;
-    const retries = store.transaction((tx) => tx.getRun(run.id)?.retries ?? 0);
+    const retries = await store.transaction(async (tx) => (await tx.getRun(run.id))?.retries ?? 0);
     // An errored check (for example a moderation timeout) is run again after retry(). Its error
     // stays recorded under the earlier key; the re-run gets the next key. A decision that was
     // recorded (allow, block, rewrite) is reused as it was, so it stays terminal.
     let key = base;
-    let existing = store.transaction((tx) => tx.getOperation(run.id, key));
+    let existing = await store.transaction(async (tx) => tx.getOperation(run.id, key));
     for (let attempt = 1; existing?.status === "completed"; attempt++) {
       const previous = existing.result as unknown as Outcome;
       if (previous.ok || previous.retries >= retries) break;
       key = `${base}:attempt${attempt}`;
-      existing = store.transaction((tx) => tx.getOperation(run.id, key));
+      existing = await store.transaction(async (tx) => tx.getOperation(run.id, key));
     }
     if (existing?.status === "completed") {
       const outcome = existing.result as unknown as Outcome;
@@ -63,8 +63,8 @@ export function createRecordedGuardrails(
       );
     }
     const identity = json({ boundary, slot, policyId: policy.id, guardrailId });
-    store.transaction((tx) => {
-      tx.putOperation(run.id, {
+    await store.transaction(async (tx) => {
+      await tx.putOperation(run.id, {
         key,
         kind: "effect",
         input: identity,
@@ -79,8 +79,8 @@ export function createRecordedGuardrails(
     } catch (error) {
       outcome = { ok: false, error: errorMessage(error), retries };
     }
-    store.transaction((tx) => {
-      tx.putOperation(run.id, {
+    await store.transaction(async (tx) => {
+      await tx.putOperation(run.id, {
         key,
         kind: "effect",
         input: identity,
@@ -102,8 +102,8 @@ export function createRecordedGuardrails(
     })),
     output: policy.output.map((guardrail) => ({
       id: guardrail.id,
-      check: (context, actions) =>
-        record(policy, "output", outputSlot(), guardrail.id, () =>
+      check: async (context, actions) =>
+        record(policy, "output", await outputSlot(), guardrail.id, () =>
           guardrail.check(context, actions),
         ),
     })),

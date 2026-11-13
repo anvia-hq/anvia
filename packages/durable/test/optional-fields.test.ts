@@ -12,10 +12,10 @@ const submission = {
   prompt: "hello",
 };
 
-it("omits unset registration and persisted run options", () => {
+it("omits unset registration and persisted run options", async () => {
   const agent = makeAgent(async () => done());
   const registration = registrations([{ agent, version: "1" }]).get(agent.id)!;
-  const record = createRunRecord(submission, registration);
+  const record = await createRunRecord(submission, registration);
   for (const key of ["stream", "compaction", "modelRetry"]) {
     expect(Object.hasOwn(registration, key)).toBe(false);
     expect(Object.hasOwn(record, key)).toBe(false);
@@ -25,16 +25,16 @@ it("omits unset registration and persisted run options", () => {
   expect(record.input).toEqual({ messages: [{ role: "user", content: "hello" }] });
 });
 
-it.each([false, true])("preserves an explicit stream option of %s", (stream) => {
+it.each([false, true])("preserves an explicit stream option of %s", async (stream) => {
   const agent = makeStreamingAgent(async function* () {
     yield { type: "final", response: done() };
   });
   const registration: DurableAgentRegistration = { agent, version: "1", stream };
   expect(registrations([registration]).get(agent.id)).toHaveProperty("stream", stream);
-  expect(createRunRecord(submission, registration)).toHaveProperty("stream", stream);
+  expect(await createRunRecord(submission, registration)).toHaveProperty("stream", stream);
 });
 
-it("copies persisted policies without mutating the registered options", () => {
+it("copies persisted policies without mutating the registered options", async () => {
   const agent = makeAgent(async () => done());
   const registration: DurableAgentRegistration = {
     agent,
@@ -51,7 +51,7 @@ it("copies persisted policies without mutating the registered options", () => {
   expect(normalized.compaction?.compactor).toBe(registration.compaction!.compactor);
   expect(normalized.compaction?.tokenCounter).toBe(registration.compaction!.tokenCounter);
 
-  const record = createRunRecord(submission, normalized);
+  const record = await createRunRecord(submission, normalized);
   expect(record.loopCompaction).toBe(true);
   expect(record.compaction).toEqual({
     trigger: { afterTokens: 100 },
@@ -69,7 +69,7 @@ it("copies persisted policies without mutating the registered options", () => {
   expect(normalized.modelRetry!.maxAttempts).toBe(2);
 });
 
-it("omits unset compaction retention and token counter", () => {
+it("omits unset compaction retention and token counter", async () => {
   const agent = makeAgent(async () => done());
   const registration = registrations([
     {
@@ -83,9 +83,9 @@ it("omits unset compaction retention and token counter", () => {
   ]).get(agent.id)!;
   expect(Object.hasOwn(registration.compaction!, "retention")).toBe(false);
   expect(Object.hasOwn(registration.compaction!, "tokenCounter")).toBe(false);
-  expect(Object.hasOwn(createRunRecord(submission, registration).compaction!, "retention")).toBe(
-    false,
-  );
+  expect(
+    Object.hasOwn((await createRunRecord(submission, registration)).compaction!, "retention"),
+  ).toBe(false);
 });
 
 it("preserves steering request IDs and omits the property when absent", () => {

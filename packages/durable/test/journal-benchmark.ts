@@ -26,8 +26,8 @@ try {
   for (const turns of [25, 50, 100]) {
     const path = join(directory, `${turns}.sqlite`);
     const store = new SqliteDurableStore(path);
-    store.acquire();
-    const run = createRunRecord(
+    await store.acquire();
+    const run = await createRunRecord(
       { agentId: "researcher", sessionId: "session", requestId: "one", prompt: "Research" },
       { agent: makeAgent(async () => done()), version: "1" },
     );
@@ -35,8 +35,8 @@ try {
     run.modelTurns = turns;
     const full: DurableOperation[] = [];
     const history: Message[] = [{ role: "user", content: "Research" }];
-    store.transaction((tx) => {
-      tx.putRun(run);
+    await store.transaction(async (tx) => {
+      await tx.putRun(run);
       for (let turn = 1; turn <= turns; turn++) {
         const operation: DurableOperation = {
           key: `0:model:${turn}`,
@@ -51,7 +51,7 @@ try {
           result: { ...done(), rawResponse: null } as unknown as JsonValue,
         };
         full.push(operation);
-        tx.putOperation(run.id, operation);
+        await tx.putOperation(run.id, operation);
         history.push({
           role: "assistant",
           content: [
@@ -71,12 +71,12 @@ try {
         });
       }
     });
-    store.close();
+    await store.close();
     let runtime = await DurableRuntime.open({ store: new SqliteDurableStore(path) });
-    const compactSnapshotMs = median(() => runtime.snapshot(run.id));
-    const runMs = median(() => runtime.run(run.id));
-    const statusMs = median(() => runtime.status(run.id));
-    const snapshotWithoutOperationsMs = median(() =>
+    const compactSnapshotMs = median(async () => runtime.snapshot(run.id));
+    const runMs = median(async () => runtime.run(run.id));
+    const statusMs = median(async () => runtime.status(run.id));
+    const snapshotWithoutOperationsMs = median(async () =>
       runtime.snapshot(run.id, { operations: false }),
     );
     await runtime.close();
@@ -101,7 +101,7 @@ try {
     const legacyBytes = size("anvia_durable_operations");
     db.close();
     runtime = await DurableRuntime.open({ store: new SqliteDurableStore(path) });
-    const legacySnapshotMs = median(() => runtime.snapshot(run.id));
+    const legacySnapshotMs = median(async () => runtime.snapshot(run.id));
     await runtime.close();
     console.log(
       JSON.stringify({

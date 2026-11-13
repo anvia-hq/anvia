@@ -132,11 +132,13 @@ it("records the MCP fingerprint on an owned agent task child, so it is not block
           checkpoint: true,
           wait: {
             type: "children",
-            ids: [ctx.spawnAgent("agent", { agentId: "researcher", prompt: "find the docs" })],
+            ids: [
+              await ctx.spawnAgent("agent", { agentId: "researcher", prompt: "find the docs" }),
+            ],
             policy: "allSettled",
           },
         };
-      return { status: "completed", output: ctx.children()[0]!.status };
+      return { status: "completed", output: (await ctx.children())[0]!.status };
     },
   });
   const runtime = await DurableRuntime.open({

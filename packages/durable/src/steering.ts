@@ -72,12 +72,12 @@ export function parseDurableSteerReceipt(value: unknown): AgentSteerReceipt {
   return parsed.data;
 }
 
-export function queueSteering(
+export async function queueSteering(
   tx: DurableTransaction,
   run: DurableRunRecord,
   input: AgentSteerInput,
   options: DurableSteerOptions,
-): AgentSteerReceipt {
+): Promise<AgentSteerReceipt> {
   const parsed = inputSchema.safeParse(json(input));
   const parsedOptions = optionsSchema.safeParse(json(options));
   if (!parsed.success || !parsedOptions.success)
@@ -101,8 +101,8 @@ export function queueSteering(
     throw new DurableConflictError("Durable run is no longer accepting steering input.");
   state.pending.push({ id: requestId, messages });
   run.updatedAt = new Date().toISOString();
-  tx.putRun(run);
-  tx.appendEvent(run.id, "steering_queued", { id: requestId });
+  await tx.putRun(run);
+  await tx.appendEvent(run.id, "steering_queued", { id: requestId });
   return { id: requestId, status: "queued" };
 }
 
@@ -113,11 +113,11 @@ export function createSteeringDrain(
   signal: AbortSignal,
 ): NonNullable<AgentRunExecution["drainSteering"]> {
   let boundary = 0;
-  return (turn, closing) => {
+  return async (turn, closing) => {
     signal.throwIfAborted();
     const key = `${run.epoch}:${boundary++}`;
-    return store.transaction((tx) => {
-      const current = tx.getRun(run.id)!;
+    return store.transaction(async (tx) => {
+      const current = (await tx.getRun(run.id))!;
       const state = current.steering!;
       const previous = state.checkpoints[key];
       if (previous !== undefined) {
@@ -130,9 +130,9 @@ export function createSteeringDrain(
       state.checkpoints[key] = { turn, closing, entries };
       // Fence the gap between core's final drain and the durable outcome commit.
       if (closing && entries.length === 0) state.closed = true;
-      tx.putRun(current);
+      await tx.putRun(current);
       for (const entry of entries)
-        tx.appendEvent(run.id, "steering_applied", { id: entry.id, epoch: run.epoch, turn });
+        await tx.appendEvent(run.id, "steering_applied", { id: entry.id, epoch: run.epoch, turn });
       return entries;
     });
   };

@@ -488,7 +488,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         await this.runTurnStartHook(currentTurns, prompt, historyForRequest, newMessages);
         await this.runCompletionCallHook(prompt, historyForRequest, newMessages);
 
-        const contextReplayed = this.replayed({ kind: "context", turn: currentTurns });
+        const contextReplayed = await this.replayed({ kind: "context", turn: currentTurns });
         const prepared =
           this.execution?.prepareMessages !== undefined ||
           this.agent.memory?.compaction !== undefined
@@ -502,7 +502,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         }
         const request = await this.createTurnRequest(prompt, prepared.messages, currentTurns);
 
-        const modelReplayed = this.replayed({ kind: "model", turn: currentTurns });
+        const modelReplayed = await this.replayed({ kind: "model", turn: currentTurns });
         let response: CompletionResponse;
         try {
           response = await this.runCompletion(request, currentTurns, runObservers);
@@ -829,7 +829,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         await this.runTurnStartHook(currentTurns, prompt, historyForRequest, newMessages);
         await this.runCompletionCallHook(prompt, historyForRequest, newMessages);
 
-        const contextReplayed = this.replayed({ kind: "context", turn: currentTurns });
+        const contextReplayed = await this.replayed({ kind: "context", turn: currentTurns });
         const prepared =
           this.execution?.prepareMessages !== undefined ||
           this.agent.memory?.compaction !== undefined
@@ -851,7 +851,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
           request,
           providerRequest,
         );
-        const modelReplayed = this.replayed({ kind: "model", turn: currentTurns });
+        const modelReplayed = await this.replayed({ kind: "model", turn: currentTurns });
         // A restored response was observed when it was generated; observing it again duplicates it.
         const generationObservers = modelReplayed
           ? new ActiveGenerationObservers([], "ignore")
@@ -2130,8 +2130,8 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     return context;
   }
 
-  private replayed(step: AgentRunExecutionStep): boolean {
-    return this.execution?.replayed?.(step) === true;
+  private async replayed(step: AgentRunExecutionStep): Promise<boolean> {
+    return (await this.execution?.replayed?.(step)) === true;
   }
 
   private async startRunObservers(runId: string): Promise<ActiveAgentRunObservers> {
@@ -2346,7 +2346,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     options: { closeWhenEmpty?: boolean } = {},
   ): Promise<QueuedSteering[]> {
     const receipts = [
-      ...(this.execution?.drainSteering?.(turn, options.closeWhenEmpty === true) ?? []),
+      ...((await this.execution?.drainSteering?.(turn, options.closeWhenEmpty === true)) ?? []),
       ...this.steeringMessages.splice(0),
     ];
     if (receipts.length === 0) {

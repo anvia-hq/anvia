@@ -226,7 +226,7 @@ it("allows custom tasks to spawn owned agents with image prompts", async () => {
             checkpoint: true,
             wait: {
               type: "children",
-              ids: [ctx.spawnAgent("vision", { agentId: "vision", prompt })],
+              ids: [await ctx.spawnAgent("vision", { agentId: "vision", prompt })],
               policy: "allSettled",
             },
           },

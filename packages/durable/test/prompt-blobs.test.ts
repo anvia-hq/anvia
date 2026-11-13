@@ -237,11 +237,11 @@ it("keeps the submitted event of a task-spawned agent small and the model still 
           checkpoint: true,
           wait: {
             type: "children",
-            ids: [ctx.spawnAgent("agent", { agentId: "researcher", prompt: big })],
+            ids: [await ctx.spawnAgent("agent", { agentId: "researcher", prompt: big })],
             policy: "allSettled",
           },
         };
-      return { status: "completed", output: ctx.children()[0]!.status };
+      return { status: "completed", output: (await ctx.children())[0]!.status };
     },
   });
   const runtime = await DurableRuntime.open({

@@ -21,20 +21,20 @@ export function guardStore(
   const check = () => {
     if (failure !== undefined) throw failure;
   };
-  const transaction = <T>(callback: (tx: DurableTransaction) => T): T => {
+  const transaction = async <T>(callback: (tx: DurableTransaction) => Promise<T>): Promise<T> => {
     check();
     let callbackFailed = false;
     let callbackError: unknown;
     try {
-      return store.transaction((tx) => {
+      return await store.transaction(async (tx) => {
         const guarded = new Proxy(tx, {
           get(target, key) {
             const method: unknown = Reflect.get(target, key);
             if (typeof method !== "function") return method;
-            return (...args: unknown[]) => {
+            return async (...args: unknown[]) => {
               check();
               try {
-                return Reflect.apply(method, target, args);
+                return await Reflect.apply(method, target, args);
               } catch (error) {
                 throw fail(error);
               }
@@ -42,7 +42,7 @@ export function guardStore(
           },
         });
         try {
-          const result = callback(limitedTransaction(guarded, limits));
+          const result = await callback(limitedTransaction(guarded, limits));
           check(); // A caught write failure must roll back, never commit a partial transaction.
           return result;
         } catch (error) {
@@ -62,10 +62,10 @@ export function guardStore(
       const method: unknown = Reflect.get(target, key);
       if (typeof method !== "function") return method;
       if (key === "close") return method.bind(target);
-      return (...args: unknown[]) => {
+      return async (...args: unknown[]) => {
         check();
         try {
-          return Reflect.apply(method, target, args);
+          return await Reflect.apply(method, target, args);
         } catch (error) {
           throw fail(error);
         }

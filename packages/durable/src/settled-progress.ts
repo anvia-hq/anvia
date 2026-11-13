@@ -12,7 +12,10 @@ import type { DurableRunRecord, DurableTransaction } from "./types.js";
  * Approval continuations already committed their preceding segment to history,
  * so their progress starts after that segment and may consist only of tool results.
  */
-export function settledProgress(tx: DurableTransaction, run: DurableRunRecord): Message[] {
+export async function settledProgress(
+  tx: DurableTransaction,
+  run: DurableRunRecord,
+): Promise<Message[]> {
   const input = run.input.messages;
   const continued = !Array.isArray(input);
   const compacted = run.contextCheckpoint?.compactedMessageCount;
@@ -22,7 +25,7 @@ export function settledProgress(tx: DurableTransaction, run: DurableRunRecord): 
   let messages: readonly unknown[] | undefined = run.exhaustion?.messages;
   if (messages === undefined) {
     let latest: { turn: number; key: string; kind: "context" | "model" } | undefined;
-    for (const operation of tx.operations(run.id)) {
+    for (const operation of await tx.operations(run.id)) {
       if (
         operation.kind !== "context" &&
         (operation.kind !== "model" || run.loopCompaction === true)
@@ -41,7 +44,7 @@ export function settledProgress(tx: DurableTransaction, run: DurableRunRecord): 
       }
     }
     if (latest === undefined) return [];
-    const saved = tx.getOperation(run.id, latest.key);
+    const saved = await tx.getOperation(run.id, latest.key);
     if (saved === undefined) return [];
     if (latest.kind === "context") {
       messages = Array.isArray(saved.input) ? saved.input : undefined;
@@ -67,8 +70,11 @@ export function settledProgress(tx: DurableTransaction, run: DurableRunRecord): 
 }
 
 /** Keep only complete tool exchanges when cancellation precedes the next checkpoint. */
-export function settledHistory(tx: DurableTransaction, run: DurableRunRecord): Message[] {
-  const messages = [...run.history, ...settledProgress(tx, run)];
+export async function settledHistory(
+  tx: DurableTransaction,
+  run: DurableRunRecord,
+): Promise<Message[]> {
+  const messages = [...run.history, ...(await settledProgress(tx, run))];
   const pending = new Set<string>();
   let exchangeStart = 0;
   for (const [index, message] of messages.entries()) {

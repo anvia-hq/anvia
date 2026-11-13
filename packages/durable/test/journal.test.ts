@@ -67,14 +67,16 @@ it.each([false, true])(
       prompt: "Research",
     });
     await handle.result();
-    const operations = runtime.snapshot(handle.id).operations.filter((op) => op.kind === "model");
+    const operations = (await runtime.snapshot(handle.id)).operations.filter(
+      (op) => op.kind === "model",
+    );
     expect(operations).toHaveLength(76);
-    operations.forEach((operation, index) => {
+    for (const [index, operation] of operations.entries()) {
       expect(operation.historyEncoding).toBe("linked-v1");
-      expect(JSON.stringify(runtime.operationRequest(handle.id, operation.key))).toBe(
+      expect(JSON.stringify(await runtime.operationRequest(handle.id, operation.key))).toBe(
         requests[index],
       );
-    });
+    }
     const db = new DatabaseSync(path, { readOnly: true });
     try {
       const bytes = (table: string, expression = "length(CAST(record AS BLOB))") =>
@@ -90,7 +92,7 @@ it.each([false, true])(
       expect(stored).toBeLessThan(unique * 3);
       // Events retain tool results and the final transcript, but must not repeat model histories.
       expect(bytes("anvia_durable_events", "length(CAST(data AS BLOB))")).toBeLessThan(unique * 3);
-      expectJournalRequests(runtime, handle.id);
+      await expectJournalRequests(runtime, handle.id);
       if (!compact) expect(requests.join("").length).toBeGreaterThan(unique * 30);
     } finally {
       db.close();
@@ -134,24 +136,24 @@ it("status, run, list, scope, task snapshots and graphs never read operation pay
   const read = vi.fn(() => {
     throw new Error("Operation payload read");
   });
-  vi.spyOn(store, "transaction").mockImplementation((callback) =>
+  vi.spyOn(store, "transaction").mockImplementation(async (callback) =>
     transaction((tx) =>
       callback({
         ...tx,
         operations: read,
         getOperation: read,
-        getRun(id) {
+        async getRun(id) {
           runReads++;
           return tx.getRun(id);
         },
       }),
     ),
   );
-  expect(runtime.status(run.id).status).toBe("completed");
+  expect((await runtime.status(run.id)).status).toBe("completed");
   expect(runReads).toBe(0);
-  expect(runtime.run(run.id).status).toBe("completed");
-  expect(runtime.runScope(run.id).sessionId).toBe("run");
-  expect(runtime.snapshot(run.id, { operations: false }).operations).toEqual([]);
+  expect((await runtime.run(run.id)).status).toBe("completed");
+  expect((await runtime.runScope(run.id)).sessionId).toBe("run");
+  expect((await runtime.snapshot(run.id, { operations: false })).operations).toEqual([]);
   await runtime.getRun(run.id);
   await handle.snapshot();
   await (await runtime.getTask(handle.id)).snapshot();
@@ -210,25 +212,26 @@ it("resumes an unfinished journal actually written by 0.6.0, preserving embedded
   });
   runtimes.push(runtime);
   const id = fixture.runs[0].id;
-  expect(runtime.status(id).status).toBe("running");
-  expect(() => runtime.steer(id, { prompt: "legacy correction" })).toThrow(
+  expect((await runtime.status(id)).status).toBe("running");
+  await expect(async () => runtime.steer(id, { prompt: "legacy correction" })).rejects.toThrow(
     "Steering requires a run submitted with steering support",
   );
-  for (const [index, op] of runtime
-    .snapshot(id)
-    .operations.filter((op) => op.kind === "model")
+  for (const [index, op] of (await runtime.snapshot(id)).operations
+    .filter((op) => op.kind === "model")
     .entries()) {
     expect(op.historyEncoding).toBeUndefined();
-    expect(JSON.stringify(runtime.operationRequest(id, op.key))).toBe(fixture.requests[index]);
+    expect(JSON.stringify(await runtime.operationRequest(id, op.key))).toBe(
+      fixture.requests[index],
+    );
   }
   await runtime.resume();
   expect(await (await runtime.getRun(id)).result()).toMatchObject({ output: "done" });
   expect(model).toHaveBeenCalledTimes(1);
   expect(tool).not.toHaveBeenCalled();
   expect(
-    runtime.snapshot(id).operations.find((op) => op.key === "0:model:2")?.historyEncoding,
+    (await runtime.snapshot(id)).operations.find((op) => op.key === "0:model:2")?.historyEncoding,
   ).toBe("linked-v1");
-  expect(JSON.stringify(runtime.operationRequest(id, "0:model:2"))).toBe(fixture.requests[1]);
+  expect(JSON.stringify(await runtime.operationRequest(id, "0:model:2"))).toBe(fixture.requests[1]);
 });
 
 it("rebuilds question-wait requests across close, reopen and response epochs", async () => {
@@ -264,8 +267,8 @@ it("rebuilds question-wait requests across close, reopen and response epochs", a
     requestId: "one",
     prompt: "Research",
   });
-  await vi.waitFor(() => expect(runtime.status(handle.id).status).toBe("waiting"));
-  const pending = runtime.run(handle.id).outcome;
+  await vi.waitFor(async () => expect((await runtime.status(handle.id)).status).toBe("waiting"));
+  const pending = (await runtime.run(handle.id)).outcome;
   if (pending?.type !== "interaction") throw new Error("Expected question");
   await runtime.close();
   runtime = await DurableRuntime.open({
@@ -279,20 +282,19 @@ it("rebuilds question-wait requests across close, reopen and response epochs", a
     answers: [{ questionId: "details", value: "The annual report" }],
   });
   await reopened.result();
-  expectJournalRequests(runtime, handle.id);
-  const models = runtime.snapshot(handle.id).operations.filter((op) => op.kind === "model");
+  await expectJournalRequests(runtime, handle.id);
+  const models = (await runtime.snapshot(handle.id)).operations.filter((op) => op.kind === "model");
   expect(models).toHaveLength(2);
-  models.forEach((op, index) =>
-    expect(JSON.stringify(runtime.operationRequest(handle.id, op.key))).toBe(requests[index]),
-  );
+  for (const [index, op] of models.entries())
+    expect(JSON.stringify(await runtime.operationRequest(handle.id, op.key))).toBe(requests[index]);
 });
 
-it("rolls back shared history with its operation and detects damaged log content", () => {
+it("rolls back shared history with its operation and detects damaged log content", async () => {
   const directory = mkdtempSync(join(tmpdir(), "anvia-log-atomic-"));
   directories.push(directory);
   const path = join(directory, "journal.sqlite");
   const store = new SqliteDurableStore(path);
-  store.acquire();
+  await store.acquire();
   const operation = {
     key: "0:model:1",
     kind: "model" as const,
@@ -302,28 +304,30 @@ it("rolls back shared history with its operation and detects damaged log content
   };
   const db = new DatabaseSync(path);
   try {
-    expect(() =>
-      store.transaction((tx) => {
-        tx.putOperation("run", operation);
+    await expect(async () =>
+      store.transaction(async (tx) => {
+        await tx.putOperation("run", operation);
         throw new Error("rollback");
       }),
-    ).toThrow("rollback");
+    ).rejects.toThrow("rollback");
     for (const table of [
       "anvia_durable_operations",
       "anvia_durable_messages",
       "anvia_durable_histories",
     ])
       expect(db.prepare(`SELECT count(*) AS n FROM ${table}`).get()!.n).toBe(0);
-    store.transaction((tx) => tx.putOperation("run", operation));
-    expect(store.transaction((tx) => tx.getOperation("run", operation.key))).toEqual(operation);
+    await store.transaction(async (tx) => tx.putOperation("run", operation));
+    expect(await store.transaction(async (tx) => tx.getOperation("run", operation.key))).toEqual(
+      operation,
+    );
     db.prepare("UPDATE anvia_durable_messages SET record = ?").run(
       JSON.stringify({ role: "user", content: "changed" }),
     );
-    expect(() => store.transaction((tx) => tx.getOperation("run", operation.key))).toThrow(
-      "Corrupt operation history content",
-    );
+    await expect(async () =>
+      store.transaction(async (tx) => tx.getOperation("run", operation.key)),
+    ).rejects.toThrow("Corrupt operation history content");
   } finally {
     db.close();
-    store.close();
+    await store.close();
   }
 });

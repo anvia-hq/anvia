@@ -45,9 +45,11 @@ async function open(
   return runtime;
 }
 
-function record(overrides: Partial<DurableRunRecord> & { requestId: string }): DurableRunRecord {
+async function record(
+  overrides: Partial<DurableRunRecord> & { requestId: string },
+): Promise<DurableRunRecord> {
   const agent = makeAgent(async () => done());
-  const base = createRunRecord(
+  const base = await createRunRecord(
     { ...submission, requestId: overrides.requestId },
     { agent, version: "1" },
   );
@@ -61,22 +63,24 @@ afterEach(async () => {
 });
 
 describe("latestCompleted", () => {
-  function latestCompleted(records: DurableRunRecord[]): DurableRunRecord | undefined {
+  async function latestCompleted(
+    records: DurableRunRecord[],
+  ): Promise<DurableRunRecord | undefined> {
     const store = new SqliteDurableStore(":memory:");
-    store.acquire();
+    await store.acquire();
     try {
-      store.transaction((tx) => {
-        for (const run of records) tx.putRun(run);
+      await store.transaction(async (tx) => {
+        for (const run of records) await tx.putRun(run);
       });
-      return store.transaction((tx) => tx.latestCompleted("session"));
+      return store.transaction(async (tx) => tx.latestCompleted("session"));
     } finally {
-      store.close();
+      await store.close();
     }
   }
 
-  it("picks a started failed run over an earlier completed run", () => {
-    const latest = latestCompleted([
-      record({
+  it("picks a started failed run over an earlier completed run", async () => {
+    const latest = await latestCompleted([
+      await record({
         requestId: "one",
         status: "completed",
         startedAt: "2026-01-01T00:00:00.000Z",
@@ -89,14 +93,14 @@ describe("latestCompleted", () => {
           messages: [],
         },
       }),
-      record({ requestId: "two", status: "failed", startedAt: "2026-01-01T00:00:01.000Z" }),
+      await record({ requestId: "two", status: "failed", startedAt: "2026-01-01T00:00:01.000Z" }),
     ]);
     expect(latest?.requestId).toBe("two");
   });
 
-  it("picks a started cancelled run over an earlier completed run", () => {
-    const latest = latestCompleted([
-      record({
+  it("picks a started cancelled run over an earlier completed run", async () => {
+    const latest = await latestCompleted([
+      await record({
         requestId: "one",
         status: "completed",
         startedAt: "2026-01-01T00:00:00.000Z",
@@ -109,14 +113,18 @@ describe("latestCompleted", () => {
           messages: [],
         },
       }),
-      record({ requestId: "two", status: "cancelled", startedAt: "2026-01-01T00:00:01.000Z" }),
+      await record({
+        requestId: "two",
+        status: "cancelled",
+        startedAt: "2026-01-01T00:00:01.000Z",
+      }),
     ]);
     expect(latest?.requestId).toBe("two");
   });
 
-  it("skips failed and cancelled runs that never started", () => {
-    const latest = latestCompleted([
-      record({
+  it("skips failed and cancelled runs that never started", async () => {
+    const latest = await latestCompleted([
+      await record({
         requestId: "one",
         status: "completed",
         startedAt: "2026-01-01T00:00:00.000Z",
@@ -129,14 +137,16 @@ describe("latestCompleted", () => {
           messages: [],
         },
       }),
-      record({ requestId: "two", status: "failed" }),
-      record({ requestId: "three", status: "cancelled" }),
+      await record({ requestId: "two", status: "failed" }),
+      await record({ requestId: "three", status: "cancelled" }),
     ]);
     expect(latest?.requestId).toBe("one");
   });
 
-  it("returns undefined when only unstarted runs exist", () => {
-    expect(latestCompleted([record({ requestId: "one", status: "failed" })])).toBeUndefined();
+  it("returns undefined when only unstarted runs exist", async () => {
+    expect(
+      await latestCompleted([await record({ requestId: "one", status: "failed" })]),
+    ).toBeUndefined();
   });
 });
 
@@ -152,7 +162,7 @@ describe("settledProgress", () => {
     } as unknown as DurableTransaction;
   }
 
-  function failedRun(overrides: Partial<DurableRunRecord> = {}): DurableRunRecord {
+  async function failedRun(overrides: Partial<DurableRunRecord> = {}): Promise<DurableRunRecord> {
     return record({
       requestId: "failed",
       status: "failed",
@@ -162,23 +172,23 @@ describe("settledProgress", () => {
     });
   }
 
-  it("returns the exhaustion tail when it contains an assistant message", () => {
-    const run = failedRun({
+  it("returns the exhaustion tail when it contains an assistant message", async () => {
+    const run = await failedRun({
       exhaustion: { reason: "max_turns", messages: [user, assistant] },
     });
     // The tail starts at input.length - 1, keeping the prompt the progress answers.
-    expect(settledProgress(txWith([]), run)).toEqual([user, assistant]);
+    expect(await settledProgress(txWith([]), run)).toEqual([user, assistant]);
   });
 
-  it("returns nothing when the exhaustion tail has no assistant message", () => {
-    const run = failedRun({
+  it("returns nothing when the exhaustion tail has no assistant message", async () => {
+    const run = await failedRun({
       exhaustion: { reason: "max_turns", messages: [user, { role: "user", content: "again" }] },
     });
-    expect(settledProgress(txWith([]), run)).toEqual([]);
+    expect(await settledProgress(txWith([]), run)).toEqual([]);
   });
 
-  it("falls back to the latest context operation without exhaustion", () => {
-    const run = failedRun({ epoch: 2 });
+  it("falls back to the latest context operation without exhaustion", async () => {
+    const run = await failedRun({ epoch: 2 });
     const tx = txWith([
       { kind: "context", key: "2:context:1", input: [user] },
       { kind: "context", key: "2:context:3", input: [user, assistant] },
@@ -186,11 +196,11 @@ describe("settledProgress", () => {
       { kind: "context", key: "1:context:9", input: [user, assistant] },
     ]);
     // Turn 3 is the latest for this epoch; the tail keeps the prompt plus progress.
-    expect(settledProgress(tx, run)).toEqual([user, assistant]);
+    expect(await settledProgress(tx, run)).toEqual([user, assistant]);
   });
 
-  it("returns nothing without exhaustion or context operations", () => {
-    expect(settledProgress(txWith([]), failedRun())).toEqual([]);
+  it("returns nothing without exhaustion or context operations", async () => {
+    expect(await settledProgress(txWith([]), await failedRun())).toEqual([]);
   });
 });
 
@@ -314,8 +324,11 @@ describe("settled session history", () => {
     await vi.waitFor(async () => expect((await run.snapshot()).run.status).toBe("waiting"));
     const outcome = (await run.snapshot()).run.outcome;
     if (outcome?.type !== "interaction") throw new Error("Expected approval");
-    runtime.respond(run.id, outcome.interaction.id, { type: "tool-approval", approved: true });
-    runtime.cancel(run.id);
+    await runtime.respond(run.id, outcome.interaction.id, {
+      type: "tool-approval",
+      approved: true,
+    });
+    await runtime.cancel(run.id);
     await runtime.close();
     const recovered = await open(path, agent);
     const next = await recovered.submit({ ...submission, requestId: "next", prompt: "continue" });
@@ -345,7 +358,7 @@ describe("settled session history", () => {
   it("recovers the latest context checkpoint of a cancelled run", async () => {
     const path = database();
     const store = new SqliteDurableStore(path);
-    store.acquire();
+    await store.acquire();
     const agent = makeAgent(async () => done());
     const registration = { agent, version: "1" };
     const user = { role: "user", content: "hello" } as const;
@@ -354,7 +367,7 @@ describe("settled session history", () => {
       content: [{ type: "text", text: "partial" }],
     } as const;
     const cancelled = {
-      ...createRunRecord({ ...submission, requestId: "cancelled" }, registration),
+      ...(await createRunRecord({ ...submission, requestId: "cancelled" }, registration)),
       status: "cancelled" as const,
       startedAt: "2026-01-01T00:00:01.000Z",
       epoch: 2,
@@ -367,14 +380,14 @@ describe("settled session history", () => {
       recovery: "safe" as const,
       input,
     });
-    store.transaction((tx) => {
-      tx.putRun(cancelled);
+    await store.transaction(async (tx) => {
+      await tx.putRun(cancelled);
       // The summary table is keyed at submission; refresh it so runtime status reads settle.
-      tx.putRun({ ...cancelled });
-      tx.putOperation(cancelled.id, context("2:context:1", [user]));
-      tx.putOperation(cancelled.id, context("2:context:3", [user, assistant]));
+      await tx.putRun({ ...cancelled });
+      await tx.putOperation(cancelled.id, context("2:context:1", [user]));
+      await tx.putOperation(cancelled.id, context("2:context:3", [user, assistant]));
     });
-    store.close();
+    await store.close();
 
     const runtime = await open(path);
     const next = await runtime.submit({ ...submission, requestId: "next", prompt: "continue" });

@@ -21,13 +21,13 @@ export const GRAPH_SESSION_PREFIX = "__anvia_graph__:";
  * stored inline, which the payload budget still bounds. `toolIndexes` is the fingerprint computed
  * by the caller before the transaction (see toolIndexesOf).
  */
-export function createRunRecord(
+export async function createRunRecord(
   submission: DurableSubmission,
   registration: DurableAgentRegistration,
   tx?: DurableTransaction,
   mcpServers?: DurableMcpServers,
   toolIndexes?: DurableToolIndexes,
-): DurableRunRecord {
+): Promise<DurableRunRecord> {
   const now = new Date().toISOString();
 
   const record: Omit<DurableRunRecord, "input"> = {
@@ -65,7 +65,7 @@ export function createRunRecord(
     record.contextDocuments =
       tx === undefined
         ? contextDocuments
-        : (externalizeContextDocuments(tx, contextDocuments) as {
+        : ((await tx.blobs((io) => externalizeContextDocuments(io, contextDocuments))) as {
             hash: string;
             documents?: typeof contextDocuments.documents;
           });

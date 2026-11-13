@@ -24,7 +24,7 @@ const parent = defineTask({
   output: z.string(),
   initial: () => null,
   run: async (ctx) => {
-    ctx.spawn("child", child, null);
+    await ctx.spawn("child", child, null);
     const output = await ctx.effect(
       "external",
       { amount: 1 },
@@ -33,7 +33,7 @@ const parent = defineTask({
           appendFileSync(effects, `${operationId}\n`);
         if (mode !== "committed") {
           // The child guarantee starts at its committed outcome, not its external append.
-          while (!ctx.children().every((task) => task.status === "completed"))
+          while (!(await ctx.children()).every((task) => task.status === "completed"))
             await new Promise((resolve) => setTimeout(resolve, 5));
           process.send?.({ id: ctx.id });
           await new Promise<void>(() => {
@@ -44,7 +44,7 @@ const parent = defineTask({
       },
       (mode === "idempotent" ? "idempotent" : "manual") as ToolRecovery,
     );
-    while (!ctx.children().every((task) => task.status === "completed"))
+    while (!(await ctx.children()).every((task) => task.status === "completed"))
       await new Promise((resolve) => setTimeout(resolve, 5));
     process.send?.({ id: ctx.id });
     await new Promise<void>(() => {

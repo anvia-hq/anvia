@@ -131,7 +131,7 @@ it("streams persisted deltas before completion and detaches subscribers without 
       { data: { event: { type: "text_delta", turn: 1, delta: "ne" } } },
     ]);
     expect(await run.result()).toMatchObject({ output: "done" });
-    expectJournalRequests(runtime, run.id);
+    await expectJournalRequests(runtime, run.id);
     const saved = await events(run);
     const started = saved.find((event) => event.type === "model_attempt_started")!;
     const attemptId = (started.data as { attemptId: string }).attemptId;
@@ -162,7 +162,7 @@ it("replays completed streams after reopening without duplicating deltas or invo
   await reopened.resume();
   const restored = await reopened.getRun(run.id);
   expect(await restored.result()).toMatchObject({ output: "done" });
-  expectJournalRequests(reopened, restored.id);
+  await expectJournalRequests(reopened, restored.id);
   expect(await events(restored)).toEqual(saved);
   expect(stream).toHaveBeenCalledTimes(1);
   expect(completion).not.toHaveBeenCalled();
@@ -184,7 +184,7 @@ it("retries failed streams under new attempt identities and preserves the retry 
   expect(calls).toBe(2);
   await run.retry();
   expect(await run.result()).toMatchObject({ output: "done" });
-  expectJournalRequests(runtime, run.id);
+  await expectJournalRequests(runtime, run.id);
   const saved = await events(run);
   const attempts = saved
     .filter((event) => event.type === "model_attempt_started")
@@ -214,13 +214,11 @@ it("keeps completed streamed model and tool checkpoints when a later stream is i
   const runtime = await open(first.agent, path);
   const run = await runtime.submit(submission);
   await vi.waitFor(() => expect(first.stream).toHaveBeenCalledTimes(2));
-  await vi.waitFor(() =>
+  await vi.waitFor(async () =>
     expect(
-      runtime
-        .events(run.id, 0)
-        .some(
-          (event) => event.type === "model_delta" && JSON.stringify(event.data).includes("partial"),
-        ),
+      (await runtime.events(run.id, 0)).some(
+        (event) => event.type === "model_delta" && JSON.stringify(event.data).includes("partial"),
+      ),
     ).toBe(true),
   );
   await runtime.close();
@@ -229,7 +227,7 @@ it("keeps completed streamed model and tool checkpoints when a later stream is i
   await reopened.resume();
   const restored = await reopened.getRun(run.id);
   expect(await restored.result()).toMatchObject({ output: "done" });
-  expectJournalRequests(reopened, restored.id);
+  await expectJournalRequests(reopened, restored.id);
   expect(resumed.stream).toHaveBeenCalledTimes(1);
   expect(tool).toHaveBeenCalledTimes(1);
   expect((await restored.snapshot()).run.usage.totalTokens).toBe(6);
@@ -263,7 +261,7 @@ it("preserves tool approval and continues with streaming after a restart", async
   const restored = await reopened.getRun(run.id);
   await restored.respond(outcome.interaction.id, { type: "tool-approval", approved: true });
   expect(await restored.result()).toMatchObject({ output: "done" });
-  expectJournalRequests(reopened, restored.id);
+  await expectJournalRequests(reopened, restored.id);
   expect(tool).toHaveBeenCalledTimes(1);
   expect(completion).not.toHaveBeenCalled();
 });
@@ -278,8 +276,8 @@ it("uses the same streaming execution for graph nodes and owned agent tasks", as
     output: z.string(),
     initial: () => null,
     run: async (ctx) => {
-      const id = ctx.spawnAgent("child", { agentId: agent.id, prompt: "hello" });
-      const child = ctx.children().find((child) => child.id === id)!;
+      const id = await ctx.spawnAgent("child", { agentId: agent.id, prompt: "hello" });
+      const child = (await ctx.children()).find((child) => child.id === id)!;
       if (child.outcome?.status === "completed") return { status: "completed", output: "done" };
       return {
         status: "waiting",
@@ -338,7 +336,7 @@ it("keeps generate() as the default and rejects unsupported streaming registrati
       }),
     ).rejects.toThrow("streaming-capable");
   } finally {
-    store.close();
+    await store.close();
   }
 });
 
@@ -389,7 +387,7 @@ it("recovers persisted partial tokens and completed tools after SIGKILL", async 
   await runtime.resume();
   const run = await runtime.getRun(id);
   expect(await run.result()).toMatchObject({ output: "done" });
-  expectJournalRequests(runtime, run.id);
+  await expectJournalRequests(runtime, run.id);
   const saved = await events(run);
   const partial = saved.find(
     (event) => event.type === "model_delta" && JSON.stringify(event.data).includes("partial"),
@@ -440,8 +438,10 @@ it("persists cancellation of a partial stream and never resumes it", async () =>
   });
   const runtime = await open(agent, path);
   const run = await runtime.submit(submission);
-  await vi.waitFor(() =>
-    expect(runtime.events(run.id, 0).some((event) => event.type === "model_delta")).toBe(true),
+  await vi.waitFor(async () =>
+    expect((await runtime.events(run.id, 0)).some((event) => event.type === "model_delta")).toBe(
+      true,
+    ),
   );
   await run.cancel();
   await expect(run.result()).rejects.toMatchObject({ status: "cancelled" });
@@ -458,13 +458,13 @@ it("treats a delta write failure as fatal storage failure and recovers with a ne
   const path = database();
   const store = new SqliteDurableStore(path);
   const transaction = store.transaction.bind(store);
-  vi.spyOn(store, "transaction").mockImplementation((callback) =>
+  vi.spyOn(store, "transaction").mockImplementation(async (callback) =>
     transaction((tx) =>
       callback({
         ...tx,
-        appendEvent(id, type, data) {
+        async appendEvent(id, type, data) {
           if (type === "model_delta") throw new Error("injected delta write failure");
-          tx.appendEvent(id, type, data);
+          await tx.appendEvent(id, type, data);
         },
       }),
     ),
@@ -494,7 +494,7 @@ it("treats a delta write failure as fatal storage failure and recovers with a ne
   await reopened.resume();
   const restored = await reopened.getRun(run.id);
   expect(await restored.result()).toMatchObject({ output: "done" });
-  expectJournalRequests(reopened, restored.id);
+  await expectJournalRequests(reopened, restored.id);
   const saved = await events(restored);
   expect(saved.filter((event) => event.type === "model_attempt_started")).toHaveLength(2);
   expect(saved.filter((event) => event.type === "model_delta")).toHaveLength(2);

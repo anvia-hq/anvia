@@ -46,15 +46,15 @@ export function createRecordedHooks(
   ): Promise<unknown> {
     const position = (sequence[name] = (sequence[name] ?? -1) + 1);
     const base = `${run.epoch}:hook:${name}:${position}:${toolCallId ?? ""}`;
-    const retries = store.transaction((tx) => tx.getRun(run.id)?.retries ?? 0);
+    const retries = await store.transaction(async (tx) => (await tx.getRun(run.id))?.retries ?? 0);
     // An errored hook is run again after retry() under the next key; a recorded action is final.
     let key = base;
-    let existing = store.transaction((tx) => tx.getOperation(run.id, key));
+    let existing = await store.transaction(async (tx) => tx.getOperation(run.id, key));
     for (let attempt = 1; existing?.status === "completed"; attempt++) {
       const previous = existing.result as unknown as Outcome;
       if (previous.ok || previous.retries >= retries) break;
       key = `${base}:attempt${attempt}`;
-      existing = store.transaction((tx) => tx.getOperation(run.id, key));
+      existing = await store.transaction(async (tx) => tx.getOperation(run.id, key));
     }
     if (existing?.status === "completed") {
       const outcome = existing.result as unknown as Outcome;
@@ -67,8 +67,8 @@ export function createRecordedHooks(
         key,
       );
     const identity = json({ hook: name, position, toolCallId: toolCallId ?? null });
-    store.transaction((tx) => {
-      tx.putOperation(run.id, {
+    await store.transaction(async (tx) => {
+      await tx.putOperation(run.id, {
         key,
         kind: "effect",
         input: identity,
@@ -82,8 +82,8 @@ export function createRecordedHooks(
     } catch (error) {
       outcome = { ok: false, error: errorMessage(error), retries };
     }
-    store.transaction((tx) => {
-      tx.putOperation(run.id, {
+    await store.transaction(async (tx) => {
+      await tx.putOperation(run.id, {
         key,
         kind: "effect",
         input: identity,

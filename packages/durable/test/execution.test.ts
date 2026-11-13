@@ -7,13 +7,13 @@ import { SqliteDurableStore } from "../src/sqlite.js";
 import { done, makeStreamingAgent } from "./helpers.js";
 
 const stores: SqliteDurableStore[] = [];
-afterEach(() => {
-  for (const store of stores.splice(0)) store.close();
+afterEach(async () => {
+  for (const store of stores.splice(0)) await store.close();
 });
 
-function execution(signal = new AbortController().signal) {
+async function execution(signal = new AbortController().signal) {
   const store = new SqliteDurableStore(":memory:");
-  store.acquire();
+  await store.acquire();
   stores.push(store);
   const registration = {
     agent: makeStreamingAgent(async function* () {
@@ -21,12 +21,12 @@ function execution(signal = new AbortController().signal) {
     }),
     version: "1",
   };
-  const run = createRunRecord(
+  const run = await createRunRecord(
     { agentId: "researcher", sessionId: "session", requestId: "request", prompt: "hello" },
     registration,
   );
   run.status = "running";
-  store.transaction((tx) => tx.putRun(run));
+  await store.transaction(async (tx) => tx.putRun(run));
   return { store, run, boundary: createExecution(store, run, registration, signal) };
 }
 
@@ -45,7 +45,7 @@ const request = { chatHistory: [], tools: [], documents: [] };
 
 it("preserves model failures when iterator cleanup also fails", async () => {
   const primary = new Error("provider failed");
-  const { boundary } = execution();
+  const { boundary } = await execution();
   const { stream, cleanup } = iterator(new Error("cleanup failed"));
   stream.next = vi.fn(async () => {
     throw primary;
@@ -57,15 +57,15 @@ it("preserves model failures when iterator cleanup also fails", async () => {
 
 it("preserves storage failures when iterator cleanup also fails", async () => {
   const primary = new DurableStorageError("delta persistence failed");
-  const { boundary, store } = execution();
+  const { boundary, store } = await execution();
   const transaction = store.transaction.bind(store);
-  vi.spyOn(store, "transaction").mockImplementation((callback) =>
+  vi.spyOn(store, "transaction").mockImplementation(async (callback) =>
     transaction((tx) =>
       callback({
         ...tx,
-        appendEvent(id, type, data) {
+        async appendEvent(id, type, data) {
           if (type === "model_delta") throw primary;
-          tx.appendEvent(id, type, data);
+          await tx.appendEvent(id, type, data);
         },
       }),
     ),
@@ -77,7 +77,7 @@ it("preserves storage failures when iterator cleanup also fails", async () => {
 
 it("preserves cancellation when iterator cleanup also fails", async () => {
   const controller = new AbortController();
-  const { boundary } = execution(controller.signal);
+  const { boundary } = await execution(controller.signal);
   const { stream, cleanup } = iterator(new Error("cleanup failed"));
   const output = boundary.streamCompletion!(1, request, () => stream);
   await output.next();
@@ -89,7 +89,7 @@ it("preserves cancellation when iterator cleanup also fails", async () => {
 
 it("surfaces cleanup failure when a subscriber closes without a primary failure", async () => {
   const cleanupError = new Error("cleanup failed");
-  const { boundary } = execution();
+  const { boundary } = await execution();
   const { stream } = iterator(cleanupError);
   const output = boundary.streamCompletion!(1, request, () => stream);
   await output.next();

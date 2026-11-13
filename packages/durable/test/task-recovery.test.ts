@@ -73,7 +73,7 @@ it.each(["committed", "manual", "idempotent"] as const)(
       output: z.string(),
       initial: () => null,
       run: async (ctx) => {
-        ctx.spawn("child", child, null);
+        await ctx.spawn("child", child, null);
         const output = await ctx.effect(
           "external",
           { amount: 1 },

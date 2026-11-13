@@ -142,7 +142,7 @@ describe("durable submissions", () => {
       restored.respond(pending.interaction.id, { type: "tool-approval", approved: false }),
     ).rejects.toThrow("different response");
     await restored.result();
-    expectJournalRequests(restarted, restored.id);
+    await expectJournalRequests(restarted, restored.id);
     expect(tool).toHaveBeenCalledTimes(1);
     expect((await restored.snapshot()).run.usage.totalTokens).toBe(6);
     const next = await restarted.submit({ ...submission, requestId: "followup" });
@@ -177,7 +177,7 @@ describe("durable submissions", () => {
     for await (const event of run.stream({ after: snapshot.cursor })) events.push(event);
     expect(events.every((event) => event.sequence > snapshot.cursor)).toBe(true);
     expect(await run.result()).toMatchObject({ output: "done" });
-    expectJournalRequests(runtime, run.id);
+    await expectJournalRequests(runtime, run.id);
   });
 
   it("persists explicit cancellation and never recovers cancelled work", async () => {
@@ -261,7 +261,7 @@ describe("durable submissions", () => {
     await open(path);
     const store = new SqliteDurableStore(path);
     await expect(DurableRuntime.open({ store, agents: [] })).rejects.toThrow("live owner");
-    store.close();
+    await store.close();
   });
 
   it("retries a failed model request without resetting the durable turn count", async () => {
@@ -271,7 +271,7 @@ describe("durable submissions", () => {
     await expect(run.result()).rejects.toMatchObject({ status: "failed" });
     await run.retry();
     expect(await run.result()).toMatchObject({ output: "done" });
-    expectJournalRequests(runtime, run.id);
+    await expectJournalRequests(runtime, run.id);
     expect((await run.snapshot()).run.modelTurns).toBe(1);
     expect(model).toHaveBeenCalledTimes(2);
   });
@@ -297,7 +297,7 @@ describe("durable submissions", () => {
       observer.mockRestore();
     }
     expect(await run.result()).toMatchObject({ output: "done" });
-    expectJournalRequests(runtime, run.id);
+    await expectJournalRequests(runtime, run.id);
     expect(model).toHaveBeenCalledTimes(2);
   });
 
@@ -330,7 +330,7 @@ describe("durable submissions", () => {
     await expect(DurableRuntime.open({ store, agents: [{ agent, version: "1" }] })).rejects.toThrow(
       "checkpoint support",
     );
-    store.acquire();
-    store.close();
+    await store.acquire();
+    await store.close();
   });
 });

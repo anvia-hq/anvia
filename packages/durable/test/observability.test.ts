@@ -207,7 +207,7 @@ describe("durable observability", () => {
               checkpoint: true,
               wait: {
                 type: "children",
-                ids: [ctx.spawnAgent("child", { agentId: "researcher", prompt: ctx.input })],
+                ids: [await ctx.spawnAgent("child", { agentId: "researcher", prompt: ctx.input })],
                 policy: "allSettled",
               },
             },
@@ -445,7 +445,7 @@ describe("durable observability", () => {
               checkpoint: true,
               wait: {
                 type: "children",
-                ids: [ctx.spawnAgent("child", { agentId: "researcher", prompt: ctx.input })],
+                ids: [await ctx.spawnAgent("child", { agentId: "researcher", prompt: ctx.input })],
                 policy: "allSettled",
               },
             },

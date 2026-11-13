@@ -248,19 +248,19 @@ it("opens a schema version 9 store, migrates it, and keeps its runs readable", a
 
 it("round-trips blob values by content hash, writing each once", async () => {
   const store = new SqliteDurableStore(":memory:");
-  store.acquire();
+  await store.acquire();
   try {
-    store.transaction((tx) => {
+    await store.transaction(async (tx) => {
       const value = { text: big };
-      const hash = tx.putBlob(value);
+      const hash = await tx.putBlob(value);
       expect(hash).toMatch(/^[a-f0-9]{64}$/);
-      expect(tx.putBlob(value)).toBe(hash);
-      expect(tx.getBlob(hash)).toEqual(value);
+      expect(await tx.putBlob(value)).toBe(hash);
+      expect(await tx.getBlob(hash)).toEqual(value);
     });
-    expect(() => store.transaction((tx) => tx.getBlob("0".repeat(64)))).toThrow(
-      "Missing durable blob content.",
-    );
+    await expect(async () =>
+      store.transaction(async (tx) => tx.getBlob("0".repeat(64))),
+    ).rejects.toThrow("Missing durable blob content.");
   } finally {
-    store.close();
+    await store.close();
   }
 });

@@ -56,7 +56,9 @@ export async function prepareContext(
   };
   const history = projection(run);
   // Counting and summarizing see restored content; the journal keeps the bounded stored form.
-  const expanded = store.transaction((tx) => hydrateMessages(tx, history));
+  const expanded = await store.transaction(
+    async (tx) => await tx.blobs((io) => hydrateMessages(io, history)),
+  );
   const prompt = promptMessage(run.prompt);
   const originalTokenCount = await count(expanded);
   const inputTokens = await count([...expanded, prompt]);
@@ -67,7 +69,7 @@ export async function prepareContext(
   const previousCount = run.contextCheckpoint?.compactedMessageCount ?? 0;
   const covered = previousCount + end - (run.contextCheckpoint === undefined ? 0 : 1);
   if (inputTokens <= run.compaction.trigger.afterTokens || end === 0 || covered <= previousCount) {
-    commit(history);
+    await commit(history);
     return;
   }
   const prefix = history.slice(0, end);
@@ -75,8 +77,8 @@ export async function prepareContext(
   const retainedTokenCount = await count(expanded.slice(end));
   const compactedTokenCount = await count(expanded.slice(0, end));
   const input = json({ policy: run.compaction, messages: prefix, compactedMessageCount: covered });
-  const operation = store.transaction((tx): DurableOperation => {
-    const saved = tx.getOperation(run.id, "compaction");
+  const operation = await store.transaction(async (tx): Promise<DurableOperation> => {
+    const saved = await tx.getOperation(run.id, "compaction");
     if (saved !== undefined) {
       if (saved.kind !== "compaction" || !sameJson(saved.input, input))
         throw new DurableRecoveryError("Compaction changed at a saved checkpoint.", "compaction");
@@ -89,8 +91,8 @@ export async function prepareContext(
       status: "started",
       input,
     };
-    tx.putOperation(run.id, started);
-    tx.appendEvent(run.id, "compaction_started", { operationId: started.key });
+    await tx.putOperation(run.id, started);
+    await tx.appendEvent(run.id, "compaction_started", { operationId: started.key });
     return started;
   });
   // Completion, projected input, usage, and contextPrepared are committed together below.
@@ -106,7 +108,7 @@ export async function prepareContext(
       new Error("Compaction attempt budget exhausted."),
     );
   operation.attempts = (operation.attempts ?? 0) + 1;
-  store.transaction((tx) => tx.putOperation(run.id, operation));
+  await store.transaction(async (tx) => tx.putOperation(run.id, operation));
   let checkpoint: DurableContextCheckpoint;
   let usage: Usage;
   try {
@@ -153,9 +155,9 @@ export async function prepareContext(
     attempts: operation.attempts,
     usage,
   };
-  commit(messages, { checkpoint, operation, info });
+  await commit(messages, { checkpoint, operation, info });
 
-  function commit(
+  async function commit(
     messages: Message[],
     result?: {
       checkpoint: DurableContextCheckpoint;
@@ -164,26 +166,26 @@ export async function prepareContext(
     },
   ) {
     signal.throwIfAborted();
-    const saved = store.transaction((tx) => {
-      const current = tx.getRun(run.id)!;
+    const saved = await store.transaction(async (tx) => {
+      const current = (await tx.getRun(run.id))!;
       if (current.status !== "running") throw new Error("Durable run is no longer running.");
       current.input = { messages: [...messages, prompt] };
       current.contextPrepared = true;
       if (result !== undefined) {
         current.contextCheckpoint = result.checkpoint;
         current.usage = Usage.add(current.usage, result.info.usage);
-        tx.putOperation(run.id, {
+        await tx.putOperation(run.id, {
           ...result.operation,
           status: "completed",
           result: json(result.checkpoint),
         });
-        tx.appendEvent(
+        await tx.appendEvent(
           run.id,
           "compaction_completed",
           json({ operationId: result.operation.key, ...result.info }),
         );
       }
-      tx.putRun(current);
+      await tx.putRun(current);
       return current;
     });
     Object.assign(run, saved);

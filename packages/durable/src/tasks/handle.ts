@@ -27,19 +27,19 @@ export class DurableTaskHandle<R = JsonValue> {
   /** Optional identity fence for callers authorizing a captured ownership tree. */
   async cancel(options: { expectedTreeIds?: readonly string[] } = {}): Promise<void> {
     this.assertOpen();
-    this.scheduler.cancel(this.id, options.expectedTreeIds);
+    await this.scheduler.cancel(this.id, options.expectedTreeIds);
   }
   async retry(): Promise<void> {
     this.assertOpen();
-    this.scheduler.retry(this.id);
+    await this.scheduler.retry(this.id);
   }
   async resolveEffect(key: string, value: JsonValue): Promise<void> {
     this.assertOpen();
-    this.scheduler.resolveEffect(this.id, key, value);
+    await this.scheduler.resolveEffect(this.id, key, value);
   }
   async signal(name: string, requestId: string, value: JsonValue): Promise<void> {
     this.assertOpen();
-    this.scheduler.signal(this.id, name, requestId, value);
+    await this.scheduler.signal(this.id, name, requestId, value);
   }
 
   async result(options: { abortSignal?: AbortSignal } = {}): Promise<R> {
@@ -64,7 +64,7 @@ export class DurableTaskHandle<R = JsonValue> {
     while (true) {
       this.assertOpen();
       options.abortSignal?.throwIfAborted();
-      const events = this.store.taskEvents(initial.task.rootId, cursor, 100);
+      const events = await this.store.taskEvents(initial.task.rootId, cursor, 100);
       for (const event of events) {
         options.abortSignal?.throwIfAborted();
         if (event.type !== "submitted" && event.type !== "status")
@@ -80,7 +80,7 @@ export class DurableTaskHandle<R = JsonValue> {
         };
       }
       if (events.length > 0) continue;
-      if (terminal(this.scheduler.snapshot(initial.task.rootId).task)) return;
+      if (terminal((await this.scheduler.snapshot(initial.task.rootId)).task)) return;
       await delay(options.abortSignal);
     }
   }

@@ -76,7 +76,7 @@ it.each(
     await runtime.resume();
     expect(await handle.result()).toMatchObject({ sessions: 2, modelTurns: 4, totalTokens: 12 });
     for (const node of (await handle.graph()).nodes)
-      if (node.agentRunId !== undefined) expectJournalRequests(runtime, node.agentRunId);
+      if (node.agentRunId !== undefined) await expectJournalRequests(runtime, node.agentRunId);
     const after = (await handle.graph()).nodes.map((node) => node.id);
     expect(after).toHaveLength(3);
     expect(after).toEqual(expect.arrayContaining(before));

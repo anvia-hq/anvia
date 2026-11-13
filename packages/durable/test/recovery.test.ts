@@ -84,7 +84,7 @@ it("recovers after SIGKILL without repeating a committed tool or model result", 
   const run = await runtime.getRun(id);
   expect(await run.result()).toMatchObject({ output: "done" });
   expect(tool).not.toHaveBeenCalled();
-  expectJournalRequests(runtime, id);
+  await expectJournalRequests(runtime, id);
   expect(model).toHaveBeenCalledTimes(1);
   expect(readFileSync(effects, "utf8")).toBe("effect\n");
 }, 15000);

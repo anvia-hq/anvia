@@ -166,13 +166,15 @@ it("hands an oversized owned-agent output to its parent task intact", async () =
           checkpoint: true,
           wait: {
             type: "children",
-            ids: [ctx.spawnAgent("agent", { agentId: "researcher", prompt: "write" })],
+            ids: [await ctx.spawnAgent("agent", { agentId: "researcher", prompt: "write" })],
             policy: "allSettled",
           },
         };
       return {
         status: "completed",
-        output: (ctx.children()[0]!.outcome as { output?: JsonValue } | undefined)?.output ?? null,
+        output:
+          ((await ctx.children())[0]!.outcome as { output?: JsonValue } | undefined)?.output ??
+          null,
       };
     },
   });
@@ -210,14 +212,14 @@ it("gives a goal round the full output of an owned agent run through agentRun", 
     initial: () => null,
     run: async (ctx) => {
       if (ctx.checkpoint === null) {
-        const childId = ctx.spawnAgent("agent", { agentId: "researcher", prompt: "write" });
+        const childId = await ctx.spawnAgent("agent", { agentId: "researcher", prompt: "write" });
         return {
           status: "waiting",
           checkpoint: childId,
           wait: { type: "children", ids: [childId], policy: "allSettled" },
         };
       }
-      const run = ctx.agentRun(ctx.checkpoint);
+      const run = await ctx.agentRun(ctx.checkpoint);
       return {
         status: "completed",
         output: (run.outcome as { output?: JsonValue } | undefined)?.output ?? null,

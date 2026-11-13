@@ -184,7 +184,7 @@ export class ToolCallExecutor {
       }
       if (toolDefinition !== undefined) toolStartArgs = { ...toolStartArgs, toolDefinition };
       if (toolMetadata !== undefined) toolStartArgs = { ...toolStartArgs, toolMetadata };
-      const toolObservers = this.replayed(toolCall)
+      const toolObservers = (await this.replayed(toolCall))
         ? undefined
         : await observation?.runObservers.startTool(toolStartArgs);
       const toolObservation = new ToolObserverScope(toolObservers);
@@ -496,7 +496,7 @@ export class ToolCallExecutor {
     }
     if (toolDefinition !== undefined) toolStartArgs = { ...toolStartArgs, toolDefinition };
     if (toolMetadata !== undefined) toolStartArgs = { ...toolStartArgs, toolMetadata };
-    const observers = this.replayed(toolCall)
+    const observers = (await this.replayed(toolCall))
       ? undefined
       : await observation?.runObservers.startTool(toolStartArgs);
     const toolObservation = new ToolObserverScope(observers);
@@ -723,8 +723,8 @@ export class ToolCallExecutor {
   }
 
   /** A restored result was observed when the tool ran; observing it again duplicates it. */
-  private replayed(toolCall: ToolCallPart): boolean {
-    return this.execution?.replayed?.({ kind: "tool", toolCall }) === true;
+  private async replayed(toolCall: ToolCallPart): Promise<boolean> {
+    return (await this.execution?.replayed?.({ kind: "tool", toolCall })) === true;
   }
 
   private runApprovedToolCall(

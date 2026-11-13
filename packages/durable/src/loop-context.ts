@@ -36,17 +36,24 @@ export function createContextPreparation(
     const key = `${run.epoch}:context:${turn}`;
     // The journal stores a bounded form of the transcript; content addressing keeps it
     // deterministic, so the checkpoint comparison below uses stored forms directly.
-    const input = store.transaction((tx) => json(externalizeMessages(tx, messages)));
-    let operation = store.transaction((tx) => tx.getOperation(run.id, key));
+    const input = await store.transaction(async (tx) =>
+      json(await tx.blobs((io) => externalizeMessages(io, messages))),
+    );
+    let operation = await store.transaction(async (tx) => tx.getOperation(run.id, key));
     if (operation !== undefined) {
       // Restored form, so journals from before blob references compare equal to the same transcript.
-      const saved = store.transaction((tx) => hydrateValue(tx, json(operation!.input)));
+      const saved = await store.transaction(
+        async (tx) => await tx.blobs((io) => hydrateValue(io, json(operation!.input))),
+      );
       if (operation.kind !== "context" || !sameJson(saved, json(messages)))
         throw new DurableRecoveryError("Context changed at a saved checkpoint.", key);
       if (operation.status === "completed") {
         const prepared = preparedLoopContextSchema.parse(operation.result);
         return store.transaction(
-          (tx) => hydrateValue(tx, json(prepared)) as unknown as PreparedLoopContext,
+          async (tx) =>
+            (await tx.blobs((io) =>
+              hydrateValue(io, json(prepared)),
+            )) as unknown as PreparedLoopContext,
         );
       }
     }
@@ -81,9 +88,9 @@ export function createContextPreparation(
     } else {
       if (operation === undefined) {
         operation = { key, kind: "context", recovery: "safe", status: "started", input };
-        store.transaction((tx) => {
-          tx.putOperation(run.id, operation!);
-          tx.appendEvent(run.id, "compaction_started", {
+        await store.transaction(async (tx) => {
+          await tx.putOperation(run.id, operation!);
+          await tx.appendEvent(run.id, "compaction_started", {
             operationId: key,
             turn,
             epoch: run.epoch,
@@ -97,7 +104,7 @@ export function createContextPreparation(
           new Error("Compaction attempt budget exhausted."),
         );
       operation.attempts = (operation.attempts ?? 0) + 1;
-      store.transaction((tx) => tx.putOperation(run.id, operation!));
+      await store.transaction(async (tx) => tx.putOperation(run.id, operation!));
       let summary;
       try {
         summary = await summarizeLoopContext(
@@ -130,17 +137,17 @@ export function createContextPreparation(
       input,
       result: json(prepared),
     };
-    store.transaction((tx) => {
-      const current = tx.getRun(run.id)!;
+    await store.transaction(async (tx) => {
+      const current = (await tx.getRun(run.id))!;
       if (current.status !== "running") throw new Error("Durable run is no longer running.");
-      tx.putOperation(run.id, {
+      await tx.putOperation(run.id, {
         ...completed,
-        result: externalizeContextResult(tx, completed.result!),
+        result: await tx.blobs((io) => externalizeContextResult(io, completed.result!)),
       });
       if (prepared.compaction !== undefined) {
         current.usage = Usage.add(current.usage, prepared.compaction.usage);
-        tx.putRun(current);
-        tx.appendEvent(
+        await tx.putRun(current);
+        await tx.appendEvent(
           run.id,
           "compaction_completed",
           json({ operationId: key, turn, epoch: run.epoch, ...prepared.compaction }),

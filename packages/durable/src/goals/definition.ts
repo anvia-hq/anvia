@@ -95,14 +95,14 @@ export function defineGoal(policy: GoalDefinition): DefinedGoal {
       if (state.agentId === undefined)
         return { status: "pending", checkpoint: { ...state, agentId: agentId(ctx.input) } };
       if (state.phase === "paused") {
-        const signal = ctx.signalValue(`resume:${state.resumeIndex}`);
+        const signal = await ctx.signalValue(`resume:${state.resumeIndex}`);
         if (signal === undefined) return pause(state, state.pauseReason!);
         const parsed = goalResumeSchema.safeParse(signal);
         if (!parsed.success)
           // Consume this immutable signal name and expose a new one for a corrected delivery.
           return pause({ ...state, resumeIndex: state.resumeIndex + 1 }, state.pauseReason!);
         // Edits and messages sent while paused take effect now; earlier pause requests are moot.
-        const controlled = readControls(ctx, state).state;
+        const controlled = (await readControls(ctx, state)).state;
         return {
           status: "pending",
           checkpoint: {
@@ -121,10 +121,10 @@ export function defineGoal(policy: GoalDefinition): DefinedGoal {
         const key = `session:${state.sessions + 1}`;
         // A spawn may have committed just before the parent phase was interrupted. Its prompt
         // already holds the controls read then; read them again only for a new session.
-        const existing = ctx.children().find((child) => child.key === key);
+        const existing = (await ctx.children()).find((child) => child.key === key);
         let admitted = state;
         if (existing === undefined) {
-          const controlled = readControls(ctx, state);
+          const controlled = await readControls(ctx, state);
           if (controlled.pause) return pause(controlled.state, "requested");
           admitted = controlled.state;
           const reason = admissionStop(admitted);
@@ -156,7 +156,7 @@ export function defineGoal(policy: GoalDefinition): DefinedGoal {
               context.messages = admitted.messages;
             }
 
-            childId = ctx.spawnAgent(key, {
+            childId = await ctx.spawnAgent(key, {
               ...input,
               prompt: [
                 ...(continueFrom === undefined
@@ -193,8 +193,8 @@ export function defineGoal(policy: GoalDefinition): DefinedGoal {
         };
       }
 
-      const run = ctx.agentRun(state.childId!);
-      const settled = ctx.children().find((child) => child.id === state.childId);
+      const run = await ctx.agentRun(state.childId!);
+      const settled = (await ctx.children()).find((child) => child.id === state.childId);
       const next: GoalCheckpoint = {
         ...state,
         phase: "ready",
@@ -333,15 +333,15 @@ function effective(input: GoalInput, state: GoalCheckpoint) {
  * and any pause request is reported. Each family's index only moves forward, so a signal is
  * read once; malformed values are skipped.
  */
-function readControls(
+async function readControls(
   ctx: TaskContext<GoalInput, GoalCheckpoint>,
   state: GoalCheckpoint,
-): { state: GoalCheckpoint; pause: boolean } {
+): Promise<{ state: GoalCheckpoint; pause: boolean }> {
   const controls: GoalControls = { pause: 0, edit: 0, message: 0, ...state.controls };
   const next: GoalCheckpoint = { ...state };
   const messages = [...(state.messages ?? [])];
   let pause = false;
-  for (let value; (value = ctx.signalValue(`edit:${controls.edit}`)) !== undefined;) {
+  for (let value; (value = await ctx.signalValue(`edit:${controls.edit}`)) !== undefined;) {
     controls.edit++;
     const edit = goalEditSchema.safeParse(value);
     if (!edit.success) continue;
@@ -349,12 +349,12 @@ function readControls(
     if (edit.data.acceptanceCriteria !== undefined)
       next.acceptanceCriteria = edit.data.acceptanceCriteria;
   }
-  for (let value; (value = ctx.signalValue(`message:${controls.message}`)) !== undefined;) {
+  for (let value; (value = await ctx.signalValue(`message:${controls.message}`)) !== undefined;) {
     controls.message++;
     const message = goalMessageSchema.safeParse(value);
     if (message.success) messages.push(message.data.text);
   }
-  for (let value; (value = ctx.signalValue(`pause:${controls.pause}`)) !== undefined;) {
+  for (let value; (value = await ctx.signalValue(`pause:${controls.pause}`)) !== undefined;) {
     controls.pause++;
     if (goalPauseSchema.safeParse(value).success) pause = true;
   }

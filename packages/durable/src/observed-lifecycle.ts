@@ -25,9 +25,9 @@ export function createObservedLifecycle(
   if (hooks === undefined) return undefined;
 
   // Model turns alone repeat when a failed run is retried, so a retry count is part of the key.
-  const failureSlot = () =>
-    store.transaction((tx) => {
-      const current = tx.getRun(run.id);
+  const failureSlot = async () =>
+    store.transaction(async (tx) => {
+      const current = await tx.getRun(run.id);
       return `${current?.modelTurns ?? 0}:${current?.retries ?? 0}`;
     });
 
@@ -40,9 +40,9 @@ export function createObservedLifecycle(
   ): Promise<void> {
     if (hooks![hook] === undefined) return;
     const key = `${run.epoch}:lifecycle:${hook}:${step}:${toolCallId ?? ""}`;
-    const claimed = store.transaction((tx) => {
-      if (tx.getOperation(run.id, key) !== undefined) return false;
-      tx.putOperation(run.id, {
+    const claimed = await store.transaction(async (tx) => {
+      if ((await tx.getOperation(run.id, key)) !== undefined) return false;
+      await tx.putOperation(run.id, {
         key,
         kind: "effect",
         input: json({ hook, step, toolCallId: toolCallId ?? null }),
@@ -59,7 +59,7 @@ export function createObservedLifecycle(
     } catch (error) {
       result = { failed: true, error: errorMessage(error) };
     }
-    store.transaction((tx) =>
+    await store.transaction(async (tx) =>
       tx.putOperation(run.id, {
         key,
         kind: "effect",
@@ -80,10 +80,10 @@ export function createObservedLifecycle(
     onToolFinish: (event) =>
       observe("onToolFinish", event.step, event.toolCallId, event, (e) => hooks.onToolFinish?.(e)),
     // The model-turn count and retry count tell a later failure apart from an earlier one.
-    onFinish: (event) =>
-      observe("onFinish", failureSlot(), undefined, event, (e) => hooks.onFinish?.(e)),
-    onError: (event) =>
-      observe("onError", failureSlot(), undefined, event, (e) => hooks.onError?.(e)),
+    onFinish: async (event) =>
+      observe("onFinish", await failureSlot(), undefined, event, (e) => hooks.onFinish?.(e)),
+    onError: async (event) =>
+      observe("onError", await failureSlot(), undefined, event, (e) => hooks.onError?.(e)),
   };
 }
 

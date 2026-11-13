@@ -1,5 +1,11 @@
 # @anvia/graph
 
+## 1.2.0
+
+### Minor Changes
+
+- b5c7820: Add `maxEntityTextLength` to the ingestion options. It truncates the text embedded for each entity, for `defaultGraphEntityText` and for a custom `entityText` function, so a property-heavy entity cannot exceed the embedding model's input limit. Chunk text is unchanged.
+
 ## 1.1.6
 
 ### Patch Changes

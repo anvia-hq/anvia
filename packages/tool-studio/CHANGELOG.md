@@ -1,5 +1,21 @@
 # @anvia/studio
 
+## 1.4.0
+
+### Minor Changes
+
+- c579956: Bound JSON request bodies. Studio now rejects a body above `maxBodyBytes` with a `413` `payload_too_large` response instead of reading it into memory and persisting it. The limit defaults to 10 MiB and can be set through `StudioOptions.maxBodyBytes` or `StudioServeOptions.maxBodyBytes`.
+
+### Patch Changes
+
+- Updated dependencies [b5c7820]
+- Updated dependencies [9969a9a]
+  - @anvia/graph@1.2.0
+  - @anvia/react-ui@1.3.2
+  - @anvia/client@1.8.1
+  - @anvia/react@1.1.5
+  - @anvia/server@1.4.1
+
 ## 1.3.27
 
 ### Patch Changes

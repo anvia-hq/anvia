@@ -1,5 +1,14 @@
 # @anvia/durable
 
+## 0.16.0
+
+### Minor Changes
+
+- e96c650: Add `hooks: { mode: "record", hook }` to the registration. It admits a core control hook (`onToolCall` skip, terminate and approval request, `onRunStart` and `onCompletionCall` cancel) and records each decision before it is applied, so a restart or retry reuses it and never calls the hook again.
+- 2654ab0: Add `context: { mode: "recorded" }` to the registration. It admits an agent with a live `VectorContext`: each retrieval is recorded before the model call and reused on replay, and the context settings are fingerprinted per run.
+
+  An oversized retrieved document set is stored in the blob table behind a whole-value reference, so one retrieval cannot exceed the operation payload limit. The peer dependency on `@anvia/core` now requires execution protocol 5 (`>=1.19.1 <2`), since the runtime refuses older core anyway.
+
 ## 0.15.0
 
 ### Minor Changes

@@ -1,5 +1,12 @@
 # @anvia/neo4j
 
+## 1.1.8
+
+### Patch Changes
+
+- Updated dependencies [b5c7820]
+  - @anvia/graph@1.2.0
+
 ## 1.1.7
 
 ### Patch Changes

@@ -1,5 +1,12 @@
 # @anvia/core
 
+## 1.19.1
+
+### Patch Changes
+
+- b92ca64: Redact PEM private key blocks and context-labelled AWS secret access keys in the default redactor. `pemPrivateKey`, `pemPrivateKeyTruncated` and `awsSecretAccessKey` join the credential patterns, so `createRedactor()` scrubs private keys that previously passed through untouched. A bare 40-character base64 run is still kept, because the AWS pattern requires the setting name in front of the value.
+- 2654ab0: Add an internal `selectContext` step to the agent run execution seam so a durable runtime can record and replay vector context retrievals. The execution protocol version is now 5. Public API is unchanged.
+
 ## 1.19.0
 
 ### Minor Changes

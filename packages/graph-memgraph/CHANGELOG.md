@@ -1,5 +1,13 @@
 # @anvia/memgraph
 
+## 1.1.8
+
+### Patch Changes
+
+- 3409ac2: Reject NUL bytes in identifiers. `quoteIdentifier` now throws for a name containing `\u0000`, matching `@anvia/neo4j`, so a schema or resource name cannot smuggle a control character into generated Cypher.
+- Updated dependencies [b5c7820]
+  - @anvia/graph@1.2.0
+
 ## 1.1.7
 
 ### Patch Changes

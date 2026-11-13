@@ -1,6 +1,6 @@
 import type { Agent } from "../../agent/agent";
 import { getAgentToolState } from "../../agent/tool-state";
-import { isVectorContext } from "../../agent/vector-context";
+import { isVectorContext, type VectorContext } from "../../agent/vector-context";
 import type { CompletionModel, Document, ToolDefinition } from "../../completion/index";
 import { retrieveDocuments } from "../../vector-store";
 
@@ -8,48 +8,66 @@ export async function fetchContextDocuments<Output, M extends CompletionModel, C
   agent: Agent<Output, M, ContextDocument>,
   ragText: string | undefined,
   abortSignal?: AbortSignal | undefined,
+  /**
+   * Wraps each vector context's retrieval (`index` is its position in `agent.context`). A runtime
+   * that replays a turn can return the persisted documents without calling `retrieve`.
+   */
+  selectContext?: (index: number, retrieve: () => Promise<Document[]>) => Promise<Document[]>,
 ): Promise<Document[]> {
   const documents: Document[] = [];
-  for (const input of agent.context) {
+  for (const [index, input] of agent.context.entries()) {
     if (!isVectorContext(input)) {
       documents.push(input);
       continue;
     }
     if (ragText === undefined || ragText.length === 0) continue;
-    const request = {
-      query: ragText,
-      topK: input.topK,
-      minScore: input.minScore,
-      filter: input.filter,
-      retries: input.retries,
-      abortSignal,
-    };
-    const results =
-      "models" in input && input.models !== undefined
-        ? await retrieveDocuments({
-            ...request,
-            store: input.store,
-            models: input.models,
-            fusion: input.fusion,
-          })
-        : await retrieveDocuments({ ...request, store: input.store, model: input.model });
-    for (const result of results) {
-      const formatted = input.format?.(result);
-      if (formatted !== undefined) {
-        documents.push(formatted);
-        continue;
-      }
-      const metadata = formatMetadata(result.metadata);
-      const document: Document = {
-        id: result.id,
-        text:
-          typeof result.document === "string"
-            ? result.document
-            : JSON.stringify(result.document, null, 2),
-      };
-      if (metadata !== undefined) document.additionalProps = metadata;
-      documents.push(document);
+    const retrieve = () => retrieveContext(input, ragText, abortSignal);
+    documents.push(
+      ...(selectContext !== undefined ? await selectContext(index, retrieve) : await retrieve()),
+    );
+  }
+  return documents;
+}
+
+async function retrieveContext(
+  input: VectorContext,
+  ragText: string,
+  abortSignal: AbortSignal | undefined,
+): Promise<Document[]> {
+  const documents: Document[] = [];
+  const request = {
+    query: ragText,
+    topK: input.topK,
+    minScore: input.minScore,
+    filter: input.filter,
+    retries: input.retries,
+    abortSignal,
+  };
+  const results =
+    "models" in input && input.models !== undefined
+      ? await retrieveDocuments({
+          ...request,
+          store: input.store,
+          models: input.models,
+          fusion: input.fusion,
+        })
+      : await retrieveDocuments({ ...request, store: input.store, model: input.model });
+  for (const result of results) {
+    const formatted = input.format?.(result);
+    if (formatted !== undefined) {
+      documents.push(formatted);
+      continue;
     }
+    const metadata = formatMetadata(result.metadata);
+    const document: Document = {
+      id: result.id,
+      text:
+        typeof result.document === "string"
+          ? result.document
+          : JSON.stringify(result.document, null, 2),
+    };
+    if (metadata !== undefined) document.additionalProps = metadata;
+    documents.push(document);
   }
   return documents;
 }

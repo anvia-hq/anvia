@@ -342,6 +342,14 @@ export function hydrateMessages(
   return messages.map((message) => hydrateValue(io, message as JsonValue) as Message);
 }
 
+/**
+ * A recorded context-document result (`{ documents }`): an oversized document set is blobbed
+ * whole, so one retrieval cannot exceed the operation payload limit; a small set stays inline.
+ */
+export function externalizeContextDocsResult(io: DurableBlobIO, result: JsonValue): JsonValue {
+  return sizeOf(result) <= BLOB_THRESHOLD_BYTES ? result : wholeValueReference(io, result);
+}
+
 /** A completed tool result (`{ output, failed, error? }`): the output object is blobbed whole. */
 export function externalizeToolResult(io: DurableBlobIO, result: JsonValue): JsonValue {
   if (typeof result !== "object" || result === null || Array.isArray(result)) return result;

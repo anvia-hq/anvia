@@ -1228,7 +1228,15 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
   ): Promise<CompletionRequest> {
     const ragText = extractRagText(prompt);
     const abortSignal = this.abortController.signal;
-    const documents = await fetchContextDocuments(this.agent, ragText, abortSignal);
+    const selectContext = this.execution?.selectContext;
+    const documents = await fetchContextDocuments(
+      this.agent,
+      ragText,
+      abortSignal,
+      selectContext === undefined
+        ? undefined
+        : (index, retrieve) => selectContext.call(this.execution, turn, index, retrieve),
+    );
     const selectTools = () => fetchToolDefinitions(this.agent, ragText, abortSignal);
     const toolDefinitions =
       this.execution?.selectTools !== undefined

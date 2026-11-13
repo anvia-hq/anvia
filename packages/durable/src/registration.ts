@@ -10,7 +10,7 @@ import type { DurableAgentRegistration } from "./types.js";
 export function registrations(
   values: readonly DurableAgentRegistration[],
 ): Map<string, DurableAgentRegistration> {
-  if (AGENT_RUN_EXECUTION_VERSION !== 4) throw new Error("Unsupported core execution protocol.");
+  if (AGENT_RUN_EXECUTION_VERSION !== 5) throw new Error("Unsupported core execution protocol.");
   const result = new Map<string, DurableAgentRegistration>();
   for (const registration of values) {
     nonblank(registration.version, "Agent version");
@@ -71,6 +71,13 @@ export function registrations(
         `Durable agent "${agent.id}" has an unknown toolIndexes mode. Only { mode: "recorded" } is supported.`,
       );
     if (
+      registration.context !== undefined &&
+      (registration.context as { mode?: unknown }).mode !== "recorded"
+    )
+      throw new TypeError(
+        `Durable agent "${agent.id}" has an unknown context mode. Only { mode: "recorded" } is supported.`,
+      );
+    if (
       registration.mcpServers !== undefined &&
       (registration.mcpServers as { mode?: unknown }).mode !== "pinned"
     )
@@ -118,6 +125,9 @@ export function registrations(
           : "",
         unsupported.includes("MCP servers")
           ? `MCP servers need { mcpServers: { mode: "pinned" } }`
+          : "",
+        unsupported.includes("context")
+          ? `vector context needs { context: { mode: "recorded" } }`
           : "",
         unsupported.includes("tool indexes")
           ? `tool indexes need { toolIndexes: { mode: "recorded" } }`
@@ -205,6 +215,10 @@ export function registrations(
       normalized.toolIndexes = { mode: "recorded" };
     }
 
+    if (registration.context !== undefined) {
+      normalized.context = { mode: "recorded" };
+    }
+
     if (registration.memory !== undefined) {
       normalized.memory = { mode: "recorded" };
     }
@@ -289,7 +303,11 @@ function unsupportedFeatures(
     features.push("guardrails");
   // Static documents are snapshotted into each run record at submission; live vector retrieval
   // is still not checkpointed.
-  if ((options.context ?? []).some((input) => isVectorContext(input))) features.push("context");
+  if (
+    (options.context ?? []).some((input) => isVectorContext(input)) &&
+    registration.context === undefined
+  )
+    features.push("context");
   if ((options.mcpServers?.length ?? 0) > 0 && registration.mcpServers === undefined)
     features.push("MCP servers");
   if ((options.providerTools?.length ?? 0) > 0 && registration.providerTools === undefined)

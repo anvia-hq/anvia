@@ -54,6 +54,7 @@ function describeRegistration(registration: DurableAgentRegistration): DurableAg
     toolConcurrency: registration.toolConcurrency ?? 1,
     compaction: registration.compaction !== undefined,
     recordedHooks: Object.freeze(recordedHookNames(registration)),
+    recordedContext: registration.context !== undefined,
     modelRetry:
       registration.modelRetry === undefined
         ? undefined

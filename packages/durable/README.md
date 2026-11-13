@@ -221,7 +221,7 @@ exposed before schema validation, and the saved result arrives in `model_complet
 Persisting each exposed delta adds SQLite writes and retained event data. The payload limit
 applies to each delta; configure model output limits and database retention in the host application.
 SQLite schema 11 adds the blob table for oversized payloads, shared model histories and context projections, and escapes user keys that look like reference markers. Schemas 1–10 upgrade on acquisition; the upgrade rewrites journal rows once. One known gap: a user object that copies an existing blob's marker (same hash and size) in a row written before schema 11 is still read as that reference.
-Older engines reject schema 11. Upgrade core and durable together: this runtime requires execution protocol version 4.
+Older engines reject schema 11. Upgrade core and durable together: this runtime requires execution protocol version 5.
 
 ## Conversation compaction
 
@@ -339,7 +339,7 @@ recorded, which would make an agent-level retry setting silently ineffective. Co
 Registering an agent that sets `memory` (without `memory: { mode: "recorded" }`, or with
 `memory.compaction` or a store without `loadVersioned()`), `lifecycle` (without `mode: "observe"` on the
 registration), `middlewares` (without `mode: "pure"`), `guardrails` (without `mode: "record"`),
-`context`, `mcpServers` (without `mcpServers: { mode: "pinned" }`), provider tools (without
+`context` (without `context: { mode: "recorded" }`), `mcpServers` (without `mcpServers: { mode: "pinned" }`), provider tools (without
 `providerTools: { mode: "stateless" }`), or dynamic tool indexes throws a `TypeError` that names exactly the features that agent uses. With
 `lifecycle: { mode: "observe" }`, the agent's lifecycle hooks run once per step, recorded before
 each call; a hook that throws is recorded and does not fail the run.
@@ -351,6 +351,15 @@ core applies it, so a restart or retry reuses it and never calls the hook again.
 before recording is not run again (`needs_attention`), a hook that throws fails the run (`retry()`
 calls it once more), and a `terminate` decision fails the run with its reason. Core runs tools one
 at a time while a hook is active. `compatibility()` reports the hooks in `recordedHooks`.
+
+With `context: { mode: "recorded" }`, an agent with a `createVectorContext(...)` is admitted. Each
+retrieval's documents are recorded before the model call that uses them, so a restart or retry
+reuses them and does not query the store again. The context settings and embedding model identity
+are fingerprinted at submission and checked at every execution start (a change fails the run with
+`needs_attention`). The fingerprint cannot cover the embedding model's internals or the store's
+contents: bump `version` when they change. An oversized document set is stored in the blob table
+behind a whole-value reference, so a large retrieval counts against the blob store, not the
+operation payload limit. `compatibility()` reports `recordedContext`.
 
 With `memory: { mode: "recorded" }`, the run reads the agent's memory store once, before the first
 model call, and reuses that snapshot on replay. Each write is recorded as a `memory` operation with

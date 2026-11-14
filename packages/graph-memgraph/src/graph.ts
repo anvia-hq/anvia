@@ -249,7 +249,7 @@ export class ManagedMemgraphKnowledgeGraph<
   readonly evidenceCapability = "chunks" as const;
   readonly seeds: Readonly<Record<string, MemgraphSeedRegistration>>;
   readonly resources: ManagedMemgraphKnowledgeGraphOptions<Schema>["resources"];
-  private readonly name: string;
+  readonly name: string;
 
   constructor(owner: MemgraphClient, options: ManagedMemgraphKnowledgeGraphOptions<Schema>) {
     super(owner, options.schema);

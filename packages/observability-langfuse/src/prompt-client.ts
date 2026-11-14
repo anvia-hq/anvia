@@ -1,4 +1,5 @@
 import { getResolvedLangfuseConfig, resolveLangfuseConfig } from "./config.js";
+import { fetchLangfuse } from "./retry.js";
 import { LangfuseScoreError } from "./scoring.js";
 import type {
   LangfuseChatMessage,
@@ -26,7 +27,7 @@ export function createLangfusePromptClient(
   const authHeader = buildAuthHeader(publicKey, secretKey);
 
   async function request<T>(input: string): Promise<T> {
-    const response = await fetch(input, {
+    const response = await fetchLangfuse(fetch, input, {
       method: "GET",
       headers: { ...authHeader },
       signal: AbortSignal.timeout(timeoutMs),

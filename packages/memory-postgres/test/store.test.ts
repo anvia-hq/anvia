@@ -541,6 +541,17 @@ describe("PostgresMemoryStore", () => {
     });
   });
 
+  it("rejects a conversation list limit that is not a positive integer", async () => {
+    const client = new FakePgClient();
+    const store = await createTestMemoryStore({ client });
+    await expect(store.inspector.listConversations({ limit: 0 })).rejects.toThrow(
+      "Memory conversation limit",
+    );
+    await expect(store.inspector.listConversations({ limit: -1 })).rejects.toThrow(
+      "Memory conversation limit",
+    );
+  });
+
   it("round-trips every supported message content shape", async () => {
     const client = new FakePgClient();
     const store = await createTestMemoryStore({ client });

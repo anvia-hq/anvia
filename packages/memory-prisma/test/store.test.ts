@@ -573,6 +573,17 @@ describe("PrismaMemoryStore", () => {
     });
   });
 
+  it("rejects a conversation list limit that is not a positive integer", async () => {
+    const prisma = new FakePrisma();
+    const store = createTestMemoryStore(prisma.client);
+    await expect(store.inspector?.listConversations({ limit: 0 })).rejects.toThrow(
+      "Memory conversation limit",
+    );
+    await expect(store.inspector?.listConversations({ limit: -1 })).rejects.toThrow(
+      "Memory conversation limit",
+    );
+  });
+
   it("keeps custom delegates without discovery methods compatible", () => {
     const prisma = new FakePrisma();
     const delegates: PrismaMemoryDelegates = {

@@ -427,6 +427,16 @@ describe("Drizzle memory public API", () => {
     });
   });
 
+  it("rejects a conversation list limit that is not a positive integer", async () => {
+    const store = createTestMemoryStore(new FakeDrizzleDb());
+    await expect(store.inspector.listConversations({ limit: 0 })).rejects.toThrow(
+      "Memory conversation limit",
+    );
+    await expect(store.inspector.listConversations({ limit: -1 })).rejects.toThrow(
+      "Memory conversation limit",
+    );
+  });
+
   it("does not open a transaction for empty appends", async () => {
     const db = new FakeDrizzleDb();
     const store = createTestMemoryStore(db);

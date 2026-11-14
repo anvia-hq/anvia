@@ -21,6 +21,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { contextUsageFromMessages, contextUsageUpdateFromEvent } from "./context-usage";
 import { clearChatResumeState, loadChatResumeState, saveChatResumeState } from "./resume";
 import { runUsageUpdateFromEvent } from "./run-usage";
+import { appendRetainedEvent, retainedEventLimit } from "./retained-events";
 import type {
   AnyClientTransport,
   SendMessageInput,
@@ -40,6 +41,7 @@ export function useChat<Transport extends AnyClientTransport = ClientTransport>(
   const [messages, setMessagesState] = useState<readonly UIMessage<Metadata, Data>[]>(() => [
     ...(options.initialMessages ?? []),
   ]);
+  const maxRetainedEvents = retainedEventLimit(options.maxRetainedEvents, "useChat");
   const [events, setEvents] = useState<ClientStreamEvent<Metadata, Data>[]>([]);
   const [runUsage, setRunUsage] = useState<Usage>();
   const [contextUsage, setContextUsage] = useState(() =>
@@ -129,7 +131,7 @@ export function useChat<Transport extends AnyClientTransport = ClientTransport>(
 
   const applyEvent = useCallback(
     (event: ClientStreamEvent<Metadata, Data>): Error | undefined => {
-      setEvents((current) => [...current, event]);
+      setEvents((current) => appendRetainedEvent(current, event, maxRetainedEvents));
       options.onEvent?.(event);
       const contextUsageUpdate = contextUsageUpdateFromEvent(event);
       if (contextUsageUpdate !== undefined) {
@@ -150,7 +152,7 @@ export function useChat<Transport extends AnyClientTransport = ClientTransport>(
       options.onError?.(nextError);
       return nextError;
     },
-    [options, updateInteraction, updateMessages],
+    [maxRetainedEvents, options, updateInteraction, updateMessages],
   );
 
   const runRequest = useCallback(

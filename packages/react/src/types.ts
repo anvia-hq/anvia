@@ -66,6 +66,11 @@ export type UseChatOptions<Transport extends AnyClientTransport = ClientTranspor
   initialMessages?: readonly UIMessage<TransportMetadata<Transport>, TransportData<Transport>>[];
   resume?: ChatResumeOptions;
   suggestions?: readonly ChatSuggestion<TransportMetadata<Transport>>[];
+  /**
+   * Keep only the newest N stream events in `events`. Defaults to keeping every
+   * event for the lifetime of the run. The transcript itself is unaffected.
+   */
+  maxRetainedEvents?: number | undefined;
   onEvent?(event: ClientStreamEvent<TransportMetadata<Transport>, TransportData<Transport>>): void;
   onError?(error: Error): void;
 };

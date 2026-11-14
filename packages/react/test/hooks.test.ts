@@ -333,6 +333,40 @@ describe("useChat", () => {
     expect(result.current.runUsage).toBeUndefined();
   });
 
+  it("retains only the configured number of stream events", async () => {
+    const transport: ClientTransport<ClientStreamRequest> = {
+      async *send() {
+        yield {
+          type: "stream_start",
+          protocol: CLIENT_STREAM_PROTOCOL,
+          streamId: "cap",
+          eventId: 0,
+          resumable: false,
+        };
+        for (let index = 0; index < 5; index += 1) {
+          yield {
+            type: "stream_event",
+            streamId: "cap",
+            eventId: index + 1,
+            event: {
+              type: "text_delta",
+              runId: "run",
+              messageId: "assistant",
+              partId: "text",
+              delta: String(index),
+            },
+          } as never;
+        }
+        yield { type: "stream_end", streamId: "cap", eventId: 6, status: "completed" };
+      },
+    };
+    const { result } = renderHook(() => useChat({ transport, maxRetainedEvents: 3 }));
+
+    await act(async () => result.current.sendMessage({ text: "Hi" }));
+
+    expect(result.current.events).toHaveLength(3);
+  });
+
   it("uses submitted, streaming, and error as distinct states", async () => {
     let releaseStart: (() => void) | undefined;
     let releaseEnd: (() => void) | undefined;

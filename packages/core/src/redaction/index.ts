@@ -158,7 +158,18 @@ export function createRedactor(options: RedactionOptions = {}): Redactor {
           result[key] = entry;
           continue;
         }
-        result[key] = redactValue(entry, depth + 1, seen);
+        const redacted = redactValue(entry, depth + 1, seen);
+        if (key === "__proto__") {
+          // Assigning would invoke the prototype setter and change the copy's prototype.
+          Object.defineProperty(result, key, {
+            value: redacted,
+            enumerable: true,
+            configurable: true,
+            writable: true,
+          });
+          continue;
+        }
+        result[key] = redacted;
       }
       return result;
     } finally {

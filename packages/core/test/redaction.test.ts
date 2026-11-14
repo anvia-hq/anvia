@@ -278,6 +278,20 @@ describe("createRedactor", () => {
     ]);
   });
 
+  it("keeps the prototype of the redacted copy intact for __proto__ keys", () => {
+    const source = JSON.parse(
+      '{"__proto__":{"polluted":true},"note":"hi person@example.com"}',
+    ) as Record<string, unknown>;
+
+    const redacted = createRedactor().redact(source) as Record<string, unknown>;
+
+    expect(Object.getPrototypeOf(redacted)).toBe(Object.prototype);
+    expect(redacted.polluted).toBeUndefined();
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+    expect(redacted.note).toBe("hi <redacted>");
+    expect(Object.hasOwn(redacted, "__proto__")).toBe(true);
+  });
+
   it("returns primitives unchanged", () => {
     const redactor = createRedactor();
 

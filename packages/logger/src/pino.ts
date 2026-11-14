@@ -31,6 +31,11 @@ export type PinoLoggerOptions = LoggerOptions & {
   mkdir?: boolean | undefined;
   /** Append to an existing `filePath` instead of truncating it. Defaults to `true`. Only valid with `filePath`. */
   append?: boolean | undefined;
+  /**
+   * Permission bits for a newly created `filePath`, such as `0o600`. Defaults to the
+   * process umask. Existing files keep their mode. Only valid with `filePath`.
+   */
+  fileMode?: number | undefined;
 };
 
 const fileOpenErrors = new WeakMap<DestinationStream, Error>();
@@ -52,9 +57,14 @@ export function createPinoLogger(options: PinoLoggerOptions = {}): FlushableLogg
 
 function resolveDestination(options: PinoLoggerOptions): DestinationStream | undefined {
   if (options.filePath === undefined) {
-    if (options.sync !== undefined || options.mkdir !== undefined || options.append !== undefined) {
+    if (
+      options.sync !== undefined ||
+      options.mkdir !== undefined ||
+      options.append !== undefined ||
+      options.fileMode !== undefined
+    ) {
       throw new Error(
-        "@anvia/logger: sync, mkdir, and append only apply to file destinations; pass filePath to use them.",
+        "@anvia/logger: sync, mkdir, append, and fileMode only apply to file destinations; pass filePath to use them.",
       );
     }
 
@@ -75,11 +85,19 @@ function resolveDestination(options: PinoLoggerOptions): DestinationStream | und
     throw new Error("@anvia/logger: pass either filePath or pinoOptions.transport, not both.");
   }
 
+  if (
+    options.fileMode !== undefined &&
+    (!Number.isInteger(options.fileMode) || options.fileMode < 0 || options.fileMode > 0o777)
+  ) {
+    throw new TypeError("@anvia/logger: fileMode must be an integer between 0 and 0o777.");
+  }
+
   const destination = pino.destination({
     dest: options.filePath,
     sync: options.sync ?? true,
     mkdir: options.mkdir ?? true,
     append: options.append ?? true,
+    mode: options.fileMode,
   });
 
   if (options.sync === false) {

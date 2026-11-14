@@ -1,6 +1,6 @@
 {
   "name": "@anvia/durable",
-  "version": "0.16.0",
+  "version": "0.17.0",
   "description": "Durable agent execution with persisted model and tool checkpoints for Anvia, on SQLite, Postgres, Drizzle or Prisma.",
   "author": "anvia",
   "license": "MIT",

@@ -153,26 +153,26 @@ Each stage is independently shippable and keeps `DurableRuntime` working.
    - **6d. HTTP bridge (shipped).** `createDurableHandler` accepts a store-only `DurableClient` as
      its backend, so the HTTP API runs in a process with no agents while workers execute. Runs and
      graphs are served; task routes answer 501.
-   - **6e. Custom tasks and goals under claims. Not started; needs a decision.** Scoping found
-     work that is larger than the earlier stages and includes a database migration:
-     - _Schema._ `anvia_durable_tasks` has no `name` column, so a worker cannot ask the database
-       for only the tasks it registers. Claiming by id and releasing the unknown ones would
-       starve them. A `name` column means a schema-version bump and migration for Postgres,
-       Drizzle and Prisma users.
-     - _Reconciliation._ `reconcileTree` decides whether a task may settle by asking "is it active
-       in this process". Under shared workers that must mean "has a live claim", and a client or
-       any worker may reconcile a tree, so reconciliation needs a per-root lock.
-     - _Locks._ Task rows are read-modify-written without row locks. Every tree transaction
-       (submit, spawn, reconcile, cancel, signal, retry, resolve, the final phase transition)
-       needs the same per-root lock taken first, with an ordering that cannot deadlock against
-       the run row locks.
-     - _Deadlines._ Time-based waits are in-process timers. Workers must instead poll for roots
-       with due waits.
-     - _Admission._ A client that submits a task has no definition to parse input or build the
-       initial checkpoint, so tasks need the same unadmitted-then-admitted path as runs.
-     - Renewal needs a lost-claim rule for tasks (a settled or waiting task is not executing).
-       Until then custom tasks and goals stay owner-only, and the owner and shared workers cannot
-       share a database.
+   - **6e. Custom tasks and goals under claims (shipped on the task-claims branch).** Scoping
+     first suggested a `name` column migration, but the stored task record is plain JSON, so
+     `claimTasks` filters on `record::jsonb ->> 'name'` and **no schema change was needed**. What
+     did change:
+     - `claimTasks` shares the claims table with runs (ids are random UUIDs); `renew` treats a task
+       as lost unless it is `pending` or `running`, since any other status means no invocation is
+       executing. `tx.isClaimed(id)` answers "has a live claim".
+     - `reconcileTree` takes a `busy(tx, task)` predicate instead of in-process sets. An owner
+       passes the local active sets; a worker asks for a live claim on the task or its owned run.
+       The claim is released before reconciling, so a finished task is not seen as busy.
+     - Every tree-changing transaction (submit, spawn, reconcile, cancel, signal, retry, resolve,
+       the start and final phase transitions) takes a per-root advisory lock first. A test
+       delivering ten signals concurrently from three workers loses signals without it (3 of 3
+       runs on real Postgres) and keeps all with it.
+     - Time-based waits are found by polling every unsettled tree, not in-process timers. The cost
+       grows with open trees; a "roots with due waits" query is the later optimisation.
+     - A task invocation runs inside its claim's fence like a run, so a stale worker cannot commit.
+   - **6f. Tasks from `DurableClient`. Not started.** A client has no definition to parse input
+     or build the initial checkpoint, so it needs the unadmitted-then-admitted path runs use,
+     plus task routes in the HTTP backend.
 
 ## Consequences
 

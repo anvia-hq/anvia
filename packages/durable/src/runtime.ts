@@ -168,6 +168,7 @@ export class DurableRuntime implements DurableSubmitClient {
             this.active.get(task.agentRunId)?.controller.abort(new Error("Owner task cancelled."));
         await this.pump();
       },
+      worker === undefined ? undefined : { workerId: worker.workerId, leaseMs: worker.leaseMs },
     );
   }
 
@@ -341,7 +342,6 @@ export class DurableRuntime implements DurableSubmitClient {
       trace?: DurableTraceOptions | undefined;
     },
   ): Promise<DurableTaskHandle<GoalResult>> {
-    this.assertNotWorker();
     const { sessionId, requestId, trace, ...goal } = input;
     return this.submitTask(definition, { sessionId, requestId, input: goal, trace });
   }
@@ -356,7 +356,6 @@ export class DurableRuntime implements DurableSubmitClient {
       trace?: DurableTraceOptions | undefined;
     },
   ): Promise<DurableTaskHandle<R>> {
-    this.assertNotWorker();
     this.assertOpen();
     const id = await this.tasks.submit(
       definition.name,
@@ -391,7 +390,6 @@ export class DurableRuntime implements DurableSubmitClient {
     input: TaskSubmission,
     options: { expectedAgentIds?: readonly string[] } = {},
   ): Promise<DurableTaskHandle> {
-    this.assertNotWorker();
     this.assertOpen();
     const submission = parseTaskSubmission(input);
     const id = await this.tasks.submit(
@@ -975,12 +973,8 @@ export class DurableRuntime implements DurableSubmitClient {
       const { status } = await this.status(id);
       if (status === "cancelled") active.controller.abort(new Error("Durable run cancelled."));
     }
+    if (this.worker !== undefined) await this.tasks.poll();
     await this.pump();
-  }
-
-  private assertNotWorker(): void {
-    if (this.worker !== undefined)
-      throw new TypeError("Custom tasks and goals are not supported in shared worker mode yet.");
   }
 
   /** Renews held claims and stops runs whose claim was lost. */
@@ -1002,24 +996,27 @@ export class DurableRuntime implements DurableSubmitClient {
   }
 
   private async renewClaims(worker: ResolvedWorker): Promise<void> {
-    const held = [...this.active.entries()].filter(([, active]) => active.claim !== undefined);
+    const held: DurableClaim[] = [
+      ...[...this.active.values()].flatMap((active) =>
+        active.claim === undefined ? [] : [active.claim],
+      ),
+      ...this.tasks.heldClaims(),
+    ];
     if (held.length === 0) {
       this.lastRenewAt = Date.now();
       return;
     }
     const { lost } = await this.store.renew!({
       workerId: worker.workerId,
-      claims: held.map(([, active]) => ({
-        runId: active.claim!.runId,
-        claimId: active.claim!.claimId,
-      })),
+      claims: held.map((claim) => ({ runId: claim.runId, claimId: claim.claimId })),
       leaseMs: worker.leaseMs,
     });
     this.lastRenewAt = Date.now();
-    for (const runId of lost) {
-      const active = this.active.get(runId);
+    for (const id of lost) {
+      const active = this.active.get(id);
       if (active?.claim !== undefined)
-        active.controller.abort(new DurableClaimLostError(runId, active.claim.claimId));
+        active.controller.abort(new DurableClaimLostError(id, active.claim.claimId));
+      this.tasks.lose(id);
     }
   }
 
@@ -1027,6 +1024,7 @@ export class DurableRuntime implements DurableSubmitClient {
     for (const [runId, active] of this.active)
       if (active.claim !== undefined)
         active.controller.abort(new DurableClaimLostError(runId, active.claim.claimId));
+    for (const claim of this.tasks.heldClaims()) this.tasks.lose(claim.runId);
   }
 
   private fail(error: unknown): void {
@@ -1165,8 +1163,6 @@ function resolveWorker(options: DurableRuntimeOptions): ResolvedWorker | undefin
     throw new TypeError(
       "This store does not support shared workers. Use a single owning runtime, or a Postgres, Drizzle, or Prisma store.",
     );
-  if ((options.tasks?.length ?? 0) > 0)
-    throw new TypeError("Custom tasks are not supported in shared worker mode yet.");
   const workerId = worker.workerId ?? `worker-${globalThis.crypto.randomUUID()}`;
   nonblank(workerId, "workerId");
   const leaseMs = worker.leaseMs ?? 30_000;

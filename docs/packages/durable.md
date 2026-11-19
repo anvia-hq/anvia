@@ -548,8 +548,9 @@ cannot overwrite the result, and a run settled elsewhere is never overwritten. L
 one run, not the runtime. `runtime.cancel()` from any worker stops the run on whichever worker holds
 it, within one heartbeat.
 
-Limits today: agent runs and static graphs. Custom tasks and goals are rejected in worker mode. The poll
-interval defaults to one second here because retry waits are not timer-driven. An owning runtime and
+Limits today: a `DurableClient` serves agent runs and graphs, not custom tasks. The poll
+interval defaults to one second here because retry waits and task timers are not driven by
+in-process timers. An owning runtime and
 shared workers cannot run together: a worker fails to start while an owner is live, and an owner
 fails to start while a worker holds a live claim. SQLite stays single-owner. Drizzle and Prisma
 users must add the `anvia_durable_claims` table (the generators include it); owner-only databases
@@ -633,7 +634,43 @@ Different tasks can run on different workers, each registering only its own agen
 submitted without registrations (by a `DurableClient`, or by a worker for agents it does not
 register) stores its tasks unadmitted; the worker that runs a task admits it. That worker also
 refuses a task whose agent records memory, which graphs do not support, by failing the task, where
-an owning runtime rejects the submission up front. Custom tasks and goals are still owner-only.
+an owning runtime rejects the submission up front.
+
+## Custom tasks and goals with workers
+
+Shared workers run custom tasks and goals too. A runtime in worker mode submits a task with
+`submitTask()` (or `submitGoal()`) and any worker that registers its definition may execute it:
+
+```ts
+const runtime = await DurableRuntime.open({
+  store,
+  agents,
+  tasks: [reviewTask, researchGoal], // definitions this worker can run
+  worker: {},
+});
+const handle = await runtime.submitTask(reviewTask, { sessionId, requestId, input });
+await handle.signal("approved", "req-1", true); // from any worker
+await handle.result();
+```
+
+`DurableWorker.start({ store, agents, tasks })` executes tasks too but has no submit methods, so
+the process that submits tasks is a `DurableRuntime` in worker mode until `DurableClient` can
+submit them.
+
+- A worker claims only tasks whose definition name it registers, one invocation at a time per
+  task, and renews the claim while the phase runs. A crashed worker's task resumes from its saved
+  checkpoint on another worker after `leaseMs`; a worker that closes releases at once.
+- `signal()`, `cancel()`, `retry()` and `resolveEffect()` work from any worker. Cancelling stops
+  the invocation on whichever worker holds it, within one heartbeat.
+- Every transaction that changes a task tree takes a per-tree lock first, so signals, joins and
+  settling from different workers cannot overwrite each other. A task owned by an agent run
+  settles from the run's outcome whichever worker ran it.
+- Timer waits and joins are noticed by polling, not in-process timers: each poll re-reconciles every
+  unsettled tree, so the cost grows with the number of open trees. Keep `pollIntervalMs` modest.
+- `spawnAgent()` needs the agent registered on the worker that runs the task; the spawned run may
+  then execute on any worker that registers it.
+- `DurableClient` cannot submit or control tasks yet, so the HTTP task routes still answer 501 for
+  a client backend.
 
 ## Worker processes
 

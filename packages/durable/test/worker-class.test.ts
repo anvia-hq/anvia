@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DurableClient, DurableWorker } from "../src/index.js";
+import { z } from "zod";
+import { defineTask, DurableClient, DurableRuntime, DurableWorker } from "../src/index.js";
 import { PostgresDurableStore } from "../src/postgres.js";
 import { SqliteDurableStore } from "../src/sqlite.js";
 import { done, makeAgent } from "./helpers.js";
@@ -108,6 +109,39 @@ describe("DurableWorker", () => {
 
     worker.registerAgents([registration()]);
     expect(await run.result()).toMatchObject({ output: "done" });
+  });
+
+  it("executes tasks a runtime in worker mode submits", async () => {
+    const { pool } = testPool();
+    const echo = defineTask({
+      name: "echo",
+      version: 1,
+      input: z.string(),
+      checkpoint: z.null(),
+      output: z.string(),
+      initial: () => null,
+      run: async (ctx) => ({ status: "completed", output: `echo:${ctx.input}` }),
+    });
+    const worker = await DurableWorker.start({
+      store: store(pool),
+      tasks: [echo],
+      pollIntervalMs: 20,
+    });
+    closers.push(() => worker.close());
+    // A runtime in worker mode submits; the DurableWorker above executes.
+    const submitter = await DurableRuntime.open({
+      store: store(pool),
+      tasks: [echo],
+      worker: {},
+      pollIntervalMs: 20,
+    });
+    closers.push(() => submitter.close());
+    const handle = await submitter.submitTask(echo, {
+      sessionId: "s",
+      requestId: "r",
+      input: "hi",
+    });
+    expect(await handle.result()).toBe("echo:hi");
   });
 
   it("refuses a store that cannot share workers", async () => {

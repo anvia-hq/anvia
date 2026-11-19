@@ -187,9 +187,6 @@ describe("shared worker mode", () => {
 
   it("refuses unsupported combinations", async () => {
     const { pool } = testPool();
-    const worker = await openWorker(pool, async () => done());
-    await expect(worker.submitTask({} as never, {} as never)).rejects.toThrow(/shared worker mode/);
-
     await expect(
       DurableRuntime.open({ store: new SqliteDurableStore(":memory:"), worker: {} }),
     ).rejects.toThrow(/does not support shared workers/);

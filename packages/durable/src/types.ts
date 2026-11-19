@@ -441,6 +441,8 @@ export interface DurableTransaction extends TaskTransaction {
    * for a run, so a worker that lost its lease cannot commit. Only stores with claims implement it.
    */
   assertClaim?(runId: string, claimId: string): Promise<void>;
+  /** Whether some worker holds a live claim on this run or task. Only claim stores implement it. */
+  isClaimed?(id: string): Promise<boolean>;
   /**
    * Serialises concurrent submissions to one session until the transaction ends. Stores that
    * admit several writers (shared workers and clients) implement it; a single owner does not need it.
@@ -499,6 +501,17 @@ export interface DurableStore {
     limit: number;
     leaseMs: number;
     agentIds?: readonly string[];
+  }): Promise<DurableClaim[]>;
+  /**
+   * Claims up to `limit` pending or running tasks whose definition name is in `names`, in the
+   * order they became ready, with the same exclusion and lease rules as `claim()`. A claim on a
+   * task and on a run share one table, so `renew`, `release` and `assertClaim` serve both.
+   */
+  claimTasks?(input: {
+    workerId: string;
+    limit: number;
+    leaseMs: number;
+    names: readonly string[];
   }): Promise<DurableClaim[]>;
   /**
    * Extends the leases of `claims` that `workerId` still holds. `lost` names the runs whose claim
@@ -564,8 +577,8 @@ export type DurableRuntimeOptions = {
    * claims (Postgres, Drizzle, Prisma); an owning runtime and shared workers cannot run together.
    * The runtime claims runs, renews its claims on a heartbeat, fences every write for a run with
    * its claim, and stops a run whose claim it loses. Polls every second unless `pollIntervalMs`
-   * says otherwise, since retry waits are not timer-driven here. Agent runs and graphs only: custom tasks
-   * and goals are not supported in this mode yet.
+   * says otherwise, since retry waits are not timer-driven here. Agent runs, graphs, custom tasks and goals
+   * are supported; a worker submits and executes tasks, a `DurableClient` cannot submit them yet.
    */
   worker?: DurableWorkerOptions;
 };

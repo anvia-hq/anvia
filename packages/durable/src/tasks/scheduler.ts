@@ -7,7 +7,15 @@ import {
   DurableNotFoundError,
 } from "../errors.js";
 import { errorMessage, json, sameJson } from "../json.js";
-import type { DurableStore, DurableAgentRegistration, DurableTraceOptions } from "../types.js";
+import type {
+  DurableClaim,
+  DurableStore,
+  DurableAgentRegistration,
+  DurableTraceOptions,
+  DurableTransaction,
+} from "../types.js";
+import { DurableClaimLostError } from "../errors.js";
+import { claimContext } from "../fencing.js";
 import { taskWaitSchema } from "./schema.js";
 import { taskInvocation } from "./invocation.js";
 import { spawnAgent } from "./agent.js";
@@ -33,7 +41,7 @@ function dependencies(definition: RegisteredTask, task: TaskRecord): string[] {
 export class TaskScheduler {
   private readonly active = new Map<
     string,
-    { controller: AbortController; promise: Promise<void> }
+    { controller: AbortController; promise: Promise<void>; claim?: DurableClaim | undefined }
   >();
   private readonly deadlines = new Map<string, number>();
   private timer: ReturnType<typeof setTimeout> | undefined;
@@ -49,7 +57,61 @@ export class TaskScheduler {
     private readonly toolIndexes: ReadonlyMap<string, DurableToolIndexes>,
     private readonly agentActive: (id: string) => boolean,
     private readonly syncAgents: (root: string) => Promise<void>,
+    /** Set when this runtime is one of several shared workers; see ADR 0001. */
+    private readonly shared?: { workerId: string; leaseMs: number },
   ) {}
+
+  /** Claims this scheduler holds, for the worker's lease heartbeat. */
+  heldClaims(): DurableClaim[] {
+    return [...this.active.values()].flatMap((entry) =>
+      entry.claim === undefined ? [] : [entry.claim],
+    );
+  }
+
+  /** Stops the invocation of a task whose claim was lost. */
+  lose(id: string): void {
+    const entry = this.active.get(id);
+    if (entry?.claim !== undefined)
+      entry.controller.abort(new DurableClaimLostError(id, entry.claim.claimId));
+  }
+
+  /**
+   * Shared workers cannot rely on in-process timers or on being told about changes another
+   * process made, so each tick re-reconciles every unsettled task tree (which also wakes due waits).
+   */
+  async poll(): Promise<void> {
+    if (this.closing) return;
+    let cursor: number | undefined = 0;
+    while (cursor !== undefined && !this.closing) {
+      const page = await this.store.unsettledTaskRoots(cursor);
+      for (const root of page.ids) await this.reconcile(root);
+      cursor = page.cursor;
+    }
+    await this.pump();
+  }
+
+  /** Every transaction that changes a task tree takes the tree's lock first, so writers serialise. */
+  private locked<T>(root: string, fn: (tx: DurableTransaction) => Promise<T>): Promise<T> {
+    return this.store.transaction(async (tx) => {
+      await tx.lockSession?.(`task-root:${root}`);
+      return fn(tx);
+    });
+  }
+
+  private busy: (tx: DurableTransaction, task: TaskRecord) => Promise<boolean> = async (
+    tx,
+    task,
+  ) => {
+    if (this.shared !== undefined)
+      return (
+        (await tx.isClaimed!(task.id)) ||
+        (task.agentRunId !== undefined && (await tx.isClaimed!(task.agentRunId)))
+      );
+    return (
+      this.active.has(task.id) ||
+      (task.agentRunId !== undefined && this.agentActive(task.agentRunId))
+    );
+  };
 
   get activeCount(): number {
     return this.active.size;
@@ -90,6 +152,8 @@ export class TaskScheduler {
   ): Promise<string> {
     const definition = this.definition(name, version);
     const task = await this.store.transaction(async (tx) => {
+      // Two submitters of one key would otherwise race to the unique constraint.
+      await tx.lockSession?.(`task-submit:${sessionId}`);
       const task = await createTask(tx, definition, input, sessionId, key, undefined, trace);
       const agentIds = dependencies(definition, task);
       if (
@@ -137,11 +201,14 @@ export class TaskScheduler {
   }
 
   async snapshot(id: string, options: { operations?: boolean } = {}) {
-    return this.store.transaction(async (tx) => ({
-      task: await requireTask(tx, id),
-      operations: options.operations === true ? await tx.operations(id) : [],
-      cursor: await tx.cursor(),
-    }));
+    return this.store.transaction(
+      async (tx) => ({
+        task: await requireTask(tx, id),
+        operations: options.operations === true ? await tx.operations(id) : [],
+        cursor: await tx.cursor(),
+      }),
+      { readOnly: true },
+    );
   }
 
   async graph(id: string): Promise<TaskGraphSnapshot> {
@@ -162,7 +229,7 @@ export class TaskScheduler {
 
   async cancel(id: string, expectedTreeIds?: readonly string[]): Promise<void> {
     const root = (await this.snapshot(id)).task.rootId;
-    const ids = await this.store.transaction(async (tx) => {
+    const ids = await this.locked(root, async (tx) => {
       if (expectedTreeIds !== undefined) {
         const current = await tx.taskTree(root);
         const expected = new Set(expectedTreeIds);
@@ -182,7 +249,8 @@ export class TaskScheduler {
   async signal(id: string, name: string, requestId: string, value: JsonValue): Promise<void> {
     taskKey(name);
     taskKey(requestId);
-    const root = await this.store.transaction(async (tx) => {
+    const rootOf = (await this.snapshot(id)).task.rootId;
+    const root = await this.locked(rootOf, async (tx) => {
       const task = await requireTask(tx, id);
       if (Object.hasOwn(task.signals, name)) {
         if (!sameJson(task.signals[name], { requestId, value: json(value) }))
@@ -206,7 +274,7 @@ export class TaskScheduler {
 
   async retry(id: string): Promise<void> {
     if (this.active.has(id)) throw new DurableConflictError("Task invocation is still settling.");
-    await this.store.transaction(async (tx) => {
+    await this.locked((await this.snapshot(id)).task.rootId, async (tx) => {
       const task = await requireTask(tx, id);
       if (task.status !== "needs_attention")
         throw new DurableConflictError(
@@ -222,7 +290,7 @@ export class TaskScheduler {
 
   async resolveEffect(id: string, key: string, value: JsonValue): Promise<void> {
     if (this.active.has(id)) throw new DurableConflictError("Task invocation is still settling.");
-    await this.store.transaction(async (tx) => {
+    await this.locked((await this.snapshot(id)).task.rootId, async (tx) => {
       const task = await requireTask(tx, id);
       const operation = await tx.getOperation(id, key);
       if (
@@ -244,9 +312,7 @@ export class TaskScheduler {
   private async reconcile(root: string): Promise<void> {
     // A fail-fast pass may mark earlier children cancelling; the second pass settles idle ones.
     for (let pass = 0; pass < 2; pass++) {
-      const result = await this.store.transaction(async (tx) =>
-        reconcileTree(tx, root, new Set(this.active.keys()), this.agentActive),
-      );
+      const result = await this.locked(root, (tx) => reconcileTree(tx, root, this.busy));
       for (const id of result.abort)
         this.active.get(id)?.controller.abort(new Error("Sibling task failed."));
       if (result.deadline === undefined) this.deadlines.delete(root);
@@ -270,7 +336,22 @@ export class TaskScheduler {
     for (const [root, deadline] of this.deadlines)
       if (deadline <= Date.now()) await this.reconcile(root);
     const capacity = this.capacity - this.active.size;
-    if (capacity > 0)
+    if (capacity > 0 && this.shared !== undefined) {
+      let claims: DurableClaim[] = [];
+      try {
+        claims = await this.store.claimTasks!({
+          workerId: this.shared.workerId,
+          limit: capacity,
+          leaseMs: this.shared.leaseMs,
+          names: [...this.definitions.keys()],
+        });
+      } catch {
+        // A transient store error retries on the next poll instead of ending the worker.
+      }
+      for (const claim of claims)
+        if (this.closing || this.active.has(claim.runId)) await this.release(claim);
+        else this.launch(claim.runId, claim);
+    } else if (capacity > 0)
       for (const id of await this.store.scheduleTasks([...this.active.keys()], capacity))
         if (!this.closing && !this.active.has(id)) this.launch(id);
     if (this.deadlines.size > 0) {
@@ -290,38 +371,61 @@ export class TaskScheduler {
     }
   }
 
-  private launch(id: string): void {
+  private async release(claim: DurableClaim | undefined): Promise<void> {
+    if (claim === undefined) return;
+    try {
+      await this.store.release!([{ runId: claim.runId, claimId: claim.claimId }]);
+    } catch {
+      // The lease lapses on its own if the release did not reach the store.
+    }
+  }
+
+  private launch(id: string, claim?: DurableClaim): void {
     const controller = new AbortController();
+    const fenced = <T>(fn: () => Promise<T>): Promise<T> =>
+      claim === undefined ? fn() : claimContext.run({ runId: id, claimId: claim.claimId }, fn);
     const promise = new Promise<void>((resolve) => setTimeout(resolve, 0))
-      .then(() => this.execute(id, controller))
+      .then(() => fenced(() => this.execute(id, controller)))
       .catch(async (error: unknown) => {
+        if (error instanceof DurableClaimLostError) return;
         if (!(error instanceof DurableLimitError)) throw error;
-        await this.store.transaction(async (tx) => {
-          const task = await requireTask(tx, id);
-          delete task.wait;
-          delete task.outcome;
-          task.status = "needs_attention";
-          task.error = error.message;
-          await saveTask(tx, task);
-        });
+        const root = (await this.snapshot(id)).task.rootId;
+        await fenced(() =>
+          this.locked(root, async (tx) => {
+            const task = await requireTask(tx, id);
+            delete task.wait;
+            delete task.outcome;
+            task.status = "needs_attention";
+            task.error = error.message;
+            await saveTask(tx, task);
+          }),
+        );
       })
       .finally(async () => {
         this.active.delete(id);
+        // Released before reconciling: a task with a live claim is not allowed to settle.
+        await this.release(claim);
         if (!this.closing) {
           await this.reconcile((await this.snapshot(id)).task.rootId);
           await this.pump();
         }
       })
       .catch((error: unknown) => {
+        if (error instanceof DurableClaimLostError || controller.signal.aborted) return;
         this.stop(error);
         this.fatal(error);
       });
-    this.active.set(id, { controller, promise });
+    this.active.set(id, { controller, promise, claim });
   }
 
   private async execute(id: string, controller: AbortController): Promise<void> {
     if (controller.signal.aborted) return;
-    const task = await this.store.transaction(async (tx) => {
+    const known = (await this.snapshot(id)).task;
+    // A shared worker can claim a task whose name the database could not filter on. It leaves
+    // a definition it does not register untouched; the claim is released when this returns.
+    if (this.shared !== undefined && !this.definitions.has(known.name)) return;
+    const rootId = known.rootId;
+    const task = await this.locked(rootId, async (tx) => {
       const saved = await requireTask(tx, id);
       if (!["pending", "running"].includes(saved.status)) return undefined;
       const definition = this.definitions.get(saved.name);
@@ -375,7 +479,7 @@ export class TaskScheduler {
     }
     if (failure instanceof DurableStorageError) throw failure;
     if (this.closing) return;
-    const abort = await this.store.transaction(async (tx) => {
+    const abort = await this.locked(task.rootId, async (tx) => {
       const current = await requireTask(tx, id);
       if (current.status !== "running") return [];
       let cancelChildren = false;

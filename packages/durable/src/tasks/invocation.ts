@@ -121,15 +121,19 @@ export function taskInvocation(
       const registered = definitions.get(definition.name);
       if (registered === undefined || registered.version !== definition.version)
         throw new DurableRecoveryError(`Task definition is not registered: ${definition.name}`);
-      const child = await transaction(async (tx) =>
-        createTask(tx, registered, input, task.sessionId, key, task.id),
-      );
+      const child = await transaction(async (tx) => {
+        await tx.lockSession?.(`task-root:${task.rootId}`);
+        return createTask(tx, registered, input, task.sessionId, key, task.id);
+      });
       await changed();
       return child.id;
     },
     spawnAgent: async (key, input) => {
       await assertActive();
-      const id = await transaction((tx) => spawnAgent(tx, task, key, input));
+      const id = await transaction(async (tx) => {
+        await tx.lockSession?.(`task-root:${task.rootId}`);
+        return spawnAgent(tx, task, key, input);
+      });
       await changed();
       return id;
     },

@@ -589,6 +589,31 @@ Run rows are locked while a transaction reads them for writing, and submissions 
 serialised, so clients and workers can write the same run without losing updates. A client cannot
 share a database with an owning runtime: `connect()` fails while one is live.
 
+## Worker processes
+
+`DurableWorker` is the executing half of a client/worker deployment. It takes the same agent
+registrations as `DurableRuntime`, claims runs from the shared store, and exposes no submit or
+control methods, which belong to `DurableClient`:
+
+```ts
+const worker = await DurableWorker.start({
+  store, // Postgres, Drizzle, or Prisma
+  agents: [{ agent: researcher, version: "1" }],
+  workerId: "worker-eu-1", // optional; generated if omitted
+  leaseMs: 30_000,
+  maxConcurrentRuns: 4,
+});
+
+worker.health(); // { status, ready, activeRuns, ... }
+await worker.close(); // aborts active attempts and releases their claims
+```
+
+Add workers freely; each claims only runs of agents it registers. `worker.unregisterAgent(id)`
+stops claiming that agent (it fails while an attempt of it is active here); runs already queued
+in the store wait for a worker that registers it. It is `DurableRuntime.open({ worker })` under the
+hood, so the limits in [Shared workers](#shared-workers) apply: agent runs only, and no owning
+runtime on the same database.
+
 ## Typed agent handles
 
 `runtime.agent(registration)` registers an agent and returns a `DurableAgentHandle<Output>`.

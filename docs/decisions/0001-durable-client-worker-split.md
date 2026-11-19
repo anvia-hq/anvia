@@ -127,7 +127,13 @@ Each stage is independently shippable and keeps `DurableRuntime` working.
      takes `agentIds` so a worker never claims a run it cannot execute. A client has no
      registration, so its runs are created `unadmitted` and the claiming worker admits them against
      its own registration (`admitRunRecord`) before the first attempt.
-5. **Public `DurableClient` and `DurableWorker`.** Mostly assembly once 2 to 4 exist.
+5. **Public `DurableClient` and `DurableWorker` (shipped on the worker-class branch).**
+   `DurableClient` arrived with 4c; `DurableWorker.start()` is the worker role over
+   `DurableRuntime` in worker mode, without submit or control methods. A worker's
+   `unregisterAgent()` no longer refuses because of unfinished runs in the store, since another
+   worker may execute them. The planned "flip polling on by default" is narrower than first
+   written: workers already poll every second, while an owning runtime has no other writer to
+   notice (an owner and clients cannot share a database), so its default stays off.
 6. Typed events and protocol bridge; registration fingerprinting; unify with tasks.
 
 ## Consequences

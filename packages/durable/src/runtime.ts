@@ -308,16 +308,19 @@ export class DurableRuntime implements DurableSubmitClient {
     if (!this.agents.has(id)) return false;
     if ([...this.active.values()].some((run) => run.agentId === id))
       throw new DurableConflictError(`Agent still has an active attempt: ${id}`);
-    for (const status of [
-      "queued",
-      "pending",
-      "running",
-      "retry_wait",
-      "waiting",
-      "needs_attention",
-    ] as const)
-      if ((await this.store.list({ agentId: id, status, limit: 1 })).runs.length)
-        throw new DurableConflictError(`Agent still has unfinished work: ${id}`);
+    // A shared worker only gives up claiming the agent: unfinished runs wait for a worker that
+    // registers it, so they are not a reason to refuse. An owner would strand them.
+    if (this.worker === undefined)
+      for (const status of [
+        "queued",
+        "pending",
+        "running",
+        "retry_wait",
+        "waiting",
+        "needs_attention",
+      ] as const)
+        if ((await this.store.list({ agentId: id, status, limit: 1 })).runs.length)
+          throw new DurableConflictError(`Agent still has unfinished work: ${id}`);
     return this.agents.delete(id);
   }
 

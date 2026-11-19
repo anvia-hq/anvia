@@ -51,6 +51,7 @@ export {
 } from "./run.js";
 export { DurableObserver, type DurableObserverOptions } from "./observer.js";
 export { DurableClient, type DurableClientOptions } from "./store-client.js";
+export { DurableWorker, type DurableWorkerStartOptions } from "./worker.js";
 export { DurableAgentHandle } from "./agent-handle.js";
 export type { DurableRunClient, DurableRunReader, DurableSubmitClient } from "./client.js";
 export {

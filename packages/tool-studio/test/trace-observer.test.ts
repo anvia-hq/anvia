@@ -155,7 +155,10 @@ describe("StudioTraceObserver", () => {
     });
 
     await run.end({
+      runId: "run_matches",
       status: "completed",
+      output: "done",
+      text: "done",
       usage: Usage.empty(),
       messages: [Message.user("refund an order"), Message.assistant("done")],
     });

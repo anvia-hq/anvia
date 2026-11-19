@@ -991,10 +991,12 @@ setting.
   model call's tool selection (the static tools plus the index search results, with their
   definitions) is recorded as an effect operation `${epoch}:tools:${turn}` before the model call. A
   restart or retry offers the recorded tools and does not run the search again. The run stores a
-  fingerprint of the indexes at submission (each index's search settings and its tools' definitions),
-  checked at every execution start: a change under the same version fails the run with
-  `needs_attention`. The fingerprint does not cover the embedding model, so change the version when
-  the model changes.
+  fingerprint of the indexes at submission (each index's search settings, its embedding model, the
+  text it embedded, and its tools' definitions), checked at every execution start: a change under
+  the same version fails the run with `needs_attention`. The embedded text is covered through what
+  the index recorded; a structurally supplied `ToolIndex` that does not carry `embeddingModel` or
+  `embeddedDocuments` hashes without them, so two such indexes with the same settings and tools
+  stay interchangeable.
 
 These per-run settings are not exposed: `retries`, `maxTurns`, and `controls` (the runtime captures
 the agent-level values at submission), plus `lifecycle`, `guardrails`, `middlewares`,

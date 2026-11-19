@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import type { Embedding, EmbeddingModel } from "../src/embeddings";
 import { Agent } from "../src/agent";
+import { Usage, type CompletionResponse } from "../src/completion";
 import { getAgentToolState } from "../src/agent/tool-state";
 import { createTool, createToolIndex, embedTools } from "../src/tool";
 
@@ -102,9 +103,9 @@ describe("tool index embedding text", () => {
           outputSchema: false,
           reasoning: false,
         },
-        completion: async () => ({
+        completion: async (): Promise<CompletionResponse> => ({
           choice: [],
-          usage: { input: 0, output: 0, total: 0 },
+          usage: Usage.empty(),
           rawResponse: {},
         }),
       },

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { DurableClient, DurableWorker } from "../src/index.js";
 import { PostgresDurableStore } from "../src/postgres.js";
 import { SqliteDurableStore } from "../src/sqlite.js";
@@ -65,7 +65,45 @@ describe("DurableWorker", () => {
 
     // Unfinished work in the store does not block unregistering on a shared worker.
     expect(await worker.unregisterAgent("researcher")).toBe(true);
-    await new Promise((resolve) => setTimeout(resolve, 900));
+    await new Promise((resolve) => setTimeout(resolve, 900)); // longer than two polls
+    expect(await run.status()).toMatchObject({ status: "queued" });
+
+    worker.registerAgents([registration()]);
+    expect(await run.result()).toMatchObject({ output: "done" });
+  });
+
+  it("leaves a run it claimed untouched when its agent is unregistered mid-claim", async () => {
+    const { pool } = testPool();
+    const inner = store(pool);
+    let worker: DurableWorker | undefined;
+    let unregistered = false;
+    const racing = new Proxy(inner, {
+      get(target, key) {
+        const value: unknown = Reflect.get(target, key);
+        if (key !== "claim" || typeof value !== "function") return value;
+        return async (...args: unknown[]) => {
+          const claims = (await Reflect.apply(value, target, args)) as unknown[];
+          if (claims.length > 0 && !unregistered) {
+            unregistered = true;
+            await worker!.unregisterAgent("researcher");
+          }
+          return claims;
+        };
+      },
+    });
+    worker = await DurableWorker.start({
+      store: racing,
+      agents: [registration()],
+      pollIntervalMs: 20,
+    });
+    closers.push(() => worker!.close());
+    const client = await DurableClient.connect({ store: store(pool) });
+    closers.push(() => client.close());
+    const run = await client
+      .agent<string>("researcher")
+      .submit({ sessionId: "s", requestId: "r", prompt: "hi" });
+    await vi.waitFor(() => expect(unregistered).toBe(true));
+    await new Promise((resolve) => setTimeout(resolve, 100));
     expect(await run.status()).toMatchObject({ status: "queued" });
 
     worker.registerAgents([registration()]);

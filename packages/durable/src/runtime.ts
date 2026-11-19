@@ -728,6 +728,9 @@ export class DurableRuntime implements DurableSubmitClient {
     if (this.closing || this.active.has(id)) return this.releaseClaim(claim);
     if (!["queued", "pending", "running", "retry_wait"].includes(status))
       return this.releaseClaim(claim);
+    // The agent may have been unregistered between claiming and here. Leave the run for a worker
+    // that registers it; there is no await between this check and `active.set` below.
+    if (this.worker !== undefined && !this.agents.has(agentId)) return this.releaseClaim(claim);
     const controller = new AbortController();
     const fenced = <T>(fn: () => Promise<T>): Promise<T> =>
       claim === undefined ? fn() : claimContext.run({ runId: id, claimId: claim.claimId }, fn);

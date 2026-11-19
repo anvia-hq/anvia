@@ -49,7 +49,11 @@ export type DurableModelRetry = {
 
 export type DurableAgentRegistration = {
   agent: Agent<unknown>;
-  /** Bump whenever code, model, tools, schemas, or instructions change incompatibly. */
+  /**
+   * Bump whenever code, model, tools, schemas, or instructions change incompatibly. `"auto"`
+   * (accepted by `DurableRuntime.open()` and `DurableWorker.start()`) derives it from the agent's
+   * declared configuration with `agentVersion()`; elsewhere pass `await agentVersion(agent)`.
+   */
   version: string;
   /** Use agent.stream() and persist normalized generation deltas. Defaults to false. */
   stream?: boolean;

@@ -51,6 +51,7 @@ export {
 } from "./run.js";
 export { DurableObserver, type DurableObserverOptions } from "./observer.js";
 export { DurableClient, type DurableClientOptions } from "./store-client.js";
+export { agentVersion } from "./fingerprint.js";
 export {
   isDurableEvent,
   type DurableEventOf,

@@ -145,7 +145,15 @@ Each stage is independently shippable and keeps `DurableRuntime` working.
      `graphSnapshot` and `cancelGraph` now work in worker mode and on `DurableClient`; tasks for
      unregistered agents are stored unadmitted. Custom tasks and goals (`definition.run` user
      code, tree reconciliation, deadlines) are not covered and still need their own claim design.
-   - **6c. Protocol bridge, registration fingerprinting, custom tasks under claims.** Not started.
+   - **6c. Registration fingerprinting (shipped on the agent-fingerprint branch).**
+     `agentVersion(agent)` and `version: "auto"` derive the version from the agent's declared
+     configuration, reusing the existing version-mismatch path instead of a second mechanism. It
+     is opt-in: making it the default would change the version of every existing registration and
+     strand their unfinished runs. Code the runtime cannot read is outside the hash.
+   - **6d. Protocol bridge, custom tasks and goals under claims.** Not started. Custom tasks need
+     claim-aware tree reconciliation (it currently asks "is this task active here"), durable wait
+     deadlines instead of in-process timers, root-level locks, and a task admission step for
+     clients.
 
 ## Consequences
 

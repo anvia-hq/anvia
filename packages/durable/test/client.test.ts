@@ -186,6 +186,24 @@ describe("DurableClient", () => {
     expect(await run.result()).toMatchObject({ output: "done" });
   });
 
+  it("reads a run in a read-only transaction that takes no write locks", async () => {
+    const { pool } = testPool();
+    const client = await openClient(pool);
+    const run = await client.agent("researcher").submit(submission("s"));
+    // The client's own reads work in a store that rejects writes, so they cannot hold run locks.
+    expect(await client.status(run.id)).toMatchObject({ status: "queued" });
+    expect(await client.snapshot(run.id)).toMatchObject({ run: { id: run.id } });
+    const shared = store(pool);
+    await shared.join();
+    closers.push(() => shared.close());
+    await expect(
+      shared.transaction(async (tx) => tx.putRun((await tx.getRun(run.id))!), { readOnly: true }),
+    ).rejects.toThrow(/read-only/);
+    await expect(
+      shared.transaction(async (tx) => (await tx.getRun(run.id))?.id, { readOnly: true }),
+    ).resolves.toBe(run.id);
+  });
+
   it("refuses stores without shared access and a live owner", async () => {
     await expect(
       DurableClient.connect({ store: new SqliteDurableStore(":memory:") }),

@@ -97,6 +97,7 @@ export type {
   DurableSubmission,
   DurableTraceOptions,
   DurableTransaction,
+  DurableTransactionOptions,
   ToolRecovery,
 } from "./types.js";
 export { DurableTaskGraph } from "./task-graph.js";

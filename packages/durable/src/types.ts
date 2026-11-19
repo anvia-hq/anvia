@@ -397,6 +397,8 @@ export type DurableSnapshot = {
   cursor: number;
 };
 
+export type DurableTransactionOptions = { readOnly?: boolean };
+
 /** Atomic transaction. Never perform external work inside its callback. */
 export interface DurableTransaction extends TaskTransaction {
   pendingCounts(): Promise<{ runs: number; tasks: number }>;
@@ -506,8 +508,15 @@ export interface DurableStore {
   /** Releases claims the caller holds. Releasing a claim already lost is not an error. */
   release?(claims: readonly DurableClaimRef[]): Promise<void>;
   close(): Promise<void>;
-  /** Runs `callback` atomically and serially; nested transactions are rejected. */
-  transaction<T>(callback: (tx: DurableTransaction) => Promise<T>): Promise<T>;
+  /**
+   * Runs `callback` atomically and serially; nested transactions are rejected. `readOnly` promises
+   * the callback only reads: a store shared by several writers then skips the run locks and claim
+   * checks it takes for read-modify-write, so polling a run never blocks the worker executing it.
+   */
+  transaction<T>(
+    callback: (tx: DurableTransaction) => Promise<T>,
+    options?: DurableTransactionOptions,
+  ): Promise<T>;
   listGraphs(options: DurableGraphListOptions): Promise<DurableGraphPage>;
   graphEvents(graphId: string, after: number, limit: number): Promise<DurableEvent[]>;
   list(options: DurableListOptions): Promise<DurableRunPage>;

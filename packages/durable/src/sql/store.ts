@@ -28,6 +28,7 @@ import type {
   DurableRunRecord,
   DurableStore,
   DurableTransaction,
+  DurableTransactionOptions,
 } from "../types.js";
 import { POSTGRES_DDL, SQL_CLAIM_TABLES, SQL_SCHEMA_VERSION, SQL_TABLES } from "./ddl.js";
 import type { SqlDriver, SqlQuery, SqlRow } from "./driver.js";
@@ -302,14 +303,19 @@ export class SqlDurableStore implements DurableStore {
     }
   }
 
-  async transaction<T>(callback: (tx: DurableTransaction) => Promise<T>): Promise<T> {
+  async transaction<T>(
+    callback: (tx: DurableTransaction) => Promise<T>,
+    options?: DurableTransactionOptions,
+  ): Promise<T> {
+    // Only a shared store honours it: an owner is the sole writer and keeps its token check.
+    const readOnly = options?.readOnly === true && this.joined;
     this.assertOpen();
     return this.gate.transaction(() => {
       // Transactions queued before close() still run: close() waits for them.
       if (this.closed) throw new Error("Durable store is not acquired.");
       return this.driver.transaction(async (query) => {
         // Enforced by Postgres, and no owner row lock is taken, so an observer never blocks the owner.
-        if (this.observing) await query("SET TRANSACTION READ ONLY");
+        if (this.observing || readOnly) await query("SET TRANSACTION READ ONLY");
         else if (!this.joined) await this.assertOwner(query);
         let active = true;
         const staging = new Staging();
@@ -321,7 +327,7 @@ export class SqlDurableStore implements DurableStore {
               () => {
                 if (!active) throw new Error("Durable transaction has finished.");
               },
-              this.joined,
+              this.joined && !readOnly,
             ),
           );
         } finally {

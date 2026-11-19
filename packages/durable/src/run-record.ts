@@ -18,8 +18,7 @@ export const UNADMITTED_VERSION = "unadmitted";
 /**
  * `tx` enables blob externalization for a large context snapshot; without it the snapshot is
  * stored inline, which the payload budget still bounds. `mcpServers` is the fingerprint computed by
- * the caller before the transaction (see mcpServersOf).
- * stored inline, which the payload budget still bounds. `toolIndexes` is the fingerprint computed
+ * the caller before the transaction (see mcpServersOf). `toolIndexes` is the fingerprint computed
  * by the caller before the transaction (see toolIndexesOf).
  */
 export async function createRunRecord(

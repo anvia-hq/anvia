@@ -1,4 +1,5 @@
 import type { z } from "zod";
+import type { JsonValue } from "../completion";
 import { assertToolApprovalRequirement } from "../internal/agent-runtime/approval-requirement";
 import {
   attachPreparedToolOwner,
@@ -24,6 +25,18 @@ type CreateToolBaseOptions<
   inputSchema: InputSchema;
   outputSchema?: OutputSchema;
   requiresApproval?: ToolRequiresApproval<z.output<InputSchema>>;
+  /**
+   * Correct calls shown with the tool definition, so a retrieved tool arrives with a worked call
+   * instead of only a schema. Rendered on every definition, including static ones; keep the list
+   * short because it is prompt tokens on every turn.
+   */
+  examples?: readonly ToolExample<InputSchema>[] | undefined;
+};
+
+/** One worked call: the input to send, plus an optional note on why or when. */
+export type ToolExample<InputSchema extends ZodSchema = ZodSchema> = {
+  input: z.input<InputSchema>;
+  note?: string | undefined;
 };
 
 /**
@@ -84,12 +97,16 @@ export function createTool<
     assertToolApprovalRequirement(requiresApproval, { allowFunction: true });
   }
   const parameters = toProviderJsonSchema(inputSchema);
+  const examples = renderExamples(name, inputSchema, options.examples);
   const preparedInputOwner = {};
-  const definition = () => ({
-    name,
-    description,
-    parameters: globalThis.structuredClone(parameters),
-  });
+  const definition = () => {
+    const base = {
+      name,
+      description,
+      parameters: globalThis.structuredClone(parameters),
+    };
+    return examples === undefined ? base : { ...base, description: `${description}${examples}` };
+  };
   const call = async (
     args: z.output<InputSchema>,
     context: ToolCallContext = {},
@@ -129,6 +146,36 @@ function snapshotApprovalRequirement<Args>(
   return typeof requirement === "object" && requirement !== null
     ? Object.freeze({ ...requirement })
     : requirement;
+}
+
+function renderExamples<InputSchema extends ZodSchema>(
+  name: string,
+  inputSchema: InputSchema,
+  examples: readonly ToolExample<InputSchema>[] | undefined,
+): string | undefined {
+  if (examples === undefined) return undefined;
+  if (!Array.isArray(examples) || examples.length === 0) {
+    throw new TypeError(`Tool "${name}" examples must be a non-empty array when set.`);
+  }
+  const lines = examples.map((example, index) => {
+    if (typeof example !== "object" || example === null) {
+      throw new TypeError(`Tool "${name}" example ${index + 1} must be an object.`);
+    }
+    if (example.note !== undefined && typeof example.note !== "string") {
+      throw new TypeError(`Tool "${name}" example ${index + 1} note must be a string.`);
+    }
+    const args = inputSchema.parse(example.input);
+    const note = example.note === undefined ? "" : ` ${example.note}`;
+    return `- ${name}(${JSON.stringify(args, jsonReplacer)})${note}`;
+  });
+  return `\n\nExamples:\n${lines.join("\n")}`;
+}
+
+function jsonReplacer(_key: string, value: unknown): JsonValue {
+  if (value === undefined) return null;
+  if (typeof value === "bigint") return value.toString();
+  if (typeof value === "function" || typeof value === "symbol") return null;
+  return value as JsonValue;
 }
 
 function resolveHandler<Args, Context, Result>(

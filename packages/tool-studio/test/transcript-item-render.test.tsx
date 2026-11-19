@@ -45,6 +45,14 @@ describe("TranscriptItem response actions", () => {
             cachedInputTokens: 0,
             cacheCreationInputTokens: 0,
           },
+          context: {
+            segments: [
+              { id: "instructions", label: "System prompt", tokens: 900, items: 1 },
+              { id: "mcpTools", label: "MCP tools", tokens: 300, items: 4 },
+            ],
+            totalTokens: 1_200,
+            reportedInputTokens: 1_200,
+          },
         }}
         decidingApprovals={new Set()}
         answeringQuestions={new Set()}
@@ -60,6 +68,8 @@ describe("TranscriptItem response actions", () => {
     expect(html).toContain("Cost");
     expect(html).toContain("Unavailable");
     expect(html).toContain("30 tokens");
+    expect(html).toContain("1,200 tokens");
+    expect(html).toContain("MCP tools");
     expect(html).toContain("Finished - 1s");
     expect(html.indexOf("Answer")).toBeLessThan(html.indexOf("Copy response"));
     expect(html.indexOf("Copy response")).toBeLessThan(html.indexOf("Response metrics"));

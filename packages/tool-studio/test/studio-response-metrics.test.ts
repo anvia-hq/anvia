@@ -86,6 +86,44 @@ describe("assistant response metrics", () => {
     });
   });
 
+  it("carries the trace's context split into the response metrics", () => {
+    const metrics = assistantResponseMetricsByEntryId({
+      entries: [
+        { entryId: 1, kind: "message", role: "user", text: "First" },
+        {
+          entryId: 2,
+          kind: "message",
+          role: "assistant",
+          text: "First answer",
+          traceId: "trace_1",
+        },
+      ] as TranscriptEntry[],
+      traceSummaries: [
+        {
+          ...traceSummary("trace_1", 30, 1_200),
+          context: {
+            segments: [
+              { id: "instructions", tokens: 8, characters: 32, items: 1 },
+              { id: "mcpTools", tokens: 4, characters: 16, items: 2 },
+            ],
+            estimatedTokens: 12,
+            reportedInputTokens: 12,
+          },
+        },
+      ],
+      logs: [],
+    });
+
+    expect(metrics.get(2)?.context).toEqual({
+      segments: [
+        { id: "instructions", label: "System prompt", tokens: 8, items: 1 },
+        { id: "mcpTools", label: "MCP tools", tokens: 4, items: 2 },
+      ],
+      totalTokens: 12,
+      reportedInputTokens: 12,
+    });
+  });
+
   it("does not create metrics for pending or empty assistant messages", () => {
     const metrics = assistantResponseMetricsByEntryId({
       entries: [

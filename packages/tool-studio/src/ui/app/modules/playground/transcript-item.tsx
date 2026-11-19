@@ -8,6 +8,7 @@ import { cn } from "../../lib/utils";
 import { approvalLabel } from "../shared/format";
 import { MarkdownText, ToolPayload } from "../shared/renderers";
 import type { ToolApproval, ToolMessage, ToolQuestion, TranscriptEntry } from "../shared/types";
+import { ContextBreakdownSummary } from "../shared/context-breakdown";
 import type { AssistantResponseMetrics, ResponseUsageMetrics } from "./response-metrics";
 import { WorkingDuration } from "./working-duration";
 
@@ -209,6 +210,9 @@ function ResponseMetricsTooltip(props: { metrics?: AssistantResponseMetrics | un
           rows.map((row) => <MetricRow label={row.label} value={row.value} key={row.label} />)
         )}
       </div>
+      {props.metrics?.context === undefined ? null : (
+        <ContextBreakdownSummary view={props.metrics.context} />
+      )}
     </div>
   );
 }
@@ -259,10 +263,16 @@ function pushOptionalUsageRow(
 
 function metricsTitle(metrics: AssistantResponseMetrics | undefined): string {
   const rows = responseMetricRows(metrics);
-  if (rows.length === 0) {
+  const context =
+    metrics?.context === undefined
+      ? undefined
+      : `Context: ${metrics.context.totalTokens.toLocaleString()} tokens`;
+  if (rows.length === 0 && context === undefined) {
     return "Cost unavailable. No usage metrics yet.";
   }
-  return ["Cost unavailable", ...rows.map((row) => `${row.label}: ${row.value}`)].join(". ");
+  return ["Cost unavailable", ...rows.map((row) => `${row.label}: ${row.value}`), context]
+    .filter((part): part is string => part !== undefined)
+    .join(". ");
 }
 
 function formatMetricNumber(value: number): string {

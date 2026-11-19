@@ -13,6 +13,7 @@ import type {
   ToolResultContentPart,
   Usage,
 } from "../completion";
+import type { ContextBreakdown } from "../context/breakdown";
 import type { DeepReadonly } from "../internal/type-utils";
 import type { ToolCallStreamEvent } from "../tool";
 
@@ -98,6 +99,8 @@ export type AgentGenerationStartArgs = {
   readonly modelInfo?: DeepReadonly<AgentGenerationModelInfo> | undefined;
   /** What the tool indexes returned to build this request's tools; absent when none ran. */
   readonly toolMatches?: readonly DeepReadonly<AgentGenerationToolMatch>[] | undefined;
+  /** Estimated input token split for this request; end args carry it scaled to reported usage. */
+  readonly context?: DeepReadonly<ContextBreakdown> | undefined;
 };
 
 /** One tool an index returned for this turn, with the score that ranked it. */
@@ -111,11 +114,15 @@ export type AgentGenerationEndArgs<RawResponse = unknown> = {
   readonly turn: number;
   readonly response: DeepReadonly<CompletionResponse<RawResponse>>;
   readonly firstDeltaMs?: number | undefined;
+  /** Input token split, scaled so its segments add up to the provider's reported input tokens. */
+  readonly context?: DeepReadonly<ContextBreakdown> | undefined;
 };
 
 export type AgentGenerationErrorArgs = {
   readonly turn: number;
   readonly error: unknown;
+  /** Estimated input token split for the request that failed; no usage to scale against. */
+  readonly context?: DeepReadonly<ContextBreakdown> | undefined;
 };
 
 export type AgentGenerationUpdateArgs = {

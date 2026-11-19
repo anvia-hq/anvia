@@ -34,6 +34,9 @@ import type {
 } from "../../agent/run-types";
 import type { AgentGenerationToolMatch } from "../../observability/types";
 import { getAgentToolState } from "../../agent/tool-state";
+import { estimateContextBreakdown, scaleContextBreakdown } from "../../context/breakdown";
+import type { ContextBreakdown } from "../../context/breakdown";
+import { isMcpTool } from "../../mcp";
 import { isStreamingCompletionModel } from "../../completion/generate-completion";
 import {
   assertCompletionRequestSupported,
@@ -206,6 +209,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
   private readonly concurrency: number;
   private traceOptions: AgentTraceOptions | undefined;
   private generationPromptRef: AgentTraceOptions["promptRef"];
+  private readonly turnContextBreakdowns = new Map<number, ContextBreakdown>();
   private completionRetryOptions: ResolvedRetryOptions | undefined;
   private readonly requestMiddlewares: AgentMiddleware[];
   private readonly controls: Readonly<Record<string, string>> | undefined;
@@ -934,6 +938,10 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
           let endArgs: AgentGenerationEndArgs = {
             turn: currentTurns,
             response: completionState.response ?? response,
+            ...this.reportedGenerationContext(
+              currentTurns,
+              (completionState.response ?? response).usage,
+            ),
           };
           if (completionState.firstDeltaMs !== undefined)
             endArgs = { ...endArgs, firstDeltaMs: completionState.firstDeltaMs };
@@ -1215,12 +1223,18 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         const finalResponse = Usage.isEmpty(failedAttemptUsage)
           ? response
           : { ...response, usage: cumulativeUsage };
-        await generationObservers.end({ turn, response: finalResponse });
+        await generationObservers.end({
+          turn,
+          response: finalResponse,
+          ...this.reportedGenerationContext(turn, finalResponse.usage),
+        });
         this.failedCompletionUsage = Usage.empty();
         return finalResponse;
       }
     } catch (error) {
-      await settleFailureCleanup([() => generationObservers.error({ turn, error })]);
+      await settleFailureCleanup([
+        () => generationObservers.error({ turn, error, ...this.estimatedGenerationContext(turn) }),
+      ]);
       throw error;
     }
   }
@@ -1287,7 +1301,12 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
             tools: toolDefinitions.map((definition) => definition.name),
             matches: fetched.matches,
           };
-    return { request: await this.runCompletionRequestMiddlewares(request, turn), selection };
+    const requestWithMiddlewares = await this.runCompletionRequestMiddlewares(request, turn);
+    const context = estimateContextBreakdown(requestWithMiddlewares, {
+      mcpToolNames: mcpToolNames(this.agent),
+    });
+    this.turnContextBreakdowns.set(turn, context);
+    return { request: requestWithMiddlewares, selection };
   }
 
   /**
@@ -1634,7 +1653,25 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     };
     if (providerRequest !== undefined) args = { ...args, providerRequest };
     if (toolMatches !== undefined && toolMatches.length > 0) args = { ...args, toolMatches };
+    const context = this.turnContextBreakdowns.get(turn);
+    if (context !== undefined) args = { ...args, context };
     return args;
+  }
+
+  /** Scales the turn's context split to the provider's reported input tokens. */
+  private reportedGenerationContext(
+    turn: number,
+    usage: { inputTokens: number },
+  ): { context?: ContextBreakdown } {
+    const context = this.turnContextBreakdowns.get(turn);
+    return context === undefined
+      ? {}
+      : { context: scaleContextBreakdown(context, usage.inputTokens) };
+  }
+
+  private estimatedGenerationContext(turn: number): { context?: ContextBreakdown } {
+    const context = this.turnContextBreakdowns.get(turn);
+    return context === undefined ? {} : { context };
   }
 
   private retryOptionsForFailure(
@@ -2916,6 +2953,13 @@ function providerMessages(messages: readonly MessageType[]): MessageType[] {
     }
   }
   return providerMessages;
+}
+
+/** Names of the tool definitions this agent serves from MCP servers. */
+function mcpToolNames(agent: object): string[] {
+  return getAgentToolState(agent)
+    .staticTools.filter((tool) => isMcpTool(tool))
+    .map((tool) => tool.name);
 }
 
 function guardrailDecisionAttributes(decision: GuardrailDecisionRecord): JsonObject {

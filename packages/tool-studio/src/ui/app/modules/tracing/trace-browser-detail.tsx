@@ -12,6 +12,7 @@ import {
 import { useState } from "react";
 import type { StudioTrace } from "../../../../types";
 import { StudioIcon } from "../../components/ui/icon";
+import { type ContextBreakdownView, contextBreakdownView } from "../shared/context-breakdown";
 import { formatToolValue, formatTraceTime, formatUsage } from "../shared/format";
 import { isRecord } from "../shared/object";
 import { messageText } from "../shared/transcript";
@@ -527,6 +528,7 @@ export function selectedTraceDetail(
   durationMs: number | undefined;
   firstDeltaMs: number | undefined;
   usage: string;
+  context?: ContextBreakdownView | undefined;
   input?: unknown;
   output?: unknown;
   error?: unknown;
@@ -541,6 +543,7 @@ export function selectedTraceDetail(
       durationMs: trace.durationMs,
       firstDeltaMs: firstDeltaMsFromObservations(trace.observations),
       usage: formatUsage(trace.usage),
+      context: traceContextView(trace.context, trace.observations),
       input: trace.input,
       output: trace.output,
       error: trace.error,
@@ -558,6 +561,7 @@ export function selectedTraceDetail(
       durationMs: turn?.durationMs,
       firstDeltaMs: firstDeltaMsFromObservations(turn?.observations ?? []),
       usage: turnUsageText(turn?.observations ?? []),
+      context: traceContextView(undefined, turn?.observations ?? []),
       input: turn?.observations[0]?.input,
       output: turn?.observations.at(-1)?.output,
       metadata: turnDetailMetadata(turnNumber, turn?.observations ?? []),
@@ -575,6 +579,7 @@ export function selectedTraceDetail(
         durationMs: observation.durationMs,
         firstDeltaMs: firstDeltaMsFromMetadata(observation.metadata),
         usage: observationUsageText(observation),
+        context: contextBreakdownView(observation.metadata?.context),
         input: observation.input,
         output: observation.output,
         error: observation.error,
@@ -590,11 +595,26 @@ export function selectedTraceDetail(
     durationMs: trace.durationMs,
     firstDeltaMs: firstDeltaMsFromObservations(trace.observations),
     usage: formatUsage(trace.usage),
+    context: traceContextView(trace.context, trace.observations),
     input: trace.input,
     output: trace.output,
     error: trace.error,
     metadata: traceDetailMetadata(trace),
   };
+}
+
+/** Prefers the run's recorded split, falling back to the latest generation's observation. */
+function traceContextView(
+  context: unknown,
+  observations: TraceObservationItem[],
+): ContextBreakdownView | undefined {
+  const recorded = contextBreakdownView(context);
+  if (recorded !== undefined) return recorded;
+  for (let index = observations.length - 1; index >= 0; index -= 1) {
+    const view = contextBreakdownView(observations[index]?.metadata?.context);
+    if (view !== undefined) return view;
+  }
+  return undefined;
 }
 
 export function traceDetailMetadata(trace: StudioTrace): Record<string, unknown> {

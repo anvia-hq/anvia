@@ -115,6 +115,10 @@
     "./decision": {
       "types": "./dist/decision/index.d.ts",
       "import": "./dist/decision/index.js"
+    },
+    "./context": {
+      "types": "./dist/context/index.d.ts",
+      "import": "./dist/context/index.js"
     }
   },
   "scripts": {

@@ -18,6 +18,7 @@ import {
   type StoredStudioCompactionState,
   type StudioCompactionMessageRow,
 } from "./compaction-state";
+import { traceContextBreakdown } from "../runtime/trace-summary";
 import { renumberTranscript, transcriptFromMessages } from "../runtime/transcript";
 import type {
   StudioPipelineLogAppendInput,
@@ -1535,6 +1536,8 @@ function toTraceSummary(row: TraceRow): StudioTraceSummary {
   if (row.output !== null) summary.output = row.output;
   if (error !== undefined) summary.error = error;
   if (usage !== undefined) summary.usage = usage;
+  const context = traceContextBreakdown(observations);
+  if (context !== undefined) summary.context = context;
   if (metadata !== undefined) summary.metadata = metadata;
   if (typeof metadata?.runId === "string") summary.runId = metadata.runId;
   return summary;

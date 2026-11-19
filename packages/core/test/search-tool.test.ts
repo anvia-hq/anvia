@@ -144,6 +144,44 @@ describe("searchTool", () => {
     expect(await index.tools[0]!.call({ query: "refund" })).toContain("Refund a customer");
   });
 
+  it("embeds the entries once, not on every search", async () => {
+    const model = new KeywordEmbeddingModel();
+    const index = searchTool({ name: "find_runbook", entities: runbooks, model, topK: 1 });
+
+    await index.search({ query: "deploy" });
+    const afterFirst = model.texts.length;
+    await index.search({ query: "refund" });
+    await index.tools[0]!.call({ query: "oncall escalation" });
+
+    // Only the queries are embedded after the first build; the entries are embedded once.
+    expect(afterFirst).toBeGreaterThan(runbooks.length);
+    expect(model.texts.length).toBe(afterFirst + 2);
+  });
+
+  it("does not surface a rejected entities promise before it is read", async () => {
+    const rejections: unknown[] = [];
+    const listener = (reason: unknown) => rejections.push(reason);
+    process.on("unhandledRejection", listener);
+    try {
+      searchTool({ name: "s", entities: Promise.reject(new Error("load failed")) });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    } finally {
+      process.off("unhandledRejection", listener);
+    }
+
+    expect(rejections).toEqual([]);
+  });
+
+  it("keeps the recent-hit cache bounded", async () => {
+    const index = searchTool({ name: "search_runbooks", entities: runbooks });
+    for (let turn = 0; turn < 200; turn += 1) {
+      await index.search({ query: `deploy ${turn}` });
+    }
+
+    // An evicted query re-runs the search instead of answering from a stale entry.
+    expect(await index.tools[0]!.call({ query: "deploy 0" })).toContain("Rolling deployment");
+  });
+
   it("resolves promised entities once", async () => {
     let loads = 0;
     const index = searchTool({

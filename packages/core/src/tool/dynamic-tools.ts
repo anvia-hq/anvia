@@ -203,40 +203,50 @@ function defaultToolEmbeddingText(
 /**
  * Property names and `describe()` text are the words a query shares with a tool, so they are
  * embedded verbatim. Schema scaffolding is dropped because it is identical for every tool and only
- * dilutes the vector. The nested `description` is left alone: `toProviderJsonSchema` runs output
- * schemas in the same parameter slot, so a tool that returns JSON would otherwise be retrievable by
- * its result fields.
+ * dilutes the vector.
+ *
+ * Only `properties` maps are walked. Reaching them through `properties` is what keeps this from
+ * picking up output fields: `toProviderJsonSchema` runs output schemas in the same parameter slot,
+ * so a tool that returns JSON would otherwise be retrievable by its result fields.
+ *
+ * `description` and `title` are schema keywords or real parameter names depending on where they
+ * appear: inside a `properties` map they are fields (`create_ticket({ title, description })` has
+ * both), and inside a property's own schema they are metadata. The walk distinguishes the two.
  */
 function compactToolEmbeddingText(definition: ToolDefinition): string[] {
   const fields: string[] = [];
   const properties = definition.parameters.properties;
-  if (isJsonObject(properties)) collectFieldWords(properties, fields);
+  if (isJsonObject(properties)) collectProperties(properties, fields);
   return fields.length === 0
     ? [definition.name, definition.description]
     : [definition.name, definition.description, fields.join(" ")];
 }
 
-function collectFieldWords(schema: JsonObject, words: string[], depth = 0, limit = 64): void {
-  if (depth > 2 || words.length >= limit) return;
+const FIELD_LIMIT = 64;
+
+/** `schema` is a `properties` map: every key is a field name. */
+function collectProperties(schema: JsonObject, words: string[], depth = 0): void {
   for (const [name, value] of Object.entries(schema as Record<string, unknown>)) {
-    if (words.length >= limit) return;
-    if (name === "description" || name === "title") {
-      if (depth > 0 && typeof value === "string") words.push(value);
-      continue;
-    }
+    if (words.length >= FIELD_LIMIT) return;
     words.push(name);
-    if (!isJsonObject(value)) continue;
-    const description = value.description;
-    if (typeof description === "string") words.push(description);
-    for (const key of ["properties", "items", "anyOf", "oneOf", "allOf"] as const) {
-      const nested = value[key];
-      if (isJsonObject(nested)) collectFieldWords(nested, words, depth + 1, limit);
-      else if (Array.isArray(nested)) {
-        for (const item of nested) {
-          if (isJsonObject(item)) collectFieldWords(item, words, depth + 1, limit);
-        }
+    if (isJsonObject(value)) collectPropertySchema(value, words, depth);
+  }
+}
+
+/** `schema` is one property's schema: `description` and `title` here are metadata. */
+function collectPropertySchema(schema: JsonObject, words: string[], depth: number): void {
+  if (depth > 2) return;
+  const description = schema.description;
+  if (typeof description === "string") words.push(description);
+  for (const key of ["properties", "items", "anyOf", "oneOf", "allOf"] as const) {
+    if (words.length >= FIELD_LIMIT) return;
+    const nested = schema[key];
+    if (key === "properties" && isJsonObject(nested)) collectProperties(nested, words, depth + 1);
+    else if (Array.isArray(nested)) {
+      for (const item of nested) {
+        if (isJsonObject(item)) collectPropertySchema(item, words, depth + 1);
       }
-    }
+    } else if (isJsonObject(nested)) collectPropertySchema(nested, words, depth + 1);
   }
 }
 

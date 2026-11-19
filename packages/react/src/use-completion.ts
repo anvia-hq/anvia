@@ -14,6 +14,7 @@ import type { ContextUsage, Usage } from "@anvia/core/completion";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { contextUsageUpdateFromEvent } from "./context-usage";
 import { runUsageUpdateFromEvent } from "./run-usage";
+import { appendRetainedEvent, retainedEventLimit } from "./retained-events";
 import type { UseChatStatus } from "./types";
 
 export type UseCompletionStatus = UseChatStatus;
@@ -25,6 +26,8 @@ export type UseCompletionOptions<
   transport: ClientTransport<ClientCompletionRequest<Metadata>, Data, Metadata>;
   initialInput?: string;
   initialCompletion?: string;
+  /** Keep only the newest N stream events in `events`. Defaults to keeping every event. */
+  maxRetainedEvents?: number | undefined;
   onEvent?(event: ClientStreamEvent<Metadata, Data>): void;
   onError?(error: Error): void;
 };
@@ -53,6 +56,7 @@ export function useCompletion<
 >(options: UseCompletionOptions<Metadata, Data>): UseCompletionResult<Metadata, Data> {
   const [input, setInput] = useState(options.initialInput ?? "");
   const [completion, setCompletion] = useState(options.initialCompletion ?? "");
+  const maxRetainedEvents = retainedEventLimit(options.maxRetainedEvents, "useCompletion");
   const [events, setEvents] = useState<ClientStreamEvent<Metadata, Data>[]>([]);
   const [usage, setUsage] = useState<Usage>();
   const [contextUsage, setContextUsage] = useState<ContextUsage>();
@@ -97,7 +101,7 @@ export function useCompletion<
           if (frame.type === "stream_event") {
             setStatus("streaming");
             const event = frame.event;
-            setEvents((current) => [...current, event]);
+            setEvents((current) => appendRetainedEvent(current, event, maxRetainedEvents));
             options.onEvent?.(event);
             const contextUsageUpdate = contextUsageUpdateFromEvent(event);
             if (contextUsageUpdate !== undefined) {
@@ -140,7 +144,7 @@ export function useCompletion<
         if (abortRef.current === controller) abortRef.current = undefined;
       }
     },
-    [options],
+    [maxRetainedEvents, options],
   );
 
   const submit = useCallback(() => complete({ prompt: input }), [complete, input]);

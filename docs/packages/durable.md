@@ -610,6 +610,31 @@ Run rows are locked while a transaction reads them for writing, and submissions 
 serialised, so clients and workers can write the same run without losing updates. A client cannot
 share a database with an owning runtime: `connect()` fails while one is live.
 
+## Graphs with workers and clients
+
+Static graphs (`submitGraph`) work with shared workers and clients, because each graph task is an
+ordinary agent run in its own session with dependencies the claim query already honours:
+
+```ts
+const graph = await client.submitGraph({
+  sessionId: "report",
+  requestId: "q3",
+  tasks: [
+    { id: "left", agentId: "researcher", prompt: "Collect sales." },
+    { id: "right", agentId: "analyst", prompt: "Collect costs." },
+    { id: "join", agentId: "writer", prompt: "Write it up.", dependsOn: ["left", "right"] },
+  ],
+});
+for await (const event of graph.stream()) render(event);
+await graph.cancel(); // from any process
+```
+
+Different tasks can run on different workers, each registering only its own agents. A graph
+submitted without registrations (by a `DurableClient`, or by a worker for agents it does not
+register) stores its tasks unadmitted; the worker that runs a task admits it. That worker also
+refuses a task whose agent records memory, which graphs do not support, by failing the task, where
+an owning runtime rejects the submission up front. Custom tasks and goals are still owner-only.
+
 ## Worker processes
 
 `DurableWorker` is the executing half of a client/worker deployment. It takes the same agent

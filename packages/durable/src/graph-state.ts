@@ -4,7 +4,7 @@ import type { JsonValue } from "@anvia/core/completion";
 import { DurableConflictError, DurableNotFoundError } from "./errors.js";
 import { externalizeSubmittedEvent, hydratedOutcomeOutput } from "./blob.js";
 import { json, sameJson } from "./json.js";
-import { GRAPH_SESSION_PREFIX, createRunRecord } from "./run-record.js";
+import { GRAPH_SESSION_PREFIX, createRunRecord, createUnadmittedRunRecord } from "./run-record.js";
 import type { DurableAgentRegistration, DurableRunRecord, DurableTransaction } from "./types.js";
 import type { DurableMcpServers } from "./mcp-servers.js";
 import type { DurableToolIndexes } from "./tool-indexes.js";
@@ -21,7 +21,14 @@ export async function createGraph(
   agents: ReadonlyMap<string, DurableAgentRegistration>,
   mcpServers: ReadonlyMap<string, DurableMcpServers>,
   toolIndexes: ReadonlyMap<string, DurableToolIndexes>,
+  /**
+   * Clients and shared workers submit graphs for agents they may not register. Those tasks are
+   * stored unadmitted and the worker that executes them admits each against its own registration.
+   */
+  allowUnregistered = false,
 ): Promise<string> {
+  // Two submitters of one graph request would otherwise race to the unique constraint.
+  await tx.lockSession?.(`${GRAPH_SESSION_PREFIX}${submission.sessionId}`);
   const existing = await tx.findGraphRequest(submission.sessionId, submission.requestId);
   if (existing !== undefined) {
     if (!sameJson(existing.submission, submission))
@@ -32,18 +39,23 @@ export async function createGraph(
   const runs: { task: (typeof submission.tasks)[number]; run: DurableRunRecord }[] = [];
   for (const task of submission.tasks) {
     const registration = agents.get(task.agentId);
-    if (registration === undefined)
+    if (registration === undefined && !allowUnregistered)
       throw new DurableNotFoundError(`Unknown durable agent: ${task.agentId}`);
+    const submitted = {
+      agentId: task.agentId,
+      sessionId: `${GRAPH_SESSION_PREFIX}${id}:${task.id}`,
+      requestId: task.id,
+      prompt: task.prompt,
+    };
+    if (registration === undefined) {
+      runs.push({ task, run: createUnadmittedRunRecord(submitted) });
+      continue;
+    }
     assertMemoryFreeTask(registration, task.agentId, "graph tasks");
     runs.push({
       task,
       run: await createRunRecord(
-        {
-          agentId: task.agentId,
-          sessionId: `${GRAPH_SESSION_PREFIX}${id}:${task.id}`,
-          requestId: task.id,
-          prompt: task.prompt,
-        },
+        submitted,
         registration,
         tx,
         mcpServers.get(task.agentId),

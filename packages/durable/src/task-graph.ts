@@ -1,4 +1,4 @@
-import type { DurableRuntime } from "./runtime.js";
+import type { DurableGraphClient } from "./client.js";
 import type { DurableStreamOptions } from "./run.js";
 import type { DurableGraphEvent, DurableGraphSnapshot } from "./graph-types.js";
 import { delay } from "./wait.js";
@@ -7,7 +7,7 @@ import { delay } from "./wait.js";
 export class DurableTaskGraph {
   constructor(
     readonly id: string,
-    private readonly runtime: DurableRuntime,
+    private readonly runtime: DurableGraphClient,
   ) {}
   async snapshot(): Promise<DurableGraphSnapshot> {
     return this.runtime.graphSnapshot(this.id);

@@ -26,7 +26,8 @@ const CACHEABLE_BLOCK_TYPES = new Set(["text", "image", "document", "tool_use", 
  * system prompt, and the last cacheable block of the conversation — so a later turn reads the
  * whole input prefix from cache and only writes the tokens after the previous breakpoint.
  * Anthropic accepts at most four breakpoints per request, and markers already present in
- * `params` count towards that limit.
+ * `params` count towards that limit. A section whose last block already carries a marker is
+ * left alone, so running the transform twice changes nothing.
  *
  * Anthropic ignores a breakpoint whose prefix is below the model's minimum cacheable length
  * (1024 tokens on Claude Sonnet and Opus, 4096 on Claude Haiku 4.5). Cache reads and writes
@@ -42,12 +43,10 @@ export function withAnthropicPromptCache(
 
   let result = params;
 
-  if (remaining > 0 && Array.isArray(result.tools)) {
-    const index = lastIndexWhere(
-      result.tools,
-      (tool) => isPlainObject(tool) && tool.cache_control === undefined,
-    );
-    if (index !== -1) {
+  if (remaining > 0 && Array.isArray(result.tools) && result.tools.length > 0) {
+    const index = result.tools.length - 1;
+    const tool = result.tools[index];
+    if (isPlainObject(tool) && tool.cache_control === undefined) {
       result = { ...result, tools: withBlockCacheControl(result.tools, index, cacheControl) };
       remaining -= 1;
     }
@@ -108,11 +107,15 @@ function withSystemCacheControl(
   if (!Array.isArray(system)) return undefined;
   const index = lastCacheableIndex(system);
   if (index === -1) return undefined;
+  const block = system[index];
+  if (!isPlainObject(block) || block.cache_control !== undefined) return undefined;
   return withBlockCacheControl(system, index, cacheControl);
 }
 
 /**
- * Places one breakpoint on the latest message that has a block accepting `cache_control`.
+ * Places one breakpoint on the last cacheable block of the conversation. A block that already
+ * carries a breakpoint ends the prefix, so the section is left alone instead of moving the
+ * marker onto an earlier block.
  */
 function withMessagesCacheControl(
   messages: unknown[],
@@ -133,6 +136,8 @@ function withMessagesCacheControl(
     if (!Array.isArray(message.content)) continue;
     const blockIndex = lastCacheableIndex(message.content);
     if (blockIndex === -1) continue;
+    const block = message.content[blockIndex];
+    if (!isPlainObject(block) || block.cache_control !== undefined) return undefined;
     return replaceAt(messages, messageIndex, {
       ...message,
       content: withBlockCacheControl(message.content, blockIndex, cacheControl),
@@ -143,16 +148,11 @@ function withMessagesCacheControl(
 }
 
 function lastCacheableIndex(blocks: unknown[]): number {
-  return lastIndexWhere(blocks, (block) => {
-    if (!isPlainObject(block)) return false;
-    if (block.cache_control !== undefined) return false;
-    return typeof block.type === "string" && CACHEABLE_BLOCK_TYPES.has(block.type);
-  });
-}
-
-function lastIndexWhere(values: unknown[], accepts: (value: unknown) => boolean): number {
-  for (let index = values.length - 1; index >= 0; index -= 1) {
-    if (accepts(values[index])) return index;
+  for (let index = blocks.length - 1; index >= 0; index -= 1) {
+    const block = blocks[index];
+    if (!isPlainObject(block)) continue;
+    if (typeof block.type !== "string" || !CACHEABLE_BLOCK_TYPES.has(block.type)) continue;
+    return index;
   }
   return -1;
 }
@@ -186,12 +186,25 @@ function countCacheBreakpoints(params: Record<string, unknown>): number {
 
   if (Array.isArray(params.messages)) {
     for (const message of params.messages) {
-      if (isPlainObject(message) && Array.isArray(message.content)) {
-        count += message.content.filter(hasCacheControl).length;
+      if (!isPlainObject(message) || !Array.isArray(message.content)) continue;
+      for (const block of message.content) {
+        count += countBlockBreakpoints(block);
       }
     }
   }
 
+  return count;
+}
+
+/**
+ * Counts a marker on the block itself and on any content nested in a tool result.
+ */
+function countBlockBreakpoints(block: unknown): number {
+  if (!isPlainObject(block)) return 0;
+  let count = block.cache_control === undefined ? 0 : 1;
+  if (Array.isArray(block.content)) {
+    count += block.content.filter(hasCacheControl).length;
+  }
   return count;
 }
 

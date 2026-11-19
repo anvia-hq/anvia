@@ -147,6 +147,59 @@ describe("Anthropic prompt cache", () => {
     ]);
   });
 
+  it("does not move a breakpoint that already ends a prefix", () => {
+    const messages = [
+      { role: "user", content: [{ type: "text", text: "a" }] },
+      { role: "user", content: [{ type: "text", text: "b", cache_control: EPHEMERAL }] },
+    ];
+
+    const cached = withAnthropicPromptCache({ system: "Be brief.", messages });
+
+    expect(cached.system).toEqual([{ type: "text", text: "Be brief.", cache_control: EPHEMERAL }]);
+    expect(cached.messages).toEqual(messages);
+  });
+
+  it("is idempotent", () => {
+    const params = {
+      tools: [{ name: "add", input_schema: { type: "object" } }],
+      system: "Be brief.",
+      messages: [{ role: "user", content: "hello" }],
+    };
+
+    const once = withAnthropicPromptCache(params);
+
+    expect(withAnthropicPromptCache(once)).toEqual(once);
+  });
+
+  it("counts a breakpoint nested in a tool result", () => {
+    const params = {
+      system: "Be brief.",
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: "toolu_1",
+              content: [
+                { type: "text", text: "7", cache_control: EPHEMERAL },
+                { type: "text", text: "8", cache_control: EPHEMERAL },
+              ],
+            },
+          ],
+        },
+        { role: "user", content: [{ type: "text", text: "a" }] },
+        { role: "user", content: [{ type: "text", text: "b", cache_control: EPHEMERAL }] },
+        { role: "user", content: [{ type: "text", text: "c", cache_control: EPHEMERAL }] },
+      ],
+    };
+
+    const cached = withAnthropicPromptCache(params);
+
+    expect(cached.system).toBe("Be brief.");
+    expect(cached.messages).toEqual(params.messages);
+  });
+
   it("keeps existing breakpoints and stays within four of them", () => {
     const params = {
       tools: [{ name: "add", cache_control: EPHEMERAL }],

@@ -426,7 +426,11 @@ export interface DurableTransaction extends TaskTransaction {
   getBlob(hash: string): Promise<JsonValue>;
 }
 
-/** A store is exclusively owned by one open runtime. All returned values must be detached copies. */
+/**
+ * A store is exclusively owned by one open runtime (`acquire()`), or opened for non-owning,
+ * read-only observation (`connect()`). The two are mutually exclusive on one instance. All returned
+ * values must be detached copies.
+ */
 export interface DurableStore {
   metrics(): Promise<DurableMetrics>;
   listTasks(options: TaskListOptions): Promise<TaskPage>;
@@ -434,6 +438,13 @@ export interface DurableStore {
   unsettledTaskRoots(after: number): Promise<{ ids: string[]; cursor?: number }>;
   taskEvents(rootId: string, after: number, limit: number): Promise<DurableEvent[]>;
   acquire(): Promise<void>;
+  /**
+   * Opens the store for read-only observation without taking ownership, so it works while another
+   * runtime owns the database. It runs no migration and takes no lease. It fails when the schema is
+   * missing or at a version this release does not read. Every transaction is read-only and
+   * `transaction()` rejects writes. Closing an observing store releases nothing it does not hold.
+   */
+  connect(): Promise<void>;
   close(): Promise<void>;
   /** Runs `callback` atomically and serially; nested transactions are rejected. */
   transaction<T>(callback: (tx: DurableTransaction) => Promise<T>): Promise<T>;

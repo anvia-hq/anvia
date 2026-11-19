@@ -3,7 +3,7 @@ import type { AgentOutcome, AgentSteerInput, AgentSteerReceipt } from "@anvia/co
 import type { AgentInteractionResponse } from "@anvia/core/agent/interactions";
 import type { ToolResultOutput } from "@anvia/core/completion";
 import { DurableBlockedError, DurableRunError } from "./errors.js";
-import type { DurableRunClient } from "./client.js";
+import type { DurableRunClient, DurableRunReader } from "./client.js";
 import type {
   DurableEvent,
   DurableSnapshot,
@@ -24,19 +24,22 @@ export type DurableResultOptions = {
   onBlocked?: "wait" | "throw";
 };
 
-/** An identity and subscription handle. Closing a subscription never cancels execution. */
-export class DurableRun<Output = unknown> {
+/**
+ * A read-only identity and subscription handle. Closing a subscription never cancels execution.
+ * `DurableRun` adds the mutations; a `DurableObserver` hands out views without them.
+ */
+export class DurableRunView<Output = unknown> {
   constructor(
     readonly id: string,
-    private readonly runtime: DurableRunClient,
+    protected readonly reader: DurableRunReader,
   ) {}
 
   async snapshot(options: { operations?: boolean } = {}): Promise<DurableSnapshot> {
-    return this.runtime.snapshot(this.id, options);
+    return this.reader.snapshot(this.id, options);
   }
 
   async status(): Promise<DurableRunSummary> {
-    return this.runtime.status(this.id);
+    return this.reader.status(this.id);
   }
 
   async *stream(options: DurableStreamOptions = {}): AsyncIterable<DurableEvent> {
@@ -49,7 +52,7 @@ export class DurableRun<Output = unknown> {
       // Read the status first: a terminal status is committed with its last event, so events read
       // after it are complete. Reading in the other order could miss a final event.
       const run = await this.status();
-      const events = await this.runtime.events(this.id, cursor);
+      const events = await this.reader.events(this.id, cursor);
       for (const event of events) {
         options.abortSignal?.throwIfAborted();
         cursor = event.sequence;
@@ -84,7 +87,7 @@ export class DurableRun<Output = unknown> {
         );
       }
       if (run.status === "completed") {
-        const { outcome } = await this.runtime.run(this.id);
+        const { outcome } = await this.reader.run(this.id);
         if (outcome === undefined) throw new Error("Completed durable run has no outcome.");
         // The registration's agent produced this outcome, so its output matches `Output`.
         return outcome as AgentOutcome<Output>;
@@ -93,31 +96,41 @@ export class DurableRun<Output = unknown> {
       await delay(options.abortSignal);
     }
   }
+}
+
+/** An identity and subscription handle. Closing a subscription never cancels execution. */
+export class DurableRun<Output = unknown> extends DurableRunView<Output> {
+  constructor(
+    id: string,
+    private readonly client: DurableRunClient,
+  ) {
+    super(id, client);
+  }
 
   async steer(
     input: AgentSteerInput,
     options: DurableSteerOptions = {},
   ): Promise<AgentSteerReceipt> {
-    return this.runtime.steer(this.id, input, options);
+    return this.client.steer(this.id, input, options);
   }
 
   async respond(interactionId: string, response: AgentInteractionResponse): Promise<void> {
-    await this.runtime.respond(this.id, interactionId, response);
+    await this.client.respond(this.id, interactionId, response);
   }
 
   async resolveTool(operationId: string, output: ToolResultOutput): Promise<void> {
-    await this.runtime.resolveTool(this.id, operationId, output);
+    await this.client.resolveTool(this.id, operationId, output);
   }
 
   async resolveMemoryWrite(operationKey: string, resolution: MemoryWriteResolution): Promise<void> {
-    await this.runtime.resolveMemoryWrite(this.id, operationKey, resolution);
+    await this.client.resolveMemoryWrite(this.id, operationKey, resolution);
   }
 
   async retry(): Promise<void> {
-    await this.runtime.retry(this.id);
+    await this.client.retry(this.id);
   }
 
   async cancel(): Promise<void> {
-    await this.runtime.cancel(this.id);
+    await this.client.cancel(this.id);
   }
 }

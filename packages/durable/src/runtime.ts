@@ -74,6 +74,7 @@ import { listOptionsSchema } from "./schema.js";
 import { registrations } from "./registration.js";
 import { compatibilityReport } from "./compatibility.js";
 import { DurableAgentHandle } from "./agent-handle.js";
+import { readEvents, readRun, readSnapshot, readStatus } from "./reads.js";
 import type { DurableSubmitClient } from "./client.js";
 import { DurableRun } from "./run.js";
 import type {
@@ -81,7 +82,6 @@ import type {
   DurableAgentCompatibility,
   DurableAgentRegistration,
   DurableListOptions,
-  DurableOperation,
   DurableRunPage,
   DurableSubmitOptions,
   DurableRunRecord,
@@ -566,20 +566,13 @@ export class DurableRuntime implements DurableSubmitClient {
   /** Read only the run record, without decoding any operation records. */
   async run(id: string): Promise<DurableRunRecord> {
     this.assertOpen();
-    return this.store.transaction(async (tx) => {
-      const stored = await requireRun(tx, id);
-      return (await tx.blobs((io) => hydrateValue(io, json(stored)))) as DurableRunRecord;
-    });
+    return readRun(this.store, id);
   }
 
   /** Bounded status projection, independent of transcript and operation count. */
   async status(id: string): Promise<DurableRunSummary> {
     this.assertOpen();
-    return this.store.transaction(async (tx) => {
-      const summary = await tx.getRunSummary(id);
-      if (summary === undefined) throw new DurableNotFoundError("Durable run not found.");
-      return summary;
-    });
+    return readStatus(this.store, id);
   }
 
   /** Rebuild one model request, including legacy embedded requests. */
@@ -601,23 +594,12 @@ export class DurableRuntime implements DurableSubmitClient {
 
   async snapshot(id: string, options: { operations?: boolean } = {}): Promise<DurableSnapshot> {
     this.assertOpen();
-    return this.store.transaction(async (tx) => {
-      const stored = await requireRun(tx, id);
-      const run = (await tx.blobs((io) => hydrateValue(io, json(stored)))) as DurableRunRecord;
-      const operations: DurableOperation[] = [];
-      if (options.operations !== false)
-        for (const operation of await tx.operations(id))
-          operations.push(
-            (await tx.blobs((io) => hydrateValue(io, json(operation)))) as DurableOperation,
-          );
-      return { run, operations, cursor: await tx.cursor() };
-    });
+    return readSnapshot(this.store, id, options);
   }
 
   async events(id: string, after: number) {
     this.assertOpen();
-    if (!Number.isSafeInteger(after) || after < 0) throw new TypeError("Invalid event cursor.");
-    return this.store.events(id, after, 100);
+    return readEvents(this.store, id, after);
   }
 
   async steer(

@@ -420,7 +420,11 @@ export class TaskScheduler {
 
   private async execute(id: string, controller: AbortController): Promise<void> {
     if (controller.signal.aborted) return;
-    const rootId = (await this.snapshot(id)).task.rootId;
+    const known = (await this.snapshot(id)).task;
+    // A shared worker can claim a task whose name the database could not filter on. It leaves
+    // a definition it does not register untouched; the claim is released when this returns.
+    if (this.shared !== undefined && !this.definitions.has(known.name)) return;
+    const rootId = known.rootId;
     const task = await this.locked(rootId, async (tx) => {
       const saved = await requireTask(tx, id);
       if (!["pending", "running"].includes(saved.status)) return undefined;

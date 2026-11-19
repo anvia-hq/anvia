@@ -245,11 +245,15 @@ export class SqlDurableStore implements DurableStore {
     if (input.names.length === 0) return [];
     return this.driver.transaction(async (query) => {
       await this.assertNoLiveOwner(query);
-      // The stored record is plain JSON, so the task name filters without a schema change.
+      // The stored record is plain JSON, so the task name filters without a schema change. jsonb
+      // rejects an escaped NUL (\\u0000) anywhere in the text, so a record that has one skips the
+      // cast (CASE, unlike OR, guarantees the order) and passes the filter instead of failing the query for every task; the worker then
+      // checks the name itself before running it.
       const candidates = await query(
         `SELECT t.id FROM anvia_durable_tasks t
          WHERE t.status IN ('pending', 'running')
-         AND (t.record::jsonb ->> 'name') IN (SELECT jsonb_array_elements_text($2::text::jsonb))
+         AND CASE WHEN position('\\u0000' in t.record) > 0 THEN true
+           ELSE (t.record::jsonb ->> 'name') IN (SELECT jsonb_array_elements_text($2::text::jsonb)) END
          AND NOT EXISTS (SELECT 1 FROM anvia_durable_claims c
            WHERE c.run_id = t.id AND c.expires_at > now())
          ORDER BY t.ready_order, t.seq LIMIT $1::bigint`,

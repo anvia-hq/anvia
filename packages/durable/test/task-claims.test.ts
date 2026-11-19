@@ -178,6 +178,26 @@ describe("custom tasks with shared workers", () => {
     expect(await handle.result()).toBe("done");
   });
 
+  it("keeps claiming tasks when one task's input contains a NUL character", async () => {
+    const { pool } = testPool();
+    const echo = defineTask({
+      name: "echo",
+      version: 1,
+      input: z.string(),
+      checkpoint: z.null(),
+      output: z.string(),
+      initial: () => null,
+      run: async (ctx) => ({ status: "completed", output: ctx.input }),
+    });
+    const a = await worker(pool, { tasks: [echo] });
+    await worker(pool, { tasks: [echo] });
+    // jsonb cannot hold \u0000, so a name filter that casts every record would fail the claim query.
+    const odd = await a.submitTask(echo, { sessionId: "s", requestId: "odd", input: "a\u0000b" });
+    const plain = await a.submitTask(echo, { sessionId: "s", requestId: "plain", input: "ok" });
+    expect(await odd.result()).toBe("a\u0000b");
+    expect(await plain.result()).toBe("ok");
+  });
+
   it("keeps every signal delivered concurrently from different workers", async () => {
     const { pool } = testPool();
     const names = Array.from({ length: 10 }, (_, index) => `s${index}`);

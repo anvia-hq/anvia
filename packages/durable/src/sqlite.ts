@@ -189,6 +189,12 @@ export class SqliteDurableStore implements DurableStore {
   }
 
   async connect(): Promise<void> {
+    // A writable store's constructor has already created the schema and taken write locks, so it
+    // could neither refuse a missing schema nor stay out of the owner's way.
+    if (!this.readOnly)
+      throw new Error(
+        "Open the SQLite store with { readOnly: true } to observe it; a writable store creates its schema on construction.",
+      );
     if (this.closed || this.acquired || this.observing)
       throw new Error("Durable store is closed or already open.");
     const stored = this.database

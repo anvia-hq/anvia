@@ -68,6 +68,40 @@ describe("PostgresDurableStore ownership and schema", () => {
     await store.acquire();
   });
 
+  it("connects read-only beside a live owner without taking or releasing its lease", async () => {
+    const { pool } = testPool();
+    const owner = open(pool);
+    await owner.acquire();
+    const observer = open(pool, { schema: "verify" });
+    await observer.connect();
+    await expect(observer.transaction(async (tx) => tx.cursor())).resolves.toBe(0);
+    await expect(
+      observer.transaction(async (tx) => tx.appendEvent("run", "status", { forged: true })),
+    ).rejects.toThrow(/read-only/);
+    await expect(observer.acquire()).rejects.toThrow(/already acquired/);
+    await observer.close();
+    await expect(open(pool).acquire()).rejects.toThrow("live owner");
+    await expect(owner.transaction(async (tx) => tx.cursor())).resolves.toBe(0);
+  });
+
+  it("refuses to observe a missing schema, an uninitialised owner row, or an old version", async () => {
+    const { pool } = testPool();
+    await expect(open(pool, { schema: "verify" }).connect()).rejects.toThrow(/schema is missing/);
+    const client = await pool.connect();
+    try {
+      for (const statement of postgresSchemaSql.split(";\n\n"))
+        if (statement.trim() !== "") await client.query(statement);
+    } finally {
+      client.release();
+    }
+    // Tables exist but no runtime ever initialised them: there is no owner row.
+    await expect(open(pool, { schema: "verify" }).connect()).rejects.toThrow(
+      /not been initialised/,
+    );
+    await pool.query("INSERT INTO anvia_durable_owner(singleton, version) VALUES (1, 999)");
+    await expect(open(pool, { schema: "verify" }).connect()).rejects.toThrow(/schema version/);
+  });
+
   it("rejects an unsupported schema version", async () => {
     const { pool } = testPool();
     const first = open(pool);

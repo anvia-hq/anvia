@@ -441,7 +441,9 @@ export interface DurableStore {
   /**
    * Opens the store for read-only observation without taking ownership, so it works while another
    * runtime owns the database. It runs no migration and takes no lease. It fails when the schema is
-   * missing or at a version this release does not read. Every transaction is read-only and
+   * missing, was never initialised by a runtime, or is at a version this release does not read. A
+   * store whose construction creates the schema must refuse `connect()` unless it was built for
+   * observation (SQLite: `{ readOnly: true }`). Every transaction is read-only and
    * `transaction()` rejects writes. Closing an observing store releases nothing it does not hold.
    */
   connect(): Promise<void>;

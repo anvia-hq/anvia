@@ -5,6 +5,7 @@ export type {
   AgentGenerationModelInfo,
   AgentGenerationObserver,
   AgentGenerationStartArgs,
+  AgentGenerationToolMatch,
   AgentGenerationUpdateArgs,
   AgentObservabilityOptions,
   AgentObserver,

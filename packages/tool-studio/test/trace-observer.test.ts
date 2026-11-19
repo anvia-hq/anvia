@@ -110,4 +110,59 @@ describe("StudioTraceObserver", () => {
     expect(toolErrorObservation?.error).toEqual({ name: "Error", message: "tool boom" });
     expect(JSON.stringify(savedTrace)).not.toContain('"stack"');
   });
+
+  it("records the tool matches behind a turn's tools", async () => {
+    let savedTrace: StudioTrace | undefined;
+    const store: StudioTraceStore = {
+      listSessionTraces: () => [],
+      getTrace: () => undefined,
+      saveTrace(trace) {
+        savedTrace = trace;
+        return trace;
+      },
+    };
+    const observer = new StudioTraceObserver({ store });
+    const run = observer.startRun({
+      runId: "run_matches",
+      prompt: Message.user("refund an order"),
+      history: [],
+      maxTurns: 1,
+      trace: { sessionId: "session_1" },
+    });
+    const generation = await run.startGeneration?.({
+      turn: 1,
+      request: {
+        chatHistory: [Message.user("refund an order")],
+        documents: [],
+        tools: [
+          {
+            name: "issue_refund",
+            description: "Issue a refund.",
+            parameters: { type: "object", properties: {} },
+          },
+        ],
+      },
+      toolMatches: [{ toolName: "issue_refund", index: 0, score: 0.91 }],
+    });
+
+    await generation?.end({
+      turn: 1,
+      response: {
+        choice: [AssistantContent.text("done")],
+        usage: Usage.empty(),
+        rawResponse: {},
+      },
+    });
+
+    await run.end({
+      status: "completed",
+      usage: Usage.empty(),
+      messages: [Message.user("refund an order"), Message.assistant("done")],
+    });
+
+    const observation = savedTrace?.observations.find((item) => item.kind === "generation");
+    expect(observation?.metadata?.toolMatches).toEqual([
+      { toolName: "issue_refund", index: 0, score: 0.91 },
+    ]);
+  });
 });

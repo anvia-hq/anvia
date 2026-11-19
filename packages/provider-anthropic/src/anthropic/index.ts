@@ -12,6 +12,13 @@ export {
 } from "./controls";
 export type { AnthropicCompletionModelId, KnownAnthropicCompletionModelId } from "./models";
 export {
+  type AnthropicPromptCacheOptions,
+  type AnthropicPromptCacheSettings,
+  type AnthropicPromptCacheTtl,
+  anthropicPromptCacheOptions,
+  withAnthropicPromptCache,
+} from "./prompt-cache";
+export {
   AnthropicVertexClient,
   type AnthropicVertexClientOptions,
   type AnthropicVertexCompletionModelHandle,

@@ -39,6 +39,7 @@ if (result.type === "response") {
 
 - Streaming completions, tool calls, image inputs, and document inputs.
 - Typed reasoning controls for supported Claude models.
+- Prompt caching with `promptCache: true`, or `{ ttl: "1h" }` for the extended cache.
 - `AnthropicVertexClient` for Google Cloud authentication and routing.
 - Custom endpoints through `baseUrl`; model listing on `AnthropicClient`.
 

@@ -34,6 +34,7 @@ import {
 import { orderedRequestMessages } from "../request-messages";
 import { isPlainObject, numberFrom, stringFrom } from "../utils";
 import type { AnthropicCompletionModelId } from "./models";
+import { type AnthropicPromptCacheOptions, withAnthropicPromptCache } from "./prompt-cache";
 
 type AnthropicCreateParams = Record<string, unknown>;
 type AnthropicMessage = Record<string, unknown>;
@@ -76,6 +77,7 @@ export class AnthropicCompletionModel<
     readonly modelId: AnthropicCompletionModelId,
     readonly contextLimits?: ModelContextLimits,
     readonly controls?: Controls,
+    readonly promptCache?: AnthropicPromptCacheOptions,
   ) {}
 
   private modelInfo(): CompletionModelInfo | undefined {
@@ -88,7 +90,7 @@ export class AnthropicCompletionModel<
     request: CompletionRequest,
     options: { stream?: boolean | undefined } = {},
   ): JsonObject {
-    const params = toAnthropicMessagesParams(this.modelId, request);
+    const params = toAnthropicMessagesParams(this.modelId, request, this.promptCache);
     if (options.stream === true) {
       params.stream = true;
     }
@@ -100,7 +102,7 @@ export class AnthropicCompletionModel<
     options?: ModelCallOptions,
   ): Promise<CompletionResponse> {
     assertCompletionRequestSupported(this, request);
-    const params = toAnthropicMessagesParams(this.modelId, request);
+    const params = toAnthropicMessagesParams(this.modelId, request, this.promptCache);
     const response = await this.createMessage(params, anthropicRequestOptions(options));
     return withContextUsage(fromAnthropicMessage(response), this.modelInfo());
   }
@@ -119,7 +121,10 @@ export class AnthropicCompletionModel<
     options?: ModelCallOptions,
   ): AsyncIterable<CompletionModelStreamEvent> {
     assertCompletionRequestSupported(this, request, { streaming: true });
-    const params = { ...toAnthropicMessagesParams(this.modelId, request), stream: true };
+    const params = {
+      ...toAnthropicMessagesParams(this.modelId, request, this.promptCache),
+      stream: true,
+    };
     const stream = await this.createMessage(params, anthropicRequestOptions(options));
     const toolsByIndex = new Map<number, AnthropicStreamToolState>();
     const toolIndexesById = new Map<string, number>();
@@ -531,6 +536,7 @@ function optionalAnthropicToolStreamIndex(value: unknown): number | undefined {
 export function toAnthropicMessagesParams(
   modelId: AnthropicCompletionModelId,
   request: CompletionRequest,
+  promptCache?: AnthropicPromptCacheOptions | undefined,
 ): AnthropicCreateParams {
   const messages = requestMessages(request);
   const system = systemFromMessages(request, messages);
@@ -572,7 +578,7 @@ export function toAnthropicMessagesParams(
     params.tool_choice = toolChoiceToAnthropic(request.toolChoice);
   }
 
-  return params;
+  return promptCache === undefined ? params : withAnthropicPromptCache(params, promptCache);
 }
 
 function anthropicRequestOptions(options: ModelCallOptions | undefined): {
@@ -596,7 +602,7 @@ function providerRequestSummary(
     messageCount: Array.isArray(params.messages) ? params.messages.length : undefined,
     toolCount: request.tools.length,
     toolNames: request.tools.map((tool) => tool.name),
-    hasSystem: typeof params.system === "string" && params.system.length > 0,
+    hasSystem: hasSystemPrompt(params.system),
     temperature: request.temperature,
     maxTokens: request.maxTokens ?? numberFrom(params.max_tokens),
     toolChoice: toolChoiceSummary(request.toolChoice),
@@ -604,6 +610,11 @@ function providerRequestSummary(
       ? Object.keys(request.providerOptions).sort()
       : undefined,
   });
+}
+
+function hasSystemPrompt(system: unknown): boolean {
+  if (typeof system === "string") return system.length > 0;
+  return Array.isArray(system) && system.length > 0;
 }
 
 function toolChoiceSummary(toolChoice: ToolChoice | undefined): JsonValue | undefined {

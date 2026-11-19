@@ -461,6 +461,27 @@ it. A caller with no operator path can opt out with `run.result({ onBlocked: "th
 rejects with `DurableBlockedError` (carrying `runId` and `blockedOperation`) instead of hanging.
 The run stays blocked: settle it with `resolveTool()`, `resolveMemoryWrite()`, or `retry()`.
 
+### Typed events
+
+`DurableEvent.data` is `JsonValue`. `isDurableEvent` narrows an event by type and gives its payload
+the shape the runtime writes:
+
+```ts
+import { isDurableEvent } from "@anvia/durable";
+
+for await (const event of run.stream()) {
+  if (isDurableEvent(event, "model_delta")) render(event.data.event);
+  if (isDurableEvent(event, "tool_started", "tool_completed")) track(event.data.operationId);
+}
+```
+
+`DurableEventPayloads` lists every type's payload and `DurableEventOf<"tool_completed">` names one
+narrowed event. The guard checks the type tag only; it does not validate the payload. Payload
+fields holding user or model content are `JsonValue`, and large values may be blob references, so
+read `snapshot()` for hydrated content. Run, graph and task events share the stream, so
+`submitted` and `status` carry optional fields for each shape. Treat payloads as open: new fields
+can appear in a minor release.
+
 ## Observing from another process
 
 `DurableObserver` reads runs from a process that does not own the database, such as a dashboard
@@ -478,7 +499,8 @@ await observer.close();
 It takes no lease, runs no migration, and is read-only: the database enforces it (SQLite
 `query_only`, Postgres `SET TRANSACTION READ ONLY`), so it cannot change a run and never blocks the
 owner's writes. Mutations (`submit`, `cancel`, `respond`, `retry`, `steer`) stay on the owning
-runtime until the store supports per-run claims ([ADR 0001](../decisions/0001-durable-client-worker-split.md)).
+runtime, or use [`DurableClient`](#clients-that-execute-nothing) when workers share a
+Postgres, Drizzle, or Prisma database ([ADR 0001](../decisions/0001-durable-client-worker-split.md)).
 An observer needs a database an owner has already set up: it fails on a missing schema and on a
 SQLite database below the current schema version, and it never creates or upgrades either. For
 SQLite the store must be built with `{ readOnly: true }`: the file is opened read-only and none of
@@ -540,13 +562,78 @@ of your own:
 
 ```ts
 await store.join(); // read-write, no owner lease
-const claims = await store.claim({ workerId, now, limit: 4, leaseMs: 30_000 });
+const claims = await store.claim({ workerId, now, limit: 4, leaseMs: 30_000, agentIds: ["a"] });
 await store.renew({ workerId, claims, leaseMs: 30_000 }); // { lost: runIds to stop }
 await store.transaction((tx) => tx.assertClaim(runId, claimId)); // throws DurableClaimLostError
 await store.release(claims);
 ```
 
-See [ADR 0001](../decisions/0001-durable-client-worker-split.md) for the protocol.
+See [ADR 0001](../decisions/0001-durable-client-worker-split.md) for the protocol. A worker passes
+the agent ids it registers as `agentIds`, so it never claims a run it has no registration for; such
+a run stays queued until a worker that registers its agent starts.
+
+## Clients that execute nothing
+
+A process that only submits and controls runs (an API server, a CLI) uses `DurableClient`. It holds
+no agent code and no lease; a worker executes what it submits.
+
+```ts
+const client = await DurableClient.connect({ store }); // Postgres, Drizzle, or Prisma store
+const run = await client.agent<string>("researcher").submit({
+  sessionId: "s1",
+  requestId: "req-1", // idempotent: the same pair returns the same run
+  prompt: "Summarise the report.",
+});
+
+for await (const event of run.stream()) console.log(event.type);
+const outcome = await run.result();
+
+await run.cancel(); // from any process, to a run any worker is executing
+await client.run(id); // snapshot/status/events/list work the same way
+```
+
+`submit`, `cancel`, `respond`, `resolveTool`, `resolveMemoryWrite`, `retry` and `steer` follow the
+same rules as on `DurableRuntime`; both call one set of store transactions.
+
+The client has no agent definition, so a run it submits is recorded as `unadmitted`: the worker
+that claims it fills in the agent version, turn limit, frozen context and fingerprints from its own
+registration before the first attempt. Consequences:
+
+- `submit()` does not check that the agent exists. A run for an agent no worker registers waits,
+  queued, until one does. `agent<Output>()` types `result()` but cannot check it.
+- `retry()` of a run with no committed history hands the run back as `queued` so the worker
+  rebuilds history; an over-limit history surfaces as a failed run rather than a rejected call.
+- `cancel()` settles the run at once. The worker holding it notices on its next lease renewal,
+  within one heartbeat, and stops; its later writes cannot replace the cancelled outcome.
+
+Run rows are locked while a transaction reads them for writing, and submissions to one session are
+serialised, so clients and workers can write the same run without losing updates. A client cannot
+share a database with an owning runtime: `connect()` fails while one is live.
+
+## Worker processes
+
+`DurableWorker` is the executing half of a client/worker deployment. It takes the same agent
+registrations as `DurableRuntime`, claims runs from the shared store, and exposes no submit or
+control methods, which belong to `DurableClient`:
+
+```ts
+const worker = await DurableWorker.start({
+  store, // Postgres, Drizzle, or Prisma
+  agents: [{ agent: researcher, version: "1" }],
+  workerId: "worker-eu-1", // optional; generated if omitted
+  leaseMs: 30_000,
+  maxConcurrentRuns: 4,
+});
+
+worker.health(); // { status, ready, activeRuns, ... }
+await worker.close(); // aborts active attempts and releases their claims
+```
+
+Add workers freely; each claims only runs of agents it registers. `worker.unregisterAgent(id)`
+stops claiming that agent (it fails while an attempt of it is active here); runs already queued
+in the store wait for a worker that registers it. It is `DurableRuntime.open({ worker })` under the
+hood, so the limits in [Shared workers](#shared-workers) apply: agent runs only, and no owning
+runtime on the same database.
 
 ## Typed agent handles
 

@@ -150,6 +150,7 @@ const runSchema = z
     prompt: z.union([z.string(), promptSchema]),
     trace: traceOptionsSchema.optional(),
     version: id,
+    unadmitted: z.literal(true).optional(),
     status: runStatusSchema,
     createdAt: id,
     updatedAt: id,

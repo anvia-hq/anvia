@@ -13,12 +13,12 @@ import type {
 } from "./types.js";
 
 export const GRAPH_SESSION_PREFIX = "__anvia_graph__:";
+export const UNADMITTED_VERSION = "unadmitted";
 
 /**
  * `tx` enables blob externalization for a large context snapshot; without it the snapshot is
  * stored inline, which the payload budget still bounds. `mcpServers` is the fingerprint computed by
- * the caller before the transaction (see mcpServersOf).
- * stored inline, which the payload budget still bounds. `toolIndexes` is the fingerprint computed
+ * the caller before the transaction (see mcpServersOf). `toolIndexes` is the fingerprint computed
  * by the caller before the transaction (see toolIndexesOf).
  */
 export async function createRunRecord(
@@ -28,23 +28,53 @@ export async function createRunRecord(
   mcpServers?: DurableMcpServers,
   toolIndexes?: DurableToolIndexes,
 ): Promise<DurableRunRecord> {
-  const now = new Date().toISOString();
+  return admitRunRecord(
+    createUnadmittedRunRecord(submission),
+    registration,
+    tx,
+    mcpServers,
+    toolIndexes,
+  );
+}
 
-  const record: Omit<DurableRunRecord, "input"> = {
+/**
+ * A run submitted by a client that holds no agent registrations. It carries only the request; the
+ * worker that claims it fills in everything a registration decides (`admitRunRecord`) before the
+ * first attempt. `version` is a placeholder until then.
+ */
+export function createUnadmittedRunRecord(submission: DurableSubmission): DurableRunRecord {
+  const now = new Date().toISOString();
+  return {
     ...submission,
     id: globalThis.crypto.randomUUID(),
-    version: registration.version,
+    version: UNADMITTED_VERSION,
+    unadmitted: true,
     status: "queued",
     createdAt: now,
     updatedAt: now,
     epoch: 0,
     modelTurns: 0,
-    maxModelTurns: (registration.agent.defaultMaxTurns ?? 0) + 1,
+    maxModelTurns: 1,
     usage: Usage.empty(),
     history: [],
     responses: {},
     steering: { pending: [], checkpoints: {}, closed: false },
+    input: { messages: [promptMessage(submission.prompt)] },
   };
+}
+
+/** Applies what the agent's registration decides to a run: its version, limits and frozen context. */
+export async function admitRunRecord(
+  base: DurableRunRecord,
+  registration: DurableAgentRegistration,
+  tx?: DurableTransaction,
+  mcpServers?: DurableMcpServers,
+  toolIndexes?: DurableToolIndexes,
+): Promise<DurableRunRecord> {
+  const record: DurableRunRecord = { ...base };
+  delete record.unadmitted;
+  record.version = registration.version;
+  record.maxModelTurns = (registration.agent.defaultMaxTurns ?? 0) + 1;
 
   if (registration.compaction !== undefined) {
     record.loopCompaction = true;
@@ -84,8 +114,5 @@ export async function createRunRecord(
     record.modelRetry = { ...registration.modelRetry };
   }
 
-  return {
-    ...record,
-    input: { messages: [promptMessage(submission.prompt)] },
-  };
+  return record;
 }

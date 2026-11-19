@@ -27,6 +27,7 @@ const sqliteOnly = [
   "test/worker-class.test.ts",
   "test/graph-claims.test.ts",
   "test/task-claims.test.ts",
+  "test/client-tasks.test.ts",
   "test/drizzle-store.test.ts",
   "test/prisma-store.test.ts",
   "test/hardening.test.ts",

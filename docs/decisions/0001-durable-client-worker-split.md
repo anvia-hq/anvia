@@ -170,9 +170,13 @@ Each stage is independently shippable and keeps `DurableRuntime` working.
      - Time-based waits are found by polling every unsettled tree, not in-process timers. The cost
        grows with open trees; a "roots with due waits" query is the later optimisation.
      - A task invocation runs inside its claim's fence like a run, so a stale worker cannot commit.
-   - **6f. Tasks from `DurableClient`. Not started.** A client has no definition to parse input
-     or build the initial checkpoint, so it needs the unadmitted-then-admitted path runs use,
-     plus task routes in the HTTP backend.
+   - **6f. Tasks from `DurableClient` (shipped on the client-tasks branch).** A client has no
+     definition, so it records an `unadmitted` task (raw input, null checkpoint) and the claiming
+     worker parses the input and builds the checkpoint at its first invocation, as for runs. Input
+     that does not parse fails the task; a version the worker lacks blocks it with the mismatch
+     named. Controls and reads reuse the scheduler in a `passive` mode that never claims. Task
+     submission over HTTP is deliberately not offered for a client backend: authorizing it needs
+     `agentDependencies`, which only a definition provides.
 
 ## Consequences
 

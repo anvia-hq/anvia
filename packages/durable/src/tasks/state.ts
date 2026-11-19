@@ -1,3 +1,4 @@
+import type { JsonValue } from "@anvia/core/completion";
 import { DurableConflictError, DurableNotFoundError } from "../errors.js";
 import { hydratedOutcomeOutput } from "../blob.js";
 import { json, nonblank, sameJson } from "../json.js";
@@ -245,4 +246,53 @@ export async function reconcileTree(
   }
 
   return result;
+}
+
+/**
+ * Records a root task for a worker to admit. The client holds no definition, so the input is not
+ * parsed and the checkpoint is not built here; a repeated key with equal input returns the task.
+ */
+export async function createUnadmittedTask(
+  tx: DurableTransaction,
+  submission: { name: string; version: number; input: JsonValue; sessionId: string; key: string },
+  trace?: DurableTraceOptions,
+): Promise<TaskRecord> {
+  taskKey(submission.key);
+  taskKey(submission.sessionId);
+  taskKey(submission.name);
+  await tx.lockSession?.(`task-submit:${submission.sessionId}`);
+  const existing = await tx.findTask(submission.sessionId, undefined, submission.key);
+  if (existing !== undefined) {
+    if (
+      existing.name !== submission.name ||
+      existing.submissionVersion !== submission.version ||
+      !sameJson(existing.submissionInput, submission.input)
+    )
+      throw new DurableConflictError("Task key already belongs to a different submission.");
+    return existing;
+  }
+  const id = globalThis.crypto.randomUUID();
+  const now = new Date().toISOString();
+  const task: TaskRecord = {
+    id,
+    rootId: id,
+    depth: 0,
+    sessionId: submission.sessionId,
+    key: submission.key,
+    name: submission.name,
+    version: submission.version,
+    submissionVersion: submission.version,
+    unadmitted: true,
+    submissionInput: submission.input,
+    input: submission.input,
+    checkpoint: null,
+    status: "pending",
+    signals: {},
+    createdAt: now,
+    updatedAt: now,
+  };
+  if (trace !== undefined) task.trace = trace;
+  await tx.putTask(task);
+  await tx.appendEvent(id, "submitted", json({ name: task.name, rootId: id }));
+  return task;
 }

@@ -64,7 +64,7 @@ export async function handleDurableTaskRequest(
       if (typeof runtime.taskSubmissionScope !== "function")
         throw new HttpInputError(
           503,
-          "Task submission authorization requires @anvia/durable 0.6 or newer.",
+          "Task submission authorization needs the task definitions, so it is not available from this backend (or from @anvia/durable older than 0.6).",
         );
       const { sessionId, taskName, agentIds } = await runtime.taskSubmissionScope(input);
       for (const agentId of agentIds.length === 0 ? [undefined] : agentIds) {

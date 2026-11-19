@@ -12,6 +12,14 @@ import type {
   DurableGraphSubmission,
 } from "./graph-types.js";
 import { DurableTaskGraph } from "./task-graph.js";
+import type { JsonValue } from "@anvia/core/completion";
+import { json } from "./json.js";
+import { parseTaskSubmission, type TaskSubmission } from "./task-protocol.js";
+import { parseTraceOptions } from "./trace-schema.js";
+import { DurableTaskHandle } from "./tasks/handle.js";
+import { taskListSchema } from "./tasks/schema.js";
+import { TaskScheduler } from "./tasks/scheduler.js";
+import type { DefinedTask, TaskListOptions } from "./tasks/types.js";
 import { createUnadmittedRunRecord } from "./run-record.js";
 import { listOptionsSchema } from "./schema.js";
 import { readEvents, readRun, readRunScope, readSnapshot, readStatus } from "./reads.js";
@@ -39,6 +47,7 @@ import type {
   DurableSteerOptions,
   DurableSubmission,
   DurableSubmitOptions,
+  DurableTraceOptions,
   MemoryWriteResolution,
 } from "./types.js";
 
@@ -57,7 +66,23 @@ export type DurableClientOptions = { store: DurableStore };
 export class DurableClient implements DurableSubmitClient, DurableGraphClient {
   private closed = false;
 
-  private constructor(private readonly store: DurableStore) {}
+  /** Task controls and reads; it never claims or runs anything (`passive`). */
+  private readonly tasks: TaskScheduler;
+
+  private constructor(private readonly store: DurableStore) {
+    this.tasks = new TaskScheduler(
+      store,
+      new Map(),
+      1,
+      () => {},
+      new Map(),
+      new Map(),
+      new Map(),
+      () => false,
+      async () => {},
+      { workerId: `client-${globalThis.crypto.randomUUID()}`, leaseMs: 30_000, passive: true },
+    );
+  }
 
   static async connect(options: DurableClientOptions): Promise<DurableClient> {
     if (options.store.join === undefined)
@@ -208,6 +233,72 @@ export class DurableClient implements DurableSubmitClient, DurableGraphClient {
   async cancelGraph(id: string): Promise<void> {
     this.assertOpen();
     await cancelGraphRuns(this.store, id);
+  }
+
+  /**
+   * Records a root task for workers to run. The client has no definition to parse the input or
+   * build the checkpoint, so the worker that claims the task does; it fails the task if the input
+   * is invalid, and leaves it waiting if no worker registers the name and version. The input must
+   * be JSON, and a repeated key with equal input returns the same task.
+   */
+  async submitTask<I, S, R>(
+    definition: DefinedTask<I, S, R>,
+    input: {
+      sessionId: string;
+      requestId: string;
+      input: I;
+      trace?: DurableTraceOptions | undefined;
+    },
+  ): Promise<DurableTaskHandle<R>> {
+    this.assertOpen();
+    const id = await this.tasks.submitUnadmitted(
+      {
+        name: definition.name,
+        version: definition.version,
+        input: json(input.input),
+        sessionId: input.sessionId,
+        key: input.requestId,
+      },
+      parseTraceOptions(input.trace),
+    );
+    return this.taskHandle<R>(id);
+  }
+
+  /** Submits by name and version, as the HTTP routes do. */
+  async submitRegisteredTask(input: TaskSubmission): Promise<DurableTaskHandle> {
+    this.assertOpen();
+    const submission = parseTaskSubmission(input);
+    const id = await this.tasks.submitUnadmitted(
+      {
+        name: submission.name,
+        version: submission.version,
+        input: submission.input,
+        sessionId: submission.sessionId,
+        key: submission.requestId,
+      },
+      submission.trace,
+    );
+    return this.taskHandle(id);
+  }
+
+  async getTask(id: string): Promise<DurableTaskHandle> {
+    this.assertOpen();
+    await this.tasks.snapshot(id);
+    return this.taskHandle(id);
+  }
+
+  async listTasks(options: TaskListOptions = {}) {
+    this.assertOpen();
+    return this.store.listTasks(taskListSchema.parse(options));
+  }
+
+  async taskGraph(id: string) {
+    this.assertOpen();
+    return this.tasks.graph(id);
+  }
+
+  private taskHandle<R = JsonValue>(id: string): DurableTaskHandle<R> {
+    return new DurableTaskHandle<R>(id, this.tasks, this.store, () => this.assertOpen());
   }
 
   /** Closes the connection. Runs it submitted keep going on their workers. */

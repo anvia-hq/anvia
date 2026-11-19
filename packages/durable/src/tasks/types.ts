@@ -110,6 +110,12 @@ export type TaskRecord = {
   name: string;
   version: number;
   submissionVersion: number;
+  /**
+   * Set on a task a `DurableClient` submitted without the definition. The worker that claims it
+   * parses the input and builds the initial checkpoint, then clears this flag before the first
+   * invocation. `input` is the unparsed submission and `checkpoint` is `null` until then.
+   */
+  unadmitted?: true;
   /** Original input for deduplication, even after migration. */
   submissionInput: JsonValue;
   input: JsonValue;

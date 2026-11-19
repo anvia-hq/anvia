@@ -364,7 +364,7 @@ export class ManagedMemgraphKnowledgeGraph<
         options.conflict,
         sourceDocuments,
       );
-      await writeMentions(transaction, this.resources.labels, options.mentions);
+      await writeMentions(transaction, this.name, this.resources.labels, options.mentions);
       await writeRelationships(
         transaction,
         this.name,
@@ -720,13 +720,13 @@ async function writeEntities<Schema extends GraphSchemaLike>(
       sourceChunkIds: entity.document.sourceChunkIds,
     }));
     if (conflict === "error") {
-      await assertEntityConflicts(transaction, entityLabel, rows);
+      await assertEntityConflicts(transaction, graphName, entityLabel, rows);
     }
     const propertySet = conflictPropertySet("e", conflict);
     const embedding = entityEmbeddingExpression(conflict);
     await transaction.run(
       `UNWIND $rows AS row
-MERGE (e:${quoteIdentifier(entityLabel)}:${quoteIdentifier(type)} {${quoteIdentifier("__anvia_key")}: row.key})
+MERGE (e:${quoteIdentifier(entityLabel)}:${quoteIdentifier(type)} {${quoteIdentifier("__anvia_key")}: row.key, ${quoteIdentifier("__anvia_graph")}: $graph})
 ${propertySet}
 SET e.${quoteIdentifier("__anvia_key")} = row.key,
     e.${quoteIdentifier("__anvia_graph")} = $graph,
@@ -765,14 +765,16 @@ function entityEmbeddingExpression(conflict: MemgraphGraphConflict): string {
 
 async function assertEntityConflicts(
   transaction: GraphTransaction,
+  graphName: string,
   entityLabel: string,
   rows: readonly { key: string; properties: GraphProperties }[],
 ): Promise<void> {
   const result = await transaction.run(
     `UNWIND $keys AS key
 MATCH (e:${quoteIdentifier(entityLabel)} {${quoteIdentifier("__anvia_key")}: key})
+WHERE e.${quoteIdentifier("__anvia_graph")} = $graph
 RETURN key, properties(e) AS properties`,
-    { keys: rows.map((row) => row.key) },
+    { keys: rows.map((row) => row.key), graph: graphName },
   );
   const incoming = new Map(rows.map((row) => [row.key, row.properties]));
   for (const record of result.records) {
@@ -788,6 +790,7 @@ RETURN key, properties(e) AS properties`,
 
 async function writeMentions(
   transaction: GraphTransaction,
+  graphName: string,
   labels: { chunk: string; entity: string },
   mentions: readonly { chunkId: string; entityKey: string }[],
 ): Promise<void> {
@@ -795,9 +798,9 @@ async function writeMentions(
   await transaction.run(
     `UNWIND $rows AS row
 MATCH (c:${quoteIdentifier(labels.chunk)} {${quoteIdentifier("__anvia_id")}: row.chunkId}),
-      (e:${quoteIdentifier(labels.entity)} {${quoteIdentifier("__anvia_key")}: row.entityKey})
+      (e:${quoteIdentifier(labels.entity)} {${quoteIdentifier("__anvia_key")}: row.entityKey, ${quoteIdentifier("__anvia_graph")}: $graph})
 MERGE (c)-[:${quoteIdentifier("ANVIA_MENTIONS")}]->(e)`,
-    { rows: mentions },
+    { rows: mentions, graph: graphName },
   );
 }
 
@@ -823,8 +826,9 @@ async function writeRelationships<Schema extends GraphSchemaLike>(
       const existing = await transaction.run(
         `UNWIND $keys AS key
 MATCH ()-[r:${quoteIdentifier(type)} {${quoteIdentifier("__anvia_key")}: key}]->()
+WHERE r.${quoteIdentifier("__anvia_graph")} = $graph
 RETURN key, properties(r) AS properties`,
-        { keys: rows.map((row) => row.key) },
+        { keys: rows.map((row) => row.key), graph: graphName },
       );
       const incoming = new Map(rows.map((row) => [row.key, row.properties]));
       for (const record of existing.records) {
@@ -840,9 +844,9 @@ RETURN key, properties(r) AS properties`,
     const propertySet = conflictPropertySet("r", conflict);
     await transaction.run(
       `UNWIND $rows AS row
-MATCH (a:${quoteIdentifier(entityLabel)} {${quoteIdentifier("__anvia_key")}: row.from}),
-      (b:${quoteIdentifier(entityLabel)} {${quoteIdentifier("__anvia_key")}: row.to})
-MERGE (a)-[r:${quoteIdentifier(type)} {${quoteIdentifier("__anvia_key")}: row.key}]->(b)
+MATCH (a:${quoteIdentifier(entityLabel)} {${quoteIdentifier("__anvia_key")}: row.from, ${quoteIdentifier("__anvia_graph")}: $graph}),
+      (b:${quoteIdentifier(entityLabel)} {${quoteIdentifier("__anvia_key")}: row.to, ${quoteIdentifier("__anvia_graph")}: $graph})
+MERGE (a)-[r:${quoteIdentifier(type)} {${quoteIdentifier("__anvia_key")}: row.key, ${quoteIdentifier("__anvia_graph")}: $graph}]->(b)
 ${propertySet}
 SET r.${quoteIdentifier("__anvia_key")} = row.key,
     r.${quoteIdentifier("__anvia_graph")} = $graph,

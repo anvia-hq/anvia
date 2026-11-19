@@ -286,6 +286,79 @@ describe("MemgraphClient", () => {
     }
   });
 
+  it("scopes entity and relationship identity to the managed graph", async () => {
+    const driver = fakeDriver(async (query) =>
+      query.includes("RETURN collect(c.`__anvia_id`) AS chunkIds")
+        ? { records: [record({ chunkIds: [] })] }
+        : { records: [] },
+    );
+    const graph = managed(new MemgraphClient({ driver: driver.value }));
+    await graph.replaceDocuments({
+      documents: [{ id: "doc-1" }],
+      chunks: [
+        {
+          id: "chunk-1",
+          document: { id: "chunk-1", documentId: "doc-1", index: 0, text: "text" },
+          embeddings: [{ document: "text", vector: [1, 0] }],
+        },
+      ],
+      entities: [
+        {
+          id: 'Incident:{"id":"INC-1"}',
+          document: {
+            key: 'Incident:{"id":"INC-1"}',
+            type: "Incident",
+            identity: { id: "INC-1" },
+            properties: { id: "INC-1", title: "Checkout unavailable" },
+            sourceChunkIds: ["chunk-1"],
+          },
+          embeddings: [{ document: "incident", vector: [1, 0] }],
+        },
+        {
+          id: 'Product:{"id":"checkout"}',
+          document: {
+            key: 'Product:{"id":"checkout"}',
+            type: "Product",
+            identity: { id: "checkout" },
+            properties: { id: "checkout", name: "Checkout" },
+            sourceChunkIds: ["chunk-1"],
+          },
+          embeddings: [{ document: "product", vector: [0, 1] }],
+        },
+      ],
+      relationships: [
+        {
+          key: 'AFFECTS:{"from":"INC-1","to":"checkout"}',
+          type: "AFFECTS",
+          from: 'Incident:{"id":"INC-1"}',
+          to: 'Product:{"id":"checkout"}',
+          properties: { severity: "high" },
+          sourceChunkIds: ["chunk-1"],
+        },
+      ],
+      mentions: [
+        { chunkId: "chunk-1", entityKey: 'Incident:{"id":"INC-1"}' },
+        { chunkId: "chunk-1", entityKey: 'Product:{"id":"checkout"}' },
+      ],
+      conflict: "error",
+      orphanEntities: "keep",
+    });
+
+    const queries = driver.run.mock.calls.map(([query]) => String(query));
+    const entityMerge = queries.find((query) => query.includes("MERGE (e:`SupportEntity`:"));
+    const entityConflict = queries.find(
+      (query) => query.includes("MATCH (e:`SupportEntity` {") && query.includes("AS properties"),
+    );
+    const relationshipMerge = queries.find((query) => query.includes("MERGE (a)-[r:`AFFECTS`"));
+    const relationshipConflict = queries.find(
+      (query) => query.includes("MATCH ()-[r:`AFFECTS`") && query.includes("AS properties"),
+    );
+    expect(entityMerge).toContain("`__anvia_graph`: $graph");
+    expect(entityConflict).toContain("`__anvia_graph` = $graph");
+    expect(relationshipMerge).toContain("`__anvia_graph`: $graph");
+    expect(relationshipConflict).toContain("`__anvia_graph` = $graph");
+  });
+
   it("explores a bounded provider-neutral graph view", async () => {
     const driver = fakeDriver(async (query) => {
       if (query.includes("RETURN id(node) AS id")) {

@@ -424,7 +424,23 @@ export interface DurableTransaction extends TaskTransaction {
   putBlob(value: JsonValue): Promise<string>;
   /** Reads a blob back by content hash; a missing or corrupt blob throws. */
   getBlob(hash: string): Promise<JsonValue>;
+  /**
+   * Fails with `DurableClaimLostError` unless `claimId` still holds the claim on `runId`, and keeps
+   * the claim from being taken over until this transaction ends. A worker calls it before writing
+   * for a run, so a worker that lost its lease cannot commit. Only stores with claims implement it.
+   */
+  assertClaim?(runId: string, claimId: string): Promise<void>;
 }
+
+/** A worker's lease on one run. `claimId` is the fencing token: it is unique per claim. */
+export type DurableClaim = {
+  runId: string;
+  claimId: string;
+  /** Database time at which the lease lapses unless renewed. */
+  expiresAt: string;
+};
+
+export type DurableClaimRef = { runId: string; claimId: string };
 
 /**
  * A store is exclusively owned by one open runtime (`acquire()`), or opened for non-owning,
@@ -447,6 +463,36 @@ export interface DurableStore {
    * `transaction()` rejects writes. Closing an observing store releases nothing it does not hold.
    */
   connect(): Promise<void>;
+  /**
+   * Opens the store as one of several shared workers: read-write, with no exclusive owner lease.
+   * Workers coordinate through per-run claims. It fails while a runtime owns the database
+   * (`acquire()`), and `acquire()` fails while workers hold live claims. Only stores that
+   * implement claims provide it; single-owner stores (SQLite) do not.
+   */
+  join?(): Promise<void>;
+  /**
+   * Claims up to `limit` runnable runs for `workerId` for `leaseMs`, oldest first. The oldest
+   * unfinished run of a session is the only claimable one, so a session never runs twice at once,
+   * and an unexpired claim is never taken. Lease times use database time, not the caller's clock.
+   * `now` only gates `retry_wait` runs.
+   */
+  claim?(input: {
+    workerId: string;
+    now: string;
+    limit: number;
+    leaseMs: number;
+  }): Promise<DurableClaim[]>;
+  /**
+   * Extends the leases of `claims` that `workerId` still holds. `lost` names the runs whose claim
+   * was released, taken over, or whose run is already settled; the worker must stop them.
+   */
+  renew?(input: {
+    workerId: string;
+    claims: readonly DurableClaimRef[];
+    leaseMs: number;
+  }): Promise<{ lost: string[] }>;
+  /** Releases claims the caller holds. Releasing a claim already lost is not an error. */
+  release?(claims: readonly DurableClaimRef[]): Promise<void>;
   close(): Promise<void>;
   /** Runs `callback` atomically and serially; nested transactions are rejected. */
   transaction<T>(callback: (tx: DurableTransaction) => Promise<T>): Promise<T>;

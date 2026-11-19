@@ -3,6 +3,7 @@ import type { JsonValue } from "@anvia/core/completion";
 import { blobIO, externalizeRunRecord, hydrateValue, type DurableBlobIO } from "../blob.js";
 import { graphListSchema, parseGraphRecord } from "../graph-schema.js";
 import type { DurableGraphListOptions, DurableGraphPage } from "../graph-types.js";
+import { DurableClaimLostError } from "../errors.js";
 import { json } from "../json.js";
 import { messageLog } from "../message-log.js";
 import type { DurableMetrics } from "../metrics.js";
@@ -19,6 +20,8 @@ import { SerialGate } from "../serial.js";
 import { parseTask, taskListSchema } from "../tasks/schema.js";
 import type { TaskListOptions, TaskPage, TaskRecord, TaskTransaction } from "../tasks/types.js";
 import type {
+  DurableClaim,
+  DurableClaimRef,
   DurableEvent,
   DurableListOptions,
   DurableRunPage,
@@ -26,7 +29,7 @@ import type {
   DurableStore,
   DurableTransaction,
 } from "../types.js";
-import { POSTGRES_DDL, SQL_SCHEMA_VERSION, SQL_TABLES } from "./ddl.js";
+import { POSTGRES_DDL, SQL_CLAIM_TABLES, SQL_SCHEMA_VERSION, SQL_TABLES } from "./ddl.js";
 import type { SqlDriver, SqlQuery, SqlRow } from "./driver.js";
 import { Staging } from "./staging.js";
 
@@ -48,6 +51,14 @@ export type SqlStoreOptions = {
 const TERMINAL = "('completed', 'failed', 'cancelled')";
 
 const num = (value: unknown): number => Number(value);
+
+function checkLease(leaseMs: number): void {
+  if (!Number.isSafeInteger(leaseMs) || leaseMs < 1) throw new TypeError("Invalid claim lease.");
+}
+
+function claimRefs(claims: readonly DurableClaimRef[]): string {
+  return JSON.stringify(claims.map((claim) => ({ run_id: claim.runId, claim_id: claim.claimId })));
+}
 const text = (value: unknown): string => String(value);
 
 function checkPage(after: number, limit: number, what: string): void {
@@ -80,6 +91,7 @@ export class SqlDurableStore implements DurableStore {
   private heartbeat: ReturnType<typeof setInterval> | undefined;
   private acquired = false;
   private observing = false;
+  private joined = false;
   private closed = false;
   private closing = false;
   private lost = false;
@@ -98,7 +110,7 @@ export class SqlDurableStore implements DurableStore {
   }
 
   async acquire(): Promise<void> {
-    if (this.closed || this.acquired || this.observing)
+    if (this.closed || this.acquired || this.observing || this.joined)
       throw new Error("Durable store is closed or already acquired.");
     if (this.schemaMode === "create") await this.createSchema();
     await this.verifySchema();
@@ -118,6 +130,20 @@ export class SqlDurableStore implements DurableStore {
         throw new Error(
           "Durable store already has a live owner. Only one runtime per database is supported.",
         );
+      // Shared workers coordinate through claims and an owner assumes it is the only writer, so an
+      // owner cannot start while a worker holds a live claim. The table is absent before claims.
+      if (
+        (await query("SELECT to_regclass('anvia_durable_claims') IS NOT NULL AS present"))[0]!
+          .present === true
+      ) {
+        const live = await query(
+          "SELECT 1 FROM anvia_durable_claims WHERE expires_at > now() LIMIT 1",
+        );
+        if (live.length > 0)
+          throw new Error(
+            "Durable store has shared workers holding live claims; stop them before opening an owning runtime.",
+          );
+      }
       await query(
         `UPDATE anvia_durable_owner SET token = $1::text,
            lease_expires_at = now() + ($2::bigint * interval '1 millisecond'),
@@ -126,7 +152,7 @@ export class SqlDurableStore implements DurableStore {
       );
     });
     this.acquired = true;
-    this.heartbeat = setInterval(() => void this.renew(), this.heartbeatMs);
+    this.heartbeat = setInterval(() => void this.renewOwnerLease(), this.heartbeatMs);
     this.heartbeat.unref();
   }
 
@@ -147,6 +173,107 @@ export class SqlDurableStore implements DurableStore {
     this.observing = true;
   }
 
+  async join(): Promise<void> {
+    if (this.closed || this.acquired || this.observing || this.joined)
+      throw new Error("Durable store is closed or already open.");
+    if (this.schemaMode === "create") await this.createSchema();
+    await this.verifySchema(SQL_CLAIM_TABLES);
+    await this.driver.transaction(async (query) => {
+      await query(
+        "INSERT INTO anvia_durable_owner(singleton, version) VALUES (1, $1::integer) ON CONFLICT (singleton) DO NOTHING",
+        [SQL_SCHEMA_VERSION],
+      );
+      await this.assertNoLiveOwner(query);
+    });
+    this.joined = true;
+  }
+
+  async claim(input: {
+    workerId: string;
+    now: string;
+    limit: number;
+    leaseMs: number;
+  }): Promise<DurableClaim[]> {
+    this.assertJoined();
+    if (!Number.isSafeInteger(input.limit) || input.limit < 1)
+      throw new TypeError("Invalid claim limit.");
+    checkLease(input.leaseMs);
+    return this.driver.transaction(async (query) => {
+      await this.assertNoLiveOwner(query);
+      const candidates = await query(
+        `SELECT r.id FROM anvia_durable_runs r
+         WHERE r.status IN ('queued', 'pending', 'running', 'retry_wait')
+         AND (r.status <> 'retry_wait' OR r.next_attempt_at <= $1::text)
+         AND NOT EXISTS (SELECT 1 FROM anvia_durable_runs previous
+           WHERE previous.session_id = r.session_id AND previous.seq < r.seq
+           AND previous.status NOT IN ${TERMINAL})
+         AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements_text(COALESCE(r.dependencies, '[]'::jsonb)) AS dependency(value)
+           LEFT JOIN anvia_durable_runs prerequisite ON prerequisite.id = dependency.value
+           WHERE prerequisite.id IS NULL OR prerequisite.status <> 'completed'
+             OR prerequisite.outcome_type IS DISTINCT FROM 'response')
+         AND NOT EXISTS (SELECT 1 FROM anvia_durable_claims c
+           WHERE c.run_id = r.id AND c.expires_at > now())
+         ORDER BY r.seq LIMIT $2::bigint`,
+        [input.now, input.limit],
+      );
+      const claims: DurableClaim[] = [];
+      for (const candidate of candidates) {
+        // The conflict clause is the exclusion: it only takes a row whose lease has lapsed, and a
+        // concurrent claimer of the same run waits on the row lock and then matches nothing.
+        const rows = await query(
+          `INSERT INTO anvia_durable_claims(run_id, worker_id, claim_id, expires_at)
+           VALUES ($1::text, $2::text, $3::text, now() + ($4::bigint * interval '1 millisecond'))
+           ON CONFLICT (run_id) DO UPDATE SET worker_id = EXCLUDED.worker_id,
+             claim_id = EXCLUDED.claim_id, expires_at = EXCLUDED.expires_at
+           WHERE anvia_durable_claims.expires_at <= now()
+           RETURNING run_id, claim_id,
+             to_char(expires_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS expires_at`,
+          [text(candidate.id), input.workerId, globalThis.crypto.randomUUID(), input.leaseMs],
+        );
+        const row = rows[0];
+        if (row !== undefined)
+          claims.push({
+            runId: text(row.run_id),
+            claimId: text(row.claim_id),
+            expiresAt: text(row.expires_at),
+          });
+      }
+      return claims;
+    });
+  }
+
+  async renew(input: {
+    workerId: string;
+    claims: readonly DurableClaimRef[];
+    leaseMs: number;
+  }): Promise<{ lost: string[] }> {
+    this.assertJoined();
+    checkLease(input.leaseMs);
+    if (input.claims.length === 0) return { lost: [] };
+    const rows = await this.driver.query(
+      `UPDATE anvia_durable_claims c SET expires_at = now() + ($3::bigint * interval '1 millisecond')
+       FROM anvia_durable_runs r,
+         jsonb_to_recordset($2::text::jsonb) AS held(run_id text, claim_id text)
+       WHERE c.worker_id = $1::text AND c.run_id = held.run_id AND c.claim_id = held.claim_id
+         AND r.id = c.run_id AND r.status NOT IN ${TERMINAL}
+       RETURNING c.run_id`,
+      [input.workerId, claimRefs(input.claims), input.leaseMs],
+    );
+    const renewed = new Set(rows.map((row) => text(row.run_id)));
+    return { lost: input.claims.map((claim) => claim.runId).filter((id) => !renewed.has(id)) };
+  }
+
+  async release(claims: readonly DurableClaimRef[]): Promise<void> {
+    this.assertJoined();
+    if (claims.length === 0) return;
+    await this.driver.query(
+      `DELETE FROM anvia_durable_claims c
+       USING jsonb_to_recordset($1::text::jsonb) AS held(run_id text, claim_id text)
+       WHERE c.run_id = held.run_id AND c.claim_id = held.claim_id`,
+      [claimRefs(claims)],
+    );
+  }
+
   async close(): Promise<void> {
     if (this.closed) return;
     this.closing = true;
@@ -164,6 +291,7 @@ export class SqlDurableStore implements DurableStore {
       this.closed = true;
       this.acquired = false;
       this.observing = false;
+      this.joined = false;
       await this.driver.close?.();
     }
   }
@@ -176,7 +304,7 @@ export class SqlDurableStore implements DurableStore {
       return this.driver.transaction(async (query) => {
         // Enforced by Postgres, and no owner row lock is taken, so an observer never blocks the owner.
         if (this.observing) await query("SET TRANSACTION READ ONLY");
-        else await this.assertOwner(query);
+        else if (!this.joined) await this.assertOwner(query);
         let active = true;
         const staging = new Staging();
         try {
@@ -686,6 +814,15 @@ export class SqlDurableStore implements DurableStore {
           ],
         );
       },
+      assertClaim: async (runId, claimId) => {
+        // FOR SHARE: a reclaim of this run waits for this transaction, so a stale worker cannot
+        // commit after another worker took the run.
+        const held = await guarded(
+          "SELECT 1 FROM anvia_durable_claims WHERE run_id = $1::text AND claim_id = $2::text FOR SHARE",
+          [runId, claimId],
+        );
+        if (held.length === 0) throw new DurableClaimLostError(runId, claimId);
+      },
       cursor: async () =>
         num(
           (
@@ -708,10 +845,10 @@ export class SqlDurableStore implements DurableStore {
     });
   }
 
-  private async verifySchema(): Promise<void> {
+  private async verifySchema(extra: readonly string[] = []): Promise<void> {
     const rows = await this.driver.query(
       `SELECT name FROM unnest($1::text::text[]) AS name WHERE to_regclass(name) IS NULL`,
-      [`{${SQL_TABLES.join(",")}}`],
+      [`{${[...SQL_TABLES, ...extra].join(",")}}`],
     );
     if (rows.length > 0)
       throw new Error(
@@ -726,7 +863,7 @@ export class SqlDurableStore implements DurableStore {
       throw new Error("Unsupported durable database schema version.");
   }
 
-  private async renew(): Promise<void> {
+  private async renewOwnerLease(): Promise<void> {
     if (this.closed || !this.acquired) return;
     try {
       const rows = await this.driver.query(
@@ -751,7 +888,28 @@ export class SqlDurableStore implements DurableStore {
   }
 
   private assertOpen(): void {
-    if (this.closed || this.closing || (!this.acquired && !this.observing))
+    if (this.closed || this.closing || (!this.acquired && !this.observing && !this.joined))
       throw new Error("Durable store is not acquired.");
+  }
+
+  private assertJoined(): void {
+    if (this.closed || this.closing || !this.joined)
+      throw new Error("Durable store has not joined as a shared worker.");
+  }
+
+  /** Locks the owner row shared, so an owner acquiring concurrently waits and then sees our claims. */
+  private async assertNoLiveOwner(query: SqlQuery): Promise<void> {
+    const owner = (
+      await query(
+        "SELECT token, version, lease_expires_at > now() AS live FROM anvia_durable_owner WHERE singleton = 1 FOR SHARE",
+      )
+    )[0];
+    if (owner === undefined) throw new Error("Durable database has not been initialised.");
+    if (num(owner.version) !== SQL_SCHEMA_VERSION)
+      throw new Error("Unsupported durable database schema version.");
+    if (owner.token !== null && owner.live === true)
+      throw new Error(
+        "Durable store has a live owning runtime; shared workers cannot run beside an owner.",
+      );
   }
 }

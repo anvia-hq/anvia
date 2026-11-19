@@ -80,3 +80,14 @@ export class DurableLimitError extends Error {
     this.actual = details.actual;
   }
 }
+
+/** A worker's claim on a run was released, expired and taken over, or its run was settled elsewhere. */
+export class DurableClaimLostError extends Error {
+  constructor(
+    readonly runId: string,
+    readonly claimId: string,
+  ) {
+    super(`Claim ${claimId} on durable run ${runId} was lost.`);
+    this.name = "DurableClaimLostError";
+  }
+}

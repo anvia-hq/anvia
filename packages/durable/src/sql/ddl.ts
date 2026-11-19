@@ -16,6 +16,12 @@ export const SQL_TABLES = [
 ] as const;
 
 /**
+ * Tables only shared workers use. They are not part of `SQL_TABLES`, so a single-owner database
+ * migrated before claims existed keeps opening; `join()` verifies them.
+ */
+export const SQL_CLAIM_TABLES = ["anvia_durable_claims"] as const;
+
+/**
  * Idempotent Postgres DDL. Ordering columns (`seq`, `sequence`) are BIGSERIAL and replace the SQLite
  * rowid; JSON fields that listings and the scheduler filter on are copied into typed columns
  * (`agent_id`, `graph_id`, `dependencies`, `next_attempt_at`, `outcome_type`, `started_at`).
@@ -101,5 +107,11 @@ export const POSTGRES_DDL: readonly string[] = [
   )`,
   `CREATE TABLE IF NOT EXISTS anvia_durable_histories (
     hash TEXT PRIMARY KEY, previous TEXT, message TEXT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS anvia_durable_claims (
+    run_id TEXT PRIMARY KEY,
+    worker_id TEXT NOT NULL,
+    claim_id TEXT NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL
   )`,
 ];

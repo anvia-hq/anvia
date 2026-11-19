@@ -143,6 +143,14 @@ export const anviaDurableHistories = pgTable("anvia_durable_histories", {
   message: text("message").notNull(),
 });
 
+/** Leases that let several shared workers divide runs. Single-owner use never reads it. */
+export const anviaDurableClaims = pgTable("anvia_durable_claims", {
+  runId: text("run_id").primaryKey(),
+  workerId: text("worker_id").notNull(),
+  claimId: text("claim_id").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+});
+
 /** Every table, for tooling that needs the full list. */
 export const anviaDurableTables = {
   anviaDurableOwner,
@@ -155,6 +163,7 @@ export const anviaDurableTables = {
   anviaDurableTasks,
   anviaDurableMessages,
   anviaDurableHistories,
+  anviaDurableClaims,
 } as const;
 
 export const drizzleDurableExportNames = Object.keys(anviaDurableTables) as ReadonlyArray<

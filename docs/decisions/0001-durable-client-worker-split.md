@@ -50,6 +50,29 @@ the `@anvia/client` stream protocol; fingerprint registrations so a changed regi
 unchanged `version` is detected; and treat an agent run as one kind of durable task so runs,
 tasks, graphs, and goals share one model (own design, last).
 
+## Claim protocol as implemented in 4a
+
+- **Modes.** A SQL store is opened as the exclusive owner (`acquire()`), a read-only observer
+  (`connect()`), or a shared worker (`join()`). `join()` is read-write with no owner lease.
+- **Owner and workers exclude each other through the owner row.** `join()` and every `claim()`
+  lock the owner row `FOR SHARE` and fail while an owner's lease is live; `acquire()` locks it
+  `FOR UPDATE` and fails while any unexpired claim exists. Both orders serialise on that row, so an
+  owner and a worker cannot both start. `SQL_TABLES` does not include the claims table, so a
+  database migrated before claims keeps opening for owners; `join()` verifies it.
+- **Claiming.** `claim()` selects the same runnable set as `schedule()` (status, `retry_wait`
+  due, dependencies met, the session's oldest unfinished run only) minus runs with an unexpired
+  claim, then inserts a claim row per run with
+  `ON CONFLICT (run_id) DO UPDATE ... WHERE expires_at <= now()`. That clause is the exclusion: a
+  concurrent claimer waits on the row lock and then matches nothing. Leases use database time.
+- **Fencing token.** The `claimId` (a UUID per claim) is the token. `tx.assertClaim(runId,
+claimId)` takes the claim row `FOR SHARE` and throws `DurableClaimLostError` if it no longer
+  matches, so a takeover waits for an in-flight write and a stale worker cannot commit after it.
+  Expiry only matters to other claimers, not to the write path, so a worker that was merely slow
+  keeps working until someone actually takes the run.
+- **Renewal and release.** `renew()` extends only claims the worker still holds and returns
+  `lost` for released, taken-over, or already settled runs. `release()` deletes by claim id, so a
+  stale release cannot drop another worker's claim.
+
 ## Sketch of the store contract
 
 ```ts
@@ -83,7 +106,16 @@ Each stage is independently shippable and keeps `DurableRuntime` working.
    cancelled elsewhere is aborted, without relying on the in-process `pump()`/abort coupling. It is
    opt-in and covers agent runs; tasks and graphs follow with claims. The default flips on in
    stage 5, and a store notification (Postgres `LISTEN/NOTIFY`) is the later latency optimisation.
-4. **Claims and fencing** on Postgres; SQLite keeps single-owner.
+4. **Claims and fencing** on Postgres; SQLite keeps single-owner. Split into:
+   - **4a. Store layer (shipped on the claims branch).** `join()`, `claim()`, `renew()`,
+     `release()` and `tx.assertClaim()` on the SQL store, plus the `anvia_durable_claims` table.
+     The runtime does not use them yet.
+   - **4b. Runtime fencing.** A worker mode that claims runs, renews on a heartbeat, calls
+     `assertClaim` before every write for a run, treats a lost claim as an abort, and audits every
+     worker write path so a client-written status (cancelled, retried) is never overwritten with
+     stale state. A failing poll or renew retries with backoff instead of failing the runtime.
+   - **4c. Client writes** (submit, cancel, respond, resolve, retry, steer) from a process that
+     holds no claim, which is safe once 4b fences workers.
 5. **Public `DurableClient` and `DurableWorker`.** Mostly assembly once 2 to 4 exist.
 6. Typed events and protocol bridge; registration fingerprinting; unify with tasks.
 

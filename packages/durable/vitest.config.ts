@@ -21,6 +21,7 @@ const adapterScenarios = [
 /** Test files that inspect SQLite files, backups, child processes or SQLite internals directly. */
 const sqliteOnly = [
   "test/postgres-store.test.ts",
+  "test/claims.test.ts",
   "test/drizzle-store.test.ts",
   "test/prisma-store.test.ts",
   "test/hardening.test.ts",

@@ -10,6 +10,7 @@ export const prismaDurableModelNames = [
   "AnviaDurableTask",
   "AnviaDurableMessage",
   "AnviaDurableHistory",
+  "AnviaDurableClaim",
 ] as const;
 
 export const prismaDurableSchema = `model AnviaDurableOwner {
@@ -126,5 +127,14 @@ model AnviaDurableHistory {
   message  String
 
   @@map("anvia_durable_histories")
+}
+
+model AnviaDurableClaim {
+  runId     String   @id @map("run_id")
+  workerId  String   @map("worker_id")
+  claimId   String   @map("claim_id")
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
+
+  @@map("anvia_durable_claims")
 }
 `;

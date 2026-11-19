@@ -56,6 +56,7 @@ export {
   DurableRecoveryError,
   DurableRunError,
   DurableBlockedError,
+  DurableClaimLostError,
   DurableNotFoundError,
   DurableConflictError,
   DurableStorageError,
@@ -63,6 +64,8 @@ export {
 } from "./errors.js";
 export type {
   DurableAgentCompatibility,
+  DurableClaim,
+  DurableClaimRef,
   DurableAgentRegistration,
   DurableRecordedHooks,
   DurableObservationalLifecycle,

@@ -504,6 +504,29 @@ is off by default, and the interval is a latency and store-load trade-off. Nothi
 writes from another process yet (the observer is read-only), so this is groundwork for per-run
 claims ([ADR 0001](../decisions/0001-durable-client-worker-split.md)).
 
+## Shared workers and run claims (store layer)
+
+On Postgres, Drizzle, and Prisma stores a process can open as one of several shared workers instead
+of the exclusive owner. This is the store layer only: `DurableRuntime` does not use it yet, so
+today it is for building and testing worker coordination.
+
+```ts
+await store.join(); // read-write, no owner lease
+const claims = await store.claim({ workerId, now, limit: 4, leaseMs: 30_000 });
+await store.renew({ workerId, claims, leaseMs: 30_000 }); // { lost: runIds to stop }
+await store.transaction((tx) => tx.assertClaim(runId, claimId)); // before writing for a run
+await store.release(claims);
+```
+
+A claim gives one worker one run for a lease. The session's oldest unfinished run is the only one
+claimable, so a session never runs twice at once, and `assertClaim` throws
+`DurableClaimLostError` once another worker has taken the run. An owning runtime and shared workers
+cannot run together: `join()` and `claim()` fail while an owner is live, and `acquire()` fails while
+a worker holds a live claim. SQLite stays single-owner and has no `join()`. The claims table is
+`anvia_durable_claims`; Drizzle and Prisma users must add it to their schema (the generators now
+include it) before using `join()`. Databases that only ever have an owner keep working without it.
+See [ADR 0001](../decisions/0001-durable-client-worker-split.md).
+
 ## Typed agent handles
 
 `runtime.agent(registration)` registers an agent and returns a `DurableAgentHandle<Output>`.

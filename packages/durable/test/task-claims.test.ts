@@ -178,7 +178,7 @@ describe("custom tasks with shared workers", () => {
     expect(await handle.result()).toBe("done");
   });
 
-  it("keeps claiming tasks when one task's input contains a NUL character", async () => {
+  it("claims tasks whose stored text is hostile to a name filter", async () => {
     const { pool } = testPool();
     const echo = defineTask({
       name: "echo",
@@ -189,13 +189,66 @@ describe("custom tasks with shared workers", () => {
       initial: () => null,
       run: async (ctx) => ({ status: "completed", output: ctx.input }),
     });
-    const a = await worker(pool, { tasks: [echo] });
+    const other = defineTask({
+      name: "other",
+      version: 1,
+      input: z.string(),
+      checkpoint: z.null(),
+      output: z.string(),
+      initial: () => null,
+      run: async (ctx) => ({ status: "completed", output: `other:${ctx.input}` }),
+    });
+    const a = await worker(pool, { tasks: [echo, other] });
     await worker(pool, { tasks: [echo] });
-    // jsonb cannot hold \u0000, so a name filter that casts every record would fail the claim query.
-    const odd = await a.submitTask(echo, { sessionId: "s", requestId: "odd", input: "a\u0000b" });
-    const plain = await a.submitTask(echo, { sessionId: "s", requestId: "plain", input: "ok" });
-    expect(await odd.result()).toBe("a\u0000b");
-    expect(await plain.result()).toBe("ok");
+    // An escaped NUL and a lone surrogate make jsonb reject the whole record, and a session id or
+    // input that looks like the `name` key must not be mistaken for it.
+    const hostile = ["a\u0000b", "lone\ud800surrogate", '"name":"other"', '\\"name\\":\\"other\\"'];
+    const handles = [];
+    for (const [index, input] of hostile.entries())
+      handles.push(
+        await a.submitTask(echo, {
+          sessionId: `s"name":"other${index}`,
+          requestId: `k\\${index}`,
+          input,
+        }),
+      );
+    const decoy = await a.submitTask(other, { sessionId: "d", requestId: "d", input: "x" });
+    for (const [index, handle] of handles.entries())
+      expect(await handle.result()).toBe(hostile[index]);
+    expect(await decoy.result()).toBe("other:x");
+  });
+
+  it("stores a task's name before any nested value, which the claim query relies on", async () => {
+    const { pool } = testPool();
+    const echo = defineTask({
+      name: "echo",
+      version: 1,
+      input: z.string(),
+      checkpoint: z.null(),
+      output: z.string(),
+      initial: () => null,
+      run: async (ctx) => ({ status: "completed", output: ctx.input }),
+    });
+    const runtime = await worker(pool, { tasks: [echo] });
+    const handle = await runtime.submitTask(echo, {
+      sessionId: "s",
+      requestId: "order",
+      input: '{"name":"decoy"}',
+    });
+    await handle.result();
+    const rows = (await pool.query("SELECT record FROM anvia_durable_tasks")).rows as {
+      record: string;
+    }[];
+    const record = rows[0]!.record;
+    const keys = Object.keys(JSON.parse(record) as Record<string, unknown>);
+    const before = keys.slice(0, keys.indexOf("name"));
+    expect(keys).toContain("name");
+    expect(
+      before.every(
+        (key) => typeof (JSON.parse(record) as Record<string, unknown>)[key] !== "object",
+      ),
+    ).toBe(true);
+    expect(record.indexOf('"name":"')).toBeLessThan(record.indexOf('"input"'));
   });
 
   it("keeps every signal delivered concurrently from different workers", async () => {

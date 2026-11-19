@@ -836,12 +836,22 @@ export class DurableRuntime implements DurableSubmitClient {
     const capacity = this.maxConcurrentRuns - this.active.size;
     if (capacity <= 0) return;
     if (this.worker !== undefined) {
-      const claims = await this.store.claim!({
-        workerId: this.worker.workerId,
-        now: new Date().toISOString(),
-        limit: capacity,
-        leaseMs: this.worker.leaseMs,
-      });
+      let claims: DurableClaim[];
+      try {
+        claims = await this.store.claim!({
+          workerId: this.worker.workerId,
+          now: new Date().toISOString(),
+          limit: capacity,
+          leaseMs: this.worker.leaseMs,
+        });
+      } catch {
+        // A transient store error retries on the next beat instead of ending the worker.
+        this.wakeTimer = setTimeout(() => {
+          this.pump().catch((error: unknown) => this.fail(error));
+        }, this.worker.heartbeatMs);
+        this.wakeTimer.unref();
+        return;
+      }
       for (const claim of claims) await this.launch(claim.runId, claim);
       return;
     }

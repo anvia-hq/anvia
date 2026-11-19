@@ -50,8 +50,24 @@ export type DurableAuthorization = {
   rootTaskId?: string;
   taskName?: string;
 };
+/**
+ * What the routes need from their backend. A `DurableRuntime` provides all of it. A store-only
+ * `DurableClient` (from `@anvia/durable`) provides runs and graphs, which is enough to put the
+ * HTTP API in a process that executes nothing; the task routes then answer 501.
+ */
+export type DurableHandlerBackend = Pick<
+  DurableRuntime,
+  "getRun" | "listRuns" | "submit" | "runScope" | "getGraph" | "listGraphs" | "submitGraph"
+> &
+  Partial<
+    Pick<
+      DurableRuntime,
+      "limits" | "getTask" | "listTasks" | "taskSubmissionScope" | "submitRegisteredTask"
+    >
+  >;
 export type DurableHandlerOptions = {
-  runtime: DurableRuntime;
+  /** A `DurableRuntime`, or a `DurableClient` when workers execute the runs elsewhere. */
+  runtime: DurableHandlerBackend;
   /** Authenticate and authorize every operation, including reads. Deny by returning false. */
   authorize: (request: Request, resource: DurableAuthorization) => boolean | Promise<boolean>;
   /**
@@ -96,10 +112,13 @@ export function durableBodyLimitWarning(
 }
 
 /** Emits the startup warning once. Never throws: a logging or old-runtime problem must not block startup. */
-function warnIfBodyLimitBelowPayloadLimit(runtime: DurableRuntime, maxBodyBytes: number): void {
+function warnIfBodyLimitBelowPayloadLimit(
+  runtime: DurableHandlerBackend,
+  maxBodyBytes: number,
+): void {
   try {
     // Runtimes before `limits()` throw here; the payload limit is then unknown and nothing is warned.
-    const maxPayloadBytes = runtime.limits().maxPayloadBytes;
+    const maxPayloadBytes = runtime.limits?.().maxPayloadBytes;
     const message = durableBodyLimitWarning(maxBodyBytes, maxPayloadBytes);
     if (message !== undefined) console.warn(message);
   } catch {

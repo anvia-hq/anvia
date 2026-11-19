@@ -14,7 +14,7 @@ import type {
 import { DurableTaskGraph } from "./task-graph.js";
 import { createUnadmittedRunRecord } from "./run-record.js";
 import { listOptionsSchema } from "./schema.js";
-import { readEvents, readRun, readSnapshot, readStatus } from "./reads.js";
+import { readEvents, readRun, readRunScope, readSnapshot, readStatus } from "./reads.js";
 import { DurableRun } from "./run.js";
 import {
   cancelGraphRuns,
@@ -32,6 +32,7 @@ import type {
   DurableListOptions,
   DurableRunPage,
   DurableRunRecord,
+  DurableRunScope,
   DurableRunSummary,
   DurableSnapshot,
   DurableStore,
@@ -102,6 +103,12 @@ export class DurableClient implements DurableSubmitClient, DurableGraphClient {
   async run(id: string): Promise<DurableRunRecord> {
     this.assertOpen();
     return readRun(this.store, id);
+  }
+
+  /** Owning scope for authorization without loading operation journals or graph results. */
+  async runScope(runId: string): Promise<DurableRunScope> {
+    this.assertOpen();
+    return readRunScope(this.store, runId);
   }
 
   async status(id: string): Promise<DurableRunSummary> {

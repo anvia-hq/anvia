@@ -46,6 +46,13 @@ export interface ToolIndex<Metadata extends VectorMetadata = VectorMetadata> {
   readonly topK: number;
   readonly minScore?: number | undefined;
   readonly filter?: VectorFilter | undefined;
+  /**
+   * The model and the text behind the embedded vectors, when the index can describe itself.
+   * `createToolIndex()` sets both; a structurally supplied index may omit them. A durable runtime
+   * fingerprints them, so a model or content change under one registration version is detected.
+   */
+  readonly embeddingModel?: EmbeddingModel | undefined;
+  readonly embeddedDocuments?: readonly { id: string; text: string }[] | undefined;
   search(options: {
     query: string;
     abortSignal?: AbortSignal | undefined;
@@ -105,7 +112,11 @@ export async function createToolIndex<Metadata extends VectorMetadata = VectorMe
   const tools = dedupeTools(options.tools);
   const { documents } = await embedTools({ ...options, tools });
   const store = InMemoryVectorStore.fromDocuments({ documents });
-  return new ToolSearchIndex(store, options.model, tools, options);
+  const embedded = documents.map((document) => ({
+    id: document.id,
+    text: document.document.text,
+  }));
+  return new ToolSearchIndex(store, options.model, tools, embedded, options);
 }
 
 export function isToolIndex(value: unknown): value is ToolIndex {
@@ -130,17 +141,26 @@ class ToolSearchIndex<Metadata extends VectorMetadata> implements ToolIndex<Meta
   readonly topK: number;
   readonly minScore: number | undefined;
   readonly filter: VectorFilter | undefined;
+  /**
+   * The model and the text behind the embedded vectors. Read, not embedded, by a durable runtime's
+   * fingerprint; a model or content change under the same registration version has to be visible.
+   */
+  readonly embeddingModel: EmbeddingModel;
+  readonly embeddedDocuments: readonly { id: string; text: string }[];
 
   constructor(
     private readonly store: InMemoryVectorStore<ToolSearchDocument<Metadata>, Metadata>,
     private readonly model: EmbeddingModel,
     tools: readonly AnyTool[],
+    embeddedDocuments: readonly { id: string; text: string }[],
     private readonly options: CreateToolIndexOptions<Metadata>,
   ) {
     this.tools = Object.freeze([...tools]);
     this.topK = options.topK;
     this.minScore = options.minScore;
     this.filter = options.filter;
+    this.embeddingModel = model;
+    this.embeddedDocuments = Object.freeze(embeddedDocuments.map((item) => Object.freeze(item)));
   }
 
   search(options: {

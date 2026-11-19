@@ -15,3 +15,10 @@ export {
   type AnthropicVertexCompletionModelOptions,
   type KnownAnthropicCompletionModelId,
 } from "./anthropic/index";
+export {
+  type AnthropicPromptCacheOptions,
+  type AnthropicPromptCacheSettings,
+  type AnthropicPromptCacheTtl,
+  anthropicPromptCacheOptions,
+  withAnthropicPromptCache,
+} from "./anthropic/index";

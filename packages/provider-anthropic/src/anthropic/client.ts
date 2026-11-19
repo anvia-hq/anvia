@@ -17,6 +17,7 @@ import {
   ANTHROPIC_COMPLETION_MODEL_CONTEXT_LIMITS,
   type AnthropicCompletionModelId,
 } from "./models";
+import { anthropicPromptCacheOptions, type AnthropicPromptCacheSettings } from "./prompt-cache";
 
 type AnthropicManagedClientOptions = {
   apiKey: string;
@@ -39,6 +40,11 @@ export type AnthropicCompletionModelOptions<
   modelId: ModelId;
   contextLimits?: ModelContextLimits | undefined;
   controls?: Controls | undefined;
+  /**
+   * Adds Anthropic prompt-cache breakpoints to every request from this model.
+   * `true` uses the default breakpoints and the 5-minute cache.
+   */
+  promptCache?: AnthropicPromptCacheSettings | undefined;
 };
 
 export type AnthropicCompletionModelHandle<
@@ -82,6 +88,7 @@ export class AnthropicClient implements ModelListingClient {
         options.contextLimits,
       ),
       controls,
+      anthropicPromptCacheOptions(options.promptCache),
     );
   }
 

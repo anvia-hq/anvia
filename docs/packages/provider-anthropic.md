@@ -105,10 +105,55 @@ or service-account keys.
 Vertex AI does not expose Anthropic's Models API, so `AnthropicVertexClient` intentionally does not
 provide `listModels()`.
 
+## Prompt Caching
+
+Anthropic can reuse a request prefix it already processed and bill those tokens as cache reads.
+Enable it per model and the adapter places the breakpoints:
+
+```ts
+const model = client.completionModel({ modelId: "claude-sonnet-5", promptCache: true });
+```
+
+With `promptCache: true`, an `AnthropicCompletionModel` marks three `cache_control: { type:
+"ephemeral" }` breakpoints: the last tool definition, the system prompt, and the last block of the
+conversation that accepts a breakpoint. Each turn then reads the prefix it sent before and writes
+only what follows it. Thinking blocks cannot carry a breakpoint, so a conversation that ends in
+private reasoning places the breakpoint on the closest block before it.
+
+The default cache lives five minutes. Use the extended cache for a prefix that should survive
+longer:
+
+```ts
+const model = client.completionModel({ modelId: "claude-sonnet-5", promptCache: { ttl: "1h" } });
+```
+
+Anthropic accepts at most four breakpoints per request. Breakpoints that already exist in the
+request count towards that limit and are left where they are. `AnthropicClient` and
+`AnthropicVertexClient` accept the same option, and an unsupported `ttl` fails when the model is
+created rather than on the first call.
+
+Anthropic ignores a breakpoint whose prefix is shorter than the model minimum, for example 1024
+tokens on Claude Sonnet and Opus and 4096 on Claude Haiku 4.5. A request that reads from cache
+reports the tokens in `usage.cachedInputTokens`, and a request that writes to the cache reports
+them in `usage.cacheCreationInputTokens`.
+
+For a hand-built Messages request, apply the same breakpoints yourself:
+
+```ts
+import { withAnthropicPromptCache } from "@anvia/anthropic";
+
+const params = withAnthropicPromptCache(
+  { model: "claude-sonnet-5", max_tokens: 1024, system: instructions, messages, tools },
+  { ttl: "1h" },
+);
+```
+
 ## Exports
 
 - `AnthropicClient`
 - `AnthropicVertexClient`
 - structural Anthropic and Vertex completion handle types
 - `AnthropicCompletionModelId`
+- `AnthropicPromptCacheOptions`, `AnthropicPromptCacheSettings`, `AnthropicPromptCacheTtl`
+- `withAnthropicPromptCache`, `anthropicPromptCacheOptions`
 - `anthropic`

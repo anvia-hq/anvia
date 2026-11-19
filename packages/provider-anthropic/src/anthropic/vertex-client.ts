@@ -15,6 +15,7 @@ import {
   ANTHROPIC_COMPLETION_MODEL_CONTEXT_LIMITS,
   type AnthropicCompletionModelId,
 } from "./models";
+import { anthropicPromptCacheOptions, type AnthropicPromptCacheSettings } from "./prompt-cache";
 
 type AnthropicVertexManagedClientOptions = Omit<AnthropicVertexSdkOptions, "maxRetries"> & {
   client?: never;
@@ -37,6 +38,11 @@ export type AnthropicVertexCompletionModelOptions<
   modelId: ModelId;
   contextLimits?: ModelContextLimits | undefined;
   controls?: Controls | undefined;
+  /**
+   * Adds Anthropic prompt-cache breakpoints to every request from this model.
+   * `true` uses the default breakpoints and the 5-minute cache.
+   */
+  promptCache?: AnthropicPromptCacheSettings | undefined;
 };
 
 export type AnthropicVertexCompletionModelHandle<
@@ -80,6 +86,7 @@ export class AnthropicVertexClient {
         options.contextLimits,
       ),
       controls,
+      anthropicPromptCacheOptions(options.promptCache),
     );
   }
 }

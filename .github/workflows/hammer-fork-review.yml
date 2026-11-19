@@ -3,7 +3,7 @@
 # SAFETY: this runs in base-repo context, so secrets are available. Never add
 # actions/checkout of the PR head, a build step, or any step that runs PR code.
 # The only step is the pinned Hammer action, which fetches the PR head read-only.
-# Same-repo PRs are reviewed by hammer.yml; this file reviews forks only.
+# This file reviews fork PRs only; hammer.yml reviews same-repo PRs only (each has an `if:` gate).
 # Keep "Require approval for first-time contributors" on (Settings > Actions > General).
 name: Hammer Fork Review
 

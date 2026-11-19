@@ -15,6 +15,8 @@ concurrency:
 
 jobs:
   review:
+    # Fork PRs get no secrets on `pull_request`; hammer-fork-review.yml reviews those.
+    if: github.event.pull_request.head.repo.full_name == github.event.pull_request.base.repo.full_name
     runs-on: ubuntu-latest
     steps:
       - uses: anvia-hq/hammer@8072b1d8c28bf50603f4e714aed8ba579f1e7738 # v1

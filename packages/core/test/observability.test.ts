@@ -234,6 +234,40 @@ describe("agent observability", () => {
     ]);
   });
 
+  it("defaults the trace session and user to the memory session, preferring explicit trace values", async () => {
+    const run = async (trace?: { sessionId?: string; userId?: string }) => {
+      const observer = new RecordingObserver();
+      const agent = new Agent({
+        id: "session-agent",
+        model: new QueueModel([response([AssistantContent.text("done")])]),
+        memory: {
+          store: {
+            load: async () => [],
+            append: async () => {},
+            clear: async () => {},
+          },
+        },
+        observability: { observers: { test: observer }, primaryTrace: "test" },
+      });
+      await agent.generate({
+        prompt: "hello",
+        session: { sessionId: "memory-session", userId: "memory-user" },
+        trace,
+      });
+      return observer.events[0];
+    };
+
+    expect(await run()).toMatchObject({
+      args: { trace: { sessionId: "memory-session", userId: "memory-user" } },
+    });
+    expect(await run({ sessionId: "trace-session" })).toMatchObject({
+      args: { trace: { sessionId: "trace-session", userId: "memory-user" } },
+    });
+    expect(await run({ userId: "trace-user" })).toMatchObject({
+      args: { trace: { sessionId: "memory-session", userId: "trace-user" } },
+    });
+  });
+
   it("records one run and one generation for text-only send", async () => {
     const observer = new RecordingObserver();
     const model = new QueueModel([response([AssistantContent.text("done")])]);

@@ -176,5 +176,17 @@ function snapshotToolIndex(index: ToolIndex): ToolIndex {
       inspect: (request: VectorInspectRequest) => inspect.call(index, request),
     };
   }
+  // The snapshot is what a durable runtime fingerprints, so the index's own record of what it
+  // embedded has to survive the copy.
+  const described = index as ToolIndexDescription;
+  if (described.embeddingModel !== undefined) {
+    snapshot = { ...snapshot, embeddingModel: described.embeddingModel };
+  }
+  if (described.embeddedDocuments !== undefined) {
+    const embeddedDocuments = described.embeddedDocuments.map((item) => Object.freeze({ ...item }));
+    snapshot = { ...snapshot, embeddedDocuments: Object.freeze(embeddedDocuments) };
+  }
   return Object.freeze(snapshot);
 }
+
+type ToolIndexDescription = Pick<ToolIndex, "embeddingModel" | "embeddedDocuments">;

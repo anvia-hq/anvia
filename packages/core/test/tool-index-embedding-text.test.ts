@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import type { Embedding, EmbeddingModel } from "../src/embeddings";
+import { Agent } from "../src/agent";
+import { getAgentToolState } from "../src/agent/tool-state";
 import { createTool, createToolIndex, embedTools } from "../src/tool";
 
 class RecordingEmbeddingModel implements EmbeddingModel {
@@ -80,6 +82,40 @@ describe("tool index embedding text", () => {
     await createToolIndex({ model, tools: [emptyTool], topK: 1, embeddingText: "compact" });
 
     expect(model.texts).toEqual(["ping", "Check that the service is reachable."]);
+  });
+
+  it("keeps the model and embedded text on the registered snapshot", async () => {
+    const model = new RecordingEmbeddingModel();
+    const index = await createToolIndex({ model, tools: [refundTool], topK: 1 });
+    const agent = new Agent({
+      id: "agent",
+      tools: [index],
+      model: {
+        provider: "test",
+        modelId: "test",
+        capabilities: {
+          streaming: false,
+          tools: true,
+          toolChoice: true,
+          imageInput: false,
+          documentInput: false,
+          outputSchema: false,
+          reasoning: false,
+        },
+        completion: async () => ({
+          choice: [],
+          usage: { input: 0, output: 0, total: 0 },
+          rawResponse: {},
+        }),
+      },
+    });
+
+    const registered = getAgentToolState(agent).toolIndexes[0]!;
+    expect(registered.embeddingModel).toBe(model);
+    expect(registered.embeddedDocuments?.map((document) => document.id)).toEqual(["issue_refund"]);
+    expect(registered.embeddedDocuments?.[0]?.text).toContain("orderId");
+    expect(Object.isFrozen(registered.embeddedDocuments)).toBe(true);
+    expect(Object.isFrozen(registered.embeddedDocuments?.[0])).toBe(true);
   });
 
   it("lets explicit content win over the embedding text mode", async () => {

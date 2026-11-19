@@ -1023,6 +1023,32 @@ the hook's array are not sent. Interaction responses (`tool-approval`, `tool-que
 to the run that produced them. A stored `{ streamId, after }` resume cursor is the durable run id
 and event sequence.
 
+### `useDurableChat`
+
+`useDurableChat` from `@anvia/react` is `useChat` over this transport plus the durable run's id,
+status, and controls. Create the transport once per agent and session (module scope, or `useMemo`
+keyed on both): it remembers the active run, so a transport rebuilt on every render loses it.
+
+```tsx
+import { useDurableChat } from "@anvia/react";
+
+const chat = useDurableChat({ transport, resume: { key: `chat:${sessionId}` } });
+
+chat.messages; // everything useChat returns
+chat.run.id; // durable run id, undefined before the first send
+chat.run.status; // "queued" | "running" | "waiting" | "retry_wait" | "needs_attention" | ...
+await chat.run.steer({ prompt: "use metric units" }); // add input to a running run
+await chat.run.cancel(); // cancels the run; chat.stop() only detaches from its stream
+await chat.run.retry();
+await chat.run.resolveTool(operationId, output);
+```
+
+With `resume: { key }`, a reload reattaches to the run through the saved `{ streamId, after }`
+cursor and reads the run's current status once before streaming. `run.status` comes from the submit
+response, that snapshot, and status events; it is advisory and `chat.status` still reports only
+whether a stream is open. `transport.controller` exposes the same controls plus `subscribe` for
+non-React code.
+
 Known limitations:
 
 - Client-side history is discarded; durable's session history is authoritative. After a reset or a

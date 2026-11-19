@@ -17,6 +17,14 @@ export type {
 } from "./types";
 export { useChat } from "./use-chat";
 export type {
+  DurableChatControls,
+  DurableChatRun,
+  DurableChatTransportLike,
+  UseDurableChatOptions,
+  UseDurableChatResult,
+} from "./use-durable-chat";
+export { useDurableChat } from "./use-durable-chat";
+export type {
   UseCompletionOptions,
   UseCompletionResult,
   UseCompletionStatus,

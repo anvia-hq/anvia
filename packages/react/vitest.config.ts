@@ -4,6 +4,9 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   resolve: {
     alias: {
+      "@anvia/client/durable-chat": fileURLToPath(
+        new URL("../client/src/durable-chat.ts", import.meta.url),
+      ),
       "@anvia/client": fileURLToPath(new URL("../client/src/index.ts", import.meta.url)),
       "@anvia/core/agent/interactions": fileURLToPath(
         new URL("../core/src/agent/interactions/index.ts", import.meta.url),

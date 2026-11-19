@@ -1,3 +1,4 @@
+import type { AgentSteerInput, AgentSteerReceipt } from "@anvia/core/agent";
 import type { AgentInteractionResponse } from "@anvia/core/agent/interactions";
 import type { JsonObject, Message, ToolResultOutput } from "@anvia/core/completion";
 import type {
@@ -483,7 +484,14 @@ class FakeClient {
   ): Promise<DurableSnapshot> {
     this.submitCalls.push({ submission, options });
     if (this.failSubmit !== undefined) throw this.failSubmit;
-    return { run: { id: runId } } as unknown as DurableSnapshot;
+    return { run: { id: runId, status: "queued" } } as unknown as DurableSnapshot;
+  }
+
+  readonly steerCalls: Array<{ runId: string; input: AgentSteerInput }> = [];
+
+  async steer(id: string, input: AgentSteerInput): Promise<AgentSteerReceipt> {
+    this.steerCalls.push({ runId: id, input });
+    return {} as AgentSteerReceipt;
   }
 
   async *stream(
@@ -589,6 +597,94 @@ describe("durable chat transport", () => {
     expect(frames[0]).toMatchObject({ type: "stream_start", streamId: runId });
     expect(transport.controller.activeRunId).toBe(runId);
     expect(frames.at(-1)).toMatchObject({ type: "stream_end", status: "completed" });
+  });
+
+  it("tracks the run status and notifies subscribers", async () => {
+    const fake = new FakeClient();
+    fake.events = [
+      event(1, "submitted", {}),
+      event(2, "status", { status: "running" }),
+      event(3, "status", { status: "waiting", outcome: { type: "interaction", requests: [] } }),
+    ];
+    fake.snapshotRun = { status: "waiting" };
+    const transport = createDurableChatTransport({
+      client: clientOf(fake),
+      agentId: "agent-1",
+      sessionId: "session-1",
+    });
+    const seen: Array<[string | undefined, string | undefined]> = [];
+    const stop = transport.controller.subscribe(() =>
+      seen.push([transport.controller.activeRunId, transport.controller.status]),
+    );
+    expect(transport.controller.status).toBeUndefined();
+    await collect(transport.send({ request: request("messages") }));
+
+    expect(seen).toEqual([
+      [runId, "queued"],
+      [runId, "running"],
+      [runId, "waiting"],
+    ]);
+    stop();
+    transport.controller.reattach("run-2");
+    expect(seen).toHaveLength(3);
+    expect(transport.controller.status).toBeUndefined();
+  });
+
+  it("reads the current status once when it resumes a run", async () => {
+    const fake = new FakeClient();
+    fake.events = [event(1, "submitted", {}), event(2, "status", { status: "running" })];
+    fake.snapshotRun = { status: "running" };
+    const transport = createDurableChatTransport({
+      client: clientOf(fake),
+      agentId: "agent-1",
+      sessionId: "session-1",
+    });
+    await collect(
+      transport.send({ request: request("messages"), resume: { streamId: runId, after: 2 } }),
+    );
+
+    expect(fake.submitCalls).toHaveLength(0);
+    expect(transport.controller.activeRunId).toBe(runId);
+    expect(transport.controller.status).toBe("running");
+  });
+
+  it("refreshes the status after cancel and retry", async () => {
+    const fake = new FakeClient();
+    const transport = createDurableChatTransport({
+      client: clientOf(fake),
+      agentId: "agent-1",
+      sessionId: "session-1",
+    });
+    transport.controller.reattach(runId);
+    fake.snapshotRun = { status: "cancelled" };
+    await transport.controller.cancel();
+    expect(transport.controller.status).toBe("cancelled");
+    fake.snapshotRun = { status: "queued" };
+    await transport.controller.retry();
+    expect(transport.controller.status).toBe("queued");
+  });
+
+  it("steers the active run and rejects a client without steer", async () => {
+    const fake = new FakeClient();
+    const transport = createDurableChatTransport({
+      client: clientOf(fake),
+      agentId: "agent-1",
+      sessionId: "session-1",
+    });
+    await expect(transport.controller.steer({ prompt: "x" })).rejects.toThrow("No active");
+    transport.controller.reattach(runId);
+    await transport.controller.steer({ prompt: "actually, use metric" });
+    expect(fake.steerCalls).toEqual([{ runId, input: { prompt: "actually, use metric" } }]);
+
+    const legacy = createDurableChatTransport({
+      client: { ...clientOf(fake), steer: undefined } as unknown as DurableChatClient,
+      agentId: "agent-1",
+      sessionId: "session-1",
+    });
+    legacy.controller.reattach(runId);
+    await expect(legacy.controller.steer({ prompt: "x" })).rejects.toThrow(
+      "does not support steer",
+    );
   });
 
   it("reads a settled outcome from the snapshot when the status event omits it", async () => {

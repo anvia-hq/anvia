@@ -479,6 +479,13 @@ export type DurableRuntimeOptions = {
   maxConcurrentTasks?: number;
   /** Maximum simultaneous executions across sessions. Defaults to 4. */
   maxConcurrentRuns?: number;
+  /**
+   * Re-reads the store on this interval (milliseconds) so changes written by another process are
+   * noticed: runs that became eligible are scheduled, and an active run that another writer
+   * cancelled is aborted. Without it the runtime only reacts to its own calls and timers. Off by
+   * default; polling covers agent runs, not tasks or graphs yet (ADR 0001).
+   */
+  pollIntervalMs?: number;
 };
 
 /** Lightweight owner metadata for application authorization. */

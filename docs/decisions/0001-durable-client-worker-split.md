@@ -78,8 +78,11 @@ Each stage is independently shippable and keeps `DurableRuntime` working.
    read-only on purpose: until claims and fencing exist (stage 4), a second writer racing the
    owner, which assumes it is the sole writer, could lose updates. Client writes arrive with
    stage 4.
-3. **Worker change detection.** Polling (and optional notification) for pending runs and for
-   cancellation, replacing the in-process `pump()`/abort coupling.
+3. **Worker change detection (shipped on the stage-3 branch).** `pollIntervalMs` makes the
+   runtime re-read the store so runs another writer made eligible are scheduled and an active run
+   cancelled elsewhere is aborted, without relying on the in-process `pump()`/abort coupling. It is
+   opt-in and covers agent runs; tasks and graphs follow with claims. The default flips on in
+   stage 5, and a store notification (Postgres `LISTEN/NOTIFY`) is the later latency optimisation.
 4. **Claims and fencing** on Postgres; SQLite keeps single-owner.
 5. **Public `DurableClient` and `DurableWorker`.** Mostly assembly once 2 to 4 exist.
 6. Typed events and protocol bridge; registration fingerprinting; unify with tasks.

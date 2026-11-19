@@ -486,6 +486,22 @@ constructor's setup runs, so a mistyped path fails instead of creating an empty 
 read-only SQLite store can only `connect()`; it cannot be acquired by a runtime. Custom
 `DurableStore` implementations must now provide `connect()`.
 
+## Noticing changes made by another process
+
+By default the runtime reacts only to its own calls and timers. Set `pollIntervalMs` to make it
+re-read the store on an interval, so work written by another process is noticed:
+
+```ts
+const runtime = await DurableRuntime.open({ store, agents, pollIntervalMs: 1000 });
+```
+
+Each tick schedules runs that became eligible and aborts an active attempt whose run was cancelled
+by another writer, as if `runtime.cancel()` had been called here. A tick is skipped while the
+previous one is still running. Polling covers agent runs; tasks and graphs are not polled yet. It
+is off by default, and the interval is a latency and store-load trade-off. Nothing in this package
+writes from another process yet (the observer is read-only), so this is groundwork for per-run
+claims ([ADR 0001](../decisions/0001-durable-client-worker-split.md)).
+
 ## Typed agent handles
 
 `runtime.agent(registration)` registers an agent and returns a `DurableAgentHandle<Output>`.

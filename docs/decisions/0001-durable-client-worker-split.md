@@ -110,10 +110,14 @@ Each stage is independently shippable and keeps `DurableRuntime` working.
    - **4a. Store layer (shipped on the claims branch).** `join()`, `claim()`, `renew()`,
      `release()` and `tx.assertClaim()` on the SQL store, plus the `anvia_durable_claims` table.
      The runtime does not use them yet.
-   - **4b. Runtime fencing.** A worker mode that claims runs, renews on a heartbeat, calls
-     `assertClaim` before every write for a run, treats a lost claim as an abort, and audits every
-     worker write path so a client-written status (cancelled, retried) is never overwritten with
-     stale state. A failing poll or renew retries with backoff instead of failing the runtime.
+   - **4b. Runtime worker mode (shipped on the worker-mode branch).** `worker: {...}` on
+     `DurableRuntime.open` joins as a shared worker, claims runs, renews on a heartbeat, aborts a
+     run whose claim it loses, and releases claims when a run settles or the runtime closes. Fencing
+     uses an async context: every transaction started inside a run's execution begins with
+     `assertClaim`, so no write path can forget it. The terminal writes (completion and failure)
+     also refuse to overwrite a run that was settled elsewhere. A failed renew retries on the next
+     beat, and a full lease without one success aborts every held run, since another worker may
+     hold them. Agent runs only: tasks, graphs, and goals are rejected in this mode.
    - **4c. Client writes** (submit, cancel, respond, resolve, retry, steer) from a process that
      holds no claim, which is safe once 4b fences workers.
 5. **Public `DurableClient` and `DurableWorker`.** Mostly assembly once 2 to 4 exist.

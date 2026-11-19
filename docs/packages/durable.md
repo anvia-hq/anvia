@@ -504,28 +504,49 @@ is off by default, and the interval is a latency and store-load trade-off. Nothi
 writes from another process yet (the observer is read-only), so this is groundwork for per-run
 claims ([ADR 0001](../decisions/0001-durable-client-worker-split.md)).
 
-## Shared workers and run claims (store layer)
+## Shared workers
 
-On Postgres, Drizzle, and Prisma stores a process can open as one of several shared workers instead
-of the exclusive owner. This is the store layer only: `DurableRuntime` does not use it yet, so
-today it is for building and testing worker coordination.
+On Postgres, Drizzle, and Prisma stores several runtimes can share one database as workers instead
+of one exclusive owner:
+
+```ts
+const runtime = await DurableRuntime.open({
+  store, // a Postgres, Drizzle, or Prisma store
+  agents,
+  worker: { workerId: "api-1", leaseMs: 30_000 }, // opts in; every field is optional
+});
+```
+
+Each worker claims runs, renews its claims on a heartbeat, and releases them when a run settles or
+the runtime closes. A run is claimed by one worker at a time and a session's oldest unfinished run
+is the only one claimable, so a session never runs twice at once. If a worker crashes, its runs are
+taken over after `leaseMs`. Every write a worker makes for a run is fenced by its claim: a worker
+that lost its claim (taken over after a stall, or the run was cancelled elsewhere) is stopped and
+cannot overwrite the result, and a run settled elsewhere is never overwritten. Losing a claim stops
+one run, not the runtime. `runtime.cancel()` from any worker stops the run on whichever worker holds
+it, within one heartbeat.
+
+Limits today: agent runs only. Tasks, graphs, and goals are rejected in worker mode. The poll
+interval defaults to one second here because retry waits are not timer-driven. An owning runtime and
+shared workers cannot run together: a worker fails to start while an owner is live, and an owner
+fails to start while a worker holds a live claim. SQLite stays single-owner. Drizzle and Prisma
+users must add the `anvia_durable_claims` table (the generators include it); owner-only databases
+keep working without it.
+
+### The store layer
+
+The runtime uses these store methods, which you can also drive directly when building coordination
+of your own:
 
 ```ts
 await store.join(); // read-write, no owner lease
 const claims = await store.claim({ workerId, now, limit: 4, leaseMs: 30_000 });
 await store.renew({ workerId, claims, leaseMs: 30_000 }); // { lost: runIds to stop }
-await store.transaction((tx) => tx.assertClaim(runId, claimId)); // before writing for a run
+await store.transaction((tx) => tx.assertClaim(runId, claimId)); // throws DurableClaimLostError
 await store.release(claims);
 ```
 
-A claim gives one worker one run for a lease. The session's oldest unfinished run is the only one
-claimable, so a session never runs twice at once, and `assertClaim` throws
-`DurableClaimLostError` once another worker has taken the run. An owning runtime and shared workers
-cannot run together: `join()` and `claim()` fail while an owner is live, and `acquire()` fails while
-a worker holds a live claim. SQLite stays single-owner and has no `join()`. The claims table is
-`anvia_durable_claims`; Drizzle and Prisma users must add it to their schema (the generators now
-include it) before using `join()`. Databases that only ever have an owner keep working without it.
-See [ADR 0001](../decisions/0001-durable-client-worker-split.md).
+See [ADR 0001](../decisions/0001-durable-client-worker-split.md) for the protocol.
 
 ## Typed agent handles
 

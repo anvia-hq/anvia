@@ -37,6 +37,7 @@ import { withInternalAgentRunOptions } from "@anvia/core/internal/agent";
 import {
   DurableConflictError,
   DurableModelError,
+  DurableClaimLostError,
   DurableNotFoundError,
   DurableRecoveryError,
   DurableStorageError,
@@ -74,6 +75,7 @@ import { listOptionsSchema } from "./schema.js";
 import { registrations } from "./registration.js";
 import { compatibilityReport } from "./compatibility.js";
 import { DurableAgentHandle } from "./agent-handle.js";
+import { claimContext, fenceStore } from "./fencing.js";
 import { readEvents, readRun, readSnapshot, readStatus } from "./reads.js";
 import type { DurableSubmitClient } from "./client.js";
 import { DurableRun } from "./run.js";
@@ -81,6 +83,7 @@ import type {
   DurableSteerOptions,
   DurableAgentCompatibility,
   DurableAgentRegistration,
+  DurableClaim,
   DurableListOptions,
   DurableRunPage,
   DurableSubmitOptions,
@@ -100,8 +103,18 @@ export class DurableRuntime implements DurableSubmitClient {
   private readonly agents: Map<string, DurableAgentRegistration>;
   private readonly active = new Map<
     string,
-    { agentId: string; sessionId: string; controller: AbortController; task: Promise<void> }
+    {
+      agentId: string;
+      sessionId: string;
+      controller: AbortController;
+      task: Promise<void>;
+      claim: DurableClaim | undefined;
+    }
   >();
+  private readonly worker: ResolvedWorker | undefined;
+  private workerTimer: ReturnType<typeof setInterval> | undefined;
+  private renewing = false;
+  private lastRenewAt = Date.now();
   private closing = false;
   private closed = false;
   private readonly store: DurableStore;
@@ -130,9 +143,15 @@ export class DurableRuntime implements DurableSubmitClient {
     limits: DurableLimits,
     private readonly onFatalError?: (error: unknown) => void,
     private readonly onCompatibility?: (report: readonly DurableAgentCompatibility[]) => void,
+    worker?: ResolvedWorker,
   ) {
     this.agents = agents;
-    this.store = guardStore(store, (error) => this.fail(error), limits);
+    this.worker = worker;
+    this.store = guardStore(
+      worker === undefined ? store : fenceStore(store),
+      (error) => this.fail(error),
+      limits,
+    );
     this.limitValues = { ...limits };
     this.tasks = new TaskScheduler(
       this.store,
@@ -184,9 +203,10 @@ export class DurableRuntime implements DurableSubmitClient {
         throw new TypeError(`Duplicate task definition: ${registration.name}`);
       definitions.set(registration.name, registration);
     }
+    const worker = resolveWorker(options);
     const agents = registrations(options.agents ?? []);
     const limits = durableLimits(options.limits);
-    await options.store.acquire();
+    await (worker === undefined ? options.store.acquire() : options.store.join!());
     const runtime = new DurableRuntime(
       options.store,
       agents,
@@ -196,6 +216,7 @@ export class DurableRuntime implements DurableSubmitClient {
       limits,
       options.onFatalError,
       options.onCompatibility,
+      worker,
     );
     try {
       await runtime.fingerprintPinnedAgents([...agents.keys()]);
@@ -204,7 +225,9 @@ export class DurableRuntime implements DurableSubmitClient {
       throw error;
     }
     runtime.notifyCompatibility();
-    if (pollIntervalMs !== undefined) runtime.startPolling(pollIntervalMs);
+    const polling = pollIntervalMs ?? (worker === undefined ? undefined : 1000);
+    if (polling !== undefined) runtime.startPolling(polling);
+    if (worker !== undefined) runtime.startWorkerHeartbeat(worker);
     return runtime;
   }
 
@@ -311,6 +334,7 @@ export class DurableRuntime implements DurableSubmitClient {
       trace?: DurableTraceOptions | undefined;
     },
   ): Promise<DurableTaskHandle<GoalResult>> {
+    this.assertNotWorker();
     const { sessionId, requestId, trace, ...goal } = input;
     return this.submitTask(definition, { sessionId, requestId, input: goal, trace });
   }
@@ -325,6 +349,7 @@ export class DurableRuntime implements DurableSubmitClient {
       trace?: DurableTraceOptions | undefined;
     },
   ): Promise<DurableTaskHandle<R>> {
+    this.assertNotWorker();
     this.assertOpen();
     const id = await this.tasks.submit(
       definition.name,
@@ -359,6 +384,7 @@ export class DurableRuntime implements DurableSubmitClient {
     input: TaskSubmission,
     options: { expectedAgentIds?: readonly string[] } = {},
   ): Promise<DurableTaskHandle> {
+    this.assertNotWorker();
     this.assertOpen();
     const submission = parseTaskSubmission(input);
     const id = await this.tasks.submit(
@@ -480,6 +506,7 @@ export class DurableRuntime implements DurableSubmitClient {
   }
 
   async submitGraph(input: DurableGraphSubmission): Promise<DurableTaskGraph> {
+    this.assertNotWorker();
     this.assertOpen();
     const submission = parseDurableGraphSubmission(input);
     const agentIds = submission.tasks.map((task) => task.agentId);
@@ -514,6 +541,7 @@ export class DurableRuntime implements DurableSubmitClient {
   }
 
   async cancelGraph(id: string): Promise<void> {
+    this.assertNotWorker();
     this.assertOpen();
     const ids = await this.store.transaction(async (tx) => {
       const graph = await requireGraph(tx, id);
@@ -551,7 +579,7 @@ export class DurableRuntime implements DurableSubmitClient {
   async resume(): Promise<void> {
     this.assertOpen();
     await this.pump();
-    await this.tasks.resume();
+    if (this.worker === undefined) await this.tasks.resume();
   }
 
   /** Abort in-flight attempts, retain checkpoints, and release ownership after callbacks settle. */
@@ -560,6 +588,7 @@ export class DurableRuntime implements DurableSubmitClient {
     this.closing = true;
     clearTimeout(this.wakeTimer);
     clearInterval(this.pollTimer);
+    clearInterval(this.workerTimer);
     for (const { controller } of this.active.values())
       controller.abort(new Error("Durable runtime closed."));
     this.closePromise = Promise.all([
@@ -806,6 +835,16 @@ export class DurableRuntime implements DurableSubmitClient {
     clearTimeout(this.wakeTimer);
     const capacity = this.maxConcurrentRuns - this.active.size;
     if (capacity <= 0) return;
+    if (this.worker !== undefined) {
+      const claims = await this.store.claim!({
+        workerId: this.worker.workerId,
+        now: new Date().toISOString(),
+        limit: capacity,
+        leaseMs: this.worker.leaseMs,
+      });
+      for (const claim of claims) await this.launch(claim.runId, claim);
+      return;
+    }
     const candidates = await this.store.schedule(
       new Date().toISOString(),
       capacity,
@@ -829,28 +868,34 @@ export class DurableRuntime implements DurableSubmitClient {
 
   private pumpTail: Promise<void> = Promise.resolve();
 
-  private async launch(id: string): Promise<void> {
-    if (this.active.has(id) || this.closing) return;
+  private async launch(id: string, claim?: DurableClaim): Promise<void> {
+    if (this.active.has(id) || this.closing) return this.releaseClaim(claim);
     const { status, sessionId, agentId } = await this.run(id);
-    if (this.closing || this.active.has(id)) return;
-    if (!["queued", "pending", "running", "retry_wait"].includes(status)) return;
+    if (this.closing || this.active.has(id)) return this.releaseClaim(claim);
+    if (!["queued", "pending", "running", "retry_wait"].includes(status))
+      return this.releaseClaim(claim);
     const controller = new AbortController();
-    const task = Promise.resolve()
-      .then(() => this.execute(id, controller.signal))
+    const fenced = <T>(fn: () => Promise<T>): Promise<T> =>
+      claim === undefined ? fn() : claimContext.run({ runId: id, claimId: claim.claimId }, fn);
+    const task = fenced(() => Promise.resolve().then(() => this.execute(id, controller.signal)))
       .catch(async (error: unknown) => {
+        if (error instanceof DurableClaimLostError) return;
         if (!(error instanceof DurableLimitError)) throw error;
         // Admission failed, so no work is pending: settle terminally so result() and the
         // event stream end instead of waiting for an operator action that cannot help.
-        await this.store.transaction(async (tx) => {
-          const run = await requireRun(tx, id);
-          if (SETTLED.includes(run.status)) return;
-          run.error = error.message;
-          delete run.nextAttemptAt;
-          await setStatus(tx, run, "failed");
-        });
+        await fenced(() =>
+          this.store.transaction(async (tx) => {
+            const run = await requireRun(tx, id);
+            if (SETTLED.includes(run.status)) return;
+            run.error = error.message;
+            delete run.nextAttemptAt;
+            await setStatus(tx, run, "failed");
+          }),
+        );
       })
       .finally(async () => {
         this.active.delete(id);
+        await this.releaseClaim(claim);
         if (
           !this.closing &&
           this.failure === undefined &&
@@ -860,10 +905,20 @@ export class DurableRuntime implements DurableSubmitClient {
         if (!this.closing && this.failure === undefined) await this.pump();
       })
       .catch((error: unknown) => {
-        if (controller.signal.aborted) return;
+        if (controller.signal.aborted || error instanceof DurableClaimLostError) return;
         this.fail(error);
       });
-    this.active.set(id, { agentId, sessionId, controller, task });
+    this.active.set(id, { agentId, sessionId, controller, task, claim });
+  }
+
+  /** Gives a claim back so another worker can take the run (or the session's next run) at once. */
+  private async releaseClaim(claim: DurableClaim | undefined): Promise<void> {
+    if (claim === undefined || this.failure !== undefined) return;
+    try {
+      await this.store.release!([{ runId: claim.runId, claimId: claim.claimId }]);
+    } catch {
+      // The lease lapses on its own if the release did not reach the store.
+    }
   }
 
   /** Recorded memory supplies a run's history, so the previous run's history is not copied in. */
@@ -948,6 +1003,8 @@ export class DurableRuntime implements DurableSubmitClient {
         signal.throwIfAborted();
         await this.store.transaction(async (tx) => {
           const current = await requireRun(tx, id);
+          // Settled elsewhere (cancelled by a client or another worker): never overwrite it.
+          if (SETTLED.includes(current.status)) return;
           current.outcome = (await tx.blobs((io) =>
             externalizeOutcome(io, json({ ...outcome, usage: current.usage })),
           )) as AgentOutcome<unknown>;
@@ -973,10 +1030,12 @@ export class DurableRuntime implements DurableSubmitClient {
         });
       }
     } catch (error) {
-      if (error instanceof DurableStorageError) throw error;
+      if (error instanceof DurableStorageError || error instanceof DurableClaimLostError)
+        throw error;
       if (signal.aborted) return;
       await this.store.transaction(async (tx) => {
         const current = await requireRun(tx, id);
+        if (SETTLED.includes(current.status)) return;
         current.error = errorMessage(error);
         if (error instanceof MaxTurnsError)
           current.exhaustion = {
@@ -1057,11 +1116,63 @@ export class DurableRuntime implements DurableSubmitClient {
     await this.pump();
   }
 
+  private assertNotWorker(): void {
+    if (this.worker !== undefined)
+      throw new TypeError("Tasks, graphs, and goals are not supported in shared worker mode yet.");
+  }
+
+  /** Renews held claims and stops runs whose claim was lost. */
+  private startWorkerHeartbeat(worker: ResolvedWorker): void {
+    this.workerTimer = setInterval(() => {
+      if (this.renewing || this.closing || this.failure !== undefined) return;
+      this.renewing = true;
+      void this.renewClaims(worker)
+        .catch(() => {
+          // A transient failure retries on the next beat. Once a full lease passes without a
+          // successful renewal another worker may hold these runs, so stop them.
+          if (Date.now() - this.lastRenewAt > worker.leaseMs) this.abortAllClaims();
+        })
+        .finally(() => {
+          this.renewing = false;
+        });
+    }, worker.heartbeatMs);
+    this.workerTimer.unref();
+  }
+
+  private async renewClaims(worker: ResolvedWorker): Promise<void> {
+    const held = [...this.active.entries()].filter(([, active]) => active.claim !== undefined);
+    if (held.length === 0) {
+      this.lastRenewAt = Date.now();
+      return;
+    }
+    const { lost } = await this.store.renew!({
+      workerId: worker.workerId,
+      claims: held.map(([, active]) => ({
+        runId: active.claim!.runId,
+        claimId: active.claim!.claimId,
+      })),
+      leaseMs: worker.leaseMs,
+    });
+    this.lastRenewAt = Date.now();
+    for (const runId of lost) {
+      const active = this.active.get(runId);
+      if (active?.claim !== undefined)
+        active.controller.abort(new DurableClaimLostError(runId, active.claim.claimId));
+    }
+  }
+
+  private abortAllClaims(): void {
+    for (const [runId, active] of this.active)
+      if (active.claim !== undefined)
+        active.controller.abort(new DurableClaimLostError(runId, active.claim.claimId));
+  }
+
   private fail(error: unknown): void {
     if (this.failure !== undefined) return;
     this.failure = error;
     clearTimeout(this.wakeTimer);
     clearInterval(this.pollTimer);
+    clearInterval(this.workerTimer);
     this.tasks?.stop(error);
     for (const active of this.active.values()) active.controller.abort(error);
     // Diagnostics must never replace the journal failure or create an unhandled rejection.
@@ -1218,4 +1329,34 @@ async function assertOwnedTaskMutable(
     throw new DurableConflictError(
       "Owned task outcomes are immutable; create a new task submission.",
     );
+}
+
+type ResolvedWorker = { workerId: string; leaseMs: number; heartbeatMs: number };
+
+function resolveWorker(options: DurableRuntimeOptions): ResolvedWorker | undefined {
+  const worker = options.worker;
+  if (worker === undefined) return undefined;
+  const store = options.store;
+  if (
+    store.join === undefined ||
+    store.claim === undefined ||
+    store.renew === undefined ||
+    store.release === undefined
+  )
+    throw new TypeError(
+      "This store does not support shared workers. Use a single owning runtime, or a Postgres, Drizzle, or Prisma store.",
+    );
+  if ((options.tasks?.length ?? 0) > 0)
+    throw new TypeError("Custom tasks are not supported in shared worker mode yet.");
+  const workerId = worker.workerId ?? `worker-${globalThis.crypto.randomUUID()}`;
+  nonblank(workerId, "workerId");
+  const leaseMs = worker.leaseMs ?? 30_000;
+  const heartbeatMs = worker.heartbeatMs ?? Math.max(1, Math.floor(leaseMs / 3));
+  for (const [name, value] of [
+    ["leaseMs", leaseMs],
+    ["heartbeatMs", heartbeatMs],
+  ] as const)
+    if (!Number.isSafeInteger(value) || value < 1 || value > 2_147_483_647)
+      throw new TypeError(`worker.${name} must be a positive integer.`);
+  return { workerId, leaseMs, heartbeatMs };
 }

@@ -534,6 +534,24 @@ export type DurableRuntimeOptions = {
    * default; polling covers agent runs, not tasks or graphs yet (ADR 0001).
    */
   pollIntervalMs?: number;
+  /**
+   * Runs as one of several shared workers instead of the exclusive owner. The store must support
+   * claims (Postgres, Drizzle, Prisma); an owning runtime and shared workers cannot run together.
+   * The runtime claims runs, renews its claims on a heartbeat, fences every write for a run with
+   * its claim, and stops a run whose claim it loses. Polls every second unless `pollIntervalMs`
+   * says otherwise, since retry waits are not timer-driven here. Agent runs only: tasks, graphs,
+   * and goals are not supported in this mode yet.
+   */
+  worker?: DurableWorkerOptions;
+};
+
+export type DurableWorkerOptions = {
+  /** Identifies this worker in claims. Defaults to a random id per runtime. */
+  workerId?: string;
+  /** How long a claim lasts without renewal. A crashed worker's runs wait this long. Default 30s. */
+  leaseMs?: number;
+  /** How often claims are renewed. Defaults to a third of `leaseMs`. */
+  heartbeatMs?: number;
 };
 
 /** Lightweight owner metadata for application authorization. */

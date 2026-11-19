@@ -635,6 +635,20 @@ export function RetrievalLogPanel(props: {
                   Tools: {item.tools.join(", ")}
                 </p>
               )}
+              {item.matches === undefined || item.matches.length === 0 ? null : (
+                <p className="m-0 text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]">
+                  <span className=" text-xs font-semibold uppercase tracking-[0.14em] text-foreground">
+                    Matches
+                  </span>{" "}
+                  {item.matches
+                    .map((match) =>
+                      match.score === undefined
+                        ? match.toolName
+                        : `${match.toolName} ${match.score.toFixed(2)}`,
+                    )
+                    .join(", ")}
+                </p>
+              )}
             </article>
           ))}
         </div>

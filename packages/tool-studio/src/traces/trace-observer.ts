@@ -545,6 +545,11 @@ function generationMetadata(
     usage,
     toolCount: request.tools.length,
     toolNames: request.tools.map((tool) => tool.name),
+    toolMatches: args.toolMatches?.map((match) => ({
+      toolName: match.toolName,
+      index: match.index,
+      score: match.score,
+    })),
     documentCount: request.documents.length,
     historyCount: request.chatHistory.length,
     temperature: request.temperature,

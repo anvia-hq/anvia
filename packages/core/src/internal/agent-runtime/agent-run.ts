@@ -32,6 +32,7 @@ import type {
   AgentStreamEvent,
   AgentToolSelectionEvent,
 } from "../../agent/run-types";
+import type { AgentGenerationToolMatch } from "../../observability/types";
 import { getAgentToolState } from "../../agent/tool-state";
 import { isStreamingCompletionModel } from "../../completion/generate-completion";
 import {
@@ -872,6 +873,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
           currentTurns,
           request,
           providerRequest,
+          selection?.matches,
         );
         const modelReplayedPending = this.replayed({ kind: "model", turn: currentTurns });
         const modelReplayed =
@@ -1618,6 +1620,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     turn: number,
     request: CompletionRequest,
     providerRequest: JsonObject | undefined,
+    toolMatches?: readonly AgentGenerationToolMatch[] | undefined,
   ): AgentGenerationStartArgs & { modelInfo: AgentGenerationModelInfo } {
     let args: AgentGenerationStartArgs & { modelInfo: AgentGenerationModelInfo } = {
       turn,
@@ -1630,6 +1633,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       },
     };
     if (providerRequest !== undefined) args = { ...args, providerRequest };
+    if (toolMatches !== undefined && toolMatches.length > 0) args = { ...args, toolMatches };
     return args;
   }
 

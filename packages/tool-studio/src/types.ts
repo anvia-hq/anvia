@@ -916,6 +916,14 @@ export type StudioKnowledgeEvidence = {
   toolCount: number;
   documents: StudioKnowledgeEvidenceDocument[];
   tools: string[];
+  /** What the tool indexes returned to offer those tools, with their scores. */
+  matches?: StudioKnowledgeEvidenceMatch[];
+};
+
+export type StudioKnowledgeEvidenceMatch = {
+  toolName: string;
+  index?: number;
+  score?: number;
 };
 
 export type StudioAgentKnowledgeConfig = {

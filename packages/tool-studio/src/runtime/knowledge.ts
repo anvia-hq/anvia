@@ -7,6 +7,7 @@ import type {
   StudioAgentKnowledgeConfig,
   StudioKnowledgeEvidence,
   StudioKnowledgeEvidenceDocument,
+  StudioKnowledgeEvidenceMatch,
   StudioKnowledgeItem,
   StudioKnowledgeItemsPage,
   StudioKnowledgeSourceKind,
@@ -433,6 +434,7 @@ function evidenceFromTrace(trace: StudioTrace): StudioKnowledgeEvidence[] {
     }
 
     const query = queryFromGenerationInput(observation.input);
+    const matches = toolMatchesFromMetadata(observation.metadata);
     const evidence: StudioKnowledgeEvidence = {
       traceId: trace.id,
       sessionId: trace.sessionId,
@@ -446,6 +448,7 @@ function evidenceFromTrace(trace: StudioTrace): StudioKnowledgeEvidence[] {
       tools,
     };
     if (query !== undefined) evidence.query = query;
+    if (matches !== undefined) evidence.matches = matches;
     return [evidence];
   });
 }
@@ -526,6 +529,21 @@ function evidenceDocument(value: unknown): StudioKnowledgeEvidenceDocument[] {
   if (text !== undefined) document.text = text;
   if (additionalProps !== undefined) document.additionalProps = additionalProps;
   return [document];
+}
+
+function toolMatchesFromMetadata(
+  metadata: Record<string, JsonValue | unknown> | undefined,
+): StudioKnowledgeEvidenceMatch[] | undefined {
+  if (metadata === undefined || !Array.isArray(metadata.toolMatches)) return undefined;
+  const matches: StudioKnowledgeEvidenceMatch[] = [];
+  for (const item of metadata.toolMatches) {
+    if (!isRecord(item) || typeof item.toolName !== "string") continue;
+    const match: StudioKnowledgeEvidenceMatch = { toolName: item.toolName };
+    if (typeof item.index === "number") match.index = item.index;
+    if (typeof item.score === "number") match.score = item.score;
+    matches.push(match);
+  }
+  return matches.length === 0 ? undefined : matches;
 }
 
 function evidenceToolName(value: unknown): string[] {

@@ -96,6 +96,15 @@ export type AgentGenerationStartArgs = {
   readonly promptRef?: DeepReadonly<AgentRunPromptRef> | undefined;
   readonly providerRequest?: DeepReadonly<JsonObject> | undefined;
   readonly modelInfo?: DeepReadonly<AgentGenerationModelInfo> | undefined;
+  /** What the tool indexes returned to build this request's tools; absent when none ran. */
+  readonly toolMatches?: readonly DeepReadonly<AgentGenerationToolMatch>[] | undefined;
+};
+
+/** One tool an index returned for this turn, with the score that ranked it. */
+export type AgentGenerationToolMatch = {
+  readonly toolName: string;
+  readonly index: number;
+  readonly score: number;
 };
 
 export type AgentGenerationEndArgs<RawResponse = unknown> = {

@@ -273,7 +273,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     // is decided per turn by ToolCallExecutor, so other turns of the same agent still run
     // concurrently. Hooks can request approval for any call, so they keep the whole run ordered.
     this.concurrency = this.activeHook !== undefined ? 1 : configuredConcurrency;
-    this.traceOptions = options.trace;
+    this.traceOptions = withMemoryScopeTrace(options.trace, options.memoryScope);
     const retrySetting = options.retries === undefined ? agent.retries : options.retries;
     this.completionRetryOptions =
       retrySetting === undefined || retrySetting === false
@@ -2969,4 +2969,19 @@ function observerRunEnd<Output>(outcome: AgentOutcome<Output>): AgentRunEndArgs 
     case "interaction":
       return { ...common, status: "suspended", interaction: outcome.interaction };
   }
+}
+
+/**
+ * A run's memory scope already names its conversation and user, so traces default to that session
+ * and user. An explicit `trace.sessionId` or `trace.userId` wins.
+ */
+function withMemoryScopeTrace(
+  trace: AgentTraceOptions | undefined,
+  scope: MemoryScope | undefined,
+): AgentTraceOptions | undefined {
+  if (scope === undefined) return trace;
+  const sessionId = trace?.sessionId ?? scope.sessionId;
+  const userId = trace?.userId ?? scope.userId;
+  if (sessionId === trace?.sessionId && userId === trace?.userId) return trace;
+  return { ...trace, sessionId, userId };
 }

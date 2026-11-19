@@ -107,7 +107,7 @@ describe("tasks from a store-only DurableClient", () => {
     expect(await handle.result()).toBe(11);
   });
 
-  it("blocks a task whose version no worker registers, with a clear reason", async () => {
+  it("leaves a task pending when no worker registers its version, instead of blocking it", async () => {
     const { pool } = testPool();
     const c = await client(pool);
     await worker(pool, [counting(2)]);
@@ -116,12 +116,26 @@ describe("tasks from a store-only DurableClient", () => {
       requestId: "old",
       input: { start: 1 },
     });
-    await vi.waitFor(async () =>
-      expect((await handle.snapshot()).task).toMatchObject({
-        status: "needs_attention",
-        error: expect.stringContaining("Task version 1 is not registered on this worker"),
-      }),
-    );
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect((await handle.snapshot()).task).toMatchObject({ status: "pending", unadmitted: true });
+  });
+
+  it("runs a task on the worker that has its version during a rolling upgrade", async () => {
+    const { pool } = testPool();
+    const c = await client(pool);
+    await worker(pool, [counting(2)]); // newer code, cannot admit a version-1 submission
+    await worker(pool, [counting(1)]);
+    const handles = [];
+    for (let index = 0; index < 4; index++)
+      handles.push(
+        await c.submitTask(counting(1), {
+          sessionId: "s",
+          requestId: `old-${index}`,
+          input: { start: index },
+        }),
+      );
+    for (const [index, handle] of handles.entries())
+      expect(await handle.result()).toBe(index * 10 + 1);
   });
 
   it("is idempotent and rejects a different input under the same key", async () => {

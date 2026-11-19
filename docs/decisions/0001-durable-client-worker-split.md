@@ -173,8 +173,10 @@ Each stage is independently shippable and keeps `DurableRuntime` working.
    - **6f. Tasks from `DurableClient` (shipped on the client-tasks branch).** A client has no
      definition, so it records an `unadmitted` task (raw input, null checkpoint) and the claiming
      worker parses the input and builds the checkpoint at its first invocation, as for runs. Input
-     that does not parse fails the task; a version the worker lacks blocks it with the mismatch
-     named. Controls and reads reuse the scheduler in a `passive` mode that never claims. Task
+     that does not parse fails the task. `claimTasks` takes name and version pairs: an unadmitted
+     task goes only to a worker with exactly its version (it cannot be migrated), and an admitted
+     one to a worker with the same or a newer version, so a rolling upgrade never blocks a task
+     another worker could run. Controls and reads reuse the scheduler in a `passive` mode that never claims. Task
      submission over HTTP is deliberately not offered for a client backend: authorizing it needs
      `agentDependencies`, which only a definition provides.
 

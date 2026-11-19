@@ -687,6 +687,10 @@ input that does not parse **fails the task** (it cannot be fixed by a retry) rat
 the call; a task for a name or version no worker registers waits `pending`, or ends
 `needs_attention` with the version mismatch named when a worker registers a different version;
 `submitTask` takes the definition only for its name, version and types, and the input must be JSON.
+A worker claims an unadmitted task only if it registers exactly that version, so during a rolling
+upgrade the workers on the older code run it. A client stores the input as given, whereas a runtime
+stores it parsed; if the schema applies defaults or transforms, resubmitting one key from both a
+client and a runtime can report a conflict.
 
 ## Worker processes
 

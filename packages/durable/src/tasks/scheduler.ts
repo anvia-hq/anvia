@@ -357,7 +357,10 @@ export class TaskScheduler {
           workerId: this.shared.workerId,
           limit: capacity,
           leaseMs: this.shared.leaseMs,
-          names: [...this.definitions.keys()],
+          definitions: [...this.definitions.values()].map(({ name, version }) => ({
+            name,
+            version,
+          })),
         });
       } catch {
         // A transient store error retries on the next poll instead of ending the worker.

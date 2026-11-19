@@ -560,7 +560,7 @@ export type DurableRuntimeOptions = {
    * claims (Postgres, Drizzle, Prisma); an owning runtime and shared workers cannot run together.
    * The runtime claims runs, renews its claims on a heartbeat, fences every write for a run with
    * its claim, and stops a run whose claim it loses. Polls every second unless `pollIntervalMs`
-   * says otherwise, since retry waits are not timer-driven here. Agent runs only: tasks, graphs,
+   * says otherwise, since retry waits are not timer-driven here. Agent runs and graphs only: custom tasks
    * and goals are not supported in this mode yet.
    */
   worker?: DurableWorkerOptions;

@@ -548,7 +548,7 @@ cannot overwrite the result, and a run settled elsewhere is never overwritten. L
 one run, not the runtime. `runtime.cancel()` from any worker stops the run on whichever worker holds
 it, within one heartbeat.
 
-Limits today: agent runs only. Tasks, graphs, and goals are rejected in worker mode. The poll
+Limits today: agent runs and static graphs. Custom tasks and goals are rejected in worker mode. The poll
 interval defaults to one second here because retry waits are not timer-driven. An owning runtime and
 shared workers cannot run together: a worker fails to start while an owner is live, and an owner
 fails to start while a worker holds a live claim. SQLite stays single-owner. Drizzle and Prisma
@@ -657,7 +657,7 @@ await worker.close(); // aborts active attempts and releases their claims
 Add workers freely; each claims only runs of agents it registers. `worker.unregisterAgent(id)`
 stops claiming that agent (it fails while an attempt of it is active here); runs already queued
 in the store wait for a worker that registers it. It is `DurableRuntime.open({ worker })` under the
-hood, so the limits in [Shared workers](#shared-workers) apply: agent runs only, and no owning
+hood, so the limits in [Shared workers](#shared-workers) apply: agent runs and graphs only, and no owning
 runtime on the same database.
 
 ## Typed agent handles

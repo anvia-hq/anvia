@@ -137,6 +137,48 @@ describe("graphs with claims", () => {
     expect((await graph.snapshot()).status).toBe("completed");
   });
 
+  it("keeps dependents queued when a dependency fails", async () => {
+    const { pool } = testPool();
+    const failing = new Agent({
+      id: "a",
+      model: {
+        provider: "test",
+        modelId: "test",
+        capabilities,
+        completion: async () => {
+          throw new Error("model down");
+        },
+      },
+    });
+    const started = await DurableWorker.start({
+      store: store(pool),
+      agents: [
+        {
+          agent: failing,
+          version: "1",
+          modelRetry: { maxAttempts: 1, initialDelayMs: 1, maxDelayMs: 1 },
+        },
+      ],
+      pollIntervalMs: 20,
+    });
+    closers.push(() => started.close());
+    const graph = await (
+      await client(pool)
+    ).submitGraph({
+      sessionId: "g",
+      requestId: "dep",
+      tasks: [
+        { id: "first", agentId: "a", prompt: "one" },
+        { id: "second", agentId: "a", prompt: "two", dependsOn: ["first"] },
+      ],
+    });
+    await expect
+      .poll(async () => (await graph.snapshot()).nodes[0]?.status, { timeout: 5000 })
+      .toMatch(/failed|needs_attention/);
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect((await graph.snapshot()).nodes[1]?.status).toBe("queued");
+  });
+
   it("fails a graph task whose agent records memory when a worker admits it", async () => {
     const { pool } = testPool();
     const remembering = new Agent({

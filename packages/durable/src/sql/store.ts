@@ -79,6 +79,7 @@ export class SqlDurableStore implements DurableStore {
   private readonly schemaMode: "verify" | "create";
   private heartbeat: ReturnType<typeof setInterval> | undefined;
   private acquired = false;
+  private observing = false;
   private closed = false;
   private closing = false;
   private lost = false;
@@ -97,7 +98,7 @@ export class SqlDurableStore implements DurableStore {
   }
 
   async acquire(): Promise<void> {
-    if (this.closed || this.acquired)
+    if (this.closed || this.acquired || this.observing)
       throw new Error("Durable store is closed or already acquired.");
     if (this.schemaMode === "create") await this.createSchema();
     await this.verifySchema();
@@ -129,6 +130,14 @@ export class SqlDurableStore implements DurableStore {
     this.heartbeat.unref();
   }
 
+  async connect(): Promise<void> {
+    if (this.closed || this.acquired || this.observing)
+      throw new Error("Durable store is closed or already open.");
+    // An observer never creates or migrates the schema, whatever `schema` says.
+    await this.verifySchema();
+    this.observing = true;
+  }
+
   async close(): Promise<void> {
     if (this.closed) return;
     this.closing = true;
@@ -145,6 +154,7 @@ export class SqlDurableStore implements DurableStore {
     } finally {
       this.closed = true;
       this.acquired = false;
+      this.observing = false;
       await this.driver.close?.();
     }
   }
@@ -155,7 +165,9 @@ export class SqlDurableStore implements DurableStore {
       // Transactions queued before close() still run: close() waits for them.
       if (this.closed) throw new Error("Durable store is not acquired.");
       return this.driver.transaction(async (query) => {
-        await this.assertOwner(query);
+        // Enforced by Postgres, and no owner row lock is taken, so an observer never blocks the owner.
+        if (this.observing) await query("SET TRANSACTION READ ONLY");
+        else await this.assertOwner(query);
         let active = true;
         const staging = new Staging();
         try {
@@ -730,7 +742,7 @@ export class SqlDurableStore implements DurableStore {
   }
 
   private assertOpen(): void {
-    if (this.closed || this.closing || !this.acquired)
+    if (this.closed || this.closing || (!this.acquired && !this.observing))
       throw new Error("Durable store is not acquired.");
   }
 }

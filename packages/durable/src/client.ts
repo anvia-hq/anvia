@@ -13,15 +13,19 @@ import type {
   MemoryWriteResolution,
 } from "./types.js";
 
-/**
- * What a `DurableRun` needs from its owner: store reads and run-scoped mutations. It is the seam
- * for a future client that needs no executor (ADR 0001). `DurableRuntime` implements it today.
- */
-export interface DurableRunClient {
+/** Read-only run access. A `DurableObserver` provides it without owning the database. */
+export interface DurableRunReader {
   snapshot(id: string, options?: { operations?: boolean }): Promise<DurableSnapshot>;
   status(id: string): Promise<DurableRunSummary>;
   run(id: string): Promise<DurableRunRecord>;
   events(id: string, after: number): Promise<DurableEvent[]>;
+}
+
+/**
+ * What a `DurableRun` needs from its owner: store reads and run-scoped mutations. It is the seam
+ * for a future client that needs no executor (ADR 0001). `DurableRuntime` implements it today.
+ */
+export interface DurableRunClient extends DurableRunReader {
   steer(
     id: string,
     input: AgentSteerInput,

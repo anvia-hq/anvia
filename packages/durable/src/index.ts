@@ -43,9 +43,15 @@ export type {
   TaskTransaction,
   RegisteredTask,
 } from "./tasks/types.js";
-export { DurableRun, type DurableResultOptions, type DurableStreamOptions } from "./run.js";
+export {
+  DurableRun,
+  DurableRunView,
+  type DurableResultOptions,
+  type DurableStreamOptions,
+} from "./run.js";
+export { DurableObserver, type DurableObserverOptions } from "./observer.js";
 export { DurableAgentHandle } from "./agent-handle.js";
-export type { DurableRunClient, DurableSubmitClient } from "./client.js";
+export type { DurableRunClient, DurableRunReader, DurableSubmitClient } from "./client.js";
 export {
   DurableRecoveryError,
   DurableRunError,

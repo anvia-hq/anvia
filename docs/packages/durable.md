@@ -461,6 +461,27 @@ it. A caller with no operator path can opt out with `run.result({ onBlocked: "th
 rejects with `DurableBlockedError` (carrying `runId` and `blockedOperation`) instead of hanging.
 The run stays blocked: settle it with `resolveTool()`, `resolveMemoryWrite()`, or `retry()`.
 
+## Observing from another process
+
+`DurableObserver` reads runs from a process that does not own the database, such as a dashboard
+or an API server streaming progress while a `DurableRuntime` elsewhere executes the work:
+
+```ts
+const observer = await DurableObserver.connect({ store: new SqliteDurableStore("./runs.sqlite") });
+const run = await observer.getRun(runId); // DurableRunView: id, snapshot, status, stream, result
+for await (const event of run.stream({ after })) render(event);
+const { runs } = await observer.listRuns({ sessionId });
+await observer.close();
+```
+
+It takes no lease, runs no migration, and is read-only: the database enforces it (SQLite
+`query_only`, Postgres `SET TRANSACTION READ ONLY`), so it cannot change a run and never blocks the
+owner's writes. Mutations (`submit`, `cancel`, `respond`, `retry`, `steer`) stay on the owning
+runtime until the store supports per-run claims ([ADR 0001](../decisions/0001-durable-client-worker-split.md)).
+An observer needs a database an owner has already set up: it fails on a missing schema and on a
+SQLite database below the current schema version, and it never creates or upgrades either. Custom
+`DurableStore` implementations must now provide `connect()`.
+
 ## Typed agent handles
 
 `runtime.agent(registration)` registers an agent and returns a `DurableAgentHandle<Output>`.

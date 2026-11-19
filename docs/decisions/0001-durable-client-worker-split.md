@@ -72,8 +72,12 @@ Each stage is independently shippable and keeps `DurableRuntime` working.
 
 1. **Seam (this PR).** `DurableRunClient` / `DurableSubmitClient`; `DurableRun` and
    `DurableAgentHandle` depend on them. Typed handles and `onBlocked` ship alongside.
-2. **Non-owning store access.** A `connect()` mode with no lease and no migration, for client
-   operations.
+2. **Non-owning, read-only store access (shipped on the stage-2 branch).** `DurableStore.connect()`
+   opens a store without a lease or migration, enforced read-only by the database (SQLite
+   `query_only`, Postgres `SET TRANSACTION READ ONLY`). `DurableObserver` builds on it. It is
+   read-only on purpose: until claims and fencing exist (stage 4), a second writer racing the
+   owner, which assumes it is the sole writer, could lose updates. Client writes arrive with
+   stage 4.
 3. **Worker change detection.** Polling (and optional notification) for pending runs and for
    cancellation, replacing the in-process `pump()`/abort coupling.
 4. **Claims and fencing** on Postgres; SQLite keeps single-owner.

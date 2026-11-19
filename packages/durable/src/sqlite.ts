@@ -43,6 +43,7 @@ export class SqliteDurableStore implements DurableStore {
   private readonly blobs: ReturnType<typeof blobStatements>;
   private readonly token = globalThis.crypto.randomUUID();
   private acquired = false;
+  private observing = false;
   private closed = false;
   private inTransaction = false;
   private readonly gate = new SerialGate();
@@ -123,7 +124,7 @@ export class SqliteDurableStore implements DurableStore {
   }
 
   async acquire(): Promise<void> {
-    if (this.closed || this.acquired)
+    if (this.closed || this.acquired || this.observing)
       throw new Error("Durable store is closed or already acquired.");
     this.atomic(() => {
       const owner = this.database
@@ -167,6 +168,21 @@ export class SqliteDurableStore implements DurableStore {
     this.acquired = true;
   }
 
+  async connect(): Promise<void> {
+    if (this.closed || this.acquired || this.observing)
+      throw new Error("Durable store is closed or already open.");
+    const stored = this.database
+      .prepare("SELECT version FROM anvia_durable_owner WHERE singleton = 1")
+      .get()?.version;
+    if (Number(stored) !== 12)
+      throw new Error(
+        "Durable database is not at the current schema version; open it once with a runtime to upgrade it before observing.",
+      );
+    // Enforced by SQLite itself, so no code path on this connection can write.
+    this.database.exec("PRAGMA query_only = ON");
+    this.observing = true;
+  }
+
   async close(): Promise<void> {
     if (this.closed) return;
     await this.gate.read(() => undefined);
@@ -184,6 +200,7 @@ export class SqliteDurableStore implements DurableStore {
       this.database.close();
       this.closed = true;
       this.acquired = false;
+      this.observing = false;
     }
   }
 
@@ -194,7 +211,7 @@ export class SqliteDurableStore implements DurableStore {
       this.begin();
       let active = true;
       try {
-        this.assertOwner();
+        if (!this.observing) this.assertOwner();
         const api = promisify<DurableTransaction>({
           ...this.transactionApi(() => {
             if (!active) throw new Error("Durable transaction has finished.");
@@ -636,7 +653,8 @@ export class SqliteDurableStore implements DurableStore {
 
   private begin(): void {
     if (this.inTransaction) throw new Error("Nested durable transactions are not supported.");
-    this.database.exec("BEGIN IMMEDIATE");
+    // An observer never writes, so it must not take the write lock the owner depends on.
+    this.database.exec(this.observing ? "BEGIN" : "BEGIN IMMEDIATE");
     this.inTransaction = true;
   }
 
@@ -661,7 +679,8 @@ export class SqliteDurableStore implements DurableStore {
   }
 
   private assertOpen(): void {
-    if (this.closed || !this.acquired) throw new Error("Durable store is not acquired.");
+    if (this.closed || (!this.acquired && !this.observing))
+      throw new Error("Durable store is not acquired.");
   }
 
   private assertOwner(): void {

@@ -44,13 +44,21 @@ export class SqliteDurableStore implements DurableStore {
   private readonly token = globalThis.crypto.randomUUID();
   private acquired = false;
   private observing = false;
+  private readonly readOnly: boolean;
   private closed = false;
   private inTransaction = false;
   private readonly gate = new SerialGate();
 
-  constructor(path: string) {
+  /**
+   * `readOnly: true` opens the file read-only and runs none of the setup below, so the store can
+   * only `connect()`. It fails when the file or its schema does not exist instead of creating them.
+   */
+  constructor(path: string, options: { readOnly?: boolean } = {}) {
     nonblank(path, "SQLite path");
-    this.database = new DatabaseSync(path);
+    this.readOnly = options.readOnly === true;
+    this.database = this.readOnly
+      ? new DatabaseSync(path, { readOnly: true })
+      : new DatabaseSync(path);
     try {
       if (
         this.database
@@ -58,7 +66,18 @@ export class SqliteDurableStore implements DurableStore {
           .get() !== undefined
       )
         throw new Error("Sealed durable backup; restore it into a new database before opening.");
-      this.database.exec(`
+      if (this.readOnly) {
+        this.database.exec("PRAGMA busy_timeout = 5000");
+        if (
+          this.database
+            .prepare("SELECT 1 FROM sqlite_master WHERE name = 'anvia_durable_owner'")
+            .get() === undefined
+        )
+          throw new Error(
+            "Durable database has no schema; open it once with a runtime before observing.",
+          );
+      } else
+        this.database.exec(`
         PRAGMA busy_timeout = 5000;
         PRAGMA journal_mode = WAL;
         PRAGMA synchronous = FULL;
@@ -124,6 +143,7 @@ export class SqliteDurableStore implements DurableStore {
   }
 
   async acquire(): Promise<void> {
+    if (this.readOnly) throw new Error("A read-only durable store can only be connected.");
     if (this.closed || this.acquired || this.observing)
       throw new Error("Durable store is closed or already acquired.");
     this.atomic(() => {

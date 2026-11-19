@@ -1,5 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -33,7 +33,9 @@ async function owner(path: string) {
 }
 
 async function observe(path: string) {
-  const observer = await DurableObserver.connect({ store: new SqliteDurableStore(path) });
+  const observer = await DurableObserver.connect({
+    store: new SqliteDurableStore(path, { readOnly: true }),
+  });
   closers.push(() => observer.close());
   return observer;
 }
@@ -115,14 +117,34 @@ describe("durable observer", () => {
     await expect(observer.listRuns()).rejects.toThrow(/closed/);
   });
 
+  itSqlite("does not create a database or schema for a path that does not exist", async () => {
+    const path = database();
+    expect(() => new SqliteDurableStore(path, { readOnly: true })).toThrow();
+    expect(existsSync(path)).toBe(false);
+  });
+
+  itSqlite("refuses an existing file that has no durable schema", async () => {
+    const path = database();
+    new DatabaseSync(path).close();
+    expect(() => new SqliteDurableStore(path, { readOnly: true })).toThrow(/no schema/);
+  });
+
+  itSqlite("a read-only store cannot be acquired as an owner", async () => {
+    const path = database();
+    await owner(path);
+    const store = new SqliteDurableStore(path, { readOnly: true });
+    closers.push(() => store.close());
+    await expect(store.acquire()).rejects.toThrow(/can only be connected/);
+  });
+
   itSqlite("refuses a database that has not been upgraded to the current schema", async () => {
     const path = database();
-    new SqliteDurableStore(path); // creates the tables
+    new SqliteDurableStore(path).close(); // creates the tables
     const raw = new DatabaseSync(path);
     raw.prepare("UPDATE anvia_durable_owner SET version = 11 WHERE singleton = 1").run();
     raw.close();
-    await expect(DurableObserver.connect({ store: new SqliteDurableStore(path) })).rejects.toThrow(
-      /schema version/,
-    );
+    await expect(
+      DurableObserver.connect({ store: new SqliteDurableStore(path, { readOnly: true }) }),
+    ).rejects.toThrow(/schema version/);
   });
 });

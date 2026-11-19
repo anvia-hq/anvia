@@ -32,6 +32,7 @@ export default defineConfig([
       "src/image-generation/index.ts",
       "src/documents/index.ts",
       "src/decision/index.ts",
+      "src/context/index.ts",
       "src/extractor/index.ts",
       "src/guardrails/index.ts",
       "src/mcp/index.ts",

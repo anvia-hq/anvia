@@ -1,4 +1,5 @@
 import type { StudioSessionLogEntry, StudioTraceSummary } from "../../../../types";
+import { type ContextBreakdownView, contextBreakdownView } from "../shared/context-breakdown";
 import { isRecord } from "../shared/object";
 import type { TranscriptEntry } from "../shared/types";
 import { finalResponseEntryIds } from "./final-response";
@@ -14,6 +15,7 @@ export type ResponseUsageMetrics = {
 export type AssistantResponseMetrics = {
   durationMs?: number;
   usage?: ResponseUsageMetrics;
+  context?: ContextBreakdownView;
 };
 
 export function assistantResponseMetricsByEntryId(props: {
@@ -81,9 +83,11 @@ function isTerminalAssistantMessage(
 function metricsFromTrace(trace: StudioTraceSummary): AssistantResponseMetrics | undefined {
   const durationMs = nonnegativeNumericValue(trace.durationMs);
   const usage = usageMetrics(trace.usage);
+  const context = contextBreakdownView(trace.context);
   const metrics: AssistantResponseMetrics = {};
   if (durationMs !== undefined) metrics.durationMs = durationMs;
   if (usage !== undefined) metrics.usage = usage;
+  if (context !== undefined) metrics.context = context;
   return definedMetrics(metrics);
 }
 
@@ -128,7 +132,11 @@ function usageMetrics(value: unknown): ResponseUsageMetrics | undefined {
 }
 
 function definedMetrics(metrics: AssistantResponseMetrics): AssistantResponseMetrics | undefined {
-  return metrics.durationMs === undefined && metrics.usage === undefined ? undefined : metrics;
+  return metrics.durationMs === undefined &&
+    metrics.usage === undefined &&
+    metrics.context === undefined
+    ? undefined
+    : metrics;
 }
 
 function mergeEntryDuration(

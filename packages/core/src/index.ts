@@ -261,4 +261,5 @@ export type {
 } from "./transcription";
 export { transcribe } from "./transcription";
 
+export * from "./context/index";
 export * from "./decision/index";

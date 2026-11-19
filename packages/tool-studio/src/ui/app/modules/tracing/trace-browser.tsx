@@ -57,6 +57,7 @@ import {
 } from "../shared/format";
 import { isRecord } from "../shared/object";
 import type { TraceInspectorKey, TraceLoadState, TraceObservationItem } from "../shared/types";
+import { ContextBreakdown } from "../shared/context-breakdown";
 import { TracePayloadSection } from "./trace-payload-section";
 
 export function TraceBrowser(props: {
@@ -810,6 +811,7 @@ function TraceDetailPane(props: {
       </header>
       <div className="min-w-0 overflow-auto">
         <div className="grid min-w-0 content-start gap-6 p-6">
+          {selected.context === undefined ? null : <ContextBreakdown view={selected.context} />}
           {selected.input === undefined ? null : (
             <TracePayloadSection field="input" title="Input" value={selected.input} />
           )}

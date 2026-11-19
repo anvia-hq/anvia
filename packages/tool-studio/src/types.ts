@@ -18,6 +18,7 @@ import type {
   ToolResultContentPart,
   Usage,
 } from "@anvia/core/completion";
+import type { ContextBreakdown } from "@anvia/core/context";
 import type {
   MemoryAppendOptions,
   MemoryErrorOptions,
@@ -828,6 +829,8 @@ export type StudioTraceSummary = {
   output?: string;
   error?: JsonValue;
   usage?: Usage;
+  /** Latest generation's input token split, scaled to the provider's reported input tokens. */
+  context?: ContextBreakdown;
   metadata?: JsonObject;
   observationCount: number;
 };

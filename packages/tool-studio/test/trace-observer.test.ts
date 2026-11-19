@@ -1,3 +1,4 @@
+import type { ContextBreakdown } from "@anvia/core/context";
 import type { AgentToolStartArgs } from "@anvia/core/observability";
 import { describe, expect, it } from "vitest";
 import {
@@ -167,5 +168,68 @@ describe("StudioTraceObserver", () => {
     expect(observation?.metadata?.toolMatches).toEqual([
       { toolName: "issue_refund", index: 0, score: 0.91 },
     ]);
+  });
+
+  it("records the context split of each generation and the run's latest split", async () => {
+    let savedTrace: StudioTrace | undefined;
+    const store: StudioTraceStore = {
+      listSessionTraces: () => [],
+      getTrace: () => undefined,
+      saveTrace(trace) {
+        savedTrace = trace;
+        return trace;
+      },
+    };
+    const observer = new StudioTraceObserver({ store });
+    const run = observer.startRun({
+      runId: "run_context",
+      prompt: Message.user("refund an order"),
+      history: [],
+      maxTurns: 1,
+      trace: { sessionId: "session_1" },
+    });
+    const started = {
+      turn: 1,
+      request: {
+        chatHistory: [Message.user("refund an order")],
+        documents: [],
+        tools: [],
+      },
+    };
+    const generation = await run.startGeneration?.({
+      ...started,
+      context: {
+        segments: [{ id: "messages", tokens: 4, characters: 16, items: 1 }],
+        estimatedTokens: 4,
+      },
+    });
+
+    const context: ContextBreakdown = {
+      segments: [{ id: "messages", tokens: 12, characters: 16, items: 1 }],
+      estimatedTokens: 12,
+      reportedInputTokens: 12,
+    };
+    await generation?.end({
+      turn: 1,
+      response: {
+        choice: [AssistantContent.text("done")],
+        usage: { ...Usage.empty(), inputTokens: 12, totalTokens: 12 },
+        rawResponse: {},
+      },
+      context,
+    });
+
+    await run.end({
+      runId: "run_context",
+      status: "completed",
+      output: "done",
+      text: "done",
+      usage: Usage.empty(),
+      messages: [Message.user("refund an order"), Message.assistant("done")],
+    });
+
+    const observation = savedTrace?.observations.find((item) => item.kind === "generation");
+    expect(observation?.metadata?.context).toEqual(context);
+    expect(savedTrace?.context).toEqual(context);
   });
 });

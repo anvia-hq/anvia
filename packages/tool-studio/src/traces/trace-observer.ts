@@ -18,6 +18,7 @@ import type {
   AgentToolSuspendedArgs,
 } from "@anvia/core/observability";
 import { serializeError } from "../runtime/errors";
+import { traceContextBreakdown } from "../runtime/trace-summary";
 import { compactJsonObject, toJsonValue } from "../runtime/json";
 import type {
   StudioTrace,
@@ -224,6 +225,8 @@ class StudioRunTraceObserver implements AgentRunObserver {
     if (result.output !== undefined) trace.output = result.output;
     if (result.error !== undefined) trace.error = result.error;
     if (result.usage !== undefined) trace.usage = result.usage;
+    const context = traceContextBreakdown(this.observations);
+    if (context !== undefined) trace.context = context;
 
     await store.saveTrace(trace);
   }
@@ -543,6 +546,7 @@ function generationMetadata(
     modelId,
     messageId: response?.messageId,
     usage,
+    context: endArgs?.context ?? args.context,
     toolCount: request.tools.length,
     toolNames: request.tools.map((tool) => tool.name),
     toolMatches: args.toolMatches?.map((match) => ({

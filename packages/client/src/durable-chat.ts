@@ -134,6 +134,15 @@ export function createDurableChatTransport(
     notify();
   };
 
+  // Cancel and retry change the status without a stream attached to report it.
+  const refreshStatus = async (runId: string) => {
+    try {
+      observe(runId, (await options.client.snapshot(runId)).run.status);
+    } catch {
+      // Advisory only; the control itself succeeded.
+    }
+  };
+
   const controller: DurableChatController = {
     get activeRunId() {
       return session.activeRunId;
@@ -156,11 +165,15 @@ export function createDurableChatTransport(
       if (steer === undefined) throw new TypeError("The durable client does not support steer.");
       await steer.call(options.client, resolveRun(session, runId), input);
     },
-    cancel(runId) {
-      return options.client.cancel(resolveRun(session, runId));
+    async cancel(runId) {
+      const id = resolveRun(session, runId);
+      await options.client.cancel(id);
+      await refreshStatus(id);
     },
-    retry(runId) {
-      return options.client.retry(resolveRun(session, runId));
+    async retry(runId) {
+      const id = resolveRun(session, runId);
+      await options.client.retry(id);
+      await refreshStatus(id);
     },
     resolveTool(operationId, output, runId) {
       return options.client.resolveTool(resolveRun(session, runId), operationId, output);

@@ -1,6 +1,6 @@
 import type { AgentSteerInput } from "@anvia/core/agent";
 import type { ToolResultOutput } from "@anvia/core/completion";
-import { useMemo, useSyncExternalStore } from "react";
+import { useCallback, useMemo, useSyncExternalStore } from "react";
 import type { AnyClientTransport, UseChatOptions, UseChatResult } from "./types";
 import { useChat } from "./use-chat";
 
@@ -63,13 +63,17 @@ export function useDurableChat<Transport extends DurableChatTransportLike>(
 ): UseDurableChatResult<Transport> {
   const chat = useChat(options);
   const controller = options.transport.controller;
+  const subscribe = useCallback(
+    (listener: () => void) => controller.subscribe(listener),
+    [controller],
+  );
   const id = useSyncExternalStore(
-    controller.subscribe,
+    subscribe,
     () => controller.activeRunId,
     () => undefined,
   );
   const status = useSyncExternalStore(
-    controller.subscribe,
+    subscribe,
     () => controller.status,
     () => undefined,
   );

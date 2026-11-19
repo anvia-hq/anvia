@@ -648,6 +648,22 @@ describe("durable chat transport", () => {
     expect(transport.controller.status).toBe("running");
   });
 
+  it("refreshes the status after cancel and retry", async () => {
+    const fake = new FakeClient();
+    const transport = createDurableChatTransport({
+      client: clientOf(fake),
+      agentId: "agent-1",
+      sessionId: "session-1",
+    });
+    transport.controller.reattach(runId);
+    fake.snapshotRun = { status: "cancelled" };
+    await transport.controller.cancel();
+    expect(transport.controller.status).toBe("cancelled");
+    fake.snapshotRun = { status: "queued" };
+    await transport.controller.retry();
+    expect(transport.controller.status).toBe("queued");
+  });
+
   it("steers the active run and rejects a client without steer", async () => {
     const fake = new FakeClient();
     const transport = createDurableChatTransport({

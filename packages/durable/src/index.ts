@@ -82,6 +82,7 @@ export type {
   DurableSubmitOptions,
   DurableModelRetry,
   DurableUnavailableRunSetting,
+  DurableWorkerOptions,
   DurableEvent,
   DurableOperation,
   DurableRunRecord,

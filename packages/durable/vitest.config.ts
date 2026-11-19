@@ -22,6 +22,7 @@ const adapterScenarios = [
 const sqliteOnly = [
   "test/postgres-store.test.ts",
   "test/claims.test.ts",
+  "test/worker-mode.test.ts",
   "test/drizzle-store.test.ts",
   "test/prisma-store.test.ts",
   "test/hardening.test.ts",

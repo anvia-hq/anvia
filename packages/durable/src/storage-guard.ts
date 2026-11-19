@@ -1,5 +1,5 @@
 import { limitedTransaction, type DurableLimits } from "./limits.js";
-import { DurableStorageError } from "./errors.js";
+import { DurableClaimLostError, DurableStorageError } from "./errors.js";
 import type { DurableStore, DurableTransaction } from "./types.js";
 
 /** A journal failure poisons the owner, even when application code catches the error. */
@@ -36,6 +36,8 @@ export function guardStore(
               try {
                 return await Reflect.apply(method, target, args);
               } catch (error) {
+                // Losing a claim stops one run; it is not a journal failure.
+                if (error instanceof DurableClaimLostError) throw error;
                 throw fail(error);
               }
             };
@@ -52,6 +54,7 @@ export function guardStore(
         }
       });
     } catch (error) {
+      if (error instanceof DurableClaimLostError) throw error;
       if (!callbackFailed || error !== callbackError) throw fail(error);
       throw failure ?? error;
     }

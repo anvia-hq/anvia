@@ -193,6 +193,7 @@ export class SqlDurableStore implements DurableStore {
     now: string;
     limit: number;
     leaseMs: number;
+    agentIds?: readonly string[];
   }): Promise<DurableClaim[]> {
     this.assertJoined();
     if (!Number.isSafeInteger(input.limit) || input.limit < 1)
@@ -204,6 +205,7 @@ export class SqlDurableStore implements DurableStore {
         `SELECT r.id FROM anvia_durable_runs r
          WHERE r.status IN ('queued', 'pending', 'running', 'retry_wait')
          AND (r.status <> 'retry_wait' OR r.next_attempt_at <= $1::text)
+         AND ($3::jsonb IS NULL OR r.agent_id IN (SELECT jsonb_array_elements_text($3::jsonb)))
          AND NOT EXISTS (SELECT 1 FROM anvia_durable_runs previous
            WHERE previous.session_id = r.session_id AND previous.seq < r.seq
            AND previous.status NOT IN ${TERMINAL})
@@ -214,7 +216,11 @@ export class SqlDurableStore implements DurableStore {
          AND NOT EXISTS (SELECT 1 FROM anvia_durable_claims c
            WHERE c.run_id = r.id AND c.expires_at > now())
          ORDER BY r.seq LIMIT $2::bigint`,
-        [input.now, input.limit],
+        [
+          input.now,
+          input.limit,
+          input.agentIds === undefined ? null : JSON.stringify(input.agentIds),
+        ],
       );
       const claims: DurableClaim[] = [];
       for (const candidate of candidates) {
@@ -309,9 +315,14 @@ export class SqlDurableStore implements DurableStore {
         const staging = new Staging();
         try {
           return await callback(
-            this.transactionApi(query, staging, () => {
-              if (!active) throw new Error("Durable transaction has finished.");
-            }),
+            this.transactionApi(
+              query,
+              staging,
+              () => {
+                if (!active) throw new Error("Durable transaction has finished.");
+              },
+              this.joined,
+            ),
           );
         } finally {
           active = false;
@@ -577,7 +588,11 @@ export class SqlDurableStore implements DurableStore {
     query: SqlQuery,
     staging: Staging,
     assertActive: () => void,
+    shared = false,
   ): DurableTransaction {
+    // With shared workers and clients, several processes read-modify-write the same run, so a
+    // run read in a read-write transaction is locked until it ends. An owner is the only writer.
+    const lock = shared ? " FOR UPDATE" : "";
     const histories = messageLog(staging);
     const blobs = blobIO(staging);
     const guarded = async (sql: string, params: unknown[] = []): Promise<SqlRow[]> => {
@@ -702,18 +717,23 @@ export class SqlDurableStore implements DurableStore {
         )[0];
         return row === undefined ? undefined : parseRunSummary(JSON.parse(text(row.record)));
       },
-      getRun: (id) => readRun("SELECT record FROM anvia_durable_runs WHERE id = $1::text", id),
+      getRun: (id) =>
+        readRun(`SELECT record FROM anvia_durable_runs WHERE id = $1::text${lock}`, id),
       findRequest: (session, request) =>
         readRun(
-          "SELECT record FROM anvia_durable_runs WHERE session_id = $1::text AND request_id = $2::text",
+          `SELECT record FROM anvia_durable_runs WHERE session_id = $1::text AND request_id = $2::text${lock}`,
           session,
           request,
         ),
       activeRun: (session) =>
         readRun(
-          `SELECT record FROM anvia_durable_runs WHERE session_id = $1::text AND status NOT IN ${TERMINAL} LIMIT 1`,
+          `SELECT record FROM anvia_durable_runs WHERE session_id = $1::text AND status NOT IN ${TERMINAL} LIMIT 1${lock}`,
           session,
         ),
+      lockSession: async (session) => {
+        // Serialises submissions of one session so "no unfinished work" cannot race.
+        await guarded("SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))", [session]);
+      },
       latestCompleted: (session) =>
         readRun(
           `SELECT record FROM anvia_durable_runs WHERE session_id = $1::text

@@ -266,6 +266,11 @@ export type DurableSteeringState = {
 export type DurableRunRecord = DurableSubmission & {
   id: string;
   version: string;
+  /**
+   * Set on a run a client submitted without agent registrations. The worker that claims it fills in
+   * `version`, turn limits and frozen context, then clears this flag before the first attempt.
+   */
+  unadmitted?: true;
   status: DurableRunStatus;
   createdAt: string;
   updatedAt: string;
@@ -430,6 +435,11 @@ export interface DurableTransaction extends TaskTransaction {
    * for a run, so a worker that lost its lease cannot commit. Only stores with claims implement it.
    */
   assertClaim?(runId: string, claimId: string): Promise<void>;
+  /**
+   * Serialises concurrent submissions to one session until the transaction ends. Stores that
+   * admit several writers (shared workers and clients) implement it; a single owner does not need it.
+   */
+  lockSession?(sessionId: string): Promise<void>;
 }
 
 /** A worker's lease on one run. `claimId` is the fencing token: it is unique per claim. */
@@ -474,13 +484,15 @@ export interface DurableStore {
    * Claims up to `limit` runnable runs for `workerId` for `leaseMs`, oldest first. The oldest
    * unfinished run of a session is the only claimable one, so a session never runs twice at once,
    * and an unexpired claim is never taken. Lease times use database time, not the caller's clock.
-   * `now` only gates `retry_wait` runs.
+   * `now` only gates `retry_wait` runs. `agentIds` restricts claims to runs of those agents, so a
+   * worker never takes work it has no registration for; omit it to claim any agent.
    */
   claim?(input: {
     workerId: string;
     now: string;
     limit: number;
     leaseMs: number;
+    agentIds?: readonly string[];
   }): Promise<DurableClaim[]>;
   /**
    * Extends the leases of `claims` that `workerId` still holds. `lost` names the runs whose claim

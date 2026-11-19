@@ -118,8 +118,15 @@ Each stage is independently shippable and keeps `DurableRuntime` working.
      also refuse to overwrite a run that was settled elsewhere. A failed renew retries on the next
      beat, and a full lease without one success aborts every held run, since another worker may
      hold them. Agent runs only: tasks, graphs, and goals are rejected in this mode.
-   - **4c. Client writes** (submit, cancel, respond, resolve, retry, steer) from a process that
-     holds no claim, which is safe once 4b fences workers.
+   - **4c. Client writes (shipped on the client-writes branch).** `DurableClient` submits, cancels,
+     responds, resolves, retries and steers without a claim or an agent. The transactions behind
+     those operations moved out of `DurableRuntime` into `mutations.ts` so both use one
+     implementation. Making that safe needed three store changes: a run read in a read-write
+     transaction is locked (`FOR UPDATE`) when the store is shared, so a worker and a client cannot
+     lose each other's updates; `lockSession` serialises submissions to one session; and `claim()`
+     takes `agentIds` so a worker never claims a run it cannot execute. A client has no
+     registration, so its runs are created `unadmitted` and the claiming worker admits them against
+     its own registration (`admitRunRecord`) before the first attempt.
 5. **Public `DurableClient` and `DurableWorker`.** Mostly assembly once 2 to 4 exist.
 6. Typed events and protocol bridge; registration fingerprinting; unify with tasks.
 

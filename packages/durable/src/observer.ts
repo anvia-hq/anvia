@@ -18,8 +18,8 @@ export type DurableObserverOptions = { store: DurableStore };
  * Read-only access to durable runs from a process that does not own the database: a dashboard, an
  * API server streaming progress, or a CLI. It takes no lease and runs no migration, so it works
  * while a `DurableRuntime` elsewhere executes the runs, and it can never change a run. Mutations
- * (submit, cancel, respond, retry, steer) stay on the owning runtime until the store supports
- * claims (ADR 0001).
+ * (submit, cancel, respond, retry, steer) belong to the owning runtime, or to `DurableClient` when
+ * workers share a Postgres-family database (ADR 0001).
  */
 export class DurableObserver implements DurableRunReader {
   private closed = false;

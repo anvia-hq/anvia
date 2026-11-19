@@ -150,10 +150,29 @@ Each stage is independently shippable and keeps `DurableRuntime` working.
      configuration, reusing the existing version-mismatch path instead of a second mechanism. It
      is opt-in: making it the default would change the version of every existing registration and
      strand their unfinished runs. Code the runtime cannot read is outside the hash.
-   - **6d. Protocol bridge, custom tasks and goals under claims.** Not started. Custom tasks need
-     claim-aware tree reconciliation (it currently asks "is this task active here"), durable wait
-     deadlines instead of in-process timers, root-level locks, and a task admission step for
-     clients.
+   - **6d. HTTP bridge (shipped).** `createDurableHandler` accepts a store-only `DurableClient` as
+     its backend, so the HTTP API runs in a process with no agents while workers execute. Runs and
+     graphs are served; task routes answer 501.
+   - **6e. Custom tasks and goals under claims. Not started; needs a decision.** Scoping found
+     work that is larger than the earlier stages and includes a database migration:
+     - _Schema._ `anvia_durable_tasks` has no `name` column, so a worker cannot ask the database
+       for only the tasks it registers. Claiming by id and releasing the unknown ones would
+       starve them. A `name` column means a schema-version bump and migration for Postgres,
+       Drizzle and Prisma users.
+     - _Reconciliation._ `reconcileTree` decides whether a task may settle by asking "is it active
+       in this process". Under shared workers that must mean "has a live claim", and a client or
+       any worker may reconcile a tree, so reconciliation needs a per-root lock.
+     - _Locks._ Task rows are read-modify-written without row locks. Every tree transaction
+       (submit, spawn, reconcile, cancel, signal, retry, resolve, the final phase transition)
+       needs the same per-root lock taken first, with an ordering that cannot deadlock against
+       the run row locks.
+     - _Deadlines._ Time-based waits are in-process timers. Workers must instead poll for roots
+       with due waits.
+     - _Admission._ A client that submits a task has no definition to parse input or build the
+       initial checkpoint, so tasks need the same unadmitted-then-admitted path as runs.
+     - Renewal needs a lost-claim rule for tasks (a settled or waiting task is not executing).
+       Until then custom tasks and goals stay owner-only, and the owner and shared workers cannot
+       share a database.
 
 ## Consequences
 

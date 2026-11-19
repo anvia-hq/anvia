@@ -497,6 +497,7 @@ export class PostgresMemoryStore implements MemoryStore {
   private async listConversations(
     options: MemoryConversationListOptions,
   ): Promise<MemoryConversationSummary[]> {
+    assertConversationLimit(options.limit);
     const values: unknown[] = [];
     let where = "";
     if (options.userId !== undefined) {
@@ -876,4 +877,10 @@ function metadata(context: MemoryScope): JsonObject {
 
 function isoTimestamp(value: string | Date): string {
   return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
+}
+
+function assertConversationLimit(limit: number): void {
+  if (!Number.isSafeInteger(limit) || limit < 1) {
+    throw new TypeError("Memory conversation limit must be a positive safe integer.");
+  }
 }

@@ -347,6 +347,7 @@ export class PrismaMemoryStore implements MemoryStore {
   private async listConversations(
     options: MemoryConversationListOptions,
   ): Promise<MemoryConversationSummary[]> {
+    assertConversationLimit(options.limit);
     const sessions = this.delegates.sessions;
     if (sessions.findMany === undefined) return [];
     const args: Record<string, unknown> = {
@@ -711,4 +712,10 @@ function inspectionSummary(row: PrismaInspectionSessionRow): MemoryConversationS
 
 function isoTimestamp(value: string | Date): string {
   return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
+}
+
+function assertConversationLimit(limit: number): void {
+  if (!Number.isSafeInteger(limit) || limit < 1) {
+    throw new TypeError("Memory conversation limit must be a positive safe integer.");
+  }
 }

@@ -401,6 +401,7 @@ export class DrizzleMemoryStore implements MemoryStore {
   private async listConversations(
     options: MemoryConversationListOptions,
   ): Promise<MemoryConversationSummary[]> {
+    assertConversationLimit(options.limit);
     const db = runtimeDatabase(this.db);
     const { agentMemorySessions: sessions, agentMemoryMessages: messages } = this.schema;
     let query = db
@@ -720,4 +721,10 @@ function inspectionSummary(row: InspectionSessionRow): MemoryConversationSummary
 
 function isoTimestamp(value: string | Date): string {
   return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
+}
+
+function assertConversationLimit(limit: number): void {
+  if (!Number.isSafeInteger(limit) || limit < 1) {
+    throw new TypeError("Memory conversation limit must be a positive safe integer.");
+  }
 }

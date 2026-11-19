@@ -288,6 +288,16 @@ describe("SqliteMemoryStore", () => {
     await expect(store.inspector.getConversation({ ref: "missing" })).resolves.toBeUndefined();
   });
 
+  it("rejects a conversation list limit that is not a positive integer", async () => {
+    const store = await createTestMemoryStore();
+    await expect(store.inspector.listConversations({ limit: 0 })).rejects.toThrow(
+      "Memory conversation limit",
+    );
+    await expect(store.inspector.listConversations({ limit: -1 })).rejects.toThrow(
+      "Memory conversation limit",
+    );
+  });
+
   it("round-trips every supported message content shape", async () => {
     const store = await createTestMemoryStore();
     const context = { sessionId: "rich-thread", userId: "user-1" };

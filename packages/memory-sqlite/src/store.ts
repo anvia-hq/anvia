@@ -491,6 +491,7 @@ export class SqliteMemoryStore implements MemoryStore {
   private async listConversations(
     options: MemoryConversationListOptions,
   ): Promise<MemoryConversationSummary[]> {
+    assertConversationLimit(options.limit);
     const where = options.userId === undefined ? "" : "WHERE s.user_id = $userId";
     const statement = (await this.database()).prepare(
       `SELECT
@@ -904,4 +905,10 @@ function assertCompactionMessageCount(value: number): void {
 
 function metadata(context: MemoryScope): JsonObject {
   return context.metadata ?? {};
+}
+
+function assertConversationLimit(limit: number): void {
+  if (!Number.isSafeInteger(limit) || limit < 1) {
+    throw new TypeError("Memory conversation limit must be a positive safe integer.");
+  }
 }

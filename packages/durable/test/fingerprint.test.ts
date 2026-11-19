@@ -23,6 +23,9 @@ type Overrides = {
   modelId?: string;
   maxTurns?: number;
   toolField?: string;
+  approval?: boolean;
+  providerOptions?: Record<string, unknown>;
+  output?: z.ZodType;
   toolBody?: () => string;
   completion?: (signal?: AbortSignal) => Promise<ReturnType<typeof done>>;
 };
@@ -30,12 +33,14 @@ type Overrides = {
 function build(overrides: Overrides = {}) {
   const field = overrides.toolField ?? "q";
   const body = overrides.toolBody ?? (() => "ok");
-  const tool = createTool({
+  const toolOptions: Record<string, unknown> = {
     name: "lookup",
     description: "Look something up.",
     inputSchema: z.object({ [field]: z.string() }),
     execute: async () => body(),
-  });
+  };
+  if (overrides.approval === true) toolOptions.requiresApproval = true;
+  const tool = createTool(toolOptions as never);
   const options: Record<string, unknown> = {
     id: "researcher",
     instructions: overrides.instructions ?? "Be brief.",
@@ -49,6 +54,8 @@ function build(overrides: Overrides = {}) {
     },
   };
   if (overrides.maxTurns !== undefined) options.maxTurns = overrides.maxTurns;
+  if (overrides.providerOptions !== undefined) options.providerOptions = overrides.providerOptions;
+  if (overrides.output !== undefined) options.outputSchema = overrides.output;
   return new Agent(options as never) as unknown as CoreAgent<unknown>;
 }
 
@@ -63,6 +70,9 @@ describe("agentVersion", () => {
     ["model", { modelId: "m2" }],
     ["turn limit", { maxTurns: 3 }],
     ["tool schema", { toolField: "query" }],
+    ["tool approval flag", { approval: true }],
+    ["provider options", { providerOptions: { effort: "high" } }],
+    ["output schema", { output: z.object({ answer: z.string() }) }],
   ] as const)("changes when the %s changes", async (_name, override) => {
     expect(await agentVersion(build(override))).not.toBe(await agentVersion(build()));
   });

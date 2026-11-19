@@ -3,7 +3,11 @@ import { z } from "zod";
 import type { Agent } from "@anvia/core/agent";
 import type { JsonValue } from "@anvia/core/completion";
 import { canonicalJson, json } from "./json.js";
+import { getResolvedAgentOptions } from "@anvia/core/internal/agent";
 import type { DurableAgentRegistration } from "./types.js";
+
+/** The shape `agentVersion()` produces; a hand-written version that looks alike is not one. */
+export const AUTO_VERSION_PATTERN = /^auto-[0-9a-f]{16}$/;
 
 /** `version: AUTO_VERSION` in `DurableRuntime.open()` derives the version from `agentVersion()`. */
 export const AUTO_VERSION = "auto";
@@ -38,6 +42,8 @@ async function describeAgent(agent: Agent<unknown>): Promise<JsonValue> {
     temperature: agent.temperature ?? null,
     maxTokens: agent.maxTokens ?? null,
     providerOptions: agent.providerOptions ?? null,
+    controls: json(agent.controls ?? null),
+    providerTools: json(getResolvedAgentOptions(agent).providerTools ?? []),
     toolChoice: agent.toolChoice ?? null,
     defaultMaxTurns: agent.defaultMaxTurns ?? null,
     outputSchema: schemaOf(agent.outputSchema),
@@ -47,7 +53,7 @@ async function describeAgent(agent: Agent<unknown>): Promise<JsonValue> {
 
 /**
  * A stable version string derived from an agent's declared configuration: model, instructions,
- * sampling settings, tool definitions and output schema. It changes when any of those change and
+ * sampling settings and controls, tool definitions, provider tools and output schema. It changes when any of those change and
  * is identical across processes and restarts, so a run recorded under it is refused by a
  * registration that has drifted instead of silently replaying against it.
  *

@@ -74,7 +74,7 @@ import { registrations } from "./registration.js";
 import { compatibilityReport } from "./compatibility.js";
 import { DurableAgentHandle } from "./agent-handle.js";
 import { claimContext, fenceStore } from "./fencing.js";
-import { AUTO_VERSION, resolveAutoVersions } from "./fingerprint.js";
+import { AUTO_VERSION, AUTO_VERSION_PATTERN, resolveAutoVersions } from "./fingerprint.js";
 import { readEvents, readRun, readSnapshot, readStatus } from "./reads.js";
 import type { DurableSubmitClient } from "./client.js";
 import { DurableRun } from "./run.js";
@@ -829,7 +829,7 @@ export class DurableRuntime implements DurableSubmitClient {
       const registration = this.agents.get(run.agentId);
       if (registration === undefined || registration.version !== run.version) {
         throw new DurableRecoveryError(
-          run.version.startsWith("auto-")
+          AUTO_VERSION_PATTERN.test(run.version)
             ? "The saved agent version is not registered: the agent's declared configuration (model, instructions, tools, or settings) changed since this run started. Restore it before retrying."
             : "The saved agent version is not registered. Restore it before retrying.",
         );

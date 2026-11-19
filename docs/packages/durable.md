@@ -676,8 +676,8 @@ const runtime = await DurableRuntime.open({
 runtime.registerAgents([{ agent, version: await agentVersion(agent) }]);
 ```
 
-`agentVersion()` hashes the model provider and id, instructions, sampling settings, tool choice,
-turn limit, output schema, and each tool's definition and approval flag. It is stable across
+`agentVersion()` hashes the model provider and id, instructions, sampling settings and controls, tool
+choice, turn limit, output schema, provider tools, and each tool's definition and approval flag. It is stable across
 processes. If any of that changes while a run is unfinished, the run stops with a message naming
 the configuration change, and `result()` reports it as blocked, instead of replaying against a
 different agent.

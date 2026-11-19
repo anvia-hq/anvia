@@ -213,7 +213,7 @@ callers can select a model and controls per run:
 Studio exposes:
 
 - Chat playground and persisted sessions
-- Trace browser and session logs
+- Trace browser and session logs, with each generation's input tokens split into system prompt, messages, tool results, documents, tool definitions, MCP tools, provider tools, and output schema
 - Realtime observability stream for session logs, pipeline logs, and completed traces
 - Eval suite runner for registered `runEvalSuite` configurations
 - Pipeline graph, logs, run history, and replay-from-history controls
@@ -222,6 +222,11 @@ Studio exposes:
 - Memory explorer for users, conversations, messages, and transcript steps backed by the session store
 - Status dashboard for storage adapters, record counts, and enabled capabilities
 - Knowledge tabs for static context, dynamic context, dynamic tools, and retrieval log
+
+The trace inspector shows that split under **Context**, scaled to the provider's reported input
+tokens when the model adapter reports them; the playground's response metrics show the same split
+for the run's latest turn. Runs started before this field existed, or without a context breakdown,
+simply omit the panel.
 
 Studio reads MCP provenance directly from `Agent.mcpServers`. Prefixes configured by an
 `McpClient` remain visible in both the MCP inspector and direct tool runner, while the remote tool

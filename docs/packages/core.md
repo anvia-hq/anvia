@@ -700,6 +700,53 @@ unhandled rejection.
 Pipelines accept the same `errorPolicy` values, but this reporting is agent-only; pipeline observer
 dispatch keeps its existing behavior.
 
+## Context breakdown
+
+Providers report one input token count per request, not what it was spent on. `@anvia/core/context`
+splits an assembled request into the parts that spend input tokens, so a large context can be traced
+back to a system prompt, a growing conversation, tool results, retrieved documents, or hundreds of
+MCP tool definitions:
+
+```ts
+import { estimateContextBreakdown, scaleContextBreakdown } from "@anvia/core/context";
+
+const breakdown = estimateContextBreakdown(request, {
+  mcpToolNames: ["search_issues", "create_pull_request"],
+});
+```
+
+Segments are `instructions`, `messages`, `toolResults`, `documents`, `tools`, `mcpTools`,
+`providerTools`, and `outputSchema`. Each segment reports estimated `tokens`, `characters`, and the
+number of `items` counted.
+
+Segment splits come from a provider-neutral estimate of about four characters per token, with inline
+image and file payloads bounded. When the provider's reported input tokens are known, scale the split
+so its segments add up to that exact total; the proportions stay local, the total becomes provider
+truth:
+
+```ts
+const scaled = scaleContextBreakdown(breakdown, response.usage.inputTokens);
+```
+
+Agent runs do this for you. `AgentGenerationStartArgs.context` carries the estimate, and
+`AgentGenerationEndArgs.context` carries the same split scaled to `response.usage.inputTokens`
+(`AgentGenerationErrorArgs.context` carries the estimate when no usage was reported). Inspect it from
+an observer:
+
+```ts
+startGeneration: (args) => ({
+  end: ({ context }) => {
+    for (const segment of context?.segments ?? []) {
+      logger.info("context", { segment: segment.id, tokens: segment.tokens });
+    }
+  },
+});
+```
+
+Studio records the split in each generation observation and shows it in the trace inspector's
+**Context** panel and in the playground's response metrics, so a turn's input tokens are broken down
+without extra instrumentation.
+
 ## Memory
 
 Configure conversation memory on the Agent, then run through a session. This minimal example uses
@@ -1381,6 +1428,7 @@ shared CI logs.
 - `mcp`: lightweight MCP tool and server registration contracts used by Agent
 - `skills`: local skill loading
 - `observability`: observer interfaces for runs, generations, and tool calls
+- `context`: input token breakdown of an assembled request
 - `evals`: evaluation helpers and reporters
 - `redaction`: PII patterns and deep value redaction shared by observability adapters
 - `documents`: deterministic in-memory text chunking

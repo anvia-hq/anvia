@@ -74,6 +74,7 @@ import { listOptionsSchema } from "./schema.js";
 import { registrations } from "./registration.js";
 import { compatibilityReport } from "./compatibility.js";
 import { DurableAgentHandle } from "./agent-handle.js";
+import type { DurableSubmitClient } from "./client.js";
 import { DurableRun } from "./run.js";
 import type {
   DurableSteerOptions,
@@ -95,7 +96,7 @@ import type {
   DurableRunScope,
 } from "./types.js";
 
-export class DurableRuntime {
+export class DurableRuntime implements DurableSubmitClient {
   private readonly agents: Map<string, DurableAgentRegistration>;
   private readonly active = new Map<
     string,

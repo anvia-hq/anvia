@@ -20,9 +20,10 @@ work. The package is at `0.x` and experimental, so this can still change in a mi
 2. Introduce the seam first, without breaking anything: a typed `DurableAgentHandle<Output>` and a
    typed `DurableRun<Output>` (shipped together with this ADR). New sugar attaches to these types,
    not to more methods on `DurableRuntime`.
-3. Later, add a `DurableClient` over the store (submit, get, list, stream, result, steer, respond,
-   cancel) that needs no executor, and make `DurableRuntime` a client plus a worker. `DurableRun`
-   and `DurableAgentHandle` should depend on a small client interface, not on the runtime class.
+3. Introduce `DurableRunClient` and `DurableSubmitClient` interfaces (shipped here). `DurableRun`
+   and `DurableAgentHandle` depend on them, not on the runtime class, with no behaviour change.
+   A store-only `DurableClient` (submit, get, list, stream, result, steer, respond, cancel) that
+   needs no executor is a later step, blocked on the two findings below.
 4. Later, type `DurableEvent` as a discriminated union and map it to the `@anvia/client` stream
    protocol.
 5. Later, fingerprint registrations (instructions, tool schemas, model id, output schema) so a
@@ -32,6 +33,19 @@ work. The package is at `0.x` and experimental, so this can still change in a mi
 
 Keep: idempotent `(sessionId, requestId)` submission, observe-only run handles, explicit
 `{ mode: ... }` markers, and durability living outside `@anvia/core`.
+
+## Findings that block a store-only client
+
+Every client operation in `DurableRuntime` is a store transaction followed by in-process effects,
+so a facade over today's code would be incorrect:
+
+- **Exclusive ownership.** `store.acquire()` takes the owner lease: SQLite throws when a live owner
+  exists, Postgres uses a lease row. A client process cannot open the same database without
+  becoming the owner. Stores need a non-owning access mode (no lease, no migration) first.
+- **Worker wake-up and abort are in-process.** After a submit, respond, resolve, or retry the
+  runtime calls `pump()`, and `cancel()` aborts the active run through an in-memory controller. A
+  separate client can only write to the store, so the worker must notice new pending runs and
+  cancellations itself, by polling or a store notification.
 
 ## Open question
 
@@ -43,4 +57,5 @@ and keep `DurableClient` as a read and write facade only.
 
 - Existing `runtime.submit()` and `registerAgents()` keep working.
 - `result()` keeps waiting through `needs_attention` by default; `onBlocked: "throw"` is opt-in.
-- Steps 3 to 6 are separate changes with their own changesets.
+- Steps 3 (store-only client) to 6 are separate changes with their own changesets, and the first
+  two need store and worker changes, not only API work.

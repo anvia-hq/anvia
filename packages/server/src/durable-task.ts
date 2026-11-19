@@ -25,7 +25,16 @@ export async function handleDurableTaskRequest(
   const path = `${base}/tasks`;
   if (url.pathname !== path && !url.pathname.startsWith(`${path}/`)) return undefined;
   const parts = url.pathname.slice(path.length).split("/").filter(Boolean).map(decodeURIComponent);
-  const runtime = options.runtime;
+  const backend = options.runtime;
+  if (
+    backend.getTask === undefined ||
+    backend.listTasks === undefined ||
+    backend.submitRegisteredTask === undefined
+  )
+    return jsonResponse({ error: "Tasks are not available from this backend." }, 501);
+  // Narrowed above; the optional members are only absent on a store-only client.
+  const runtime = backend as typeof backend &
+    Required<Pick<typeof backend, "getTask" | "listTasks" | "submitRegisteredTask">>;
   const authorize = async (task: TaskRecord, action: DurableHttpAction) => {
     const agent =
       task.agentRunId === undefined ? undefined : (await runtime.runScope(task.agentRunId)).agentId;

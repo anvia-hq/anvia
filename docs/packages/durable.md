@@ -837,6 +837,25 @@ const handleRequest = createDurableHandler({
 // Mount handleRequest in your Fetch-compatible server; retain runtime at application scope.
 ```
 
+### Over a store-only client
+
+`createDurableHandler` also accepts a [`DurableClient`](#clients-that-execute-nothing) from
+`@anvia/durable` as `runtime`, so the HTTP API can run in a process that holds no agents while
+workers execute the runs:
+
+```ts
+import { DurableClient } from "@anvia/durable";
+
+const backend = await DurableClient.connect({ store }); // Postgres, Drizzle, or Prisma
+const handleRequest = createDurableHandler({ runtime: backend, authorize });
+// Workers elsewhere: DurableWorker.start({ store, agents })
+```
+
+Runs and graphs are served, with the same authorization. Custom task routes answer `501`, because
+tasks are not supported with clients yet. Submission checks nothing about the agent: a run for an
+agent no worker registers waits queued. The body-size warning is skipped, since the client does not
+know the workers' payload limit.
+
 Authorization is required for every operation, including event subscriptions and inspection.
 The callback receives `action`, `sessionId`, and, for existing runs, `runId` and `agentId`;
 submission authorization also receives `agentId`. Enforce agent access as needed. Existing

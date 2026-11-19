@@ -27,7 +27,7 @@ import { DurableTaskHandle } from "./tasks/handle.js";
 import type { DefinedTask, RegisteredTask, TaskListOptions } from "./tasks/types.js";
 import { TASK_SESSION_PREFIX, agentTask } from "./tasks/agent.js";
 import { parseDurableGraphSubmission, graphListSchema } from "./graph-schema.js";
-import { createGraph, graphInput, graphSnapshot, requireGraph } from "./graph-state.js";
+import { createGraph, graphInput, graphSnapshot } from "./graph-state.js";
 import { admitRunRecord, createRunRecord } from "./run-record.js";
 import type {
   DurableGraphSubmission,
@@ -75,7 +75,7 @@ import { compatibilityReport } from "./compatibility.js";
 import { DurableAgentHandle } from "./agent-handle.js";
 import { claimContext, fenceStore } from "./fencing.js";
 import { AUTO_VERSION, AUTO_VERSION_PATTERN, resolveAutoVersions } from "./fingerprint.js";
-import { readEvents, readRun, readSnapshot, readStatus } from "./reads.js";
+import { readEvents, readRun, readRunScope, readSnapshot, readStatus } from "./reads.js";
 import type { DurableSubmitClient } from "./client.js";
 import { DurableRun } from "./run.js";
 import type {
@@ -409,28 +409,7 @@ export class DurableRuntime implements DurableSubmitClient {
   /** Owning scope for authorization without loading operation journals or graph results. */
   async runScope(runId: string): Promise<DurableRunScope> {
     this.assertOpen();
-    return this.store.transaction(async (tx) => {
-      const run = await requireRun(tx, runId);
-      const base = { runId, agentId: run.agentId, sessionId: run.sessionId };
-      if (run.graphId !== undefined)
-        return {
-          ...base,
-          sessionId: (await requireGraph(tx, run.graphId)).submission.sessionId,
-          graphId: run.graphId,
-          taskId: run.taskId!,
-        };
-      if (!run.sessionId.startsWith(TASK_SESSION_PREFIX)) return base;
-      const task = await tx.getTask(run.sessionId.slice(TASK_SESSION_PREFIX.length));
-      if (task === undefined || task.agentRunId !== runId)
-        throw new DurableNotFoundError("Owned task is missing.");
-      return {
-        ...base,
-        sessionId: task.sessionId,
-        taskId: task.id,
-        rootTaskId: task.rootId,
-        taskName: task.name,
-      };
-    });
+    return readRunScope(this.store, runId);
   }
 
   async getTask(id: string): Promise<DurableTaskHandle> {

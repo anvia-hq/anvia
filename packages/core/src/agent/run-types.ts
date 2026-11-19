@@ -227,6 +227,27 @@ export type AgentSteeringAppliedEvent = {
   turn: number;
 };
 
+/**
+ * The tools a turn offered, and what the tool indexes returned to select them.
+ *
+ * Present only when the turn's text hit an index, so "why wasn't my tool offered" is answerable
+ * from the stream. A replayed turn carries no matches: it does not search again.
+ */
+export type AgentToolSelectionEvent = {
+  type: "tool_selection";
+  turn: number;
+  /** Every tool offered to the model this turn, in prompt order. */
+  tools: string[];
+  matches: AgentToolSelectionMatch[];
+};
+
+export type AgentToolSelectionMatch = {
+  toolName: string;
+  /** The index's position in the agent's tool list. */
+  index: number;
+  score: number;
+};
+
 type AgentChildStreamEventBase<Output = string, RawResponse = unknown> =
   | {
       type: "turn_start";
@@ -295,6 +316,7 @@ type AgentChildStreamEventBase<Output = string, RawResponse = unknown> =
   | AgentMemoryCompactionEvent
   | AgentInteractionResponseEvent
   | AgentSteeringAppliedEvent
+  | AgentToolSelectionEvent
   | AgentOutcome<Output>
   | AgentErrorStreamEvent;
 

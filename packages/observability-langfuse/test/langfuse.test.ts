@@ -3019,6 +3019,20 @@ describe("LangfuseDatasetClient", () => {
     return `Basic ${encoded}`;
   }
 
+  it("retries a dataset request after a transient server error", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response("busy", { status: 503 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+
+    const tracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk" });
+    const client = createDatasetClient(tracing);
+
+    await expect(client.createDataset({ name: "retry-set" })).resolves.toMatchObject({
+      name: "retry-set",
+    });
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2);
+  });
+
   it("createDataset PUTs to /api/public/datasets/:name with auth", async () => {
     vi.mocked(fetch).mockReturnValueOnce(Promise.resolve(makeFetchResponse({ id: 1 })));
 
@@ -3330,7 +3344,7 @@ describe("LangfuseDatasetClient", () => {
   });
 
   it("runExperiment throws on non-2xx POST", async () => {
-    vi.mocked(fetch).mockReturnValueOnce(Promise.resolve(makeFetchResponse("server error", 500)));
+    vi.mocked(fetch).mockReturnValueOnce(Promise.resolve(makeFetchResponse("bad request", 400)));
 
     const tracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk" });
     const client = createDatasetClient(tracing, {
@@ -3345,7 +3359,7 @@ describe("LangfuseDatasetClient", () => {
         items: [{ id: "i-1", input: "a" }],
         run: (item) => ({ output: `out-${item.id}`, trace: undefined }),
       }),
-    ).rejects.toThrow(/server error/);
+    ).rejects.toThrow(/bad request/);
   });
 
   it("runExperiment returns empty posted count when dataset has no items", async () => {
@@ -3580,6 +3594,23 @@ describe("LangfusePromptClient", () => {
     expect(url).toBe("https://env.langfuse.test/api/public/v2/prompts/support.system");
     const headers = new Headers(init.headers);
     expect(headers.get("Authorization")).toBe(basicAuth("env-pk", "env-sk"));
+  });
+
+  it("retries a prompt request after a transient server error", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response("busy", { status: 503 }))
+      .mockResolvedValueOnce(
+        makePromptJson({ name: "retry.prompt", version: 1, prompt: "hi", type: "text" }),
+      );
+
+    const tracing = new LangfuseClient({ publicKey: "pk", secretKey: "sk" });
+    const client = createPromptClient(tracing, { publicKey: "pk", secretKey: "sk" });
+
+    await expect(client.getPrompt({ name: "retry.prompt" })).resolves.toMatchObject({
+      name: "retry.prompt",
+      version: 1,
+    });
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2);
   });
 
   it("getPrompt includes ?version and ?label when supplied", async () => {

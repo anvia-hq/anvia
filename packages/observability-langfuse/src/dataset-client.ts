@@ -1,5 +1,6 @@
 import type { JsonValue } from "@anvia/core/completion";
 import { getResolvedLangfuseConfig, resolveLangfuseConfig } from "./config.js";
+import { fetchLangfuse } from "./retry.js";
 import { LangfuseScoreError } from "./scoring.js";
 import type {
   LangfuseDataset,
@@ -39,7 +40,7 @@ export function createLangfuseDatasetClient(
     const headers: Record<string, string> = {};
     Object.assign(headers, init.headers, authHeader);
     headers["Content-Type"] = "application/json";
-    const response = await fetchImpl(input, {
+    const response = await fetchLangfuse(fetchImpl, input, {
       ...init,
       headers,
     });

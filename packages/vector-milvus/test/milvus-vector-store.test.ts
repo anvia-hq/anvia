@@ -57,6 +57,48 @@ describe("MilvusVectorClient", () => {
     expect(client.search).toHaveBeenCalledWith(expect.objectContaining({ data: [[1, 0]] }));
   });
 
+  it("rejects metadata that would overwrite the reserved id field", async () => {
+    const client = fixture();
+    const store = new MilvusVectorClient({ client }).vectorStore<{ text: string }>({
+      collectionName: "docs",
+      dimensions: 2,
+    });
+    await expect(
+      store.upsert({
+        documents: [
+          {
+            id: "doc",
+            document: { text: "cat" },
+            embeddings: [{ document: "cat", vector: [1, 0] }],
+            metadata: { id: "other" },
+          },
+        ],
+      }),
+    ).rejects.toThrow(/reserved/);
+    expect(client.insert).not.toHaveBeenCalled();
+  });
+
+  it("rejects metadata that would overwrite the reserved vector field", async () => {
+    const client = fixture();
+    const store = new MilvusVectorClient({ client }).vectorStore<{ text: string }>({
+      collectionName: "docs",
+      dimensions: 2,
+    });
+    await expect(
+      store.upsert({
+        documents: [
+          {
+            id: "doc",
+            document: { text: "cat" },
+            embeddings: [{ document: "cat", vector: [1, 0] }],
+            metadata: { vector: [0, 1] } as never,
+          },
+        ],
+      }),
+    ).rejects.toThrow(/reserved/);
+    expect(client.insert).not.toHaveBeenCalled();
+  });
+
   it("expands physical candidates until topK logical documents are available", async () => {
     const client = fixture();
     client.search = vi.fn(async (options) => {

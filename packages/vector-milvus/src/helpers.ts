@@ -31,9 +31,11 @@ export function parseDocument<T>(document: unknown): T {
   }
 }
 
+const reservedRowFields = new Set(["id", "vector", documentIdFieldName, documentFieldName]);
+
 export function assertNoReservedFields(metadata: VectorMetadata | undefined): void {
   for (const key of Object.keys(metadata ?? {})) {
-    if (key.startsWith(reservedFieldPrefix)) {
+    if (reservedRowFields.has(key) || key.startsWith(reservedFieldPrefix)) {
       throw new Error(`Metadata key ${key} is reserved for Anvia Milvus fields`);
     }
   }

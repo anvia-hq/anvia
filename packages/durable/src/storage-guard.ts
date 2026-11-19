@@ -68,7 +68,7 @@ export function guardStore(
       const method: unknown = Reflect.get(target, key);
       if (typeof method !== "function") return method;
       if (key === "close") return method.bind(target);
-      if (key === "claim" || key === "renew" || key === "release") {
+      if (key === "claim" || key === "claimTasks" || key === "renew" || key === "release") {
         // Lease traffic fails transiently (network, failover); the runtime retries it and
         // stops affected runs itself, so it must not poison the journal.
         return async (...args: unknown[]) => {

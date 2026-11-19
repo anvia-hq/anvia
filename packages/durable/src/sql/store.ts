@@ -223,29 +223,44 @@ export class SqlDurableStore implements DurableStore {
           input.agentIds === undefined ? null : JSON.stringify(input.agentIds),
         ],
       );
-      const claims: DurableClaim[] = [];
-      for (const candidate of candidates) {
-        // The conflict clause is the exclusion: it only takes a row whose lease has lapsed, and a
-        // concurrent claimer of the same run waits on the row lock and then matches nothing.
-        const rows = await query(
-          `INSERT INTO anvia_durable_claims(run_id, worker_id, claim_id, expires_at)
-           VALUES ($1::text, $2::text, $3::text, now() + ($4::bigint * interval '1 millisecond'))
-           ON CONFLICT (run_id) DO UPDATE SET worker_id = EXCLUDED.worker_id,
-             claim_id = EXCLUDED.claim_id, expires_at = EXCLUDED.expires_at
-           WHERE anvia_durable_claims.expires_at <= now()
-           RETURNING run_id, claim_id,
-             to_char(expires_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS expires_at`,
-          [text(candidate.id), input.workerId, globalThis.crypto.randomUUID(), input.leaseMs],
-        );
-        const row = rows[0];
-        if (row !== undefined)
-          claims.push({
-            runId: text(row.run_id),
-            claimId: text(row.claim_id),
-            expiresAt: text(row.expires_at),
-          });
-      }
-      return claims;
+      return takeClaims(
+        query,
+        candidates.map((candidate) => text(candidate.id)),
+        input.workerId,
+        input.leaseMs,
+      );
+    });
+  }
+
+  async claimTasks(input: {
+    workerId: string;
+    limit: number;
+    leaseMs: number;
+    names: readonly string[];
+  }): Promise<DurableClaim[]> {
+    this.assertJoined();
+    if (!Number.isSafeInteger(input.limit) || input.limit < 1)
+      throw new TypeError("Invalid claim limit.");
+    checkLease(input.leaseMs);
+    if (input.names.length === 0) return [];
+    return this.driver.transaction(async (query) => {
+      await this.assertNoLiveOwner(query);
+      // The stored record is plain JSON, so the task name filters without a schema change.
+      const candidates = await query(
+        `SELECT t.id FROM anvia_durable_tasks t
+         WHERE t.status IN ('pending', 'running')
+         AND (t.record::jsonb ->> 'name') IN (SELECT jsonb_array_elements_text($2::text::jsonb))
+         AND NOT EXISTS (SELECT 1 FROM anvia_durable_claims c
+           WHERE c.run_id = t.id AND c.expires_at > now())
+         ORDER BY t.ready_order, t.seq LIMIT $1::bigint`,
+        [input.limit, JSON.stringify(input.names)],
+      );
+      return takeClaims(
+        query,
+        candidates.map((candidate) => text(candidate.id)),
+        input.workerId,
+        input.leaseMs,
+      );
     });
   }
 
@@ -257,12 +272,16 @@ export class SqlDurableStore implements DurableStore {
     this.assertJoined();
     checkLease(input.leaseMs);
     if (input.claims.length === 0) return { lost: [] };
+    // A claim names a run or a task. A run is held until it settles; a task only while it is
+    // executing (`pending` or `running`), since any other status means no invocation is running.
     const rows = await this.driver.query(
       `UPDATE anvia_durable_claims c SET expires_at = now() + ($3::bigint * interval '1 millisecond')
-       FROM anvia_durable_runs r,
-         jsonb_to_recordset($2::text::jsonb) AS held(run_id text, claim_id text)
+       FROM jsonb_to_recordset($2::text::jsonb) AS held(run_id text, claim_id text)
        WHERE c.worker_id = $1::text AND c.run_id = held.run_id AND c.claim_id = held.claim_id
-         AND r.id = c.run_id AND r.status NOT IN ${TERMINAL}
+         AND (EXISTS (SELECT 1 FROM anvia_durable_runs r
+                WHERE r.id = c.run_id AND r.status NOT IN ${TERMINAL})
+           OR EXISTS (SELECT 1 FROM anvia_durable_tasks t
+                WHERE t.id = c.run_id AND t.status IN ('pending', 'running')))
        RETURNING c.run_id`,
       [input.workerId, claimRefs(input.claims), input.leaseMs],
     );
@@ -840,6 +859,13 @@ export class SqlDurableStore implements DurableStore {
           ],
         );
       },
+      isClaimed: async (id) =>
+        (
+          await guarded(
+            "SELECT 1 FROM anvia_durable_claims WHERE run_id = $1::text AND expires_at > now() LIMIT 1",
+            [id],
+          )
+        ).length > 0,
       assertClaim: async (runId, claimId) => {
         // FOR SHARE: a reclaim of this run waits for this transaction, so a stale worker cannot
         // commit after another worker took the run.
@@ -938,4 +964,38 @@ export class SqlDurableStore implements DurableStore {
         "Durable store has a live owning runtime; shared workers cannot run beside an owner.",
       );
   }
+}
+
+/**
+ * Takes the claim on each id whose lease has lapsed. The conflict clause is the exclusion: a
+ * concurrent claimer of the same id waits on the row lock and then matches nothing. Run ids and
+ * task ids are random UUIDs, so one table holds both.
+ */
+async function takeClaims(
+  query: SqlQuery,
+  ids: readonly string[],
+  workerId: string,
+  leaseMs: number,
+): Promise<DurableClaim[]> {
+  const claims: DurableClaim[] = [];
+  for (const id of ids) {
+    const rows = await query(
+      `INSERT INTO anvia_durable_claims(run_id, worker_id, claim_id, expires_at)
+       VALUES ($1::text, $2::text, $3::text, now() + ($4::bigint * interval '1 millisecond'))
+       ON CONFLICT (run_id) DO UPDATE SET worker_id = EXCLUDED.worker_id,
+         claim_id = EXCLUDED.claim_id, expires_at = EXCLUDED.expires_at
+       WHERE anvia_durable_claims.expires_at <= now()
+       RETURNING run_id, claim_id,
+         to_char(expires_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS expires_at`,
+      [id, workerId, globalThis.crypto.randomUUID(), leaseMs],
+    );
+    const row = rows[0];
+    if (row !== undefined)
+      claims.push({
+        runId: text(row.run_id),
+        claimId: text(row.claim_id),
+        expiresAt: text(row.expires_at),
+      });
+  }
+  return claims;
 }

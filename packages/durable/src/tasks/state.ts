@@ -163,11 +163,13 @@ export async function cancelTree(
   return ids;
 }
 
+/** Whether an invocation of a task, or an attempt of its owned agent run, is still executing. */
+export type TaskBusy = (tx: DurableTransaction, task: TaskRecord) => Promise<boolean>;
+
 export async function reconcileTree(
   tx: DurableTransaction,
   rootId: string,
-  active: ReadonlySet<string>,
-  agentActive: (id: string) => boolean,
+  busy: TaskBusy,
 ): Promise<{ abort: string[]; deadline?: number }> {
   const abort: string[] = [];
   let deadline: number | undefined;
@@ -228,8 +230,7 @@ export async function reconcileTree(
     }
     if (
       ["completing", "cancelling"].includes(task.status) &&
-      !active.has(task.id) &&
-      (task.agentRunId === undefined || !agentActive(task.agentRunId)) &&
+      !(await busy(tx, task)) &&
       (await tx.taskChildren(task.id)).every(terminal)
     ) {
       task.status = task.outcome!.status;

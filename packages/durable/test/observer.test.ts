@@ -74,7 +74,7 @@ describe("durable observer", () => {
     });
     await run.result();
 
-    const store = new SqliteDurableStore(path);
+    const store = new SqliteDurableStore(path, { readOnly: true });
     await store.connect();
     closers.push(() => store.close());
     await expect(
@@ -102,10 +102,10 @@ describe("durable observer", () => {
   it("cannot be used as an owner, and an owner cannot be observed through the same instance", async () => {
     const path = database();
     await owner(path); // sets up the schema; an observer never creates it
-    const store = new SqliteDurableStore(path);
+    const store = new SqliteDurableStore(path, { readOnly: true });
     await store.connect();
     closers.push(() => store.close());
-    await expect(store.acquire()).rejects.toThrow(/already acquired|closed/);
+    await expect(store.acquire()).rejects.toThrow(/already acquired|can only be connected/);
     await expect(store.connect()).rejects.toThrow(/already open/);
   });
 
@@ -116,6 +116,17 @@ describe("durable observer", () => {
     await observer.close();
     await expect(observer.listRuns()).rejects.toThrow(/closed/);
   });
+
+  itSqlite(
+    "refuses connect() on a writable store, whose constructor already created the schema",
+    async () => {
+      const path = database();
+      await owner(path);
+      const store = new SqliteDurableStore(path);
+      closers.push(() => store.close());
+      await expect(store.connect()).rejects.toThrow(/readOnly: true/);
+    },
+  );
 
   itSqlite("does not create a database or schema for a path that does not exist", async () => {
     const path = database();

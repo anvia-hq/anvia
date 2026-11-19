@@ -135,6 +135,15 @@ export class SqlDurableStore implements DurableStore {
       throw new Error("Durable store is closed or already open.");
     // An observer never creates or migrates the schema, whatever `schema` says.
     await this.verifySchema();
+    // Tables with no owner row were never initialised by a runtime. Like the SQLite path, an
+    // observer needs a database an owner has set up.
+    const owner = await this.driver.query(
+      "SELECT version FROM anvia_durable_owner WHERE singleton = 1",
+    );
+    if (owner.length === 0)
+      throw new Error(
+        "Durable database has not been initialised; open it once with a runtime before observing.",
+      );
     this.observing = true;
   }
 

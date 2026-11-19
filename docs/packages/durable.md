@@ -481,9 +481,11 @@ owner's writes. Mutations (`submit`, `cancel`, `respond`, `retry`, `steer`) stay
 runtime until the store supports per-run claims ([ADR 0001](../decisions/0001-durable-client-worker-split.md)).
 An observer needs a database an owner has already set up: it fails on a missing schema and on a
 SQLite database below the current schema version, and it never creates or upgrades either. For
-SQLite, pass `{ readOnly: true }` to the store: the file is opened read-only and none of the
-constructor's setup runs, so a mistyped path fails instead of creating an empty database. A
-read-only SQLite store can only `connect()`; it cannot be acquired by a runtime. Custom
+SQLite the store must be built with `{ readOnly: true }`: the file is opened read-only and none of
+the constructor's setup runs, so a mistyped path fails instead of creating an empty database, and
+the observer never contends for the owner's write lock. A writable SQLite store refuses
+`connect()`, and a read-only one can only `connect()`; it cannot be acquired by a runtime. On
+Postgres, Drizzle and Prisma the schema and the owner row must already exist. Custom
 `DurableStore` implementations must now provide `connect()`.
 
 ## Noticing changes made by another process

@@ -163,6 +163,8 @@ type StreamingCompletionState = {
   firstDeltaMs: number | undefined;
   emittedToolCallIds: Set<string>;
   providerErrorUsage: Usage;
+  /** Input tokens of the last attempt alone, before earlier retries fold into `response.usage`. */
+  attemptInputTokens: number | undefined;
 };
 
 type StreamingCompletionArgs = {
@@ -904,6 +906,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
           firstDeltaMs: undefined,
           emittedToolCallIds: new Set(),
           providerErrorUsage: Usage.empty(),
+          attemptInputTokens: undefined,
         };
         let response: CompletionResponse;
         const completionRunObservers = runObservers;
@@ -940,7 +943,8 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
             response: completionState.response ?? response,
             ...this.reportedGenerationContext(
               currentTurns,
-              (completionState.response ?? response).usage,
+              completionState.attemptInputTokens ??
+                (completionState.response ?? response).usage.inputTokens,
             ),
           };
           if (completionState.firstDeltaMs !== undefined)
@@ -1226,7 +1230,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         await generationObservers.end({
           turn,
           response: finalResponse,
-          ...this.reportedGenerationContext(turn, finalResponse.usage),
+          ...this.reportedGenerationContext(turn, response.usage.inputTokens),
         });
         this.failedCompletionUsage = Usage.empty();
         return finalResponse;
@@ -1383,6 +1387,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         }
         const response = accumulator.response();
         assertCompletionResponseIntegrity({ response });
+        args.state.attemptInputTokens = response.usage.inputTokens;
         const cumulativeStructuredUsage = Usage.add(args.state.providerErrorUsage, response.usage);
         try {
           this.validateStructuredResponse(response, attempt, cumulativeStructuredUsage);
@@ -1658,15 +1663,13 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     return args;
   }
 
-  /** Scales the turn's context split to the provider's reported input tokens. */
+  /** Scales the turn's context split to the input tokens the provider reported for the final attempt. */
   private reportedGenerationContext(
     turn: number,
-    usage: { inputTokens: number },
+    inputTokens: number,
   ): { context?: ContextBreakdown } {
     const context = this.turnContextBreakdowns.get(turn);
-    return context === undefined
-      ? {}
-      : { context: scaleContextBreakdown(context, usage.inputTokens) };
+    return context === undefined ? {} : { context: scaleContextBreakdown(context, inputTokens) };
   }
 
   private estimatedGenerationContext(turn: number): { context?: ContextBreakdown } {

@@ -1,61 +1,92 @@
-# 0001: Split the durable client from the worker
+# 0001: Split the durable client from the worker, with per-run claims
 
-Status: Proposed. One open question below needs a maintainer decision.
+Status: Accepted direction. The seam and typed handles ship now; the claim protocol is staged
+below and each stage is its own change.
 
 ## Context
 
 `@anvia/durable` exposes everything through `DurableRuntime`: the executor (scheduler,
 `resume()`, `maxConcurrentRuns`) and the client (`submit`, `stream`, `result`, `cancel`,
-`respond`). `DurableRun` holds a `DurableRuntime`, so a process that only wants to submit and
-observe must open a full executing runtime. One runtime owns one database (a heartbeat lease on
-Postgres), so every observer is also the single executor.
+`respond`). One runtime owns one database: `store.acquire()` takes an exclusive owner lease
+(SQLite throws when a live owner exists; Postgres uses a lease row with a heartbeat). `DurableRun`
+held a `DurableRuntime`, so a process that only wanted to submit and observe had to open a full
+executing runtime.
 
-Agent runs, tasks, graphs, and goals also live on the same class, as parallel models of durable
-work. The package is at `0.x` and experimental, so this can still change in a minor release.
+Two further facts shape the fix. Every client operation is a store transaction followed by
+in-process effects: `pump()` wakes the scheduler, and `cancel()` aborts the active run through an
+in-memory controller. And agent runs, tasks, graphs, and goals are parallel models on one class.
+
+The package is `0.x` and experimental, so a structural change is cheap now and expensive after the
+API hardens.
 
 ## Decision
 
-1. Keep the single-owner execution model for now. Do not add per-run leases or multiple workers
-   until a concrete need exists (see the open question).
-2. Introduce the seam first, without breaking anything: a typed `DurableAgentHandle<Output>` and a
-   typed `DurableRun<Output>` (shipped together with this ADR). New sugar attaches to these types,
-   not to more methods on `DurableRuntime`.
-3. Introduce `DurableRunClient` and `DurableSubmitClient` interfaces (shipped here). `DurableRun`
-   and `DurableAgentHandle` depend on them, not on the runtime class, with no behaviour change.
-   A store-only `DurableClient` (submit, get, list, stream, result, steer, respond, cancel) that
-   needs no executor is a later step, blocked on the two findings below.
-4. Later, type `DurableEvent` as a discriminated union and map it to the `@anvia/client` stream
-   protocol.
-5. Later, fingerprint registrations (instructions, tool schemas, model id, output schema) so a
-   changed registration under an unchanged `version` is detected.
-6. Last, treat an agent run as one kind of durable task so agent runs and tasks, graphs, and goals
-   share one model. This needs its own design.
+Make the store, not the process, the source of truth for who runs what. Adopt **per-run claims
+with leases**, and make the client a thin, store-only role.
 
-Keep: idempotent `(sessionId, requestId)` submission, observe-only run handles, explicit
-`{ mode: ... }` markers, and durability living outside `@anvia/core`.
+1. **Roles.** `DurableClient` (submit, get, list, stream, result, steer, respond, resolve, retry,
+   cancel) needs no executor and never owns the database. `DurableWorker` executes runs. The
+   existing `DurableRuntime` stays as a client plus a worker for compatibility and for the
+   single-process case.
+2. **Claims replace the database lease.** A worker claims runs with a lease, renews them on a
+   heartbeat, and releases them on completion. Several workers can share one database; a crashed
+   worker's runs become claimable when its lease expires.
+3. **Fencing.** Each claim carries a fencing token (the run `epoch` plus a claim id). Every
+   worker-side mutation checks it inside the same transaction, so a worker that lost its lease
+   cannot commit stale results.
+4. **State changes go through the store.** Cancel, respond, resolve, retry, and submit only write
+   to the store. Workers observe them: a lost or cancelled claim aborts the in-memory attempt on
+   the next renew, and new work is found by polling, with an optional store notification
+   (Postgres `LISTEN/NOTIFY`) to cut latency.
+5. **Session order is a store invariant.** The oldest eligible run per session is the only
+   claimable one; `excludedSessions` stops being in-memory worker state.
+6. **Backends declare capability.** Postgres (and Drizzle/Prisma over it) supports many workers.
+   SQLite stays single-owner and declares it, instead of defining the model for everyone.
+7. **Keep:** idempotent `(sessionId, requestId)` submission, observe-only run handles, explicit
+   `{ mode: ... }` markers, and durability living outside `@anvia/core`.
 
-## Findings that block a store-only client
+Also decided, independent of workers: type `DurableEvent` as a discriminated union and map it to
+the `@anvia/client` stream protocol; fingerprint registrations so a changed registration under an
+unchanged `version` is detected; and treat an agent run as one kind of durable task so runs,
+tasks, graphs, and goals share one model (own design, last).
 
-Every client operation in `DurableRuntime` is a store transaction followed by in-process effects,
-so a facade over today's code would be incorrect:
+## Sketch of the store contract
 
-- **Exclusive ownership.** `store.acquire()` takes the owner lease: SQLite throws when a live owner
-  exists, Postgres uses a lease row. A client process cannot open the same database without
-  becoming the owner. Stores need a non-owning access mode (no lease, no migration) first.
-- **Worker wake-up and abort are in-process.** After a submit, respond, resolve, or retry the
-  runtime calls `pump()`, and `cancel()` aborts the active run through an in-memory controller. A
-  separate client can only write to the store, so the worker must notice new pending runs and
-  cancellations itself, by polling or a store notification.
+```ts
+interface DurableStore {
+  // replaces acquire(): no exclusive ownership
+  connect(): Promise<void>;
+  claim(input: { workerId: string; now: string; limit: number; leaseMs: number }): Promise<Claim[]>;
+  renew(input: { workerId: string; claims: readonly ClaimRef[]; leaseMs: number }): Promise<{
+    lost: ClaimRef[]; // reassigned, cancelled, or expired
+  }>;
+  release(claims: readonly ClaimRef[]): Promise<void>;
+  // transaction() gains a claim guard: worker writes pass { claim } and fail when it is stale
+}
+type ClaimRef = { runId: string; claimId: string; epoch: number };
+```
 
-## Open question
+## Staging
 
-Do we need several workers against one database? If yes, step 3 must include per-run leases and a
-claim protocol, and should happen before the API hardens. If no, document the one-executor limit
-and keep `DurableClient` as a read and write facade only.
+Each stage is independently shippable and keeps `DurableRuntime` working.
+
+1. **Seam (this PR).** `DurableRunClient` / `DurableSubmitClient`; `DurableRun` and
+   `DurableAgentHandle` depend on them. Typed handles and `onBlocked` ship alongside.
+2. **Non-owning store access.** A `connect()` mode with no lease and no migration, for client
+   operations.
+3. **Worker change detection.** Polling (and optional notification) for pending runs and for
+   cancellation, replacing the in-process `pump()`/abort coupling.
+4. **Claims and fencing** on Postgres; SQLite keeps single-owner.
+5. **Public `DurableClient` and `DurableWorker`.** Mostly assembly once 2 to 4 exist.
+6. Typed events and protocol bridge; registration fingerprinting; unify with tasks.
 
 ## Consequences
 
-- Existing `runtime.submit()` and `registerAgents()` keep working.
-- `result()` keeps waiting through `needs_attention` by default; `onBlocked: "throw"` is opt-in.
-- Steps 3 (store-only client) to 6 are separate changes with their own changesets, and the first
-  two need store and worker changes, not only API work.
+- Existing `runtime.submit()`, `registerAgents()`, and `result()` keep working through 1 to 5.
+- `store.acquire()` is replaced by `connect()` plus claims. Custom `DurableStore` implementations
+  are affected at stage 4, which is acceptable at `0.x` but needs a minor changeset and a note.
+- Heartbeats and polling add steady store load; the interval is a worker option with a safe
+  default and the notification path is the optimisation.
+- Task and graph schedulers use the same owner lease today and need the same claim treatment.
+- Risk: the fencing check must cover every worker write path, including recorded memory and task
+  transitions. Stage 4 needs a journal-level test that a stale claim cannot commit.

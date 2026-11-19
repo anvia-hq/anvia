@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, expect, vi } from "vitest";
-import { DurableRuntime, type ToolRecovery } from "../src/index.js";
+import { DurableBlockedError, DurableRuntime, type ToolRecovery } from "../src/index.js";
 import { SqliteDurableStore } from "../src/sqlite.js";
 import type { ToolCallContext } from "@anvia/core/tool";
 import { done, hasToolResult, lookup, makeAgent, toolResponse } from "./helpers.js";
@@ -121,6 +121,28 @@ itSqlite(
     expect(await run.result()).toMatchObject({ output: "done" });
     expect(readFileSync(effects, "utf8")).toBe("effect\n");
     expect(tool).not.toHaveBeenCalled();
+  },
+  15000,
+);
+
+itSqlite(
+  "result() waits by default but rejects with DurableBlockedError when asked to throw",
+  async () => {
+    const { id, database, effects } = await crash("tool");
+    const { runtime } = await restart(database, effects);
+    const run = await runtime.getRun(id);
+    await vi.waitFor(async () => expect((await run.snapshot()).run.status).toBe("needs_attention"));
+    const operationId = (await run.snapshot()).run.blockedOperation!;
+    const rejection = await run.result({ onBlocked: "throw" }).catch((error: unknown) => error);
+    expect(rejection).toBeInstanceOf(DurableBlockedError);
+    expect(rejection).toMatchObject({ runId: id, blockedOperation: operationId });
+    // Default behaviour is unchanged: it keeps waiting until the operator settles the run.
+    const controller = new AbortController();
+    const waiting = run.result({ abortSignal: controller.signal });
+    controller.abort(new Error("stop waiting"));
+    await expect(waiting).rejects.toThrow("stop waiting");
+    await run.resolveTool(operationId, { type: "text", value: "reconciled result" });
+    expect(await run.result({ onBlocked: "throw" })).toMatchObject({ output: "done" });
   },
   15000,
 );

@@ -2,7 +2,7 @@ import { delay } from "./wait.js";
 import type { AgentOutcome, AgentSteerInput, AgentSteerReceipt } from "@anvia/core/agent";
 import type { AgentInteractionResponse } from "@anvia/core/agent/interactions";
 import type { ToolResultOutput } from "@anvia/core/completion";
-import { DurableRunError } from "./errors.js";
+import { DurableBlockedError, DurableRunError } from "./errors.js";
 import type { DurableRuntime } from "./runtime.js";
 import type {
   DurableEvent,
@@ -14,8 +14,18 @@ import type {
 
 export type DurableStreamOptions = { after?: number; abortSignal?: AbortSignal };
 
+export type DurableResultOptions = {
+  abortSignal?: AbortSignal;
+  /**
+   * What to do when the run is `needs_attention`. `"wait"` (default) keeps waiting for an operator
+   * to settle it; `"throw"` rejects with `DurableBlockedError` so a caller without an operator
+   * path does not hang.
+   */
+  onBlocked?: "wait" | "throw";
+};
+
 /** An identity and subscription handle. Closing a subscription never cancels execution. */
-export class DurableRun {
+export class DurableRun<Output = unknown> {
   constructor(
     readonly id: string,
     private readonly runtime: DurableRuntime,
@@ -52,7 +62,13 @@ export class DurableRun {
     }
   }
 
-  async result(options: { abortSignal?: AbortSignal } = {}): Promise<AgentOutcome<unknown>> {
+  async result(options: DurableResultOptions = {}): Promise<AgentOutcome<Output>> {
+    if (
+      options.onBlocked !== undefined &&
+      options.onBlocked !== "wait" &&
+      options.onBlocked !== "throw"
+    )
+      throw new TypeError('onBlocked must be "wait" or "throw".');
     while (true) {
       options.abortSignal?.throwIfAborted();
       // Settle from the observed state: another caller may retry before the next snapshot.
@@ -60,10 +76,18 @@ export class DurableRun {
       if (run.status === "failed" || run.status === "cancelled") {
         throw new DurableRunError(run.id, run.status, run.error ?? run.status);
       }
+      if (run.status === "needs_attention" && options.onBlocked === "throw") {
+        throw new DurableBlockedError(
+          run.id,
+          run.blockedOperation,
+          run.error ?? "Run needs attention.",
+        );
+      }
       if (run.status === "completed") {
         const { outcome } = await this.runtime.run(this.id);
         if (outcome === undefined) throw new Error("Completed durable run has no outcome.");
-        return outcome;
+        // The registration's agent produced this outcome, so its output matches `Output`.
+        return outcome as AgentOutcome<Output>;
       }
       // Cancelling a wait only detaches this subscriber.
       await delay(options.abortSignal);

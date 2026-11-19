@@ -1,5 +1,5 @@
 import { queueSteering } from "./steering.js";
-import type { AgentOutcome, AgentSteerInput, AgentSteerReceipt } from "@anvia/core/agent";
+import type { Agent, AgentOutcome, AgentSteerInput, AgentSteerReceipt } from "@anvia/core/agent";
 import { parsePrompt, promptMessage } from "./prompt.js";
 import { MaxTurnsError } from "@anvia/core/agent";
 import type { DefinedGoal } from "./goals/definition.js";
@@ -73,6 +73,7 @@ import { errorMessage, json, nonblank, sameJson } from "./json.js";
 import { listOptionsSchema } from "./schema.js";
 import { registrations } from "./registration.js";
 import { compatibilityReport } from "./compatibility.js";
+import { DurableAgentHandle } from "./agent-handle.js";
 import { DurableRun } from "./run.js";
 import type {
   DurableSteerOptions,
@@ -212,6 +213,25 @@ export class DurableRuntime {
         );
     for (const [id, registration] of added) this.agents.set(id, registration);
     this.notifyCompatibility();
+  }
+
+  /**
+   * Register one agent and return a typed handle for it. It follows `registerAgents()` rules, so an
+   * agent that pins MCP servers must be passed to `open()` and fetched with `handle()`.
+   */
+  agent<Output>(
+    registration: DurableAgentRegistration & { agent: Agent<Output> },
+  ): DurableAgentHandle<Output> {
+    this.registerAgents([registration]);
+    return new DurableAgentHandle<Output>(registration.agent.id, this);
+  }
+
+  /** A typed handle for an agent already registered, for example through `open({ agents })`. */
+  handle<Output>(agent: Agent<Output>): DurableAgentHandle<Output> {
+    this.assertOpen();
+    if (!this.agents.has(agent.id))
+      throw new DurableNotFoundError(`Unknown durable agent: ${agent.id}`);
+    return new DurableAgentHandle<Output>(agent.id, this);
   }
 
   /** Stores the MCP and tool-index fingerprints of the given agents for the synchronous paths. */

@@ -43,10 +43,12 @@ export type {
   TaskTransaction,
   RegisteredTask,
 } from "./tasks/types.js";
-export { DurableRun, type DurableStreamOptions } from "./run.js";
+export { DurableRun, type DurableResultOptions, type DurableStreamOptions } from "./run.js";
+export { DurableAgentHandle } from "./agent-handle.js";
 export {
   DurableRecoveryError,
   DurableRunError,
+  DurableBlockedError,
   DurableNotFoundError,
   DurableConflictError,
   DurableStorageError,

@@ -76,7 +76,7 @@ describe("durable HTTP routes over a store-only DurableClient", () => {
     );
   });
 
-  it("serves graphs and answers 501 for tasks the backend cannot provide", async () => {
+  it("serves graphs and task reads, and refuses task submission it cannot authorize", async () => {
     const { handler, backend } = await setup();
     const graph: DurableTaskGraph = await backend.submitGraph({
       sessionId: "allowed",
@@ -90,6 +90,21 @@ describe("durable HTTP routes over a store-only DurableClient", () => {
     const tasks = await handler(
       new Request("http://anvia.test/durable/tasks?sessionId=allowed", { method: "GET" }),
     );
-    expect(tasks.status).toBe(501);
+    expect(tasks.status).toBe(200);
+    const submitted = await handler(
+      new Request("http://anvia.test/durable/tasks", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name: "x",
+          version: 1,
+          sessionId: "allowed",
+          requestId: "t",
+          input: null,
+        }),
+      }),
+    );
+    // Authorizing a task submission needs the definitions' agent dependencies.
+    expect(submitted.status).toBe(503);
   });
 });

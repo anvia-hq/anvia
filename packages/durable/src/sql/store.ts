@@ -236,30 +236,43 @@ export class SqlDurableStore implements DurableStore {
     workerId: string;
     limit: number;
     leaseMs: number;
-    names: readonly string[];
+    definitions: readonly { name: string; version: number }[];
   }): Promise<DurableClaim[]> {
     this.assertJoined();
     if (!Number.isSafeInteger(input.limit) || input.limit < 1)
       throw new TypeError("Invalid claim limit.");
     checkLease(input.leaseMs);
-    if (input.names.length === 0) return [];
+    if (input.definitions.length === 0) return [];
     return this.driver.transaction(async (query) => {
       await this.assertNoLiveOwner(query);
-      // No `name` column exists, and the record is JSON text that must not be cast: jsonb rejects
-      // valid records (an escaped NUL, a lone surrogate) and one such task would fail the query
-      // for every worker. The task schema writes `name` after only the string and number fields
-      // id, rootId, parentId, agentRunId, depth, sessionId and key, and before any nested value.
-      // A JSON string cannot contain an unescaped quote, so the first `"name":"` in the text is
-      // the top-level key. A test pins that order. Names compare in their JSON-escaped form.
+      // No `name` or `version` column exists, and the record is JSON text that must not be cast:
+      // jsonb rejects valid records (an escaped NUL, a lone surrogate) and one such task would
+      // fail the query for every worker. The task schema writes `name`, `version`,
+      // `submissionVersion` and `unadmitted` as adjacent fields, after only string and number
+      // fields and before any nested value, and a JSON string cannot contain an unescaped quote,
+      // so the first match of this pattern is the top-level fields. A test pins that layout.
+      // Names compare in their JSON-escaped form.
       const candidates = await query(
-        `SELECT t.id FROM anvia_durable_tasks t
+        `SELECT t.id FROM anvia_durable_tasks t,
+           LATERAL (SELECT regexp_match(t.record,
+             '"name":"((?:[^"\\\\]|\\\\.)*)","version":([0-9]+),"submissionVersion":[0-9]+(,"unadmitted":true)?') AS m) x
          WHERE t.status IN ('pending', 'running')
-         AND substring(t.record from '"name":"((?:[^"\\\\]|\\\\.)*)"')
-           IN (SELECT jsonb_array_elements_text($2::text::jsonb))
+         AND x.m IS NOT NULL
+         AND EXISTS (SELECT 1 FROM jsonb_to_recordset($2::text::jsonb) AS d(name text, version bigint)
+           WHERE d.name = x.m[1]
+           AND (CASE WHEN x.m[3] IS NULL THEN d.version >= x.m[2]::bigint ELSE d.version = x.m[2]::bigint END))
          AND NOT EXISTS (SELECT 1 FROM anvia_durable_claims c
            WHERE c.run_id = t.id AND c.expires_at > now())
          ORDER BY t.ready_order, t.seq LIMIT $1::bigint`,
-        [input.limit, JSON.stringify(input.names.map((name) => JSON.stringify(name).slice(1, -1)))],
+        [
+          input.limit,
+          JSON.stringify(
+            input.definitions.map(({ name, version }) => ({
+              name: JSON.stringify(name).slice(1, -1),
+              version,
+            })),
+          ),
+        ],
       );
       return takeClaims(
         query,

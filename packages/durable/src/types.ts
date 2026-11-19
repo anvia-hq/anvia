@@ -503,15 +503,17 @@ export interface DurableStore {
     agentIds?: readonly string[];
   }): Promise<DurableClaim[]>;
   /**
-   * Claims up to `limit` pending or running tasks whose definition name is in `names`, in the
-   * order they became ready, with the same exclusion and lease rules as `claim()`. A claim on a
+   * Claims up to `limit` pending or running tasks this worker can execute, in the order they
+   * became ready. That means a task whose name is in `definitions` at the same or a newer version
+   * (an older stored checkpoint is migrated), or exactly the same version for an `unadmitted` task
+   * a client submitted, which cannot be migrated, with the same exclusion and lease rules as `claim()`. A claim on a
    * task and on a run share one table, so `renew`, `release` and `assertClaim` serve both.
    */
   claimTasks?(input: {
     workerId: string;
     limit: number;
     leaseMs: number;
-    names: readonly string[];
+    definitions: readonly { name: string; version: number }[];
   }): Promise<DurableClaim[]>;
   /**
    * Extends the leases of `claims` that `workerId` still holds. `lost` names the runs whose claim

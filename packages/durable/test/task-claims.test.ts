@@ -249,6 +249,8 @@ describe("custom tasks with shared workers", () => {
       ),
     ).toBe(true);
     expect(record.indexOf('"name":"')).toBeLessThan(record.indexOf('"input"'));
+    // The claim query reads these four fields as one run of adjacent keys.
+    expect(record).toMatch(/"name":"echo","version":1,"submissionVersion":1,"submissionInput":/);
   });
 
   it("keeps every signal delivered concurrently from different workers", async () => {

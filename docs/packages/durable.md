@@ -548,7 +548,8 @@ cannot overwrite the result, and a run settled elsewhere is never overwritten. L
 one run, not the runtime. `runtime.cancel()` from any worker stops the run on whichever worker holds
 it, within one heartbeat.
 
-Limits today: a `DurableClient` serves agent runs and graphs, not custom tasks. The poll
+Limits today: a `DurableClient` serves agent runs, graphs and tasks, but not task submission over
+HTTP. The poll
 interval defaults to one second here because retry waits and task timers are not driven by
 in-process timers. An owning runtime and
 shared workers cannot run together: a worker fails to start while an owner is live, and an owner
@@ -653,9 +654,8 @@ await handle.signal("approved", "req-1", true); // from any worker
 await handle.result();
 ```
 
-`DurableWorker.start({ store, agents, tasks })` executes tasks too but has no submit methods, so
-the process that submits tasks is a `DurableRuntime` in worker mode until `DurableClient` can
-submit them.
+`DurableWorker.start({ store, agents, tasks })` executes tasks but has no submit methods; submit
+from a `DurableClient`, or from a runtime in worker mode.
 
 - A worker claims only tasks whose definition name it registers, one invocation at a time per
   task, and renews the claim while the phase runs. A crashed worker's task resumes from its saved
@@ -669,8 +669,28 @@ submit them.
   unsettled tree, so the cost grows with the number of open trees. Keep `pollIntervalMs` modest.
 - `spawnAgent()` needs the agent registered on the worker that runs the task; the spawned run may
   then execute on any worker that registers it.
-- `DurableClient` cannot submit or control tasks yet, so the HTTP task routes still answer 501 for
-  a client backend.
+- A `DurableClient` submits and controls tasks too; see below.
+
+A process that only fronts the API submits and controls tasks with `DurableClient`:
+
+```ts
+const client = await DurableClient.connect({ store });
+const handle = await client.submitTask(reviewTask, { sessionId, requestId, input });
+await handle.signal("approved", "req-1", true);
+await handle.cancel(); // stops the invocation on whichever worker holds it
+await client.getTask(id); // listTasks(), taskGraph() as on a runtime
+```
+
+The client has no definition to parse the input or build the checkpoint, so the task is stored
+`unadmitted` and the worker that claims it does both, then clears the flag. Consequences: an
+input that does not parse **fails the task** (it cannot be fixed by a retry) rather than rejecting
+the call; a task for a name or version no worker registers waits `pending`, or ends
+`needs_attention` with the version mismatch named when a worker registers a different version;
+`submitTask` takes the definition only for its name, version and types, and the input must be JSON.
+A worker claims an unadmitted task only if it registers exactly that version, so during a rolling
+upgrade the workers on the older code run it. A client stores the input as given, whereas a runtime
+stores it parsed; if the schema applies defaults or transforms, resubmitting one key from both a
+client and a runtime can report a conflict.
 
 ## Worker processes
 
@@ -888,8 +908,10 @@ const handleRequest = createDurableHandler({ runtime: backend, authorize });
 // Workers elsewhere: DurableWorker.start({ store, agents })
 ```
 
-Runs and graphs are served, with the same authorization. Custom task routes answer `501`, because
-tasks are not supported with clients yet. Submission checks nothing about the agent: a run for an
+Runs and graphs are served, with the same authorization, and so are task reads and controls.
+Submitting a task over HTTP answers `503`, because authorizing it needs the definitions' agent
+dependencies, which a client does not have; submit tasks from your own code with
+`client.submitTask()`. Submission checks nothing about the agent: a run for an
 agent no worker registers waits queued. The body-size warning is skipped, since the client does not
 know the workers' payload limit.
 

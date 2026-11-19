@@ -53,7 +53,8 @@ export type DurableAuthorization = {
 /**
  * What the routes need from their backend. A `DurableRuntime` provides all of it. A store-only
  * `DurableClient` (from `@anvia/durable`) provides runs and graphs, which is enough to put the
- * HTTP API in a process that executes nothing; the task routes then answer 501.
+ * HTTP API in a process that executes nothing. Task reads and controls work; submitting a task
+ * over HTTP needs the definitions to authorize each agent, so it answers 503 for a client.
  */
 export type DurableHandlerBackend = Pick<
   DurableRuntime,

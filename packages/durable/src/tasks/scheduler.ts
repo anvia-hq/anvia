@@ -24,6 +24,7 @@ import type { DurableToolIndexes } from "../tool-indexes.js";
 import {
   cancelTree,
   createTask,
+  createUnadmittedTask,
   prepareTask,
   reconcileTree,
   requireTask,
@@ -58,7 +59,7 @@ export class TaskScheduler {
     private readonly agentActive: (id: string) => boolean,
     private readonly syncAgents: (root: string) => Promise<void>,
     /** Set when this runtime is one of several shared workers; see ADR 0001. */
-    private readonly shared?: { workerId: string; leaseMs: number },
+    private readonly shared?: { workerId: string; leaseMs: number; passive?: boolean },
   ) {}
 
   /** Claims this scheduler holds, for the worker's lease heartbeat. */
@@ -169,6 +170,18 @@ export class TaskScheduler {
       return task;
     });
     await this.pump();
+    return task.id;
+  }
+
+  /**
+   * Records a root task without its definition, for a client with none. The worker that claims it
+   * parses the input and builds the checkpoint (`execute`).
+   */
+  async submitUnadmitted(
+    submission: { name: string; version: number; input: JsonValue; sessionId: string; key: string },
+    trace?: DurableTraceOptions,
+  ): Promise<string> {
+    const task = await this.store.transaction((tx) => createUnadmittedTask(tx, submission, trace));
     return task.id;
   }
 
@@ -331,7 +344,8 @@ export class TaskScheduler {
   private pumpTail: Promise<void> = Promise.resolve();
 
   private async pumpOnce(): Promise<void> {
-    if (this.closing) return;
+    // A client controls tasks but never executes them, so there is nothing to claim.
+    if (this.closing || this.shared?.passive === true) return;
     clearTimeout(this.timer);
     for (const [root, deadline] of this.deadlines)
       if (deadline <= Date.now()) await this.reconcile(root);
@@ -343,7 +357,10 @@ export class TaskScheduler {
           workerId: this.shared.workerId,
           limit: capacity,
           leaseMs: this.shared.leaseMs,
-          names: [...this.definitions.keys()],
+          definitions: [...this.definitions.values()].map(({ name, version }) => ({
+            name,
+            version,
+          })),
         });
       } catch {
         // A transient store error retries on the next poll instead of ending the worker.
@@ -432,7 +449,27 @@ export class TaskScheduler {
       try {
         if (definition === undefined || definition.version < saved.version)
           throw new Error("Task definition/version is unavailable.");
-        if (definition.version !== saved.version) {
+        if (saved.unadmitted === true) {
+          // A client submitted this without the definition; admit it as the version it named.
+          if (definition.version !== saved.version)
+            throw new Error(
+              `Task version ${saved.version} is not registered on this worker (it has ${definition.version}).`,
+            );
+          try {
+            saved.input = definition.parseInput(saved.input);
+            saved.checkpoint = definition.initial(saved.input);
+          } catch (error) {
+            // Invalid input cannot be fixed by a retry, so the task fails instead of blocking.
+            saved.outcome = {
+              status: "failed",
+              error: `Invalid task input: ${errorMessage(error)}`,
+            };
+            saved.status = "cancelling";
+            await saveTask(tx, saved);
+            return undefined;
+          }
+          delete saved.unadmitted;
+        } else if (definition.version !== saved.version) {
           if (definition.migrate === undefined)
             throw new Error("Task checkpoint requires a migration.");
           const migrated = definition.migrate(saved.input, saved.checkpoint, saved.version);

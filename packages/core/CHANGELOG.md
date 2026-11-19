@@ -1,5 +1,39 @@
 # @anvia/core
 
+## 1.20.0
+
+### Minor Changes
+
+- e0f5c42: `AgentGenerationStartArgs` gains optional `toolMatches`: the tools each index returned for the turn's text, with the score that ranked them. Observers see which candidates were considered, not only the definitions that made it into the request.
+- fd6354e: Add `searchTool()`: one tool that searches its own domain, returned as a `ToolIndex` so it registers through `Agent.tools` unchanged.
+
+  A flat tool index ranks a generic tool like `search_runbooks` by its own name and description, so a query about a deployment checklist never reaches it. `searchTool` embeds the _entries_ instead and returns their text and detail, so the model finds the runbook and reads the steps. Without a `model` it matches terms case-insensitively over the same text, which covers a few dozen entries with no embedding provider.
+
+  The tool answers a call from the search the agent just ran for that turn; `format` renders the hits, and a miss returns "No matching entries." rather than an empty prompt.
+
+- 1813ccc: Add `examples` to `createTool()`. Each example is an input, validated against the tool's `inputSchema` when the tool is created, and an optional note; they render into the tool definition's description as `name({"arg":1}) note` lines.
+
+  This matters most for retrieved tools: a tool index hands the model a schema for a tool it has never seen, and a worked call for the common case is what keeps the call shape right. Examples render on static definitions too, which costs prompt tokens on every turn, so keep the list short.
+
+- 0dd59aa: Add `embeddingText: "compact"` to `createToolIndex()` and `embedTools()`. The compact mode embeds a tool's name, description, parameter names and `describe()` text instead of the stringified JSON schema, so a query shares more words with the tool and the identical schema scaffolding no longer dilutes the vector. It only reads `properties` keys and their `description`, so an output schema rendered into the same slot cannot make a tool retrievable by its result fields.
+
+  The full-definition text stays the default: switching it silently would re-rank every existing `ToolIndex`, and `content` still overrides both modes.
+
+- 7773bf1: `ToolIndex` can describe itself: `createToolIndex()` sets optional `embeddingModel` and `embeddedDocuments` (each tool's id and the text that was embedded), and the agent's registered snapshot keeps them.
+
+  This closes a durable hole. The tool-index fingerprint hashed the search settings and tool definitions but not the embedding model or the embedded text, so changing the model, the `content` callback, or `embeddingText` under one registration version replayed a stale recorded selection silently. The docs told users to bump the version by hand instead.
+
+- 176e590: Add the `tool_selection` stream event: the tools a turn offered, plus every tool each tool index returned with its score and the index it came from.
+
+  Selection used to be invisible once the request was built, so "why wasn't my tool offered" could only be guessed at. The event fires only when the turn's text actually hit an index. A replayed durable turn reports the recorded selection with no matches, because it does not search again.
+
+  **Widens the `AgentStreamEvent` union**, which breaks a consumer that handles every variant exhaustively (`switch` with a `never` default, or a `Record<AgentStreamEvent["type"], ...>`). `@anvia/client` maps it through its existing custom-event fallback.
+
+### Patch Changes
+
+- ccd3ce7: Keep redacted objects from adopting a `__proto__` payload as their prototype, so a redacted copy always has an ordinary object prototype.
+- 85377c9: Default a run's trace `sessionId` and `userId` to its memory `session`, so multi-turn conversations group into one session in Lens, Langfuse and OpenTelemetry. An explicit `trace.sessionId` or `trace.userId` still wins.
+
 ## 1.19.2
 
 ### Patch Changes

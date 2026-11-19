@@ -1,5 +1,12 @@
 # @anvia/react
 
+## 1.2.0
+
+### Minor Changes
+
+- 7602177: Add a `maxRetainedEvents` option to `useChat` and `useCompletion` so a long stream can keep only the newest events in React state without changing the transcript.
+- 866cf83: Add `useDurableChat({ transport })`: `useChat` over a durable chat transport that also returns `run` with the durable run id, status, and `steer`, `cancel`, `retry`, `resolveTool` and `resolveMemoryWrite` controls.
+
 ## 1.1.5
 
 ### Patch Changes

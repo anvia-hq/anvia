@@ -1,5 +1,11 @@
 # @anvia/logger
 
+## 1.3.0
+
+### Minor Changes
+
+- ec99bb8: Add a `fileMode` option for file destinations, so a log file that may contain trace payloads can be created with restricted permissions such as `0o600`.
+
 ## 1.2.1
 
 ### Patch Changes

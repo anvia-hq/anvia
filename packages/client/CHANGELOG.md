@@ -1,5 +1,11 @@
 # @anvia/client
 
+## 1.9.0
+
+### Minor Changes
+
+- 866cf83: `createDurableChatTransport`'s controller gains `status` (the run's last known durable status), `subscribe(listener)`, and `steer(input)`. `DurableChatClient` accepts an optional `steer`. A resumed run reads its current status once from the snapshot.
+
 ## 1.8.1
 
 ### Patch Changes

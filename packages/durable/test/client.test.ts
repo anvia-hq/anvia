@@ -91,14 +91,20 @@ describe("DurableClient", () => {
     expect(queued.id).not.toBe(first.id);
   });
 
-  it("lets only one of two concurrent clients open a session", async () => {
+  it("lets only one of many concurrent clients open a session", async () => {
     const { pool } = testPool();
-    const [a, b] = [await openClient(pool), await openClient(pool)];
-    const results = await Promise.allSettled([
-      a.submit({ agentId: "researcher", ...submission("race", "a") }),
-      b.submit({ agentId: "researcher", ...submission("race", "b") }),
-    ]);
+    const clients = await Promise.all(Array.from({ length: 8 }, () => openClient(pool)));
+    const results = await Promise.allSettled(
+      clients.map((client, index) =>
+        client.submit({ agentId: "researcher", ...submission("race", `r${index}`) }),
+      ),
+    );
     expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(
+      (await clients[0]!.listRuns({ sessionId: "race" } as never)).runs.filter(
+        (run) => run.sessionId === "race",
+      ),
+    ).toHaveLength(1);
   });
 
   it("leaves a run queued until a worker registers its agent", async () => {

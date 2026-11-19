@@ -461,6 +461,27 @@ it. A caller with no operator path can opt out with `run.result({ onBlocked: "th
 rejects with `DurableBlockedError` (carrying `runId` and `blockedOperation`) instead of hanging.
 The run stays blocked: settle it with `resolveTool()`, `resolveMemoryWrite()`, or `retry()`.
 
+### Typed events
+
+`DurableEvent.data` is `JsonValue`. `isDurableEvent` narrows an event by type and gives its payload
+the shape the runtime writes:
+
+```ts
+import { isDurableEvent } from "@anvia/durable";
+
+for await (const event of run.stream()) {
+  if (isDurableEvent(event, "model_delta")) render(event.data.event);
+  if (isDurableEvent(event, "tool_started", "tool_completed")) track(event.data.operationId);
+}
+```
+
+`DurableEventPayloads` lists every type's payload and `DurableEventOf<"tool_completed">` names one
+narrowed event. The guard checks the type tag only; it does not validate the payload. Payload
+fields holding user or model content are `JsonValue`, and large values may be blob references, so
+read `snapshot()` for hydrated content. Run, graph and task events share the stream, so
+`submitted` and `status` carry optional fields for each shape. Treat payloads as open: new fields
+can appear in a minor release.
+
 ## Observing from another process
 
 `DurableObserver` reads runs from a process that does not own the database, such as a dashboard

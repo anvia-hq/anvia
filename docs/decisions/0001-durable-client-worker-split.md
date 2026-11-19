@@ -135,6 +135,12 @@ Each stage is independently shippable and keeps `DurableRuntime` working.
    written: workers already poll every second, while an owning runtime has no other writer to
    notice (an owner and clients cannot share a database), so its default stays off.
 6. Typed events and protocol bridge; registration fingerprinting; unify with tasks.
+   - **6a. Typed events (shipped on the typed-events branch).** `isDurableEvent` and
+     `DurableEventPayloads` type each event's payload without changing `DurableEvent`, so it is
+     additive. The payload shapes were read from every `appendEvent` call and a test checks them
+     against a real run. A runtime-validated discriminated union stays deferred: `submitted` and
+     `status` are shared by runs, graphs and tasks, so a strict union needs those split first.
+   - **6b. Protocol bridge, registration fingerprinting, tasks under claims.** Not started.
 
 ## Consequences
 

@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { statSync } from "node:fs";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -127,6 +128,26 @@ describe("createPinoLogger", () => {
     expect(JSON.parse((await readFile(filePath, "utf8")).trim())).toMatchObject({
       msg: "durable log",
     });
+  });
+
+  it("rejects a file mode outside the permission bits", () => {
+    expect(() =>
+      createPinoLogger({ filePath: join(directory, "mode.log"), fileMode: 0o1000 }),
+    ).toThrow("fileMode");
+    expect(() =>
+      createPinoLogger({ filePath: join(directory, "mode.log"), fileMode: 1.5 }),
+    ).toThrow("fileMode");
+    expect(() => createPinoLogger({ fileMode: 0o600 })).toThrow("fileMode");
+  });
+
+  it.runIf(process.platform !== "win32")("applies the configured file mode", async () => {
+    const filePath = join(directory, "mode.log");
+    const logger = createPinoLogger({ filePath, fileMode: 0o600 });
+
+    logger.info("mode log");
+    await logger.flush();
+
+    expect(statSync(filePath).mode & 0o777).toBe(0o600);
   });
 
   it("flushes a caller-supplied Pino destination", async () => {

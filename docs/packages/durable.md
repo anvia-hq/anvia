@@ -660,6 +660,33 @@ in the store wait for a worker that registers it. It is `DurableRuntime.open({ w
 hood, so the limits in [Shared workers](#shared-workers) apply: agent runs and graphs only, and no owning
 runtime on the same database.
 
+## Automatic registration versions
+
+A run records the registration `version` it started under, and a restart refuses to resume it under
+a different version. Bumping that string by hand is easy to forget. Let the runtime derive it from
+the agent's declared configuration instead:
+
+```ts
+const runtime = await DurableRuntime.open({
+  store,
+  agents: [{ agent: researcher, version: "auto" }], // also in DurableWorker.start()
+});
+
+// or compute it yourself, for registerAgents() and runtime.agent():
+runtime.registerAgents([{ agent, version: await agentVersion(agent) }]);
+```
+
+`agentVersion()` hashes the model provider and id, instructions, sampling settings and controls, tool
+choice, turn limit, output schema, provider tools, and each tool's definition and approval flag. It is stable across
+processes. If any of that changes while a run is unfinished, the run stops with a message naming
+the configuration change, and `result()` reports it as blocked, instead of replaying against a
+different agent.
+
+It cannot see code: a tool's implementation, guardrails, middlewares and lifecycle hooks are not
+part of the hash, so changing only those still needs an explicit version. MCP servers, tool
+indexes and context have their own fingerprints. `"auto"` is resolved in `open()` because tool
+definitions are read asynchronously; `registerAgents()` rejects it and points at `agentVersion()`.
+
 ## Typed agent handles
 
 `runtime.agent(registration)` registers an agent and returns a `DurableAgentHandle<Output>`.

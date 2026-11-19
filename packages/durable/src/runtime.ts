@@ -74,6 +74,7 @@ import { registrations } from "./registration.js";
 import { compatibilityReport } from "./compatibility.js";
 import { DurableAgentHandle } from "./agent-handle.js";
 import { claimContext, fenceStore } from "./fencing.js";
+import { AUTO_VERSION, AUTO_VERSION_PATTERN, resolveAutoVersions } from "./fingerprint.js";
 import { readEvents, readRun, readSnapshot, readStatus } from "./reads.js";
 import type { DurableSubmitClient } from "./client.js";
 import { DurableRun } from "./run.js";
@@ -202,7 +203,7 @@ export class DurableRuntime implements DurableSubmitClient {
       definitions.set(registration.name, registration);
     }
     const worker = resolveWorker(options);
-    const agents = registrations(options.agents ?? []);
+    const agents = registrations(await resolveAutoVersions(options.agents ?? []));
     const limits = durableLimits(options.limits);
     await (worker === undefined ? options.store.acquire() : options.store.join!());
     const runtime = new DurableRuntime(
@@ -234,6 +235,11 @@ export class DurableRuntime implements DurableSubmitClient {
    */
   registerAgents(values: readonly DurableAgentRegistration[]): void {
     this.assertOpen();
+    for (const value of values)
+      if (value.version === AUTO_VERSION)
+        throw new TypeError(
+          `Durable agent "${value.agent.id}" uses version "auto", which is resolved in DurableRuntime.open(). Pass \`version: await agentVersion(agent)\` here instead.`,
+        );
     const added = registrations(values);
     for (const id of added.keys())
       if (this.agents.has(id)) throw new DurableConflictError(`Agent already registered: ${id}`);
@@ -823,7 +829,9 @@ export class DurableRuntime implements DurableSubmitClient {
       const registration = this.agents.get(run.agentId);
       if (registration === undefined || registration.version !== run.version) {
         throw new DurableRecoveryError(
-          "The saved agent version is not registered. Restore it before retrying.",
+          AUTO_VERSION_PATTERN.test(run.version)
+            ? "The saved agent version is not registered: the agent's declared configuration (model, instructions, tools, or settings) changed since this run started. Restore it before retrying."
+            : "The saved agent version is not registered. Restore it before retrying.",
         );
       }
       verifyContextDocuments(run, registration);

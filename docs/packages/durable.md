@@ -456,6 +456,28 @@ open during approvals and recovery blocks. `run.result({ abortSignal })` waits f
 outcome, throwing `DurableRunError` for failure/cancellation. An application must separately
 observe and resolve pending interactions; waiting for the result does not approve them.
 
+A run in `needs_attention` is not terminal, so `result()` keeps waiting for an operator to settle
+it. A caller with no operator path can opt out with `run.result({ onBlocked: "throw" })`, which
+rejects with `DurableBlockedError` (carrying `runId` and `blockedOperation`) instead of hanging.
+The run stays blocked: settle it with `resolveTool()`, `resolveMemoryWrite()`, or `retry()`.
+
+## Typed agent handles
+
+`runtime.agent(registration)` registers an agent and returns a `DurableAgentHandle<Output>`.
+Submitting through it drops the `agentId` string, and the returned `DurableRun<Output>` types
+`result()` from the agent's output:
+
+```ts
+const researcher = runtime.agent({ agent, version: "1" });
+const run = await researcher.submit({ sessionId, requestId, prompt });
+const outcome = await run.result(); // AgentOutcome<Output>
+```
+
+`runtime.agent()` follows `registerAgents()` rules, so an agent that pins MCP servers must be
+passed to `DurableRuntime.open()`. Use `runtime.handle(agent)` to get the same typed handle for an
+agent already registered there. `runtime.submit()` is unchanged. Design direction for splitting
+the client from the worker is in [ADR 0001](../decisions/0001-durable-client-worker-split.md).
+
 ## Tracing with Lens and OpenTelemetry
 
 Attach observers to the registered agent as usual. Durable work passes trace context to every

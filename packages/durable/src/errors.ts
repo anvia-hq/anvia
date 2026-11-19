@@ -19,6 +19,22 @@ export class DurableRunError extends Error {
   }
 }
 
+/**
+ * Thrown by `DurableRun.result({ onBlocked: "throw" })` when the run needs an operator decision
+ * (`needs_attention`). The run is not failed: settle it with `resolveTool()`, `resolveMemoryWrite()`
+ * or `retry()`, then wait again.
+ */
+export class DurableBlockedError extends Error {
+  constructor(
+    readonly runId: string,
+    readonly blockedOperation: string | undefined,
+    message: string,
+  ) {
+    super(message);
+    this.name = "DurableBlockedError";
+  }
+}
+
 export class DurableNotFoundError extends Error {}
 export class DurableConflictError extends Error {}
 

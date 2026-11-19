@@ -7,7 +7,7 @@ import {
 import { parseMessage, type ToolResultOutput } from "@anvia/core/completion";
 import { externalizeSubmittedEvent, externalizeToolResult } from "./blob.js";
 import { DurableConflictError, DurableNotFoundError } from "./errors.js";
-import { requireGraph } from "./graph-state.js";
+import { graphSnapshot, requireGraph } from "./graph-state.js";
 import { errorMessage, json, nonblank, sameJson } from "./json.js";
 import { parsePrompt } from "./prompt.js";
 import { isRecordedMemoryWrite, resolveRecordedMemoryWrite } from "./recorded-memory.js";
@@ -315,5 +315,26 @@ export function cancelRun(store: DurableStore, id: string): Promise<string> {
     run.error = "Durable run cancelled.";
     await setStatus(tx, run, "cancelled");
     return run.sessionId;
+  });
+}
+
+/** Cancels every unfinished run of a graph and returns the run ids, for the caller to abort. */
+export function cancelGraphRuns(store: DurableStore, id: string): Promise<string[]> {
+  return store.transaction(async (tx) => {
+    const graph = await requireGraph(tx, id);
+    if (graph.cancelled || (await graphSnapshot(tx, id)).status === "completed") return [];
+    graph.cancelled = true;
+    await tx.putGraph(graph);
+    const runIds = Object.values(graph.runIds);
+    for (const runId of runIds) {
+      const run = await requireRun(tx, runId);
+      if (SETTLED_STATUSES.includes(run.status)) continue;
+      delete run.nextAttemptAt;
+      run.error = "Durable graph cancelled.";
+      await setStatus(tx, run, "cancelled");
+    }
+    // Cancellation remains observable even when every task had already failed.
+    await tx.appendEvent(runIds[0]!, "status", { graphCancelled: true });
+    return runIds;
   });
 }

@@ -1,6 +1,7 @@
 import type { AgentSteerInput, AgentSteerReceipt } from "@anvia/core/agent";
 import type { AgentInteractionResponse } from "@anvia/core/agent/interactions";
 import type { ToolResultOutput } from "@anvia/core/completion";
+import type { DurableGraphSnapshot } from "./graph-types.js";
 import type { DurableRun } from "./run.js";
 import type {
   DurableEvent,
@@ -45,4 +46,11 @@ export interface DurableRunClient extends DurableRunReader {
 /** A run client that can also admit new submissions. */
 export interface DurableSubmitClient extends DurableRunClient {
   submit(input: DurableSubmission, options?: DurableSubmitOptions): Promise<DurableRun>;
+}
+
+/** What a `DurableTaskGraph` needs from its owner. */
+export interface DurableGraphClient {
+  graphSnapshot(id: string): Promise<DurableGraphSnapshot>;
+  graphEvents(id: string, after: number): Promise<DurableEvent[]>;
+  cancelGraph(id: string): Promise<void>;
 }

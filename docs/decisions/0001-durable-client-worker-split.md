@@ -140,7 +140,12 @@ Each stage is independently shippable and keeps `DurableRuntime` working.
      additive. The payload shapes were read from every `appendEvent` call and a test checks them
      against a real run. A runtime-validated discriminated union stays deferred: `submitted` and
      `status` are shared by runs, graphs and tasks, so a strict union needs those split first.
-   - **6b. Protocol bridge, registration fingerprinting, tasks under claims.** Not started.
+   - **6b. Graphs under claims (shipped on the worker-tasks branch).** Graph tasks are ordinary
+     runs with dependencies, so claims already schedule them. `submitGraph`, `getGraph`,
+     `graphSnapshot` and `cancelGraph` now work in worker mode and on `DurableClient`; tasks for
+     unregistered agents are stored unadmitted. Custom tasks and goals (`definition.run` user
+     code, tree reconciliation, deadlines) are not covered and still need their own claim design.
+   - **6c. Protocol bridge, registration fingerprinting, custom tasks under claims.** Not started.
 
 ## Consequences
 

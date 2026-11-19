@@ -2,12 +2,22 @@ import type { AgentSteerInput, AgentSteerReceipt } from "@anvia/core/agent";
 import type { AgentInteractionResponse } from "@anvia/core/agent/interactions";
 import type { ToolResultOutput } from "@anvia/core/completion";
 import { DurableAgentHandle } from "./agent-handle.js";
-import type { DurableSubmitClient } from "./client.js";
+import type { DurableGraphClient, DurableSubmitClient } from "./client.js";
+import { createGraph, graphSnapshot } from "./graph-state.js";
+import { graphListSchema, parseDurableGraphSubmission } from "./graph-schema.js";
+import type {
+  DurableGraphListOptions,
+  DurableGraphPage,
+  DurableGraphSnapshot,
+  DurableGraphSubmission,
+} from "./graph-types.js";
+import { DurableTaskGraph } from "./task-graph.js";
 import { createUnadmittedRunRecord } from "./run-record.js";
 import { listOptionsSchema } from "./schema.js";
 import { readEvents, readRun, readSnapshot, readStatus } from "./reads.js";
 import { DurableRun } from "./run.js";
 import {
+  cancelGraphRuns,
   cancelRun,
   parseSubmission,
   resolveMemoryWriteForRun,
@@ -43,7 +53,7 @@ export type DurableClientOptions = { store: DurableStore };
  * A client cannot share a database with an owning runtime: `connect()` fails while one is live,
  * because an owner assumes it is the only writer (ADR 0001).
  */
-export class DurableClient implements DurableSubmitClient {
+export class DurableClient implements DurableSubmitClient, DurableGraphClient {
   private closed = false;
 
   private constructor(private readonly store: DurableStore) {}
@@ -150,6 +160,47 @@ export class DurableClient implements DurableSubmitClient {
   async cancel(id: string): Promise<void> {
     this.assertOpen();
     await cancelRun(this.store, id);
+  }
+
+  /**
+   * Records a static graph for workers to execute. Each task becomes an agent run in its own
+   * session; the worker that claims it admits it against its registration. Like `submit()`, it
+   * does not check that the agents exist.
+   */
+  async submitGraph(input: DurableGraphSubmission): Promise<DurableTaskGraph> {
+    this.assertOpen();
+    const submission = parseDurableGraphSubmission(input);
+    const id = await this.store.transaction(async (tx) =>
+      createGraph(tx, submission, new Map(), new Map(), new Map(), true),
+    );
+    return new DurableTaskGraph(id, this);
+  }
+
+  async getGraph(id: string): Promise<DurableTaskGraph> {
+    await this.graphSnapshot(id);
+    return new DurableTaskGraph(id, this);
+  }
+
+  async listGraphs(options: DurableGraphListOptions = {}): Promise<DurableGraphPage> {
+    this.assertOpen();
+    return this.store.listGraphs(graphListSchema.parse(options));
+  }
+
+  async graphSnapshot(id: string): Promise<DurableGraphSnapshot> {
+    this.assertOpen();
+    return this.store.transaction(async (tx) => graphSnapshot(tx, id), { readOnly: true });
+  }
+
+  async graphEvents(id: string, after: number) {
+    this.assertOpen();
+    if (!Number.isSafeInteger(after) || after < 0) throw new TypeError("Invalid event cursor.");
+    return this.store.graphEvents(id, after, 100);
+  }
+
+  /** Cancels every unfinished task. Workers stop their runs within one heartbeat. */
+  async cancelGraph(id: string): Promise<void> {
+    this.assertOpen();
+    await cancelGraphRuns(this.store, id);
   }
 
   /** Closes the connection. Runs it submitted keep going on their workers. */

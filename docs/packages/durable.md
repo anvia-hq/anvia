@@ -548,7 +548,7 @@ cannot overwrite the result, and a run settled elsewhere is never overwritten. L
 one run, not the runtime. `runtime.cancel()` from any worker stops the run on whichever worker holds
 it, within one heartbeat.
 
-Limits today: agent runs only. Tasks, graphs, and goals are rejected in worker mode. The poll
+Limits today: agent runs and static graphs. Custom tasks and goals are rejected in worker mode. The poll
 interval defaults to one second here because retry waits are not timer-driven. An owning runtime and
 shared workers cannot run together: a worker fails to start while an owner is live, and an owner
 fails to start while a worker holds a live claim. SQLite stays single-owner. Drizzle and Prisma
@@ -610,6 +610,31 @@ Run rows are locked while a transaction reads them for writing, and submissions 
 serialised, so clients and workers can write the same run without losing updates. A client cannot
 share a database with an owning runtime: `connect()` fails while one is live.
 
+## Graphs with workers and clients
+
+Static graphs (`submitGraph`) work with shared workers and clients, because each graph task is an
+ordinary agent run in its own session with dependencies the claim query already honours:
+
+```ts
+const graph = await client.submitGraph({
+  sessionId: "report",
+  requestId: "q3",
+  tasks: [
+    { id: "left", agentId: "researcher", prompt: "Collect sales." },
+    { id: "right", agentId: "analyst", prompt: "Collect costs." },
+    { id: "join", agentId: "writer", prompt: "Write it up.", dependsOn: ["left", "right"] },
+  ],
+});
+for await (const event of graph.stream()) render(event);
+await graph.cancel(); // from any process
+```
+
+Different tasks can run on different workers, each registering only its own agents. A graph
+submitted without registrations (by a `DurableClient`, or by a worker for agents it does not
+register) stores its tasks unadmitted; the worker that runs a task admits it. That worker also
+refuses a task whose agent records memory, which graphs do not support, by failing the task, where
+an owning runtime rejects the submission up front. Custom tasks and goals are still owner-only.
+
 ## Worker processes
 
 `DurableWorker` is the executing half of a client/worker deployment. It takes the same agent
@@ -632,7 +657,7 @@ await worker.close(); // aborts active attempts and releases their claims
 Add workers freely; each claims only runs of agents it registers. `worker.unregisterAgent(id)`
 stops claiming that agent (it fails while an attempt of it is active here); runs already queued
 in the store wait for a worker that registers it. It is `DurableRuntime.open({ worker })` under the
-hood, so the limits in [Shared workers](#shared-workers) apply: agent runs only, and no owning
+hood, so the limits in [Shared workers](#shared-workers) apply: agent runs and graphs only, and no owning
 runtime on the same database.
 
 ## Typed agent handles

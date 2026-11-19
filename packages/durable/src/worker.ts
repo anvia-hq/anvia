@@ -28,7 +28,7 @@ export type DurableWorkerStartOptions = Pick<
  *
  * It is a role over `DurableRuntime` in worker mode, so agent registration, limits and
  * compatibility behave as documented there. A worker cannot share a database with an owning
- * runtime, and it runs agent runs only (ADR 0001).
+ * runtime, and it runs agent runs and graphs only, not custom tasks or goals (ADR 0001).
  */
 export class DurableWorker {
   private constructor(

@@ -1,4 +1,5 @@
 import {
+  cancelGraphRuns,
   cancelRun,
   parseSubmission,
   requireRun,
@@ -59,6 +60,7 @@ import { createObservedLifecycle } from "./observed-lifecycle.js";
 import { createRecordedHooks } from "./recorded-hooks.js";
 import { createRecordedGuardrails } from "./recorded-guardrails.js";
 import {
+  assertMemoryFreeTask,
   flushRecordedMemory,
   recordMemoryWrites,
   recordedMemoryOf,
@@ -469,14 +471,13 @@ export class DurableRuntime implements DurableSubmitClient {
   }
 
   async submitGraph(input: DurableGraphSubmission): Promise<DurableTaskGraph> {
-    this.assertNotWorker();
     this.assertOpen();
     const submission = parseDurableGraphSubmission(input);
     const agentIds = submission.tasks.map((task) => task.agentId);
     const mcpServers = await mcpServersByAgent(this.agents, agentIds);
     const toolIndexes = await toolIndexesByAgent(this.agents, agentIds);
     const id = await this.store.transaction(async (tx) =>
-      createGraph(tx, submission, this.agents, mcpServers, toolIndexes),
+      createGraph(tx, submission, this.agents, mcpServers, toolIndexes, this.worker !== undefined),
     );
     await this.pump();
     return new DurableTaskGraph(id, this);
@@ -494,7 +495,7 @@ export class DurableRuntime implements DurableSubmitClient {
 
   async graphSnapshot(id: string): Promise<DurableGraphSnapshot> {
     this.assertOpen();
-    return this.store.transaction(async (tx) => graphSnapshot(tx, id));
+    return this.store.transaction(async (tx) => graphSnapshot(tx, id), { readOnly: true });
   }
 
   async graphEvents(id: string, after: number) {
@@ -504,25 +505,8 @@ export class DurableRuntime implements DurableSubmitClient {
   }
 
   async cancelGraph(id: string): Promise<void> {
-    this.assertNotWorker();
     this.assertOpen();
-    const ids = await this.store.transaction(async (tx) => {
-      const graph = await requireGraph(tx, id);
-      if (graph.cancelled || (await graphSnapshot(tx, id)).status === "completed") return [];
-      graph.cancelled = true;
-      await tx.putGraph(graph);
-      const runIds = Object.values(graph.runIds);
-      for (const runId of runIds) {
-        const run = await requireRun(tx, runId);
-        if (["completed", "failed", "cancelled"].includes(run.status)) continue;
-        delete run.nextAttemptAt;
-        run.error = "Durable graph cancelled.";
-        await setStatus(tx, run, "cancelled");
-      }
-      // Cancellation remains observable even when every task had already failed.
-      await tx.appendEvent(runIds[0]!, "status", { graphCancelled: true });
-      return runIds;
-    });
+    const ids = await cancelGraphRuns(this.store, id);
     for (const runId of ids)
       this.active.get(runId)?.controller.abort(new Error("Durable graph cancelled."));
     await this.pump();
@@ -807,6 +791,15 @@ export class DurableRuntime implements DurableSubmitClient {
           await setStatus(tx, current, "failed");
           return undefined;
         }
+        if (current.graphId !== undefined) {
+          try {
+            assertMemoryFreeTask(registration, current.agentId, "graph tasks");
+          } catch (error) {
+            current.error = errorMessage(error);
+            await setStatus(tx, current, "failed");
+            return undefined;
+          }
+        }
         current = await admitRunRecord(
           current,
           registration,
@@ -1000,7 +993,7 @@ export class DurableRuntime implements DurableSubmitClient {
 
   private assertNotWorker(): void {
     if (this.worker !== undefined)
-      throw new TypeError("Tasks, graphs, and goals are not supported in shared worker mode yet.");
+      throw new TypeError("Custom tasks and goals are not supported in shared worker mode yet.");
   }
 
   /** Renews held claims and stops runs whose claim was lost. */

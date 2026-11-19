@@ -1,0 +1,33 @@
+# Automatic Hammer review for fork PRs via pull_request_target.
+#
+# SAFETY: this runs in base-repo context, so secrets are available. Never add
+# actions/checkout of the PR head, a build step, or any step that runs PR code.
+# The only step is the pinned Hammer action, which fetches the PR head read-only.
+# Same-repo PRs are reviewed by hammer.yml; this file reviews forks only.
+# Keep "Require approval for first-time contributors" on (Settings > Actions > General).
+name: Hammer Fork Review
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    concurrency:
+      group: hammer-review-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    if: github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: anvia-hq/hammer@8072b1d8c28bf50603f4e714aed8ba579f1e7738 # v1
+        with:
+          client: anthropic
+          model: claude-sonnet-5-5
+          api-key: ${{ secrets.MODEL_API_KEY }}
+          max_cost_usd: "1"
+          fail_on_error: "false"

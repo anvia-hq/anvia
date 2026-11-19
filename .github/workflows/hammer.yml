@@ -7,6 +7,11 @@ on:
 permissions:
   contents: read
   pull-requests: write
+  id-token: write
+
+concurrency:
+  group: hammer-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
   review:

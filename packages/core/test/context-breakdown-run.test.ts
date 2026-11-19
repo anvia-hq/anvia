@@ -33,7 +33,7 @@ class FixedModel implements CompletionModel {
     toolChoice: true,
     imageInput: false,
     documentInput: false,
-    outputSchema: false,
+    outputSchema: true,
     reasoning: false,
   };
 
@@ -165,5 +165,24 @@ describe("agent generation context breakdown", () => {
     const context = trace.errors[0]?.context;
     expect(context?.reportedInputTokens).toBeUndefined();
     expect(context?.segments.map((segment) => segment.id)).toEqual(["instructions", "messages"]);
+  });
+
+  it("scales to the final attempt's input tokens, not the cumulative retry usage", async () => {
+    const trace = recorder();
+    const replies = [response("not json", usage(3_000)), response('{"ok":true}', usage(3_000))];
+    const agent = new Agent({
+      id: "context-agent",
+      model: new FixedModel(() => replies.shift() ?? response('{"ok":true}', usage(3_000))),
+      instructions: "You are a careful assistant.",
+      outputSchema: z.object({ ok: z.boolean() }),
+      retries: { maxAttempts: 2, initialDelayMs: 0, maxDelayMs: 0 },
+      observability: { observers: { test: trace.observer } },
+    });
+
+    await agent.generate({ prompt: "hello" });
+
+    const end = trace.ends[0];
+    expect(end?.response.usage.inputTokens).toBe(6_000);
+    expect(end?.context?.reportedInputTokens).toBe(3_000);
   });
 });

@@ -3,7 +3,7 @@ import type { AgentOutcome, AgentSteerInput, AgentSteerReceipt } from "@anvia/co
 import type { AgentInteractionResponse } from "@anvia/core/agent/interactions";
 import type { ToolResultOutput } from "@anvia/core/completion";
 import { DurableBlockedError, DurableRunError } from "./errors.js";
-import type { DurableRuntime } from "./runtime.js";
+import type { DurableRunClient } from "./client.js";
 import type {
   DurableEvent,
   DurableSnapshot,
@@ -28,7 +28,7 @@ export type DurableResultOptions = {
 export class DurableRun<Output = unknown> {
   constructor(
     readonly id: string,
-    private readonly runtime: DurableRuntime,
+    private readonly runtime: DurableRunClient,
   ) {}
 
   async snapshot(options: { operations?: boolean } = {}): Promise<DurableSnapshot> {

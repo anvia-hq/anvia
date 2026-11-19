@@ -45,6 +45,7 @@ export type {
 } from "./tasks/types.js";
 export { DurableRun, type DurableResultOptions, type DurableStreamOptions } from "./run.js";
 export { DurableAgentHandle } from "./agent-handle.js";
+export type { DurableRunClient, DurableSubmitClient } from "./client.js";
 export {
   DurableRecoveryError,
   DurableRunError,

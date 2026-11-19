@@ -1,5 +1,5 @@
 import type { DurableRun } from "./run.js";
-import type { DurableRuntime } from "./runtime.js";
+import type { DurableSubmitClient } from "./client.js";
 import type { DurableSubmission, DurableSubmitOptions } from "./types.js";
 
 /**
@@ -9,7 +9,7 @@ import type { DurableSubmission, DurableSubmitOptions } from "./types.js";
 export class DurableAgentHandle<Output> {
   constructor(
     readonly id: string,
-    private readonly runtime: DurableRuntime,
+    private readonly runtime: DurableSubmitClient,
   ) {}
 
   async submit(

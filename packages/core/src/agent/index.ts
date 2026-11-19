@@ -39,6 +39,8 @@ export type {
   AgentStream,
   AgentStreamEvent,
   AgentToolCallDeltaEvent,
+  AgentToolSelectionEvent,
+  AgentToolSelectionMatch,
 } from "./run-types";
 export type {
   AgentContextInput,

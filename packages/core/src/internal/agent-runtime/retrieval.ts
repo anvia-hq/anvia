@@ -72,33 +72,51 @@ async function retrieveContext(
   return documents;
 }
 
+/**
+ * A tool an index returned for this turn's text. Tool names are unique across an agent's sources,
+ * so a match is always offered; the flag existed for a repeat that cannot occur.
+ */
+export type ToolSelectionMatch = {
+  toolName: string;
+  /** The index's position in the agent's tool list. */
+  index: number;
+  score: number;
+};
+
+export type FetchedToolDefinitions = {
+  definitions: ToolDefinition[];
+  matches: ToolSelectionMatch[];
+};
+
 export async function fetchToolDefinitions<Output, M extends CompletionModel, ContextDocument>(
   agent: Agent<Output, M, ContextDocument>,
   ragText: string | undefined,
   abortSignal?: AbortSignal | undefined,
-): Promise<ToolDefinition[]> {
+): Promise<FetchedToolDefinitions> {
   const state = getAgentToolState(agent);
   const staticDefinitions = await Promise.all(
     state.staticTools.map((tool) => tool.definition(ragText ?? "")),
   );
   if (ragText === undefined || ragText.length === 0 || state.toolIndexes.length === 0) {
-    return staticDefinitions;
+    return { definitions: staticDefinitions, matches: [] };
   }
 
   const definitions = [...staticDefinitions];
+  const matches: ToolSelectionMatch[] = [];
   const names = new Set(staticDefinitions.map((definition) => definition.name));
-  for (const index of state.toolIndexes) {
+  for (const [indexPosition, index] of state.toolIndexes.entries()) {
     const results = await index.search({ query: ragText, abortSignal });
     for (const result of results) {
       const toolName = result.document.toolName;
-      if (names.has(toolName)) continue;
       const tool = index.tools.find((candidate) => candidate.name === toolName);
       if (tool === undefined) continue;
+      if (names.has(toolName)) continue;
+      matches.push({ toolName, index: indexPosition, score: result.score });
       names.add(toolName);
       definitions.push(await tool.definition(ragText));
     }
   }
-  return definitions;
+  return { definitions, matches };
 }
 
 function formatMetadata(

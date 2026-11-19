@@ -30,6 +30,7 @@ import type {
   AgentSteerInput,
   AgentSteerReceipt,
   AgentStreamEvent,
+  AgentToolSelectionEvent,
 } from "../../agent/run-types";
 import { getAgentToolState } from "../../agent/tool-state";
 import { isStreamingCompletionModel } from "../../completion/generate-completion";
@@ -119,7 +120,11 @@ import type {
 } from "./execution";
 import { AgentRunMemory, type MemoryPreparation } from "./memory";
 import { normalizeMemoryScope } from "./memory-scope";
-import { fetchContextDocuments, fetchToolDefinitions } from "./retrieval";
+import {
+  fetchContextDocuments,
+  fetchToolDefinitions,
+  type FetchedToolDefinitions,
+} from "./retrieval";
 import { getInternalAgentRunOptions, type InternalAgentRunOptions } from "./run-options";
 import { assertNonnegativeSafeInteger, assertPositiveSafeInteger } from "./run-validation";
 import { addTurn, addTurnToToolCallDelta, isGenerationDeltaEvent } from "./stream-events";
@@ -504,7 +509,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
           await this.notifyInternalMemoryCompaction(prepared.compaction);
           if (!contextReplayed) await this.recordMemoryCompaction(prepared, runObservers);
         }
-        const request = await this.createTurnRequest(prompt, prepared.messages, currentTurns);
+        const { request } = await this.createTurnRequest(prompt, prepared.messages, currentTurns);
 
         const modelReplayedPending = this.replayed({ kind: "model", turn: currentTurns });
         const modelReplayed =
@@ -854,7 +859,12 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
           if (!contextReplayed) await this.recordMemoryCompaction(prepared, runObservers);
           yield { type: "memory_compaction", ...prepared.compaction };
         }
-        const request = await this.createTurnRequest(prompt, prepared.messages, currentTurns);
+        const { request, selection } = await this.createTurnRequest(
+          prompt,
+          prepared.messages,
+          currentTurns,
+        );
+        if (selection !== undefined) yield selection;
 
         assertCompletionRequestSupported(this.agent.model, request, { streaming: true });
         const providerRequest = this.providerTraceRequest(request, { stream: true });
@@ -1241,7 +1251,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     prompt: MessageType,
     messages: readonly MessageType[],
     turn: number,
-  ): Promise<CompletionRequest> {
+  ): Promise<{ request: CompletionRequest; selection: AgentToolSelectionEvent | undefined }> {
     const ragText = extractRagText(prompt);
     const abortSignal = this.abortController.signal;
     const selectContext = this.execution?.selectContext;
@@ -1253,11 +1263,8 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         ? undefined
         : (index, retrieve) => selectContext.call(this.execution, turn, index, retrieve),
     );
-    const selectTools = () => fetchToolDefinitions(this.agent, ragText, abortSignal);
-    const toolDefinitions =
-      this.execution?.selectTools !== undefined
-        ? await this.execution.selectTools(turn, selectTools)
-        : await selectTools();
+    const fetched = await this.selectTurnTools(turn, ragText, abortSignal);
+    const toolDefinitions = fetched.definitions;
     const request = createCompletionRequest(providerMessages(messages), {
       instructions: this.agent.instructions,
       documents,
@@ -1269,7 +1276,37 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       controls: this.controls,
       outputSchema: getAgentProviderOutputSchema(this.agent),
     });
-    return this.runCompletionRequestMiddlewares(request, turn);
+    const selection =
+      fetched.matches.length === 0
+        ? undefined
+        : {
+            type: "tool_selection" as const,
+            turn,
+            tools: toolDefinitions.map((definition) => definition.name),
+            matches: fetched.matches,
+          };
+    return { request: await this.runCompletionRequestMiddlewares(request, turn), selection };
+  }
+
+  /**
+   * The tools this turn offers. A runtime that replays a turn hands back its recorded selection,
+   * which carries no matches: replay must not search again, and the event only reports what the
+   * index returned this time.
+   */
+  private async selectTurnTools(
+    turn: number,
+    ragText: string | undefined,
+    abortSignal: AbortSignal,
+  ): Promise<FetchedToolDefinitions> {
+    if (this.execution?.selectTools === undefined) {
+      return fetchToolDefinitions(this.agent, ragText, abortSignal);
+    }
+    let fetched: FetchedToolDefinitions = { definitions: [], matches: [] };
+    const selected = await this.execution.selectTools(turn, async () => {
+      fetched = await fetchToolDefinitions(this.agent, ragText, abortSignal);
+      return fetched.definitions;
+    });
+    return { definitions: selected, matches: fetched.matches };
   }
 
   private async *runUncachedStreamingCompletion(

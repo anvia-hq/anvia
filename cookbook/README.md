@@ -90,5 +90,6 @@ Not every example needs every variable. Pure pipeline, dynamic tool, and core ev
 pnpm --filter cookbook typecheck
 pnpm --filter cookbook pipelines:01
 pnpm --filter cookbook tools:09
+pnpm --filter cookbook tools:12
 pnpm --filter cookbook evals:01
 ```

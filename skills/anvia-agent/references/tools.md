@@ -55,7 +55,24 @@ approvals. The same interaction loop applies to `createQuestionTool` prompts.
 - `createQuestionTool()` — ask the caller a question mid-run (resolves through
   the interaction loop like approvals).
 - `ToolIndex` — expose a large or dynamic tool set behind one entry so the Agent
-  resolves tools at call time instead of listing them all in the prompt.
+  resolves tools at call time instead of listing them all in the prompt. Build
+  one with `createToolIndex({ model, tools, topK })`; it searches with the
+  turn's text, which is the user prompt on the first turn and the tool result
+  afterwards, so a discovery reaches the next turn.
+  - `embeddingText: "compact"` embeds the name, description and property names
+    instead of the stringified schema. Prefer it: schema scaffolding is the
+    same for every tool and dilutes the vector.
+  - `examples` on `createTool` renders worked calls into the definition. A
+    retrieved tool is one the model has never seen, so a correct call shape
+    matters more there than anywhere.
+- `searchTool()` for the common large-registry case: one `search_runbooks`-style
+  tool that searches its own entries and returns their text. A flat index ranks
+  a generic tool by its own name, so it never surfaces for a concrete question;
+  searching the entries does. Pass `model` for semantic matching, omit it for
+  term matching.
+- Watch `tool_selection` on the stream (or `toolMatches` on the generation
+  observation) when a tool you expected was not offered: it carries every index
+  match with its score.
 - `createMiddleware()` — observe or map around requests, responses, and tool
   input/output; prefer it over re-implementing retry or mapping inside
   `handler`.

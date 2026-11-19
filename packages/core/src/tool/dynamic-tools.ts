@@ -1,4 +1,4 @@
-import type { ToolDefinition } from "../completion";
+import type { JsonObject, ToolDefinition } from "../completion";
 import type { EmbeddedDocument, EmbeddingModel, VectorMetadata } from "../embeddings";
 import { embedDocuments } from "../embeddings";
 import { assertFiniteMinScore, assertPositiveSearchLimit } from "../internal/vector-search-options";
@@ -13,6 +13,8 @@ import {
 } from "../vector-store";
 import type { AnyTool } from "./tool";
 
+export type ToolEmbeddingText = "default" | "compact";
+
 export type ToolSearchDocument<Metadata extends VectorMetadata = VectorMetadata> = {
   toolName: string;
   definition: ToolDefinition;
@@ -24,6 +26,7 @@ export type EmbedToolsOptions<Metadata extends VectorMetadata = VectorMetadata> 
   model: EmbeddingModel;
   tools: readonly AnyTool[];
   content?: ((tool: AnyTool, definition: ToolDefinition) => string | string[]) | undefined;
+  embeddingText?: ToolEmbeddingText | undefined;
   metadata?: ((tool: AnyTool, definition: ToolDefinition) => Metadata | undefined) | undefined;
   concurrency?: number | undefined;
   retries?: RetrySetting | undefined;
@@ -62,7 +65,9 @@ export async function embedTools<Metadata extends VectorMetadata = VectorMetadat
     toolList.map(async (tool) => ({ tool, definition: await tool.definition("") })),
   );
   const documents = definitions.map(({ tool, definition }) => {
-    const content = options.content?.(tool, definition) ?? defaultToolEmbeddingText(definition);
+    const content =
+      options.content?.(tool, definition) ??
+      defaultToolEmbeddingText(definition, options.embeddingText);
     const texts = Array.isArray(content) ? content : [content];
     const metadata = options.metadata?.(tool, definition);
     let document: ToolSearchDocument<Metadata> = {
@@ -167,6 +172,54 @@ function dedupeTools(tools: readonly AnyTool[]): AnyTool[] {
   return [...byName.values()];
 }
 
-function defaultToolEmbeddingText(definition: ToolDefinition): string[] {
+function defaultToolEmbeddingText(
+  definition: ToolDefinition,
+  mode: ToolEmbeddingText = "default",
+): string[] {
+  if (mode === "compact") return compactToolEmbeddingText(definition);
   return [definition.name, definition.description, JSON.stringify(definition.parameters)];
+}
+
+/**
+ * Property names and `describe()` text are the words a query shares with a tool, so they are
+ * embedded verbatim. Schema scaffolding is dropped because it is identical for every tool and only
+ * dilutes the vector. The nested `description` is left alone: `toProviderJsonSchema` runs output
+ * schemas in the same parameter slot, so a tool that returns JSON would otherwise be retrievable by
+ * its result fields.
+ */
+function compactToolEmbeddingText(definition: ToolDefinition): string[] {
+  const fields: string[] = [];
+  const properties = definition.parameters.properties;
+  if (isJsonObject(properties)) collectFieldWords(properties, fields);
+  return fields.length === 0
+    ? [definition.name, definition.description]
+    : [definition.name, definition.description, fields.join(" ")];
+}
+
+function collectFieldWords(schema: JsonObject, words: string[], depth = 0, limit = 64): void {
+  if (depth > 2 || words.length >= limit) return;
+  for (const [name, value] of Object.entries(schema as Record<string, unknown>)) {
+    if (words.length >= limit) return;
+    if (name === "description" || name === "title") {
+      if (depth > 0 && typeof value === "string") words.push(value);
+      continue;
+    }
+    words.push(name);
+    if (!isJsonObject(value)) continue;
+    const description = value.description;
+    if (typeof description === "string") words.push(description);
+    for (const key of ["properties", "items", "anyOf", "oneOf", "allOf"] as const) {
+      const nested = value[key];
+      if (isJsonObject(nested)) collectFieldWords(nested, words, depth + 1, limit);
+      else if (Array.isArray(nested)) {
+        for (const item of nested) {
+          if (isJsonObject(item)) collectFieldWords(item, words, depth + 1, limit);
+        }
+      }
+    }
+  }
+}
+
+function isJsonObject(value: unknown): value is JsonObject {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

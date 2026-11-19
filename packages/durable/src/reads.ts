@@ -9,9 +9,12 @@ import type {
   DurableSnapshot,
   DurableStore,
   DurableTransaction,
+  DurableTransactionOptions,
 } from "./types.js";
 
 /** Run reads shared by the owning runtime and the read-only observer. None of them write. */
+
+const READ_ONLY: DurableTransactionOptions = { readOnly: true };
 
 async function requireRun(tx: DurableTransaction, id: string): Promise<DurableRunRecord> {
   const run = await tx.getRun(id);
@@ -23,7 +26,7 @@ export function readRun(store: DurableStore, id: string): Promise<DurableRunReco
   return store.transaction(async (tx) => {
     const stored = await requireRun(tx, id);
     return (await tx.blobs((io) => hydrateValue(io, json(stored)))) as DurableRunRecord;
-  });
+  }, READ_ONLY);
 }
 
 export function readStatus(store: DurableStore, id: string): Promise<DurableRunSummary> {
@@ -31,7 +34,7 @@ export function readStatus(store: DurableStore, id: string): Promise<DurableRunS
     const summary = await tx.getRunSummary(id);
     if (summary === undefined) throw new DurableNotFoundError("Durable run not found.");
     return summary;
-  });
+  }, READ_ONLY);
 }
 
 export function readSnapshot(
@@ -49,7 +52,7 @@ export function readSnapshot(
           (await tx.blobs((io) => hydrateValue(io, json(operation)))) as DurableOperation,
         );
     return { run, operations, cursor: await tx.cursor() };
-  });
+  }, READ_ONLY);
 }
 
 export function readEvents(

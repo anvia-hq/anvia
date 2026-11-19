@@ -118,10 +118,29 @@ Each stage is independently shippable and keeps `DurableRuntime` working.
      also refuse to overwrite a run that was settled elsewhere. A failed renew retries on the next
      beat, and a full lease without one success aborts every held run, since another worker may
      hold them. Agent runs only: tasks, graphs, and goals are rejected in this mode.
-   - **4c. Client writes** (submit, cancel, respond, resolve, retry, steer) from a process that
-     holds no claim, which is safe once 4b fences workers.
-5. **Public `DurableClient` and `DurableWorker`.** Mostly assembly once 2 to 4 exist.
+   - **4c. Client writes (shipped on the client-writes branch).** `DurableClient` submits, cancels,
+     responds, resolves, retries and steers without a claim or an agent. The transactions behind
+     those operations moved out of `DurableRuntime` into `mutations.ts` so both use one
+     implementation. Making that safe needed three store changes: a run read in a read-write
+     transaction is locked (`FOR UPDATE`) when the store is shared, so a worker and a client cannot
+     lose each other's updates; `lockSession` serialises submissions to one session; and `claim()`
+     takes `agentIds` so a worker never claims a run it cannot execute. A client has no
+     registration, so its runs are created `unadmitted` and the claiming worker admits them against
+     its own registration (`admitRunRecord`) before the first attempt.
+5. **Public `DurableClient` and `DurableWorker` (shipped on the worker-class branch).**
+   `DurableClient` arrived with 4c; `DurableWorker.start()` is the worker role over
+   `DurableRuntime` in worker mode, without submit or control methods. A worker's
+   `unregisterAgent()` no longer refuses because of unfinished runs in the store, since another
+   worker may execute them. The planned "flip polling on by default" is narrower than first
+   written: workers already poll every second, while an owning runtime has no other writer to
+   notice (an owner and clients cannot share a database), so its default stays off.
 6. Typed events and protocol bridge; registration fingerprinting; unify with tasks.
+   - **6a. Typed events (shipped on the typed-events branch).** `isDurableEvent` and
+     `DurableEventPayloads` type each event's payload without changing `DurableEvent`, so it is
+     additive. The payload shapes were read from every `appendEvent` call and a test checks them
+     against a real run. A runtime-validated discriminated union stays deferred: `submitted` and
+     `status` are shared by runs, graphs and tasks, so a strict union needs those split first.
+   - **6b. Protocol bridge, registration fingerprinting, tasks under claims.** Not started.
 
 ## Consequences
 

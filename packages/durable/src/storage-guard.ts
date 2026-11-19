@@ -1,6 +1,6 @@
 import { limitedTransaction, type DurableLimits } from "./limits.js";
 import { DurableClaimLostError, DurableStorageError } from "./errors.js";
-import type { DurableStore, DurableTransaction } from "./types.js";
+import type { DurableStore, DurableTransaction, DurableTransactionOptions } from "./types.js";
 
 /** A journal failure poisons the owner, even when application code catches the error. */
 export function guardStore(
@@ -21,7 +21,10 @@ export function guardStore(
   const check = () => {
     if (failure !== undefined) throw failure;
   };
-  const transaction = async <T>(callback: (tx: DurableTransaction) => Promise<T>): Promise<T> => {
+  const transaction = async <T>(
+    callback: (tx: DurableTransaction) => Promise<T>,
+    options?: DurableTransactionOptions,
+  ): Promise<T> => {
     check();
     let callbackFailed = false;
     let callbackError: unknown;
@@ -52,7 +55,7 @@ export function guardStore(
           callbackError = error;
           throw error;
         }
-      });
+      }, options);
     } catch (error) {
       if (error instanceof DurableClaimLostError) throw error;
       if (!callbackFailed || error !== callbackError) throw fail(error);

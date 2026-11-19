@@ -34,6 +34,7 @@ import type {
   DurableRunRecord,
   DurableStore,
   DurableTransaction,
+  DurableTransactionOptions,
 } from "./types.js";
 
 /** SQLite storage for one host and one runtime owner. Use a dedicated local database file. */
@@ -230,7 +231,10 @@ export class SqliteDurableStore implements DurableStore {
     }
   }
 
-  async transaction<T>(callback: (tx: DurableTransaction) => Promise<T>): Promise<T> {
+  async transaction<T>(
+    callback: (tx: DurableTransaction) => Promise<T>,
+    _options?: DurableTransactionOptions,
+  ): Promise<T> {
     this.assertOpen();
     return this.gate.transaction(async () => {
       this.assertOpen();

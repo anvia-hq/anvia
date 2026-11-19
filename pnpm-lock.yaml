@@ -836,6 +836,9 @@ importers:
       '@anvia/core':
         specifier: workspace:*
         version: link:../core
+      '@anvia/durable':
+        specifier: workspace:*
+        version: link:../durable
       '@anvia/graph':
         specifier: workspace:*
         version: link:../graph
@@ -12222,7 +12225,7 @@ snapshots:
       obug: 2.1.1
       std-env: 4.1.0
       tinyrainbow: 3.1.0
-      vitest: 4.1.11(@opentelemetry/api@1.10.0)(@types/node@24.12.2)(@vitest/coverage-v8@4.1.11)(happy-dom@21.0.4)(vite@8.3.4(@types/node@24.12.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.1))
+      vitest: 4.1.11(@opentelemetry/api@1.10.0)(@types/node@24.12.2)(@vitest/coverage-v8@4.1.11)(happy-dom@21.0.4)(vite@8.3.4(@types/node@24.12.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
 
   '@vitest/expect@4.1.11':
     dependencies:

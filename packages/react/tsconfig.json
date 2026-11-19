@@ -6,6 +6,7 @@
     "outDir": "dist",
     "paths": {
       "@anvia/client": ["../client/src/index.ts"],
+      "@anvia/client/durable-chat": ["../client/src/durable-chat.ts"],
       "@anvia/core": ["../core/src/index.ts"],
       "@anvia/core/*": ["../core/src/*/index.ts"],
       "@anvia/graph": ["../graph/src/index.ts"]

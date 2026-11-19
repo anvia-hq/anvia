@@ -1,4 +1,4 @@
-import type { AgentPrompt } from "@anvia/core/agent";
+import type { AgentPrompt, AgentSteerInput } from "@anvia/core/agent";
 import type { JsonObject, Message, ToolResultOutput } from "@anvia/core/completion";
 import { isJsonValue } from "@anvia/core/completion";
 import type { DurableEvent } from "@anvia/durable/protocol";
@@ -51,8 +51,8 @@ export type DurableChatClient = Pick<
   DurableClient,
   "submit" | "stream" | "snapshot" | "respond" | "resolveTool" | "retry" | "cancel" | "listRuns"
 > &
-  // Optional so a client written before this method existed still satisfies the type.
-  Partial<Pick<DurableClient, "resolveMemoryWrite">>;
+  // Optional so a client written before these methods existed still satisfies the type.
+  Partial<Pick<DurableClient, "resolveMemoryWrite" | "steer">>;
 
 /**
  * Run controls that `useChat` does not expose. `stop()` only aborts the subscription; cancellation
@@ -61,8 +61,17 @@ export type DurableChatClient = Pick<
 export type DurableChatController = {
   /** Run last submitted or reattached. Undefined before the first successful send. */
   readonly activeRunId: string | undefined;
+  /**
+   * Last known status of `activeRunId` (for example `running`, `waiting`, `retry_wait`,
+   * `needs_attention`). Updated from the submit response, a resume snapshot and status events.
+   */
+  readonly status: string | undefined;
+  /** Called after `activeRunId` or `status` changes. Returns an unsubscribe function. */
+  subscribe(listener: () => void): () => void;
   /** Point later interaction responses and `send({ resume })` at an existing run. */
   reattach(runId: string, after?: number): void;
+  /** Add a user message to a running run. The run applies it at its next model step. */
+  steer(input: AgentSteerInput, runId?: string): Promise<void>;
   cancel(runId?: string): Promise<void>;
   retry(runId?: string): Promise<void>;
   resolveTool(operationId: string, output: ToolResultOutput, runId?: string): Promise<void>;
@@ -90,6 +99,7 @@ export type DurableChatTransport = ClientTransport<ClientStreamRequest> & {
 
 type Session = {
   activeRunId?: string;
+  status?: string | undefined;
   /** Durable sequence last applied for `activeRunId`. Interaction responses resume after it. */
   cursor: number;
   map: DurableChatMapState;
@@ -107,16 +117,44 @@ export function createDurableChatTransport(
   options: CreateDurableChatTransportOptions,
 ): DurableChatTransport {
   const session: Session = { cursor: 0, map: createDurableChatMapState() };
+  const listeners = new Set<() => void>();
+  const notify = () => {
+    for (const listener of listeners) listener();
+  };
+  // A new run starts with an unknown status until the submit response or a status event reports it.
+  const track = (runId: string, status: string | undefined) => {
+    if (session.activeRunId === runId && session.status === status) return;
+    session.activeRunId = runId;
+    session.status = status;
+    notify();
+  };
+  const observe = (runId: string, status: string | undefined) => {
+    if (status === undefined || session.activeRunId !== runId || session.status === status) return;
+    session.status = status;
+    notify();
+  };
 
   const controller: DurableChatController = {
     get activeRunId() {
       return session.activeRunId;
     },
+    get status() {
+      return session.status;
+    },
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => void listeners.delete(listener);
+    },
     reattach(runId, after = 0) {
       assertCursor(after);
-      session.activeRunId = requireId(runId, "runId");
-      session.cursor = after;
       session.map = createDurableChatMapState(after);
+      session.cursor = after;
+      track(requireId(runId, "runId"), undefined);
+    },
+    async steer(input, runId) {
+      const steer = options.client.steer;
+      if (steer === undefined) throw new TypeError("The durable client does not support steer.");
+      await steer.call(options.client, resolveRun(session, runId), input);
     },
     cancel(runId) {
       return options.client.cancel(resolveRun(session, runId));
@@ -146,9 +184,12 @@ export function createDurableChatTransport(
       if (session.activeRunId !== target.runId || target.after < session.cursor) {
         session.map = createDurableChatMapState(target.after);
       }
-      session.activeRunId = target.runId;
       session.cursor = target.after;
-      yield* streamFrames(options.client, session, target.runId, send.abortSignal);
+      track(
+        target.runId,
+        target.status ?? (session.activeRunId === target.runId ? session.status : undefined),
+      );
+      yield* streamFrames(options.client, session, target.runId, send.abortSignal, observe);
     },
   };
 }
@@ -157,11 +198,13 @@ async function begin(
   options: CreateDurableChatTransportOptions,
   session: Session,
   send: ClientTransportSendOptions<ClientStreamRequest>,
-): Promise<{ runId: string; after: number }> {
+): Promise<{ runId: string; after: number; status?: string | undefined }> {
   const resume = send.resume ?? send.request.resume;
   if (resume !== undefined) {
     assertCursor(resume.after);
-    return { runId: requireId(resume.streamId, "streamId"), after: resume.after };
+    const runId = requireId(resume.streamId, "streamId");
+    // Status events behind the cursor are not replayed, so read the current status once.
+    return { runId, after: resume.after, status: await currentStatus(options.client, runId, send) };
   }
   if (send.request.type === "interaction_response") {
     if (session.activeRunId === undefined) {
@@ -175,14 +218,31 @@ async function begin(
     );
     return { runId: session.activeRunId, after: session.cursor };
   }
-  const snapshot = await submitPrompt(options, send);
-  return { runId: snapshot, after: 0 };
+  const submitted = await submitPrompt(options, send);
+  return { runId: submitted.runId, after: 0, status: submitted.status };
+}
+
+async function currentStatus(
+  client: DurableChatClient,
+  runId: string,
+  send: ClientTransportSendOptions<ClientStreamRequest>,
+): Promise<string | undefined> {
+  try {
+    const snapshot = await client.snapshot(
+      runId,
+      send.abortSignal === undefined ? {} : { abortSignal: send.abortSignal },
+    );
+    return snapshot.run.status;
+  } catch {
+    // The status is advisory; the stream below reports a missing run itself.
+    return undefined;
+  }
 }
 
 async function submitPrompt(
   options: CreateDurableChatTransportOptions,
   send: ClientTransportSendOptions<ClientStreamRequest>,
-): Promise<string> {
+): Promise<{ runId: string; status: string }> {
   if (send.request.type !== "messages") {
     throw new TypeError("Unsupported durable chat request.");
   }
@@ -197,7 +257,7 @@ async function submitPrompt(
       { agentId: options.agentId, sessionId: options.sessionId, requestId, prompt },
       requestOptions,
     );
-    return snapshot.run.id;
+    return { runId: snapshot.run.id, status: snapshot.run.status };
   } catch (error) {
     if (!isSessionBusy(error)) throw error;
     throw new DurableBusyError(await findBusyRun(options, send.abortSignal), error.message);
@@ -209,6 +269,7 @@ async function* streamFrames(
   session: Session,
   runId: string,
   abortSignal: AbortSignal | undefined,
+  observe: (runId: string, status: string | undefined) => void,
 ): AsyncIterable<ClientStreamFrame> {
   // The event id is the durable sequence, which is not contiguous per stream. See the note in
   // durable-chat-map.ts for why validateFrameSequence must not wrap this generator.
@@ -230,6 +291,7 @@ async function* streamFrames(
       const mapped = mapDurableChatEvent(event, session.map, settled);
       session.map = mapped.state;
       session.cursor = mapped.state.sequence;
+      observe(runId, statusEventStatus(event));
       lastEventId = mapped.state.sequence;
       for (const clientEvent of mapped.events) {
         yield {

@@ -48,6 +48,7 @@
   "devDependencies": {
     "@anvia/client": "workspace:*",
     "@anvia/core": "workspace:*",
+    "@anvia/durable": "workspace:*",
     "@anvia/graph": "workspace:*",
     "@testing-library/react": "^16.3.3",
     "@types/node": "^24.9.1",

@@ -138,6 +138,19 @@ describe("tasks from a store-only DurableClient", () => {
       expect(await handle.result()).toBe(index * 10 + 1);
   });
 
+  it("handles a task version beyond 32 bits", async () => {
+    const { pool } = testPool();
+    const definition = counting(3_000_000_000);
+    const c = await client(pool);
+    await worker(pool, [definition]);
+    const handle = await c.submitTask(definition, {
+      sessionId: "s",
+      requestId: "big",
+      input: { start: 1 },
+    });
+    expect(await handle.result()).toBe(11);
+  });
+
   it("is idempotent and rejects a different input under the same key", async () => {
     const { pool } = testPool();
     const definition = counting();

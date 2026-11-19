@@ -258,9 +258,9 @@ export class SqlDurableStore implements DurableStore {
              '"name":"((?:[^"\\\\]|\\\\.)*)","version":([0-9]+),"submissionVersion":[0-9]+(,"unadmitted":true)?') AS m) x
          WHERE t.status IN ('pending', 'running')
          AND x.m IS NOT NULL
-         AND EXISTS (SELECT 1 FROM jsonb_to_recordset($2::text::jsonb) AS d(name text, version int)
+         AND EXISTS (SELECT 1 FROM jsonb_to_recordset($2::text::jsonb) AS d(name text, version bigint)
            WHERE d.name = x.m[1]
-           AND (CASE WHEN x.m[3] IS NULL THEN d.version >= x.m[2]::int ELSE d.version = x.m[2]::int END))
+           AND (CASE WHEN x.m[3] IS NULL THEN d.version >= x.m[2]::bigint ELSE d.version = x.m[2]::bigint END))
          AND NOT EXISTS (SELECT 1 FROM anvia_durable_claims c
            WHERE c.run_id = t.id AND c.expires_at > now())
          ORDER BY t.ready_order, t.seq LIMIT $1::bigint`,

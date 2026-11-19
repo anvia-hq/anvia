@@ -1,5 +1,21 @@
 # @anvia/studio
 
+## 1.4.2
+
+### Patch Changes
+
+- e0f5c42: The knowledge retrieval log shows each turn's tool matches with their scores, so a tool that was nearly selected is visible instead of silently absent.
+- Updated dependencies [866cf83]
+- Updated dependencies [7602177]
+- Updated dependencies [866cf83]
+- Updated dependencies [84da9ad]
+- Updated dependencies [6594439]
+  - @anvia/client@1.9.0
+  - @anvia/react@1.2.0
+  - @anvia/server@1.5.0
+  - @anvia/react-ui@1.3.2
+  - @anvia/graph@1.2.0
+
 ## 1.4.1
 
 ### Patch Changes

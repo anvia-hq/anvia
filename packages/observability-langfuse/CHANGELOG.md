@@ -1,5 +1,11 @@
 # @anvia/langfuse
 
+## 1.4.0
+
+### Minor Changes
+
+- 3d51132: Retry transient prompt and dataset requests (network errors, 429 and 5xx) with the same attempt shape the score queue already uses.
+
 ## 1.3.1
 
 ### Patch Changes

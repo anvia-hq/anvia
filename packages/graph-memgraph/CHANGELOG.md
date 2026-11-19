@@ -1,5 +1,13 @@
 # @anvia/memgraph
 
+## 1.1.9
+
+### Patch Changes
+
+- 81ed4ab: Scope entity and relationship identity matches to the managed graph so two graphs that share label resources cannot overwrite each other's nodes.
+- 0fcd493: Scope graph exploration to the managed graph so overview and expansion do not return nodes from another graph that shares label resources.
+  - @anvia/graph@1.2.0
+
 ## 1.1.8
 
 ### Patch Changes

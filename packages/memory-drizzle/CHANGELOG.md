@@ -1,5 +1,11 @@
 # @anvia/memory-drizzle
 
+## 1.2.1
+
+### Patch Changes
+
+- 901f5bb: Reject a conversation list limit that is not a positive safe integer, so a negative limit can no longer read every conversation on SQLite or fail differently on the other stores.
+
 ## 1.2.0
 
 ### Minor Changes

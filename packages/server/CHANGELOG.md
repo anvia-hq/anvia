@@ -1,5 +1,15 @@
 # @anvia/server
 
+## 1.5.0
+
+### Minor Changes
+
+- 84da9ad: `createDurableHandler` accepts a store-only `DurableClient` from `@anvia/durable` as `runtime`, so the HTTP API can run in a process that holds no agents while `DurableWorker`s execute the runs. Runs and graphs are served with the same authorization; custom task routes answer 501 for such a backend. The option type is now the structural `DurableHandlerBackend`.
+
+### Patch Changes
+
+- 6594439: With a store-only `DurableClient` as the durable handler's backend, task reads and controls are served; submitting a task over HTTP is refused with 503 and a clearer message, because authorizing it needs the task definitions.
+
 ## 1.4.2
 
 ### Patch Changes

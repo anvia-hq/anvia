@@ -1,5 +1,11 @@
 # @anvia/milvus
 
+## 1.2.1
+
+### Patch Changes
+
+- 45e0ac8: Reject metadata keys that would overwrite the reserved `id` and `vector` row fields during upsert.
+
 ## 1.2.0
 
 ### Minor Changes

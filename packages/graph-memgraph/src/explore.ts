@@ -9,7 +9,7 @@ import {
   type ResolvedGraphExploreExpandOptions,
 } from "@anvia/graph";
 import { int, isInt, type Record as DriverRecord } from "neo4j-driver";
-import { MemgraphKnowledgeGraphBase } from "./graph.js";
+import { ManagedMemgraphKnowledgeGraph, MemgraphKnowledgeGraphBase } from "./graph.js";
 import { quoteIdentifier, strictProperties } from "./helpers.js";
 
 export async function exploreGraph<Schema extends GraphSchemaLike>(
@@ -43,17 +43,37 @@ export async function exploreGraph<Schema extends GraphSchemaLike>(
   };
 }
 
+function scopeName(graph: MemgraphKnowledgeGraphBase): string | undefined {
+  return graph instanceof ManagedMemgraphKnowledgeGraph ? graph.name : undefined;
+}
+
+function scopePredicate(graph: MemgraphKnowledgeGraphBase, variable: string): string {
+  return scopeName(graph) === undefined
+    ? ""
+    : ` AND ${variable}.${quoteIdentifier("__anvia_graph")} = $graph`;
+}
+
+function scopeParameters(
+  graph: MemgraphKnowledgeGraphBase,
+  parameters: Record<string, unknown>,
+): Record<string, unknown> {
+  const name = scopeName(graph);
+  return name === undefined ? parameters : { ...parameters, graph: name };
+}
 async function overviewNodes(
   graph: MemgraphKnowledgeGraphBase,
   options: ReturnType<typeof resolveGraphExploreOptions> & { mode: "overview" },
 ): Promise<readonly DriverRecord[]> {
   const result = await graph.query(
     `MATCH (node)
-WHERE any(type IN labels(node) WHERE type IN $nodeTypes)
+WHERE any(type IN labels(node) WHERE type IN $nodeTypes)${scopePredicate(graph, "node")}
 RETURN id(node) AS id, labels(node) AS labels, properties(node) AS properties
 ORDER BY id(node)
 LIMIT $nodeLimit`,
-    { nodeTypes: options.nodeTypes, nodeLimit: int(options.maxNodes + 1) },
+    scopeParameters(graph, {
+      nodeTypes: options.nodeTypes,
+      nodeLimit: int(options.maxNodes + 1),
+    }),
     options.abortSignal,
   );
   return result.records;
@@ -67,9 +87,9 @@ async function expandedNodes(
   const roots = await graph.query(
     `MATCH (node)
 WHERE id(node) IN $nodeIds
-  AND any(type IN labels(node) WHERE type IN $nodeTypes)
+  AND any(type IN labels(node) WHERE type IN $nodeTypes)${scopePredicate(graph, "node")}
 RETURN id(node) AS id, labels(node) AS labels, properties(node) AS properties`,
-    { nodeIds, nodeTypes: options.nodeTypes },
+    scopeParameters(graph, { nodeIds, nodeTypes: options.nodeTypes }),
     options.abortSignal,
   );
   if (options.relationships.length === 0) return roots.records;
@@ -78,16 +98,16 @@ RETURN id(node) AS id, labels(node) AS labels, properties(node) AS properties`,
   const relationshipTypes = options.relationships.map(quoteIdentifier).join("|");
   const pattern = traversalPattern(relationshipTypes, options.direction, options.maxDepth);
   const neighbors = await graph.query(
-    `MATCH (root) WHERE id(root) IN $nodeIds
+    `MATCH (root) WHERE id(root) IN $nodeIds${scopePredicate(graph, "root")}
 MATCH path = ${pattern}
-WHERE any(type IN labels(node) WHERE type IN $nodeTypes)
+WHERE any(type IN labels(node) WHERE type IN $nodeTypes)${scopePredicate(graph, "node")}
 RETURN id(node) AS id, labels(node) AS labels, properties(node) AS properties
 LIMIT $nodeLimit`,
-    {
+    scopeParameters(graph, {
       nodeIds,
       nodeTypes: options.nodeTypes,
       nodeLimit: int(remainingNodeLimit),
-    },
+    }),
     options.abortSignal,
   );
   return [...roots.records, ...neighbors.records];
@@ -105,7 +125,7 @@ async function relationshipsBetween(
     `MATCH (from)-[relationship]->(to)
 WHERE id(from) IN $nodeIds
   AND id(to) IN $nodeIds
-  AND type(relationship) IN $relationshipTypes
+  AND type(relationship) IN $relationshipTypes${scopePredicate(graph, "from")}${scopePredicate(graph, "to")}
 RETURN id(relationship) AS id,
        type(relationship) AS type,
        id(from) AS source,
@@ -113,11 +133,11 @@ RETURN id(relationship) AS id,
        properties(relationship) AS properties
 ORDER BY id(relationship)
 LIMIT $relationshipLimit`,
-    {
+    scopeParameters(graph, {
       nodeIds: nodeIds.map(nodeIdParameter),
       relationshipTypes,
       relationshipLimit: int(maxRelationships + 1),
-    },
+    }),
     abortSignal,
   );
   return result.records.map(relationshipFromRecord);

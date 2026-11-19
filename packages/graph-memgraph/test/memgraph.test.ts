@@ -418,6 +418,38 @@ describe("MemgraphClient", () => {
     });
   });
 
+  it("scopes exploration to the managed graph", async () => {
+    const queries: string[] = [];
+    const driver = fakeDriver(async (query) => {
+      queries.push(query);
+      return { records: [] };
+    });
+    const graph = managed(new MemgraphClient({ driver: driver.value }));
+
+    await graph.explore({ mode: "overview", maxNodes: 5, maxRelationships: 5 });
+    await graph.explore({
+      mode: "expand",
+      nodeIds: ["1"],
+      relationships: ["AFFECTS"],
+      direction: "both",
+      maxDepth: 1,
+      maxNodes: 5,
+      maxRelationships: 5,
+    });
+
+    const overview = queries.find(
+      (query) => query.includes("MATCH (node)") && query.includes("RETURN id(node) AS id"),
+    );
+    const roots = queries.find((query) => query.includes("id(node) IN $nodeIds"));
+    const neighbors = queries.find((query) => query.includes("MATCH path ="));
+    expect(overview).toContain("node.`__anvia_graph` = $graph");
+    expect(roots).toContain("node.`__anvia_graph` = $graph");
+    expect(neighbors).toContain("node.`__anvia_graph` = $graph");
+    for (const [, parameters] of driver.run.mock.calls) {
+      expect(parameters).toMatchObject({ graph: "support" });
+    }
+  });
+
   it("validates replacement input before opening a transaction", async () => {
     const driver = fakeDriver();
     await expect(

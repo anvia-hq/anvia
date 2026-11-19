@@ -72,6 +72,43 @@ describe("tool index embedding text", () => {
     expect(text).not.toContain("headcount");
   });
 
+  it("keeps parameters named title or description", async () => {
+    const ticketingTool = createTool({
+      name: "create_ticket",
+      description: "Create a support ticket.",
+      inputSchema: z.object({
+        title: z.string().describe("Short summary"),
+        description: z.string().describe("Full text"),
+      }),
+      handler: () => "ticket",
+    });
+    const model = new RecordingEmbeddingModel();
+    await createToolIndex({ model, tools: [ticketingTool], topK: 1, embeddingText: "compact" });
+
+    const text = model.joined;
+    expect(text).toContain("title");
+    expect(text).toContain("description");
+    expect(text).toContain("Short summary");
+    expect(text).toContain("Full text");
+  });
+
+  it("reaches nested property names through properties", async () => {
+    const nestedTool = createTool({
+      name: "update_profile",
+      description: "Update a profile.",
+      inputSchema: z.object({
+        address: z.object({ street: z.string().describe("Street line"), city: z.string() }),
+      }),
+      handler: () => "ok",
+    });
+    const model = new RecordingEmbeddingModel();
+    await createToolIndex({ model, tools: [nestedTool], topK: 1, embeddingText: "compact" });
+
+    expect(model.joined).toContain("street");
+    expect(model.joined).toContain("Street line");
+    expect(model.joined).toContain("city");
+  });
+
   it("falls back to name and description for a tool without parameters", async () => {
     const model = new RecordingEmbeddingModel();
     const emptyTool = createTool({

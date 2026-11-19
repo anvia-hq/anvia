@@ -68,18 +68,20 @@ export function searchTool<Metadata extends VectorMetadata = VectorMetadata>(
     }
   }
   const entities = loadEntities(options.entities);
+  // A rejected entities promise must not surface as an unhandled rejection before the first
+  // search reads it.
+  void entities.catch(() => {});
   const format = options.format ?? defaultFormat;
+  // Built once: the entries do not change, and embedding them per call would re-embed the whole
+  // registry on every turn.
+  const semantic = options.model === undefined ? undefined : rankerFor(entities, options, topK);
 
   const lookup = async (
     query: string,
     abortSignal?: AbortSignal,
   ): Promise<SearchHit<Metadata>[]> => {
-    const loaded = await entities;
-    const hits =
-      options.model === undefined
-        ? rankByTerms(loaded, query, topK)
-        : await rankByEmbedding(loaded, query, options, topK, abortSignal);
-    return hits;
+    if (semantic === undefined) return rankByTerms(await entities, query, topK);
+    return (await semantic)(query, abortSignal);
   };
 
   const tool: AnyTool = {
@@ -97,8 +99,9 @@ export function searchTool<Metadata extends VectorMetadata = VectorMetadata>(
 
   // The shared channel: the index searches, and the tool answers from the result of the query the
   // agent just made for this turn. Both sides key on the query text, so a concurrent run with
-  // different text does not see this one's hits.
-  const recent = new Map<string, SearchHit<Metadata>[]>();
+  // different text does not see this one's hits. Bounded, because a long-lived process would
+  // otherwise keep one entry per distinct turn text forever.
+  const recent = new BoundedCache<SearchHit<Metadata>[]>(RECENT_LIMIT);
   const index: Mutable<ToolIndex<Metadata>> = {
     kind: "tool-index",
     tools: [tool],
@@ -126,6 +129,29 @@ export function searchTool<Metadata extends VectorMetadata = VectorMetadata>(
 }
 
 type Mutable<T> = { -readonly [K in keyof T]: T[K] };
+
+const RECENT_LIMIT = 32;
+
+/** Insertion-ordered, oldest first, so a long-lived search tool does not grow without bound. */
+class BoundedCache<Value> {
+  private readonly entries = new Map<string, Value>();
+
+  constructor(private readonly limit: number) {}
+
+  get(key: string): Value | undefined {
+    return this.entries.get(key);
+  }
+
+  set(key: string, value: Value): void {
+    this.entries.delete(key);
+    this.entries.set(key, value);
+    while (this.entries.size > this.limit) {
+      const oldest = this.entries.keys().next();
+      if (oldest.done === true) return;
+      this.entries.delete(oldest.value);
+    }
+  }
+}
 
 const SEARCH_PARAMETERS = {
   type: "object",
@@ -169,25 +195,46 @@ function entityText(entity: SearchEntity): string {
   return entity.detail === undefined ? entity.text : `${entity.text}\n${entity.detail}`;
 }
 
-async function rankByEmbedding<Metadata extends VectorMetadata>(
-  entities: readonly SearchEntity<Metadata>[],
-  query: string,
+/**
+ * Embed the entries once and hand back a query function. The index is built on the first query and
+ * reused, so a turn's search does not re-embed the registry.
+ */
+function rankerFor<Metadata extends VectorMetadata>(
+  entities: Promise<readonly SearchEntity<Metadata>[]>,
   options: SearchToolOptions<Metadata>,
   topK: number,
-  abortSignal: AbortSignal | undefined,
-): Promise<SearchHit<Metadata>[]> {
-  const byId = new Map(entities.map((entity) => [entity.id, entity]));
-  const createOptions: Parameters<typeof createToolIndex>[0] = {
-    model: options.model!,
-    tools: entities.map((entity) => entryTool(entity)),
-    topK,
-    embeddingText: "compact",
-    content: (_tool, definition) => byId.get(definition.name)!.text,
+): (query: string, abortSignal?: AbortSignal | undefined) => Promise<SearchHit<Metadata>[]> {
+  let built:
+    | Promise<{
+        index: ToolIndex<Metadata>;
+        byId: Map<string, SearchEntity<Metadata>>;
+      }>
+    | undefined;
+  const build = () => {
+    built ??= (async () => {
+      const loaded = await entities;
+      const byId = new Map(loaded.map((entity) => [entity.id, entity]));
+      const createOptions: Parameters<typeof createToolIndex<Metadata>>[0] = {
+        model: options.model!,
+        tools: loaded.map((entity) => entryTool(entity)),
+        topK,
+        embeddingText: "compact",
+        content: (_tool, definition) => byId.get(definition.name)!.text,
+      };
+      if (options.minScore !== undefined) createOptions.minScore = options.minScore;
+      return { index: await createToolIndex(createOptions), byId };
+    })();
+    // A failed build must not poison the promise for later searches.
+    built.catch(() => {
+      built = undefined;
+    });
+    return built;
   };
-  if (options.minScore !== undefined) createOptions.minScore = options.minScore;
-  const index = await createToolIndex(createOptions);
-  const results = await index.search({ query, abortSignal });
-  return results.map((result) => toHit(byId.get(result.document.toolName)!, result.score));
+  return async (query, abortSignal) => {
+    const { index, byId } = await build();
+    const results = await index.search({ query, abortSignal });
+    return results.map((result) => toHit(byId.get(result.document.toolName)!, result.score));
+  };
 }
 
 function entryTool<Metadata extends VectorMetadata>(entity: SearchEntity<Metadata>): AnyTool {

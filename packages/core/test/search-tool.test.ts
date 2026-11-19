@@ -218,6 +218,46 @@ describe("searchTool in an agent", () => {
     expect(result.text).toBe("Follow the rolling deployment steps.");
   });
 
+  it("searches the entity text on the turn after a hit", async () => {
+    const base = searchTool({
+      name: "search_runbooks",
+      entities: [
+        { id: "deploy", text: "Rolling deployment", detail: "canary then promote" },
+        { id: "refund", text: "Refund a customer", detail: "verify the order first" },
+      ],
+    });
+    const queries: string[] = [];
+    const index: typeof base = {
+      ...base,
+      search: (event) => {
+        queries.push(event.query);
+        return base.search(event);
+      },
+    };
+    const model = new QueueModel([
+      response([
+        {
+          type: "tool-call",
+          toolCallId: "call_1",
+          toolName: "search_runbooks",
+          input: { query: "refund a customer" },
+        },
+      ]),
+      response([{ type: "text", text: "Verify the order first." }]),
+    ]);
+
+    await new Agent({ id: "ops", model, tools: [index] }).generate({
+      prompt: "how do I handle a refund?",
+    });
+
+    // Turn 1 searches the user's words; turn 2 searches the result the model just received, which
+    // is how a discovered entity reaches the Ops turn instead of the original question again.
+    expect(queries).toEqual([
+      "how do I handle a refund?",
+      "Refund a customer\nverify the order first",
+    ]);
+  });
+
   it("coexists with an ordinary vector index in the same agent", async () => {
     const ordinary = await createToolIndex({
       model: new KeywordEmbeddingModel(),

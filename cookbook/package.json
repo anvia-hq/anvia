@@ -25,6 +25,7 @@
     "tools:09": "tsx -r dotenv/config 02_tools/09-dynamic-tools.ts dotenv_config_path=../.env",
     "tools:10": "tsx -r dotenv/config 02_tools/10-tool-result-middleware.ts dotenv_config_path=../.env",
     "tools:11": "tsx -r dotenv/config 02_tools/11-docker-sandbox.ts dotenv_config_path=../.env",
+    "tools:12": "tsx -r dotenv/config 02_tools/12-search-tool.ts dotenv_config_path=../.env",
     "structured-output": "tsx -r dotenv/config 03_structured_output/01-structured-extraction.ts dotenv_config_path=../.env",
     "structured-output:01": "tsx -r dotenv/config 03_structured_output/01-structured-extraction.ts dotenv_config_path=../.env",
     "structured-output:02": "tsx -r dotenv/config 03_structured_output/02-output-schema.ts dotenv_config_path=../.env",

@@ -108,6 +108,8 @@ export class DurableRuntime implements DurableSubmitClient {
   private closePromise: Promise<void> | undefined;
   private failure: unknown;
   private wakeTimer: ReturnType<typeof setTimeout> | undefined;
+  private pollTimer: ReturnType<typeof setInterval> | undefined;
+  private polling = false;
   private readonly tasks: TaskScheduler;
   private readonly limitValues: DurableLimits;
   /**
@@ -166,6 +168,14 @@ export class DurableRuntime implements DurableSubmitClient {
       maxConcurrentTasks > 1000
     )
       throw new TypeError("maxConcurrentTasks must be an integer between 1 and 1000.");
+    const pollIntervalMs = options.pollIntervalMs;
+    if (
+      pollIntervalMs !== undefined &&
+      (!Number.isSafeInteger(pollIntervalMs) ||
+        pollIntervalMs < 1 ||
+        pollIntervalMs > 2_147_483_647)
+    )
+      throw new TypeError("pollIntervalMs must be a positive integer.");
     const definitions = new Map<string, RegisteredTask>();
     for (const { registration } of options.tasks ?? []) {
       if (registration.name === agentTask.name)
@@ -194,6 +204,7 @@ export class DurableRuntime implements DurableSubmitClient {
       throw error;
     }
     runtime.notifyCompatibility();
+    if (pollIntervalMs !== undefined) runtime.startPolling(pollIntervalMs);
     return runtime;
   }
 
@@ -548,6 +559,7 @@ export class DurableRuntime implements DurableSubmitClient {
     if (this.closePromise !== undefined) return this.closePromise;
     this.closing = true;
     clearTimeout(this.wakeTimer);
+    clearInterval(this.pollTimer);
     for (const { controller } of this.active.values())
       controller.abort(new Error("Durable runtime closed."));
     this.closePromise = Promise.all([
@@ -1016,10 +1028,40 @@ export class DurableRuntime implements DurableSubmitClient {
     };
   }
 
+  /**
+   * Notices changes another process wrote to the store: schedules runs that became eligible and
+   * aborts an active attempt whose run was cancelled elsewhere. A tick is skipped while the
+   * previous one is still running, so a slow store cannot pile up reads.
+   */
+  private startPolling(intervalMs: number): void {
+    this.pollTimer = setInterval(() => {
+      if (this.polling || this.closing || this.failure !== undefined) return;
+      this.polling = true;
+      void this.poll()
+        .catch((error: unknown) => {
+          if (!this.closing) this.fail(error);
+        })
+        .finally(() => {
+          this.polling = false;
+        });
+    }, intervalMs);
+    this.pollTimer.unref();
+  }
+
+  private async poll(): Promise<void> {
+    for (const [id, active] of this.active) {
+      if (active.controller.signal.aborted) continue;
+      const { status } = await this.status(id);
+      if (status === "cancelled") active.controller.abort(new Error("Durable run cancelled."));
+    }
+    await this.pump();
+  }
+
   private fail(error: unknown): void {
     if (this.failure !== undefined) return;
     this.failure = error;
     clearTimeout(this.wakeTimer);
+    clearInterval(this.pollTimer);
     this.tasks?.stop(error);
     for (const active of this.active.values()) active.controller.abort(error);
     // Diagnostics must never replace the journal failure or create an unhandled rejection.

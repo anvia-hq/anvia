@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CompletionRequest } from "@anvia/core/completion";
 import { DurableRuntime, type DurableWorkerOptions } from "../src/index.js";
 import { PostgresDurableStore } from "../src/postgres.js";
@@ -148,6 +148,41 @@ describe("shared worker mode", () => {
     );
     expect(await (await b.getRun(run.id)).result()).toMatchObject({ output: "done" });
     expect(takenOver).toBe(1); // well inside the 10 minute lease a, which never renewed, held
+  });
+
+  it("survives transient claim, renew and release failures", async () => {
+    const { pool } = testPool();
+    const inner = new PostgresDurableStore({ pool }, { schema: "create" });
+    const flaky = { claim: 1, renew: 2, release: 1 };
+    const store = new Proxy(inner, {
+      get(target, key) {
+        const value: unknown = Reflect.get(target, key);
+        if (typeof value !== "function") return value;
+        const name = String(key) as keyof typeof flaky;
+        return (...args: unknown[]) => {
+          if (name in flaky && flaky[name] > 0) {
+            flaky[name]--;
+            return Promise.reject(new Error(`transient ${name}`));
+          }
+          return Reflect.apply(value, target, args);
+        };
+      },
+    });
+    const { state, completion } = gate();
+    const runtime = await DurableRuntime.open({
+      store,
+      agents: [{ agent: makeAgent(completion), version: "1" }],
+      worker: { heartbeatMs: 10, leaseMs: 5_000 },
+      pollIntervalMs: 20,
+    });
+    runtimes.push(runtime);
+    const run = await runtime.submit(submission("flaky"));
+    await vi.waitFor(() => expect(state.started).toBe(1));
+    await vi.waitFor(() => expect(flaky.renew).toBe(0));
+    state.release();
+    expect(await run.result()).toMatchObject({ output: "done" });
+    expect(flaky).toEqual({ claim: 0, renew: 0, release: 0 });
+    expect(state.aborted).toBe(false);
   });
 
   it("refuses unsupported combinations", async () => {

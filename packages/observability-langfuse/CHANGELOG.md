@@ -1,5 +1,11 @@
 # @anvia/langfuse
 
+## 1.4.2
+
+### Patch Changes
+
+- 2cbb213: Propagate trace-level correlation context (`trace.name`, `userId`, `sessionId`, `tags`, and `version`) onto child spans in agent, tool, and pipeline observers so observation/run-level queries and filtering work consistently across all spans in a trace.
+
 ## 1.4.1
 
 ### Patch Changes

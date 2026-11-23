@@ -1,4 +1,3 @@
-import type { PreparedLoopContext, LoopContextCheckpoint } from "./loop-context";
 import type { Agent } from "../../agent/agent";
 import {
   AgentRunCancelledError,
@@ -6,12 +5,7 @@ import {
   AgentStructuredOutputError,
   MaxTurnsError,
 } from "../../agent/errors";
-import {
-  type AgentInteractionResponse,
-  assertAgentInteractionResponse,
-  parseAgentContinuation,
-  parseAgentInteractionResponse,
-} from "../../agent/interactions";
+import { type AgentInteractionResponse, parseAgentContinuation } from "../../agent/interactions";
 import {
   type AgentFinishEvent,
   type AgentLifecycle,
@@ -21,10 +15,8 @@ import {
 import { getAgentProviderOutputSchema } from "../../agent/output-schema";
 import type {
   AgentBlockedOutcome,
-  AgentInput,
   AgentInteractionOutcome,
   AgentOutcome,
-  AgentResponse,
   AgentRunOptions,
   AgentRunSettings,
   AgentSteerInput,
@@ -32,37 +24,24 @@ import type {
   AgentStreamEvent,
   AgentToolSelectionEvent,
 } from "../../agent/run-types";
-import type { AgentGenerationToolMatch } from "../../observability/types";
 import { getAgentToolState } from "../../agent/tool-state";
-import { estimateContextBreakdown, scaleContextBreakdown } from "../../context/breakdown";
-import type { ContextBreakdown } from "../../context/breakdown";
-import { isMcpTool } from "../../mcp";
-import { isStreamingCompletionModel } from "../../completion/generate-completion";
+import { type ContextBreakdown, estimateContextBreakdown } from "../../context/breakdown";
 import {
   assertCompletionRequestSupported,
+  type CompletionModel,
   type CompletionModelControls,
   type CompletionModelControlsOf,
-  type CompletionFinishReason,
-  type CompletionModel,
   type CompletionRequest,
   type CompletionResponse,
-  type CompletionSource,
-  getAssistantGenerationMetadata,
-  isJsonValue,
   type JsonObject,
   type Message as MessageType,
   mergeCompletionControlValues,
-  type ProviderToolCall,
-  parseMessage,
-  parseMessages,
   type ToolCallPart,
-  type ToolInteractionResponsePart,
   type ToolResultPart,
   textFromAssistantContent,
   Usage,
 } from "../../completion/index";
 import { assertCompletionResponseIntegrity } from "../../completion/provider-output-error";
-import { CompletionStreamAccumulator } from "../../completion/stream-accumulator";
 import {
   appendGuardrailPolicies,
   type GuardrailDecisionRecord,
@@ -73,10 +52,8 @@ import {
   runOutputGuardrails,
 } from "../../guardrails";
 import type { AgentHook } from "../../hooks";
-import { runControl } from "../../hooks";
 import { MemoryCompactionError } from "../../memory/errors";
 import type { MemoryCompactionInfo, MemoryScope } from "../../memory/types";
-import type { ModelCallOptions } from "../../model-call-options";
 import {
   type ActiveAgentRunObservers,
   ActiveGenerationObservers,
@@ -84,56 +61,81 @@ import {
 } from "../../observability/group";
 import type {
   AgentGenerationEndArgs,
-  AgentGenerationModelInfo,
-  AgentGenerationStartArgs,
-  AgentRunEndArgs,
+  AgentGenerationToolMatch,
   AgentTraceOptions,
 } from "../../observability/types";
 import {
   completionProviderOutputErrorUsage,
   type ResolvedRetryOptions,
   resolveRetryOptions,
-  retryDelayMs,
-  retryErrorAttributes,
-  retryOptionsForFailure,
-  waitForRetry,
 } from "../../retry";
 import type { AgentMiddleware } from "../../tool/middleware";
 import { isQuestionTool } from "../../tool/question-tool";
 import { abortError, throwIfAborted } from "../abort";
 import { createAsyncQueue } from "../async-queue";
 import { createCompletionRequest } from "../completion-request";
-import { assertJsonObject } from "../json-object";
 import { extractRagText } from "../rag-text";
 import {
+  buildGenerationStartArgs,
+  type CompletionRunnerContext,
+  estimatedGenerationContext,
+  parseStructuredOutput,
+  providerTraceRequest,
+  reportedGenerationContext,
+  runUncachedCompletion,
+  runUncachedStreamingCompletion,
+  type StreamingCompletionState,
+} from "./completion-runner";
+import {
   type AgentContinuationState,
-  parseContinuationState,
   type QueuedSteering,
   questionResult,
   serializeContinuationState,
 } from "./continuation-state";
+import type { AgentRunExecutionStep } from "./execution";
+import {
+  abortReason,
+  latestAssistantText,
+  mcpToolNames,
+  normalizeAgentInput,
+  normalizeRequestedRunId,
+  normalizeSteeringInput,
+  providerMessages,
+  textFromMessage,
+  withMemoryScopeTrace,
+} from "./input-normalization";
 import { ToolExecutionSuspension } from "./interaction-suspension";
-import type {
-  AgentCompletionStream,
-  AgentCompletionStreamEvent,
-  AgentRunExecutionStep,
-} from "./execution";
+import type { LoopContextCheckpoint, PreparedLoopContext } from "./loop-context";
 import { AgentRunMemory, type MemoryPreparation } from "./memory";
-import { normalizeMemoryScope } from "./memory-scope";
 import {
   fetchContextDocuments,
   fetchToolDefinitions,
   type FetchedToolDefinitions,
 } from "./retrieval";
-import { getInternalAgentRunOptions, type InternalAgentRunOptions } from "./run-options";
-import { assertNonnegativeSafeInteger, assertPositiveSafeInteger } from "./run-validation";
-import { addTurn, addTurnToToolCallDelta, isGenerationDeltaEvent } from "./stream-events";
 import {
-  normalizeStructuredOutput,
-  STRUCTURED_OUTPUT_RETRY_PROMPT,
-  STRUCTURED_OUTPUT_TRUNCATED_RETRY_PROMPT,
-  structuredOutputRepairPreview,
-} from "./structured-output";
+  runCompletionCallHook,
+  runCompletionErrorHook,
+  runCompletionRequestMiddlewares,
+  runCompletionResponseHook,
+  runCompletionResponseMiddlewares,
+  runRunEndHook,
+  runRunErrorHook,
+  runRunStartHook,
+  runTurnEndHook,
+  runTurnStartHook,
+  shouldBufferStreamResponseEvents,
+} from "./run-hooks";
+import { getInternalAgentRunOptions, type InternalAgentRunOptions } from "./run-options";
+import {
+  blockedOutcomeDetails,
+  generatedAssistantMessage,
+  generationArtifacts,
+  guardrailDecisionAttributes,
+  observerRunEnd,
+  responseStreamEvents,
+  settleFailureCleanup,
+} from "./run-outcomes";
+import { assertNonnegativeSafeInteger, assertPositiveSafeInteger } from "./run-validation";
 import {
   type AgentToolEventPayload,
   ToolCallExecutor,
@@ -153,44 +155,6 @@ type AgentRunCreateOptions<
   sourceRunId?: string | undefined;
   interactionId?: string | undefined;
 };
-
-type StreamingCompletionState = {
-  response: CompletionResponse | undefined;
-  firstDeltaMs: number | undefined;
-  emittedToolCallIds: Set<string>;
-  providerErrorUsage: Usage;
-  /** Input tokens of the last attempt alone, before earlier retries fold into `response.usage`. */
-  attemptInputTokens: number | undefined;
-};
-
-type StreamingCompletionArgs = {
-  request: CompletionRequest;
-  turn: number;
-  bufferResponseEvents: boolean;
-  bufferOutputDeltas: boolean;
-  generationStartedAt: number;
-  generationObservers: ActiveGenerationObservers;
-  runObservers: ActiveAgentRunObservers;
-  state: StreamingCompletionState;
-};
-
-type StructuredOutputRetryRequest = Readonly<{
-  request: CompletionRequest;
-  previousResponse: "omitted" | "preview";
-  includedOutputLength: number;
-}>;
-
-async function settleFailureCleanup(
-  operations: Array<() => void | Promise<void> | undefined>,
-): Promise<void> {
-  for (const operation of operations) {
-    try {
-      await operation();
-    } catch {
-      // Cleanup failures must not replace the primary run failure.
-    }
-  }
-}
 
 type RawResponseOf<Model> =
   Model extends CompletionModel<infer RawResponse> ? RawResponse : unknown;
@@ -273,9 +237,6 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       options.toolConcurrency ?? 1,
       "toolConcurrency",
     );
-    // Approval and question tools suspend a turn, which needs ordered, resumable execution. That
-    // is decided per turn by ToolCallExecutor, so other turns of the same agent still run
-    // concurrently. Hooks can request approval for any call, so they keep the whole run ordered.
     this.concurrency = this.activeHook !== undefined ? 1 : configuredConcurrency;
     this.traceOptions = withMemoryScopeTrace(options.trace, options.memoryScope);
     const retrySetting = options.retries === undefined ? agent.retries : options.retries;
@@ -357,381 +318,29 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     return error;
   }
 
-  private setCancellationError(error: AgentRunCancelledError): void {
-    this.cancellationError = error;
-
-    if (!this.abortController.signal.aborted) this.abortController.abort(error);
-  }
-
   async generate(): Promise<AgentTerminalResult<Output>> {
-    this.startRun();
-    const runId = this.requestedRunId ?? globalThis.crypto.randomUUID();
-    let usage = Usage.empty();
-    let currentTurns = 0;
-    let lastPrompt = this.promptMessage;
-    let newMessages: MessageType[] = [this.promptMessage];
-    let runObservers: ActiveAgentRunObservers | undefined;
-    let pendingTurnMessages: MessageType[] = [];
-
-    try {
-      this.throwIfCancelled();
-      const memoryPreparation =
-        this.continuationState === undefined
-          ? await this.memoryRecorder.prepareHistory(
-              runId,
-              newMessages,
-              this.abortController.signal,
-            )
-          : undefined;
-
-      if (memoryPreparation !== undefined) {
-        this.chatHistory = memoryPreparation.history;
-        usage = Usage.add(usage, memoryPreparation.usage);
-        this.memoryCompaction = memoryPreparation.compaction;
-        await this.notifyInternalMemoryCompaction(memoryPreparation.compaction);
+    for await (const event of this.executeRun(false)) {
+      if (event.type === "response" || event.type === "blocked" || event.type === "interaction") {
+        return event;
       }
-
-      runObservers = await this.startRunObservers(runId);
-
-      if (memoryPreparation !== undefined) {
-        await this.recordMemoryCompaction(memoryPreparation, runObservers);
-      }
-
-      this.throwIfCancelled();
-      await this.activeLifecycle?.onStart?.({
-        runId,
-        input: lifecycleSnapshot(this.promptMessage),
-        history: lifecycleSnapshot(this.chatHistory),
-        maxTurns: this.maxTurnCount,
-      });
-
-      if (this.continuationState === undefined) {
-        const inputResult = await runInputGuardrails(this.guardrailPolicies, {
-          prompt: this.promptMessage,
-          history: this.chatHistory,
-          inputText: textFromMessage(this.promptMessage),
-          run: this.guardrailRunContext(runId),
-        });
-        for (const decision of inputResult.decisions) {
-          await this.recordGuardrailDecision(decision, runObservers);
-        }
-        this.promptMessage = inputResult.prompt;
-
-        if (inputResult.blocked) {
-          const text = inputResult.message ?? "The request was blocked by a guardrail.";
-          const result: AgentBlockedOutcome = {
-            type: "blocked",
-            stage: "input",
-            ...blockedOutcomeDetails(
-              this.guardrailDecisions,
-              "The request was blocked by a guardrail.",
-            ),
-            runId,
-            text,
-            usage,
-            messages: [this.promptMessage, { role: "assistant", content: text }],
-            trace: runObservers.trace,
-            guardrails: [...this.guardrailDecisions],
-            ...this.memoryCompactionResult(),
-          };
-
-          if (this.resumedFrom !== undefined) result.resumedFrom = this.resumedFrom;
-
-          this.runState = "closing";
-          await this.runLifecycleFinish(result);
-          await runObservers.end(observerRunEnd(result));
-          this.runState = "completed";
-          this.disposeAbortLink();
-          return result;
-        }
-      }
-
-      newMessages = [this.promptMessage];
-      await this.memoryRecorder.commitAcceptedInput(runId, newMessages);
-      pendingTurnMessages = this.memoryRecorder.pendingTurnMessages(newMessages);
-      await this.runRunStartHook(newMessages);
-
-      if (this.continuationState !== undefined) {
-        await this.recordInteractionResponseEvent(runObservers);
-        try {
-          const toolResults = await this.resolveContinuationTools(
-            runId,
-            newMessages,
-            undefined,
-            undefined,
-            {
-              turn: 1,
-              runObservers,
-            },
-          );
-          const toolMessage: MessageType = { role: "tool", content: toolResults };
-          newMessages.push(toolMessage);
-          await this.memoryRecorder.commitMessages(runId, 1, [toolMessage], pendingTurnMessages);
-          await this.drainSteeringMessages(runId, 1, newMessages, pendingTurnMessages);
-          await this.memoryRecorder.commitCompletedTurn(runId, 1, pendingTurnMessages);
-        } catch (error) {
-          if (error instanceof ToolExecutionSuspension) {
-            return this.finishSuspension({
-              runId,
-              turn: 1,
-              usage,
-              newMessages,
-              pendingTurnMessages,
-              runObservers,
-              suspension: error,
-              uncommittedMessages: [],
-            });
-          }
-
-          throw error;
-        }
-      }
-
-      if (this.continuationState === undefined && this.execution?.drainSteering !== undefined) {
-        await this.drainSteeringMessages(runId, 0, newMessages, pendingTurnMessages);
-      }
-
-      while (currentTurns <= this.maxTurnCount) {
-        const prompt = newMessages.at(-1);
-
-        if (prompt === undefined) {
-          throw new Error("AgentRun requires at least one message");
-        }
-
-        lastPrompt = prompt;
-        currentTurns += 1;
-
-        const historyForRequest = [...this.chatHistory, ...newMessages.slice(0, -1)];
-        await this.runTurnStartHook(currentTurns, prompt, historyForRequest, newMessages);
-        await this.runCompletionCallHook(prompt, historyForRequest, newMessages);
-
-        const contextReplayedPending = this.replayed({ kind: "context", turn: currentTurns });
-        const contextReplayed =
-          typeof contextReplayedPending === "boolean"
-            ? contextReplayedPending
-            : await contextReplayedPending;
-        const prepared =
-          this.execution?.prepareMessages !== undefined ||
-          this.agent.memory?.compaction !== undefined
-            ? await this.prepareTurnMessages(currentTurns, [...historyForRequest, prompt])
-            : { messages: [...historyForRequest, prompt] };
-
-        if (prepared.compaction !== undefined) {
-          if (!contextReplayed) usage = Usage.add(usage, prepared.compaction.usage);
-
-          this.memoryCompaction = prepared.compaction;
-          await this.notifyInternalMemoryCompaction(prepared.compaction);
-
-          if (!contextReplayed) await this.recordMemoryCompaction(prepared, runObservers);
-        }
-
-        const { request, selection } = await this.createTurnRequest(
-          prompt,
-          prepared.messages,
-          currentTurns,
-        );
-
-        const modelReplayedPending = this.replayed({ kind: "model", turn: currentTurns });
-        const modelReplayed =
-          typeof modelReplayedPending === "boolean"
-            ? modelReplayedPending
-            : await modelReplayedPending;
-        let response: CompletionResponse;
-        try {
-          response = await this.runCompletion(
-            request,
-            currentTurns,
-            runObservers,
-            selection?.matches,
-          );
-        } catch (error) {
-          await settleFailureCleanup([
-            () => this.runCompletionErrorHook(prompt, error, newMessages),
-          ]);
-          throw error;
-        }
-        response = await this.runCompletionResponseMiddlewares(request, response, currentTurns);
-        try {
-          assertCompletionResponseIntegrity({ response });
-        } catch (error) {
-          const providerOutputUsage = completionProviderOutputErrorUsage(error);
-
-          if (providerOutputUsage !== undefined) usage = Usage.add(usage, providerOutputUsage);
-
-          throw error;
-        }
-
-        if (!modelReplayed) usage = Usage.add(usage, response.usage);
-
-        this.updateRunProgress(newMessages);
-        await this.runCompletionResponseHook(prompt, response, newMessages);
-        await this.runTurnEndHook(currentTurns, response, newMessages);
-        await this.activeLifecycle?.onStepFinish?.({
-          runId,
-          step: currentTurns,
-          response: lifecycleSnapshot(response),
-          usage: lifecycleSnapshot(usage),
-        });
-
-        const toolCalls = response.choice.filter(
-          (item): item is ToolCallPart => item.type === "tool-call",
-        );
-        const assistantMessage = this.generatedAssistantMessage(response, request);
-        newMessages.push(assistantMessage);
-
-        if (toolCalls.length === 0) {
-          await this.beforeFinish?.();
-
-          if (this.steeringMessages.length > 0) {
-            await this.memoryRecorder.commitMessages(
-              runId,
-              currentTurns,
-              [assistantMessage],
-              pendingTurnMessages,
-            );
-          }
-
-          const appliedSteering = await this.drainSteeringMessages(
-            runId,
-            currentTurns,
-            newMessages,
-            pendingTurnMessages,
-            { closeWhenEmpty: true },
-          );
-
-          if (appliedSteering.length > 0) {
-            for (const receipt of appliedSteering) {
-              await runObservers.event({
-                name: "agent.steering_applied",
-                attributes: { id: receipt.id, turn: currentTurns },
-              });
-            }
-            await this.memoryRecorder.commitCompletedTurn(runId, currentTurns, pendingTurnMessages);
-            continue;
-          }
-
-          const guardedOutput = await this.runOutputGuardrailsForResponse(
-            runId,
-            usage,
-            response,
-            newMessages,
-            runObservers,
-          );
-          response = guardedOutput.response;
-          const finalAssistantMessage = this.generatedAssistantMessage(response, request);
-          newMessages[newMessages.length - 1] = finalAssistantMessage;
-          await this.memoryRecorder.commitMessages(
-            runId,
-            currentTurns,
-            [finalAssistantMessage],
-            pendingTurnMessages,
-          );
-          const result = this.createTerminalResult(
-            runId,
-            guardedOutput.text,
-            guardedOutput.blocked,
-            usage,
-            newMessages,
-            runObservers,
-          );
-
-          if (result.type === "response") {
-            await this.runRunEndHook(result, newMessages);
-          }
-
-          await this.memoryRecorder.commitCompletedRun(
-            runId,
-            currentTurns,
-            newMessages,
-            pendingTurnMessages,
-          );
-          await this.runLifecycleFinish(result);
-          await runObservers.end(observerRunEnd(result));
-          this.runState = "completed";
-          this.disposeAbortLink();
-          return result;
-        }
-
-        this.updateRunProgress(newMessages);
-        let toolResults: ToolResultPart[];
-        try {
-          toolResults = await this.executeToolCalls(
-            runId,
-            toolCalls,
-            newMessages,
-            undefined,
-            undefined,
-            {
-              turn: currentTurns,
-              runObservers,
-              toolDefinitions: request.tools,
-            },
-          );
-        } catch (error) {
-          if (error instanceof ToolExecutionSuspension) {
-            return this.finishSuspension({
-              runId,
-              turn: currentTurns,
-              usage,
-              newMessages,
-              pendingTurnMessages,
-              runObservers,
-              suspension: error,
-              uncommittedMessages: [assistantMessage],
-            });
-          }
-
-          throw error;
-        }
-        const toolMessage: MessageType = { role: "tool", content: toolResults };
-        newMessages.push(toolMessage);
-        await this.memoryRecorder.commitMessages(
-          runId,
-          currentTurns,
-          [assistantMessage, toolMessage],
-          pendingTurnMessages,
-        );
-        await this.drainSteeringMessages(runId, currentTurns, newMessages, pendingTurnMessages);
-        await this.memoryRecorder.commitCompletedTurn(runId, currentTurns, pendingTurnMessages);
-      }
-
-      throw new MaxTurnsError(this.maxTurnCount, [...this.chatHistory, ...newMessages], lastPrompt);
-    } catch (error) {
-      if (error instanceof MemoryCompactionError && error.usage !== undefined) {
-        usage = Usage.add(usage, error.usage);
-      }
-
-      const failedCompletionUsage = this.takeFailedCompletionUsage();
-
-      if (error instanceof AgentStructuredOutputError) {
-        usage = Usage.add(usage, error.usage);
-      } else {
-        usage = Usage.add(usage, failedCompletionUsage);
-      }
-
-      this.runState = "closing";
-      const runError = this.normalizeRunError(error);
-      const reportedError = await this.reportRunFailure(
-        runError,
-        runId,
-        usage,
-        newMessages,
-        runObservers,
-      );
-      this.runState = reportedError instanceof AgentRunCancelledError ? "cancelled" : "errored";
-      this.disposeAbortLink();
-      throw reportedError;
     }
+    throw new Error("AgentRun completed without a terminal outcome.");
   }
 
-  async *events(): AsyncIterable<AgentStreamEvent<Output, RawResponseOf<M>>> {
+  events(): AsyncIterable<AgentStreamEvent<Output, RawResponseOf<M>>> {
+    return this.executeRun(true);
+  }
+
+  private async *executeRun(
+    streaming: boolean,
+  ): AsyncIterable<AgentStreamEvent<Output, RawResponseOf<M>>> {
     this.startRun();
     const runId = this.requestedRunId ?? globalThis.crypto.randomUUID();
-    let usage = Usage.empty();
+    const usageState = { value: Usage.empty() };
     let currentTurns = 0;
     let lastPrompt = this.promptMessage;
     let newMessages: MessageType[] = [this.promptMessage];
-    const bufferOutputDeltas = hasEnforcedOutputGuardrails(this.guardrailPolicies);
+    const bufferOutputDeltas = streaming && hasEnforcedOutputGuardrails(this.guardrailPolicies);
     let runObservers: ActiveAgentRunObservers | undefined;
     let pendingTurnMessages: MessageType[] = [];
 
@@ -748,7 +357,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
 
       if (memoryPreparation !== undefined) {
         this.chatHistory = memoryPreparation.history;
-        usage = Usage.add(usage, memoryPreparation.usage);
+        usageState.value = Usage.add(usageState.value, memoryPreparation.usage);
         this.memoryCompaction = memoryPreparation.compaction;
         await this.notifyInternalMemoryCompaction(memoryPreparation.compaction);
       }
@@ -759,7 +368,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         await this.recordMemoryCompaction(memoryPreparation, runObservers);
       }
 
-      if (memoryPreparation?.compaction !== undefined) {
+      if (streaming && memoryPreparation?.compaction !== undefined) {
         yield { type: "memory_compaction", ...memoryPreparation.compaction };
       }
 
@@ -780,7 +389,8 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         });
         for (const decision of inputResult.decisions) {
           await this.recordGuardrailDecision(decision, runObservers);
-          yield { type: "guardrail_decision", decision };
+
+          if (streaming) yield { type: "guardrail_decision", decision };
         }
         this.promptMessage = inputResult.prompt;
 
@@ -795,7 +405,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
             ),
             runId,
             text,
-            usage,
+            usage: usageState.value,
             messages: [this.promptMessage, { role: "assistant", content: text }],
             trace: runObservers.trace,
             guardrails: [...this.guardrailDecisions],
@@ -817,49 +427,80 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       newMessages = [this.promptMessage];
       await this.memoryRecorder.commitAcceptedInput(runId, newMessages);
       pendingTurnMessages = this.memoryRecorder.pendingTurnMessages(newMessages);
-      await this.runRunStartHook(newMessages);
+      await runRunStartHook(this.activeHook, {
+        prompt: this.promptMessage,
+        history: this.chatHistory,
+        maxTurns: this.maxTurnCount,
+        newMessages,
+        cancel: (messages, reason) => this.cancelled(messages, reason),
+      });
 
       if (this.continuationState !== undefined) {
         await this.recordInteractionResponseEvent(runObservers);
-        const responsePart =
-          this.promptMessage.role === "tool" ? this.promptMessage.content[0] : undefined;
 
-        if (responsePart === undefined || responsePart.type === "tool-result") {
-          throw new TypeError("Agent continuation response message is invalid.");
+        if (streaming) {
+          const responsePart =
+            this.promptMessage.role === "tool" ? this.promptMessage.content[0] : undefined;
+
+          if (responsePart === undefined || responsePart.type === "tool-result") {
+            throw new TypeError("Agent continuation response message is invalid.");
+          }
+
+          yield {
+            type: "interaction_response",
+            response: responsePart,
+            sourceRunId: this.resumedFrom?.runId ?? this.continuationState.kind,
+          };
         }
 
-        yield {
-          type: "interaction_response",
-          response: responsePart,
-          sourceRunId: this.resumedFrom?.runId ?? this.continuationState.kind,
-        };
         try {
-          const execution = this.executeContinuationToolStream(runId, newMessages, {
-            turn: 1,
-            runObservers,
-          });
-          for await (const event of execution.events) {
-            yield { turn: 1, ...event };
+          let toolResults: ToolResultPart[];
+
+          if (streaming) {
+            const execution = this.executeContinuationToolStream(runId, newMessages, {
+              turn: 1,
+              runObservers,
+            });
+            for await (const event of execution.events) {
+              yield { turn: 1, ...event };
+            }
+            toolResults = await execution.results;
+          } else {
+            toolResults = await this.resolveContinuationTools(
+              runId,
+              newMessages,
+              undefined,
+              undefined,
+              {
+                turn: 1,
+                runObservers,
+              },
+            );
           }
-          const toolResults = await execution.results;
+
           const toolMessage: MessageType = { role: "tool", content: toolResults };
           newMessages.push(toolMessage);
           await this.memoryRecorder.commitMessages(runId, 1, [toolMessage], pendingTurnMessages);
-          for (const receipt of await this.drainSteeringMessages(
+          const drainedSteering = await this.drainSteeringMessages(
             runId,
             1,
             newMessages,
             pendingTurnMessages,
-          )) {
-            yield { type: "steering_applied", id: receipt.id, turn: 1 };
+          );
+
+          if (streaming) {
+            for (const receipt of drainedSteering) {
+              yield { type: "steering_applied", id: receipt.id, turn: 1 };
+            }
           }
+
           await this.memoryRecorder.commitCompletedTurn(runId, 1, pendingTurnMessages);
         } catch (error) {
           if (error instanceof ToolExecutionSuspension) {
             const result = await this.finishSuspension({
               runId,
               turn: 1,
-              usage,
+              usage: usageState.value,
               newMessages,
               pendingTurnMessages,
               runObservers,
@@ -889,20 +530,35 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         currentTurns += 1;
 
         const historyForRequest = [...this.chatHistory, ...newMessages.slice(0, -1)];
-        yield {
-          type: "turn_start",
-          turn: currentTurns,
-          prompt,
-          history: historyForRequest,
-        };
-        await this.runTurnStartHook(currentTurns, prompt, historyForRequest, newMessages);
-        await this.runCompletionCallHook(prompt, historyForRequest, newMessages);
 
-        const contextReplayedPending = this.replayed({ kind: "context", turn: currentTurns });
-        const contextReplayed =
-          typeof contextReplayedPending === "boolean"
-            ? contextReplayedPending
-            : await contextReplayedPending;
+        if (streaming) {
+          yield {
+            type: "turn_start",
+            turn: currentTurns,
+            prompt,
+            history: historyForRequest,
+          };
+        }
+
+        const cancelFn = (messages: MessageType[], reason: string) =>
+          this.cancelled(messages, reason);
+        await runTurnStartHook(
+          this.activeHook,
+          currentTurns,
+          prompt,
+          historyForRequest,
+          newMessages,
+          cancelFn,
+        );
+        await runCompletionCallHook(
+          this.activeHook,
+          prompt,
+          historyForRequest,
+          newMessages,
+          cancelFn,
+        );
+
+        const contextReplayed = await this.isReplayed({ kind: "context", turn: currentTurns });
         const prepared =
           this.execution?.prepareMessages !== undefined ||
           this.agent.memory?.compaction !== undefined
@@ -910,14 +566,16 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
             : { messages: [...historyForRequest, prompt] };
 
         if (prepared.compaction !== undefined) {
-          if (!contextReplayed) usage = Usage.add(usage, prepared.compaction.usage);
+          if (!contextReplayed) {
+            usageState.value = Usage.add(usageState.value, prepared.compaction.usage);
+          }
 
           this.memoryCompaction = prepared.compaction;
           await this.notifyInternalMemoryCompaction(prepared.compaction);
 
           if (!contextReplayed) await this.recordMemoryCompaction(prepared, runObservers);
 
-          yield { type: "memory_compaction", ...prepared.compaction };
+          if (streaming) yield { type: "memory_compaction", ...prepared.compaction };
         }
 
         const { request, selection } = await this.createTurnRequest(
@@ -926,131 +584,68 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
           currentTurns,
         );
 
-        if (selection !== undefined) yield selection;
+        if (streaming && selection !== undefined) yield selection;
 
-        assertCompletionRequestSupported(this.agent.model, request, { streaming: true });
-        const providerRequest = this.providerTraceRequest(request, { stream: true });
-        const generationStartArgs = this.generationStartArgs(
-          currentTurns,
-          request,
-          providerRequest,
-          selection?.matches,
-        );
-        const modelReplayedPending = this.replayed({ kind: "model", turn: currentTurns });
-        const modelReplayed =
-          typeof modelReplayedPending === "boolean"
-            ? modelReplayedPending
-            : await modelReplayedPending;
-        // A restored response was observed when it was generated; observing it again duplicates it.
-        const generationObservers = modelReplayed
-          ? new ActiveGenerationObservers([], "ignore")
-          : await runObservers.startGeneration(generationStartArgs);
-        this.activeGeneration = { turn: currentTurns, observers: generationObservers };
-        const generationStartedAt = Date.now();
-        yield {
-          type: "generation_start",
-          turn: currentTurns,
-          request,
-          modelInfo: generationStartArgs.modelInfo,
-          promptRef: generationStartArgs.promptRef,
-        };
+        const modelReplayed = await this.isReplayed({ kind: "model", turn: currentTurns });
         const bufferResponseEvents =
-          this.shouldBufferStreamResponseEvents() || this.agent.outputSchema !== undefined;
-        const completionState: StreamingCompletionState = {
-          response: undefined,
-          firstDeltaMs: undefined,
-          emittedToolCallIds: new Set(),
-          providerErrorUsage: Usage.empty(),
-          attemptInputTokens: undefined,
-        };
+          streaming &&
+          (shouldBufferStreamResponseEvents(this.activeHook, this.activeMiddlewares()) ||
+            this.agent.outputSchema !== undefined);
         let response: CompletionResponse;
-        const completionRunObservers = runObservers;
-        const execute = () => {
-          return this.runUncachedStreamingCompletion({
-            request,
+        let firstDeltaMs: number | undefined;
+        let emittedToolCallIds: Set<string> = new Set();
+
+        if (streaming) {
+          const turnStream = yield* this.executeStreamingTurn({
             turn: currentTurns,
+            prompt,
+            request,
+            selection,
+            modelReplayed,
             bufferResponseEvents,
             bufferOutputDeltas,
-            generationStartedAt,
-            generationObservers,
-            runObservers: completionRunObservers,
-            state: completionState,
+            newMessages,
+            runObservers,
+            usageState,
           });
-        };
-        try {
-          try {
-            if (this.execution !== undefined) {
-              if (this.execution.streamCompletion === undefined) {
-                throw new TypeError(
-                  "The execution runtime does not support streaming checkpoints.",
-                );
-              }
-
-              response = yield* this.execution.streamCompletion(currentTurns, request, execute);
-            } else {
-              response = yield* execute();
-            }
-          } finally {
-            usage = Usage.add(usage, completionState.providerErrorUsage);
-          }
-          // Local observation and post-processing must not make a committed model response retryable.
-          let endArgs: AgentGenerationEndArgs = {
+          response = turnStream.response;
+          firstDeltaMs = turnStream.firstDeltaMs;
+          emittedToolCallIds = turnStream.emittedToolCallIds;
+        } else {
+          response = await this.executeNonStreamingTurn({
             turn: currentTurns,
-            response: completionState.response ?? response,
-            ...this.reportedGenerationContext(
-              currentTurns,
-              completionState.attemptInputTokens ??
-                (completionState.response ?? response).usage.inputTokens,
-            ),
-          };
-
-          if (completionState.firstDeltaMs !== undefined)
-            endArgs = { ...endArgs, firstDeltaMs: completionState.firstDeltaMs };
-
-          this.activeGeneration = undefined;
-          await generationObservers.end(endArgs);
-          response = await this.runCompletionResponseMiddlewares(request, response, currentTurns);
-          try {
-            assertCompletionResponseIntegrity({ response });
-          } catch (error) {
-            const providerOutputUsage = completionProviderOutputErrorUsage(error);
-
-            if (providerOutputUsage !== undefined) usage = Usage.add(usage, providerOutputUsage);
-
-            throw error;
-          }
-        } catch (error) {
-          await settleFailureCleanup([
-            () => this.closeActiveGeneration(error),
-            () => this.runCompletionErrorHook(prompt, error, newMessages),
-          ]);
-          throw error;
+            prompt,
+            request,
+            selection,
+            newMessages,
+            runObservers,
+            usageState,
+          });
         }
-        const { firstDeltaMs, emittedToolCallIds } = completionState;
 
-        if (!modelReplayed) usage = Usage.add(usage, response.usage);
+        if (!modelReplayed) usageState.value = Usage.add(usageState.value, response.usage);
 
         this.updateRunProgress(newMessages);
-        await this.runCompletionResponseHook(prompt, response, newMessages);
-        await this.runTurnEndHook(currentTurns, response, newMessages);
+        await runCompletionResponseHook(this.activeHook, prompt, response, newMessages, cancelFn);
+        await runTurnEndHook(this.activeHook, currentTurns, response, newMessages, cancelFn);
         await this.activeLifecycle?.onStepFinish?.({
           runId,
           step: currentTurns,
           response: lifecycleSnapshot(response),
-          usage: lifecycleSnapshot(usage),
+          usage: lifecycleSnapshot(usageState.value),
         });
 
         const toolCalls = response.choice.filter(
           (item): item is ToolCallPart => item.type === "tool-call",
         );
-        const assistantMessage = this.generatedAssistantMessage(response, request);
+        const assistantMessage = generatedAssistantMessage(this.agent.model, response);
         newMessages.push(assistantMessage);
 
         if (toolCalls.length === 0) {
           await this.beforeFinish?.();
           let emittedTurnEnd = false;
 
-          if (!bufferOutputDeltas) {
+          if (streaming && !bufferOutputDeltas) {
             if (bufferResponseEvents) {
               for (const event of responseStreamEvents(currentTurns, response)) {
                 yield event as AgentStreamEvent<Output, RawResponseOf<M>>;
@@ -1082,75 +677,96 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
             pendingTurnMessages,
             { closeWhenEmpty: true },
           );
-          for (const receipt of appliedSteering) {
-            await runObservers.event({
-              name: "agent.steering_applied",
-              attributes: { id: receipt.id, turn: currentTurns },
-            });
-            yield { type: "steering_applied", id: receipt.id, turn: currentTurns };
-          }
 
           if (appliedSteering.length > 0) {
+            for (const receipt of appliedSteering) {
+              await runObservers.event({
+                name: "agent.steering_applied",
+                attributes: { id: receipt.id, turn: currentTurns },
+              });
+
+              if (streaming) {
+                yield { type: "steering_applied", id: receipt.id, turn: currentTurns };
+              }
+            }
             await this.memoryRecorder.commitCompletedTurn(runId, currentTurns, pendingTurnMessages);
             continue;
           }
 
-          for await (const event of this.completeStreamingRun({
+          yield* this.completeRunResponse({
+            streaming,
             runId,
             turn: currentTurns,
-            request,
             response,
             firstDeltaMs,
-            usage,
+            usage: usageState.value,
             newMessages,
             pendingTurnMessages,
             runObservers,
             bufferResponseEvents,
             bufferOutputDeltas,
             emittedTurnEnd,
-          })) {
-            yield event;
-          }
+          });
           return;
         }
 
-        if (bufferResponseEvents) {
-          for (const event of responseStreamEvents(currentTurns, response)) {
-            yield event as AgentStreamEvent<Output, RawResponseOf<M>>;
-          }
-        } else {
-          for (const toolCall of toolCalls) {
-            if (!emittedToolCallIds.has(toolCall.toolCallId)) {
-              yield { type: "tool_call", turn: currentTurns, toolCall };
+        if (streaming) {
+          if (bufferResponseEvents) {
+            for (const event of responseStreamEvents(currentTurns, response)) {
+              yield event as AgentStreamEvent<Output, RawResponseOf<M>>;
+            }
+          } else {
+            for (const toolCall of toolCalls) {
+              if (!emittedToolCallIds.has(toolCall.toolCallId)) {
+                yield { type: "tool_call", turn: currentTurns, toolCall };
+              }
             }
           }
         }
 
         this.updateRunProgress(newMessages);
-        yield {
-          type: "turn_end",
-          turn: currentTurns,
-          response: response as CompletionResponse<RawResponseOf<M>>,
-          firstDeltaMs,
-        };
+
+        if (streaming) {
+          yield {
+            type: "turn_end",
+            turn: currentTurns,
+            response: response as CompletionResponse<RawResponseOf<M>>,
+            firstDeltaMs,
+          };
+        }
 
         let toolResults: ToolResultPart[];
         try {
-          const toolExecution = this.executeStreamingToolCalls(runId, toolCalls, newMessages, {
-            turn: currentTurns,
-            runObservers,
-            toolDefinitions: request.tools,
-          });
-          for await (const result of toolExecution.events) {
-            yield { turn: currentTurns, ...result };
+          if (streaming) {
+            const toolExecution = this.executeStreamingToolCalls(runId, toolCalls, newMessages, {
+              turn: currentTurns,
+              runObservers,
+              toolDefinitions: request.tools,
+            });
+            for await (const result of toolExecution.events) {
+              yield { turn: currentTurns, ...result };
+            }
+            toolResults = await toolExecution.results;
+          } else {
+            toolResults = await this.executeToolCalls(
+              runId,
+              toolCalls,
+              newMessages,
+              undefined,
+              undefined,
+              {
+                turn: currentTurns,
+                runObservers,
+                toolDefinitions: request.tools,
+              },
+            );
           }
-          toolResults = await toolExecution.results;
         } catch (error) {
           if (error instanceof ToolExecutionSuspension) {
             const result = await this.finishSuspension({
               runId,
               turn: currentTurns,
-              usage,
+              usage: usageState.value,
               newMessages,
               pendingTurnMessages,
               runObservers,
@@ -1171,25 +787,34 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
           [assistantMessage, toolMessage],
           pendingTurnMessages,
         );
-        for (const receipt of await this.drainSteeringMessages(
+        const drainedSteering = await this.drainSteeringMessages(
           runId,
           currentTurns,
           newMessages,
           pendingTurnMessages,
-        )) {
-          yield { type: "steering_applied", id: receipt.id, turn: currentTurns };
+        );
+
+        if (streaming) {
+          for (const receipt of drainedSteering) {
+            yield { type: "steering_applied", id: receipt.id, turn: currentTurns };
+          }
         }
+
         await this.memoryRecorder.commitCompletedTurn(runId, currentTurns, pendingTurnMessages);
       }
 
       throw new MaxTurnsError(this.maxTurnCount, [...this.chatHistory, ...newMessages], lastPrompt);
     } catch (error) {
       if (error instanceof MemoryCompactionError && error.usage !== undefined) {
-        usage = Usage.add(usage, error.usage);
+        usageState.value = Usage.add(usageState.value, error.usage);
       }
 
+      const failedCompletionUsage = this.takeFailedCompletionUsage();
+
       if (error instanceof AgentStructuredOutputError) {
-        usage = Usage.add(usage, error.usage);
+        usageState.value = Usage.add(usageState.value, error.usage);
+      } else {
+        usageState.value = Usage.add(usageState.value, failedCompletionUsage);
       }
 
       this.runState = "closing";
@@ -1197,15 +822,19 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       const reportedError = await this.reportRunFailure(
         runError,
         runId,
-        usage,
+        usageState.value,
         newMessages,
         runObservers,
       );
       this.runState = reportedError instanceof AgentRunCancelledError ? "cancelled" : "errored";
-      const finalUsage = usage;
-      yield { type: "error", error: reportedError, usage: finalUsage };
       this.disposeAbortLink();
-      return;
+
+      if (streaming) {
+        yield { type: "error", error: reportedError, usage: usageState.value };
+        return;
+      }
+
+      throw reportedError;
     } finally {
       if (this.runState === "running" || this.runState === "closing") {
         const cancellation =
@@ -1213,11 +842,303 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
           new AgentRunCancelledError([...this.chatHistory, ...newMessages], "Agent stream closed.");
         this.setCancellationError(cancellation);
         await settleFailureCleanup([() => this.closeActiveGeneration(cancellation)]);
-        await this.reportRunFailure(cancellation, runId, usage, newMessages, runObservers);
+        await this.reportRunFailure(
+          cancellation,
+          runId,
+          usageState.value,
+          newMessages,
+          runObservers,
+        );
         this.runState = "cancelled";
         this.disposeAbortLink();
       }
     }
+  }
+
+  private async executeNonStreamingTurn(args: {
+    turn: number;
+    prompt: MessageType;
+    request: CompletionRequest;
+    selection: AgentToolSelectionEvent | undefined;
+    newMessages: MessageType[];
+    runObservers: ActiveAgentRunObservers;
+    usageState: { value: Usage };
+  }): Promise<CompletionResponse> {
+    let response: CompletionResponse;
+    try {
+      response = await this.runCompletion(
+        args.request,
+        args.turn,
+        args.runObservers,
+        args.selection?.matches,
+      );
+    } catch (error) {
+      await settleFailureCleanup([
+        () =>
+          runCompletionErrorHook(
+            this.activeHook,
+            args.prompt,
+            error,
+            args.newMessages,
+            (messages, reason) => this.cancelled(messages, reason),
+          ),
+      ]);
+      throw error;
+    }
+    response = await runCompletionResponseMiddlewares(
+      this.activeMiddlewares(),
+      args.request,
+      response,
+      args.turn,
+    );
+    try {
+      assertCompletionResponseIntegrity({ response });
+    } catch (error) {
+      const providerOutputUsage = completionProviderOutputErrorUsage(error);
+
+      if (providerOutputUsage !== undefined) {
+        args.usageState.value = Usage.add(args.usageState.value, providerOutputUsage);
+      }
+
+      throw error;
+    }
+    return response;
+  }
+
+  private async *executeStreamingTurn(args: {
+    turn: number;
+    prompt: MessageType;
+    request: CompletionRequest;
+    selection: AgentToolSelectionEvent | undefined;
+    modelReplayed: boolean;
+    bufferResponseEvents: boolean;
+    bufferOutputDeltas: boolean;
+    newMessages: MessageType[];
+    runObservers: ActiveAgentRunObservers;
+    usageState: { value: Usage };
+  }): AsyncGenerator<
+    AgentStreamEvent<Output, RawResponseOf<M>>,
+    {
+      response: CompletionResponse;
+      firstDeltaMs: number | undefined;
+      emittedToolCallIds: Set<string>;
+    }
+  > {
+    assertCompletionRequestSupported(this.agent.model, args.request, { streaming: true });
+    const providerRequest = providerTraceRequest(this.agent.model, args.request, { stream: true });
+    const generationStartArgs = buildGenerationStartArgs({
+      model: this.agent.model,
+      turn: args.turn,
+      request: args.request,
+      promptRef: this.generationPromptRef,
+      providerRequest,
+      toolMatches: args.selection?.matches,
+      context: this.turnContextBreakdowns.get(args.turn),
+    });
+    const generationObservers = args.modelReplayed
+      ? new ActiveGenerationObservers([], "ignore")
+      : await args.runObservers.startGeneration(generationStartArgs);
+    this.activeGeneration = { turn: args.turn, observers: generationObservers };
+    const generationStartedAt = Date.now();
+    yield {
+      type: "generation_start",
+      turn: args.turn,
+      request: args.request,
+      modelInfo: generationStartArgs.modelInfo,
+      promptRef: generationStartArgs.promptRef,
+    };
+    const completionState: StreamingCompletionState = {
+      response: undefined,
+      firstDeltaMs: undefined,
+      emittedToolCallIds: new Set(),
+      providerErrorUsage: Usage.empty(),
+      attemptInputTokens: undefined,
+    };
+    const execute = () =>
+      runUncachedStreamingCompletion(this.completionRunnerContext(), {
+        request: args.request,
+        turn: args.turn,
+        bufferResponseEvents: args.bufferResponseEvents,
+        bufferOutputDeltas: args.bufferOutputDeltas,
+        generationStartedAt,
+        generationObservers,
+        runObservers: args.runObservers,
+        state: completionState,
+      });
+    let response: CompletionResponse;
+    try {
+      try {
+        if (this.execution !== undefined) {
+          if (this.execution.streamCompletion === undefined) {
+            throw new TypeError("The execution runtime does not support streaming checkpoints.");
+          }
+
+          response = yield* this.execution.streamCompletion(args.turn, args.request, execute);
+        } else {
+          response = yield* execute();
+        }
+      } finally {
+        args.usageState.value = Usage.add(
+          args.usageState.value,
+          completionState.providerErrorUsage,
+        );
+      }
+      let endArgs: AgentGenerationEndArgs = {
+        turn: args.turn,
+        response: completionState.response ?? response,
+        ...reportedGenerationContext(
+          this.turnContextBreakdowns.get(args.turn),
+          completionState.attemptInputTokens ??
+            (completionState.response ?? response).usage.inputTokens,
+        ),
+      };
+
+      if (completionState.firstDeltaMs !== undefined) {
+        endArgs = { ...endArgs, firstDeltaMs: completionState.firstDeltaMs };
+      }
+
+      this.activeGeneration = undefined;
+      await generationObservers.end(endArgs);
+      response = await runCompletionResponseMiddlewares(
+        this.activeMiddlewares(),
+        args.request,
+        response,
+        args.turn,
+      );
+      try {
+        assertCompletionResponseIntegrity({ response });
+      } catch (error) {
+        const providerOutputUsage = completionProviderOutputErrorUsage(error);
+
+        if (providerOutputUsage !== undefined) {
+          args.usageState.value = Usage.add(args.usageState.value, providerOutputUsage);
+        }
+
+        throw error;
+      }
+    } catch (error) {
+      await settleFailureCleanup([
+        () => this.closeActiveGeneration(error),
+        () =>
+          runCompletionErrorHook(
+            this.activeHook,
+            args.prompt,
+            error,
+            args.newMessages,
+            (messages, reason) => this.cancelled(messages, reason),
+          ),
+      ]);
+      throw error;
+    }
+
+    return {
+      response,
+      firstDeltaMs: completionState.firstDeltaMs,
+      emittedToolCallIds: completionState.emittedToolCallIds,
+    };
+  }
+
+  private async *completeRunResponse(args: {
+    streaming: boolean;
+    runId: string;
+    turn: number;
+    response: CompletionResponse;
+    firstDeltaMs: number | undefined;
+    usage: Usage;
+    newMessages: MessageType[];
+    pendingTurnMessages: MessageType[];
+    runObservers: ActiveAgentRunObservers;
+    bufferResponseEvents: boolean;
+    bufferOutputDeltas: boolean;
+    emittedTurnEnd: boolean;
+  }): AsyncIterable<AgentStreamEvent<Output, RawResponseOf<M>>> {
+    const guardedOutput = await this.runOutputGuardrailsForResponse(
+      args.runId,
+      args.usage,
+      args.response,
+      args.newMessages,
+      args.runObservers,
+    );
+
+    if (args.streaming) {
+      for (const decision of guardedOutput.decisions) {
+        yield { type: "guardrail_decision", decision };
+      }
+    }
+
+    const response = guardedOutput.response;
+    const assistantMessage = generatedAssistantMessage(this.agent.model, response);
+    args.newMessages[args.newMessages.length - 1] = assistantMessage;
+    await this.memoryRecorder.commitMessages(
+      args.runId,
+      args.turn,
+      [assistantMessage],
+      args.pendingTurnMessages,
+    );
+
+    if (
+      args.streaming &&
+      !args.emittedTurnEnd &&
+      (args.bufferResponseEvents || args.bufferOutputDeltas)
+    ) {
+      for (const event of responseStreamEvents(args.turn, response, args.bufferResponseEvents)) {
+        yield event as AgentStreamEvent<Output, RawResponseOf<M>>;
+      }
+    }
+
+    if (args.streaming && !args.emittedTurnEnd) {
+      yield {
+        type: "turn_end",
+        turn: args.turn,
+        response: response as CompletionResponse<RawResponseOf<M>>,
+        firstDeltaMs: args.firstDeltaMs,
+      };
+    }
+
+    const result = this.createTerminalResult(
+      args.runId,
+      guardedOutput.text,
+      guardedOutput.blocked,
+      args.usage,
+      args.newMessages,
+      args.runObservers,
+    );
+
+    if (result.type === "response") {
+      await runRunEndHook(this.activeHook, result, args.newMessages, (messages, reason) =>
+        this.cancelled(messages, reason),
+      );
+    }
+
+    await this.memoryRecorder.commitCompletedRun(
+      args.runId,
+      args.turn,
+      args.newMessages,
+      args.pendingTurnMessages,
+    );
+    await this.runLifecycleFinish(result);
+    await args.runObservers.end(observerRunEnd(result));
+    this.runState = "completed";
+    this.disposeAbortLink();
+    yield result;
+  }
+
+  private completionRunnerContext(): CompletionRunnerContext<Output> {
+    return {
+      model: this.agent.model,
+      outputSchema: this.agent.outputSchema,
+      retryOptions: this.completionRetryOptions,
+      abortSignal: this.abortController.signal,
+      throwIfCancelled: () => this.throwIfCancelled(),
+      getTurnContext: (turn) => this.turnContextBreakdowns.get(turn),
+      setValidatedStructuredOutput: (validated) => {
+        this.validatedStructuredOutput = validated;
+      },
+      getValidatedStructuredOutput: () => this.validatedStructuredOutput,
+      recordFailedAttemptUsage: (usage) => {
+        this.failedCompletionUsage = usage;
+      },
+    };
   }
 
   private runCompletion(
@@ -1226,103 +1147,17 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     runObservers: ActiveAgentRunObservers,
     toolMatches?: readonly AgentGenerationToolMatch[] | undefined,
   ): Promise<CompletionResponse> {
-    const execute = () => this.runUncachedCompletion(request, turn, runObservers, toolMatches);
+    const execute = () =>
+      runUncachedCompletion(this.completionRunnerContext(), {
+        request,
+        turn,
+        runObservers,
+        promptRef: this.generationPromptRef,
+        toolMatches,
+      });
     return this.execution === undefined
       ? execute()
       : this.execution.completion(turn, request, execute);
-  }
-
-  private async runUncachedCompletion(
-    request: CompletionRequest,
-    turn: number,
-    runObservers: ActiveAgentRunObservers,
-    toolMatches?: readonly AgentGenerationToolMatch[] | undefined,
-  ): Promise<CompletionResponse> {
-    assertCompletionRequestSupported(this.agent.model, request);
-    this.validatedStructuredOutput = undefined;
-    this.failedCompletionUsage = Usage.empty();
-    const providerRequest = this.providerTraceRequest(request);
-    const generationObservers = await runObservers.startGeneration(
-      this.generationStartArgs(turn, request, providerRequest, toolMatches),
-    );
-    let currentRequest = request;
-    let failedAttemptUsage = Usage.empty();
-    try {
-      for (let attempt = 1; ; attempt += 1) {
-        let response: CompletionResponse;
-        try {
-          this.throwIfCancelled();
-          response = await this.agent.model.completion(currentRequest, this.modelCallOptions());
-          assertCompletionResponseIntegrity({ response });
-        } catch (error) {
-          const attemptUsage = completionProviderOutputErrorUsage(error);
-
-          if (attemptUsage !== undefined) {
-            failedAttemptUsage = Usage.add(failedAttemptUsage, attemptUsage);
-            this.failedCompletionUsage = failedAttemptUsage;
-          }
-
-          const retryOptions = this.retryOptionsForFailure(error, attempt, turn, false);
-
-          if (retryOptions === undefined) {
-            throw error;
-          }
-
-          await this.scheduleCompletionRetry(
-            error,
-            attempt,
-            turn,
-            false,
-            retryOptions,
-            runObservers,
-            providerOutputRetryEventAttributes(error, failedAttemptUsage),
-          );
-          continue;
-        }
-
-        const cumulativeUsage = Usage.add(failedAttemptUsage, response.usage);
-        try {
-          this.validateStructuredResponse(response, attempt, cumulativeUsage);
-        } catch (error) {
-          const retryOptions = this.retryOptionsForFailure(error, attempt, turn, false);
-
-          if (retryOptions === undefined) {
-            throw error;
-          }
-
-          failedAttemptUsage = cumulativeUsage;
-          this.failedCompletionUsage = failedAttemptUsage;
-          const retryRequest = structuredOutputRetryRequest(request, response, error);
-          currentRequest = retryRequest.request;
-          await this.scheduleCompletionRetry(
-            error,
-            attempt,
-            turn,
-            false,
-            retryOptions,
-            runObservers,
-            structuredOutputRetryEventAttributes(error, retryRequest),
-          );
-          continue;
-        }
-
-        const finalResponse = Usage.isEmpty(failedAttemptUsage)
-          ? response
-          : { ...response, usage: cumulativeUsage };
-        await generationObservers.end({
-          turn,
-          response: finalResponse,
-          ...this.reportedGenerationContext(turn, response.usage.inputTokens),
-        });
-        this.failedCompletionUsage = Usage.empty();
-        return finalResponse;
-      }
-    } catch (error) {
-      await settleFailureCleanup([
-        () => generationObservers.error({ turn, error, ...this.estimatedGenerationContext(turn) }),
-      ]);
-      throw error;
-    }
   }
 
   private async prepareTurnMessages(
@@ -1390,19 +1225,20 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
             tools: toolDefinitions.map((definition) => definition.name),
             matches: fetched.matches,
           };
-    const requestWithMiddlewares = await this.runCompletionRequestMiddlewares(request, turn);
-    const context = estimateContextBreakdown(requestWithMiddlewares, {
+    const middlewareResult = await runCompletionRequestMiddlewares(
+      this.activeMiddlewares(),
+      request,
+      turn,
+      this.traceOptions?.promptRef,
+    );
+    this.generationPromptRef = middlewareResult.promptRef;
+    const context = estimateContextBreakdown(middlewareResult.request, {
       mcpToolNames: mcpToolNames(this.agent),
     });
     this.turnContextBreakdowns.set(turn, context);
-    return { request: requestWithMiddlewares, selection };
+    return { request: middlewareResult.request, selection };
   }
 
-  /**
-   * The tools this turn offers. A runtime that replays a turn hands back its recorded selection,
-   * which carries no matches: replay must not search again, and the event only reports what the
-   * index returned this time.
-   */
   private async selectTurnTools(
     turn: number,
     ragText: string | undefined,
@@ -1418,219 +1254,6 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       return fetched.definitions;
     });
     return { definitions: selected, matches: fetched.matches };
-  }
-
-  private async *runUncachedStreamingCompletion(
-    args: StreamingCompletionArgs,
-  ): AgentCompletionStream {
-    const model = this.agent.model;
-
-    if (!isStreamingCompletionModel(model)) {
-      throw new TypeError("Streaming completion requires a streaming-capable model.");
-    }
-
-    this.validatedStructuredOutput = undefined;
-    let currentRequest = args.request;
-    for (let attempt = 1; ; attempt += 1) {
-      const accumulator = new CompletionStreamAccumulator();
-      let hasProviderProgress = false;
-      let recordedErrorUsage = false;
-      let attemptErrorUsage: Usage | undefined;
-      try {
-        this.throwIfCancelled();
-        for await (const event of model.streamCompletion(currentRequest, this.modelCallOptions())) {
-          if (event.type === "error") {
-            const eventUsage = event.usage ?? completionProviderOutputErrorUsage(event.error);
-
-            if (eventUsage !== undefined) {
-              args.state.providerErrorUsage = Usage.add(args.state.providerErrorUsage, eventUsage);
-              recordedErrorUsage = true;
-              attemptErrorUsage = eventUsage;
-            }
-
-            throw event.error;
-          }
-
-          const mapped = accumulator.accept(event);
-
-          if (event.type === "final") break;
-
-          if (event.type === "tool_call_delta" || mapped !== undefined) {
-            hasProviderProgress = true;
-          }
-
-          if (args.state.firstDeltaMs === undefined && isGenerationDeltaEvent(event.type)) {
-            args.state.firstDeltaMs = Date.now() - args.generationStartedAt;
-          }
-
-          if (event.type === "tool_call_delta") {
-            yield addTurnToToolCallDelta(args.turn, event);
-          }
-
-          if (mapped !== undefined) {
-            await args.generationObservers.update?.({ turn: args.turn, delta: mapped });
-
-            if (mapped.type === "tool_call") {
-              args.state.emittedToolCallIds.add(mapped.toolCall.toolCallId);
-            }
-
-            const shouldBuffer =
-              args.bufferResponseEvents ||
-              (args.bufferOutputDeltas &&
-                (mapped.type === "text_delta" || mapped.type === "reasoning_delta"));
-
-            if (!shouldBuffer) {
-              yield addTurn(args.turn, mapped) as AgentCompletionStreamEvent;
-            }
-          }
-        }
-        const response = accumulator.response();
-        assertCompletionResponseIntegrity({ response });
-        args.state.attemptInputTokens = response.usage.inputTokens;
-        const cumulativeStructuredUsage = Usage.add(args.state.providerErrorUsage, response.usage);
-        try {
-          this.validateStructuredResponse(response, attempt, cumulativeStructuredUsage);
-        } catch (error) {
-          const retryOptions = this.retryOptionsForFailure(error, attempt, args.turn, true);
-
-          if (retryOptions === undefined) {
-            if (error instanceof AgentStructuredOutputError) {
-              args.state.providerErrorUsage = Usage.empty();
-            }
-
-            throw error;
-          }
-
-          args.state.providerErrorUsage = Usage.add(args.state.providerErrorUsage, response.usage);
-          args.state.firstDeltaMs = undefined;
-          args.state.emittedToolCallIds.clear();
-          const retryRequest = structuredOutputRetryRequest(args.request, response, error);
-          currentRequest = retryRequest.request;
-          await this.scheduleCompletionRetry(
-            error,
-            attempt,
-            args.turn,
-            true,
-            retryOptions,
-            args.runObservers,
-            structuredOutputRetryEventAttributes(error, retryRequest),
-          );
-          continue;
-        }
-        args.state.response = Usage.isEmpty(args.state.providerErrorUsage)
-          ? response
-          : { ...response, usage: cumulativeStructuredUsage };
-        args.state.providerErrorUsage = Usage.empty();
-        return args.state.response;
-      } catch (error) {
-        if (!recordedErrorUsage) {
-          const attemptUsage = completionProviderOutputErrorUsage(error);
-
-          if (attemptUsage !== undefined) {
-            args.state.providerErrorUsage = Usage.add(args.state.providerErrorUsage, attemptUsage);
-            attemptErrorUsage = attemptUsage;
-          }
-        }
-
-        const retryOptions = hasProviderProgress
-          ? undefined
-          : this.retryOptionsForFailure(error, attempt, args.turn, true);
-
-        if (retryOptions === undefined) {
-          throw error;
-        }
-
-        await this.scheduleCompletionRetry(
-          error,
-          attempt,
-          args.turn,
-          true,
-          retryOptions,
-          args.runObservers,
-          providerOutputRetryEventAttributes(
-            error,
-            args.state.providerErrorUsage,
-            attemptErrorUsage,
-          ),
-        );
-      }
-    }
-  }
-
-  private async *completeStreamingRun(args: {
-    runId: string;
-    turn: number;
-    request: CompletionRequest;
-    response: CompletionResponse;
-    firstDeltaMs: number | undefined;
-    usage: Usage;
-    newMessages: MessageType[];
-    pendingTurnMessages: MessageType[];
-    runObservers: ActiveAgentRunObservers;
-    bufferResponseEvents: boolean;
-    bufferOutputDeltas: boolean;
-    emittedTurnEnd: boolean;
-  }): AsyncIterable<AgentStreamEvent<Output, RawResponseOf<M>>> {
-    const guardedOutput = await this.runOutputGuardrailsForResponse(
-      args.runId,
-      args.usage,
-      args.response,
-      args.newMessages,
-      args.runObservers,
-    );
-    for (const decision of guardedOutput.decisions) {
-      yield { type: "guardrail_decision", decision };
-    }
-
-    const response = guardedOutput.response;
-    const assistantMessage = this.generatedAssistantMessage(response, args.request);
-    args.newMessages[args.newMessages.length - 1] = assistantMessage;
-    await this.memoryRecorder.commitMessages(
-      args.runId,
-      args.turn,
-      [assistantMessage],
-      args.pendingTurnMessages,
-    );
-
-    if (!args.emittedTurnEnd && (args.bufferResponseEvents || args.bufferOutputDeltas)) {
-      for (const event of responseStreamEvents(args.turn, response, args.bufferResponseEvents)) {
-        yield event as AgentStreamEvent<Output, RawResponseOf<M>>;
-      }
-    }
-
-    if (!args.emittedTurnEnd) {
-      yield {
-        type: "turn_end",
-        turn: args.turn,
-        response: response as CompletionResponse<RawResponseOf<M>>,
-        firstDeltaMs: args.firstDeltaMs,
-      };
-    }
-
-    const result = this.createTerminalResult(
-      args.runId,
-      guardedOutput.text,
-      guardedOutput.blocked,
-      args.usage,
-      args.newMessages,
-      args.runObservers,
-    );
-
-    if (result.type === "response") {
-      await this.runRunEndHook(result, args.newMessages);
-    }
-
-    await this.memoryRecorder.commitCompletedRun(
-      args.runId,
-      args.turn,
-      args.newMessages,
-      args.pendingTurnMessages,
-    );
-    await this.runLifecycleFinish(result);
-    await args.runObservers.end(observerRunEnd(result));
-    this.runState = "completed";
-    this.disposeAbortLink();
-    yield result;
   }
 
   private async finishSuspension(args: {
@@ -1682,8 +1305,9 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
 
     if (this.memoryScope !== undefined) continuationState.memoryScope = this.memoryScope;
 
-    if (this.loopContextCheckpoint !== undefined)
+    if (this.loopContextCheckpoint !== undefined) {
       continuationState.loopContextCheckpoint = this.loopContextCheckpoint;
+    }
 
     const continuation = parseAgentContinuation({
       version: 1,
@@ -1714,145 +1338,6 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     this.currentMessages = [...args.newMessages];
     this.disposeAbortLink();
     return result;
-  }
-
-  private generatedAssistantMessage(
-    response: CompletionResponse,
-    _request: CompletionRequest,
-  ): MessageType {
-    const generation: JsonObject = {
-      provider: this.agent.model.provider,
-      modelId: this.agent.model.modelId,
-      usage: { ...response.usage },
-    };
-
-    if (response.finishReason !== undefined) generation.finishReason = response.finishReason;
-
-    if (response.providerFinishReason !== undefined) {
-      generation.providerFinishReason = response.providerFinishReason;
-    }
-
-    if (response.contextUsage !== undefined) generation.contextUsage = response.contextUsage;
-
-    if (response.sources !== undefined) generation.sources = response.sources;
-
-    if (response.providerToolCalls !== undefined) {
-      generation.providerToolCalls = response.providerToolCalls;
-    }
-
-    const metadata: JsonObject = { anvia: { generation } };
-    let message: MessageType = {
-      role: "assistant",
-      content: response.choice,
-      metadata,
-    };
-
-    if (response.messageId !== undefined) message = { ...message, id: response.messageId };
-
-    return message;
-  }
-
-  private providerTraceRequest(
-    request: CompletionRequest,
-    options: { stream?: boolean | undefined } = {},
-  ): JsonObject | undefined {
-    try {
-      return this.agent.model.traceRequest?.(request, options);
-    } catch (error) {
-      return {
-        error: error instanceof Error ? error.message : String(error),
-      };
-    }
-  }
-
-  private generationStartArgs(
-    turn: number,
-    request: CompletionRequest,
-    providerRequest: JsonObject | undefined,
-    toolMatches?: readonly AgentGenerationToolMatch[] | undefined,
-  ): AgentGenerationStartArgs & { modelInfo: AgentGenerationModelInfo } {
-    let args: AgentGenerationStartArgs & { modelInfo: AgentGenerationModelInfo } = {
-      turn,
-      request,
-      promptRef: this.generationPromptRef,
-      modelInfo: {
-        provider: this.agent.model.provider,
-        modelId: this.agent.model.modelId,
-        capabilities: this.agent.model.capabilities,
-      },
-    };
-
-    if (providerRequest !== undefined) args = { ...args, providerRequest };
-
-    if (toolMatches !== undefined && toolMatches.length > 0) args = { ...args, toolMatches };
-
-    const context = this.turnContextBreakdowns.get(turn);
-
-    if (context !== undefined) args = { ...args, context };
-
-    return args;
-  }
-
-  /** Scales the turn's context split to the input tokens the provider reported for the final attempt. */
-  private reportedGenerationContext(
-    turn: number,
-    inputTokens: number,
-  ): { context?: ContextBreakdown } {
-    const context = this.turnContextBreakdowns.get(turn);
-    return context === undefined ? {} : { context: scaleContextBreakdown(context, inputTokens) };
-  }
-
-  private estimatedGenerationContext(turn: number): { context?: ContextBreakdown } {
-    const context = this.turnContextBreakdowns.get(turn);
-    return context === undefined ? {} : { context };
-  }
-
-  private retryOptionsForFailure(
-    error: unknown,
-    attempt: number,
-    turn: number,
-    streaming: boolean,
-  ): ResolvedRetryOptions | undefined {
-    if (this.abortController.signal.aborted) return undefined;
-
-    return retryOptionsForFailure(this.completionRetryOptions, {
-      error,
-      attempt,
-      turn,
-      streaming,
-    });
-  }
-
-  private async scheduleCompletionRetry(
-    error: unknown,
-    attempt: number,
-    turn: number,
-    streaming: boolean,
-    options: ResolvedRetryOptions,
-    runObservers: ActiveAgentRunObservers,
-    additionalAttributes?: JsonObject | undefined,
-  ): Promise<void> {
-    const delayMs = retryDelayMs(options, attempt);
-    const attributes: JsonObject = {
-      turn,
-      attempt,
-      nextAttempt: attempt + 1,
-      maxAttempts: options.maxAttempts,
-      delayMs,
-      streaming,
-      ...retryErrorAttributes(error),
-    };
-
-    if (additionalAttributes !== undefined) {
-      Object.assign(attributes, additionalAttributes);
-    }
-
-    await runObservers.event({
-      name: "completion.retry",
-      level: "WARNING",
-      attributes,
-    });
-    await waitForRetry(delayMs, this.abortController.signal);
   }
 
   private async executeToolCalls(
@@ -2020,7 +1505,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     await active.observers.error({
       turn: active.turn,
       error,
-      ...this.estimatedGenerationContext(active.turn),
+      ...estimatedGenerationContext(this.turnContextBreakdowns.get(active.turn)),
     });
   }
 
@@ -2057,12 +1542,8 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       text: result.text,
       usage: lifecycleSnapshot(result.usage),
       messages: lifecycleSnapshot(result.messages),
+      trace: lifecycleSnapshot(result.trace),
     };
-
-    if (result.memoryCompaction !== undefined) {
-      Object.assign(common, { memoryCompaction: lifecycleSnapshot(result.memoryCompaction) });
-    }
-
     let event: AgentFinishEvent<Output>;
 
     if (result.type === "response") {
@@ -2140,9 +1621,15 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     messages: MessageType[],
   ): Promise<unknown> {
     try {
-      await this.runRunErrorHook(error, usage, messages);
+      await runRunErrorHook(this.activeHook, {
+        error,
+        usage,
+        chatHistory: this.chatHistory,
+        newMessages: messages,
+        cancel: (newMessages, reason) => this.cancelled(newMessages, reason),
+      });
     } catch {
-      // Thrown hook errors are diagnostic cleanup and must not replace the run failure.
+      void error;
     }
     const reportedError = this.cancellationError ?? error;
     await this.runLifecycleError(reportedError, runId, usage, messages);
@@ -2226,127 +1713,14 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     return {
       ...common,
       type: "response",
-      output: this.parseOutput(text),
+      output: parseStructuredOutput(this.completionRunnerContext(), text),
     };
-  }
-
-  private validateStructuredResponse(
-    response: CompletionResponse,
-    attempt: number,
-    usage: Usage,
-  ): void {
-    if (this.agent.outputSchema === undefined) return;
-
-    if (response.choice.some((item) => item.type === "tool-call")) return;
-
-    const text = textFromAssistantContent(response.choice);
-    const normalized = normalizeStructuredOutput(text);
-
-    if (response.finishReason === "content-filter") {
-      throw new AgentStructuredOutputError({
-        phase: "content-filter",
-        attempt,
-        maxAttempts: this.completionRetryOptions?.maxAttempts ?? 1,
-        outputLength: text.length,
-        normalizedLength: normalized.text.length,
-        outputFormat: normalized.format,
-        attemptUsage: response.usage,
-        usage,
-        finishReason: response.finishReason,
-        providerFinishReason: response.providerFinishReason,
-      });
-    }
-
-    if (response.finishReason === "length") {
-      throw new AgentStructuredOutputError({
-        phase: "truncated",
-        attempt,
-        maxAttempts: this.completionRetryOptions?.maxAttempts ?? 1,
-        outputLength: text.length,
-        normalizedLength: normalized.text.length,
-        outputFormat: normalized.format,
-        attemptUsage: response.usage,
-        usage,
-        finishReason: response.finishReason,
-        providerFinishReason: response.providerFinishReason,
-      });
-    }
-
-    const output = this.parseOutput(text, attempt, usage, {
-      useValidatedOutput: false,
-      attemptUsage: response.usage,
-      finishReason: response.finishReason,
-      providerFinishReason: response.providerFinishReason,
-    });
-    this.validatedStructuredOutput = { text, output };
   }
 
   private takeFailedCompletionUsage(): Usage {
     const usage = this.failedCompletionUsage;
     this.failedCompletionUsage = Usage.empty();
     return usage;
-  }
-
-  private parseOutput(
-    text: string,
-    attempt = 1,
-    usage = Usage.empty(),
-    options: {
-      useValidatedOutput?: boolean;
-      attemptUsage?: Usage;
-      finishReason?: CompletionFinishReason | undefined;
-      providerFinishReason?: string | undefined;
-    } = {},
-  ): Output {
-    const schema = this.agent.outputSchema;
-
-    if (schema === undefined) return text as Output;
-
-    if (options.useValidatedOutput !== false && this.validatedStructuredOutput?.text === text) {
-      return this.validatedStructuredOutput.output;
-    }
-
-    const normalized = normalizeStructuredOutput(text);
-    const maxAttempts = this.completionRetryOptions?.maxAttempts ?? 1;
-    let json: unknown;
-    try {
-      json = JSON.parse(normalized.text);
-
-      if (!isJsonValue(json)) {
-        throw new TypeError("Agent structured output is not a JSON value.");
-      }
-    } catch (error) {
-      throw new AgentStructuredOutputError({
-        phase: "parse",
-        attempt,
-        maxAttempts,
-        outputLength: text.length,
-        normalizedLength: normalized.text.length,
-        outputFormat: normalized.format,
-        attemptUsage: options.attemptUsage ?? usage,
-        usage,
-        finishReason: options.finishReason,
-        providerFinishReason: options.providerFinishReason,
-        cause: error,
-      });
-    }
-    try {
-      return schema.parse(json);
-    } catch (error) {
-      throw new AgentStructuredOutputError({
-        phase: "schema",
-        attempt,
-        maxAttempts,
-        outputLength: text.length,
-        normalizedLength: normalized.text.length,
-        outputFormat: normalized.format,
-        attemptUsage: options.attemptUsage ?? usage,
-        usage,
-        finishReason: options.finishReason,
-        providerFinishReason: options.providerFinishReason,
-        cause: error,
-      });
-    }
   }
 
   private memoryCompactionResult(): {
@@ -2424,8 +1798,9 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     return context;
   }
 
-  private replayed(step: AgentRunExecutionStep): boolean | Promise<boolean> {
-    return this.execution?.replayed?.(step) ?? false;
+  private async isReplayed(step: AgentRunExecutionStep): Promise<boolean> {
+    const pending = this.execution?.replayed?.(step) ?? false;
+    return typeof pending === "boolean" ? pending : await pending;
   }
 
   private async startRunObservers(runId: string): Promise<ActiveAgentRunObservers> {
@@ -2451,197 +1826,8 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     );
   }
 
-  private async runCompletionCallHook(
-    prompt: MessageType,
-    history: MessageType[],
-    newMessages: MessageType[],
-  ): Promise<void> {
-    const action = await this.activeHook?.onCompletionCall?.({
-      prompt,
-      history,
-      run: runControl,
-    });
-
-    if (action?.type === "terminate") {
-      throw this.cancelled(newMessages, action.reason);
-    }
-  }
-
-  private async runRunStartHook(newMessages: MessageType[]): Promise<void> {
-    const action = await this.activeHook?.onRunStart?.({
-      prompt: this.promptMessage,
-      history: this.chatHistory,
-      maxTurns: this.maxTurnCount,
-      run: runControl,
-    });
-
-    if (action?.type === "terminate") {
-      throw this.cancelled(newMessages, action.reason);
-    }
-  }
-
-  private async runRunEndHook(
-    result: AgentResponse<Output>,
-    newMessages: MessageType[],
-  ): Promise<void> {
-    const action = await this.activeHook?.onRunEnd?.({
-      status: "completed",
-      output: result.output,
-      text: result.text,
-      usage: result.usage,
-      messages: result.messages,
-      run: runControl,
-    });
-
-    if (action?.type === "terminate") {
-      throw this.cancelled(newMessages, action.reason);
-    }
-  }
-
-  private async runRunErrorHook(
-    error: unknown,
-    usage: Usage,
-    newMessages: MessageType[],
-  ): Promise<void> {
-    const action = await this.activeHook?.onRunError?.({
-      error,
-      usage,
-      messages: [...this.chatHistory, ...newMessages],
-      run: runControl,
-    });
-
-    if (action?.type === "terminate") {
-      this.cancelled(newMessages, action.reason);
-    }
-  }
-
-  private async runTurnStartHook(
-    turn: number,
-    prompt: MessageType,
-    history: MessageType[],
-    newMessages: MessageType[],
-  ): Promise<void> {
-    const action = await this.activeHook?.onTurnStart?.({
-      turn,
-      prompt,
-      history,
-      run: runControl,
-    });
-
-    if (action?.type === "terminate") {
-      throw this.cancelled(newMessages, action.reason);
-    }
-  }
-
-  private async runTurnEndHook(
-    turn: number,
-    response: CompletionResponse,
-    newMessages: MessageType[],
-  ): Promise<void> {
-    const action = await this.activeHook?.onTurnEnd?.({
-      turn,
-      response,
-      run: runControl,
-    });
-
-    if (action?.type === "terminate") {
-      throw this.cancelled(newMessages, action.reason);
-    }
-  }
-
-  private async runCompletionRequestMiddlewares(
-    request: CompletionRequest,
-    turn: number,
-  ): Promise<CompletionRequest> {
-    let current = request;
-    this.generationPromptRef = this.traceOptions?.promptRef;
-    for (const middleware of this.activeMiddlewares()) {
-      const replacement = await middleware.onCompletionRequest?.({
-        turn,
-        request: current,
-        originalRequest: request,
-        promptRef: this.generationPromptRef,
-      });
-
-      if (replacement?.promptRef !== undefined) {
-        this.generationPromptRef = replacement.promptRef ?? undefined;
-      }
-
-      if (replacement?.request !== undefined) {
-        current = replacement.request;
-
-        if (current.providerOptions !== undefined) {
-          assertJsonObject(current.providerOptions, "providerOptions");
-        }
-      }
-    }
-    return current;
-  }
-
-  private async runCompletionResponseMiddlewares(
-    request: CompletionRequest,
-    response: CompletionResponse,
-    turn: number,
-  ): Promise<CompletionResponse> {
-    let current = response;
-    for (const middleware of this.activeMiddlewares()) {
-      const replacement = await middleware.onCompletionResponse?.({
-        turn,
-        request,
-        response: current,
-        originalResponse: response,
-      });
-
-      if (replacement?.response !== undefined) {
-        current = replacement.response;
-      }
-    }
-    return current;
-  }
-
-  private async runCompletionResponseHook(
-    prompt: MessageType,
-    response:
-      | Awaited<ReturnType<M["completion"]>>
-      | Awaited<ReturnType<CompletionModel["completion"]>>,
-    newMessages: MessageType[],
-  ): Promise<void> {
-    const action = await this.activeHook?.onCompletionResponse?.({
-      prompt,
-      response,
-      run: runControl,
-    });
-
-    if (action?.type === "terminate") {
-      throw this.cancelled(newMessages, action.reason);
-    }
-  }
-
-  private async runCompletionErrorHook(
-    prompt: MessageType,
-    error: unknown,
-    newMessages: MessageType[],
-  ): Promise<void> {
-    const action = await this.activeHook?.onCompletionError?.({
-      prompt,
-      error,
-      run: runControl,
-    });
-
-    if (action?.type === "terminate") {
-      throw this.cancelled(newMessages, action.reason);
-    }
-  }
-
   private activeMiddlewares(): AgentMiddleware[] {
     return [...this.agent.middlewares, ...this.requestMiddlewares];
-  }
-
-  private shouldBufferStreamResponseEvents(): boolean {
-    return (
-      this.activeHook?.onCompletionResponse !== undefined ||
-      this.activeMiddlewares().some((middleware) => middleware.onCompletionResponse !== undefined)
-    );
   }
 
   private async drainSteeringMessages(
@@ -2671,6 +1857,12 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     await this.memoryRecorder.commitMessages(runId, turn, messages, pendingTurnMessages);
     for (const receipt of receipts) this.onSteeringApplied?.(receipt.id);
     return receipts;
+  }
+
+  private setCancellationError(error: AgentRunCancelledError): void {
+    this.cancellationError = error;
+
+    if (!this.abortController.signal.aborted) this.abortController.abort(error);
   }
 
   private startRun(): void {
@@ -2734,608 +1926,8 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       : error;
   }
 
-  private modelCallOptions(): ModelCallOptions {
-    return { abortSignal: this.abortController.signal };
-  }
-
   private disposeAbortLink(): void {
     this.removeExternalAbortListener?.();
     this.removeExternalAbortListener = undefined;
   }
-}
-
-function abortReason(reason: unknown): string {
-  if (typeof reason === "string" && reason.trim().length > 0) return reason;
-
-  if (reason instanceof Error && reason.message.trim().length > 0) return reason.message;
-
-  return "External abort signal.";
-}
-
-function normalizeAgentInput(
-  agentId: string,
-  input: AgentInput,
-): {
-  prompt: MessageType;
-  history: MessageType[];
-  scope?: MemoryScope | undefined;
-  continuationState?: AgentContinuationState | undefined;
-  interactionResponse?: AgentInteractionResponse | undefined;
-  sourceRunId?: string | undefined;
-  interactionId?: string | undefined;
-} {
-  if (typeof input !== "object" || input === null || Array.isArray(input)) {
-    throw new TypeError("Agent runs require one options object with prompt or messages.");
-  }
-
-  const hasContinuation = "continuation" in input && input.continuation !== undefined;
-  const hasPrompt = "prompt" in input && input.prompt !== undefined;
-  const hasMessages = "messages" in input && input.messages !== undefined;
-
-  if (Number(hasContinuation) + Number(hasPrompt) + Number(hasMessages) !== 1) {
-    throw new TypeError("Agent runs require exactly one of prompt, messages, or continuation.");
-  }
-
-  if (hasContinuation) {
-    if (!("response" in input) || input.response === undefined) {
-      throw new TypeError("Agent continuation runs require an interaction response.");
-    }
-
-    if ("session" in input && input.session !== undefined) {
-      throw new TypeError("Agent continuations carry their memory scope and cannot use session.");
-    }
-
-    const continuation = parseAgentContinuation(input.continuation);
-
-    if (continuation.agentId !== agentId) {
-      throw new TypeError(
-        `Agent continuation belongs to "${continuation.agentId}", not "${agentId}".`,
-      );
-    }
-
-    const response = parseAgentInteractionResponse(input.response);
-    assertAgentInteractionResponse(continuation.interaction, response);
-    const state = parseContinuationState(continuation.state, continuation.interaction);
-    let responsePart: ToolInteractionResponsePart;
-
-    if (response.type === "tool-approval") {
-      responsePart = {
-        type: "tool-approval-response",
-        interactionId: continuation.interaction.id,
-        toolCallId: continuation.interaction.toolCallId,
-        toolName: continuation.interaction.toolName,
-        approved: response.approved,
-      };
-
-      if (response.reason !== undefined)
-        responsePart = { ...responsePart, reason: response.reason };
-    } else {
-      responsePart = {
-        type: "tool-question-response",
-        interactionId: continuation.interaction.id,
-        toolCallId: continuation.interaction.toolCallId,
-        toolName: continuation.interaction.toolName,
-        answers: response.answers,
-      };
-    }
-
-    if (continuation.interaction.callId !== undefined) {
-      responsePart = { ...responsePart, callId: continuation.interaction.callId };
-    }
-
-    const normalized = {
-      prompt: parseMessage({ role: "tool", content: [responsePart] }),
-      history: [...state.history, ...state.messages],
-      continuationState: state,
-      interactionResponse: response,
-      sourceRunId: continuation.sourceRunId,
-      interactionId: continuation.interaction.id,
-    };
-
-    if (state.memoryScope !== undefined) {
-      Object.assign(normalized, { scope: normalizeMemoryScope(state.memoryScope) });
-    }
-
-    return normalized;
-  }
-
-  if (hasPrompt) {
-    const prompt = input.prompt;
-
-    if (
-      typeof prompt !== "string" &&
-      (typeof prompt !== "object" || prompt === null || prompt.role !== "user")
-    ) {
-      throw new TypeError("Agent prompt must be text or a user message.");
-    }
-
-    const parsedPrompt = parseMessage(
-      typeof prompt === "string" ? { role: "user", content: prompt } : prompt,
-    );
-
-    if (parsedPrompt.role !== "user") {
-      throw new TypeError("Agent prompt must be text or a user message.");
-    }
-
-    const normalized = {
-      prompt: parsedPrompt,
-      history: [],
-    };
-
-    if (input.session !== undefined) {
-      Object.assign(normalized, { scope: normalizeMemoryScope(input.session) });
-    }
-
-    return normalized;
-  }
-
-  if (input.session !== undefined) {
-    throw new TypeError("Agent messages cannot be combined with a persisted session.");
-  }
-
-  const messages = input.messages;
-
-  if (!Array.isArray(messages) || messages.length === 0) {
-    throw new TypeError("Agent input transcript must contain at least one message.");
-  }
-
-  const parsedMessages = parseMessages(messages);
-  const activePrompt = parsedMessages.at(-1);
-
-  if (activePrompt === undefined) {
-    throw new TypeError("Agent input transcript must contain at least one message.");
-  }
-
-  if (activePrompt.role !== "user") {
-    throw new TypeError("Agent input transcript must end with a user message.");
-  }
-
-  return {
-    prompt: activePrompt,
-    history: parsedMessages.slice(0, -1),
-  };
-}
-
-function normalizeSteeringInput(input: AgentSteerInput): MessageType[] {
-  if (typeof input !== "object" || input === null || Array.isArray(input)) {
-    throw new TypeError("Agent steering requires one options object with prompt or messages.");
-  }
-
-  const hasPrompt = "prompt" in input && input.prompt !== undefined;
-  const hasMessages = "messages" in input && input.messages !== undefined;
-
-  if (hasPrompt === hasMessages) {
-    throw new TypeError("Agent steering requires exactly one of prompt or messages.");
-  }
-
-  if (hasPrompt) {
-    const prompt = input.prompt;
-
-    if (
-      typeof prompt !== "string" &&
-      (typeof prompt !== "object" || prompt === null || prompt.role !== "user")
-    ) {
-      throw new TypeError("Agent steering prompt must be text or a user message.");
-    }
-
-    const parsedPrompt = parseMessage(
-      typeof prompt === "string" ? { role: "user", content: prompt } : prompt,
-    );
-
-    if (parsedPrompt.role !== "user") {
-      throw new TypeError("Agent steering prompt must be text or a user message.");
-    }
-
-    return [parsedPrompt];
-  }
-
-  const messages = input.messages;
-
-  if (!Array.isArray(messages) || messages.length === 0) {
-    throw new TypeError("Agent steering messages must contain at least one user message.");
-  }
-
-  const parsedMessages = parseMessages(messages);
-
-  if (parsedMessages.some((message) => message.role !== "user")) {
-    throw new TypeError("Agent steering messages must all be user messages.");
-  }
-
-  return parsedMessages;
-}
-
-function normalizeRequestedRunId(runId: string | undefined): string | undefined {
-  if (runId === undefined) {
-    return undefined;
-  }
-
-  if (typeof runId !== "string" || runId.trim().length === 0) {
-    throw new TypeError("runId must be a non-empty string.");
-  }
-
-  return runId;
-}
-
-function responseStreamEvents(
-  turn: number,
-  response: CompletionResponse,
-  includeProviderArtifacts = true,
-): AgentStreamEvent[] {
-  const events: AgentStreamEvent[] = [];
-  for (const item of response.choice) {
-    if (item.type === "text") {
-      if (item.text.length > 0) {
-        events.push({ type: "text_delta", turn, delta: item.text });
-      }
-
-      continue;
-    }
-
-    if (item.type === "reasoning") {
-      if (item.details === undefined) {
-        if (item.text.length > 0) {
-          events.push(reasoningDeltaEvent(turn, item.text, { id: item.id }));
-        }
-
-        continue;
-      }
-
-      for (const content of item.details) {
-        const delta =
-          content.type === "encrypted" || content.type === "redacted" ? content.data : content.text;
-        events.push(
-          reasoningDeltaEvent(turn, delta, {
-            id: item.id,
-            contentType: content.type,
-            signature: content.type === "text" ? content.signature : undefined,
-          }),
-        );
-      }
-      continue;
-    }
-
-    if (item.type === "tool-call") {
-      events.push({ type: "tool_call", turn, toolCall: item });
-    }
-  }
-
-  if (includeProviderArtifacts) {
-    for (const source of response.sources ?? []) {
-      events.push({ type: "source", turn, source });
-    }
-    for (const toolCall of response.providerToolCalls ?? []) {
-      events.push({ type: "provider_tool_call", turn, toolCall });
-    }
-  }
-
-  return events;
-}
-
-function generationArtifacts(messages: MessageType[]): {
-  sources?: CompletionSource[];
-  providerToolCalls?: ProviderToolCall[];
-  finishReason?: CompletionFinishReason;
-  providerFinishReason?: string;
-  contextUsage?: import("../../completion/index").ContextUsage;
-} {
-  const sources = new Map<string, CompletionSource>();
-  const providerToolCalls = new Map<string, ProviderToolCall>();
-  let finishReason: CompletionFinishReason | undefined;
-  let providerFinishReason: string | undefined;
-  let contextUsage: import("../../completion/index").ContextUsage | undefined;
-  for (const message of messages) {
-    const metadata = getAssistantGenerationMetadata(message);
-
-    if (metadata !== undefined) {
-      finishReason = metadata.finishReason;
-      providerFinishReason = metadata.providerFinishReason;
-      contextUsage = metadata.contextUsage;
-    }
-
-    for (const source of metadata?.sources ?? []) {
-      const key = `${source.url}\u0000${source.startIndex ?? ""}\u0000${source.endIndex ?? ""}`;
-      sources.set(key, source);
-    }
-    for (const toolCall of metadata?.providerToolCalls ?? []) {
-      providerToolCalls.set(toolCall.id, toolCall);
-    }
-  }
-  const artifacts: {
-    sources?: CompletionSource[];
-    providerToolCalls?: ProviderToolCall[];
-    finishReason?: CompletionFinishReason;
-    providerFinishReason?: string;
-    contextUsage?: import("../../completion/index").ContextUsage;
-  } = {};
-
-  if (sources.size > 0) artifacts.sources = [...sources.values()];
-
-  if (providerToolCalls.size > 0) {
-    artifacts.providerToolCalls = [...providerToolCalls.values()];
-  }
-
-  if (finishReason !== undefined) artifacts.finishReason = finishReason;
-
-  if (providerFinishReason !== undefined) {
-    artifacts.providerFinishReason = providerFinishReason;
-  }
-
-  if (contextUsage !== undefined) artifacts.contextUsage = contextUsage;
-
-  return artifacts;
-}
-
-type ReasoningDeltaEvent = Extract<AgentStreamEvent, { type: "reasoning_delta" }>;
-
-function reasoningDeltaEvent(
-  turn: number,
-  delta: string,
-  details: {
-    id?: ReasoningDeltaEvent["id"] | undefined;
-    contentType?: ReasoningDeltaEvent["contentType"] | undefined;
-    signature?: ReasoningDeltaEvent["signature"] | undefined;
-  } = {},
-): ReasoningDeltaEvent {
-  const event: ReasoningDeltaEvent = {
-    type: "reasoning_delta",
-    turn,
-    delta,
-  };
-
-  if (details.id !== undefined) {
-    event.id = details.id;
-  }
-
-  if (details.contentType !== undefined) {
-    event.contentType = details.contentType;
-  }
-
-  if (details.signature !== undefined) {
-    event.signature = details.signature;
-  }
-
-  return event;
-}
-
-function textFromMessage(message: MessageType): string {
-  if (message.role === "system") {
-    return message.content;
-  }
-
-  if (typeof message.content === "string") {
-    return message.content;
-  }
-
-  return message.content
-    .flatMap((content) => {
-      if (content.type === "text") {
-        return [content.text];
-      }
-
-      if (content.type === "file" && content.data.type === "text") {
-        return [content.data.text];
-      }
-
-      return [];
-    })
-    .join("\n");
-}
-
-function latestAssistantText(messages: readonly MessageType[]): string {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-
-    if (message?.role === "assistant") {
-      return typeof message.content === "string"
-        ? message.content
-        : textFromAssistantContent(message.content);
-    }
-  }
-  return "";
-}
-
-function structuredOutputRetryRequest(
-  request: CompletionRequest,
-  response: CompletionResponse,
-  error: unknown,
-): StructuredOutputRetryRequest {
-  const truncated = error instanceof AgentStructuredOutputError && error.phase === "truncated";
-  const correction: MessageType = {
-    role: "user",
-    content: truncated ? STRUCTURED_OUTPUT_TRUNCATED_RETRY_PROMPT : STRUCTURED_OUTPUT_RETRY_PROMPT,
-  };
-
-  if (truncated) {
-    return {
-      request: {
-        ...request,
-        chatHistory: [...request.chatHistory, correction],
-      },
-      previousResponse: "omitted",
-      includedOutputLength: 0,
-    };
-  }
-
-  const preview = structuredOutputRepairPreview(textFromAssistantContent(response.choice));
-
-  if (preview.includedOutputLength === 0) {
-    return {
-      request: {
-        ...request,
-        chatHistory: [...request.chatHistory, correction],
-      },
-      previousResponse: "omitted",
-      includedOutputLength: 0,
-    };
-  }
-
-  const invalidResponse: MessageType = {
-    role: "assistant",
-    content: [{ type: "text", text: preview.text }],
-  };
-  return {
-    request: {
-      ...request,
-      chatHistory: [...request.chatHistory, invalidResponse, correction],
-    },
-    previousResponse: "preview",
-    includedOutputLength: preview.includedOutputLength,
-  };
-}
-
-function structuredOutputRetryEventAttributes(
-  error: unknown,
-  retryRequest: StructuredOutputRetryRequest,
-): JsonObject {
-  const attributes: JsonObject = {
-    previousResponse: retryRequest.previousResponse,
-    includedOutputLength: retryRequest.includedOutputLength,
-  };
-
-  if (!(error instanceof AgentStructuredOutputError)) return attributes;
-
-  Object.assign(attributes, {
-    failurePhase: error.phase,
-    outputLength: error.outputLength,
-    normalizedLength: error.normalizedLength,
-    attemptUsage: usageEventValue(error.attemptUsage),
-    cumulativeUsage: usageEventValue(error.usage),
-  });
-
-  if (error.finishReason !== undefined) attributes.finishReason = error.finishReason;
-
-  if (error.providerFinishReason !== undefined) {
-    attributes.providerFinishReason = error.providerFinishReason;
-  }
-
-  return attributes;
-}
-
-function providerOutputRetryEventAttributes(
-  error: unknown,
-  cumulativeUsage: Usage,
-  attemptUsage?: Usage | undefined,
-): JsonObject | undefined {
-  const resolvedAttemptUsage = attemptUsage ?? completionProviderOutputErrorUsage(error);
-
-  if (resolvedAttemptUsage === undefined) return undefined;
-
-  return {
-    attemptUsage: usageEventValue(resolvedAttemptUsage),
-    cumulativeUsage: usageEventValue(cumulativeUsage),
-  };
-}
-
-function usageEventValue(usage: Usage): JsonObject {
-  const value: JsonObject = {
-    inputTokens: usage.inputTokens,
-    outputTokens: usage.outputTokens,
-    totalTokens: usage.totalTokens,
-    cachedInputTokens: usage.cachedInputTokens,
-    cacheCreationInputTokens: usage.cacheCreationInputTokens,
-  };
-
-  if (usage.details !== undefined) value.details = { ...usage.details };
-
-  return value;
-}
-
-function providerMessages(messages: readonly MessageType[]): MessageType[] {
-  const providerMessages: MessageType[] = [];
-  for (const message of messages) {
-    if (message.role !== "tool") {
-      providerMessages.push(message);
-      continue;
-    }
-
-    const results = message.content.filter((part) => part.type === "tool-result");
-
-    if (results.length > 0) {
-      providerMessages.push({ ...message, content: results });
-    }
-  }
-  return providerMessages;
-}
-
-/** Names of the tool definitions this agent serves from MCP servers. */
-function mcpToolNames(agent: object): string[] {
-  return getAgentToolState(agent)
-    .staticTools.filter((tool) => isMcpTool(tool))
-    .map((tool) => tool.name);
-}
-
-function guardrailDecisionAttributes(decision: GuardrailDecisionRecord): JsonObject {
-  const attributes: JsonObject = {
-    policyId: decision.policyId,
-    guardrailId: decision.guardrailId,
-    boundary: decision.boundary,
-    mode: decision.mode,
-    action: decision.action,
-    applied: decision.applied,
-    latencyMs: decision.latencyMs,
-  };
-
-  if (decision.reason !== undefined) {
-    attributes.reason = decision.reason;
-  }
-
-  if (decision.message !== undefined) {
-    attributes.message = decision.message;
-  }
-
-  return attributes;
-}
-
-function blockedOutcomeDetails(
-  decisions: readonly GuardrailDecisionRecord[],
-  fallbackReason: string,
-): { reason: string; message?: string | undefined } {
-  for (let index = decisions.length - 1; index >= 0; index -= 1) {
-    const decision = decisions[index];
-
-    if (decision?.applied !== true || decision.action !== "block") continue;
-
-    return decision.message === undefined
-      ? { reason: decision.reason ?? fallbackReason }
-      : { reason: decision.reason ?? fallbackReason, message: decision.message };
-  }
-  return { reason: fallbackReason };
-}
-
-function observerRunEnd<Output>(outcome: AgentOutcome<Output>): AgentRunEndArgs {
-  const common = {
-    runId: outcome.runId,
-    text: outcome.text,
-    usage: outcome.usage,
-    messages: outcome.messages,
-    sources: outcome.sources,
-    providerToolCalls: outcome.providerToolCalls,
-    resumedFrom: outcome.resumedFrom,
-  };
-  switch (outcome.type) {
-    case "response":
-      return { ...common, status: "completed", output: outcome.output };
-    case "blocked":
-      return { ...common, status: "blocked", stage: outcome.stage };
-    case "interaction":
-      return { ...common, status: "suspended", interaction: outcome.interaction };
-  }
-}
-
-/**
- * A run's memory scope already names its conversation and user, so traces default to that session
- * and user. An explicit `trace.sessionId` or `trace.userId` wins.
- */
-function withMemoryScopeTrace(
-  trace: AgentTraceOptions | undefined,
-  scope: MemoryScope | undefined,
-): AgentTraceOptions | undefined {
-  if (scope === undefined) return trace;
-
-  const sessionId = trace?.sessionId ?? scope.sessionId;
-  const userId = trace?.userId ?? scope.userId;
-
-  if (sessionId === trace?.sessionId && userId === trace?.userId) return trace;
-
-  return { ...trace, sessionId, userId };
 }

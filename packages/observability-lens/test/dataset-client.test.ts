@@ -1,3 +1,4 @@
+import { contains, notBlank, runEvalSuite } from "@anvia/core/evals";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { LensClient, LensDatasetError } from "../src/index";
 
@@ -143,6 +144,57 @@ describe("Lens dataset client", () => {
     expect(() => lens?.datasetClient({ baseUrl: "lens.internal" })).toThrow(
       /baseUrl must be an absolute http\(s\) URL/,
     );
+  });
+
+  it("parses item tags and feeds dataset.items directly into runEvalSuite", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValueOnce(
+        response({
+          name: "support-tagged",
+          version: "v1",
+          items: [
+            {
+              id: "billing-1",
+              input: "refund",
+              expected: "REFUND",
+              tags: ["billing", "smoke"],
+              metadata: { owner: "payments" },
+            },
+            {
+              id: "other-1",
+              input: "hello",
+              expected: "HELLO",
+              tags: ["general"],
+            },
+          ],
+          meta: { page: 1, limit: 50, totalItems: 2, totalPages: 1 },
+        }),
+      ),
+    );
+    lens = createClient();
+    const dataset = await lens
+      .datasetClient()
+      .getDataset<string, string>({ name: "support-tagged" });
+
+    expect(dataset.items[0]?.tags).toEqual(["billing", "smoke"]);
+
+    const result = await runEvalSuite({
+      name: "lens-dataset-eval",
+      run: { datasetName: dataset.name, datasetVersion: dataset.version },
+      cases: dataset.items,
+      tags: ["billing"],
+      target: (input) => input.toUpperCase(),
+      metrics: [
+        notBlank(),
+        contains<string, string, string>({
+          expected: ({ case: testCase }) => testCase.expected ?? "",
+        }),
+      ],
+    });
+
+    expect(result.passed).toBe(true);
+    expect(result.results.map((entry) => entry.case.id)).toEqual(["billing-1"]);
   });
 });
 

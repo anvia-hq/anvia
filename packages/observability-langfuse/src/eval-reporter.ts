@@ -118,6 +118,23 @@ function buildScoreMetadata<Input, Output, Score, Expected>({
 
   if (args.metric.threshold !== undefined) merged.threshold = args.metric.threshold;
 
+  if (args.metric.model !== undefined) {
+    merged.metricModel = {
+      provider: args.metric.model.provider,
+      modelId: args.metric.model.modelId,
+    };
+  }
+
+  if (args.case.tags !== undefined && args.case.tags.length > 0) {
+    merged.caseTags = [...args.case.tags];
+  }
+
+  if (args.trial !== undefined) merged.trial = args.trial;
+
+  if (args.trialCount !== undefined) merged.trialCount = args.trialCount;
+
+  if (args.cached === true) merged.cached = true;
+
   if (args.outcome.usage !== undefined) merged.evaluationUsage = { ...args.outcome.usage };
 
   mergeMetadata(merged, args.outcome.metadata);

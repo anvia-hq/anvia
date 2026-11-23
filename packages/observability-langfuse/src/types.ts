@@ -1,4 +1,4 @@
-import type { JsonValue } from "@anvia/core/completion";
+import type { JsonObject, JsonValue } from "@anvia/core/completion";
 
 export type LangfuseRedactionMode = boolean | "deep";
 export type LangfuseCaptureMode = "safe" | "full";
@@ -79,7 +79,8 @@ export type LangfuseDatasetItem<Input = unknown, Expected = unknown> = {
   id: string;
   input: Input;
   expected?: Expected | undefined;
-  metadata?: Record<string, JsonValue | undefined> | undefined;
+  tags?: readonly string[] | undefined;
+  metadata?: JsonObject | undefined;
 };
 
 export type LangfuseDataset<Input = unknown, Expected = unknown> = {

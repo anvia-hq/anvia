@@ -123,7 +123,13 @@ export function createLangfuseDatasetClient(
 
           if (item.expected !== undefined) normalized.expected = item.expected;
 
-          if (item.metadata !== undefined) normalized.metadata = item.metadata;
+          if (item.metadata !== undefined) {
+            const cleanMetadata: Record<string, JsonValue> = {};
+            for (const [key, value] of Object.entries(item.metadata)) {
+              if (value !== undefined) cleanMetadata[key] = value;
+            }
+            normalized.metadata = cleanMetadata;
+          }
 
           items.push(normalized);
         }

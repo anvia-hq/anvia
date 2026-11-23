@@ -1,6 +1,13 @@
 import type { ModelContextLimits } from "@anvia/core/completion";
 import type { ModelId } from "@anvia/core/model-listing";
 
+export const GEMINI_2_5_FLASH_IMAGE = "gemini-2.5-flash-image";
+export const GEMINI_3_1_FLASH_IMAGE = "gemini-3.1-flash-image";
+export const GEMINI_3_1_FLASH_LITE_IMAGE = "gemini-3.1-flash-lite-image";
+export const GEMINI_3_PRO_IMAGE = "gemini-3-pro-image";
+export const GEMINI_3_PRO_IMAGE_PREVIEW = "gemini-3-pro-image-preview";
+export const IMAGEN_4_GENERATE = "imagen-4.0-generate-001";
+
 export type KnownGeminiCompletionModelId =
   | "gemini-2.0-flash"
   | "gemini-2.0-flash-lite"

@@ -1,4 +1,5 @@
 import type { Embedding, EmbeddingModel, ModelCallOptions } from "@anvia/core/embeddings";
+import { embedTextBatches, isNumberArray, isPlainObject } from "@anvia/core/internal/provider";
 import type { GoogleGenAI } from "@google/genai";
 import type { GeminiEmbeddingModelId } from "./models";
 import { disableGeminiNativeRetries } from "./retry";
@@ -42,12 +43,7 @@ export class GeminiEmbeddingModel implements EmbeddingModel {
   }
 
   async embedTexts(texts: string[], options?: ModelCallOptions): Promise<Embedding[]> {
-    const embeddings: Embedding[] = [];
-    for (let index = 0; index < texts.length; index += this.maxBatchSize) {
-      const batch = texts.slice(index, index + this.maxBatchSize);
-      embeddings.push(...(await this.embedBatch(batch, options)));
-    }
-    return embeddings;
+    return embedTextBatches(texts, this.maxBatchSize, (batch) => this.embedBatch(batch, options));
   }
 
   private async embedBatch(texts: string[], options?: ModelCallOptions): Promise<Embedding[]> {
@@ -94,7 +90,7 @@ export class GeminiEmbeddingModel implements EmbeddingModel {
 }
 
 function embeddingsFromResponse(response: unknown): number[][] {
-  const raw = response as Record<string, unknown>;
+  const raw = isPlainObject(response) ? response : {};
 
   if (Array.isArray(raw.embeddings)) {
     return raw.embeddings.map((embedding, index) => vectorFromEmbedding(embedding, index));
@@ -108,17 +104,9 @@ function embeddingsFromResponse(response: unknown): number[][] {
 }
 
 function vectorFromEmbedding(embedding: unknown, position: number): number[] {
-  if (!isObject(embedding) || !isNumberArray(embedding.values)) {
+  if (!isPlainObject(embedding) || !isNumberArray(embedding.values)) {
     throw new Error(`Invalid Gemini embedding response vector at position ${position}.`);
   }
 
   return embedding.values;
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isNumberArray(value: unknown): value is number[] {
-  return Array.isArray(value) && value.every((item) => typeof item === "number");
 }

@@ -6,16 +6,19 @@ import type {
   ImageGenerationResult,
   ModelCallOptions,
 } from "@anvia/core/image-generation";
+import { isPlainObject } from "@anvia/core/internal/provider";
 import type { GoogleGenAI } from "@google/genai";
 import type { GeminiGenerateContentImageModelId, GeminiGenerateImagesModelId } from "./models";
 import { disableGeminiNativeRetries } from "./retry";
 
-export const GEMINI_2_5_FLASH_IMAGE = "gemini-2.5-flash-image";
-export const GEMINI_3_1_FLASH_IMAGE = "gemini-3.1-flash-image";
-export const GEMINI_3_1_FLASH_LITE_IMAGE = "gemini-3.1-flash-lite-image";
-export const GEMINI_3_PRO_IMAGE = "gemini-3-pro-image";
-export const GEMINI_3_PRO_IMAGE_PREVIEW = "gemini-3-pro-image-preview";
-export const IMAGEN_4_GENERATE = "imagen-4.0-generate-001";
+export {
+  GEMINI_2_5_FLASH_IMAGE,
+  GEMINI_3_1_FLASH_IMAGE,
+  GEMINI_3_1_FLASH_LITE_IMAGE,
+  GEMINI_3_PRO_IMAGE,
+  GEMINI_3_PRO_IMAGE_PREVIEW,
+  IMAGEN_4_GENERATE,
+} from "./models";
 
 export class GeminiImageGenerationModel implements ImageGenerationModel<unknown> {
   readonly provider = "gemini";
@@ -93,7 +96,7 @@ export class GeminiImagenGenerationModel implements ImageGenerationModel<unknown
 }
 
 export function nativeImageResponseFromGemini(response: unknown): ImageGenerationResult<unknown> {
-  const raw = response as Record<string, unknown>;
+  const raw = isPlainObject(response) ? response : {};
   const candidates = Array.isArray(raw.candidates) ? raw.candidates : [];
   const images = candidates.flatMap((candidate): GeneratedImage[] => {
     if (!isPlainObject(candidate) || !isPlainObject(candidate.content)) {
@@ -133,7 +136,7 @@ export function nativeImageResponseFromGemini(response: unknown): ImageGeneratio
 }
 
 export function imagenResponseFromGemini(response: unknown): ImageGenerationResult<unknown> {
-  const raw = response as Record<string, unknown>;
+  const raw = isPlainObject(response) ? response : {};
   const images = (Array.isArray(raw.generatedImages) ? raw.generatedImages : []).flatMap(
     (item): GeneratedImage[] => {
       if (!isPlainObject(item) || !isPlainObject(item.image)) {
@@ -193,8 +196,4 @@ function decodeBase64Image(value: string): Uint8Array {
   }
 
   return new Uint8Array(bytes);
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

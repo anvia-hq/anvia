@@ -1,3 +1,5 @@
+import { isPlainObject } from "@anvia/core/internal/provider";
+
 export function disableGeminiNativeRetries(
   config: Record<string, unknown>,
 ): Record<string, unknown> {
@@ -13,8 +15,4 @@ export function disableGeminiNativeRetries(
       },
     },
   };
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

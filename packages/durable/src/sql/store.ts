@@ -104,8 +104,10 @@ export class SqlDurableStore implements DurableStore {
     this.leaseMs = options.leaseMs ?? 30_000;
     this.heartbeatMs = options.heartbeatMs ?? Math.max(1, Math.floor(this.leaseMs / 3));
     this.schemaMode = options.schema ?? "verify";
+
     if (!Number.isSafeInteger(this.leaseMs) || this.leaseMs < 1)
       throw new TypeError("leaseMs must be a positive integer.");
+
     if (!Number.isSafeInteger(this.heartbeatMs) || this.heartbeatMs < 1)
       throw new TypeError("heartbeatMs must be a positive integer.");
   }
@@ -113,7 +115,9 @@ export class SqlDurableStore implements DurableStore {
   async acquire(): Promise<void> {
     if (this.closed || this.acquired || this.observing || this.joined)
       throw new Error("Durable store is closed or already acquired.");
+
     if (this.schemaMode === "create") await this.createSchema();
+
     await this.verifySchema();
     await this.driver.transaction(async (query) => {
       await query(
@@ -125,12 +129,15 @@ export class SqlDurableStore implements DurableStore {
           "SELECT token, version, lease_expires_at > now() AS live FROM anvia_durable_owner WHERE singleton = 1 FOR UPDATE",
         )
       )[0]!;
+
       if (num(owner.version) !== SQL_SCHEMA_VERSION)
         throw new Error("Unsupported durable database schema version.");
+
       if (owner.token !== null && owner.live === true)
         throw new Error(
           "Durable store already has a live owner. Only one runtime per database is supported.",
         );
+
       // Shared workers coordinate through claims and an owner assumes it is the only writer, so an
       // owner cannot start while a worker holds a live claim. The table is absent before claims.
       if (
@@ -140,11 +147,13 @@ export class SqlDurableStore implements DurableStore {
         const live = await query(
           "SELECT 1 FROM anvia_durable_claims WHERE expires_at > now() LIMIT 1",
         );
+
         if (live.length > 0)
           throw new Error(
             "Durable store has shared workers holding live claims; stop them before opening an owning runtime.",
           );
       }
+
       await query(
         `UPDATE anvia_durable_owner SET token = $1::text,
            lease_expires_at = now() + ($2::bigint * interval '1 millisecond'),
@@ -160,6 +169,7 @@ export class SqlDurableStore implements DurableStore {
   async connect(): Promise<void> {
     if (this.closed || this.acquired || this.observing)
       throw new Error("Durable store is closed or already open.");
+
     // An observer never creates or migrates the schema, whatever `schema` says.
     await this.verifySchema();
     // Tables with no owner row were never initialised by a runtime. Like the SQLite path, an
@@ -167,17 +177,21 @@ export class SqlDurableStore implements DurableStore {
     const owner = await this.driver.query(
       "SELECT version FROM anvia_durable_owner WHERE singleton = 1",
     );
+
     if (owner.length === 0)
       throw new Error(
         "Durable database has not been initialised; open it once with a runtime before observing.",
       );
+
     this.observing = true;
   }
 
   async join(): Promise<void> {
     if (this.closed || this.acquired || this.observing || this.joined)
       throw new Error("Durable store is closed or already open.");
+
     if (this.schemaMode === "create") await this.createSchema();
+
     await this.verifySchema(SQL_CLAIM_TABLES);
     await this.driver.transaction(async (query) => {
       await query(
@@ -197,8 +211,10 @@ export class SqlDurableStore implements DurableStore {
     agentIds?: readonly string[];
   }): Promise<DurableClaim[]> {
     this.assertJoined();
+
     if (!Number.isSafeInteger(input.limit) || input.limit < 1)
       throw new TypeError("Invalid claim limit.");
+
     checkLease(input.leaseMs);
     return this.driver.transaction(async (query) => {
       await this.assertNoLiveOwner(query);
@@ -239,10 +255,14 @@ export class SqlDurableStore implements DurableStore {
     definitions: readonly { name: string; version: number }[];
   }): Promise<DurableClaim[]> {
     this.assertJoined();
+
     if (!Number.isSafeInteger(input.limit) || input.limit < 1)
       throw new TypeError("Invalid claim limit.");
+
     checkLease(input.leaseMs);
+
     if (input.definitions.length === 0) return [];
+
     return this.driver.transaction(async (query) => {
       await this.assertNoLiveOwner(query);
       // No `name` or `version` column exists, and the record is JSON text that must not be cast:
@@ -290,7 +310,9 @@ export class SqlDurableStore implements DurableStore {
   }): Promise<{ lost: string[] }> {
     this.assertJoined();
     checkLease(input.leaseMs);
+
     if (input.claims.length === 0) return { lost: [] };
+
     // A claim names a run or a task. A run is held until it settles; a task only while it is
     // executing (`pending` or `running`), since any other status means no invocation is running.
     const rows = await this.driver.query(
@@ -310,7 +332,9 @@ export class SqlDurableStore implements DurableStore {
 
   async release(claims: readonly DurableClaimRef[]): Promise<void> {
     this.assertJoined();
+
     if (claims.length === 0) return;
+
     await this.driver.query(
       `DELETE FROM anvia_durable_claims c
        USING jsonb_to_recordset($1::text::jsonb) AS held(run_id text, claim_id text)
@@ -321,11 +345,13 @@ export class SqlDurableStore implements DurableStore {
 
   async close(): Promise<void> {
     if (this.closed) return;
+
     this.closing = true;
     clearInterval(this.heartbeat);
     this.heartbeat = undefined;
     try {
       await this.gate.read(() => undefined);
+
       if (this.acquired && !this.lost)
         await this.driver.query(
           `UPDATE anvia_durable_owner SET token = NULL, lease_expires_at = NULL, host = NULL, pid = NULL
@@ -351,10 +377,12 @@ export class SqlDurableStore implements DurableStore {
     return this.gate.transaction(() => {
       // Transactions queued before close() still run: close() waits for them.
       if (this.closed) throw new Error("Durable store is not acquired.");
+
       return this.driver.transaction(async (query) => {
         // Enforced by Postgres, and no owner row lock is taken, so an observer never blocks the owner.
         if (this.observing || readOnly) await query("SET TRANSACTION READ ONLY");
         else if (!this.joined) await this.assertOwner(query);
+
         let active = true;
         const staging = new Staging();
         try {
@@ -414,10 +442,12 @@ export class SqlDurableStore implements DurableStore {
     const limit = options.limit ?? 50;
     const params: unknown[] = [options.after ?? 0];
     let filter = "";
+
     if (options.sessionId !== undefined) {
       params.push(options.sessionId);
       filter = `AND session_id = $${params.length}::text`;
     }
+
     params.push(limit + 1);
     const rows = await this.read((query) =>
       query(
@@ -436,7 +466,9 @@ export class SqlDurableStore implements DurableStore {
         createdAt: text(row.created_at),
       })),
     };
+
     if (rows.length > limit) result.nextCursor = num(page.at(-1)!.cursor);
+
     return result;
   }
 
@@ -445,10 +477,12 @@ export class SqlDurableStore implements DurableStore {
     const limit = options.limit ?? 50;
     const params: unknown[] = [options.after ?? 0];
     let filter = "";
+
     if (options.sessionId !== undefined) {
       params.push(options.sessionId);
       filter = `AND session_id = $${params.length}::text`;
     }
+
     params.push(limit + 1);
     const rows = await this.read((query) =>
       query(
@@ -459,7 +493,9 @@ export class SqlDurableStore implements DurableStore {
     );
     const page = rows.slice(0, limit);
     const result: TaskPage = { tasks: page.map((row) => parseTask(readStored(text(row.record)))) };
+
     if (rows.length > limit) result.nextCursor = num(page.at(-1)!.cursor);
+
     return result;
   }
 
@@ -485,7 +521,9 @@ export class SqlDurableStore implements DurableStore {
       ),
     );
     const result: { ids: string[]; cursor?: number } = { ids: rows.map((row) => text(row.id)) };
+
     if (rows.length === 100) result.cursor = num(rows.at(-1)!.cursor);
+
     return result;
   }
 
@@ -526,6 +564,7 @@ export class SqlDurableStore implements DurableStore {
       ["r.status", options.status],
     ] as const) {
       if (value === undefined) continue;
+
       params.push(value);
       conditions.push(`${column} = $${params.length}::text`);
     }
@@ -543,7 +582,9 @@ export class SqlDurableStore implements DurableStore {
     const result: DurableRunPage = {
       runs: page.map((row) => parseRunSummary(JSON.parse(text(row.record)))),
     };
+
     if (rows.length > limit) result.nextCursor = num(page.at(-1)!.cursor);
+
     return result;
   }
 
@@ -553,6 +594,7 @@ export class SqlDurableStore implements DurableStore {
     excludedSessions: readonly string[],
   ): Promise<{ ids: string[]; nextAttemptAt?: string }> {
     if (!Number.isSafeInteger(limit) || limit < 1) throw new TypeError("Invalid scheduler limit.");
+
     const eligible = `FROM anvia_durable_runs r
       WHERE r.status IN ('queued', 'pending', 'running', 'retry_wait')
       AND r.session_id NOT IN (SELECT jsonb_array_elements_text($1::text::jsonb))
@@ -581,7 +623,9 @@ export class SqlDurableStore implements DurableStore {
         )
       )[0];
       const result: { ids: string[]; nextAttemptAt?: string } = { ids };
+
       if (typeof wake?.deadline === "string") result.nextAttemptAt = wake.deadline;
+
       return result;
     });
   }
@@ -612,11 +656,15 @@ export class SqlDurableStore implements DurableStore {
       if (row.history_encoding !== null && row.history_encoding !== undefined) {
         if (row.history_encoding !== "linked-v1" || row.type !== "model_started")
           throw new Error("Unsupported durable event history encoding.");
+
         return json(hydrateValue(blobs, histories.unpackEvent(json(readStored(text(row.data))))));
       }
+
       const stored = text(row.data);
+
       if (!stored.includes("anvia:blob") && !stored.includes("durableBlobs"))
         return json(readStored(stored));
+
       return json(hydrateValue(blobs, json(readStored(stored))));
     });
     return {
@@ -651,8 +699,10 @@ export class SqlDurableStore implements DurableStore {
     const decodeRun = (stored: string): Promise<DurableRunRecord> =>
       withBlobs(() => {
         const value = readStored(stored) as Record<string, JsonValue>;
+
         if (!stored.includes("anvia:blob") && !stored.includes("durableBlobs"))
           return parseRun(value);
+
         return parseRun({ ...value, prompt: hydrateValue(blobs, json(value.prompt)) });
       });
     const readRun = async (sql: string, ...params: unknown[]) => {
@@ -839,7 +889,9 @@ export class SqlDurableStore implements DurableStore {
             [runId, key],
           )
         )[0];
+
         if (row === undefined) return undefined;
+
         return withBlobs(() =>
           parseOperation(histories.unpack(parseOperation(readStored(text(row.record))))),
         );
@@ -892,6 +944,7 @@ export class SqlDurableStore implements DurableStore {
           "SELECT 1 FROM anvia_durable_claims WHERE run_id = $1::text AND claim_id = $2::text FOR SHARE",
           [runId, claimId],
         );
+
         if (held.length === 0) throw new DurableClaimLostError(runId, claimId);
       },
       cursor: async () =>
@@ -921,27 +974,32 @@ export class SqlDurableStore implements DurableStore {
       `SELECT name FROM unnest($1::text::text[]) AS name WHERE to_regclass(name) IS NULL`,
       [`{${[...SQL_TABLES, ...extra].join(",")}}`],
     );
+
     if (rows.length > 0)
       throw new Error(
         `Durable schema is missing: ${rows.map((row) => text(row.name)).join(", ")}. ` +
           "Create it with your migrations (see the anvia-durable-drizzle / anvia-durable-prisma generators), " +
           'or open the Postgres store with schema: "create".',
       );
+
     const version = (
       await this.driver.query("SELECT version FROM anvia_durable_owner WHERE singleton = 1")
     )[0]?.version;
+
     if (version !== undefined && num(version) !== SQL_SCHEMA_VERSION)
       throw new Error("Unsupported durable database schema version.");
   }
 
   private async renewOwnerLease(): Promise<void> {
     if (this.closed || !this.acquired) return;
+
     try {
       const rows = await this.driver.query(
         `UPDATE anvia_durable_owner SET lease_expires_at = now() + ($2::bigint * interval '1 millisecond')
          WHERE singleton = 1 AND token = $1::text RETURNING 1 AS ok`,
         [this.token, this.leaseMs],
       );
+
       if (rows.length === 0) this.lost = true;
     } catch {
       // A failed renewal is retried on the next beat. Transactions still check the owner token.
@@ -952,6 +1010,7 @@ export class SqlDurableStore implements DurableStore {
     const owner = (
       await query("SELECT token FROM anvia_durable_owner WHERE singleton = 1 FOR UPDATE")
     )[0];
+
     if (owner?.token !== this.token) {
       this.lost = true;
       throw new Error("Durable store ownership was lost.");
@@ -975,9 +1034,12 @@ export class SqlDurableStore implements DurableStore {
         "SELECT token, version, lease_expires_at > now() AS live FROM anvia_durable_owner WHERE singleton = 1 FOR SHARE",
       )
     )[0];
+
     if (owner === undefined) throw new Error("Durable database has not been initialised.");
+
     if (num(owner.version) !== SQL_SCHEMA_VERSION)
       throw new Error("Unsupported durable database schema version.");
+
     if (owner.token !== null && owner.live === true)
       throw new Error(
         "Durable store has a live owning runtime; shared workers cannot run beside an owner.",
@@ -1009,6 +1071,7 @@ async function takeClaims(
       [id, workerId, globalThis.crypto.randomUUID(), leaseMs],
     );
     const row = rows[0];
+
     if (row !== undefined)
       claims.push({
         runId: text(row.run_id),

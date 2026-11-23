@@ -226,9 +226,11 @@ function fakeDesktop() {
     },
     async takeover(options: { holder: string; leaseMs?: number }) {
       desktop.calls.push(["takeover", { holder: options.holder, leaseMs: options.leaseMs }]);
+
       if (desktop.lockedBy !== undefined && desktop.lockedBy !== options.holder) {
         throw new DockerSandboxError(`Held by ${desktop.lockedBy}.`, "desktop_locked");
       }
+
       desktop.state = {
         held: true,
         holder: options.holder,
@@ -264,6 +266,7 @@ function fakeTunnel() {
       async *[Symbol.asyncIterator]() {
         while (!ended || queue.length > 0) {
           const next = queue.shift();
+
           if (next !== undefined) yield next;
           else await new Promise<void>((resolve) => (wake = resolve));
         }

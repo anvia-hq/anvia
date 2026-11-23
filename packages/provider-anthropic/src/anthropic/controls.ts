@@ -51,7 +51,9 @@ export function anthropicControlsForModel(modelId: string): AnthropicReasoningCo
   if (modelId === "claude-haiku-5-5" || modelId === "claude-opus-5-5") {
     return ADVANCED_MEDIUM_CONTROLS;
   }
+
   if (isAdvancedEffortModel(modelId)) return ADVANCED_CONTROLS;
+
   if (
     modelId === "claude-mythos-preview" ||
     modelId === "claude-opus-4-6" ||
@@ -59,9 +61,11 @@ export function anthropicControlsForModel(modelId: string): AnthropicReasoningCo
   ) {
     return MAX_CONTROLS;
   }
+
   if (modelId === "claude-opus-4-5" || modelId === "claude-opus-4-5-20251101") {
     return STANDARD_CONTROLS;
   }
+
   return undefined;
 }
 

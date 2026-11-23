@@ -12,12 +12,14 @@ export function splitStreamMarkdownBlocks(
   if (content.length === 0) {
     return [];
   }
+
   if (options.singleDocument === true) {
     return [{ content, startOffset: 0 }];
   }
 
   try {
     const tokens = lexer(content, { gfm: false });
+
     if (tokens.some((token) => token.type === "def") || Object.keys(tokens.links).length > 0) {
       return [{ content, startOffset: 0 }];
     }

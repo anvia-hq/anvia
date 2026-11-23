@@ -5,7 +5,9 @@ import { DurableRuntime } from "../../src/index.js";
 import { SqliteDurableStore } from "../../src/sqlite.js";
 import { done, lookup, makeAgent, toolResponse } from "../helpers.js";
 const [path, calls, stage] = process.argv.slice(2);
+
 if (path === undefined || calls === undefined) throw new Error("Missing fixture arguments");
+
 let id: string;
 async function halt(): Promise<never> {
   process.send?.({ id });
@@ -21,7 +23,9 @@ const runtime = await DurableRuntime.open({
     {
       agent: makeAgent(async () => {
         if (++modelCalls === 1) return toolResponse();
+
         if (stage === "model") await halt();
+
         return done();
       }, [
         lookup(async () => {
@@ -37,11 +41,14 @@ const runtime = await DurableRuntime.open({
         tokenCounter: async (messages) => {
           // Kill after the provider returned, but before the projection transaction.
           if (stage === "prepared" && summaryReturned) await halt();
+
           return estimateMemoryTokens(messages);
         },
         compactor: async () => {
           appendFileSync(calls, "summary\n");
+
           if (stage === "summary") await halt();
+
           summaryReturned = true;
           return {
             summary: "Lookup found the answer.",

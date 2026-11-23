@@ -50,9 +50,11 @@ export function approvalInteraction(request: {
   if (request.toolCallId === undefined) {
     throw new TypeError("Tool approval requires a canonical toolCallId.");
   }
+
   if (!isJsonValue(request.args)) {
     throw new TypeError("Tool approval input must be strict JSON.");
   }
+
   let interaction: AgentToolApprovalRequest = {
     type: "tool-approval",
     id: request.id,
@@ -61,7 +63,10 @@ export function approvalInteraction(request: {
     internalCallId: request.internalCallId,
     input: request.args,
   };
+
   if (request.callId !== undefined) interaction = { ...interaction, callId: request.callId };
+
   if (request.reason !== undefined) interaction = { ...interaction, reason: request.reason };
+
   return interaction;
 }

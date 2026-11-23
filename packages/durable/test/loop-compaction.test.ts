@@ -82,9 +82,12 @@ it("compacts newly approved tool output while keeping the continuation and trans
     agent: makeAgent(
       async (request) => {
         requests.push(request);
+
         if (++calls === 1) return toolResponse();
+
         if (JSON.stringify(request.chatHistory).length > 2000)
           throw new Error("context length exceeded");
+
         return done();
       },
       [{ ...lookup(tool), requiresApproval: true }],
@@ -95,7 +98,9 @@ it("compacts newly approved tool output while keeping the continuation and trans
   const run = await runtime.submit(submission);
   await vi.waitFor(async () => expect((await run.snapshot()).run.status).toBe("waiting"));
   const outcome = (await run.snapshot()).run.outcome;
+
   if (outcome?.type !== "interaction") throw new Error("Expected approval");
+
   await run.respond(outcome.interaction.id, { type: "tool-approval", approved: true });
   await run.result();
   await expectJournalRequests(runtime, run.id);
@@ -152,8 +157,10 @@ it.each([false, true])(
     const requests: CompletionRequest[] = [];
     const completion = async (request: CompletionRequest) => {
       requests.push(request);
+
       if (JSON.stringify(request.chatHistory).length > 2000)
         throw new Error("context length exceeded");
+
       return requests.length <= 2 ? toolResponse() : done();
     };
     const tool = vi.fn(async () => large);
@@ -167,6 +174,7 @@ it.each([false, true])(
       : makeAgent(completion, [lookup(tool)]);
     const summaryCompletion = vi.fn(async (request: CompletionRequest) => {
       if (Object.hasOwn(request, "temperature")) throw new Error("Unsupported temperature");
+
       return { ...done(), usage };
     });
     const compactor = vi.fn(
@@ -249,6 +257,7 @@ itSqlite.each(["summary", "prepared", "model"])(
     }));
     const tokenCounter = vi.fn((messages: Parameters<typeof estimateMemoryTokens>[0]) => {
       if (stage === "model") throw new Error("Committed preparation must not call the counter");
+
       return estimateMemoryTokens(messages);
     });
     const tool = vi.fn(async () => large);
@@ -273,12 +282,16 @@ itSqlite.each(["summary", "prepared", "model"])(
     expect(readFileSync(calls, "utf8")).toBe("tool\nsummary\n");
     expect(tool).not.toHaveBeenCalled();
     expect(compactor).toHaveBeenCalledTimes(stage === "model" ? 0 : 1);
+
     if (stage === "model") expect(tokenCounter).not.toHaveBeenCalled();
+
     expect(model).toHaveBeenCalledTimes(1);
     const after = await run.snapshot();
     expect(after.run.usage.totalTokens).toBe(stage === "model" ? 13 : 17);
     const completedContext = after.operations.find((operation) => operation.key === "0:context:2");
+
     if (stage === "model") expect(completedContext).toEqual(savedContext);
+
     expect(model.mock.calls[0]![0].chatHistory).toContainEqual(
       expect.objectContaining({
         role: "system",
@@ -326,6 +339,7 @@ it("rolls back projected context, usage, and progress together on a journal fail
           ...tx,
           async appendEvent(id, type, data) {
             if (type === "compaction_completed") throw new Error("Injected journal failure");
+
             await tx.appendEvent(id, type, data);
           },
         }),

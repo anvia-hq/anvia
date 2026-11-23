@@ -42,9 +42,11 @@ const getTicketTool = createTool({
   }),
   execute({ id }) {
     const ticket = tickets.get(id);
+
     if (ticket === undefined) {
       throw new Error(`Ticket not found: ${id}`);
     }
+
     return ticket;
   },
 });

@@ -69,9 +69,11 @@ export function isPrivateOrReservedHost(hostname: string): boolean {
   if (host === "localhost" || host.endsWith(".localhost")) return true;
 
   const ipv4 = parseIpv4(host);
+
   if (ipv4 !== null) return isBlockedIpv4(ipv4);
 
   const ipv6 = parseIpv6(host);
+
   if (ipv6 !== null) return isBlockedIpv6(ipv6);
 
   return false;
@@ -83,6 +85,7 @@ function stripBrackets(hostname: string): string {
 
 function isBlockedIpv4(value: number): boolean {
   if (GLOBALLY_REACHABLE_IPV4.has(value)) return false;
+
   for (const [network, prefix] of BLOCKED_IPV4_RANGES) {
     if (isInIpv4Range(value, network, prefix)) return true;
   }
@@ -98,12 +101,14 @@ function isBlockedIpv6(value: bigint): boolean {
 
 function isInIpv4Range(value: number, network: number, prefix: number): boolean {
   if (prefix === 0) return true;
+
   const shift = 32 - prefix;
   return value >>> shift === network >>> shift;
 }
 
 function isInIpv6Range(value: bigint, network: bigint, prefix: number): boolean {
   if (prefix === 0) return true;
+
   const shift = BigInt(128 - prefix);
   return value >> shift === network >> shift;
 }
@@ -111,12 +116,17 @@ function isInIpv6Range(value: bigint, network: bigint, prefix: number): boolean 
 /** Parse a dotted quad into its unsigned 32-bit value, or null when it is not one. */
 function parseIpv4(value: string): number | null {
   const parts = value.split(".");
+
   if (parts.length !== 4) return null;
+
   let result = 0;
   for (const part of parts) {
     if (!/^\d{1,3}$/.test(part)) return null;
+
     const octet = Number(part);
+
     if (octet > 255) return null;
+
     result = result * 256 + octet;
   }
   return result;
@@ -131,15 +141,20 @@ function parseIpv6(value: string): bigint | null {
 
   let text = address;
   const embedded = /(\d{1,3}(?:\.\d{1,3}){3})$/.exec(address);
+
   if (embedded !== null) {
     const ipv4 = parseIpv4(embedded[1] ?? "");
+
     if (ipv4 === null) return null;
+
     const groups = `${(ipv4 >>> 16).toString(16)}:${(ipv4 & 0xffff).toString(16)}`;
     text = `${address.slice(0, embedded.index)}${groups}`;
   }
 
   const halves = text.split("::");
+
   if (halves.length > 2) return null;
+
   if (halves.length === 1) {
     const groups = text.split(":");
     return groups.length === 8 ? foldHexGroups(groups) : null;
@@ -149,10 +164,14 @@ function parseIpv6(value: string): bigint | null {
   const leading = head === "" ? [] : head.split(":");
   const trailing = tail === "" ? [] : tail.split(":");
   const missing = 8 - leading.length - trailing.length;
+
   if (missing < 1) return null;
+
   const foldedHead = foldHexGroups(leading);
   const foldedTail = foldHexGroups(trailing);
+
   if (foldedHead === null || foldedTail === null) return null;
+
   return (foldedHead << BigInt(16 * (missing + trailing.length))) | foldedTail;
 }
 
@@ -160,6 +179,7 @@ function foldHexGroups(groups: readonly string[]): bigint | null {
   let value = 0n;
   for (const group of groups) {
     if (!/^[0-9a-f]{1,4}$/.test(group)) return null;
+
     value = (value << 16n) | BigInt(parseInt(group, 16));
   }
   return value;
@@ -170,7 +190,9 @@ function compileIpv4Ranges(
 ): ReadonlyArray<readonly [number, number]> {
   return ranges.map(([network, prefix]) => {
     const value = parseIpv4(network);
+
     if (value === null) throw new TypeError(`Invalid IPv4 range: ${network}/${prefix}`);
+
     return [value, prefix] as const;
   });
 }
@@ -180,7 +202,9 @@ function compileIpv6Ranges(
 ): ReadonlyArray<readonly [bigint, number]> {
   return ranges.map(([network, prefix]) => {
     const value = parseIpv6(network);
+
     if (value === null) throw new TypeError(`Invalid IPv6 range: ${network}/${prefix}`);
+
     return [value, prefix] as const;
   });
 }

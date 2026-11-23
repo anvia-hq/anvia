@@ -46,6 +46,7 @@ for (const pkg of releases) {
   }
 
   const body = releaseBody(pkg, tagName);
+
   if (dryRun) {
     console.info(`[dry-run] Would create GitHub Release ${tagName}`);
     continue;
@@ -59,14 +60,19 @@ function readPublishedPackageVersions() {
   if (publishedPackagesFile === undefined || publishedPackagesFile.length === 0) {
     return undefined;
   }
+
   const filePath = path.resolve(root, publishedPackagesFile);
+
   if (!existsSync(filePath)) {
     throw new Error(`Published package file does not exist: ${filePath}`);
   }
+
   const releases = JSON.parse(readFileSync(filePath, "utf8"));
+
   if (!Array.isArray(releases)) {
     throw new Error(`Published package file must contain an array: ${filePath}`);
   }
+
   return new Set(
     releases
       .filter(
@@ -86,6 +92,7 @@ function findPackageDirs(dir) {
 
   for (const entry of entries) {
     const entryPath = path.join(dir, entry);
+
     if (!statSync(entryPath).isDirectory()) continue;
 
     if (existsSync(path.join(entryPath, "package.json"))) {
@@ -121,6 +128,7 @@ async function releaseExists(tagName) {
   );
 
   if (response.status === 200) return true;
+
   if (response.status === 404) return false;
 
   throw new Error(
@@ -150,11 +158,13 @@ async function createRelease({ tagName, name, body }) {
 function releaseBody(pkg, tagName) {
   const changelogPath = path.join(pkg.dir, "CHANGELOG.md");
   const relativeChangelogPath = path.relative(root, changelogPath);
+
   if (!existsSync(changelogPath)) {
     return `Release notes for ${tagName} were not found in \`${relativeChangelogPath}\`.`;
   }
 
   const entry = extractChangelogEntry(readFileSync(changelogPath, "utf8"), pkg.packageJson.version);
+
   if (entry === undefined) {
     return `Release notes for ${tagName} were not found in \`${relativeChangelogPath}\`.`;
   }

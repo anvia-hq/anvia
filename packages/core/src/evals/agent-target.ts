@@ -80,9 +80,11 @@ export function agentEvalTarget<
   return async (input, testCase, context) => {
     context?.signal.throwIfAborted();
     const maxResponses = options.interactions?.maxResponses ?? 10;
+
     if (!Number.isSafeInteger(maxResponses) || maxResponses < 1) {
       throw new TypeError("Agent eval interactions.maxResponses must be a positive integer.");
     }
+
     const request = await abortable(
       context?.signal,
       Promise.resolve(options.request({ input, testCase })),
@@ -101,12 +103,14 @@ export function agentEvalTarget<
         if (options.interactions === undefined) {
           throw new AgentEvalSuspensionError(response);
         }
+
         if (phase >= maxResponses) {
           throw new AgentEvalSuspensionError(
             response,
             `Agent eval target exceeded the interaction response limit of ${maxResponses}.`,
           );
         }
+
         phase += 1;
         const interactionResponse = await abortable(
           signal,
@@ -129,7 +133,9 @@ export function agentEvalTarget<
         );
         signal?.throwIfAborted();
       }
+
       if (response.type === "blocked") throw new AgentRunBlockedError(response);
+
       const output =
         options.output === undefined
           ? (response as Output)

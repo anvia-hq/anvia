@@ -53,6 +53,7 @@ export class MistralClient implements ModelListingClient {
       this.sdk = options.client;
       return;
     }
+
     this.sdk = new Mistral({
       apiKey: requireApiKey(options.apiKey),
       serverURL: options.baseUrl,
@@ -89,9 +90,11 @@ export class MistralClient implements ModelListingClient {
       const requestOptions: NonNullable<Parameters<typeof this.sdk.models.list>[1]> = {
         retries: { strategy: "none" },
       };
+
       if (options.abortSignal !== undefined) {
         Object.assign(requestOptions, { signal: options.abortSignal });
       }
+
       const response = await this.sdk.models.list(undefined, requestOptions);
       const data = collectModelsFromResponse(response).map(toListedModel).filter(isListedModel);
       return { data };
@@ -103,6 +106,7 @@ export class MistralClient implements ModelListingClient {
 
 function rejectManagedOptionsWithInjectedClient(options: object, keys: readonly string[]): void {
   const conflict = keys.find((key) => key in options);
+
   if (conflict !== undefined) {
     throw new TypeError(`MistralClient cannot combine client with ${conflict}.`);
   }
@@ -120,6 +124,7 @@ function requireModelId<ModelId extends string>(modelId: ModelId): ModelId {
   if (modelId.trim().length === 0) {
     throw new TypeError("modelId must be a non-empty string");
   }
+
   return modelId;
 }
 
@@ -149,30 +154,39 @@ function toListedModel(model: unknown): ModelList["data"][number] | undefined {
   const listedModel: ModelList["data"][number] = {
     id: model.id,
   };
+
   if (typeof model.name === "string") {
     listedModel.name = model.name;
   }
+
   if (typeof model.description === "string") {
     listedModel.description = model.description;
   }
+
   if (typeof model.type === "string") {
     listedModel.type = model.type;
   }
+
   if (typeof model.created === "number") {
     listedModel.createdAt = model.created;
   }
+
   if (typeof model.ownedBy === "string") {
     listedModel.ownedBy = model.ownedBy;
   }
+
   if (typeof model.owned_by === "string") {
     listedModel.ownedBy = model.owned_by;
   }
+
   if (typeof model.maxContextLength === "number") {
     listedModel.contextLength = model.maxContextLength;
   }
+
   if (typeof model.max_context_length === "number") {
     listedModel.contextLength = model.max_context_length;
   }
+
   return listedModel;
 }
 

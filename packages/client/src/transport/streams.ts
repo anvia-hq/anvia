@@ -61,8 +61,11 @@ export async function* readJsonlStream<TEvent>(
   for await (const line of readLines(stream)) {
     lineNumber += 1;
     const raw = line.trim();
+
     if (raw.length === 0) continue;
+
     const parsed = parseJson(raw, options, () => ({ format: "jsonl", raw, line: lineNumber }));
+
     if (parsed.ok) yield parsed.value as TEvent;
   }
 }
@@ -89,31 +92,43 @@ export async function* readSseFrames<TEvent>(
     const hasData = data.length > 0;
     data = [];
     event = "";
+
     // Whitespace-only payloads (for example `data:` heartbeats) carry no JSON event.
     if (!hasData || raw.trim().length === 0) return undefined;
+
     const parsed = parseJson(raw, options, () => ({
       format: "sse",
       raw,
       event: name,
       lastEventId,
     }));
+
     if (!parsed.ok) return undefined;
+
     const frame: SseFrame<TEvent> = { data: parsed.value as TEvent, event: name, lastEventId };
+
     if (retry !== undefined) frame.retry = retry;
+
     return frame;
   }
 
   for await (const line of readLines(stream)) {
     if (line === "") {
       const frame = dispatch();
+
       if (frame !== undefined) yield frame;
+
       continue;
     }
+
     if (line.startsWith(":")) continue;
+
     const separator = line.indexOf(":");
     const field = separator === -1 ? line : line.slice(0, separator);
     let value = separator === -1 ? "" : line.slice(separator + 1);
+
     if (value.startsWith(" ")) value = value.slice(1);
+
     if (field === "data") {
       data.push(value);
     } else if (field === "event") {
@@ -126,6 +141,7 @@ export async function* readSseFrames<TEvent>(
   }
   // Leniently dispatch a final event that was not followed by a blank line.
   const frame = dispatch();
+
   if (frame !== undefined) yield frame;
 }
 
@@ -139,21 +155,28 @@ async function* readLines(stream: ReadableStream<Uint8Array>): AsyncIterable<str
 
   function* split(text: string): Iterable<string> {
     let chunk = text;
+
     if (skipLeadingLf && chunk.length > 0) {
       skipLeadingLf = false;
+
       if (chunk.startsWith("\n")) chunk = chunk.slice(1);
     }
+
     let start = 0;
     let index = buffer.length;
     buffer += chunk;
     for (; index < buffer.length; index += 1) {
       const char = buffer.charCodeAt(index);
+
       if (char !== 10 && char !== 13) continue;
+
       yield buffer.slice(start, index);
+
       if (char === 13) {
         if (index + 1 === buffer.length) skipLeadingLf = true;
         else if (buffer.charCodeAt(index + 1) === 10) index += 1;
       }
+
       start = index + 1;
     }
     buffer = buffer.slice(start);
@@ -162,16 +185,20 @@ async function* readLines(stream: ReadableStream<Uint8Array>): AsyncIterable<str
   try {
     while (true) {
       const next = await reader.read();
+
       if (next.done) {
         completed = true;
         break;
       }
+
       yield* split(decoder.decode(next.value, { stream: true }));
     }
     yield* split(decoder.decode());
+
     if (buffer.length > 0) yield buffer;
   } finally {
     if (!completed) await cancelReader(reader);
+
     reader.releaseLock();
   }
 }
@@ -186,7 +213,9 @@ function parseJson(
   } catch (cause) {
     const error = new EventStreamParseError({ ...details(), cause });
     options.onParseError?.(error);
+
     if (options.strict === true) throw error;
+
     return { ok: false };
   }
 }

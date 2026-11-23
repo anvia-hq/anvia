@@ -21,6 +21,7 @@ export function createAsyncQueue<T>(): AsyncQueue<T> {
     while (waiters.length > 0 && values.length > 0) {
       const waiter = waiters.shift();
       const value = values.shift() as T;
+
       if (waiter !== undefined) {
         waiter.resolve({ value, done: false });
       }
@@ -32,9 +33,11 @@ export function createAsyncQueue<T>(): AsyncQueue<T> {
 
     while (waiters.length > 0) {
       const waiter = waiters.shift();
+
       if (waiter === undefined) {
         continue;
       }
+
       if (error !== undefined) {
         waiter.reject(error);
       } else {
@@ -48,16 +51,19 @@ export function createAsyncQueue<T>(): AsyncQueue<T> {
       if (closed) {
         return;
       }
+
       values.push(value);
       flush();
     },
     close(options?: QueueCloseOptions): void {
       if (options?.discardPending) values.length = 0;
+
       closed = true;
       flush();
     },
     throw(thrown: unknown, options?: QueueCloseOptions): void {
       if (options?.discardPending) values.length = 0;
+
       closed = true;
       error = thrown;
       flush();
@@ -69,12 +75,15 @@ export function createAsyncQueue<T>(): AsyncQueue<T> {
             const value = values.shift() as T;
             return Promise.resolve({ value, done: false });
           }
+
           if (error !== undefined) {
             return Promise.reject(error);
           }
+
           if (closed) {
             return Promise.resolve({ value: undefined, done: true });
           }
+
           return new Promise((resolve, reject) => {
             waiters.push({ resolve, reject });
           });

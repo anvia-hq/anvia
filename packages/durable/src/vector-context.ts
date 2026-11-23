@@ -21,6 +21,7 @@ function identity(model: Identity): Record<string, unknown> {
 export function vectorContextOf(agent: Agent<unknown>): DurableVectorContext | undefined {
   const fingerprint = agent.context.flatMap((input, index) => {
     if (!isVectorContext(input)) return [];
+
     const models =
       "models" in input && input.models !== undefined
         ? { dense: identity(input.models.dense), sparse: identity(input.models.sparse) }
@@ -39,7 +40,9 @@ export function vectorContextOf(agent: Agent<unknown>): DurableVectorContext | u
       },
     ];
   });
+
   if (fingerprint.length === 0) return undefined;
+
   return {
     hash: createHash("sha256")
       .update(canonicalJson(json(fingerprint)))

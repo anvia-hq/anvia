@@ -52,12 +52,16 @@ export function copyStringRecord(
   name: string,
 ): Record<string, string> {
   if (value === undefined) return {};
+
   if (!isRecord(value)) throw new TypeError(`${name} must be an object.`);
+
   const copy: Record<string, string> = {};
   for (const [key, item] of Object.entries(value)) {
     if (typeof item !== "string") throw new TypeError(`${name}.${key} must be a string.`);
+
     if (name === "env" && !envKeyPattern.test(key))
       throw new TypeError(`Invalid environment variable name: ${key}`);
+
     copy[key] = item;
   }
   return copy;
@@ -66,15 +70,20 @@ export function copyStringRecord(
 export function validateExecOptions(options: SandboxExecOptions): void {
   assertOptionsObject(options);
   assertNonEmptyString(options.command, "command");
+
   if (
     options.args !== undefined &&
     (!Array.isArray(options.args) || !options.args.every((value) => typeof value === "string"))
   ) {
     throw new TypeError("args must contain only strings.");
   }
+
   if (options.cwd !== undefined) normalizeSandboxPath(options.cwd, { allowRoot: true });
+
   copyStringRecord(options.env, "env");
+
   if (options.timeoutMs !== undefined) assertPositiveSafeInteger(options.timeoutMs, "timeoutMs");
+
   if (
     options.input !== undefined &&
     typeof options.input !== "string" &&
@@ -87,13 +96,16 @@ export function validateExecOptions(options: SandboxExecOptions): void {
 export function validateProcessStartOptions(options: SandboxProcessStartOptions): void {
   assertOptionsObject(options);
   assertNonEmptyString(options.command, "command");
+
   if (
     options.args !== undefined &&
     (!Array.isArray(options.args) || !options.args.every((value) => typeof value === "string"))
   ) {
     throw new TypeError("args must contain only strings.");
   }
+
   if (options.cwd !== undefined) normalizeSandboxPath(options.cwd, { allowRoot: true });
+
   copyStringRecord(options.env, "env");
 }
 

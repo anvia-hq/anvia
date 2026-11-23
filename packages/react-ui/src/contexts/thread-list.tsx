@@ -82,24 +82,30 @@ export function InternalThreadListRootProvider({
 
 export function useThreadList(): ThreadListController {
   const value = useContext(ThreadListContext);
+
   if (value === undefined) {
     throw new Error("ThreadList primitives must be used inside ThreadListProvider.");
   }
+
   return value;
 }
 
 export function useThreadListItem(): ThreadListItemContextValue {
   const value = useContext(ThreadListItemContext);
+
   if (value === undefined) {
     throw new Error("ThreadListItem primitives must be used inside ThreadListPrimitive.Items.");
   }
+
   return value;
 }
 
 export function useInternalThreadListRoot(): InternalThreadListRootContextValue {
   const value = useContext(ThreadListRootContext);
+
   if (value === undefined) {
     throw new Error("Thread-list primitives must be used inside ThreadListPrimitive.Root.");
   }
+
   return value;
 }

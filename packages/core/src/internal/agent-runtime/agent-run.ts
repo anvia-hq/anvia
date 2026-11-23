@@ -263,6 +263,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         : (composeAgentLifecycle(agent.lifecycle, options.lifecycle) as
             | AgentLifecycle<Output, unknown>
             | undefined);
+
     if (internalOptions?.guardrails !== undefined) {
       this.guardrailPolicies = [...internalOptions.guardrails];
     } else {
@@ -271,6 +272,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
           ? [...agent.guardrails]
           : appendGuardrailPolicies([...agent.guardrails], options.guardrails);
     }
+
     const configuredConcurrency = assertPositiveSafeInteger(
       options.toolConcurrency ?? 1,
       "toolConcurrency",
@@ -297,6 +299,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     this.continuationState = options.continuationState;
     this.loopContextCheckpoint = options.continuationState?.loopContextCheckpoint;
     this.interactionResponse = options.interactionResponse;
+
     if (options.continuationState !== undefined) {
       this.steeringMessages.push(
         ...options.continuationState.steering.map((entry) => ({
@@ -305,6 +308,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         })),
       );
     }
+
     this.resumedFrom =
       options.sourceRunId === undefined || options.interactionId === undefined
         ? undefined
@@ -317,9 +321,11 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     options: AgentRunOptions<Output, RawResponseOf<M>, CompletionModelControlsOf<M>>,
   ): AgentRun<Output, M> {
     const normalized = normalizeAgentInput(agent.id, options);
+
     if (normalized.scope !== undefined && agent.memory === undefined) {
       throw new TypeError(`Agent "${agent.id}" cannot use a session without a memory store.`);
     }
+
     return new AgentRun(agent, normalized.prompt, normalized.history, {
       ...options,
       memoryScope: normalized.scope ?? getInternalAgentRunOptions(options)?.memory?.scope,
@@ -334,6 +340,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     if (this.isTerminal() || this.cancellationError !== undefined) {
       throw new AgentStreamClosedError();
     }
+
     const receipt: AgentSteerReceipt = Object.freeze({
       id: globalThis.crypto.randomUUID(),
       status: "queued",
@@ -346,6 +353,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     if (this.isTerminal() || this.cancellationError !== undefined) {
       return this.cancellationError;
     }
+
     const messages =
       this.currentMessages.length === 0 ? [this.promptMessage] : [...this.currentMessages];
     const error = new AgentRunCancelledError([...this.chatHistory, ...messages], reason);
@@ -355,6 +363,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
 
   private setCancellationError(error: AgentRunCancelledError): void {
     this.cancellationError = error;
+
     if (!this.abortController.signal.aborted) this.abortController.abort(error);
   }
 
@@ -378,16 +387,20 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
               this.abortController.signal,
             )
           : undefined;
+
       if (memoryPreparation !== undefined) {
         this.chatHistory = memoryPreparation.history;
         usage = Usage.add(usage, memoryPreparation.usage);
         this.memoryCompaction = memoryPreparation.compaction;
         await this.notifyInternalMemoryCompaction(memoryPreparation.compaction);
       }
+
       runObservers = await this.startRunObservers(runId);
+
       if (memoryPreparation !== undefined) {
         await this.recordMemoryCompaction(memoryPreparation, runObservers);
       }
+
       this.throwIfCancelled();
       await this.activeLifecycle?.onStart?.({
         runId,
@@ -395,6 +408,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         history: lifecycleSnapshot(this.chatHistory),
         maxTurns: this.maxTurnCount,
       });
+
       if (this.continuationState === undefined) {
         const inputResult = await runInputGuardrails(this.guardrailPolicies, {
           prompt: this.promptMessage,
@@ -406,6 +420,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
           await this.recordGuardrailDecision(decision, runObservers);
         }
         this.promptMessage = inputResult.prompt;
+
         if (inputResult.blocked) {
           const text = inputResult.message ?? "The request was blocked by a guardrail.";
           const result: AgentBlockedOutcome = {
@@ -423,7 +438,9 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
             guardrails: [...this.guardrailDecisions],
             ...this.memoryCompactionResult(),
           };
+
           if (this.resumedFrom !== undefined) result.resumedFrom = this.resumedFrom;
+
           this.runState = "closing";
           await this.runLifecycleFinish(result);
           await runObservers.end(observerRunEnd(result));
@@ -437,17 +454,22 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       await this.memoryRecorder.commitAcceptedInput(runId, newMessages);
       pendingTurnMessages = this.memoryRecorder.pendingTurnMessages(newMessages);
       await this.runRunStartHook(newMessages);
+
       if (this.continuationState !== undefined) {
         const interactionAttributes: JsonObject = {};
+
         if (this.resumedFrom?.runId !== undefined) {
           interactionAttributes.sourceRunId = this.resumedFrom.runId;
         }
+
         if (this.resumedFrom?.interactionId !== undefined) {
           interactionAttributes.interactionId = this.resumedFrom.interactionId;
         }
+
         if (this.interactionResponse?.type !== undefined) {
           interactionAttributes.interactionType = this.interactionResponse.type;
         }
+
         await runObservers.event({
           name: "agent.interaction_response",
           attributes: interactionAttributes,
@@ -481,14 +503,18 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
               uncommittedMessages: [],
             });
           }
+
           throw error;
         }
       }
+
       if (this.continuationState === undefined && this.execution?.drainSteering !== undefined) {
         await this.drainSteeringMessages(runId, 0, newMessages, pendingTurnMessages);
       }
+
       while (currentTurns <= this.maxTurnCount) {
         const prompt = newMessages.at(-1);
+
         if (prompt === undefined) {
           throw new Error("AgentRun requires at least one message");
         }
@@ -510,12 +536,16 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
           this.agent.memory?.compaction !== undefined
             ? await this.prepareTurnMessages(currentTurns, [...historyForRequest, prompt])
             : { messages: [...historyForRequest, prompt] };
+
         if (prepared.compaction !== undefined) {
           if (!contextReplayed) usage = Usage.add(usage, prepared.compaction.usage);
+
           this.memoryCompaction = prepared.compaction;
           await this.notifyInternalMemoryCompaction(prepared.compaction);
+
           if (!contextReplayed) await this.recordMemoryCompaction(prepared, runObservers);
         }
+
         const { request } = await this.createTurnRequest(prompt, prepared.messages, currentTurns);
 
         const modelReplayedPending = this.replayed({ kind: "model", turn: currentTurns });
@@ -537,10 +567,14 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
           assertCompletionResponseIntegrity({ response });
         } catch (error) {
           const providerOutputUsage = completionProviderOutputErrorUsage(error);
+
           if (providerOutputUsage !== undefined) usage = Usage.add(usage, providerOutputUsage);
+
           throw error;
         }
+
         if (!modelReplayed) usage = Usage.add(usage, response.usage);
+
         this.updateRunProgress(newMessages);
         await this.runCompletionResponseHook(prompt, response, newMessages);
         await this.runTurnEndHook(currentTurns, response, newMessages);
@@ -556,8 +590,10 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         );
         const assistantMessage = this.generatedAssistantMessage(response, request);
         newMessages.push(assistantMessage);
+
         if (toolCalls.length === 0) {
           await this.beforeFinish?.();
+
           if (this.steeringMessages.length > 0) {
             await this.memoryRecorder.commitMessages(
               runId,
@@ -566,6 +602,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
               pendingTurnMessages,
             );
           }
+
           const appliedSteering = await this.drainSteeringMessages(
             runId,
             currentTurns,
@@ -573,6 +610,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
             pendingTurnMessages,
             { closeWhenEmpty: true },
           );
+
           if (appliedSteering.length > 0) {
             for (const receipt of appliedSteering) {
               await runObservers.event({
@@ -608,9 +646,11 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
             newMessages,
             runObservers,
           );
+
           if (result.type === "response") {
             await this.runRunEndHook(result, newMessages);
           }
+
           await this.memoryRecorder.commitCompletedRun(
             runId,
             currentTurns,
@@ -652,6 +692,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
               uncommittedMessages: [assistantMessage],
             });
           }
+
           throw error;
         }
         const toolMessage: MessageType = { role: "tool", content: toolResults };
@@ -671,12 +712,15 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       if (error instanceof MemoryCompactionError && error.usage !== undefined) {
         usage = Usage.add(usage, error.usage);
       }
+
       const failedCompletionUsage = this.takeFailedCompletionUsage();
+
       if (error instanceof AgentStructuredOutputError) {
         usage = Usage.add(usage, error.usage);
       } else {
         usage = Usage.add(usage, failedCompletionUsage);
       }
+
       this.runState = "closing";
       const runError = this.normalizeRunError(error);
       const reportedError = await this.reportRunFailure(
@@ -713,19 +757,24 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
               this.abortController.signal,
             )
           : undefined;
+
       if (memoryPreparation !== undefined) {
         this.chatHistory = memoryPreparation.history;
         usage = Usage.add(usage, memoryPreparation.usage);
         this.memoryCompaction = memoryPreparation.compaction;
         await this.notifyInternalMemoryCompaction(memoryPreparation.compaction);
       }
+
       runObservers = await this.startRunObservers(runId);
+
       if (memoryPreparation !== undefined) {
         await this.recordMemoryCompaction(memoryPreparation, runObservers);
       }
+
       if (memoryPreparation?.compaction !== undefined) {
         yield { type: "memory_compaction", ...memoryPreparation.compaction };
       }
+
       this.throwIfCancelled();
       await this.activeLifecycle?.onStart?.({
         runId,
@@ -733,6 +782,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         history: lifecycleSnapshot(this.chatHistory),
         maxTurns: this.maxTurnCount,
       });
+
       if (this.continuationState === undefined) {
         const inputResult = await runInputGuardrails(this.guardrailPolicies, {
           prompt: this.promptMessage,
@@ -745,6 +795,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
           yield { type: "guardrail_decision", decision };
         }
         this.promptMessage = inputResult.prompt;
+
         if (inputResult.blocked) {
           const text = inputResult.message ?? "The request was blocked by a guardrail.";
           const result: AgentBlockedOutcome = {
@@ -762,7 +813,9 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
             guardrails: [...this.guardrailDecisions],
             ...this.memoryCompactionResult(),
           };
+
           if (this.resumedFrom !== undefined) result.resumedFrom = this.resumedFrom;
+
           this.runState = "closing";
           await this.runLifecycleFinish(result);
           await runObservers.end(observerRunEnd(result));
@@ -777,12 +830,15 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       await this.memoryRecorder.commitAcceptedInput(runId, newMessages);
       pendingTurnMessages = this.memoryRecorder.pendingTurnMessages(newMessages);
       await this.runRunStartHook(newMessages);
+
       if (this.continuationState !== undefined) {
         const responsePart =
           this.promptMessage.role === "tool" ? this.promptMessage.content[0] : undefined;
+
         if (responsePart === undefined || responsePart.type === "tool-result") {
           throw new TypeError("Agent continuation response message is invalid.");
         }
+
         yield {
           type: "interaction_response",
           response: responsePart,
@@ -824,14 +880,18 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
             yield result;
             return;
           }
+
           throw error;
         }
       }
+
       if (this.continuationState === undefined && this.execution?.drainSteering !== undefined) {
         await this.drainSteeringMessages(runId, 0, newMessages, pendingTurnMessages);
       }
+
       while (currentTurns <= this.maxTurnCount) {
         const prompt = newMessages.at(-1);
+
         if (prompt === undefined) {
           throw new Error("AgentRun requires at least one message");
         }
@@ -859,18 +919,24 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
           this.agent.memory?.compaction !== undefined
             ? await this.prepareTurnMessages(currentTurns, [...historyForRequest, prompt])
             : { messages: [...historyForRequest, prompt] };
+
         if (prepared.compaction !== undefined) {
           if (!contextReplayed) usage = Usage.add(usage, prepared.compaction.usage);
+
           this.memoryCompaction = prepared.compaction;
           await this.notifyInternalMemoryCompaction(prepared.compaction);
+
           if (!contextReplayed) await this.recordMemoryCompaction(prepared, runObservers);
+
           yield { type: "memory_compaction", ...prepared.compaction };
         }
+
         const { request, selection } = await this.createTurnRequest(
           prompt,
           prepared.messages,
           currentTurns,
         );
+
         if (selection !== undefined) yield selection;
 
         assertCompletionRequestSupported(this.agent.model, request, { streaming: true });
@@ -930,6 +996,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
                   "The execution runtime does not support streaming checkpoints.",
                 );
               }
+
               response = yield* this.execution.streamCompletion(currentTurns, request, execute);
             } else {
               response = yield* execute();
@@ -947,8 +1014,10 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
                 (completionState.response ?? response).usage.inputTokens,
             ),
           };
+
           if (completionState.firstDeltaMs !== undefined)
             endArgs = { ...endArgs, firstDeltaMs: completionState.firstDeltaMs };
+
           this.activeGeneration = undefined;
           await generationObservers.end(endArgs);
           response = await this.runCompletionResponseMiddlewares(request, response, currentTurns);
@@ -956,7 +1025,9 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
             assertCompletionResponseIntegrity({ response });
           } catch (error) {
             const providerOutputUsage = completionProviderOutputErrorUsage(error);
+
             if (providerOutputUsage !== undefined) usage = Usage.add(usage, providerOutputUsage);
+
             throw error;
           }
         } catch (error) {
@@ -969,6 +1040,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         const { firstDeltaMs, emittedToolCallIds } = completionState;
 
         if (!modelReplayed) usage = Usage.add(usage, response.usage);
+
         this.updateRunProgress(newMessages);
         await this.runCompletionResponseHook(prompt, response, newMessages);
         await this.runTurnEndHook(currentTurns, response, newMessages);
@@ -988,12 +1060,14 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         if (toolCalls.length === 0) {
           await this.beforeFinish?.();
           let emittedTurnEnd = false;
+
           if (!bufferOutputDeltas) {
             if (bufferResponseEvents) {
               for (const event of responseStreamEvents(currentTurns, response)) {
                 yield event as AgentStreamEvent<Output, RawResponseOf<M>>;
               }
             }
+
             yield {
               type: "turn_end",
               turn: currentTurns,
@@ -1002,6 +1076,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
             };
             emittedTurnEnd = true;
           }
+
           if (this.steeringMessages.length > 0) {
             await this.memoryRecorder.commitMessages(
               runId,
@@ -1010,6 +1085,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
               pendingTurnMessages,
             );
           }
+
           const appliedSteering = await this.drainSteeringMessages(
             runId,
             currentTurns,
@@ -1020,6 +1096,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
           for (const receipt of appliedSteering) {
             yield { type: "steering_applied", id: receipt.id, turn: currentTurns };
           }
+
           if (appliedSteering.length > 0) {
             await this.memoryRecorder.commitCompletedTurn(runId, currentTurns, pendingTurnMessages);
             continue;
@@ -1055,6 +1132,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
             }
           }
         }
+
         this.updateRunProgress(newMessages);
         yield {
           type: "turn_end",
@@ -1089,6 +1167,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
             yield result;
             return;
           }
+
           throw error;
         }
         const toolMessage: MessageType = { role: "tool", content: toolResults };
@@ -1115,9 +1194,11 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       if (error instanceof MemoryCompactionError && error.usage !== undefined) {
         usage = Usage.add(usage, error.usage);
       }
+
       if (error instanceof AgentStructuredOutputError) {
         usage = Usage.add(usage, error.usage);
       }
+
       this.runState = "closing";
       const runError = this.normalizeRunError(error);
       const reportedError = await this.reportRunFailure(
@@ -1180,14 +1261,18 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
           assertCompletionResponseIntegrity({ response });
         } catch (error) {
           const attemptUsage = completionProviderOutputErrorUsage(error);
+
           if (attemptUsage !== undefined) {
             failedAttemptUsage = Usage.add(failedAttemptUsage, attemptUsage);
             this.failedCompletionUsage = failedAttemptUsage;
           }
+
           const retryOptions = this.retryOptionsForFailure(error, attempt, turn, false);
+
           if (retryOptions === undefined) {
             throw error;
           }
+
           await this.scheduleCompletionRetry(
             error,
             attempt,
@@ -1205,9 +1290,11 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
           this.validateStructuredResponse(response, attempt, cumulativeUsage);
         } catch (error) {
           const retryOptions = this.retryOptionsForFailure(error, attempt, turn, false);
+
           if (retryOptions === undefined) {
             throw error;
           }
+
           failedAttemptUsage = cumulativeUsage;
           this.failedCompletionUsage = failedAttemptUsage;
           const retryRequest = structuredOutputRetryRequest(request, response, error);
@@ -1248,6 +1335,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     messages: MessageType[],
   ): Promise<PreparedLoopContext> {
     let prepared: PreparedLoopContext;
+
     if (this.execution?.prepareMessages !== undefined) {
       prepared = await this.execution.prepareMessages(turn, messages, this.loopContextCheckpoint);
     } else if (
@@ -1263,7 +1351,9 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     } else {
       prepared = { messages };
     }
+
     if (prepared.checkpoint !== undefined) this.loopContextCheckpoint = prepared.checkpoint;
+
     return prepared;
   }
 
@@ -1326,6 +1416,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     if (this.execution?.selectTools === undefined) {
       return fetchToolDefinitions(this.agent, ragText, abortSignal);
     }
+
     let fetched: FetchedToolDefinitions = { definitions: [], matches: [] };
     const selected = await this.execution.selectTools(turn, async () => {
       fetched = await fetchToolDefinitions(this.agent, ragText, abortSignal);
@@ -1338,9 +1429,11 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     args: StreamingCompletionArgs,
   ): AgentCompletionStream {
     const model = this.agent.model;
+
     if (!isStreamingCompletionModel(model)) {
       throw new TypeError("Streaming completion requires a streaming-capable model.");
     }
+
     this.validatedStructuredOutput = undefined;
     let currentRequest = args.request;
     for (let attempt = 1; ; attempt += 1) {
@@ -1353,33 +1446,44 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         for await (const event of model.streamCompletion(currentRequest, this.modelCallOptions())) {
           if (event.type === "error") {
             const eventUsage = event.usage ?? completionProviderOutputErrorUsage(event.error);
+
             if (eventUsage !== undefined) {
               args.state.providerErrorUsage = Usage.add(args.state.providerErrorUsage, eventUsage);
               recordedErrorUsage = true;
               attemptErrorUsage = eventUsage;
             }
+
             throw event.error;
           }
+
           const mapped = accumulator.accept(event);
+
           if (event.type === "final") break;
+
           if (event.type === "tool_call_delta" || mapped !== undefined) {
             hasProviderProgress = true;
           }
+
           if (args.state.firstDeltaMs === undefined && isGenerationDeltaEvent(event.type)) {
             args.state.firstDeltaMs = Date.now() - args.generationStartedAt;
           }
+
           if (event.type === "tool_call_delta") {
             yield addTurnToToolCallDelta(args.turn, event);
           }
+
           if (mapped !== undefined) {
             await args.generationObservers.update?.({ turn: args.turn, delta: mapped });
+
             if (mapped.type === "tool_call") {
               args.state.emittedToolCallIds.add(mapped.toolCall.toolCallId);
             }
+
             const shouldBuffer =
               args.bufferResponseEvents ||
               (args.bufferOutputDeltas &&
                 (mapped.type === "text_delta" || mapped.type === "reasoning_delta"));
+
             if (!shouldBuffer) {
               yield addTurn(args.turn, mapped) as AgentCompletionStreamEvent;
             }
@@ -1393,12 +1497,15 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
           this.validateStructuredResponse(response, attempt, cumulativeStructuredUsage);
         } catch (error) {
           const retryOptions = this.retryOptionsForFailure(error, attempt, args.turn, true);
+
           if (retryOptions === undefined) {
             if (error instanceof AgentStructuredOutputError) {
               args.state.providerErrorUsage = Usage.empty();
             }
+
             throw error;
           }
+
           args.state.providerErrorUsage = Usage.add(args.state.providerErrorUsage, response.usage);
           args.state.firstDeltaMs = undefined;
           args.state.emittedToolCallIds.clear();
@@ -1423,17 +1530,21 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       } catch (error) {
         if (!recordedErrorUsage) {
           const attemptUsage = completionProviderOutputErrorUsage(error);
+
           if (attemptUsage !== undefined) {
             args.state.providerErrorUsage = Usage.add(args.state.providerErrorUsage, attemptUsage);
             attemptErrorUsage = attemptUsage;
           }
         }
+
         const retryOptions = hasProviderProgress
           ? undefined
           : this.retryOptionsForFailure(error, attempt, args.turn, true);
+
         if (retryOptions === undefined) {
           throw error;
         }
+
         await this.scheduleCompletionRetry(
           error,
           attempt,
@@ -1485,11 +1596,13 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       [assistantMessage],
       args.pendingTurnMessages,
     );
+
     if (!args.emittedTurnEnd && (args.bufferResponseEvents || args.bufferOutputDeltas)) {
       for (const event of responseStreamEvents(args.turn, response, args.bufferResponseEvents)) {
         yield event as AgentStreamEvent<Output, RawResponseOf<M>>;
       }
     }
+
     if (!args.emittedTurnEnd) {
       yield {
         type: "turn_end",
@@ -1507,9 +1620,11 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       args.newMessages,
       args.runObservers,
     );
+
     if (result.type === "response") {
       await this.runRunEndHook(result, args.newMessages);
     }
+
     await this.memoryRecorder.commitCompletedRun(
       args.runId,
       args.turn,
@@ -1537,10 +1652,12 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       args.suspension.completedResults.length === 0
         ? undefined
         : { role: "tool", content: [...args.suspension.completedResults] };
+
     if (partialToolMessage !== undefined) {
       args.newMessages.push(partialToolMessage);
       args.uncommittedMessages.push(partialToolMessage);
     }
+
     await this.memoryRecorder.commitMessages(
       args.runId,
       args.turn,
@@ -1567,9 +1684,12 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         messages: [...entry.messages],
       })),
     };
+
     if (this.memoryScope !== undefined) continuationState.memoryScope = this.memoryScope;
+
     if (this.loopContextCheckpoint !== undefined)
       continuationState.loopContextCheckpoint = this.loopContextCheckpoint;
+
     const continuation = parseAgentContinuation({
       version: 1,
       agentId: this.agent.id,
@@ -1590,7 +1710,9 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       ...generationArtifacts([...this.chatHistory, ...args.newMessages]),
       ...this.memoryCompactionResult(),
     };
+
     if (this.resumedFrom !== undefined) result.resumedFrom = this.resumedFrom;
+
     await this.runLifecycleFinish(result);
     await args.runObservers.end(observerRunEnd(result));
     this.runState = "completed";
@@ -1608,22 +1730,30 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       modelId: this.agent.model.modelId,
       usage: { ...response.usage },
     };
+
     if (response.finishReason !== undefined) generation.finishReason = response.finishReason;
+
     if (response.providerFinishReason !== undefined) {
       generation.providerFinishReason = response.providerFinishReason;
     }
+
     if (response.contextUsage !== undefined) generation.contextUsage = response.contextUsage;
+
     if (response.sources !== undefined) generation.sources = response.sources;
+
     if (response.providerToolCalls !== undefined) {
       generation.providerToolCalls = response.providerToolCalls;
     }
+
     const metadata: JsonObject = { anvia: { generation } };
     let message: MessageType = {
       role: "assistant",
       content: response.choice,
       metadata,
     };
+
     if (response.messageId !== undefined) message = { ...message, id: response.messageId };
+
     return message;
   }
 
@@ -1656,10 +1786,15 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         capabilities: this.agent.model.capabilities,
       },
     };
+
     if (providerRequest !== undefined) args = { ...args, providerRequest };
+
     if (toolMatches !== undefined && toolMatches.length > 0) args = { ...args, toolMatches };
+
     const context = this.turnContextBreakdowns.get(turn);
+
     if (context !== undefined) args = { ...args, context };
+
     return args;
   }
 
@@ -1684,6 +1819,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     streaming: boolean,
   ): ResolvedRetryOptions | undefined {
     if (this.abortController.signal.aborted) return undefined;
+
     return retryOptionsForFailure(this.completionRetryOptions, {
       error,
       attempt,
@@ -1711,9 +1847,11 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       streaming,
       ...retryErrorAttributes(error),
     };
+
     if (additionalAttributes !== undefined) {
       Object.assign(attributes, additionalAttributes);
     }
+
     await runObservers.event({
       name: "completion.retry",
       level: "WARNING",
@@ -1764,16 +1902,21 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
   ): Promise<ToolResultPart[]> {
     const state = this.continuationState;
     const response = this.interactionResponse;
+
     if (state === undefined || response === undefined) {
       return [];
     }
+
     const pending = state.pending;
     const interaction = this.resumedFrom;
+
     if (interaction === undefined) {
       throw new TypeError("Agent continuation is missing its source run linkage.");
     }
+
     const executor = this.createToolExecutor(runId, newMessages);
     const results: ToolResultPart[] = [];
+
     if (response.type === "tool-approval") {
       const attributes: JsonObject = {
         approvalId: interaction.interactionId,
@@ -1782,11 +1925,14 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         internalCallId: pending.internalCallId,
         approved: response.approved,
       };
+
       if (response.reason !== undefined) attributes.decisionReason = response.reason;
+
       await observation.runObservers.event({
         name: "tool.approval_resolved",
         attributes,
       });
+
       if (response.approved) {
         results.push(await executor.executeResumed(pending, onResult, onStreamEvent, observation));
       } else {
@@ -1798,14 +1944,17 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       }
     } else {
       const currentTool = this.agent.getTool(pending.toolCall.toolName);
+
       if (currentTool === undefined || !isQuestionTool(currentTool)) {
         throw new TypeError(
           `Cannot resume question interaction because tool "${pending.toolCall.toolName}" is no longer registered as a question tool.`,
         );
       }
+
       const output = questionResult(response.answers);
       results.push(await executor.resolveResumed(pending, output, onResult, observation));
     }
+
     try {
       results.push(
         ...(await executor.execute(state.remainingToolCalls, onResult, onStreamEvent, observation)),
@@ -1814,6 +1963,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       if (error instanceof ToolExecutionSuspension) {
         error.completedResults = [...results, ...error.completedResults];
       }
+
       throw error;
     }
     return results;
@@ -1869,9 +2019,11 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
 
   private async closeActiveGeneration(error: unknown): Promise<void> {
     const active = this.activeGeneration;
+
     if (active === undefined) {
       return;
     }
+
     this.activeGeneration = undefined;
     await active.observers.error({ turn: active.turn, error });
   }
@@ -1887,28 +2039,34 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       usage: lifecycleSnapshot(result.usage),
       messages: lifecycleSnapshot(result.messages),
     };
+
     if (result.memoryCompaction !== undefined) {
       Object.assign(common, { memoryCompaction: lifecycleSnapshot(result.memoryCompaction) });
     }
-    const event =
-      result.type === "response"
-        ? {
-            ...common,
-            status: "completed",
-            output: lifecycleSnapshot(result.output),
-          }
-        : result.type === "blocked"
-          ? {
-              ...common,
-              status: "blocked",
-              stage: result.stage,
-            }
-          : {
-              ...common,
-              status: "suspended",
-              interaction: lifecycleSnapshot(result.interaction),
-            };
-    await this.activeLifecycle?.onFinish?.(event as AgentFinishEvent<Output>);
+
+    let event: AgentFinishEvent<Output>;
+
+    if (result.type === "response") {
+      event = {
+        ...common,
+        status: "completed",
+        output: lifecycleSnapshot(result.output),
+      } as AgentFinishEvent<Output>;
+    } else if (result.type === "blocked") {
+      event = {
+        ...common,
+        status: "blocked",
+        stage: result.stage,
+      } as AgentFinishEvent<Output>;
+    } else {
+      event = {
+        ...common,
+        status: "suspended",
+        interaction: lifecycleSnapshot(result.interaction),
+      } as AgentFinishEvent<Output>;
+    }
+
+    await this.activeLifecycle?.onFinish?.(event);
   }
 
   private async runLifecycleError(
@@ -1997,9 +2155,11 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     const text = result.blocked
       ? (result.message ?? "The response was blocked by a guardrail.")
       : result.outputText;
+
     if (text === originalOutput) {
       return { text, blocked: result.blocked, response, decisions: result.decisions };
     }
+
     return {
       text,
       blocked: result.blocked,
@@ -2029,7 +2189,9 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       ...generationArtifacts(messages),
       ...this.memoryCompactionResult(),
     };
+
     if (this.resumedFrom !== undefined) Object.assign(common, { resumedFrom: this.resumedFrom });
+
     if (blocked) {
       return {
         ...common,
@@ -2041,6 +2203,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         ),
       };
     }
+
     return {
       ...common,
       type: "response",
@@ -2054,9 +2217,12 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     usage: Usage,
   ): void {
     if (this.agent.outputSchema === undefined) return;
+
     if (response.choice.some((item) => item.type === "tool-call")) return;
+
     const text = textFromAssistantContent(response.choice);
     const normalized = normalizeStructuredOutput(text);
+
     if (response.finishReason === "content-filter") {
       throw new AgentStructuredOutputError({
         phase: "content-filter",
@@ -2071,6 +2237,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         providerFinishReason: response.providerFinishReason,
       });
     }
+
     if (response.finishReason === "length") {
       throw new AgentStructuredOutputError({
         phase: "truncated",
@@ -2085,6 +2252,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         providerFinishReason: response.providerFinishReason,
       });
     }
+
     const output = this.parseOutput(text, attempt, usage, {
       useValidatedOutput: false,
       attemptUsage: response.usage,
@@ -2112,15 +2280,19 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     } = {},
   ): Output {
     const schema = this.agent.outputSchema;
+
     if (schema === undefined) return text as Output;
+
     if (options.useValidatedOutput !== false && this.validatedStructuredOutput?.text === text) {
       return this.validatedStructuredOutput.output;
     }
+
     const normalized = normalizeStructuredOutput(text);
     const maxAttempts = this.completionRetryOptions?.maxAttempts ?? 1;
     let json: unknown;
     try {
       json = JSON.parse(normalized.text);
+
       if (!isJsonValue(json)) {
         throw new TypeError("Agent structured output is not a JSON value.");
       }
@@ -2183,9 +2355,11 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     runObservers: ActiveAgentRunObservers,
   ): Promise<void> {
     const compaction = preparation.compaction;
+
     if (compaction === undefined) {
       return;
     }
+
     await runObservers.event({
       name: "memory.compaction",
       attributes: {
@@ -2210,6 +2384,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     if (compaction === undefined) {
       return;
     }
+
     await this.onInternalMemoryCompaction?.(lifecycleSnapshot(compaction));
   }
 
@@ -2218,12 +2393,15 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       agentId: this.agent.id,
       runId,
     };
+
     if (this.memoryScope !== undefined) {
       context.sessionId = this.memoryScope.sessionId;
+
       if (this.memoryScope.metadata !== undefined) {
         context.metadata = this.memoryScope.metadata;
       }
     }
+
     return context;
   }
 
@@ -2264,6 +2442,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       history,
       run: runControl,
     });
+
     if (action?.type === "terminate") {
       throw this.cancelled(newMessages, action.reason);
     }
@@ -2276,6 +2455,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       maxTurns: this.maxTurnCount,
       run: runControl,
     });
+
     if (action?.type === "terminate") {
       throw this.cancelled(newMessages, action.reason);
     }
@@ -2293,6 +2473,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       messages: result.messages,
       run: runControl,
     });
+
     if (action?.type === "terminate") {
       throw this.cancelled(newMessages, action.reason);
     }
@@ -2309,6 +2490,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       messages: [...this.chatHistory, ...newMessages],
       run: runControl,
     });
+
     if (action?.type === "terminate") {
       this.cancelled(newMessages, action.reason);
     }
@@ -2326,6 +2508,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       history,
       run: runControl,
     });
+
     if (action?.type === "terminate") {
       throw this.cancelled(newMessages, action.reason);
     }
@@ -2341,6 +2524,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       response,
       run: runControl,
     });
+
     if (action?.type === "terminate") {
       throw this.cancelled(newMessages, action.reason);
     }
@@ -2359,11 +2543,14 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         originalRequest: request,
         promptRef: this.generationPromptRef,
       });
+
       if (replacement?.promptRef !== undefined) {
         this.generationPromptRef = replacement.promptRef ?? undefined;
       }
+
       if (replacement?.request !== undefined) {
         current = replacement.request;
+
         if (current.providerOptions !== undefined) {
           assertJsonObject(current.providerOptions, "providerOptions");
         }
@@ -2385,6 +2572,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         response: current,
         originalResponse: response,
       });
+
       if (replacement?.response !== undefined) {
         current = replacement.response;
       }
@@ -2404,6 +2592,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       response,
       run: runControl,
     });
+
     if (action?.type === "terminate") {
       throw this.cancelled(newMessages, action.reason);
     }
@@ -2419,6 +2608,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       error,
       run: runControl,
     });
+
     if (action?.type === "terminate") {
       throw this.cancelled(newMessages, action.reason);
     }
@@ -2448,12 +2638,15 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         ? (drainedPending ?? [])
         : await drainedPending;
     const receipts = [...drained, ...this.steeringMessages.splice(0)];
+
     if (receipts.length === 0) {
       if (options.closeWhenEmpty === true) {
         this.runState = "closing";
       }
+
       return [];
     }
+
     const messages = receipts.flatMap((receipt) => receipt.messages);
     newMessages.push(...messages);
     await this.memoryRecorder.commitMessages(runId, turn, messages, pendingTurnMessages);
@@ -2466,9 +2659,11 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       this.runState = "running";
       return;
     }
+
     if (this.runState === "running") {
       throw new Error("Agent stream is already running.");
     }
+
     throw new Error("Agent stream has already been consumed.");
   }
 
@@ -2478,6 +2673,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
 
   private cancelled(newMessages: MessageType[], reason: string): AgentRunCancelledError {
     if (this.cancellationError !== undefined) return this.cancellationError;
+
     const error = new AgentRunCancelledError([...this.chatHistory, ...newMessages], reason);
     this.setCancellationError(error);
     return error;
@@ -2485,8 +2681,10 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
 
   private linkExternalAbortSignal(signal: AbortSignal | undefined): void {
     if (signal === undefined) return;
+
     const cancelFromSignal = () => {
       if (this.cancellationError !== undefined || this.isTerminal()) return;
+
       const cause = abortError(signal.reason);
       const reason = abortReason(signal.reason);
       const messages =
@@ -2495,16 +2693,19 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
         new AgentRunCancelledError([...this.chatHistory, ...messages], reason, { cause }),
       );
     };
+
     if (signal.aborted) {
       cancelFromSignal();
       return;
     }
+
     signal.addEventListener("abort", cancelFromSignal, { once: true });
     this.removeExternalAbortListener = () => signal.removeEventListener("abort", cancelFromSignal);
   }
 
   private throwIfCancelled(): void {
     if (this.cancellationError !== undefined) throw this.cancellationError;
+
     throwIfAborted(this.abortController.signal);
   }
 
@@ -2526,7 +2727,9 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
 
 function abortReason(reason: unknown): string {
   if (typeof reason === "string" && reason.trim().length > 0) return reason;
+
   if (reason instanceof Error && reason.message.trim().length > 0) return reason.message;
+
   return "External abort signal.";
 }
 
@@ -2545,29 +2748,37 @@ function normalizeAgentInput(
   if (typeof input !== "object" || input === null || Array.isArray(input)) {
     throw new TypeError("Agent runs require one options object with prompt or messages.");
   }
+
   const hasContinuation = "continuation" in input && input.continuation !== undefined;
   const hasPrompt = "prompt" in input && input.prompt !== undefined;
   const hasMessages = "messages" in input && input.messages !== undefined;
+
   if (Number(hasContinuation) + Number(hasPrompt) + Number(hasMessages) !== 1) {
     throw new TypeError("Agent runs require exactly one of prompt, messages, or continuation.");
   }
+
   if (hasContinuation) {
     if (!("response" in input) || input.response === undefined) {
       throw new TypeError("Agent continuation runs require an interaction response.");
     }
+
     if ("session" in input && input.session !== undefined) {
       throw new TypeError("Agent continuations carry their memory scope and cannot use session.");
     }
+
     const continuation = parseAgentContinuation(input.continuation);
+
     if (continuation.agentId !== agentId) {
       throw new TypeError(
         `Agent continuation belongs to "${continuation.agentId}", not "${agentId}".`,
       );
     }
+
     const response = parseAgentInteractionResponse(input.response);
     assertAgentInteractionResponse(continuation.interaction, response);
     const state = parseContinuationState(continuation.state, continuation.interaction);
     let responsePart: ToolInteractionResponsePart;
+
     if (response.type === "tool-approval") {
       responsePart = {
         type: "tool-approval-response",
@@ -2576,6 +2787,7 @@ function normalizeAgentInput(
         toolName: continuation.interaction.toolName,
         approved: response.approved,
       };
+
       if (response.reason !== undefined)
         responsePart = { ...responsePart, reason: response.reason };
     } else {
@@ -2587,9 +2799,11 @@ function normalizeAgentInput(
         answers: response.answers,
       };
     }
+
     if (continuation.interaction.callId !== undefined) {
       responsePart = { ...responsePart, callId: continuation.interaction.callId };
     }
+
     const normalized = {
       prompt: parseMessage({ role: "tool", content: [responsePart] }),
       history: [...state.history, ...state.messages],
@@ -2598,49 +2812,65 @@ function normalizeAgentInput(
       sourceRunId: continuation.sourceRunId,
       interactionId: continuation.interaction.id,
     };
+
     if (state.memoryScope !== undefined) {
       Object.assign(normalized, { scope: normalizeMemoryScope(state.memoryScope) });
     }
+
     return normalized;
   }
+
   if (hasPrompt) {
     const prompt = input.prompt;
+
     if (
       typeof prompt !== "string" &&
       (typeof prompt !== "object" || prompt === null || prompt.role !== "user")
     ) {
       throw new TypeError("Agent prompt must be text or a user message.");
     }
+
     const parsedPrompt = parseMessage(
       typeof prompt === "string" ? { role: "user", content: prompt } : prompt,
     );
+
     if (parsedPrompt.role !== "user") {
       throw new TypeError("Agent prompt must be text or a user message.");
     }
+
     const normalized = {
       prompt: parsedPrompt,
       history: [],
     };
+
     if (input.session !== undefined) {
       Object.assign(normalized, { scope: normalizeMemoryScope(input.session) });
     }
+
     return normalized;
   }
+
   if (input.session !== undefined) {
     throw new TypeError("Agent messages cannot be combined with a persisted session.");
   }
+
   const messages = input.messages;
+
   if (!Array.isArray(messages) || messages.length === 0) {
     throw new TypeError("Agent input transcript must contain at least one message.");
   }
+
   const parsedMessages = parseMessages(messages);
   const activePrompt = parsedMessages.at(-1);
+
   if (activePrompt === undefined) {
     throw new TypeError("Agent input transcript must contain at least one message.");
   }
+
   if (activePrompt.role !== "user") {
     throw new TypeError("Agent input transcript must end with a user message.");
   }
+
   return {
     prompt: activePrompt,
     history: parsedMessages.slice(0, -1),
@@ -2651,35 +2881,47 @@ function normalizeSteeringInput(input: AgentSteerInput): MessageType[] {
   if (typeof input !== "object" || input === null || Array.isArray(input)) {
     throw new TypeError("Agent steering requires one options object with prompt or messages.");
   }
+
   const hasPrompt = "prompt" in input && input.prompt !== undefined;
   const hasMessages = "messages" in input && input.messages !== undefined;
+
   if (hasPrompt === hasMessages) {
     throw new TypeError("Agent steering requires exactly one of prompt or messages.");
   }
+
   if (hasPrompt) {
     const prompt = input.prompt;
+
     if (
       typeof prompt !== "string" &&
       (typeof prompt !== "object" || prompt === null || prompt.role !== "user")
     ) {
       throw new TypeError("Agent steering prompt must be text or a user message.");
     }
+
     const parsedPrompt = parseMessage(
       typeof prompt === "string" ? { role: "user", content: prompt } : prompt,
     );
+
     if (parsedPrompt.role !== "user") {
       throw new TypeError("Agent steering prompt must be text or a user message.");
     }
+
     return [parsedPrompt];
   }
+
   const messages = input.messages;
+
   if (!Array.isArray(messages) || messages.length === 0) {
     throw new TypeError("Agent steering messages must contain at least one user message.");
   }
+
   const parsedMessages = parseMessages(messages);
+
   if (parsedMessages.some((message) => message.role !== "user")) {
     throw new TypeError("Agent steering messages must all be user messages.");
   }
+
   return parsedMessages;
 }
 
@@ -2687,9 +2929,11 @@ function normalizeRequestedRunId(runId: string | undefined): string | undefined 
   if (runId === undefined) {
     return undefined;
   }
+
   if (typeof runId !== "string" || runId.trim().length === 0) {
     throw new TypeError("runId must be a non-empty string.");
   }
+
   return runId;
 }
 
@@ -2704,6 +2948,7 @@ function responseStreamEvents(
       if (item.text.length > 0) {
         events.push({ type: "text_delta", turn, delta: item.text });
       }
+
       continue;
     }
 
@@ -2712,6 +2957,7 @@ function responseStreamEvents(
         if (item.text.length > 0) {
           events.push(reasoningDeltaEvent(turn, item.text, { id: item.id }));
         }
+
         continue;
       }
 
@@ -2733,6 +2979,7 @@ function responseStreamEvents(
       events.push({ type: "tool_call", turn, toolCall: item });
     }
   }
+
   if (includeProviderArtifacts) {
     for (const source of response.sources ?? []) {
       events.push({ type: "source", turn, source });
@@ -2741,6 +2988,7 @@ function responseStreamEvents(
       events.push({ type: "provider_tool_call", turn, toolCall });
     }
   }
+
   return events;
 }
 
@@ -2758,11 +3006,13 @@ function generationArtifacts(messages: MessageType[]): {
   let contextUsage: import("../../completion/index").ContextUsage | undefined;
   for (const message of messages) {
     const metadata = getAssistantGenerationMetadata(message);
+
     if (metadata !== undefined) {
       finishReason = metadata.finishReason;
       providerFinishReason = metadata.providerFinishReason;
       contextUsage = metadata.contextUsage;
     }
+
     for (const source of metadata?.sources ?? []) {
       const key = `${source.url}\u0000${source.startIndex ?? ""}\u0000${source.endIndex ?? ""}`;
       sources.set(key, source);
@@ -2778,15 +3028,21 @@ function generationArtifacts(messages: MessageType[]): {
     providerFinishReason?: string;
     contextUsage?: import("../../completion/index").ContextUsage;
   } = {};
+
   if (sources.size > 0) artifacts.sources = [...sources.values()];
+
   if (providerToolCalls.size > 0) {
     artifacts.providerToolCalls = [...providerToolCalls.values()];
   }
+
   if (finishReason !== undefined) artifacts.finishReason = finishReason;
+
   if (providerFinishReason !== undefined) {
     artifacts.providerFinishReason = providerFinishReason;
   }
+
   if (contextUsage !== undefined) artifacts.contextUsage = contextUsage;
+
   return artifacts;
 }
 
@@ -2806,15 +3062,19 @@ function reasoningDeltaEvent(
     turn,
     delta,
   };
+
   if (details.id !== undefined) {
     event.id = details.id;
   }
+
   if (details.contentType !== undefined) {
     event.contentType = details.contentType;
   }
+
   if (details.signature !== undefined) {
     event.signature = details.signature;
   }
+
   return event;
 }
 
@@ -2822,17 +3082,21 @@ function textFromMessage(message: MessageType): string {
   if (message.role === "system") {
     return message.content;
   }
+
   if (typeof message.content === "string") {
     return message.content;
   }
+
   return message.content
     .flatMap((content) => {
       if (content.type === "text") {
         return [content.text];
       }
+
       if (content.type === "file" && content.data.type === "text") {
         return [content.data.text];
       }
+
       return [];
     })
     .join("\n");
@@ -2841,6 +3105,7 @@ function textFromMessage(message: MessageType): string {
 function latestAssistantText(messages: readonly MessageType[]): string {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
+
     if (message?.role === "assistant") {
       return typeof message.content === "string"
         ? message.content
@@ -2860,6 +3125,7 @@ function structuredOutputRetryRequest(
     role: "user",
     content: truncated ? STRUCTURED_OUTPUT_TRUNCATED_RETRY_PROMPT : STRUCTURED_OUTPUT_RETRY_PROMPT,
   };
+
   if (truncated) {
     return {
       request: {
@@ -2870,7 +3136,9 @@ function structuredOutputRetryRequest(
       includedOutputLength: 0,
     };
   }
+
   const preview = structuredOutputRepairPreview(textFromAssistantContent(response.choice));
+
   if (preview.includedOutputLength === 0) {
     return {
       request: {
@@ -2881,6 +3149,7 @@ function structuredOutputRetryRequest(
       includedOutputLength: 0,
     };
   }
+
   const invalidResponse: MessageType = {
     role: "assistant",
     content: [{ type: "text", text: preview.text }],
@@ -2903,7 +3172,9 @@ function structuredOutputRetryEventAttributes(
     previousResponse: retryRequest.previousResponse,
     includedOutputLength: retryRequest.includedOutputLength,
   };
+
   if (!(error instanceof AgentStructuredOutputError)) return attributes;
+
   Object.assign(attributes, {
     failurePhase: error.phase,
     outputLength: error.outputLength,
@@ -2911,10 +3182,13 @@ function structuredOutputRetryEventAttributes(
     attemptUsage: usageEventValue(error.attemptUsage),
     cumulativeUsage: usageEventValue(error.usage),
   });
+
   if (error.finishReason !== undefined) attributes.finishReason = error.finishReason;
+
   if (error.providerFinishReason !== undefined) {
     attributes.providerFinishReason = error.providerFinishReason;
   }
+
   return attributes;
 }
 
@@ -2924,7 +3198,9 @@ function providerOutputRetryEventAttributes(
   attemptUsage?: Usage | undefined,
 ): JsonObject | undefined {
   const resolvedAttemptUsage = attemptUsage ?? completionProviderOutputErrorUsage(error);
+
   if (resolvedAttemptUsage === undefined) return undefined;
+
   return {
     attemptUsage: usageEventValue(resolvedAttemptUsage),
     cumulativeUsage: usageEventValue(cumulativeUsage),
@@ -2939,7 +3215,9 @@ function usageEventValue(usage: Usage): JsonObject {
     cachedInputTokens: usage.cachedInputTokens,
     cacheCreationInputTokens: usage.cacheCreationInputTokens,
   };
+
   if (usage.details !== undefined) value.details = { ...usage.details };
+
   return value;
 }
 
@@ -2950,7 +3228,9 @@ function providerMessages(messages: readonly MessageType[]): MessageType[] {
       providerMessages.push(message);
       continue;
     }
+
     const results = message.content.filter((part) => part.type === "tool-result");
+
     if (results.length > 0) {
       providerMessages.push({ ...message, content: results });
     }
@@ -2975,12 +3255,15 @@ function guardrailDecisionAttributes(decision: GuardrailDecisionRecord): JsonObj
     applied: decision.applied,
     latencyMs: decision.latencyMs,
   };
+
   if (decision.reason !== undefined) {
     attributes.reason = decision.reason;
   }
+
   if (decision.message !== undefined) {
     attributes.message = decision.message;
   }
+
   return attributes;
 }
 
@@ -2990,7 +3273,9 @@ function blockedOutcomeDetails(
 ): { reason: string; message?: string | undefined } {
   for (let index = decisions.length - 1; index >= 0; index -= 1) {
     const decision = decisions[index];
+
     if (decision?.applied !== true || decision.action !== "block") continue;
+
     return decision.message === undefined
       ? { reason: decision.reason ?? fallbackReason }
       : { reason: decision.reason ?? fallbackReason, message: decision.message };
@@ -3027,8 +3312,11 @@ function withMemoryScopeTrace(
   scope: MemoryScope | undefined,
 ): AgentTraceOptions | undefined {
   if (scope === undefined) return trace;
+
   const sessionId = trace?.sessionId ?? scope.sessionId;
   const userId = trace?.userId ?? scope.userId;
+
   if (sessionId === trace?.sessionId && userId === trace?.userId) return trace;
+
   return { ...trace, sessionId, userId };
 }

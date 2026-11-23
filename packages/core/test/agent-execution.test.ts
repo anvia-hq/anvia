@@ -150,11 +150,14 @@ it("passes validated streamed responses through the checkpoint boundary", async 
       const stream = execute();
       while (true) {
         const next = await stream.next();
+
         if (next.done) {
           saved = next.value;
           return next.value;
         }
+
         if (next.value.type === "text_delta") deltas.push(next.value.delta);
+
         yield next.value;
       }
     },
@@ -207,6 +210,7 @@ it("does not observe or count usage for steps the execution runtime replays", as
     },
     async *streamCompletion(turn, _request, execute) {
       if (turn > 1) return { ...(yield* execute()), usage };
+
       return { choice: [AssistantContent.toolCall("call", "write", {})], usage, rawResponse: null };
     },
     tool: async () => ({ failed: false, output: { type: "text", value: "saved tool" } }),

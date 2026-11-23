@@ -74,7 +74,9 @@ async function settled(
 ) {
   for (let attempt = 0; attempt < 250; attempt++) {
     const snapshot = await run.snapshot();
+
     if (statuses.includes(snapshot.run.status)) return snapshot;
+
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
   throw new Error("The durable run did not settle.");
@@ -246,11 +248,13 @@ it("keeps a duplicate write from being stored twice after the store committed it
   let lost = true;
   store.append = async (options) => {
     const result = await real(options);
+
     // The store commits, then the response is lost.
     if (lost) {
       lost = false;
       throw new Error("response lost");
     }
+
     return result;
   };
   const runtime = await open(
@@ -361,7 +365,9 @@ describe.each(["message", "run"] as const)(
       const paused = await settled(submitted, ["waiting"]);
       expect(paused.run.status).toBe("waiting");
       const outcome = paused.run.outcome;
+
       if (outcome?.type !== "interaction") throw new Error("Expected an interaction.");
+
       const afterPause = (await store.load({ scope })).map((message) => message.role);
       expect(afterPause).toEqual(["user", "assistant"]);
 
@@ -393,7 +399,9 @@ describe.each(["message", "run"] as const)(
       const submitted = await runtime.submit({ ...submission, prompt: "hello" });
       const paused = await settled(submitted, ["waiting"]);
       const outcome = paused.run.outcome;
+
       if (outcome?.type !== "interaction") throw new Error("Expected an interaction.");
+
       await store.append({
         scope,
         runId: "other",

@@ -59,6 +59,7 @@ for await (const event of agent.stream({ prompt })) {
     if (!wroteText && wroteReasoning) {
       process.stderr.write("\n");
     }
+
     wroteText = true;
     process.stdout.write(event.delta);
   }

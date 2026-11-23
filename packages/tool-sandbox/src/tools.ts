@@ -213,6 +213,7 @@ export function createSandboxTools(options: CreateSandboxToolsOptions): readonly
   if (tools.length !== selected.size) {
     throw toolPolicyError("Sandbox tool selection contains an unsupported tool name.");
   }
+
   return Object.freeze(tools);
 }
 
@@ -232,21 +233,29 @@ function createExecCommandTool(options: CreateSandboxToolsOptions): AnyTool {
       let execOptions: DockerSandboxExecOptions = {
         command: invocation.command,
       };
+
       if (invocation.args !== undefined) execOptions = { ...execOptions, args: invocation.args };
+
       if (normalizedCwd !== undefined) {
         execOptions = { ...execOptions, cwd: normalizedCwd };
       }
+
       if (env !== undefined) execOptions = { ...execOptions, env };
+
       if (effectiveTimeoutMs !== undefined) {
         execOptions = { ...execOptions, timeoutMs: effectiveTimeoutMs };
       }
+
       if (input !== undefined) execOptions = { ...execOptions, input };
+
       if (context.operationId !== undefined) {
         execOptions = { ...execOptions, operationId: context.operationId };
       }
+
       if (context.abortSignal !== undefined) {
         execOptions = { ...execOptions, abortSignal: context.abortSignal };
       }
+
       return serializeExecResult(await options.sandbox.exec(execOptions));
     },
   });
@@ -261,20 +270,24 @@ function createReadFileTool(options: CreateSandboxToolsOptions): AnyTool {
     outputSchema: readFileOutput,
     execute: async ({ path, startLine, lineCount }, context) => {
       const effectiveLineCount = lineCount ?? limits.defaultLineCount;
+
       if (effectiveLineCount > limits.maxLineCount) {
         throw toolPolicyError(
           `File read line count exceeds policy (${effectiveLineCount} > ${limits.maxLineCount}).`,
         );
       }
+
       let readOptions: Parameters<typeof options.sandbox.readTextFilePage>[0] = {
         path: normalizeToolPath(options.sandbox, path),
         startLine: startLine ?? 1,
         lineCount: effectiveLineCount,
         maxBytes: limits.maxBytes,
       };
+
       if (context.abortSignal !== undefined) {
         readOptions = { ...readOptions, abortSignal: context.abortSignal };
       }
+
       return options.sandbox.readTextFilePage(readOptions);
     },
   });
@@ -289,20 +302,25 @@ function createWriteFileTool(options: CreateSandboxToolsOptions): AnyTool {
     execute: async ({ path, content }, context) => {
       const bytesWritten = new TextEncoder().encode(content).byteLength;
       const maxBytes = options.writeFile?.maxBytes;
+
       if (maxBytes !== undefined && bytesWritten > maxBytes) {
         throw toolPolicyError(`File content exceeds policy (${bytesWritten} > ${maxBytes}).`);
       }
+
       const normalizedPath = normalizeToolPath(options.sandbox, path);
       let writeOptions: Parameters<typeof options.sandbox.writeTextFile>[0] = {
         path: normalizedPath,
         text: content,
       };
+
       if (context.operationId !== undefined) {
         writeOptions = { ...writeOptions, operationId: context.operationId };
       }
+
       if (context.abortSignal !== undefined) {
         writeOptions = { ...writeOptions, abortSignal: context.abortSignal };
       }
+
       await options.sandbox.writeTextFile(writeOptions);
       return { path: normalizedPath, bytesWritten };
     },
@@ -318,10 +336,13 @@ function createListFilesTool(sandbox: SandboxRuntime): AnyTool {
     execute: async ({ path }, context) => {
       const normalizedPath = path === undefined ? "." : normalizeToolPath(sandbox, path, true);
       let listOptions: Parameters<typeof sandbox.listFiles>[0] = {};
+
       if (path !== undefined) listOptions = { ...listOptions, path: normalizedPath };
+
       if (context.abortSignal !== undefined) {
         listOptions = { ...listOptions, abortSignal: context.abortSignal };
       }
+
       return { path: normalizedPath, entries: [...(await sandbox.listFiles(listOptions))] };
     },
   });
@@ -349,16 +370,21 @@ function createStartProcessTool(options: CreateSandboxToolsOptions): AnyTool {
         cwd === undefined ? undefined : normalizeToolPath(options.sandbox, cwd, true);
       const invocation = await resolveExecInvocation(options, command, args, context.abortSignal);
       let startOptions: Parameters<typeof options.sandbox.startProcess>[0] = { ...invocation };
+
       if (normalizedCwd !== undefined) {
         startOptions = { ...startOptions, cwd: normalizedCwd };
       }
+
       if (env !== undefined) startOptions = { ...startOptions, env };
+
       if (context.operationId !== undefined) {
         startOptions = { ...startOptions, operationId: context.operationId };
       }
+
       if (context.abortSignal !== undefined) {
         startOptions = { ...startOptions, abortSignal: context.abortSignal };
       }
+
       return serializeProcessInfo(await options.sandbox.startProcess(startOptions));
     },
   });
@@ -372,7 +398,9 @@ function createListProcessesTool(sandbox: SandboxRuntime): AnyTool {
     outputSchema: listProcessesOutput,
     execute: async (_, context) => {
       const listOptions: Writable<DockerSandboxListProcessesOptions> = {};
+
       if (context.abortSignal !== undefined) listOptions.abortSignal = context.abortSignal;
+
       return {
         processes: (await sandbox.listProcesses(listOptions)).map(serializeProcessInfo),
       };
@@ -389,18 +417,22 @@ function createReadProcessLogsTool(options: CreateSandboxToolsOptions): AnyTool 
     outputSchema: processLogsOutput,
     execute: async ({ processId, tailBytes }, context) => {
       const effectiveTailBytes = tailBytes ?? maxLogBytes;
+
       if (effectiveTailBytes > maxLogBytes) {
         throw toolPolicyError(
           `Process log request exceeds policy (${effectiveTailBytes} > ${maxLogBytes}).`,
         );
       }
+
       let readOptions: Parameters<typeof options.sandbox.readProcessLogs>[0] = {
         processId,
         tailBytes: effectiveTailBytes,
       };
+
       if (context.abortSignal !== undefined) {
         readOptions = { ...readOptions, abortSignal: context.abortSignal };
       }
+
       const logs = await options.sandbox.readProcessLogs(readOptions);
       return {
         processId,
@@ -424,12 +456,15 @@ function createStopProcessTool(options: CreateSandboxToolsOptions): AnyTool {
         processId,
         gracePeriodMs: options.process?.stopGracePeriodMs ?? 5_000,
       };
+
       if (context.operationId !== undefined) {
         stopOptions = { ...stopOptions, operationId: context.operationId };
       }
+
       if (context.abortSignal !== undefined) {
         stopOptions = { ...stopOptions, abortSignal: context.abortSignal };
       }
+
       return serializeProcessInfo(await options.sandbox.stopProcess(stopOptions));
     },
   });
@@ -444,18 +479,22 @@ function createWaitForPortTool(options: CreateSandboxToolsOptions): AnyTool {
     execute: async ({ containerPort, timeoutMs }, context) => {
       const effectiveTimeoutMs = timeoutMs ?? options.process?.defaultWaitTimeoutMs ?? 30_000;
       const maxWaitTimeoutMs = options.process?.maxWaitTimeoutMs ?? maxToolTimeoutMs;
+
       if (effectiveTimeoutMs > maxWaitTimeoutMs) {
         throw toolPolicyError(
           `Port wait timeout exceeds policy (${effectiveTimeoutMs} > ${maxWaitTimeoutMs}).`,
         );
       }
+
       let waitOptions: Parameters<typeof options.sandbox.waitForPort>[0] = {
         containerPort,
         timeoutMs: effectiveTimeoutMs,
       };
+
       if (context.abortSignal !== undefined) {
         waitOptions = { ...waitOptions, abortSignal: context.abortSignal };
       }
+
       return { port: await options.sandbox.waitForPort(waitOptions) };
     },
   });
@@ -485,9 +524,13 @@ function serializeProcessInfo(
     status: process.status,
     startedAt: process.startedAt,
   };
+
   if (process.cwd !== undefined) serialized = { ...serialized, cwd: process.cwd };
+
   if (process.exitCode !== undefined) serialized = { ...serialized, exitCode: process.exitCode };
+
   if (process.endedAt !== undefined) serialized = { ...serialized, endedAt: process.endedAt };
+
   return serialized;
 }
 
@@ -499,19 +542,24 @@ function validateFactoryOptions(options: CreateSandboxToolsOptions): void {
   if (!isRecord(options)) {
     throw new TypeError("options must be an object.");
   }
+
   if (!isSandboxRuntime(options.sandbox)) {
     throw new TypeError("sandbox must be a SandboxRuntime.");
   }
+
   if (!Array.isArray(options.tools) || options.tools.length === 0) {
     throw new TypeError("tools must be a non-empty array.");
   }
+
   const known = new Set<string>(allToolNames);
   const seen = new Set<string>();
   for (const name of options.tools as readonly unknown[]) {
     if (typeof name !== "string" || !known.has(name)) {
       throw new TypeError("tools contains an unsupported sandbox tool name.");
     }
+
     if (seen.has(name)) throw new TypeError(`tools contains a duplicate: ${name}`);
+
     seen.add(name);
   }
   for (const [name, policy] of [
@@ -527,12 +575,14 @@ function validateFactoryOptions(options: CreateSandboxToolsOptions): void {
   validateCommandPolicy(options.exec?.commands);
   assertOptionalPositiveInteger(options.exec?.defaultTimeoutMs, "exec.defaultTimeoutMs");
   assertOptionalPositiveInteger(options.exec?.maxTimeoutMs, "exec.maxTimeoutMs");
+
   if (
     (options.exec?.defaultTimeoutMs ?? 0) > maxToolTimeoutMs ||
     (options.exec?.maxTimeoutMs ?? 0) > maxToolTimeoutMs
   ) {
     throw toolPolicyError(`Sandbox tool command timeouts cannot exceed ${maxToolTimeoutMs}.`);
   }
+
   if (
     options.exec?.defaultTimeoutMs !== undefined &&
     options.exec.maxTimeoutMs !== undefined &&
@@ -540,6 +590,7 @@ function validateFactoryOptions(options: CreateSandboxToolsOptions): void {
   ) {
     throw toolPolicyError("exec.defaultTimeoutMs cannot exceed exec.maxTimeoutMs.");
   }
+
   assertOptionalBoundedPositiveInteger(options.readFile?.maxBytes, "readFile.maxBytes");
   assertOptionalPositiveInteger(options.readFile?.defaultLineCount, "readFile.defaultLineCount");
   assertOptionalPositiveInteger(options.readFile?.maxLineCount, "readFile.maxLineCount");
@@ -553,9 +604,11 @@ function validateFactoryOptions(options: CreateSandboxToolsOptions): void {
   assertOptionalNonNegativeInteger(options.process?.stopGracePeriodMs, "process.stopGracePeriodMs");
   const defaultWaitTimeoutMs = options.process?.defaultWaitTimeoutMs;
   const maxWaitTimeoutMs = options.process?.maxWaitTimeoutMs ?? maxToolTimeoutMs;
+
   if (maxWaitTimeoutMs > maxToolTimeoutMs) {
     throw toolPolicyError(`process.maxWaitTimeoutMs cannot exceed ${maxToolTimeoutMs}.`);
   }
+
   if (defaultWaitTimeoutMs !== undefined && defaultWaitTimeoutMs > maxWaitTimeoutMs) {
     throw toolPolicyError("process.defaultWaitTimeoutMs cannot exceed process.maxWaitTimeoutMs.");
   }
@@ -563,6 +616,7 @@ function validateFactoryOptions(options: CreateSandboxToolsOptions): void {
 
 function snapshotCommandPolicy(policy: DockerSandboxCommandPolicy): DockerSandboxCommandPolicy {
   const values = Object.freeze([...policy.values]);
+
   if (policy.mode === "allow" && policy.allowShellInterpreters !== undefined) {
     return Object.freeze({
       mode: policy.mode,
@@ -570,6 +624,7 @@ function snapshotCommandPolicy(policy: DockerSandboxCommandPolicy): DockerSandbo
       allowShellInterpreters: policy.allowShellInterpreters,
     });
   }
+
   return Object.freeze({ mode: policy.mode, values });
 }
 
@@ -586,29 +641,39 @@ function snapshotFactoryOptions(options: CreateSandboxToolsOptions): CreateSandb
     sandbox: options.sandbox,
     tools: toolNames,
   };
+
   if (options.exec !== undefined) {
     let exec = { ...options.exec };
+
     if (commands !== undefined) exec = { ...exec, commands };
+
     snapshot = { ...snapshot, exec: Object.freeze(exec) };
   }
+
   if (options.readFile !== undefined) {
     snapshot = { ...snapshot, readFile: Object.freeze({ ...options.readFile }) };
   }
+
   if (options.writeFile !== undefined) {
     snapshot = { ...snapshot, writeFile: Object.freeze({ ...options.writeFile }) };
   }
+
   if (options.process !== undefined) {
     snapshot = { ...snapshot, process: Object.freeze({ ...options.process }) };
   }
+
   return Object.freeze(snapshot);
 }
 
 function validateCommandPolicy(policy: DockerSandboxCommandPolicy | undefined): void {
   if (policy === undefined) return;
+
   if (!isRecord(policy)) throw toolPolicyError("exec.commands must be an object.");
+
   if (policy.mode !== "allow" && policy.mode !== "block") {
     throw toolPolicyError("exec.commands must use mode allow or block.");
   }
+
   if (
     policy.mode === "allow" &&
     policy.allowShellInterpreters !== undefined &&
@@ -616,15 +681,19 @@ function validateCommandPolicy(policy: DockerSandboxCommandPolicy | undefined): 
   ) {
     throw toolPolicyError("exec.commands.allowShellInterpreters must be a boolean.");
   }
+
   if (!Array.isArray(policy.values))
     throw toolPolicyError("exec.commands.values must be an array.");
+
   const seen = new Set<string>();
   for (const value of policy.values as readonly unknown[]) {
     if (typeof value !== "string" || value.length === 0) {
       throw toolPolicyError("exec.commands.values must contain non-empty strings.");
     }
+
     if (seen.has(value))
       throw toolPolicyError(`exec.commands.values contains a duplicate: ${value}`);
+
     seen.add(value);
   }
 }
@@ -634,7 +703,9 @@ function assertCommandAllowed(
   policy: DockerSandboxCommandPolicy | undefined,
 ): void {
   if (policy === undefined) return;
+
   const included = policy.values.includes(command);
+
   if ((policy.mode === "allow" && !included) || (policy.mode === "block" && included)) {
     throw toolPolicyError(`Command is rejected by sandbox tool policy: ${command}`);
   }
@@ -645,6 +716,7 @@ function assertCommandAllowed(
   // Also block path-qualified shells (e.g., /bin/sh, /usr/bin/bash)
   if (policy.mode === "allow" && policy.allowShellInterpreters !== true) {
     const commandBasename = command.split("/").pop() ?? command;
+
     if (shellInterpreters.includes(commandBasename as (typeof shellInterpreters)[number])) {
       throw toolPolicyError(
         `Command is rejected by sandbox tool policy: ${command} (shell interpreter not allowed)`,
@@ -661,20 +733,24 @@ async function resolveExecInvocation(
 ): Promise<Pick<DockerSandboxExecOptions, "command" | "args">> {
   abortSignal?.throwIfAborted();
   const policy = options.exec?.commands;
+
   if (args === undefined && requiresShell(command)) {
     if (policy?.mode === "block") {
       throw toolPolicyError(
         "Natural command lines cannot be used with block-mode command policies. Use command and args instead.",
       );
     }
+
     if (policy?.mode === "allow" && policy.allowShellInterpreters !== true) {
       throw toolPolicyError("Natural command lines require allowShellInterpreters: true.");
     }
+
     const shell = await sandboxShell(options.sandbox, abortSignal);
     abortSignal?.throwIfAborted();
     assertCommandAllowed(shell, policy);
     return { command: shell, args: ["-c", command] };
   }
+
   assertCommandAllowed(command, policy);
   return args === undefined ? { command } : { command, args };
 }
@@ -693,12 +769,15 @@ function resolveReadFileLimits(options: CreateSandboxToolsOptions) {
   const defaultLineCount = options.readFile?.defaultLineCount ?? defaultReadFileLineCount;
   const maxLineCount = options.readFile?.maxLineCount ?? defaultReadFileMaxLineCount;
   const maxBytes = options.readFile?.maxBytes ?? defaultReadFileMaxBytes;
+
   if (defaultLineCount > maxLineCount) {
     throw toolPolicyError("readFile.defaultLineCount cannot exceed readFile.maxLineCount.");
   }
+
   if (maxLineCount > maxToolReadFileLines) {
     throw toolPolicyError(`readFile.maxLineCount cannot exceed ${maxToolReadFileLines}.`);
   }
+
   return { defaultLineCount, maxLineCount, maxBytes };
 }
 
@@ -716,6 +795,7 @@ function assertOptionalNonNegativeInteger(value: number | undefined, name: strin
 
 function assertOptionalBoundedNonNegativeInteger(value: number | undefined, name: string): void {
   assertOptionalNonNegativeInteger(value, name);
+
   if (value !== undefined && value > maxToolBytes) {
     throw toolPolicyError(`${name} cannot exceed ${maxToolBytes}.`);
   }
@@ -723,6 +803,7 @@ function assertOptionalBoundedNonNegativeInteger(value: number | undefined, name
 
 function assertOptionalBoundedPositiveInteger(value: number | undefined, name: string): void {
   assertOptionalPositiveInteger(value, name);
+
   if (value !== undefined && value > maxToolBytes) {
     throw toolPolicyError(`${name} cannot exceed ${maxToolBytes}.`);
   }
@@ -730,6 +811,7 @@ function assertOptionalBoundedPositiveInteger(value: number | undefined, name: s
 
 function isSandboxRuntime(value: unknown): value is SandboxRuntime {
   if (!isRecord(value)) return false;
+
   return (
     typeof value.id === "string" &&
     typeof value.provider === "string" &&

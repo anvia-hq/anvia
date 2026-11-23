@@ -72,41 +72,51 @@ export class DesktopService {
     const binaries = options?.binaries;
     const choice = options?.backend ?? "auto";
     // Naming a program picks the backend it belongs to; otherwise use Xvnc if it is there.
-    const backend: DesktopBackend =
-      choice !== "auto"
-        ? choice
-        : binaries?.xvnc !== undefined
-          ? "xvnc"
-          : binaries?.xvfb !== undefined || binaries?.x11vnc !== undefined
-            ? "xvfb"
-            : (await findExecutable("Xvnc", searchPath)) !== undefined
-              ? "xvnc"
-              : "xvfb";
+    let backend: DesktopBackend;
+
+    if (choice !== "auto") {
+      backend = choice;
+    } else if (binaries?.xvnc !== undefined) {
+      backend = "xvnc";
+    } else if (binaries?.xvfb !== undefined || binaries?.x11vnc !== undefined) {
+      backend = "xvfb";
+    } else if ((await findExecutable("Xvnc", searchPath)) !== undefined) {
+      backend = "xvnc";
+    } else {
+      backend = "xvfb";
+    }
+
     const wanted: Partial<Record<keyof ResolvedDesktopBinaries, string>> = {
       xdotool: binaries?.xdotool ?? "xdotool",
       xrandr: binaries?.xrandr ?? "xrandr",
       import: binaries?.import ?? "import",
     };
+
     if (backend === "xvnc") {
       wanted.xvnc = binaries?.xvnc ?? "Xvnc";
     } else {
       wanted.xvfb = binaries?.xvfb ?? "Xvfb";
       wanted.x11vnc = binaries?.x11vnc ?? "x11vnc";
     }
+
     const found: Partial<ResolvedDesktopBinaries> = {};
     const missing: Array<[keyof ResolvedDesktopBinaries, string]> = [];
     for (const [key, name] of Object.entries(wanted) as Array<
       [keyof ResolvedDesktopBinaries, string]
     >) {
       const path = await findExecutable(name, searchPath);
+
       if (path === undefined) missing.push([key, name]);
       else found[key] = path;
     }
+
     if (backend === "xvnc") {
       // Not required: without it the clipboard does not sync, and nothing else is lost.
       const vncconfig = await findExecutable(binaries?.vncconfig ?? "vncconfig", searchPath);
+
       if (vncconfig !== undefined) found.vncconfig = vncconfig;
     }
+
     if (missing.length > 0) {
       // With nothing chosen, say that either backend would do, not just the fallback's programs.
       const chosen =
@@ -115,6 +125,7 @@ export class DesktopService {
         binaries?.xvfb !== undefined ||
         binaries?.x11vnc !== undefined;
       const isServer = ([key]: [string, string]) => key === "xvfb" || key === "x11vnc";
+
       if (!chosen && missing.some(isServer)) {
         return {
           missing: [
@@ -123,24 +134,32 @@ export class DesktopService {
           ],
         };
       }
+
       return { missing: missing.map(([, name]) => name) };
     }
 
     // A window manager is optional: without one the desktop still works, windows just have no frame.
     // `openbox-session` is openbox that also runs ~/.config/openbox/autostart, which is how an image
     // adds a wallpaper or a taskbar. It ships in the same package as `openbox`.
-    const requested =
-      options?.windowManager !== undefined
-        ? options.windowManager
-        : (await findExecutable("openbox-session", searchPath)) !== undefined
-          ? "openbox-session"
-          : "openbox";
+    let requested: string | false;
+
+    if (options?.windowManager !== undefined) {
+      requested = options.windowManager;
+    } else if ((await findExecutable("openbox-session", searchPath)) !== undefined) {
+      requested = "openbox-session";
+    } else {
+      requested = "openbox";
+    }
+
     let windowManager: string | undefined;
+
     if (requested !== false) {
       const [program = ""] = requested.split(/\s+/);
+
       if ((await findExecutable(program, searchPath)) !== undefined) windowManager = requested;
       else deps.log(`no window manager: ${program} was not found`);
     }
+
     return {
       service: new DesktopService(
         options ?? {},
@@ -158,6 +177,7 @@ export class DesktopService {
 
   async status(start = false): Promise<DesktopStatus> {
     if (start) await this.supervisor.ensureRunning();
+
     return { ...this.supervisor.status(), control: this.control.snapshot() };
   }
 
@@ -174,11 +194,13 @@ export class DesktopService {
     const { width: displayWidth, height: displayHeight } = this.supervisor.status();
     // No `-silent`: placed before `-resize` it makes ImageMagick's import ignore the resize.
     const args = ["-window", "root"];
+
     if (scale !== undefined && scale < 1) {
       const width = Math.max(1, Math.round(displayWidth * scale));
       const height = Math.max(1, Math.round(displayHeight * scale));
       args.push("-resize", `${width}x${height}!`);
     }
+
     const png = await this.onDisplay(() =>
       runTool(this.binaries.import, [...args, "png:-"], {
         env: this.supervisor.environment(),
@@ -201,9 +223,11 @@ export class DesktopService {
     const text = output.toString("utf8");
     const x = Number(/^X=(-?\d+)/m.exec(text)?.[1]);
     const y = Number(/^Y=(-?\d+)/m.exec(text)?.[1]);
+
     if (!Number.isFinite(x) || !Number.isFinite(y)) {
       throw new DockerSandboxError("Could not read the cursor position.", "process");
     }
+
     return { x, y };
   }
 
@@ -256,6 +280,7 @@ export class DesktopService {
       if (error instanceof DockerSandboxError && (await this.supervisor.recoveredFromCrash())) {
         return run();
       }
+
       throw error;
     }
   }
@@ -269,9 +294,11 @@ export class DesktopService {
   private xdotoolArguments(action: DesktopAction, width: number, height: number): string[] {
     const point = (x: number | undefined, y: number | undefined): string[] => {
       if (x === undefined && y === undefined) return [];
+
       if (x === undefined || y === undefined) {
         throw new RangeError("Give both x and y, or neither.");
       }
+
       assertOnScreen(x, y, width, height);
       return ["mousemove", String(x), String(y)];
     };
@@ -341,8 +368,10 @@ function assertOnScreen(x: number, y: number, width: number, height: number): vo
 /** Width and height from a PNG's header, so a screenshot reports what it actually is. */
 function pngSize(png: Buffer): { width: number; height: number } {
   const signature = png.subarray(0, 8).toString("hex");
+
   if (signature !== "89504e470d0a1a0a" || png.byteLength < 24) {
     throw new DockerSandboxError("The screenshot was not a PNG.", "process");
   }
+
   return { width: png.readUInt32BE(16), height: png.readUInt32BE(20) };
 }

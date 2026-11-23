@@ -39,6 +39,7 @@ export function syncSkillTree(options: SkillTreeSyncOptions): SkillsSyncOutcome 
         updated.push(join(targetRoot, relativePath));
       } else if (outcome === "skipped") {
         skipped += 1;
+
         if (options.mode === "update") {
           pending.push(join(targetRoot, relativePath));
         }

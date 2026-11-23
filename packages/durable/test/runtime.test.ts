@@ -131,7 +131,9 @@ describe("durable submissions", () => {
     const run = await runtime.submit(submission);
     await status(run, "waiting");
     const pending = (await run.snapshot()).run.outcome;
+
     if (pending?.type !== "interaction") throw new Error("Missing approval");
+
     expect(tool).not.toHaveBeenCalled();
     await runtime.close();
     const restarted = await open(path, agent);
@@ -207,6 +209,7 @@ describe("durable submissions", () => {
     });
     const model = vi.fn(async (request) => {
       if (!hasToolResult(request)) return toolResponse();
+
       await held;
       return done();
     });
@@ -312,7 +315,9 @@ describe("durable submissions", () => {
     const run = await runtime.submit(submission);
     await status(run, "waiting");
     const outcome = (await run.snapshot()).run.outcome;
+
     if (outcome?.type !== "interaction") throw new Error("Missing approval");
+
     await run.respond(outcome.interaction.id, { type: "tool-approval", approved: true });
     await expect(run.result()).rejects.toThrow("max turn limit");
     expect((await run.snapshot()).run.exhaustion?.reason).toBe("max_turns");

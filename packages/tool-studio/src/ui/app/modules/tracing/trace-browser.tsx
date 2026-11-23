@@ -194,6 +194,8 @@ function TraceDetailRoute(props: {
   onShowSessionTraces: (sessionId: string) => void;
 }) {
   const summaryTone = props.selectedTrace?.observations[0]?.kind ?? "trace";
+  const missingTraceLabel =
+    props.traceLoadState === "loading" ? "Loading trace" : "Trace not found";
   return (
     <div className="grid h-full min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-background">
       <header className="shrink-0 border-b bg-background px-4 py-3">
@@ -227,11 +229,7 @@ function TraceDetailRoute(props: {
             </div>
             <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
               {props.selectedTrace === undefined ? (
-                props.traceLoadState === "loading" ? (
-                  "Loading trace"
-                ) : (
-                  "Trace not found"
-                )
+                missingTraceLabel
               ) : (
                 <>
                   <span>{formatTraceDate(props.selectedTrace.startedAt)}</span>
@@ -284,9 +282,11 @@ function TraceDetailRoute(props: {
 
 function traceDisplayName(trace: StudioTrace | undefined): string {
   if (trace?.name) return trace.name;
+
   if (isRecord(trace?.metadata) && typeof trace.metadata.agentName === "string") {
     return trace.metadata.agentName;
   }
+
   return "Trace detail";
 }
 
@@ -368,8 +368,10 @@ function TracePanel(props: {
   const toggleCollapsed = (key: string) => {
     setCollapsed((current) => {
       const next = new Set(current);
+
       if (next.has(key)) next.delete(key);
       else next.add(key);
+
       return next;
     });
   };
@@ -382,6 +384,96 @@ function TracePanel(props: {
         text="Choose a trace to inspect its spans and metadata."
       />
     );
+  }
+
+  const currentTrace = activeTrace;
+
+  function renderTimeline() {
+    if (query.length > 0) {
+      if (searchResults.length === 0) {
+        return (
+          <div className="grid place-items-center gap-1 p-6 text-center">
+            <span className="text-sm font-medium">No matching spans</span>
+            <span className="text-xs text-muted-foreground">Search by name, kind, or ID.</span>
+          </div>
+        );
+      }
+
+      return searchResults.map(({ trace, observation }) => (
+        <TraceTreeRow
+          active={currentTrace.id === trace.id && activeKey === `observation:${observation.id}`}
+          ancestorLevels={[]}
+          hasChildren={false}
+          isLastSibling={true}
+          key={`${trace.id}:${observation.id}`}
+          level={0}
+          tone={observation.kind}
+          title={traceObservationLabel(observation)}
+          subtitle={formatDuration(observation.durationMs)}
+          onSelect={() => selectTimelineItem(trace.id, `observation:${observation.id}`)}
+        />
+      ));
+    }
+
+    return orderedTraces.map((trace) => {
+      const traceActive = currentTrace.id === trace.id;
+      const traceTurnItems = traceTurns(trace);
+      const agentKey = `${trace.id}:agent`;
+      const agentCollapsed = collapsed.has(agentKey);
+      return (
+        <div className="contents" key={trace.id}>
+          <TraceTreeRow
+            active={traceActive && activeKey === "agent"}
+            ancestorLevels={[]}
+            hasChildren={traceTurnItems.length > 0}
+            isLastSibling={true}
+            level={0}
+            tone="agent"
+            title={orderedTraces.length > 1 ? (trace.name ?? "agent.run") : "agent.run"}
+            subtitle={formatDuration(trace.durationMs)}
+            collapsed={agentCollapsed}
+            onSelect={() => selectTimelineItem(trace.id, "agent")}
+            onToggle={() => toggleCollapsed(agentKey)}
+          />
+          {agentCollapsed
+            ? null
+            : traceTurnItems.map((turn) => {
+                const turnKey = `${trace.id}:turn:${turn.turn}`;
+                const turnCollapsed = collapsed.has(turnKey);
+                return (
+                  <div className="contents" key={turnKey}>
+                    <TraceTreeRow
+                      active={traceActive && activeKey === `turn:${turn.turn}`}
+                      ancestorLevels={[]}
+                      hasChildren={turn.observations.length > 0}
+                      isLastSibling={turn.turn === traceTurnItems.at(-1)?.turn}
+                      level={1}
+                      tone="turn"
+                      title={`turn.${turn.turn}`}
+                      subtitle={formatDuration(turn.durationMs)}
+                      collapsed={turnCollapsed}
+                      onSelect={() => selectTimelineItem(trace.id, `turn:${turn.turn}`)}
+                      onToggle={() => toggleCollapsed(turnKey)}
+                    />
+                    {turnCollapsed ? null : (
+                      <TraceObservationRows
+                        activeKey={activeKey}
+                        collapsed={collapsed}
+                        isLastTurn={turn.turn === traceTurnItems.at(-1)?.turn}
+                        observations={turn.observations}
+                        onSelect={(observationId) =>
+                          selectTimelineItem(trace.id, `observation:${observationId}`)
+                        }
+                        onToggle={toggleCollapsed}
+                        traceActive={traceActive}
+                      />
+                    )}
+                  </div>
+                );
+              })}
+        </div>
+      );
+    });
   }
 
   return (
@@ -424,93 +516,7 @@ function TracePanel(props: {
             </Button>
           </div>
           <div className="min-h-0 flex-1 overflow-auto overscroll-contain px-2 py-1">
-            {query.length > 0 ? (
-              searchResults.length > 0 ? (
-                searchResults.map(({ trace, observation }) => (
-                  <TraceTreeRow
-                    active={
-                      activeTrace.id === trace.id && activeKey === `observation:${observation.id}`
-                    }
-                    ancestorLevels={[]}
-                    hasChildren={false}
-                    isLastSibling={true}
-                    key={`${trace.id}:${observation.id}`}
-                    level={0}
-                    tone={observation.kind}
-                    title={traceObservationLabel(observation)}
-                    subtitle={formatDuration(observation.durationMs)}
-                    onSelect={() => selectTimelineItem(trace.id, `observation:${observation.id}`)}
-                  />
-                ))
-              ) : (
-                <div className="grid place-items-center gap-1 p-6 text-center">
-                  <span className="text-sm font-medium">No matching spans</span>
-                  <span className="text-xs text-muted-foreground">
-                    Search by name, kind, or ID.
-                  </span>
-                </div>
-              )
-            ) : (
-              orderedTraces.map((trace) => {
-                const traceActive = activeTrace.id === trace.id;
-                const traceTurnItems = traceTurns(trace);
-                const agentKey = `${trace.id}:agent`;
-                const agentCollapsed = collapsed.has(agentKey);
-                return (
-                  <div className="contents" key={trace.id}>
-                    <TraceTreeRow
-                      active={traceActive && activeKey === "agent"}
-                      ancestorLevels={[]}
-                      hasChildren={traceTurnItems.length > 0}
-                      isLastSibling={true}
-                      level={0}
-                      tone="agent"
-                      title={orderedTraces.length > 1 ? (trace.name ?? "agent.run") : "agent.run"}
-                      subtitle={formatDuration(trace.durationMs)}
-                      collapsed={agentCollapsed}
-                      onSelect={() => selectTimelineItem(trace.id, "agent")}
-                      onToggle={() => toggleCollapsed(agentKey)}
-                    />
-                    {agentCollapsed
-                      ? null
-                      : traceTurnItems.map((turn) => {
-                          const turnKey = `${trace.id}:turn:${turn.turn}`;
-                          const turnCollapsed = collapsed.has(turnKey);
-                          return (
-                            <div className="contents" key={turnKey}>
-                              <TraceTreeRow
-                                active={traceActive && activeKey === `turn:${turn.turn}`}
-                                ancestorLevels={[]}
-                                hasChildren={turn.observations.length > 0}
-                                isLastSibling={turn.turn === traceTurnItems.at(-1)?.turn}
-                                level={1}
-                                tone="turn"
-                                title={`turn.${turn.turn}`}
-                                subtitle={formatDuration(turn.durationMs)}
-                                collapsed={turnCollapsed}
-                                onSelect={() => selectTimelineItem(trace.id, `turn:${turn.turn}`)}
-                                onToggle={() => toggleCollapsed(turnKey)}
-                              />
-                              {turnCollapsed ? null : (
-                                <TraceObservationRows
-                                  activeKey={activeKey}
-                                  collapsed={collapsed}
-                                  isLastTurn={turn.turn === traceTurnItems.at(-1)?.turn}
-                                  observations={turn.observations}
-                                  onSelect={(observationId) =>
-                                    selectTimelineItem(trace.id, `observation:${observationId}`)
-                                  }
-                                  onToggle={toggleCollapsed}
-                                  traceActive={traceActive}
-                                />
-                              )}
-                            </div>
-                          );
-                        })}
-                  </div>
-                );
-              })
-            )}
+            {renderTimeline()}
           </div>
         </nav>
         <TraceDetailPane
@@ -594,6 +600,38 @@ function TraceTreeIndent(props: {
 }) {
   const slot = 20;
   const iconX = props.level * slot;
+
+  function renderBranchLines() {
+    if (props.level <= 0) {
+      return null;
+    }
+
+    if (props.isLastSibling) {
+      return (
+        <span
+          className="absolute top-0 h-1/2 rounded-bl-sm border-b border-l border-border"
+          data-tree-line="elbow"
+          style={{ left: `${(props.level - 1) * slot + 10}px`, width: `${slot}px` }}
+        />
+      );
+    }
+
+    return (
+      <>
+        <span
+          className="absolute inset-y-0 w-px bg-border"
+          data-tree-line="sibling-continuation"
+          style={{ left: `${(props.level - 1) * slot + 10}px` }}
+        />
+        <span
+          className="absolute top-1/2 h-px bg-border"
+          data-tree-line="elbow"
+          style={{ left: `${(props.level - 1) * slot + 10}px`, width: `${slot}px` }}
+        />
+      </>
+    );
+  }
+
   return (
     <span
       className="relative shrink-0"
@@ -608,28 +646,7 @@ function TraceTreeIndent(props: {
           style={{ left: `${level * slot + 10}px` }}
         />
       ))}
-      {props.level > 0 ? (
-        props.isLastSibling ? (
-          <span
-            className="absolute top-0 h-1/2 rounded-bl-sm border-b border-l border-border"
-            data-tree-line="elbow"
-            style={{ left: `${(props.level - 1) * slot + 10}px`, width: `${slot}px` }}
-          />
-        ) : (
-          <>
-            <span
-              className="absolute inset-y-0 w-px bg-border"
-              data-tree-line="sibling-continuation"
-              style={{ left: `${(props.level - 1) * slot + 10}px` }}
-            />
-            <span
-              className="absolute top-1/2 h-px bg-border"
-              data-tree-line="elbow"
-              style={{ left: `${(props.level - 1) * slot + 10}px`, width: `${slot}px` }}
-            />
-          </>
-        )
-      ) : null}
+      {renderBranchLines()}
       {props.hasChildren ? (
         <span
           className="absolute bottom-0 w-px bg-border"

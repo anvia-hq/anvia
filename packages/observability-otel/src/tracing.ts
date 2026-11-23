@@ -154,7 +154,9 @@ class OtelRunObserver implements AgentRunObserver {
 
 function eventTimestamp(value: Date | string | undefined): Date | undefined {
   if (value instanceof Date) return Number.isNaN(value.getTime()) ? undefined : value;
+
   if (value === undefined) return undefined;
+
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? undefined : parsed;
 }
@@ -203,6 +205,7 @@ class OtelToolObserver implements AgentToolObserver {
   streamEvent(args: AgentToolStreamEventArgs): void {
     const wrapper = args.event;
     const child = isRecord(wrapper.event) ? wrapper.event : undefined;
+
     if (child === undefined) {
       return;
     }
@@ -233,6 +236,7 @@ class OtelToolObserver implements AgentToolObserver {
         turn: childTurn,
         request: child.request as AgentGenerationStartArgs["request"],
       };
+
       if (isRecord(child.promptRef) && typeof child.promptRef.name === "string") {
         generationArgs = {
           ...generationArgs,
@@ -243,12 +247,14 @@ class OtelToolObserver implements AgentToolObserver {
           },
         };
       }
+
       if (isRecord(child.modelInfo)) {
         generationArgs = {
           ...generationArgs,
           modelInfo: child.modelInfo as AgentGenerationStartArgs["modelInfo"],
         };
       }
+
       this.childGeneration(agentId, agentName, childTurn, args, agent).setAttributes(
         generationStartAttributes(generationArgs, this.options),
       );
@@ -257,6 +263,7 @@ class OtelToolObserver implements AgentToolObserver {
 
     if (child.type === "turn_end") {
       const generation = this.childGenerations.get(generationKey(agentId, childTurn));
+
       if (generation !== undefined) {
         const attributes: Attributes = {
           "anvia.child_agent.id": agentId,
@@ -264,26 +271,31 @@ class OtelToolObserver implements AgentToolObserver {
           "anvia.child_agent.turn": childTurn,
           "anvia.generation.output": capturedJson(child.response, "output", this.options),
         };
+
         if (isRecord(child.response) && isRecord(child.response.usage)) {
           Object.assign(attributes, usageAttributesFromRecord(child.response.usage));
         }
+
         generation.setAttributes(compactAttributes(attributes));
         generation.setStatus({ code: SpanStatusCode.OK });
         generation.end();
         this.childGenerations.delete(generationKey(agentId, childTurn));
       }
+
       return;
     }
 
     if (child.type === "tool_call" && isRecord(child.toolCall)) {
       const toolCall = child.toolCall;
       const toolName = typeof toolCall.toolName === "string" ? toolCall.toolName : "tool";
-      const toolCallId =
-        typeof toolCall.toolCallId === "string"
-          ? toolCall.toolCallId
-          : typeof toolCall.callId === "string"
-            ? toolCall.callId
-            : undefined;
+      let toolCallId: string | undefined;
+
+      if (typeof toolCall.toolCallId === "string") {
+        toolCallId = toolCall.toolCallId;
+      } else if (typeof toolCall.callId === "string") {
+        toolCallId = toolCall.callId;
+      }
+
       const span = this.tracer.startSpan(
         `${agentLabel(agentId, agentName)}.${toolName}`,
         {
@@ -308,7 +320,9 @@ class OtelToolObserver implements AgentToolObserver {
         span,
         ended: false,
       };
+
       if (toolCallId !== undefined) childTool.toolCallId = toolCallId;
+
       this.childTools.push(childTool);
       return;
     }
@@ -317,6 +331,7 @@ class OtelToolObserver implements AgentToolObserver {
       const toolName = typeof child.toolName === "string" ? child.toolName : "tool";
       const toolCallId = typeof child.toolCallId === "string" ? child.toolCallId : undefined;
       const span = this.findChildTool(agentId, toolName, toolCallId);
+
       if (span !== undefined) {
         span.ended = true;
         span.span.setAttributes(
@@ -343,18 +358,22 @@ class OtelToolObserver implements AgentToolObserver {
         span.span.setStatus({ code: SpanStatusCode.OK });
         span.span.end();
       }
+
       return;
     }
 
     if (child.type === "response" || child.type === "interaction" || child.type === "blocked") {
       const result = child;
+      let status: "response" | "interaction" | "blocked" = "blocked";
+
+      if (result.type === "response") {
+        status = "response";
+      } else if (result.type === "interaction") {
+        status = "interaction";
+      }
+
       const attributes: Attributes = {
-        "anvia.child_agent.status":
-          result.type === "response"
-            ? "response"
-            : result.type === "interaction"
-              ? "interaction"
-              : "blocked",
+        "anvia.child_agent.status": status,
         "anvia.child_agent.text": capturedString(
           typeof result.text === "string" ? result.text : undefined,
           "output",
@@ -367,9 +386,11 @@ class OtelToolObserver implements AgentToolObserver {
         ),
         "anvia.child_agent.messages": capturedJson(result.messages, "output", this.options),
       };
+
       if (isRecord(result.usage)) {
         Object.assign(attributes, usageAttributesFromRecord(result.usage));
       }
+
       agent.setAttributes(compactAttributes(attributes));
       agent.setStatus({ code: SpanStatusCode.OK });
       agent.end();
@@ -381,6 +402,7 @@ class OtelToolObserver implements AgentToolObserver {
       if (isRecord(child.usage)) {
         agent.setAttributes(compactAttributes(usageAttributesFromRecord(child.usage)));
       }
+
       recordSpanError(agent, child.error, this.options);
       agent.end();
       this.childAgents.delete(agentId);
@@ -418,9 +440,11 @@ class OtelToolObserver implements AgentToolObserver {
     args: AgentToolStartArgs,
   ): Span {
     const existing = this.childAgents.get(agentId);
+
     if (existing !== undefined) {
       return existing;
     }
+
     const span = this.tracer.startSpan(
       `${agentLabel(agentId, agentName)}.run`,
       {
@@ -448,7 +472,9 @@ class OtelToolObserver implements AgentToolObserver {
   ): Span {
     const key = generationKey(agentId, turn);
     const existing = this.childGenerations.get(key);
+
     if (existing !== undefined) return existing;
+
     const generation = this.tracer.startSpan(
       `${agentLabel(agentId, agentName)}.model.turn.${turn}`,
       {
@@ -475,6 +501,7 @@ class OtelToolObserver implements AgentToolObserver {
   ): (typeof this.childTools)[number] | undefined {
     for (let index = this.childTools.length - 1; index >= 0; index -= 1) {
       const childTool = this.childTools[index];
+
       if (
         childTool === undefined ||
         childTool.ended ||
@@ -483,6 +510,7 @@ class OtelToolObserver implements AgentToolObserver {
       ) {
         continue;
       }
+
       if (toolCallId === undefined || childTool.toolCallId === toolCallId) {
         return childTool;
       }

@@ -17,10 +17,14 @@ export function loadChatResumeState<
 >(options: ChatResumeOptions | undefined): ChatResumeState<Metadata, Data> | undefined {
   const storage = resolveResumeStorage(options);
   const key = resumeStorageKey(options);
+
   if (storage === undefined || key === undefined) return undefined;
+
   try {
     const raw = storage.getItem(key);
+
     if (raw === null) return undefined;
+
     const parsed: unknown = JSON.parse(raw);
     return parseChatResumeState<Metadata, Data>(parsed);
   } catch {
@@ -34,7 +38,9 @@ export function saveChatResumeState<Metadata extends ClientMetadata, Data extend
 ): void {
   const storage = resolveResumeStorage(options);
   const key = resumeStorageKey(options);
+
   if (storage === undefined || key === undefined) return;
+
   try {
     storage.setItem(key, JSON.stringify(state));
   } catch {
@@ -45,7 +51,9 @@ export function saveChatResumeState<Metadata extends ClientMetadata, Data extend
 export function clearChatResumeState(options: ChatResumeOptions | undefined): void {
   const storage = resolveResumeStorage(options);
   const key = resumeStorageKey(options);
+
   if (storage === undefined || key === undefined) return;
+
   try {
     storage.removeItem(key);
   } catch {
@@ -59,8 +67,11 @@ function resumeStorageKey(options: ChatResumeOptions | undefined): string | unde
 
 function resolveResumeStorage(options: ChatResumeOptions | undefined): Storage | undefined {
   if (options === undefined) return undefined;
+
   if (typeof options.storage === "object") return options.storage;
+
   if (typeof globalThis.window === "undefined") return undefined;
+
   try {
     return options.storage === "localStorage" ? window.localStorage : window.sessionStorage;
   } catch {
@@ -81,6 +92,7 @@ function parseChatResumeState<Metadata extends ClientMetadata, Data extends Clie
   ) {
     return undefined;
   }
+
   try {
     return {
       version: 3,
@@ -97,6 +109,7 @@ function parseChatResumeState<Metadata extends ClientMetadata, Data extends Clie
 
 function parseInteractions(value: unknown): readonly ClientInteraction[] {
   if (!Array.isArray(value)) throw new TypeError("interactions must be an array");
+
   return value.map((item) => {
     if (
       !isRecord(item) ||
@@ -105,6 +118,7 @@ function parseInteractions(value: unknown): readonly ClientInteraction[] {
     ) {
       throw new TypeError("interaction state is invalid");
     }
+
     return {
       request: parseAgentInteractionRequest(item.request),
       runId: item.runId,

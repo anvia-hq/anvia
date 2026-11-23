@@ -13,6 +13,7 @@ export async function dispatchDesktop(
   if (desktop === undefined) {
     throw new DockerSandboxError("This sandbox has no desktop support.", "unsupported");
   }
+
   switch (frame.method) {
     case "desktopStatus":
       return desktop.status(frame.params.start === true);

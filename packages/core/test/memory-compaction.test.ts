@@ -24,6 +24,18 @@ import {
   Usage,
 } from "./helpers/imports";
 
+function readUserMessageText(message: MessageType | undefined): string {
+  if (message?.role !== "user") {
+    return "";
+  }
+
+  if (typeof message.content === "string") {
+    return message.content;
+  }
+
+  return message.content[0]?.type === "text" ? message.content[0].text : "";
+}
+
 class QueueModel implements CompletionModel {
   readonly provider = "test";
   readonly modelId = "test";
@@ -43,9 +55,11 @@ class QueueModel implements CompletionModel {
   async completion(request: CompletionRequest): Promise<CompletionResponse> {
     this.requests.push(request);
     const response = this.responses.shift();
+
     if (response === undefined) {
       throw new Error("No queued response");
     }
+
     return response;
   }
 }
@@ -73,9 +87,11 @@ class StreamingQueueModel implements StreamingCompletionModel {
   async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionModelStreamEvent> {
     this.requests.push(request);
     const events = this.events.shift();
+
     if (events === undefined) {
       throw new Error("No queued stream");
     }
+
     yield* events;
   }
 }
@@ -91,13 +107,16 @@ class CompactingMemoryStore implements MemoryStore {
     }),
     replacePrefix: async (input) => {
       this.replaceCalls.push(input);
+
       if (this.conflictsRemaining > 0) {
         this.conflictsRemaining -= 1;
         return { status: "conflict" };
       }
+
       if (input.revision !== String(this.revision)) {
         return { status: "conflict" };
       }
+
       const previousBoundary = this.checkpoint?.throughIndex ?? -1;
       const physicalPrefixCount = input.messageCount - (this.checkpoint === undefined ? 0 : 1);
       this.checkpoint = {
@@ -148,6 +167,7 @@ class CompactingMemoryStore implements MemoryStore {
     if (this.checkpoint === undefined) {
       return [...this.messages];
     }
+
     return [
       structuredClone(this.checkpoint.summary),
       ...this.messages.slice(this.checkpoint.throughIndex + 1),
@@ -719,14 +739,7 @@ describe("memory compaction", () => {
     await agent.generate({ prompt: "next", session: scope });
 
     const summaryPrompt = summaryModel.requests[0]?.chatHistory[0];
-    const serialized =
-      summaryPrompt?.role !== "user"
-        ? ""
-        : typeof summaryPrompt.content === "string"
-          ? summaryPrompt.content
-          : summaryPrompt.content[0]?.type === "text"
-            ? summaryPrompt.content[0].text
-            : "";
+    const serialized = readUserMessageText(summaryPrompt);
     expect(serialized).toContain("[truncated 500 chars]");
     expect(serialized).not.toContain(longDocument);
   });
@@ -1048,9 +1061,11 @@ describe("memory compaction", () => {
       capabilities: summaryDelegate.capabilities,
       async completion(request) {
         summaryAttempts += 1;
+
         if (summaryAttempts === 1) {
           throw Object.assign(new Error("temporarily unavailable"), { status: 503 });
         }
+
         return summaryDelegate.completion(request);
       },
     };
@@ -1229,14 +1244,7 @@ describe("memory compaction", () => {
 
     const summaryPrompt = summaryModel.requests[0]?.chatHistory[0];
     expect(summaryPrompt?.role).toBe("user");
-    const serialized =
-      summaryPrompt?.role !== "user"
-        ? ""
-        : typeof summaryPrompt.content === "string"
-          ? summaryPrompt.content
-          : summaryPrompt.content[0]?.type === "text"
-            ? summaryPrompt.content[0].text
-            : "";
+    const serialized = readUserMessageText(summaryPrompt);
     expect(serialized).toContain("lookup");
     expect(serialized).toContain("found");
     expect(serialized).toContain("data omitted");
@@ -1285,14 +1293,7 @@ describe("memory compaction", () => {
     await agent.generate({ prompt: "next", session: scope });
 
     const summaryPrompt = summaryModel.requests[0]?.chatHistory[0];
-    const serialized =
-      summaryPrompt?.role !== "user"
-        ? ""
-        : typeof summaryPrompt.content === "string"
-          ? summaryPrompt.content
-          : summaryPrompt.content[0]?.type === "text"
-            ? summaryPrompt.content[0].text
-            : "";
+    const serialized = readUserMessageText(summaryPrompt);
     expect(serialized).toContain("[truncated 500 chars]");
     expect(serialized).not.toContain(longToolResult);
   });
@@ -1326,14 +1327,7 @@ describe("memory compaction", () => {
     await agent.generate({ prompt: "next", session: scope });
 
     const summaryPrompt = summaryModel.requests[0]?.chatHistory[0];
-    const serialized =
-      summaryPrompt?.role !== "user"
-        ? ""
-        : typeof summaryPrompt.content === "string"
-          ? summaryPrompt.content
-          : summaryPrompt.content[0]?.type === "text"
-            ? summaryPrompt.content[0].text
-            : "";
+    const serialized = readUserMessageText(summaryPrompt);
     expect(serialized).toContain("[truncated");
     expect(serialized).not.toContain("row-999");
   });
@@ -1374,14 +1368,7 @@ describe("memory compaction", () => {
     await agent.generate({ prompt: "next", session: scope });
 
     const summaryPrompt = summaryModel.requests[0]?.chatHistory[0];
-    const serialized =
-      summaryPrompt?.role !== "user"
-        ? ""
-        : typeof summaryPrompt.content === "string"
-          ? summaryPrompt.content
-          : summaryPrompt.content[0]?.type === "text"
-            ? summaryPrompt.content[0].text
-            : "";
+    const serialized = readUserMessageText(summaryPrompt);
     expect(serialized).toContain("[truncated");
     expect(serialized).not.toContain(longReason);
   });

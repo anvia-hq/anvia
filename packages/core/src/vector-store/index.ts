@@ -75,15 +75,18 @@ export class InMemoryVectorStore<
   constructor(options: InMemoryVectorStoreOptions = {}) {
     this.indexStrategy = options.index ?? { type: "bruteForce" };
     this.metric = options.metric ?? "cosine";
+
     if (!VECTOR_METRICS.has(this.metric)) {
       throw new TypeError(`Unsupported vector metric: ${String(this.metric)}`);
     }
+
     if (
       options.dimensions !== undefined &&
       (!Number.isSafeInteger(options.dimensions) || options.dimensions < 1)
     ) {
       throw new RangeError("Vector dimensions must be a positive safe integer.");
     }
+
     this.embeddingDimension = options.dimensions;
   }
 
@@ -127,17 +130,21 @@ export class InMemoryVectorStore<
       .filter((document) => matchesVectorFilter(document.metadata, request.filter))
       .flatMap((document) => {
         const score = bestScore(queryEmbedding, document.embeddings, this.metric);
+
         if (score === undefined || (request.minScore !== undefined && score < request.minScore)) {
           return [];
         }
+
         let result: VectorSearchResult<T, Metadata> = {
           score,
           id: document.id,
           document: document.document,
         };
+
         if (document.metadata !== undefined) {
           result = { ...result, metadata: document.metadata };
         }
+
         return [result];
       })
       .sort((left, right) => right.score - left.score)
@@ -161,14 +168,18 @@ export class InMemoryVectorStore<
           id: document.id,
           document: document.document,
         };
+
         if (document.metadata !== undefined) {
           item = { ...item, metadata: document.metadata };
         }
+
         return item;
       }),
       totalCount: documents.length,
     };
+
     if (nextOffset < documents.length) result.nextCursor = String(nextOffset);
+
     throwIfAborted(request.abortSignal);
     return result;
   }
@@ -177,10 +188,13 @@ export class InMemoryVectorStore<
     const ids = new Set<string>();
     for (const document of documents) {
       if (ids.has(document.id)) throw new TypeError(`Duplicate vector document id: ${document.id}`);
+
       ids.add(document.id);
+
       if (document.embeddings.length === 0) {
         throw new TypeError(`Vector document ${document.id} must contain at least one embedding.`);
       }
+
       for (const embedding of document.embeddings)
         assertFiniteVector(embedding.vector, document.id);
     }
@@ -191,9 +205,13 @@ export class InMemoryVectorStore<
 
   private candidates(queryEmbedding: Embedding): Array<StoredDocument<T, Metadata>> {
     this.validateQueryDimension(queryEmbedding);
+
     if (this.indexStrategy.type !== "lsh" || this.lshIndex === undefined) return this.values();
+
     const candidateIds = this.lshIndex.query(queryEmbedding.vector);
+
     if (candidateIds.size === 0) return this.values();
+
     return [...candidateIds].flatMap((id) => {
       const document = this.documents.get(id);
       return document === undefined ? [] : [document];
@@ -205,11 +223,14 @@ export class InMemoryVectorStore<
       this.lshIndex = undefined;
       return;
     }
+
     const firstEmbedding = this.values().flatMap((document) => document.embeddings)[0];
+
     if (firstEmbedding === undefined) {
       this.lshIndex = undefined;
       return;
     }
+
     const index = new LshIndex(firstEmbedding.vector.length, this.indexStrategy);
     for (const document of this.documents.values()) {
       for (const embedding of document.embeddings) index.insert(document.id, embedding.vector);
@@ -318,17 +339,21 @@ function validateEmbeddingDimension(
   id: string,
 ): number {
   assertFiniteVector(embedding.vector, id);
+
   if (expectedDimension === undefined) return embedding.vector.length;
+
   if (embedding.vector.length !== expectedDimension) {
     throw new Error(
       `Vector dimension mismatch: expected ${expectedDimension} dimensions but received ${embedding.vector.length} for ${id}`,
     );
   }
+
   return expectedDimension;
 }
 
 function assertFiniteVector(vector: number[], id: string): void {
   if (vector.length === 0) throw new TypeError(`Vector for ${id} must not be empty.`);
+
   if (!vector.every(Number.isFinite)) {
     throw new TypeError(`Vector for ${id} must contain only finite numbers.`);
   }

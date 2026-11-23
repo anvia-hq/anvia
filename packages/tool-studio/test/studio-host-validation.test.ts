@@ -124,7 +124,9 @@ async function startStudio(options: { allowedHosts?: string[]; hostname?: string
     port: 0,
     hostname: options.hostname ?? "127.0.0.1",
   };
+
   if (options.allowedHosts !== undefined) serveOptions.allowedHosts = options.allowedHosts;
+
   studio.start({ ...serveOptions, log: false, handleSignals: false });
   const port = await studioPort(studio);
   return { studio, port };
@@ -156,9 +158,11 @@ async function studioPort(studio: Studio): Promise<number> {
   const startedAt = Date.now();
   while (Date.now() - startedAt < 5_000) {
     const address = handle?.address();
+
     if (typeof address === "object" && address !== null && "port" in address) {
       return (address as { port: number }).port;
     }
+
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
   throw new Error("Expected Studio to listen on a TCP port");
@@ -166,7 +170,9 @@ async function studioPort(studio: Studio): Promise<number> {
 
 function lanIpv4Address(): string {
   const lan = findLanIpv4();
+
   if (lan === undefined) throw new Error("No non-loopback IPv4 address available");
+
   return lan;
 }
 

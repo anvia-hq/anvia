@@ -266,7 +266,9 @@ it("preserves approval waits and the cumulative budget across approval epochs", 
   expect(assess).not.toHaveBeenCalled();
   const child = await runtime.getRun((await handle.graph()).nodes[1]!.agentRunId!);
   const outcome = (await child.snapshot()).run.outcome;
+
   if (outcome?.type !== "interaction") throw new Error("Expected approval");
+
   await child.respond(outcome.interaction.id, { type: "tool-approval", approved: true });
   await paused(handle, "max_model_turns");
   expect((await child.snapshot()).run.modelTurns).toBe(1);
@@ -300,6 +302,7 @@ it("retries a failed verifier against the same completed session without repeati
     agentId: "researcher",
     assess: async () => {
       if (++attempts === 1) throw new Error("Verification service unavailable");
+
       return decision("complete");
     },
   });
@@ -389,7 +392,9 @@ it("pauses on request after the current session, and applies edits and messages 
     makeAgent(async (request) => {
       const prompt = request.chatHistory.find((message) => message.role === "user");
       prompts.push(typeof prompt?.content === "string" ? prompt.content : "");
+
       if (prompts.length === 1) await gate;
+
       return done();
     }),
   );
@@ -445,9 +450,11 @@ it("delivers messages sent between sessions to exactly one session", async () =>
     agentId: "researcher",
     assess: async () => {
       sessions++;
+
       // Deliver while the goal is between sessions, before the next one is admitted.
       if (sessions === 1)
         await handle.signal("message:0", "message", { text: "Prefer the cached data." });
+
       return decision(sessions === 3 ? "complete" : "continue", `progress-${sessions}`);
     },
   });
@@ -567,7 +574,9 @@ it("keeps a turn-limited round's partial work for the next round", async () => {
     tools: [lookup(async () => "artifact from round one")],
     model: makeAgent(async (request) => {
       calls++;
+
       if (calls === 1) return toolResponse();
+
       // The second round starts from the first round's tool result.
       expect(JSON.stringify(request.chatHistory)).toContain("artifact from round one");
       return done();
@@ -636,8 +645,10 @@ it("continues from the last usable round after a failed round is resumed", async
     makeAgent(async (request) => {
       calls++;
       histories.push(request.chatHistory.length);
+
       // The second round fails outright, without a turn limit.
       if (calls === 2) throw new Error("Provider unavailable");
+
       return response([{ type: "text", text: `Answer ${calls}` }]);
     }),
   );

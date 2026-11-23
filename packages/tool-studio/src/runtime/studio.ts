@@ -112,13 +112,17 @@ export class Studio implements AnviaStudio {
       hostname?: string;
       maxBodyBytes?: number;
     } = {};
+
     if (serveOptions.allowedHosts !== undefined) {
       serveHostOptions.allowedHosts = serveOptions.allowedHosts;
     }
+
     if (serveOptions.hostname !== undefined) serveHostOptions.hostname = serveOptions.hostname;
+
     if (serveOptions.maxBodyBytes !== undefined) {
       serveHostOptions.maxBodyBytes = serveOptions.maxBodyBytes;
     }
+
     this.studio = createStudioApp({ ...this.options, ...serveHostOptions });
     this.shutdownPromise = undefined;
 
@@ -133,10 +137,13 @@ export class Studio implements AnviaStudio {
       // supports ws.WebSocketServer. Keep the interop assertion at this single ownership boundary.
       server: this.websocketServer as unknown as WebSocketServerLike,
     };
+
     if (serveOptions.hostname !== undefined) serverOptions.hostname = serveOptions.hostname;
+
     this.server = serve(serverOptions);
 
     const log = serveOptions.log ?? true;
+
     if (log) {
       const host = serveOptions.hostname ?? "localhost";
       this.logAddress(host, port);
@@ -170,6 +177,7 @@ export class Studio implements AnviaStudio {
     try {
       this.start({ ...startOptions, log: false, handleSignals: false });
       const server = this.server;
+
       if (server === undefined) {
         throw new Error("Studio server did not start");
       }
@@ -200,6 +208,7 @@ export class Studio implements AnviaStudio {
     }
 
     if (failures.length === 1) throw failures[0];
+
     if (failures.length > 1) {
       throw new AggregateError(failures, "Failed to run and shut down Anvia Studio.");
     }
@@ -213,11 +222,13 @@ export class Studio implements AnviaStudio {
 
   shutdown(options: { timeoutMs?: number } = {}): Promise<void> {
     const timeoutMs = options.timeoutMs ?? 30_000;
+
     if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
       return Promise.reject(
         new TypeError("Anvia Studio shutdown timeoutMs must be a positive number."),
       );
     }
+
     this.shutdownPromise ??= this.shutdownResources(timeoutMs);
     return this.shutdownPromise;
   }
@@ -230,6 +241,7 @@ export class Studio implements AnviaStudio {
 
   private removeSignalHandlers(): void {
     if (this.signalHandlers === undefined) return;
+
     process.off("SIGINT", this.signalHandlers.sigint);
     process.off("SIGTERM", this.signalHandlers.sigterm);
     this.signalHandlers = undefined;
@@ -292,9 +304,12 @@ function waitForShutdown(signal?: AbortSignal): Promise<void> {
       process.off("SIGINT", finish);
       process.off("SIGTERM", finish);
       signal?.removeEventListener("abort", finish);
+
       if (useRawInput) {
         process.stdin.off("data", onInput);
+
         if (!wasRaw && process.stdin.isRaw) process.stdin.setRawMode(false);
+
         if (wasFlowing !== true) process.stdin.pause();
       }
     };
@@ -304,14 +319,17 @@ function waitForShutdown(signal?: AbortSignal): Promise<void> {
     };
     const onInput = (chunk: Buffer | string) => {
       const interrupted = typeof chunk === "string" ? chunk.includes("\u0003") : chunk.includes(3);
+
       if (interrupted) finish();
     };
 
     process.once("SIGINT", finish);
     process.once("SIGTERM", finish);
     signal?.addEventListener("abort", finish, { once: true });
+
     if (useRawInput) {
       if (!wasRaw) process.stdin.setRawMode(true);
+
       process.stdin.resume();
       process.stdin.on("data", onInput);
     }
@@ -334,25 +352,35 @@ function studioOptionsFromTargets(
     evals: options.evals ?? [],
     graphs: options.graphs === undefined ? [] : [...options.graphs],
   };
+
   if (options.models !== undefined) runtimeOptions.models = options.models;
+
   if (options.stores !== undefined) runtimeOptions.stores = options.stores;
+
   if (options.ui !== undefined) runtimeOptions.ui = options.ui;
+
   if (options.maxBodyBytes !== undefined) runtimeOptions.maxBodyBytes = options.maxBodyBytes;
+
   if (options.sandboxes !== undefined) {
     runtimeOptions.sandboxes = options.sandboxes.map((registration) => {
       let snapshot: StudioSandboxRegistration = { inspector: registration.inspector };
+
       if (registration.agentIds !== undefined) {
         snapshot = { ...snapshot, agentIds: [...registration.agentIds] };
       }
+
       if (registration.toolNames !== undefined) {
         snapshot = { ...snapshot, toolNames: [...registration.toolNames] };
       }
+
       if (registration.views !== undefined) {
         snapshot = { ...snapshot, views: [...registration.views] };
       }
+
       return snapshot;
     });
   }
+
   return runtimeOptions;
 }
 
@@ -378,9 +406,13 @@ function inferStudioPipelines(pipelines: Array<Pipeline<any, any>>): StudioPipel
       id,
       pipeline,
     };
+
     if (pipeline.name !== undefined) studioPipeline.name = pipeline.name;
+
     if (pipeline.description !== undefined) studioPipeline.description = pipeline.description;
+
     if (pipeline.metadata !== undefined) studioPipeline.metadata = pipeline.metadata;
+
     return studioPipeline;
   });
 }
@@ -406,7 +438,9 @@ function agentMetadata(agent: Agent): JsonObject {
     observerCount: Object.keys(agent.observability?.observers ?? {}).length,
     approvalToolCount: agent.tools.filter(toolRequiresApproval).length,
   };
+
   if (agent.defaultMaxTurns !== undefined) metadata.defaultMaxTurns = agent.defaultMaxTurns;
+
   return metadata;
 }
 
@@ -432,16 +466,21 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
   // trusted automatically, and operators binding 0.0.0.0 must list
   // client-facing hostnames in allowedHosts.
   const guardOptions: { allowedHosts?: readonly string[]; hostname?: string } = {};
+
   if (options.allowedHosts !== undefined) guardOptions.allowedHosts = options.allowedHosts;
+
   if (options.hostname !== undefined) guardOptions.hostname = options.hostname;
+
   app.use(createStudioHostGuard(guardOptions));
   // Bound request bodies before any handler parses or persists them. Studio
   // accepts rich transcripts, so the default stays generous, but an unbounded
   // body lets a caller that passes the host guard grow memory and the stores.
   const maxBodyBytes = options.maxBodyBytes ?? defaultStudioMaxBodyBytes;
+
   if (!Number.isSafeInteger(maxBodyBytes) || maxBodyBytes < 1) {
     throw new RangeError("Studio maxBodyBytes must be a positive safe integer.");
   }
+
   app.use(
     bodyLimit({
       maxSize: maxBodyBytes,
@@ -490,6 +529,7 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
 
   app.get("/agents/:agentId", (c) => {
     const agent = agentMap.get(c.req.param("agentId"));
+
     if (agent === undefined) {
       return errorResponse(c, 404, "not_found", "Agent not found");
     }
@@ -499,6 +539,7 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
 
   app.get("/agents/:agentId/runtime", (c) => {
     const agent = agentMap.get(c.req.param("agentId"));
+
     if (agent === undefined) {
       return errorResponse(c, 404, "not_found", "Agent not found");
     }
@@ -518,15 +559,20 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
   });
   registerGraphRoutes(app, options.graphs);
   const knowledgeOptions: Parameters<typeof registerKnowledgeRoutes>[1] = { agents };
+
   if (stores.traces !== undefined) knowledgeOptions.traceStore = stores.traces;
+
   registerKnowledgeRoutes(app, knowledgeOptions);
   const pipelineOptions: Parameters<typeof registerPipelineRoutes>[1] = {
     pipelines,
     pipelineMap,
     runLifecycle,
   };
+
   if (stores.pipelineLogs !== undefined) pipelineOptions.logStore = stores.pipelineLogs;
+
   if (stores.pipelineRuns !== undefined) pipelineOptions.runStore = stores.pipelineRuns;
+
   registerPipelineRoutes(app, pipelineOptions);
 
   registerAgentRunRoute(app, {
@@ -550,7 +596,9 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
       agentMap,
       sessionStore: stores.sessions,
     };
+
     if (stores.traces !== undefined) sessionOptions.traceStore = stores.traces;
+
     registerSessionRoutes(app, sessionOptions);
   }
 
@@ -566,6 +614,7 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
   let closing = false;
   const beginClose = () => {
     if (closing) return;
+
     closing = true;
     continuationRegistry.clear();
     closeSandboxViews();
@@ -587,8 +636,11 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
       await runLifecycle.drain(shutdownOptions.timeoutMs ?? 30_000);
     },
   };
+
   if (stores.sessions !== undefined) Object.assign(studio, { sessionStore: stores.sessions });
+
   if (stores.traces !== undefined) Object.assign(studio, { traceStore: stores.traces });
+
   return studio;
 }
 
@@ -597,11 +649,14 @@ function withStudioTraceObserver(
   traceStore: StudioTraceStore | undefined,
 ): StudioAgent {
   if (traceStore === undefined) return studioAgent;
+
   const existing = studioAgent.agent.observability;
   const studioObserver = existing?.observers.studio;
+
   if (studioObserver !== undefined && !(studioObserver instanceof StudioTraceObserver)) {
     throw new TypeError('Studio reserves the observer name "studio" for local trace persistence.');
   }
+
   for (const [name, observer] of Object.entries(existing?.observers ?? {})) {
     if (observer instanceof StudioTraceObserver && name !== "studio") {
       throw new TypeError('StudioTraceObserver must be registered with the name "studio".');

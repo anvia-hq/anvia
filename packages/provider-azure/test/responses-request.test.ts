@@ -32,6 +32,7 @@ describe("Azure Responses requests", () => {
       const model = new AzureOpenAIClient({
         client: { responses: { create } } as never,
       }).completionModel({ modelId: "deployment", api: "responses" });
+
       if (stream) {
         const output = [];
         for await (const event of model.streamCompletion(request)) output.push(event);

@@ -49,9 +49,13 @@ export function runCommand(
 
   return new Promise((resolve, reject) => {
     const spawnOptions: SpawnOptions = { stdio: ["pipe", "pipe", "pipe"] };
+
     if (options.cwd !== undefined) spawnOptions.cwd = options.cwd;
+
     if (options.env !== undefined) spawnOptions.env = options.env;
+
     if (options.killProcessGroup === true) spawnOptions.detached = true;
+
     const child = spawn(command, [...args], spawnOptions) as ChildProcessWithoutNullStreams;
 
     let timedOut = false;
@@ -67,6 +71,7 @@ export function runCommand(
           // The group is already gone; fall back to the direct child.
         }
       }
+
       child.kill("SIGKILL");
     };
 
@@ -94,6 +99,7 @@ export function runCommand(
 
     const finish = (code: number | null) => {
       if (settled) return;
+
       settled = true;
       cleanup();
 
@@ -120,9 +126,11 @@ export function runCommand(
 
     child.on("error", (error) => {
       if (settled) return;
+
       settled = true;
       cleanup();
       const mapped = options.mapSpawnError?.(error) ?? error;
+
       if (mapped instanceof Error) reject(mapped);
       else resolve(mapped);
     });

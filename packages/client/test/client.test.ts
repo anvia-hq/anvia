@@ -1391,6 +1391,7 @@ describe("protocol and transport", () => {
           ) {
             return { success: false as const };
           }
+
           return {
             success: true as const,
             data: { completed: Math.trunc(value.completed), total: Math.trunc(value.total) },

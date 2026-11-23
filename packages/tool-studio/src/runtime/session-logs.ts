@@ -82,8 +82,11 @@ export function runReceivedLog(props: {
     hasTrace: props.hasTrace,
     metadataKeys: Object.keys(props.metadata ?? {}),
   };
+
   if (props.maxTurns !== undefined) metadata.maxTurns = props.maxTurns;
+
   if (props.toolConcurrency !== undefined) metadata.toolConcurrency = props.toolConcurrency;
+
   return {
     sessionId: props.sessionId,
     runId: props.runId,
@@ -141,8 +144,11 @@ export function runCompletedLog(props: {
     outputBytes: byteLength(props.output),
   };
   const usage = usageSummary(props.usage);
+
   if (usage !== undefined) metadata.usage = usage;
+
   if (props.messageCount !== undefined) metadata.messageCount = props.messageCount;
+
   return {
     sessionId: props.sessionId,
     runId: props.runId,
@@ -178,7 +184,9 @@ export function memorySavedLog(props: {
   messageCount?: number;
 }): StudioSessionLogAppendInput {
   const metadata: JsonObject = {};
+
   if (props.messageCount !== undefined) metadata.messageCount = props.messageCount;
+
   return {
     sessionId: props.sessionId,
     runId: props.runId,
@@ -214,7 +222,9 @@ export function memoryCompactedLog(props: {
     attempts: props.attempts,
   };
   const usage = usageSummary(props.usage);
+
   if (usage !== undefined) metadata.usage = usage;
+
   return {
     sessionId: props.sessionId,
     runId: props.runId,
@@ -253,9 +263,11 @@ function logsFromStreamEvent(props: {
   startedAt: number;
 }): StudioSessionLogAppendInput[] {
   const { event, sessionId, runId } = props;
+
   if (event.type === "memory_compaction") {
     return [memoryCompactedLog({ sessionId, runId, ...event })];
   }
+
   if (event.type === "turn_start") {
     return [
       {
@@ -273,6 +285,7 @@ function logsFromStreamEvent(props: {
       },
     ];
   }
+
   if (event.type === "tool_call") {
     return [
       {
@@ -291,6 +304,7 @@ function logsFromStreamEvent(props: {
       },
     ];
   }
+
   if (event.type === "tool_result") {
     const metadata: JsonObject = {
       turn: event.turn,
@@ -298,11 +312,15 @@ function logsFromStreamEvent(props: {
       argumentBytes: byteLength(event.args),
       resultBytes: byteLength(event.result),
     };
+
     if (event.toolCallId !== undefined) metadata.callId = event.toolCallId;
+
     if (event.internalCallId !== undefined) metadata.internalCallId = event.internalCallId;
+
     if (event.structuredResult !== undefined) {
       metadata.structuredResultBytes = byteLength(JSON.stringify(event.structuredResult));
     }
+
     return [
       {
         sessionId,
@@ -315,13 +333,16 @@ function logsFromStreamEvent(props: {
       },
     ];
   }
+
   if (event.type === "turn_end") {
     const metadata: JsonObject = {
       turn: event.turn,
       contentCount: event.response.choice.length,
     };
     const usage = usageSummary(event.response.usage);
+
     if (usage !== undefined) metadata.usage = usage;
+
     return [
       {
         sessionId,
@@ -334,9 +355,11 @@ function logsFromStreamEvent(props: {
       },
     ];
   }
+
   if (event.type === "response" || event.type === "interaction" || event.type === "blocked") {
     const result = event;
     const logs: StudioSessionLogAppendInput[] = [];
+
     if (result.type === "interaction") {
       logs.push({
         sessionId,
@@ -364,6 +387,7 @@ function logsFromStreamEvent(props: {
         }),
       );
     }
+
     if (result.resumedFrom !== undefined) {
       logs.push({
         sessionId,
@@ -379,12 +403,15 @@ function logsFromStreamEvent(props: {
         },
       });
     }
+
     logs.push(memorySavedLog({ sessionId, runId, messageCount: result.messages.length }));
     return logs;
   }
+
   if (event.type === "error") {
     return [runFailedLog(sessionId, runId, event.error, props.startedAt)];
   }
+
   if (event.type === "interaction_response") {
     const response = event.response;
     const metadata: JsonObject = {
@@ -394,13 +421,16 @@ function logsFromStreamEvent(props: {
       toolName: response.toolName,
       sourceRunId: event.sourceRunId,
     };
+
     if (response.callId !== undefined) metadata.callId = response.callId;
+
     if (response.type === "tool-approval-response") {
       metadata.approved = response.approved;
       metadata.hasReason = response.reason !== undefined;
     } else {
       metadata.answerCount = response.answers.length;
     }
+
     return [
       {
         sessionId,
@@ -413,9 +443,11 @@ function logsFromStreamEvent(props: {
       },
     ];
   }
+
   if (event.type === "agent_tool_event") {
     return childAgentLog(event, sessionId, runId);
   }
+
   return [];
 }
 
@@ -424,6 +456,7 @@ async function* emitLog(
   input: StudioSessionLogAppendInput,
 ): AsyncIterable<AgentRunStreamEvent> {
   const log = await appendSessionLog(store, input);
+
   if (log !== undefined) {
     yield { type: "session_log", log };
   }
@@ -435,6 +468,7 @@ function childAgentLog(
   runId: string,
 ): StudioSessionLogAppendInput[] {
   const child = event.event;
+
   if (child.type === "tool_call") {
     return [
       {
@@ -457,6 +491,7 @@ function childAgentLog(
       },
     ];
   }
+
   if (child.type === "tool_result") {
     const metadata: JsonObject = {
       parentToolName: event.toolName,
@@ -467,10 +502,13 @@ function childAgentLog(
       toolName: child.toolName,
       resultBytes: byteLength(child.result),
     };
+
     if (child.toolCallId !== undefined) metadata.callId = child.toolCallId;
+
     if (child.structuredResult !== undefined) {
       metadata.structuredResultBytes = byteLength(JSON.stringify(child.structuredResult));
     }
+
     return [
       {
         sessionId,
@@ -483,6 +521,7 @@ function childAgentLog(
       },
     ];
   }
+
   if (child.type === "turn_start") {
     return [
       {
@@ -502,6 +541,7 @@ function childAgentLog(
       },
     ];
   }
+
   if (child.type === "response" || child.type === "interaction" || child.type === "blocked") {
     const result = child;
     const metadata: JsonObject = {
@@ -513,7 +553,9 @@ function childAgentLog(
       status: result.type,
     };
     const usage = usageSummary(result.usage);
+
     if (usage !== undefined) metadata.usage = usage;
+
     return [
       {
         sessionId,
@@ -526,6 +568,7 @@ function childAgentLog(
       },
     ];
   }
+
   if (child.type === "error") {
     return [
       {
@@ -544,6 +587,7 @@ function childAgentLog(
       },
     ];
   }
+
   return [];
 }
 
@@ -555,6 +599,7 @@ function messageSummary(message: string | Message): JsonObject {
       byteLength: byteLength(message),
     };
   }
+
   return {
     role: message.role,
     contentKind: Array.isArray(message.content) ? "parts" : "text",
@@ -567,6 +612,7 @@ function usageSummary(value: unknown): JsonObject | undefined {
   if (value === undefined || value === null || typeof value !== "object") {
     return undefined;
   }
+
   const record = value as Record<string, unknown>;
   const summary: JsonObject = {};
   const inputTokens = numericValue(record.inputTokens);
@@ -574,13 +620,19 @@ function usageSummary(value: unknown): JsonObject | undefined {
   const totalTokens = numericValue(record.totalTokens);
   const cachedInputTokens = numericValue(record.cachedInputTokens);
   const cacheCreationInputTokens = numericValue(record.cacheCreationInputTokens);
+
   if (inputTokens !== undefined) summary.inputTokens = inputTokens;
+
   if (outputTokens !== undefined) summary.outputTokens = outputTokens;
+
   if (totalTokens !== undefined) summary.totalTokens = totalTokens;
+
   if (cachedInputTokens !== undefined) summary.cachedInputTokens = cachedInputTokens;
+
   if (cacheCreationInputTokens !== undefined) {
     summary.cacheCreationInputTokens = cacheCreationInputTokens;
   }
+
   return summary;
 }
 

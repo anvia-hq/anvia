@@ -158,10 +158,20 @@ function durableTrace(spans: ExportedSpan[], runId: string): TraceView {
  */
 function lensStatus(view: TraceView): "running" | "ok" | "error" | "unset" {
   const latest = view.roots.at(-1);
+
   if (latest === undefined || latest.attributes["anvia.run.status"] === "suspended") {
     return "running";
   }
-  return latest.statusCode === 2 ? "error" : latest.statusCode === 1 ? "ok" : "unset";
+
+  if (latest.statusCode === 2) {
+    return "error";
+  }
+
+  if (latest.statusCode === 1) {
+    return "ok";
+  }
+
+  return "unset";
 }
 
 function expectChildrenOf(view: TraceView, parent: ExportedSpan, prefix: string, count: number) {
@@ -291,7 +301,9 @@ describe("native durable tracing through LensClient", () => {
     expect(lensStatus(waiting)).toBe("running");
 
     const pending = (await run.snapshot()).run.outcome;
+
     if (pending?.type !== "interaction") throw new Error("Expected an approval");
+
     await run.respond(pending.interaction.id, { type: "tool-approval", approved: true });
     expect(await run.result()).toMatchObject({ type: "response" });
 
@@ -331,7 +343,9 @@ describe("native durable tracing through LensClient", () => {
     });
     await vi.waitFor(async () => expect((await run.snapshot()).run.status).toBe("waiting"));
     const pending = (await run.snapshot()).run.outcome;
+
     if (pending?.type !== "interaction") throw new Error("Expected a question");
+
     await first.close();
     expect(lensStatus(durableTrace(await spans(), run.id))).toBe("running");
 
@@ -399,8 +413,11 @@ describe("native durable tracing through LensClient", () => {
         {
           agent: agent(observer, async () => {
             calls += 1;
+
             if (calls === 1) return toolCall();
+
             if (calls === 2) throw new Error("transient provider error");
+
             return done();
           }, [lookup()]),
           version: "1",
@@ -507,6 +524,7 @@ describe("native durable tracing through LensClient", () => {
     });
     expect(await handle.result()).toBe("ok");
     const child = (await handle.graph()).nodes[1];
+
     if (child?.agentRunId === undefined) throw new Error("Expected a subagent run");
 
     const view = durableTrace(await spans(), child.agentRunId);
@@ -532,8 +550,11 @@ describe("native durable tracing through LensClient", () => {
             observer,
             async (request) => {
               if (hasToolResult(request)) return done();
+
               started += 1;
+
               if (started === count) release();
+
               // Hold every first turn open so all runs have live spans at the same time.
               await allStarted;
               return toolCall();
@@ -666,7 +687,9 @@ describe("observability sessions through LensClient", () => {
     });
     await vi.waitFor(async () => expect((await turn2.snapshot()).run.status).toBe("waiting"));
     const pending = (await turn2.snapshot()).run.outcome;
+
     if (pending?.type !== "interaction") throw new Error("Expected an approval");
+
     await turn2.respond(pending.interaction.id, { type: "tool-approval", approved: true });
     await turn2.result();
     const goalHandle = await runtime.submitGoal(goal, {

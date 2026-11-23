@@ -47,8 +47,11 @@ class QueueModel implements CompletionModel {
   async completion(request: CompletionRequest): Promise<CompletionResponse> {
     this.requests.push(request);
     const output = this.outputs.shift();
+
     if (output === undefined) throw new Error("No queued model output.");
+
     if (output instanceof Error) throw output;
+
     return typeof output === "string" ? response(output) : output;
   }
 }
@@ -73,11 +76,14 @@ class StreamingQueueModel extends QueueModel implements StreamingCompletionModel
   async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionModelStreamEvent> {
     this.requests.push(request);
     const output = this.streamingOutputs.shift();
+
     if (output === undefined) throw new Error("No queued streaming model output.");
+
     if (typeof output === "string") {
       yield { type: "final", response: response(output) };
       return;
     }
+
     yield* output;
   }
 }
@@ -216,9 +222,11 @@ describe("Agent structured output", () => {
       expect(JSON.stringify(request)).not.toContain("secret-reasoning");
       const repair = request.chatHistory[1];
       expect(repair?.role).toBe("assistant");
+
       if (repair?.role !== "assistant" || typeof repair.content === "string") {
         throw new Error("Expected a text-only repair preview.");
       }
+
       const text = repair.content.find((part) => part.type === "text")?.text;
       expect(text?.length).toBeLessThanOrEqual(8_192);
     }
@@ -350,9 +358,13 @@ describe("Agent structured output", () => {
         options?: ModelCallOptions,
       ): Promise<CompletionResponse> {
         calls += 1;
+
         if (calls === 1) return response("not json");
+
         const abortSignal = options?.abortSignal;
+
         if (abortSignal === undefined) throw new Error("Expected Agent abort signal.");
+
         markRetryStarted?.();
         return new Promise((_, reject) => {
           abortSignal.addEventListener("abort", () => reject(abortSignal.reason), { once: true });
@@ -418,7 +430,9 @@ describe("Agent structured output", () => {
       output: { phase: "hypotheses", hypotheses: [] },
       usage: { totalTokens: 2 },
     });
+
     if (final?.type !== "response") throw new Error("Expected Agent response event.");
+
     expect(final.messages.at(-1)?.metadata).toMatchObject({
       anvia: { generation: { usage: { totalTokens: 2 } } },
     });

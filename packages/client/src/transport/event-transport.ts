@@ -48,10 +48,15 @@ export function createFetchEventTransport<TRequest, TEvent = unknown>(
         headers,
         format: options.format ?? "auto",
       };
+
       if (body !== undefined) init.body = body;
+
       if (transportOptions.abortSignal !== undefined) init.signal = transportOptions.abortSignal;
+
       if (options.fetch !== undefined) init.fetch = options.fetch;
+
       if (options.validateResponse !== undefined) init.validateResponse = options.validateResponse;
+
       if (options.onParseError !== undefined) init.onParseError = options.onParseError;
 
       for await (const event of fetchEventStream<unknown>(init)) {
@@ -79,7 +84,9 @@ export function createDirectEventTransport<TRequest, TEvent>(options: {
       try {
         while (!context.abortSignal?.aborted) {
           const next = await iterator.next();
+
           if (next.done) break;
+
           yield next.value;
         }
       } finally {
@@ -104,8 +111,11 @@ async function resolveBody<TRequest>(
   method: string,
 ): Promise<BodyInit | null | undefined> {
   if (body !== undefined) return body({ ...context, headers });
+
   if (method.toUpperCase() === "GET" || method.toUpperCase() === "HEAD") return undefined;
+
   if (!headers.has("content-type")) headers.set("content-type", "application/json");
+
   return JSON.stringify(context.request);
 }
 
@@ -113,6 +123,7 @@ function mergeHeaders(...values: Array<HeadersInit | undefined>): Headers {
   const headers = new Headers();
   for (const value of values) {
     if (value === undefined) continue;
+
     new Headers(value).forEach((headerValue, key) => {
       headers.set(key, headerValue);
     });

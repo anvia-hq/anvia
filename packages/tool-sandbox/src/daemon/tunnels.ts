@@ -78,16 +78,21 @@ export class ConnectionTunnels {
     const { tunnelId, port } = frame;
     const fail = (error: unknown) => this.deps.send(encodeError(error, tunnelId));
     const { options } = this.deps;
+
     if (!this.deps.enabled) {
       fail(new DockerSandboxError("This sandbox has no tunnel support.", "unsupported"));
       return;
     }
+
     const allowed = options?.allowedPorts;
+
     if (allowed !== undefined && !allowed.includes(port) && !this.alwaysAllowed(port)) {
       fail(new DockerSandboxError(`Port ${port} is not allowed for tunnels.`, "port"));
       return;
     }
+
     const maxTunnels = options?.maxTunnels ?? defaultMaxTunnels;
+
     if (this.entries.has(tunnelId) || this.entries.size >= maxTunnels) {
       fail(
         new DockerSandboxError(
@@ -122,9 +127,12 @@ export class ConnectionTunnels {
       );
     } catch (error) {
       this.entries.delete(tunnelId);
+
       if (!entry.closing) fail(error);
+
       return;
     }
+
     if (entry.closing) {
       socket.destroy();
       return;
@@ -162,6 +170,7 @@ export class ConnectionTunnels {
     });
     socket.once("close", () => {
       if (this.entries.get(tunnelId) !== entry) return; // Closed from our side; already reported.
+
       this.entries.delete(tunnelId);
       // A write that fails after the service said goodbye (EPIPE) is the service closing, not a
       // fault in the tunnel.
@@ -181,12 +190,16 @@ export class ConnectionTunnels {
   /** Bytes from the hub, written to the service. Acknowledged once the socket took them. */
   data(tunnelId: string, bytes: Uint8Array): void {
     const entry = this.entries.get(tunnelId);
+
     if (entry?.socket === undefined) return;
+
     entry.received += bytes.byteLength;
+
     if (entry.received - entry.written > entry.maxUnwrittenBytes) {
       this.shutdown(tunnelId, entry, { reason: "error", message: "Tunnel ignored flow control." });
       return;
     }
+
     entry.socket.write(bytes, () => {
       entry.written += bytes.byteLength;
       this.acknowledge(tunnelId, entry);
@@ -200,7 +213,9 @@ export class ConnectionTunnels {
 
   close(tunnelId: string): void {
     const entry = this.entries.get(tunnelId);
+
     if (entry === undefined) return;
+
     this.entries.delete(tunnelId);
     this.release(entry);
   }
@@ -218,16 +233,21 @@ export class ConnectionTunnels {
 
   private acknowledge(tunnelId: string, entry: Entry): void {
     if (entry.closing) return;
+
     const unacked = entry.written - entry.acknowledged;
+
     // Step acks to keep traffic down, but never leave the hub waiting on the last few bytes.
     if (unacked < entry.ackStepBytes && entry.written < entry.received) return;
+
     if (unacked === 0) return;
+
     entry.acknowledged = entry.written;
     this.deps.send({ type: "tunnel.ack", tunnelId, bytes: entry.written });
   }
 
   private shutdown(tunnelId: string, entry: Entry, info: TunnelExitInfo): void {
     if (this.entries.get(tunnelId) !== entry) return;
+
     this.entries.delete(tunnelId);
     entry.channel?.finish(info);
     this.release(entry);
@@ -247,8 +267,11 @@ function outputLimits(
   options: SandboxDaemonTunnelOptions | undefined,
 ): StreamChannelLimits | undefined {
   const forPort = options?.flowByPort?.[port];
+
   if (forPort !== undefined) return { ...options?.flow, ...forPort };
+
   if (profile === undefined) return options?.flow;
+
   return {
     batchMs: profile.batchMs,
     frameBytes: profile.frameBytes,

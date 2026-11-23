@@ -7,9 +7,11 @@ export function cosineSimilarity(left: number[], right: number[]): number {
   assertSameDimensions(left, right);
   const leftMagnitude = magnitude(left);
   const rightMagnitude = magnitude(right);
+
   if (leftMagnitude === 0 || rightMagnitude === 0) {
     return 0;
   }
+
   return dotProduct(left, right) / (leftMagnitude * rightMagnitude);
 }
 

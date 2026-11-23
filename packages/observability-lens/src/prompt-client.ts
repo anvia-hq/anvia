@@ -61,12 +61,15 @@ export function createLensPromptClient(
   const secretKey = options.secretKey ?? tracingConfig.secretKey;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const cacheTtlMs = options.cacheTtlMs ?? DEFAULT_CACHE_TTL_MS;
+
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > 2_147_483_647) {
     throw new TypeError("Anvia Lens prompt timeoutMs must be a positive timer-safe integer");
   }
+
   if (!Number.isFinite(cacheTtlMs) || cacheTtlMs < 0) {
     throw new TypeError("Anvia Lens prompt cacheTtlMs must be a non-negative number");
   }
+
   const authorization = `Basic ${Buffer.from(`${publicKey}:${secretKey}`).toString("base64")}`;
   const stores: PromptStores = {
     baseUrl,
@@ -89,36 +92,47 @@ export function createLensPromptClient(
       lifecycle?.assertOpen();
       const { name, label, version, signal } = getOptions;
       const normalizedName = typeof name === "string" ? name.trim() : "";
+
       if (normalizedName.length === 0) throw new TypeError("Anvia Lens prompt name is required");
+
       if (label !== undefined && version !== undefined) {
         throw new TypeError("Anvia Lens prompt requires exactly one of label or version");
       }
+
       if (version !== undefined && (!Number.isSafeInteger(version) || version <= 0)) {
         throw new TypeError("Anvia Lens prompt version must be a positive safe integer");
       }
+
       if (label !== undefined && (typeof label !== "string" || label.trim().length === 0)) {
         throw new TypeError("Anvia Lens prompt label is required");
       }
+
       const mode = getOptions.cache ?? "default";
+
       if (mode !== "default" && mode !== "reload" && mode !== "no-store") {
         throw new TypeError("Anvia Lens prompt cache mode is invalid");
       }
+
       if (signal?.aborted) {
         throw new LensPromptError("Lens prompt request aborted", undefined, "aborted");
       }
+
       const selector: PromptSelector =
         version === undefined
           ? { label: (label as string | undefined)?.trim() ?? DEFAULT_LABEL }
           : { version };
       const key = JSON.stringify([normalizedName, selector]);
       const cached = stores.cache.get(key);
+
       if (mode === "default" && cached !== undefined && cached.expires > Date.now()) {
         stores.cache.delete(key);
         stores.cache.set(key, cached);
         return cached.prompt;
       }
+
       // Expired entries are never a fallback: a failed refresh must surface its error.
       if (cached !== undefined && cached.expires <= Date.now()) stores.cache.delete(key);
+
       const generation = epoch;
       const existing = mode === "default" ? stores.pending.get(key) : undefined;
       const entry =
@@ -133,15 +147,19 @@ export function createLensPromptClient(
           stores,
           lifecycle?.signal,
         );
+
       if (existing === undefined && mode !== "no-store") stores.pending.set(key, entry);
+
       entry.callers += 1;
       try {
         return await awaitWithAbort(entry.promise, signal);
       } finally {
         entry.callers -= 1;
+
         // The shared request only aborts once no caller is waiting on it anymore.
         if (entry.callers === 0) {
           if (stores.pending.get(key) === entry) stores.pending.delete(key);
+
           entry.controller.abort();
         }
       }
@@ -161,8 +179,10 @@ function createPendingEntry(
 ): PendingEntry {
   const controller = new AbortController();
   const url = new URL(`${stores.baseUrl}/api/public/prompts/${encodeURIComponent(name)}`);
+
   if ("label" in selector) url.searchParams.set("label", selector.label);
   else url.searchParams.set("version", String(selector.version));
+
   const requestSignal =
     lifecycleSignal === undefined
       ? controller.signal
@@ -189,11 +209,14 @@ function createPendingEntry(
       ) {
         stores.cache.delete(key);
         stores.cache.set(key, { prompt, expires: Date.now() + stores.cacheTtlMs });
+
         if (stores.cache.size > MAX_CACHE_ENTRIES) {
           const oldest = stores.cache.keys().next();
+
           if (oldest.done !== true) stores.cache.delete(oldest.value);
         }
       }
+
       return prompt;
     })
     .finally(() => {
@@ -235,6 +258,7 @@ async function requestPrompt(
         response.ok ? "invalid_response" : "request_failed",
       );
     }
+
     if (!response.ok) {
       // Server messages may echo prompt content or credentials; only the code is kept.
       const code =
@@ -247,6 +271,7 @@ async function requestPrompt(
         code,
       );
     }
+
     return parsePrompt(value, response.status, name, selector);
   };
   try {
@@ -255,9 +280,11 @@ async function requestPrompt(
     if (requestSignal.aborted) {
       throw new LensPromptError("Lens prompt request aborted", undefined, "aborted");
     }
+
     if (timeout.signal.aborted) {
       throw new LensPromptError("Lens prompt request timed out", undefined, "timeout");
     }
+
     throw error;
   } finally {
     clearTimeout(timer);
@@ -266,9 +293,11 @@ async function requestPrompt(
 
 function awaitWithAbort<T>(promise: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
   if (signal === undefined) return promise;
+
   if (signal.aborted) {
     return Promise.reject(new LensPromptError("Lens prompt request aborted", undefined, "aborted"));
   }
+
   return new Promise<T>((resolve, reject) => {
     const onAbort = () => {
       cleanup();
@@ -297,6 +326,7 @@ function parsePrompt(
 ): LensPrompt {
   const invalid = () =>
     new LensPromptError("Lens returned an invalid prompt", status, "invalid_response");
+
   if (
     !isRecord(value) ||
     value.name !== name ||
@@ -312,6 +342,7 @@ function parsePrompt(
   ) {
     throw invalid();
   }
+
   // The response selector and identity must exactly match the normalized request.
   if ("label" in selector) {
     if (value.selector.label !== selector.label || !value.labels.includes(selector.label))
@@ -319,6 +350,7 @@ function parsePrompt(
   } else if (value.selector.version !== selector.version || value.version !== selector.version) {
     throw invalid();
   }
+
   const variables = new Set<string>();
   const base = {
     name,
@@ -330,8 +362,10 @@ function parsePrompt(
       | { readonly label: string }
       | { readonly version: number },
   };
+
   if (value.type === "text") {
     if (typeof value.template !== "string" || value.messages !== null) throw invalid();
+
     const parts = parseTemplate(value.template, variables);
     return Object.freeze({
       ...base,
@@ -342,9 +376,12 @@ function parsePrompt(
       compile: (values: Readonly<Record<string, string>> = {}) => renderTemplate(parts, values),
     });
   }
+
   if (value.type !== "chat") throw invalid();
+
   if (value.template !== null || !Array.isArray(value.messages) || value.messages.length === 0)
     throw invalid();
+
   const messages = value.messages.map((message: unknown): LensChatMessage => {
     if (
       !isRecord(message) ||
@@ -354,11 +391,14 @@ function parsePrompt(
     ) {
       throw invalid();
     }
+
     const parsed: Writable<LensChatMessage> = {
       role: message.role,
       content: message.content,
     };
+
     if (message.name !== undefined) parsed.name = message.name;
+
     return Object.freeze(parsed);
   });
   const parts = messages.map((message) => parseTemplate(message.content, variables));
@@ -382,6 +422,7 @@ function parseTemplate(template: string, variables: Set<string>): TemplatePart[]
   let offset = 0;
   for (const match of template.matchAll(pattern)) {
     parts.push(template.slice(offset, match.index));
+
     if (match[0].startsWith("\\")) {
       // An escaped placeholder renders as its literal text without registering a variable.
       parts.push(match[0].slice(1));
@@ -390,6 +431,7 @@ function parseTemplate(template: string, variables: Set<string>): TemplatePart[]
       variables.add(variable);
       parts.push({ variable });
     }
+
     offset = (match.index ?? 0) + match[0].length;
   }
   parts.push(template.slice(offset));
@@ -404,26 +446,32 @@ function renderTemplate(parts: TemplatePart[], values: Readonly<Record<string, s
       rendered += part;
       continue;
     }
+
     if (!Object.hasOwn(values, part.variable)) {
       missing.push(part.variable);
       continue;
     }
+
     const value = values[part.variable];
+
     if (typeof value !== "string") {
       throw new LensPromptCompilationError(
         "invalid_variable",
         `Anvia Lens prompt variable "${part.variable}" must be a string`,
       );
     }
+
     // Values are concatenated verbatim: no recursive replacement of placeholders.
     rendered += value;
   }
+
   if (missing.length > 0) {
     throw new LensPromptCompilationError(
       "missing_variable",
       `Anvia Lens prompt is missing variables: ${missing.join(", ")}`,
     );
   }
+
   return rendered;
 }
 
@@ -433,8 +481,11 @@ function isChatRole(value: unknown): value is LensChatMessage["role"] {
 
 function isJsonValue(value: unknown): value is JsonValue {
   if (value === null || typeof value === "string" || typeof value === "boolean") return true;
+
   if (typeof value === "number") return Number.isFinite(value);
+
   if (Array.isArray(value)) return value.every(isJsonValue);
+
   return isRecord(value) && Object.values(value).every(isJsonValue);
 }
 
@@ -443,5 +494,6 @@ function deepFreezeJson(value: JsonValue): JsonValue {
     for (const child of Object.values(value)) deepFreezeJson(child);
     Object.freeze(value);
   }
+
   return value;
 }

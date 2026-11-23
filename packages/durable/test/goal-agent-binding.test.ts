@@ -97,6 +97,7 @@ it.each(["goal", "registered"])(
       }
 
       if (path === "goal") return runtime.submitGoal(goal, goalInput);
+
       const { sessionId, requestId, ...value } = goalInput;
       return runtime.submitRegisteredTask({
         name: goal.name,

@@ -39,6 +39,7 @@ export function registerKnowledgeRoutes(
 ): void {
   app.get("/knowledge", async (c) => {
     const limit = parseLimit(c.req.query("limit"));
+
     if (limit === undefined) {
       return errorResponse(c, 400, "bad_request", "Invalid limit");
     }
@@ -52,17 +53,20 @@ export function registerKnowledgeRoutes(
 
   app.get("/knowledge/items", async (c) => {
     const limit = parseLimit(c.req.query("limit"));
+
     if (limit === undefined) {
       return errorResponse(c, 400, "bad_request", "Invalid limit");
     }
 
     const agentId = optionalQueryString(c.req.query("agentId"));
     const sourceId = optionalQueryString(c.req.query("sourceId"));
+
     if (agentId === undefined || sourceId === undefined) {
       return errorResponse(c, 400, "bad_request", "agentId and sourceId are required");
     }
 
     const agent = props.agents.find((item) => item.id === agentId);
+
     if (agent === undefined) {
       return errorResponse(c, 404, "not_found", "Agent not found");
     }
@@ -71,9 +75,11 @@ export function registerKnowledgeRoutes(
       limit,
       cursor: optionalQueryString(c.req.query("cursor")),
     });
+
     if (page === undefined) {
       return errorResponse(c, 404, "not_found", "Knowledge source not found");
     }
+
     if (page === false) {
       return errorResponse(c, 400, "bad_request", "Invalid cursor");
     }
@@ -95,13 +101,17 @@ async function agentKnowledgeConfig(agent: StudioAgent): Promise<StudioAgentKnow
     sources: await knowledgeSources(agent),
     staticContext: staticContext.map((document) => {
       const item: StudioStaticKnowledgeDocument = { id: document.id, text: document.text };
+
       if (document.additionalProps !== undefined) {
         item.additionalProps = jsonObjectFromRecord(document.additionalProps);
       }
+
       return item;
     }),
   };
+
   if (agentName !== undefined) config.agentName = agentName;
+
   return config;
 }
 
@@ -133,10 +143,13 @@ async function knowledgeSources(agent: StudioAgent): Promise<StudioKnowledgeSour
         topK: vectorContext.topK,
         inspectable: inspect !== undefined,
       };
+
       if (vectorContext.minScore !== undefined) {
         source.minScore = vectorContext.minScore;
       }
+
       if (count !== undefined) source.itemCount = count;
+
       return source;
     }),
   );
@@ -154,10 +167,13 @@ async function knowledgeSources(agent: StudioAgent): Promise<StudioKnowledgeSour
         topK: toolIndex.topK,
         inspectable: inspect !== undefined,
       };
+
       if (toolIndex.minScore !== undefined) {
         source.minScore = toolIndex.minScore;
       }
+
       if (count !== undefined) source.itemCount = count;
+
       return source;
     }),
   );
@@ -172,6 +188,7 @@ async function inspectableCount(
   if (inspect === undefined) {
     return undefined;
   }
+
   const page = await inspect({ limit: 1, filter });
   return page.totalCount;
 }
@@ -186,15 +203,20 @@ async function knowledgeItemsPage(
   }
 
   const vectorContextIndex = dynamicSourceIndex(sourceId, "dynamic_context");
+
   if (vectorContextIndex !== undefined) {
     const vectorContext = vectorContexts(agent.agent)[vectorContextIndex];
+
     if (vectorContext === undefined) {
       return undefined;
     }
+
     const inspect = inspectFn(vectorContext.store);
+
     if (inspect === undefined) {
       return nonInspectablePage(agent.id, sourceId, "dynamic_context");
     }
+
     let page;
     try {
       page = await inspect({
@@ -206,6 +228,7 @@ async function knowledgeItemsPage(
       if (VectorInspectCursorError.isCursorError(error)) {
         return false;
       }
+
       throw error;
     }
     const result: StudioKnowledgeItemsPage = {
@@ -215,21 +238,29 @@ async function knowledgeItemsPage(
       inspectable: true,
       items: page.items.map((item) => dynamicContextItem(item)),
     };
+
     if (page.nextCursor !== undefined) result.nextCursor = page.nextCursor;
+
     if (page.totalCount !== undefined) result.totalCount = page.totalCount;
+
     return result;
   }
 
   const dynamicToolsIndex = dynamicSourceIndex(sourceId, "dynamic_tools");
+
   if (dynamicToolsIndex !== undefined) {
     const toolIndex = getAgentToolState(agent.agent).toolIndexes[dynamicToolsIndex];
+
     if (toolIndex === undefined) {
       return undefined;
     }
+
     const inspect = inspectFn(toolIndex);
+
     if (inspect === undefined) {
       return nonInspectablePage(agent.id, sourceId, "dynamic_tools");
     }
+
     let page;
     try {
       page = await inspect({
@@ -241,6 +272,7 @@ async function knowledgeItemsPage(
       if (VectorInspectCursorError.isCursorError(error)) {
         return false;
       }
+
       throw error;
     }
     const result: StudioKnowledgeItemsPage = {
@@ -250,8 +282,11 @@ async function knowledgeItemsPage(
       inspectable: true,
       items: page.items.map((item) => dynamicToolItem(item)),
     };
+
     if (page.nextCursor !== undefined) result.nextCursor = page.nextCursor;
+
     if (page.totalCount !== undefined) result.totalCount = page.totalCount;
+
     return result;
   }
 
@@ -262,6 +297,7 @@ function inspectFn(store: unknown): InspectableStore["inspect"] | undefined {
   if (!isRecord(store) || typeof store.inspect !== "function") {
     return undefined;
   }
+
   const inspect = store.inspect;
   return (request) =>
     inspect.call(store, request) as ReturnType<NonNullable<InspectableStore["inspect"]>>;
@@ -291,14 +327,18 @@ function staticKnowledgeItemsPage(
         kind: "static_context",
         text: document.text,
       };
+
       if (document.additionalProps !== undefined) {
         item.metadata = jsonObjectFromRecord(document.additionalProps);
       }
+
       return item;
     }),
     totalCount: staticContext.length,
   };
+
   if (nextOffset < staticContext.length) result.nextCursor = String(nextOffset);
+
   return result;
 }
 
@@ -322,19 +362,24 @@ function dynamicContextItem(item: {
   document: unknown;
   metadata?: Record<string, unknown> | undefined;
 }): StudioKnowledgeItem {
-  const text =
-    isRecord(item.document) && typeof item.document.text === "string"
-      ? item.document.text
-      : typeof item.document === "string"
-        ? item.document
-        : undefined;
+  let text: string | undefined;
+
+  if (isRecord(item.document) && typeof item.document.text === "string") {
+    text = item.document.text;
+  } else if (typeof item.document === "string") {
+    text = item.document;
+  }
+
   const result: StudioKnowledgeItem = {
     id: item.id,
     kind: "dynamic_context",
   };
+
   if (text === undefined) result.document = toJsonValue(item.document);
   else result.text = text;
+
   if (item.metadata !== undefined) result.metadata = jsonObjectFromRecord(item.metadata);
+
   return result;
 }
 
@@ -345,12 +390,14 @@ function dynamicToolItem(item: {
 }): StudioKnowledgeItem {
   const document = isRecord(item.document) ? item.document : {};
   const definition = isRecord(document.definition) ? document.definition : {};
-  const toolName =
-    typeof document.toolName === "string"
-      ? document.toolName
-      : typeof definition.name === "string"
-        ? definition.name
-        : item.id;
+  let toolName = item.id;
+
+  if (typeof document.toolName === "string") {
+    toolName = document.toolName;
+  } else if (typeof definition.name === "string") {
+    toolName = definition.name;
+  }
+
   const description = typeof definition.description === "string" ? definition.description : "";
   const result: StudioKnowledgeItem = {
     id: item.id,
@@ -360,7 +407,9 @@ function dynamicToolItem(item: {
     parameterKeys: parameterKeys(definition.parameters),
     document: toJsonValue(item.document),
   };
+
   if (item.metadata !== undefined) result.metadata = jsonObjectFromRecord(item.metadata);
+
   return result;
 }
 
@@ -368,6 +417,7 @@ function parameterKeys(parameters: unknown): string[] {
   if (!isRecord(parameters) || !isRecord(parameters.properties)) {
     return [];
   }
+
   return Object.keys(parameters.properties);
 }
 
@@ -388,9 +438,11 @@ function dynamicSourceIndex(
   kind: "dynamic_context" | "dynamic_tools",
 ): number | undefined {
   const prefix = kind === "dynamic_context" ? "dynamic-context-" : "dynamic-tools-";
+
   if (!sourceId.startsWith(prefix)) {
     return undefined;
   }
+
   const index = Number(sourceId.slice(prefix.length));
   return Number.isInteger(index) && index >= 0 ? index : undefined;
 }
@@ -405,9 +457,11 @@ async function recentKnowledgeEvidence(
 
   const store = traceStore;
   const listTraces = store.listTraces;
+
   if (listTraces === undefined) {
     return [];
   }
+
   const summaries = await listTraces.call(store, { limit });
   const traces = await Promise.all(
     summaries.map((summary) => Promise.resolve(store.getTrace(summary.id)).catch(() => undefined)),
@@ -429,6 +483,7 @@ function evidenceFromTrace(trace: StudioTrace): StudioKnowledgeEvidence[] {
     const tools = Array.isArray(observation.input.tools)
       ? observation.input.tools.flatMap((tool) => evidenceToolName(tool))
       : [];
+
     if (documents.length === 0 && tools.length === 0) {
       return [];
     }
@@ -447,14 +502,18 @@ function evidenceFromTrace(trace: StudioTrace): StudioKnowledgeEvidence[] {
       documents,
       tools,
     };
+
     if (query !== undefined) evidence.query = query;
+
     if (matches !== undefined) evidence.matches = matches;
+
     return [evidence];
   });
 }
 
 function queryFromGenerationInput(value: Record<string, unknown>): string | undefined {
   const promptText = messageText(value.prompt);
+
   if (promptText.length > 0) {
     return promptText;
   }
@@ -462,6 +521,7 @@ function queryFromGenerationInput(value: Record<string, unknown>): string | unde
   if (Array.isArray(value.chatHistory)) {
     for (let index = value.chatHistory.length - 1; index >= 0; index -= 1) {
       const text = messageText(value.chatHistory[index]);
+
       if (text.length > 0) {
         return text;
       }
@@ -471,6 +531,7 @@ function queryFromGenerationInput(value: Record<string, unknown>): string | unde
   if (Array.isArray(value.history)) {
     for (let index = value.history.length - 1; index >= 0; index -= 1) {
       const text = messageText(value.history[index]);
+
       if (text.length > 0) {
         return text;
       }
@@ -484,18 +545,23 @@ function messageText(value: unknown): string {
   if (typeof value === "string") {
     return value.trim();
   }
+
   if (!isRecord(value)) {
     return "";
   }
+
   if (typeof value.text === "string") {
     return value.text.trim();
   }
+
   if (typeof value.content === "string") {
     return value.content.trim();
   }
+
   if (Array.isArray(value.content)) {
     return value.content.map(contentText).filter(Boolean).join("\n").trim();
   }
+
   return "";
 }
 
@@ -503,12 +569,15 @@ function contentText(value: unknown): string {
   if (typeof value === "string") {
     return value.trim();
   }
+
   if (!isRecord(value)) {
     return "";
   }
+
   if (typeof value.text === "string") {
     return value.text.trim();
   }
+
   return "";
 }
 
@@ -516,18 +585,25 @@ function evidenceDocument(value: unknown): StudioKnowledgeEvidenceDocument[] {
   if (!isRecord(value)) {
     return [];
   }
+
   const id = typeof value.id === "string" ? value.id : undefined;
   const text = typeof value.text === "string" ? value.text : undefined;
   const additionalProps = isRecord(value.additionalProps)
     ? jsonObjectFromRecord(value.additionalProps)
     : undefined;
+
   if (id === undefined && text === undefined && additionalProps === undefined) {
     return [];
   }
+
   const document: StudioKnowledgeEvidenceDocument = {};
+
   if (id !== undefined) document.id = id;
+
   if (text !== undefined) document.text = text;
+
   if (additionalProps !== undefined) document.additionalProps = additionalProps;
+
   return [document];
 }
 
@@ -535,12 +611,17 @@ function toolMatchesFromMetadata(
   metadata: Record<string, JsonValue | unknown> | undefined,
 ): StudioKnowledgeEvidenceMatch[] | undefined {
   if (metadata === undefined || !Array.isArray(metadata.toolMatches)) return undefined;
+
   const matches: StudioKnowledgeEvidenceMatch[] = [];
   for (const item of metadata.toolMatches) {
     if (!isRecord(item) || typeof item.toolName !== "string") continue;
+
     const match: StudioKnowledgeEvidenceMatch = { toolName: item.toolName };
+
     if (typeof item.index === "number") match.index = item.index;
+
     if (typeof item.score === "number") match.score = item.score;
+
     matches.push(match);
   }
   return matches.length === 0 ? undefined : matches;
@@ -550,6 +631,7 @@ function evidenceToolName(value: unknown): string[] {
   if (!isRecord(value) || typeof value.name !== "string") {
     return [];
   }
+
   return [value.name];
 }
 

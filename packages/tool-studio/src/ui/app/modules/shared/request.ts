@@ -11,10 +11,14 @@ export async function requestJson<T>(
     ...init,
     cache,
   };
+
   if (signal !== undefined) request.signal = signal;
+
   const response = await fetch(url, request);
+
   if (!response.ok) {
     throw new Error(await responseErrorMessage(response, label));
   }
+
   return (await response.json()) as T;
 }

@@ -35,11 +35,15 @@ Environment:
 
 function integer(name: string): number | undefined {
   const raw = process.env[name];
+
   if (raw === undefined || raw === "") return undefined;
+
   const value = Number(raw);
+
   if (!Number.isSafeInteger(value) || value < 0) {
     throw new Error(`${name} must be a non-negative integer.`);
   }
+
   return value;
 }
 
@@ -49,7 +53,9 @@ async function check(): Promise<void> {
     terminal: process.env.ANVIA_SANDBOX_TERMINAL === "0" ? false : {},
   };
   const desktop = desktopOptionsFromEnv(process.env);
+
   if (desktop !== undefined) options.desktop = desktop;
+
   const result = await checkDaemon(
     options,
     path.resolve(process.env.ANVIA_SANDBOX_WORKDIR ?? process.cwd()),
@@ -61,6 +67,7 @@ async function check(): Promise<void> {
   ];
   for (const name of result.missing) lines.push(`missing: ${name} is required but not available`);
   process.stdout.write(`${lines.join("\n")}\n`);
+
   if (result.missing.length > 0) process.exitCode = 1;
 }
 
@@ -69,6 +76,7 @@ function main(): void {
     process.stdout.write(usage);
     return;
   }
+
   if (process.argv.includes("--check")) {
     check().catch((error: unknown) => {
       process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
@@ -76,8 +84,10 @@ function main(): void {
     });
     return;
   }
+
   const controlUrl = process.env.ANVIA_CONTROL_URL;
   const token = process.env.ANVIA_SANDBOX_TOKEN;
+
   if (!controlUrl || !token) {
     process.stderr.write(`ANVIA_CONTROL_URL and ANVIA_SANDBOX_TOKEN are required.\n\n${usage}`);
     process.exitCode = 2;
@@ -103,7 +113,9 @@ function main(): void {
       process.stderr.write(`[anvia-sandbox-daemon] ${level}: ${message}\n`),
   };
   const desktop = desktopOptionsFromEnv(process.env);
+
   if (desktop !== undefined) options.desktop = desktop;
+
   const daemon = new SandboxDaemon(options);
   daemon.start();
 
@@ -111,6 +123,7 @@ function main(): void {
   for (const signal of ["SIGINT", "SIGTERM"] as const) {
     process.on(signal, () => {
       if (stopping) return;
+
       stopping = true;
       void daemon.stop().finally(() => process.exit(0));
     });

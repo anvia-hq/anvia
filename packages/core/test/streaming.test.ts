@@ -56,9 +56,11 @@ class StreamingQueueModel implements StreamingCompletionModel {
   async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionModelStreamEvent> {
     this.requests.push(request);
     const response = this.responses.shift();
+
     if (response === undefined) {
       throw new Error("No queued response");
     }
+
     for await (const event of response) {
       yield event;
     }
@@ -1168,9 +1170,11 @@ describe("Agent streaming", () => {
     });
     const finalEvent = events.at(-1);
     expect(finalEvent?.type).toBe("response");
+
     if (finalEvent?.type !== "response") {
       throw new Error("Expected a response event");
     }
+
     const assistantMessage = finalEvent.messages.at(-1);
     expect(assistantMessage && getAssistantGenerationMetadata(assistantMessage)).toEqual({
       provider: "test",
@@ -1264,6 +1268,7 @@ describe("Agent streaming", () => {
       interaction: { type: "tool-approval", toolName: "guarded", input: { value: 7 } },
     });
     expect(executed).toBe(false);
+
     if (pending?.type !== "interaction") {
       throw new Error("Expected interaction event");
     }
@@ -1315,9 +1320,11 @@ describe("Agent streaming", () => {
     const receipt = stream.steer({ prompt: "Prioritize this." });
     const rest = await collectIterator(iterator);
     const pending = rest.at(-1);
+
     if (pending?.type !== "interaction") {
       throw new Error("Expected interaction event");
     }
+
     expect(() => stream.steer({ prompt: "too late" })).toThrow(AgentStreamClosedError);
 
     const resumed = await collect(
@@ -1615,9 +1622,11 @@ describe("Agent streaming", () => {
       rejectAfter<IteratorResult<AgentStreamEvent>>(100, "Timed out waiting for fast tool result"),
     ]);
     expect(firstToolResult.done).toBe(false);
+
     if (firstToolResult.done) {
       throw new Error("Expected a tool result event");
     }
+
     expect(firstToolResult.value).toMatchObject({
       type: "tool_result",
       toolName: "fast_tool",
@@ -2264,8 +2273,10 @@ describe("Agent streaming", () => {
           return {
             async next() {
               nextCalls++;
+
               if (nextCalls === 1)
                 return { done: false, value: { type: "text_delta", delta: "one" } };
+
               return new Promise<IteratorResult<{ type: string; delta: string }>>(
                 (resolve, fail) => {
                   settle = () =>
@@ -2328,9 +2339,11 @@ async function collectIterator<T>(iterator: AsyncIterator<T>): Promise<T[]> {
   const result: T[] = [];
   while (true) {
     const next = await iterator.next();
+
     if (next.done) {
       return result;
     }
+
     result.push(next.value);
   }
 }
@@ -2338,9 +2351,11 @@ async function collectIterator<T>(iterator: AsyncIterator<T>): Promise<T[]> {
 async function nextEvent<T>(iterator: AsyncIterator<T>): Promise<T> {
   const next = await iterator.next();
   expect(next.done).toBe(false);
+
   if (next.done) {
     throw new Error("Expected another stream event");
   }
+
   return next.value;
 }
 
@@ -2349,6 +2364,7 @@ async function nextAgentError(
 ): Promise<Extract<AgentStreamEvent, { type: "error" }>> {
   while (true) {
     const event = await nextEvent(iterator);
+
     if (event.type === "error") {
       return event;
     }
@@ -2427,9 +2443,11 @@ async function readAll(readable: ReadableStream<Uint8Array>): Promise<string> {
   let text = "";
   while (true) {
     const result = await reader.read();
+
     if (result.done) {
       return text;
     }
+
     text += decoder.decode(result.value, { stream: true });
   }
 }

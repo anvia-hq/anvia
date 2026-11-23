@@ -9,6 +9,7 @@ describe("Mistral embedding models", () => {
         embeddings: {
           create: async (params: { inputs: string[] }) => {
             calls.push(params);
+
             if (params.inputs.length === 2) {
               return {
                 data: [
@@ -17,6 +18,7 @@ describe("Mistral embedding models", () => {
                 ],
               };
             }
+
             return {
               data: [{ index: 0, embedding: [params.inputs[0]?.length ?? 0, 0] }],
             };

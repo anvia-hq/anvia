@@ -62,6 +62,7 @@ export function McpsPage(props: {
       setSelectedToolKey("");
       return;
     }
+
     if (!runnableTools.some((tool) => tool.key === selectedToolKey)) {
       setSelectedToolKey(runnableTools[0]?.key ?? "");
     }
@@ -69,9 +70,11 @@ export function McpsPage(props: {
 
   useEffect(() => {
     const nextSelectedToolKey = selectedTool?.key ?? "";
+
     if (lastSelectedToolKeyRef.current === nextSelectedToolKey) {
       return;
     }
+
     lastSelectedToolKeyRef.current = nextSelectedToolKey;
     runRequestIdRef.current += 1;
     setArgsText("{}");
@@ -84,6 +87,7 @@ export function McpsPage(props: {
     if (selectedTool === undefined) {
       return;
     }
+
     let args: unknown;
     try {
       args = JSON.parse(argsText);
@@ -115,15 +119,20 @@ export function McpsPage(props: {
         },
       );
       const rawBody = await response.json();
+
       if (!isCurrentRun()) {
         return;
       }
+
       const body = parseStudioToolRunResponse(rawBody);
+
       if (body === undefined) {
         setRunError(`Unexpected Studio tool run response: ${formatJson(rawBody)}`);
         return;
       }
+
       setRunResponse(body);
+
       if (!response.ok || body.status === "error") {
         setRunError(formatJson(body.error ?? body));
       }
@@ -136,6 +145,51 @@ export function McpsPage(props: {
         setRunState("idle");
       }
     }
+  }
+
+  function renderContent() {
+    if (!props.enabled) {
+      return (
+        <StudioEmptyState
+          title="MCPs unavailable"
+          text="No registered Studio agent exposes MCP tools."
+        />
+      );
+    }
+
+    if (props.loading) {
+      return <StudioEmptyState title="Loading MCPs" text="Reading registered MCP metadata." />;
+    }
+
+    if (servers.length === 0) {
+      return (
+        <StudioEmptyState title="No MCPs" text="The selected agent has no registered MCP tools." />
+      );
+    }
+
+    return (
+      <div className="grid w-full gap-5">
+        {servers.map((server) => (
+          <McpServerSection
+            selectedToolKey={selectedTool?.key ?? ""}
+            server={server}
+            key={server.name}
+            onSelectTool={setSelectedToolKey}
+          />
+        ))}
+        {runnableTools.length === 0 ? null : (
+          <ToolRunner
+            argsText={argsText}
+            runError={runError}
+            runResponse={runResponse}
+            runState={runState}
+            selectedTool={selectedTool}
+            onArgsTextChange={setArgsText}
+            onRun={() => void runSelectedTool()}
+          />
+        )}
+      </div>
+    );
   }
 
   return (
@@ -165,43 +219,7 @@ export function McpsPage(props: {
         }
       />
 
-      <StudioPageContent className="overflow-auto">
-        {!props.enabled ? (
-          <StudioEmptyState
-            title="MCPs unavailable"
-            text="No registered Studio agent exposes MCP tools."
-          />
-        ) : props.loading ? (
-          <StudioEmptyState title="Loading MCPs" text="Reading registered MCP metadata." />
-        ) : servers.length === 0 ? (
-          <StudioEmptyState
-            title="No MCPs"
-            text="The selected agent has no registered MCP tools."
-          />
-        ) : (
-          <div className="grid w-full gap-5">
-            {servers.map((server) => (
-              <McpServerSection
-                selectedToolKey={selectedTool?.key ?? ""}
-                server={server}
-                key={server.name}
-                onSelectTool={setSelectedToolKey}
-              />
-            ))}
-            {runnableTools.length === 0 ? null : (
-              <ToolRunner
-                argsText={argsText}
-                runError={runError}
-                runResponse={runResponse}
-                runState={runState}
-                selectedTool={selectedTool}
-                onArgsTextChange={setArgsText}
-                onRun={() => void runSelectedTool()}
-              />
-            )}
-          </div>
-        )}
-      </StudioPageContent>
+      <StudioPageContent className="overflow-auto">{renderContent()}</StudioPageContent>
     </StudioPageShell>
   );
 }

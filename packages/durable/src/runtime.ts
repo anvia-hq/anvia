@@ -174,20 +174,25 @@ export class DurableRuntime implements DurableSubmitClient {
 
   static async open(options: DurableRuntimeOptions): Promise<DurableRuntime> {
     const maxConcurrentRuns = options.maxConcurrentRuns ?? 4;
+
     if (
       !Number.isSafeInteger(maxConcurrentRuns) ||
       maxConcurrentRuns < 1 ||
       maxConcurrentRuns > 1000
     )
       throw new TypeError("maxConcurrentRuns must be an integer between 1 and 1000.");
+
     const maxConcurrentTasks = options.maxConcurrentTasks ?? 4;
+
     if (
       !Number.isSafeInteger(maxConcurrentTasks) ||
       maxConcurrentTasks < 1 ||
       maxConcurrentTasks > 1000
     )
       throw new TypeError("maxConcurrentTasks must be an integer between 1 and 1000.");
+
     const pollIntervalMs = options.pollIntervalMs;
+
     if (
       pollIntervalMs !== undefined &&
       (!Number.isSafeInteger(pollIntervalMs) ||
@@ -195,12 +200,15 @@ export class DurableRuntime implements DurableSubmitClient {
         pollIntervalMs > 2_147_483_647)
     )
       throw new TypeError("pollIntervalMs must be a positive integer.");
+
     const definitions = new Map<string, RegisteredTask>();
     for (const { registration } of options.tasks ?? []) {
       if (registration.name === agentTask.name)
         throw new TypeError("Reserved task name: anvia.agent");
+
       if (definitions.has(registration.name))
         throw new TypeError(`Duplicate task definition: ${registration.name}`);
+
       definitions.set(registration.name, registration);
     }
     const worker = resolveWorker(options);
@@ -226,8 +234,11 @@ export class DurableRuntime implements DurableSubmitClient {
     }
     runtime.notifyCompatibility();
     const polling = pollIntervalMs ?? (worker === undefined ? undefined : 1000);
+
     if (polling !== undefined) runtime.startPolling(polling);
+
     if (worker !== undefined) runtime.startWorkerHeartbeat(worker);
+
     return runtime;
   }
 
@@ -269,8 +280,10 @@ export class DurableRuntime implements DurableSubmitClient {
   /** A typed handle for an agent already registered, for example through `open({ agents })`. */
   handle<Output>(agent: Agent<Output>): DurableAgentHandle<Output> {
     this.assertOpen();
+
     if (!this.agents.has(agent.id))
       throw new DurableNotFoundError(`Unknown durable agent: ${agent.id}`);
+
     return new DurableAgentHandle<Output>(agent.id, this);
   }
 
@@ -300,6 +313,7 @@ export class DurableRuntime implements DurableSubmitClient {
 
   private notifyCompatibility(): void {
     if (this.onCompatibility === undefined) return;
+
     // A host logging hook must never change whether open or registerAgents succeeds.
     try {
       void Promise.resolve(this.onCompatibility(compatibilityReport(this.agents))).catch(() => {});
@@ -314,9 +328,12 @@ export class DurableRuntime implements DurableSubmitClient {
   async unregisterAgent(id: string): Promise<boolean> {
     this.assertOpen();
     nonblank(id, "Agent ID");
+
     if (!this.agents.has(id)) return false;
+
     if ([...this.active.values()].some((run) => run.agentId === id))
       throw new DurableConflictError(`Agent still has an active attempt: ${id}`);
+
     // A shared worker only gives up claiming the agent: unfinished runs wait for a worker that
     // registers it, so they are not a reason to refuse. An owner would strand them.
     if (this.worker === undefined)
@@ -330,6 +347,7 @@ export class DurableRuntime implements DurableSubmitClient {
       ] as const)
         if ((await this.store.list({ agentId: id, status, limit: 1 })).runs.length)
           throw new DurableConflictError(`Agent still has unfinished work: ${id}`);
+
     return this.agents.delete(id);
   }
 
@@ -430,8 +448,10 @@ export class DurableRuntime implements DurableSubmitClient {
     this.assertOpen();
     const submission = parseSubmission(input, options);
     const registration = this.agents.get(input.agentId);
+
     if (registration === undefined)
       throw new DurableNotFoundError(`Unknown durable agent: ${input.agentId}`);
+
     // Fingerprinted before the transaction: server and index metadata is read asynchronously.
     const mcpServers = await mcpServersByAgent(this.agents, [input.agentId]);
     const toolIndexes = await toolIndexesByAgent(this.agents, [input.agentId]);
@@ -483,7 +503,9 @@ export class DurableRuntime implements DurableSubmitClient {
 
   async graphEvents(id: string, after: number) {
     this.assertOpen();
+
     if (!Number.isSafeInteger(after) || after < 0) throw new TypeError("Invalid event cursor.");
+
     return this.store.graphEvents(id, after, 100);
   }
 
@@ -509,12 +531,14 @@ export class DurableRuntime implements DurableSubmitClient {
   async resume(): Promise<void> {
     this.assertOpen();
     await this.pump();
+
     if (this.worker === undefined) await this.tasks.resume();
   }
 
   /** Abort in-flight attempts, retain checkpoints, and release ownership after callbacks settle. */
   close(): Promise<void> {
     if (this.closePromise !== undefined) return this.closePromise;
+
     this.closing = true;
     clearTimeout(this.wakeTimer);
     clearInterval(this.pollTimer);
@@ -552,8 +576,11 @@ export class DurableRuntime implements DurableSubmitClient {
     return this.store.transaction(async (tx) => {
       await requireRun(tx, id);
       const operation = await tx.getOperation(id, key);
+
       if (operation === undefined) throw new DurableNotFoundError("Durable operation not found.");
+
       if (operation.kind !== "model") throw new TypeError("Operation is not a model request.");
+
       return (await tx.blobs((io) =>
         hydrateValue(
           io,
@@ -614,7 +641,9 @@ export class DurableRuntime implements DurableSubmitClient {
 
   async retry(id: string): Promise<void> {
     this.assertOpen();
+
     if (this.active.has(id)) throw new DurableConflictError("Run is still settling.");
+
     // A run whose admission transaction rolled back has no committed history. Rebuild it from
     // the session before execution so a retry never runs with less context than the original
     // attempt; an over-limit history rejects the retry and leaves the run failed.
@@ -628,8 +657,10 @@ export class DurableRuntime implements DurableSubmitClient {
     this.assertOpen();
     const sessionId = await cancelRun(this.store, id);
     this.active.get(id)?.controller.abort(new Error("Durable run cancelled."));
+
     if (sessionId.startsWith(TASK_SESSION_PREFIX))
       await this.tasks.agentChanged(sessionId.slice(TASK_SESSION_PREFIX.length));
+
     await this.pump();
   }
 
@@ -642,9 +673,12 @@ export class DurableRuntime implements DurableSubmitClient {
 
   private async pumpOnce(): Promise<void> {
     if (this.closing || this.failure !== undefined) return;
+
     clearTimeout(this.wakeTimer);
     const capacity = this.maxConcurrentRuns - this.active.size;
+
     if (capacity <= 0) return;
+
     if (this.worker !== undefined) {
       let claims: DurableClaim[];
       try {
@@ -666,12 +700,14 @@ export class DurableRuntime implements DurableSubmitClient {
       for (const claim of claims) await this.launch(claim.runId, claim);
       return;
     }
+
     const candidates = await this.store.schedule(
       new Date().toISOString(),
       capacity,
       [...this.active.values()].map((active) => active.sessionId),
     );
     for (const id of candidates.ids) await this.launch(id);
+
     if (candidates.nextAttemptAt !== undefined) {
       this.wakeTimer = setTimeout(
         async () => {
@@ -691,26 +727,35 @@ export class DurableRuntime implements DurableSubmitClient {
 
   private async launch(id: string, claim?: DurableClaim): Promise<void> {
     if (this.active.has(id) || this.closing) return this.releaseClaim(claim);
+
     const { status, sessionId, agentId } = await this.run(id);
+
     if (this.closing || this.active.has(id)) return this.releaseClaim(claim);
+
     if (!["queued", "pending", "running", "retry_wait"].includes(status))
       return this.releaseClaim(claim);
+
     // The agent may have been unregistered between claiming and here. Leave the run for a worker
     // that registers it; there is no await between this check and `active.set` below.
     if (this.worker !== undefined && !this.agents.has(agentId)) return this.releaseClaim(claim);
+
     const controller = new AbortController();
     const fenced = <T>(fn: () => Promise<T>): Promise<T> =>
       claim === undefined ? fn() : claimContext.run({ runId: id, claimId: claim.claimId }, fn);
     const task = fenced(() => Promise.resolve().then(() => this.execute(id, controller.signal)))
       .catch(async (error: unknown) => {
         if (error instanceof DurableClaimLostError) return;
+
         if (!(error instanceof DurableLimitError)) throw error;
+
         // Admission failed, so no work is pending: settle terminally so result() and the
         // event stream end instead of waiting for an operator action that cannot help.
         await fenced(() =>
           this.store.transaction(async (tx) => {
             const run = await requireRun(tx, id);
+
             if (SETTLED.includes(run.status)) return;
+
             run.error = error.message;
             delete run.nextAttemptAt;
             await setStatus(tx, run, "failed");
@@ -720,16 +765,19 @@ export class DurableRuntime implements DurableSubmitClient {
       .finally(async () => {
         this.active.delete(id);
         await this.releaseClaim(claim);
+
         if (
           !this.closing &&
           this.failure === undefined &&
           sessionId.startsWith(TASK_SESSION_PREFIX)
         )
           await this.tasks.agentChanged(sessionId.slice(TASK_SESSION_PREFIX.length));
+
         if (!this.closing && this.failure === undefined) await this.pump();
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted || error instanceof DurableClaimLostError) return;
+
         this.fail(error);
       });
     this.active.set(id, { agentId, sessionId, controller, task, claim });
@@ -738,6 +786,7 @@ export class DurableRuntime implements DurableSubmitClient {
   /** Gives a claim back so another worker can take the run (or the session's next run) at once. */
   private async releaseClaim(claim: DurableClaim | undefined): Promise<void> {
     if (claim === undefined || this.failure !== undefined) return;
+
     try {
       await this.store.release!([{ runId: claim.runId, claimId: claim.claimId }]);
     } catch {
@@ -765,15 +814,19 @@ export class DurableRuntime implements DurableSubmitClient {
         : undefined;
     const run = await this.store.transaction(async (tx) => {
       let current = await requireRun(tx, id);
+
       if (!["queued", "pending", "running", "retry_wait"].includes(current.status))
         return undefined;
+
       if (current.unadmitted === true) {
         const registration = this.agents.get(current.agentId);
+
         if (registration === undefined || admission === undefined) {
           current.error = `Agent is not registered on this worker: ${current.agentId}`;
           await setStatus(tx, current, "failed");
           return undefined;
         }
+
         if (current.graphId !== undefined) {
           try {
             assertMemoryFreeTask(registration, current.agentId, "graph tasks");
@@ -783,6 +836,7 @@ export class DurableRuntime implements DurableSubmitClient {
             return undefined;
           }
         }
+
         current = await admitRunRecord(
           current,
           registration,
@@ -791,19 +845,25 @@ export class DurableRuntime implements DurableSubmitClient {
           admission.toolIndexes.get(current.agentId),
         );
       }
+
       if (current.status === "queued")
         await inheritSessionHistory(tx, current, this.recordsMemory(current.agentId));
+
       current.startedAt ??= new Date().toISOString();
       delete current.nextAttemptAt;
       delete current.error;
       await setStatus(tx, current, "running");
       return current;
     });
+
     if (run === undefined) return;
+
     if (run.sessionId.startsWith(TASK_SESSION_PREFIX))
       await this.tasks.agentChanged(run.sessionId.slice(TASK_SESSION_PREFIX.length));
+
     try {
       const registration = this.agents.get(run.agentId);
+
       if (registration === undefined || registration.version !== run.version) {
         throw new DurableRecoveryError(
           AUTO_VERSION_PATTERN.test(run.version)
@@ -811,11 +871,13 @@ export class DurableRuntime implements DurableSubmitClient {
             : "The saved agent version is not registered. Restore it before retrying.",
         );
       }
+
       verifyContextDocuments(run, registration);
       await verifyMcpServers(run, registration);
       await verifyToolIndexes(run, registration);
       verifyVectorContext(run, registration);
       const memory = recordedMemoryOf(registration);
+
       // A checkpoint from an earlier attempt means the model work is finished: only the memory
       // writes after it can remain, so the agent is not run again.
       if (run.outcome === undefined) {
@@ -863,25 +925,32 @@ export class DurableRuntime implements DurableSubmitClient {
         signal.throwIfAborted();
         await this.store.transaction(async (tx) => {
           const current = await requireRun(tx, id);
+
           // Settled elsewhere (cancelled by a client or another worker): never overwrite it.
           if (SETTLED.includes(current.status)) return;
+
           current.outcome = (await tx.blobs((io) =>
             externalizeOutcome(io, json({ ...outcome, usage: current.usage })),
           )) as AgentOutcome<unknown>;
+
           if (captured.length === 0) {
             await setStatus(tx, current, outcome.type === "interaction" ? "waiting" : "completed");
             return;
           }
+
           // The run stays running until its memory writes finish, so a crash here resumes them.
           await recordMemoryWrites(tx, current, captured);
           await tx.putRun(current);
         });
       }
+
       if (memory !== undefined) {
         await flushRecordedMemory({ store: this.store, run, source: memory.store, signal });
         await this.store.transaction(async (tx) => {
           const current = await requireRun(tx, id);
+
           if (current.status !== "running") return;
+
           await setStatus(
             tx,
             current,
@@ -892,18 +961,25 @@ export class DurableRuntime implements DurableSubmitClient {
     } catch (error) {
       if (error instanceof DurableStorageError || error instanceof DurableClaimLostError)
         throw error;
+
       if (signal.aborted) return;
+
       await this.store.transaction(async (tx) => {
         const current = await requireRun(tx, id);
+
         if (SETTLED.includes(current.status)) return;
+
         current.error = errorMessage(error);
+
         if (error instanceof MaxTurnsError)
           current.exhaustion = {
             reason: "max_turns",
             messages: await tx.blobs((io) => externalizeMessages(io, error.chatHistory)),
           };
+
         if (error instanceof DurableRecoveryError && error.operationId !== undefined)
           current.blockedOperation = error.operationId;
+
         if (
           error instanceof DurableModelError &&
           current.modelRetry !== undefined &&
@@ -933,14 +1009,18 @@ export class DurableRuntime implements DurableSubmitClient {
 
   /** Does not touch storage, so supervisors can inspect a failed owner. */
   health() {
+    let status: "closed" | "closing" | "failed" | "ready" = "ready";
+
+    if (this.closed) {
+      status = "closed";
+    } else if (this.closing) {
+      status = "closing";
+    } else if (this.failure !== undefined) {
+      status = "failed";
+    }
+
     return {
-      status: this.closed
-        ? ("closed" as const)
-        : this.closing
-          ? ("closing" as const)
-          : this.failure !== undefined
-            ? ("failed" as const)
-            : ("ready" as const),
+      status,
       ready: !this.closing && this.failure === undefined,
       activeRuns: this.active.size,
       activeTasks: this.tasks.activeCount,
@@ -955,6 +1035,7 @@ export class DurableRuntime implements DurableSubmitClient {
   private startPolling(intervalMs: number): void {
     this.pollTimer = setInterval(() => {
       if (this.polling || this.closing || this.failure !== undefined) return;
+
       this.polling = true;
       void this.poll()
         .catch((error: unknown) => {
@@ -970,10 +1051,14 @@ export class DurableRuntime implements DurableSubmitClient {
   private async poll(): Promise<void> {
     for (const [id, active] of this.active) {
       if (active.controller.signal.aborted) continue;
+
       const { status } = await this.status(id);
+
       if (status === "cancelled") active.controller.abort(new Error("Durable run cancelled."));
     }
+
     if (this.worker !== undefined) await this.tasks.poll();
+
     await this.pump();
   }
 
@@ -981,6 +1066,7 @@ export class DurableRuntime implements DurableSubmitClient {
   private startWorkerHeartbeat(worker: ResolvedWorker): void {
     this.workerTimer = setInterval(() => {
       if (this.renewing || this.closing || this.failure !== undefined) return;
+
       this.renewing = true;
       void this.renewClaims(worker)
         .catch(() => {
@@ -1002,10 +1088,12 @@ export class DurableRuntime implements DurableSubmitClient {
       ),
       ...this.tasks.heldClaims(),
     ];
+
     if (held.length === 0) {
       this.lastRenewAt = Date.now();
       return;
     }
+
     const { lost } = await this.store.renew!({
       workerId: worker.workerId,
       claims: held.map((claim) => ({ runId: claim.runId, claimId: claim.claimId })),
@@ -1014,8 +1102,10 @@ export class DurableRuntime implements DurableSubmitClient {
     this.lastRenewAt = Date.now();
     for (const id of lost) {
       const active = this.active.get(id);
+
       if (active?.claim !== undefined)
         active.controller.abort(new DurableClaimLostError(id, active.claim.claimId));
+
       this.tasks.lose(id);
     }
   }
@@ -1029,6 +1119,7 @@ export class DurableRuntime implements DurableSubmitClient {
 
   private fail(error: unknown): void {
     if (this.failure !== undefined) return;
+
     this.failure = error;
     clearTimeout(this.wakeTimer);
     clearInterval(this.pollTimer);
@@ -1043,6 +1134,7 @@ export class DurableRuntime implements DurableSubmitClient {
 
   private assertOpen(): void {
     if (this.closing) throw new Error("Durable runtime is closed.");
+
     if (this.failure !== undefined) throw this.failure;
   }
 }
@@ -1057,6 +1149,7 @@ function verifyContextDocuments(
 ): void {
   const current = contextDocumentsOf(registration.agent);
   const expected = run.contextDocuments?.hash;
+
   if (expected !== current?.hash)
     throw new DurableRecoveryError(
       `Context documents changed for durable agent "${run.agentId}": the run recorded hash ${expected ?? "none"}, but the registration now resolves ${current?.hash ?? "none"}. Restore the original documents, or bump the registration version.`,
@@ -1073,6 +1166,7 @@ async function verifyMcpServers(
 ): Promise<void> {
   const current = await mcpServersOf(registration.agent);
   const expected = run.mcpServers?.hash;
+
   if (expected !== current?.hash)
     throw new DurableRecoveryError(
       `MCP servers changed for durable agent "${run.agentId}": the run recorded fingerprint ${expected ?? "none"}, but the registration now resolves ${current?.hash ?? "none"}. Restore the original servers and tool lists, or bump the registration version.`,
@@ -1090,6 +1184,7 @@ async function verifyToolIndexes(
 ): Promise<void> {
   const current = await toolIndexesOf(registration.agent);
   const expected = run.toolIndexes?.hash;
+
   if (expected !== current?.hash)
     throw new DurableRecoveryError(
       `Tool indexes changed for durable agent "${run.agentId}": the run recorded fingerprint ${expected ?? "none"}, but the registration now resolves ${current?.hash ?? "none"}. Restore the original tool indexes, or bump the registration version.`,
@@ -1105,6 +1200,7 @@ function verifyVectorContext(run: DurableRunRecord, registration: DurableAgentRe
   const current =
     registration.context === undefined ? undefined : vectorContextOf(registration.agent);
   const expected = run.vectorContext?.hash;
+
   if (expected !== current?.hash)
     throw new DurableRecoveryError(
       `Vector context changed for durable agent "${run.agentId}": the run recorded fingerprint ${expected ?? "none"}, but the registration now resolves ${current?.hash ?? "none"}. Restore the original vector context, or bump the registration version.`,
@@ -1128,23 +1224,29 @@ async function inheritSessionHistory(
     run.input = { messages: [promptMessage(await graphInput(tx, run))] };
     return;
   }
+
   // Recorded memory holds the session's conversation; copying the previous run in would repeat it.
   if (recordsMemory) {
     run.history = [];
     run.input = { messages: [promptMessage(run.prompt)] };
     return;
   }
+
   const previous =
     run.continueFrom === undefined
       ? await tx.latestCompleted(run.sessionId)
       : await requireRun(tx, run.continueFrom);
-  run.history =
-    previous === undefined
-      ? []
-      : previous.status === "completed"
-        ? [...previous.history, ...(previous.outcome?.messages ?? [])]
-        : await settledHistory(tx, previous);
+
+  if (previous === undefined) {
+    run.history = [];
+  } else if (previous.status === "completed") {
+    run.history = [...previous.history, ...(previous.outcome?.messages ?? [])];
+  } else {
+    run.history = await settledHistory(tx, previous);
+  }
+
   if (previous?.contextCheckpoint !== undefined) run.contextCheckpoint = previous.contextCheckpoint;
+
   run.input = { messages: [...run.history, promptMessage(run.prompt)] };
 }
 
@@ -1152,8 +1254,11 @@ type ResolvedWorker = { workerId: string; leaseMs: number; heartbeatMs: number }
 
 function resolveWorker(options: DurableRuntimeOptions): ResolvedWorker | undefined {
   const worker = options.worker;
+
   if (worker === undefined) return undefined;
+
   const store = options.store;
+
   if (
     store.join === undefined ||
     store.claim === undefined ||
@@ -1163,6 +1268,7 @@ function resolveWorker(options: DurableRuntimeOptions): ResolvedWorker | undefin
     throw new TypeError(
       "This store does not support shared workers. Use a single owning runtime, or a Postgres, Drizzle, or Prisma store.",
     );
+
   const workerId = worker.workerId ?? `worker-${globalThis.crypto.randomUUID()}`;
   nonblank(workerId, "workerId");
   const leaseMs = worker.leaseMs ?? 30_000;

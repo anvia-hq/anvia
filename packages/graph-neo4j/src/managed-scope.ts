@@ -20,6 +20,7 @@ export function managedScopePredicate(
   prefix: " WHERE" | " AND" | "WHERE" | "AND",
 ): string {
   if (scope === undefined) return "";
+
   return `${prefix} ${variable}.${quoteIdentifier("__anvia_graph")} = $graph${namespacePredicate(scope, variable, " AND")}`;
 }
 
@@ -46,6 +47,7 @@ export function managedPathPredicate(
   relationships: boolean,
 ): string {
   if (scope === undefined) return "";
+
   const item = `item.${quoteIdentifier("__anvia_graph")} = $graph${namespacePredicate(scope, "item", " AND")}`;
   const nodes = ` AND all(item IN nodes(path) WHERE ${item})`;
   return relationships ? `${nodes}\n  AND all(item IN relationships(path) WHERE ${item})` : nodes;

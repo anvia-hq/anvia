@@ -16,11 +16,13 @@ export function registerTraceRoutes(app: Hono, traceStore: StudioTraceStore): vo
     }
 
     const limit = parseLimit(c.req.query("limit"));
+
     if (limit === undefined) {
       return errorResponse(c, 400, "bad_request", "limit must be a positive integer");
     }
 
     const status = parseTraceStatus(c.req.query("status"));
+
     if (status === false) {
       return errorResponse(c, 400, "bad_request", "status must be running, success, or error");
     }
@@ -28,24 +30,32 @@ export function registerTraceRoutes(app: Hono, traceStore: StudioTraceStore): vo
     const agentId = optionalQueryString(c.req.query("agentId"));
     const sessionId = optionalQueryString(c.req.query("sessionId"));
     const input: Parameters<NonNullable<typeof traceStore.listTraces>>[0] = { limit };
+
     if (agentId !== undefined) input.agentId = agentId;
+
     if (sessionId !== undefined) input.sessionId = sessionId;
+
     if (status !== undefined) input.status = status;
+
     const traces = await traceStore.listTraces(input);
+
     if (c.req.query("include") === "detail") {
       const detailed = await Promise.all(
         traces.map((trace) => Promise.resolve(traceStore.getTrace(trace.id))),
       );
       return c.json({ traces: detailed.filter((trace) => trace !== undefined) });
     }
+
     return c.json({ traces });
   });
 
   app.get("/traces/:traceId", async (c) => {
     const trace = await traceStore.getTrace(c.req.param("traceId"));
+
     if (trace === undefined) {
       return errorResponse(c, 404, "not_found", "Trace not found");
     }
+
     return c.json(trace);
   });
 }

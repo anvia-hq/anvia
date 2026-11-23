@@ -84,5 +84,6 @@ export class QdrantTenant {
 function tenantNamespace(tenantId: string): string {
   if (typeof tenantId !== "string" || tenantId.trim().length === 0)
     throw new TypeError("Qdrant tenant id must be a non-empty string.");
+
   return createHash("sha256").update(tenantId).digest("hex");
 }

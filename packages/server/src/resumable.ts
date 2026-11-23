@@ -22,9 +22,11 @@ export class InvalidResumableAfterError extends RangeError {
 
 export function parseResumableAfter(value: unknown): number {
   if (value === undefined) return 0;
+
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
     throw new InvalidResumableAfterError(value);
   }
+
   return value;
 }
 
@@ -123,6 +125,7 @@ export function createMemoryResumableStreamStore<TEvent = unknown>(
       if (stream.status === "running" || stream.closedAt === undefined) {
         continue;
       }
+
       if (now - stream.closedAt >= closedStreamTtlMs) {
         streams.delete(streamId);
       }
@@ -134,9 +137,11 @@ export function createMemoryResumableStreamStore<TEvent = unknown>(
         closed.push({ streamId, closedAt: stream.closedAt });
       }
     }
+
     if (closed.length <= maxClosedStreams) {
       return;
     }
+
     closed.sort((a, b) => a.closedAt - b.closedAt);
     for (const entry of closed.slice(0, closed.length - maxClosedStreams)) {
       streams.delete(entry.streamId);
@@ -147,6 +152,7 @@ export function createMemoryResumableStreamStore<TEvent = unknown>(
     if (stream === undefined) {
       return { status: "missing", lastEventId: 0 };
     }
+
     return {
       status: stream.status,
       lastEventId: stream.records.at(-1)?.eventId ?? 0,
@@ -157,10 +163,12 @@ export function createMemoryResumableStreamStore<TEvent = unknown>(
     async open(input) {
       evictClosedStreams();
       const existing = streams.get(input.streamId);
+
       if (existing !== undefined) {
         if (existing.status === "running") {
           throw new Error(`Resumable stream "${input.streamId}" is already running`);
         }
+
         closeSubscribers(existing);
       }
 
@@ -175,9 +183,11 @@ export function createMemoryResumableStreamStore<TEvent = unknown>(
 
     async append(input) {
       const stream = streams.get(input.streamId);
+
       if (stream === undefined) {
         throw new Error(`Resumable stream "${input.streamId}" is not open`);
       }
+
       if (stream.status !== "running") {
         throw new Error(`Resumable stream "${input.streamId}" is already ${stream.status}`);
       }
@@ -206,6 +216,7 @@ export function createMemoryResumableStreamStore<TEvent = unknown>(
         [Symbol.asyncIterator](): AsyncIterator<ResumableStreamRecord<TEvent>> {
           const stream = streams.get(input.streamId);
           const queue = createAsyncQueue<ResumableStreamRecord<TEvent>>();
+
           if (stream === undefined) {
             queue.close();
             return queue[Symbol.asyncIterator]();
@@ -245,9 +256,11 @@ export function createMemoryResumableStreamStore<TEvent = unknown>(
 
     async close(input) {
       const stream = streams.get(input.streamId);
+
       if (stream === undefined) {
         return { status: input.status, lastEventId: 0 };
       }
+
       stream.status = input.status;
       stream.closedAt = Date.now();
       closeSubscribers(stream);
@@ -344,9 +357,11 @@ function createAsyncQueue<T>(): AsyncQueue<T> {
 
     while (waiters.length > 0) {
       const waiter = waiters.shift();
+
       if (waiter === undefined) {
         continue;
       }
+
       if (error !== undefined) {
         waiter.reject(error);
       } else {
@@ -360,6 +375,7 @@ function createAsyncQueue<T>(): AsyncQueue<T> {
       if (closed) {
         return;
       }
+
       values.push(value);
       flush();
     },
@@ -379,12 +395,15 @@ function createAsyncQueue<T>(): AsyncQueue<T> {
             const value = values.shift() as T;
             return Promise.resolve({ value, done: false });
           }
+
           if (error !== undefined) {
             return Promise.reject(error);
           }
+
           if (closed) {
             return Promise.resolve({ value: undefined, done: true });
           }
+
           return new Promise((resolve, reject) => {
             waiters.push({ resolve, reject });
           });

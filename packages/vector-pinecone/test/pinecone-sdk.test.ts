@@ -20,16 +20,22 @@ it("provisions and uses a vector index through the real SDK with mocked HTTP", a
     const path = new URL(request.url).pathname;
     const body = request.method === "POST" ? await request.json() : {};
     requests.push({ path, body });
+
     if (path === "/indexes" && request.method === "GET") {
       return Response.json({ indexes: created ? [index] : [] });
     }
+
     if (path === "/indexes" && request.method === "POST") {
       created = true;
       return Response.json(index, { status: 201 });
     }
+
     if (path === "/indexes/sdk-compat") return Response.json(index);
+
     if (path === "/vectors/delete") return Response.json({});
+
     if (path === "/vectors/upsert") return Response.json({ upsertedCount: 1 });
+
     if (path === "/query") {
       return Response.json({
         matches: [
@@ -41,6 +47,7 @@ it("provisions and uses a vector index through the real SDK with mocked HTTP", a
         ],
       });
     }
+
     throw new Error(`Unexpected SDK request: ${request.method} ${path}`);
   });
   vi.stubGlobal("fetch", fetch);

@@ -33,8 +33,11 @@ export function originAllowed(
   allowedOrigins: readonly string[] | undefined,
 ): boolean {
   const origin = request.headers.origin;
+
   if (origin === undefined) return true;
+
   if (allowedOrigins !== undefined) return allowedOrigins.includes(origin);
+
   try {
     return new URL(origin).host === request.headers.host;
   } catch {
@@ -47,6 +50,7 @@ export function rejectUpgrade(socket: Duplex, status: number, message: string): 
   if (socket.writable) {
     socket.write(`HTTP/1.1 ${status} ${message}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
   }
+
   socket.destroy();
 }
 
@@ -63,6 +67,7 @@ export function keepAlive(ws: WebSocket): () => void {
       ws.terminate();
       return;
     }
+
     alive = false;
     ws.ping();
   }, pingIntervalMs);
@@ -108,10 +113,15 @@ export function handleBrowserUpgrade<Grant>(
   route: BrowserRoute<Grant>,
 ): void {
   socket.on("error", () => undefined);
+
   if (route.isClosed()) return rejectUpgrade(socket, 503, "Service Unavailable");
+
   const { authorize } = route;
+
   if (authorize === undefined) return rejectUpgrade(socket, 404, "Not Found");
+
   if (!originAllowed(request, route.allowedOrigins)) return rejectUpgrade(socket, 403, "Forbidden");
+
   void (async () => {
     let grant: Grant | null | undefined;
     try {
@@ -119,10 +129,13 @@ export function handleBrowserUpgrade<Grant>(
     } catch {
       return rejectUpgrade(socket, 500, "Internal Server Error");
     }
+
     if (grant === null || grant === undefined || !route.valid(grant)) {
       return rejectUpgrade(socket, 401, "Unauthorized");
     }
+
     if (route.isClosed() || socket.destroyed) return socket.destroy();
+
     const granted = grant;
     route.server.handleUpgrade(request, socket, head, (ws) => route.onSocket(ws, granted));
   })();

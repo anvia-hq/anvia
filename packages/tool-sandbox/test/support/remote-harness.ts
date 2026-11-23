@@ -64,7 +64,9 @@ export async function createRemoteHarness(
       reconnect: { initialDelayMs: 25, maxDelayMs: 100 },
       onLog: (level, message) => logs.push(`${level}: ${message}`),
     };
+
     if (options.limits !== undefined) daemonOptions = { ...daemonOptions, limits: options.limits };
+
     const daemon = new SandboxDaemon({ ...daemonOptions, ...options.daemon, ...overrides });
     daemons.push(daemon);
     daemon.start();
@@ -72,6 +74,7 @@ export async function createRemoteHarness(
   };
 
   const daemon = startDaemon();
+
   if (options.connect !== false) await daemon.ready();
 
   return {
@@ -101,6 +104,7 @@ export async function eventually<T>(
   while (Date.now() < deadline) {
     try {
       const value = await check();
+
       if (value) return value as NonNullable<T>;
     } catch (error) {
       lastError = error;

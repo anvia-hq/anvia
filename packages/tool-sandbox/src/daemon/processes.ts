@@ -54,10 +54,13 @@ export class LocalProcessManager {
     abortSignal?: AbortSignal,
   ): Promise<SandboxProcessInfo> {
     abortSignal?.throwIfAborted();
+
     if (options.command.trim().length === 0) {
       throw processError("Sandbox process command cannot be empty.");
     }
+
     this.prune();
+
     if (this.records.size >= this.options.maxProcesses) {
       throw processError(
         `Sandbox process limit reached (${this.records.size} >= ${this.options.maxProcesses}).`,
@@ -83,6 +86,7 @@ export class LocalProcessManager {
       status: "running",
       startedAt: new Date().toISOString(),
     };
+
     if (options.cwd !== undefined) info.cwd = options.cwd;
 
     await new Promise<void>((resolve, reject) => {
@@ -95,6 +99,7 @@ export class LocalProcessManager {
         );
       });
     });
+
     if (child.pid === undefined) throw processError("Sandbox process did not report a pid.");
 
     const record: ProcessRecord = {
@@ -148,6 +153,7 @@ export class LocalProcessManager {
       }
     } catch (error) {
       if (record.info.status === "running") record.stopRequested = false;
+
       throw error;
     }
     return copyProcessInfo(record.info);
@@ -167,10 +173,13 @@ export class LocalProcessManager {
   ): Promise<boolean> {
     abortSignal?.throwIfAborted();
     record.stopRequested = true;
+
     if (!this.isGroupRunning(record)) return this.settled(record);
 
     this.signal(record, "SIGTERM");
+
     if (await this.waitForExit(record, gracePeriodMs, abortSignal)) return true;
+
     this.signal(record, "SIGKILL");
     return this.waitForExit(record, 1_000, abortSignal);
   }
@@ -183,9 +192,13 @@ export class LocalProcessManager {
     const deadline = Date.now() + timeoutMs;
     while (true) {
       abortSignal?.throwIfAborted();
+
       if (!this.isGroupRunning(record)) return this.settled(record);
+
       const remaining = deadline - Date.now();
+
       if (remaining <= 0) return false;
+
       await waitForDelay(Math.min(25, remaining), abortSignal);
     }
   }
@@ -220,7 +233,9 @@ export class LocalProcessManager {
 
   private getRecord(processId: string): ProcessRecord {
     const record = this.records.get(processId);
+
     if (record === undefined) throw processError(`Unknown sandbox process: ${processId}`);
+
     return record;
   }
 
@@ -228,6 +243,7 @@ export class LocalProcessManager {
   private prune(): void {
     for (const [id, record] of this.records) {
       if (this.records.size < this.options.maxProcesses) return;
+
       if (record.info.status !== "running" && !this.isGroupRunning(record)) {
         this.records.delete(id);
       }

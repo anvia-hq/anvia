@@ -15,6 +15,7 @@ export class SqliteDurableStore extends PrismaDurableStore {
         migrated.add(pool);
         await migrate(pool);
       }
+
       return query(text, ...values);
     };
     super(client, { leaseMs: 60_000 });

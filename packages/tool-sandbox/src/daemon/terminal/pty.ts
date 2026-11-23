@@ -57,7 +57,9 @@ export async function loadNodePty(): Promise<PtySpawner | undefined> {
     const specifier = "node-pty";
     const loaded = (await import(specifier)) as NodePtyModule & { default?: NodePtyModule };
     const module = typeof loaded.spawn === "function" ? loaded : loaded.default;
+
     if (module === undefined || typeof module.spawn !== "function") return undefined;
+
     return (options) => {
       const child = module.spawn(options.file, [...options.args], {
         name: "xterm-256color",

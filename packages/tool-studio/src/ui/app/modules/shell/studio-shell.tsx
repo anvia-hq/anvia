@@ -186,12 +186,16 @@ export function StudioHeader(props: {
   onToggleTheme: () => void;
 }) {
   const section = navigationSection(props.activePage);
-  const pageLabel =
-    props.activePage === "playground"
-      ? "Chat"
-      : props.activePage === "knowledge"
-        ? (knowledgeTabs.find((tab) => tab.id === props.knowledgeTab)?.label ?? "Knowledge")
-        : pageTitle(props.activePage, undefined);
+  let pageLabel: string;
+
+  if (props.activePage === "playground") {
+    pageLabel = "Chat";
+  } else if (props.activePage === "knowledge") {
+    pageLabel = knowledgeTabs.find((tab) => tab.id === props.knowledgeTab)?.label ?? "Knowledge";
+  } else {
+    pageLabel = pageTitle(props.activePage, undefined);
+  }
+
   const nextTheme = props.theme === "light" ? "dark" : "light";
   const themeLabel = `Theme: ${props.theme}. Switch to ${nextTheme} theme`;
   const themeIcon = props.theme === "light" ? Sun : Moon;

@@ -40,7 +40,9 @@ class ScriptModel implements CompletionModel {
   async completion(request: CompletionRequest): Promise<CompletionResponse> {
     this.requests.push(request);
     const reply = this.replies.shift();
+
     if (reply === undefined) throw new Error("No scripted response");
+
     return typeof reply === "function" ? reply(request) : reply;
   }
 }
@@ -76,7 +78,9 @@ class StreamingScriptModel extends ScriptModel {
 }
 function instanceFrom(request: CompletionRequest): string {
   const match = history(request).match(/instanceId\\?":\\?"([^"\\]+)/);
+
   if (!match?.[1]) throw new Error("No instance ID in history");
+
   return match[1];
 }
 
@@ -140,7 +144,9 @@ describe("AgentTeam", () => {
       outputSchema: z.object({ answer: z.string() }),
     });
     const result = await team.generate({ prompt: "start" });
+
     if (result.type !== "response") throw new Error("Expected response");
+
     expectTypeOf(result.output).toEqualTypeOf<{ answer: string }>();
     expect(result.output).toEqual({ answer: "done" });
     expect(result.members).toEqual([]);
@@ -823,6 +829,7 @@ describe("AgentTeam", () => {
       for await (const event of stream) {
         if (event.type === "agent_started" && event.member.agentId === "worker")
           starts.push(event.runId!);
+
         if (event.type === "message_delivered" && event.message.content === "closing follow-up")
           delivered++;
       }

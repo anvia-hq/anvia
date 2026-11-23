@@ -52,12 +52,15 @@ export function filterToMilvusExpr(filter: VectorFilter | undefined): string | u
     }
     case "in": {
       const key = sanitizeFilterKey(filter.key);
+
       if (filter.values.length === 0) {
         throw new Error(`Milvus "in" filter for ${key} requires at least one value`);
       }
+
       if (filter.values.includes(null)) {
         throw new Error(`Milvus does not support null values in "in" filters (field ${key})`);
       }
+
       return `${key} in [${filter.values.map(milvusLiteral).join(", ")}]`;
     }
     case "and": {
@@ -82,6 +85,7 @@ function sanitizeFilterKey(key: string): string {
         ` and contain only alphanumeric characters, underscores, and dots for nested fields.`,
     );
   }
+
   for (const segment of key.split(".")) {
     if (milvusExpressionKeywords.has(segment.toLowerCase())) {
       throw new Error(
@@ -97,13 +101,16 @@ function milvusLiteral(value: string | number | boolean | null): string {
   if (value === null) {
     return "null";
   }
+
   if (typeof value === "string") {
     return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
   }
+
   if (typeof value === "number" && !Number.isFinite(value)) {
     throw new Error(
       `Invalid metadata filter value: ${value}. Numeric filter values must be finite.`,
     );
   }
+
   return String(value);
 }

@@ -36,6 +36,7 @@ export function SessionsPage(props: {
       </StudioPageShell>
     );
   }
+
   if (props.sessions.length === 0) {
     return (
       <StudioPageShell aria-label="Sessions">

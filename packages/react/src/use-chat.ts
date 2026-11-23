@@ -104,6 +104,7 @@ export function useChat<Transport extends AnyClientTransport = ClientTransport>(
 
   const persistResumeState = useCallback(() => {
     if (streamIdRef.current === undefined || requestRef.current === undefined) return;
+
     saveChatResumeState(options.resume, {
       version: 3,
       streamId: streamIdRef.current,
@@ -124,7 +125,9 @@ export function useChat<Transport extends AnyClientTransport = ClientTransport>(
     const current = interactionsRef.current;
     const index = current.findIndex((item) => item.request.id === interaction.request.id);
     const next = index === -1 ? [...current, interaction] : [...current];
+
     if (index !== -1) next[index] = interaction;
+
     interactionsRef.current = next;
     setInteractions(next);
   }, []);
@@ -134,19 +137,27 @@ export function useChat<Transport extends AnyClientTransport = ClientTransport>(
       setEvents((current) => appendRetainedEvent(current, event, maxRetainedEvents));
       options.onEvent?.(event);
       const contextUsageUpdate = contextUsageUpdateFromEvent(event);
+
       if (contextUsageUpdate !== undefined) {
         setContextUsage(contextUsageUpdate.contextUsage);
       }
+
       const nextRunUsage = runUsageUpdateFromEvent(event);
+
       if (nextRunUsage !== undefined) setRunUsage(nextRunUsage);
+
       if (event.type === "interaction") {
         updateInteraction({ request: event.interaction, runId: event.runId, status: "pending" });
       }
+
       if (event.type === "run_end") {
         waitingRef.current = event.status === "suspended";
       }
+
       updateMessages((current) => applyClientStreamEvent(current, event));
+
       if (event.type !== "error") return undefined;
+
       const nextError = normalizeClientError(event.error);
       setError(nextError);
       options.onError?.(nextError);
@@ -171,21 +182,25 @@ export function useChat<Transport extends AnyClientTransport = ClientTransport>(
       const activeRequest =
         runOptions.resume === undefined ? request : { ...request, resume: runOptions.resume };
       requestRef.current = activeRequest;
+
       if (runOptions.resume === undefined) {
         clearResumeState();
       } else {
         lastEventIdRef.current = runOptions.resume.after;
         setStreamId(runOptions.resume.streamId);
       }
+
       updateMessages(nextMessages);
       setRunUsage(undefined);
       setContextUsage(contextUsageFromMessages(nextMessages));
       setEvents([]);
       setError(undefined);
+
       if (runOptions.clearInteractions === true) {
         interactionsRef.current = [];
         setInteractions([]);
       }
+
       setStatus("submitted");
       setIsResuming(runOptions.isResuming === true);
 
@@ -196,9 +211,12 @@ export function useChat<Transport extends AnyClientTransport = ClientTransport>(
           request: activeRequest,
           abortSignal: controller.signal,
         };
+
         if (runOptions.resume !== undefined) sendOptions.resume = runOptions.resume;
+
         for await (const frame of transport.send(sendOptions)) {
           if (abortRef.current !== controller || controller.signal.aborted) return accepted;
+
           if (frame.type === "stream_start") {
             accepted = true;
             runOptions.onAccepted?.();
@@ -206,16 +224,23 @@ export function useChat<Transport extends AnyClientTransport = ClientTransport>(
             persistResumeState();
             continue;
           }
+
           if (frame.type === "stream_event") {
             lastEventIdRef.current = frame.eventId;
+
             if (streamError === undefined) setStatus("streaming");
+
             streamError = applyEvent(frame.event) ?? streamError;
+
             if (streamError !== undefined) setStatus("error");
+
             persistResumeState();
             continue;
           }
+
           lastEventIdRef.current = frame.eventId;
           clearResumeState();
+
           if (frame.status !== "completed" && streamError === undefined) {
             throw new ClientProtocolError(
               `Client stream ended with status ${frame.status}.`,
@@ -223,15 +248,25 @@ export function useChat<Transport extends AnyClientTransport = ClientTransport>(
             );
           }
         }
+
         if (abortRef.current === controller && !controller.signal.aborted) {
-          setStatus(streamError !== undefined ? "error" : waitingRef.current ? "waiting" : "ready");
+          if (streamError !== undefined) {
+            setStatus("error");
+          } else if (waitingRef.current) {
+            setStatus("waiting");
+          } else {
+            setStatus("ready");
+          }
         }
       } catch (caught) {
         if (isAbortError(caught)) {
           if (abortRef.current === controller) setStatus("ready");
+
           return accepted;
         }
+
         if (abortRef.current !== controller) return accepted;
+
         const nextError = normalizeClientError(caught);
         setError(nextError);
         setStatus("error");
@@ -268,7 +303,9 @@ export function useChat<Transport extends AnyClientTransport = ClientTransport>(
 
   const resume = useCallback(async () => {
     const saved = loadChatResumeState<Metadata, Data>(options.resume);
+
     if (saved === undefined) return;
+
     interactionsRef.current = [...saved.interactions];
     setInteractions([...saved.interactions]);
     await runRequest(saved.request, saved.messages, {
@@ -279,6 +316,7 @@ export function useChat<Transport extends AnyClientTransport = ClientTransport>(
 
   useEffect(() => {
     if (options.resume?.auto === false || autoResumeStartedRef.current) return;
+
     autoResumeStartedRef.current = true;
     void resume();
   }, [options.resume?.auto, resume]);
@@ -298,6 +336,7 @@ export function useChat<Transport extends AnyClientTransport = ClientTransport>(
 
   const regenerate = useCallback(async () => {
     const lastUser = findLastUserIndex(messagesRef.current);
+
     if (lastUser !== -1) await sendMessages(messagesRef.current.slice(0, lastUser + 1));
   }, [sendMessages]);
 
@@ -306,12 +345,16 @@ export function useChat<Transport extends AnyClientTransport = ClientTransport>(
       const interaction = interactionsRef.current.find(
         (item) => item.request.id === input.interactionId && item.status === "pending",
       );
+
       if (interaction === undefined) {
         throw new TypeError(`No pending interaction exists for "${input.interactionId}".`);
       }
+
       const response = parseAgentInteractionResponse(input.response);
       assertAgentInteractionResponse(interaction.request, response);
+
       if (respondingRef.current.has(input.interactionId)) return;
+
       const responding = new Set(respondingRef.current).add(input.interactionId);
       respondingRef.current = responding;
       setRespondingInteractions(responding);
@@ -327,6 +370,7 @@ export function useChat<Transport extends AnyClientTransport = ClientTransport>(
             onAccepted: () => updateInteraction({ ...interaction, status: "responded" }),
           },
         );
+
         if (!accepted) {
           throw new ClientProtocolError("The interaction response was not accepted.");
         }

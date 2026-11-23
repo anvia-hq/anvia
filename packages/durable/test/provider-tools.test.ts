@@ -22,7 +22,9 @@ function database(): string {
 
 const webSearch = (configuration?: ProviderTool["configuration"]): ProviderTool => {
   const tool: ProviderTool = { kind: "provider", provider: "openai", name: "web_search" };
+
   if (configuration !== undefined) tool.configuration = configuration;
+
   return tool;
 };
 
@@ -59,8 +61,10 @@ async function open(
 async function settled(run: DurableRun) {
   for (let attempt = 0; attempt < 250; attempt++) {
     const snapshot = await run.snapshot();
+
     if (["completed", "failed", "cancelled", "needs_attention"].includes(snapshot.run.status))
       return snapshot;
+
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
   throw new Error("The durable run did not settle.");
@@ -145,6 +149,7 @@ describe("provider tools replay", () => {
       const path = database();
       const first = vi.fn(async (request: CompletionRequest) => {
         if (!hasToolResult(request)) return searchingTurn();
+
         throw new Error("provider down");
       });
       const runtime = await open(path, agentWith(first, webSearch({ searchContextSize: "low" })));
@@ -171,6 +176,7 @@ describe("provider tools replay", () => {
     const path = database();
     const first = vi.fn(async (request: CompletionRequest) => {
       if (!hasToolResult(request)) return searchingTurn();
+
       throw new Error("provider down");
     });
     const runtime = await open(path, agentWith(first, webSearch({ searchContextSize: "low" })));

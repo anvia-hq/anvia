@@ -15,11 +15,13 @@ type OmittedTraceValue = {
 
 export function validateCaptureMaxBytes(value: number | undefined): number {
   const resolved = value ?? DEFAULT_CAPTURE_MAX_BYTES;
+
   if (!Number.isInteger(resolved) || resolved < MIN_CAPTURE_MAX_BYTES) {
     throw new TypeError(
       `Langfuse captureMaxBytes must be an integer of at least ${MIN_CAPTURE_MAX_BYTES}`,
     );
   }
+
   return resolved;
 }
 
@@ -36,9 +38,11 @@ export function sanitizeTraceValue<T>(
     return omitted("unserializable");
   }
   const originalBytes = utf8Bytes(serialized);
+
   if (originalBytes <= maxBytes) {
     return sanitized;
   }
+
   const preview = boundedPreview(serialized, originalBytes, maxBytes);
   return {
     anviaTraceValue: "truncated",
@@ -51,28 +55,36 @@ function sanitizeValue(value: unknown, depth: number, seen: WeakSet<object>): un
   if (depth > 16) {
     return omitted("depth");
   }
+
   if (typeof value === "string") {
     if (/^data:[^;,]+;base64,/i.test(value)) {
       return omitted("base64", utf8Bytes(value));
     }
+
     return value;
   }
+
   if (value instanceof ArrayBuffer || ArrayBuffer.isView(value)) {
     const byteLength = value.byteLength;
     return omitted("binary", byteLength);
   }
+
   if (value === null || typeof value !== "object") {
     return value;
   }
+
   if (seen.has(value)) {
     return omitted("circular");
   }
+
   seen.add(value);
+
   if (Array.isArray(value)) {
     const result = value.map((entry) => sanitizeValue(entry, depth + 1, seen));
     seen.delete(value);
     return result;
   }
+
   const record = value as Record<string, unknown>;
   const result: Record<string, unknown> = {};
   for (const [key, entry] of Object.entries(record)) {
@@ -85,6 +97,7 @@ function sanitizeValue(value: unknown, depth: number, seen: WeakSet<object>): un
       result[key] = omitted("base64", utf8Bytes(entry));
       continue;
     }
+
     result[key] = sanitizeValue(entry, depth + 1, seen);
   }
   seen.delete(value);
@@ -96,7 +109,9 @@ function omitted(reason: OmittedTraceValue["reason"], originalBytes?: number): O
     anviaTraceValue: "omitted",
     reason,
   };
+
   if (originalBytes !== undefined) value.originalBytes = originalBytes;
+
   return value;
 }
 
@@ -110,6 +125,7 @@ function boundedPreview(value: string, originalBytes: number, maxBytes: number):
       originalBytes,
       preview: value.slice(0, middle),
     };
+
     if (utf8Bytes(JSON.stringify(candidate)) <= maxBytes) {
       low = middle;
     } else {

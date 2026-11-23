@@ -44,4 +44,5 @@ const agent = new Agent({
 const response = await agent.generate({ prompt: "What should I do for a security incident?" });
 
 if (response.type !== "response") throw new Error("Unexpected tool approval request.");
+
 console.log(response.output);

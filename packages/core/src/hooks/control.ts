@@ -25,12 +25,15 @@ export function requestToolApproval(options: ToolApprovalRequestOptions = {}): T
   const action: ToolCallHookAction = {
     type: "approval_request" as const,
   };
+
   if (options.reason !== undefined) {
     action.reason = options.reason;
   }
+
   if (options.rejectMessage !== undefined) {
     action.rejectMessage = options.rejectMessage;
   }
+
   return action;
 }
 

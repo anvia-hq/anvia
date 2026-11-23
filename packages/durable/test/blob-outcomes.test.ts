@@ -51,12 +51,14 @@ const graph: DurableGraphSubmission = {
 it("passes an oversized graph dependency result, intact, into the downstream prompt", async () => {
   const model = vi.fn(async (request: CompletionRequest) => {
     const input = JSON.stringify(request.chatHistory);
+
     if (input.includes("SYNTHESIS")) {
       // The dependency suffix carries the full 140 KB result, not a null placeholder.
       expect(input).toContain("Task dependency results");
       expect(input.includes(big)).toBe(true);
       return done();
     }
+
     return response([{ type: "text", text: big }]);
   });
   const runtime = await open(database(), makeAgent(model));
@@ -174,6 +176,7 @@ it("hands an oversized owned-agent output to its parent task intact", async () =
             policy: "allSettled",
           },
         };
+
       return {
         status: "completed",
         output:
@@ -223,6 +226,7 @@ it("gives a goal round the full output of an owned agent run through agentRun", 
           wait: { type: "children", ids: [childId], policy: "allSettled" },
         };
       }
+
       const run = await ctx.agentRun(ctx.checkpoint);
       return {
         status: "completed",

@@ -104,14 +104,18 @@ console.log("second turn tools:", secondTurnTools.join(", "));
 
 function vectorFor(text: string): number[] {
   const normalized = text.toLowerCase();
+
   if (normalized.includes("refund")) {
     return [1, 0, 0];
   }
+
   if (normalized.includes("address")) {
     return [0, 1, 0];
   }
+
   if (normalized.includes("runbook")) {
     return [0, 0, 1];
   }
+
   return [0.2, 0.2, 0.2];
 }

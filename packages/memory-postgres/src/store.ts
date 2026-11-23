@@ -231,7 +231,9 @@ export class PostgresMemoryStore implements MemoryStore {
     );
     const rows = result.rows as VersionedLoadRow[];
     const first = rows[0];
+
     if (first === undefined) return { messages: [], version: NO_SESSION_VERSION };
+
     const last = rows[rows.length - 1];
     return {
       messages: rows
@@ -243,9 +245,11 @@ export class PostgresMemoryStore implements MemoryStore {
 
   async append(input: MemoryAppendOptions): Promise<MemoryAppendResult> {
     const guarded = input.idempotencyKey !== undefined || input.expectedVersion !== undefined;
+
     if (input.messages.length === 0 && !guarded) {
       return { status: "committed" };
     }
+
     this.validateInputMessages(input.messages);
 
     const scopeKey = this.scopeKey(input.scope);
@@ -258,14 +262,17 @@ export class PostgresMemoryStore implements MemoryStore {
 
         const fingerprint =
           input.idempotencyKey === undefined ? undefined : appendFingerprint(input);
+
         if (input.idempotencyKey !== undefined && fingerprint !== undefined) {
           const committed = await this.committedFingerprint(tx, scopeKey, input.idempotencyKey);
+
           if (committed !== undefined) {
             return this.replayResult(tx, scopeKey, committed, fingerprint);
           }
         }
 
         const current = await this.currentVersion(tx, scopeKey);
+
         if (input.expectedVersion !== undefined && input.expectedVersion !== current.version) {
           return { status: "conflict", version: current.version };
         }
@@ -279,8 +286,10 @@ export class PostgresMemoryStore implements MemoryStore {
              RETURNING idempotency_key`,
             [scopeKey, input.idempotencyKey, fingerprint],
           );
+
           if (inserted.rows.length === 0) {
             const committed = await this.committedFingerprint(tx, scopeKey, input.idempotencyKey);
+
             if (committed !== undefined) {
               return this.replayResult(tx, scopeKey, committed, fingerprint);
             }
@@ -318,6 +327,7 @@ export class PostgresMemoryStore implements MemoryStore {
           { cause: error },
         );
       }
+
       throw error;
     }
   }
@@ -359,7 +369,9 @@ export class PostgresMemoryStore implements MemoryStore {
       [scopeKey],
     );
     const row = result.rows[0] as VersionRow | undefined;
+
     if (row === undefined) return { version: NO_SESSION_VERSION, compactionState: null };
+
     return {
       version: formatVersion(row.id, row.max_position, row.compaction_state),
       compactionState: row.compaction_state,
@@ -376,6 +388,7 @@ export class PostgresMemoryStore implements MemoryStore {
     if (this.options.errorPolicy === "ignore") {
       return;
     }
+
     this.validateInputMessages(input.messages);
 
     const scopeKey = this.scopeKey(input.scope);
@@ -413,9 +426,11 @@ export class PostgresMemoryStore implements MemoryStore {
       [scopeKey],
     );
     const session = sessionResult.rows[0] as CompactionSessionRow | undefined;
+
     if (session === undefined) {
       return { revision: compactionRevision([], undefined), messages: [] };
     }
+
     const state = this.compactionStateFromValue(session.compaction_state);
     const result = await client.query(
       `SELECT id, position, message
@@ -443,6 +458,7 @@ export class PostgresMemoryStore implements MemoryStore {
       if (this.options.lock === "advisory") {
         await tx.query("SELECT pg_advisory_xact_lock(hashtext($1))", [scopeKey]);
       }
+
       const sessionResult = await tx.query(
         `SELECT id, compaction_state
          FROM ${this.tables.sessions}
@@ -450,7 +466,9 @@ export class PostgresMemoryStore implements MemoryStore {
         [scopeKey],
       );
       const session = sessionResult.rows[0] as CompactionSessionRow | undefined;
+
       if (session === undefined) return { status: "conflict" };
+
       const state = this.compactionStateFromValue(session.compaction_state);
       const result = await tx.query(
         `SELECT id, position, message
@@ -463,6 +481,7 @@ export class PostgresMemoryStore implements MemoryStore {
       const rows = result.rows as CompactionMessageRow[];
       const activeRows = activeCompactionRows(rows, state);
       const physicalPrefixCount = input.messageCount - (state === undefined ? 0 : 1);
+
       if (
         compactionRevision(rows, state) !== input.revision ||
         physicalPrefixCount < 0 ||
@@ -470,13 +489,16 @@ export class PostgresMemoryStore implements MemoryStore {
       ) {
         return { status: "conflict" };
       }
+
       const summarizedThroughPosition =
         physicalPrefixCount === 0
           ? state?.summarizedThroughPosition
           : Number(activeRows[physicalPrefixCount - 1]?.position);
+
       if (summarizedThroughPosition === undefined || Number.isNaN(summarizedThroughPosition)) {
         return { status: "conflict" };
       }
+
       const nextState: StoredCompactionState = {
         version: 1,
         generation: (state?.generation ?? 0) + 1,
@@ -500,10 +522,12 @@ export class PostgresMemoryStore implements MemoryStore {
     assertConversationLimit(options.limit);
     const values: unknown[] = [];
     let where = "";
+
     if (options.userId !== undefined) {
       values.push(options.userId);
       where = `WHERE s.user_id = $${values.length}`;
     }
+
     values.push(options.limit);
     const result = await (
       await this.client()
@@ -546,6 +570,7 @@ export class PostgresMemoryStore implements MemoryStore {
       [ref],
     );
     const row = summaryResult.rows[0] as InspectionSessionRow | undefined;
+
     if (row === undefined) return undefined;
 
     const messageResult = await (
@@ -584,7 +609,9 @@ export class PostgresMemoryStore implements MemoryStore {
       updatedAt: isoTimestamp(row.updated_at),
       messageCount: Number(row.message_count),
     };
+
     if (row.user_id !== null) summary.userId = row.user_id;
+
     return summary;
   }
 
@@ -628,9 +655,11 @@ export class PostgresMemoryStore implements MemoryStore {
       [scopeKey, context.sessionId, context.userId ?? null, JSON.stringify(metadata(context))],
     );
     const session = result.rows[0] as SessionRow | undefined;
+
     if (session === undefined) {
       throw new Error("PostgresMemoryStore failed to upsert memory session.");
     }
+
     return session;
   }
 
@@ -675,6 +704,7 @@ export class PostgresMemoryStore implements MemoryStore {
 
   private compactionStateFromValue(value: unknown): StoredCompactionState | undefined {
     if (value === null || value === undefined) return undefined;
+
     const parsed = typeof value === "string" ? (JSON.parse(value) as unknown) : value;
     return parseCompactionState(parsed, (message) =>
       this.options.validateMessages ? parseMemoryMessage(message) : (message as Message),
@@ -693,6 +723,7 @@ export class PostgresMemoryStore implements MemoryStore {
     if (typeof this.options.scopeKey === "function") {
       return this.options.scopeKey({ scope: context });
     }
+
     return createMemoryScopeKey({ scope: context, ...this.options.scopeKey });
   }
 
@@ -736,12 +767,15 @@ function formatVersion(
 ): string {
   // An empty history has one version whether or not recordError created a session row for it.
   if (maxPosition === null) return NO_SESSION_VERSION;
+
   return `${sessionId}:${Number(maxPosition)}:${compactionGeneration(compactionState)}`;
 }
 
 function compactionGeneration(value: unknown): number {
   const parsed = typeof value === "string" ? (JSON.parse(value) as unknown) : value;
+
   if (typeof parsed !== "object" || parsed === null) return 0;
+
   const generation = (parsed as { generation?: unknown }).generation;
   return typeof generation === "number" ? generation : 0;
 }
@@ -772,6 +806,7 @@ function projectedMessages(
   message: (row: CompactionMessageRow) => Message,
 ): Message[] {
   if (state === undefined) return rows.map(message);
+
   return [state.summary, ...activeCompactionRows(rows, state).map(message)];
 }
 
@@ -780,12 +815,15 @@ function activeCompactionRows(
   state: StoredCompactionState | undefined,
 ): CompactionMessageRow[] {
   if (state === undefined) return rows;
+
   const boundaryIndex = rows.findIndex(
     (row) => Number(row.position) === state.summarizedThroughPosition,
   );
+
   if (boundaryIndex === -1) {
     throw new Error("Postgres memory compaction state boundary is invalid.");
   }
+
   return rows.slice(boundaryIndex + 1);
 }
 
@@ -796,7 +834,9 @@ function parseCompactionState(
   if (typeof value !== "object" || value === null) {
     throw new Error("Postgres memory compaction state must be an object.");
   }
+
   const record = value as Record<string, unknown>;
+
   if (
     record.version !== 1 ||
     !Number.isSafeInteger(record.generation) ||
@@ -806,10 +846,13 @@ function parseCompactionState(
   ) {
     throw new Error("Postgres memory compaction state is invalid.");
   }
+
   const summary = parseMessage(record.summary);
+
   if (!isMemoryCompactionMessage(summary)) {
     throw new Error("Postgres memory compaction state summary is invalid.");
   }
+
   return {
     version: 1,
     generation: record.generation as number,
@@ -839,9 +882,11 @@ function resolveTables(options: PostgresMemorySchemaOptions): ResolvedPostgresMe
 
 function quoteQualifiedIdentifier(identifier: string): string {
   const parts = identifier.split(".");
+
   if (parts.length === 0 || parts.some((part) => part.length === 0)) {
     throw new Error(`Invalid Postgres identifier: ${identifier}`);
   }
+
   return parts.map(quoteIdentifier).join(".");
 }
 
@@ -849,6 +894,7 @@ function quoteIdentifier(identifier: string): string {
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(identifier)) {
     throw new Error(`Invalid Postgres identifier: ${identifier}`);
   }
+
   return `"${identifier.replaceAll('"', '""')}"`;
 }
 
@@ -858,6 +904,7 @@ async function transactionClient(
   if (isPool(client)) {
     return client.connect();
   }
+
   return client;
 }
 

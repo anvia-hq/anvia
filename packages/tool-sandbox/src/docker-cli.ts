@@ -55,14 +55,19 @@ const envValueFlags = new Set(["--env", "-e"]);
 function redactCliArgs(args: string[]): string[] {
   return args.map((arg, index) => {
     const flag = args[index - 1];
+
     if (flag !== undefined && envValueFlags.has(flag)) return redactEnvAssignment(arg);
+
     for (const envFlag of envValueFlags) {
       const prefix = `${envFlag}=`;
+
       if (arg.startsWith(prefix))
         return `${prefix}${redactEnvAssignment(arg.slice(prefix.length))}`;
     }
+
     if (arg.startsWith("-e") && !arg.startsWith("-e=") && arg.length > 2)
       return `-e${redactEnvAssignment(arg.slice(2))}`;
+
     return arg;
   });
 }

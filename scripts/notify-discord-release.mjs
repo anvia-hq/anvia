@@ -26,6 +26,7 @@ const releasedPackages =
   publishedPackages === undefined
     ? packages
     : packages.filter((pkg) => publishedPackages.has(pkg.packageJson.name));
+
 if (publishedPackages !== undefined && releasedPackages.length === 0) {
   console.warn("No published packages were recorded. Skipping Discord release notification.");
   process.exit(0);
@@ -114,6 +115,7 @@ console.info(`Sent Discord notification for ${releaseChannel} release.`);
 
 function previewReleaseNotes(releases) {
   const changesetNotes = changesetReleaseNotes();
+
   if (changesetNotes.length > 0) {
     return changesetNotes;
   }
@@ -123,6 +125,7 @@ function previewReleaseNotes(releases) {
 
 function changesetReleaseNotes() {
   const changesetRoot = path.join(root, ".changeset");
+
   if (!existsSync(changesetRoot)) {
     return [];
   }
@@ -137,6 +140,7 @@ function changesetReleaseNotes() {
 function parseChangeset(filePath) {
   const content = readFileSync(filePath, "utf8").trim();
   const match = content.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
+
   if (match === null) {
     return undefined;
   }
@@ -163,6 +167,7 @@ function stableReleaseNotes(releases) {
 
   for (const pkg of releases) {
     const changelogPath = path.join(pkg.dir, "CHANGELOG.md");
+
     if (!existsSync(changelogPath)) {
       continue;
     }
@@ -188,6 +193,7 @@ function latestChangelogNotes(releases) {
 
   for (const pkg of releases) {
     const changelogPath = path.join(pkg.dir, "CHANGELOG.md");
+
     if (!existsSync(changelogPath)) {
       continue;
     }
@@ -208,6 +214,7 @@ function latestChangelogNotes(releases) {
 function extractLatestChangelogEntry(changelog) {
   const lines = changelog.split(/\r?\n/);
   const start = lines.findIndex((line) => /^##\s+/.test(line));
+
   if (start === -1) {
     return undefined;
   }
@@ -223,6 +230,7 @@ function extractChangelogEntry(changelog, version) {
   const lines = changelog.split(/\r?\n/);
   const headingPattern = new RegExp(`^##\\s+\\[?${escapeRegExp(version)}\\]?\\b`);
   const start = lines.findIndex((line) => headingPattern.test(line));
+
   if (start === -1) {
     return undefined;
   }
@@ -245,10 +253,12 @@ function changelogChanges(entry) {
     }
 
     const bullet = line.match(/^-\s+(?:(?:[0-9a-f]{7,40}):\s*)?(.+)$/);
+
     if (bullet !== null) {
       if (current !== undefined) {
         changes.push(current.trim());
       }
+
       current = bullet[1];
       continue;
     }
@@ -273,6 +283,7 @@ function dedupeReleaseNotes(notes) {
 
   for (const note of notes) {
     const key = note.summary;
+
     if (seen.has(key)) {
       const existing = deduped.find((item) => item.summary === note.summary);
       existing?.packages.push(...note.packages);
@@ -305,13 +316,16 @@ function releaseNoteList(notes) {
     const packageLabel = compactPackageLabel(note.packages);
     const line = `- ${packageLabel}: ${note.summary}`;
     const next = output.length === 0 ? line : `${output}\n${line}`;
+
     if (next.length > maxLength) {
       if (output.length === 0) {
         return `${line.slice(0, maxLength - 3)}...`;
       }
+
       const remaining = notes.length - output.split("\n").length;
       return `${output}\nand ${remaining} more change${remaining === 1 ? "" : "s"}`;
     }
+
     output = next;
   }
 
@@ -320,6 +334,7 @@ function releaseNoteList(notes) {
 
 function compactPackageLabel(packageNames) {
   const unique = [...new Set(packageNames)].sort();
+
   if (unique.length === 1) {
     return `\`${unique[0]}\``;
   }
@@ -340,6 +355,7 @@ function findPackageDirs(dir) {
 
   for (const entry of entries) {
     const entryPath = path.join(dir, entry);
+
     if (!statSync(entryPath).isDirectory()) {
       continue;
     }
@@ -365,6 +381,7 @@ function readPublishedPackages() {
   }
 
   const filePath = path.resolve(root, publishedPackagesFile);
+
   if (!existsSync(filePath)) {
     return undefined;
   }
@@ -375,6 +392,7 @@ function readPublishedPackages() {
   } catch {
     return undefined;
   }
+
   if (!Array.isArray(releases)) {
     return undefined;
   }

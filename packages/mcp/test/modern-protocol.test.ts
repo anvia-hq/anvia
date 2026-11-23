@@ -18,6 +18,7 @@ class ProtocolTransport implements Transport {
 
   async send(message: JSONRPCMessage): Promise<void> {
     this.messages.push(message);
+
     if (!("id" in message) || !("method" in message)) return;
 
     if (message.method === "server/discover") {

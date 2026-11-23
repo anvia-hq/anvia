@@ -164,8 +164,10 @@ function emptyStateCount(html: string): number {
 
 function emptyStateClasses(html: string): string[] {
   const match = html.match(/data-slot="studio-empty-state" class="([^"]+)"/);
+
   if (match?.[1] === undefined) {
     throw new Error("Studio empty state class list not found");
   }
+
   return match[1].split(" ");
 }

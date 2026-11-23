@@ -201,12 +201,15 @@ function replacementSnapshotRecords(query: string): FakeRecord[] | undefined {
   const product = input.entities[0];
   const incident = input.entities[1];
   const relationship = input.relationships[0];
+
   if (product === undefined || incident === undefined || relationship === undefined) {
     throw new Error("Expected complete replacement fixture.");
   }
+
   if (query.includes("AS key, properties(d) AS properties")) {
     return [record({ key: "doc-1", properties: { __anvia_id: "doc-1", source: "test" } })];
   }
+
   if (query.includes("AS key, properties(c) AS properties")) {
     return [
       record({
@@ -221,6 +224,7 @@ function replacementSnapshotRecords(query: string): FakeRecord[] | undefined {
       }),
     ];
   }
+
   if (query.includes("labels(e) AS labels")) {
     return [product, incident].map((entity) =>
       record({
@@ -237,6 +241,7 @@ function replacementSnapshotRecords(query: string): FakeRecord[] | undefined {
       }),
     );
   }
+
   if (query.includes("type(r) AS type")) {
     return [
       record({
@@ -254,9 +259,11 @@ function replacementSnapshotRecords(query: string): FakeRecord[] | undefined {
       }),
     ];
   }
+
   if (query.includes("AS chunkId") && query.includes("ANVIA_MENTIONS")) {
     return input.mentions.map((mention) => record(mention));
   }
+
   return undefined;
 }
 
@@ -385,6 +392,7 @@ describe("Neo4j schema and lifecycle", () => {
       executeQuery: async (query, _parameters) => {
         if (query.includes("dbms.components"))
           return { records: [record({ version: "2026.01.0" })] };
+
         if (query.startsWith("SHOW INDEXES")) {
           return {
             records: [
@@ -437,6 +445,7 @@ describe("Neo4j schema and lifecycle", () => {
             ],
           };
         }
+
         if (query.startsWith("SHOW CONSTRAINTS")) {
           return {
             records: [
@@ -456,6 +465,7 @@ describe("Neo4j schema and lifecycle", () => {
             ),
           };
         }
+
         return { records: [] };
       },
     });
@@ -476,6 +486,7 @@ describe("Neo4j schema and lifecycle", () => {
         if (query.includes("dbms.components")) {
           return { records: [record({ version: "2026.01.0" })] };
         }
+
         if (query.startsWith("SHOW INDEXES")) {
           return {
             records: [
@@ -520,6 +531,7 @@ describe("Neo4j schema and lifecycle", () => {
               ]),
           };
         }
+
         if (query.startsWith("SHOW CONSTRAINTS")) {
           return {
             records: [
@@ -539,6 +551,7 @@ describe("Neo4j schema and lifecycle", () => {
             ),
           };
         }
+
         return { records: [] };
       },
     });
@@ -582,6 +595,7 @@ describe("Neo4j schema and lifecycle", () => {
         if (query.includes("dbms.components")) {
           return { records: [record({ version: "2026.01.0" })] };
         }
+
         if (query.startsWith("SHOW INDEXES")) {
           return {
             records: [
@@ -602,6 +616,7 @@ describe("Neo4j schema and lifecycle", () => {
             ],
           };
         }
+
         return { records: [] };
       },
     });
@@ -835,7 +850,9 @@ describe("managed graph writes", () => {
     const driver = fakeDriver({
       transactionRun: async (query) => {
         if (query.includes("collect(c.")) return { records: [record({ chunkIds: [] })] };
+
         if (query.includes("MERGE (d:")) written = true;
+
         const records = written ? replacementSnapshotRecords(query) : undefined;
         return { records: records ?? [] };
       },
@@ -859,6 +876,7 @@ describe("managed graph writes", () => {
           if (query.includes("collect(c.")) {
             return { records: [record({ chunkIds: ["chunk-1"] })] };
           }
+
           if (query.includes("RETURN key, properties(e) AS properties")) {
             const input = replacement();
             const keys = Array.isArray(parameters.keys) ? parameters.keys : [];
@@ -870,12 +888,14 @@ describe("managed graph writes", () => {
                 ),
             };
           }
+
           if (query.includes("RETURN key, properties(r) AS properties")) {
             const item = replacement().relationships[0];
             return item === undefined
               ? { records: [] }
               : { records: [record({ key: item.key, properties: item.properties })] };
           }
+
           void parameters;
           return { records: replacementSnapshotRecords(query) ?? [] };
         },
@@ -934,18 +954,23 @@ describe("managed graph writes", () => {
         transactionRun: async (query) => {
           if (!removed) {
             const records = replacementSnapshotRecords(query);
+
             if (records !== undefined) return { records };
           }
+
           if (query.includes("collect(c.")) {
             removed = true;
             return { records: [record({ chunkIds: ["chunk-1"] })] };
           }
+
           if (removed && orphanEntities === "keep" && query.includes("labels(e) AS labels")) {
             const records = replacementSnapshotRecords(query) ?? [];
             return {
               records: records.map((item) => {
                 const properties = item.get("properties");
+
                 if (typeof properties !== "object" || properties === null) return item;
+
                 return record({
                   key: item.get("key"),
                   labels: item.get("labels"),
@@ -958,6 +983,7 @@ describe("managed graph writes", () => {
               }),
             };
           }
+
           return { records: [] };
         },
       });
@@ -989,7 +1015,9 @@ describe("managed graph writes", () => {
     const driver = fakeDriver({
       transactionRun: async (query) => {
         if (query.includes("collect(c.")) return { records: [record({ chunkIds: [] })] };
+
         if (query.includes("MERGE (d:")) throw new Error("write failed");
+
         return { records: [] };
       },
     });
@@ -1005,7 +1033,9 @@ describe("managed graph writes", () => {
     const graph = managed(new Neo4jClient({ driver: driver.value }));
     const input = replacement();
     const relationship = input.relationships[0];
+
     if (relationship === undefined) throw new Error("Expected a relationship fixture.");
+
     await expect(
       graph.replaceDocuments({
         ...input,
@@ -1025,9 +1055,11 @@ describe("managed graph writes", () => {
     const relationship = input.relationships[0];
     const product = input.entities[0];
     const incident = input.entities[1];
+
     if (relationship === undefined || product === undefined || incident === undefined) {
       throw new Error("Expected complete replacement fixture.");
     }
+
     await expect(
       graph.replaceDocuments({
         ...input,
@@ -1237,6 +1269,7 @@ describe("graph retrieval", () => {
             ],
           };
         }
+
         if (query.includes("MATCH path")) {
           return {
             records: [
@@ -1274,6 +1307,7 @@ describe("graph retrieval", () => {
             ],
           };
         }
+
         return { records: [] };
       },
     });
@@ -1334,9 +1368,11 @@ describe("graph retrieval", () => {
             records: [record({ ...incident, score: 0.9 }), record({ ...product, score: 0.8 })],
           };
         }
+
         if (query.includes("RETURN {elementId")) {
           return { records: [record({ node: incident })] };
         }
+
         if (query.includes("MATCH path")) {
           return {
             records: [
@@ -1355,6 +1391,7 @@ describe("graph retrieval", () => {
             ],
           };
         }
+
         return { records: [] };
       },
     });
@@ -1427,9 +1464,11 @@ describe("graph retrieval", () => {
         if (query.includes("SEARCH seed")) {
           return { records: [record({ ...incident, score: 0.9 })] };
         }
+
         if (query.includes("RETURN {elementId")) {
           return { records: [record({ node: incident })] };
         }
+
         if (query.includes("MATCH path")) {
           return {
             records: [
@@ -1452,11 +1491,13 @@ describe("graph retrieval", () => {
             ],
           };
         }
+
         if (query.includes("AS chunkId")) {
           return {
             records: [evidence("chunk-3", 2), evidence("chunk-1", 0), evidence("chunk-2", 1)],
           };
         }
+
         return { records: [] };
       },
     });
@@ -1599,6 +1640,7 @@ describe("graph retrieval", () => {
     const malformedDriver = fakeDriver({
       transactionRun: async (query) => {
         if (query.includes("SEARCH seed")) return { records: [hit] };
+
         if (query.includes("AS chunkId")) {
           return {
             records: [
@@ -1612,6 +1654,7 @@ describe("graph retrieval", () => {
             ],
           };
         }
+
         return { records: [] };
       },
     });
@@ -1629,10 +1672,12 @@ describe("graph retrieval", () => {
     const abortDriver = fakeDriver({
       transactionRun: async (query) => {
         if (query.includes("SEARCH seed")) return { records: [hit] };
+
         if (query.includes("AS chunkId")) {
           evidenceStarted?.();
           return await new Promise<never>(() => undefined);
         }
+
         return { records: [] };
       },
     });
@@ -1712,6 +1757,7 @@ describe("graph retrieval", () => {
             ],
           };
         }
+
         if (query.includes("MATCH (from)-[relationship]->(to)")) {
           return {
             records: [
@@ -1730,6 +1776,7 @@ describe("graph retrieval", () => {
             ],
           };
         }
+
         return { records: [] };
       },
     });

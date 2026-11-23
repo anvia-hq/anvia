@@ -18,8 +18,10 @@ export class DurableTaskGraph {
   async *stream(options: DurableStreamOptions = {}): AsyncIterable<DurableGraphEvent> {
     let cursor = options.after ?? 0;
     const initial = await this.snapshot();
+
     if (!Number.isSafeInteger(cursor) || cursor < 0 || cursor > initial.cursor)
       throw new TypeError("Invalid graph event cursor.");
+
     const taskIds = new Map(initial.nodes.map((node) => [node.runId, node.id]));
     while (true) {
       options.abortSignal?.throwIfAborted();
@@ -29,12 +31,17 @@ export class DurableTaskGraph {
       for (const event of events) {
         options.abortSignal?.throwIfAborted();
         const taskId = taskIds.get(event.runId);
+
         if (taskId === undefined) throw new Error("Graph event belongs to an unknown task.");
+
         cursor = event.sequence;
         yield { ...event, graphId: this.id, taskId };
       }
+
       if (events.length > 0) continue;
+
       if (snapshot.status === "completed" || snapshot.status === "cancelled") return;
+
       await delay(options.abortSignal);
     }
   }

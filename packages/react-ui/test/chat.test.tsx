@@ -37,9 +37,11 @@ function composerEditor(): HTMLElement {
 
 function composerTiptapEditor(): Editor {
   const editor = (composerEditor() as HTMLElement & { editor?: Editor }).editor;
+
   if (editor === undefined) {
     throw new Error("Expected TipTap editor instance");
   }
+
   return editor;
 }
 
@@ -375,6 +377,7 @@ describe("Chat primitives", () => {
     fireEvent.click(screen.getByText("Submit directly"));
 
     if (submission === undefined) throw new Error("Expected a composer submission promise");
+
     await expect(submission).rejects.toThrow("Composer entity data must be a JSON value.");
     expect(sendMessage).not.toHaveBeenCalled();
   });
@@ -405,6 +408,7 @@ describe("Chat primitives", () => {
     if (submission === undefined) {
       throw new Error("Expected a composer submission promise");
     }
+
     const rejection = expect(submission).rejects.toThrow("stream failed");
     await act(async () => {
       sendCompletion.reject(new Error("stream failed"));
@@ -532,6 +536,7 @@ describe("Chat primitives", () => {
               if (node === null) {
                 return;
               }
+
               Object.defineProperties(node, {
                 clientHeight: { configurable: true, value: 20 },
                 scrollHeight: { configurable: true, value: 100 },
@@ -879,9 +884,11 @@ describe("Chat primitives", () => {
     fireEvent.keyDown(composerEditor(), { key: "ArrowDown" });
     expect(screen.getByText("Grace").getAttribute("data-state")).toBe("selected");
     const selection = window.getSelection();
+
     if (selection !== null) {
       vi.spyOn(selection, "collapseToEnd").mockImplementation(() => {});
     }
+
     fireEvent.keyDown(composerEditor(), { key: "Enter" });
 
     await waitFor(() => {
@@ -1215,9 +1222,11 @@ describe("Chat primitives", () => {
     fireEvent.mouseEnter(screen.getByText("Ada"));
     expect(screen.getByText("Ada").getAttribute("data-state")).toBe("selected");
     const selection = window.getSelection();
+
     if (selection !== null) {
       vi.spyOn(selection, "collapseToEnd").mockImplementation(() => {});
     }
+
     fireEvent.click(screen.getByText("Ada"));
 
     await waitFor(() => {
@@ -1339,6 +1348,7 @@ describe("Chat primitives", () => {
     fireEvent.click(screen.getByText("Submit directly"));
 
     if (submission === undefined) throw new Error("Expected a composer submission promise");
+
     await expect(submission).rejects.toThrow("Composer entity data must be a JSON value.");
     expect(submitMessage).not.toHaveBeenCalled();
   });
@@ -1505,6 +1515,7 @@ describe("Chat primitives", () => {
               if (node === null) {
                 return;
               }
+
               Object.defineProperty(node, "scrollHeight", {
                 configurable: true,
                 get: () => scrollHeight,

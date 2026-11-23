@@ -52,21 +52,27 @@ export function searchTool<Metadata extends VectorMetadata = VectorMetadata>(
   options: SearchToolOptions<Metadata>,
 ): ToolIndex<Metadata> {
   const name = options.name.trim();
+
   if (name.length === 0) throw new TypeError("Search tool name must not be empty.");
+
   const topK = options.topK ?? 5;
+
   if (!Number.isSafeInteger(topK) || topK <= 0) {
     throw new RangeError("Search tool topK must be a positive safe integer.");
   }
+
   if (options.minScore !== undefined) {
     if (!Number.isFinite(options.minScore)) {
       throw new RangeError("Search tool minScore must be a finite number.");
     }
+
     if (options.model === undefined) {
       throw new TypeError(
         "Search tool minScore requires a model: vocabulary overlap scores are not comparable to embedding scores.",
       );
     }
   }
+
   const entities = loadEntities(options.entities);
   // A rejected entities promise must not surface as an unhandled rejection before the first
   // search reads it.
@@ -81,6 +87,7 @@ export function searchTool<Metadata extends VectorMetadata = VectorMetadata>(
     abortSignal?: AbortSignal,
   ): Promise<SearchHit<Metadata>[]> => {
     if (semantic === undefined) return rankByTerms(await entities, query, topK);
+
     return (await semantic)(query, abortSignal);
   };
 
@@ -117,7 +124,9 @@ export function searchTool<Metadata extends VectorMetadata = VectorMetadata>(
       }));
     },
   };
+
   if (options.minScore !== undefined) index.minScore = options.minScore;
+
   if (options.model !== undefined) index.embeddingModel = options.model;
 
   tool.call = async (args: unknown, context?: ToolCallContext) => {
@@ -147,7 +156,9 @@ class BoundedCache<Value> {
     this.entries.set(key, value);
     while (this.entries.size > this.limit) {
       const oldest = this.entries.keys().next();
+
       if (oldest.done === true) return;
+
       this.entries.delete(oldest.value);
     }
   }
@@ -173,7 +184,9 @@ function loadEntities<Metadata extends VectorMetadata>(
     for (const entity of list) {
       if (entity.id.trim().length === 0)
         throw new TypeError("Search entities require a non-empty id.");
+
       if (seen.has(entity.id)) throw new TypeError(`Duplicate search entity id "${entity.id}".`);
+
       seen.add(entity.id);
     }
     return list;
@@ -184,10 +197,13 @@ function searchQuery(name: string, args: unknown): string {
   if (typeof args !== "object" || args === null) {
     throw new TypeError(`Search tool "${name}" expects an object argument.`);
   }
+
   const query = (args as { query?: unknown }).query;
+
   if (typeof query !== "string" || query.trim().length === 0) {
     throw new TypeError(`Search tool "${name}" requires a non-empty "query" string.`);
   }
+
   return query;
 }
 
@@ -221,7 +237,9 @@ function rankerFor<Metadata extends VectorMetadata>(
         embeddingText: "compact",
         content: (_tool, definition) => byId.get(definition.name)!.text,
       };
+
       if (options.minScore !== undefined) createOptions.minScore = options.minScore;
+
       return { index: await createToolIndex(createOptions), byId };
     })();
     // A failed build must not poison the promise for later searches.
@@ -254,8 +272,11 @@ function toHit<Metadata extends VectorMetadata>(
   score: number,
 ): SearchHit<Metadata> {
   const hit: SearchHit<Metadata> = { id: entity.id, score, text: entity.text };
+
   if (entity.detail !== undefined) hit.detail = entity.detail;
+
   if (entity.metadata !== undefined) hit.metadata = entity.metadata;
+
   return hit;
 }
 
@@ -271,12 +292,16 @@ function rankByTerms<Metadata extends VectorMetadata>(
   topK: number,
 ): SearchHit<Metadata>[] {
   const terms = tokens(query);
+
   if (terms.length === 0) return [];
+
   const hits: SearchHit<Metadata>[] = [];
   for (const entity of entities) {
     const words = tokens(entityText(entity));
     const matched = terms.filter((term) => words.some((word) => word.startsWith(term)));
+
     if (matched.length === 0) continue;
+
     hits.push(toHit(entity, matched.length / terms.length));
   }
   hits.sort((left, right) => right.score - left.score || left.id.localeCompare(right.id));
@@ -292,5 +317,6 @@ function tokens(text: string): string[] {
 
 function defaultFormat(hits: readonly SearchHit[]): string {
   if (hits.length === 0) return "No matching entries.";
+
   return hits.map((hit) => entityText(hit)).join("\n\n");
 }

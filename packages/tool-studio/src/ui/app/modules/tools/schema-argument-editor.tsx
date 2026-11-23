@@ -37,9 +37,11 @@ export function SchemaArgumentEditor(props: {
   function removePathItem(path: JsonPath, index: number) {
     const base = rootValue ?? {};
     const arrayValue = getValueAtPath(base, path);
+
     if (!Array.isArray(arrayValue)) {
       return;
     }
+
     props.onChange(
       formatEditorJson(
         setValueAtPath(
@@ -246,6 +248,62 @@ function ArrayField(props: {
     index,
     key: `${formatPath(props.path)}:${index}:${formatEnumValue(item)}`,
   }));
+  function renderBody() {
+    if (itemSchema === undefined) {
+      return (
+        <JsonValueField
+          disabled={props.disabled}
+          path={props.path}
+          value={props.value}
+          onChange={props.onChange}
+        />
+      );
+    }
+
+    if (items.length === 0) {
+      return (
+        <div className="rounded-md border border-dashed border-hair px-3 py-2 text-xs text-muted-foreground">
+          Empty array
+        </div>
+      );
+    }
+
+    return (
+      <div className="grid gap-3 border-l border-hair pl-3">
+        {itemEntries.map((item) => (
+          <div className="grid gap-2" key={item.key}>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs font-medium text-muted-foreground">
+                Item {item.index + 1}
+              </span>
+              <Button
+                className="h-7 min-h-7 rounded-md px-2 text-xs"
+                disabled={props.disabled}
+                type="button"
+                variant="ghost"
+                onClick={() => props.onRemoveArrayItem(props.path, item.index)}
+              >
+                Remove
+              </Button>
+            </div>
+            <SchemaField
+              disabled={props.disabled}
+              field={{
+                name: String(item.index + 1),
+                required: true,
+                schema: itemSchema,
+              }}
+              path={[...props.path, item.index]}
+              rootValue={props.rootValue}
+              onChange={props.onChange}
+              onRemoveArrayItem={props.onRemoveArrayItem}
+            />
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   return (
     <div className="grid min-w-0 gap-3 border-b border-hair pb-3 last:border-b-0">
       <div className="flex min-w-0 items-center justify-between gap-3">
@@ -267,51 +325,7 @@ function ArrayField(props: {
       {props.description === undefined ? null : (
         <p className="m-0 text-xs leading-5 text-muted-foreground">{props.description}</p>
       )}
-      {itemSchema === undefined ? (
-        <JsonValueField
-          disabled={props.disabled}
-          path={props.path}
-          value={props.value}
-          onChange={props.onChange}
-        />
-      ) : items.length === 0 ? (
-        <div className="rounded-md border border-dashed border-hair px-3 py-2 text-xs text-muted-foreground">
-          Empty array
-        </div>
-      ) : (
-        <div className="grid gap-3 border-l border-hair pl-3">
-          {itemEntries.map((item) => (
-            <div className="grid gap-2" key={item.key}>
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-xs font-medium text-muted-foreground">
-                  Item {item.index + 1}
-                </span>
-                <Button
-                  className="h-7 min-h-7 rounded-md px-2 text-xs"
-                  disabled={props.disabled}
-                  type="button"
-                  variant="ghost"
-                  onClick={() => props.onRemoveArrayItem(props.path, item.index)}
-                >
-                  Remove
-                </Button>
-              </div>
-              <SchemaField
-                disabled={props.disabled}
-                field={{
-                  name: String(item.index + 1),
-                  required: true,
-                  schema: itemSchema,
-                }}
-                path={[...props.path, item.index]}
-                rootValue={props.rootValue}
-                onChange={props.onChange}
-                onRemoveArrayItem={props.onRemoveArrayItem}
-              />
-            </div>
-          ))}
-        </div>
-      )}
+      {renderBody()}
     </div>
   );
 }
@@ -342,6 +356,7 @@ function ScalarFieldControl(props: {
   onChange: (path: JsonPath, value: unknown | undefined) => void;
 }) {
   const enumOptions = schemaEnum(props.schema);
+
   if (enumOptions.length > 0) {
     const selectedIndex = enumOptions.findIndex((option) => jsonEqual(option, props.value));
     const optionEntries = enumOptions.map((option, index) => ({
@@ -383,6 +398,7 @@ function ScalarFieldControl(props: {
   }
 
   const type = schemaPrimaryType(props.schema);
+
   if (type === "boolean") {
     return (
       <label className="flex min-h-9 w-fit cursor-pointer items-center gap-2 rounded-md border border-hair bg-background px-3 text-sm text-foreground">
@@ -468,17 +484,21 @@ function NumberFieldControl(props: {
           setDraft("");
           return;
         }
+
         const nextValue = parseNumberDraft(draft, props.type);
         setDraft(nextValue.ok ? String(nextValue.value) : externalValue);
       }}
       onChange={(event) => {
         const nextDraft = event.target.value;
         setDraft(nextDraft);
+
         if (nextDraft.trim().length === 0) {
           props.onChange(props.path, undefined);
           return;
         }
+
         const nextValue = parseNumberDraft(nextDraft, props.type);
+
         if (nextValue.ok) {
           props.onChange(props.path, nextValue.value);
         }
@@ -511,11 +531,14 @@ function JsonValueField(props: {
         onChange={(event) => {
           const nextDraft = event.target.value;
           setDraft(nextDraft);
+
           if (nextDraft.trim().length === 0) {
             props.onChange(props.path, undefined);
             return;
           }
+
           const nextValue = parseJson(nextDraft);
+
           if (nextValue.ok) {
             props.onChange(props.path, nextValue.value);
           }
@@ -534,10 +557,13 @@ function schemaFields(schema: unknown): SchemaFieldDefinition[] {
   if (!isRecord(schema)) {
     return [];
   }
+
   const properties = schema.properties;
+
   if (!isRecord(properties)) {
     return [];
   }
+
   const required = schemaRequired(schema);
   return Object.entries(properties).map(([name, propertySchema]) => ({
     name,
@@ -548,34 +574,43 @@ function schemaFields(schema: unknown): SchemaFieldDefinition[] {
 
 function schemaRequired(schema: Record<string, unknown>): Set<string> {
   const required = schema.required;
+
   if (!Array.isArray(required)) {
     return new Set();
   }
+
   return new Set(required.filter((item): item is string => typeof item === "string"));
 }
 
 function schemaPrimaryType(schema: Record<string, unknown>): string {
   const type = schema.type;
+
   if (typeof type === "string") {
     return type;
   }
+
   if (Array.isArray(type)) {
     const firstType = type.find(
       (item): item is string => typeof item === "string" && item !== "null",
     );
+
     if (firstType !== undefined) {
       return firstType;
     }
   }
+
   if (schemaEnum(schema).length > 0) {
     return "enum";
   }
+
   if (isRecord(schema.properties)) {
     return "object";
   }
+
   if (schema.items !== undefined) {
     return "array";
   }
+
   return "unknown";
 }
 
@@ -607,26 +642,35 @@ function defaultValueForSchema(schema: Record<string, unknown>): unknown {
   if (Object.hasOwn(schema, "default")) {
     return schema.default;
   }
+
   const enumOptions = schemaEnum(schema);
+
   if (enumOptions.length > 0) {
     return enumOptions[0];
   }
+
   const type = schemaPrimaryType(schema);
+
   if (type === "boolean") {
     return false;
   }
+
   if (type === "integer" || type === "number") {
     return 0;
   }
+
   if (type === "array") {
     return [];
   }
+
   if (type === "object") {
     return {};
   }
+
   if (type === "string") {
     return "";
   }
+
   return null;
 }
 
@@ -637,12 +681,15 @@ function getValueAtPath(root: unknown, path: JsonPath): unknown {
       if (!Array.isArray(current)) {
         return undefined;
       }
+
       current = current[segment];
       continue;
     }
+
     if (!isRecord(current)) {
       return undefined;
     }
+
     current = current[segment];
   }
   return current;
@@ -652,8 +699,18 @@ function setValueAtPath(root: unknown, path: JsonPath, value: unknown | undefine
   if (path.length === 0) {
     return value;
   }
+
   const [segment, ...rest] = path;
-  const nextRoot = Array.isArray(root) ? [...root] : isRecord(root) ? { ...root } : {};
+  let nextRoot: unknown[] | Record<string, unknown>;
+
+  if (Array.isArray(root)) {
+    nextRoot = [...root];
+  } else if (isRecord(root)) {
+    nextRoot = { ...root };
+  } else {
+    nextRoot = {};
+  }
+
   if (rest.length === 0) {
     if (value === undefined) {
       if (Array.isArray(nextRoot) && typeof segment === "number") {
@@ -661,27 +718,35 @@ function setValueAtPath(root: unknown, path: JsonPath, value: unknown | undefine
       } else if (!Array.isArray(nextRoot) && typeof segment === "string") {
         delete nextRoot[segment];
       }
+
       return nextRoot;
     }
+
     if (Array.isArray(nextRoot) && typeof segment === "number") {
       nextRoot[segment] = value;
     } else if (!Array.isArray(nextRoot) && typeof segment === "string") {
       nextRoot[segment] = value;
     }
+
     return nextRoot;
   }
-  const currentValue =
-    Array.isArray(nextRoot) && typeof segment === "number"
-      ? nextRoot[segment]
-      : !Array.isArray(nextRoot) && typeof segment === "string"
-        ? nextRoot[segment]
-        : undefined;
+
+  let currentValue: unknown;
+
+  if (Array.isArray(nextRoot) && typeof segment === "number") {
+    currentValue = nextRoot[segment];
+  } else if (!Array.isArray(nextRoot) && typeof segment === "string") {
+    currentValue = nextRoot[segment];
+  }
+
   const nextValue = setValueAtPath(currentValue, rest, value);
+
   if (Array.isArray(nextRoot) && typeof segment === "number") {
     nextRoot[segment] = nextValue;
   } else if (!Array.isArray(nextRoot) && typeof segment === "string") {
     nextRoot[segment] = nextValue;
   }
+
   return nextRoot;
 }
 
@@ -689,6 +754,7 @@ function parseJson(value: string): ParseResult {
   if (value.trim().length === 0) {
     return { ok: true, value: undefined };
   }
+
   try {
     return { ok: true, value: JSON.parse(value) };
   } catch (error) {
@@ -700,16 +766,21 @@ type NumberParseResult = { ok: true; value: number } | { ok: false };
 
 function parseNumberDraft(value: string, type: "number" | "integer"): NumberParseResult {
   const normalized = value.trim();
+
   if (normalized.length === 0 || isIncompleteNumberDraft(normalized)) {
     return { ok: false };
   }
+
   const parsed = Number(normalized);
+
   if (!Number.isFinite(parsed)) {
     return { ok: false };
   }
+
   if (type === "integer" && !Number.isInteger(parsed)) {
     return { ok: false };
   }
+
   return { ok: true, value: parsed };
 }
 
@@ -729,6 +800,7 @@ function fieldJsonValue(value: unknown): string {
   if (value === undefined) {
     return "";
   }
+
   return formatEditorJson(value);
 }
 
@@ -744,12 +816,15 @@ function formatEnumValue(value: unknown): string {
   if (typeof value === "string") {
     return value;
   }
+
   if (typeof value === "number" || typeof value === "boolean") {
     return String(value);
   }
+
   if (value === null) {
     return "null";
   }
+
   return JSON.stringify(value);
 }
 

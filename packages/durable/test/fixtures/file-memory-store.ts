@@ -41,17 +41,22 @@ export class FileMemoryStore implements MemoryStore {
     const fingerprint = JSON.stringify([options.runId, options.turn, options.messages]);
     const known =
       options.idempotencyKey === undefined ? undefined : state.writes[options.idempotencyKey];
+
     if (known !== undefined)
       return {
         status: known === fingerprint ? "duplicate" : "conflict",
         version: String(state.version),
       };
+
     if (options.expectedVersion !== undefined && options.expectedVersion !== String(state.version))
       return { status: "conflict", version: String(state.version) };
+
     await this.beforeCommit();
     state.messages.push(...options.messages);
     state.version += 1;
+
     if (options.idempotencyKey !== undefined) state.writes[options.idempotencyKey] = fingerprint;
+
     writeFileSync(`${this.path}.tmp`, JSON.stringify(state));
     renameSync(`${this.path}.tmp`, this.path);
     await this.afterCommit();

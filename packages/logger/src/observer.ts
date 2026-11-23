@@ -49,11 +49,17 @@ class LoggerRunObserver implements AgentRunObserver {
       component: "anvia.agent",
       runId: args.runId,
     };
+
     if (args.agentName !== undefined) context.agentName = args.agentName;
+
     if (args.trace?.name !== undefined) context.traceName = args.trace.name;
+
     if (args.trace?.userId !== undefined) context.userId = args.trace.userId;
+
     if (args.trace?.sessionId !== undefined) context.sessionId = args.trace.sessionId;
+
     if (args.trace?.traceId !== undefined) context.traceId = args.trace.traceId;
+
     this.logger = logger.child(context);
     this.logger.info("agent run started", {
       agentDescription: args.agentDescription,
@@ -75,7 +81,9 @@ class LoggerRunObserver implements AgentRunObserver {
       toolName: args.toolName,
       internalCallId: args.internalCallId,
     };
+
     if (args.toolCallId !== undefined) context.toolCallId = args.toolCallId;
+
     const toolLogger = this.logger.child(context);
     toolLogger.info("agent tool started", {
       args: args.args,
@@ -89,10 +97,13 @@ class LoggerRunObserver implements AgentRunObserver {
       eventName: args.name,
       eventLevel: args.level ?? "DEFAULT",
     };
+
     if (args.timestamp !== undefined) context.eventTimestamp = args.timestamp;
+
     if (args.name === "completion.retry" && args.attributes !== undefined) {
       Object.assign(context, completionRetryContext(args.attributes));
     }
+
     if (args.level === "ERROR") {
       this.logger.error("agent event", context);
     } else if (args.level === "WARNING") {
@@ -110,11 +121,15 @@ class LoggerRunObserver implements AgentRunObserver {
       usage: args.usage,
       messageCount: args.messages.length,
     };
+
     if (args.resumedFrom !== undefined) context.resumedFrom = args.resumedFrom;
+
     if (args.status === "blocked") context.blockedStage = args.stage;
+
     if (this.options.includeOutput === true && args.status === "completed") {
       context.output = args.output;
     }
+
     this.logger.info("agent run ended", context);
   }
 
@@ -125,6 +140,7 @@ class LoggerRunObserver implements AgentRunObserver {
       usage: args.usage,
       messageCount: args.messages.length,
     };
+
     if (args.status === "cancelled") {
       this.logger.warn("agent run cancelled", context);
     } else {
@@ -157,12 +173,14 @@ function completionRetryContext(attributes: Readonly<Record<string, unknown>>): 
   const context: LogContext = {};
   for (const name of COMPLETION_RETRY_SCALAR_ATTRIBUTES) {
     const value = attributes[name];
+
     if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
       context[name] = value;
     }
   }
   for (const name of ["attemptUsage", "cumulativeUsage"] as const) {
     const value = attributes[name];
+
     if (isUsageMetadata(value)) context[name] = { ...value };
   }
   return context;
@@ -202,12 +220,15 @@ class LoggerToolObserver implements AgentToolObserver {
     const context: LogContext = {
       skipped: args.skipped,
     };
+
     if (this.options.includeToolResult === true) {
       context.result = args.result;
+
       if (args.structuredResult !== undefined) {
         context.structuredResult = args.structuredResult;
       }
     }
+
     this.logger.info("agent tool ended", context);
   }
 
@@ -235,7 +256,9 @@ function generationStartContext(
     model: args.modelInfo?.modelId,
     providerRequest: args.providerRequest,
   };
+
   if (options.includeRequest === true) context.request = args.request;
+
   return context;
 }
 
@@ -248,7 +271,9 @@ function generationEndContext(
     firstDeltaMs: args.firstDeltaMs,
     usage: args.response.usage,
   };
+
   if (options.includeResponse === true) context.response = args.response;
+
   return context;
 }
 
@@ -272,7 +297,9 @@ function serializeError(
 ): unknown {
   if (error instanceof Error) {
     if (seen.has(error)) return "[Circular error cause]";
+
     if (depth >= MAX_SERIALIZED_ERROR_CAUSE_DEPTH) return "[Error cause depth limit]";
+
     seen.add(error);
     const providerOutputError = isCompletionProviderOutputError(error);
     const serialized: Record<string, unknown> = providerOutputError
@@ -284,15 +311,19 @@ function serializeError(
           name: error.name,
           message: error.message,
         };
+
     if (!providerOutputError && options.includeErrorStack === true) {
       serialized.stack = error.stack;
     }
+
     if (isStructuredOutputError(error)) {
       addStructuredOutputMetadata(serialized, error);
     }
+
     if (providerOutputError) {
       addCompletionProviderOutputMetadata(serialized, error);
     }
+
     if (error.cause !== undefined) {
       if (isStructuredOutputError(error)) {
         serialized.cause = structuredOutputCauseMetadata(error.cause);
@@ -300,6 +331,7 @@ function serializeError(
         serialized.cause = serializeError(error.cause, options, seen, depth + 1);
       }
     }
+
     return serialized;
   }
 
@@ -313,6 +345,7 @@ function addCompletionProviderOutputMetadata(
   const details = error as unknown as Record<string, unknown>;
   serialized.code = COMPLETION_PROVIDER_OUTPUT_ERROR_CODE;
   serialized.kind = details.kind;
+
   if (
     details.finishReason === "stop" ||
     details.finishReason === "length" ||
@@ -336,6 +369,7 @@ function isCompletionProviderOutputError(error: Error): boolean {
 
 function addStructuredOutputMetadata(serialized: Record<string, unknown>, error: Error): void {
   const details = error as unknown as Record<string, unknown>;
+
   if (
     details.phase === "truncated" ||
     details.phase === "content-filter" ||
@@ -344,12 +378,15 @@ function addStructuredOutputMetadata(serialized: Record<string, unknown>, error:
   ) {
     serialized.phase = details.phase;
   }
+
   for (const name of ["attempt", "maxAttempts", "outputLength", "normalizedLength"] as const) {
     const value = details[name];
+
     if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) {
       serialized[name] = value;
     }
   }
+
   if (
     details.outputFormat === "raw" ||
     details.outputFormat === "json-fence" ||
@@ -357,6 +394,7 @@ function addStructuredOutputMetadata(serialized: Record<string, unknown>, error:
   ) {
     serialized.outputFormat = details.outputFormat;
   }
+
   if (
     details.finishReason === "stop" ||
     details.finishReason === "length" ||
@@ -366,9 +404,11 @@ function addStructuredOutputMetadata(serialized: Record<string, unknown>, error:
   ) {
     serialized.finishReason = details.finishReason;
   }
+
   if (typeof details.providerFinishReason === "string") {
     serialized.providerFinishReason = details.providerFinishReason;
   }
+
   for (const name of ["attemptUsage", "usage"] as const) {
     if (isUsageMetadata(details[name])) serialized[name] = { ...details[name] };
   }
@@ -382,6 +422,7 @@ function isStructuredOutputError(error: Error): boolean {
 
 function isUsageMetadata(value: unknown): value is Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+
   const usage = value as Record<string, unknown>;
   return (
     typeof usage.inputTokens === "number" &&
@@ -394,10 +435,12 @@ function structuredOutputCauseMetadata(cause: unknown): Record<string, unknown> 
   const metadata: Record<string, unknown> = {
     message: "Structured-output cause details redacted.",
   };
+
   if (cause instanceof Error) {
     metadata.name = cause.name;
   } else {
     metadata.type = cause === null ? "null" : typeof cause;
   }
+
   return metadata;
 }

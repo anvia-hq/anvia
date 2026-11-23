@@ -13,12 +13,16 @@ export function validateRuntimeLimits(runtime?: SandboxRuntimeLimits): void {
   if (runtime !== undefined && !isRecord(runtime)) {
     throw new TypeError("runtime must be an object.");
   }
+
   if (runtime?.commandTimeoutMs !== undefined)
     assertPositiveSafeInteger(runtime.commandTimeoutMs, "commandTimeoutMs");
+
   if (runtime?.maxOutputBytes !== undefined)
     assertNonNegativeSafeInteger(runtime.maxOutputBytes, "maxOutputBytes");
+
   if (runtime?.maxFileBytes !== undefined)
     assertNonNegativeSafeInteger(runtime.maxFileBytes, "maxFileBytes");
+
   if (runtime?.maxProcesses !== undefined)
     assertNonNegativeSafeInteger(runtime.maxProcesses, "maxProcesses");
 }

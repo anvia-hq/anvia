@@ -95,8 +95,11 @@ describe("PrismaDurableStore", () => {
       const set = new Set<string>();
       for (const line of body!.split("\n")) {
         const map = line.match(/@@map\("(\w+)"\)/);
+
         if (map) table = map[1]!;
+
         const field = line.match(/^ {2}(\w+)\s+\S+/);
+
         if (field && !line.trim().startsWith("@@"))
           set.add(line.match(/@map\("(\w+)"\)/)?.[1] ?? field[1]!);
       }

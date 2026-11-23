@@ -63,7 +63,9 @@ describe.each(["azure", "openai"] as const)(
 
         // Replay the assembled choice through the adapter to preserve reasoning across turns.
         expect(final).toBeDefined();
+
         if (final?.type !== "final") throw new Error("Expected a final completion");
+
         fetch.mockImplementationOnce(
           async () =>
             new Response(

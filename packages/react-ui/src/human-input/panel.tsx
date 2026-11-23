@@ -16,6 +16,7 @@ const HumanInputPanel = forwardRef<HTMLDivElement, HumanInputPanelProps>(functio
   const humanInput = useHumanInput();
   const approvals = filter === "all" ? humanInput.approvals.all : humanInput.approvals.pending;
   const questions = filter === "all" ? humanInput.questions.all : humanInput.questions.pending;
+
   if (approvals.length === 0 && questions.length === 0) {
     return null;
   }

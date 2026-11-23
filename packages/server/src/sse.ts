@@ -19,7 +19,9 @@ export function createSseStream<TEvent>(
     async pull(controller) {
       try {
         const next = await iterator.next();
+
         if (cancelled) return;
+
         if (next.done === true) {
           controller.close();
           return;
@@ -30,6 +32,7 @@ export function createSseStream<TEvent>(
         );
       } catch (error) {
         if (cancelled) return;
+
         const event = errorEvent(error);
         controller.enqueue(encoder.encode(formatSseEvent(event, serialize, options.eventName)));
         controller.close();
@@ -52,6 +55,7 @@ function formatSseEvent<TEvent>(
   const name = typeof eventName === "function" ? eventName(event) : eventName;
   const lines: string[] = [];
   const id = eventId?.(event);
+
   if (id !== undefined) {
     validateSseEventName(id);
     lines.push(`id: ${id}`);
@@ -78,6 +82,7 @@ function validateSseOptions<TEvent>(options: SseStreamOptions<TEvent>): void {
   if (options.retry !== undefined && !isValidRetry(options.retry)) {
     throw new TypeError("SSE retry must be a finite non-negative integer");
   }
+
   if (typeof options.eventName === "string") {
     validateSseEventName(options.eventName);
   }
@@ -90,6 +95,7 @@ function isValidRetry(value: number): boolean {
 function validateSseEventName(name: string): void {
   for (const character of name) {
     const code = character.charCodeAt(0);
+
     if (code === 0 || code === 10 || code === 13) {
       throw new TypeError("SSE event names must not contain null bytes or line breaks");
     }

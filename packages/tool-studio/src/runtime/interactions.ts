@@ -32,17 +32,22 @@ export function createStudioContinuationRegistry<Context>(): StudioContinuationR
   return {
     register(registration) {
       const id = registration.continuation.interaction.id;
+
       if (pending.has(id) || claimed.has(id)) {
         throw new TypeError(`Duplicate Studio interaction ID "${id}".`);
       }
+
       pending.set(id, registration);
     },
     take(interactionId, agentId, response) {
       if (claimed.has(interactionId)) return { status: "claimed" };
+
       const registration = pending.get(interactionId);
+
       if (registration === undefined || registration.continuation.agentId !== agentId) {
         return { status: "missing" };
       }
+
       const request = registration.continuation.interaction;
       try {
         assertAgentInteractionResponse(request, response);

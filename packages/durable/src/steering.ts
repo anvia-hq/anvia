@@ -15,6 +15,7 @@ import type {
 const id = z.string().refine((value) => value.trim().length > 0);
 const userMessage = messageSchema.transform((message, context) => {
   if (message.role === "user") return message;
+
   context.addIssue({ code: "custom", message: "Steering requires user messages." });
   return z.NEVER;
 });
@@ -50,6 +51,7 @@ export function parseDurableSteering(value: unknown): {
     .object({ input: inputSchema, requestId: id.optional() })
     .strict()
     .safeParse(json(value));
+
   if (!parsed.success) throw new TypeError("Invalid durable steering input.");
 
   const steering: { input: AgentSteerInput; requestId?: string } = {
@@ -68,7 +70,9 @@ export function parseDurableSteerReceipt(value: unknown): AgentSteerReceipt {
     .object({ id, status: z.literal("queued") })
     .strict()
     .safeParse(value);
+
   if (!parsed.success) throw new TypeError("Invalid durable steering receipt.");
+
   return parsed.data;
 }
 
@@ -80,25 +84,33 @@ export async function queueSteering(
 ): Promise<AgentSteerReceipt> {
   const parsed = inputSchema.safeParse(json(input));
   const parsedOptions = optionsSchema.safeParse(json(options));
+
   if (!parsed.success || !parsedOptions.success)
     throw new TypeError("Invalid durable steering input.");
+
   const messages =
     "prompt" in parsed.data ? [promptMessage(parsed.data.prompt)] : parsed.data.messages;
   const requestId = parsedOptions.data.requestId ?? globalThis.crypto.randomUUID();
   const state = run.steering;
+
   if (state === undefined)
     throw new DurableConflictError("Steering requires a run submitted with steering support.");
+
   const previous = [
     ...state.pending,
     ...Object.values(state.checkpoints).flatMap((checkpoint) => checkpoint.entries),
   ].find((entry) => entry.id === requestId);
+
   if (previous !== undefined) {
     if (!sameJson(previous.messages, messages))
       throw new DurableConflictError("Steering request already received different input.");
+
     return { id: requestId, status: "queued" };
   }
+
   if (state.closed || ["completed", "failed", "cancelled"].includes(run.status))
     throw new DurableConflictError("Durable run is no longer accepting steering input.");
+
   state.pending.push({ id: requestId, messages });
   run.updatedAt = new Date().toISOString();
   await tx.putRun(run);
@@ -120,16 +132,22 @@ export function createSteeringDrain(
       const current = (await tx.getRun(run.id))!;
       const state = current.steering!;
       const previous = state.checkpoints[key];
+
       if (previous !== undefined) {
         if (previous.turn !== turn || previous.closing !== closing)
           throw new DurableRecoveryError("Steering changed at a saved checkpoint.");
+
         return previous.entries;
       }
+
       if (current.status !== "running") throw new Error("Durable run is no longer running.");
+
       const entries = state.pending.splice(0);
       state.checkpoints[key] = { turn, closing, entries };
+
       // Fence the gap between core's final drain and the durable outcome commit.
       if (closing && entries.length === 0) state.closed = true;
+
       await tx.putRun(current);
       for (const entry of entries)
         await tx.appendEvent(run.id, "steering_applied", { id: entry.id, epoch: run.epoch, turn });

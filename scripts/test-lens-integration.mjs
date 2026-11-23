@@ -19,6 +19,7 @@ for (const name of [
 ]) {
   if (!environment[name]) throw new Error(`${name} is required in .env or the process environment`);
 }
+
 if (!/^[A-Za-z0-9_-]+$/.test(environment.ANVIA_LENS_PUBLIC_KEY)) {
   throw new Error("ANVIA_LENS_PUBLIC_KEY contains unsupported characters");
 }
@@ -28,6 +29,7 @@ if (options.has("--rebuild")) {
 } else {
   run("docker", ["compose", "up", "-d"], { cwd: lensRoot });
 }
+
 await waitForReady();
 const localApiBaseUrl = composeServiceUrl("api", 3001);
 
@@ -45,6 +47,7 @@ const projectId = compose([
   "-Atc",
   "SELECT project_id FROM project_api_keys WHERE public_key = :'public_key' AND revoked_at IS NULL LIMIT 1",
 ]).trim();
+
 if (!/^[0-9a-f-]{36}$/.test(projectId)) {
   throw new Error("The configured public key does not resolve to an active Lens project");
 }
@@ -61,12 +64,15 @@ const payload = parseSmokeOutput(smoke);
 const traceId = payload.trace?.traceId;
 const observationId = payload.trace?.observationId;
 const runId = payload.runId;
+
 if (!/^[0-9a-f]{32}$/.test(traceId ?? "") || !/^[0-9a-f]{16}$/.test(observationId ?? "")) {
   throw new Error("The native smoke example did not return valid trace correlation identifiers");
 }
+
 if (typeof runId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(runId)) {
   throw new Error("The native smoke example did not return an evaluation run ID");
 }
+
 if (payload.outcome !== "pass")
   throw new Error(`Expected a passing evaluation, got ${payload.outcome}`);
 
@@ -100,17 +106,23 @@ const evaluation = JSON.parse(
     { project_id: projectId, trace_id: traceId },
   ).trim(),
 );
+
 if (evaluation.observation_id !== observationId) {
   throw new Error("The evaluation was not correlated with the expected observation");
 }
+
 if (evaluation.run_id !== runId) throw new Error("The evaluation was not grouped into its run");
+
 if (evaluation.metric_name !== "refund-policy-correctness" || evaluation.outcome !== "pass") {
   throw new Error("The stored evaluation metric or outcome is incorrect");
 }
+
 if (evaluation.payload_status !== "captured" || typeof evaluation.payload !== "string") {
   throw new Error("The opt-in evaluation payload was not captured");
 }
+
 const evaluationPayload = JSON.parse(evaluation.payload);
+
 if (
   evaluationPayload.input !== "How long are refunds available?" ||
   evaluationPayload.expected !== "30 days" ||
@@ -127,6 +139,7 @@ const capturedPayloads = Number(
     { project_id: projectId, trace_id: traceId },
   ).trim(),
 );
+
 if (capturedPayloads !== 0) throw new Error("Safe capture exported an input or output payload");
 
 if (options.has("--durability")) {
@@ -180,7 +193,9 @@ function composeServiceUrl(service, port) {
     .trim()
     .split(/\r?\n/, 1)[0];
   const hostPort = address?.match(/:(\d+)$/)?.[1];
+
   if (hostPort === undefined) throw new Error(`Could not resolve the ${service} Compose port`);
+
   return `http://127.0.0.1:${hostPort}`;
 }
 
@@ -210,6 +225,7 @@ function assertReady() {
     "-qO-",
     "http://127.0.0.1:3001/health/ready",
   ]);
+
   if (JSON.parse(result).status !== "ready") throw new Error("Lens API is not ready");
 }
 
@@ -228,18 +244,22 @@ function run(command, args, settings = {}) {
     maxBuffer: 10 * 1024 * 1024,
     stdio: settings.capture ? "pipe" : "inherit",
   });
+
   if (result.status !== 0) {
     const details = [result.stdout, result.stderr].filter(Boolean).join("\n").trim();
     throw new Error(
       `${command} failed with exit code ${result.status}${details ? `:\n${details}` : ""}`,
     );
   }
+
   return result.stdout ?? "";
 }
 
 function parseSmokeOutput(output) {
   const start = output.indexOf("{");
+
   if (start < 0) throw new Error("The native smoke example did not print a JSON result");
+
   return JSON.parse(output.slice(start));
 }
 
@@ -264,7 +284,9 @@ function loadEnvironment(source) {
       .filter((line) => line.length > 0 && !line.startsWith("#"))
       .map((line) => {
         const separator = line.indexOf("=");
+
         if (separator < 1) return [line, ""];
+
         const key = line.slice(0, separator).trim();
         const raw = line.slice(separator + 1).trim();
         const value =

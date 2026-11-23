@@ -58,6 +58,7 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
       if (typeof event.delta !== "string") {
         throw new CompletionProviderOutputError({ kind: "invalid-stream-event" });
       }
+
       this.appendText(event.delta);
       return { type: "text_delta", delta: event.delta };
     }
@@ -71,6 +72,7 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
       ) {
         throw new CompletionProviderOutputError({ kind: "invalid-stream-event" });
       }
+
       const reasoning = this.reasoningStateForEvent(event);
       this.appendReasoning(reasoning, event);
       return reasoningDeltaEvent(event);
@@ -80,13 +82,16 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
       if (!isNonblankString(event.id)) {
         throw new CompletionProviderOutputError({ kind: "invalid-tool-call" });
       }
+
       const toolCall = this.toolCallStateForId(event.id);
+
       if (toolCall.fullCallSeen) {
         throw new CompletionProviderOutputError({
           kind: "invalid-tool-call",
           toolCallId: toolCall.id,
         });
       }
+
       if (event.callId !== undefined) {
         if (!isNonblankString(event.callId)) {
           throw new CompletionProviderOutputError({
@@ -94,14 +99,17 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
             toolCallId: toolCall.id,
           });
         }
+
         if (toolCall.callId !== undefined && toolCall.callId !== event.callId) {
           throw new CompletionProviderOutputError({
             kind: "invalid-tool-call",
             toolCallId: toolCall.id,
           });
         }
+
         toolCall.callId = event.callId;
       }
+
       if (event.name !== undefined) {
         if (!isNonblankString(event.name)) {
           throw new CompletionProviderOutputError({
@@ -109,14 +117,17 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
             toolCallId: toolCall.id,
           });
         }
+
         if (toolCall.name.length > 0 && toolCall.name !== event.name) {
           throw new CompletionProviderOutputError({
             kind: "invalid-tool-call",
             toolCallId: toolCall.id,
           });
         }
+
         toolCall.name = event.name;
       }
+
       if (event.signature !== undefined) {
         if (
           !isNonblankString(event.signature) ||
@@ -127,8 +138,10 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
             toolCallId: toolCall.id,
           });
         }
+
         toolCall.signature = event.signature;
       }
+
       if (
         event.argumentsMode !== undefined &&
         event.argumentsMode !== "append" &&
@@ -139,12 +152,14 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
           toolCallId: toolCall.id,
         });
       }
+
       if (event.argumentsMode !== undefined && event.argumentsDelta === undefined) {
         throw new CompletionProviderOutputError({
           kind: "invalid-stream-event",
           toolCallId: toolCall.id,
         });
       }
+
       if (event.argumentsDelta !== undefined) {
         if (typeof event.argumentsDelta !== "string") {
           throw new CompletionProviderOutputError({
@@ -152,6 +167,7 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
             toolCallId: toolCall.id,
           });
         }
+
         if (event.argumentsMode === "replace") {
           if (
             toolCall.argumentsText.length > 0 &&
@@ -164,6 +180,7 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
               toolCallId: toolCall.id,
             });
           }
+
           toolCall.argumentsText = event.argumentsDelta;
           toolCall.argumentsSnapshotSeen = true;
         } else {
@@ -173,9 +190,11 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
               toolCallId: toolCall.id,
             });
           }
+
           toolCall.argumentsText += event.argumentsDelta;
         }
       }
+
       return undefined;
     }
 
@@ -198,6 +217,7 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
       if (!isNonblankString(event.id)) {
         throw new CompletionProviderOutputError({ kind: "invalid-stream-event" });
       }
+
       this.messageId = event.id;
       return undefined;
     }
@@ -219,12 +239,15 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
       if (error instanceof CompletionProviderOutputError && this.finalResponse !== undefined) {
         throw providerOutputErrorWithUsage(error, this.finalResponse.usage);
       }
+
       throw error;
     }
+
     if (this.finalResponse !== undefined) {
       if (accumulatedResponse.choice.length === 0) {
         return this.withAccumulatedArtifacts(this.finalResponse, accumulatedResponse);
       }
+
       return this.mergeFinalResponse(accumulatedResponse, this.finalResponse);
     }
 
@@ -236,14 +259,18 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
       if (this.toolCalls.size === 0) {
         throw new CompletionProviderOutputError({ kind: "incomplete-stream" });
       }
+
       const toolCallId = this.toolCalls.size === 1 ? this.toolCalls.keys().next().value : undefined;
       throw new CompletionProviderOutputError({
         kind: "incomplete-tool-call",
         toolCallId,
       });
     }
+
     if (this.toolCalls.size === 0) return;
+
     const finishReason = this.finalResponse.finishReason;
+
     if (finishReason === "length") {
       throw new CompletionProviderOutputError({
         kind: "truncated-tool-call",
@@ -251,6 +278,7 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
         usage: this.finalResponse.usage,
       });
     }
+
     if (finishReason === "content-filter") {
       throw new CompletionProviderOutputError({
         kind: "filtered-tool-call",
@@ -258,6 +286,7 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
         usage: this.finalResponse.usage,
       });
     }
+
     if (finishReason !== undefined && finishReason !== "stop" && finishReason !== "tool-calls") {
       throw new CompletionProviderOutputError({
         kind: "invalid-tool-call",
@@ -272,21 +301,26 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
     for (const part of this.orderedParts) {
       if (part.type === "text") {
         const text = this.textParts.get(part.key) ?? "";
+
         if (text.length > 0) {
           choice.push({ type: "text", text });
         }
+
         continue;
       }
 
       if (part.type === "reasoning") {
         const reasoning = this.reasoningByKey.get(part.key);
+
         if (reasoning !== undefined) {
           choice.push(reasoningContent(reasoning));
         }
+
         continue;
       }
 
       const toolCall = this.toolCalls.get(part.key);
+
       if (toolCall !== undefined) {
         choice.push(toolCallContent(toolCall));
       }
@@ -297,17 +331,23 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
       usage: Usage.empty(),
       rawResponse: undefined as RawResponse,
     };
+
     if (this.messageId !== undefined) {
       response.messageId = this.messageId;
     }
+
     const sources = [...this.sources.values()];
+
     if (sources.length > 0) {
       response.sources = sources;
     }
+
     const providerToolCalls = [...this.providerToolCalls.values()];
+
     if (providerToolCalls.length > 0) {
       response.providerToolCalls = providerToolCalls;
     }
+
     return response;
   }
 
@@ -323,13 +363,16 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
         toolCallId: isNonblankString(toolCall.toolCallId) ? toolCall.toolCallId : undefined,
       });
     }
+
     if (!isJsonValue(toolCall.input)) {
       throw new CompletionProviderOutputError({
         kind: "invalid-tool-arguments",
         toolCallId: toolCall.toolCallId,
       });
     }
+
     const existing = this.toolCalls.get(toolCall.toolCallId);
+
     if (existing !== undefined) {
       if (existing.fullCallSeen) {
         throw new CompletionProviderOutputError({
@@ -337,6 +380,7 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
           toolCallId: toolCall.toolCallId,
         });
       }
+
       if (
         (existing.name.length > 0 && existing.name !== toolCall.toolName) ||
         (existing.callId !== undefined && existing.callId !== toolCall.callId) ||
@@ -349,8 +393,10 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
           toolCallId: toolCall.toolCallId,
         });
       }
+
       if (existing.argumentsText.length > 0) {
         const accumulatedInput = parseToolArguments(existing.id, existing.argumentsText);
+
         if (!jsonValuesEqual(accumulatedInput, toolCall.input)) {
           throw new CompletionProviderOutputError({
             kind: "invalid-tool-call",
@@ -359,9 +405,11 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
         }
       }
     }
+
     if (!this.toolCalls.has(toolCall.toolCallId)) {
       this.orderedParts.push({ type: "tool_call", key: toolCall.toolCallId });
     }
+
     const partial: PartialToolCall = {
       id: toolCall.toolCallId,
       name: toolCall.toolName,
@@ -369,13 +417,17 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
       argumentsSnapshotSeen: true,
       fullCallSeen: true,
     };
+
     if (toolCall.callId !== undefined) {
       partial.callId = toolCall.callId;
     }
+
     const signature = toolCall.signature ?? existing?.signature;
+
     if (signature !== undefined) {
       partial.signature = signature;
     }
+
     this.toolCalls.set(toolCall.toolCallId, partial);
   }
 
@@ -395,6 +447,7 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
       (content) => content.type !== "tool-call",
     );
     const finalNonTool = finalResponse.choice.filter((content) => content.type !== "tool-call");
+
     if (
       accumulatedNonTool.length > 0 &&
       !nonToolPartsMatchFinal(accumulatedNonTool, finalNonTool)
@@ -409,17 +462,22 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
     const accumulatedByCallId = new Map<string, ToolCallPart>();
     for (const content of accumulatedResponse.choice) {
       if (content.type !== "tool-call") continue;
+
       accumulatedById.set(content.toolCallId, content);
+
       if (content.callId !== undefined) accumulatedByCallId.set(content.callId, content);
     }
 
     const matchedAccumulatedToolCalls = new Set<ToolCallPart>();
     const choice = finalResponse.choice.map((content) => {
       if (content.type !== "tool-call") return content;
+
       const accumulated = accumulatedById.get(content.toolCallId);
+
       if (accumulated === undefined) {
         const changedIdentity =
           content.callId === undefined ? undefined : accumulatedByCallId.get(content.callId);
+
         if (changedIdentity !== undefined) {
           throw new CompletionProviderOutputError({
             kind: "invalid-tool-call",
@@ -427,8 +485,10 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
             usage: finalResponse.usage,
           });
         }
+
         return content;
       }
+
       matchedAccumulatedToolCalls.add(accumulated);
       return mergeFinalToolCall(accumulated, content, finalResponse.usage);
     });
@@ -449,9 +509,11 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
   private appendText(delta: string): void {
     const lastPart = this.orderedParts.at(-1);
     const key = lastPart?.type === "text" ? lastPart.key : this.createTextKey();
+
     if (lastPart?.type !== "text") {
       this.orderedParts.push({ type: "text", key });
     }
+
     this.textParts.set(key, `${this.textParts.get(key) ?? ""}${delta}`);
   }
 
@@ -460,8 +522,10 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
   ): ReasoningState {
     if (event.id !== undefined) {
       const existingKey = this.reasoningKeyById.get(event.id);
+
       if (existingKey !== undefined) {
         const existing = this.reasoningByKey.get(existingKey);
+
         if (existing !== undefined) {
           return existing;
         }
@@ -476,8 +540,10 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
     }
 
     const lastPart = this.orderedParts.at(-1);
+
     if (lastPart?.type === "reasoning") {
       const lastReasoning = this.reasoningByKey.get(lastPart.key);
+
       if (lastReasoning !== undefined && lastReasoning.id === undefined) {
         return lastReasoning;
       }
@@ -492,6 +558,7 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
 
   private toolCallStateForId(id: string): PartialToolCall {
     const existing = this.toolCalls.get(id);
+
     if (existing !== undefined) {
       return existing;
     }
@@ -515,6 +582,7 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
     if (response.messageId !== undefined || accumulatedResponse.messageId === undefined) {
       return response;
     }
+
     return { ...response, messageId: accumulatedResponse.messageId };
   }
 
@@ -529,10 +597,13 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
       response.providerToolCalls,
     );
     let accumulated: CompletionResponse<RawResponse> = { ...withMessageId };
+
     if (sources.length > 0) accumulated = { ...accumulated, sources };
+
     if (providerToolCalls.length > 0) {
       accumulated = { ...accumulated, providerToolCalls };
     }
+
     return accumulated;
   }
 
@@ -551,6 +622,7 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
     event: Extract<CompletionModelStreamEvent<RawResponse>, { type: "reasoning_delta" }>,
   ): void {
     const contentType = event.contentType ?? "text";
+
     if (contentType === "text" || contentType === "summary") {
       reasoning.text += event.delta;
     }
@@ -561,13 +633,16 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
 
     reasoning.details ??= [];
     const last = reasoning.details.at(-1);
+
     if (contentType === "text") {
       if (last?.type === "text") {
         let detail: ReasoningDetail = {
           ...last,
           text: `${last.text}${event.delta}`,
         };
+
         if (event.signature !== undefined) detail = { ...detail, signature: event.signature };
+
         reasoning.details[reasoning.details.length - 1] = detail;
       } else {
         reasoning.details.push(
@@ -576,6 +651,7 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
             : { type: "text", text: event.delta, signature: event.signature },
         );
       }
+
       return;
     }
 
@@ -588,6 +664,7 @@ export class CompletionStreamAccumulator<RawResponse = unknown> {
       } else {
         reasoning.details.push({ type: "summary", text: event.delta });
       }
+
       return;
     }
 
@@ -642,8 +719,11 @@ function toolCallContent(toolCall: PartialToolCall): ToolCallPart {
     toolName: toolCall.name,
     input: argumentsValue,
   };
+
   if (toolCall.callId !== undefined) content = { ...content, callId: toolCall.callId };
+
   if (toolCall.signature !== undefined) content = { ...content, signature: toolCall.signature };
+
   return content;
 }
 
@@ -666,6 +746,7 @@ function mergeFinalToolCall(
       usage,
     });
   }
+
   if (!isJsonValue(finalToolCall.input)) {
     throw new CompletionProviderOutputError({
       kind: "invalid-tool-arguments",
@@ -673,6 +754,7 @@ function mergeFinalToolCall(
       usage,
     });
   }
+
   if (!jsonValuesEqual(accumulated.input, finalToolCall.input)) {
     throw new CompletionProviderOutputError({
       kind: "invalid-tool-call",
@@ -680,6 +762,7 @@ function mergeFinalToolCall(
       usage,
     });
   }
+
   let merged: ToolCallPart = {
     type: "tool-call",
     toolCallId: finalToolCall.toolCallId,
@@ -687,9 +770,13 @@ function mergeFinalToolCall(
     input: accumulated.input,
   };
   const callId = finalToolCall.callId ?? accumulated.callId;
+
   if (callId !== undefined) merged = { ...merged, callId };
+
   const signature = finalToolCall.signature ?? accumulated.signature;
+
   if (signature !== undefined) merged = { ...merged, signature };
+
   return merged;
 }
 
@@ -697,15 +784,20 @@ function reasoningDeltaEvent(
   event: Extract<CompletionModelStreamEvent, { type: "reasoning_delta" }>,
 ): AccumulatedStreamEvent {
   const mapped: AccumulatedStreamEvent = { type: "reasoning_delta", delta: event.delta };
+
   if (event.id !== undefined) mapped.id = event.id;
+
   if (event.contentType !== undefined) mapped.contentType = event.contentType;
+
   if (event.signature !== undefined) mapped.signature = event.signature;
+
   return mapped;
 }
 
 function parseToolArguments(toolCallId: string, text: string): JsonValue {
   // Some OpenAI-compatible backends send "" for zero-argument tool calls.
   if (text.trim() === "") return {};
+
   let value: unknown;
   try {
     value = JSON.parse(text);
@@ -715,12 +807,14 @@ function parseToolArguments(toolCallId: string, text: string): JsonValue {
       toolCallId,
     });
   }
+
   if (!isJsonValue(value)) {
     throw new CompletionProviderOutputError({
       kind: "invalid-tool-arguments",
       toolCallId,
     });
   }
+
   return value;
 }
 
@@ -728,13 +822,16 @@ function jsonValuesEqual(left: JsonValue, right: JsonValue): boolean {
   if (left === right) {
     return true;
   }
+
   if (left === null || right === null || typeof left !== "object" || typeof right !== "object") {
     return false;
   }
+
   if (isJsonArray(left) || isJsonArray(right)) {
     if (!isJsonArray(left) || !isJsonArray(right) || left.length !== right.length) {
       return false;
     }
+
     return left.every((value, index) => {
       const rightValue = right[index];
       return rightValue !== undefined && jsonValuesEqual(value, rightValue);
@@ -743,15 +840,19 @@ function jsonValuesEqual(left: JsonValue, right: JsonValue): boolean {
 
   const leftKeys = Object.keys(left);
   const rightKeys = Object.keys(right);
+
   if (leftKeys.length !== rightKeys.length) {
     return false;
   }
+
   for (const key of leftKeys) {
     if (!Object.hasOwn(right, key)) {
       return false;
     }
+
     const leftValue = left[key];
     const rightValue = right[key];
+
     if (
       leftValue === undefined ||
       rightValue === undefined ||
@@ -768,15 +869,19 @@ function nonToolPartsMatchFinal(
   final: readonly AssistantContentPart[],
 ): boolean {
   if (!isJsonValue(accumulated) || !isJsonValue(final)) return false;
+
   const unmatched = [...final];
   for (const part of accumulated) {
     let index = unmatched.findIndex((candidate) => jsonValuesEqual(part, candidate));
+
     if (index < 0 && part.type === "reasoning") {
       index = unmatched.findIndex(
         (candidate) => candidate.type === "reasoning" && reasoningMatchesFinal(part, candidate),
       );
     }
+
     if (index < 0) return false;
+
     unmatched.splice(index, 1);
   }
   // Responses may expose replayable reasoning only in the terminal snapshot.
@@ -798,7 +903,9 @@ function reasoningMatchesFinal(accumulated: ReasoningPart, final: ReasoningPart)
   // Only allow final-only encryption to enrich an otherwise identical part.
   // Already streamed encryption, summaries, IDs and signatures must still agree.
   if (accumulated.details?.some((detail) => detail.type === "encrypted")) return false;
+
   if (!final.details?.some((detail) => detail.type === "encrypted")) return false;
+
   const { details, ...base } = final;
   const streamedDetails = details.filter((detail) => detail.type !== "encrypted");
   const comparable = streamedDetails.length === 0 ? base : { ...base, details: streamedDetails };
@@ -816,7 +923,9 @@ function providerOutputErrorWithUsage(
   usage: CompletionResponse["usage"],
 ): CompletionProviderOutputError {
   const shared: { toolCallId?: string; usage: CompletionResponse["usage"] } = { usage };
+
   if (error.toolCallId !== undefined) shared.toolCallId = error.toolCallId;
+
   if (error.kind === "truncated-tool-call") {
     return new CompletionProviderOutputError({
       ...shared,
@@ -824,6 +933,7 @@ function providerOutputErrorWithUsage(
       finishReason: "length",
     });
   }
+
   if (error.kind === "filtered-tool-call") {
     return new CompletionProviderOutputError({
       ...shared,
@@ -831,9 +941,11 @@ function providerOutputErrorWithUsage(
       finishReason: "content-filter",
     });
   }
+
   if (error.finishReason === "length" || error.finishReason === "content-filter") {
     throw error;
   }
+
   return new CompletionProviderOutputError({
     ...shared,
     kind: error.kind,

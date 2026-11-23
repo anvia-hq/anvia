@@ -9,6 +9,12 @@ const client = new OpenAIClient({
   apiKey: process.env.OPENAI_API_KEY ?? "",
 });
 
+const runbookChecklists: Record<"payments" | "shipping" | "incidents", string[]> = {
+  payments: ["Collect payment event ids", "Check retry status", "Escalate to billing-ops"],
+  shipping: ["Confirm allocation", "Check carrier pickup", "Update customer timeline"],
+  incidents: ["Assign incident owner", "Open customer channel", "Set next checkpoint"],
+};
+
 const getRunbook = createTool({
   name: "get_runbook",
   description: "Read a short runbook by area.",
@@ -21,12 +27,7 @@ const getRunbook = createTool({
   }),
   execute: ({ area }) => ({
     area,
-    checklist:
-      area === "payments"
-        ? ["Collect payment event ids", "Check retry status", "Escalate to billing-ops"]
-        : area === "shipping"
-          ? ["Confirm allocation", "Check carrier pickup", "Update customer timeline"]
-          : ["Assign incident owner", "Open customer channel", "Set next checkpoint"],
+    checklist: runbookChecklists[area],
   }),
 });
 

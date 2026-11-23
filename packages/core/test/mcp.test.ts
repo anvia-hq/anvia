@@ -41,7 +41,9 @@ class QueueModel implements CompletionModel {
   async completion(request: CompletionRequest): Promise<CompletionResponse> {
     this.requests.push(request);
     const response = this.responses.shift();
+
     if (response === undefined) throw new Error("No queued response");
+
     return response;
   }
 }
@@ -69,7 +71,9 @@ class StreamingQueueModel implements StreamingCompletionModel {
   async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionModelStreamEvent> {
     this.requests.push(request);
     const response = this.responses.shift();
+
     if (response === undefined) throw new Error("No queued response");
+
     yield* response;
   }
 }
@@ -239,7 +243,9 @@ describe("Agent MCP registrations", () => {
       interaction: { type: "tool-approval", toolName: "mcp_guarded" },
     });
     expect(executed).toBe(false);
+
     if (pending.type !== "interaction") throw new Error("Expected suspension");
+
     await expect(
       agent.generate({
         continuation: pending.continuation,
@@ -289,6 +295,7 @@ describe("Agent MCP registrations", () => {
     const model = new QueueModel([]);
     const server = fakeMcpServer();
     const mcpTool = server.tools[0];
+
     if (mcpTool === undefined) throw new Error("Expected MCP fixture tool");
 
     expect(() => new Agent({ id: "wrong-boundary", model, tools: [mcpTool] })).toThrow(
@@ -321,7 +328,9 @@ function fakeMcpServer(instructions?: string, toolName = "mcp_add"): McpServer {
     name: "math",
     tools: Object.freeze([tool]),
   };
+
   if (instructions !== undefined) server = { ...server, instructions };
+
   return Object.freeze(server);
 }
 

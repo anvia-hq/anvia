@@ -9,9 +9,11 @@ export function grokFetch(options: GrokHttpOptions): typeof fetch {
   if (options.fetch !== undefined) {
     return options.fetch;
   }
+
   if (typeof globalThis.fetch === "function") {
     return globalThis.fetch.bind(globalThis);
   }
+
   throw new Error("Grok media requests require a fetch implementation.");
 }
 
@@ -26,6 +28,7 @@ export function grokHeaders(
   if (options.apiKey === undefined || options.apiKey.length === 0) {
     throw new Error("Missing Grok credentials for media request.");
   }
+
   return {
     ...options.headers,
     ...additional,

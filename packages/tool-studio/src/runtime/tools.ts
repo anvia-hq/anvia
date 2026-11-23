@@ -20,6 +20,7 @@ export function registerToolRoutes(
   app.get("/agents/:agentId/tools", async (c) => {
     const agentId = c.req.param("agentId");
     const agent = props.agentMap.get(agentId);
+
     if (agent === undefined) {
       return errorResponse(c, 404, "not_found", "Agent not found");
     }
@@ -34,14 +35,17 @@ export function registerToolRoutes(
     const agentId = c.req.param("agentId");
     const toolName = c.req.param("toolName");
     const agent = props.agentMap.get(agentId);
+
     if (agent === undefined) {
       return errorResponse(c, 404, "not_found", "Agent not found");
     }
+
     if (agent.agent.getTool(toolName) === undefined) {
       return errorResponse(c, 404, "not_found", "Tool not found");
     }
 
     const body = await parseToolRunRequest(c);
+
     if ("error" in body) {
       return body.error;
     }
@@ -94,23 +98,31 @@ async function parseToolRunRequest(
   } catch {
     return { error: errorResponse(c, 400, "bad_request", "Request body must be JSON") };
   }
+
   if (body === undefined || body === null) {
     return { args: {} } satisfies StudioToolRunRequest;
   }
+
   if (!isJsonObject(body)) {
     return { error: errorResponse(c, 400, "bad_request", "Request body must be an object") };
   }
+
   const args = Object.hasOwn(body, "args") ? body.args : {};
+
   if (!isJsonValue(args)) {
     return { error: errorResponse(c, 400, "bad_request", "args must be JSON-compatible") };
   }
+
   const request: StudioToolRunRequest = { args };
+
   if (Object.hasOwn(body, "context")) {
     if (!isJsonObject(body.context)) {
       return { error: errorResponse(c, 400, "bad_request", "context must be an object") };
     }
+
     request.context = body.context;
   }
+
   return request;
 }
 
@@ -119,9 +131,11 @@ export async function agentToolMetadata(agent: StudioAgent): Promise<StudioAgent
   const metadata: StudioAgentToolMetadata[] = [];
   for (const { tool, source } of agentToolItems(agent)) {
     const key = `${source}:${tool.name}`;
+
     if (seen.has(key)) {
       continue;
     }
+
     seen.add(key);
     const definition = await tool.definition("");
     const serverName = mcpServerName(tool);
@@ -133,7 +147,9 @@ export async function agentToolMetadata(agent: StudioAgent): Promise<StudioAgent
       source,
       approval: approvalMetadata(tool),
     };
+
     if (serverName !== undefined) item.mcpServerName = serverName;
+
     metadata.push(item);
   }
 
@@ -141,6 +157,7 @@ export async function agentToolMetadata(agent: StudioAgent): Promise<StudioAgent
     if (left.source !== right.source) {
       return left.source === "static" ? -1 : 1;
     }
+
     return left.name.localeCompare(right.name);
   });
 }

@@ -41,7 +41,9 @@ export function chunkTextDocuments<Metadata>(
   if (typeof options !== "object" || options === null) {
     throw new TypeError("chunkTextDocuments options must contain a documents array");
   }
+
   const documents = options.documents;
+
   if (!Array.isArray(documents)) {
     throw new TypeError("chunkTextDocuments options must contain a documents array");
   }
@@ -59,15 +61,19 @@ function validateDocument<Metadata>(document: TextDocument<Metadata>, ids: Set<s
   if (typeof document !== "object" || document === null) {
     throw new TypeError("Text documents must be objects");
   }
+
   if (typeof document.id !== "string" || document.id.length === 0) {
     throw new TypeError("Text document ids must be non-empty strings");
   }
+
   if (ids.has(document.id)) {
     throw new TypeError(`Duplicate text document id: ${document.id}`);
   }
+
   if (typeof document.text !== "string" || document.text.length === 0) {
     throw new TypeError(`Text document ${document.id} must contain non-empty text`);
   }
+
   ids.add(document.id);
 }
 
@@ -88,6 +94,7 @@ function chunkDocumentText(
   chunking: Exclude<TextDocumentChunkingOptions, Readonly<{ strategy: "none" }>>,
 ) {
   const overlap = chunking.overlap ?? 0;
+
   if (chunking.strategy === "fixed") {
     return chunkText({
       text,
@@ -96,6 +103,7 @@ function chunkDocumentText(
       overlap,
     });
   }
+
   return chunkText({
     text,
     strategy: "recursive",
@@ -116,8 +124,10 @@ function createDocumentChunk<Metadata>(
     index,
     text,
   };
+
   if (document.metadata === undefined) {
     return chunk;
   }
+
   return { ...chunk, metadata: document.metadata };
 }

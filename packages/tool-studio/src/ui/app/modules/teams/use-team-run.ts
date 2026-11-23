@@ -17,6 +17,7 @@ type ActiveTeamRun = {
 
 function cancelTeamRun(run: ActiveTeamRun | undefined) {
   if (!run || run.controller.signal.aborted) return;
+
   if (run.runId) {
     // Keep server cancellation independent of stream teardown, including page navigation.
     void fetch(`${run.base}/${encodeURIComponent(run.runId)}/cancel`, {
@@ -29,6 +30,7 @@ function cancelTeamRun(run: ActiveTeamRun | undefined) {
       // Teardown cannot wait for the server; disconnect remains the fallback on network failure.
     });
   }
+
   run.controller.abort();
 }
 
@@ -50,6 +52,7 @@ export function useTeamRun(teamId: string) {
 
   async function start(prompt: string) {
     if (active.current) return;
+
     const run: ActiveTeamRun = {
       controller: new AbortController(),
       base,
@@ -68,25 +71,36 @@ export function useTeamRun(teamId: string) {
         body: JSON.stringify({ prompt }),
         signal: run.controller.signal,
       });
+
       if (!response.ok) throw new Error(await responseErrorMessage(response, "Start team"));
+
       if (!response.body) throw new Error("Team response has no stream");
+
       run.runId = response.headers.get("x-anvia-team-run-id") ?? undefined;
       for await (const event of readJsonlStream<StudioTeamRunEvent>(response.body)) {
         if (active.current !== run || run.controller.signal.aborted) break;
+
         if (event.type === "team_run_started") run.runId = event.runId;
+
         const terminal =
           event.type === "response" || event.type === "blocked" || event.type === "error";
+
         // Finish before rendering the result; closing the response body may still be pending.
         if (terminal) active.current = undefined;
+
         dispatch({ type: "event", event });
+
         if (terminal) return;
       }
+
       if (!run.controller.signal.aborted)
         throw new Error("Team stream ended before a result arrived");
     } catch (error) {
       if (active.current === run) {
         const action: TeamAction = { type: "stop" };
+
         if (!run.controller.signal.aborted) action.error = errorMessage(error);
+
         dispatch(action);
       }
     } finally {
@@ -96,7 +110,9 @@ export function useTeamRun(teamId: string) {
 
   async function control(key: string, path: string, body: unknown, onSuccess: () => void) {
     const run = active.current;
+
     if (!run?.runId || run.pending.has(key)) return false;
+
     run.pending.add(key);
     setBusy(new Set(run.pending));
     setControlError("");
@@ -112,20 +128,25 @@ export function useTeamRun(teamId: string) {
           body: JSON.stringify(body),
         },
       );
+
       if (epoch.current === run.epoch && !run.controller.signal.aborted) onSuccess();
+
       return true;
     } catch (error) {
       if (active.current === run && !run.controller.signal.aborted)
         setControlError(errorMessage(error));
+
       return false;
     } finally {
       run.pending.delete(key);
+
       if (epoch.current === run.epoch) setBusy(new Set(run.pending));
     }
   }
 
   function stop() {
     if (!active.current) return;
+
     cancelTeamRun(active.current);
     dispatch({ type: "stop" });
   }

@@ -11,6 +11,7 @@ const execFileAsync = promisify(execFile);
 const packageDir = fileURLToPath(new URL("../", import.meta.url));
 // The first config builds the unbundled JavaScript; the second only emits declarations.
 const [sourceConfig] = config;
+
 if (sourceConfig === undefined) throw new Error("Expected a source tsdown config.");
 
 it("tree-shakes createTool from root and tool entrypoints without changing execution", async () => {

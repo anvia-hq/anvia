@@ -39,26 +39,31 @@ export function createAzureOpenAISdk(options: AzureOpenAIClientOptions): OpenAI 
       "headers",
       "fetch",
     ].find((key) => key in options);
+
     if (conflict !== undefined) {
       throw new TypeError(`AzureOpenAIClient cannot combine client with ${conflict}.`);
     }
+
     return options.client;
   }
 
   if ((options.endpoint !== undefined) === (options.baseUrl !== undefined)) {
     throw new TypeError("AzureOpenAIClient requires exactly one of endpoint or baseUrl.");
   }
+
   if ((options.apiKey !== undefined) === (options.azureADTokenProvider !== undefined)) {
     throw new TypeError(
       "AzureOpenAIClient requires exactly one of apiKey or azureADTokenProvider.",
     );
   }
+
   if (
     options.apiKey !== undefined &&
     (typeof options.apiKey !== "string" || options.apiKey.trim().length === 0)
   ) {
     throw new TypeError("AzureOpenAIClient apiKey must be a non-empty string.");
   }
+
   if (
     options.azureADTokenProvider !== undefined &&
     typeof options.azureADTokenProvider !== "function"
@@ -73,9 +78,11 @@ export function createAzureOpenAISdk(options: AzureOpenAIClientOptions): OpenAI 
       ? options.apiKey
       : async () => {
           const token = await tokenProvider();
+
           if (typeof token !== "string" || token.trim().length === 0) {
             throw new TypeError("AzureOpenAIClient token provider must return a non-empty string.");
           }
+
           return token;
         };
 
@@ -90,10 +97,13 @@ export function createAzureOpenAISdk(options: AzureOpenAIClientOptions): OpenAI 
 
 function resolveBaseUrl(options: AzureOpenAIEndpointOptions): string {
   const value = options.endpoint ?? options.baseUrl;
+
   if (typeof value !== "string" || value.trim().length === 0) {
     throw new TypeError("AzureOpenAIClient endpoint or baseUrl must be a non-empty URL.");
   }
+
   const url = new URL(value);
+
   if (
     !["https:", "http:"].includes(url.protocol) ||
     url.username ||
@@ -105,21 +115,25 @@ function resolveBaseUrl(options: AzureOpenAIEndpointOptions): string {
       "AzureOpenAIClient requires an HTTP(S) URL without credentials, query, or fragment.",
     );
   }
+
   if (url.protocol === "http:" && !isLoopbackHostname(url.hostname)) {
     throw new TypeError(
       "AzureOpenAIClient requires HTTPS for non-loopback endpoints; plain HTTP is allowed only for loopback development hosts.",
     );
   }
+
   if (options.endpoint !== undefined) {
     if (url.pathname !== "/") {
       throw new TypeError(
         "AzureOpenAIClient endpoint must be a resource origin. Use baseUrl for a full API URL.",
       );
     }
+
     url.pathname = "/openai/v1/";
   } else {
     url.pathname = `${url.pathname.replace(/\/+$/, "")}/`;
   }
+
   return url.toString();
 }
 

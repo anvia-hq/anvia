@@ -22,6 +22,7 @@ export function filterToPineconeFilter(filter: VectorFilter | undefined): unknow
       if (filter.values.length === 0) {
         throw new Error(`Pinecone "in" filter for ${filter.key} requires at least one value`);
       }
+
       return { [filter.key]: { $in: filter.values } };
     case "and":
       return { $and: filter.filters.map(filterToPineconeFilter) };

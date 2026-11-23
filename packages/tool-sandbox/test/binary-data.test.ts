@@ -74,6 +74,7 @@ async function roundTrip(handle: TunnelHandle, data: Uint8Array): Promise<Uint8A
     for await (const chunk of handle.output) {
       received.set(chunk.subarray(0, received.byteLength - got), got);
       got += chunk.byteLength;
+
       if (got >= received.byteLength) break;
     }
   })();
@@ -113,6 +114,7 @@ describe("binary tunnel data", () => {
           const chunk = Buffer.alloc(Math.min(48 * 1024, total - sent));
           for (let index = 0; index < chunk.length; index += 1) chunk[index] = (sent + index) % 251;
           sent += chunk.length;
+
           if (!socket.write(chunk)) return void socket.once("drain", pump);
         }
         socket.end();
@@ -155,6 +157,7 @@ describe("binary tunnel data", () => {
     let read = 0;
     for await (const chunk of handle.output) {
       read += chunk.byteLength;
+
       if (read >= 4 * 1024 * 1024) break;
     }
     expect(read).toBeGreaterThanOrEqual(4 * 1024 * 1024);
@@ -207,6 +210,7 @@ describe("binary tunnel data", () => {
         const type = binary ? undefined : (JSON.parse(data.toString()) as { type: string }).type;
         received.push(type === undefined ? { binary } : { binary, type });
         const frame = binary ? undefined : (JSON.parse(data.toString()) as Record<string, unknown>);
+
         if (frame?.type === "tunnel.open") {
           socket.send(JSON.stringify({ type: "tunnel.opened", tunnelId: frame.tunnelId }));
         }

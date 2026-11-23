@@ -16,6 +16,7 @@ if (azureIntegrationEnabled) {
   })
     .filter(([, value]) => !value?.trim())
     .map(([key]) => key);
+
   if (missing.length > 0) {
     throw new Error(
       `Azure live tests require ${missing.join(", ")}. Fill the root .env before running test:live.`,

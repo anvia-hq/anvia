@@ -34,8 +34,11 @@ export class LanceDBVectorClient {
 
   async close(): Promise<void> {
     if (this.closed) return;
+
     this.closed = true;
+
     if (this.injected !== undefined || this.clientPromise === undefined) return;
+
     await (await this.clientPromise).close?.();
   }
 

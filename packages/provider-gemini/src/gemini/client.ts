@@ -86,6 +86,7 @@ export class GeminiClient implements ModelListingClient {
       this.sdk = options.client;
       return;
     }
+
     this.sdk = new GoogleGenAI(toGoogleGenAIOptions(options));
   }
 
@@ -136,9 +137,11 @@ export class GeminiClient implements ModelListingClient {
   async listModels(options: { abortSignal?: AbortSignal | undefined } = {}): Promise<ModelList> {
     try {
       const config = { pageSize: 1000 };
+
       if (options.abortSignal !== undefined) {
         Object.assign(config, { abortSignal: options.abortSignal });
       }
+
       const response = await this.sdk.models.list({
         config: disableGeminiNativeRetries(config),
       });
@@ -154,6 +157,7 @@ export class GeminiClient implements ModelListingClient {
 
 function rejectManagedOptionsWithInjectedClient(options: object, keys: readonly string[]): void {
   const conflict = keys.find((key) => key in options);
+
   if (conflict !== undefined) {
     throw new TypeError(`GeminiClient cannot combine client with ${conflict}.`);
   }
@@ -163,15 +167,18 @@ export function toGoogleGenAIOptions(options: GeminiClientOptions): GoogleGenAIO
   if ("client" in options && options.client !== undefined) {
     throw new TypeError("Injected Gemini clients do not have managed SDK options.");
   }
+
   if ("vertexAi" in options && options.vertexAi !== undefined) {
     const sdkOptions: GoogleGenAIOptions = {
       vertexai: true,
       project: requireOption(options.vertexAi.projectId, "projectId", "Vertex Gemini"),
       location: requireOption(options.vertexAi.location, "location", "Vertex Gemini"),
     };
+
     if (options.vertexAi.googleAuthOptions !== undefined) {
       sdkOptions.googleAuthOptions = options.vertexAi.googleAuthOptions;
     }
+
     return sdkOptions;
   }
 
@@ -192,6 +199,7 @@ function requireModelId<ModelId extends string>(modelId: ModelId): ModelId {
   if (modelId.trim().length === 0) {
     throw new TypeError("modelId must be a non-empty string");
   }
+
   return modelId;
 }
 
@@ -242,24 +250,31 @@ function toListedModel(model: unknown): ModelList["data"][number] | undefined {
   const listedModel: ModelList["data"][number] = {
     id,
   };
+
   if (typeof model.displayName === "string") {
     listedModel.name = model.displayName;
   }
+
   if (typeof model.display_name === "string") {
     listedModel.name = model.display_name;
   }
+
   if (typeof model.description === "string") {
     listedModel.description = model.description;
   }
+
   if (typeof model.type === "string") {
     listedModel.type = model.type;
   }
+
   if (typeof model.inputTokenLimit === "number") {
     listedModel.contextLength = model.inputTokenLimit;
   }
+
   if (typeof model.input_token_limit === "number") {
     listedModel.contextLength = model.input_token_limit;
   }
+
   return listedModel;
 }
 

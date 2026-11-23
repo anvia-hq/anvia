@@ -105,15 +105,20 @@ export class DesktopSupervisor {
       vncPort: this.options.vncPort,
       restarts: this.restarts,
     };
+
     if (this.message !== undefined) status.message = this.message;
+
     return status;
   }
 
   /** Start the desktop if it is not up, and wait for it. Safe to call from many places at once. */
   ensureRunning(): Promise<void> {
     if (this.stopping) return Promise.reject(unavailable("The desktop is shutting down."));
+
     if (this.ready !== undefined) return this.ready;
+
     if (this.state === "running") return Promise.resolve();
+
     this.failures = 0;
     this.message = undefined;
     return this.bringUp("starting");
@@ -121,9 +126,11 @@ export class DesktopSupervisor {
 
   async resize(width: number, height: number): Promise<void> {
     const max = this.options.maxResolution;
+
     if (width > max.width || height > max.height) {
       throw new RangeError(`The desktop can be at most ${max.width}x${max.height}.`);
     }
+
     await this.ensureRunning();
     await this.applyMode(width, height);
     this.width = width;
@@ -139,7 +146,9 @@ export class DesktopSupervisor {
     while (this.state === "running" && Date.now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, 25));
     }
+
     if (this.state === "running") return false;
+
     try {
       await this.ensureRunning();
       return true;
@@ -191,6 +200,7 @@ export class DesktopSupervisor {
   private async startStack(): Promise<void> {
     const { options } = this;
     this.output = undefined;
+
     if (options.backend === "xvnc") {
       // The display is the VNC server, so one process and one wait. It starts at the size asked for
       // and grows by RandR, which Xvnc allows far past any size we let `resize` ask for.
@@ -208,6 +218,7 @@ export class DesktopSupervisor {
       this.startWindowManager();
       return;
     }
+
     const { width, height } = options.maxResolution;
     const xvfb = this.launch("xvfb", requiredBinary(options.binaries.xvfb, "Xvfb"), [
       options.display,
@@ -229,12 +240,15 @@ export class DesktopSupervisor {
   /** Xvnc only shares the clipboard with desktop programs while `vncconfig` is running. */
   private startClipboard(): void {
     const { vncconfig } = this.options.binaries;
+
     if (vncconfig !== undefined) this.launch("clipboard", vncconfig, ["-nowin"]);
   }
 
   private startWindowManager(): void {
     const { windowManager } = this.options;
+
     if (windowManager === undefined) return;
+
     const [file = "", ...args] = windowManager.split(/\s+/).filter(Boolean);
     this.launch("window manager", file, args);
   }
@@ -282,24 +296,31 @@ export class DesktopSupervisor {
   private onExit(managed: Managed, code: number | null, signal: NodeJS.Signals | null): void {
     // An old process of this name exiting after it was replaced is not news.
     if (this.processes.get(managed.name) !== managed) return;
+
     this.processes.delete(managed.name);
+
     if (this.stopping) return;
+
     const how = signal === null ? `code ${code}` : `signal ${signal}`;
     this.options.log(`${managed.name} exited (${how}): ${managed.stderr.trim().slice(-300)}`);
+
     // While starting, the start itself notices (its waits fail fast); only a running desktop recovers.
     if (this.state !== "running") return;
+
     this.recover(managed.name);
   }
 
   private recover(crashed: ProcessName): void {
     const { restart } = this.options;
     this.failures = Date.now() - this.lastUpAt > stableAfterMs ? 1 : this.failures + 1;
+
     if (this.failures > (restart.maxFailures ?? defaultMaxFailures)) {
       this.state = "failed";
       this.message = `The ${crashed} keeps crashing.`;
       void this.killAll();
       return;
     }
+
     const delay = Math.min(
       restart.maxDelayMs ?? defaultMaxDelayMs,
       (restart.initialDelayMs ?? defaultInitialDelayMs) * 2 ** (this.failures - 1),
@@ -331,6 +352,7 @@ export class DesktopSupervisor {
             } else {
               this.startWindowManager();
             }
+
             this.state = "running";
             this.lastUpAt = Date.now();
             this.ready = undefined;
@@ -386,12 +408,15 @@ export class DesktopSupervisor {
   /** The output the display's size is set on. Servers name it differently, so ask. */
   private async outputName(): Promise<string> {
     if (this.output !== undefined) return this.output;
+
     const stdout = await runTool(this.options.binaries.xrandr, ["--query"], {
       env: this.environment(),
       timeoutMs: 5_000,
     });
     const name = /^(\S+) connected/m.exec(stdout.toString("utf8"))?.[1];
+
     if (name === undefined) throw unavailable("The display has no RandR output to resize.");
+
     this.output = name;
     return name;
   }
@@ -401,6 +426,7 @@ export class DesktopSupervisor {
     await this.waitUntil(async () => {
       if (this.processes.get(display.name) !== display)
         throw unavailable(`${programName(display.name)} exited: ${display.stderr.trim()}`);
+
       try {
         await runTool(this.options.binaries.xdotool, ["getdisplaygeometry"], {
           env,
@@ -417,6 +443,7 @@ export class DesktopSupervisor {
     await this.waitUntil(async () => {
       if (this.processes.get(vnc.name) !== vnc)
         throw unavailable(`${programName(vnc.name)} exited: ${vnc.stderr.trim()}`);
+
       return new Promise<boolean>((resolve) => {
         const socket = net.connect({ host: "127.0.0.1", port: this.options.vncPort });
         socket.once("connect", () => {
@@ -432,6 +459,7 @@ export class DesktopSupervisor {
     const deadline = Date.now() + this.options.startTimeoutMs;
     while (Date.now() < deadline) {
       if (await check()) return;
+
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
     throw unavailable(`Timed out waiting for ${what} to come up.`);
@@ -447,7 +475,9 @@ export class DesktopSupervisor {
 /** Sends a signal to a managed process's group. Falls back to the child alone if the group is gone. */
 function signalGroup(child: ChildProcess, signal: NodeJS.Signals): void {
   const pid = child.pid;
+
   if (pid === undefined) return;
+
   try {
     process.kill(-pid, signal);
   } catch (error) {
@@ -498,11 +528,21 @@ function xvncFlags(options: DesktopSupervisorOptions): string[] {
 }
 
 function programName(name: ProcessName): string {
-  return name === "xvnc" ? "Xvnc" : name === "xvfb" ? "Xvfb" : name === "vnc" ? "x11vnc" : name;
+  switch (name) {
+    case "xvnc":
+      return "Xvnc";
+    case "xvfb":
+      return "Xvfb";
+    case "vnc":
+      return "x11vnc";
+    default:
+      return name;
+  }
 }
 
 function requiredBinary(path: string | undefined, name: string): string {
   if (path === undefined) throw unavailable(`${name} was not found.`);
+
   return path;
 }
 

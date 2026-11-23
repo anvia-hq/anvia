@@ -20,7 +20,9 @@ export async function toolIndexesOf(
   agent: Agent<unknown>,
 ): Promise<DurableToolIndexes | undefined> {
   const indexes = getResolvedAgentOptions(agent).toolIndexes ?? [];
+
   if (indexes.length === 0) return undefined;
+
   const fingerprint = await Promise.all(indexes.map(fingerprintIndex));
   return {
     hash: createHash("sha256")
@@ -64,12 +66,15 @@ function realIndex(index: ToolIndex): {
 
 function modelIdentity(model: EmbeddingModel | undefined): unknown {
   if (model === undefined) return "unknown";
+
   return { provider: model.provider, modelId: model.modelId, dimensions: model.dimensions ?? null };
 }
 
 function embeddedText(index: ToolIndex): unknown {
   const documents = realIndex(index).embeddedDocuments;
+
   if (documents === undefined) return "unknown";
+
   return documents.map((document) => ({ id: document.id, text: document.text }));
 }
 
@@ -81,8 +86,11 @@ export async function toolIndexesByAgent(
   const result = new Map<string, DurableToolIndexes>();
   for (const agentId of new Set(agentIds)) {
     const registration = agents.get(agentId);
+
     if (registration?.toolIndexes === undefined) continue;
+
     const fingerprint = await toolIndexesOf(registration.agent);
+
     if (fingerprint !== undefined) result.set(agentId, fingerprint);
   }
   return result;

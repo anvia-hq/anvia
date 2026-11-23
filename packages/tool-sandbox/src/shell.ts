@@ -12,6 +12,7 @@ export async function sandboxShell(
 ): Promise<SandboxShell> {
   abortSignal?.throwIfAborted();
   let pending = shells.get(sandbox);
+
   if (pending === undefined) {
     pending = detectShell(sandbox).catch((error) => {
       shells.delete(sandbox);
@@ -19,13 +20,16 @@ export async function sandboxShell(
     });
     shells.set(sandbox, pending);
   }
+
   if (abortSignal === undefined) return pending;
+
   let abort: (() => void) | undefined;
   try {
     return await Promise.race([
       pending,
       new Promise<SandboxShell>((_, reject) => {
         abort = () => reject(abortSignal.reason);
+
         if (abortSignal.aborted) abort();
         else abortSignal.addEventListener("abort", abort, { once: true });
       }),
@@ -43,10 +47,14 @@ async function detectShell(sandbox: SandboxRuntime): Promise<SandboxShell> {
     args: ["-c", "test -x /bin/bash"],
     timeoutMs: 5_000,
   });
+
   if (result.status === "timed_out") {
     throw new DockerSandboxError("Sandbox shell detection timed out.", "timeout");
   }
+
   if (result.exitCode === 0) return "/bin/bash";
+
   if (result.exitCode === 1) return "sh";
+
   throw new DockerSandboxError("Could not detect the sandbox shell.", "docker_command_failed");
 }

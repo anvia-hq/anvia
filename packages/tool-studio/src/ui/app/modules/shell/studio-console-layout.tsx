@@ -26,6 +26,16 @@ export function StudioConsoleLayout() {
     onNavigateKnowledgeTab: studio.navigateKnowledgeTab,
   };
 
+  let selectedAgentLabel: string;
+
+  if (teamId) {
+    selectedAgentLabel = teamId;
+  } else if (studio.activePage === "sandboxes") {
+    selectedAgentLabel = "Sandboxes";
+  } else {
+    selectedAgentLabel = studio.selectedAgent?.name ?? studio.selectedAgent?.id ?? "Agent";
+  }
+
   return (
     <div className="flex h-[100dvh] min-h-0 overflow-hidden bg-background text-foreground">
       <StudioRail {...navigation} />
@@ -36,13 +46,7 @@ export function StudioConsoleLayout() {
           activePage={studio.activePage}
           knowledgeTab={studio.knowledgeTab}
           navigation={navigation}
-          selectedAgentLabel={
-            teamId
-              ? teamId
-              : studio.activePage === "sandboxes"
-                ? "Sandboxes"
-                : (studio.selectedAgent?.name ?? studio.selectedAgent?.id ?? "Agent")
-          }
+          selectedAgentLabel={selectedAgentLabel}
           showNewSession={!teamId}
           sessionsEnabled={studio.sessionsEnabled}
           theme={studio.theme}

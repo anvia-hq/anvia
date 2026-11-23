@@ -38,18 +38,23 @@ export const EvalOutcome = {
     const outcome: EvalOutcome<Score> = {
       outcome: "pass" as const,
     };
+
     if (score !== undefined) {
       outcome.score = score;
     }
+
     if (options.comment !== undefined) {
       outcome.comment = options.comment;
     }
+
     if (options.metadata !== undefined) {
       outcome.metadata = options.metadata;
     }
+
     if (options.usage !== undefined) {
       outcome.usage = options.usage;
     }
+
     return outcome;
   },
 
@@ -57,18 +62,23 @@ export const EvalOutcome = {
     const outcome: EvalOutcome<Score> = {
       outcome: "fail" as const,
     };
+
     if (score !== undefined) {
       outcome.score = score;
     }
+
     if (options.comment !== undefined) {
       outcome.comment = options.comment;
     }
+
     if (options.metadata !== undefined) {
       outcome.metadata = options.metadata;
     }
+
     if (options.usage !== undefined) {
       outcome.usage = options.usage;
     }
+
     return outcome;
   },
 
@@ -84,14 +94,21 @@ export const EvalOutcome = {
       outcome: "invalid" as const,
       reason,
     };
+
     if (options.score !== undefined) {
       outcome.score = options.score;
     }
+
     if (options.comment !== undefined) outcome.comment = options.comment;
+
     if (options.metadata !== undefined) outcome.metadata = options.metadata;
+
     if (options.usage !== undefined) outcome.usage = options.usage;
+
     if (options.kind !== undefined) outcome.kind = options.kind;
+
     if (options.error !== undefined) outcome.error = options.error;
+
     return outcome;
   },
 

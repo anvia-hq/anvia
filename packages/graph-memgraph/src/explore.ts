@@ -19,6 +19,7 @@ export async function exploreGraph<Schema extends GraphSchemaLike>(
   if (!(graph instanceof MemgraphKnowledgeGraphBase)) {
     throw new TypeError("exploreGraph requires a Memgraph knowledge graph registration.");
   }
+
   const resolved = resolveGraphExploreOptions(graph.schema, options);
   const records =
     resolved.mode === "overview"
@@ -92,9 +93,13 @@ RETURN id(node) AS id, labels(node) AS labels, properties(node) AS properties`,
     scopeParameters(graph, { nodeIds, nodeTypes: options.nodeTypes }),
     options.abortSignal,
   );
+
   if (options.relationships.length === 0) return roots.records;
+
   const remainingNodeLimit = options.maxNodes + 1 - roots.records.length;
+
   if (remainingNodeLimit <= 0) return roots.records;
+
   const relationshipTypes = options.relationships.map(quoteIdentifier).join("|");
   const pattern = traversalPattern(relationshipTypes, options.direction, options.maxDepth);
   const neighbors = await graph.query(
@@ -121,6 +126,7 @@ async function relationshipsBetween(
   abortSignal?: AbortSignal,
 ): Promise<GraphExploreRelationship[]> {
   if (nodeIds.length === 0 || relationshipTypes.length === 0) return [];
+
   const result = await graph.query(
     `MATCH (from)-[relationship]->(to)
 WHERE id(from) IN $nodeIds
@@ -148,7 +154,9 @@ function nodeFromRecord(record: DriverRecord, schema: GraphSchemaLike): GraphExp
   const labels = stringArray(record.get("labels"), "Memgraph explorer node labels");
   const raw = objectValue(record.get("properties"), "Memgraph explorer node properties");
   const type = labels.find((label) => label in schema.nodes);
+
   if (type === undefined) throw new TypeError("Memgraph explorer node has no registered type.");
+
   const properties = applicationProperties(raw, "Memgraph explorer node properties");
   const node: {
     id: string;
@@ -163,7 +171,9 @@ function nodeFromRecord(record: DriverRecord, schema: GraphSchemaLike): GraphExp
     properties,
   };
   const key = raw.__anvia_key;
+
   if (typeof key === "string") node.key = key;
+
   return node;
 }
 
@@ -184,7 +194,9 @@ function relationshipFromRecord(record: DriverRecord): GraphExploreRelationship 
     properties: applicationProperties(raw, "Memgraph explorer relationship properties"),
   };
   const key = raw.__anvia_key;
+
   if (typeof key === "string") relationship.key = key;
+
   return relationship;
 }
 
@@ -195,9 +207,12 @@ function identityProperties(
 ): Record<string, string | number | boolean> {
   const identity: Record<string, string | number | boolean> = {};
   const definition = schema.nodes[type];
+
   if (definition === undefined) return identity;
+
   for (const property of definition.identity) {
     const value = properties[property];
+
     if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
       identity[property] = value;
     }
@@ -224,9 +239,11 @@ function traversalPattern(
   if (direction === "outgoing") {
     return `(root)-[:${relationshipTypes} *BFS 1..${maxDepth}]->(node)`;
   }
+
   if (direction === "incoming") {
     return `(root)<-[:${relationshipTypes} *BFS 1..${maxDepth}]-(node)`;
   }
+
   return `(root)-[:${relationshipTypes} *BFS 1..${maxDepth}]-(node)`;
 }
 
@@ -234,6 +251,7 @@ function nodeIdParameter(value: string) {
   if (!/^(0|[1-9]\d*)$/.test(value)) {
     throw new TypeError(`Memgraph explorer node id ${value} is invalid.`);
   }
+
   try {
     return int(value);
   } catch {
@@ -243,12 +261,15 @@ function nodeIdParameter(value: string) {
 
 function driverId(value: unknown, label: string): string {
   if (isInt(value)) return value.toString();
+
   if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) return String(value);
+
   throw new TypeError(`${label} must be a non-negative integer.`);
 }
 
 function stringValue(value: unknown, label: string): string {
   if (typeof value !== "string") throw new TypeError(`${label} must be a string.`);
+
   return value;
 }
 
@@ -256,6 +277,7 @@ function stringArray(value: unknown, label: string): string[] {
   if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) {
     throw new TypeError(`${label} must be a string array.`);
   }
+
   return value;
 }
 
@@ -263,5 +285,6 @@ function objectValue(value: unknown, label: string): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new TypeError(`${label} must be an object.`);
   }
+
   return value as Record<string, unknown>;
 }

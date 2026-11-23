@@ -68,6 +68,8 @@ for await (const event of stream.events) {
 }
 
 const result = await stream.result;
+
 if (result.type === "response") console.log(result.output);
 else console.log("Blocked:", result.reason);
+
 console.log("Total usage:", result.usage);

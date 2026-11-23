@@ -133,7 +133,9 @@ describe("durable HTTP bridge", () => {
       expect((await client.snapshot(run.id)).run.status).toBe("waiting"),
     );
     const snapshot = await client.snapshot(run.id);
+
     if (snapshot.run.outcome?.type !== "interaction") throw new Error("Missing approval");
+
     const interactionId = snapshot.run.outcome.interaction.id;
     await client.respond(run.id, interactionId, { type: "tool-approval", approved: true });
     await client.respond(run.id, interactionId, { type: "tool-approval", approved: true });

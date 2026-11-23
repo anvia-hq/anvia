@@ -84,24 +84,32 @@ export function nodeStatusFromLogs(
   activeRunId: string,
 ): Map<string, NodeStatus> {
   const statuses = new Map<string, NodeStatus>();
+
   if (activeRunId.length === 0) {
     return statuses;
   }
+
   for (const log of logs) {
     if (log.runId !== activeRunId) {
       continue;
     }
+
     const nodePath = metadataPath(log.metadata, "nodePath");
+
     if (nodePath === undefined) {
       continue;
     }
+
     const nodeId = pipelineNodeKey(nodePath);
+
     if (log.event.endsWith(".started")) {
       statuses.set(nodeId, "running");
     }
+
     if (log.event.endsWith(".completed")) {
       statuses.set(nodeId, "completed");
     }
+
     if (log.event.endsWith(".failed")) {
       statuses.set(nodeId, "failed");
     }
@@ -193,15 +201,19 @@ function nodeDepths(graph: StudioPipelineDetail["graph"]): Map<string, number> {
       const source = pipelineNodeKey(edge.source);
       const target = pipelineNodeKey(edge.target);
       const sourceDepth = depths.get(source);
+
       if (sourceDepth === undefined || !depths.has(target)) {
         continue;
       }
+
       const nextDepth = sourceDepth + 1;
+
       if (nextDepth > (depths.get(target) ?? 0)) {
         depths.set(target, nextDepth);
         changed = true;
       }
     }
+
     if (!changed) {
       break;
     }

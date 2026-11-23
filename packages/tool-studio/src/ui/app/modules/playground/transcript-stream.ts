@@ -9,21 +9,26 @@ export const transcriptStreamAdapter: SmoothStreamItemAdapter<TranscriptEntry> =
     if (entry.kind === "reasoning") {
       return entry.text;
     }
+
     if (entry.kind === "message" && entry.role === "assistant") {
       return entry.text;
     }
+
     return undefined;
   },
   withText(entry, text) {
     if (entry.kind === "reasoning") {
       return { ...entry, text };
     }
+
     if (entry.kind === "message" && entry.role === "assistant") {
       if ("tone" in entry && entry.tone === "pending") {
         return entry;
       }
+
       return { ...entry, text };
     }
+
     return entry;
   },
 };

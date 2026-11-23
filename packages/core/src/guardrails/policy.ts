@@ -29,6 +29,7 @@ export function normalizeGuardrailPolicies(
   if (policies === undefined) {
     return [];
   }
+
   return Array.isArray(policies) ? policies : [policies];
 }
 

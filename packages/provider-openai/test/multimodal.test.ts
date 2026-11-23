@@ -171,9 +171,11 @@ function mockOpenAIClient(
       generateCalls,
       async generate(params: unknown) {
         generateCalls.push(params);
+
         if (options.imageError !== undefined) {
           throw options.imageError;
         }
+
         return (
           options.imageResponse ?? {
             output_format: "png",

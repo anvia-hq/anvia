@@ -55,7 +55,9 @@ export async function extractGraphFacts<
   const ids = new Set<string>();
   for (const chunk of options.chunks) {
     if (ids.has(chunk.id)) throw new TypeError(`Duplicate graph chunk id: ${chunk.id}`);
+
     ids.add(chunk.id);
+
     if (typeof chunk.text !== "string") {
       throw new TypeError(`Graph chunk ${chunk.id} text must be a string.`);
     }
@@ -105,7 +107,9 @@ function extractionSchema(schema: GraphSchemaLike): z.ZodType<RawChunkFacts> {
 
 function union(items: z.ZodType[], empty: z.ZodType): z.ZodType {
   if (items.length === 0) return empty;
+
   if (items.length === 1) return items[0] as z.ZodType;
+
   return z.union(items as [z.ZodType, z.ZodType, ...z.ZodType[]]);
 }
 
@@ -148,8 +152,11 @@ function normalizeFacts<Schema extends GraphSchemaLike>(
       if (refs.has(raw.ref)) {
         throw new TypeError(`Duplicate entity ref ${raw.ref} in chunk ${extraction.chunkId}.`);
       }
+
       const definition = schema.nodes[raw.type];
+
       if (definition === undefined) throw new TypeError(`Unknown graph entity type: ${raw.type}`);
+
       const properties = parseGraphProperties(
         definition.properties.parse(raw.properties),
         `entity ${raw.type}`,
@@ -173,21 +180,26 @@ function normalizeFacts<Schema extends GraphSchemaLike>(
 
     for (const raw of extraction.output.relationships) {
       const definition = schema.relationships[raw.type];
+
       if (definition === undefined) {
         throw new TypeError(`Unknown graph relationship type: ${raw.type}`);
       }
+
       const from = refs.get(raw.from);
       const to = refs.get(raw.to);
+
       if (from === undefined || to === undefined) {
         throw new TypeError(
           `Relationship ${raw.type} in chunk ${extraction.chunkId} references an unknown entity ref.`,
         );
       }
+
       if (from.type !== definition.from || to.type !== definition.to) {
         throw new TypeError(
           `Relationship ${raw.type} has invalid endpoint types ${from.type} -> ${to.type}.`,
         );
       }
+
       const properties = parseGraphProperties(
         definition.properties.parse(raw.properties),
         `relationship ${raw.type}`,
@@ -209,7 +221,9 @@ function normalizeFacts<Schema extends GraphSchemaLike>(
   const entities = [...entityCandidates.values()].map((candidates) => {
     const first = requiredCandidate(candidates);
     const definition = schema.nodes[first.type];
+
     if (definition === undefined) throw new TypeError(`Unknown graph entity type: ${first.type}`);
+
     const properties = parseGraphProperties(
       definition.properties.parse(
         resolveFactProperties(
@@ -235,9 +249,11 @@ function normalizeFacts<Schema extends GraphSchemaLike>(
   const relationships = [...relationshipCandidates.values()].map((candidates) => {
     const first = requiredCandidate(candidates);
     const definition = schema.relationships[first.type];
+
     if (definition === undefined) {
       throw new TypeError(`Unknown graph relationship type: ${first.type}`);
     }
+
     const properties = parseGraphProperties(
       definition.properties.parse(
         resolveFactProperties(
@@ -273,13 +289,16 @@ function appendCandidate<Candidate>(
   candidate: Candidate,
 ): void {
   const current = candidates.get(key);
+
   if (current === undefined) candidates.set(key, [candidate]);
   else current.push(candidate);
 }
 
 function requiredCandidate<Candidate>(candidates: readonly Candidate[]): Candidate {
   const candidate = candidates[0];
+
   if (candidate === undefined) throw new TypeError("Graph fact candidate group cannot be empty.");
+
   return candidate;
 }
 
@@ -307,14 +326,17 @@ function resolveFactProperties(
       value: candidate.properties[property],
     }));
     const firstValue = propertyCandidates[0]?.value;
+
     if (
       propertyCandidates.every(
         (candidate) => stableValue(candidate.value) === stableValue(firstValue),
       )
     ) {
       if (firstValue !== undefined) properties[property] = firstValue;
+
       continue;
     }
+
     const conflict: GraphFactPropertyConflict = {
       code: "GRAPH_FACT_CONFLICT",
       kind,
@@ -327,12 +349,16 @@ function resolveFactProperties(
     };
     const strategy =
       policy?.properties?.[property] ?? policy?.resolve ?? policy?.default ?? "reject";
+
     if (strategy === "reject") throw new GraphFactConflictError(conflict);
+
     const resolvedValue = validateResolvedValue(
       resolvePropertyConflict(strategy, conflict),
       conflict,
     );
+
     if (resolvedValue !== undefined) properties[property] = resolvedValue;
+
     warnings.push({
       ...conflict,
       code: "GRAPH_FACT_CONFLICT_RESOLVED",
@@ -350,19 +376,28 @@ function resolvePropertyConflict(
   if (typeof strategy === "function") {
     return strategy(conflict);
   }
+
   const values = conflict.candidates.map((candidate) => candidate.value);
+
   if (strategy === "prefer-first") return values[0];
+
   if (strategy === "prefer-last") return values.at(-1);
+
   if (strategy === "prefer-defined") return values.find((value) => value !== undefined);
+
   if (strategy === "prefer-longest") {
     const strings = definedValues(values, "string", conflict, strategy);
     return strings.reduce((longest, value) => (value.length > longest.length ? value : longest));
   }
+
   if (strategy === "union") {
     const arrays = values.filter((value) => value !== undefined);
+
     if (!arrays.every(Array.isArray)) throw incompatibleStrategy(conflict, strategy);
+
     return [...new Set(arrays.flat())] as string[] | number[] | boolean[];
   }
+
   const numbers = definedValues(values, "number", conflict, strategy);
   return strategy === "max" ? Math.max(...numbers) : Math.min(...numbers);
 }
@@ -374,9 +409,11 @@ function definedValues<Type extends "string" | "number">(
   strategy: string,
 ): Type extends "string" ? string[] : number[] {
   const defined = values.filter((value) => value !== undefined);
+
   if (defined.length === 0 || !defined.every((value) => typeof value === type)) {
     throw incompatibleStrategy(conflict, strategy);
   }
+
   return defined as Type extends "string" ? string[] : number[];
 }
 
@@ -403,12 +440,14 @@ function identityFromProperties(
   const identity: Record<string, string | number | boolean> = {};
   for (const key of keys) {
     const value = properties[key];
+
     if (
       value === undefined ||
       !(typeof value === "string" || typeof value === "number" || typeof value === "boolean")
     ) {
       throw new TypeError(`Identity property ${key} for ${type} must be a primitive value.`);
     }
+
     identity[key] = value;
   }
   return identity;
@@ -475,7 +514,9 @@ function assertConcurrency(value: number | undefined): void {
 
 function throwIfAborted(signal: AbortSignal | undefined): void {
   if (signal?.aborted !== true) return;
+
   if (signal.reason instanceof Error) throw signal.reason;
+
   throw new DOMException("The operation was aborted.", "AbortError");
 }
 
@@ -491,7 +532,9 @@ async function mapConcurrent<Input, Output>(
       for (;;) {
         const index = cursor;
         cursor += 1;
+
         if (index >= values.length) return;
+
         output[index] = await run(values[index] as Input);
       }
     }),

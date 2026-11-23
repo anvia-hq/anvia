@@ -159,6 +159,7 @@ const ComposerRoot = forwardRef<HTMLFormElement, ComposerRootProps>(function Com
       if (!inputControlled) {
         setUncontrolledInput(nextInput);
       }
+
       onInputChange?.(nextInput);
     },
     [inputControlled, onInputChange],
@@ -169,9 +170,11 @@ const ComposerRoot = forwardRef<HTMLFormElement, ComposerRootProps>(function Com
       const nextAttachments =
         typeof update === "function" ? update(attachmentsRef.current) : update;
       attachmentsRef.current = nextAttachments;
+
       if (!attachmentsControlled) {
         setUncontrolledAttachments(nextAttachments);
       }
+
       onAttachmentsChange?.(nextAttachments);
     },
     [attachmentsControlled, onAttachmentsChange],
@@ -181,9 +184,11 @@ const ComposerRoot = forwardRef<HTMLFormElement, ComposerRootProps>(function Com
     (update: ComposerEntitiesUpdate) => {
       const nextEntities = typeof update === "function" ? update(entitiesRef.current) : update;
       entitiesRef.current = nextEntities;
+
       if (!entitiesControlled) {
         setUncontrolledEntities(nextEntities);
       }
+
       onEntitiesChange?.(nextEntities);
     },
     [entitiesControlled, onEntitiesChange],
@@ -192,9 +197,11 @@ const ComposerRoot = forwardRef<HTMLFormElement, ComposerRootProps>(function Com
   const setQuote = useCallback(
     (nextQuote: ComposerQuote | undefined) => {
       const normalizedQuote = normalizeQuote(nextQuote);
+
       if (!quoteControlled) {
         setUncontrolledQuote(normalizedQuote);
       }
+
       onQuoteChange?.(normalizedQuote);
     },
     [onQuoteChange, quoteControlled],
@@ -235,6 +242,7 @@ const ComposerRoot = forwardRef<HTMLFormElement, ComposerRootProps>(function Com
 
   const submit = useCallback(async () => {
     const prompt = input;
+
     if (
       (prompt.trim().length === 0 &&
         attachments.length === 0 &&
@@ -245,7 +253,9 @@ const ComposerRoot = forwardRef<HTMLFormElement, ComposerRootProps>(function Com
     ) {
       return;
     }
+
     assertComposerEntitiesData(entities);
+
     if (submitMessage !== undefined) {
       await submitMessage({
         input: prompt,
@@ -257,6 +267,7 @@ const ComposerRoot = forwardRef<HTMLFormElement, ComposerRootProps>(function Com
       });
       return;
     }
+
     if (defaultSubmissionInFlightRef.current) {
       return;
     }
@@ -274,6 +285,7 @@ const ComposerRoot = forwardRef<HTMLFormElement, ComposerRootProps>(function Com
     const submittedText = formattedPrompt.text;
     const metadata = composerSubmitMetadata(submittedQuote, submittedEntities);
     let payload: Parameters<typeof chat.sendMessage>[0];
+
     if (submittedAttachments.length === 0) {
       payload =
         metadata === undefined ? { text: submittedText } : { text: submittedText, metadata };
@@ -286,7 +298,9 @@ const ComposerRoot = forwardRef<HTMLFormElement, ComposerRootProps>(function Com
         text: submittedText,
         attachments: submittedAttachments,
       };
+
       if (metadata !== undefined) attachmentPayload.metadata = metadata;
+
       payload = attachmentPayload;
     }
 
@@ -354,9 +368,11 @@ const ComposerRoot = forwardRef<HTMLFormElement, ComposerRootProps>(function Com
   const handleSubmit = useCallback(
     (event: FormEvent<HTMLFormElement>) => {
       (onSubmit as ((event: FormEvent<HTMLFormElement>) => void) | undefined)?.(event);
+
       if (event.defaultPrevented) {
         return;
       }
+
       event.preventDefault();
       void submit();
     },
@@ -386,9 +402,11 @@ const ComposerQuotePreview = forwardRef<HTMLQuoteElement, ComposerQuoteProps>(
   function ComposerQuotePreview({ children, ...props }, ref) {
     const composer = useComposer();
     const quote = composer.quote;
+
     if (quote === undefined) {
       return null;
     }
+
     const renderedChildren =
       typeof children === "function" ? children(quote) : (children ?? quote.text);
 
@@ -411,9 +429,11 @@ const ComposerClearQuote = forwardRef<HTMLButtonElement, PrimitiveProps<"button"
     const handleClick = useCallback(
       (event: MouseEvent<HTMLButtonElement>) => {
         onClick?.(event);
+
         if (event.defaultPrevented || disabled) {
           return;
         }
+
         composer.clearQuote();
       },
       [composer, disabled, onClick],
@@ -504,6 +524,7 @@ const ComposerInput = forwardRef<HTMLDivElement, ComposerInputProps>(function Co
         if (!editorReadyRef.current) {
           return;
         }
+
         const snapshot = composerSnapshotFromEditor(
           updatedEditor,
           composerRef.current.entities,
@@ -526,6 +547,7 @@ const ComposerInput = forwardRef<HTMLDivElement, ComposerInputProps>(function Co
     if (!autoResize) {
       return style;
     }
+
     const rowsStyle: CSSProperties = {
       ["--anvia-composer-min-rows" as string]: minRows,
       ["--anvia-composer-max-rows" as string]: maxRows,
@@ -535,6 +557,7 @@ const ComposerInput = forwardRef<HTMLDivElement, ComposerInputProps>(function Co
   const handleKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLDivElement>) => {
       onKeyDown?.(event);
+
       if (
         event.defaultPrevented ||
         event.key !== "Enter" ||
@@ -543,6 +566,7 @@ const ComposerInput = forwardRef<HTMLDivElement, ComposerInputProps>(function Co
       ) {
         return;
       }
+
       event.preventDefault();
       void composerRef.current.submit();
     },
@@ -553,6 +577,7 @@ const ComposerInput = forwardRef<HTMLDivElement, ComposerInputProps>(function Co
     if (editor === null) {
       return;
     }
+
     editor.setEditable(!composerDisabled, false);
   }, [composerDisabled, editor]);
 
@@ -560,6 +585,7 @@ const ComposerInput = forwardRef<HTMLDivElement, ComposerInputProps>(function Co
     if (editor === null) {
       return;
     }
+
     editor.commands.setContent(plainTextToComposerContent(composerRef.current.input), {
       emitUpdate: false,
     });
@@ -573,14 +599,18 @@ const ComposerInput = forwardRef<HTMLDivElement, ComposerInputProps>(function Co
     if (editor === null || !editorReadyRef.current) {
       return;
     }
+
     if (syncingFromEditorRef.current) {
       syncingFromEditorRef.current = false;
       return;
     }
+
     const snapshot = composerSnapshotFromEditor(editor, composer.entities, composer.triggers);
+
     if (snapshot.input === composer.input) {
       return;
     }
+
     editor.commands.setContent(plainTextToComposerContent(composer.input), {
       emitUpdate: false,
     });
@@ -630,21 +660,26 @@ const ComposerTextareaInput = forwardRef<HTMLTextAreaElement, ComposerTextareaIn
     useEffect(() => {
       const wasAutoResize = wasAutoResizeRef.current;
       wasAutoResizeRef.current = autoResize;
+
       if (!autoResize) {
         if (wasAutoResize) {
           resetComposerInputSize(inputRef.current);
         }
+
         return;
       }
+
       resizeComposerInput(inputRef.current, { maxRows, minRows });
     });
 
     const handleChange = useCallback(
       (event: ChangeEvent<HTMLTextAreaElement>) => {
         onChange?.(event);
+
         if (!event.defaultPrevented) {
           composer.setInput(event.currentTarget.value);
           composer.setEntities([]);
+
           if (autoResize) {
             resizeComposerInput(event.currentTarget, { maxRows, minRows });
           }
@@ -656,6 +691,7 @@ const ComposerTextareaInput = forwardRef<HTMLTextAreaElement, ComposerTextareaIn
     const handleKeyDown = useCallback(
       (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
         onKeyDown?.(event);
+
         if (
           event.defaultPrevented ||
           event.key !== "Enter" ||
@@ -664,6 +700,7 @@ const ComposerTextareaInput = forwardRef<HTMLTextAreaElement, ComposerTextareaIn
         ) {
           return;
         }
+
         event.preventDefault();
         void composer.submit();
       },
@@ -766,9 +803,11 @@ const ComposerEntityExtension = Mention.extend<
         parseHTML: (element) => dataFromAttribute(element.getAttribute("data-entity-data")),
         renderHTML: (attributes) => {
           if (attributes.data === undefined) return {};
+
           if (!isComposerEntityData(attributes.data)) {
             throw new TypeError("Composer entity data must be a JSON value.");
           }
+
           return { "data-entity-data": JSON.stringify(attributes.data) };
         },
       },
@@ -842,6 +881,7 @@ function submitComposerFromEditorKeyDown(event: KeyboardEvent, composerRef: Comp
   ) {
     return false;
   }
+
   event.preventDefault();
   void composerRef.current.submit();
   return true;
@@ -911,14 +951,19 @@ function composerSuggestion(
         handleComposerTriggerKeyDown(trigger, props, composerRef),
     }),
   };
+
   if (trigger.allowSpaces !== undefined) suggestion.allowSpaces = trigger.allowSpaces;
+
   if (trigger.allowedPrefixes !== undefined) {
     suggestion.allowedPrefixes = trigger.allowedPrefixes;
   }
+
   if (trigger.startOfLine !== undefined) suggestion.startOfLine = trigger.startOfLine;
+
   if (trigger.minQueryLength !== undefined) {
     suggestion.minQueryLength = trigger.minQueryLength;
   }
+
   return suggestion;
 }
 
@@ -932,6 +977,7 @@ function resolveTriggerItems(
     const normalizedQuery = query.toLowerCase();
     return trigger.items.filter((item) => item.label.toLowerCase().includes(normalizedQuery));
   }
+
   return trigger.items({
     trigger,
     query,
@@ -943,9 +989,11 @@ function resolveTriggerItems(
 
 function composerEditorOwnerDocument(editor: Editor): Document | undefined {
   const element = editor.options.element;
+
   if (element === null || typeof element === "function") {
     return undefined;
   }
+
   return "mount" in element ? element.mount.ownerDocument : element.ownerDocument;
 }
 
@@ -968,6 +1016,7 @@ function updateComposerTriggerState(
       if (item.disabled) {
         return;
       }
+
       props.command(triggerItemToEntityAttrs(trigger, item));
     },
     setSelectedIndex: (index) => {
@@ -978,7 +1027,9 @@ function updateComposerTriggerState(
       );
     },
   };
+
   if (rect !== undefined) state.rect = rect;
+
   composerRef.current.setActiveTrigger(state);
 }
 
@@ -988,6 +1039,7 @@ function handleComposerTriggerKeyDown(
   composerRef: ComposerRef,
 ): boolean {
   const activeTrigger = composerRef.current.activeTrigger;
+
   if (activeTrigger?.trigger.id !== trigger.id) {
     return false;
   }
@@ -1007,9 +1059,11 @@ function handleComposerTriggerKeyDown(
   if (event.key === "Enter" || event.key === "Tab") {
     event.preventDefault();
     const item = activeTrigger.items[activeTrigger.selectedIndex];
+
     if (item !== undefined) {
       activeTrigger.selectItem(item);
     }
+
     return true;
   }
 
@@ -1028,6 +1082,7 @@ function triggerItemToEntityAttrs(
   if (item.data !== undefined && !isComposerEntityData(item.data)) {
     throw new TypeError("Composer trigger item data must be a JSON value.");
   }
+
   return {
     id: item.id,
     label: item.label,
@@ -1049,9 +1104,11 @@ function rectFromSuggestion(
   props: SuggestionProps<ComposerTriggerItemValue, ComposerEntityAttrs>,
 ): ComposerTriggerState["rect"] {
   const rect = props.clientRect?.();
+
   if (rect === undefined || rect === null) {
     return undefined;
   }
+
   return {
     top: rect.top,
     right: rect.right,
@@ -1066,6 +1123,7 @@ function clampIndex(index: number, length: number): number {
   if (length <= 0) {
     return 0;
   }
+
   return (index + length) % length;
 }
 
@@ -1075,9 +1133,11 @@ function plainTextToComposerContent(input: string): JSONContent {
     type: "doc",
     content: lines.map((line) => {
       const paragraph: JSONContent = { type: "paragraph" };
+
       if (line.length > 0) {
         paragraph.content = [{ type: "text", text: line }];
       }
+
       return paragraph;
     }),
   };
@@ -1112,6 +1172,7 @@ function composerSnapshotFromContent(
       if (blockIndex > 0) {
         input += "\n";
       }
+
       blockIndex += 1;
       for (const child of node.content ?? []) {
         appendNode(child);
@@ -1175,15 +1236,19 @@ function composerEntityFromAttrs(
       to: from + text.length,
     },
   };
+
   if (data !== undefined) entity.data = data;
+
   return entity;
 }
 
 function composerEntityText(attrs: ComposerEntityAttrs | undefined): string {
   const text = stringAttr(attrs?.text);
+
   if (text !== undefined) {
     return text;
   }
+
   const trigger = stringAttr(attrs?.mentionSuggestionChar) ?? "@";
   return `${trigger}${stringAttr(attrs?.label) ?? stringAttr(attrs?.id) ?? ""}`;
 }
@@ -1196,6 +1261,7 @@ function dataFromAttribute(value: string | null): ComposerEntityData | undefined
   if (value === null) {
     return undefined;
   }
+
   try {
     const parsed: unknown = JSON.parse(value);
     return isComposerEntityData(parsed) ? parsed : undefined;
@@ -1238,6 +1304,7 @@ function resetComposerInputSize(input: HTMLTextAreaElement | null): void {
   if (input === null) {
     return;
   }
+
   input.style.height = "";
   input.style.overflowY = "";
 }
@@ -1246,6 +1313,7 @@ function normalizeRows(value: number, min: number): number {
   if (!Number.isFinite(value)) {
     return min;
   }
+
   return Math.max(min, Math.floor(value));
 }
 
@@ -1270,9 +1338,11 @@ function promptWithQuote(
     .split(/\r?\n/)
     .map((line) => `> ${line}`)
     .join("\n");
+
   if (prompt.trim().length === 0) {
     return { text: quotedText, prefixLength: 0 };
   }
+
   const prefix = `${quotedText}\n\n`;
   return { text: `${prefix}${prompt}`, prefixLength: prefix.length };
 }
@@ -1281,6 +1351,7 @@ function normalizeQuote(quote: ComposerQuote | undefined): ComposerQuote | undef
   if (quote === undefined) {
     return undefined;
   }
+
   return {
     text: quote.text,
     messageId: quote.messageId,
@@ -1301,11 +1372,15 @@ function composerSubmitMetadata(
   if (quote === undefined && entities.length === 0) {
     return undefined;
   }
+
   const metadata: ComposerSubmitMetadata = {};
+
   if (quote !== undefined) metadata.quote = quote;
+
   if (entities.length > 0) {
     metadata.composer = { entities: entities.map(composerEntityMetadata) };
   }
+
   return metadata;
 }
 
@@ -1326,9 +1401,11 @@ function composerEntityMetadata(entity: ComposerEntity): ClientMetadata {
     text: entity.text,
     range: { from: entity.range.from, to: entity.range.to },
   };
+
   if (entity.data !== undefined) {
     metadata.data = entity.data;
   }
+
   return metadata;
 }
 
@@ -1361,9 +1438,11 @@ const ComposerStop = forwardRef<HTMLButtonElement, PrimitiveProps<"button">>(fun
   const handleClick = useCallback(
     (event: MouseEvent<HTMLButtonElement>) => {
       onClick?.(event);
+
       if (event.defaultPrevented || disabled) {
         return;
       }
+
       composer.stop();
     },
     [composer, disabled, onClick],
@@ -1395,6 +1474,7 @@ const ComposerTriggerMenu = forwardRef<HTMLDivElement, ComposerTriggerMenuProps>
     const composer = useComposer();
     const activeTrigger = composer.activeTrigger;
     const empty = activeTrigger === undefined;
+
     if (empty && !keepMounted) {
       return null;
     }
@@ -1408,17 +1488,29 @@ const ComposerTriggerMenu = forwardRef<HTMLDivElement, ComposerTriggerMenuProps>
             left: activeTrigger.rect.left,
             ...style,
           } satisfies CSSProperties);
-    const renderedChildren =
-      activeTrigger === undefined
-        ? typeof children === "function"
-          ? null
-          : children
-        : typeof children === "function"
-          ? children(activeTrigger)
-          : (children ??
-            activeTrigger.items.map((item, index) => (
-              <ComposerTriggerItem key={`${item.id}:${index.toString()}`} index={index} />
-            )));
+    let renderedChildren: ReactNode;
+
+    if (activeTrigger === undefined) {
+      renderedChildren = typeof children === "function" ? null : children;
+    } else if (typeof children === "function") {
+      renderedChildren = children(activeTrigger);
+    } else {
+      renderedChildren =
+        children ??
+        activeTrigger.items.map((item, index) => (
+          <ComposerTriggerItem key={`${item.id}:${index.toString()}`} index={index} />
+        ));
+    }
+
+    let menuState: "closed" | "loading" | "empty" | "open" = "open";
+
+    if (activeTrigger === undefined) {
+      menuState = "closed";
+    } else if (activeTrigger.loading) {
+      menuState = "loading";
+    } else if (empty) {
+      menuState = "empty";
+    }
 
     return renderPrimitive(
       "div",
@@ -1427,14 +1519,7 @@ const ComposerTriggerMenu = forwardRef<HTMLDivElement, ComposerTriggerMenuProps>
         children: renderedChildren,
         role: props.role ?? "listbox",
         style: menuStyle,
-        "data-state":
-          activeTrigger === undefined
-            ? "closed"
-            : activeTrigger.loading
-              ? "loading"
-              : empty
-                ? "empty"
-                : "open",
+        "data-state": menuState,
       } as PrimitiveProps<"div">,
       ref,
     );
@@ -1460,6 +1545,7 @@ const ComposerTriggerItem = forwardRef<HTMLButtonElement, ComposerTriggerItemPro
     const activeTrigger = composer.activeTrigger;
     const itemIndex = index ?? 0;
     const item = itemProp ?? activeTrigger?.items[itemIndex];
+
     if (activeTrigger === undefined || item === undefined) {
       return null;
     }
@@ -1471,16 +1557,26 @@ const ComposerTriggerItem = forwardRef<HTMLButtonElement, ComposerTriggerItemPro
 
     const handleMouseEnter = (event: MouseEvent<HTMLButtonElement>) => {
       onMouseEnter?.(event);
+
       if (!event.defaultPrevented && !disabled) {
         activeTrigger.setSelectedIndex(itemIndex);
       }
     };
     const handleClick = (event: MouseEvent<HTMLButtonElement>) => {
       onClick?.(event);
+
       if (!event.defaultPrevented && !disabled) {
         activeTrigger.selectItem(item);
       }
     };
+
+    let itemState: "disabled" | "selected" | "idle" = "idle";
+
+    if (disabled) {
+      itemState = "disabled";
+    } else if (selected) {
+      itemState = "selected";
+    }
 
     return renderPrimitive(
       "button",
@@ -1493,7 +1589,7 @@ const ComposerTriggerItem = forwardRef<HTMLButtonElement, ComposerTriggerItemPro
         role: props.role ?? "option",
         type: props.type ?? "button",
         "aria-selected": selected,
-        "data-state": disabled ? "disabled" : selected ? "selected" : "idle",
+        "data-state": itemState,
       } as PrimitiveProps<"button">,
       ref,
     );
@@ -1511,6 +1607,7 @@ const ComposerAttachments = forwardRef<HTMLDivElement, ComposerAttachmentsProps>
   function ComposerAttachments({ children, keepMounted = false, ...props }, ref) {
     const composer = useComposer();
     const empty = composer.attachments.length === 0;
+
     if (empty && !keepMounted) {
       return null;
     }
@@ -1558,9 +1655,11 @@ const ComposerAttachmentInput = forwardRef<HTMLInputElement, ComposerAttachmentI
     const handleChange = useCallback(
       async (event: ChangeEvent<HTMLInputElement>) => {
         onChange?.(event);
+
         if (event.defaultPrevented) {
           return;
         }
+
         const files = Array.from(event.currentTarget.files ?? []);
         event.currentTarget.value = "";
         for (const file of files) {
@@ -1596,9 +1695,11 @@ const ComposerAddAttachment = forwardRef<HTMLButtonElement, ComposerAddAttachmen
     const handleClick = useCallback(
       (event: MouseEvent<HTMLButtonElement>) => {
         onClick?.(event);
+
         if (event.defaultPrevented || disabled) {
           return;
         }
+
         inputRef.current?.click();
       },
       [disabled, onClick],
@@ -1648,9 +1749,11 @@ const ComposerAttachmentDropzone = forwardRef<HTMLDivElement, ComposerAttachment
     const handleDragOver = useCallback(
       (event: DragEvent<HTMLDivElement>) => {
         onDragOver?.(event);
+
         if (event.defaultPrevented || disabled) {
           return;
         }
+
         event.preventDefault();
         setDragging(true);
       },
@@ -1660,6 +1763,7 @@ const ComposerAttachmentDropzone = forwardRef<HTMLDivElement, ComposerAttachment
     const handleDragLeave = useCallback(
       (event: DragEvent<HTMLDivElement>) => {
         onDragLeave?.(event);
+
         if (!event.defaultPrevented) {
           setDragging(false);
         }
@@ -1670,9 +1774,11 @@ const ComposerAttachmentDropzone = forwardRef<HTMLDivElement, ComposerAttachment
     const handleDrop = useCallback(
       (event: DragEvent<HTMLDivElement>) => {
         onDrop?.(event);
+
         if (event.defaultPrevented || disabled) {
           return;
         }
+
         event.preventDefault();
         setDragging(false);
         const files = Array.from(event.dataTransfer.files);
@@ -1681,6 +1787,14 @@ const ComposerAttachmentDropzone = forwardRef<HTMLDivElement, ComposerAttachment
       [composer, disabled, onDrop],
     );
 
+    let dropzoneState: "disabled" | "dragging" | "enabled" = "enabled";
+
+    if (disabled) {
+      dropzoneState = "disabled";
+    } else if (dragging) {
+      dropzoneState = "dragging";
+    }
+
     return renderPrimitive(
       "div",
       {
@@ -1688,7 +1802,7 @@ const ComposerAttachmentDropzone = forwardRef<HTMLDivElement, ComposerAttachment
         onDragLeave: handleDragLeave,
         onDragOver: handleDragOver,
         onDrop: handleDrop,
-        "data-state": disabled ? "disabled" : dragging ? "dragging" : "enabled",
+        "data-state": dropzoneState,
       } as PrimitiveProps<"div">,
       ref,
     );
@@ -1734,9 +1848,11 @@ let nextAttachmentId = 0;
 
 function createAttachmentId(): string {
   const random = globalThis.crypto?.randomUUID?.();
+
   if (random !== undefined) {
     return `attachment_${random}`;
   }
+
   nextAttachmentId += 1;
   return `attachment_${nextAttachmentId.toString(36)}`;
 }

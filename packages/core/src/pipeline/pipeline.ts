@@ -162,9 +162,11 @@ export class Pipeline<Input, Output = Input> {
       this.observability = options[internalPipelineOptions].observability;
     } else {
       const id = normalizePipelineId(options.id);
+
       if (!isZodSchema(options.inputSchema)) {
         throw new TypeError("Pipeline inputSchema must be a Zod schema.");
       }
+
       const inputSchema = options.inputSchema;
       this.executor = (async (input, context) => {
         throwIfAborted(context.abortSignal);
@@ -220,9 +222,11 @@ export class Pipeline<Input, Output = Input> {
     options: PipelineParallelOptions<Awaited<Output>, Branches>,
   ): Pipeline<Input, ParallelOutput<Branches>> {
     const branchEntries = normalizeBranches(options.branches, "parallel");
+
     if (branchEntries.length === 0) {
       throw new TypeError("Pipeline parallel branches must not be empty.");
     }
+
     const parallel = appendStageNode(this.state, "parallel", options, {
       defaultLabel: `${branchEntries.length} parallel branches`,
     });
@@ -251,17 +255,22 @@ export class Pipeline<Input, Output = Input> {
             return [key, output] as const;
           } catch (error) {
             if (firstError === undefined) firstError = error;
+
             if (!controller.signal.aborted) controller.abort(error);
+
             throw error;
           }
         });
 
         const settled = await Promise.allSettled(promises);
         combined.dispose();
+
         if (context.abortSignal?.aborted === true) {
           throw pipelineAbortError(context.abortSignal);
         }
+
         if (firstError !== undefined) throw firstError;
+
         return Object.fromEntries(
           settled.map(
             (result) => (result as PromiseFulfilledResult<readonly [string, unknown]>).value,
@@ -277,6 +286,7 @@ export class Pipeline<Input, Output = Input> {
     if (options.suspension !== "reject") {
       throw new TypeError('Pipeline Agent stages require suspension: "reject".');
     }
+
     const next = appendStageNode(this.state, "agent", options, {
       defaultLabel: options.agent.name ?? options.agent.id,
       agentId: options.agent.id,
@@ -296,12 +306,15 @@ export class Pipeline<Input, Output = Input> {
           ),
           abortSignal: context.abortSignal,
         } as AgentRunOptions<AgentOutput, RawResponseOf<Model>, CompletionModelControlsOf<Model>>);
+
         if (response.type === "interaction") {
           throw new PipelineAgentSuspensionError(response);
         }
+
         if (response.type === "blocked") {
           throw new AgentRunBlockedError(response);
         }
+
         return response.output;
       });
     }, next.state);
@@ -366,9 +379,11 @@ export class Pipeline<Input, Output = Input> {
     options: PipelineRouteOptions<Awaited<Output>, Options, Model, Branches>,
   ): Pipeline<Input, RouteOutput<Branches>> {
     assertQuestion(options.question);
+
     if (options.question.type !== "choice") {
       throw new TypeError("Pipeline route question must be a choice question.");
     }
+
     const branchEntries = normalizeBranches(
       options.branches as Readonly<Record<string, Pipeline<Awaited<Output>, unknown>>>,
       "route",
@@ -486,6 +501,7 @@ export class Pipeline<Input, Output = Input> {
         if (options.abortSignal?.aborted === true) {
           throw pipelineAbortError(options.abortSignal);
         }
+
         return { status: "failed", runId, error } as const;
       }
     });
@@ -529,12 +545,17 @@ function withPipelineParentTrace(
   agentPrimaryTrace: string | undefined,
 ): AgentTraceOptions | undefined {
   if (parent?.traceId === undefined) return trace;
+
   if (parent.observer !== agentPrimaryTrace) return trace;
+
   if (trace?.traceId !== undefined && trace.traceId !== parent.traceId) return trace;
+
   const resolved = { ...trace, traceId: parent.traceId };
+
   if (trace?.parentObservationId === undefined && parent.observationId !== undefined) {
     resolved.parentObservationId = parent.observationId;
   }
+
   return resolved;
 }
 
@@ -552,10 +573,13 @@ function normalizePipelineId(id: string): string {
   if (typeof id !== "string") {
     throw new TypeError("Pipeline id must be a string.");
   }
+
   const normalized = id.trim();
+
   if (normalized.length === 0) {
     throw new TypeError("Pipeline id must be a non-empty string.");
   }
+
   return normalized;
 }
 
@@ -563,10 +587,13 @@ function normalizeRunId(runId: string): string {
   if (typeof runId !== "string") {
     throw new TypeError("Pipeline runId must be a string.");
   }
+
   const normalized = runId.trim();
+
   if (normalized.length === 0) {
     throw new TypeError("Pipeline runId must be a non-empty string.");
   }
+
   return normalized;
 }
 
@@ -579,16 +606,21 @@ function normalizeBranches<Branch>(
   for (const key of Object.keys(branches)) {
     const pipeline = branches[key] as Branch;
     const id = key.trim();
+
     if (id.length === 0) {
       throw new TypeError(`Pipeline ${kind} branch id must be a non-empty string.`);
     }
+
     if (ids.has(id)) {
       throw new TypeError(`Pipeline ${kind} branch id "${id}" is already registered.`);
     }
+
     ids.add(id);
+
     if (id !== key) {
       throw new TypeError(`Pipeline ${kind} branch ids must not contain surrounding whitespace.`);
     }
+
     entries.push([id, pipeline]);
   }
   return entries;

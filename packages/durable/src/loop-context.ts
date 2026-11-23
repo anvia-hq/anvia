@@ -32,6 +32,7 @@ export function createContextPreparation(
   ): Promise<PreparedLoopContext> => {
     if (run.loopCompaction !== true || run.compaction === undefined || run.graphId !== undefined)
       return { messages: [...messages] };
+
     signal.throwIfAborted();
     const key = `${run.epoch}:context:${turn}`;
     // The journal stores a bounded form of the transcript; content addressing keeps it
@@ -40,13 +41,16 @@ export function createContextPreparation(
       json(await tx.blobs((io) => externalizeMessages(io, messages))),
     );
     let operation = await store.transaction(async (tx) => tx.getOperation(run.id, key));
+
     if (operation !== undefined) {
       // Restored form, so journals from before blob references compare equal to the same transcript.
       const saved = await store.transaction(
         async (tx) => await tx.blobs((io) => hydrateValue(io, json(operation!.input))),
       );
+
       if (operation.kind !== "context" || !sameJson(saved, json(messages)))
         throw new DurableRecoveryError("Context changed at a saved checkpoint.", key);
+
       if (operation.status === "completed") {
         const prepared = preparedLoopContextSchema.parse(operation.result);
         return store.transaction(
@@ -57,11 +61,14 @@ export function createContextPreparation(
         );
       }
     }
+
     // A started operation is retryable intent. Its unfinished projection has never
     // reached the main model; only the completed transaction below freezes replay.
     const options = registration.compaction;
+
     if (options === undefined)
       throw new DurableRecoveryError("Restore the saved agent's compaction implementation.");
+
     // Histories can contain a long previous run, and approval epochs can start with a
     // newly completed exchange. Both need the same check as subsequent model calls.
     const plan = !messages.some((message) => message.role === "tool")
@@ -77,6 +84,7 @@ export function createContextPreparation(
           signal,
         );
     let prepared: PreparedLoopContext;
+
     if (plan === undefined) {
       prepared = {
         messages: projectLoopContext(messages, checkpoint),
@@ -97,12 +105,14 @@ export function createContextPreparation(
           });
         });
       }
+
       if (run.modelRetry !== undefined && (operation.attempts ?? 0) >= run.modelRetry.maxAttempts)
         throw new DurableModelError(
           key,
           operation.attempts!,
           new Error("Compaction attempt budget exhausted."),
         );
+
       operation.attempts = (operation.attempts ?? 0) + 1;
       await store.transaction(async (tx) => tx.putOperation(run.id, operation!));
       let summary;
@@ -127,6 +137,7 @@ export function createContextPreparation(
         operation.attempts,
       );
     }
+
     signal.throwIfAborted();
     const completed: DurableOperation = {
       ...operation,
@@ -139,11 +150,14 @@ export function createContextPreparation(
     };
     await store.transaction(async (tx) => {
       const current = (await tx.getRun(run.id))!;
+
       if (current.status !== "running") throw new Error("Durable run is no longer running.");
+
       await tx.putOperation(run.id, {
         ...completed,
         result: await tx.blobs((io) => externalizeContextResult(io, completed.result!)),
       });
+
       if (prepared.compaction !== undefined) {
         current.usage = Usage.add(current.usage, prepared.compaction.usage);
         await tx.putRun(current);

@@ -71,6 +71,7 @@ while (result.type === "interaction") {
   if (result.interaction.type !== "tool-approval") {
     throw new Error("This example only handles tool approvals.");
   }
+
   console.log("approval required:", result.interaction.toolName, result.interaction.reason);
   result = await agent.resume(result.continuation, {
     type: "tool-approval",

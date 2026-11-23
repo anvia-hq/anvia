@@ -68,16 +68,25 @@ const LOW_HIGH_CONTROLS = reasoningControls(["low", "high"] as const, "high");
 
 export function geminiControlsForModel(modelId: string): GeminiReasoningControls | undefined {
   if (ALL_LEVEL_HIGH_MODELS.has(modelId)) return ALL_LEVEL_HIGH_CONTROLS;
+
   if (ALL_LEVEL_MEDIUM_MODELS.has(modelId)) return ALL_LEVEL_MEDIUM_CONTROLS;
+
   if (ALL_LEVEL_MINIMAL_MODELS.has(modelId)) return ALL_LEVEL_MINIMAL_CONTROLS;
+
   if (GEMINI_2_5_MODELS.has(modelId)) return LOW_MEDIUM_HIGH_CONTROLS;
+
   if (GEMINI_PRO_MODELS.has(modelId)) return LOW_MEDIUM_HIGH_DEFAULT_HIGH_CONTROLS;
+
   if (GEMINI_MEDIUM_DEFAULT_MODELS.has(modelId)) return LOW_MEDIUM_HIGH_DEFAULT_MEDIUM_CONTROLS;
+
   if (GEMINI_XHIGH_DEFAULT_HIGH_MODELS.has(modelId)) {
     return LOW_MEDIUM_HIGH_XHIGH_DEFAULT_HIGH_CONTROLS;
   }
+
   if (modelId === "gemini-3.1-flash-lite-image") return MINIMAL_HIGH_CONTROLS;
+
   if (modelId === "gemini-3-pro-preview") return LOW_HIGH_CONTROLS;
+
   return undefined;
 }
 
@@ -115,7 +124,9 @@ function reasoningControls<const Efforts extends readonly GeminiReasoningEffort[
     description: "Controls how much reasoning the model applies before responding.",
     options: efforts,
   };
+
   if (defaultValue !== undefined) effortControl.defaultValue = defaultValue;
+
   return defineCompletionModelControls({
     reasoningEffort: effortControl,
   });

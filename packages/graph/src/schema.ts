@@ -20,21 +20,27 @@ export function validateGraphSchemaOptions(options: GraphSchemaOptions): void {
   if (Object.keys(options.nodes).length === 0) {
     throw new TypeError("A graph schema requires at least one node type.");
   }
+
   for (const [type, definition] of Object.entries(options.nodes)) {
     assertGraphName(type, "node type");
     assertDescription(definition.description, `node ${type}`);
+
     if (!(definition.properties instanceof z.ZodObject)) {
       throw new TypeError(`Properties for node ${type} must be a Zod object schema.`);
     }
+
     assertExactPropertySchema(definition.properties, `node ${type}`);
+
     if (
       definition.identity.length === 0 ||
       new Set(definition.identity).size !== definition.identity.length
     ) {
       throw new TypeError(`Node ${type} must declare unique identity properties.`);
     }
+
     for (const property of definition.identity) {
       assertGraphPropertyName(property);
+
       if (!(property in definition.properties.shape)) {
         throw new TypeError(`Identity property ${property} is not declared by node ${type}.`);
       }
@@ -46,17 +52,22 @@ export function validateGraphSchemaOptions(options: GraphSchemaOptions): void {
   for (const [type, definition] of Object.entries(options.relationships)) {
     assertGraphName(type, "relationship type");
     assertDescription(definition.description, `relationship ${type}`);
+
     if (!(definition.from in options.nodes) || !(definition.to in options.nodes)) {
       throw new TypeError(`Relationship ${type} references an unknown endpoint type.`);
     }
+
     if (!(definition.properties instanceof z.ZodObject)) {
       throw new TypeError(`Properties for relationship ${type} must be a Zod object schema.`);
     }
+
     assertExactPropertySchema(definition.properties, `relationship ${type}`);
     const identity = definition.identity ?? [];
+
     if (new Set(identity).size !== identity.length) {
       throw new TypeError(`Relationship ${type} contains duplicate identity properties.`);
     }
+
     for (const property of Object.keys(definition.properties.shape)) {
       assertGraphPropertyName(property);
     }
@@ -83,9 +94,11 @@ export function freezeGraphSchema<
   const relationships = Object.fromEntries(
     Object.entries(options.relationships).map(([type, definition]) => {
       const copy = { ...definition };
+
       if (definition.identity !== undefined) {
         Object.assign(copy, { identity: Object.freeze([...definition.identity]) });
       }
+
       return [type, Object.freeze(copy)];
     }),
   );
@@ -100,6 +113,7 @@ export function parseGraphProperties(value: unknown, label: string): GraphProper
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new TypeError(`${label} must be an object of graph property values.`);
   }
+
   const output: Record<string, GraphPropertyValue> = {};
   for (const [key, item] of Object.entries(value)) {
     assertGraphPropertyName(key);
@@ -110,22 +124,30 @@ export function parseGraphProperties(value: unknown, label: string): GraphProper
 
 export function parseGraphPropertyValue(value: unknown, label: string): GraphPropertyValue {
   if (typeof value === "string" || typeof value === "boolean") return value;
+
   if (typeof value === "number") {
     if (!Number.isFinite(value)) throw new TypeError(`${label} must be finite.`);
+
     if (Number.isInteger(value) && !Number.isSafeInteger(value)) {
       throw new TypeError(`${label} must be a safe integer.`);
     }
+
     return value;
   }
+
   if (Array.isArray(value)) {
     if (value.length === 0) return [];
+
     const parsed = value.map((item, index) => parsePrimitive(item, `${label}[${index}]`));
     const type = typeof parsed[0];
+
     if (!parsed.every((item) => typeof item === type)) {
       throw new TypeError(`${label} must be a homogeneous array.`);
     }
+
     return parsed as GraphPropertyValue;
   }
+
   throw new TypeError(`${label} is not a supported graph property value.`);
 }
 
@@ -137,6 +159,7 @@ export function assertGraphName(value: string, label: string): void {
 
 export function assertGraphPropertyName(value: string): void {
   assertGraphName(value, "graph property name");
+
   if (value.startsWith(graphReservedPropertyPrefix)) {
     throw new TypeError(
       `Graph property names beginning with ${graphReservedPropertyPrefix} are reserved.`,
@@ -146,9 +169,11 @@ export function assertGraphPropertyName(value: string): void {
 
 function parsePrimitive(value: unknown, label: string): GraphPropertyPrimitive {
   const parsed = parseGraphPropertyValue(value, label);
+
   if (typeof parsed === "string" || typeof parsed === "number" || typeof parsed === "boolean") {
     return parsed;
   }
+
   throw new TypeError(`${label} must be a primitive property value.`);
 }
 
@@ -160,9 +185,11 @@ function assertDescription(value: string, label: string): void {
 
 function assertExactPropertySchema(schema: z.ZodObject<z.ZodRawShape>, label: string): void {
   const definition = schema._zod.def;
+
   if (!(definition.catchall instanceof z.ZodNever)) {
     throw new TypeError(`${label} properties must use a strict Zod object schema.`);
   }
+
   for (const [property, propertySchema] of Object.entries(schema.shape)) {
     assertNonEffectfulSchema(propertySchema, `${label} property ${property}`, new Set());
   }
@@ -170,10 +197,13 @@ function assertExactPropertySchema(schema: z.ZodObject<z.ZodRawShape>, label: st
 
 function assertNonEffectfulSchema(value: unknown, label: string, visited: Set<z.ZodType>): void {
   if (!(value instanceof z.ZodType)) throw new TypeError(`${label} must be a Zod schema.`);
+
   if (visited.has(value)) return;
+
   visited.add(value);
   const definition = value._zod.def as unknown as Record<string, unknown>;
   const type = definition.type;
+
   if (
     definition.coerce === true ||
     type === "default" ||
@@ -186,16 +216,20 @@ function assertNonEffectfulSchema(value: unknown, label: string, visited: Set<z.
       `${label} must not coerce, default, transform, preprocess, or catch values.`,
     );
   }
+
   const checks = definition.checks;
+
   if (
     Array.isArray(checks) &&
     checks.some((check) => {
       if (typeof check !== "object" || check === null) return false;
+
       return (check as { _zod?: { def?: { check?: unknown } } })._zod?.def?.check === "overwrite";
     })
   ) {
     throw new TypeError(`${label} must not normalize or overwrite values.`);
   }
+
   for (const child of schemaChildren(definition)) assertNonEffectfulSchema(child, label, visited);
 }
 
@@ -203,10 +237,12 @@ function schemaChildren(definition: Record<string, unknown>): z.ZodType[] {
   const children: z.ZodType[] = [];
   for (const key of ["innerType", "element", "left", "right", "rest", "keyType", "valueType"]) {
     const value = definition[key];
+
     if (value instanceof z.ZodType) children.push(value);
   }
   for (const key of ["options", "items"]) {
     const value = definition[key];
+
     if (Array.isArray(value)) {
       for (const item of value) if (item instanceof z.ZodType) children.push(item);
     }

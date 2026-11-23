@@ -44,6 +44,7 @@ export function migrateLegacyRows(database: DatabaseSync): void {
         isCount(value.bytes) &&
         blobExists(value.hash, value.bytes as number)
       );
+
     return (
       Array.isArray(value) &&
       value.every(
@@ -59,7 +60,9 @@ export function migrateLegacyRows(database: DatabaseSync): void {
 
   const encode = (value: unknown): unknown => {
     if (Array.isArray(value)) return value.map(encode);
+
     if (!isObject(value)) return value;
+
     const output: Record<string, unknown> = {};
     for (const [key, entry] of Object.entries(value)) {
       if (RESERVED_KEYS.has(key) && keepsMarker(key, entry)) output[key] = entry;
@@ -91,7 +94,9 @@ export function migrateLegacyRows(database: DatabaseSync): void {
     let cursor: string | null = start;
     while (cursor !== null && !heads.has(cursor)) {
       const link = links.get(cursor);
+
       if (link === undefined) throw new Error("Corrupt operation history content.");
+
       pending.push(cursor);
       cursor = link.previous;
     }
@@ -99,7 +104,9 @@ export function migrateLegacyRows(database: DatabaseSync): void {
     for (let index = pending.length - 1; index >= 0; index--) {
       const node = pending[index]!;
       const message = messages.get(links.get(node)!.message);
+
       if (message === undefined) throw new Error("Missing operation history content.");
+
       base = digest(JSON.stringify([base, message.hash]));
       heads.set(node, base);
     }
@@ -107,7 +114,9 @@ export function migrateLegacyRows(database: DatabaseSync): void {
 
   const renameHeads = (value: unknown): unknown => {
     if (Array.isArray(value)) return value.map(renameHeads);
+
     if (!isObject(value)) return value;
+
     const output: Record<string, unknown> = {};
     for (const [key, entry] of Object.entries(value)) {
       output[key] =
@@ -129,6 +138,7 @@ export function migrateLegacyRows(database: DatabaseSync): void {
     const statement = database.prepare(update);
     for (const row of database.prepare(select).all()) {
       const text = transform(row);
+
       if (text !== String(row[column])) {
         statement.run(text, ...keys.map((key) => row[key] as string | number));
       }
@@ -209,6 +219,7 @@ export function migrateOversizedPrompts(database: DatabaseSync): void {
   for (const row of runs) {
     const text = String(row.record);
     const next = writeStored(externalizeRunRecord(io, readStored(text) as JsonObject));
+
     if (next !== text) updateRun.run(next, String(row.id));
   }
   const events = database
@@ -220,8 +231,11 @@ export function migrateOversizedPrompts(database: DatabaseSync): void {
   for (const row of events) {
     const text = String(row.data);
     const value = readStored(text);
+
     if (typeof value !== "object" || value === null || Array.isArray(value)) continue;
+
     const next = writeStored(externalizeSubmittedEvent(io, value as JsonObject));
+
     if (next !== text) updateEvent.run(next, Number(row.sequence));
   }
 }

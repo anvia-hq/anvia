@@ -98,10 +98,13 @@ vi.mock("@langfuse/tracing", () => {
         attributes?: unknown;
       }) {
         const options: Record<string, unknown> = { asType };
+
         if (params.otelSpan.__options.startTime !== undefined) {
           options.startTime = params.otelSpan.__options.startTime;
         }
+
         const parent = params.otelSpan.__context?.__parentObservation;
+
         if (parent !== undefined) {
           Object.assign(
             this,
@@ -109,8 +112,11 @@ vi.mock("@langfuse/tracing", () => {
           );
           return;
         }
+
         const parentSpanContext = params.otelSpan.__context?.__parentSpanContext;
+
         if (parentSpanContext !== undefined) options.parentSpanContext = parentSpanContext;
+
         Object.assign(
           this,
           mocks.startObservation(params.otelSpan.__name, params.attributes, options),
@@ -1740,14 +1746,17 @@ describe("langfuse", () => {
       (_url, init) =>
         new Promise((_, reject) => {
           const signal = (init as RequestInit | undefined)?.signal as AbortSignal | undefined;
+
           if (signal === undefined) {
             reject(new Error("missing signal"));
             return;
           }
+
           if (signal.aborted) {
             reject(new DOMException("aborted", "AbortError"));
             return;
           }
+
           signal.addEventListener("abort", () => {
             reject(new DOMException("aborted", "AbortError"));
           });
@@ -2480,8 +2489,11 @@ describe("ScoreQueue", () => {
       fetchImpl: fetchMock as typeof fetch,
       sleep: sleepMock as (ms: number) => Promise<void>,
     };
+
     if (overrides.setTimer) options.setTimer = overrides.setTimer;
+
     if (overrides.clearTimer) options.clearTimer = overrides.clearTimer;
+
     const queue = new ScoreQueue(options);
     return {
       queue,
@@ -3001,6 +3013,7 @@ function metric(name: string) {
 describe("LangfuseDatasetClient", () => {
   function readJsonBody(body: unknown): unknown {
     if (typeof body !== "string") return body;
+
     try {
       return JSON.parse(body);
     } catch {
@@ -3330,6 +3343,7 @@ describe("LangfuseDatasetClient", () => {
       ],
       run: (item) => {
         if (item.id === "i-2") throw new Error("kaboom");
+
         return { output: `out-${item.id}`, trace: undefined };
       },
     });
@@ -4019,7 +4033,9 @@ describe("Langfuse redaction integration", () => {
       history: [],
       maxTurns: 1,
     });
+
     if (!run?.startGeneration) throw new Error("missing startGeneration");
+
     await run.startGeneration({
       ...generationStartArgs(),
       request: {

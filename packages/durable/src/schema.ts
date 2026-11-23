@@ -197,22 +197,28 @@ const runSchema = z
 export function parseRun(value: unknown): DurableRunRecord {
   // The core owns richer optional outcome fields; the envelope and execution state are checked here.
   const run = carryReferences(value, runSchema.parse(value) as DurableRunRecord);
+
   if (
     (run.graphId === undefined) !== (run.taskId === undefined) ||
     (run.graphId === undefined) !== (run.dependencies === undefined)
   )
     throw new Error("Incomplete graph task metadata.");
+
   if (run.status === "retry_wait" && run.nextAttemptAt === undefined)
     throw new Error("Retrying run has no deadline.");
+
   if (run.status === "waiting" && run.outcome?.type !== "interaction")
     throw new Error("Waiting run has no interaction.");
+
   if (
     run.status === "completed" &&
     (run.outcome === undefined || run.outcome.type === "interaction")
   )
     throw new Error("Completed run has no terminal outcome.");
+
   if ((run.contextCheckpoint?.compactedMessageCount ?? 0) > run.history.length)
     throw new Error("Compaction checkpoint exceeds canonical history.");
+
   return run;
 }
 
@@ -243,6 +249,7 @@ const operationSchema = z
 
 export function parseOperation(value: unknown): DurableOperation {
   const operation = carryReferences(value, operationSchema.parse(value));
+
   if (operation.historyEncoding !== undefined) {
     if (operation.kind === "model") {
       z.object({ request: z.object({ chatHistory: historyReferenceSchema }) }).parse(
@@ -250,10 +257,12 @@ export function parseOperation(value: unknown): DurableOperation {
       );
     } else if (operation.kind === "context") {
       const input = historyReferenceSchema.parse(operation.input);
+
       if (operation.status === "completed") {
         const prepared = preparedLoopContextSchema
           .extend({ messages: historyReferenceSchema })
           .parse(operation.result);
+
         if (
           prepared.messages.length === 0 ||
           (prepared.checkpoint?.coveredMessages ?? 0) > input.length
@@ -262,8 +271,11 @@ export function parseOperation(value: unknown): DurableOperation {
       }
     } else throw new Error("History encoding is not supported for this operation kind.");
   }
+
   if (operation.status !== "completed") return operation;
+
   if (operation.result === undefined) throw new Error("Completed operation has no result.");
+
   if (operation.kind === "model") {
     const result = z
       .object({ choice: z.array(jsonValue), usage, rawResponse: z.null() })
@@ -273,6 +285,7 @@ export function parseOperation(value: unknown): DurableOperation {
   } else if (operation.kind === "context" && operation.historyEncoding === undefined) {
     const prepared = preparedLoopContextSchema.parse(operation.result);
     const input = messagesSchema.parse(operation.input);
+
     if ((prepared.checkpoint?.coveredMessages ?? 0) > input.length)
       throw new Error("Context checkpoint exceeds its source transcript.");
   } else if (operation.kind === "compaction") {
@@ -291,6 +304,7 @@ export function parseOperation(value: unknown): DurableOperation {
       ],
     });
   }
+
   return operation;
 }
 

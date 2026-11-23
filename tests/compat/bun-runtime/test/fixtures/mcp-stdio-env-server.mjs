@@ -5,10 +5,14 @@ process.stdin.on("data", (chunk) => {
   buffer += chunk;
   while (true) {
     const newline = buffer.indexOf("\n");
+
     if (newline === -1) return;
+
     const line = buffer.slice(0, newline);
     buffer = buffer.slice(newline + 1);
+
     if (line.trim() === "") continue;
+
     respond(JSON.parse(line));
   }
 });
@@ -33,6 +37,7 @@ function resultFor(message) {
       },
     };
   }
+
   if (message.method === "tools/list") {
     return {
       resultType: "complete",
@@ -50,6 +55,7 @@ function resultFor(message) {
       ],
     };
   }
+
   if (message.method === "tools/call") {
     return {
       resultType: "complete",
@@ -58,5 +64,6 @@ function resultFor(message) {
       content: [{ type: "text", text: `echo:${String(message.params?.arguments?.text ?? "")}` }],
     };
   }
+
   return {};
 }

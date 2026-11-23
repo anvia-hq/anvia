@@ -208,9 +208,14 @@ export function isMessage(value: unknown): value is Message {
 
 function isBase64(value: string): boolean {
   if (!/^[A-Za-z0-9+/]*={0,2}$/.test(value)) return false;
+
   const firstPadding = value.indexOf("=");
+
   if (firstPadding !== -1 && firstPadding < value.length - 2) return false;
+
   const rawLength = value.replace(/=+$/, "").length;
+
   if (rawLength % 4 === 1) return false;
+
   return firstPadding === -1 || value.length % 4 === 0;
 }

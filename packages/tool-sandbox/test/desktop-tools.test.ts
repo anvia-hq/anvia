@@ -43,7 +43,9 @@ function tools(
   const created = createDesktopTools({ sandbox: desktop, settleMs: 0, ...options });
   const call = (name: DesktopToolName, args: unknown, context: object = {}) => {
     const tool = created.find((candidate) => candidate.name === name);
+
     if (tool === undefined) throw new Error(`no tool ${name}`);
+
     return tool.call(args as never, context);
   };
   return { created, call };

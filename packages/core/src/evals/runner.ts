@@ -132,9 +132,11 @@ export async function runEvalSuite<
       caseResult.metrics.flatMap((metricResult) => metricResult.reporterErrors),
     ),
   );
+
   if (aggregates.cost !== undefined) {
     result.cost = aggregates.cost;
   }
+
   const runEndArgs: EvalRunEndArgs = {
     ...lifecycle,
     status: "completed",
@@ -144,9 +146,11 @@ export async function runEvalSuite<
     cases: result.cases,
     usage: result.usage,
   };
+
   if (result.cost !== undefined) {
     runEndArgs.cost = result.cost;
   }
+
   result.reporterErrors.push(
     ...(await notifyRunEnd(reporters, runEndArgs, options.reporterErrorPolicy ?? "collect")),
   );
@@ -178,6 +182,7 @@ async function runEvalCases<
         failure ??= { error: suiteAbortReason(options.signal) };
         break;
       }
+
       const index = nextIndex;
       nextIndex += 1;
       try {
@@ -190,11 +195,14 @@ async function runEvalCases<
           () => completedCases,
         );
         completedCases += 1;
+
         if (isAborted(options.signal)) {
           failure ??= { error: suiteAbortReason(options.signal) };
         }
+
         if (options.failFast === true && results[index]?.outcome !== "pass") {
           const result = results[index];
+
           if (result !== undefined && result.outcome !== "pass") {
             failure ??= { error: new EvalFailFastError(result.case.id, result.outcome) };
           }
@@ -208,7 +216,9 @@ async function runEvalCases<
   await Promise.all(
     Array.from({ length: Math.min(workerConcurrency, options.cases.length) }, () => worker()),
   );
+
   if (failure !== undefined) throw failure.error;
+
   return results;
 }
 
@@ -261,6 +271,7 @@ async function runEvalCase<
       if (options.signal?.aborted === true) {
         throw suiteAbortReason(options.signal);
       }
+
       targetStatus = "failed";
       targetError = error;
     }
@@ -326,8 +337,11 @@ async function runEvalCase<
             durationMs,
             reporterErrors,
           };
+
           if (metric.direction !== undefined) metricResult.direction = metric.direction;
+
           if (metric.threshold !== undefined) metricResult.threshold = metric.threshold;
+
           return metricResult;
         }),
       ),
@@ -346,12 +360,15 @@ async function runEvalCase<
       scores,
       usage: emptyUsageSummary(),
     };
+
     if (targetStatus === "succeeded") {
       result.output = output;
     }
+
     if (targetStatus === "failed") {
       result.targetError = targetError;
     }
+
     await progress({
       type: "case-complete",
       suiteName: options.name,
@@ -400,6 +417,7 @@ async function safeEvaluate<Input, Output, Expected>(
       signal.reason instanceof EvalTimeoutError ? "timeout" : "metric",
     );
   }
+
   try {
     return await abortable(
       signal,
@@ -425,9 +443,11 @@ async function reportOutcome<Input, Output, Expected>(args: {
   reporterErrorPolicy: "collect" | "throw";
 }): Promise<unknown[]> {
   const errors: unknown[] = [];
+
   if (args.traceError !== undefined) {
     errors.push(args.traceError);
   }
+
   for (const reporter of args.reporters) {
     try {
       await reporter.report({
@@ -454,9 +474,11 @@ function resolveRun<Input, Output, Expected>(
   startedAtMs: number,
 ): EvalRunContext {
   const id = options.run?.id ?? globalThis.crypto.randomUUID();
+
   if (id.trim().length === 0 || id.length > 128) {
     throw new TypeError("Evaluation run id must contain 1 to 128 characters");
   }
+
   for (const [label, value] of [
     ["dataset name", options.run?.datasetName],
     ["dataset version", options.run?.datasetVersion],
@@ -469,10 +491,15 @@ function resolveRun<Input, Output, Expected>(
     id,
     startedAt: new Date(startedAtMs).toISOString(),
   };
+
   if (options.run?.datasetName !== undefined) run.datasetName = options.run.datasetName;
+
   if (options.run?.datasetVersion !== undefined) run.datasetVersion = options.run.datasetVersion;
+
   if (options.run?.promptRef !== undefined) run.promptRef = options.run.promptRef;
+
   if (options.run?.metadata !== undefined) run.metadata = options.run.metadata;
+
   return run;
 }
 
@@ -484,6 +511,7 @@ async function notifyRunStart<Input, Output, Expected>(
   const errors: unknown[] = [];
   for (const reporter of reporters) {
     if (reporter.onRunStart === undefined) continue;
+
     try {
       await reporter.onRunStart(args);
     } catch (error) {
@@ -502,6 +530,7 @@ async function notifyRunEnd<Input, Output, Expected>(
   const errors: unknown[] = [];
   for (const reporter of reporters) {
     if (reporter.onRunEnd === undefined) continue;
+
     try {
       await reporter.onRunEnd(args);
     } catch (error) {
@@ -558,7 +587,9 @@ function emptyUsageSummary() {
 
 function statusKey(status: "pass" | "fail" | "invalid"): "passed" | "failed" | "invalid" {
   if (status === "pass") return "passed";
+
   if (status === "fail") return "failed";
+
   return "invalid";
 }
 
@@ -567,9 +598,13 @@ function caseOutcome(
   metrics: EvalMetricResult[],
 ): "pass" | "fail" | "invalid" {
   if (targetStatus === "failed") return "invalid";
+
   const required = metrics.filter((metric) => metric.required);
+
   if (required.some((metric) => metric.outcome.outcome === "invalid")) return "invalid";
+
   if (required.some((metric) => metric.outcome.outcome === "fail")) return "fail";
+
   return "pass";
 }
 
@@ -597,11 +632,14 @@ async function aggregateResult<
     let caseEvaluationUsage = UsageValue.empty();
     let caseTargetCost = 0;
     let caseEvaluationCost = 0;
+
     if (result.targetStatus === "succeeded") {
       const usage = await resolveTargetUsage(options, result.case, result.output as Output);
+
       if (usage !== undefined) {
         caseTargetUsage = usage;
         targetUsage = UsageValue.add(targetUsage, usage);
+
         if (options.cost !== undefined) {
           caseTargetCost = await calculateCost(
             options.cost.calculate({
@@ -616,16 +654,21 @@ async function aggregateResult<
         }
       }
     }
+
     for (const metricResult of result.metrics) {
       const usage = metricResult.outcome.usage;
+
       if (usage === undefined) continue;
+
       assertUsage(usage, `Evaluation usage for metric ${metricResult.metricName}`);
       caseEvaluationUsage = UsageValue.add(caseEvaluationUsage, usage);
       evaluationUsage = UsageValue.add(evaluationUsage, usage);
+
       if (options.cost !== undefined && result.targetStatus === "succeeded") {
         const metric = options.metrics.find(
           (candidate) => candidate.name === metricResult.metricName,
         );
+
         if (metric !== undefined) {
           const metricCost = await calculateCost(
             options.cost.calculate({
@@ -648,6 +691,7 @@ async function aggregateResult<
       evaluation: caseEvaluationUsage,
       total: UsageValue.add(caseTargetUsage, caseEvaluationUsage),
     };
+
     if (options.cost !== undefined) {
       result.cost = {
         currency: options.cost.currency,
@@ -673,6 +717,7 @@ async function aggregateResult<
     cases: countCaseOutcomes(results),
     usage,
   };
+
   if (options.cost !== undefined) {
     aggregates.cost = {
       currency: options.cost.currency,
@@ -681,6 +726,7 @@ async function aggregateResult<
       total: targetCost + evaluationCost,
     };
   }
+
   return aggregates;
 }
 
@@ -698,18 +744,22 @@ async function resolveTargetUsage<Input, Output, Expected>(
           output,
           signal: new AbortController().signal,
         });
+
   if (usage !== undefined) assertUsage(usage, `Target usage for case ${testCase.id}`);
+
   return usage;
 }
 
 function usageFromOutput(output: unknown): Usage | undefined {
   if (typeof output !== "object" || output === null || !("usage" in output)) return undefined;
+
   return (output as { usage?: Usage | undefined }).usage;
 }
 
 function assertUsage(usage: Usage, label: string): void {
   for (const [key, value] of Object.entries(usage)) {
     if (key === "details") continue;
+
     if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
       throw new TypeError(`${label} must contain finite, non-negative token counts`);
     }
@@ -718,9 +768,11 @@ function assertUsage(usage: Usage, label: string): void {
 
 async function calculateCost(value: number | Promise<number>): Promise<number> {
   const cost = await value;
+
   if (!Number.isFinite(cost) || cost < 0) {
     throw new TypeError("Evaluation cost calculator must return a finite, non-negative number");
   }
+
   return cost;
 }
 
@@ -730,12 +782,15 @@ function validateSuiteOptions<Input, Output, Expected>(
   if (options.name.trim().length === 0) {
     throw new TypeError("Evaluation suite name must not be empty");
   }
+
   if (options.cases.length === 0) {
     throw new TypeError("Evaluation suite must contain at least one case");
   }
+
   if (options.metrics.length === 0) {
     throw new TypeError("Evaluation suite must contain at least one metric");
   }
+
   for (const testCase of options.cases) {
     if (testCase.id.trim().length === 0) {
       throw new TypeError("Evaluation case id must not be empty");
@@ -754,9 +809,11 @@ function validateSuiteOptions<Input, Output, Expected>(
     options.metrics.map((metric) => metric.name),
     "Evaluation metric name",
   );
+
   if (options.cost !== undefined && options.cost.currency.trim().length === 0) {
     throw new TypeError("Evaluation cost currency must not be empty");
   }
+
   for (const [label, value] of [
     ["concurrency", options.concurrency],
     ["targetConcurrency", options.targetConcurrency],
@@ -766,16 +823,19 @@ function validateSuiteOptions<Input, Output, Expected>(
       throw new RangeError(`Evaluation ${label} must be a positive integer`);
     }
   }
+
   if (
     options.caseTimeoutMs !== undefined &&
     (!Number.isSafeInteger(options.caseTimeoutMs) || options.caseTimeoutMs < 1)
   ) {
     throw new RangeError("Evaluation caseTimeoutMs must be a positive integer");
   }
+
   if (options.shard !== undefined) {
     if (!Number.isSafeInteger(options.shard.count) || options.shard.count < 1) {
       throw new RangeError("Evaluation shard count must be a positive integer");
     }
+
     if (
       !Number.isSafeInteger(options.shard.index) ||
       options.shard.index < 0 ||
@@ -790,6 +850,7 @@ function assertUnique(values: string[], label: string): void {
   const seen = new Set<string>();
   for (const value of values) {
     if (seen.has(value)) throw new TypeError(`${label} must be unique: ${value}`);
+
     seen.add(value);
   }
 }
@@ -798,6 +859,7 @@ function selectCases<Input, Output, Expected>(
   options: RunEvalSuiteOptions<Input, Output, Expected>,
 ): readonly EvalCase<Input, Expected>[] {
   const requested = options.caseIds === undefined ? undefined : new Set(options.caseIds);
+
   if (requested !== undefined) {
     assertUnique([...options.caseIds!], "Evaluation selected case id");
     const available = new Set(options.cases.map((testCase) => testCase.id));
@@ -806,12 +868,15 @@ function selectCases<Input, Output, Expected>(
         throw new TypeError(`Evaluation selected case id was not found: ${id}`);
     }
   }
+
   const filtered = options.cases.filter(
     (testCase, index) =>
       (requested === undefined || requested.has(testCase.id)) &&
       (options.caseFilter === undefined || options.caseFilter(testCase, index)),
   );
+
   if (options.shard === undefined) return filtered;
+
   return filtered.filter((_, index) => index % options.shard!.count === options.shard!.index);
 }
 

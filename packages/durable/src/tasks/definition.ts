@@ -17,12 +17,16 @@ export function defineTask<I, S, R>(definition: TaskDefinition<I, S, R>): Define
 export function registerTask<I, S, R>(task: TaskDefinition<I, S, R>): RegisteredTask {
   nonblank(task.name, "Task name");
   taskKey(task.name);
+
   if (!Number.isSafeInteger(task.version) || task.version < 1)
     throw new TypeError("Task version must be a positive integer.");
+
   const parse = (schema: z.ZodType, value: unknown): JsonValue => {
     const result = json(schema.parse(json(value)));
+
     if (!sameJson(result, schema.parse(json(result))))
       throw new TypeError("Task schemas must round-trip persisted JSON without changing it.");
+
     return result;
   };
   const input = (value: unknown) => parse(task.input, value);

@@ -96,6 +96,7 @@ export function answerRelevancy<
       const statements = statementResult.data.statements;
       let verdicts: Verdict[] = [];
       let usage = statementResult.usage;
+
       if (statements.length > 0) {
         const verdictResult = await runJudge({
           model: options.model,
@@ -110,6 +111,7 @@ export function answerRelevancy<
         assertSameLength("answer relevancy verdicts", statements, verdicts);
         usage = addUsage(usage, verdictResult.usage);
       }
+
       const score =
         verdicts.length === 0
           ? 1
@@ -158,6 +160,7 @@ export function promptAlignment<
   if (options.promptInstructions.length === 0) {
     throw new TypeError("promptAlignment requires at least one prompt instruction.");
   }
+
   const config = metricConfig<Name>(options, "prompt_alignment");
   return numericMetric(config.name, config, "higher_is_better", async (args) => {
     try {
@@ -241,10 +244,13 @@ export function jsonCorrectness<
         let validationError: string | undefined;
         try {
           parsed = JSON.parse(actual);
+
           if (!isJsonValue(parsed)) {
             throw new TypeError("Generated output is not a JSON value.");
           }
+
           const result = options.schema.safeParse(parsed);
+
           if (!result.success) {
             validationError = z.prettifyError(result.error);
           }
@@ -254,6 +260,7 @@ export function jsonCorrectness<
         const score = validationError === undefined ? 1 : 0;
         let comment: string | undefined;
         let usage = UsageValue.empty();
+
         if (includeReason) {
           if (score === 1) {
             comment = "The generated JSON is syntactically valid and matches the expected schema.";
@@ -273,6 +280,7 @@ export function jsonCorrectness<
             usage = reasonResult.usage;
           }
         }
+
         return higherOutcome({
           score,
           threshold,
@@ -432,6 +440,7 @@ export function faithfulness<Input, Output, Expected = unknown, const Name exten
       const claims = claimResult.data.facts;
       let verdicts: Verdict[] = [];
       let usage = addUsage(truthResult.usage, claimResult.usage);
+
       if (claims.length > 0) {
         const verdictResult = await runJudge({
           model: options.model,
@@ -446,6 +455,7 @@ export function faithfulness<Input, Output, Expected = unknown, const Name exten
         assertSameLength("faithfulness verdicts", claims, verdicts);
         usage = addUsage(usage, verdictResult.usage);
       }
+
       const penalizeAmbiguousClaims = options.penalizeAmbiguousClaims ?? false;
       const supported = verdicts.filter(
         (verdict) =>
@@ -507,15 +517,19 @@ export function abstention<Input, Output, Expected = unknown, const Name extends
         throwIfAborted(args.signal);
         const actual = await resolveActualText(options.actual, args);
         const shouldAbstain = await resolveExpected(options.shouldAbstain, args);
+
         if (typeof shouldAbstain !== "boolean") {
           return EvalOutcome.invalid("abstention shouldAbstain must resolve to a boolean.");
         }
+
         const context = await resolveAbstentionContext(options.context, args);
+
         if (!shouldAbstain && context.length === 0) {
           return EvalOutcome.invalid(
             "abstention context must be non-empty when shouldAbstain is false.",
           );
         }
+
         const judgment = await runJudge({
           abortSignal: args.signal,
           model: options.model,
@@ -557,15 +571,20 @@ async function resolveAbstentionContext<Input, Output, Expected>(
   selectorOrValue: SelectorOrValue<Input, Output, Expected, string[]> | undefined,
   args: EvalMetricArgs<Input, Output, Expected>,
 ): Promise<string[]> {
-  const context =
-    selectorOrValue === undefined
-      ? (args.case.retrievalContext ?? [])
-      : typeof selectorOrValue === "function"
-        ? await (selectorOrValue as ValueSelector<Input, Output, Expected, string[]>)(args)
-        : selectorOrValue;
+  let context: string[];
+
+  if (selectorOrValue === undefined) {
+    context = args.case.retrievalContext ?? [];
+  } else if (typeof selectorOrValue === "function") {
+    context = await (selectorOrValue as ValueSelector<Input, Output, Expected, string[]>)(args);
+  } else {
+    context = selectorOrValue;
+  }
+
   if (!Array.isArray(context) || context.some((value) => typeof value !== "string")) {
     throw new TypeError("abstention context must be an array of strings.");
   }
+
   return context;
 }
 
@@ -577,7 +596,9 @@ function abstentionCategory(
   if (behavior === "abstention") {
     return shouldAbstain ? "correct_abstention" : "unnecessary_abstention";
   }
+
   if (shouldAbstain || !grounded) return "unsupported_confident_answer";
+
   return "correct_grounded_answer";
 }
 
@@ -650,9 +671,11 @@ export function summarization<
       const truths = limitValues(truthResult.data.facts, truthsExtractionLimit);
       const claims = claimResult.data.facts;
       const questions = questionResult.data.questions;
+
       if (questions.length === 0) {
         throw new Error("Summarization assessment questions must not be empty.");
       }
+
       const sourceAnswerPromise = runJudge({
         model: options.model,
         schema: answersSchema,
@@ -702,10 +725,13 @@ export function summarization<
       const coverageVerdicts = questions.map((question, index) => {
         const originalVerdict = sourceAnswerResult.data.answers[index] as "yes" | "no";
         const summaryVerdict = summaryAnswerResult.data.answers[index] as "yes" | "no";
+
         if (originalVerdict === "yes") {
           coverageTotal += 1;
+
           if (summaryVerdict === "yes") coverageMatched += 1;
         }
+
         return { question, originalVerdict, summaryVerdict };
       });
       const coverageScore = coverageTotal === 0 ? 0 : coverageMatched / coverageTotal;
@@ -849,18 +875,23 @@ export function gEval<Input, Output, Expected = unknown, const Name extends stri
   options: GEvalOptions<Input, Output, Expected> & { name: Name },
 ): EvalMetric<Input, Output, number, Expected, Name> {
   if (options.name.trim().length === 0) throw new TypeError("gEval name must not be empty.");
+
   if (options.evaluationParams.length === 0) {
     throw new TypeError("gEval requires at least one evaluation parameter.");
   }
+
   if ((options.criteria === undefined) === (options.evaluationSteps === undefined)) {
     throw new TypeError("gEval requires exactly one of criteria or evaluationSteps.");
   }
+
   if (options.criteria !== undefined && options.criteria.trim().length === 0) {
     throw new TypeError("gEval criteria must not be empty.");
   }
+
   if (options.evaluationSteps !== undefined && options.evaluationSteps.length === 0) {
     throw new TypeError("gEval evaluationSteps must not be empty.");
   }
+
   const config = metricConfig<Name>(options, options.name);
   const rubric = validateRubric(options.rubric);
   const scoreRange =
@@ -879,10 +910,13 @@ export function gEval<Input, Output, Expected = unknown, const Name extends stri
     signal: AbortSignal,
   ): Promise<{ steps: string[]; preparation?: PreparedSteps }> {
     throwIfAborted(signal);
+
     if (options.evaluationSteps !== undefined) {
       return { steps: [...options.evaluationSteps] };
     }
+
     if (preparedSteps !== undefined) return acceptSteps(preparedSteps, signal);
+
     if (pendingPreparation === undefined) {
       const controller = new AbortController();
       const epoch: PreparationEpoch = {
@@ -907,31 +941,38 @@ export function gEval<Input, Output, Expected = unknown, const Name extends stri
             if (result.data.steps.length === 0) {
               throw new Error("G-Eval generated no evaluation steps.");
             }
+
             const prepared = {
               steps: [...result.data.steps],
               usage: result.usage,
               usageClaimed: false,
             };
+
             if (pendingPreparation === epoch) {
               preparedSteps = prepared;
               pendingPreparation = undefined;
             }
+
             return prepared;
           })
           .catch((error: unknown) => {
             if (pendingPreparation === epoch) pendingPreparation = undefined;
+
             throw error;
           }),
       };
       pendingPreparation = epoch;
     }
+
     const epoch = pendingPreparation;
     const token = {};
     epoch.waiters.add(token);
     return new Promise((resolve, reject) => {
       const release = () => {
         if (!epoch.waiters.delete(token)) return;
+
         signal.removeEventListener("abort", onAbort);
+
         if (pendingPreparation === epoch && epoch.waiters.size === 0) {
           pendingPreparation = undefined;
           epoch.controller.abort(signal.reason);
@@ -945,6 +986,7 @@ export function gEval<Input, Output, Expected = unknown, const Name extends stri
       epoch.promise.then(
         (result) => {
           if (!epoch.waiters.has(token)) return;
+
           try {
             const accepted = acceptSteps(result, signal);
             release();
@@ -981,6 +1023,7 @@ export function gEval<Input, Output, Expected = unknown, const Name extends stri
         retries: config.retries,
       });
       const rawScore = scoreResult.data.score;
+
       if (
         !Number.isFinite(rawScore) ||
         (config.strictMode && rawScore !== 0 && rawScore !== 1) ||
@@ -988,6 +1031,7 @@ export function gEval<Input, Output, Expected = unknown, const Name extends stri
       ) {
         throw new RangeError(`G-Eval score ${rawScore} is outside the requested range.`);
       }
+
       const score = config.strictMode
         ? rawScore
         : (rawScore - scoreRange[0]) / (scoreRange[1] - scoreRange[0]);
@@ -1015,7 +1059,9 @@ export function gEval<Input, Output, Expected = unknown, const Name extends stri
         },
         usage,
       });
+
       if (preparation !== undefined) preparation.usageClaimed = true;
+
       return outcome;
     } catch (error) {
       return EvalOutcome.fromError(error);
@@ -1208,12 +1254,17 @@ function numericMetric<Input, Output, Expected, const Name extends string>(
   direction: "higher_is_better" | "lower_is_better",
   evaluate: (args: EvalMetricArgs<Input, Output, Expected>) => Promise<EvalOutcomeType<number>>,
 ): EvalMetric<Input, Output, number, Expected, Name> {
+  let threshold = config.threshold;
+
+  if (config.strictMode === true) {
+    threshold = direction === "higher_is_better" ? 1 : 0;
+  }
+
   return {
     name,
     required: config.required,
     direction,
-    threshold:
-      config.strictMode === true ? (direction === "higher_is_better" ? 1 : 0) : config.threshold,
+    threshold,
     dataType: "NUMERIC",
     async evaluate(args) {
       try {
@@ -1266,7 +1317,12 @@ function higherOutcome(args: {
   details: JsonObject;
   usage: Usage;
 }) {
-  const score = args.strictMode ? (args.score === 1 ? 1 : 0) : args.score;
+  let score = args.score;
+
+  if (args.strictMode) {
+    score = args.score === 1 ? 1 : 0;
+  }
+
   const threshold = args.strictMode ? 1 : args.threshold;
   const options = {
     comment: args.comment,
@@ -1292,7 +1348,12 @@ function lowerOutcome(args: {
   details: JsonObject;
   usage: Usage;
 }) {
-  const score = args.strictMode ? (args.score === 0 ? 0 : 1) : args.score;
+  let score = args.score;
+
+  if (args.strictMode) {
+    score = args.score === 0 ? 0 : 1;
+  }
+
   const threshold = args.strictMode ? 0 : args.threshold;
   const options = {
     comment: args.comment,
@@ -1320,7 +1381,9 @@ async function maybeReason(args: {
   abortSignal: AbortSignal;
 }): Promise<{ reason?: string | undefined; usage: Usage }> {
   throwIfAborted(args.abortSignal);
+
   if (!args.includeReason) return { usage: UsageValue.empty() };
+
   const result = await runJudge({
     model: args.model,
     schema: reasonSchema,
@@ -1345,12 +1408,16 @@ async function resolveStringList<Input, Output, Expected>(
   args: EvalMetricArgs<Input, Output, Expected>,
   label: string,
 ): Promise<string[]> {
-  const value =
-    selectorOrValue === undefined
-      ? fallback
-      : typeof selectorOrValue === "function"
-        ? await (selectorOrValue as ValueSelector<Input, Output, Expected, string[]>)(args)
-        : selectorOrValue;
+  let value: string[] | undefined;
+
+  if (selectorOrValue === undefined) {
+    value = fallback;
+  } else if (typeof selectorOrValue === "function") {
+    value = await (selectorOrValue as ValueSelector<Input, Output, Expected, string[]>)(args);
+  } else {
+    value = selectorOrValue;
+  }
+
   if (
     !Array.isArray(value) ||
     value.length === 0 ||
@@ -1358,6 +1425,7 @@ async function resolveStringList<Input, Output, Expected>(
   ) {
     throw new TypeError(`${label} must be a non-empty array of strings.`);
   }
+
   return value;
 }
 
@@ -1368,15 +1436,20 @@ async function resolveGEvalParameters<Input, Output, Expected>(
   const parameters: JsonObject = {};
   for (const parameter of options.evaluationParams) {
     if (parameter === "input") parameters.input = await resolveInput(options.input, args);
+
     if (parameter === "actualOutput") {
       parameters.actualOutput = await resolveActualText(options.actual, args);
     }
+
     if (parameter === "expectedOutput") {
       const expected =
         options.expected === undefined ? args.case.expected : await options.expected(args);
+
       if (expected === undefined) throw new Error("G-Eval expectedOutput is missing.");
+
       parameters.expectedOutput = toJsonValue(expected);
     }
+
     if (parameter === "context") {
       parameters.context = await resolveStringList(
         options.context,
@@ -1385,6 +1458,7 @@ async function resolveGEvalParameters<Input, Output, Expected>(
         "context",
       );
     }
+
     if (parameter === "retrievalContext") {
       parameters.retrievalContext = await resolveStringList(
         options.retrievalContext,
@@ -1393,6 +1467,7 @@ async function resolveGEvalParameters<Input, Output, Expected>(
         "retrievalContext",
       );
     }
+
     if (parameter === "metadata") parameters.metadata = args.case.metadata ?? {};
   }
   return parameters;
@@ -1400,9 +1475,11 @@ async function resolveGEvalParameters<Input, Output, Expected>(
 
 function validateRubric(rubric: GEvalRubric[] | undefined): GEvalRubric[] {
   if (rubric === undefined || rubric.length === 0) return [];
+
   const sorted = [...rubric].sort((left, right) => left.scoreRange[0] - right.scoreRange[0]);
   for (const [index, entry] of sorted.entries()) {
     const [start, end] = entry.scoreRange;
+
     if (
       !Number.isInteger(start) ||
       !Number.isInteger(end) ||
@@ -1414,19 +1491,24 @@ function validateRubric(rubric: GEvalRubric[] | undefined): GEvalRubric[] {
         "G-Eval rubric score ranges must be ordered integers from 0 through 10.",
       );
     }
+
     if (entry.expectedOutcome.trim().length === 0) {
       throw new TypeError("G-Eval rubric expectedOutcome must not be empty.");
     }
+
     const next = sorted[index + 1];
+
     if (next !== undefined && end >= next.scoreRange[0]) {
       throw new RangeError("G-Eval rubric score ranges must not overlap.");
     }
   }
   const first = sorted[0];
   const last = sorted.at(-1);
+
   if (first !== undefined && last !== undefined && first.scoreRange[0] === last.scoreRange[1]) {
     throw new RangeError("G-Eval rubric score range must span more than one value.");
   }
+
   return sorted;
 }
 
@@ -1444,6 +1526,7 @@ function validateThreshold(value: number): number {
   if (!Number.isFinite(value) || value < 0 || value > 1) {
     throw new RangeError("Eval metric threshold must be between 0 and 1.");
   }
+
   return value;
 }
 
@@ -1451,6 +1534,7 @@ function validateRetries(value: number): number {
   if (!Number.isInteger(value) || value < 0) {
     throw new RangeError("Eval metric retries must be a non-negative integer.");
   }
+
   return value;
 }
 
@@ -1458,6 +1542,7 @@ function validatePositiveInteger(value: number, label: string): number {
   if (!Number.isInteger(value) || value < 1) {
     throw new RangeError(`${label} must be a positive integer.`);
   }
+
   return value;
 }
 
@@ -1466,9 +1551,11 @@ function validateOptionalNonNegativeInteger(
   label: string,
 ): number | undefined {
   if (value === undefined) return undefined;
+
   if (!Number.isInteger(value) || value < 0) {
     throw new RangeError(`${label} must be a non-negative integer.`);
   }
+
   return value;
 }
 
@@ -1481,7 +1568,9 @@ function assertSameLength(label: string, inputs: unknown[], outputs: unknown[]):
 function serializeVerdicts(verdicts: readonly Verdict[]): JsonObject[] {
   return verdicts.map((verdict) => {
     const serialized: JsonObject = { verdict: verdict.verdict };
+
     if (verdict.reason !== undefined) serialized.reason = verdict.reason;
+
     return serialized;
   });
 }
@@ -1494,17 +1583,21 @@ function toJsonValue(value: unknown): JsonValue {
   if (!isJsonValue(value)) {
     throw new TypeError("G-Eval expectedOutput must be a JSON value.");
   }
+
   return cloneJsonValue(value);
 }
 
 function cloneJsonValue(value: JsonValue): JsonValue {
   if (value === null || typeof value !== "object") return value;
+
   if (Array.isArray(value)) return value.map(cloneJsonValue);
+
   return Object.fromEntries(
     Object.entries(value).map(([key, item]) => {
       if (item === undefined) {
         throw new TypeError("G-Eval expectedOutput must be a JSON value.");
       }
+
       return [key, cloneJsonValue(item)];
     }),
   );
@@ -1514,15 +1607,22 @@ type ConversationSource = EvalTurn[] | Message[];
 
 function normalizeEvalTurns(value: unknown): EvalTurn[] | undefined {
   const source = conversationArray(value);
+
   if (source === undefined) return undefined;
+
   const turns: EvalTurn[] = [];
   for (const entry of source) {
     if (typeof entry !== "object" || entry === null) continue;
+
     const role = (entry as { role?: unknown }).role;
+
     if (role !== "user" && role !== "assistant") continue;
+
     const content = (entry as { content?: unknown }).content;
     const text = contentText(content);
+
     if (text.length === 0) continue;
+
     const metadata = (entry as { metadata?: unknown }).metadata;
     turns.push(
       typeof metadata === "object" && metadata !== null && !Array.isArray(metadata)
@@ -1539,11 +1639,13 @@ async function resolveTurns<Input, Output, Expected>(
 ): Promise<EvalTurn[]> {
   const source = selector === undefined ? args.output : await selector(args);
   const turns = normalizeEvalTurns(source);
+
   if (turns === undefined) {
     throw new TypeError(
       "Conversational eval requires non-empty EvalTurn[], Message[], or an output with messages.",
     );
   }
+
   return turns;
 }
 
@@ -1558,27 +1660,35 @@ function unitInteractions(turns: EvalTurn[]): EvalTurn[][] {
       hasUser = true;
       continue;
     }
+
     current.push(turn);
+
     if (turn.role === "user") hasUser = true;
   }
+
   if (current.length > 1 && current.at(-1)?.role === "assistant" && hasUser) {
     interactions.push(current);
   }
+
   return interactions;
 }
 
 function conversationArray(value: unknown): unknown[] | undefined {
   if (Array.isArray(value)) return value;
+
   if (typeof value === "object" && value !== null && "messages" in value) {
     const messages = (value as { messages?: unknown }).messages;
     return Array.isArray(messages) ? messages : undefined;
   }
+
   return undefined;
 }
 
 function contentText(content: unknown): string {
   if (typeof content === "string") return content;
+
   if (!Array.isArray(content)) return "";
+
   return content
     .flatMap((part) =>
       typeof part === "object" &&

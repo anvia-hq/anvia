@@ -115,7 +115,9 @@ export abstract class Neo4jKnowledgeGraphBase<
     );
     for (const [name, definition] of expected) {
       const record = actual.get(name);
+
       if (record === undefined) throw new Error(`Neo4j index ${name} does not exist.`);
+
       validateIndexRecord(record, definition);
     }
   }
@@ -148,7 +150,9 @@ export abstract class Neo4jKnowledgeGraphBase<
 
   seed(name: string): SeedRegistration {
     const seed = this.seeds[name];
+
     if (seed === undefined) throw new TypeError(`Unknown Neo4j graph seed: ${name}`);
+
     return seed;
   }
 
@@ -168,9 +172,11 @@ export abstract class Neo4jKnowledgeGraphBase<
     const sessionOptions: SessionConfig = {
       defaultAccessMode: access === "read" ? "READ" : "WRITE",
     };
+
     if (this.owner.database !== undefined) {
       Object.assign(sessionOptions, { database: this.owner.database });
     }
+
     const session = this.owner.nativeDriver().session(sessionOptions);
     const transaction = session.beginTransaction();
     let rejectAbort: ((error: Error) => void) | undefined;
@@ -190,11 +196,15 @@ export abstract class Neo4jKnowledgeGraphBase<
       return value;
     } catch (error) {
       if (transaction.isOpen()) await transaction.rollback();
+
       if (!committing && abortSignal?.aborted) throw abortError();
+
       throw error;
     } finally {
       abortSignal?.removeEventListener("abort", onAbort);
+
       if (transaction.isOpen()) await transaction.rollback();
+
       await session.close();
     }
   }
@@ -206,9 +216,11 @@ export abstract class Neo4jKnowledgeGraphBase<
       abortSignal,
     );
     const version = result.records[0]?.get("version");
+
     if (typeof version !== "string") {
       throw new TypeError("Neo4j returned a non-string server version.");
     }
+
     if (!supportedVersion(version)) {
       throw new Error(`@anvia/neo4j requires Neo4j 2026.01 or newer; received ${version}.`);
     }
@@ -224,9 +236,11 @@ export class Neo4jKnowledgeGraph<Schema extends Neo4jGraphSchema> extends Neo4jK
 
   constructor(owner: Neo4jClient, options: Neo4jKnowledgeGraphOptions<Schema>) {
     super(owner, options.schema);
+
     if (Object.keys(options.seeds).length === 0) {
       throw new TypeError("An existing Neo4j knowledge graph requires at least one seed.");
     }
+
     const seeds: Record<string, SeedRegistration> = {};
     for (const [name, seed] of Object.entries(options.seeds)) {
       assertName(name, "Neo4j seed name");
@@ -252,7 +266,9 @@ export class ManagedNeo4jKnowledgeGraph<
     const namespace = tenantScope?.namespace;
     super(owner, options.schema, namespace);
     assertName(options.name, "Managed Neo4j graph name");
+
     if (namespace !== undefined) assertName(namespace, "Managed Neo4j namespace");
+
     this.name = options.name;
     this.resources = validateManagedResources(options.resources);
     let chunks: SeedRegistration = {
@@ -265,9 +281,12 @@ export class ManagedNeo4jKnowledgeGraph<
         this.namespace === undefined ? undefined : Object.freeze(["__anvia_namespace"]),
       entryRelationshipType: "ANVIA_MENTIONS",
     };
+
     if (this.resources.indexes.chunks.fulltext !== undefined) {
       const chunkFulltextProperties = ["__anvia_text"];
+
       if (this.namespace !== undefined) chunkFulltextProperties.push("__anvia_namespace");
+
       chunks = {
         ...chunks,
         fulltextIndex: Object.freeze({
@@ -276,6 +295,7 @@ export class ManagedNeo4jKnowledgeGraph<
         }),
       };
     }
+
     let entities: SeedRegistration = {
       labels: Object.freeze([this.resources.labels.entity]),
       vectorIndex: Object.freeze({
@@ -285,11 +305,14 @@ export class ManagedNeo4jKnowledgeGraph<
       vectorFilterProperties:
         this.namespace === undefined ? undefined : Object.freeze(["__anvia_namespace"]),
     };
+
     if (this.resources.indexes.entities.fulltext !== undefined) {
       const entityFulltextProperties = [
         ...(this.resources.indexes.entities.fulltext.properties ?? []),
       ];
+
       if (this.namespace !== undefined) entityFulltextProperties.push("__anvia_namespace");
+
       entities = {
         ...entities,
         fulltextIndex: Object.freeze({
@@ -298,6 +321,7 @@ export class ManagedNeo4jKnowledgeGraph<
         }),
       };
     }
+
     this.seeds = Object.freeze({
       chunks: Object.freeze(chunks),
       entities: Object.freeze(entities),
@@ -331,20 +355,27 @@ export class ManagedNeo4jKnowledgeGraph<
       vectorIndex(indexes.chunks.vector, labels.chunk, this.namespace !== undefined),
       vectorIndex(indexes.entities.vector, labels.entity, this.namespace !== undefined),
     ];
+
     if (indexes.chunks.fulltext !== undefined) {
       const chunkIndexProperties = ["__anvia_text"];
+
       if (this.namespace !== undefined) chunkIndexProperties.push("__anvia_namespace");
+
       statements.push(
         fulltextIndex(indexes.chunks.fulltext.name, labels.chunk, chunkIndexProperties),
       );
     }
+
     if (indexes.entities.fulltext !== undefined) {
       const entityIndexProperties = [...(indexes.entities.fulltext.properties ?? [])];
+
       if (this.namespace !== undefined) entityIndexProperties.push("__anvia_namespace");
+
       statements.push(
         fulltextIndex(indexes.entities.fulltext.name, labels.entity, entityIndexProperties),
       );
     }
+
     for (const statement of statements)
       await this.query(statement, {}, options.abortSignal, "write");
     await this.query(
@@ -372,9 +403,11 @@ export class ManagedNeo4jKnowledgeGraph<
     );
     for (const constraint of expected) {
       const record = actual.get(constraint.name);
+
       if (record === undefined) {
         throw new Error(`Neo4j constraint ${constraint.name} does not exist.`);
       }
+
       validateConstraintRecord(record, constraint);
     }
   }
@@ -383,15 +416,19 @@ export class ManagedNeo4jKnowledgeGraph<
     options: ReplaceNeo4jDocumentsOptions<Schema>,
   ): Promise<Neo4jGraphWriteResult> {
     validateReplacement(options, this.resources.indexes, this.schema);
+
     if (options.documents.length === 0) return emptyWriteResult();
+
     const documentIds = options.documents.map((document) => document.id);
     const chunksById = new Map(options.chunks.map((chunk) => [chunk.id, chunk.document]));
     const sourceDocuments = (sourceChunkIds: readonly string[]) => [
       ...new Set(
         sourceChunkIds.map((chunkId) => {
           const chunk = chunksById.get(chunkId);
+
           if (chunk === undefined)
             throw new TypeError(`Graph fact references unknown chunk ${chunkId}.`);
+
           return chunk.documentId;
         }),
       ),
@@ -466,7 +503,9 @@ export class ManagedNeo4jKnowledgeGraph<
   async deleteDocuments(options: DeleteNeo4jDocumentsOptions): Promise<Neo4jGraphWriteResult> {
     validateOrphanPolicy(options.orphanEntities);
     const ids = uniqueIds(options.documentIds, "document");
+
     if (ids.length === 0) return emptyWriteResult();
+
     return await this.transaction(options.abortSignal, async (transaction) => {
       const targets = emptySnapshotTargets(ids);
       const before = await snapshotGraphState(
@@ -528,19 +567,23 @@ function validateExistingSeed(schema: Neo4jGraphSchema, seed: ExistingNeo4jSeed)
       "Each existing Neo4j seed requires exactly one indexed node type; register additional indexes as separate seeds.",
     );
   }
+
   for (const type of seed.nodeTypes) {
     if (!(type in schema.nodes))
       throw new TypeError(`Neo4j seed references unknown node type ${type}.`);
   }
   validateVectorIndex(seed.vectorIndex);
   assertPropertyName(seed.vectorIndex.property);
+
   if (seed.fulltextIndex !== undefined) {
     validateFulltextIndex(seed.fulltextIndex, "Existing Neo4j full-text index");
   }
+
   let registration: SeedRegistration = {
     labels: Object.freeze([...seed.nodeTypes]),
     vectorIndex: Object.freeze({ ...seed.vectorIndex }),
   };
+
   if (seed.fulltextIndex !== undefined) {
     registration = {
       ...registration,
@@ -550,6 +593,7 @@ function validateExistingSeed(schema: Neo4jGraphSchema, seed: ExistingNeo4jSeed)
       }),
     };
   }
+
   return Object.freeze(registration);
 }
 
@@ -558,8 +602,10 @@ function validateManagedResources<Schema extends Neo4jGraphSchema>(
 ): ManagedNeo4jKnowledgeGraphOptions<Schema>["resources"] {
   const labels = Object.values(resources.labels);
   for (const label of labels) assertName(label, "Neo4j managed label");
+
   if (new Set(labels).size !== labels.length)
     throw new TypeError("Managed Neo4j graph labels must be distinct.");
+
   const indexes = [resources.indexes.chunks.vector, resources.indexes.entities.vector];
   for (const index of indexes) validateVectorIndex(index);
   const names = [
@@ -567,13 +613,17 @@ function validateManagedResources<Schema extends Neo4jGraphSchema>(
     resources.indexes.chunks.fulltext?.name,
     resources.indexes.entities.fulltext?.name,
   ].filter((name): name is string => name !== undefined);
+
   if (new Set(names).size !== names.length)
     throw new TypeError("Managed Neo4j index names must be unique.");
+
   if (resources.indexes.entities.fulltext !== undefined) {
     const properties = resources.indexes.entities.fulltext.properties ?? [];
+
     if (properties.length === 0)
       throw new TypeError("Entity full-text indexes require explicit properties.");
   }
+
   if (resources.indexes.chunks.fulltext !== undefined) {
     validateFulltextIndex(
       { ...resources.indexes.chunks.fulltext, properties: ["__anvia_text"] },
@@ -581,6 +631,7 @@ function validateManagedResources<Schema extends Neo4jGraphSchema>(
       true,
     );
   }
+
   if (resources.indexes.entities.fulltext !== undefined) {
     validateFulltextIndex(
       {
@@ -590,31 +641,38 @@ function validateManagedResources<Schema extends Neo4jGraphSchema>(
       "Entity full-text index",
     );
   }
+
   const copyFulltext = (fulltext: Neo4jFulltextIndex): Neo4jFulltextIndex => {
     let copy: Neo4jFulltextIndex = { ...fulltext };
+
     if (fulltext.properties !== undefined) {
       copy = { ...copy, properties: Object.freeze([...fulltext.properties]) };
     }
+
     return Object.freeze(copy);
   };
   let chunks: (typeof resources)["indexes"]["chunks"] = Object.freeze({
     vector: Object.freeze({ ...resources.indexes.chunks.vector }),
   });
+
   if (resources.indexes.chunks.fulltext !== undefined) {
     chunks = Object.freeze({
       ...chunks,
       fulltext: copyFulltext(resources.indexes.chunks.fulltext),
     });
   }
+
   let entities: (typeof resources)["indexes"]["entities"] = Object.freeze({
     vector: Object.freeze({ ...resources.indexes.entities.vector }),
   });
+
   if (resources.indexes.entities.fulltext !== undefined) {
     entities = Object.freeze({
       ...entities,
       fulltext: copyFulltext(resources.indexes.entities.fulltext),
     });
   }
+
   return Object.freeze({
     labels: Object.freeze({ ...resources.labels }),
     indexes: Object.freeze({
@@ -627,6 +685,7 @@ function validateManagedResources<Schema extends Neo4jGraphSchema>(
 function validateVectorIndex(index: Neo4jVectorIndex): void {
   assertName(index.name, "Neo4j vector index name");
   positiveInteger(index.dimensions, "Neo4j vector dimensions", 4096);
+
   if (index.similarity !== "cosine" && index.similarity !== "euclidean") {
     throw new TypeError("Neo4j vector similarity must be cosine or euclidean.");
   }
@@ -638,9 +697,11 @@ function validateFulltextIndex(
   allowReservedProperties = false,
 ): void {
   assertName(index.name, `${label} name`);
+
   if (index.properties.length === 0 || new Set(index.properties).size !== index.properties.length) {
     throw new TypeError(`${label} requires unique properties.`);
   }
+
   for (const property of index.properties) {
     if (allowReservedProperties) assertName(property, `${label} property`);
     else assertPropertyName(property);
@@ -669,9 +730,11 @@ function expectedIndexes(
   const expected = new Map<string, ExpectedIndex>();
   const register = (index: ExpectedIndex) => {
     const previous = expected.get(index.name);
+
     if (previous !== undefined && stableObject(previous) !== stableObject(index)) {
       throw new TypeError(`Neo4j index ${index.name} has conflicting registrations.`);
     }
+
     expected.set(index.name, index);
   };
   for (const seed of Object.values(seeds)) {
@@ -683,6 +746,7 @@ function expectedIndexes(
       dimensions: seed.vectorIndex.dimensions,
       similarity: seed.vectorIndex.similarity,
     });
+
     if (seed.fulltextIndex !== undefined) {
       register({
         kind: "fulltext",
@@ -697,7 +761,9 @@ function expectedIndexes(
 
 function validateIndexRecord(record: Neo4jRecord, expected: ExpectedIndex): void {
   const state = requiredString(record.get("state"), `Neo4j index ${expected.name} state`);
+
   if (state !== "ONLINE") throw new Error(`Neo4j index ${expected.name} is ${state}, not ONLINE.`);
+
   const type = requiredString(record.get("type"), `Neo4j index ${expected.name} type`);
   const entityType = requiredString(
     record.get("entityType"),
@@ -711,6 +777,7 @@ function validateIndexRecord(record: Neo4jRecord, expected: ExpectedIndex): void
     record.get("properties"),
     `Neo4j index ${expected.name} properties`,
   );
+
   if (
     entityType !== "NODE" ||
     type !== expected.kind.toUpperCase() ||
@@ -719,6 +786,7 @@ function validateIndexRecord(record: Neo4jRecord, expected: ExpectedIndex): void
   ) {
     throw new Error(`Neo4j index ${expected.name} does not match its registration.`);
   }
+
   if (expected.kind === "vector") {
     const options = requiredObject(record.get("options"), `Neo4j index ${expected.name} options`);
     const config = requiredObject(
@@ -733,6 +801,7 @@ function validateIndexRecord(record: Neo4jRecord, expected: ExpectedIndex): void
       config["vector.similarity_function"],
       `Neo4j index ${expected.name} similarity`,
     ).toLowerCase();
+
     if (dimensions !== expected.dimensions || similarity !== expected.similarity) {
       throw new Error(`Neo4j index ${expected.name} has incompatible vector configuration.`);
     }
@@ -753,6 +822,7 @@ function validateConstraintRecord(record: Neo4jRecord, expected: ExpectedConstra
     record.get("properties"),
     `Neo4j constraint ${expected.name} properties`,
   );
+
   if (
     entityType !== "NODE" ||
     type !== "UNIQUENESS" ||
@@ -767,6 +837,7 @@ function requiredObject(value: unknown, label: string): Record<string, unknown> 
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new TypeError(`${label} must be an object.`);
   }
+
   return value as Record<string, unknown>;
 }
 
@@ -774,20 +845,25 @@ function requiredStringArray(value: unknown, label: string): string[] {
   if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) {
     throw new TypeError(`${label} must be a string array.`);
   }
+
   return [...value];
 }
 
 function requiredSafeInteger(value: unknown, label: string): number {
   if (isInt(value)) {
     if (!value.inSafeRange()) throw new TypeError(`${label} must be a safe integer.`);
+
     return value.toNumber();
   }
+
   if (!Number.isSafeInteger(value)) throw new TypeError(`${label} must be a safe integer.`);
+
   return value as number;
 }
 
 function sameStrings(left: readonly string[], right: readonly string[]): boolean {
   if (left.length !== right.length) return false;
+
   const sortedLeft = [...left].sort();
   const sortedRight = [...right].sort();
   return sortedLeft.every((value, index) => value === sortedRight[index]);
@@ -795,7 +871,9 @@ function sameStrings(left: readonly string[], right: readonly string[]): boolean
 
 function supportedVersion(value: string): boolean {
   const match = /^(\d{4})\.(\d+)/.exec(value);
+
   if (match === null) return false;
+
   const year = Number(match[1]);
   const month = Number(match[2]);
   return year > 2026 || (year === 2026 && month >= 1);
@@ -820,6 +898,7 @@ function vectorIndex(index: Neo4jVectorIndex, label: string, namespaced: boolean
 
 function fulltextIndex(name: string, label: string, properties: readonly string[]): string {
   if (properties.length === 0) throw new TypeError(`Full-text index ${name} requires properties.`);
+
   return `CREATE FULLTEXT INDEX ${quoteIdentifier(name)} IF NOT EXISTS FOR (n:${quoteIdentifier(label)}) ON EACH [${properties.map((property) => `n.${quoteIdentifier(property)}`).join(", ")}]`;
 }
 
@@ -837,6 +916,7 @@ function validateReplacement<Schema extends Neo4jGraphSchema>(
   ) {
     throw new TypeError("Neo4j replacement collections must be arrays.");
   }
+
   if (
     options.conflict !== "error" &&
     options.conflict !== "overwrite" &&
@@ -844,6 +924,7 @@ function validateReplacement<Schema extends Neo4jGraphSchema>(
   ) {
     throw new TypeError("Neo4j conflict policy must be error, overwrite, or keep-existing.");
   }
+
   validateOrphanPolicy(options.orphanEntities);
   const documentIds = uniqueIds(
     options.documents.map((document, index) => {
@@ -877,20 +958,26 @@ function validateReplacement<Schema extends Neo4jGraphSchema>(
   for (const chunk of options.chunks) {
     if (!documentSet.has(chunk.document.documentId))
       throw new TypeError(`Chunk ${chunk.id} references an unknown document.`);
+
     if (chunk.document.id !== chunk.id)
       throw new TypeError(`Embedded chunk ${chunk.id} has a mismatched document id.`);
+
     if (!Number.isSafeInteger(chunk.document.index) || chunk.document.index < 0) {
       throw new TypeError(`Chunk ${chunk.id} index must be a non-negative safe integer.`);
     }
+
     if (typeof chunk.document.text !== "string") {
       throw new TypeError(`Chunk ${chunk.id} text must be a string.`);
     }
+
     const position = `${chunk.document.documentId}\u0000${chunk.document.index}`;
+
     if (chunkPositions.has(position)) {
       throw new TypeError(
         `Document ${chunk.document.documentId} contains duplicate chunk index ${chunk.document.index}.`,
       );
     }
+
     chunkPositions.add(position);
     singleEmbedding(chunk.embeddings, indexes.chunks.vector.dimensions, `chunk ${chunk.id}`);
     parseNeo4jProperties(chunk.document.metadata ?? {}, `chunk ${chunk.id} metadata`);
@@ -900,12 +987,17 @@ function validateReplacement<Schema extends Neo4jGraphSchema>(
   for (const entity of options.entities) {
     if (entity.document.key !== entity.id)
       throw new TypeError(`Embedded entity ${entity.id} has a mismatched key.`);
+
     singleEmbedding(entity.embeddings, indexes.entities.vector.dimensions, `entity ${entity.id}`);
     const type = entity.document.type;
+
     if (typeof type !== "string") throw new TypeError(`Entity ${entity.id} type must be a string.`);
+
     const definition = schema.nodes[type];
+
     if (definition === undefined)
       throw new TypeError(`Entity ${entity.id} has unknown type ${type}.`);
+
     const properties = parseExactSchemaProperties(
       definition.properties,
       entity.document.properties,
@@ -913,9 +1005,11 @@ function validateReplacement<Schema extends Neo4jGraphSchema>(
     );
     const identity = parseIdentity(entity.document.identity, definition.identity, properties, type);
     const expectedKey = `${type}:${stableObject(identity)}`;
+
     if (entity.id !== expectedKey) {
       throw new TypeError(`Entity ${entity.id} does not match its canonical identity key.`);
     }
+
     const sourceChunkIds = validateSourceChunkIds(
       entity.document.sourceChunkIds,
       chunkSet,
@@ -933,20 +1027,24 @@ function validateReplacement<Schema extends Neo4jGraphSchema>(
   );
   for (const relationship of options.relationships) {
     const definition = schema.relationships[relationship.type];
+
     if (definition === undefined) {
       throw new TypeError(
         `Relationship ${relationship.key} has unknown type ${relationship.type}.`,
       );
     }
+
     if (!entitySet.has(relationship.from) || !entitySet.has(relationship.to)) {
       throw new TypeError(`Relationship ${relationship.key} references an unknown entity.`);
     }
+
     if (
       entityTypes.get(relationship.from) !== definition.from ||
       entityTypes.get(relationship.to) !== definition.to
     ) {
       throw new TypeError(`Relationship ${relationship.key} has incompatible endpoint types.`);
     }
+
     const properties = parseExactSchemaProperties(
       definition.properties,
       relationship.properties,
@@ -958,9 +1056,11 @@ function validateReplacement<Schema extends Neo4jGraphSchema>(
       relationship.type,
     );
     const expectedKey = `${relationship.type}:${relationship.from}->${relationship.to}:${stableObject(identity)}`;
+
     if (relationship.key !== expectedKey) {
       throw new TypeError(`Relationship ${relationship.key} does not match its canonical key.`);
     }
+
     const sourceChunkIds = validateSourceChunkIds(
       relationship.sourceChunkIds,
       chunkSet,
@@ -968,6 +1068,7 @@ function validateReplacement<Schema extends Neo4jGraphSchema>(
     );
     const fromSources = entitySourceChunks.get(relationship.from);
     const toSources = entitySourceChunks.get(relationship.to);
+
     if (
       fromSources === undefined ||
       toSources === undefined ||
@@ -982,13 +1083,18 @@ function validateReplacement<Schema extends Neo4jGraphSchema>(
   const mentionChunksByEntity = new Map<string, Set<string>>();
   for (const [index, mention] of options.mentions.entries()) {
     requiredObject(mention, `Neo4j mention at index ${index}`);
+
     if (!chunkSet.has(mention.chunkId) || !entitySet.has(mention.entityKey)) {
       throw new TypeError(`Mention at index ${index} references an unknown chunk or entity.`);
     }
+
     const key = `${mention.chunkId}\u0000${mention.entityKey}`;
+
     if (mentionKeys.has(key)) throw new TypeError(`Duplicate Neo4j mention at index ${index}.`);
+
     mentionKeys.add(key);
     const chunks = mentionChunksByEntity.get(mention.entityKey);
+
     if (chunks === undefined)
       mentionChunksByEntity.set(mention.entityKey, new Set([mention.chunkId]));
     else chunks.add(mention.chunkId);
@@ -996,6 +1102,7 @@ function validateReplacement<Schema extends Neo4jGraphSchema>(
   for (const entityId of entityIds) {
     const sources = Array.from(entitySourceChunks.get(entityId) ?? []);
     const mentions = Array.from(mentionChunksByEntity.get(entityId) ?? []);
+
     if (!sameStrings(sources, mentions)) {
       throw new TypeError(`Entity ${entityId} source chunks must exactly match its mentions.`);
     }
@@ -1009,11 +1116,15 @@ function parseExactSchemaProperties(
 ): Neo4jProperties {
   const input = parseNeo4jProperties(value, label);
   const result = schema.safeParse(value);
+
   if (!result.success) throw new TypeError(`${label} does not match the graph schema.`);
+
   const output = parseNeo4jProperties(result.data, `${label} output`);
+
   if (stableObject(input) !== stableObject(output)) {
     throw new TypeError(`${label} must not be coerced, defaulted, transformed, or stripped.`);
   }
+
   return input;
 }
 
@@ -1028,9 +1139,11 @@ function parseIdentity(
     parseNeo4jProperties(value, `${type} identity`),
     type,
   );
+
   if (!sameStrings(Object.keys(identity), keys)) {
     throw new TypeError(`Entity ${type} identity must contain exactly its declared properties.`);
   }
+
   for (const key of keys) {
     if (identity[key] !== properties[key]) {
       throw new TypeError(`Entity ${type} identity property ${key} does not match its properties.`);
@@ -1047,9 +1160,11 @@ function identityFromProperties(
   const identity: Record<string, string | number | boolean> = {};
   for (const key of keys) {
     const value = properties[key];
+
     if (typeof value !== "string" && typeof value !== "number" && typeof value !== "boolean") {
       throw new TypeError(`Identity property ${key} for ${type} must be a primitive value.`);
     }
+
     identity[key] = value;
   }
   return identity;
@@ -1061,7 +1176,9 @@ function validateSourceChunkIds(
   label: string,
 ): string[] {
   const ids = uniqueIds(value, `${label} source chunk`);
+
   if (ids.length === 0) throw new TypeError(`${label} requires source chunk provenance.`);
+
   for (const id of ids) {
     if (!chunkIds.has(id)) throw new TypeError(`${label} references unknown source chunk ${id}.`);
   }
@@ -1080,21 +1197,28 @@ function singleEmbedding(
   label: string,
 ): number[] {
   if (!Array.isArray(embeddings)) throw new TypeError(`${label} embeddings must be an array.`);
+
   if (embeddings.length !== 1) throw new TypeError(`${label} requires exactly one embedding.`);
+
   const vector = embeddings[0]?.vector;
+
   if (vector === undefined || vector.length !== dimensions || !vector.every(Number.isFinite)) {
     throw new TypeError(`${label} has an invalid ${dimensions}-dimension embedding.`);
   }
+
   return vector;
 }
 
 function uniqueIds(ids: readonly string[], label: string): string[] {
   if (!Array.isArray(ids)) throw new TypeError(`Neo4j ${label} ids must be an array.`);
+
   const seen = new Set<string>();
   for (const id of ids) {
     if (typeof id !== "string" || id.length === 0)
       throw new TypeError(`Neo4j ${label} ids must be non-empty strings.`);
+
     if (seen.has(id)) throw new TypeError(`Duplicate Neo4j ${label} id: ${id}`);
+
     seen.add(id);
   }
   return [...seen];
@@ -1144,7 +1268,9 @@ function expandSnapshotTargets(targets: SnapshotTargets, snapshot: GraphSnapshot
   );
   for (const key of snapshot.mentions.keys()) {
     const separator = key.indexOf("\u0000");
+
     if (separator < 0) throw new TypeError("Stored Neo4j mention has an invalid identity.");
+
     mentions.set(key, { chunkId: key.slice(0, separator), entityKey: key.slice(separator + 1) });
   }
   return {
@@ -1236,8 +1362,10 @@ function snapshotProperties(
   const output = new Map<string, string>();
   for (const record of records) {
     const key = requiredString(record.get("key"), `Neo4j ${resource} snapshot key`);
+
     if (output.has(key))
       throw new TypeError(`Neo4j ${resource} snapshot contains duplicate ${key}.`);
+
     const properties = normalizedSnapshotProperties(
       record.get("properties"),
       `Neo4j ${resource} snapshot`,
@@ -1254,8 +1382,10 @@ function snapshotRelationships(records: readonly Neo4jRecord[]): Map<string, str
   const output = new Map<string, string>();
   for (const record of records) {
     const key = requiredString(record.get("key"), "Neo4j relationship snapshot key");
+
     if (output.has(key))
       throw new TypeError(`Neo4j relationship snapshot contains duplicate ${key}.`);
+
     output.set(
       key,
       stableObject({
@@ -1279,7 +1409,9 @@ function snapshotMentions(records: readonly Neo4jRecord[]): Map<string, string> 
       requiredString(record.get("chunkId"), "Neo4j mention chunk id"),
       requiredString(record.get("entityKey"), "Neo4j mention entity key"),
     );
+
     if (output.has(key)) throw new TypeError(`Neo4j mention snapshot contains duplicate ${key}.`);
+
     output.set(key, key);
   }
   return output;
@@ -1289,6 +1421,7 @@ function normalizedSnapshotProperties(value: unknown, label: string): string {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new TypeError(`${label} properties must be an object.`);
   }
+
   const normalized: Record<string, unknown> = {};
   for (const [key, item] of Object.entries(value)) {
     normalized[key] = parseNeo4jPropertyValue(
@@ -1298,10 +1431,12 @@ function normalizedSnapshotProperties(value: unknown, label: string): string {
   }
   for (const property of ["__anvia_source_document_ids", "__anvia_source_chunk_ids"]) {
     const items = normalized[property];
+
     if (items !== undefined) {
       if (!Array.isArray(items) || !items.every((item) => typeof item === "string")) {
         throw new TypeError(`${label}.${property} must be a string array.`);
       }
+
       normalized[property] = [...new Set(items)].sort();
     }
   }
@@ -1311,11 +1446,14 @@ function normalizedSnapshotProperties(value: unknown, label: string): string {
 function normalizeSnapshotDriverValue(value: unknown, label: string): unknown {
   if (isInt(value)) {
     if (!value.inSafeRange()) throw new TypeError(`${label} contains an unsafe Neo4j integer.`);
+
     return value.toNumber();
   }
+
   if (Array.isArray(value)) {
     return value.map((item, index) => normalizeSnapshotDriverValue(item, `${label}[${index}]`));
   }
+
   return value;
 }
 
@@ -1344,6 +1482,7 @@ function diffSnapshotMaps(
   for (const key of new Set([...before.keys(), ...after.keys()])) {
     const previous = before.get(key);
     const next = after.get(key);
+
     if (previous === undefined) created += 1;
     else if (next === undefined) deleted += 1;
     else if (previous === next) unchanged += 1;
@@ -1494,6 +1633,7 @@ CREATE (d)-[:${quoteIdentifier("ANVIA_HAS_CHUNK")}${tenantRelationshipProperties
         ? [{ from: row.id, to: next.id }]
         : [];
     });
+
   if (pairs.length > 0) {
     await transaction.run(
       `UNWIND $rows AS row MATCH (a:${quoteIdentifier(labels.chunk)} {${quoteIdentifier("__anvia_id")}: row.from${namespaceMapEntry(namespace)}}), (b:${quoteIdentifier(labels.chunk)} {${quoteIdentifier("__anvia_id")}: row.to${namespaceMapEntry(namespace)}}) CREATE (a)-[:${quoteIdentifier("ANVIA_NEXT_CHUNK")}${tenantRelationshipProperties(namespace)}]->(b)`,
@@ -1520,8 +1660,10 @@ async function writeEntities<Schema extends Neo4jGraphSchema>(
       sourceDocumentIds: sourceDocuments(entity.document.sourceChunkIds),
       sourceChunkIds: entity.document.sourceChunkIds,
     }));
+
     if (conflict === "error")
       await assertEntityConflicts(transaction, graphName, namespace, entityLabel, rows);
+
     const propertySet = conflictPropertySet("e", conflict);
     const embedding = entityEmbeddingExpression(conflict);
     await transaction.run(
@@ -1554,6 +1696,7 @@ async function assertEntityConflicts(
   for (const record of result.records) {
     const key = requiredString(record.get("key"), "Neo4j entity key");
     const existing = applicationProperties(record.get("properties"));
+
     if (stableObject(existing) !== stableObject(incoming.get(key) ?? {})) {
       throw new Error(`Neo4j entity ${key} conflicts with existing properties.`);
     }
@@ -1568,6 +1711,7 @@ async function writeMentions(
   mentions: readonly { chunkId: string; entityKey: string }[],
 ): Promise<void> {
   if (mentions.length === 0) return;
+
   await transaction.run(
     `UNWIND $rows AS row
 MATCH (c:${quoteIdentifier(labels.chunk)} {${quoteIdentifier("__anvia_id")}: row.chunkId${namespaceMapEntry(namespace)}}), (e:${quoteIdentifier(labels.entity)} {${quoteIdentifier("__anvia_key")}: row.entityKey${namespaceMapEntry(namespace)}})
@@ -1596,6 +1740,7 @@ async function writeRelationships<Schema extends Neo4jGraphSchema>(
       sourceDocumentIds: sourceDocuments(relationship.sourceChunkIds),
       sourceChunkIds: relationship.sourceChunkIds,
     }));
+
     if (conflict === "error") {
       const existing = await transaction.run(
         `UNWIND $keys AS key MATCH ()-[r:${quoteIdentifier(type)} {${quoteIdentifier("__anvia_key")}: key${namespaceMapEntry(namespace)}}]->() WHERE r.${quoteIdentifier("__anvia_graph")} = $graph RETURN key, properties(r) AS properties`,
@@ -1604,6 +1749,7 @@ async function writeRelationships<Schema extends Neo4jGraphSchema>(
       const incoming = new Map(rows.map((row) => [row.key, row.properties]));
       for (const record of existing.records) {
         const key = requiredString(record.get("key"), "Neo4j relationship key");
+
         if (
           stableObject(applicationProperties(record.get("properties"))) !==
           stableObject(incoming.get(key) ?? {})
@@ -1612,6 +1758,7 @@ async function writeRelationships<Schema extends Neo4jGraphSchema>(
         }
       }
     }
+
     const propertySet = conflictPropertySet("r", conflict);
     await transaction.run(
       `UNWIND $rows AS row
@@ -1635,14 +1782,17 @@ function conflictPropertySet(variable: "e" | "r", conflict: Neo4jGraphConflict):
   const existingSources = `WITH ${variable}, row,
      coalesce(${variable}.${sourceDocuments}, []) AS existingDocumentIds,
      coalesce(${variable}.${sourceChunks}, []) AS existingChunkIds`;
+
   if (conflict === "keep-existing") {
     return `ON CREATE SET ${variable} += row.properties
 ${existingSources}`;
   }
+
   if (conflict === "overwrite") {
     return `${existingSources}
 SET ${variable} = row.properties`;
   }
+
   return `${existingSources}
 SET ${variable} += row.properties`;
 }
@@ -1651,16 +1801,19 @@ function entityEmbeddingExpression(conflict: Neo4jGraphConflict): string {
   if (conflict === "keep-existing") {
     return `coalesce(e.${quoteIdentifier("__anvia_embedding")}, row.embedding)`;
   }
+
   return "row.embedding";
 }
 
 function requiredString(value: unknown, label: string): string {
   if (typeof value !== "string") throw new TypeError(`${label} must be a string.`);
+
   return value;
 }
 
 function applicationProperties(value: unknown): Neo4jProperties {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return {};
+
   return parseNeo4jProperties(
     Object.fromEntries(Object.entries(value).filter(([key]) => !key.startsWith("__anvia_"))),
     "stored Neo4j properties",
@@ -1675,6 +1828,7 @@ function groupBy<Value, Key>(
   for (const value of values) {
     const key = keyFor(value);
     const group = groups.get(key);
+
     if (group === undefined) groups.set(key, [value]);
     else group.push(value);
   }

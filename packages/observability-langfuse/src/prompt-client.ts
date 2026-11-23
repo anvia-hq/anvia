@@ -32,6 +32,7 @@ export function createLangfusePromptClient(
       headers: { ...authHeader },
       signal: AbortSignal.timeout(timeoutMs),
     });
+
     if (!response.ok) {
       const body = await readErrorBody(response);
       throw new LangfuseScoreError(
@@ -39,6 +40,7 @@ export function createLangfusePromptClient(
         [],
       );
     }
+
     return (await response.json()) as T;
   }
 
@@ -46,19 +48,25 @@ export function createLangfusePromptClient(
     const { name, ...opts } = options;
     const key = `${name}::${opts.version ?? ""}::${opts.label ?? ""}`;
     const ttl = opts.cacheTtlMs ?? defaultTtl;
+
     if (opts.refresh !== true) {
       const cached = cache.get(key);
+
       if (cached !== undefined && cached.expiresAt > Date.now()) {
         return cached.prompt;
       }
     }
+
     const url = new URL(`${baseUrl}/api/public/v2/prompts/${encodeURIComponent(name)}`);
+
     if (opts.version !== undefined) {
       url.searchParams.set("version", String(opts.version));
     }
+
     if (opts.label !== undefined) {
       url.searchParams.set("label", opts.label);
     }
+
     const raw = await request<{
       name: string;
       version: number;
@@ -75,7 +83,9 @@ export function createLangfusePromptClient(
       type: raw.type,
       resolvedAt: new Date(),
     };
+
     if (raw.tags !== undefined) prompt.tags = raw.tags;
+
     cache.set(key, { prompt, expiresAt: Date.now() + ttl });
     return prompt;
   }
@@ -85,6 +95,7 @@ export function createLangfusePromptClient(
       if (typeof prompt.prompt !== "string") {
         throw new Error(`Prompt ${options.name} is a chat prompt; expected text`);
       }
+
       return prompt.prompt;
     });
   }
@@ -94,6 +105,7 @@ export function createLangfusePromptClient(
       if (typeof prompt.prompt === "string") {
         throw new Error(`Prompt ${options.name} is a text prompt; expected chat`);
       }
+
       return prompt.prompt;
     });
   }
@@ -108,23 +120,30 @@ export function createLangfusePromptClient(
 function normalizePrompt(raw: unknown, type: "text" | "chat"): string | LangfuseChatMessage[] {
   if (type === "text") {
     if (typeof raw === "string") return raw;
+
     throw new Error("Expected text prompt to be a string");
   }
+
   if (!Array.isArray(raw)) {
     throw new Error("Expected chat prompt to be an array of messages");
   }
+
   return raw.map((entry) => {
     if (typeof entry !== "object" || entry === null) {
       throw new Error("Expected chat message to be an object");
     }
+
     const role = (entry as { role?: unknown }).role;
     const content = (entry as { content?: unknown }).content;
+
     if (typeof content !== "string") {
       throw new Error("Expected chat message content to be a string");
     }
+
     if (role !== "system" && role !== "user" && role !== "assistant" && role !== "tool") {
       throw new Error(`Unexpected chat message role: ${String(role)}`);
     }
+
     return { role, content };
   });
 }
@@ -136,6 +155,7 @@ function buildAuthHeader(
   if (publicKey === undefined || secretKey === undefined) {
     return {};
   }
+
   const encoded = Buffer.from(`${publicKey}:${secretKey}`).toString("base64");
   return { Authorization: `Basic ${encoded}` };
 }

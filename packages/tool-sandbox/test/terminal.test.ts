@@ -36,6 +36,7 @@ afterEach(async () => {
       (socket) =>
         new Promise<void>((resolve) => {
           if (tmuxPath === undefined) return resolve();
+
           execFile(tmuxPath, ["-L", socket, "kill-server"], () => resolve());
         }),
     ),
@@ -172,6 +173,7 @@ for (const mode of ["shell", "tmux"] as const) {
       handle.write("exit 3\n");
       const exit = await handle.exit;
       expect(exit.reason).toBe("exited");
+
       if (mode === "shell") expect(exit.exitCode).toBe(3);
     });
 
@@ -459,8 +461,11 @@ describe.skipIf(nodePty === undefined)("browser terminal relay", () => {
         allowedOrigins: [origin],
         authorizeTerminal: (request) => {
           const ticket = terminalTicket(request);
+
           if (ticket === "rw") return { sandboxId, sessionName: "web" };
+
           if (ticket === "ro") return { sandboxId, sessionName: "web", readOnly: true };
+
           return null;
         },
       },
@@ -471,7 +476,9 @@ describe.skipIf(nodePty === undefined)("browser terminal relay", () => {
   /** The hub side of a browser: one socket with its messages sorted into text and output. */
   function browser(url: string, options: { protocols?: string[]; origin?: string | null } = {}) {
     const clientOptions: WebSocket.ClientOptions = {};
+
     if (options.origin !== null) clientOptions.origin = options.origin ?? origin;
+
     const socket = new WebSocket(url, options.protocols ?? ["anvia.terminal.v1"], clientOptions);
     const state = { output: "", messages: [] as Array<Record<string, unknown>> };
     socket.on("message", (data, isBinary) => {

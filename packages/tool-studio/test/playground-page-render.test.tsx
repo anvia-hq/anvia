@@ -205,9 +205,11 @@ function runAction(html: string): string {
   const matched = html.match(
     /<button[^>]+aria-label="(?:Send message|Running|Stop generating)"[^>]*>[\s\S]*?<\/button>/,
   );
+
   if (matched === null) {
     throw new Error("Run action button not found");
   }
+
   return matched[0];
 }
 
@@ -215,9 +217,11 @@ function buttonWithLabel(html: string, label: string): string {
   const matched = html.match(
     new RegExp(`<button[^>]+aria-label="${label}"[^>]*>[\\s\\S]*?</button>`),
   );
+
   if (matched === null) {
     throw new Error(`${label} button not found`);
   }
+
   return matched[0];
 }
 

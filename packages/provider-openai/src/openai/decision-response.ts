@@ -22,6 +22,7 @@ export function mapDecisionResponse<Questions extends DecisionQuestions>(
       questionName,
     });
   };
+
   if (
     !isPlainObject(rawResponse) ||
     !Array.isArray(rawResponse.answers) ||
@@ -29,6 +30,7 @@ export function mapDecisionResponse<Questions extends DecisionQuestions>(
   ) {
     return fail("OpenAI returned an invalid decision envelope.");
   }
+
   const expectedKeys = new Set(compiled.flatMap(({ keys }) => keys));
   const byName = new Map<string, Record<string, JsonValue>>();
   for (const answer of rawResponse.answers) {
@@ -40,14 +42,18 @@ export function mapDecisionResponse<Questions extends DecisionQuestions>(
     ) {
       return fail("OpenAI answers do not match the requested questions.");
     }
+
     byName.set(answer.name, answer);
   }
+
   if (byName.size !== expectedKeys.size) {
     return fail("OpenAI answers do not match the requested questions.");
   }
+
   const refused = compiled.filter(({ keys }) =>
     keys.some((key) => byName.get(key)!.type === "refusal"),
   );
+
   if (refused.length > 0) {
     throw new DecisionRefusalError({
       provider: "OpenAI",
@@ -56,19 +62,24 @@ export function mapDecisionResponse<Questions extends DecisionQuestions>(
       rawResponse,
     });
   }
+
   const answers = Object.fromEntries(
     compiled.map(({ name, question, keys }) => {
       const getAnswer = (key: string | undefined) => byName.get(key!)!;
       const predicate = (key: string | undefined): number => {
         const answer = getAnswer(key);
+
         if (answer.type !== "predicate" || !isProbability(answer.probability)) {
           return fail("OpenAI returned an invalid predicate probability.", name);
         }
+
         return answer.probability;
       };
+
       if (question.type === "check") {
         return [name, { type: "check", probability: predicate(keys[0]) }];
       }
+
       if (question.type === "multi-label") {
         const labels = Object.keys(question.options);
         const probabilities = Object.fromEntries(
@@ -83,7 +94,9 @@ export function mapDecisionResponse<Questions extends DecisionQuestions>(
           },
         ];
       }
+
       const answer = getAnswer(keys[0]);
+
       if (
         answer.type !== question.type ||
         !isProbability(answer.confidence) ||
@@ -91,7 +104,9 @@ export function mapDecisionResponse<Questions extends DecisionQuestions>(
       ) {
         return fail("OpenAI returned an invalid choice or score answer.", name);
       }
+
       const distribution = answer.probabilities;
+
       if (question.type === "choice") {
         const labels = Object.keys(question.options);
         const probabilities = new Map<string, number>();
@@ -105,8 +120,10 @@ export function mapDecisionResponse<Questions extends DecisionQuestions>(
           ) {
             return fail("OpenAI returned invalid choice probabilities.", name);
           }
+
           probabilities.set(entry.value, entry.probability);
         }
+
         if (
           probabilities.size !== labels.length ||
           !sumsToOne([...probabilities.values()]) ||
@@ -115,6 +132,7 @@ export function mapDecisionResponse<Questions extends DecisionQuestions>(
         ) {
           return fail("OpenAI returned an invalid choice answer.", name);
         }
+
         return [
           name,
           {
@@ -127,6 +145,7 @@ export function mapDecisionResponse<Questions extends DecisionQuestions>(
           },
         ];
       }
+
       const probabilities = new Map<number, number>();
       for (const entry of distribution) {
         if (
@@ -141,8 +160,10 @@ export function mapDecisionResponse<Questions extends DecisionQuestions>(
         ) {
           return fail("OpenAI returned invalid score probabilities or rubric labels.", name);
         }
+
         probabilities.set(entry.value, entry.probability);
       }
+
       if (
         probabilities.size !== question.rubric.length ||
         !sumsToOne([...probabilities.values()]) ||
@@ -153,6 +174,7 @@ export function mapDecisionResponse<Questions extends DecisionQuestions>(
       ) {
         return fail("OpenAI returned an invalid score answer.", name);
       }
+
       return [
         name,
         {
@@ -166,6 +188,7 @@ export function mapDecisionResponse<Questions extends DecisionQuestions>(
     }),
   ) as DecisionAnswers<Questions>;
   const usage = rawResponse.usage;
+
   if (
     !isDataObject(usage) ||
     !isTokenCount(usage.input_tokens) ||
@@ -177,9 +200,11 @@ export function mapDecisionResponse<Questions extends DecisionQuestions>(
   ) {
     return fail("OpenAI returned invalid decision token usage.");
   }
+
   const cached = usage.input_tokens_details.cached_tokens;
   const written = usage.input_tokens_details.cache_write_tokens;
   const reasoning = usage.output_tokens_details.reasoning_tokens;
+
   if (
     !isTokenCount(cached) ||
     !isTokenCount(written) ||
@@ -189,6 +214,7 @@ export function mapDecisionResponse<Questions extends DecisionQuestions>(
   ) {
     return fail("OpenAI returned invalid decision token usage details.");
   }
+
   const normalizedUsage = normalizeOpenAIUsage({
     inputTokens: usage.input_tokens,
     outputTokens: usage.output_tokens,

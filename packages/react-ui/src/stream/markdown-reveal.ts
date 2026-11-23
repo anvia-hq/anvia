@@ -44,6 +44,7 @@ export function createStreamGradientRevealPlugin(
         lifecycle.settledRevealIds.clear();
         lifecycle.startedAtByRevealId.clear();
       }
+
       const targets = collectTextTargets(tree);
       const renderedText = targets.map((target) => target.node.value ?? "").join("");
       const graphemes = createRevealGraphemes(renderedText);
@@ -60,10 +61,12 @@ function collectTextTargets(tree: MarkdownNode): TextTarget[] {
     if (node.type === "element" && node.tagName === "pre") {
       return;
     }
+
     if (node.type === "text" && node.value !== undefined && parent !== undefined) {
       if (!/\S/u.test(node.value)) {
         return;
       }
+
       const startOffset = offset;
       offset += node.value.length;
       targets.push({
@@ -75,6 +78,7 @@ function collectTextTargets(tree: MarkdownNode): TextTarget[] {
       });
       return;
     }
+
     for (const [childIndex, child] of (node.children ?? []).entries()) {
       visit(child, node, childIndex);
     }
@@ -94,9 +98,11 @@ function createRevealGraphemes(content: string): RevealGrapheme[] {
       Math.floor(index / streamRevealConfig.bandGraphemes) * streamRevealConfig.bandGraphemes;
     const bandEndIndex =
       Math.min(bandStartIndex + streamRevealConfig.bandGraphemes, tail.length) - 1;
+
     if (grapheme === undefined) {
       continue;
     }
+
     const progress = tail.length === 1 ? 1 : bandEndIndex / (tail.length - 1);
     graphemes.push({
       startOffset: grapheme.startOffset,
@@ -124,6 +130,7 @@ function wrapStreamRevealGraphemes(
       (grapheme) =>
         grapheme.endOffset > target.startOffset && grapheme.startOffset < target.endOffset,
     );
+
     if (intersectingGraphemes.length === 0) {
       continue;
     }
@@ -133,9 +140,11 @@ function wrapStreamRevealGraphemes(
     for (const grapheme of intersectingGraphemes) {
       const start = Math.max(0, grapheme.startOffset - target.startOffset);
       const end = Math.min(value.length, grapheme.endOffset - target.startOffset);
+
       if (start > cursor) {
         replacement.push({ type: "text", value: value.slice(cursor, start) });
       }
+
       if (end > start) {
         const text = value.slice(start, end);
         const absoluteStart = target.startOffset + start;
@@ -145,9 +154,11 @@ function wrapStreamRevealGraphemes(
         const startedAt = lifecycle.startedAtByRevealId.get(revealId) ?? nowMs;
         lifecycle.startedAtByRevealId.set(revealId, startedAt);
         const elapsedMs = Math.max(0, nowMs - startedAt);
+
         if (elapsedMs >= streamRevealConfig.durationMs) {
           lifecycle.settledRevealIds.add(revealId);
         }
+
         if (lifecycle.settledRevealIds.has(revealId)) {
           replacement.push({ type: "text", value: text });
         } else {
@@ -167,11 +178,14 @@ function wrapStreamRevealGraphemes(
           });
         }
       }
+
       cursor = Math.max(cursor, end);
     }
+
     if (cursor < value.length) {
       replacement.push({ type: "text", value: value.slice(cursor) });
     }
+
     target.parent.children?.splice(target.index, 1, ...replacement);
   }
 
@@ -213,9 +227,11 @@ function segmentTailGraphemeRanges(
     let cursor = content.length;
     while (cursor > 0 && ranges.length < limit) {
       const segment = segments.containing(cursor - 1);
+
       if (segment === undefined) {
         break;
       }
+
       ranges.unshift({
         startOffset: segment.index,
         endOffset: segment.index + segment.segment.length,
@@ -230,12 +246,15 @@ function segmentTailGraphemeRanges(
   while (cursor > 0 && ranges.length < limit) {
     let startOffset = cursor - 1;
     const code = content.charCodeAt(startOffset);
+
     if (code >= 0xdc00 && code <= 0xdfff && startOffset > 0) {
       const previousCode = content.charCodeAt(startOffset - 1);
+
       if (previousCode >= 0xd800 && previousCode <= 0xdbff) {
         startOffset -= 1;
       }
     }
+
     ranges.unshift({ startOffset, endOffset: cursor });
     cursor = startOffset;
   }

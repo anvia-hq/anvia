@@ -44,9 +44,11 @@ export class OpenAIEmbeddingModel implements EmbeddingModel {
       model: this.modelId,
       input: texts,
     };
+
     if (this.dimensions !== undefined) {
       params.dimensions = this.dimensions;
     }
+
     if (this.user !== undefined) {
       params.user = this.user;
     }
@@ -56,6 +58,7 @@ export class OpenAIEmbeddingModel implements EmbeddingModel {
       maxRetries: 0,
     });
     const data = embeddingDataFromResponse(response, texts.length);
+
     if (data.length !== texts.length) {
       throw new Error(
         `Embedding response length ${data.length} did not match input length ${texts.length}`,
@@ -64,9 +67,11 @@ export class OpenAIEmbeddingModel implements EmbeddingModel {
 
     return texts.map((document, index) => {
       const item = data[index];
+
       if (item === undefined) {
         throw new Error(`Embedding response did not contain index ${index}`);
       }
+
       return {
         document,
         vector: item.embedding,
@@ -91,6 +96,7 @@ function embeddingDataFromResponse(response: unknown, inputLength: number): Embe
     }
 
     const index = item.index;
+
     if (index < 0 || index >= inputLength) {
       throw new Error(
         `Embedding response index ${index} was outside input range 0..${inputLength - 1}`,

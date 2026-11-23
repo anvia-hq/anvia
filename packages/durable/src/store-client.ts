@@ -89,6 +89,7 @@ export class DurableClient implements DurableSubmitClient, DurableGraphClient {
       throw new TypeError(
         "This store does not support clients. Use a Postgres, Drizzle, or Prisma store.",
       );
+
     await options.store.join();
     return new DurableClient(options.store);
   }
@@ -225,7 +226,9 @@ export class DurableClient implements DurableSubmitClient, DurableGraphClient {
 
   async graphEvents(id: string, after: number) {
     this.assertOpen();
+
     if (!Number.isSafeInteger(after) || after < 0) throw new TypeError("Invalid event cursor.");
+
     return this.store.graphEvents(id, after, 100);
   }
 
@@ -304,6 +307,7 @@ export class DurableClient implements DurableSubmitClient, DurableGraphClient {
   /** Closes the connection. Runs it submitted keep going on their workers. */
   async close(): Promise<void> {
     if (this.closed) return;
+
     this.closed = true;
     await this.store.close();
   }

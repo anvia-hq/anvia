@@ -26,6 +26,7 @@ export const skill = {
 
 async function loadLocalSkills(path: string): Promise<Skill[]> {
   const root = resolve(path);
+
   if (await hasSkillFile(root)) {
     return [await readSkill(root)];
   }
@@ -36,7 +37,9 @@ async function loadLocalSkills(path: string): Promise<Skill[]> {
     if (!entry.isDirectory()) {
       continue;
     }
+
     const directory = join(root, entry.name);
+
     if (await hasSkillFile(directory)) {
       skills.push(await readSkill(directory));
     }
@@ -90,6 +93,7 @@ function parseSkillMarkdown(
   const newline = markdown.startsWith("---\r\n") ? "\r\n" : "\n";
   const marker = `${newline}---${newline}`;
   const end = markdown.indexOf(marker, 3);
+
   if (end === -1) {
     throw new SkillValidationError("Skill validation failed", [
       { path, message: "SKILL.md frontmatter must end with ---" },
@@ -99,6 +103,7 @@ function parseSkillMarkdown(
   const rawFrontmatter = markdown.slice(3 + newline.length, end);
   const body = markdown.slice(end + marker.length);
   const parsed = parseYaml(rawFrontmatter);
+
   if (!isRecord(parsed)) {
     throw new SkillValidationError("Skill validation failed", [
       { path, message: "SKILL.md frontmatter must be a YAML object" },
@@ -123,12 +128,14 @@ function validateSkillFrontmatter(
     if (name.length > MAX_NAME_LENGTH) {
       issues.push({ path, message: `name must be at most ${MAX_NAME_LENGTH} characters` });
     }
+
     if (!NAME_PATTERN.test(name)) {
       issues.push({
         path,
         message: "name must contain lowercase letters, numbers, and hyphens only",
       });
     }
+
     if (basename(directory) !== name) {
       issues.push({ path, message: "name must match the skill directory name" });
     }
@@ -151,6 +158,7 @@ function validateSkillFrontmatter(
 async function listRelativeFiles(directory: string): Promise<string[]> {
   try {
     const info = await stat(directory);
+
     if (!info.isDirectory()) {
       return [];
     }
@@ -167,6 +175,7 @@ async function collectFiles(root: string, directory: string, files: string[]): P
   const entries = await readdir(directory, { withFileTypes: true });
   for (const entry of entries) {
     const path = join(directory, entry.name);
+
     if (entry.isDirectory()) {
       await collectFiles(root, path, files);
     } else if (entry.isFile()) {

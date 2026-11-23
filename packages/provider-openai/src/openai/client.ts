@@ -82,6 +82,7 @@ export class OpenAIClient implements ModelListingClient {
       this.sdk = options.client;
       return;
     }
+
     this.sdk = new OpenAI({
       apiKey: requireApiKey(options.apiKey),
       baseURL: options.baseUrl,
@@ -155,6 +156,7 @@ export class OpenAIClient implements ModelListingClient {
 
 function rejectManagedOptionsWithInjectedClient(options: object, keys: readonly string[]): void {
   const conflict = keys.find((key) => key in options);
+
   if (conflict !== undefined) {
     throw new TypeError(`OpenAIClient cannot combine client with ${conflict}.`);
   }
@@ -172,6 +174,7 @@ function requireModelId<ModelId extends string>(modelId: ModelId): ModelId {
   if (modelId.trim().length === 0) {
     throw new TypeError("modelId must be a non-empty string");
   }
+
   return modelId;
 }
 
@@ -209,44 +212,56 @@ function toListedModel(model: unknown): ModelList["data"][number] | undefined {
   const listedModel: ModelList["data"][number] = {
     id: model.id,
   };
+
   if (typeof model.name === "string") {
     listedModel.name = model.name;
   }
+
   if (typeof model.description === "string") {
     listedModel.description = model.description;
   }
+
   if (typeof model.type === "string") {
     listedModel.type = model.type;
   } else if (typeof model.object === "string") {
     listedModel.type = model.object;
   }
+
   if (typeof model.created === "number") {
     listedModel.createdAt = model.created;
   }
+
   if (typeof model.created_at === "number") {
     listedModel.createdAt = model.created_at;
   }
+
   if (typeof model.owned_by === "string") {
     listedModel.ownedBy = model.owned_by;
   }
+
   if (typeof model.context_length === "number") {
     listedModel.contextLength = model.context_length;
   }
+
   if (typeof model.contextLength === "number") {
     listedModel.contextLength = model.contextLength;
   }
+
   if (
     Array.isArray(model.supported_parameters) &&
     model.supported_parameters.every((parameter) => typeof parameter === "string")
   ) {
     listedModel.supportedParameters = model.supported_parameters;
   }
+
   if (isObject(model.reasoning) && !Array.isArray(model.reasoning)) {
     listedModel.reasoning = model.reasoning;
   }
+
   if (isObject(model.pricing) && !Array.isArray(model.pricing)) {
     listedModel.pricing = model.pricing;
   }
+
   return listedModel;
 }
 

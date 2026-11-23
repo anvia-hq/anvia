@@ -14,6 +14,7 @@ export const AUTO_VERSION = "auto";
 
 function schemaOf(schema: unknown): JsonValue {
   if (schema === undefined) return null;
+
   try {
     return json(z.toJSONSchema(schema as z.ZodType));
   } catch {

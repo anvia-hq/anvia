@@ -50,7 +50,9 @@ class QueueModel implements CompletionModel {
   async completion(request: CompletionRequest): Promise<CompletionResponse> {
     this.requests.push(request);
     const response = this.responses.shift();
+
     if (response === undefined) throw new Error("No queued response");
+
     return response;
   }
 }
@@ -837,6 +839,7 @@ describe("Pipeline", () => {
       observer: {
         onEvent(event) {
           if (event.type === "stage_started") paths.push([...event.path]);
+
           expect(event.runId).toBe("run_graph");
           expect(event.pipelineId).toBe("graph");
         },
@@ -902,7 +905,9 @@ describe("Pipeline", () => {
         maxActive = Math.max(maxActive, active);
         await delay(5);
         active -= 1;
+
         if (input === 2) throw new Error("boom");
+
         return input * 2;
       },
     });
@@ -1029,12 +1034,16 @@ function fakeDecisionModel(
       callOptions?: { abortSignal?: AbortSignal | undefined },
     ) {
       requests.push({ request, abortSignal: callOptions?.abortSignal });
+
       if (failures.length > 0) throw failures.shift();
+
       const result: DecisionResult<Q> = {
         answers: answers as DecisionAnswers<Q>,
         rawResponse: { requestId: "decision" },
       };
+
       if (options.usage !== undefined) return { ...result, usage: options.usage };
+
       return result;
     },
   };

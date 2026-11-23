@@ -45,7 +45,9 @@ export function createPinoLogger(options: PinoLoggerOptions = {}): FlushableLogg
     ...options.pinoOptions,
     level: options.pinoOptions?.level ?? resolveLogLevel(options.level),
   };
+
   if (options.name !== undefined) pinoOptions.name = options.name;
+
   if (options.bindings !== undefined) pinoOptions.base = options.bindings;
 
   const destination = resolveDestination(options);
@@ -216,6 +218,7 @@ function flushPinoInstance(logger: PinoLoggerInstance): Promise<void> {
  */
 function flushStream(stream: FlushableStream): Promise<void> {
   const openError = fileOpenErrors.get(stream);
+
   if (openError !== undefined) {
     return Promise.reject(openError);
   }
@@ -225,6 +228,7 @@ function flushStream(stream: FlushableStream): Promise<void> {
   }
 
   const flushSync = stream.flushSync;
+
   if (flushSync !== undefined) {
     return waitUntilReady(stream)
       .then(() => waitUntilWritesSettle(stream))
@@ -234,6 +238,7 @@ function flushStream(stream: FlushableStream): Promise<void> {
   }
 
   const flush = stream.flush;
+
   if (flush !== undefined) {
     return new Promise<void>((resolve, reject) => {
       flush.call(stream, (error?: Error) => {
@@ -254,6 +259,7 @@ function flushStream(stream: FlushableStream): Promise<void> {
 
 function waitUntilReady(stream: FlushableStream): Promise<void> {
   const { fd } = stream;
+
   if (fd === undefined || fd >= 0) {
     return Promise.resolve();
   }
@@ -282,6 +288,7 @@ function waitForEvent(
   failureMessage: string,
 ): Promise<void> {
   const { once, removeListener } = stream;
+
   if (once === undefined) {
     return Promise.resolve();
   }

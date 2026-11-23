@@ -20,6 +20,7 @@ export class TeamStream<Output> implements AgentTeamStream<Output> {
   ) {
     this.run = createRun((event) => {
       if (this.mode !== "events" || this.bufferError !== undefined) return;
+
       if (this.bufferedEvents >= maxBufferedEvents) {
         // Set the error before cancelling: cancellation emits further member events.
         this.bufferError = new AgentTeamLimitError("maxBufferedEvents");
@@ -27,6 +28,7 @@ export class TeamStream<Output> implements AgentTeamStream<Output> {
         this.run.cancel("Agent team stream exceeded maxBufferedEvents.");
         return;
       }
+
       this.bufferedEvents += 1;
       this.queue.enqueue(event);
     });
@@ -44,6 +46,7 @@ export class TeamStream<Output> implements AgentTeamStream<Output> {
       queueMicrotask(() => {
         this.mode ??= "result";
       });
+
     return this.start();
   }
   get text(): Promise<string> {
@@ -67,6 +70,7 @@ export class TeamStream<Output> implements AgentTeamStream<Output> {
         (outcome) => {
           // Overflow can occur while publishing the terminal outcome, after the run closes.
           if (this.bufferError !== undefined) throw this.bufferError;
+
           return outcome;
         },
         (error: unknown) => {
@@ -79,12 +83,14 @@ export class TeamStream<Output> implements AgentTeamStream<Output> {
         (error: unknown) => this.queue.throw(error),
       );
     }
+
     return this.promise;
   }
 
   private async *consume(): AsyncIterableIterator<AgentTeamEvent<Output>> {
     if (this.mode !== undefined || this.iterating)
       throw new Error("Agent team stream already has a consumer.");
+
     this.mode = "events";
     this.iterating = true;
     void this.start();
@@ -92,6 +98,7 @@ export class TeamStream<Output> implements AgentTeamStream<Output> {
     try {
       for await (const event of this.queue) {
         if (this.bufferError !== undefined) throw this.bufferError;
+
         this.bufferedEvents -= 1;
         yield event;
       }
@@ -102,6 +109,7 @@ export class TeamStream<Output> implements AgentTeamStream<Output> {
         this.run.cancel("Agent team stream consumer closed.");
         this.queue.close({ discardPending: true });
       }
+
       this.iterating = false;
     }
   }

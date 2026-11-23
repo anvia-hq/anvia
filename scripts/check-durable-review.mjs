@@ -67,17 +67,21 @@ function fail(document, message) {
 
 function lineCount(file) {
   const text = readFileSync(file, "utf8");
+
   if (text.length === 0) return 0;
+
   const lines = text.split("\n");
   return lines.at(-1) === "" ? lines.length - 1 : lines.length;
 }
 
 function checkDocument(entry) {
   const absolute = join(root, entry.path);
+
   if (!existsSync(absolute) || !statSync(absolute).isFile()) {
     fail(entry.path, "document is missing");
     return;
   }
+
   const text = readFileSync(absolute, "utf8");
   summary.documents += 1;
 
@@ -88,6 +92,7 @@ function checkDocument(entry) {
   if (entry.lastHeading !== undefined) {
     const headings = [...text.matchAll(/^## .+$/gm)].map((match) => match[0]);
     const last = headings.at(-1);
+
     if (last === undefined || !last.startsWith(entry.lastHeading)) {
       fail(
         entry.path,
@@ -98,8 +103,10 @@ function checkDocument(entry) {
 
   // Findings: each heading must carry the full finding contract.
   const matches = [...text.matchAll(findingPattern)];
+
   if (entry.path === REVIEW) {
     if (matches.length === 0) fail(entry.path, "no findings found (expected #### DUR-… headings)");
+
     for (let index = 0; index < matches.length; index += 1) {
       const match = matches[index];
       const start = match.index + match[0].length;
@@ -117,21 +124,28 @@ function checkDocument(entry) {
   for (const match of text.matchAll(citationPattern)) {
     const [, path, rawLine] = match;
     const key = `${path}:${rawLine}`;
+
     if (seen.has(key)) continue;
+
     seen.add(key);
     summary.citations += 1;
     const line = Number(rawLine);
+
     if (!Number.isSafeInteger(line) || line < 1) {
       fail(entry.path, `invalid citation line: ${key}`);
       continue;
     }
+
     const target = join(root, path);
+
     if (!existsSync(target) || !statSync(target).isFile()) {
       fail(entry.path, `citation points to a missing file: ${key}`);
       continue;
     }
+
     summary.uniqueFiles.add(path);
     const count = lineCount(target);
+
     if (line > count) {
       fail(
         entry.path,

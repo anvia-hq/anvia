@@ -29,9 +29,17 @@ describe("Studio theme", () => {
     expect(readInitialStudioTheme()).toBe("light");
     getItem.mockImplementation((key: string) => (key === "anvia-studio-theme" ? "dark" : null));
     expect(readInitialStudioTheme()).toBe("dark");
-    getItem.mockImplementation((key: string) =>
-      key === "anvia-theme" ? "sepia" : key === "anvia-studio-theme" ? "light" : null,
-    );
+    getItem.mockImplementation((key: string) => {
+      if (key === "anvia-theme") {
+        return "sepia";
+      }
+
+      if (key === "anvia-studio-theme") {
+        return "light";
+      }
+
+      return null;
+    });
     expect(readInitialStudioTheme()).toBe("light");
     expect(nextStudioTheme("light")).toBe("dark");
     expect(nextStudioTheme("dark")).toBe("light");

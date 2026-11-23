@@ -18,10 +18,12 @@ assertWorkspaceInternalDependencies(packages);
 const baseRef =
   readOption("--base-ref") ??
   (process.env.GITHUB_BASE_REF ? `origin/${process.env.GITHUB_BASE_REF}` : undefined);
+
 if (baseRef !== undefined) assertNoMajorVersionChanges(root, baseRef);
 
 if (!stable) {
   const pending = readPendingChangesets(root);
+
   if (pending.length > 0) {
     assertReleasableChangesets(
       pending,
@@ -32,6 +34,7 @@ if (!stable) {
 }
 
 let stableReleases;
+
 if (stable) {
   stableReleases = assertStableReleaseState(root, packages);
 }
@@ -44,12 +47,16 @@ console.info(
 
 function readOption(name) {
   const index = process.argv.indexOf(name);
+
   if (index === -1) {
     return undefined;
   }
+
   const value = process.argv[index + 1];
+
   if (value === undefined || value.startsWith("--")) {
     throw new Error(`${name} requires a value.`);
   }
+
   return value;
 }

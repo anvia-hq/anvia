@@ -28,6 +28,7 @@ function lazy(
       migrated.add(pool);
       await migrate(pool);
     }
+
     return execute(query);
   };
 }

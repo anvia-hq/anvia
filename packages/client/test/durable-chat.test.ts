@@ -272,9 +272,11 @@ describe("durable chat event mapping", () => {
     expect(types(mapped)).toEqual(["tool_call_end", "tool_result"]);
     const end = mapped[0];
     const result = mapped[1];
+
     if (end?.type !== "tool_call_end" || result?.type !== "tool_result") {
       throw new Error("Expected a tool call and its result.");
     }
+
     expect(result).toMatchObject({
       toolCallId: "call-1",
       toolName: "echo",
@@ -293,7 +295,9 @@ describe("durable chat event mapping", () => {
       }),
     ]);
     const result = mapped[1];
+
     if (result?.type !== "tool_result") throw new Error("Expected a tool result.");
+
     expect(result).toMatchObject({
       toolCallId: "call-1",
       toolName: "echo",
@@ -396,7 +400,9 @@ describe("durable chat event mapping", () => {
     ];
     for (const { status, outcome, error } of cases) {
       const compact: JsonObject = { status };
+
       if (error !== undefined) compact.error = error;
+
       const legacy: JsonObject = { ...compact, outcome: outcome as JsonObject };
       const embedded = mapAll([event(1, "status", legacy)]);
       const snapshotted = mapDurableChatEvent(
@@ -483,7 +489,9 @@ class FakeClient {
     options: DurableSubmitOptions = {},
   ): Promise<DurableSnapshot> {
     this.submitCalls.push({ submission, options });
+
     if (this.failSubmit !== undefined) throw this.failSubmit;
+
     return { run: { id: runId, status: "queued" } } as unknown as DurableSnapshot;
   }
 
@@ -502,6 +510,7 @@ class FakeClient {
     this.streamCalls.push({ runId: id, after, aborted: options.abortSignal?.aborted ?? false });
     for (const value of this.events) {
       if (value.sequence <= after) continue;
+
       options.abortSignal?.throwIfAborted();
       yield value;
     }
@@ -561,6 +570,7 @@ function request(type: ClientStreamRequest["type"], value: Partial<ClientStreamR
   if (type === "messages") {
     return { type, messages: [user("hello")], ...value } as ClientStreamRequest;
   }
+
   return {
     type,
     interactionId: "interaction-1",

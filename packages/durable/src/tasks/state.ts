@@ -7,13 +7,17 @@ import type { RegisteredTask, TaskRecord } from "./types.js";
 
 export function taskKey(value: string): void {
   nonblank(value, "Task key");
+
   if (value.length > 256 || value !== value.trim())
     throw new TypeError("Task keys must be trimmed and at most 256 characters.");
+
   if (value === "__proto__") throw new TypeError("Reserved task key.");
 }
 export async function requireTask(tx: DurableTransaction, id: string): Promise<TaskRecord> {
   const task = await tx.getTask(id);
+
   if (task === undefined) throw new DurableNotFoundError(`Unknown durable task: ${id}`);
+
   return task;
 }
 export function terminal(task: TaskRecord): boolean {
@@ -52,6 +56,7 @@ export async function createTask(
     parentId,
     trace,
   );
+
   if (created) {
     await tx.putTask(task);
     await tx.appendEvent(
@@ -60,6 +65,7 @@ export async function createTask(
       json({ name: task.name, parentId, rootId: task.rootId }),
     );
   }
+
   return task;
 }
 
@@ -80,12 +86,16 @@ export async function prepareTask(
     parsed = definition.parseInput(input);
   } catch (cause) {
     if (cause instanceof TypeError) throw cause;
+
     throw new TypeError("Invalid task input.", { cause });
   }
   const parent = parentId === undefined ? undefined : await requireTask(tx, parentId);
+
   if (parent !== undefined && parent.status !== "running")
     throw new DurableConflictError("Parent task is no longer running.");
+
   const existing = await tx.findTask(sessionId, parentId, key);
+
   if (existing !== undefined) {
     if (
       existing.name !== definition.name ||
@@ -93,13 +103,16 @@ export async function prepareTask(
       !sameJson(existing.submissionInput, parsed)
     )
       throw new DurableConflictError("Task key already belongs to a different submission.");
+
     return { task: existing, created: false };
   }
+
   if (
     parent !== undefined &&
     (parent.depth >= 32 || (await tx.taskTree(parent.rootId)).length >= 1000)
   )
     throw new DurableConflictError("Task trees support at most 1000 nodes and depth 32.");
+
   const id = globalThis.crypto.randomUUID();
   const now = new Date().toISOString();
   const task: TaskRecord = {
@@ -141,12 +154,15 @@ export async function cancelTree(
   const pending = [await requireTask(tx, id)];
   for (const task of pending) {
     if (terminal(task)) continue;
+
     ids.push(task.id);
     pending.push(...(await tx.taskChildren(task.id)));
     task.status = "cancelling";
     task.outcome = { status: "cancelled", error };
+
     if (task.agentRunId !== undefined) {
       const run = (await tx.getRun(task.agentRunId))!;
+
       if (!["completed", "failed", "cancelled"].includes(run.status)) {
         run.status = "cancelled";
         run.error = error;
@@ -156,6 +172,7 @@ export async function cancelTree(
         await tx.appendEvent(run.id, "status", { status: "cancelled", error });
       }
     }
+
     delete task.wait;
     delete task.error;
     delete task.blockedOperation;
@@ -177,13 +194,17 @@ export async function reconcileTree(
   const nodes = (await tx.taskTree(rootId)).reverse();
   for (const node of nodes) {
     const task = await requireTask(tx, node.id);
+
     if (terminal(task)) continue;
+
     if (task.status === "waiting") {
       const wait = task.wait!;
       let ready = false;
+
       if (wait.type === "children") {
         const children: TaskRecord[] = [];
         for (const id of wait.ids) children.push(await requireTask(tx, id));
+
         if (
           wait.policy === "failFast" &&
           children.some((child) => terminal(child) && child.status !== "completed")
@@ -192,14 +213,18 @@ export async function reconcileTree(
             if (!terminal(child) && child.status !== "cancelling")
               abort.push(...(await cancelTree(tx, child.id, "Sibling task failed.")));
         }
+
         ready = children.every(terminal);
       } else if (wait.type === "agent") {
         const run = await tx.getRun(wait.runId);
+
         if (run === undefined) throw new Error("Owned agent run is missing.");
+
         if (wait.status !== run.status) {
           wait.status = run.status;
           await saveTask(tx, task);
         }
+
         if (["completed", "failed", "cancelled"].includes(run.status)) {
           task.outcome =
             run.status === "completed" && run.outcome?.type === "response"
@@ -221,14 +246,17 @@ export async function reconcileTree(
       else {
         const until = Date.parse(wait.until);
         ready = until <= Date.now();
+
         if (!ready) deadline = Math.min(deadline ?? Infinity, until);
       }
+
       if (ready) {
         task.status = "pending";
         delete task.wait;
         await saveTask(tx, task);
       }
     }
+
     if (
       ["completing", "cancelling"].includes(task.status) &&
       !(await busy(tx, task)) &&
@@ -262,6 +290,7 @@ export async function createUnadmittedTask(
   taskKey(submission.name);
   await tx.lockSession?.(`task-submit:${submission.sessionId}`);
   const existing = await tx.findTask(submission.sessionId, undefined, submission.key);
+
   if (existing !== undefined) {
     if (
       existing.name !== submission.name ||
@@ -269,8 +298,10 @@ export async function createUnadmittedTask(
       !sameJson(existing.submissionInput, submission.input)
     )
       throw new DurableConflictError("Task key already belongs to a different submission.");
+
     return existing;
   }
+
   const id = globalThis.crypto.randomUUID();
   const now = new Date().toISOString();
   const task: TaskRecord = {
@@ -291,7 +322,9 @@ export async function createUnadmittedTask(
     createdAt: now,
     updatedAt: now,
   };
+
   if (trace !== undefined) task.trace = trace;
+
   await tx.putTask(task);
   await tx.appendEvent(id, "submitted", json({ name: task.name, rootId: id }));
   return task;

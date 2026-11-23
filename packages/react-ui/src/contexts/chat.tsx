@@ -42,9 +42,11 @@ export function useChatContext<
   Data extends ClientDataMap = ClientDataMap,
 >(): ChatController<Metadata, Data> {
   const value = useContext(ChatContext);
+
   if (value === undefined) {
     throw new Error("Anvia chat primitives must be used inside ChatProvider.");
   }
+
   return value as unknown as ChatController<Metadata, Data>;
 }
 

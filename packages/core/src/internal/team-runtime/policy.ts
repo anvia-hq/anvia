@@ -19,21 +19,28 @@ export class TeamPolicy {
         (communication.siblings !== undefined && typeof communication.siblings !== "boolean"))
     )
       throw new TypeError("AgentTeam communication.siblings must be a boolean.");
+
     this.siblings = communication?.siblings ?? false;
+
     if (spawning !== undefined && !Array.isArray(spawning))
       throw new TypeError("AgentTeam spawning must be an array.");
+
     for (const rule of spawning ?? []) {
       if (rule === null || typeof rule !== "object" || !catalog.includes(rule.from))
         throw new TypeError("Spawn rule from must reference a registered Agent instance.");
+
       if (this.spawning.has(rule.from))
         throw new TypeError(`Duplicate spawn rule for "${rule.from.id}".`);
+
       if (
         !Array.isArray(rule.to) ||
         [...rule.to].some((target: AgentTeamMember) => !catalog.includes(target))
       )
         throw new TypeError("Spawn rule to must contain registered Agent instances.");
+
       if (new Set(rule.to).size !== rule.to.length)
         throw new TypeError(`Duplicate spawn target for "${rule.from.id}".`);
+
       this.spawning.set(rule.from, Object.freeze([...rule.to]));
     }
   }

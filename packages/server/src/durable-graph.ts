@@ -11,16 +11,23 @@ export async function handleDurableGraphRequest(
 ): Promise<Response | undefined> {
   const url = new URL(request.url);
   const root = `${basePath}/graphs`;
+
   if (url.pathname !== root && !url.pathname.startsWith(`${root}/`)) return undefined;
+
   const parts = url.pathname.slice(root.length).split("/").filter(Boolean).map(decodeURIComponent);
+
   if (parts.length === 0) {
     if (request.method === "GET") {
       const filter = parseDurableGraphListOptions(listQuery(url));
+
       if (filter.sessionId === undefined) throw new TypeError("Listing graphs requires sessionId.");
+
       if (!(await options.authorize(request, { action: "list", sessionId: filter.sessionId })))
         return json({ error: "Forbidden" }, 403);
+
       return json(await options.runtime.listGraphs(filter));
     }
+
     if (request.method === "POST") {
       const input = parseDurableGraphSubmission(await readJson(request, maxBodyBytes));
       for (const task of input.tasks) {
@@ -37,16 +44,21 @@ export async function handleDurableGraphRequest(
       const graph = await options.runtime.submitGraph(input);
       return json(await graph.snapshot(), 202);
     }
+
     return json({ error: "Method not allowed" }, 405);
   }
+
   if (
     parts.length > 2 ||
     (parts[1] !== undefined && parts[1] !== "events" && parts[1] !== "cancel")
   )
     return json({ error: "Not found" }, 404);
+
   const action: DurableHttpAction = parts[1] ?? "inspect";
+
   if (request.method !== (action === "cancel" ? "POST" : "GET"))
     return json({ error: "Method not allowed" }, 405);
+
   const graph = await options.runtime.getGraph(parts[0]!);
   const snapshot = await graph.snapshot();
   for (const node of snapshot.nodes) {
@@ -62,9 +74,12 @@ export async function handleDurableGraphRequest(
     )
       return json({ error: "Forbidden" }, 403);
   }
+
   if (action === "inspect") return json(snapshot);
+
   if (action === "events")
     return durableEventsResponse(request, snapshot.cursor, (options) => graph.stream(options));
+
   await graph.cancel();
   return new Response(null, { status: 204, headers: { "cache-control": "no-store" } });
 }

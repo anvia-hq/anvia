@@ -45,6 +45,7 @@ export function matchesVectorFilter(
   if (filter === undefined) {
     return true;
   }
+
   if (metadata === undefined) {
     return false;
   }
@@ -84,11 +85,14 @@ function compare(
   if (typeof left === "number" && typeof right === "number") {
     return left - right;
   }
+
   if (typeof left === "string" && typeof right === "string") {
     return left.localeCompare(right);
   }
+
   if (typeof left === "boolean" && typeof right === "boolean") {
     return Number(left) - Number(right);
   }
+
   return undefined;
 }

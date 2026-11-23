@@ -45,6 +45,13 @@ import { assertCompletionRequestSupported, textFromAssistantContent, Usage } fro
 
 export type CompletionStructuredOutputPhase = "truncated" | "content-filter" | "parse" | "schema";
 
+const COMPLETION_STRUCTURED_OUTPUT_FAILURES: Record<CompletionStructuredOutputPhase, string> = {
+  truncated: "because the provider reached its output limit",
+  "content-filter": "because the provider filtered the response",
+  parse: "during JSON parsing",
+  schema: "during schema validation",
+};
+
 export class CompletionStructuredOutputError extends Error {
   readonly phase: CompletionStructuredOutputPhase;
   readonly outputLength: number;
@@ -60,14 +67,7 @@ export class CompletionStructuredOutputError extends Error {
     providerFinishReason?: string | undefined;
     cause?: unknown;
   }) {
-    const failure =
-      options.phase === "truncated"
-        ? "because the provider reached its output limit"
-        : options.phase === "content-filter"
-          ? "because the provider filtered the response"
-          : options.phase === "parse"
-            ? "during JSON parsing"
-            : "during schema validation";
+    const failure = COMPLETION_STRUCTURED_OUTPUT_FAILURES[options.phase];
     super(`Structured completion output failed ${failure}.`, { cause: options.cause });
     this.name = "CompletionStructuredOutputError";
     this.phase = options.phase;
@@ -144,9 +144,11 @@ export function streamCompletion<Output, Model extends StreamingCompletionModel>
   options: StreamCompletionOptions<Model> | StreamStructuredCompletionOptions<Output, Model>,
 ): AsyncIterable<CompletionStreamEvent<Output | string, RawResponseOf<Model>>> {
   throwIfAborted(options.abortSignal);
+
   if (!isStreamingCompletionModel(options.model) || !options.model.capabilities.streaming) {
     throw new Error("This completion model does not support streaming");
   }
+
   const { request, pendingSchema } = requestFromOptionsSync(options);
   // Schemas whose JSON Schema conversion is deferred still count as an output
   // schema for capability validation.
@@ -191,13 +193,17 @@ async function sendCompletion<Model extends CompletionModel>(
       const normalizedError =
         abortSignal?.aborted === true ? abortError(abortSignal.reason) : error;
       const attemptUsage = completionProviderOutputErrorUsage(normalizedError);
+
       if (attemptUsage !== undefined) failedUsage = Usage.add(failedUsage, attemptUsage);
+
       const retryOptions = retryOptionsForFailure(retries, {
         error: normalizedError,
         attempt,
         streaming: false,
       });
+
       if (retryOptions === undefined) throw normalizedError;
+
       await waitForRetry(retryDelayMs(retryOptions, attempt), abortSignal);
       attempt += 1;
     }
@@ -219,12 +225,14 @@ async function* streamCompletionWithRetries<Output, Model extends StreamingCompl
   outputSchema: StandardSchemaV1<unknown, Output> | undefined,
 ): AsyncIterable<CompletionStreamEvent<Output | string, RawResponseOf<Model>>> {
   let request = initialRequest;
+
   if (pendingSchema !== undefined) {
     request = {
       ...request,
       outputSchema: await toProviderJsonSchemaFromStandardSchema(pendingSchema),
     };
   }
+
   let attempt = 1;
   let swallowedUsage = Usage.empty();
   const callOptions = modelCallOptions(abortSignal);
@@ -249,6 +257,7 @@ async function* streamCompletionWithRetries<Output, Model extends StreamingCompl
             attempt,
             streaming: true,
           });
+
           if (retryOptions !== undefined) {
             swallowedUsage = Usage.add(swallowedUsage, eventUsage);
             retryDelay = retryDelayMs(retryOptions, attempt);
@@ -290,12 +299,14 @@ async function* streamCompletionWithRetries<Output, Model extends StreamingCompl
                   attempt,
                   streaming: true,
                 });
+
             if (retryOptions !== undefined) {
               swallowedUsage = cumulativeUsage;
               await waitForRetry(retryDelayMs(retryOptions, attempt), abortSignal);
               attempt += 1;
               continue attemptLoop;
             }
+
             yield { type: "error", error, usage: cumulativeUsage };
           }
           return;
@@ -319,18 +330,21 @@ async function* streamCompletionWithRetries<Output, Model extends StreamingCompl
       } catch (error) {
         incomplete = error;
       }
+
       if (!exposedProgress) {
         const retryOptions = retryOptionsForFailure(retries, {
           error: incomplete,
           attempt,
           streaming: true,
         });
+
         if (retryOptions !== undefined) {
           await waitForRetry(retryDelayMs(retryOptions, attempt), abortSignal);
           attempt += 1;
           continue;
         }
       }
+
       yield { type: "error", error: incomplete, usage: swallowedUsage };
       return;
     } catch (error) {
@@ -339,12 +353,14 @@ async function* streamCompletionWithRetries<Output, Model extends StreamingCompl
       const attemptUsage = completionProviderOutputErrorUsage(normalizedError);
       const cumulativeUsage =
         attemptUsage === undefined ? swallowedUsage : Usage.add(swallowedUsage, attemptUsage);
+
       if (!exposedProgress) {
         const retryOptions = retryOptionsForFailure(retries, {
           error: normalizedError,
           attempt,
           streaming: true,
         });
+
         if (retryOptions !== undefined) {
           try {
             swallowedUsage = cumulativeUsage;
@@ -357,6 +373,7 @@ async function* streamCompletionWithRetries<Output, Model extends StreamingCompl
           }
         }
       }
+
       yield { type: "error", error: normalizedError, usage: cumulativeUsage };
       return;
     }
@@ -367,7 +384,9 @@ async function requestFromOptions<Model extends CompletionModel, Output>(
   options: GenerateCompletionOptions<Model> | GenerateStructuredCompletionOptions<Output, Model>,
 ): Promise<CompletionRequest> {
   const { request, pendingSchema } = requestFromOptionsSync(options);
+
   if (pendingSchema === undefined) return request;
+
   return {
     ...request,
     outputSchema: await toProviderJsonSchemaFromStandardSchema(pendingSchema),
@@ -384,14 +403,17 @@ function requestFromOptionsSync<Model extends CompletionModel, Output>(
   const schema = structuredOutputSchema(options);
   let outputSchema: JsonObject | undefined;
   let pendingSchema: StandardSchemaV1<unknown, Output> | undefined;
+
   if (schema !== undefined) {
     const converted = tryToProviderJsonSchemaFromStandardSchema(schema);
+
     if (converted.jsonSchema !== undefined) {
       outputSchema = converted.jsonSchema;
     } else {
       pendingSchema = schema;
     }
   }
+
   const request = createCompletionRequest(input, {
     instructions: options.instructions,
     documents: options.documents,
@@ -411,18 +433,23 @@ function inputFromOptions(options: CompletionInput): string | readonly MessageTy
   const messages = (options as { messages?: unknown }).messages;
   const hasPrompt = prompt !== undefined;
   const hasMessages = messages !== undefined;
+
   if (hasPrompt === hasMessages) {
     throw new TypeError("Exactly one of prompt or messages must be provided.");
   }
+
   if (hasPrompt) {
     if (typeof prompt !== "string" || prompt.trim().length === 0) {
       throw new TypeError("Completion prompt must be a non-empty string.");
     }
+
     return prompt;
   }
+
   if (!Array.isArray(messages)) {
     throw new TypeError("Completion messages must be an array of Message values.");
   }
+
   return messages as readonly MessageType[];
 }
 
@@ -444,16 +471,23 @@ function resultFromResponse<Output, RawResponse>(
     usage: response.usage,
     rawResponse: response.rawResponse,
   };
+
   if (response.finishReason !== undefined) result.finishReason = response.finishReason;
+
   if (response.providerFinishReason !== undefined) {
     result.providerFinishReason = response.providerFinishReason;
   }
+
   if (response.contextUsage !== undefined) result.contextUsage = response.contextUsage;
+
   if (response.messageId !== undefined) result.messageId = response.messageId;
+
   if (response.sources !== undefined) result.sources = [...response.sources];
+
   if (response.providerToolCalls !== undefined) {
     result.providerToolCalls = [...response.providerToolCalls];
   }
+
   return result;
 }
 
@@ -471,6 +505,7 @@ function parseCompletionOutput<Output, RawResponse>(
       providerFinishReason: response.providerFinishReason,
     });
   }
+
   if (response.finishReason === "length") {
     throw new CompletionStructuredOutputError({
       phase: "truncated",
@@ -480,9 +515,11 @@ function parseCompletionOutput<Output, RawResponse>(
       providerFinishReason: response.providerFinishReason,
     });
   }
+
   let json: unknown;
   try {
     json = JSON.parse(text);
+
     if (!isJsonValue(json)) {
       throw new TypeError("Structured completion output is not a JSON value.");
     }
@@ -509,6 +546,7 @@ function parseCompletionOutput<Output, RawResponse>(
       cause: error,
     });
   }
+
   if (!validation.success) {
     throw new CompletionStructuredOutputError({
       phase: "schema",
@@ -519,6 +557,7 @@ function parseCompletionOutput<Output, RawResponse>(
       cause: new Error(formatStandardSchemaIssues(validation.issues)),
     });
   }
+
   return validation.value;
 }
 

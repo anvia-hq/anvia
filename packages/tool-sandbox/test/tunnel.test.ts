@@ -85,6 +85,7 @@ const sendsBytes = (total: number) => (socket: net.Socket) => {
     while (left > 0) {
       const chunk = Buffer.alloc(Math.min(64 * 1024, left), 5);
       left -= chunk.byteLength;
+
       if (!socket.write(chunk)) return void socket.once("drain", pump);
     }
     socket.end();
@@ -98,6 +99,7 @@ async function timeTransfer(handle: TunnelHandle, total: number): Promise<number
   let bytes = 0;
   for await (const chunk of handle.output) {
     bytes += chunk.byteLength;
+
     if (bytes >= total) break;
   }
   expect(bytes).toBe(total);
@@ -111,6 +113,7 @@ async function readUntil(handle: TunnelHandle, enough: (text: string) => boolean
   const decoder = new TextDecoder();
   for await (const chunk of handle.output) {
     text += decoder.decode(chunk, { stream: true });
+
     if (enough(text)) return text;
   }
   throw new Error(`stream ended early: ${text}`);
@@ -210,6 +213,7 @@ describe("tunnel", () => {
             const chunk = Buffer.alloc(size, sent % 251);
             sent += size;
             expected.update(chunk);
+
             if (!socket.write(chunk)) {
               backpressured += 1;
               socket.once("drain", pump);
@@ -229,6 +233,7 @@ describe("tunnel", () => {
       for await (const chunk of handle.output) {
         received.update(chunk);
         bytes += chunk.byteLength;
+
         // A consumer that is slower than the service.
         if ((chunks += 1) % 4 === 0) await sleep(1);
       }
@@ -245,11 +250,13 @@ describe("tunnel", () => {
         const pump = () => {
           while (true) {
             const chunk = Buffer.alloc(64 * 1024, 1);
+
             if (!socket.write(chunk)) {
               accepted += chunk.byteLength;
               socket.once("drain", pump);
               return;
             }
+
             accepted += chunk.byteLength;
           }
         };
@@ -286,6 +293,7 @@ describe("tunnel", () => {
       let tunnelId = "";
       daemon.on("message", (data) => {
         const frame = JSON.parse(data.toString()) as { type: string; tunnelId?: string };
+
         if (frame.type === "tunnel.open") {
           tunnelId = frame.tunnelId ?? "";
           daemon.send(JSON.stringify({ type: "tunnel.opened", tunnelId }));
@@ -451,6 +459,7 @@ describe("tunnel", () => {
       let bytes = 0;
       for await (const chunk of handle.output) {
         bytes += chunk.byteLength;
+
         if (bytes >= 3 * 1024 * 1024) break;
       }
       expect(bytes).toBeGreaterThanOrEqual(3 * 1024 * 1024);
@@ -502,12 +511,15 @@ describe("tunnel", () => {
         let received = 0;
         socket.on("message", (data) => {
           const frame = JSON.parse(data.toString()) as Record<string, unknown>;
+
           if (frame.type === "tunnel.open") {
             const opened: Record<string, unknown> = {
               type: "tunnel.opened",
               tunnelId: frame.tunnelId,
             };
+
             if (confirms && typeof frame.profile === "string") opened.profile = frame.profile;
+
             socket.send(JSON.stringify(opened));
           } else if (frame.type === "tunnel.data") {
             received += Buffer.from(frame.data as string, "base64").byteLength;
@@ -680,14 +692,18 @@ describe("browser tunnel relay", () => {
           relayTicket(request) === "ok" ? { sandboxId, port: options.port } : null,
       },
     };
+
     if (options.daemon !== undefined) harnessOptions.daemon = options.daemon;
+
     const h = await harness(harnessOptions);
     return { h, url: `ws://127.0.0.1:${h.port}/tunnel` };
   }
 
   function browser(url: string, options: { protocols?: string[]; origin?: string | null } = {}) {
     const clientOptions: WebSocket.ClientOptions = {};
+
     if (options.origin !== null) clientOptions.origin = options.origin ?? origin;
+
     const socket = new WebSocket(url, options.protocols ?? ["anvia.tunnel.v1"], clientOptions);
     const state = {
       output: Buffer.alloc(0),

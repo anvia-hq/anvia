@@ -27,9 +27,11 @@ export function serializeUnknownError(error: unknown): JsonValue {
       name: error.name,
       message: error.message,
     };
+
     if (error.stack !== undefined) {
       serialized.stack = error.stack;
     }
+
     return serialized;
   }
 

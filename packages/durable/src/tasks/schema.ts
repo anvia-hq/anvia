@@ -78,11 +78,14 @@ const record = z
   .superRefine((task, context) => {
     if ((task.status === "waiting") !== (task.wait !== undefined))
       context.addIssue({ code: "custom", message: "Only waiting tasks have a wait." });
+
     const finishing = ["completing", "cancelling", "completed", "failed", "cancelled"].includes(
       task.status,
     );
+
     if (finishing !== (task.outcome !== undefined))
       context.addIssue({ code: "custom", message: "Finishing tasks must have an outcome." });
+
     if (
       ["completed", "failed", "cancelled"].includes(task.status) &&
       task.status !== task.outcome?.status

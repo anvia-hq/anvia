@@ -69,7 +69,9 @@ function Harness() {
 
 async function emitRun(events: unknown[]) {
   const stream = streams.at(-1);
+
   if (stream === undefined) throw new Error("Missing stream");
+
   const streamId = `stream_${streams.length}`;
   const frames = [
     {

@@ -17,10 +17,13 @@ export function parseStudioCompactionState(
   value: string | null,
 ): StoredStudioCompactionState | undefined {
   if (value === null) return undefined;
+
   const parsed: unknown = JSON.parse(value);
+
   if (typeof parsed !== "object" || parsed === null) {
     throw new Error("Stored Studio memory compaction state is invalid.");
   }
+
   const record = parsed as Record<string, unknown>;
   let summary: Message;
   try {
@@ -28,6 +31,7 @@ export function parseStudioCompactionState(
   } catch (cause) {
     throw new Error("Stored Studio memory compaction state summary is invalid.", { cause });
   }
+
   if (
     record.version !== 1 ||
     !Number.isSafeInteger(record.generation) ||
@@ -38,6 +42,7 @@ export function parseStudioCompactionState(
   ) {
     throw new Error("Stored Studio memory compaction state is invalid.");
   }
+
   return {
     version: 1,
     generation: record.generation as number,
@@ -51,6 +56,7 @@ export function projectStudioCompactionMessages(
   state: StoredStudioCompactionState | undefined,
 ): Message[] {
   if (state === undefined) return rows.map((row) => row.message);
+
   return [state.summary, ...activeStudioCompactionMessages(rows, state).map((row) => row.message)];
 }
 
@@ -59,10 +65,13 @@ export function activeStudioCompactionMessages(
   state: StoredStudioCompactionState | undefined,
 ): StudioCompactionMessageRow[] {
   if (state === undefined) return rows;
+
   const boundaryIndex = rows.findIndex((row) => row.position === state.summarizedThroughPosition);
+
   if (boundaryIndex === -1) {
     throw new Error("Stored Studio memory compaction state boundary is invalid.");
   }
+
   return rows.slice(boundaryIndex + 1);
 }
 

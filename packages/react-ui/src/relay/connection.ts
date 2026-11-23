@@ -100,6 +100,7 @@ export class RelayConnection {
   retry(): void {
     // Only a link that gave up needs this; otherwise an attempt is already under way.
     if (this.disposed || !this.finished) return;
+
     clearTimeout(this.timer);
     this.finished = false;
     this.attempt = 0;
@@ -129,6 +130,7 @@ export class RelayConnection {
 
   private async connect(): Promise<void> {
     if (this.disposed) return;
+
     const { label } = this.options.protocol;
     this.options.onStatus({ state: "connecting" });
     // A fatal error belongs to the attempt that hit it. Without this, one that was retried away
@@ -142,10 +144,12 @@ export class RelayConnection {
       // Fetching a ticket usually fails because the control plane is restarting, which is exactly
       // when reconnecting is wanted, so it backs off like a dropped socket.
       if (this.disposed) return;
+
       const detail = error instanceof Error ? `: ${error.message}` : "";
       this.scheduleReconnect(`Could not get a ${label} ticket${detail}`);
       return;
     }
+
     if (this.disposed) return;
 
     let socket: WebSocket;
@@ -156,10 +160,12 @@ export class RelayConnection {
       this.fail(error instanceof Error ? error.message : `Could not open the ${label}.`);
       return;
     }
+
     if (this.disposed) {
       socket.close(1000);
       return;
     }
+
     this.socketInUse = socket;
     socket.binaryType = "arraybuffer";
 
@@ -174,7 +180,9 @@ export class RelayConnection {
       ended: (info) => {
         this.finished = true;
         const status: RelayStatus = { state: "ended", message: info.message ?? "ended" };
+
         if (info.exitCode !== undefined) status.exitCode = info.exitCode;
+
         this.options.onStatus(status);
       },
       fatal: (message) => {
@@ -186,8 +194,11 @@ export class RelayConnection {
     socket.addEventListener("message", (event: MessageEvent) => protocol.message(event, session));
     socket.addEventListener("close", (event: CloseEvent) => {
       if (this.socketInUse === socket) this.socketInUse = undefined;
+
       protocol.close?.(event, session);
+
       if (this.disposed || this.finished) return;
+
       if (this.fatalMessage !== undefined) this.fail(this.fatalMessage);
       else this.scheduleReconnect();
     });
@@ -200,10 +211,12 @@ export class RelayConnection {
       maxAttempts: defaultMaxAttempts,
       ...this.options.reconnect,
     };
+
     if (this.attempt >= maxAttempts) {
       this.fail(reason ?? `The connection to the ${this.options.protocol.label} was lost.`);
       return;
     }
+
     const delay =
       Math.min(maxDelayMs, initialDelayMs * 2 ** this.attempt) * (0.8 + Math.random() * 0.4);
     this.attempt += 1;
@@ -222,21 +235,27 @@ export class RelayConnection {
 
   private resolveUrl(): string {
     const url = new URL(this.options.url, globalThis.location?.href);
+
     if (url.protocol === "http:") url.protocol = "ws:";
     else if (url.protocol === "https:") url.protocol = "wss:";
+
     if (this.options.sessionName !== undefined) {
       url.searchParams.set("session", this.options.sessionName);
     }
+
     return url.toString();
   }
 
   /** The subprotocols to offer: the relay's, plus the ticket when there is one. */
   private resolveProtocols(ticket: string | undefined): string[] {
     const { subprotocol, label } = this.options.protocol;
+
     if (ticket === undefined) return [subprotocol];
+
     if (!subprotocolToken.test(ticket)) {
       throw new Error(`The ${label} ticket must use only URL-safe characters (A-Z a-z 0-9 - _ .).`);
     }
+
     return [subprotocol, `${ticketSubprotocolPrefix}${ticket}`];
   }
 }

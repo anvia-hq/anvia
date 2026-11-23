@@ -123,6 +123,7 @@ describe("structural messages", () => {
     expect(parseMessage(message)).toEqual(message);
     const reasoning = message.content[0];
     expect(reasoning?.type).toBe("reasoning");
+
     if (reasoning?.type === "reasoning") {
       expect(reasoningDisplayText(reasoning)).toBe("Checked the plan.Visible.");
     }

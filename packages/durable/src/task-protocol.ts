@@ -91,6 +91,7 @@ export function parseTaskGraph(value: unknown): TaskGraphSnapshot {
     value,
   );
   const ids = new Set(graph.nodes.map((node) => node.id));
+
   if (
     ids.size !== graph.nodes.length ||
     !ids.has(graph.rootId) ||
@@ -98,5 +99,6 @@ export function parseTaskGraph(value: unknown): TaskGraphSnapshot {
     graph.edges.some((edge) => !ids.has(edge.source) || !ids.has(edge.target))
   )
     throw new TypeError("Invalid durable task graph identities.");
+
   return graph;
 }

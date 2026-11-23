@@ -97,8 +97,11 @@ class InMemoryStudioStore
       runs: [],
       logs: [],
     };
+
     if (input.title !== undefined) session.title = input.title;
+
     if (input.metadata !== undefined) session.metadata = input.metadata;
+
     this.sessions.set(input.id, session);
     return sessionSummary(session);
   }
@@ -110,14 +113,17 @@ class InMemoryStudioStore
 
   updateSessionMetadata(id: string, metadata: JsonObject | undefined): StudioSession | undefined {
     const session = this.sessions.get(id);
+
     if (session === undefined) {
       return undefined;
     }
+
     if (metadata === undefined) {
       delete session.metadata;
     } else {
       session.metadata = metadata;
     }
+
     session.updatedAt = new Date().toISOString();
     return materializeSession(session);
   }
@@ -128,17 +134,20 @@ class InMemoryStudioStore
 
   append(input: MemoryAppendOptions): Promise<void> {
     const session = this.sessions.get(input.scope.sessionId);
+
     if (session !== undefined) {
       session.messages.push(...cloneMessages(input.messages));
       session.storeRevision += 1;
       session.messageCount = session.messages.length;
       session.updatedAt = new Date().toISOString();
     }
+
     return Promise.resolve();
   }
 
   clear({ scope }: { scope: MemoryScope }): Promise<void> {
     const session = this.sessions.get(scope.sessionId);
+
     if (session !== undefined) {
       session.messages = [];
       delete session.compactionState;
@@ -147,6 +156,7 @@ class InMemoryStudioStore
       session.messageCount = 0;
       session.updatedAt = new Date().toISOString();
     }
+
     return Promise.resolve();
   }
 
@@ -166,17 +176,22 @@ class InMemoryStudioStore
     if (!Number.isSafeInteger(input.messageCount) || input.messageCount < 1) {
       throw new RangeError("messageCount must be a positive integer.");
     }
+
     const session = this.sessions.get(input.scope.sessionId);
+
     if (session === undefined || String(session.storeRevision) !== input.revision) {
       return Promise.resolve({ status: "conflict" });
     }
+
     const physicalPrefixCount =
       input.messageCount - (session.compactionState === undefined ? 0 : 1);
     const activeMessageCount =
       session.messages.length - (session.compactionState?.summarizedThroughPosition ?? -1) - 1;
+
     if (physicalPrefixCount < 0 || physicalPrefixCount > activeMessageCount) {
       return Promise.resolve({ status: "conflict" });
     }
+
     session.compactionState = {
       generation: (session.compactionState?.generation ?? 0) + 1,
       summary: structuredClone(input.replacement),
@@ -190,9 +205,11 @@ class InMemoryStudioStore
 
   saveSessionRunTranscript(input: StudioSessionRunTranscriptInput): StudioSession | undefined {
     const session = this.sessions.get(input.id);
+
     if (session === undefined) {
       return undefined;
     }
+
     const now = new Date().toISOString();
     const existingIndex = session.runs.findIndex((run) => run.runId === input.runId);
     const run = {
@@ -201,11 +218,13 @@ class InMemoryStudioStore
       createdAt: existingIndex === -1 ? now : (session.runs[existingIndex]?.createdAt ?? now),
       updatedAt: now,
     };
+
     if (existingIndex === -1) {
       session.runs.push(run);
     } else {
       session.runs[existingIndex] = run;
     }
+
     session.updatedAt = now;
     return materializeSession(session);
   }
@@ -223,12 +242,16 @@ class InMemoryStudioStore
       event: input.event,
       message: input.message,
     };
+
     if (input.runId !== undefined) entry.runId = input.runId;
+
     if (input.metadata !== undefined) entry.metadata = input.metadata;
+
     if (session !== undefined) {
       session.logs.push(entry);
       session.updatedAt = entry.timestamp;
     }
+
     return entry;
   }
 
@@ -282,8 +305,11 @@ class InMemoryStudioStore
       event: input.event,
       message: input.message,
     };
+
     if (input.runId !== undefined) entry.runId = input.runId;
+
     if (input.metadata !== undefined) entry.metadata = input.metadata;
+
     this.pipelineLogs.set(input.pipelineId, [...logs, entry]);
     return entry;
   }
@@ -302,11 +328,17 @@ class InMemoryStudioStore
       input: input.input,
       startedAt: input.startedAt,
     };
+
     if (input.output !== undefined) record.output = input.output;
+
     if (input.error !== undefined) record.error = input.error;
+
     if (input.metadata !== undefined) record.metadata = input.metadata;
+
     if (input.endedAt !== undefined) record.endedAt = input.endedAt;
+
     if (input.durationMs !== undefined) record.durationMs = input.durationMs;
+
     this.pipelineRuns.set(input.runId, record);
     return record;
   }
@@ -335,8 +367,11 @@ function sessionSummary(session: MemorySessionRecord): StudioSessionSummary {
     updatedAt: session.updatedAt,
     messageCount: session.messages.length,
   };
+
   if (session.title !== undefined) summary.title = session.title;
+
   if (session.metadata !== undefined) summary.metadata = session.metadata;
+
   return summary;
 }
 
@@ -369,6 +404,7 @@ function projectedMessages(
   state: StudioCompactionState | undefined,
 ): Message[] {
   if (state === undefined) return cloneMessages(messages);
+
   return [
     structuredClone(state.summary),
     ...cloneMessages(messages.slice(state.summarizedThroughPosition + 1)),
@@ -382,5 +418,6 @@ function serializeJsonError(error: unknown): JsonValue {
       message: error.message,
     };
   }
+
   return isJsonValue(error) ? error : String(error);
 }

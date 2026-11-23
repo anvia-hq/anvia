@@ -33,7 +33,9 @@ export class FakeRfb {
 
   static get last(): FakeRfb {
     const rfb = FakeRfb.instances.at(-1);
+
     if (rfb === undefined) throw new Error("No noVNC client was created.");
+
     return rfb;
   }
 }

@@ -222,8 +222,11 @@ describe("settled session history", () => {
       const agent = makeAgent(
         async (request) => {
           requests.push(request);
+
           if (requests.length === 2) return toolResponse();
+
           if (requests.length === 3) throw new Error("provider unavailable");
+
           return done();
         },
         [{ ...lookup(tool), requiresApproval: true }],
@@ -245,7 +248,9 @@ describe("settled session history", () => {
       const run = await runtime.submit(submission);
       await vi.waitFor(async () => expect((await run.snapshot()).run.status).toBe("waiting"));
       const outcome = (await run.snapshot()).run.outcome;
+
       if (outcome?.type !== "interaction") throw new Error("Expected approval");
+
       await run.respond(outcome.interaction.id, { type: "tool-approval", approved: true });
       await expect(run.result()).rejects.toMatchObject({ status: "failed" });
       await runtime.close();
@@ -269,11 +274,13 @@ describe("settled session history", () => {
           output: { type: "text", value: "approved result" },
         }),
       ]);
+
       if (compact) {
         expect(hasApprovedResult(compactor.mock.calls.at(-1)![0].messages)).toBe(true);
       } else {
         expect(hasApprovedResult(requests.at(-1)!.chatHistory)).toBe(true);
       }
+
       expect(tool).toHaveBeenCalledTimes(1);
     },
   );
@@ -289,7 +296,9 @@ describe("settled session history", () => {
     const run = await runtime.submit(submission);
     await vi.waitFor(async () => expect((await run.snapshot()).run.status).toBe("waiting"));
     const outcome = (await run.snapshot()).run.outcome;
+
     if (outcome?.type !== "interaction") throw new Error("Expected approval");
+
     await run.respond(outcome.interaction.id, { type: "tool-approval", approved: true });
     await expect(run.result()).rejects.toMatchObject({ status: "failed" });
     expect((await run.snapshot()).run.exhaustion?.reason).toBe("max_turns");
@@ -323,7 +332,9 @@ describe("settled session history", () => {
     const run = await runtime.submit(submission);
     await vi.waitFor(async () => expect((await run.snapshot()).run.status).toBe("waiting"));
     const outcome = (await run.snapshot()).run.outcome;
+
     if (outcome?.type !== "interaction") throw new Error("Expected approval");
+
     await runtime.respond(run.id, outcome.interaction.id, {
       type: "tool-approval",
       approved: true,

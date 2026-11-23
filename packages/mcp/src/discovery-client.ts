@@ -24,6 +24,7 @@ export class DiscoveryClient extends Client {
     limits: DiscoveryLimits,
   ) {
     super(implementation, options);
+
     if (
       limits !== undefined &&
       (!Number.isSafeInteger(limits.maxTools) ||
@@ -32,6 +33,7 @@ export class DiscoveryClient extends Client {
         limits.maxBytes <= 0)
     )
       throw new TypeError("MCP discovery limits must be positive integers");
+
     this.#limits = limits === undefined ? undefined : { ...limits };
   }
 
@@ -67,16 +69,21 @@ export class DiscoveryClient extends Client {
             request as { method: RequestMethod; params?: Record<string, unknown> },
             schemaOrOptions,
           );
+
     // The SDK's listTools auto-aggregates pages. Enforce limits on each validated
     // page before it reaches that aggregation/cache or Anvia's tool construction.
     if (this.#discovering && request.method === "tools/list" && this.#limits !== undefined) {
       const tools = (result as ListToolsResult).tools;
       this.#toolCount += tools.length;
+
       if (this.#toolCount > this.#limits.maxTools) throw new Error("MCP tool count limit exceeded");
+
       this.#toolBytes += Buffer.byteLength(JSON.stringify(tools), "utf8");
+
       if (this.#toolBytes > this.#limits.maxBytes)
         throw new Error("MCP tool catalog byte limit exceeded");
     }
+
     return result;
   }
 }

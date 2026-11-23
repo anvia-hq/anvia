@@ -22,16 +22,19 @@ export function filterToChromaWhere(filter: VectorFilter | undefined): unknown {
       if (filter.values.length === 0) {
         throw new Error(`Chroma "in" filter for ${filter.key} requires at least one value`);
       }
+
       return { [filter.key]: { $in: filter.values } };
     case "and":
     case "or": {
       if (filter.filters.length === 0) {
         throw new Error(`Chroma "${filter.type}" filter requires at least one child filter`);
       }
+
       // Chroma rejects $and/$or with fewer than two expressions.
       if (filter.filters.length === 1) {
         return filterToChromaWhere(filter.filters[0]);
       }
+
       const operator = filter.type === "and" ? "$and" : "$or";
       return { [operator]: filter.filters.map(filterToChromaWhere) };
     }

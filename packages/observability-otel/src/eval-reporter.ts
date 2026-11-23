@@ -34,6 +34,7 @@ export function createOtelEvalReporter<Input = unknown, Output = unknown, Expect
     },
     report(args) {
       if (args.outcome.outcome === "invalid" && !publishInvalid) return;
+
       const resolvedTraceRef =
         args.trace ??
         resolveEvalTraceRef({
@@ -46,20 +47,24 @@ export function createOtelEvalReporter<Input = unknown, Output = unknown, Expect
           ? resolvedTraceRef
           : undefined;
       const eventContext = contextFromTraceRef(traceRef);
+
       if (eventContext === undefined && onMissingTrace !== "emit") {
         if (onMissingTrace === "throw") {
           throw new Error(
             `OpenTelemetry eval reporter requires a valid traceId and observationId from observer ${JSON.stringify(traceObserver)}`,
           );
         }
+
         if (onMissingTrace === "warn") {
           console.warn(
             "[anvia/otel] eval reporter emitted no event because no valid trace context was found",
             { caseId: args.case.id, metric: args.metric.name },
           );
         }
+
         return;
       }
+
       emitEvaluation(logger, args, traceRef, eventContext, includeMetadata, {
         includePayloads,
         captureMaxBytes: options.captureMaxBytes,
@@ -103,47 +108,63 @@ function emitEvaluation<Input, Output, Score, Expected>(
     "anvia.eval.case.id": args.case.id,
     "anvia.eval.outcome": projection.outcome,
   };
+
   if (args.run !== undefined) {
     addRunAttributes(attributes, args.run, includeMetadata, transformMetadata);
   }
+
   if (projection.numericValue !== undefined) {
     attributes["gen_ai.evaluation.score.value"] = projection.numericValue;
   }
+
   if (projection.explanation !== undefined) {
     attributes["gen_ai.evaluation.explanation"] = projection.explanation;
   }
+
   if (traceRef?.responseId !== undefined) {
     attributes["gen_ai.response.id"] = traceRef.responseId;
   }
+
   if (traceRef?.observer !== undefined) {
     attributes["anvia.eval.target.observer"] = traceRef.observer;
   }
+
   if (traceRef?.traceId !== undefined) {
     attributes["anvia.eval.target.trace_id"] = traceRef.traceId;
   }
+
   if (traceRef?.observationId !== undefined) {
     attributes["anvia.eval.target.observation_id"] = traceRef.observationId;
   }
+
   if (args.metric.dataType !== undefined) {
     attributes["anvia.eval.data_type"] = args.metric.dataType;
   }
+
   attributes["anvia.eval.required"] = args.metric.required ?? true;
+
   if (args.metric.direction !== undefined) {
     attributes["anvia.eval.score.direction"] = args.metric.direction;
   }
+
   if (args.metric.threshold !== undefined) {
     attributes["anvia.eval.score.threshold"] = args.metric.threshold;
   }
+
   if (args.outcome.usage !== undefined) {
     attributes["anvia.eval.usage.input_tokens"] = args.outcome.usage.inputTokens;
     attributes["anvia.eval.usage.output_tokens"] = args.outcome.usage.outputTokens;
     attributes["anvia.eval.usage.total_tokens"] = args.outcome.usage.totalTokens;
   }
+
   const configId = args.metric.configId ?? args.metric.scoreConfigId;
+
   if (configId !== undefined) attributes["anvia.eval.config_id"] = configId;
+
   if (args.outcome.outcome === "invalid") {
     attributes["error.type"] = errorType(args.targetError);
   }
+
   if (includeMetadata) {
     addMetadata(attributes, "anvia.eval.case.metadata", args.case.metadata, transformMetadata);
     addMetadata(attributes, "anvia.eval.metric.metadata", args.metric.metadata, transformMetadata);
@@ -154,6 +175,7 @@ function emitEvaluation<Input, Output, Score, Expected>(
       transformMetadata,
     );
   }
+
   if (payloadOptions.includePayloads) {
     addEvaluationPayload(attributes, args, payloadOptions);
   }
@@ -164,7 +186,9 @@ function emitEvaluation<Input, Output, Score, Expected>(
     severityText: args.outcome.outcome === "invalid" ? "ERROR" : "INFO",
     attributes,
   };
+
   if (eventContext !== undefined) record.context = eventContext;
+
   logger.emit(record);
 }
 
@@ -178,11 +202,15 @@ function addEvaluationPayload<Input, Output, Score, Expected>(
   const payload: Record<string, unknown> = {
     input: transformInput(args.case.input),
   };
+
   if (args.case.expected !== undefined) payload.expected = transformInput(args.case.expected);
+
   if (args.case.context !== undefined) payload.context = transformInput(args.case.context);
+
   if (args.case.retrievalContext !== undefined) {
     payload.retrievalContext = transformInput(args.case.retrievalContext);
   }
+
   if (args.output !== undefined) payload.output = transformOutput(args.output);
 
   let serialized: string;
@@ -193,6 +221,7 @@ function addEvaluationPayload<Input, Output, Score, Expected>(
     return;
   }
   const maxBytes = options.captureMaxBytes;
+
   if (
     maxBytes !== undefined &&
     Number.isFinite(maxBytes) &&
@@ -202,6 +231,7 @@ function addEvaluationPayload<Input, Output, Score, Expected>(
     attributes["anvia.eval.payload.status"] = "size_limit";
     return;
   }
+
   attributes["anvia.eval.payload"] = serialized;
   attributes["anvia.eval.payload.status"] = "captured";
 }
@@ -249,24 +279,30 @@ function emitRunFinished(
     "anvia.eval.run.case_count": args.caseCount,
     "anvia.eval.run.metric_names": args.metricNames,
   };
+
   if (args.metrics !== undefined) {
     addTotals(attributes, "anvia.eval.run.metrics", args.metrics);
   }
+
   if (args.cases !== undefined) {
     addTotals(attributes, "anvia.eval.run.cases", args.cases);
   }
+
   if (args.usage !== undefined) {
     attributes["anvia.eval.run.usage.target_tokens"] = args.usage.target.totalTokens;
     attributes["anvia.eval.run.usage.evaluation_tokens"] = args.usage.evaluation.totalTokens;
     attributes["anvia.eval.run.usage.total_tokens"] = args.usage.total.totalTokens;
   }
+
   if (args.cost !== undefined) {
     attributes["anvia.eval.run.cost.currency"] = args.cost.currency;
     attributes["anvia.eval.run.cost.target"] = args.cost.target;
     attributes["anvia.eval.run.cost.evaluation"] = args.cost.evaluation;
     attributes["anvia.eval.run.cost.total"] = args.cost.total;
   }
+
   if (args.status === "failed") attributes["error.type"] = errorType(args.error);
+
   addRunAttributes(attributes, args.run, includeMetadata, transformMetadata);
   logger.emit({
     eventName: "anvia.eval.run.finished",
@@ -295,21 +331,27 @@ function addRunAttributes(
 ): void {
   attributes["anvia.eval.run.id"] = run.id;
   attributes["anvia.eval.run.started_at"] = run.startedAt;
+
   if (run.promptRef !== undefined) {
     attributes["anvia.eval.run.prompt.name"] = run.promptRef.name;
+
     if (run.promptRef.version !== undefined) {
       attributes["anvia.eval.run.prompt.version"] = String(run.promptRef.version);
     }
   }
+
   if (run.datasetName !== undefined) attributes["anvia.eval.run.dataset.name"] = run.datasetName;
+
   if (run.datasetVersion !== undefined) {
     attributes["anvia.eval.run.dataset.version"] = run.datasetVersion;
   }
+
   if (includeMetadata)
     addMetadata(attributes, "anvia.eval.run.metadata", run.metadata, transformMetadata);
 }
 
 function errorType(error: unknown): string {
   if (error instanceof Error && error.name.length > 0) return error.name;
+
   return "evaluation_invalid";
 }

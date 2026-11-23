@@ -5,6 +5,7 @@ import { json } from "./json.js";
 
 const userMessage = messageSchema.transform((message, context) => {
   if (message.role === "user") return message;
+
   context.addIssue({ code: "custom", message: "A durable prompt must be a user message." });
   return z.NEVER;
 });
@@ -21,7 +22,9 @@ export const promptSchema: z.ZodType<AgentPrompt> = z
 
 export function parsePrompt(value: unknown): AgentPrompt {
   const parsed = promptSchema.safeParse(json(value));
+
   if (!parsed.success) throw new TypeError("Invalid durable prompt.");
+
   return parsed.data;
 }
 

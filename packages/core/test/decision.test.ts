@@ -342,7 +342,9 @@ describe("decision batches", () => {
         maxActive = Math.max(maxActive, active);
         await new Promise<void>((resolve) => pending.set(state, resolve));
         active--;
+
         if (state === "bad") throw new Error("failed item");
+
         return {
           answers: { urgent: { type: "check", probability: 0.8 } } as DecisionAnswers<Q>,
           rawResponse: state,

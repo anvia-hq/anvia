@@ -6,8 +6,10 @@ import { capabilities, done } from "../helpers.js";
 import { FileMemoryStore } from "./file-memory-store.js";
 
 const [database, memoryPath, modelCalls, crashAt] = process.argv.slice(2);
+
 if (database === undefined || memoryPath === undefined || modelCalls === undefined)
   throw new Error("Missing fixture arguments");
+
 let id: string | undefined;
 const halt = async () => {
   process.send?.({ id });

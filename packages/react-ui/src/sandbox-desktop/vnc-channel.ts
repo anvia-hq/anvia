@@ -47,7 +47,9 @@ export class VncChannel {
 
   set onmessage(handler: ((event: { data: ArrayBuffer }) => void) | null) {
     this.handler = handler;
+
     if (handler === null) return;
+
     for (const data of this.backlog.splice(0)) handler({ data });
   }
 
@@ -58,6 +60,7 @@ export class VncChannel {
   /** noVNC is done with the connection. */
   close(): void {
     if (this.state !== OPEN) return;
+
     this.state = CLOSED;
     this.link.close();
   }
@@ -71,6 +74,7 @@ export class VncChannel {
   /** The relay closed the socket. */
   closed(event: { code: number; reason: string }): void {
     if (this.state === CLOSED) return;
+
     this.state = CLOSED;
     this.backlog = [];
     this.onclose?.(event);

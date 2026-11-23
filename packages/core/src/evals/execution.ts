@@ -24,8 +24,10 @@ export function createEvalCaseSignal(
   const controller = new AbortController();
   const abortFromParent = () =>
     controller.abort(parent === undefined ? new EvalAbortError() : abortReason(parent));
+
   if (parent?.aborted === true) abortFromParent();
   else parent?.addEventListener("abort", abortFromParent, { once: true });
+
   const timeout =
     timeoutMs === undefined
       ? undefined
@@ -34,6 +36,7 @@ export function createEvalCaseSignal(
     signal: controller.signal,
     dispose() {
       if (timeout !== undefined) clearTimeout(timeout);
+
       parent?.removeEventListener("abort", abortFromParent);
     },
   };
@@ -51,8 +54,11 @@ export function composeEvalSignals(
   const signals = [...new Set([caseSignal, requestSignal])].filter(
     (signal): signal is AbortSignal => signal !== undefined,
   );
+
   if (signals.length < 2) return { signal: signals[0], dispose() {} };
+
   const aborted = signals.find((signal) => signal.aborted);
+
   if (aborted !== undefined) return { signal: aborted, dispose() {} };
 
   const controller = new AbortController();
@@ -74,10 +80,12 @@ export function composeEvalSignals(
 
 export function abortable<T>(signal: AbortSignal | undefined, operation: Promise<T>): Promise<T> {
   if (signal === undefined) return operation;
+
   if (signal.aborted) {
     void operation.catch(() => {});
     return Promise.reject(abortReason(signal));
   }
+
   return new Promise<T>((resolve, reject) => {
     const onAbort = () => {
       signal.removeEventListener("abort", onAbort);
@@ -106,6 +114,7 @@ export function createConcurrencyLimiter(concurrency: number): ConcurrencyLimite
     if (active >= concurrency) {
       await new Promise<void>((resolve) => waiting.push(resolve));
     }
+
     active += 1;
     try {
       return await operation();

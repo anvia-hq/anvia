@@ -34,6 +34,7 @@ export class GrokCompletionModel<
       controls,
     });
     this.capabilities = { ...this.delegate.capabilities };
+
     if (api === "responses") this.capabilities = { ...this.capabilities, providerTools: true };
   }
 
@@ -66,6 +67,7 @@ export class GrokCompletionModel<
 
 function assertGrokProviderTools(request: CompletionRequest): void {
   const mismatched = request.providerTools?.find((tool) => tool.provider !== "grok");
+
   if (mismatched !== undefined) {
     throw new TypeError(
       `Grok completion cannot use provider tool "${mismatched.name}" from "${mismatched.provider}".`,

@@ -107,13 +107,16 @@ export class MistralCompletionModel implements StreamingCompletionModel<
       sawPrimaryChoice ||= metadata.primaryChoice !== undefined;
 
       const hasSemanticProgress = hasRawMistralSemanticProgress(metadata.primaryChoice);
+
       if (providerFinishReason !== undefined && hasSemanticProgress) {
         throw invalidMistralToolCall(undefined, errorUsage);
       }
+
       if (chunkFinishReason !== undefined) {
         if (providerFinishReason !== undefined && providerFinishReason !== chunkFinishReason) {
           throw invalidMistralToolCall(undefined, errorUsage);
         }
+
         providerFinishReason = chunkFinishReason;
       }
 
@@ -123,27 +126,33 @@ export class MistralCompletionModel implements StreamingCompletionModel<
           finalResponse = event.response;
           continue;
         }
+
         if (event.type === "tool_call_delta" || event.type === "tool_call") {
           sawToolProgress = true;
         }
+
         yield event;
       }
     }
+
     if (!sawPrimaryChoice) {
       if (sawAnyChoice) {
         throw invalidMistralToolCall(undefined, finalResponse?.usage);
       }
+
       throw new CompletionProviderOutputError({
         kind: "incomplete-stream",
         usage: finalResponse?.usage,
       });
     }
+
     if (sawToolProgress && providerFinishReason === undefined) {
       throw new CompletionProviderOutputError({
         kind: "incomplete-tool-call",
         usage: finalResponse?.usage,
       });
     }
+
     if (finalResponse === undefined && providerFinishReason !== undefined) {
       finalResponse = {
         choice: [],
@@ -151,11 +160,14 @@ export class MistralCompletionModel implements StreamingCompletionModel<
         rawResponse: lastChunk,
       };
     }
+
     if (finalResponse !== undefined) {
       applyMistralFinishReason(finalResponse, providerFinishReason);
+
       if (sawToolProgress) {
         assertSafeToolCallFinish(1, finalResponse.finishReason, finalResponse.usage);
       }
+
       yield {
         type: "final",
         response: withContextUsage(finalResponse, this.modelInfo()),
@@ -168,6 +180,7 @@ function mistralCompletionEventData(event: unknown): Record<string, unknown> {
   if (!isPlainObject(event) || !isPlainObject(event.data)) {
     throw invalidMistralToolCall(undefined);
   }
+
   return event.data;
 }
 
@@ -181,6 +194,7 @@ export function toMistralChatParams(
   ) {
     throw new TypeError("Mistral providerOptions must be a JSON object.");
   }
+
   const providerOptions = request.providerOptions ?? {};
   const params: MistralChatParams = {
     ...providerOptions,
@@ -255,6 +269,7 @@ function toolChoiceSummary(toolChoice: ToolChoice | undefined): JsonValue | unde
   if (toolChoice === undefined || typeof toolChoice === "string") {
     return toolChoice;
   }
+
   return { type: toolChoice.type, name: toolChoice.name };
 }
 
@@ -264,6 +279,7 @@ function compactJsonObject(values: Record<string, unknown>): JsonObject {
       if (!isJsonValue(value)) {
         return [];
       }
+
       return [[key, value]];
     }),
   ) as JsonObject;
@@ -277,6 +293,7 @@ export function fromMistralChatResponse(response: unknown): CompletionResponse {
   if (!isPlainObject(response)) {
     throw new CompletionProviderOutputError({ kind: "invalid-tool-call" });
   }
+
   const raw = response;
   const usage = usageFromMistral(raw.usage);
   const primaryChoice = primaryMistralChoice(raw.choices, usage);
@@ -287,6 +304,7 @@ export function fromMistralChatResponse(response: unknown): CompletionResponse {
   const choice: AssistantContentPart[] = [];
 
   const text = stringContent(message.content);
+
   if (text !== undefined && text.length > 0) {
     choice.push({ type: "text", text });
   }
@@ -298,13 +316,16 @@ export function fromMistralChatResponse(response: unknown): CompletionResponse {
     if (!isPlainObject(toolCall.function)) {
       throw invalidMistralToolCall(undefined, usage);
     }
+
     assertMistralFunctionToolCall(toolCall, usage);
     const fn = toolCall.function;
     const id =
       optionalMistralToolCallId(toolCall.id, usage) ?? deterministicToolCallId(raw.id, index);
+
     if (!isNonblankString(id) || !isNonblankString(fn.name)) {
       throw invalidMistralToolCall(isNonblankString(id) ? id : undefined, usage);
     }
+
     const args = parseToolArgumentsValue(id, fn.arguments, usage);
     choice.push({
       type: "tool-call",
@@ -336,13 +357,16 @@ export function fromMistralChatStreamChunk(chunk: unknown): CompletionModelStrea
 
   const events: CompletionModelStreamEvent[] = [];
   const usage = isPlainObject(chunk.usage) ? usageFromMistral(chunk.usage) : undefined;
+
   if (chunk.choices === undefined) {
     throw invalidMistralToolCall(undefined, usage);
   }
+
   const choice = primaryMistralChoice(chunk.choices, usage, { allowMissingPrimary: true });
   const providerFinishReason = finishReasonFromChoice(choice);
   const finishReason =
     providerFinishReason === undefined ? undefined : mistralFinishReason(providerFinishReason);
+
   if (hasRawMistralToolCalls(choice) && finishReason !== undefined) {
     assertSafeToolCallFinish(1, finishReason, usage);
   }
@@ -350,9 +374,11 @@ export function fromMistralChatStreamChunk(chunk: unknown): CompletionModelStrea
   if (choice?.delta !== undefined && !isPlainObject(choice.delta)) {
     throw invalidMistralToolCall(undefined, usage);
   }
+
   if (choice !== undefined && isPlainObject(choice.delta)) {
     const delta = choice.delta;
     const content = stringContent(delta.content);
+
     if (content !== undefined && content.length > 0) {
       events.push({ type: "text_delta", delta: content });
     }
@@ -361,6 +387,7 @@ export function fromMistralChatStreamChunk(chunk: unknown): CompletionModelStrea
       if (!isPlainObject(toolCall.function)) {
         throw invalidMistralToolCall(undefined, usage);
       }
+
       assertMistralFunctionToolCall(toolCall, usage);
       const fn = toolCall.function;
       const index = mistralToolCallIndex(toolCall.index, usage);
@@ -388,9 +415,11 @@ export function fromMistralChatStreamChunk(chunk: unknown): CompletionModelStrea
       usage: usageFromMistral(chunk.usage),
       rawResponse: chunk,
     };
+
     if (typeof chunk.id === "string") {
       response.messageId = chunk.id;
     }
+
     applyMistralFinishReason(response, providerFinishReason);
     events.push({ type: "final", response });
   }
@@ -408,10 +437,13 @@ function mistralStreamChunkMetadata(value: unknown): MistralStreamChunkMetadata 
   if (!isPlainObject(value)) {
     throw invalidMistralToolCall(undefined);
   }
+
   const usage = isPlainObject(value.usage) ? usageFromMistral(value.usage) : undefined;
+
   if (value.choices === undefined) {
     throw invalidMistralToolCall(undefined, usage);
   }
+
   const primaryChoice = primaryMistralChoice(value.choices, usage, {
     allowMissingPrimary: true,
   });
@@ -424,13 +456,16 @@ function mistralStreamChunkMetadata(value: unknown): MistralStreamChunkMetadata 
 
 function hasRawMistralSemanticProgress(choice: Record<string, unknown> | undefined): boolean {
   if (choice?.delta === undefined) return false;
+
   if (!isPlainObject(choice.delta)) return true;
+
   const content = stringContent(choice.delta.content);
   return (content !== undefined && content.length > 0) || hasRawMistralToolCalls(choice);
 }
 
 function hasRawMistralToolCalls(choice: Record<string, unknown> | undefined): boolean {
   if (!isPlainObject(choice?.delta)) return false;
+
   const raw = choice.delta.toolCalls ?? choice.delta.tool_calls;
   return hasRawToolCallValue(raw);
 }
@@ -441,15 +476,20 @@ function hasRawToolCallValue(value: unknown): boolean {
 
 function applyMistralFinishReason(response: CompletionResponse, value: string | undefined): void {
   if (value === undefined) return;
+
   response.finishReason = mistralFinishReason(value);
   response.providerFinishReason = value;
 }
 
 function mistralFinishReason(value: string): CompletionFinishReason {
   if (value === "stop") return "stop";
+
   if (value === "length" || value === "model_length") return "length";
+
   if (value === "content_filter" || value === "safety") return "content-filter";
+
   if (value === "tool_calls" || value === "function_call") return "tool-calls";
+
   return "other";
 }
 
@@ -480,6 +520,7 @@ function messageToMistralMessages(message: MessageType): MistralChatMessage[] {
     if (typeof message.content === "string") {
       return [{ role: "user", content: message.content }];
     }
+
     const contentParts: string[] = [];
 
     for (const content of message.content) {
@@ -487,6 +528,7 @@ function messageToMistralMessages(message: MessageType): MistralChatMessage[] {
     }
 
     const text = contentParts.join("\n");
+
     if (text.length > 0) {
       return [{ role: "user", content: text }];
     }
@@ -501,6 +543,7 @@ function messageToMistralMessages(message: MessageType): MistralChatMessage[] {
           "Anvia interaction responses must be resolved by Agent before provider calls.",
         );
       }
+
       return toolContentToMistralMessage(content);
     });
   }
@@ -508,9 +551,11 @@ function messageToMistralMessages(message: MessageType): MistralChatMessage[] {
   if (typeof message.content === "string") {
     return [{ role: "assistant", content: message.content }];
   }
+
   const text = message.content
     .flatMap((content) => (content.type === "text" ? [content.text] : []))
     .join("\n");
+
   if (message.content.some((content) => content.type === "image" || content.type === "file")) {
     throw new Error("Mistral chat does not support image or file content in assistant history");
   }
@@ -529,9 +574,11 @@ function messageToMistralMessages(message: MessageType): MistralChatMessage[] {
   const chatMessage: MistralChatMessage = {
     role: "assistant",
   };
+
   if (text.length > 0) {
     chatMessage.content = text;
   }
+
   if (toolCalls.length > 0) {
     chatMessage.toolCalls = toolCalls;
   }
@@ -574,15 +621,19 @@ function documentToMistralText(document: FilePart): string[] {
 
 function toolResultToMistralText(content: ToolResultPart): string {
   const output = content.output;
+
   if (output.type === "text" || output.type === "error-text") {
     return output.value;
   }
+
   if (output.type === "json" || output.type === "error-json") {
     return JSON.stringify(output.value);
   }
+
   if (output.type === "execution-denied") {
     return output.reason ?? "Tool execution was denied.";
   }
+
   return output.value
     .map((item) => (item.type === "text" ? item.text : `[file:${item.mediaType}]`))
     .join("\n");
@@ -618,10 +669,13 @@ function toolChoiceToMistral(toolChoice: ToolChoice): unknown {
 
 function toolCallsFrom(message: Record<string, unknown>, usage?: Usage): Record<string, unknown>[] {
   const raw = message.toolCalls ?? message.tool_calls;
+
   if (raw === undefined) return [];
+
   if (!Array.isArray(raw) || raw.some((toolCall) => !isPlainObject(toolCall))) {
     throw invalidMistralToolCall(undefined, usage);
   }
+
   return raw;
 }
 
@@ -636,6 +690,7 @@ function stringContent(content: unknown): string | undefined {
         if (!isPlainObject(part)) {
           return [];
         }
+
         return typeof part.text === "string" ? [part.text] : [];
       })
       .join("");
@@ -649,6 +704,7 @@ function parseToolArgumentsValue(toolCallId: string, args: unknown, usage: Usage
   if (typeof args === "string") {
     return parseToolArguments(toolCallId, args, usage);
   }
+
   if (!isPlainObject(args) || !isJsonValue(args)) {
     throw new CompletionProviderOutputError({
       kind: "invalid-tool-arguments",
@@ -656,6 +712,7 @@ function parseToolArgumentsValue(toolCallId: string, args: unknown, usage: Usage
       usage,
     });
   }
+
   return args;
 }
 
@@ -670,13 +727,17 @@ function primaryMistralChoice(
   options: Readonly<{ allowMissingPrimary?: boolean }> = {},
 ): Record<string, unknown> | undefined {
   if (value === undefined) return undefined;
+
   if (!Array.isArray(value)) {
     throw invalidMistralToolCall(undefined, usage);
   }
+
   const choices = value.filter(isPlainObject);
+
   if (choices.length !== value.length) {
     throw invalidMistralToolCall(undefined, usage);
   }
+
   if (
     choices.some(
       (choice) =>
@@ -686,19 +747,26 @@ function primaryMistralChoice(
   ) {
     throw invalidMistralToolCall(undefined, usage);
   }
+
   const indexed = choices.filter((choice) => choice.index === 0);
+
   if (indexed.length === 1) return indexed[0];
+
   if (indexed.length > 1) throw invalidMistralToolCall(undefined, usage);
+
   if (choices.length === 0) return undefined;
+
   if (choices.length === 1 && (choices[0]?.index === undefined || choices[0]?.index === 0)) {
     return choices[0];
   }
+
   if (
     options.allowMissingPrimary === true &&
     choices.every((choice) => choice.index !== undefined)
   ) {
     return undefined;
   }
+
   throw invalidMistralToolCall(undefined, usage);
 }
 
@@ -712,9 +780,11 @@ function assertSafeToolCallFinish(
   usage?: Usage,
 ): void {
   if (toolCallCount === 0) return;
+
   if (finishReason === undefined) {
     throw new CompletionProviderOutputError({ kind: "incomplete-tool-call", usage });
   }
+
   if (finishReason === "length") {
     throw new CompletionProviderOutputError({
       kind: "truncated-tool-call",
@@ -722,6 +792,7 @@ function assertSafeToolCallFinish(
       usage,
     });
   }
+
   if (finishReason === "content-filter") {
     throw new CompletionProviderOutputError({
       kind: "filtered-tool-call",
@@ -729,6 +800,7 @@ function assertSafeToolCallFinish(
       usage,
     });
   }
+
   if (finishReason === "other") {
     throw new CompletionProviderOutputError({
       kind: "invalid-tool-call",
@@ -742,6 +814,7 @@ function mistralToolCallIndex(value: unknown, usage?: Usage): number {
   if (!Number.isSafeInteger(value) || (value as number) < 0) {
     throw invalidMistralToolCall(undefined, usage);
   }
+
   return value as number;
 }
 
@@ -753,13 +826,17 @@ function assertMistralFunctionToolCall(toolCall: Record<string, unknown>, usage?
 
 function optionalMistralToolCallId(value: unknown, usage?: Usage): string | undefined {
   if (value === undefined || value === null || value === "null") return undefined;
+
   if (!isNonblankString(value)) throw invalidMistralToolCall(undefined, usage);
+
   return value;
 }
 
 function optionalMistralToolCallName(value: unknown, usage?: Usage): string | undefined {
   if (value === undefined || value === "") return undefined;
+
   if (!isNonblankString(value)) throw invalidMistralToolCall(undefined, usage);
+
   return value;
 }
 
@@ -774,7 +851,9 @@ function mistralStreamToolArguments(
   usage?: Usage,
 ): MistralStreamToolArguments {
   if (value === undefined) return {};
+
   if (typeof value === "string") return { text: value };
+
   if (!isPlainObject(value) || !isJsonValue(value)) {
     throw new CompletionProviderOutputError({
       kind: "invalid-tool-arguments",
@@ -782,6 +861,7 @@ function mistralStreamToolArguments(
       usage,
     });
   }
+
   return { text: JSON.stringify(value), mode: "replace" };
 }
 
@@ -810,10 +890,15 @@ function toolCallDelta(
   },
 ): CompletionModelStreamEvent {
   const event: CompletionModelStreamEvent = { type: "tool_call_delta", id };
+
   if (values.callId !== undefined) event.callId = values.callId;
+
   if (values.name !== undefined) event.name = values.name;
+
   if (values.argumentsDelta !== undefined) event.argumentsDelta = values.argumentsDelta;
+
   if (values.argumentsMode !== undefined) event.argumentsMode = values.argumentsMode;
+
   return event;
 }
 

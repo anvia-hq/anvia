@@ -437,7 +437,9 @@ describe("generateCompletion", () => {
     expect(immutableProviderOptions.stop).toEqual(["END"]);
     const includeLimit = false;
     const omittedOptionalProperty: JsonObject = {};
+
     if (includeLimit) omittedOptionalProperty.limit = 10;
+
     expect(omittedOptionalProperty).toEqual({});
 
     for (const providerOptions of [
@@ -532,7 +534,9 @@ describe("generateCompletion", () => {
     const final = events.at(-1);
 
     expect(final?.type).toBe("final");
+
     if (final?.type !== "final") throw new Error("Expected a final event.");
+
     expectTypeOf(final.result.output).toEqualTypeOf<{ title: string }>();
     expect(final.result).toMatchObject({
       output: { title: "Typed" },

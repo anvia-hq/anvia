@@ -9,6 +9,7 @@ export function parseVectors(value: unknown, expectedLength: number): number[][]
     if (!Array.isArray(vector) || !vector.every((item) => typeof item === "number")) {
       throw new Error(`Transformers embedding model returned an invalid vector at index ${index}`);
     }
+
     return vector;
   });
 }

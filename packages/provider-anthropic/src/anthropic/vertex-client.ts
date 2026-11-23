@@ -54,14 +54,18 @@ export class AnthropicVertexClient {
 
   constructor(options: AnthropicVertexClientOptions) {
     const { client, ...clientOptions } = options;
+
     if (client !== undefined) {
       const conflict = Object.keys(clientOptions)[0];
+
       if (conflict !== undefined) {
         throw new TypeError(`AnthropicVertexClient cannot combine client with ${conflict}.`);
       }
+
       this.sdk = client;
       return;
     }
+
     this.sdk = new AnthropicVertex({ ...clientOptions, maxRetries: 0 });
   }
 
@@ -95,5 +99,6 @@ function requireModelId<ModelId extends string>(modelId: ModelId): ModelId {
   if (modelId.trim().length === 0) {
     throw new TypeError("modelId must be a non-empty string");
   }
+
   return modelId;
 }

@@ -44,6 +44,7 @@ class TransformersEmbeddingModel implements EmbeddingModel {
     let output: TransformersTensor | undefined;
     try {
       throwIfAborted(options?.abortSignal);
+
       if (texts.length === 0) {
         return [];
       }
@@ -82,11 +83,13 @@ class OwnedTransformersEmbeddingModel
     if (this.closed) {
       throw new Error("Transformers embedding model is closed.");
     }
+
     this.activeCalls += 1;
   }
 
   protected override endCall(): void {
     this.activeCalls -= 1;
+
     if (this.activeCalls === 0) {
       for (const resolve of this.idleWaiters) resolve();
       this.idleWaiters.clear();
@@ -97,11 +100,13 @@ class OwnedTransformersEmbeddingModel
     if (this.closePromise !== undefined) {
       return this.closePromise;
     }
+
     this.closed = true;
     this.closePromise = (async () => {
       if (this.activeCalls > 0) {
         await new Promise<void>((resolve) => this.idleWaiters.add(resolve));
       }
+
       await this.runtime.dispose();
     })();
     return this.closePromise;
@@ -119,13 +124,19 @@ export async function loadTransformersEmbeddingModel(
   let runtime: TransformersFeatureExtractionPipeline | undefined;
   try {
     const runtimeOptions: Record<string, unknown> = {};
+
     if (options.device !== undefined) runtimeOptions.device = options.device;
+
     if (options.dtype !== undefined) runtimeOptions.dtype = options.dtype;
+
     if (options.cacheDir !== undefined) runtimeOptions.cache_dir = options.cacheDir;
+
     if (options.localFilesOnly !== undefined) {
       runtimeOptions.local_files_only = options.localFilesOnly;
     }
+
     if (options.revision !== undefined) runtimeOptions.revision = options.revision;
+
     runtime = (await transformersPipeline(
       "feature-extraction",
       normalized.modelId,
@@ -162,6 +173,7 @@ function requireModelId(modelId: string): string {
   if (modelId.trim().length === 0) {
     throw new TypeError("modelId must be a non-empty string");
   }
+
   return modelId;
 }
 
@@ -169,6 +181,7 @@ function positiveSafeInteger(value: number, name: string): number {
   if (!Number.isSafeInteger(value) || value <= 0) {
     throw new TypeError(`${name} must be a positive safe integer`);
   }
+
   return value;
 }
 

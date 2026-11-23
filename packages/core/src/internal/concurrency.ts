@@ -6,6 +6,7 @@ export async function mapWithConcurrency<Input, Output>(
   if (!Number.isSafeInteger(concurrency) || concurrency <= 0) {
     throw new RangeError("concurrency must be a positive safe integer.");
   }
+
   const limit = concurrency;
   const results = Array<Output>(inputs.length);
   let nextIndex = 0;
@@ -24,8 +25,10 @@ export async function mapWithConcurrency<Input, Output>(
   }
 
   await Promise.all(Array.from({ length: Math.min(limit, inputs.length) }, () => worker()));
+
   if (firstFailure !== undefined) {
     throw firstFailure.error;
   }
+
   return results;
 }

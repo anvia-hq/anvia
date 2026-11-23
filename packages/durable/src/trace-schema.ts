@@ -25,7 +25,10 @@ export const traceOptionsSchema = z
 
 export function parseTraceOptions(value: unknown): DurableTraceOptions | undefined {
   if (value === undefined) return undefined;
+
   const result = traceOptionsSchema.safeParse(value);
+
   if (!result.success) throw new TypeError("Invalid durable trace options.");
+
   return result.data;
 }

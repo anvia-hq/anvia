@@ -51,6 +51,7 @@ export function assistantResponseMetricsByEntryId(props: {
     if ((entry.kind === "message" && entry.role === "user") || terminalRunIndex < 0) {
       terminalRunIndex += 1;
     }
+
     if (!finalEntryIds.has(entry.entryId) || !isTerminalAssistantMessage(entry)) {
       continue;
     }
@@ -61,6 +62,7 @@ export function assistantResponseMetricsByEntryId(props: {
         ? fallbackMetrics
         : (traceMetrics.get(entry.traceId) ?? fallbackMetrics);
     const metrics = mergeEntryDuration(entry.durationMs, observedMetrics);
+
     if (metrics !== undefined) {
       byEntryId.set(entry.entryId, metrics);
     }
@@ -85,9 +87,13 @@ function metricsFromTrace(trace: StudioTraceSummary): AssistantResponseMetrics |
   const usage = usageMetrics(trace.usage);
   const context = contextBreakdownView(trace.context);
   const metrics: AssistantResponseMetrics = {};
+
   if (durationMs !== undefined) metrics.durationMs = durationMs;
+
   if (usage !== undefined) metrics.usage = usage;
+
   if (context !== undefined) metrics.context = context;
+
   return definedMetrics(metrics);
 }
 
@@ -95,14 +101,19 @@ function metricsFromTerminalRunLog(
   log: StudioSessionLogEntry,
 ): AssistantResponseMetrics | undefined {
   const metadata = log.metadata;
+
   if (!isRecord(metadata)) {
     return undefined;
   }
+
   const durationMs = nonnegativeNumericValue(metadata.durationMs);
   const usage = usageMetrics(metadata.usage);
   const metrics: AssistantResponseMetrics = {};
+
   if (durationMs !== undefined) metrics.durationMs = durationMs;
+
   if (usage !== undefined) metrics.usage = usage;
+
   return definedMetrics(metrics);
 }
 
@@ -119,15 +130,22 @@ function usageMetrics(value: unknown): ResponseUsageMetrics | undefined {
       ? undefined
       : inputTokens + outputTokens);
   const usage: ResponseUsageMetrics = {};
+
   if (inputTokens !== undefined) usage.inputTokens = inputTokens;
+
   if (outputTokens !== undefined) usage.outputTokens = outputTokens;
+
   if (totalTokens !== undefined) usage.totalTokens = totalTokens;
+
   const cachedInputTokens = numericValue(value.cachedInputTokens);
   const cacheCreationInputTokens = numericValue(value.cacheCreationInputTokens);
+
   if (cachedInputTokens !== undefined) usage.cachedInputTokens = cachedInputTokens;
+
   if (cacheCreationInputTokens !== undefined) {
     usage.cacheCreationInputTokens = cacheCreationInputTokens;
   }
+
   return Object.keys(usage).length === 0 ? undefined : usage;
 }
 
@@ -144,9 +162,11 @@ function mergeEntryDuration(
   metrics: AssistantResponseMetrics | undefined,
 ): AssistantResponseMetrics | undefined {
   const persistedDurationMs = nonnegativeNumericValue(durationMs);
+
   if (persistedDurationMs === undefined) {
     return metrics;
   }
+
   return {
     ...metrics,
     durationMs: persistedDurationMs,

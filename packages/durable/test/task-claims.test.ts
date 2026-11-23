@@ -100,6 +100,7 @@ describe("custom tasks with shared workers", () => {
               policy: "allSettled",
             },
           };
+
         return { status: "completed", output: (await ctx.children())[0]!.status };
       },
     });
@@ -145,6 +146,7 @@ describe("custom tasks with shared workers", () => {
             wait: { type: "children", ids, policy: "allSettled" },
           };
         }
+
         const children = await ctx.children();
         return {
           status: "completed",
@@ -322,11 +324,13 @@ describe("custom tasks with shared workers", () => {
         initial: () => null,
         run: async (ctx) => {
           started++;
+
           if (blocked)
             await new Promise<void>((resolve, reject) => {
               void gate.then(resolve);
               ctx.signal.addEventListener("abort", () => reject(ctx.signal.reason));
             });
+
           return { status: "completed", output: blocked ? "first" : "second" };
         },
       });

@@ -4,6 +4,7 @@ export function isMcpTool(tool: unknown): tool is McpTool {
   if (typeof tool !== "object" || tool === null || !("mcp" in tool)) {
     return false;
   }
+
   const mcp = tool.mcp;
   return (
     typeof mcp === "object" &&

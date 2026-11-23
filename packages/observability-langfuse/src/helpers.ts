@@ -22,15 +22,20 @@ export function modelParameters(
   request: AgentGenerationStartArgs["request"],
 ): Record<string, string | number> {
   const params: Record<string, string | number> = {};
+
   if (request.temperature !== undefined) params.temperature = request.temperature;
+
   if (request.maxTokens !== undefined) params.maxTokens = request.maxTokens;
+
   if (request.controls?.reasoningEffort !== undefined) {
     params.reasoningEffort = request.controls.reasoningEffort;
   }
+
   if (request.toolChoice !== undefined) {
     params.toolChoice =
       typeof request.toolChoice === "string" ? request.toolChoice : request.toolChoice.name;
   }
+
   return params;
 }
 
@@ -40,6 +45,7 @@ export function usageDetails(
   if (usage.details !== undefined && Object.keys(usage.details).length > 0) {
     return { ...usage.details };
   }
+
   return {
     input: usage.inputTokens,
     output: usage.outputTokens,
@@ -55,10 +61,12 @@ export function usageDetailsFromRecord(usage: Record<string, unknown>): Record<s
           typeof entry[1] === "number" && Number.isFinite(entry[1]) && entry[1] >= 0,
       ),
     );
+
     if (Object.keys(details).length > 0) {
       return details;
     }
   }
+
   return {
     input: numberValue(usage.inputTokens) ?? 0,
     output: numberValue(usage.outputTokens) ?? 0,

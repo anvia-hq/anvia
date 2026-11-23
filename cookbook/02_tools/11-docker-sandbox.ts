@@ -25,7 +25,9 @@ const tools = createDockerSandboxTools({
 });
 const callTool = (name: string, args: unknown) => {
   const tool = tools.find((candidate) => candidate.name === name);
+
   if (tool === undefined) throw new Error(`Missing sandbox tool: ${name}`);
+
   return tool.call(args);
 };
 

@@ -172,6 +172,7 @@ it("keeps the prepared projection through approval continuations", async () => {
           !hasToolResult(request)
         )
           return toolResponse();
+
         return done();
       },
       [approval],
@@ -184,7 +185,9 @@ it("keeps the prepared projection through approval continuations", async () => {
   const run = await submit(runtime, "approval");
   await vi.waitFor(async () => expect((await run.snapshot()).run.status).toBe("waiting"));
   const outcome = (await run.snapshot()).run.outcome;
+
   if (outcome?.type !== "interaction") throw new Error("Expected approval");
+
   await run.respond(outcome.interaction.id, { type: "tool-approval", approved: true });
   await run.result();
   expect(compactor).toHaveBeenCalledTimes(1);
@@ -222,7 +225,9 @@ it.each(["empty", "throw", "usage"])(
     let fail = true;
     const compactor = vi.fn<MemoryCompactor>(async () => {
       if (!fail) return { summary: "Recovered" };
+
       if (failure === "throw") throw new Error("Summary provider failed");
+
       return {
         summary: failure === "empty" ? "  " : "Summary",
         usage: failure === "usage" ? { ...summaryUsage, totalTokens: -1 } : summaryUsage,
@@ -454,6 +459,7 @@ it("rolls back the summary, usage, event and prepared input together on a storag
           ...tx,
           async putRun(run) {
             if (run.contextCheckpoint !== undefined) throw new Error("Injected write failure");
+
             await tx.putRun(run);
           },
         }),

@@ -80,27 +80,33 @@ class SkillRegistry {
 
   get(skillName: string): Skill {
     const skill = this.skills.get(skillName);
+
     if (skill === undefined) {
       throw new Error(`Skill not found: ${skillName}`);
     }
+
     return skill;
   }
 
   async readReference(skillName: string, referencePath: string): Promise<string> {
     const skill = this.get(skillName);
     const path = this.resolveContainedPath(skill, "references", referencePath);
+
     if (!skill.references.includes(referencePath)) {
       throw new Error(`Skill reference not found: ${skillName}/${referencePath}`);
     }
+
     return readFile(path, "utf8");
   }
 
   async readScript(skillName: string, scriptPath: string): Promise<string> {
     const skill = this.get(skillName);
     const path = this.resolveContainedPath(skill, "scripts", scriptPath);
+
     if (!skill.scripts.includes(scriptPath)) {
       throw new Error(`Skill script not found: ${skillName}/${scriptPath}`);
     }
+
     return readFile(path, "utf8");
   }
 
@@ -113,9 +119,11 @@ class SkillRegistry {
   ): Promise<string> {
     const skill = this.get(skillName);
     const script = this.resolveContainedPath(skill, "scripts", scriptPath);
+
     if (!skill.scripts.includes(scriptPath)) {
       throw new Error(`Skill script not found: ${skillName}/${scriptPath}`);
     }
+
     return runExecutable(script, args, skill.directory, timeoutMs, abortSignal);
   }
 
@@ -131,6 +139,7 @@ class SkillRegistry {
     const root = resolve(skill.directory, section);
     const resolved = resolve(root, requestedPath);
     const rel = relative(root, resolved);
+
     if (rel === ".." || rel.startsWith(`..${"/"}`) || rel.startsWith(`..${"\\"}`)) {
       throw new Error(`Invalid skill path: ${requestedPath}`);
     }
@@ -167,6 +176,7 @@ function runExecutable(
 
     function settle(error?: Error, output = ""): void {
       if (settled) return;
+
       settled = true;
       clearTimeout(timeout);
       clearTimeout(escalation);
@@ -177,6 +187,7 @@ function runExecutable(
       child.removeListener("close", onClose);
       child.stdout.removeListener("data", onStdout);
       child.stderr.removeListener("data", onStderr);
+
       if (error !== undefined) reject(error);
       else resolvePromise(output);
     }
@@ -190,12 +201,15 @@ function runExecutable(
 
     function beginTermination(cause: Error): void {
       if (settled || firstCause !== undefined) return;
+
       firstCause = cause;
       clearTimeout(timeout);
+
       if (exited) {
         finishTermination();
         return;
       }
+
       escalation = setTimeout(() => {
         if (!exited) child.kill("SIGKILL");
       }, TERMINATION_GRACE_MS);
@@ -218,15 +232,19 @@ function runExecutable(
 
     function onExit(): void {
       exited = true;
+
       if (firstCause !== undefined) finishTermination();
     }
 
     function onClose(code: number | null, signal: NodeJS.Signals | null): void {
       if (firstCause !== undefined) {
         if (exited) finishTermination();
+
         return;
       }
+
       const output = formatProcessOutput(stdout, stderr);
+
       if (code !== 0) {
         settle(new Error(`Skill script exited with code ${code ?? "unknown"}: ${output}`));
       } else if (signal !== null) {
@@ -252,25 +270,31 @@ function runExecutable(
     child.on("exit", onExit);
     child.on("close", onClose);
     abortSignal?.addEventListener("abort", onAbort, { once: true });
+
     if (abortSignal?.aborted === true) onAbort();
   });
 }
 
 function formatProcessOutput(stdout: string, stderr: string): string {
   const parts: string[] = [];
+
   if (stdout.length > 0) {
     parts.push(`stdout:\n${stdout}`);
   }
+
   if (stderr.length > 0) {
     parts.push(`stderr:\n${stderr}`);
   }
+
   return parts.length === 0 ? "" : parts.join("\n\n");
 }
 
 function appendLimited(current: string, chunk: string): string {
   const next = current + chunk;
+
   if (next.length <= MAX_OUTPUT_CHARS) {
     return next;
   }
+
   return `${next.slice(0, MAX_OUTPUT_CHARS)}\n[truncated]`;
 }

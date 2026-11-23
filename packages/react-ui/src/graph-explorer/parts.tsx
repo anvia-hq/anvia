@@ -37,6 +37,7 @@ export const GraphExplorerSearch = forwardRef<HTMLInputElement, PrimitiveProps<"
     const handleChange = useCallback(
       (event: ChangeEvent<HTMLInputElement>) => {
         onChange?.(event);
+
         if (!event.defaultPrevented) explorer.setQuery(event.currentTarget.value);
       },
       [explorer, onChange],
@@ -79,7 +80,9 @@ export const GraphExplorerNodes = forwardRef<HTMLDivElement, GraphExplorerNodesP
   function GraphExplorerNodes({ children, keepMounted = false, ...props }, ref) {
     const explorer = useGraphExplorerContext();
     const empty = explorer.nodes.length === 0;
+
     if (empty && !keepMounted) return null;
+
     return renderPrimitive(
       "div",
       {
@@ -113,7 +116,9 @@ export const GraphExplorerNodes = forwardRef<HTMLDivElement, GraphExplorerNodesP
 export const GraphExplorerEmpty = forwardRef<HTMLDivElement, PrimitiveProps<"div">>(
   function GraphExplorerEmpty(props, ref) {
     const explorer = useGraphExplorerContext();
+
     if (explorer.nodes.length > 0 || explorer.status === "loading") return null;
+
     return renderPrimitive(
       "div",
       { ...props, children: props.children ?? "No graph nodes." } as PrimitiveProps<"div">,
@@ -171,6 +176,7 @@ export const GraphExplorerNodeRoot = forwardRef<HTMLDivElement, GraphExplorerNod
     const explorer = useGraphExplorerContext();
     const inherited = useOptionalGraphExplorerNode();
     const node = nodeId === undefined ? inherited?.node : explorer.nodeById.get(nodeId);
+
     if (node === undefined) {
       throw new Error(
         nodeId === undefined
@@ -178,6 +184,7 @@ export const GraphExplorerNodeRoot = forwardRef<HTMLDivElement, GraphExplorerNod
           : `Graph explorer node ${nodeId} is not loaded.`,
       );
     }
+
     const state: GraphExplorerNodeContextValue = {
       node,
       selected: node.id === explorer.selectedNodeId,
@@ -209,6 +216,7 @@ export const GraphExplorerNodeTrigger = forwardRef<HTMLButtonElement, PrimitiveP
     const handleClick = useCallback(
       (event: MouseEvent<HTMLButtonElement>) => {
         onClick?.(event);
+
         if (!event.defaultPrevented && !props.disabled) explorer.selectNode(state.node.id);
       },
       [explorer, onClick, props.disabled, state.node.id],
@@ -264,7 +272,9 @@ function useAsyncAction(
   return useCallback(
     (event: MouseEvent<HTMLButtonElement>) => {
       onClick?.(event);
+
       if (event.defaultPrevented || disabled) return;
+
       void action().catch(() => undefined);
     },
     [action, disabled, onClick],
@@ -273,6 +283,8 @@ function useAsyncAction(
 
 function statusText(explorer: GraphExplorerController): ReactNode {
   if (explorer.status === "loading") return "Loading graph.";
+
   if (explorer.status === "error") return "Graph exploration failed.";
+
   return `${explorer.nodes.length} nodes, ${explorer.relationships.length} relationships.`;
 }

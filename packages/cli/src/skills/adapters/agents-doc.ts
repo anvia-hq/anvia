@@ -25,6 +25,7 @@ export function syncAgentsDoc(options: AgentsDocSyncOptions): SkillsSyncOutcome 
     if (options.preview === true) {
       return { created: [], updated: [], skipped: 0, pending: [options.agentsPath] };
     }
+
     mkdirSync(dirname(options.agentsPath), { recursive: true });
     writeFileSync(options.agentsPath, `# AGENTS.md\n\n${section}\n`);
 

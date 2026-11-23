@@ -53,6 +53,7 @@ export class McpClient {
     if (options.name.trim() === "") {
       throw new TypeError("MCP client name must not be empty");
     }
+
     this.name = options.name;
     this.#options = options;
   }
@@ -61,9 +62,11 @@ export class McpClient {
     if (this.#closed) {
       return Promise.reject(new Error(`MCP client "${this.name}" is closed`));
     }
+
     if (this.#server !== undefined) {
       return Promise.resolve(this.#server);
     }
+
     if (this.#connecting !== undefined) {
       return this.#connecting;
     }
@@ -79,9 +82,11 @@ export class McpClient {
     this.#connecting = connecting;
     const clearConnecting = () => {
       unlinkAbortSignal();
+
       if (this.#connecting === connecting) {
         this.#connecting = undefined;
       }
+
       if (this.#connectAbortController === abortController) {
         this.#connectAbortController = undefined;
       }
@@ -97,6 +102,7 @@ export class McpClient {
     );
 
     const resource = this.#resource;
+
     if (resource !== undefined) {
       await closeResource(resource);
     }
@@ -115,11 +121,13 @@ export class McpClient {
       throwIfAborted(abortSignal);
       const transport = await createTransport(this.#options, { abortSignal });
       resource.transport = transport;
+
       if (abortSignal.aborted) {
         // close() may have completed while an asynchronous factory was pending.
         await transport.close().catch(() => {});
         throwIfAborted(abortSignal);
       }
+
       // Negotiation starts before the SDK attaches Client.transport and does not
       // observe request signals. Retain and cancel the transport itself.
       const onAbort = () => {
@@ -152,9 +160,13 @@ export class McpClient {
         name: this.name,
         tools,
       };
+
       if (serverInfo !== undefined) registration = { ...registration, serverInfo };
+
       if (capabilities !== undefined) registration = { ...registration, capabilities };
+
       if (instructions !== undefined) registration = { ...registration, instructions };
+
       const server = freezeServer(registration);
       this.#server = server;
       return server;
@@ -164,9 +176,11 @@ export class McpClient {
       } catch {
         // Preserve the actionable connection or discovery failure.
       }
+
       if (this.#resource === resource) {
         this.#resource = undefined;
       }
+
       this.#server = undefined;
       throw error;
     } finally {
@@ -180,58 +194,77 @@ async function createTransport(
   connectOptions: McpConnectOptions,
 ): Promise<Transport> {
   const transport = options.transport;
+
   if (transport.type === "custom") {
     return transport.create({ abortSignal: connectOptions.abortSignal });
   }
+
   if (transport.type === "stdio") {
     let parameters: ConstructorParameters<typeof StdioClientTransport>[0] = {
       command: transport.command,
     };
+
     if (transport.args !== undefined) parameters = { ...parameters, args: transport.args };
+
     if (transport.env !== undefined) parameters = { ...parameters, env: transport.env };
+
     if (transport.cwd !== undefined) parameters = { ...parameters, cwd: transport.cwd };
+
     if (transport.stderr !== undefined) parameters = { ...parameters, stderr: transport.stderr };
+
     if (transport.maxBufferSize !== undefined) {
       parameters = { ...parameters, maxBufferSize: transport.maxBufferSize };
     }
+
     return new StdioClientTransport(parameters);
   }
 
   const ssrfProtection = transport.ssrfProtection ?? "strict";
+
   if (ssrfProtection !== "strict" && ssrfProtection !== "disabled") {
     throw new TypeError("MCP Streamable HTTP ssrfProtection must be strict or disabled");
   }
+
   const maxBufferSize = transport.maxBufferSize ?? defaultMcpMaxBufferSize;
+
   if (!Number.isSafeInteger(maxBufferSize) || maxBufferSize <= 0) {
     throw new TypeError("MCP Streamable HTTP maxBufferSize must be a positive integer");
   }
+
   let parameters: ConstructorParameters<typeof StreamableHTTPClientTransport>[1] = {};
   let url: URL;
   let transportFetch: McpFetch | undefined;
+
   if (ssrfProtection === "strict") {
     transportFetch = createSafeMcpFetch();
     url = parseAndValidateMcpUrl(transport.url);
   } else {
     url = parseMcpHttpUrl(transport.url);
   }
+
   if (transport.headers !== undefined) {
     const headers = copyMcpHeaders(transport.headers, transport.authProvider !== undefined);
     const fetchRequest = transportFetch ?? defaultMcpFetch;
     transportFetch = createMcpEndpointFetch(url, headers, fetchRequest);
   }
+
   parameters = {
     ...parameters,
     fetch: createBoundedMcpFetch(transportFetch ?? defaultMcpFetch, maxBufferSize) as McpFetch,
   };
+
   if (transport.authProvider !== undefined) {
     parameters = { ...parameters, authProvider: transport.authProvider };
   }
+
   if (transport.reconnectionOptions !== undefined) {
     parameters = { ...parameters, reconnectionOptions: transport.reconnectionOptions };
   }
+
   if (transport.sessionId !== undefined) {
     parameters = { ...parameters, sessionId: transport.sessionId };
   }
+
   return new ManagedMcpHttpTransport(url, parameters, transport.terminateSessionOnClose === true);
 }
 
@@ -242,24 +275,31 @@ function copyMcpHeaders(
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new TypeError("MCP Streamable HTTP headers must be a plain object");
   }
+
   const prototype = Object.getPrototypeOf(value);
+
   if (prototype !== Object.prototype && prototype !== null) {
     throw new TypeError("MCP Streamable HTTP headers must be a plain object");
   }
+
   const headers = new Headers();
   for (const [name, headerValue] of Object.entries(value)) {
     if (typeof headerValue !== "string") {
       throw new TypeError(`MCP Streamable HTTP header ${name} must be a string`);
     }
+
     const normalizedName = name.toLowerCase();
+
     if (transportOwnedHttpHeaders.has(normalizedName) || normalizedName.startsWith("mcp-param-")) {
       throw new TypeError(`MCP Streamable HTTP header ${name} is owned by the transport`);
     }
+
     if (hasAuthProvider && normalizedName === "authorization") {
       throw new TypeError(
         "MCP Streamable HTTP authorization header cannot be combined with authProvider",
       );
     }
+
     headers.set(name, headerValue);
   }
   return headers;
@@ -272,6 +312,7 @@ function createMcpEndpointFetch(
 ): McpFetch {
   return (input, init) => {
     const requestUrl = input instanceof Request ? new URL(input.url) : new URL(input);
+
     if (requestUrl.href !== endpoint.href) return fetchRequest(input, init);
 
     const requestHeaders = new Headers(
@@ -300,6 +341,7 @@ function assertUniqueToolNames(tools: readonly { name: string }[], serverName: s
     if (names.has(tool.name)) {
       throw new Error(`Duplicate MCP tool name "${tool.name}" from server "${serverName}"`);
     }
+
     names.add(tool.name);
   }
 }
@@ -325,6 +367,7 @@ function getMcpClientVersion(): string {
   if (mcpClientVersion === undefined) {
     mcpClientVersion = readMcpPackageVersion();
   }
+
   return mcpClientVersion;
 }
 
@@ -361,6 +404,7 @@ function copyServerInfo(value: ReturnType<Client["getServerVersion"]>): McpServe
   if (value === undefined) {
     return undefined;
   }
+
   return deepFreeze(structuredClone(value)) as McpServerInfo;
 }
 
@@ -368,6 +412,7 @@ function copyJsonObject(value: unknown): JsonObject | undefined {
   if (value === undefined) {
     return undefined;
   }
+
   return deepFreeze(structuredClone(value)) as JsonObject;
 }
 
@@ -380,6 +425,7 @@ function deepFreeze<T>(value: T): T {
   if (typeof value !== "object" || value === null || Object.isFrozen(value)) {
     return value;
   }
+
   for (const child of Object.values(value)) {
     deepFreeze(child);
   }

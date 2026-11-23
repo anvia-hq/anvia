@@ -35,10 +35,14 @@ export async function findDesktopAgents(
   const found: Array<{ pid: number; name: string }> = [];
   for (const entry of entries) {
     if (!/^\d+$/.test(entry)) continue;
+
     try {
       const name = (await readFile(`${procRoot}/${entry}/comm`, "utf8")).trim();
+
       if (!desktopAgentNames.includes(name)) continue;
+
       const environment = await readFile(`${procRoot}/${entry}/environ`, "utf8");
+
       if (environment.split("\0").includes(marker)) found.push({ pid: Number(entry), name });
     } catch {
       // The process exited while it was being read, or belongs to another user.

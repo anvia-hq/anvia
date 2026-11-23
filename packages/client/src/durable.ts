@@ -63,6 +63,7 @@ export class DurableHttpError extends Error {
 /** Parses an integer-seconds `Retry-After` value. HTTP-date values are ignored. */
 function parseRetryAfter(value: string | null): number | undefined {
   if (value === null || !/^\d+$/.test(value.trim())) return undefined;
+
   const seconds = Number(value.trim());
   return Number.isSafeInteger(seconds) ? seconds : undefined;
 }
@@ -77,21 +78,29 @@ async function durableErrorBody(
   } catch {
     return {};
   }
+
   if (text.length === 0 || text.length > 8_192) return {};
+
   let body: unknown;
   try {
     body = JSON.parse(text);
   } catch {
     return {};
   }
+
   if (typeof body !== "object" || body === null) return {};
+
   const record = body as Record<string, unknown>;
   const details: { message?: string; code?: string; field?: string } = {};
+
   // Gateways and proxies often send their text as `message`; `error` is Anvia's own field.
   if (typeof record.error === "string") details.message = record.error;
   else if (typeof record.message === "string") details.message = record.message;
+
   if (typeof record.code === "string") details.code = record.code;
+
   if (typeof record.field === "string") details.field = record.field;
+
   return details;
 }
 
@@ -100,6 +109,7 @@ export class DurableClient {
   private readonly endpoint: string;
   constructor(private readonly options: DurableClientOptions) {
     const endpoint = new URL(options.endpoint);
+
     if (
       !["http:", "https:"].includes(endpoint.protocol) ||
       endpoint.search ||
@@ -110,6 +120,7 @@ export class DurableClient {
       throw new TypeError(
         "endpoint must be an HTTP(S) base URL without credentials, query, or fragment.",
       );
+
     this.endpoint = endpoint.href.replace(/\/$/, "");
   }
 
@@ -126,15 +137,19 @@ export class DurableClient {
     const snapshot = parseTaskSnapshot(
       await (await this.request(this.taskPath(id), "GET", undefined, options)).json(),
     );
+
     if (snapshot.task.id !== id) throw new TypeError("Snapshot belongs to another task.");
+
     return snapshot;
   }
   async taskGraph(id: string, options: DurableRequestOptions = {}): Promise<TaskGraphSnapshot> {
     const graph = parseTaskGraph(
       await (await this.request(`${this.taskPath(id)}/graph`, "GET", undefined, options)).json(),
     );
+
     if (!graph.nodes.some((task) => task.id === id))
       throw new TypeError("Graph belongs to another task.");
+
     return graph;
   }
   async listTasks(
@@ -176,7 +191,9 @@ export class DurableClient {
     options: DurableRequestOptions & { after?: number } = {},
   ): AsyncIterable<TaskEvent> {
     let cursor = options.after ?? 0;
+
     if (!Number.isSafeInteger(cursor) || cursor < 0) throw new TypeError("Invalid task cursor.");
+
     const snapshot = await this.taskSnapshot(id, options);
     const response = await this.request(
       `${this.taskPath(id)}/events?after=${cursor}`,
@@ -184,22 +201,27 @@ export class DurableClient {
       undefined,
       options,
     );
+
     if (
       !response.headers.get("content-type")?.startsWith("text/event-stream") ||
       response.body === null
     )
       throw new TypeError("Expected a task SSE response.");
+
     for await (const value of readSseStream<unknown>(response.body, { strict: true })) {
       options.abortSignal?.throwIfAborted();
       const event = parseTaskEvent(value);
+
       if (event.rootId !== snapshot.task.rootId || event.sequence <= cursor)
         throw new TypeError("Invalid task event order or root ID.");
+
       cursor = event.sequence;
       yield event;
     }
   }
   private taskPath(id: string): string {
     if (id.trim().length === 0 || id === "." || id === "..") throw new TypeError("Invalid taskId.");
+
     return `/tasks/${encodeURIComponent(id)}`;
   }
 
@@ -218,7 +240,9 @@ export class DurableClient {
     const snapshot = parseDurableGraphSnapshot(
       await (await this.request(this.graphPath(graphId), "GET", undefined, options)).json(),
     );
+
     if (snapshot.id !== graphId) throw new TypeError("Snapshot belongs to another graph.");
+
     return snapshot;
   }
   async listGraphs(
@@ -240,23 +264,29 @@ export class DurableClient {
     options: DurableRequestOptions & { after?: number } = {},
   ): AsyncIterable<DurableGraphEvent> {
     let cursor = options.after ?? 0;
+
     if (!Number.isSafeInteger(cursor) || cursor < 0) throw new TypeError("Invalid graph cursor.");
+
     const response = await this.request(
       `${this.graphPath(graphId)}/events?after=${cursor}`,
       "GET",
       undefined,
       options,
     );
+
     if (
       !response.headers.get("content-type")?.startsWith("text/event-stream") ||
       response.body === null
     )
       throw new TypeError("Expected a graph SSE response.");
+
     for await (const value of readSseStream<unknown>(response.body, { strict: true })) {
       options.abortSignal?.throwIfAborted();
       const event = parseDurableGraphEvent(value);
+
       if (event.graphId !== graphId || event.sequence <= cursor)
         throw new TypeError("Invalid graph event order or ID.");
+
       cursor = event.sequence;
       yield event;
     }
@@ -293,7 +323,9 @@ export class DurableClient {
     const snapshot = parseDurableSnapshot(
       await (await this.request(this.path(runId), "GET", undefined, options)).json(),
     );
+
     if (snapshot.run.id !== runId) throw new TypeError("Durable snapshot belongs to another run.");
+
     return snapshot;
   }
   async *stream(
@@ -301,23 +333,29 @@ export class DurableClient {
     options: DurableRequestOptions & { after?: number } = {},
   ): AsyncIterable<DurableEvent> {
     let cursor = options.after ?? 0;
+
     if (!Number.isSafeInteger(cursor) || cursor < 0) throw new TypeError("Invalid event cursor.");
+
     const response = await this.request(
       `${this.path(runId)}/events?after=${cursor}`,
       "GET",
       undefined,
       options,
     );
+
     if (
       !response.headers.get("content-type")?.startsWith("text/event-stream") ||
       response.body === null
     )
       throw new TypeError("Expected a durable SSE response.");
+
     for await (const value of readSseStream<unknown>(response.body, { strict: true })) {
       options.abortSignal?.throwIfAborted();
       const event = parseDurableEvent(value);
+
       if (event.runId !== runId || event.sequence <= cursor)
         throw new TypeError("Invalid durable event order or run ID.");
+
       cursor = event.sequence;
       yield event;
     }
@@ -383,10 +421,12 @@ export class DurableClient {
   private graphPath(id: string): string {
     if (id.trim().length === 0 || id === "." || id === "..")
       throw new TypeError("Invalid graphId.");
+
     return `/graphs/${encodeURIComponent(id)}`;
   }
   private path(id: string): string {
     if (id.trim().length === 0) throw new TypeError("runId must not be empty.");
+
     return `/runs/${encodeURIComponent(id)}`;
   }
   private async request(
@@ -401,6 +441,7 @@ export class DurableClient {
         ? await this.options.headers()
         : this.options.headers;
     const headers = new Headers(supplied);
+
     if (body !== undefined) headers.set("content-type", "application/json");
 
     const fetch = this.options.fetch ?? globalThis.fetch;
@@ -423,6 +464,7 @@ export class DurableClient {
     }
 
     const response = await fetch(url, init);
+
     if (!response.ok) {
       const details = await durableErrorBody(response);
       throw new DurableHttpError(
@@ -433,6 +475,7 @@ export class DurableClient {
         parseRetryAfter(response.headers.get("retry-after")),
       );
     }
+
     return response;
   }
 }

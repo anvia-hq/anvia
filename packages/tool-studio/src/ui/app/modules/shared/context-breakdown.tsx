@@ -50,10 +50,13 @@ export function contextBreakdownView(value: unknown): ContextBreakdownView | und
   if (!isRecord(value) || !Array.isArray(value.segments)) {
     return undefined;
   }
+
   const segments: ContextSegmentView[] = [];
   for (const segment of value.segments) {
     if (!isRecord(segment) || typeof segment.id !== "string") continue;
+
     if (typeof segment.tokens !== "number" || !Number.isFinite(segment.tokens)) continue;
+
     segments.push({
       id: segment.id,
       label: contextSegmentLabel(segment.id),
@@ -61,9 +64,11 @@ export function contextBreakdownView(value: unknown): ContextBreakdownView | und
       items: typeof segment.items === "number" ? segment.items : 0,
     });
   }
+
   if (segments.length === 0) {
     return undefined;
   }
+
   const totalTokens = segments.reduce((total, segment) => total + segment.tokens, 0);
   const reportedInputTokens =
     typeof value.reportedInputTokens === "number" && value.reportedInputTokens > 0
@@ -88,7 +93,9 @@ export function ContextBreakdownBar(props: {
   className?: string | undefined;
 }) {
   const total = props.view.totalTokens;
+
   if (total <= 0) return null;
+
   return (
     <div
       className={cn("flex h-2 w-full overflow-hidden rounded-full bg-muted", props.className)}

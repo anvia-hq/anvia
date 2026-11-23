@@ -46,6 +46,7 @@ export function GraphsPage(props: {
   const loadGraph = useCallback(
     async (request: GraphExploreOptions<GraphSchemaLike>) => {
       if (graph === undefined) throw new Error("Graph explorer unavailable");
+
       const { abortSignal, ...body } = request;
       onStatus("Loading graph");
       try {
@@ -60,13 +61,16 @@ export function GraphsPage(props: {
             body: JSON.stringify(body),
           },
         );
+
         if (abortSignal?.aborted !== true) onStatus("Connected");
+
         return next;
       } catch (loadError) {
         if (abortSignal?.aborted !== true) {
           onError(errorMessage(loadError));
           onStatus("Graph error");
         }
+
         throw loadError;
       }
     },
@@ -93,6 +97,7 @@ export function GraphsPage(props: {
 
   useEffect(() => {
     if (graph === undefined) return;
+
     const nodeTypes = graph.nodeTypes.map((item) => item.name);
     const relationships = graph.relationshipTypes.map((item) => item.name);
     setSelectedGraphId(graph.id);
@@ -135,6 +140,7 @@ export function GraphsPage(props: {
 
   function expandSelected() {
     if (selectedNode === undefined) return;
+
     void explorer
       .expandNode(selectedNode.id, {
         nodeTypes: selectedNodeTypes,
@@ -386,5 +392,6 @@ function NodeInspector(props: { node: GraphExploreNode }) {
 
 function toggled(values: string[], value: string): string[] {
   if (values.includes(value)) return values.filter((item) => item !== value);
+
   return [...values, value];
 }

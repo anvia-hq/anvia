@@ -154,15 +154,19 @@ function jsonTokenKind(
   if (token.startsWith('"')) {
     return nextNonSpace === ":" ? "key" : "string";
   }
+
   if (token === "true" || token === "false") {
     return "boolean";
   }
+
   if (token === "null") {
     return "null";
   }
+
   if (/^-?\d/.test(token)) {
     return "number";
   }
+
   return "punctuation";
 }
 
@@ -200,6 +204,7 @@ export function JsonValueView(props: { value: unknown }) {
 
   if (isRecord(props.value)) {
     const entries = Object.entries(props.value);
+
     if (entries.length === 0) {
       return <span className="italic text-muted-foreground">Empty object</span>;
     }
@@ -239,14 +244,18 @@ function JsonScalar(props: { value: unknown }) {
   if (props.value === null) {
     return <span className="italic text-muted-foreground">null</span>;
   }
+
   if (typeof props.value === "string") {
     return <span>{props.value}</span>;
   }
+
   if (typeof props.value === "number") {
     return <span>{props.value}</span>;
   }
+
   if (typeof props.value === "boolean") {
     return <span>{String(props.value)}</span>;
   }
+
   return <span>{String(props.value)}</span>;
 }

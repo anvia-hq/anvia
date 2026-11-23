@@ -412,7 +412,9 @@ function publicWorkspacePackageNames(root) {
   for (const glob of globs) {
     for (const manifestPath of workspaceManifests(root, glob.split("/"))) {
       const manifest = readJson(manifestPath);
+
       if (manifest.private === true || typeof manifest.name !== "string") continue;
+
       names.push(manifest.name);
     }
   }
@@ -424,9 +426,13 @@ function workspaceManifests(dir, segments) {
     const manifestPath = path.join(dir, "package.json");
     return existsSync(manifestPath) ? [manifestPath] : [];
   }
+
   const [segment, ...rest] = segments;
+
   if (segment !== "*") return workspaceManifests(path.join(dir, segment), rest);
+
   if (!existsSync(dir)) return [];
+
   return readdirSync(dir)
     .sort()
     .flatMap((entry) => workspaceManifests(path.join(dir, entry), rest));

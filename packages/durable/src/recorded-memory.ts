@@ -42,6 +42,7 @@ export function memoryIdempotencyKey(runId: string, operationKey: string): strin
 /** The agent's memory when the registration admits it; undefined otherwise. */
 export function recordedMemoryOf(registration: DurableAgentRegistration) {
   if (registration.memory === undefined) return undefined;
+
   return getResolvedAgentOptions(registration.agent).memory;
 }
 
@@ -87,6 +88,7 @@ export function recordedMemoryStore(options: {
         throw new TypeError(
           "Durable memory derives idempotency keys and versions; memory writes must not set them.",
         );
+
       captured.push({
         scope: write.scope,
         runId: write.runId,
@@ -107,6 +109,7 @@ async function readSnapshot(
   const { store, run, source, signal } = options;
   const key = `${memoryPrefix(run)}:${READ_SUFFIX}`;
   const recorded = await store.transaction(async (tx) => tx.getOperation(run.id, key));
+
   if (recorded?.status === "completed") {
     const value = recorded.result as unknown as { messages: Message[]; version: string };
     return store.transaction(async (tx) => ({
@@ -116,9 +119,12 @@ async function readSnapshot(
       version: value.version,
     }));
   }
+
   signal.throwIfAborted();
+
   if (source.loadVersioned === undefined)
     throw new TypeError("Recorded memory needs a store with loadVersioned().");
+
   const loaded = await source.loadVersioned({ scope: loadOptions.scope });
   await store.transaction(async (tx) => {
     await tx.putOperation(run.id, {
@@ -196,11 +202,13 @@ export async function flushRecordedMemory(options: {
       version = (write.result as unknown as { version: string | null }).version ?? undefined;
       continue;
     }
+
     if ((write.attempts ?? 0) > 0)
       throw new DurableRecoveryError(
         `Memory write ${write.key} was interrupted before its outcome was recorded. Retry the run to send it again; the idempotency key stops the store from writing it twice.`,
         write.key,
       );
+
     signal.throwIfAborted();
     const input = await store.transaction(async (tx) => {
       // Persisted before the store call, so a crash inside the call leaves the attempt visible.
@@ -221,11 +229,13 @@ export async function flushRecordedMemory(options: {
       expectedVersion: version,
     });
     const status = result?.status ?? "committed";
+
     if (status === "conflict")
       throw new DurableRecoveryError(
         `Memory write ${write.key} conflicts with the memory store: the history changed after this run read it, or the key was committed with different content. Nothing was written.`,
         write.key,
       );
+
     const recorded = { status, version: result?.version ?? null };
     await store.transaction(async (tx) => {
       await tx.putOperation(run.id, {

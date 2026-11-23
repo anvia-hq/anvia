@@ -80,10 +80,12 @@ function trackListeners(signal: AbortSignal) {
   const remove = signal.removeEventListener.bind(signal);
   vi.spyOn(signal, "addEventListener").mockImplementation((type, listener, options) => {
     if (type === "abort" && listener !== null) listeners.add(listener);
+
     add(type, listener, options);
   });
   vi.spyOn(signal, "removeEventListener").mockImplementation((type, listener, options) => {
     if (type === "abort" && listener !== null) listeners.delete(listener);
+
     remove(type, listener, options);
   });
   return () => listeners.size;
@@ -121,6 +123,7 @@ function preparationModel() {
       setupStarted.resolve();
       return result.promise;
     }
+
     scores += 1;
     return judgeResponse({ score: 10, reason: "Correct" });
   });
@@ -148,8 +151,10 @@ describe("evaluation metric cancellation", () => {
             stopped += 1;
             reject(signal?.reason);
           };
+
           if (signal?.aborted) onAbort();
           else signal?.addEventListener("abort", onAbort);
+
           if (signal === undefined) {
             active -= 1;
             resolve(texts.map((document) => ({ document, vector: [1, 0] })));
@@ -349,6 +354,7 @@ describe("evaluation metric cancellation", () => {
     let stopped = 0;
     const model = new JudgeModel(async (_request, signal, index) => {
       if (index < lane.blocked) return judgeResponse(lane.ready[index]);
+
       active += 1;
       started.resolve();
       return new Promise((_resolve, reject) => {
@@ -358,6 +364,7 @@ describe("evaluation metric cancellation", () => {
           stopped += 1;
           reject(signal?.reason);
         };
+
         if (signal?.aborted) onAbort();
         else signal?.addEventListener("abort", onAbort);
       });
@@ -380,8 +387,9 @@ describe("evaluation metric cancellation", () => {
     const outcome = await lane
       .make(control)
       .evaluate({ ...metricArgs(new AbortController().signal), output: lane.output });
+    const expectedOutcome = lane.score === 0 && lane.name !== "hallucination" ? "fail" : "pass";
     expect(outcome).toMatchObject({
-      outcome: lane.score === 0 ? (lane.name === "hallucination" ? "pass" : "fail") : "pass",
+      outcome: expectedOutcome,
       score: lane.score,
     });
   });
@@ -447,15 +455,19 @@ describe("evaluation metric cancellation", () => {
           preparations++;
           return judgeResponse({ steps: ["Compare"] });
         }
+
         scores++;
+
         if (scores === 1) {
           scoringStarted.resolve();
           return firstScore.promise;
         }
+
         if (scores === 2) {
           survivorStarted.resolve();
           return survivorScore.promise;
         }
+
         return judgeResponse({ score: 10, reason: "Correct" });
       });
       const metric = gEval({
@@ -470,11 +482,13 @@ describe("evaluation metric cancellation", () => {
       await scoringStarted.promise;
       const survivor = metric.evaluate(metricArgs(new AbortController().signal, "survivor"));
       await survivorStarted.promise;
+
       if (failure === "cancel") {
         controller.abort("cancel scoring");
         firstScore.resolve(judgeResponse({ score: 10, reason: "Late" }));
       } else if (failure === "reject") firstScore.reject(new Error("scoring failed"));
       else firstScore.resolve(judgeResponse({ score: 11, reason: "Out of range" }));
+
       expect(await first).toMatchObject({ outcome: "invalid" });
       survivorScore.resolve(judgeResponse({ score: 10, reason: "Correct" }));
       expect(await survivor).toMatchObject({ outcome: "pass", usage: { totalTokens: 4 } });
@@ -523,9 +537,11 @@ describe("evaluation metric cancellation", () => {
       const replacement = metric.evaluate(metricArgs(new AbortController().signal));
       await flush();
       expect(fixture.preparations).toHaveLength(2);
+
       if (settlement === "resolve")
         fixture.preparations[0]?.result.resolve(judgeResponse({ steps: ["Stale"] }));
       else fixture.preparations[0]?.result.reject(new Error("stale failure"));
+
       await flush();
       const additional = metric.evaluate(metricArgs(new AbortController().signal));
       await flush();
@@ -552,8 +568,10 @@ describe("evaluation metric cancellation", () => {
       const metric = gMetric(fixture.model);
       const first = metric.evaluate(metricArgs(new AbortController().signal));
       await fixture.setupStarted.promise;
+
       if (failure === "reject") fixture.preparations[0]?.result.reject(new Error("setup failed"));
       else fixture.preparations[0]?.result.resolve(judgeResponse({ steps: [] }));
+
       expect(await first).toMatchObject({ outcome: "invalid" });
       const second = metric.evaluate(metricArgs(new AbortController().signal));
       await flush();

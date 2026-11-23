@@ -97,6 +97,7 @@ class FakePgClient implements PostgresMemoryClientLike {
 
   replaceFirstMessage(message: unknown): void {
     const first = [...this.state.messages.values()][0]?.[0];
+
     if (first !== undefined) {
       first.message = message;
     }
@@ -126,14 +127,18 @@ class FakePgClient implements PostgresMemoryClientLike {
 
     if (text.startsWith("INSERT INTO") && text.includes("memory_idempotency_keys")) {
       const id = `${values[0] as string}\u0000${values[1] as string}`;
+
       if (this.state.keys.has(id)) return { rows: [] };
+
       this.state.keys.set(id, values[2] as string);
       return { rows: [{ idempotency_key: values[1] }] };
     }
 
     if (text.includes("AS max_position")) {
       const session = this.state.sessions.get(values[0] as string);
+
       if (session === undefined) return { rows: [] };
+
       const positions = (this.state.messages.get(session.id) ?? []).map((row) => row.position);
       return {
         rows: [
@@ -148,7 +153,9 @@ class FakePgClient implements PostgresMemoryClientLike {
 
     if (text.includes("AS session_id, s.compaction_state, m.position")) {
       const session = this.state.sessions.get(values[0] as string);
+
       if (session === undefined) return { rows: [] };
+
       const messages = [...(this.state.messages.get(session.id) ?? [])].sort(
         (left, right) => left.position - right.position,
       );
@@ -192,9 +199,11 @@ class FakePgClient implements PostgresMemoryClientLike {
 
     if (text.startsWith("UPDATE") && text.includes("memory_sessions")) {
       const session = [...this.state.sessions.values()].find((item) => item.id === values[0]);
+
       if (session !== undefined) {
         session.compactionState = JSON.parse(values[1] as string) as unknown;
       }
+
       return { rows: [] };
     }
 
@@ -213,6 +222,7 @@ class FakePgClient implements PostgresMemoryClientLike {
       if (this.failMessageInsert) {
         throw new Error("insert failed");
       }
+
       for (let index = 0; index < values.length; index += 6) {
         const memorySessionId = values[index] as string;
         const row = {
@@ -249,11 +259,14 @@ class FakePgClient implements PostgresMemoryClientLike {
 
     if (text.includes("COUNT(m.id)::integer AS message_count")) {
       const allSessions = [...this.state.sessions.values()];
-      const sessions = text.includes("WHERE s.id = $1")
-        ? allSessions.filter((session) => session.id === values[0])
-        : text.includes("WHERE s.user_id = $1")
-          ? allSessions.filter((session) => session.userId === values[0])
-          : allSessions;
+      let sessions = allSessions;
+
+      if (text.includes("WHERE s.id = $1")) {
+        sessions = allSessions.filter((session) => session.id === values[0]);
+      } else if (text.includes("WHERE s.user_id = $1")) {
+        sessions = allSessions.filter((session) => session.userId === values[0]);
+      }
+
       const limit = text.includes("LIMIT") ? Number(values.at(-1)) : sessions.length;
       return {
         rows: sessions.slice(0, limit).map((session) => ({
@@ -306,9 +319,11 @@ class FakePgClient implements PostgresMemoryClientLike {
 
     if (text.startsWith("DELETE FROM")) {
       const session = this.state.sessions.get(values[0] as string);
+
       if (session !== undefined) {
         this.state.messages.delete(session.id);
       }
+
       this.state.sessions.delete(values[0] as string);
       return { rows: [] };
     }
@@ -961,6 +976,8 @@ async function createTestMemoryStore(
   const client = new PostgresMemoryClient({ client: nativeClient });
   memoryClients.add(client);
   const store = client.memoryStore(storeOptions);
+
   if (ensure) await store.ensure();
+
   return store;
 }

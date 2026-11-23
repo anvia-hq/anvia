@@ -17,6 +17,7 @@ async function dockerAvailable(): Promise<boolean> {
   } catch (error) {
     if (error instanceof Error && "code" in error && error.code === "docker_unavailable")
       return false;
+
     throw error;
   }
 }
@@ -72,6 +73,7 @@ describe.skipIf(!canRunDockerTests)("natural shell command lines on Debian", () 
         sandbox: sandbox.runtime,
         tools: ["exec_command"],
       });
+
       if (tool === undefined) throw new Error("Expected exec_command tool.");
 
       const result = await tool.call({ command });
@@ -94,7 +96,9 @@ describe.skipIf(!canRunDockerTests)("natural shell command lines on Debian", () 
       tools: ["start_process"],
       exec: { commands: { mode: "allow", values: ["/bin/bash"], allowShellInterpreters: true } },
     });
+
     if (tool === undefined) throw new Error("Expected start_process tool.");
+
     const process = (await tool.call({
       command: "mkdir -p repro/{raw,results} && [[ -d repro/raw ]] && echo ok",
     })) as { id: string };
@@ -128,7 +132,9 @@ describe.skipIf(!canRunDockerTests)("natural shell command lines on Debian", () 
       tools: ["exec_command"],
       exec: { commands: { mode: "allow", values: ["sh"], allowShellInterpreters: true } },
     });
+
     if (tool === undefined) throw new Error("Expected exec_command tool.");
+
     await expect(tool.call({ command: "echo ready" })).rejects.toMatchObject({
       code: "tool_policy",
     });

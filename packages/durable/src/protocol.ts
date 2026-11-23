@@ -55,7 +55,9 @@ const event = z
 
 function parse<T>(schema: z.ZodType<T>, value: unknown, name: string): T {
   const result = schema.safeParse(value);
+
   if (!result.success) throw new TypeError(`Invalid durable ${name}.`);
+
   return result.data;
 }
 
@@ -89,7 +91,9 @@ export function parseDurableResolution(value: unknown): {
         },
       ],
     });
+
     if (message.role !== "tool" || message.content[0]?.type !== "tool-result") throw new Error();
+
     return { operationId: input.operationId, output: message.content[0].output };
   } catch {
     throw new TypeError("Invalid durable tool result.");

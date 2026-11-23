@@ -30,14 +30,18 @@ export function registerSandboxViewRoutes(app: Hono, registry: StudioSandboxRegi
 
   app.get("/sandboxes/:sandboxRef/views/:viewId/control", async (c) => {
     const resolved = await authorizedView(c, registry);
+
     if (resolved instanceof Response) return resolved;
+
     await pruneExpiredLease(leases, viewKey(resolved));
     return c.json(await resolved.view.source.control.snapshot());
   });
 
   app.get("/sandboxes/:sandboxRef/views/:viewId/connection", async (c) => {
     const resolved = await authorizedView(c, registry);
+
     if (resolved instanceof Response) return resolved;
+
     const response: StudioSandboxViewConnection = {
       sandboxRef: resolved.entry.summary.ref,
       viewId: resolved.view.id,
@@ -54,14 +58,20 @@ export function registerSandboxViewRoutes(app: Hono, registry: StudioSandboxRegi
 
   app.post("/sandboxes/:sandboxRef/views/:viewId/control/acquire", async (c) => {
     const resolved = await authorizedView(c, registry);
+
     if (resolved instanceof Response) return resolved;
+
     const body = await readControlBody(c);
+
     if (body instanceof Response) return body;
+
     const key = viewKey(resolved);
     await pruneExpiredLease(leases, key);
+
     if (leases.has(key)) {
       return errorResponse(c, 409, "conflict", "Browser view is already controlled");
     }
+
     try {
       const lease = await resolved.view.source.control.acquireHumanControl({
         ownerId: body.ownerId,
@@ -77,15 +87,21 @@ export function registerSandboxViewRoutes(app: Hono, registry: StudioSandboxRegi
 
   app.post("/sandboxes/:sandboxRef/views/:viewId/control/renew", async (c) => {
     const resolved = await authorizedView(c, registry);
+
     if (resolved instanceof Response) return resolved;
+
     const body = await readLeaseBody(c);
+
     if (body instanceof Response) return body;
+
     const key = viewKey(resolved);
     await pruneExpiredLease(leases, key);
     const lease = leases.get(key);
+
     if (lease === undefined || lease.id !== body.leaseId) {
       return errorResponse(c, 409, "conflict", "Browser control lease is not active");
     }
+
     try {
       await lease.renew({ leaseTimeoutMs: body.leaseTimeoutMs });
       return c.json(leaseResponse(lease));
@@ -97,14 +113,20 @@ export function registerSandboxViewRoutes(app: Hono, registry: StudioSandboxRegi
 
   app.post("/sandboxes/:sandboxRef/views/:viewId/control/release", async (c) => {
     const resolved = await authorizedView(c, registry);
+
     if (resolved instanceof Response) return resolved;
+
     const body = await readReleaseBody(c);
+
     if (body instanceof Response) return body;
+
     const key = viewKey(resolved);
     const lease = leases.get(key);
+
     if (lease === undefined || lease.id !== body.leaseId) {
       return errorResponse(c, 409, "conflict", "Browser control lease is not active");
     }
+
     try {
       await lease.release();
     } catch (error) {
@@ -117,7 +139,9 @@ export function registerSandboxViewRoutes(app: Hono, registry: StudioSandboxRegi
 
   app.get("/sandboxes/:sandboxRef/views/:viewId/ws", async (c) => {
     const resolved = await authorizedView(c, registry);
+
     if (resolved instanceof Response) return resolved;
+
     const { source } = resolved.view;
     const events =
       "connect" in source
@@ -154,9 +178,11 @@ function createStreamEvents(
             stream.close();
             return undefined;
           }
+
           streams.add(stream);
           void stream.exit.then(() => {
             streams.delete(stream);
+
             if (!closed) downstream.close(1000, "Desktop connection ended");
           });
           void (async () => {
@@ -170,6 +196,7 @@ function createStreamEvents(
         },
         () => {
           if (!closed) downstream.close(1011, "noVNC upstream failed");
+
           return undefined;
         },
       );
@@ -181,11 +208,14 @@ function createStreamEvents(
             downstream.close(1003, "Unsupported noVNC message");
             return;
           }
+
           pendingBytes += message.byteLength;
+
           if (pendingBytes > maxPendingWebSocketBytes) {
             downstream.close(1009, "Pending noVNC messages exceeded the limit");
             return;
           }
+
           writes = writes.then(async () => {
             try {
               await (await opening)?.write(message);
@@ -203,6 +233,7 @@ function createStreamEvents(
       abort.abort();
       void opening.then((stream) => {
         stream?.close();
+
         if (stream !== undefined) streams.delete(stream);
       });
     },
@@ -254,18 +285,22 @@ function createProxyEvents(upstreamUrl: string, sockets: Set<WebSocket>): WSEven
             upstream.send(message);
             return;
           }
+
           pendingBytes +=
             typeof message === "string" ? Buffer.byteLength(message) : message.byteLength;
+
           if (pendingBytes > maxPendingWebSocketBytes) {
             downstream.close(1009, "Pending noVNC messages exceeded the limit");
             return;
           }
+
           pending.push(message);
         })
         .catch(() => downstream.close(1003, "Unsupported noVNC message"));
     },
     onClose() {
       upstream?.close(1000, "Viewer disconnected");
+
       if (upstream !== undefined) sockets.delete(upstream);
     },
     onError() {
@@ -279,13 +314,19 @@ async function authorizedView(
   registry: StudioSandboxRegistry,
 ): Promise<ResolvedView | Response> {
   const entry = registry.get(c.req.param("sandboxRef") ?? "");
+
   if (entry === undefined) return errorResponse(c, 404, "not_found", "Sandbox not found");
+
   const view = entry.views.get(c.req.param("viewId") ?? "");
+
   if (view === undefined) return errorResponse(c, 404, "not_found", "Sandbox view not found");
+
   if (!(await authorize(c, entry, view))) {
     return errorResponse(c, 403, "forbidden", "Sandbox view access denied");
   }
+
   if ("connect" in view.source) return { entry, view, upstream: undefined };
+
   const { containerPort } = view.source;
   const published = entry.inspector.publishedPorts?.find(
     (port) =>
@@ -293,9 +334,11 @@ async function authorizedView(
       port.protocol === "tcp" &&
       isLoopbackAddress(port.host),
   );
+
   if (published === undefined) {
     return errorResponse(c, 503, "internal_error", "Sandbox view port is unavailable");
   }
+
   return { entry, view, upstream: { host: published.host, port: published.hostPort } };
 }
 
@@ -317,15 +360,20 @@ async function authorize(
       return false;
     }
   }
+
   let remoteAddress: string;
   try {
     const address = getConnInfo(c).remote.address;
+
     if (address === undefined) return false;
+
     remoteAddress = address;
   } catch {
     return false;
   }
+
   if (!isLoopbackAddress(remoteAddress)) return false;
+
   const expectedOrigin = new URL(c.req.url).origin;
   const origin = c.req.header("origin");
   return (
@@ -338,13 +386,17 @@ async function readControlBody(
   c: Context,
 ): Promise<{ ownerId: string; leaseTimeoutMs: number } | Response> {
   const body = await readJsonObject(c);
+
   if (body instanceof Response) return body;
+
   if (typeof body.ownerId !== "string" || body.ownerId.length === 0 || body.ownerId.length > 200) {
     return errorResponse(c, 400, "bad_request", "ownerId must be a non-empty string");
   }
+
   if (!isLeaseTimeout(body.leaseTimeoutMs)) {
     return errorResponse(c, 400, "bad_request", "leaseTimeoutMs is outside the allowed range");
   }
+
   return { ownerId: body.ownerId, leaseTimeoutMs: body.leaseTimeoutMs };
 }
 
@@ -352,22 +404,29 @@ async function readLeaseBody(
   c: Context,
 ): Promise<{ leaseId: string; leaseTimeoutMs: number } | Response> {
   const body = await readJsonObject(c);
+
   if (body instanceof Response) return body;
+
   if (typeof body.leaseId !== "string" || body.leaseId.length === 0) {
     return errorResponse(c, 400, "bad_request", "leaseId must be a non-empty string");
   }
+
   if (!isLeaseTimeout(body.leaseTimeoutMs)) {
     return errorResponse(c, 400, "bad_request", "leaseTimeoutMs is outside the allowed range");
   }
+
   return { leaseId: body.leaseId, leaseTimeoutMs: body.leaseTimeoutMs };
 }
 
 async function readReleaseBody(c: Context): Promise<{ leaseId: string } | Response> {
   const body = await readJsonObject(c);
+
   if (body instanceof Response) return body;
+
   if (typeof body.leaseId !== "string" || body.leaseId.length === 0) {
     return errorResponse(c, 400, "bad_request", "leaseId must be a non-empty string");
   }
+
   return { leaseId: body.leaseId };
 }
 
@@ -387,9 +446,11 @@ function controlErrorResponse(c: Context, error: unknown): Response {
   if (isRecord(error) && error.code === "human_controlled") {
     return errorResponse(c, 409, "conflict", "Browser view is already controlled");
   }
+
   if (isRecord(error) && error.code === "invalid_state") {
     return errorResponse(c, 409, "conflict", "Browser control lease is no longer active");
   }
+
   return errorResponse(c, 500, "internal_error", "Browser control operation failed");
 }
 
@@ -402,6 +463,7 @@ async function pruneExpiredLease(
   key: string,
 ): Promise<void> {
   const lease = leases.get(key);
+
   if (lease !== undefined && Date.parse(lease.expiresAt) <= Date.now()) {
     leases.delete(key);
     await Promise.resolve(lease.release()).catch(() => {});
@@ -438,11 +500,15 @@ async function normalizeWebSocketMessage(
   value: unknown,
 ): Promise<string | Uint8Array<ArrayBuffer>> {
   if (typeof value === "string") return value;
+
   if (value instanceof ArrayBuffer) return Uint8Array.from(new Uint8Array(value));
+
   if (ArrayBuffer.isView(value)) {
     return Uint8Array.from(new Uint8Array(value.buffer, value.byteOffset, value.byteLength));
   }
+
   if (value instanceof Blob) return Uint8Array.from(new Uint8Array(await value.arrayBuffer()));
+
   throw new TypeError("Unsupported noVNC WebSocket message type.");
 }
 

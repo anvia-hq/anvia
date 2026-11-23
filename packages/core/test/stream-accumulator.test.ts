@@ -24,10 +24,12 @@ describe("CompletionStreamAccumulator", () => {
         finishReason: "stop",
         providerFinishReason: "end",
       };
+
       if (mode !== "final-only") {
         accumulator.accept({ type: "text_delta", delta: "o" });
         accumulator.accept({ type: "text_delta", delta: "k" });
       }
+
       accumulator.accept({ type: "final", response: terminal });
 
       const result = accumulator.response();

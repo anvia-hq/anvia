@@ -80,7 +80,9 @@ export async function startDesktopSandbox(options: {
 
 export function requireAnthropicKey(): string {
   const key = process.env.ANTHROPIC_API_KEY;
+
   if (!key) throw new Error("Set ANTHROPIC_API_KEY (in the repo's .env, or the environment).");
+
   return key;
 }
 

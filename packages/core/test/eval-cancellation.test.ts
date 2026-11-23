@@ -65,7 +65,9 @@ function modelFixture(choices: CompletionResponse["choice"][] = []) {
       signals.push(options?.abortSignal);
       started.resolve();
       const choice = choices.shift();
+
       if (choice !== undefined) return completion(choice);
+
       active += 1;
       pending.resolve();
       return new Promise<CompletionResponse>((_resolve, reject) => {
@@ -76,6 +78,7 @@ function modelFixture(choices: CompletionResponse["choice"][] = []) {
           stopped.resolve();
           reject(signal?.reason);
         };
+
         if (signal?.aborted) onAbort();
         else signal?.addEventListener("abort", onAbort, { once: true });
       });
@@ -168,18 +171,24 @@ describe("agent eval cancellation", () => {
           },
           request: () => ({ prompt: "hello", abortSignal: requestController.signal }),
         });
+
         if (preAborted) selected.abort(reason);
+
         const operation = target("hello", testCase, { signal: caseController.signal });
         const rejection = expect(operation).rejects.toBe(reason);
+
         if (!preAborted) {
           await started.promise;
           selected.abort(reason);
         }
+
         await rejection;
         expect(selected.signal.reason).toBe(reason);
         expect(calls).toBe(preAborted ? 0 : 1);
         expect(active).toBe(0);
+
         if (effective !== undefined) expect(effective.reason).toBe(reason);
+
         expect(caseBalance()).toBe(0);
         expect(requestBalance()).toBe(0);
         expect(
@@ -201,7 +210,9 @@ describe("agent eval cancellation", () => {
       const started = deferred<void>();
       let effective: AbortSignal | undefined;
       let active = 0;
+
       if (preAborted) controller.abort(reason);
+
       const operation = runEvalSuite({
         name: "suite-reason",
         cases: [testCase],
@@ -228,13 +239,17 @@ describe("agent eval cancellation", () => {
         }),
       });
       const rejection = expect(operation).rejects.toBe(reason);
+
       if (!preAborted) {
         await started.promise;
         controller.abort(reason);
       }
+
       await rejection;
+
       if (preAborted) expect(effective).toBeUndefined();
       else expect(effective?.reason).toBe(reason);
+
       expect(active).toBe(0);
       expect(balance()).toBe(0);
     }
@@ -397,7 +412,9 @@ describe("agent eval cancellation", () => {
         generate(input) {
           generations += 1;
           const operation = fixture.agent.generate(input);
+
           if (generations === 2) resumed.resolve();
+
           return operation;
         },
       },
@@ -544,17 +561,22 @@ describe("agent eval cancellation", () => {
         agent: {
           async generate() {
             calls += 1;
+
             if (phase === "generation") controller.abort(reason);
+
             return response();
           },
         },
         request: () => {
           if (phase === "request") controller.abort(reason);
+
           return { prompt: "hello" };
         },
         output: ({ response }) => {
           outputs += 1;
+
           if (phase === "output") controller.abort(reason);
+
           return response.output;
         },
       });
@@ -576,6 +598,7 @@ describe("agent eval cancellation", () => {
         agent: {
           async generate() {
             if (phase === "generation") throw reason;
+
             return response();
           },
         },
@@ -615,6 +638,7 @@ describe("integrated target and metric cancellation", () => {
             stopped += 1;
             reject(signal?.reason);
           };
+
           if (signal?.aborted) onAbort();
           else signal?.addEventListener("abort", onAbort, { once: true });
         });
@@ -666,12 +690,14 @@ describe("integrated target and metric cancellation", () => {
       completion(request, options) {
         if (JSON.stringify(request).includes("Generate three or four")) {
           setupCalls += 1;
+
           if (!blockPreparation) {
             return Promise.resolve({
               ...completion([AssistantContent.toolCall("setup", "submit", { steps: ["Compare"] })]),
               usage: { ...Usage.empty(), totalTokens: 2, inputTokens: 1, outputTokens: 1 },
             });
           }
+
           active += 1;
           started.resolve();
           return new Promise((_resolve, reject) => {
@@ -682,10 +708,12 @@ describe("integrated target and metric cancellation", () => {
               stopped += 1;
               reject(signal?.reason);
             };
+
             if (signal?.aborted) onAbort();
             else signal?.addEventListener("abort", onAbort, { once: true });
           });
         }
+
         scoreCalls += 1;
         return Promise.resolve({
           ...completion([

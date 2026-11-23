@@ -64,20 +64,26 @@ export function relayTerminal(
       ws.close(1003, "text frames only");
       return;
     }
+
     const parsed = parseMessage(data);
+
     if (parsed === undefined) {
       ws.close(1002, "invalid message");
       return;
     }
+
     if (parsed.type === "open") {
       if (opening) return;
+
       opening = true;
       clearTimeout(waitForOpen);
       void start(parsed.cols, parsed.rows);
       return;
     }
+
     // Input and resize before the terminal is ready, or from a read-only viewer, are dropped.
     if (handle === undefined || readOnly) return;
+
     if (parsed.type === "input") handle.write(parsed.data);
     else handle.resize(parsed.cols, parsed.rows);
   });
@@ -91,10 +97,12 @@ export function relayTerminal(
         readOnly,
         cwd: authorization.cwd,
       });
+
       if (ws.readyState !== WebSocket.OPEN) {
         opened.close();
         return;
       }
+
       handle = opened;
     } catch (error) {
       sendJson(ws, {
@@ -110,6 +118,7 @@ export function relayTerminal(
     try {
       for await (const chunk of handle.output) {
         if (ws.readyState !== WebSocket.OPEN) break;
+
         await sendBinary(ws, chunk);
       }
     } catch {

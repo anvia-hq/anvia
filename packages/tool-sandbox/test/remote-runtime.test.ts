@@ -418,6 +418,7 @@ describe.skipIf(process.platform === "win32")("remote sandbox", () => {
       } finally {
         if (previous.token === undefined) delete process.env.ANVIA_SANDBOX_TOKEN;
         else process.env.ANVIA_SANDBOX_TOKEN = previous.token;
+
         if (previous.url === undefined) delete process.env.ANVIA_CONTROL_URL;
         else process.env.ANVIA_CONTROL_URL = previous.url;
       }

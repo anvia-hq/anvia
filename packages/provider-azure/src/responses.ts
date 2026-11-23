@@ -17,6 +17,7 @@ export class AzureOpenAIResponsesCompletionModel<
 
   protected override requestParams(request: CompletionRequest): Record<string, unknown> {
     const params = super.requestParams(request);
+
     if (Array.isArray(params.input)) {
       // Foundry project endpoints require explicit message types. This is also valid on resource endpoints.
       params.input = params.input.map((item) =>
@@ -25,6 +26,7 @@ export class AzureOpenAIResponsesCompletionModel<
           : item,
       );
     }
+
     return params;
   }
 

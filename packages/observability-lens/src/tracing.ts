@@ -66,12 +66,14 @@ export class LensClient {
       this.config = undefined;
       return;
     }
+
     this.enabled = true;
     this.config = resolveLensConfig(options);
   }
 
   observer(options: LensObserverOptions = {}): AgentObserver {
     this.assertOpen();
+
     if (!this.enabled) {
       return {
         startRun: () => {
@@ -80,6 +82,7 @@ export class LensClient {
         },
       };
     }
+
     const client = this;
     const { captureMode, capture } = this.observerOptions(options);
     return {
@@ -94,6 +97,7 @@ export class LensClient {
 
   pipelineObserver(options: LensPipelineObserverOptions = {}): PipelineObserver {
     this.assertOpen();
+
     if (!this.enabled) {
       return {
         startRun: () => {
@@ -102,6 +106,7 @@ export class LensClient {
         },
       };
     }
+
     const client = this;
     const { captureMode, capture } = this.observerOptions(options);
     return {
@@ -120,6 +125,7 @@ export class LensClient {
     options: LensEvalReporterOptions = {},
   ): LensEvalReporter<Input, Output, Expected> {
     this.assertOpen();
+
     if (!this.enabled) {
       return {
         report: () => {
@@ -127,6 +133,7 @@ export class LensClient {
         },
       };
     }
+
     const capture = this.captureOptions(options);
     let reporter: EvalReporter<Input, Output, Expected> | undefined;
     const resolve = async () => {
@@ -157,15 +164,19 @@ export class LensClient {
 
   async score(args: LensScoreArgs): Promise<void> {
     this.assertOpen();
+
     if (!this.enabled) return;
+
     (await this.resources()).scorer.score(args);
   }
 
   datasetClient(options: LensDatasetClientOptions = {}): LensDatasetClient {
     this.assertOpen();
+
     if (this.config === undefined) {
       throw new Error("LensClient is disabled because no connection is configured.");
     }
+
     const datasets = createLensDatasetClient(this.config, options);
     return {
       getDataset: <Input = unknown, Expected = unknown>(getOptions: LensDatasetGetOptions) => {
@@ -177,9 +188,11 @@ export class LensClient {
 
   promptClient(options: LensPromptClientOptions = {}): LensPromptClient {
     this.assertOpen();
+
     if (this.config === undefined) {
       throw new Error("LensClient is disabled because no connection is configured.");
     }
+
     return createLensPromptClient(this.config, options, {
       assertOpen: () => this.assertOpen(),
       signal: this.promptAbort.signal,
@@ -190,7 +203,9 @@ export class LensClient {
     this.assertOpen();
     const resource =
       this.resource ?? (this.initialization === undefined ? undefined : await this.initialization);
+
     if (resource === undefined) return;
+
     const flushOptions =
       this.config === undefined ? undefined : { timeoutMillis: this.config.timeoutMs };
     await Promise.all([
@@ -210,12 +225,15 @@ export class LensClient {
 
   private resources(): Promise<LensResources> {
     this.assertOpen();
+
     if (this.config === undefined) {
       return Promise.reject(
         new Error("LensClient is disabled because no connection is configured."),
       );
     }
+
     if (this.resource !== undefined) return Promise.resolve(this.resource);
+
     const capture = this.captureOptions({});
     this.initialization ??= Promise.resolve()
       .then(() => createLensResources(this.config as ResolvedLensConfig, capture.transformMetadata))
@@ -281,7 +299,9 @@ export class LensClient {
     this.promptAbort.abort();
     const pending =
       this.resource === undefined ? this.initialization : Promise.resolve(this.resource);
+
     if (pending === undefined) return;
+
     let resource: LensResources;
     try {
       resource = await pending;
@@ -295,6 +315,7 @@ export class LensClient {
     const failures = settled.flatMap((result) =>
       result.status === "rejected" ? [result.reason] : [],
     );
+
     if (failures.length > 0) throw new AggregateError(failures, "Failed to close LensClient.");
   }
 

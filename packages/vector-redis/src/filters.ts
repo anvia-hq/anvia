@@ -19,11 +19,13 @@ function translateFilter(
   metadataSchema: Record<string, RedisMetadataFieldType>,
 ): string {
   const fieldType = "key" in filter ? metadataSchema[filter.key] : undefined;
+
   if ("key" in filter && fieldType === undefined) {
     throw new TypeError(
       `Redis metadata filter field ${filter.key} must be declared in vectorStore({ metadataSchema })`,
     );
   }
+
   switch (filter.type) {
     case "eq":
       return equalityQuery(filter.key, filter.value, fieldType);
@@ -33,11 +35,13 @@ function translateFilter(
       if (filter.values.length === 0) {
         throw new TypeError(`Redis "in" filter for ${filter.key} requires at least one value`);
       }
+
       if (fieldType === "numeric") {
         return filter.values
           .map((value) => `(${equalityQuery(filter.key, value, fieldType)})`)
           .join(" | ");
       }
+
       const tags = filter.values.map((value) => escapeRedisValue(redisTagValue(value)));
       return `@${filter.key}:{${tags.join(" | ")}}`;
     }
@@ -73,8 +77,10 @@ function equalityQuery(
     if (typeof value !== "number" || !Number.isFinite(value)) {
       throw new TypeError(`Redis numeric metadata field ${key} requires numeric filters`);
     }
+
     return `@${key}:[${value} ${value}]`;
   }
+
   return `@${key}:{${escapeRedisValue(redisTagValue(value))}}`;
 }
 

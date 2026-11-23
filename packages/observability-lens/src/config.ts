@@ -26,12 +26,15 @@ export function resolveLensConfig(options: LensClientOptions = {}): ResolvedLens
   const timeoutMs = options.timeoutMs ?? 30_000;
   const captureMaxBytes = assertCaptureMaxBytes(options.captureMaxBytes ?? 262_144);
   const captureMode = options.captureMode ?? "safe";
+
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
     throw new TypeError("Anvia Lens timeoutMs must be a positive number");
   }
+
   if (captureMode !== "safe" && captureMode !== "full") {
     throw new TypeError('Anvia Lens captureMode must be "safe" or "full"');
   }
+
   return {
     baseUrl,
     publicKey,
@@ -53,11 +56,13 @@ function required(
   environment: string | undefined,
 ): string {
   const value = first(option, environment);
+
   if (value === undefined) {
     throw new Error(
       `Anvia Lens ${name} is required; pass it to LensClient or set ANVIA_LENS_${envName(name)}`,
     );
   }
+
   return value;
 }
 
@@ -69,6 +74,7 @@ export function assertCaptureMaxBytes(value: number): number {
   if (!Number.isInteger(value) || value < 96) {
     throw new TypeError("Anvia Lens captureMaxBytes must be an integer of at least 96 bytes");
   }
+
   return value;
 }
 
@@ -78,16 +84,20 @@ export function assertCaptureMaxBytes(value: number): number {
  */
 export function normalizeLensBaseUrl(value: string): string {
   const normalized = value.trim().replace(/\/+$/, "");
+
   // WHATWG URL reports a terminal "?" or "#" as an empty query/fragment, but it still delimits the
   // composed endpoint, so reject either delimiter before parsing.
   if (normalized.includes("?") || normalized.includes("#")) throw invalidBaseUrl(value);
+
   let parsed: URL;
   try {
     parsed = new URL(normalized);
   } catch {
     throw invalidBaseUrl(value);
   }
+
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") throw invalidBaseUrl(value);
+
   return normalized;
 }
 

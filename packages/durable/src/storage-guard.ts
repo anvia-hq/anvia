@@ -16,6 +16,7 @@ export function guardStore(
       });
       onFailure(failure);
     }
+
     return failure;
   };
   const check = () => {
@@ -33,7 +34,9 @@ export function guardStore(
         const guarded = new Proxy(tx, {
           get(target, key) {
             const method: unknown = Reflect.get(target, key);
+
             if (typeof method !== "function") return method;
+
             return async (...args: unknown[]) => {
               check();
               try {
@@ -41,6 +44,7 @@ export function guardStore(
               } catch (error) {
                 // Losing a claim stops one run; it is not a journal failure.
                 if (error instanceof DurableClaimLostError) throw error;
+
                 throw fail(error);
               }
             };
@@ -58,16 +62,22 @@ export function guardStore(
       }, options);
     } catch (error) {
       if (error instanceof DurableClaimLostError) throw error;
+
       if (!callbackFailed || error !== callbackError) throw fail(error);
+
       throw failure ?? error;
     }
   };
   return new Proxy(store, {
     get(target, key) {
       if (key === "transaction") return transaction;
+
       const method: unknown = Reflect.get(target, key);
+
       if (typeof method !== "function") return method;
+
       if (key === "close") return method.bind(target);
+
       if (key === "claim" || key === "claimTasks" || key === "renew" || key === "release") {
         // Lease traffic fails transiently (network, failover); the runtime retries it and
         // stops affected runs itself, so it must not poison the journal.
@@ -76,6 +86,7 @@ export function guardStore(
           return Reflect.apply(method, target, args);
         };
       }
+
       return async (...args: unknown[]) => {
         check();
         try {

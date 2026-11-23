@@ -340,13 +340,7 @@ export function PlaygroundPage(props: {
                       </Select>
                     ) : null)}
                   <Button
-                    aria-label={
-                      props.isStreaming
-                        ? "Stop generating"
-                        : props.runState === "running"
-                          ? "Running"
-                          : "Send message"
-                    }
+                    aria-label={submitButtonLabel(props.isStreaming, props.runState)}
                     className="size-9 min-h-9 shrink-0 rounded-lg"
                     size="icon"
                     type={props.isStreaming ? "button" : "submit"}
@@ -388,6 +382,18 @@ export function PlaygroundPage(props: {
   );
 }
 
+function submitButtonLabel(isStreaming: boolean, runState: string): string {
+  if (isStreaming) {
+    return "Stop generating";
+  }
+
+  if (runState === "running") {
+    return "Running";
+  }
+
+  return "Send message";
+}
+
 function PlaygroundBrowserPanel(props: {
   workspace: BrowserWorkspace;
   width: number;
@@ -415,6 +421,7 @@ function PlaygroundBrowserPanel(props: {
         tabIndex={0}
         onKeyDown={(event) => {
           if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+
           event.preventDefault();
           props.onWidthChange(
             Math.min(1_100, Math.max(440, props.width + (event.key === "ArrowLeft" ? 24 : -24))),

@@ -84,9 +84,11 @@ class QueueModel {
   async completion(request: CompletionRequest): Promise<CompletionResponse> {
     this.requests.push(request);
     const response = this.responses.shift();
+
     if (response === undefined) {
       throw new Error("No queued response");
     }
+
     return response;
   }
 }
@@ -120,10 +122,12 @@ class AbortableModel extends QueueModel {
     this.markStarted();
     return new Promise((_resolve, reject) => {
       const signal = options?.abortSignal;
+
       if (signal?.aborted === true) {
         reject(signal.reason);
         return;
       }
+
       signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
     });
   }
@@ -161,12 +165,15 @@ class AbortableStreamingModel implements StreamingCompletionModel {
     this.markStarted();
     yield { type: "text_delta", delta: "partial" };
     const signal = options?.abortSignal;
+
     if (signal === undefined) throw new Error("Expected an abort signal");
+
     await new Promise<void>((_resolve, reject) => {
       if (signal.aborted) {
         reject(signal.reason);
         return;
       }
+
       signal.addEventListener("abort", () => reject(signal.reason), { once: true });
     });
   }
@@ -193,12 +200,15 @@ class FlakyQueueModel {
   async completion(request: CompletionRequest): Promise<CompletionResponse> {
     this.requests.push(request);
     const outcome = this.outcomes.shift();
+
     if (outcome === undefined) {
       throw new Error("No queued outcome");
     }
+
     if ("error" in outcome) {
       throw outcome.error;
     }
+
     return outcome.response;
   }
 }
@@ -239,9 +249,11 @@ class StreamingQueueModel implements StreamingCompletionModel {
   async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionModelStreamEvent> {
     this.requests.push(request);
     const response = this.responses.shift();
+
     if (response === undefined) {
       throw new Error("No queued stream response");
     }
+
     let hasFinal = false;
     let hasToolCall = false;
     for await (const event of response) {
@@ -252,6 +264,7 @@ class StreamingQueueModel implements StreamingCompletionModel {
         event.type === "provider_tool_call";
       yield event;
     }
+
     if (!hasFinal) {
       yield {
         type: "final",
@@ -458,6 +471,7 @@ beforeEach(() => {
 
 afterEach(() => {
   for (const store of openSqliteStores.splice(0)) store.close();
+
   if (studioDbDir !== undefined) {
     rmSync(studioDbDir, { force: true, recursive: true });
     studioDbDir = undefined;
@@ -707,6 +721,7 @@ describe("Anvia studio", () => {
               if (modelId !== "secondary") {
                 throw new Error(`Unexpected model: ${modelId}`);
               }
+
               return selectedModel;
             },
           },
@@ -798,7 +813,9 @@ describe("Anvia studio", () => {
             ],
             createCompletionModel: ({ modelId }) => {
               if (modelId === "primary") return controlled;
+
               if (modelId === "secondary") return plain;
+
               throw new Error(`Unexpected model: ${modelId}`);
             },
           },
@@ -1266,9 +1283,11 @@ describe("Anvia studio", () => {
     };
     expect(runsBody.runs).toHaveLength(1);
     const [savedRun] = runsBody.runs;
+
     if (savedRun === undefined) {
       throw new Error("Expected a saved pipeline run");
     }
+
     expect(savedRun).toMatchObject({
       pipelineId: "audit-pipeline",
       status: "success",
@@ -1639,7 +1658,9 @@ describe("Anvia studio", () => {
       const sandboxes = await fetchEventually(`${baseUrl}/sandboxes`);
       const summary = (await sandboxes.json()) as { sandboxes: Array<{ ref: string }> };
       const ref = summary.sandboxes[0]?.ref;
+
       if (ref === undefined) throw new Error("Expected a sandbox reference.");
+
       const control = await fetch(`${baseUrl}/sandboxes/${ref}/views/desktop/control`, {
         headers: { origin: baseUrl },
       });
@@ -1694,6 +1715,7 @@ describe("Anvia studio", () => {
       blocker.once("error", reject);
       blocker.listen(0, "127.0.0.1", () => {
         const address = blocker.address();
+
         if (typeof address === "object" && address !== null) resolve(address.port);
         else reject(new Error("Expected a TCP server address"));
       });
@@ -2553,7 +2575,9 @@ describe("Anvia studio", () => {
       }),
     );
     const first = (await firstResponse.json()) as AgentRunResponse;
+
     if (first.type !== "interaction") throw new Error("Expected interaction outcome");
+
     expect(first).not.toHaveProperty("continuation");
     expect(first).not.toHaveProperty("messages");
     expect(executed).toBe(false);
@@ -2949,6 +2973,7 @@ describe("Anvia studio", () => {
       }),
     );
     const first = (await firstResponse.json()) as AgentRunResponse;
+
     if (first.type !== "interaction") throw new Error("Expected interaction outcome");
 
     const resumedResponse = await runner.fetch(
@@ -3102,6 +3127,7 @@ describe("Anvia studio", () => {
       }),
     );
     const first = (await firstResponse.json()) as AgentRunResponse;
+
     if (first.type !== "interaction") throw new Error("Expected interaction outcome");
 
     const restartedRunner = new Studio([agent]);
@@ -3205,6 +3231,7 @@ describe("Anvia studio", () => {
     let reasoningEvent: unknown;
     while (reasoningEvent === undefined) {
       const event = await withTimeout(reader.read(), 1_000);
+
       if ((event as { type?: string }).type === "reasoning_delta") {
         reasoningEvent = event;
       }
@@ -4790,27 +4817,35 @@ describe("Anvia studio", () => {
       turn: 1,
       messages: [original],
     });
+
     if (typeof original.content === "string") {
       throw new Error("Expected structured user content");
     }
+
     const originalText = original.content[0];
+
     if (originalText?.type !== "text") {
       throw new Error("Expected text message");
     }
+
     (originalText as { text: string }).text = "mutated after append";
 
     const snapshot = await store.compaction?.snapshot({ scope: { sessionId: "session_1" } });
+
     if (snapshot === undefined || store.compaction === undefined) {
       throw new Error("Expected in-memory compaction capability");
     }
+
     const snapshotMessage = snapshot.messages[0];
     const snapshotText =
       snapshotMessage?.role === "user" && typeof snapshotMessage.content !== "string"
         ? snapshotMessage.content[0]
         : undefined;
+
     if (snapshotText?.type !== "text") {
       throw new Error("Expected text snapshot message");
     }
+
     (snapshotText as { text: string }).text = "mutated snapshot";
 
     await expect(store.load({ scope: { sessionId: "session_1" } })).resolves.toEqual([
@@ -4970,9 +5005,11 @@ describe("Anvia studio", () => {
       scope: { sessionId: "session_1" },
     });
     expect(snapshot).toBeDefined();
+
     if (snapshot === undefined || store.compaction === undefined) {
       throw new Error("Expected SQLite compaction capability");
     }
+
     const replacement = Message.system("Earlier discussion.", {
       metadata: {
         anvia: {
@@ -5444,6 +5481,7 @@ describe("Anvia studio", () => {
     const stream = await app.request("http://runner.test/observability/events");
     expect(stream.status).toBe(200);
     expect(stream.headers.get("content-type")).toContain("application/x-ndjson");
+
     if (stream.body === null) {
       throw new Error("Expected observability response body");
     }
@@ -5607,15 +5645,19 @@ function createJsonlReader(response: Response): {
       while (true) {
         while (events.length === 0) {
           const next = await reader.read();
+
           if (next.done) {
             buffer += decoder.decode();
+
             if (buffer.trim().length > 0) {
               events.push(JSON.parse(buffer) as unknown);
               buffer = "";
               break;
             }
+
             throw new Error("Stream ended before another JSONL event");
           }
+
           buffer += decoder.decode(next.value, { stream: true });
           const lines = buffer.split("\n");
           buffer = lines.pop() ?? "";
@@ -5627,7 +5669,9 @@ function createJsonlReader(response: Response): {
         }
         const value = events.shift();
         const unwrapped = unwrapClientFrame(value);
+
         if (unwrapped.kind === "event") return unwrapped.value;
+
         if (unwrapped.kind === "end") {
           throw new Error("Stream ended before another JSONL event");
         }
@@ -5642,11 +5686,15 @@ function unwrapClientFrame(
   if (typeof value !== "object" || value === null || !("type" in value)) {
     return { kind: "event", value };
   }
+
   if (value.type === "stream_event" && "event" in value) {
     return { kind: "event", value: value.event };
   }
+
   if (value.type === "stream_start") return { kind: "skip" };
+
   if (value.type === "stream_end") return { kind: "end" };
+
   return { kind: "event", value };
 }
 
@@ -5667,6 +5715,7 @@ async function readRemainingJsonl(reader: { read: () => Promise<unknown> }): Pro
       if (error instanceof Error && error.message === "Stream ended before another JSONL event") {
         return events;
       }
+
       throw error;
     }
   }
@@ -5694,6 +5743,7 @@ async function waitFor(predicate: () => boolean, ms = 1000): Promise<void> {
     if (Date.now() - startedAt > ms) {
       throw new Error("Timed out waiting for condition");
     }
+
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
 }
@@ -5704,6 +5754,7 @@ async function availableLoopbackPort(): Promise<number> {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", () => {
       const address = server.address();
+
       if (typeof address === "object" && address !== null) resolve(address.port);
       else reject(new Error("Expected a TCP server address."));
     });
@@ -5721,6 +5772,7 @@ async function fetchEventually(url: string): Promise<Response> {
       return await fetch(url);
     } catch (error) {
       if (Date.now() - startedAt > 1000) throw error;
+
       await new Promise((resolve) => setTimeout(resolve, 5));
     }
   }

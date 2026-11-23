@@ -11,34 +11,43 @@ export function registrations(
   values: readonly DurableAgentRegistration[],
 ): Map<string, DurableAgentRegistration> {
   if (AGENT_RUN_EXECUTION_VERSION !== 5) throw new Error("Unsupported core execution protocol.");
+
   const result = new Map<string, DurableAgentRegistration>();
   for (const registration of values) {
     nonblank(registration.version, "Agent version");
     const { agent } = registration;
+
     if (registration.lifecycle !== undefined && registration.lifecycle.mode !== "observe")
       throw new TypeError(
         `Durable agent "${agent.id}" has an unknown lifecycle mode. Only { mode: "observe" } is supported.`,
       );
+
     if (registration.stream !== undefined && typeof registration.stream !== "boolean")
       throw new TypeError("Durable stream option must be a boolean.");
+
     if (
       registration.stream === true &&
       (!agent.model.capabilities.streaming || !isStreamingCompletionModel(agent.model))
     )
       throw new TypeError("Durable streaming requires a streaming-capable model.");
+
     if (
       registration.toolConcurrency !== undefined &&
       (!Number.isSafeInteger(registration.toolConcurrency) || registration.toolConcurrency < 1)
     )
       throw new TypeError("Durable toolConcurrency must be a positive integer.");
+
     const options = getResolvedAgentOptions(agent);
+
     if (result.has(agent.id)) throw new TypeError(`Duplicate durable agent: ${agent.id}`);
+
     // Agent-level retries would restart a model request without a persisted attempt, so the
     // runtime executes with retries disabled. Reject the setting instead of silently disabling it.
     if (retriesEnabled(options.retries))
       throw new TypeError(
         `Durable agent "${agent.id}" defines retries, which the durable runtime cannot honour: every run executes with retries disabled so a replay never repeats an unrecorded attempt. Configure modelRetry on the registration instead, or remove retries from the agent.`,
       );
+
     // Hooks, middleware, guardrails and provider tools each need their own marker and persistence
     // boundary, so none of them is replayed silently.
     if (
@@ -48,6 +57,7 @@ export function registrations(
       throw new TypeError(
         `Durable agent "${agent.id}" has an unknown middlewares mode. Only { mode: "pure" } is supported.`,
       );
+
     if (
       registration.guardrails !== undefined &&
       (registration.guardrails as { mode?: unknown }).mode !== "record"
@@ -55,7 +65,9 @@ export function registrations(
       throw new TypeError(
         `Durable agent "${agent.id}" has an unknown guardrails mode. Only { mode: "record" } is supported.`,
       );
+
     if (registration.hooks !== undefined) assertRecordedHooks(agent.id, registration.hooks);
+
     if (
       registration.providerTools !== undefined &&
       (registration.providerTools as { mode?: unknown }).mode !== "stateless"
@@ -63,6 +75,7 @@ export function registrations(
       throw new TypeError(
         `Durable agent "${agent.id}" has an unknown providerTools mode. Only { mode: "stateless" } is supported.`,
       );
+
     if (
       registration.toolIndexes !== undefined &&
       (registration.toolIndexes as { mode?: unknown }).mode !== "recorded"
@@ -70,6 +83,7 @@ export function registrations(
       throw new TypeError(
         `Durable agent "${agent.id}" has an unknown toolIndexes mode. Only { mode: "recorded" } is supported.`,
       );
+
     if (
       registration.context !== undefined &&
       (registration.context as { mode?: unknown }).mode !== "recorded"
@@ -77,6 +91,7 @@ export function registrations(
       throw new TypeError(
         `Durable agent "${agent.id}" has an unknown context mode. Only { mode: "recorded" } is supported.`,
       );
+
     if (
       registration.mcpServers !== undefined &&
       (registration.mcpServers as { mode?: unknown }).mode !== "pinned"
@@ -84,6 +99,7 @@ export function registrations(
       throw new TypeError(
         `Durable agent "${agent.id}" has an unknown mcpServers mode. Only { mode: "pinned" } is supported.`,
       );
+
     if (
       registration.memory !== undefined &&
       (registration.memory as { mode?: unknown }).mode !== "recorded"
@@ -91,13 +107,16 @@ export function registrations(
       throw new TypeError(
         `Durable agent "${agent.id}" has an unknown memory mode. Only { mode: "recorded" } is supported.`,
       );
+
     if (registration.guardrails !== undefined) assertUniqueGuardrailIds(agent);
+
     // Core does not classify a provider tool with non-JSON configuration as a provider tool, so it
     // is checked in the configured tool list, where it is still visible. Provider tool configuration
     // is persisted with the model request, so it must be JSON.
     if (registration.providerTools !== undefined)
       for (const tool of options.tools ?? []) {
         const candidate = tool as { kind?: unknown; name?: unknown; configuration?: unknown };
+
         if (
           candidate.kind === "provider" &&
           candidate.configuration !== undefined &&
@@ -107,9 +126,12 @@ export function registrations(
             `Durable agent "${agent.id}" has provider tool "${String(candidate.name)}" whose configuration is not JSON. Provider tool configuration is persisted with the model request, so it must be JSON.`,
           );
       }
+
     if (options.memory !== undefined && registration.memory !== undefined)
       assertRecordableMemory(agent.id, options.memory);
+
     const unsupported = unsupportedFeatures(options, registration);
+
     if (unsupported.length > 0) {
       // Each feature with a marker names it, so the fix is one line away.
       const hints = [
@@ -137,13 +159,16 @@ export function registrations(
         `Durable agent "${agent.id}" (version ${JSON.stringify(registration.version)}) uses features that require additional checkpoint support: ${unsupported.join(", ")}. Durable agents support static local tools, static context documents, and instructions only.${hints.length > 0 ? ` To admit them, set the registration marker: ${hints.join("; ")}.` : ""}`,
       );
     }
+
     for (const [name, policy] of Object.entries(registration.toolRecovery ?? {})) {
       if (agent.getTool(name) === undefined) throw new TypeError(`Unknown recovery tool: ${name}`);
+
       if (policy !== "safe" && policy !== "idempotent" && policy !== "manual")
         throw new TypeError(`Invalid recovery policy for ${name}`);
     }
 
     let compaction: DurableAgentRegistration["compaction"];
+
     if (registration.compaction !== undefined) {
       // Registration compaction projects the run's own history, which recorded memory leaves empty:
       // the conversation lives in the memory store, so the policy would silently do nothing.
@@ -151,7 +176,9 @@ export function registrations(
         throw new TypeError(
           `Durable agent "${agent.id}" sets both compaction and memory: { mode: "recorded" }. Registration compaction works on the run's history, which recorded memory keeps in the memory store, so it would not apply. Remove one of them.`,
         );
+
       const { compactor, tokenCounter, ...policy } = registration.compaction;
+
       if (
         typeof compactor !== "function" ||
         (tokenCounter !== undefined && typeof tokenCounter !== "function")
@@ -159,6 +186,7 @@ export function registrations(
         throw new TypeError(
           "Durable compaction requires a compactor and an optional token counter.",
         );
+
       const parsed = compactionPolicySchema.parse(policy);
       compaction = {
         trigger: parsed.trigger,
@@ -251,6 +279,7 @@ function assertRecordableMemory(agentId: string, memory: NonNullable<ResolvedOpt
     throw new TypeError(
       `Durable agent "${agentId}" sets memory.compaction, which recorded memory does not support yet. Remove memory.compaction to admit memory.`,
     );
+
   if (typeof memory.store.loadVersioned !== "function")
     throw new TypeError(
       `Durable agent "${agentId}" sets memory.store without loadVersioned(). Recorded memory needs a store that returns a version with each load, so a concurrent write is detected as a conflict.`,
@@ -263,16 +292,20 @@ function assertRecordableMemory(agentId: string, memory: NonNullable<ResolvedOpt
  */
 function assertRecordedHooks(agentId: string, hooks: unknown) {
   const { mode, hook } = hooks as { mode?: unknown; hook?: unknown };
+
   if (mode !== "record")
     throw new TypeError(
       `Durable agent "${agentId}" has an unknown hooks mode. Only { mode: "record", hook } is supported.`,
     );
+
   if (typeof hook !== "object" || hook === null)
     throw new TypeError(`Durable agent "${agentId}" sets hooks without a hook object.`);
+
   const unsupported = Object.entries(hook)
     .filter(([, value]) => value !== undefined)
     .map(([name]) => name)
     .filter((name) => !(RECORDED_HOOKS as readonly string[]).includes(name));
+
   if (unsupported.length > 0)
     throw new TypeError(
       `Durable agent "${agentId}" has hook callbacks durable does not record: ${unsupported.join(", ")}. Only ${RECORDED_HOOKS.join(", ")} are supported.`,
@@ -282,7 +315,9 @@ function assertRecordedHooks(agentId: string, hooks: unknown) {
 /** `false`, `0`, and a one-attempt policy all mean the runtime would not retry anyway. */
 function retriesEnabled(retries: ResolvedOptions["retries"]): boolean {
   if (retries === undefined || retries === false) return false;
+
   if (typeof retries !== "object" || retries === null) return false;
+
   return retries.maxAttempts === undefined || retries.maxAttempts > 1;
 }
 
@@ -292,15 +327,20 @@ function unsupportedFeatures(
   registration: DurableAgentRegistration,
 ): string[] {
   const features: string[] = [];
+
   if (options.memory !== undefined && registration.memory === undefined) features.push("memory");
+
   // Observational hooks are gated by the registration's marker; anything else can change the run.
   if (options.lifecycle !== undefined && registration.lifecycle === undefined)
     features.push("lifecycle");
+
   // Pure middleware and recorded guardrails are gated by their markers, like lifecycle hooks.
   if ((options.middlewares?.length ?? 0) > 0 && registration.middlewares === undefined)
     features.push("middleware");
+
   if ((options.guardrails?.length ?? 0) > 0 && registration.guardrails === undefined)
     features.push("guardrails");
+
   // Static documents are snapshotted into each run record at submission; live vector retrieval
   // is still not checkpointed.
   if (
@@ -308,12 +348,16 @@ function unsupportedFeatures(
     registration.context === undefined
   )
     features.push("context");
+
   if ((options.mcpServers?.length ?? 0) > 0 && registration.mcpServers === undefined)
     features.push("MCP servers");
+
   if ((options.providerTools?.length ?? 0) > 0 && registration.providerTools === undefined)
     features.push("provider tools");
+
   if ((options.toolIndexes?.length ?? 0) > 0 && registration.toolIndexes === undefined)
     features.push("tool indexes");
+
   return features;
 }
 
@@ -328,6 +372,7 @@ function assertUniqueGuardrailIds(agent: { id: string; guardrails: readonly Guar
       throw new TypeError(
         `Durable agent "${agent.id}" has two guardrail policies named "${policy.id}".`,
       );
+
     policyIds.add(policy.id);
     for (const [boundary, checks] of [
       ["input", policy.input],
@@ -339,6 +384,7 @@ function assertUniqueGuardrailIds(agent: { id: string; guardrails: readonly Guar
           throw new TypeError(
             `Durable agent "${agent.id}" has two ${boundary} guardrails named "${check.id}" in policy "${policy.id}".`,
           );
+
         ids.add(check.id);
       }
     }

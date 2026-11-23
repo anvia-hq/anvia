@@ -17,12 +17,14 @@ export class SerialGate {
   transaction<T>(fn: () => Promise<T>): Promise<T> {
     if (this.inside)
       return Promise.reject(new Error("Nested durable transactions are not supported."));
+
     return this.enqueue(() => this.context.run(true, fn));
   }
 
   /** Runs a read after the open transaction, or at once when called from inside one. */
   read<T>(fn: () => Promise<T> | T): Promise<T> {
     if (this.inside) return Promise.resolve().then(fn);
+
     return this.enqueue(async () => fn());
   }
 

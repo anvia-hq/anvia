@@ -27,6 +27,7 @@ export function tryToProviderJsonSchemaFromStandardSchema(
   schema: StandardSchemaV1,
 ): StandardSchemaJsonSchemaConversion {
   const props = schema["~standard"];
+
   // Zod keeps its native converter. Prefer the output representation: it
   // validates identically for schemas without input/output differences and
   // carries zod's strict-object refinements (additionalProperties: false)
@@ -36,17 +37,20 @@ export function tryToProviderJsonSchemaFromStandardSchema(
       jsonSchema: toProviderJsonSchemaShape(toProviderZodJsonSchema(schema as z.ZodType)),
     };
   }
+
   // Generic support for any library implementing the Standard JSON Schema spec.
   const jsonSchema = (
     props as {
       jsonSchema?: StandardJSONSchemaV1["~standard"]["jsonSchema"] | undefined;
     }
   ).jsonSchema;
+
   if (typeof jsonSchema === "object" && jsonSchema !== null) {
     return {
       jsonSchema: toProviderJsonSchemaShape(jsonSchema.input({ target: JSON_SCHEMA_TARGET })),
     };
   }
+
   // Vendor-specific converters may need to be loaded asynchronously.
   return { pendingSchema: schema };
 }
@@ -90,6 +94,7 @@ function jsonSchemaMatchesInputShape(input: JsonValue, output: JsonValue): boole
       input.every((item, index) => jsonSchemaMatchesInputShape(item, output[index]))
     );
   }
+
   if (
     typeof input === "object" &&
     input !== null &&
@@ -104,7 +109,9 @@ function jsonSchemaMatchesInputShape(input: JsonValue, output: JsonValue): boole
       inputKeys.length === outputKeys.length &&
       inputKeys.every((key, index) => {
         const outputKey = outputKeys[index];
+
         if (outputKey === undefined || key !== outputKey) return false;
+
         // Keys come from Object.keys, so the indexed values exist by construction.
         const inputValue = (input as Record<string, JsonValue>)[key] as JsonValue;
         const outputValue = (output as Record<string, JsonValue>)[outputKey] as JsonValue;
@@ -112,6 +119,7 @@ function jsonSchemaMatchesInputShape(input: JsonValue, output: JsonValue): boole
       })
     );
   }
+
   return input === output;
 }
 
@@ -124,12 +132,16 @@ export async function toProviderJsonSchemaFromStandardSchema(
   schema: StandardSchemaV1,
 ): Promise<JsonObject> {
   const converted = tryToProviderJsonSchemaFromStandardSchema(schema);
+
   if (converted.jsonSchema !== undefined) return converted.jsonSchema;
+
   const pending = converted.pendingSchema;
   const vendor = pending["~standard"].vendor;
+
   if (vendor === "valibot") {
     return valibotToProviderJsonSchema(pending);
   }
+
   throw new Error(
     `Structured output schemas from vendor "${vendor}" cannot be converted to a provider JSON schema. ` +
       `Use a Zod or Valibot schema, or make the schema implement the Standard JSON Schema interface ("~standard.jsonSchema").`,
@@ -182,6 +194,7 @@ function copyProviderSchema(source: unknown): JsonObject {
   if (typeof source !== "object" || source === null || Array.isArray(source)) {
     throw new TypeError("Provider JSON schema must be a plain or null-prototype record.");
   }
+
   return copyJsonData(source, new WeakSet(), true) as JsonObject;
 }
 
@@ -198,38 +211,50 @@ function copyJsonData(
   ) {
     return value;
   }
+
   if (typeof value !== "object") {
     throw new TypeError("Provider JSON schema must contain only finite JSON data.");
   }
+
   if (ancestors.has(value)) {
     throw new TypeError("Provider JSON schema must not contain cycles.");
   }
+
   ancestors.add(value);
+
   if (Array.isArray(value)) {
     const copy: JsonValue[] = [];
     for (let index = 0; index < value.length; index++) {
       const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+
       if (descriptor === undefined || !("value" in descriptor)) {
         throw new TypeError(
           "Provider JSON schema arrays must be dense data arrays without accessors.",
         );
       }
+
       copy.push(copyJsonData(descriptor.value, ancestors));
     }
     ancestors.delete(value);
     return copy;
   }
+
   const prototype = Object.getPrototypeOf(value);
+
   if (prototype !== Object.prototype && prototype !== null) {
     throw new TypeError("Provider JSON schema must contain only plain or null-prototype records.");
   }
+
   const copy: JsonObject = {};
   for (const key of Object.keys(value)) {
     if (omitRootSchema && key === "$schema") continue;
+
     const descriptor = Object.getOwnPropertyDescriptor(value, key);
+
     if (descriptor === undefined || !("value" in descriptor)) {
       throw new TypeError("Provider JSON schema records must not contain enumerable accessors.");
     }
+
     // Define own data properties so __proto__ cannot change the copy's prototype.
     Object.defineProperty(copy, key, {
       value: copyJsonData(descriptor.value, ancestors),
@@ -294,11 +319,15 @@ function completeSchemaNode(node: unknown): void {
     for (const item of node) completeSchemaNode(item);
     return;
   }
+
   if (typeof node !== "object" || node === null) return;
+
   const schema = node as Record<string, unknown>;
+
   if (schema.type === "object" && schema.additionalProperties === undefined) {
     schema.additionalProperties = false;
   }
+
   for (const [key, value] of Object.entries(schema)) {
     if (SCHEMA_POSITIONS.has(key)) {
       completeSchemaNode(value);

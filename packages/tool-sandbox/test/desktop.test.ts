@@ -245,7 +245,9 @@ for (const backend of backends) {
         context: object = {},
       ) => {
         const tool = tools.find((candidate) => candidate.name === name);
+
         if (tool === undefined) throw new Error(name);
+
         return Promise.resolve(tool.call(args as never, context));
       };
 
@@ -432,7 +434,9 @@ for (const backend of backends) {
         },
         { env: () => ({ ...process.env }) as Record<string, string>, log: () => undefined },
       );
+
       if (!("service" in found)) throw new Error(`missing ${found.missing.join(", ")}`);
+
       const { service } = found;
       await service.status(true);
       execFileSync("pkill", ["-9", "-x", backend.display]);
@@ -621,9 +625,13 @@ describe("browser desktop relay", () => {
         allowedOrigins: [origin],
         authorizeDesktop: (request) => {
           const ticket = relayTicket(request);
+
           if (ticket === "rw") return { sandboxId, ...grant };
+
           if (ticket === "rw2") return { sandboxId, holder: "bob" };
+
           if (ticket === "ro") return { sandboxId, readOnly: true };
+
           return null;
         },
       },
@@ -634,7 +642,9 @@ describe("browser desktop relay", () => {
 
   function browser(url: string, options: { origin?: string | null; protocols?: string[] } = {}) {
     const clientOptions: WebSocket.ClientOptions = {};
+
     if (options.origin !== null) clientOptions.origin = options.origin ?? origin;
+
     const socket = new WebSocket(url, options.protocols ?? ["anvia.desktop.v1"], clientOptions);
     const state = {
       received: Buffer.alloc(0),

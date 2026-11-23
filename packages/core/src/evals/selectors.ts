@@ -16,6 +16,7 @@ export function selectPromptOutput(args: EvalMetricArgs<unknown, unknown, unknow
   ) {
     throw new TypeError("selectPromptOutput requires an output object with a string output field.");
   }
+
   return args.output.output;
 }
 
@@ -41,9 +42,12 @@ export async function resolveActualText<Input, Output, Expected>(
   args: EvalMetricArgs<Input, Output, Expected>,
 ): Promise<string> {
   const value = selector === undefined ? defaultOutputValue(args.output) : await selector(args);
+
   if (typeof value === "string") return value;
+
   try {
     const serialized = JSON.stringify(value);
+
     if (serialized !== undefined) return serialized;
   } catch {
     // The caller receives one consistent boundary error below.
@@ -58,6 +62,7 @@ export async function resolveExpected<Input, Output, Expected, Value>(
   if (selectorOrValue === undefined) {
     return args.case.expected;
   }
+
   return typeof selectorOrValue === "function"
     ? (selectorOrValue as ValueSelector<Input, Output, Expected, Value>)(args)
     : selectorOrValue;
@@ -70,6 +75,7 @@ export async function resolveJudgePrompt<Input, Output, Expected>(
   if (selector !== undefined) {
     return selector(args);
   }
+
   return [
     `Suite: ${args.suiteName}`,
     `Case: ${args.case.id}`,

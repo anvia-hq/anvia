@@ -21,7 +21,9 @@ export function createObservedLifecycle(
   registration: DurableAgentRegistration,
 ): AgentLifecycle<unknown, unknown> | undefined {
   if (registration.lifecycle === undefined) return undefined;
+
   const hooks = registration.agent.lifecycle as AgentLifecycle<unknown, unknown> | undefined;
+
   if (hooks === undefined) return undefined;
 
   // Model turns alone repeat when a failed run is retried, so a retry count is part of the key.
@@ -39,9 +41,11 @@ export function createObservedLifecycle(
     call: (snapshot: Event) => unknown,
   ): Promise<void> {
     if (hooks![hook] === undefined) return;
+
     const key = `${run.epoch}:lifecycle:${hook}:${step}:${toolCallId ?? ""}`;
     const claimed = await store.transaction(async (tx) => {
       if ((await tx.getOperation(run.id, key)) !== undefined) return false;
+
       await tx.putOperation(run.id, {
         key,
         kind: "effect",
@@ -51,6 +55,7 @@ export function createObservedLifecycle(
       });
       return true;
     });
+
     if (!claimed) return;
 
     let result: { failed: false } | { failed: true; error: string } = { failed: false };
@@ -92,5 +97,6 @@ function deepFreeze<T>(value: T): T {
     Object.freeze(value);
     for (const child of Object.values(value)) deepFreeze(child);
   }
+
   return value;
 }

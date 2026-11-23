@@ -95,8 +95,10 @@ export const StudioConsoleContext = createContext<StudioConsoleContextValue | un
 
 export function useStudioConsole(): StudioConsoleContextValue {
   const value = useContext(StudioConsoleContext);
+
   if (value === undefined) {
     throw new Error("StudioConsoleContext is missing");
   }
+
   return value;
 }

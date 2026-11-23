@@ -4,7 +4,9 @@ import { DurableRuntime } from "../../src/index.js";
 import { SqliteDurableStore } from "../../src/sqlite.js";
 import { done, makeAgent } from "../helpers.js";
 const [database, calls, stage] = process.argv.slice(2);
+
 if (database === undefined || calls === undefined) throw new Error("Missing fixture arguments");
+
 let id: string;
 async function halt(): Promise<never> {
   process.send?.({ id });
@@ -19,6 +21,7 @@ const runtime = await DurableRuntime.open({
     {
       agent: makeAgent(async () => {
         if (++modelCalls === 2 && stage === "model") await halt();
+
         return done();
       }),
       version: "1",
@@ -27,7 +30,9 @@ const runtime = await DurableRuntime.open({
         retention: { recentTurns: 0 },
         compactor: async () => {
           appendFileSync(calls, "summary\n");
+
           if (stage === "summary") await halt();
+
           return {
             summary: "Earlier decisions.",
             usage: { ...Usage.empty(), inputTokens: 5, outputTokens: 2, totalTokens: 7 },

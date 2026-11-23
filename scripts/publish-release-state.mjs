@@ -14,6 +14,7 @@ export function releasesReadyForTags(
   }
   for (const release of alreadyPublished) {
     const tag = `${release.name}@${release.version}`;
+
     if (recoverableTags.has(tag)) {
       releases.set(tag, release);
     }

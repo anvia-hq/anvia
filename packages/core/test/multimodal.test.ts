@@ -300,7 +300,9 @@ function flakyImageModel(): ImageGenerationModel {
     modelId: "test-image",
     async imageGeneration() {
       attempt += 1;
+
       if (attempt === 1) throw Object.assign(new Error("unavailable"), { status: 503 });
+
       const image = new Uint8Array([1]);
       return { images: [{ data: image }], rawResponse: {} };
     },
@@ -314,7 +316,9 @@ function flakyAudioModel(): SpeechGenerationModel {
     modelId: "test-speech",
     async speechGeneration() {
       attempt += 1;
+
       if (attempt === 1) throw Object.assign(new Error("unavailable"), { status: 503 });
+
       return { audio: { data: new Uint8Array([1]) }, rawResponse: {} };
     },
   };
@@ -327,7 +331,9 @@ function flakyTranscriptionModel(): TranscriptionModel {
     modelId: "test-transcription",
     async transcription() {
       attempt += 1;
+
       if (attempt === 1) throw Object.assign(new Error("unavailable"), { status: 503 });
+
       return { text: "done", rawResponse: {} };
     },
   };

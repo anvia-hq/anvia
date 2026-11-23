@@ -33,19 +33,24 @@ export function createLensDatasetClient(
   const secretKey = options.secretKey ?? tracingConfig.secretKey;
   const timeoutMs = options.timeoutMs ?? tracingConfig.timeoutMs;
   const pageSize = options.pageSize ?? DEFAULT_PAGE_SIZE;
+
   if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100) {
     throw new TypeError("Anvia Lens dataset pageSize must be an integer between 1 and 100");
   }
+
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
     throw new TypeError("Anvia Lens dataset timeoutMs must be a positive number");
   }
+
   const authorization = `Basic ${Buffer.from(`${publicKey}:${secretKey}`).toString("base64")}`;
 
   return {
     async getDataset<Input = unknown, Expected = unknown>(getOptions: LensDatasetGetOptions) {
       const { name } = getOptions;
       const normalizedName = name.trim();
+
       if (normalizedName.length === 0) throw new TypeError("Anvia Lens dataset name is required");
+
       const items: LensDatasetItem<Input, Expected>[] = [];
       let dataset: Omit<LensDataset<Input, Expected>, "items"> | undefined;
       let totalPages: number | undefined;
@@ -53,16 +58,22 @@ export function createLensDatasetClient(
         const url = new URL(`${baseUrl}/api/public/datasets/${encodeURIComponent(normalizedName)}`);
         url.searchParams.set("page", String(page));
         url.searchParams.set("limit", String(pageSize));
+
         if (getOptions.version !== undefined) url.searchParams.set("version", getOptions.version);
+
         const response = await request(url, authorization, timeoutMs);
         const parsed = await parseDatasetResponse<Input, Expected>(response);
         const nextDataset: Omit<LensDataset<Input, Expected>, "items"> = {
           name: parsed.name,
           version: parsed.version,
         };
+
         if (parsed.description !== undefined) nextDataset.description = parsed.description;
+
         if (parsed.metadata !== undefined) nextDataset.metadata = parsed.metadata;
+
         dataset ??= nextDataset;
+
         if (dataset.name !== parsed.name || dataset.version !== parsed.version) {
           throw new LensDatasetError(
             "Lens returned inconsistent dataset pages",
@@ -70,6 +81,7 @@ export function createLensDatasetClient(
             "invalid_response",
           );
         }
+
         if (totalPages === undefined) {
           totalPages = parsed.totalPages;
         } else if (totalPages !== parsed.totalPages) {
@@ -79,8 +91,11 @@ export function createLensDatasetClient(
             "invalid_response",
           );
         }
+
         items.push(...parsed.items);
+
         if (page >= totalPages) break;
+
         if (page === MAX_PAGINATION_PAGES) {
           throw new LensDatasetError(
             "Lens dataset exceeds the pagination limit",
@@ -89,9 +104,11 @@ export function createLensDatasetClient(
           );
         }
       }
+
       if (dataset === undefined) {
         throw new LensDatasetError("Lens returned no dataset pages", undefined, "invalid_response");
       }
+
       return { ...dataset, items };
     },
   };
@@ -108,10 +125,12 @@ async function request(url: URL, authorization: string, timeoutMs: number): Prom
   } catch (cause) {
     throw new LensDatasetError("Unable to reach Anvia Lens", undefined, "network_error", { cause });
   }
+
   if (!response.ok) {
     const error = await readApiError(response);
     throw new LensDatasetError(error.message, response.status, error.code);
   }
+
   return response;
 }
 
@@ -141,13 +160,17 @@ function parseDatasetResponse<Input, Expected>(
       if (!isRecord(value) || typeof value.name !== "string" || typeof value.version !== "string") {
         throw invalidResponse(response, "Lens returned an invalid dataset");
       }
+
       if (!Array.isArray(value.items) || !isRecord(value.meta)) {
         throw invalidResponse(response, "Lens returned invalid dataset pagination");
       }
+
       const totalPages = value.meta.totalPages;
+
       if (!Number.isInteger(totalPages) || (totalPages as number) < 0) {
         throw invalidResponse(response, "Lens returned invalid dataset pagination");
       }
+
       const items = value.items.map((item) => parseItem<Input, Expected>(item, response));
       const result: {
         name: string;
@@ -157,18 +180,23 @@ function parseDatasetResponse<Input, Expected>(
         items: LensDatasetItem<Input, Expected>[];
         totalPages: number;
       } = { name: value.name, version: value.version, items, totalPages: totalPages as number };
+
       if (value.description !== undefined) {
         if (typeof value.description !== "string") {
           throw invalidResponse(response, "Lens returned an invalid dataset description");
         }
+
         result.description = value.description;
       }
+
       if (value.metadata !== undefined) {
         if (!isJsonRecord(value.metadata)) {
           throw invalidResponse(response, "Lens returned invalid dataset metadata");
         }
+
         result.metadata = value.metadata;
       }
+
       return result;
     });
 }
@@ -180,32 +208,42 @@ function parseItem<Input, Expected>(
   if (!isRecord(value) || typeof value.id !== "string" || !("input" in value)) {
     throw invalidResponse(response, "Lens returned an invalid dataset item");
   }
+
   if (!isJsonValue(value.input)) {
     throw invalidResponse(response, "Lens returned a non-JSON dataset input");
   }
+
   const item: LensDatasetItem<Input, Expected> = { id: value.id, input: value.input as Input };
+
   if (value.expected !== undefined) {
     if (!isJsonValue(value.expected)) {
       throw invalidResponse(response, "Lens returned a non-JSON expected value");
     }
+
     item.expected = value.expected as Expected;
   }
+
   if (value.context !== undefined) item.context = stringArray(value.context, response, "context");
+
   if (value.retrievalContext !== undefined) {
     item.retrievalContext = stringArray(value.retrievalContext, response, "retrieval context");
   }
+
   if (value.metadata !== undefined) {
     if (!isJsonRecord(value.metadata)) {
       throw invalidResponse(response, "Lens returned invalid case metadata");
     }
+
     item.metadata = value.metadata;
   }
+
   return item;
 }
 
 async function readApiError(response: Response): Promise<{ code: string; message: string }> {
   try {
     const value: unknown = await response.json();
+
     if (isRecord(value) && isRecord(value.error)) {
       return {
         code: typeof value.error.code === "string" ? value.error.code : "request_failed",
@@ -229,6 +267,7 @@ function stringArray(value: unknown, response: Response, label: string): string[
   if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) {
     throw invalidResponse(response, `Lens returned invalid ${label}`);
   }
+
   return value;
 }
 
@@ -245,6 +284,8 @@ function isJsonValue(value: unknown): value is JsonValue {
   ) {
     return true;
   }
+
   if (Array.isArray(value)) return value.every(isJsonValue);
+
   return isJsonRecord(value);
 }

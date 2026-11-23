@@ -4,7 +4,9 @@ import { SqliteDurableStore } from "../../src/sqlite.js";
 import { done, hasToolResult, lookup, makeAgent, toolResponse } from "../helpers.js";
 
 const [database, effects, crashAt] = process.argv.slice(2);
+
 if (database === undefined || effects === undefined) throw new Error("Missing fixture arguments");
+
 let id: string;
 const halt = async () => {
   process.send?.({ ready: true, id });
@@ -15,8 +17,10 @@ const halt = async () => {
 const agent = makeAgent(
   async (request) => {
     if (!hasToolResult(request)) return toolResponse();
+
     // The hook decision is already committed when the model call of the second turn starts.
     if (crashAt === "model") await halt();
+
     return done();
   },
   [
@@ -37,7 +41,9 @@ const runtime = await DurableRuntime.open({
         hook: {
           onToolCall: async ({ tool }) => {
             appendFileSync(effects, "hook\n");
+
             if (crashAt === "hook") await halt();
+
             return tool.skip("blocked by policy");
           },
         },

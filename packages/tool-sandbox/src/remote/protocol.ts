@@ -264,14 +264,18 @@ export type TerminalSessionInfo = MethodResult<"terminalList">["sessions"][numbe
 /** A WebSocket message as text. Frames are JSON, except tunnel bytes once `binary-data` is agreed. */
 export function rawDataToString(data: WebSocket.RawData): string {
   if (Array.isArray(data)) return Buffer.concat(data).toString("utf8");
+
   if (Buffer.isBuffer(data)) return data.toString("utf8");
+
   return Buffer.from(data).toString("utf8");
 }
 
 /** A WebSocket message's bytes, whichever form `ws` handed them over in. */
 export function rawDataToBytes(data: WebSocket.RawData): Uint8Array {
   if (Array.isArray(data)) return new Uint8Array(Buffer.concat(data));
+
   if (Buffer.isBuffer(data)) return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+
   return new Uint8Array(data);
 }
 
@@ -471,6 +475,7 @@ export function encodeInput(
   input: SandboxExecOptions["input"],
 ): z.infer<typeof wireInput> | undefined {
   if (input === undefined) return undefined;
+
   return typeof input === "string" ? { text: input } : { base64: encodeBytes(input) };
 }
 
@@ -478,6 +483,7 @@ export function decodeInput(
   input: z.infer<typeof wireInput> | undefined,
 ): string | Uint8Array | undefined {
   if (input === undefined) return undefined;
+
   return "text" in input ? input.text : decodeBytes(input.base64);
 }
 
@@ -543,22 +549,29 @@ export type WireError = Extract<DaemonFrame, { type: "error" }>;
 /** Describe a failure for the wire. Causes and stack traces never leave the sandbox. */
 export function encodeError(error: unknown, requestIdValue?: string): WireError {
   const base: { type: "error"; requestId?: string } = { type: "error" };
+
   if (requestIdValue !== undefined) base.requestId = requestIdValue;
+
   if (error instanceof DockerSandboxError) {
     const details = jsonSafe(error.details);
     return compact({ ...base, code: error.code, message: error.message, details });
   }
+
   if (error instanceof TypeError)
     return { ...base, code: "protocol", message: error.message, name: "TypeError" };
+
   if (error instanceof RangeError)
     return { ...base, code: "protocol", message: error.message, name: "RangeError" };
+
   const message = error instanceof Error ? error.message : "Unexpected sandbox daemon failure.";
   return { ...base, code: "protocol", message };
 }
 
 export function decodeError(frame: WireError): Error {
   if (frame.name === "TypeError") return new TypeError(frame.message);
+
   if (frame.name === "RangeError") return new RangeError(frame.message);
+
   if (knownCodes.has(frame.code)) {
     return new DockerSandboxError(
       frame.message,
@@ -566,11 +579,13 @@ export function decodeError(frame: WireError): Error {
       frame.details,
     );
   }
+
   return new DockerSandboxError(frame.message, "protocol", frame.details);
 }
 
 function jsonSafe(value: unknown): unknown {
   if (value === undefined) return undefined;
+
   try {
     return JSON.parse(JSON.stringify(value));
   } catch {

@@ -525,9 +525,11 @@ describe("createLoggerObserver", () => {
           },
         },
       });
+
       if (finishReason !== undefined) {
         expect(logger.records.at(-1)?.context.error).toMatchObject({ finishReason });
       }
+
       expect(JSON.stringify(logger.records.at(-1))).not.toContain("private-provider-tool-id");
     },
   );
@@ -755,7 +757,9 @@ async function recordPinoRunError(error: Error): Promise<Record<string, unknown>
   })) as AgentRunObserver;
   run.error?.({ status: "failed", error, usage: Usage.empty(), messages: [] });
   const record = lines[0];
+
   if (record === undefined) throw new Error("Expected Pino error record.");
+
   return record;
 }
 

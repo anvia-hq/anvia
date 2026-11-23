@@ -15,6 +15,7 @@ const { goal, registration } = recoveryGoal(
   log,
   binding === "override" ? "per-user" : "researcher",
 );
+
 if (binding === "legacy") {
   // Older controllers read the definition's agent directly, without pinning a phase first.
   const run = goal.registration.run;
@@ -24,6 +25,7 @@ if (binding === "legacy") {
       checkpoint: { ...(ctx.checkpoint as JsonObject), agentId: "researcher" },
     });
 }
+
 const store = new SqliteDurableStore(database);
 const transaction = store.transaction.bind(store);
 let stopped = false;
@@ -50,12 +52,14 @@ store.transaction = async <T>(callback: (tx: DurableTransaction) => Promise<T>):
           ((boundary === "spawn" && state.phase === "session" && state.sessions === 0) ||
             (boundary === "assessment" && state.phase === "ready" && state.sessions === 1) ||
             (boundary === "rollover" && state.phase === "session" && state.sessions === 1));
+
         if (!stopped && stop) {
           stopped = true;
           process.send?.({ id: task.id });
           // Roll back this phase only. The earlier spawn/assessment transaction is committed.
           throw new DurableStorageError("Injected interruption at goal boundary");
         }
+
         await tx.putTask(persisted);
       },
     }),

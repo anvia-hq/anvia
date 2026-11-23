@@ -33,6 +33,7 @@ const server = Bun.serve({
   port: 0,
   async fetch(request) {
     const url = new URL(request.url);
+
     if (url.pathname === "/cancel") {
       return createEventStreamResponse({
         events: cancellableEvents(() => observeCancellation?.()),
@@ -65,6 +66,7 @@ const server = Bun.serve({
           store: resumableStore,
         });
       }
+
       return createClientStreamResponse({
         events: clientEvents([
           { type: "run_start", runId: "resume-run", source: "completion" },
@@ -82,6 +84,7 @@ const server = Bun.serve({
           store: resumableStore,
         });
       }
+
       return createClientStreamResponse({
         events: liveEvents(),
         resumable: { streamId: "bun-live", store: resumableStore },
@@ -326,6 +329,7 @@ function byteStream(text: string): ReadableStream<Uint8Array> {
         controller.close();
         return;
       }
+
       controller.enqueue(bytes.subarray(offset, offset + 1));
       offset += 1;
     },
@@ -382,6 +386,7 @@ function cancellableEvents(onCancel: () => void): AsyncIterable<GenericEvent> {
             emitted = true;
             return Promise.resolve({ done: false as const, value: { kind: "first" } });
           }
+
           return new Promise<IteratorResult<GenericEvent>>((resolve) => {
             finish = resolve;
           });

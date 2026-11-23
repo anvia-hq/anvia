@@ -37,7 +37,9 @@ it.each([false, true])(
         capabilities,
         async completion(request) {
           requests.push(JSON.stringify(request));
+
           if (++calls > 75) return done();
+
           return response([
             { type: "tool-call", toolCallId: `call-${calls}`, toolName: "lookup", input: {} },
           ]);
@@ -93,6 +95,7 @@ it.each([false, true])(
       // Events retain tool results and the final transcript, but must not repeat model histories.
       expect(bytes("anvia_durable_events", "length(CAST(data AS BLOB))")).toBeLessThan(unique * 3);
       await expectJournalRequests(runtime, handle.id);
+
       if (!compact) expect(requests.join("").length).toBeGreaterThan(unique * 30);
     } finally {
       db.close();
@@ -242,7 +245,9 @@ it("rebuilds question-wait requests across close, reopen and response epochs", a
   const agent = makeAgent(
     async (request) => {
       requests.push(JSON.stringify(request));
+
       if (request.chatHistory.some((message) => message.role === "tool")) return done();
+
       return response([
         {
           type: "tool-call",
@@ -269,7 +274,9 @@ it("rebuilds question-wait requests across close, reopen and response epochs", a
   });
   await vi.waitFor(async () => expect((await runtime.status(handle.id)).status).toBe("waiting"));
   const pending = (await runtime.run(handle.id)).outcome;
+
   if (pending?.type !== "interaction") throw new Error("Expected question");
+
   await runtime.close();
   runtime = await DurableRuntime.open({
     store: new SqliteDurableStore(path),

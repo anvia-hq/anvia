@@ -34,15 +34,19 @@ export function resolveStudioAllowedHostnames(options?: {
   const allowed = new Set<string>(STUDIO_LOCAL_HOSTNAMES);
   for (const host of options?.allowedHosts ?? []) {
     const normalized = normalizeHostname(host);
+
     if (normalized !== "") allowed.add(normalized);
   }
   const bound = normalizeHostname(options?.hostname ?? "");
+
   if (bound !== "" && bound !== "0.0.0.0" && bound !== "::" && !allowed.has(bound)) {
     allowed.add(bound);
+
     // Host headers carry IPv6 literals bracketed (e.g. "[2001:db8::1]"), while
     // the configured bind address is unbracketed, so trust both spellings.
     if (bound.includes(":")) allowed.add(`[${bound}]`);
   }
+
   return allowed;
 }
 
@@ -66,28 +70,39 @@ export function createStudioHostGuard(options?: {
   // on the wire always provide one, so there is nothing to validate.
   return async function studioHostGuard(c: Context, next: Next): Promise<Response | void> {
     const host = c.req.header("host");
+
     if (host !== undefined && !isAllowedHostname(studioRequestHostname(host), allowed)) {
       return errorResponse(c, 403, "forbidden", "Host not allowed");
     }
+
     const origin = c.req.header("origin");
+
     if (origin !== undefined && !isAllowedOrigin(origin, allowed)) {
       return errorResponse(c, 403, "forbidden", "Origin not allowed");
     }
+
     return next();
   };
 }
 
 function studioRequestHostname(hostHeader: string | undefined): string | undefined {
   if (hostHeader === undefined) return undefined;
+
   const host = hostHeader.trim().toLowerCase();
+
   if (host.startsWith("[")) {
     const end = host.indexOf("]");
+
     if (end === -1) return undefined;
+
     return host.slice(0, end + 1);
   }
+
   const colon = host.lastIndexOf(":");
+
   // A single colon can only be a port separator; IPv6 literals arrive bracketed.
   if (colon !== -1 && host.indexOf(":") === colon) return host.slice(0, colon);
+
   return host;
 }
 
@@ -114,9 +129,11 @@ export function errorResponse(
       message,
     },
   };
+
   if (details !== undefined) {
     body.error.details = details;
   }
+
   return c.json(body, status);
 }
 

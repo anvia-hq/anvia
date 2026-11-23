@@ -97,6 +97,7 @@ describe("sandbox browser relay on Bun", () => {
     const frames = 64; // 1 MiB.
     for (let index = 0; index < frames; index += 1) {
       socket.send(frame);
+
       if (index % 8 === 7) await Bun.sleep(5);
     }
     await until(() => state.received >= frame.byteLength * frames);
@@ -126,6 +127,7 @@ describe("sandbox browser relay on Bun", () => {
     } as unknown as string[]);
     fakeDaemon.onmessage = (event) => {
       const frame = JSON.parse(String(event.data)) as { type: string; tunnelId?: string };
+
       if (frame.type === "tunnel.open") {
         fakeDaemon.send(JSON.stringify({ type: "tunnel.opened", tunnelId: frame.tunnelId }));
       }
@@ -152,12 +154,14 @@ describe("sandbox browser relay on Bun", () => {
       for (let index = 0; index < 400; index += 1) socket.send(frame);
       await Bun.sleep(2_000);
       expect(uncaught).toEqual([]);
+
       if (state.closed !== undefined) {
         expect(state.closed).toEqual({
           code: 1008,
           reason: "sending faster than the service reads",
         });
       }
+
       expect(stalled.isConnected(sandboxId)).toBe(true); // The hub itself is fine.
     } finally {
       fakeDaemon.close();

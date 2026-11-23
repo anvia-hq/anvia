@@ -89,7 +89,9 @@ it("keeps approval registrations pinned while unrelated agents can be added and 
   await vi.waitFor(async () => expect(await runtime.unregisterAgent("other")).toBe(true));
   expect((await other.snapshot()).run.status).toBe("completed");
   const outcome = (await pending.snapshot()).run.outcome;
+
   if (outcome?.type !== "interaction") throw new Error("Expected approval");
+
   await pending.respond(outcome.interaction.id, { type: "tool-approval", approved: true });
   await pending.result();
   await vi.waitFor(async () => expect(await runtime.unregisterAgent("researcher")).toBe(true));
@@ -166,6 +168,7 @@ it("shares added registrations with custom tasks that spawn owned agents", async
             ids: [await ctx.spawnAgent("child", { agentId: "dynamic", prompt: "Hello" })],
           },
         };
+
       return { status: "completed", output: "done" };
     },
   });
@@ -247,14 +250,17 @@ it("replays a completed owned spawn after unloading its registration", async () 
     initial: () => 0,
     run: async (ctx) => {
       const child = await ctx.spawnAgent("child", { agentId: "dynamic", prompt: "Hello" });
+
       if (ctx.checkpoint === 0)
         return {
           status: "waiting",
           checkpoint: 1,
           wait: { type: "children", ids: [child], policy: "failFast" },
         };
+
       if (ctx.checkpoint === 1)
         return { status: "waiting", checkpoint: 2, wait: { type: "signal", name: "continue" } };
+
       return { status: "completed", output: child };
     },
   });

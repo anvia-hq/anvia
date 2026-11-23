@@ -60,5 +60,6 @@ const agent = new Agent({
 const response = await agent.generate({ prompt: "The queue is backing up. What should I check?" });
 
 if (response.type !== "response") throw new Error("Unexpected tool approval request.");
+
 console.log(response.output);
 await vectorClient.close();

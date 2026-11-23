@@ -49,9 +49,13 @@ export function memberSummary(member: TeamMember): AgentTeamMemberSummary {
     status: member.status,
     usage: lifecycleSnapshot(member.usage),
   };
+
   if (member.parentInstanceId !== undefined) summary.parentInstanceId = member.parentInstanceId;
+
   if (member.outcome !== undefined) summary.outcome = lifecycleSnapshot(member.outcome);
+
   if (member.error !== undefined) summary.error = member.error;
+
   return summary;
 }
 
@@ -63,6 +67,7 @@ export function steeringMessages(input: AgentSteerInput): UserMessage[] {
   ) {
     throw new TypeError("Agent team steering requires exactly one of prompt or messages.");
   }
+
   const messages =
     input.prompt === undefined
       ? parseMessages(input.messages)
@@ -73,9 +78,11 @@ export function steeringMessages(input: AgentSteerInput): UserMessage[] {
               : input.prompt,
           ),
         ];
+
   if (messages.length === 0 || messages.some((message) => message.role !== "user")) {
     throw new TypeError("Agent team steering requires user messages.");
   }
+
   return messages as UserMessage[];
 }
 

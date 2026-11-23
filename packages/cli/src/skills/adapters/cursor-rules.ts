@@ -46,9 +46,11 @@ export function syncCursorRules(options: CursorRulesSyncOptions): SkillsSyncOutc
 
     if (!options.force) {
       skipped += 1;
+
       if (options.mode === "update") {
         pending.push(targetPath);
       }
+
       continue;
     }
 

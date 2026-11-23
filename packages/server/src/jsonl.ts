@@ -12,6 +12,7 @@ export function createJsonlStream<TEvent>(
     async pull(controller) {
       try {
         const next = await iterator.next();
+
         if (next.done === true) {
           controller.close();
           return;

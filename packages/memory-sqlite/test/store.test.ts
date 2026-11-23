@@ -457,7 +457,9 @@ describe("SqliteMemoryStore", () => {
 
 function sqliteDatabase(store: SqliteMemoryStore): DatabaseSync {
   const database = storeDatabases.get(store);
+
   if (database === undefined) throw new Error("Missing test database.");
+
   return database;
 }
 
@@ -470,13 +472,17 @@ async function createTestMemoryStore(
   options: CreateTestMemoryStoreOptions = {},
 ): Promise<SqliteMemoryStore> {
   const { path = ":memory:", ensure = true, ...storeOptions } = options;
+
   if (path !== ":memory:") mkdirSync(join(path, ".."), { recursive: true });
+
   const database = new DatabaseSync(path);
   databases.add(database);
   const client = new SqliteMemoryClient({ database });
   const store = client.memoryStore(storeOptions);
   storeDatabases.set(store, database);
+
   if (ensure) await store.ensure();
+
   return store;
 }
 

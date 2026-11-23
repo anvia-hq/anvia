@@ -15,18 +15,23 @@ export class MemgraphClient {
 
   constructor(options: MemgraphClientOptions) {
     this.database = options.database;
+
     if ("driver" in options) {
       this.driver = options.driver;
       this.ownsDriver = false;
       return;
     }
+
     if (typeof options.uri !== "string" || options.uri.length === 0) {
       throw new TypeError("MemgraphClient uri must be a non-empty string.");
     }
+
     const credentials = options.auth ?? { username: "", password: "" };
+
     if (typeof credentials.username !== "string" || typeof credentials.password !== "string") {
       throw new TypeError("MemgraphClient credentials must be strings.");
     }
+
     this.driver = createDriver(options.uri, auth.basic(credentials.username, credentials.password));
     this.ownsDriver = true;
   }
@@ -52,7 +57,9 @@ export class MemgraphClient {
 
   async close(): Promise<void> {
     if (this.closed) return;
+
     this.closed = true;
+
     if (this.ownsDriver) await this.driver.close();
   }
 

@@ -15,7 +15,9 @@ export type DurableMcpServers = { hash: string };
 
 export async function mcpServersOf(agent: Agent<unknown>): Promise<DurableMcpServers | undefined> {
   const servers = getResolvedAgentOptions(agent).mcpServers ?? [];
+
   if (servers.length === 0) return undefined;
+
   const fingerprint = await Promise.all(
     servers.map(async (server) => ({
       name: server.name,
@@ -47,8 +49,11 @@ export async function mcpServersByAgent(
   const result = new Map<string, DurableMcpServers>();
   for (const agentId of new Set(agentIds)) {
     const registration = agents.get(agentId);
+
     if (registration?.mcpServers === undefined) continue;
+
     const fingerprint = await mcpServersOf(registration.agent);
+
     if (fingerprint !== undefined) result.set(agentId, fingerprint);
   }
   return result;

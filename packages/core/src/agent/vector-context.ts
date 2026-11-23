@@ -52,23 +52,28 @@ export function createVectorContext<T>(
     topK,
     kind: "vector-context" as const,
   };
+
   if (minScore !== undefined) {
     context = { ...context, minScore };
   }
+
   return Object.freeze(context);
 }
 
 export function isVectorContext(value: unknown): value is VectorContext {
   if (typeof value !== "object" || value === null) return false;
+
   const candidate = value as {
     kind?: unknown;
     store?: { search?: unknown };
     model?: unknown;
     models?: { dense?: unknown; sparse?: unknown };
   };
+
   if (candidate.kind !== "vector-context" || typeof candidate.store?.search !== "function") {
     return false;
   }
+
   return (
     candidate.model !== undefined ||
     (candidate.models?.dense !== undefined && candidate.models.sparse !== undefined)

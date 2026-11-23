@@ -105,13 +105,17 @@ export function resolveSandboxImageSpec(input: SandboxImageInput): SandboxImageS
   for (const requirement of packages.uv) validateUvRequirement(requirement);
 
   if (features.has("artifacts") || packages.uv.length > 0) runtimes.add("python");
+
   if (features.has("playwright")) runtimes.add("node");
+
   if (features.has("desktop")) {
     if (features.has("playwright")) {
       throw new Error("The desktop feature cannot be combined with playwright.");
     }
+
     runtimes.add("node");
   }
+
   if (packages.npm.length > 0 && !runtimes.has("node") && !runtimes.has("bun")) {
     runtimes.add("node");
   }
@@ -142,9 +146,11 @@ export function renderSandboxImageContext(
 ): SandboxImageContext {
   const files = new Map<string, string>();
   const pythonRequirements = [...spec.packages.uv];
+
   if (spec.features.includes("artifacts")) {
     pythonRequirements.unshift(...artifactPythonPackages);
   }
+
   const npmDependencies = npmDependenciesFor(spec);
 
   files.set(
@@ -159,6 +165,7 @@ export function renderSandboxImageContext(
   if (pythonRequirements.length > 0) {
     files.set("pyproject.toml", renderPythonProject(spec, unique(pythonRequirements)));
   }
+
   if (npmDependencies.size > 0) {
     files.set(
       "package.json",
@@ -216,8 +223,11 @@ function renderDockerfile(
   ];
 
   if (hasNode) lines.push(`FROM node:${spec.versions.node}-bookworm-slim AS node-runtime`);
+
   if (hasPython) lines.push(`FROM python:${spec.versions.python}-slim-bookworm AS python-runtime`);
+
   if (hasBun) lines.push(`FROM oven/bun:${spec.versions.bun}-slim AS bun-runtime`);
+
   if (hasPython) lines.push(`FROM ghcr.io/astral-sh/uv:${spec.versions.uv} AS uv-runtime`);
 
   if (hasPlaywright) {
@@ -235,26 +245,33 @@ function renderDockerfile(
   if (hasPython && (hasPlaywright || !isFinalRuntime(spec, "python"))) {
     lines.push("COPY --from=python-runtime /usr/local/ /usr/local/");
   }
+
   if (hasNode && (hasPlaywright || !isFinalRuntime(spec, "node"))) {
     lines.push("COPY --from=node-runtime /usr/local/bin/ /usr/local/bin/");
     lines.push(
       "COPY --from=node-runtime /usr/local/lib/node_modules/ /usr/local/lib/node_modules/",
     );
   }
+
   if (hasBun && !isFinalRuntime(spec, "bun")) {
     lines.push("COPY --from=bun-runtime /usr/local/bin/bun /usr/local/bin/bun");
     lines.push("RUN ln -sf /usr/local/bin/bun /usr/local/bin/bunx");
   }
+
   if (hasPython) {
     lines.push("COPY --from=uv-runtime /uv /uvx /usr/local/bin/");
   }
 
   const requestedAptPackages = [...commonAptPackages];
+
   if (spec.features.includes("artifacts")) requestedAptPackages.push("fonts-dejavu-core");
+
   if (hasDesktop) {
     requestedAptPackages.push(...desktopAptPackages, ...desktopBuildAptPackages);
+
     if (!hasPython) requestedAptPackages.push("python3");
   }
+
   requestedAptPackages.push(...spec.packages.apt);
   const aptPackages = unique(requestedAptPackages).sort();
   lines.push(
@@ -285,6 +302,7 @@ function renderDockerfile(
 
   if (npmDependencies.size > 0) {
     lines.push("", "COPY package.json /opt/anvia-js/package.json");
+
     if (hasNode) {
       lines.push(
         "RUN npm install --prefix /opt/anvia-js --omit=dev --no-audit --no-fund \\",
@@ -298,6 +316,7 @@ function renderDockerfile(
         "  && ln -s /opt/anvia-js/node_modules /node_modules",
       );
     }
+
     lines.push("ENV NODE_PATH=/opt/anvia-js/node_modules");
     lines.push("ENV PATH=/opt/anvia-js/node_modules/.bin:$PATH");
   }
@@ -312,7 +331,9 @@ function renderDockerfile(
   }
 
   lines.push("");
+
   if (hasPlaywright) lines.push("ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright");
+
   if (hasDesktop) {
     lines.push(
       "RUN useradd --create-home --shell /bin/bash sandbox \\",
@@ -327,6 +348,7 @@ function renderDockerfile(
     );
     return lines.join("\n");
   }
+
   lines.push(
     "RUN mkdir -p /workspace",
     "WORKDIR /workspace",
@@ -339,8 +361,11 @@ function renderDockerfile(
 
 function renderDockerignore(hasPython: boolean, hasNpm: boolean): string {
   const lines = ["**", "!Dockerfile", "!.dockerignore", "!anvia-sandbox.json"];
+
   if (hasPython) lines.push("!pyproject.toml");
+
   if (hasNpm) lines.push("!package.json");
+
   lines.push("");
   return lines.join("\n");
 }
@@ -361,14 +386,18 @@ function renderPythonProject(spec: SandboxImageSpec, requirements: readonly stri
 
 function npmDependenciesFor(spec: SandboxImageSpec): Map<string, string> {
   const dependencies = new Map<string, string>();
+
   if (spec.features.includes("playwright")) {
     dependencies.set("playwright", spec.versions.playwright);
   }
+
   for (const packageSpec of spec.packages.npm) {
     const parsed = parseNpmPackageSpec(packageSpec);
+
     if (dependencies.has(parsed.name)) {
       throw new Error(`Duplicate npm package: ${parsed.name}`);
     }
+
     dependencies.set(parsed.name, parsed.version);
   }
   return new Map([...dependencies.entries()].sort(([left], [right]) => left.localeCompare(right)));
@@ -376,8 +405,11 @@ function npmDependenciesFor(spec: SandboxImageSpec): Map<string, string> {
 
 function isFinalRuntime(spec: SandboxImageSpec, runtime: SandboxImageRuntime): boolean {
   if (spec.features.includes("playwright")) return false;
+
   if (spec.runtimes.includes("python")) return runtime === "python";
+
   if (spec.runtimes.includes("node")) return runtime === "node";
+
   return runtime === "bun";
 }
 
@@ -421,9 +453,11 @@ function parseNpmPackageSpec(packageSpec: string): { name: string; version: stri
   if (!/^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/i.test(name) || !version) {
     throw new Error(`Invalid npm package spec: ${packageSpec}`);
   }
+
   if (/[\s'"`$;&|<>\\]/.test(version) || hasControlCharacter(version)) {
     throw new Error(`Invalid npm package version in: ${packageSpec}`);
   }
+
   return { name, version };
 }
 

@@ -58,7 +58,9 @@ describe("AgentTeam stream buffering", () => {
           options?: ModelCallOptions,
         ): AsyncIterable<CompletionModelStreamEvent> {
           const signal = options?.abortSignal;
+
           if (signal === undefined) throw new Error("Expected a cancellation signal");
+
           yield { type: "text_delta", delta: "partial" };
           await new Promise<void>((resolve) => {
             if (signal.aborted) resolve();

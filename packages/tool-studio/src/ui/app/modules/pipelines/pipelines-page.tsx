@@ -72,6 +72,7 @@ export function PipelinesPage(props: {
     if (graph === undefined) {
       return { nodes: [], edges: [] } satisfies PipelineFlow;
     }
+
     return toFlow(graph, nodeStatuses);
   }, [graph, nodeStatuses]);
 
@@ -557,9 +558,11 @@ function pipelineRunOutputText(run: StudioPipelineRunRecord): string {
   if (run.output !== undefined) {
     return typeof run.output === "string" ? run.output : JSON.stringify(run.output, null, 2);
   }
+
   if (run.error !== undefined) {
     return JSON.stringify(run.error, null, 2);
   }
+
   return "";
 }
 
@@ -657,17 +660,21 @@ function PipelineLogsSection(props: {
 
   useEffect(() => {
     const node = scrollerRef.current;
+
     if (node === null || !stickToBottomRef.current) {
       return;
     }
+
     node.scrollTop = node.scrollHeight;
   });
 
   function updateStickiness() {
     const node = scrollerRef.current;
+
     if (node === null) {
       return;
     }
+
     stickToBottomRef.current = node.scrollHeight - node.scrollTop - node.clientHeight < 24;
   }
 
@@ -757,9 +764,11 @@ function PipelineLogRow(props: { log: StudioPipelineLogEntry }) {
 
 function DetailList(props: { items: Array<[string, string | undefined]> }) {
   const items = props.items.filter(([, value]) => value !== undefined && value.length > 0);
+
   if (items.length === 0) {
     return null;
   }
+
   return (
     <div className="grid gap-2 rounded-none bg-background p-3">
       {items.map(([label, value]) => (
@@ -782,9 +791,11 @@ function Badge(props: { children: string }) {
 
 function formatLogTime(value: string): string {
   const date = new Date(value);
+
   if (Number.isNaN(date.getTime())) {
     return "";
   }
+
   return date.toLocaleTimeString([], {
     hour: "2-digit",
     minute: "2-digit",
@@ -796,15 +807,19 @@ function formatMetadataValue(value: unknown): string {
   if (value === null) {
     return "null";
   }
+
   if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
     return String(value);
   }
+
   if (Array.isArray(value)) {
     return `[${value.length}]`;
   }
+
   if (typeof value === "object" && value !== null) {
     return "{...}";
   }
+
   return "";
 }
 

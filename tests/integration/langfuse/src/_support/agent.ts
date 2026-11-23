@@ -51,6 +51,7 @@ export function buildSupportAgent(model: CompletionModel, options: BuildSupportA
     tools,
     maxTurns: 2,
   };
+
   if (options.tracing !== undefined) {
     agentOptions.observability = {
       observers: {
@@ -59,5 +60,6 @@ export function buildSupportAgent(model: CompletionModel, options: BuildSupportA
       primaryTrace: "langfuse",
     };
   }
+
   return new Agent(agentOptions);
 }

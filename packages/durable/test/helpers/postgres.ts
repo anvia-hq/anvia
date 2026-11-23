@@ -26,11 +26,14 @@ const schemas = new Map<string, PostgresPoolLike>();
 /** The pool for a database "path": the same path always names the same data within one file. */
 export function poolFor(path: string): PostgresPoolLike {
   if (path === ":memory:") return testPool().pool;
+
   let pool = schemas.get(path);
+
   if (pool === undefined) {
     pool = testPool().pool;
     schemas.set(path, pool);
   }
+
   return pool;
 }
 

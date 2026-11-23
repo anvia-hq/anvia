@@ -59,13 +59,17 @@ const ThreadListRoot = forwardRef<HTMLDivElement, ThreadListRootProps>(function 
   const handleKeyDown = useCallback(
     (event: KeyboardEvent<HTMLDivElement>) => {
       onKeyDown?.(event);
+
       if (event.defaultPrevented || !["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
         return;
       }
+
       const triggers = orderedEnabledTriggers(rootContext);
+
       if (triggers.length === 0) {
         return;
       }
+
       event.preventDefault();
       const activeElement = document.activeElement;
       const currentIndex =
@@ -106,9 +110,11 @@ const ThreadListNew = forwardRef<HTMLButtonElement, PrimitiveProps<"button">>(
     const handleClick = useCallback(
       (event: MouseEvent<HTMLButtonElement>) => {
         onClick?.(event);
+
         if (event.defaultPrevented || props.disabled) {
           return;
         }
+
         void threadList.createThread();
       },
       [onClick, props.disabled, threadList],
@@ -143,6 +149,7 @@ const ThreadListItems = forwardRef<HTMLDivElement, ThreadListItemsProps>(functio
   const threadList = useThreadList();
   const threads = threadList.threads.filter((thread) => Boolean(thread.archived) === archived);
   const empty = threads.length === 0;
+
   if (empty && !keepMounted) {
     return null;
   }
@@ -177,6 +184,7 @@ const ThreadListEmpty = forwardRef<HTMLDivElement, ThreadListEmptyProps>(functio
   const hasVisibleThreads = threadList.threads.some(
     (thread) => Boolean(thread.archived) === archived,
   );
+
   if (hasVisibleThreads) {
     return null;
   }
@@ -226,9 +234,11 @@ const ThreadListItemTrigger = forwardRef<HTMLButtonElement, PrimitiveProps<"butt
     const handleClick = useCallback(
       (event: MouseEvent<HTMLButtonElement>) => {
         onClick?.(event);
+
         if (event.defaultPrevented || disabled) {
           return;
         }
+
         void threadList.switchThread(item.thread.id);
       },
       [disabled, item.thread.id, onClick, threadList],
@@ -284,9 +294,11 @@ function createThreadListItemAction(action: ThreadListItemActionKey, defaultLabe
     const handleClick = useCallback(
       (event: MouseEvent<HTMLButtonElement>) => {
         onClick?.(event);
+
         if (event.defaultPrevented || disabled) {
           return;
         }
+
         focusAfterThreadItemRemoval(thread.id, root);
         void actionHandler?.(thread.id);
       },
@@ -324,15 +336,19 @@ function nextTriggerIndex(key: string, currentIndex: number, triggerCount: numbe
   if (key === "Home") {
     return 0;
   }
+
   if (key === "End") {
     return triggerCount - 1;
   }
+
   if (currentIndex === -1) {
     return key === "ArrowUp" ? triggerCount - 1 : 0;
   }
+
   if (key === "ArrowUp") {
     return (currentIndex - 1 + triggerCount) % triggerCount;
   }
+
   return (currentIndex + 1) % triggerCount;
 }
 
@@ -342,6 +358,7 @@ function focusAfterThreadItemRemoval(
 ): void {
   const root = rootContext.rootRef.current;
   const currentItem = rootContext.itemElements.current.get(threadId);
+
   if (
     root === null ||
     currentItem === undefined ||
@@ -363,6 +380,7 @@ function focusAfterThreadItemRemoval(
   if (focusTarget === root && !root.hasAttribute("tabindex")) {
     root.tabIndex = -1;
   }
+
   focusTarget.focus();
 }
 

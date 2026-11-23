@@ -22,9 +22,11 @@ export function isAbortError(error: unknown): error is Error {
   let current = error;
   while (typeof current === "object" && current !== null && !seen.has(current)) {
     seen.add(current);
+
     if ("name" in current && current.name === "AbortError") {
       return true;
     }
+
     current = "cause" in current ? current.cause : undefined;
   }
   return false;
@@ -35,7 +37,9 @@ export function waitForAbortableDelay(
   signal: AbortSignal | undefined,
 ): Promise<void> {
   throwIfAborted(signal);
+
   if (delayMs === 0) return Promise.resolve();
+
   if (signal === undefined) {
     return new Promise<void>((resolve) => setTimeout(resolve, delayMs));
   }

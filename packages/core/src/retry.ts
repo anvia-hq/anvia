@@ -85,11 +85,14 @@ export function resolveRetryOptions(options: RetryOptions): ResolvedRetryOptions
   if (!Number.isSafeInteger(maxAttempts) || maxAttempts < 1) {
     throw new RangeError("Retry maxAttempts must be a positive integer.");
   }
+
   assertDelay(initialDelayMs, "initialDelayMs");
   assertDelay(maxDelayMs, "maxDelayMs");
+
   if (maxDelayMs < initialDelayMs) {
     throw new RangeError("Retry maxDelayMs must be greater than or equal to initialDelayMs.");
   }
+
   if (options.shouldRetry !== undefined && typeof options.shouldRetry !== "function") {
     throw new TypeError("Retry shouldRetry must be a function.");
   }
@@ -119,25 +122,38 @@ export function retryErrorAttributes(error: unknown): JsonObject {
     .find((value) => value !== undefined);
 
   const attributes: JsonObject = {};
+
   if (errorName !== undefined) attributes.errorName = errorName;
+
   if (statusCode !== undefined) attributes.statusCode = statusCode;
+
   if (errorCode !== undefined) attributes.errorCode = errorCode;
+
   const providerOutputError = errors.find(isCompletionProviderOutputErrorRecord);
+
   if (providerOutputError !== undefined) {
     const kind = stringProperty(providerOutputError, "kind");
+
     if (kind !== undefined) attributes.providerOutputKind = kind;
+
     const finishReason = stringProperty(providerOutputError, "finishReason");
+
     if (finishReason !== undefined) attributes.finishReason = finishReason;
+
     const usage = usageProperty(providerOutputError);
+
     if (usage !== undefined) attributes.attemptUsage = usageEventValue(usage);
   }
+
   return attributes;
 }
 
 export function completionProviderOutputErrorUsage(error: unknown): Usage | undefined {
   for (const candidate of errorChain(error)) {
     if (!isCompletionProviderOutputErrorRecord(candidate)) continue;
+
     const usage = usageProperty(candidate);
+
     if (usage !== undefined) return usage;
   }
   return undefined;
@@ -155,7 +171,9 @@ export function retryOptionsForFailure(
   context: Omit<RetryContext, "maxAttempts">,
 ): ResolvedRetryOptions | undefined {
   if (isAbortError(context.error)) return undefined;
+
   if (options === undefined || context.attempt >= options.maxAttempts) return undefined;
+
   return options.shouldRetry({ ...context, maxAttempts: options.maxAttempts })
     ? options
     : undefined;
@@ -178,8 +196,11 @@ export async function runWithRetries<T>(
       if (context.abortSignal?.aborted === true) {
         throw abortError(context.abortSignal.reason);
       }
+
       const retryOptions = retryOptionsForFailure(options, { error, attempt, ...context });
+
       if (retryOptions === undefined) throw error;
+
       await waitForRetry(retryDelayMs(retryOptions, attempt), context.abortSignal);
       attempt += 1;
     }
@@ -188,11 +209,14 @@ export async function runWithRetries<T>(
 
 function defaultShouldRetry(context: RetryContext): boolean {
   const errors = errorChain(context.error);
+
   if (isAbortError(context.error)) return false;
 
   const providerOutputErrorMarker = errors.find(isCompletionProviderOutputErrorMarker);
+
   if (providerOutputErrorMarker !== undefined) {
     if (!isCompletionProviderOutputErrorRecord(providerOutputErrorMarker)) return false;
+
     const kind = stringProperty(providerOutputErrorMarker, "kind");
     return kind !== undefined && RETRYABLE_PROVIDER_OUTPUT_KINDS.has(kind);
   }
@@ -200,21 +224,27 @@ function defaultShouldRetry(context: RetryContext): boolean {
   const structuredOutputError = errors.find(
     (error) => stringProperty(error, "name") === "AgentStructuredOutputError",
   );
+
   if (structuredOutputError !== undefined) {
     const phase = stringProperty(structuredOutputError, "phase");
     return phase !== undefined && RETRYABLE_STRUCTURED_OUTPUT_PHASES.has(phase);
   }
 
   const statusCode = firstStatusCode(errors);
+
   if (statusCode !== undefined) {
     return RETRYABLE_STATUS_CODES.has(statusCode) || (statusCode >= 500 && statusCode <= 599);
   }
 
   return errors.some((error) => {
     const name = stringProperty(error, "name");
+
     if (name !== undefined && RETRYABLE_ERROR_NAMES.has(name)) return true;
+
     const code = stringProperty(error, "code")?.toUpperCase();
+
     if (code !== undefined && RETRYABLE_ERROR_CODES.has(code)) return true;
+
     const numericCode = numberProperty(error, "code");
     return numericCode !== undefined && RETRYABLE_NUMERIC_ERROR_CODES.has(numericCode);
   });
@@ -239,26 +269,34 @@ function isCompletionProviderOutputErrorMarker(error: Record<string, unknown>): 
 
 function hasConsistentProviderOutputFinish(error: Record<string, unknown>, kind: string): boolean {
   const rawFinishReason = property(error, "finishReason");
+
   if (
     rawFinishReason !== undefined &&
     (typeof rawFinishReason !== "string" || !PROVIDER_OUTPUT_FINISH_REASONS.has(rawFinishReason))
   ) {
     return false;
   }
+
   const finishReason = rawFinishReason as string | undefined;
+
   if (kind === "truncated-tool-call") return finishReason === "length";
+
   if (kind === "filtered-tool-call") return finishReason === "content-filter";
+
   return finishReason !== "length" && finishReason !== "content-filter";
 }
 
 function usageProperty(value: Record<string, unknown>): Usage | undefined {
   const usage = property(value, "usage");
+
   if (!isObject(usage)) return undefined;
+
   const inputTokens = nonnegativeNumberProperty(usage, "inputTokens");
   const outputTokens = nonnegativeNumberProperty(usage, "outputTokens");
   const totalTokens = nonnegativeNumberProperty(usage, "totalTokens");
   const cachedInputTokens = nonnegativeNumberProperty(usage, "cachedInputTokens");
   const cacheCreationInputTokens = nonnegativeNumberProperty(usage, "cacheCreationInputTokens");
+
   if (
     inputTokens === undefined ||
     outputTokens === undefined ||
@@ -268,6 +306,7 @@ function usageProperty(value: Record<string, unknown>): Usage | undefined {
   ) {
     return undefined;
   }
+
   const result: Usage = {
     inputTokens,
     outputTokens,
@@ -276,15 +315,19 @@ function usageProperty(value: Record<string, unknown>): Usage | undefined {
     cacheCreationInputTokens,
   };
   const details = property(usage, "details");
+
   if (details !== undefined) {
     if (!isObject(details)) return undefined;
+
     const copiedDetails: Record<string, number> = {};
     for (const [key, detail] of Object.entries(details)) {
       if (typeof detail !== "number" || !Number.isFinite(detail) || detail < 0) return undefined;
+
       copiedDetails[key] = detail;
     }
     result.details = copiedDetails;
   }
+
   return result;
 }
 
@@ -296,17 +339,24 @@ function usageEventValue(usage: Usage): JsonObject {
     cachedInputTokens: usage.cachedInputTokens,
     cacheCreationInputTokens: usage.cacheCreationInputTokens,
   };
+
   if (usage.details !== undefined) value.details = { ...usage.details };
+
   return value;
 }
 
 function firstStatusCode(errors: Record<string, unknown>[]): number | undefined {
   for (const error of errors) {
     const status = numberProperty(error, "status");
+
     if (status !== undefined && status >= 100 && status <= 599) return status;
+
     const statusCode = numberProperty(error, "statusCode");
+
     if (statusCode !== undefined && statusCode >= 100 && statusCode <= 599) return statusCode;
+
     const code = numberProperty(error, "code");
+
     if (code !== undefined && code >= 100 && code <= 599) return code;
   }
   return undefined;

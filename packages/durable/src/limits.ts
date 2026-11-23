@@ -51,8 +51,10 @@ function payloadBudget(value: unknown): DurablePayloadBudget {
     assertLimit(value, "maxPayloadBytes");
     return value;
   }
+
   if (typeof value !== "object" || value === null || Array.isArray(value))
     throw new TypeError("Invalid durable limit: maxPayloadBytes");
+
   for (const key of Object.keys(value))
     if (!(PAYLOAD_KEYS as readonly string[]).includes(key))
       throw new TypeError(`Invalid durable limit: maxPayloadBytes.${key}`);
@@ -94,6 +96,7 @@ const FIELD_GROUPS: Readonly<Record<string, DurablePayloadField>> = {
 /** Effective byte limit for one persisted field. */
 export function payloadLimitFor(budget: DurablePayloadBudget, field: string): number {
   if (typeof budget === "number") return budget;
+
   const group = FIELD_GROUPS[field];
   return group === undefined
     ? (budget.default ?? DEFAULT_PAYLOAD_BYTES)
@@ -110,8 +113,10 @@ export function limitedTransaction(
   // check measures the same string instead of serializing it again.
   const payload = (field: string, serialized: string | undefined) => {
     if (serialized === undefined) return;
+
     const limit = payloadLimitFor(limits.maxPayloadBytes, field);
     const actual = new TextEncoder().encode(serialized).byteLength;
+
     if (actual > limit)
       throw new DurableLimitError(
         "payload_too_large",
@@ -131,10 +136,15 @@ export function limitedTransaction(
   const texts = new WeakMap<object, string>();
   const textOf = (value: unknown): string | undefined => {
     if (typeof value !== "object" || value === null) return JSON.stringify(value);
+
     const known = texts.get(value);
+
     if (known !== undefined) return known;
+
     const text = JSON.stringify(value);
+
     if (text !== undefined) texts.set(value, text);
+
     return text;
   };
   /** Serialized `next` when it differs from `previous`, otherwise undefined (nothing to check). */
@@ -148,6 +158,7 @@ export function limitedTransaction(
     ...tx,
     async appendEvent(id, type, data) {
       if (type === "model_delta") payload("event.model_delta", textOf(data));
+
       // Status events are deliberately not checked. A status event is the only record of a
       // failure or a blocked run, and its `error` text is not checked anywhere else, so a limit
       // here would stop a run from reaching `failed` or `needs_attention` (the trap in DUR-03).
@@ -156,14 +167,18 @@ export function limitedTransaction(
     },
     async putRun(run) {
       const previous = await tx.getRun(run.id);
+
       if (!terminal(run.status) && (previous === undefined || terminal(previous.status))) {
         const pending = (await tx.pendingCounts()).runs;
+
         if (pending >= limits.maxPendingRuns) throw capacity("run", limits.maxPendingRuns, pending);
       }
+
       if (previous === undefined) {
         payload("run.prompt", textOf(run.prompt));
         payload("run.trace", textOf(run.trace));
       }
+
       for (const key of [
         "input",
         "history",
@@ -179,29 +194,38 @@ export function limitedTransaction(
     },
     async putTask(task) {
       const previous = await tx.getTask(task.id);
+
       if (!terminal(task.status) && (previous === undefined || terminal(previous.status))) {
         const pending = (await tx.pendingCounts()).tasks;
+
         if (pending >= limits.maxPendingTasks)
           throw capacity("task", limits.maxPendingTasks, pending);
       }
+
       if (previous === undefined) payload("task.trace", textOf(task.trace));
+
       // Allow control/status transitions after limits are lowered on restart.
       for (const key of ["input", "checkpoint", "signals"] as const)
         payload(`task.${key}`, changed(previous?.[key], task[key]));
+
       // Owned-agent output was admitted with its run; copying it must survive lower quotas. Only the
       // output is measured, so its bytes are serialized once, not once inside the outcome as well.
       if (task.agentRunId === undefined && task.outcome?.status === "completed") {
         const output = textOf(task.outcome.output);
         const previousOutput =
           previous?.outcome?.status === "completed" ? previous.outcome.output : undefined;
+
         if (output !== textOf(previousOutput)) payload("task.outcome", output);
       }
+
       await tx.putTask(task);
     },
     async putOperation(id, operation) {
       const previous = await tx.getOperation(id, operation.key);
+
       if (previous === undefined) {
         const count = await tx.operationCount(id);
+
         if (count >= limits.maxOperations)
           throw new DurableLimitError(
             "capacity_exceeded",
@@ -209,6 +233,7 @@ export function limitedTransaction(
             { limit: limits.maxOperations },
           );
       }
+
       payload("operation.input", changed(previous?.input, operation.input));
       payload("operation.result", changed(previous?.result, operation.result));
       await tx.putOperation(id, operation);

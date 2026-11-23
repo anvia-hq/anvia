@@ -25,14 +25,17 @@ if (releases.length === 0) {
 
 for (const release of releases) {
   const pkg = packagesByName.get(release.name);
+
   if (pkg === undefined) {
     throw new Error(`Changesets planned a release for unknown public package ${release.name}.`);
   }
+
   const nextVersion = createPreviewVersion(release.newVersion, buildId);
   const updated = structuredClone(pkg.packageJson);
   updated.version = nextVersion;
 
   console.info(`${pkg.packageJson.name}: ${pkg.packageJson.version} -> ${nextVersion}`);
+
   if (!dryRun) {
     writeFileSync(path.join(pkg.dir, "package.json"), `${JSON.stringify(updated, null, 2)}\n`);
   }
@@ -48,14 +51,17 @@ function createBuildId() {
     .replace(/[-:]/g, "")
     .replace(/\.\d{3}Z$/, "");
   const shortSha = getShortSha();
+
   if (shortSha === undefined) {
     throw new Error("Preview versioning requires a Git commit SHA.");
   }
+
   return `${timestamp}.sha-${shortSha}`;
 }
 
 function getShortSha() {
   const envSha = process.env.GITHUB_SHA;
+
   if (envSha !== undefined && envSha.length >= 7) {
     return envSha.slice(0, 7);
   }
@@ -64,6 +70,7 @@ function getShortSha() {
     cwd: root,
     encoding: "utf8",
   });
+
   if (result.status !== 0) {
     return undefined;
   }

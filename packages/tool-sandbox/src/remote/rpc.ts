@@ -37,14 +37,18 @@ export async function rpc<M extends SandboxMethod>(
   let lastLoss: LinkClosedError | undefined;
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     const connection = await source.acquire(options.signal);
+
     if (options.require !== undefined && !connection.capabilities.has(options.require.capability)) {
       throw options.require.error();
     }
+
     try {
       return await connection.call(method, params, options);
     } catch (error) {
       if (!(error instanceof LinkClosedError)) throw error;
+
       lastLoss = error;
+
       if (!retryable) break;
     }
   }

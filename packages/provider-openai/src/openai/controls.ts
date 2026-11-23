@@ -75,9 +75,11 @@ const LEGACY_REASONING_CONTROLS = reasoningControls(["low", "medium", "high"] as
 
 export function openAIControlsForModel(modelId: string): OpenAIReasoningControls | undefined {
   if (modelId === "gpt-5-pro") return HIGH_ONLY_REASONING_CONTROLS;
+
   if (modelId === "gpt-5.2-pro" || modelId === "gpt-5.4-pro" || modelId === "gpt-5.5-pro") {
     return PRO_REASONING_CONTROLS;
   }
+
   if (
     modelId.startsWith("gpt-6") ||
     modelId === "gpt-daybreak-blue-latest" ||
@@ -86,15 +88,23 @@ export function openAIControlsForModel(modelId: string): OpenAIReasoningControls
   ) {
     return GPT_6_REASONING_CONTROLS;
   }
+
   if (modelId.startsWith("gpt-5.6")) return GPT_5_6_REASONING_CONTROLS;
+
   if (modelId.startsWith("gpt-5.2") || modelId.startsWith("gpt-5.4")) {
     return LATE_GPT_5_DEFAULT_NONE_CONTROLS;
   }
+
   if (modelId.startsWith("gpt-5.5")) return GPT_5_5_REASONING_CONTROLS;
+
   if (modelId.startsWith("gpt-5.3")) return GPT_5_3_REASONING_CONTROLS;
+
   if (modelId.startsWith("gpt-5.1")) return GPT_5_1_REASONING_CONTROLS;
+
   if (modelId.startsWith("gpt-5")) return GPT_5_REASONING_CONTROLS;
+
   if (/^o\d/.test(modelId)) return LEGACY_REASONING_CONTROLS;
+
   return undefined;
 }
 
@@ -108,7 +118,9 @@ function reasoningControls<const Efforts extends readonly OpenAIReasoningEffort[
     description: "Controls how much reasoning the model applies before responding.",
     options: efforts,
   };
+
   if (defaultValue !== undefined) effortControl.defaultValue = defaultValue;
+
   return defineCompletionModelControls({
     reasoningEffort: effortControl,
   });

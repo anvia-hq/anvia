@@ -67,17 +67,21 @@ export class TeamRun<Output = unknown> {
         ? steeringMessages({ prompt: options.prompt! })
         : parseMessages(options.messages);
     const last = messages.at(-1);
+
     if (last?.role !== "user")
       throw new TypeError("Agent team input must end with a user message.");
+
     this.leader.history = messages.slice(0, -1);
     this.leader.inputs.push({
       id: globalThis.crypto.randomUUID(),
       messages: [last],
       submitted: false,
     });
+
     if (options.abortSignal !== undefined) {
       const signal = options.abortSignal;
       const abort = () => this.cancel("Agent team aborted.");
+
       if (signal.aborted) abort();
       else {
         signal.addEventListener("abort", abort, { once: true });
@@ -88,6 +92,7 @@ export class TeamRun<Output = unknown> {
 
   async execute(): Promise<AgentTeamOutcome<Output>> {
     if (this.started) throw new Error("Agent team execution has already started.");
+
     this.started = true;
     try {
       this.assertOpen();
@@ -95,9 +100,12 @@ export class TeamRun<Output = unknown> {
       while (true) {
         this.assertOpen();
         const version = this.changes.version;
+
         if (this.leader.status === "failed" && this.leader.outcome?.type !== "blocked")
           throw this.leader.error;
+
         const outcome = this.leader.outcome;
+
         if (
           outcome !== undefined &&
           (outcome.type === "blocked" ||
@@ -123,6 +131,7 @@ export class TeamRun<Output = unknown> {
           this.emit(result);
           return result;
         }
+
         await this.changes.wait(version, this.controller.signal);
       }
     } catch (error) {
@@ -148,17 +157,22 @@ export class TeamRun<Output = unknown> {
 
   cancel(reason = "Agent team cancelled."): void {
     if (this.closed || this.controller.signal.aborted) return;
+
     this.fail(new AgentRunCancelledError([], reason));
   }
 
   spawn(parent: TeamMember, definition: AgentTeamMember, prompt: string, name?: string) {
     this.assertOpen();
     throwIfAborted(parent.controller.signal);
+
     if (!this.policy.spawnTargets(parent).includes(definition))
       throw new Error(`Agent "${parent.definition.id}" cannot spawn "${definition.id}".`);
+
     if (parent.depth >= this.limits.maxDepth) throw new AgentTeamLimitError("maxDepth");
+
     if (this.instances.size >= this.limits.maxAgentInstances)
       throw new AgentTeamLimitError("maxAgentInstances");
+
     const member = this.createMember(definition, name ?? definition.name ?? definition.id, parent);
     member.inputs.push({
       id: globalThis.crypto.randomUUID(),
@@ -174,9 +188,11 @@ export class TeamRun<Output = unknown> {
     this.assertOpen();
     throwIfAborted(sender.controller.signal);
     const recipient = this.recipient(sender, input.to);
+
     if (recipient.status === "failed" || recipient.status === "cancelled") {
       throw new Error(`Agent instance "${recipient.instanceId}" is ${recipient.status}.`);
     }
+
     return this.queueMessage(sender, recipient, input);
   }
 
@@ -194,7 +210,9 @@ export class TeamRun<Output = unknown> {
       content: input.content,
       createdAt: new Date().toISOString(),
     };
+
     if (input.replyTo !== undefined) message.replyTo = input.replyTo;
+
     this.enqueue(recipient, agentMessageInput(message), notificationType);
     return { messageId: message.id, status: "queued" as const };
   }
@@ -210,9 +228,11 @@ export class TeamRun<Output = unknown> {
           status: member.status,
           depth: member.depth,
         };
+
         if (member.parentInstanceId !== undefined) {
           summary.parentInstanceId = member.parentInstanceId;
         }
+
         return summary;
       });
   }
@@ -221,12 +241,17 @@ export class TeamRun<Output = unknown> {
     this.assertOpen();
     throwIfAborted(caller.controller.signal);
     const member = this.recipient(caller, instanceId);
+
     if (member.parentInstanceId !== caller.instanceId)
       throw new Error("Only a parent can cancel its child.");
+
     if (member.status === "cancelled") return { instanceId, status: "cancelled" as const };
+
     this.stopMember(member, reason);
     this.stopDescendants(member, reason);
+
     if (member.task === undefined) this.reportOutcome(member);
+
     return { instanceId, status: "cancelled" as const };
   }
 
@@ -240,6 +265,7 @@ export class TeamRun<Output = unknown> {
         const index = member.notifications.findIndex(
           (notification) => target === undefined || notification.from === target.instanceId,
         );
+
         if (index !== -1) {
           const notification = member.notifications.splice(index, 1)[0]!;
           return {
@@ -248,11 +274,15 @@ export class TeamRun<Output = unknown> {
             messageId: notification.id,
           };
         }
+
         if (target !== undefined && ["idle", "failed", "cancelled"].includes(target.status)) {
           return { reason: "outcome", instanceId: target.instanceId, status: target.status };
         }
+
         const remaining = deadline - Date.now();
+
         if (remaining <= 0) return { reason: "timeout" };
+
         await this.changes.wait(version, member.controller.signal, remaining);
       }
     });
@@ -274,7 +304,9 @@ export class TeamRun<Output = unknown> {
       usage: Usage.empty(),
       notifications: [],
     };
+
     if (parentInstanceId !== undefined) member.parentInstanceId = parentInstanceId;
+
     const resolved = getResolvedAgentOptions(member.agent);
     member.agent = createResolvedAgent({
       ...resolved,
@@ -297,6 +329,7 @@ export class TeamRun<Output = unknown> {
   private recipient(sender: TeamMember, to: string): TeamMember {
     const id = to === "parent" ? sender.parentInstanceId : to;
     const recipient = id === undefined ? undefined : this.instances.get(id);
+
     if (
       recipient === undefined ||
       recipient === sender ||
@@ -306,6 +339,7 @@ export class TeamRun<Output = unknown> {
         `Agent instance "${to}" is not an accessible parent or child, or enabled sibling.`,
       );
     }
+
     return recipient;
   }
 
@@ -316,7 +350,9 @@ export class TeamRun<Output = unknown> {
   ): void {
     if (member.inputs.length >= 128)
       throw new AgentTeamLimitError("pending messages per instance (128)");
+
     member.inputs.push(input);
+
     if (input.message !== undefined) {
       this.emit({ type: "message_queued", ...this.identity(member), message: input.message });
       member.notifications.push({
@@ -325,15 +361,20 @@ export class TeamRun<Output = unknown> {
         id: input.id,
       });
     }
+
     this.submitInputs(member);
+
     if (this.started && member.task === undefined) this.launch(member);
+
     this.changes.notify();
   }
 
   private submitInputs(member: TeamMember): void {
     if (member.activeRun === undefined) return;
+
     for (const input of member.inputs) {
       if (input.submitted) continue;
+
       try {
         const receipt = member.activeRun.steer({ messages: input.messages });
         member.receipts.set(receipt.id, input);
@@ -341,6 +382,7 @@ export class TeamRun<Output = unknown> {
       } catch (error) {
         // Closing runs reject steering; leave this input pending for the next assignment.
         if (error instanceof AgentStreamClosedError) return;
+
         throw error;
       }
     }
@@ -348,28 +390,35 @@ export class TeamRun<Output = unknown> {
 
   private delivered(member: TeamMember, input: TeamInput): void {
     const index = member.inputs.indexOf(input);
+
     if (index !== -1) member.inputs.splice(index, 1);
+
     member.notifications = member.notifications.filter(
       (notification) => notification.id !== input.id,
     );
+
     if (input.message !== undefined)
       this.emit({ type: "message_delivered", ...this.identity(member), message: input.message });
   }
 
   private launch(member: TeamMember): void {
     if (member.task !== undefined || this.closed || member.controller.signal.aborted) return;
+
     member.status = "queued";
     member.task = Promise.resolve()
       .then(() => this.runMember(member))
       .catch((error: unknown) => {
         member.error = error;
         member.inputs.length = 0;
+
         if (member.controller.signal.aborted) member.status = "cancelled";
         else {
           member.status = "failed";
           this.memberEvent(member, "agent_failed");
         }
+
         this.stopDescendants(member, "Parent failed or was cancelled.");
+
         if (!this.closed && !this.controller.signal.aborted && member !== this.leader) {
           try {
             this.reportOutcome(member);
@@ -383,7 +432,9 @@ export class TeamRun<Output = unknown> {
         member.release = undefined;
         member.activeRun = undefined;
         member.task = undefined;
+
         if (member.status === "idle" && member.inputs.length > 0) this.launch(member);
+
         this.changes.notify();
       });
     this.changes.notify();
@@ -398,14 +449,18 @@ export class TeamRun<Output = unknown> {
       throwIfAborted(signal);
       member.status = "running";
       member.runId = globalThis.crypto.randomUUID();
+
       if (nextInput === undefined) {
         firstInputs = member.inputs.filter((input) => !input.submitted);
         const incoming = firstInputs.flatMap((input) => input.messages);
+
         if (incoming.length === 0) throw new Error("Agent team member has no input.");
+
         nextInput = { messages: [...member.history, ...incoming] };
         member.history.push(...incoming.slice(0, -1));
         for (const input of firstInputs) input.submitted = true;
       }
+
       const streaming =
         this.streaming &&
         member.agent.model.capabilities.streaming &&
@@ -450,11 +505,13 @@ export class TeamRun<Output = unknown> {
             hook: {
               onCompletionCall: () => {
                 this.assertOpen();
+
                 if (this.turns >= this.limits.maxTotalTurns) {
                   const error = new AgentTeamLimitError("maxTotalTurns");
                   this.fail(error);
                   throw error;
                 }
+
                 this.turns += 1;
                 for (const input of firstInputs) this.delivered(member, input);
                 firstInputs = [];
@@ -463,6 +520,7 @@ export class TeamRun<Output = unknown> {
             beforeFinish: () => this.waitForChildren(member),
             onSteeringApplied: (id) => {
               const input = member.receipts.get(id);
+
               if (input !== undefined) {
                 member.receipts.delete(id);
                 this.delivered(member, input);
@@ -479,6 +537,7 @@ export class TeamRun<Output = unknown> {
       member.activeRun = undefined;
       member.usage = Usage.add(member.usage, outcome.usage);
       member.history.push(...outcome.messages);
+
       if (outcome.type === "interaction") {
         const resolver = this.options.resolveInteraction;
         this.emit({
@@ -486,11 +545,13 @@ export class TeamRun<Output = unknown> {
           ...this.identity(member),
           interaction: lifecycleSnapshot(outcome.interaction),
         });
+
         if (resolver === undefined) {
           const error = new AgentTeamInteractionError(member.instanceId);
           this.fail(error);
           throw error;
         }
+
         try {
           const response = await this.yieldSlot(member, "awaiting_interaction", () =>
             abortable(
@@ -511,20 +572,26 @@ export class TeamRun<Output = unknown> {
           nextInput = { continuation: outcome.continuation, response: parsed };
         } catch (cause) {
           if (signal.aborted) throw cause;
+
           const error = new AgentTeamInteractionError(member.instanceId, { cause });
           this.fail(error);
           throw error;
         }
         continue;
       }
+
       member.outcome = outcome;
       member.status = outcome.type === "blocked" ? "failed" : "idle";
+
       if (outcome.type === "blocked") {
         member.inputs.length = 0;
         this.stopDescendants(member, "Parent was blocked.");
       }
+
       this.memberEvent(member, outcome.type === "blocked" ? "agent_failed" : "agent_idle");
+
       if (member !== this.leader) this.reportOutcome(member);
+
       return;
     }
   }
@@ -536,14 +603,19 @@ export class TeamRun<Output = unknown> {
   ): Promise<AgentOutcome<unknown>> {
     if (!streaming) {
       const outcome = await run.generate();
+
       if (outcome.type === "response")
         this.agentEvent(member, { type: "text_delta", turn: 0, delta: outcome.text });
+
       this.agentEvent(member, outcome);
       return outcome;
     }
+
     for await (const event of run.events()) {
       this.agentEvent(member, event);
+
       if (event.type === "error") throw event.error;
+
       if (event.type === "response" || event.type === "blocked" || event.type === "interaction")
         return event;
     }
@@ -552,23 +624,30 @@ export class TeamRun<Output = unknown> {
 
   private reportOutcome(member: TeamMember): void {
     const parent = this.instances.get(member.parentInstanceId!);
+
     if (parent === undefined || parent.status === "failed" || parent.status === "cancelled") return;
+
     const payload: Record<string, unknown> = {
       type: "agent-outcome",
       instanceId: member.instanceId,
       status: member.status,
     };
+
     if (member.outcome?.type === "response") payload.output = member.outcome.output;
+
     if (member.outcome?.type === "blocked") payload.reason = member.outcome.reason;
+
     if (member.error !== undefined) {
       payload.error = member.error instanceof Error ? member.error.message : String(member.error);
     }
+
     const content = JSON.stringify(payload);
     this.queueMessage(member, parent, { content }, "outcome");
   }
 
   private async waitForChildren(member: TeamMember): Promise<void> {
     if (!this.childrenBusy(member) || member.inputs.length > 0) return;
+
     await this.yieldSlot(member, "waiting", async () => {
       while (this.childrenBusy(member) && member.inputs.length === 0) {
         const version = this.changes.version;
@@ -614,7 +693,9 @@ export class TeamRun<Output = unknown> {
       teamRunId: this.id,
       instanceId: member.instanceId,
     };
+
     if (member.runId !== undefined) identity.runId = member.runId;
+
     return identity;
   }
 
@@ -633,6 +714,7 @@ export class TeamRun<Output = unknown> {
 
   private agentEvent(member: TeamMember, event: AgentStreamEvent<unknown>) {
     if (this.closed || member.controller.signal.aborted) return;
+
     this.emit({
       type: "agent_event",
       ...this.identity(member),
@@ -643,7 +725,9 @@ export class TeamRun<Output = unknown> {
 
   private assertOpen(): void {
     if (this.fatal !== undefined) throw this.fatal;
+
     if (this.closed) throw new AgentStreamClosedError();
+
     throwIfAborted(this.controller.signal);
   }
 
@@ -656,6 +740,7 @@ export class TeamRun<Output = unknown> {
 
   private stopMember(member: TeamMember, reason: string): void {
     if (member.status === "cancelled") return;
+
     member.status = "cancelled";
     member.inputs.length = 0;
     member.controller.abort(reason);

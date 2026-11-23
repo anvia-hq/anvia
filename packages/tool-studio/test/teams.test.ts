@@ -55,12 +55,15 @@ async function* events(response: Response): AsyncGenerator<StudioTeamRunEvent> {
   try {
     while (true) {
       const next = await reader.read();
+
       if (next.done) break;
+
       buffer += decoder.decode(next.value, { stream: true });
       let end: number;
       while ((end = buffer.indexOf("\n")) !== -1) {
         const line = buffer.slice(0, end);
         buffer = buffer.slice(end + 1);
+
         if (line) yield JSON.parse(line) as StudioTeamRunEvent;
       }
     }
@@ -71,6 +74,7 @@ async function* events(response: Response): AsyncGenerator<StudioTeamRunEvent> {
 async function untilInteraction(iterator: AsyncGenerator<StudioTeamRunEvent>) {
   for await (const event of { [Symbol.asyncIterator]: () => ({ next: () => iterator.next() }) }) {
     if (event.type === "interaction") return event;
+
     if (event.type === "error") throw new Error(JSON.stringify(event.error));
   }
   throw new Error("No interaction");
@@ -98,8 +102,11 @@ function approvalTeam(id = "team", siblings = false) {
     members: [worker],
     model: model((request) => {
       if (JSON.stringify(request.chatHistory).includes("spawn_worker")) return say("done");
+
       const response = call("spawn_worker", { prompt: "work" });
+
       if (siblings) response.choice.push(...call("spawn_worker", { prompt: "more work" }).choice);
+
       return response;
     }),
     limits: { maxConcurrentAgents: 1 },
@@ -213,6 +220,7 @@ describe("Studio teams", () => {
       const runId = response.headers.get("x-anvia-team-run-id")!;
       const iterator = events(response);
       const interaction = await untilInteraction(iterator);
+
       if (action === "cancel") {
         expect((await post(studio, `/teams/team/runs/${runId}/cancel`)).status).toBe(200);
         const emitted = [];
@@ -220,6 +228,7 @@ describe("Studio teams", () => {
         expect(emitted.at(-1)).toMatchObject({ type: "error" });
       } else if (action === "disconnect") await iterator.return(undefined);
       else await studio.shutdown({ timeoutMs: 1000 });
+
       await studio.shutdown({ timeoutMs: 1000 });
       expect(
         (

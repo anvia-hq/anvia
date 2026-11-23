@@ -63,11 +63,13 @@ it.each(
   } finally {
     db.close();
   }
+
   if (read === "status") {
     await expect(async () => runtime.status(run.id)).rejects.toThrow("Durable storage failed");
   } else {
     await expect(runtime.listRuns()).rejects.toThrow("Durable storage failed");
   }
+
   expect(runtime.health().status).toBe("failed");
   expect(fatal).toHaveBeenCalledTimes(1);
 });
@@ -84,6 +86,7 @@ it("poisons the runtime after a model checkpoint failure and recovers from the s
           async putOperation(id, operation) {
             if (operation.kind === "model" && operation.status === "completed")
               throw new Error("simulated SQLITE_FULL");
+
             await tx.putOperation(id, operation);
           },
         }),
@@ -391,6 +394,7 @@ it("finishes copying a committed owned-agent output after restart with lower quo
           async putTask(task) {
             if (task.agentRunId !== undefined && task.outcome?.status === "completed")
               throw new Error("crash before owned output copy");
+
             await tx.putTask(task);
           },
         }),

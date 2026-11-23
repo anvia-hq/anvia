@@ -12,6 +12,7 @@ export function browserWorkspaceForTool(
 ): BrowserWorkspace | undefined {
   const matches = sandboxes.flatMap((sandbox) => {
     if (!sandbox.agentIds.includes(agentId) || !sandbox.toolNames.includes(toolName)) return [];
+
     return sandbox.views
       .filter((view) => view.protocol === "novnc")
       .map((view) => ({ sandboxRef: sandbox.ref, view }));

@@ -14,9 +14,11 @@ export function LogMetadata(props: {
 }) {
   const items = inlineMetadataItems(props.metadata, props.limit);
   const hasStructuredDetails = hasStructuredMetadata(props.metadata);
+
   if (items.length === 0 && !hasStructuredDetails) {
     return null;
   }
+
   return (
     <div className="grid min-w-0 gap-1 text-xs leading-5 text-muted-foreground">
       {items.length === 0 ? null : (
@@ -79,18 +81,23 @@ function formatInlineMetadataValue(key: string, value: MetadataValue): string {
   if (value === null) {
     return "null";
   }
+
   if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
     return String(value);
   }
+
   if (Array.isArray(value)) {
     return `[${value.length}]`;
   }
+
   if (isRecord(value)) {
     if (key === "error") {
       return formatErrorMetadata(value);
     }
+
     return compactJson(value);
   }
+
   return "";
 }
 
@@ -98,12 +105,15 @@ function formatErrorMetadata(value: Record<string, MetadataValue>): string {
   const name = typeof value.name === "string" && value.name.length > 0 ? value.name : undefined;
   const message =
     typeof value.message === "string" && value.message.length > 0 ? value.message : undefined;
+
   if (name !== undefined && message !== undefined) {
     return `${name}: ${message}`;
   }
+
   if (message !== undefined) {
     return message;
   }
+
   return compactJson(value);
 }
 
@@ -115,6 +125,7 @@ function formatStructuredDetails(metadata?: Record<string, MetadataValue>): stri
   if (metadata === undefined) {
     return "";
   }
+
   try {
     return JSON.stringify(metadata, null, 2);
   } catch {

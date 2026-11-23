@@ -26,6 +26,7 @@ export function resolveLogLevel(level: LogLevel | undefined): LogLevel {
   }
 
   const envLevel = readEnv("ANVIA_LOG_LEVEL") ?? readEnv("LOG_LEVEL");
+
   if (isLogLevel(envLevel)) {
     return envLevel;
   }

@@ -48,6 +48,7 @@ const HumanInputApprovals = forwardRef<HTMLDivElement, HumanInputApprovalsProps>
     const humanInput = useHumanInput();
     const approvals = filter === "all" ? humanInput.approvals.all : humanInput.approvals.pending;
     const empty = approvals.length === 0;
+
     if (empty && !keepMounted) {
       return null;
     }
@@ -105,12 +106,16 @@ const HumanInputApprove = forwardRef<HTMLButtonElement, PrimitiveProps<"button">
     const handleClick = useCallback(
       (event: MouseEvent<HTMLButtonElement>) => {
         onClick?.(event);
+
         if (event.defaultPrevented || disabled) {
           return;
         }
+
         const decisionReason = reason.trim().length > 0 ? reason : undefined;
         const response = { type: "tool-approval" as const, approved: true };
+
         if (decisionReason !== undefined) Object.assign(response, { reason: decisionReason });
+
         void chat.respondToInteraction({
           interactionId: approval.request.id,
           response,
@@ -145,12 +150,16 @@ const HumanInputReject = forwardRef<HTMLButtonElement, PrimitiveProps<"button">>
     const handleClick = useCallback(
       (event: MouseEvent<HTMLButtonElement>) => {
         onClick?.(event);
+
         if (event.defaultPrevented || disabled) {
           return;
         }
+
         const decisionReason = reason.trim().length > 0 ? reason : undefined;
         const response = { type: "tool-approval" as const, approved: false };
+
         if (decisionReason !== undefined) Object.assign(response, { reason: decisionReason });
+
         void chat.respondToInteraction({
           interactionId: approval.request.id,
           response,
@@ -181,6 +190,7 @@ const HumanInputApprovalReason = forwardRef<HTMLTextAreaElement, PrimitiveProps<
     const handleChange = useCallback(
       (event: ChangeEvent<HTMLTextAreaElement>) => {
         onChange?.(event);
+
         if (!event.defaultPrevented) {
           approval.setReason(event.currentTarget.value);
         }

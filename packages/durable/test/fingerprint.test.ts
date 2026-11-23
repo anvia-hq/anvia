@@ -39,7 +39,9 @@ function build(overrides: Overrides = {}) {
     inputSchema: z.object({ [field]: z.string() }),
     execute: async () => body(),
   };
+
   if (overrides.approval === true) toolOptions.requiresApproval = true;
+
   const tool = createTool(toolOptions as never);
   const options: Record<string, unknown> = {
     id: "researcher",
@@ -53,9 +55,13 @@ function build(overrides: Overrides = {}) {
         (overrides.completion ?? (async () => done()))(call?.abortSignal),
     },
   };
+
   if (overrides.maxTurns !== undefined) options.maxTurns = overrides.maxTurns;
+
   if (overrides.providerOptions !== undefined) options.providerOptions = overrides.providerOptions;
+
   if (overrides.output !== undefined) options.outputSchema = overrides.output;
+
   return new Agent(options as never) as unknown as CoreAgent<unknown>;
 }
 

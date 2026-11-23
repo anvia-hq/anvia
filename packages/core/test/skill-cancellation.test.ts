@@ -26,13 +26,16 @@ function alive(pid: number): boolean {
     return true;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ESRCH") return false;
+
     throw error;
   }
 }
 
 async function running(pid: number): Promise<boolean> {
   if (!alive(pid)) return false;
+
   if (process.platform !== "linux") return true;
+
   try {
     // Orphaned descendants can remain as zombies until PID 1 reaps them.
     // The command name may contain parentheses, so read state after the last one.
@@ -42,7 +45,9 @@ async function running(pid: number): Promise<boolean> {
   } catch (error) {
     // The process may disappear before opening stat or while reading it.
     const code = (error as NodeJS.ErrnoException).code;
+
     if (code === "ENOENT" || code === "ESRCH") return false;
+
     throw error;
   }
 }
@@ -51,6 +56,7 @@ async function waitForPid(path: string): Promise<number> {
   for (let attempt = 0; attempt < 400; attempt++) {
     try {
       const pid = Number(await readFile(path, "utf8"));
+
       if (pid > 0) {
         pids.add(pid);
         return pid;
@@ -91,12 +97,14 @@ function resources() {
         entries.add(listener);
         listeners.set(this, entries);
       }
+
       originalAdd.call(this, type, listener, options);
     },
   );
   vi.spyOn(AbortSignal.prototype, "removeEventListener").mockImplementation(
     function (this: AbortSignal, type, listener, options) {
       if (type === "abort") listeners.get(this)?.delete(listener);
+
       originalRemove.call(this, type, listener, options);
     },
   );
@@ -137,7 +145,9 @@ setInterval(() => {}, 1000);`,
   }
   const skills = await loadSkills(skill.local(directory));
   const scriptTool = skills.tools.find((item) => item.name === "run_skill_script");
+
   if (scriptTool === undefined) throw new Error("Missing public skill tool");
+
   const tool = {
     async call(
       args: { skillName: string; scriptPath: string; args: string[]; timeoutMs: number },
@@ -267,7 +277,9 @@ describe.skipIf(process.platform === "win32")("skill direct-child cancellation",
         return error;
       });
     const pid = await waitForPid(f.pidFile);
+
     if (first === "timeout") await delay(350);
+
     controller.abort("first abort");
     expect(await result).toMatchObject(
       first === "abort"
@@ -420,7 +432,9 @@ describe.skipIf(process.platform === "win32")("skill direct-child cancellation",
       inputSchema: z.object({}),
       async execute(_args, context) {
         const signal = context.abortSignal;
+
         if (signal === undefined) throw new Error("Missing tool cancellation signal");
+
         counts.starts++;
         notifyStarted();
         await new Promise<void>((_resolve, reject) => {
@@ -573,6 +587,7 @@ describe.skipIf(process.platform === "win32")("skill direct-child cancellation",
     let toolOutput: unknown;
     for await (const event of agent.stream({ prompt: "run" })) {
       if (event.type === "response") output = event.output;
+
       if (event.type === "tool_result") toolOutput = event.result;
     }
     expect(output).toBe("done");

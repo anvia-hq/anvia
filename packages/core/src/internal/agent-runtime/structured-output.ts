@@ -24,6 +24,7 @@ export function structuredOutputRepairPreview(text: string): StructuredOutputRep
   if (text.length <= STRUCTURED_OUTPUT_REPAIR_PREVIEW_MAX_LENGTH) {
     return { text, includedOutputLength: text.length };
   }
+
   const availableLength =
     STRUCTURED_OUTPUT_REPAIR_PREVIEW_MAX_LENGTH - STRUCTURED_OUTPUT_REPAIR_PREVIEW_MARKER.length;
   const headLength = Math.ceil(availableLength / 2);
@@ -42,6 +43,7 @@ export type NormalizedStructuredOutput = Readonly<{
 export function normalizeStructuredOutput(text: string): NormalizedStructuredOutput {
   const trimmed = text.trim();
   const opening = fenceOpening(trimmed);
+
   if (opening === undefined || !trimmed.endsWith(FENCE_END)) {
     return { text: trimmed, format: "raw" };
   }
@@ -62,14 +64,18 @@ function fenceOpening(
   if (text.startsWith(JSON_FENCE_START)) {
     return { length: JSON_FENCE_START.length, format: "json-fence" };
   }
+
   if (text.startsWith(JSON_FENCE_CRLF_START)) {
     return { length: JSON_FENCE_CRLF_START.length, format: "json-fence" };
   }
+
   if (text.startsWith(UNLABELED_FENCE_START)) {
     return { length: UNLABELED_FENCE_START.length, format: "unlabeled-fence" };
   }
+
   if (text.startsWith(UNLABELED_FENCE_CRLF_START)) {
     return { length: UNLABELED_FENCE_CRLF_START.length, format: "unlabeled-fence" };
   }
+
   return undefined;
 }

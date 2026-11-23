@@ -32,7 +32,9 @@ function fakeClient(options: { events: DurableEvent[]; hold?: Gate; status?: str
     async *stream(_id: string, streamOptions: { after?: number } = {}) {
       for (const value of options.events) {
         if (value.sequence <= (streamOptions.after ?? 0)) continue;
+
         if (value.sequence === 3) await options.hold?.promise;
+
         yield value;
       }
     },

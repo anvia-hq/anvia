@@ -31,8 +31,11 @@ export class MilvusVectorClient {
 
   async close(): Promise<void> {
     if (this.closed) return;
+
     this.closed = true;
+
     if (this.injected !== undefined || this.clientPromise === undefined) return;
+
     await (await this.clientPromise).closeConnection?.();
   }
 
@@ -41,7 +44,9 @@ export class MilvusVectorClient {
     const options: { address: string; token?: string } = {
       address: this.options.address ?? "localhost:19530",
     };
+
     if (this.options.token !== undefined) options.token = this.options.token;
+
     return new MilvusClient(options) as unknown as MilvusClientLike;
   }
 

@@ -56,11 +56,13 @@ export function createStudioSandboxRegistry(
     validateRegistration(registration, index, agentIds);
     const inspector = registration.inspector;
     const ref = sandboxRef(inspector.provider, inspector.id);
+
     if (refs.has(ref)) {
       throw new TypeError(
         `sandboxes contains a duplicate provider/id registration: ${inspector.provider}/${inspector.id}`,
       );
     }
+
     refs.add(ref);
     const views = new Map((registration.views ?? []).map((view) => [view.id, view]));
     return {
@@ -104,8 +106,11 @@ export function registerSandboxRoutes(app: Hono, registry: StudioSandboxRegistry
 
   app.get("/sandboxes/:sandboxRef/files", async (c) => {
     const entry = registry.get(c.req.param("sandboxRef"));
+
     if (entry === undefined) return errorResponse(c, 404, "not_found", "Sandbox not found");
+
     if (!supportsFiles(entry.inspector)) return unsupportedSandboxOperation(c, "files");
+
     try {
       const requestedPath = c.req.query("path") ?? ".";
       const normalizedPath = normalizeSandboxPath(requestedPath, true);
@@ -121,17 +126,24 @@ export function registerSandboxRoutes(app: Hono, registry: StudioSandboxRegistry
 
   app.get("/sandboxes/:sandboxRef/files/content", async (c) => {
     const entry = registry.get(c.req.param("sandboxRef"));
+
     if (entry === undefined) return errorResponse(c, 404, "not_found", "Sandbox not found");
+
     if (!supportsFiles(entry.inspector)) return unsupportedSandboxOperation(c, "files.content");
+
     try {
       const requestedPath = c.req.query("path");
+
       if (requestedPath === undefined) {
         throw new SandboxRouteError(400, "bad_request", "path query parameter is required");
       }
+
       const download = c.req.query("download");
+
       if (download !== undefined && download !== "1") {
         throw new SandboxRouteError(400, "bad_request", "download must be 1 when provided");
       }
+
       const normalizedPath = normalizeSandboxPath(requestedPath, false);
       const siblings = await listSandboxFiles(
         entry.inspector,
@@ -139,9 +151,11 @@ export function registerSandboxRoutes(app: Hono, registry: StudioSandboxRegistry
         c.req.raw.signal,
       );
       const file = siblings.find((candidate) => candidate.path === normalizedPath);
+
       if (file === undefined) {
         throw new SandboxRouteError(404, "not_found", "Sandbox file not found");
       }
+
       if (file.type !== "file") {
         throw new SandboxRouteError(
           400,
@@ -149,16 +163,21 @@ export function registerSandboxRoutes(app: Hono, registry: StudioSandboxRegistry
           "Sandbox content path must refer to a regular file",
         );
       }
+
       if (file.size !== undefined && file.size > maxFileResponseBytes)
         throw fileTooLarge(file.size);
+
       const rawBytes = await entry.inspector.readFile({
         path: normalizedPath,
         abortSignal: c.req.raw.signal,
       });
+
       if (!(rawBytes instanceof Uint8Array)) {
         throw new TypeError("Sandbox readFile returned an invalid byte payload");
       }
+
       if (rawBytes.byteLength > maxFileResponseBytes) throw fileTooLarge(rawBytes.byteLength);
+
       const bytes = rawBytes.slice();
       const disposition = download === "1" ? "attachment" : "inline";
       const filename = encodeURIComponent(path.posix.basename(normalizedPath));
@@ -178,8 +197,11 @@ export function registerSandboxRoutes(app: Hono, registry: StudioSandboxRegistry
 
   app.get("/sandboxes/:sandboxRef/ports", (c) => {
     const entry = registry.get(c.req.param("sandboxRef"));
+
     if (entry === undefined) return errorResponse(c, 404, "not_found", "Sandbox not found");
+
     if (!supportsPorts(entry.inspector)) return unsupportedSandboxOperation(c, "ports");
+
     try {
       return c.json({
         sandboxRef: entry.summary.ref,
@@ -192,10 +214,13 @@ export function registerSandboxRoutes(app: Hono, registry: StudioSandboxRegistry
 
   app.get("/sandboxes/:sandboxRef/processes", async (c) => {
     const entry = registry.get(c.req.param("sandboxRef"));
+
     if (entry === undefined) return errorResponse(c, 404, "not_found", "Sandbox not found");
+
     if (!supportsProcesses(entry.inspector)) {
       return unsupportedSandboxOperation(c, "processes");
     }
+
     try {
       return c.json({
         sandboxRef: entry.summary.ref,
@@ -210,19 +235,24 @@ export function registerSandboxRoutes(app: Hono, registry: StudioSandboxRegistry
 
   app.get("/sandboxes/:sandboxRef/processes/:processId/logs", async (c) => {
     const entry = registry.get(c.req.param("sandboxRef"));
+
     if (entry === undefined) return errorResponse(c, 404, "not_found", "Sandbox not found");
+
     if (!supportsProcesses(entry.inspector)) {
       return unsupportedSandboxOperation(c, "processes.logs");
     }
+
     try {
       const tailBytes = parseTailBytes(c.req.query("tailBytes"));
       const processId = c.req.param("processId");
       const processes = normalizeProcesses(
         await entry.inspector.listProcesses({ abortSignal: c.req.raw.signal }),
       );
+
       if (!processes.some((process) => process.id === processId)) {
         throw new SandboxRouteError(404, "not_found", "Sandbox process not found");
       }
+
       const logs = normalizeProcessLogs(
         await entry.inspector.readProcessLogs({
           processId,
@@ -255,18 +285,24 @@ function validateRegistration(
   if (!isRecord(registration) || !isInspector(registration.inspector)) {
     throw new TypeError(`sandboxes[${index}] must contain a valid inspector.`);
   }
+
   const inspector = registration.inspector;
   const files = supportsFiles(inspector);
+
   if ((inspector.listFiles === undefined) !== (inspector.readFile === undefined)) {
     throw new TypeError(`sandboxes[${index}] must register both file inspector methods.`);
   }
+
   const processes = supportsProcesses(inspector);
+
   if ((inspector.listProcesses === undefined) !== (inspector.readProcessLogs === undefined)) {
     throw new TypeError(`sandboxes[${index}] must register both process inspector methods.`);
   }
+
   if (!files && !supportsPorts(inspector) && !processes) {
     throw new TypeError(`sandboxes[${index}] inspector exposes no capabilities.`);
   }
+
   for (const agentId of sortedUnique(registration.agentIds ?? [])) {
     if (!knownAgentIds.has(agentId)) {
       throw new TypeError(`sandboxes[${index}] references an unknown agent: ${agentId}`);
@@ -282,12 +318,15 @@ function validateViews(
   registrationIndex: number,
 ): void {
   if (views === undefined) return;
+
   if (!Array.isArray(views))
     throw new TypeError(`sandboxes[${registrationIndex}].views must be an array.`);
+
   const ids = new Set<string>();
   for (const [viewIndex, view] of views.entries()) {
     const prefix = `sandboxes[${registrationIndex}].views[${viewIndex}]`;
     const candidate: unknown = view;
+
     if (
       !isRecord(candidate) ||
       typeof candidate.id !== "string" ||
@@ -295,12 +334,17 @@ function validateViews(
     ) {
       throw new TypeError(`${prefix}.id must be a stable lowercase identifier.`);
     }
+
     if (ids.has(candidate.id)) throw new TypeError(`${prefix}.id is duplicated: ${candidate.id}`);
+
     ids.add(candidate.id);
+
     if (typeof candidate.label !== "string" || candidate.label.length === 0) {
       throw new TypeError(`${prefix}.label must be a non-empty string.`);
     }
+
     const source = candidate.source;
+
     if (
       !isRecord(source) ||
       source.protocol !== "novnc" ||
@@ -310,6 +354,7 @@ function validateViews(
     ) {
       throw new TypeError(`${prefix}.source must be a valid noVNC view source.`);
     }
+
     if (typeof source.connect === "function") {
       if (source.containerPort !== undefined) {
         throw new TypeError(`${prefix}.source must have either connect or containerPort.`);
@@ -318,33 +363,42 @@ function validateViews(
       if (!isPort(source.containerPort)) {
         throw new TypeError(`${prefix}.source must be a valid noVNC view source.`);
       }
+
       if (!supportsPorts(inspector)) {
         throw new TypeError(
           `${prefix} needs published port inspection for a containerPort source.`,
         );
       }
+
       const port = inspector.publishedPorts?.find(
         (candidate) =>
           candidate.containerPort === source.containerPort && candidate.protocol === "tcp",
       );
+
       if (port === undefined || !isLoopbackHost(port.host)) {
         throw new TypeError(`${prefix}.source must resolve to a loopback-published TCP port.`);
       }
     }
+
     const access = candidate.access;
+
     if (!isRecord(access) || (access.mode !== "local" && access.mode !== "authorize")) {
       throw new TypeError(`${prefix}.access must explicitly select local or authorize mode.`);
     }
+
     if (access.mode === "authorize" && typeof access.authorize !== "function") {
       throw new TypeError(`${prefix}.access.authorize must be a function.`);
     }
+
     const authentication = candidate.authentication;
+
     if (
       !isRecord(authentication) ||
       (authentication.type !== "none" && authentication.type !== "password")
     ) {
       throw new TypeError(`${prefix}.authentication must explicitly select none or password.`);
     }
+
     if (
       authentication.type === "password" &&
       (typeof authentication.password !== "string" || authentication.password.length === 0)
@@ -413,7 +467,9 @@ async function listSandboxFiles(
   return normalizeFileEntries(await inspector.listFiles({ path: filePath, abortSignal })).sort(
     (left, right) => {
       if (left.type === "directory" && right.type !== "directory") return -1;
+
       if (left.type !== "directory" && right.type === "directory") return 1;
+
       return left.path.localeCompare(right.path);
     },
   );
@@ -421,10 +477,12 @@ async function listSandboxFiles(
 
 function normalizeFileEntries(value: unknown): StudioSandboxFileEntry[] {
   if (!Array.isArray(value)) throw new TypeError("Sandbox listFiles returned an invalid payload");
+
   return value.map((item) => {
     if (!isRecord(item) || typeof item.path !== "string" || !isFileType(item.type)) {
       throw new TypeError("Sandbox listFiles returned an invalid entry");
     }
+
     let entryPath: string;
     try {
       entryPath = normalizeSandboxPath(item.path, false);
@@ -432,12 +490,15 @@ function normalizeFileEntries(value: unknown): StudioSandboxFileEntry[] {
       throw new TypeError("Sandbox listFiles returned an invalid entry path");
     }
     const entry: StudioSandboxFileEntry = { path: entryPath, type: item.type };
+
     if (item.size !== undefined) {
       if (!Number.isSafeInteger(item.size) || Number(item.size) < 0) {
         throw new TypeError("Sandbox listFiles returned an invalid file size");
       }
+
       entry.size = item.size as number;
     }
+
     return entry;
   });
 }
@@ -445,6 +506,7 @@ function normalizeFileEntries(value: unknown): StudioSandboxFileEntry[] {
 function normalizePorts(value: unknown) {
   if (!Array.isArray(value))
     throw new TypeError("Sandbox publishedPorts returned an invalid payload");
+
   return value.map((item) => {
     if (
       !isRecord(item) ||
@@ -455,6 +517,7 @@ function normalizePorts(value: unknown) {
     ) {
       throw new TypeError("Sandbox publishedPorts returned an invalid entry");
     }
+
     return {
       containerPort: item.containerPort,
       host: item.host,
@@ -467,6 +530,7 @@ function normalizePorts(value: unknown) {
 function normalizeProcesses(value: unknown): StudioSandboxProcess[] {
   if (!Array.isArray(value))
     throw new TypeError("Sandbox listProcesses returned an invalid payload");
+
   return value.map((item) => {
     if (
       !isRecord(item) ||
@@ -479,6 +543,7 @@ function normalizeProcesses(value: unknown): StudioSandboxProcess[] {
     ) {
       throw new TypeError("Sandbox listProcesses returned an invalid entry");
     }
+
     const process: StudioSandboxProcess = {
       id: item.id,
       command: item.command,
@@ -486,9 +551,13 @@ function normalizeProcesses(value: unknown): StudioSandboxProcess[] {
       status: item.status,
       startedAt: item.startedAt,
     };
+
     if (typeof item.cwd === "string") process.cwd = item.cwd;
+
     if (typeof item.exitCode === "number") process.exitCode = item.exitCode;
+
     if (typeof item.endedAt === "string") process.endedAt = item.endedAt;
+
     return process;
   });
 }
@@ -506,6 +575,7 @@ function normalizeProcessLogs(
   ) {
     throw new TypeError("Sandbox readProcessLogs returned an invalid payload");
   }
+
   const stdout = boundedLogBytes(value.stdout, maxBytes);
   const stderr = boundedLogBytes(value.stderr, maxBytes);
   return {
@@ -521,6 +591,7 @@ function boundedLogBytes(
   maxBytes: number,
 ): { text: string; truncated: boolean } {
   if (maxBytes === 0) return { text: "", truncated: value.byteLength > 0 };
+
   let start = Math.max(0, value.byteLength - maxBytes);
   while (start < value.byteLength && ((value[start] ?? 0) & 0xc0) === 0x80) start += 1;
   return {
@@ -533,25 +604,33 @@ function normalizeSandboxPath(input: string, allowRoot: boolean): string {
   if (input.length === 0) {
     throw new SandboxRouteError(400, "bad_request", "Sandbox path cannot be empty");
   }
+
   if (input.includes("\0")) {
     throw new SandboxRouteError(400, "bad_request", "Sandbox path cannot contain null bytes");
   }
+
   const normalized = path.posix.normalize(input.replaceAll("\\", "/"));
+
   if (path.posix.isAbsolute(normalized)) {
     throw new SandboxRouteError(400, "bad_request", "Sandbox path must be relative");
   }
+
   if (normalized === ".." || normalized.startsWith("../")) {
     throw new SandboxRouteError(400, "bad_request", "Sandbox path cannot leave the workspace");
   }
+
   if (normalized === "." && !allowRoot) {
     throw new SandboxRouteError(400, "bad_request", "Sandbox path must refer to a file");
   }
+
   return normalized;
 }
 
 function parseTailBytes(value: string | undefined): number {
   if (value === undefined) return defaultProcessLogBytes;
+
   const parsed = Number(value);
+
   if (!Number.isInteger(parsed) || parsed < 0 || parsed > maxProcessLogBytes) {
     throw new SandboxRouteError(
       400,
@@ -559,6 +638,7 @@ function parseTailBytes(value: string | undefined): number {
       `tailBytes must be an integer from 0 through ${maxProcessLogBytes}`,
     );
   }
+
   return parsed;
 }
 
@@ -573,14 +653,19 @@ function sandboxErrorResponse(c: Context, error: unknown): Response {
   if (error instanceof SandboxRouteError) {
     return errorResponse(c, error.status, error.code, error.message);
   }
+
   const code = errorCode(error);
+
   if (code === "invalid_path") return errorResponse(c, 400, "bad_request", errorMessage(error));
+
   if (code === "file_too_large") {
     return errorResponse(c, 413, "payload_too_large", errorMessage(error));
   }
+
   if (code === "invalid_state" || code === "sandbox_not_found") {
     return errorResponse(c, 409, "conflict", "Sandbox is no longer available");
   }
+
   return errorResponse(
     c,
     500,
@@ -610,12 +695,15 @@ class SandboxRouteError extends Error {
 
 function sortedUnique(values: readonly string[]): string[] {
   if (!Array.isArray(values)) throw new TypeError("Sandbox associations must be arrays.");
+
   const result = new Set<string>();
   for (const value of values as readonly unknown[]) {
     if (typeof value !== "string" || value.length === 0) {
       throw new TypeError("Sandbox associations must contain non-empty strings.");
     }
+
     if (result.has(value)) throw new TypeError(`Sandbox association is duplicated: ${value}`);
+
     result.add(value);
   }
   return [...result].sort();

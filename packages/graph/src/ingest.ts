@@ -226,12 +226,14 @@ export async function prepareGraphDocuments<
   if (options.revision !== undefined && options.revision.trim().length === 0) {
     throw new TypeError("Graph ingestion revision must be a non-empty string.");
   }
+
   if (
     options.maxEntityTextLength !== undefined &&
     (!Number.isSafeInteger(options.maxEntityTextLength) || options.maxEntityTextLength < 1)
   ) {
     throw new RangeError("Graph maxEntityTextLength must be a positive safe integer.");
   }
+
   validatePortableMetadata(options.documents);
   const chunks = chunkTextDocuments({
     documents: options.documents,
@@ -300,7 +302,9 @@ function ingestionReceipt<Schema extends GraphSchemaLike>(
   } = {
     documentIds: prepared.documents.map((document) => document.id),
   };
+
   if (revision !== undefined) head.revision = revision;
+
   return {
     ...head,
     entityKeys: prepared.entities.map((entity) => entity.id),
@@ -317,6 +321,7 @@ function validatePortableMetadata(documents: readonly TextDocument<TextDocumentM
     if (document.metadata === undefined) {
       continue;
     }
+
     const metadata = parseGraphProperties(
       document.metadata,
       `Text document ${document.id} metadata`,
@@ -341,6 +346,7 @@ function groupVectorDocuments(
   >();
   for (const chunk of chunks) {
     const documentChunks = chunksByDocument.get(chunk.document.documentId);
+
     if (documentChunks === undefined) {
       chunksByDocument.set(chunk.document.documentId, [chunk]);
     } else {
@@ -349,9 +355,11 @@ function groupVectorDocuments(
   }
   return documents.map((document) => {
     const documentChunks = chunksByDocument.get(document.id);
+
     if (documentChunks === undefined) {
       throw new TypeError(`Text document ${document.id} has no embedded graph chunks`);
     }
+
     const embeddedDocument: EmbeddedDocument<
       TextDocument<TextDocumentMetadata>,
       TextDocumentMetadata
@@ -360,9 +368,11 @@ function groupVectorDocuments(
       document,
       embeddings: documentChunks.flatMap((chunk) => chunk.embeddings),
     };
+
     if (document.metadata !== undefined) {
       embeddedDocument.metadata = document.metadata;
     }
+
     return embeddedDocument;
   });
 }
@@ -371,6 +381,7 @@ function graphDocument(document: TextDocument<TextDocumentMetadata>): GraphDocum
   if (document.metadata === undefined) {
     return { id: document.id };
   }
+
   return { id: document.id, properties: document.metadata };
 }
 
@@ -385,6 +396,7 @@ function graphChunk(
       text: chunk.text,
     };
   }
+
   return {
     id: chunk.id,
     documentId: chunk.documentId,
@@ -406,5 +418,6 @@ function formatGraphProperty(value: GraphProperties[string]): string {
   if (Array.isArray(value)) {
     return value.join(", ");
   }
+
   return String(value);
 }

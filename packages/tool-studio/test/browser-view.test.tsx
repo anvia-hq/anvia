@@ -44,7 +44,9 @@ describe("StudioBrowserView", () => {
       "fetch",
       vi.fn(async (input: string | URL | Request) => {
         const url = String(input);
+
         if (url.endsWith("/control")) return jsonResponse({ mode: "agent" });
+
         if (url.endsWith("/connection")) {
           return jsonResponse({
             sandboxRef: "sandbox_ref",
@@ -54,6 +56,7 @@ describe("StudioBrowserView", () => {
             authentication: { type: "password", password: "private-password" },
           });
         }
+
         return new Response(null, { status: 404 });
       }),
     );

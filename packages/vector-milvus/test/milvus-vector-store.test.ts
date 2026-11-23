@@ -116,6 +116,7 @@ describe("MilvusVectorClient", () => {
           __anvia_document: "A",
         },
       ];
+
       if (options.limit !== 2) {
         results.push(
           {
@@ -132,6 +133,7 @@ describe("MilvusVectorClient", () => {
           },
         );
       }
+
       return { results };
     });
     const store = new MilvusVectorClient({ client }).vectorStore<string>({

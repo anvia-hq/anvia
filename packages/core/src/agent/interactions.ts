@@ -91,6 +91,7 @@ const questionPromptSchema = z
         path: ["allowCustom"],
       });
     }
+
     const values = new Set<string>();
     for (const [index, choice] of (question.choices ?? []).entries()) {
       if (values.has(choice.value)) {
@@ -100,6 +101,7 @@ const questionPromptSchema = z
           path: ["choices", index, "value"],
         });
       }
+
       values.add(choice.value);
     }
   });
@@ -145,6 +147,7 @@ const questionRequestSchema = z
           path: ["questions", index, "id"],
         });
       }
+
       ids.add(question.id);
     }
   });
@@ -211,6 +214,7 @@ export function assertAgentInteractionResponse(
   if (request.type !== response.type) {
     throw new TypeError("Interaction response type does not match the pending request.");
   }
+
   if (request.type === "tool-question" && response.type === "tool-question") {
     assertQuestionAnswers(request, response.answers);
   }
@@ -222,18 +226,24 @@ function assertQuestionAnswers(
 ): void {
   const parsed = answers.map((answer) => questionAnswerSchema.parse(answer));
   const byId = new Map(parsed.map((answer) => [answer.questionId, answer]));
+
   if (byId.size !== parsed.length) {
     throw new TypeError("Question answers must not contain duplicate question IDs.");
   }
+
   if (byId.size !== request.questions.length) {
     throw new TypeError("Question responses must answer every question exactly once.");
   }
+
   for (const question of request.questions) {
     const answer = byId.get(question.id);
+
     if (answer === undefined) {
       throw new TypeError(`Question response is missing an answer for "${question.id}".`);
     }
+
     const choices = question.choices;
+
     if (
       choices !== undefined &&
       question.allowCustom !== true &&
@@ -246,6 +256,7 @@ function assertQuestionAnswers(
 
 function freeze<T>(value: T): T {
   if (typeof value !== "object" || value === null || Object.isFrozen(value)) return value;
+
   for (const child of Object.values(value)) freeze(child);
   return Object.freeze(value);
 }

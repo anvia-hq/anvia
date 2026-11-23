@@ -11,9 +11,11 @@ export const claimContext = new AsyncLocalStorage<{ runId: string; claimId: stri
  */
 export function fenceStore(store: DurableStore): DurableStore {
   if (store.transaction === undefined) return store;
+
   return new Proxy(store, {
     get(target, key) {
       const value: unknown = Reflect.get(target, key);
+
       if (key === "transaction") {
         return async (
           callback: Parameters<DurableStore["transaction"]>[0],
@@ -21,12 +23,15 @@ export function fenceStore(store: DurableStore): DurableStore {
         ) =>
           target.transaction(async (tx) => {
             const claim = claimContext.getStore();
+
             // A read cannot commit a stale write, and `FOR SHARE` is not allowed in a read-only one.
             if (claim !== undefined && options?.readOnly !== true)
               await tx.assertClaim?.(claim.runId, claim.claimId);
+
             return callback(tx);
           }, options);
       }
+
       return typeof value === "function" ? value.bind(target) : value;
     },
   });

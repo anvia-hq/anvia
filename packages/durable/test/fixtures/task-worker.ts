@@ -31,6 +31,7 @@ const parent = defineTask({
       async (operationId) => {
         if (!existsSync(effects) || !readFileSync(effects, "utf8").includes(operationId))
           appendFileSync(effects, `${operationId}\n`);
+
         if (mode !== "committed") {
           // The child guarantee starts at its committed outcome, not its external append.
           while (!(await ctx.children()).every((task) => task.status === "completed"))
@@ -40,6 +41,7 @@ const parent = defineTask({
             setInterval(() => {}, 1000);
           });
         }
+
         return "receipt";
       },
       (mode === "idempotent" ? "idempotent" : "manual") as ToolRecovery,

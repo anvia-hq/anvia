@@ -26,11 +26,13 @@ export class PineconeVectorStore<
   }
   async ensure(): Promise<void> {
     const client = await this.owner.nativeClient();
+
     if (!(await indexExists(client, this.options.indexName))) {
       if (this.options.spec === undefined)
         throw new TypeError(
           "Pinecone ensure() requires vectorStore({ spec }) when the index is missing.",
         );
+
       await client.createIndex({
         name: this.options.indexName,
         dimension: this.options.dimensions,
@@ -39,21 +41,26 @@ export class PineconeVectorStore<
         waitUntilReady: true,
       });
     }
+
     await this.validate();
   }
   async validate(): Promise<void> {
     const client = await this.owner.nativeClient();
+
     if (!(await indexExists(client, this.options.indexName)))
       throw new Error(`Pinecone index ${this.options.indexName} does not exist`);
+
     if (client.describeIndex !== undefined) {
       const raw = (await client.describeIndex(this.options.indexName)) as {
         dimension?: unknown;
         metric?: unknown;
       };
+
       if (typeof raw.dimension === "number" && raw.dimension !== this.options.dimensions)
         throw new Error(
           `Pinecone index dimension ${raw.dimension} does not match requested dimensions ${this.options.dimensions}`,
         );
+
       if (typeof raw.metric === "string" && raw.metric !== metricName(this.options.metric))
         throw new Error(
           `Pinecone index metric ${raw.metric} does not match requested metric ${metricName(this.options.metric)}`,
@@ -62,7 +69,9 @@ export class PineconeVectorStore<
   }
   async upsert(options: VectorStoreUpsertOptions<T, Metadata>): Promise<void> {
     validateDocuments(options.documents, this.options.dimensions);
+
     if (options.documents.length === 0) return;
+
     const namespace = await this.namespace();
     await namespace.deleteMany({
       filter: {
@@ -70,6 +79,7 @@ export class PineconeVectorStore<
       },
     });
     const vectors = options.documents.flatMap((document) => pineconeVectors(document));
+
     if (vectors.length > 0)
       await namespace.upsert({ ...options.providerOptions, records: vectors });
   }
@@ -93,14 +103,18 @@ export class PineconeVectorStore<
         metricName(this.options.metric),
       );
       const results = selectResults(unfiltered, request);
+
       if (
         results.length >= request.topK ||
         pineconeResultCount(response) < candidateLimit ||
         hasResultBelowMinimum(unfiltered, request.minScore)
       )
         return results;
+
       const nextLimit = nextCandidateLimit(candidateLimit);
+
       if (nextLimit === candidateLimit) return results;
+
       candidateLimit = nextLimit;
     }
   }
@@ -143,7 +157,9 @@ async function indexExists(
 }
 function metricName(metric: PineconeVectorStoreOptions["metric"]): PineconeMetric {
   if (metric === "euclidean") return "euclidean";
+
   if (metric === "dotProduct") return "dotproduct";
+
   return "cosine";
 }
 function throwIfAborted(signal: AbortSignal | undefined): void {
@@ -164,9 +180,12 @@ function validateDocuments<T, Metadata extends VectorMetadata>(
   const ids = new Set<string>();
   for (const document of documents) {
     if (ids.has(document.id)) throw new TypeError(`Duplicate vector document id: ${document.id}`);
+
     ids.add(document.id);
+
     if (document.embeddings.length === 0)
       throw new TypeError(`Vector document ${document.id} must contain at least one embedding.`);
+
     for (const embedding of document.embeddings)
       if (embedding.vector.length !== dimensions)
         throw new Error(`Vector dimension mismatch for document ${document.id}`);
@@ -177,11 +196,15 @@ function validateDocuments<T, Metadata extends VectorMetadata>(
 
 function validateSearchRequest(request: VectorSearchRequest, dimensions: number): void {
   throwIfAborted(request.abortSignal);
+
   if (!Number.isSafeInteger(request.topK) || request.topK < 1)
     throw new RangeError("Vector search topK must be a positive safe integer.");
+
   if (request.minScore !== undefined && !Number.isFinite(request.minScore))
     throw new RangeError("Vector search minScore must be a finite number.");
+
   if (request.vector.length !== dimensions) throw new Error("Vector dimension mismatch for query");
+
   if (!request.vector.every(Number.isFinite))
     throw new Error("Vector search query must contain only finite numbers");
 }

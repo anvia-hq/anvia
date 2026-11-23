@@ -17,6 +17,24 @@ const client = new OpenAIClient({
   apiKey: process.env.OPENAI_API_KEY ?? "",
 });
 
+const escalationPlaybooks: Record<
+  "billing" | "fulfillment" | "webhooks",
+  { owner: string; nextAction: string }
+> = {
+  billing: {
+    owner: "billing-ops",
+    nextAction: "Attach payment event ids to the handoff.",
+  },
+  fulfillment: {
+    owner: "warehouse-ops",
+    nextAction: "Confirm allocation before promising shipment timing.",
+  },
+  webhooks: {
+    owner: "platform",
+    nextAction: "Include retry queue depth and recent deploy ids.",
+  },
+};
+
 const getEscalation = createTool({
   name: "get_escalation",
   description: "Read the current escalation owner for an operational area.",
@@ -33,20 +51,11 @@ const getEscalation = createTool({
   }),
   execute: ({ area }) => {
     const normalizedArea = escalationArea(area ?? "webhooks");
+    const { owner, nextAction } = escalationPlaybooks[normalizedArea];
     return {
       area: normalizedArea,
-      owner:
-        normalizedArea === "billing"
-          ? "billing-ops"
-          : normalizedArea === "fulfillment"
-            ? "warehouse-ops"
-            : "platform",
-      nextAction:
-        normalizedArea === "billing"
-          ? "Attach payment event ids to the handoff."
-          : normalizedArea === "fulfillment"
-            ? "Confirm allocation before promising shipment timing."
-            : "Include retry queue depth and recent deploy ids.",
+      owner,
+      nextAction,
     };
   },
 });
@@ -75,15 +84,21 @@ const escalationPipeline = new Pipeline({
   })
   .step({
     id: "assign-owner",
-    run: ({ input: area }) => ({
-      area,
-      severity: area.includes("webhook") ? "high" : "normal",
-      owner: area.includes("billing")
-        ? "billing-ops"
-        : area.includes("fulfillment")
-          ? "warehouse-ops"
-          : "platform",
-    }),
+    run: ({ input: area }) => {
+      let owner: "billing-ops" | "warehouse-ops" | "platform" = "platform";
+
+      if (area.includes("billing")) {
+        owner = "billing-ops";
+      } else if (area.includes("fulfillment")) {
+        owner = "warehouse-ops";
+      }
+
+      return {
+        area,
+        severity: area.includes("webhook") ? "high" : "normal",
+        owner,
+      };
+    },
   });
 
 new Studio([agent, escalationPipeline], {
@@ -107,6 +122,7 @@ console.log("Restart this example, then open /ui/sessions, /ui/tracing, and /ui/
 
 function escalationArea(area: string): "billing" | "fulfillment" | "webhooks" {
   const normalized = area.toLowerCase();
+
   if (
     normalized.includes("billing") ||
     normalized.includes("payment") ||
@@ -114,6 +130,7 @@ function escalationArea(area: string): "billing" | "fulfillment" | "webhooks" {
   ) {
     return "billing";
   }
+
   if (
     normalized.includes("fulfillment") ||
     normalized.includes("shipping") ||
@@ -122,5 +139,6 @@ function escalationArea(area: string): "billing" | "fulfillment" | "webhooks" {
   ) {
     return "fulfillment";
   }
+
   return "webhooks";
 }

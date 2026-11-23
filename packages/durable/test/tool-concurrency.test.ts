@@ -56,7 +56,9 @@ async function runWith(toolConcurrency: number | undefined) {
     version: "1",
     toolRecovery: { slow: "safe" },
   };
+
   if (toolConcurrency !== undefined) registration.toolConcurrency = toolConcurrency;
+
   const runtime = await DurableRuntime.open({
     store: new SqliteDurableStore(":memory:"),
     agents: [registration],
@@ -158,6 +160,7 @@ itSqlite(
       expect(model).toHaveBeenCalledTimes(1);
     } finally {
       if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+
       rmSync(directory, { recursive: true, force: true });
     }
   },

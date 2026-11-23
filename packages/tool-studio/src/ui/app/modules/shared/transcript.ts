@@ -34,6 +34,7 @@ export function resizeTextarea(textarea: HTMLTextAreaElement | null) {
   if (textarea === null) {
     return;
   }
+
   textarea.style.height = "auto";
   textarea.style.height = `${textarea.scrollHeight}px`;
 }
@@ -55,12 +56,15 @@ export function findMatchingToolIndex(
 ): number {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
+
     if (message === undefined) {
       continue;
     }
+
     if (message.kind !== "tool" || message.toolName !== toolName || message.result !== undefined) {
       continue;
     }
+
     if (callId === undefined || message.callId === callId) {
       return index;
     }
@@ -75,12 +79,15 @@ export function findMatchingToolIndexByCall(
 ): number {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
+
     if (message === undefined) {
       continue;
     }
+
     if (message.kind !== "tool" || message.toolName !== toolName) {
       continue;
     }
+
     if (callId === undefined || message.callId === callId) {
       return index;
     }
@@ -92,18 +99,23 @@ export function messageText(value: unknown): string {
   if (typeof value === "string") {
     return value;
   }
+
   if (!isRecord(value)) {
     return "";
   }
+
   if (typeof value.text === "string") {
     return value.text;
   }
+
   if (typeof value.content === "string") {
     return value.content;
   }
+
   if (Array.isArray(value.content)) {
     return value.content.map(contentText).filter(Boolean).join("\n");
   }
+
   return "";
 }
 
@@ -111,18 +123,23 @@ function contentText(value: unknown): string {
   if (typeof value === "string") {
     return value;
   }
+
   if (!isRecord(value)) {
     return "";
   }
+
   if (typeof value.text === "string") {
     return value.text;
   }
+
   if (value.type === "tool_call" && isRecord(value.function)) {
     return `${String(value.function.name ?? "tool")}(${formatToolValue(value.function.arguments)})`;
   }
+
   if (value.type === "tool_result" && Array.isArray(value.content)) {
     return value.content.map(contentText).filter(Boolean).join("\n");
   }
+
   return typeof value.type === "string" ? value.type : "";
 }
 

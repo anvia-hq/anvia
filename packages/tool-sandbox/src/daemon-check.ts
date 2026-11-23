@@ -33,8 +33,11 @@ export async function checkDaemon(
   const features = await detectFeatures(options, new LocalSandbox({ workdir }), (_level, message) =>
     notes.push(message),
   );
+
   if (options.desktop === false) notes.push("desktop turned off");
+
   if (options.terminal === false) notes.push("terminals turned off");
+
   const missing = required.filter((name) => !features.capabilities.includes(capabilityOf[name]));
   return { capabilities: features.capabilities, notes, missing };
 }

@@ -54,6 +54,7 @@ export function StudioBrowserView(props: {
         signal,
       );
       setControl(state);
+
       if (state.mode === "agent") {
         leaseRef.current = undefined;
         setLease(undefined);
@@ -80,6 +81,7 @@ export function StudioBrowserView(props: {
 
   useEffect(() => {
     if (leaseId === undefined) return;
+
     const controller = new AbortController();
     const interval = window.setInterval(() => {
       void requestJson<BrowserControlLeaseResponse>(
@@ -115,7 +117,9 @@ export function StudioBrowserView(props: {
   useEffect(
     () => () => {
       const activeLease = leaseRef.current;
+
       if (activeLease === undefined) return;
+
       void fetch(`${base}/control/release`, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -128,7 +132,9 @@ export function StudioBrowserView(props: {
 
   useEffect(() => {
     const target = targetRef.current;
+
     if (target === null) return;
+
     const controller = new AbortController();
     setViewerStatus("connecting");
     setViewerError("");
@@ -145,6 +151,7 @@ export function StudioBrowserView(props: {
     ])
       .then(([connection, noVnc]) => {
         if (controller.signal.aborted) return;
+
         const websocketUrl = new URL(connection.websocketPath, window.location.origin);
         websocketUrl.protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
         const credentials =
@@ -152,7 +159,9 @@ export function StudioBrowserView(props: {
             ? { username: "", password: connection.authentication.password, target: "" }
             : undefined;
         const rfbOptions: ConstructorParameters<typeof noVnc.default>[2] = {};
+
         if (credentials !== undefined) rfbOptions.credentials = credentials;
+
         const rfb = new noVnc.default(target, websocketUrl.href, rfbOptions);
         rfbRef.current = rfb;
         rfb.scaleViewport = true;
@@ -168,6 +177,7 @@ export function StudioBrowserView(props: {
             setViewerError("The browser desktop requires credentials that Studio does not have.");
             return;
           }
+
           rfb.sendCredentials(credentials);
         });
         rfb.addEventListener("securityfailure", (event) => {
@@ -176,13 +186,16 @@ export function StudioBrowserView(props: {
         });
         rfb.addEventListener("disconnect", (event) => {
           if (controller.signal.aborted) return;
+
           setViewerStatus(event.detail.clean ? "disconnected" : "error");
+
           if (!event.detail.clean)
             setViewerError("The browser desktop connection was interrupted.");
         });
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
+
         setViewerStatus("error");
         setViewerError(error instanceof Error ? error.message : "Unable to open browser desktop.");
         reportError(error);
@@ -198,8 +211,11 @@ export function StudioBrowserView(props: {
 
   useEffect(() => {
     const rfb = rfbRef.current;
+
     if (rfb === undefined) return;
+
     rfb.viewOnly = lease === undefined;
+
     if (lease === undefined) rfb.blur();
     else rfb.focus({ preventScroll: true });
   }, [lease]);
@@ -230,6 +246,7 @@ export function StudioBrowserView(props: {
 
   const release = useCallback(async () => {
     if (lease === undefined) return;
+
     setPending(true);
     try {
       await requestJson<{ released: boolean }>(
@@ -253,6 +270,12 @@ export function StudioBrowserView(props: {
     }
   }, [base, lease, reportError]);
 
+  let statusLabel: string = viewerStatus;
+
+  if (viewerStatus === "connected") {
+    statusLabel = heldByThisViewer ? "You control" : "Agent control";
+  }
+
   return (
     <StudioSurface
       className={cn(
@@ -263,13 +286,7 @@ export function StudioBrowserView(props: {
       <div className="flex min-h-12 items-center justify-between gap-3 border-b border-border bg-background px-3 py-2">
         <div className="flex min-w-0 items-center gap-2.5">
           <span className="truncate text-sm font-semibold text-foreground">{props.view.label}</span>
-          <StudioStatusBadge>
-            {viewerStatus === "connected"
-              ? heldByThisViewer
-                ? "You control"
-                : "Agent control"
-              : viewerStatus}
-          </StudioStatusBadge>
+          <StudioStatusBadge>{statusLabel}</StudioStatusBadge>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           {heldByThisViewer ? (

@@ -42,10 +42,13 @@ export function grokControlsForModel(modelId: string): GrokReasoningControls | u
   ) {
     return GROK_REASONING_CONTROLS;
   }
+
   if (modelId === "grok-4.5") return GROK_4_5_REASONING_CONTROLS;
+
   if (modelId === "grok-4.3" || modelId === "grok-4.3-latest") {
     return GROK_4_3_REASONING_CONTROLS;
   }
+
   return undefined;
 }
 
@@ -59,7 +62,9 @@ function reasoningControls<const Efforts extends readonly GrokReasoningEffort[]>
     description: "Controls how much reasoning the model applies before responding.",
     options: efforts,
   };
+
   if (defaultValue !== undefined) effortControl.defaultValue = defaultValue;
+
   return defineCompletionModelControls({
     reasoningEffort: effortControl,
   });

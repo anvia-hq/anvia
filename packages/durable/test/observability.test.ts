@@ -56,8 +56,11 @@ function flakyAgent(observer: AgentObserver, toolOutput = "found") {
   let calls = 0;
   const pick = (): CompletionResponse => {
     calls += 1;
+
     if (calls === 1) return toolResponse();
+
     if (calls === 2) throw new Error("transient provider error");
+
     return done();
   };
   const tool = vi.fn(async () => toolOutput);
@@ -261,8 +264,11 @@ describe("durable observability", () => {
         capabilities,
         completion: async () => {
           calls += 1;
+
           if (calls === 1) return toolResponse();
+
           if (calls === 2) throw new Error("transient provider error");
+
           return done();
         },
       },
@@ -285,7 +291,9 @@ describe("durable observability", () => {
     });
     await vi.waitFor(async () => expect((await run.snapshot()).run.status).toBe("waiting"));
     const pending = (await run.snapshot()).run.outcome;
+
     if (pending?.type !== "interaction") throw new Error("Missing approval");
+
     await run.respond(pending.interaction.id, { type: "tool-approval", approved: true });
     await run.result();
 

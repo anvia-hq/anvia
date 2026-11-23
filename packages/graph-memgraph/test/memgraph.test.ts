@@ -127,7 +127,9 @@ describe("MemgraphClient", () => {
     ] as const;
     const driver = fakeDriver(async (query) => {
       queries.push(query);
+
       if (query === "SHOW VERSION") return { records: [record({ version: "Memgraph v3.9.0" })] };
+
       if (query === "SHOW CONSTRAINT INFO") {
         return {
           records: constraintsCreated
@@ -137,24 +139,33 @@ describe("MemgraphClient", () => {
             : [],
         };
       }
+
       if (query.startsWith("CREATE CONSTRAINT")) {
         constraintsCreated = true;
         return { records: [] };
       }
+
       if (query.startsWith("CREATE INDEX ON")) {
         lookupCreated = true;
         return { records: [] };
       }
+
       if (query.startsWith("CREATE VECTOR INDEX")) {
         if (query.includes("support_chunks_vector")) vectors.add("support_chunks_vector");
+
         if (query.includes("support_entities_vector")) vectors.add("support_entities_vector");
+
         return { records: [] };
       }
+
       if (query.startsWith("CREATE TEXT INDEX")) {
         if (query.includes("support_chunks_text")) texts.add("support_chunks_text");
+
         if (query.includes("support_entities_text")) texts.add("support_entities_text");
+
         return { records: [] };
       }
+
       if (query.includes("vector_search.show_index_info")) {
         return {
           records: [...vectors].map((name) => {
@@ -169,8 +180,10 @@ describe("MemgraphClient", () => {
           }),
         };
       }
+
       if (query === "SHOW INDEX INFO") {
         const records = [...texts].map((name) => record({ type: "text", name }));
+
         if (lookupCreated) {
           records.unshift(
             ...constraints.map(([label, properties]) =>
@@ -178,10 +191,12 @@ describe("MemgraphClient", () => {
             ),
           );
         }
+
         return {
           records,
         };
       }
+
       return { records: [] };
     });
     await managed(new MemgraphClient({ driver: driver.value })).ensure();
@@ -194,6 +209,7 @@ describe("MemgraphClient", () => {
     const queries: string[] = [];
     const driver = fakeDriver(async (query) => {
       queries.push(query);
+
       if (query.includes("vector_search.search(")) {
         return {
           records: [
@@ -211,6 +227,7 @@ describe("MemgraphClient", () => {
           ],
         };
       }
+
       if (query.includes("RETURN {internalId: id(node)")) {
         return {
           records: [
@@ -228,7 +245,9 @@ describe("MemgraphClient", () => {
           ],
         };
       }
+
       if (query.includes("MATCH path")) return { records: [] };
+
       return { records: [] };
     });
     const model: EmbeddingModel = {
@@ -382,6 +401,7 @@ describe("MemgraphClient", () => {
           ],
         };
       }
+
       if (query.includes("MATCH (from)-[relationship]->(to)")) {
         return {
           records: [
@@ -395,6 +415,7 @@ describe("MemgraphClient", () => {
           ],
         };
       }
+
       return { records: [] };
     });
     const result = await managed(new MemgraphClient({ driver: driver.value })).explore({

@@ -44,6 +44,7 @@ function App() {
     const stream = new EventSource("/api/events");
     stream.onmessage = (message) => {
       const event = JSON.parse(message.data as string) as AppEvent;
+
       if (event.type === "sandbox") {
         setSandbox(event.state);
         setSandboxMessage(event.message);
@@ -65,6 +66,7 @@ function App() {
       headers: { "content-type": "application/json" },
       body: body === undefined ? null : JSON.stringify(body),
     });
+
     if (!response.ok)
       setProblem(((await response.json()) as { error?: string }).error ?? "Request failed.");
   };

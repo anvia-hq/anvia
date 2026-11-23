@@ -58,10 +58,13 @@ export class OperationStore {
   constructor(private readonly options: OperationStoreOptions) {
     this.directory = options.directory;
     this.maxEntries = options.maxEntries ?? defaultMaxOperationEntries;
+
     if (!Number.isSafeInteger(this.maxEntries) || this.maxEntries < 1) {
       throw new RangeError("maxEntries must be a positive safe integer.");
     }
+
     this.maxStoredResultBytes = options.maxStoredResultBytes ?? defaultMaxStoredResultBytes;
+
     if (!Number.isSafeInteger(this.maxStoredResultBytes) || this.maxStoredResultBytes < 1) {
       throw new RangeError("maxStoredResultBytes must be a positive safe integer.");
     }
@@ -77,6 +80,7 @@ export class OperationStore {
 
     while (true) {
       const running = this.inflight.get(operationId);
+
       if (running !== undefined) {
         assertSameRequest(operationId, running.fingerprint, fingerprint);
         try {
@@ -85,27 +89,33 @@ export class OperationStore {
           // The first attempt was cancelled, so it never completed and this retry owns the
           // operation now. Any other failure is real and is reported as is.
           if (isAbortError(error)) continue;
+
           throw error;
         }
       }
 
       const stored = this.volatile.get(operationId) ?? (await this.load(operationId));
+
       if (stored !== undefined) {
         assertSameRequest(operationId, stored.fingerprint, fingerprint);
+
         if (stored.resultDropped) {
           throw new DockerSandboxError(
             `Operation ${operationId} already ran, but its result was too large to store.`,
             "invalid_state",
           );
         }
+
         return stored.result as T;
       }
+
       // Another retry may have started while the disk lookup was pending.
       if (this.inflight.has(operationId)) continue;
 
       const promise = execute().then(async (result) => {
         if (durable) await this.save({ operationId, fingerprint, result });
         else this.remember({ operationId, fingerprint, result });
+
         return result;
       });
       this.inflight.set(operationId, { fingerprint, promise });
@@ -124,6 +134,7 @@ export class OperationStore {
       return parsed.operationId === operationId ? parsed : undefined;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") this.options.onError?.(error);
+
       return undefined;
     }
   }
@@ -133,6 +144,7 @@ export class OperationStore {
     this.volatile.set(entry.operationId, entry);
     for (const oldest of this.volatile.keys()) {
       if (this.volatile.size <= this.maxEntries) break;
+
       this.volatile.delete(oldest);
     }
   }
@@ -140,16 +152,19 @@ export class OperationStore {
   private async save(entry: StoredOperation): Promise<void> {
     try {
       let serialized = JSON.stringify(entry);
+
       if (Buffer.byteLength(serialized) > this.maxStoredResultBytes) {
         const { operationId, fingerprint } = entry;
         serialized = JSON.stringify({ operationId, fingerprint, resultDropped: true });
       }
+
       await this.prepare();
       const target = this.fileFor(entry.operationId);
       const temporary = `${target}.tmp`;
       await writeFile(temporary, serialized, { mode: 0o600 });
       await rename(temporary, target);
       this.writesSincePrune += 1;
+
       if (this.writesSincePrune >= Math.max(1, Math.floor(this.maxEntries / 8))) {
         this.writesSincePrune = 0;
         await this.prune();
@@ -168,7 +183,9 @@ export class OperationStore {
 
   private async prune(): Promise<void> {
     const names = (await readdir(this.directory)).filter((name) => name.endsWith(".json"));
+
     if (names.length <= this.maxEntries) return;
+
     const dated = await Promise.all(
       names.map(async (name) => ({
         name,
@@ -208,11 +225,19 @@ function fingerprintRequest(request: { method: string; params: unknown }): strin
 
 function stableStringify(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+
   if (typeof value === "object" && value !== null) {
     const entries = Object.entries(value as Record<string, unknown>)
       .filter(([, item]) => item !== undefined)
-      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+      .sort(([a], [b]) => {
+        if (a < b) return -1;
+
+        if (a > b) return 1;
+
+        return 0;
+      });
     return `{${entries.map(([key, item]) => `${JSON.stringify(key)}:${stableStringify(item)}`).join(",")}}`;
   }
+
   return JSON.stringify(value) ?? "null";
 }

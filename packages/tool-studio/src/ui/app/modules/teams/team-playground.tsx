@@ -24,11 +24,14 @@ export function TeamPlayground({
   const started = run.state.status !== "idle";
   useEffect(() => {
     const element = scrollRef.current;
+
     if (element && stick.current) element.scrollTop = element.scrollHeight;
   }, [run.state]);
   async function send() {
     const value = prompt.trim();
+
     if (!value) return;
+
     if (running) {
       if (await run.steer(value)) setPrompt("");
     } else {
@@ -66,6 +69,7 @@ export function TeamPlayground({
             className="min-h-0 flex-1 overflow-auto px-5 py-6"
             onScroll={() => {
               const element = scrollRef.current;
+
               if (element)
                 stick.current =
                   element.scrollHeight - element.scrollTop - element.clientHeight < 80;
@@ -93,6 +97,7 @@ export function TeamPlayground({
                       <p className="whitespace-pre-wrap break-words text-sm">{entry.text}</p>
                     </article>
                   );
+
                 const turn = run.state.turns.find((item) => item.key === entry.key);
                 return turn?.text ? (
                   <article key={entry.key}>
@@ -141,6 +146,7 @@ export function TeamPlayground({
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                   event.preventDefault();
+
                   if ((!started || running) && !run.busy.has("steer")) void send();
                 }
               }}

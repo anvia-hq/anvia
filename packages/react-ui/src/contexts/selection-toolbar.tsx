@@ -27,10 +27,12 @@ export function InternalSelectionToolbarProvider({
 
 export function useSelectionToolbar(): SelectionToolbarContextValue {
   const value = useContext(SelectionToolbarContext);
+
   if (value === undefined) {
     throw new Error(
       "SelectionToolbar primitives must be used inside SelectionToolbarPrimitive.Root.",
     );
   }
+
   return value;
 }

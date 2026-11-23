@@ -70,6 +70,7 @@ function transformNode(
   for (const child of node.children) {
     transformNode(child, markdown, entities, rendered);
   }
+
   if (!phrasingParentTypes.has(node.type)) {
     return;
   }
@@ -78,7 +79,9 @@ function transformNode(
     if (rendered.has(entityIndex)) {
       continue;
     }
+
     const entity = entities[entityIndex];
+
     if (entity !== undefined && replaceEntity(node, markdown, entity, entityIndex)) {
       rendered.add(entityIndex);
     }
@@ -92,11 +95,14 @@ function replaceEntity(
   entityIndex: number,
 ): boolean {
   const children = parent.children;
+
   if (children === undefined) {
     return false;
   }
+
   const firstIndex = children.findIndex((child) => containsStart(child, entity.range.from));
   const lastIndex = findLastIndex(children, (child) => containsEnd(child, entity.range.to));
+
   if (firstIndex < 0 || lastIndex < firstIndex) {
     return false;
   }
@@ -105,6 +111,7 @@ function replaceEntity(
   const last = children[lastIndex];
   const firstPosition = offsets(first);
   const lastPosition = offsets(last);
+
   if (
     first === undefined ||
     last === undefined ||
@@ -119,8 +126,10 @@ function replaceEntity(
   if (firstIndex === lastIndex && literalNodeTypes.has(first.type)) {
     return false;
   }
+
   const before = contentBefore(first, markdown, entity);
   const after = contentAfter(last, markdown, entity);
+
   if (before === undefined || after === undefined) {
     return false;
   }
@@ -147,30 +156,39 @@ function contentBefore(
   entity: ComposerEntity,
 ): MarkdownNode[] | undefined {
   const position = offsets(node);
+
   if (position === undefined) {
     return undefined;
   }
+
   if (entity.range.from === position.from) {
     return [];
   }
+
   if (node.type !== "text" || node.value === undefined) {
     if (node.children === undefined || literalNodeTypes.has(node.type)) {
       return undefined;
     }
+
     const childIndex = node.children.findIndex((child) => containsStart(child, entity.range.from));
     const child = node.children[childIndex];
+
     if (child === undefined) {
       return undefined;
     }
+
     const childContent = contentBefore(child, markdown, entity);
     return childContent === undefined
       ? undefined
       : [...node.children.slice(0, childIndex), ...childContent];
   }
+
   const split = textValueRange(node, markdown, entity);
+
   if (split === undefined) {
     return undefined;
   }
+
   return [
     {
       ...node,
@@ -189,30 +207,39 @@ function contentAfter(
   entity: ComposerEntity,
 ): MarkdownNode[] | undefined {
   const position = offsets(node);
+
   if (position === undefined) {
     return undefined;
   }
+
   if (entity.range.to === position.to) {
     return [];
   }
+
   if (node.type !== "text" || node.value === undefined) {
     if (node.children === undefined || literalNodeTypes.has(node.type)) {
       return undefined;
     }
+
     const childIndex = findLastIndex(node.children, (child) => containsEnd(child, entity.range.to));
     const child = node.children[childIndex];
+
     if (child === undefined) {
       return undefined;
     }
+
     const childContent = contentAfter(child, markdown, entity);
     return childContent === undefined
       ? undefined
       : [...childContent, ...node.children.slice(childIndex + 1)];
   }
+
   const split = textValueRange(node, markdown, entity);
+
   if (split === undefined) {
     return undefined;
   }
+
   return [
     {
       ...node,
@@ -232,12 +259,15 @@ function textValueRange(
 ): { from: number; to: number } | undefined {
   const position = offsets(node);
   const value = node.value;
+
   if (position === undefined || value === undefined) {
     return undefined;
   }
+
   const raw = markdown.slice(position.from, position.to);
   const relativeFrom = entity.range.from - position.from;
   const relativeTo = entity.range.to - position.from;
+
   if (raw === value) {
     return { from: relativeFrom, to: relativeTo };
   }
@@ -254,9 +284,11 @@ function countOccurrences(value: string, search: string): number {
   let offset = 0;
   while (offset <= value.length - search.length) {
     const index = value.indexOf(search, offset);
+
     if (index < 0) {
       break;
     }
+
     count += 1;
     offset = index + search.length;
   }
@@ -267,12 +299,15 @@ function occurrenceIndex(value: string, search: string, occurrence: number): num
   let offset = 0;
   for (let index = 0; index <= occurrence; index += 1) {
     const found = value.indexOf(search, offset);
+
     if (found < 0) {
       return undefined;
     }
+
     if (index === occurrence) {
       return found;
     }
+
     offset = found + search.length;
   }
   return undefined;
@@ -297,6 +332,7 @@ function offsets(node: MarkdownNode | undefined): { from: number; to: number } |
 function findLastIndex<T>(items: T[], predicate: (item: T) => boolean): number {
   for (let index = items.length - 1; index >= 0; index -= 1) {
     const item = items[index];
+
     if (item !== undefined && predicate(item)) {
       return index;
     }

@@ -70,8 +70,10 @@ function answerSupportQuestion(question: string): string {
   if (question.includes("refund")) {
     return "Refunds are available for 30 days.";
   }
+
   if (question.includes("security")) {
     return "Security incidents must be escalated to the incident commander.";
   }
+
   return "Please contact support.";
 }

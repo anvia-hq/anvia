@@ -26,9 +26,12 @@ export function toReadableStream<T>(
   return new ReadableStream<Uint8Array>({
     async pull(controller) {
       if (state !== "open") return;
+
       try {
         const next = await iterator.next();
+
         if (state !== "open") return;
+
         if (next.done === true) {
           state = "terminal";
           controller.close();
@@ -45,6 +48,7 @@ export function toReadableStream<T>(
             )
           : next.value;
         controller.enqueue(encoder.encode(`${JSON.stringify(value)}\n`));
+
         if (terminal) {
           state = "terminal";
           controller.close();
@@ -52,6 +56,7 @@ export function toReadableStream<T>(
         }
       } catch (error) {
         if (state !== "open") return;
+
         const value =
           options.errorSerialization === "anvia"
             ? anviaErrorEnvelope(error)
@@ -78,31 +83,40 @@ function anviaErrorEnvelope(error: unknown, usage?: unknown): TerminalErrorWire 
   envelope.type = "error";
   envelope.error = normalizeAnviaError(error);
   const safeUsage = projectUsage(usage);
+
   if (safeUsage !== undefined) envelope.usage = safeUsage;
+
   return envelope;
 }
 
 function normalizeAnviaError(error: unknown): SafeError {
   if (isSafeScalar(error)) return error;
+
   if (typeof error === "bigint") return { message: String(error) };
 
   const diagnostic: Record<string, SafeScalar> = Object.create(null);
   for (const key of ["name", "message"]) {
     const value = readDataProperty(error, key);
+
     if (typeof value === "string") diagnostic[key] = value;
   }
   const code = readDataProperty(error, "code");
+
   if (isSafeScalar(code)) diagnostic.code = code;
 
   if (code === COMPLETION_PROVIDER_OUTPUT_ERROR_CODE) {
     const kind = readDataProperty(error, "kind");
+
     if (typeof kind === "string" && providerOutputKinds.has(kind)) {
       diagnostic.kind = kind;
       const toolCallId = readDataProperty(error, "toolCallId");
+
       if (typeof toolCallId === "string" && toolCallId.length > 0) {
         diagnostic.toolCallId = toolCallId;
       }
+
       const finishReason = readDataProperty(error, "finishReason");
+
       if (typeof finishReason === "string" && finishReasons.has(finishReason)) {
         diagnostic.finishReason = finishReason;
       }
@@ -138,11 +152,14 @@ function readDataProperty(value: unknown, key: string): unknown {
   if ((typeof value !== "object" || value === null) && typeof value !== "function") {
     return undefined;
   }
+
   try {
     let object: object | null = value;
     for (let depth = 0; object !== null && depth < 32; depth++) {
       const descriptor = Object.getOwnPropertyDescriptor(object, key);
+
       if (descriptor !== undefined) return "value" in descriptor ? descriptor.value : undefined;
+
       object = Object.getPrototypeOf(object);
     }
   } catch {
@@ -153,6 +170,7 @@ function readDataProperty(value: unknown, key: string): unknown {
 
 function projectUsage(value: unknown): Usage | undefined {
   if (typeof value !== "object" || value === null) return undefined;
+
   const usage: Usage = Object.create(null);
   for (const key of [
     "inputTokens",
@@ -162,21 +180,28 @@ function projectUsage(value: unknown): Usage | undefined {
     "cacheCreationInputTokens",
   ] as const) {
     const count = readDataProperty(value, key);
+
     if (typeof count !== "number" || !Number.isFinite(count) || count < 0) return undefined;
+
     usage[key] = count;
   }
   try {
     const descriptor = Object.getOwnPropertyDescriptor(value, "details");
+
     if (descriptor !== undefined) {
       if (!("value" in descriptor)) return undefined;
+
       const details: unknown = descriptor.value;
+
       if (details !== undefined) {
         if (typeof details !== "object" || details === null || Array.isArray(details)) {
           return undefined;
         }
+
         const counts: Record<string, number> = Object.create(null);
         for (const key of Object.keys(details)) {
           const field = Object.getOwnPropertyDescriptor(details, key);
+
           if (
             field === undefined ||
             !("value" in field) ||
@@ -186,6 +211,7 @@ function projectUsage(value: unknown): Usage | undefined {
           ) {
             return undefined;
           }
+
           counts[key] = field.value;
         }
         usage.details = counts;
@@ -207,13 +233,17 @@ function serializeError(error: unknown): unknown {
     // can keep diagnostic fields such as `code` on the prototype, where
     // JSON.stringify drops them. Copy well-known diagnostic fields explicitly.
     const code = (error as { code?: unknown }).code;
+
     if (code !== undefined) {
       serialized.code = code;
     }
+
     const details = (error as { details?: unknown }).details;
+
     if (details !== undefined) {
       serialized.details = details;
     }
+
     return serialized;
   }
 

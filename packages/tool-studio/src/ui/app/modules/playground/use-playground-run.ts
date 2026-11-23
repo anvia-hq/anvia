@@ -99,27 +99,34 @@ export function usePlaygroundRun(props: {
     () => ({
       send(options) {
         const context = playgroundRunRequestRef.current;
+
         if (context === undefined) {
           throw new Error("Missing playground run request");
         }
+
         if (options.request.type === "interaction_response") {
           const request = {
             agentId: context.agentId,
             ...options.request,
             stream: true,
           };
+
           if (context.metadata !== undefined) {
             Object.assign(request, { metadata: context.metadata });
           }
+
           return studioAgentTransport.send({
             ...options,
             request,
           });
         }
+
         const prompt = options.request.messages.at(-1);
+
         if (prompt === undefined || prompt.role !== "user") {
           throw new Error("Missing playground prompt message");
         }
+
         return studioAgentTransport.send({
           ...options,
           request: runRequestFromContext(context, prompt),
@@ -135,7 +142,9 @@ export function usePlaygroundRun(props: {
       if (playgroundRunTerminalRef.current) {
         return;
       }
+
       const visibleDelta = acceptStreamEvent(event);
+
       if (visibleDelta) {
         playgroundVisibleEventRef.current = playgroundVisibleEventRef.current.then(nextPaint);
       }
@@ -144,6 +153,7 @@ export function usePlaygroundRun(props: {
       if (playgroundRunStoppedRef.current || playgroundRunTerminalRef.current) {
         return;
       }
+
       playgroundRunTerminalRef.current = true;
       playgroundRunErrorRef.current = error;
       const message = agentRunErrorMessage(error);
@@ -157,6 +167,7 @@ export function usePlaygroundRun(props: {
     const trimmed = text.trim();
     const promptAttachments = attachments;
     const agentId = selectedAgent?.id ?? selectedAgentId;
+
     if (
       (trimmed.length === 0 && promptAttachments.length === 0) ||
       agentId.length === 0 ||
@@ -184,9 +195,11 @@ export function usePlaygroundRun(props: {
         role: "user",
         text: trimmed,
       };
+
       if (promptAttachments.length > 0) {
         userEntry.attachments = transcriptAttachmentsForPrompt(promptAttachments);
       }
+
       return [
         ...current,
         userEntry,
@@ -209,18 +222,24 @@ export function usePlaygroundRun(props: {
       playgroundRunErrorRef.current = undefined;
       playgroundVisibleEventRef.current = Promise.resolve();
       const metadata: StudioAgentRunRequest["metadata"] = { source: "anvia-studio" };
+
       if (selectedModelRef.length > 0) metadata.studioModel = selectedModelRef;
+
       metadata.studioControls = selectedControls;
       const runContext: PlaygroundRunRequestContext = {
         agentId,
         stream: true,
         metadata,
       };
+
       if (sessionId.length > 0) runContext.sessionId = sessionId;
+
       if (history !== undefined) runContext.history = history;
+
       if (selectedModelRef.length > 0) {
         runContext.model = studioModelRefFromKey(selectedModelRef);
       }
+
       runContext.controls = selectedControls;
       playgroundRunRequestRef.current = runContext;
       const startedAt = Date.now();
@@ -231,12 +250,14 @@ export function usePlaygroundRun(props: {
         attachments: uiAttachmentsForPrompt(promptAttachments),
       });
       await playgroundVisibleEventRef.current;
+
       if (playgroundWaitingRef.current) {
         return;
       }
 
       if (playgroundRunErrorRef.current === undefined) {
         await sessions.loadAllSessions();
+
         if (sessionId.length > 0) {
           sessions.setSelectedSessionId(sessionId);
           const [traceSummaries] = await Promise.all([
@@ -247,10 +268,12 @@ export function usePlaygroundRun(props: {
           transcript.setMessages((current) =>
             enrichTranscriptWithTraceIds(current, traceSummaries),
           );
+
           if (shouldCreateSession) {
             sessions.openSessionPath(sessionId);
           }
         }
+
         onStatus(playgroundRunStoppedRef.current ? "Stopped" : "Connected");
       }
     } catch (runError) {
@@ -278,6 +301,7 @@ export function usePlaygroundRun(props: {
     ) {
       return;
     }
+
     playgroundRunStoppedRef.current = true;
     playgroundRunTerminalRef.current = true;
     const durationMs = stopWorkingClock();
@@ -302,6 +326,7 @@ export function usePlaygroundRun(props: {
       })
       .catch((decisionError) => {
         onError(errorMessage(decisionError));
+
         if (
           isPermanentInteractionError(decisionError) ||
           isPermanentInteractionError(playgroundRunErrorRef.current)
@@ -336,6 +361,7 @@ export function usePlaygroundRun(props: {
       })
       .catch((answerError) => {
         onError(errorMessage(answerError));
+
         if (
           isPermanentInteractionError(answerError) ||
           isPermanentInteractionError(playgroundRunErrorRef.current)
@@ -347,6 +373,7 @@ export function usePlaygroundRun(props: {
 
   function finishInteractionPhase() {
     if (playgroundWaitingRef.current) return;
+
     completeWorkingRun();
     playgroundRunRequestRef.current = undefined;
     playgroundChat.reset();
@@ -358,14 +385,17 @@ export function usePlaygroundRun(props: {
       transcript.appendAgentToolEvent(event);
       return true;
     }
+
     if (event.type === "text_delta") {
       transcript.appendAssistantText(event.delta);
       return true;
     }
+
     if (event.type === "reasoning_delta") {
       transcript.appendReasoningText(event.delta, event.partId);
       return true;
     }
+
     if (event.type === "tool_call_end") {
       onToolCall(event.toolName);
       transcript.appendToolCall(
@@ -375,6 +405,7 @@ export function usePlaygroundRun(props: {
       );
       return true;
     }
+
     if (event.type === "tool_result") {
       const result: Parameters<typeof transcript.appendToolResult>[0] = {
         toolName: event.toolName,
@@ -385,14 +416,18 @@ export function usePlaygroundRun(props: {
             ? formatToolValue(event.result.output)
             : event.result.error.message,
       };
+
       if (event.result.status === "success" && event.result.content !== undefined) {
         result.structuredResult = event.result.content;
       }
+
       transcript.appendToolResult(result);
       return true;
     }
+
     if (event.type === "interaction") {
       const requestedAt = new Date().toISOString();
+
       if (event.interaction.type === "tool-approval") {
         const approval = {
           id: event.interaction.id,
@@ -401,9 +436,11 @@ export function usePlaygroundRun(props: {
           status: "pending",
           requestedAt,
         } as const;
+
         if (event.interaction.reason !== undefined) {
           Object.assign(approval, { reason: event.interaction.reason });
         }
+
         transcript.updateToolApproval(approval);
       } else {
         transcript.updateToolQuestion({
@@ -420,12 +457,15 @@ export function usePlaygroundRun(props: {
           })),
         });
       }
+
       return true;
     }
+
     if (event.type === "data" && event.name === "studio.session_log") {
       sessions.appendSessionLogEntry(event.data as unknown as StudioSessionLogEntry);
       return true;
     }
+
     if (event.type === "run_end") {
       if (event.status === "suspended") {
         playgroundWaitingRef.current = true;
@@ -433,14 +473,18 @@ export function usePlaygroundRun(props: {
         onStatus("Waiting for input");
         return true;
       }
+
       playgroundRunTerminalRef.current = true;
+
       if (event.trace?.traceId !== undefined) {
         transcript.assignAssistantTraceId(event.trace.traceId);
       }
+
       transcript.clearPendingAssistant();
       completeWorkingRun();
       return true;
     }
+
     if (event.type === "error") {
       playgroundRunTerminalRef.current = true;
       const message = serializedStreamErrorText(event.error);
@@ -450,11 +494,13 @@ export function usePlaygroundRun(props: {
       completeWorkingRun();
       return true;
     }
+
     return false;
   }
 
   function completeWorkingRun() {
     const durationMs = stopWorkingClock();
+
     if (durationMs !== undefined) {
       transcript.completeRun(durationMs);
     }
@@ -462,9 +508,11 @@ export function usePlaygroundRun(props: {
 
   function stopWorkingClock(): number | undefined {
     const startedAt = playgroundRunStartedAtRef.current;
+
     if (startedAt === undefined) {
       return undefined;
     }
+
     playgroundRunStartedAtRef.current = undefined;
     return Date.now() - startedAt;
   }
@@ -492,6 +540,7 @@ function isPermanentInteractionError(error: unknown): boolean {
   if (error instanceof TypeError && error.message.startsWith("No pending interaction exists")) {
     return true;
   }
+
   return (
     error instanceof EventStreamHttpError &&
     (error.response.status === 404 || error.response.status === 409)
@@ -507,10 +556,16 @@ function runRequestFromContext(
     type: "messages",
     messages: context.sessionId === undefined ? [...(context.history ?? []), message] : [message],
   };
+
   if (context.stream !== undefined) request.stream = context.stream;
+
   if (context.metadata !== undefined) request.metadata = context.metadata;
+
   if (context.sessionId !== undefined) request.sessionId = context.sessionId;
+
   if (context.model !== undefined) request.model = context.model;
+
   if (context.controls !== undefined) request.controls = context.controls;
+
   return request;
 }

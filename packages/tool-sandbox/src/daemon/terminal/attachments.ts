@@ -71,6 +71,7 @@ export class PtyAttachment implements TerminalAttachment {
       if (this.closing) this.exited = { reason: "closed" };
       else if (this.options.wasKilled?.() === true) this.exited = { reason: "killed" };
       else this.exited = { reason: "exited", exitCode };
+
       this.options.onClosed(this);
       this.listener?.onExit(this.exited);
     });
@@ -79,6 +80,7 @@ export class PtyAttachment implements TerminalAttachment {
   start(listener: NonNullable<PtyAttachment["listener"]>): void {
     this.listener = listener;
     for (const chunk of this.early.splice(0)) listener.onData(chunk);
+
     if (this.exited !== undefined) listener.onExit(this.exited);
   }
 
@@ -104,6 +106,7 @@ export class PtyAttachment implements TerminalAttachment {
 
   close(): void {
     if (this.exited !== undefined || this.closing) return;
+
     this.closing = true;
     killPty(this.pty, () => this.exited !== undefined);
   }
@@ -148,6 +151,7 @@ export class ShellSession {
 
   kill(): void {
     if (this.ended) return;
+
     this.killed = true;
     killPty(this.pty, () => this.ended);
   }
@@ -169,6 +173,7 @@ export class ShellSession {
       this.bytes -= this.chunks.shift()?.byteLength ?? 0;
     }
     const first = this.chunks[0];
+
     if (first !== undefined && this.bytes > this.scrollbackBytes) {
       const excess = this.bytes - this.scrollbackBytes;
       this.chunks[0] = first.subarray(excess);
@@ -209,6 +214,7 @@ export class ShellViewer implements TerminalAttachment {
   start(listener: NonNullable<ShellViewer["listener"]>): void {
     this.listener = listener;
     for (const chunk of this.early.splice(0)) listener.onData(chunk);
+
     if (this.exit !== undefined) listener.onExit(this.exit);
   }
 
@@ -234,9 +240,11 @@ export class ShellViewer implements TerminalAttachment {
 
   private finish(info: TerminalExitInfo, notify = true): void {
     if (this.done) return;
+
     this.done = true;
     this.session.viewers.delete(this);
     this.onClosed(this);
+
     if (notify) {
       this.exit = info;
       this.listener?.onExit(info);

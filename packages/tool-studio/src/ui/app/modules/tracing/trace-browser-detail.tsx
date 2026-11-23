@@ -172,6 +172,7 @@ function JsonNodeLabel(props: {
       </>
     );
   }
+
   if (props.arrayIndex !== undefined) {
     return (
       <>
@@ -180,6 +181,7 @@ function JsonNodeLabel(props: {
       </>
     );
   }
+
   return null;
 }
 
@@ -187,18 +189,23 @@ function JsonPrimitive(props: { value: unknown }) {
   if (typeof props.value === "string") {
     return <span className="code-string">{JSON.stringify(props.value)}</span>;
   }
+
   if (typeof props.value === "number") {
     return <span className="code-number">{String(props.value)}</span>;
   }
+
   if (typeof props.value === "boolean") {
     return <span className="code-literal">{String(props.value)}</span>;
   }
+
   if (props.value === null) {
     return <span className="code-comment">null</span>;
   }
+
   if (props.value === undefined) {
     return <span className="text-muted-foreground">undefined</span>;
   }
+
   return <span className="text-foreground">{rawTraceJson(props.value)}</span>;
 }
 
@@ -216,9 +223,11 @@ export function jsonSyntaxTokens(
   for (const match of json.matchAll(tokenPattern)) {
     const text = match[0];
     const index = match.index ?? 0;
+
     if (index > cursor) {
       tokens.push({ text: json.slice(cursor, index), type: "plain", start: cursor });
     }
+
     tokens.push({
       text,
       type: jsonTokenType(text, json.slice(index + text.length)),
@@ -226,9 +235,11 @@ export function jsonSyntaxTokens(
     });
     cursor = index + text.length;
   }
+
   if (cursor < json.length) {
     tokens.push({ text: json.slice(cursor), type: "plain", start: cursor });
   }
+
   return tokens;
 }
 
@@ -238,12 +249,15 @@ function jsonTokenType(text: string, followingText: string): JsonTokenType {
   if (text.startsWith('"')) {
     return followingText.trimStart().startsWith(":") ? "key" : "string";
   }
+
   if (text === "true" || text === "false") {
     return "boolean";
   }
+
   if (text === "null") {
     return "null";
   }
+
   return "number";
 }
 
@@ -272,14 +286,18 @@ export function plainTraceValue(
 ): Array<{ label: string; text: string }> {
   if (title === "Output") {
     const outputRows = plainTraceOutput(value);
+
     if (outputRows.length > 0) {
       return outputRows;
     }
   }
+
   const messageRows = plainTraceInput(value, title);
+
   if (messageRows.length > 0) {
     return messageRows;
   }
+
   if (!isRecord(value)) {
     return [{ label: title, text: plainTraceText(value) }];
   }
@@ -287,10 +305,12 @@ export function plainTraceValue(
   const rows: Array<{ label: string; text: string }> = [];
   for (const [key, item] of Object.entries(value)) {
     const nestedMessages = plainTraceInput(item, key);
+
     if (nestedMessages.length > 0) {
       rows.push(...nestedMessages);
       continue;
     }
+
     rows.push({ label: traceLabelText(key), text: plainTraceText(item) });
   }
   return rows.length > 0 ? rows : [{ label: title, text: "Empty object" }];
@@ -300,12 +320,15 @@ function plainTraceOutput(value: unknown): Array<{ label: string; text: string }
   if (!isRecord(value)) {
     return [];
   }
+
   const rows: Array<{ label: string; text: string }> = [];
   const choiceRows = plainTraceInput(value.choice, "choice");
   rows.push(...choiceRows);
+
   if (typeof value.messageId === "string" && value.messageId.length > 0) {
     rows.push({ label: "Message Id", text: value.messageId });
   }
+
   return rows;
 }
 
@@ -316,13 +339,16 @@ function plainTraceInput(
   if (typeof value === "string" && parentKey === undefined) {
     return [{ label: "Value", text: value }];
   }
+
   if (Array.isArray(value)) {
     if (parentKey === "chatHistory") {
       return chatHistoryRows(value);
     }
+
     if (parentKey === "history") {
       return conversationHistoryRows(value);
     }
+
     return value
       .map((item, index) => ({
         label: traceArrayItemLabel(item, index, parentKey),
@@ -330,11 +356,13 @@ function plainTraceInput(
       }))
       .filter((item) => item.text.length > 0);
   }
+
   if (!isRecord(value)) {
     return [];
   }
 
   const chatHistory = Array.isArray(value.chatHistory) ? value.chatHistory : undefined;
+
   if (chatHistory !== undefined) {
     const rows = systemPromptRows(value);
     rows.push(...plainTraceInput(chatHistory, "chatHistory"));
@@ -349,11 +377,13 @@ function plainTraceInput(
   rows.push(...systemPromptRows(value));
 
   const history = Array.isArray(value.history) ? value.history : [];
+
   if (history.length > 0) {
     rows.push(...plainTraceInput(history, "history"));
   }
 
   const promptText = messageText(value.prompt);
+
   if (promptText.length > 0) {
     rows.push({ label: history.length > 0 ? "Current prompt" : "Prompt", text: promptText });
   }
@@ -371,18 +401,21 @@ function chatHistoryRows(value: unknown[]): Array<{ label: string; text: string 
   const current = messages.at(-1);
   const history = messages.slice(0, -1);
   const rows: Array<{ label: string; text: string }> = [];
+
   if (history.length > 0) {
     rows.push({
       label: `Conversation history (${history.length})`,
       text: history.map((item, index) => `${index + 1}. ${item.label}\n${item.text}`).join("\n\n"),
     });
   }
+
   if (current !== undefined) {
     rows.push({
       label: history.length > 0 ? "Current prompt" : "Prompt",
       text: current.text,
     });
   }
+
   return rows;
 }
 
@@ -393,9 +426,11 @@ function conversationHistoryRows(value: unknown[]): Array<{ label: string; text:
       text: messageText(item) || formatToolValue(item),
     }))
     .filter((item) => item.text.length > 0);
+
   if (messages.length === 0) {
     return [];
   }
+
   return [
     {
       label: `Conversation history (${messages.length})`,
@@ -407,20 +442,25 @@ function conversationHistoryRows(value: unknown[]): Array<{ label: string; text:
 function traceArrayItemLabel(item: unknown, index: number, parentKey: string | undefined): string {
   if (isRecord(item)) {
     const type = typeof item.type === "string" ? item.type : undefined;
+
     if (parentKey === "choice") {
       if (type === "text") {
         return "Assistant output";
       }
+
       if (type === "reasoning") {
         return "Reasoning";
       }
     }
+
     if (type === "reasoning") {
       return "Reasoning";
     }
+
     if (typeof item.role === "string") {
       return traceLabelText(item.role);
     }
+
     if (type !== undefined) {
       return traceLabelText(type);
     }
@@ -440,9 +480,11 @@ function traceLabelText(value: string): string {
 
 function systemPromptRows(value: Record<string, unknown>): Array<{ label: string; text: string }> {
   const instructions = value.instructions;
+
   if (typeof instructions !== "string" || instructions.trim().length === 0) {
     return [];
   }
+
   return [{ label: "System prompt", text: instructions }];
 }
 
@@ -450,15 +492,19 @@ function plainTraceText(value: unknown): string {
   if (value === undefined) {
     return "undefined";
   }
+
   if (value === null) {
     return "null";
   }
+
   if (typeof value === "string") {
     return value;
   }
+
   if (typeof value === "number" || typeof value === "boolean") {
     return String(value);
   }
+
   try {
     return JSON.stringify(value, null, 2);
   } catch {
@@ -502,11 +548,14 @@ export function traceObservationTree(observations: TraceObservationItem[]): Trac
   const roots: TraceObservationNode[] = [];
   for (const observation of observations) {
     const node = nodes.get(observation.id);
+
     if (node === undefined) {
       continue;
     }
+
     const parentId = observation.parentObservationId;
     const parent = parentId === undefined ? undefined : nodes.get(parentId);
+
     if (parent === undefined) {
       roots.push(node);
     } else {
@@ -550,6 +599,7 @@ export function selectedTraceDetail(
       metadata: traceDetailMetadata(trace),
     };
   }
+
   if (activeKey.startsWith("turn:")) {
     const turnNumber = Number(activeKey.slice("turn:".length));
     const turn = turns.find((item) => item.turn === turnNumber);
@@ -567,9 +617,11 @@ export function selectedTraceDetail(
       metadata: turnDetailMetadata(turnNumber, turn?.observations ?? []),
     };
   }
+
   if (activeKey.startsWith("observation:")) {
     const observationId = activeKey.slice("observation:".length);
     const observation = trace.observations.find((item) => item.id === observationId);
+
     if (observation !== undefined) {
       return {
         title: traceObservationLabel(observation),
@@ -587,6 +639,7 @@ export function selectedTraceDetail(
       };
     }
   }
+
   return {
     title: trace.name ?? "Agent",
     tone: "trace",
@@ -609,9 +662,12 @@ function traceContextView(
   observations: TraceObservationItem[],
 ): ContextBreakdownView | undefined {
   const recorded = contextBreakdownView(context);
+
   if (recorded !== undefined) return recorded;
+
   for (let index = observations.length - 1; index >= 0; index -= 1) {
     const view = contextBreakdownView(observations[index]?.metadata?.context);
+
     if (view !== undefined) return view;
   }
   return undefined;
@@ -766,15 +822,19 @@ export function observationStatusSummary(observations: TraceObservationItem[]): 
   if (observations.length === 0) {
     return "empty";
   }
+
   if (observations.some((observation) => observation.status === "error")) {
     return "error";
   }
+
   if (observations.some((observation) => observation.status === "cancelled")) {
     return "cancelled";
   }
+
   if (observations.some((observation) => observation.status === "running")) {
     return "running";
   }
+
   return "success";
 }
 
@@ -790,6 +850,7 @@ export function traceObservationLabel(observation: TraceObservationItem): string
   if (observation.kind === "agent") {
     return observation.name;
   }
+
   return observation.kind === "tool" ? `tool.${observation.name}` : observation.name;
 }
 
@@ -798,6 +859,7 @@ export function firstDeltaMsFromObservations(
 ): number | undefined {
   for (const observation of observations) {
     const firstDeltaMs = firstDeltaMsFromMetadata(observation.metadata);
+
     if (firstDeltaMs !== undefined) {
       return firstDeltaMs;
     }
@@ -809,6 +871,7 @@ function firstDeltaMsFromMetadata(metadata: unknown): number | undefined {
   if (!isRecord(metadata) || typeof metadata.firstDeltaMs !== "number") {
     return undefined;
   }
+
   return metadata.firstDeltaMs;
 }
 
@@ -854,6 +917,7 @@ export function observationUsageText(observation: TraceObservationItem): string 
   if (!isRecord(observation.output) || !isRecord(observation.output.usage)) {
     return "";
   }
+
   return formatUsageValue(observation.output.usage);
 }
 
@@ -869,8 +933,10 @@ function formatUsageValue(value: Record<string, unknown>): string {
   const input = typeof value.inputTokens === "number" ? value.inputTokens : 0;
   const output = typeof value.outputTokens === "number" ? value.outputTokens : 0;
   const total = typeof value.totalTokens === "number" ? value.totalTokens : input + output;
+
   if (total === 0) {
     return "";
   }
+
   return `${input} -> ${output} (Σ ${total})`;
 }

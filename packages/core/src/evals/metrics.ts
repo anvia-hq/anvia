@@ -40,9 +40,11 @@ export function exactMatch<Input, Output, Expected = unknown, const Name extends
     async evaluate(args) {
       const actual = await resolveActual(options.actual, args);
       const expected = await resolveExpected(options.expected, args);
+
       if (expected === undefined) {
         return EvalOutcome.invalid("No expected value provided for exact match.");
       }
+
       const passed = evalValuesEqual(actual, expected);
       return passed
         ? EvalOutcome.pass(true)
@@ -82,12 +84,15 @@ export function contains<Input, Output, Expected = unknown, const Name extends s
     async evaluate(args) {
       const actual = await resolveActualText(options.actual, args);
       const expected = await resolveExpected(options.expected, args);
+
       if (expected === undefined) {
         return EvalOutcome.invalid("No expected value provided for contains.");
       }
+
       if (typeof expected !== "string" && !(expected instanceof RegExp)) {
         return EvalOutcome.invalid("Contains expected value must be a string or RegExp.");
       }
+
       const passed =
         expected instanceof RegExp ? regexMatches(expected, actual) : actual.includes(expected);
       return passed
@@ -127,12 +132,15 @@ export function notContains<Input, Output, Expected = unknown, const Name extend
     async evaluate(args) {
       const actual = await resolveActualText(options.actual, args);
       const expected = await resolveExpected(options.expected, args);
+
       if (expected === undefined) {
         return EvalOutcome.invalid("No expected value provided for notContains.");
       }
+
       if (typeof expected !== "string" && !(expected instanceof RegExp)) {
         return EvalOutcome.invalid("notContains expected value must be a string or RegExp.");
       }
+
       const found = textExpectationMatches(expected, actual);
       return found
         ? EvalOutcome.fail(false, {
@@ -212,15 +220,20 @@ function containsListMetric<Input, Output, Expected, const Name extends string>(
     async evaluate(args) {
       const actual = await resolveActualText(options.actual, args);
       const expected = await resolveExpected(options.expected, args);
+
       if (!Array.isArray(expected) || expected.length === 0) {
         return EvalOutcome.invalid(`${defaultName} expected value must be a non-empty array.`);
       }
+
       if (expected.some((value) => typeof value !== "string" && !(value instanceof RegExp))) {
         return EvalOutcome.invalid(`${defaultName} expected values must be strings or RegExp.`);
       }
+
       const matches = expected.map((value) => textExpectationMatches(value, actual));
       const passed = mode === "all" ? matches.every(Boolean) : matches.some(Boolean);
+
       if (passed) return EvalOutcome.pass(true);
+
       const missing = expected.filter((_, index) => !matches[index]).map(String);
       const comment =
         mode === "all"
@@ -294,9 +307,11 @@ function regexMetric<Input, Output, Expected, const Name extends string>(
     async evaluate(args) {
       const actual = await resolveActualText(options.actual, args);
       const expected = await resolveExpected(options.expected, args);
+
       if (!(expected instanceof RegExp)) {
         return EvalOutcome.invalid(`${defaultName} expected value must be a RegExp.`);
       }
+
       const matched = regexMatches(expected, actual);
       const passed = negate ? !matched : matched;
       return passed
@@ -329,9 +344,11 @@ export function maxLength<Input, Output, Expected = unknown, const Name extends 
     async evaluate(args) {
       const actual = await resolveActualText(options.actual, args);
       const max = await resolveOption(options.max, args);
+
       if (!Number.isInteger(max) || max < 0) {
         return EvalOutcome.invalid("maxLength max must be a non-negative integer.");
       }
+
       const length = Array.from(actual).length;
       return length <= max
         ? EvalOutcome.pass(true)
@@ -364,6 +381,7 @@ export function requiredFields<
     async evaluate(args) {
       const actual = await resolveActual(options.actual, args);
       const expected = await resolveOption(options.expected, args);
+
       if (
         !Array.isArray(expected) ||
         expected.length === 0 ||
@@ -373,9 +391,11 @@ export function requiredFields<
           "requiredFields expected value must be a non-empty string array.",
         );
       }
+
       if (typeof actual !== "object" || actual === null || Array.isArray(actual)) {
         return EvalOutcome.invalid("requiredFields actual value must be an object.");
       }
+
       const missing = expected.filter((field) => !Object.hasOwn(actual, field));
       return missing.length === 0
         ? EvalOutcome.pass(true)
@@ -455,12 +475,15 @@ export function semanticSimilarity<
       const actual = await resolveActualText(options.actual, args);
       throwIfAborted(args.signal);
       const expected = await resolveExpected(options.expected, args);
+
       if (expected === undefined) {
         return EvalOutcome.invalid("No expected value provided for semantic similarity.");
       }
+
       if (typeof expected !== "string") {
         return EvalOutcome.invalid("Semantic similarity expected value must be a string.");
       }
+
       throwIfAborted(args.signal);
       const [{ embedding: actualEmbedding }, { embedding: expectedEmbedding }] = await Promise.all([
         embedText({ model: options.model, text: actual, abortSignal: args.signal }),
@@ -543,7 +566,9 @@ export function llmScore<Input, Output, Expected = unknown, const Name extends s
   options: LlmScoreOptions<Input, Output, Expected> & { name?: Name | undefined },
 ): EvalMetric<Input, Output, LlmScoreMetricScore, Expected, Name> {
   const criteria = Array.isArray(options.criteria) ? options.criteria.join("\n") : options.criteria;
+
   if (criteria.trim().length === 0) throw new TypeError("llmScore criteria must not be empty.");
+
   const threshold = unitInterval(options.threshold, "llmScore threshold");
   const retries = extractionRetries(options.retries);
   return {
@@ -571,12 +596,14 @@ export function llmScore<Input, Output, Expected = unknown, const Name extends s
         });
         throwIfAborted(args.signal);
         const score = result.output;
+
         if (score.score < 0 || score.score > 1) {
           return EvalOutcome.invalid(`Score ${score.score} outside valid range [0, 1].`, {
             score,
             usage: result.usage,
           });
         }
+
         return score.score >= threshold
           ? EvalOutcome.pass(score, { comment: score.feedback, usage: result.usage })
           : EvalOutcome.fail(score, { comment: score.feedback, usage: result.usage });
@@ -589,12 +616,15 @@ export function llmScore<Input, Output, Expected = unknown, const Name extends s
 
 function extractionRetries(retries: number | undefined): { maxAttempts: number } | undefined {
   const retryCount = retries ?? 0;
+
   if (!Number.isInteger(retryCount) || retryCount < 0) {
     throw new RangeError("Eval metric retries must be a non-negative integer.");
   }
+
   if (retryCount === 0) {
     return undefined;
   }
+
   return { maxAttempts: retryCount + 1 };
 }
 
@@ -602,5 +632,6 @@ function unitInterval(value: number, label: string): number {
   if (!Number.isFinite(value) || value < 0 || value > 1) {
     throw new RangeError(`${label} must be between 0 and 1.`);
   }
+
   return value;
 }

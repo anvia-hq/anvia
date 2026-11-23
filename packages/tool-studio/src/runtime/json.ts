@@ -8,16 +8,20 @@ function toJsonValueInternal(value: unknown, seen: WeakSet<object>): JsonValue {
   if (value === null || typeof value === "string" || typeof value === "boolean") {
     return value;
   }
+
   if (typeof value === "number") {
     return Number.isFinite(value) ? value : String(value);
   }
+
   if (value === undefined) {
     return null;
   }
+
   if (Array.isArray(value)) {
     if (seen.has(value)) {
       return "[Circular]";
     }
+
     seen.add(value);
     try {
       return value.map((item) => toJsonValueInternal(item, seen));
@@ -25,10 +29,12 @@ function toJsonValueInternal(value: unknown, seen: WeakSet<object>): JsonValue {
       seen.delete(value);
     }
   }
+
   if (typeof value === "object") {
     if (seen.has(value)) {
       return "[Circular]";
     }
+
     seen.add(value);
     try {
       return compactJsonObjectInternal(value as Record<string, unknown>, seen);
@@ -36,6 +42,7 @@ function toJsonValueInternal(value: unknown, seen: WeakSet<object>): JsonValue {
       seen.delete(value);
     }
   }
+
   return String(value);
 }
 
@@ -61,6 +68,7 @@ export function serializeUnknown(error: unknown): JsonValue {
       stack: error.stack,
     });
   }
+
   return toJsonValue(error);
 }
 

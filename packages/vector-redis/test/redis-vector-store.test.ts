@@ -117,6 +117,7 @@ describe("RedisVectorClient", () => {
     const limits: number[] = [];
     const search = vi.fn(async (_name: string, query: string) => {
       if (!query.includes("KNN")) return { documents: [] };
+
       const limit = Number(query.match(/KNN (\d+)/)?.[1]);
       limits.push(limit);
       const candidates = [

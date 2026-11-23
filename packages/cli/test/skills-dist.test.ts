@@ -44,6 +44,7 @@ function snapshot(root: string): Record<string, { content: string; mode: number;
   function visit(dir: string): void {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       const path = join(dir, entry.name);
+
       if (entry.isDirectory()) visit(path);
       else {
         const stat = statSync(path);

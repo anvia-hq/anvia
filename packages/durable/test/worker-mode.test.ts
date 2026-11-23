@@ -30,7 +30,9 @@ async function openWorker(
     worker,
     pollIntervalMs: extra.pollIntervalMs ?? 20,
   };
+
   if (extra.maxConcurrentRuns !== undefined) options.maxConcurrentRuns = extra.maxConcurrentRuns;
+
   const runtime = await DurableRuntime.open(options);
   runtimes.push(runtime);
   return runtime;
@@ -157,13 +159,16 @@ describe("shared worker mode", () => {
     const store = new Proxy(inner, {
       get(target, key) {
         const value: unknown = Reflect.get(target, key);
+
         if (typeof value !== "function") return value;
+
         const name = String(key) as keyof typeof flaky;
         return (...args: unknown[]) => {
           if (name in flaky && flaky[name] > 0) {
             flaky[name]--;
             return Promise.reject(new Error(`transient ${name}`));
           }
+
           return Reflect.apply(value, target, args);
         };
       },

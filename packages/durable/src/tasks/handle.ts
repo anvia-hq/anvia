@@ -46,11 +46,15 @@ export class DurableTaskHandle<R = JsonValue> {
     while (true) {
       options.abortSignal?.throwIfAborted();
       const { task } = await this.snapshot();
+
       if (terminal(task)) {
         const outcome = task.outcome!;
+
         if (outcome.status === "completed") return outcome.output as R;
+
         throw new DurableRunError(task.id, outcome.status, outcome.error);
       }
+
       await delay(options.abortSignal);
     }
   }
@@ -59,8 +63,10 @@ export class DurableTaskHandle<R = JsonValue> {
   async *stream(options: DurableStreamOptions = {}): AsyncIterable<TaskEvent> {
     let cursor = options.after ?? 0;
     const initial = await this.snapshot();
+
     if (!Number.isSafeInteger(cursor) || cursor < 0 || cursor > initial.cursor)
       throw new TypeError("Invalid task event cursor.");
+
     while (true) {
       this.assertOpen();
       options.abortSignal?.throwIfAborted();
@@ -69,8 +75,10 @@ export class DurableTaskHandle<R = JsonValue> {
       const events = await this.store.taskEvents(initial.task.rootId, cursor, 100);
       for (const event of events) {
         options.abortSignal?.throwIfAborted();
+
         if (event.type !== "submitted" && event.type !== "status")
           throw new Error("Invalid task event type.");
+
         cursor = event.sequence;
         yield {
           rootId: initial.task.rootId,
@@ -81,8 +89,11 @@ export class DurableTaskHandle<R = JsonValue> {
           data: event.data,
         };
       }
+
       if (events.length > 0) continue;
+
       if (settled) return;
+
       await delay(options.abortSignal);
     }
   }

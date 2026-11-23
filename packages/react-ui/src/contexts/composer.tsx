@@ -136,8 +136,10 @@ export function InternalComposerProvider({
 
 export function useComposer(): ComposerContextValue {
   const value = useContext(ComposerContext);
+
   if (value === undefined) {
     throw new Error("Composer primitives must be used inside ComposerPrimitive.Root.");
   }
+
   return value;
 }

@@ -55,8 +55,10 @@ function answerSupportQuestion(question: string): string {
   if (question.includes("refund")) {
     return "A customer can ask for a refund during the 30 day refund period.";
   }
+
   if (question.includes("billing")) {
     return "Only workspace owners are allowed to update billing settings.";
   }
+
   return "Please contact support.";
 }

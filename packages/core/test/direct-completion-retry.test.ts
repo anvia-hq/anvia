@@ -431,7 +431,9 @@ describe("direct completion retries", () => {
     const random = vi.spyOn(Math, "random").mockReturnValue(1);
     const timer = vi.spyOn(globalThis, "setTimeout").mockImplementation((callback) => {
       expect(model.closed).toBe(true);
+
       if (typeof callback === "function") callback();
+
       return 0 as unknown as ReturnType<typeof setTimeout>;
     });
 
@@ -503,8 +505,11 @@ class CompletionQueueModel implements CompletionModel {
   async completion(request: CompletionRequest): Promise<CompletionResponse> {
     this.requests.push(request);
     const next = this.queue.shift();
+
     if (next instanceof Error) throw next;
+
     if (next === undefined) throw new Error("No queued completion response.");
+
     return next;
   }
 }
@@ -543,7 +548,9 @@ class ThrowingStreamQueueModel implements StreamingCompletionModel {
   async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionModelStreamEvent> {
     this.requests.push(request);
     this.attempt += 1;
+
     if (this.attempt === 1) throw this.error;
+
     yield { type: "final", response: response("ready") };
   }
 }
@@ -565,6 +572,7 @@ class ClosingStreamModel implements StreamingCompletionModel {
   async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionModelStreamEvent> {
     this.requests.push(request);
     this.attempt += 1;
+
     if (this.attempt === 1) {
       try {
         yield { type: "error", error: this.error };
@@ -573,6 +581,7 @@ class ClosingStreamModel implements StreamingCompletionModel {
       }
       return;
     }
+
     yield { type: "final", response: response("ready") };
   }
 }

@@ -306,6 +306,7 @@ describe("Studio sandbox views with a connect source", () => {
       },
       async release() {
         if (fail) throw new Error("daemon unreachable");
+
         released += 1;
       },
     };
@@ -406,6 +407,7 @@ function createFakeStream() {
       async *[Symbol.asyncIterator]() {
         while (!ended || queue.length > 0) {
           const next = queue.shift();
+
           if (next !== undefined) yield next;
           else await new Promise<void>((resolve) => (wake = resolve));
         }
@@ -453,7 +455,9 @@ function createConnectApp(
   const app = new Hono();
   const close = registerSandboxViewRoutes(app, registry);
   const ref = registry.list()[0]?.ref;
+
   if (ref === undefined) throw new Error("Expected sandbox ref");
+
   return { app, close, ref };
 }
 
@@ -476,7 +480,9 @@ function createViewApp(authorize: () => boolean | Promise<boolean>, hostPort = 4
   const app = new Hono();
   const close = registerSandboxViewRoutes(app, registry);
   const ref = registry.list()[0]?.ref;
+
   if (ref === undefined) throw new Error("Expected sandbox ref");
+
   return { app, close, control, ref, registry };
 }
 

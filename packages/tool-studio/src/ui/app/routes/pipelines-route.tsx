@@ -22,6 +22,7 @@ export function PipelinesRoute() {
     const url = new URL(window.location.href);
     url.searchParams.set("tab", tab);
     const nextUrl = `${url.pathname}${url.search}${url.hash}`;
+
     if (`${window.location.pathname}${window.location.search}${window.location.hash}` !== nextUrl) {
       window.history.pushState(null, "", nextUrl);
     }
@@ -49,8 +50,10 @@ function tabFromLocation(): PipelineSidebarTab {
 
 function pipelineSidebarTab(search: string): PipelineSidebarTab {
   const tab = new URLSearchParams(search).get("tab");
+
   if (tab === "metadata" || tab === "runs" || tab === "logs") {
     return tab;
   }
+
   return "input";
 }

@@ -8,6 +8,7 @@ export class LangfuseScoreError extends Error {
     super(message);
     this.name = "LangfuseScoreError";
     this.scores = scores;
+
     if (cause !== undefined) {
       this.cause = cause;
     }
@@ -83,11 +84,14 @@ export class ScoreQueue {
     if (this.closed) {
       throw new Error("Langfuse score queue is shut down");
     }
+
     this.pending.push(score);
+
     if (this.pending.length >= this.batchSize) {
       this.triggerBackgroundFlush();
       return;
     }
+
     this.scheduleTimer();
   }
 
@@ -100,14 +104,18 @@ export class ScoreQueue {
     while (true) {
       if (this.flushing !== null) {
         await this.flushing;
+
         if (this.pending.length === 0) {
           return;
         }
+
         continue;
       }
+
       if (this.pending.length === 0) {
         return;
       }
+
       const draining = this.drain();
       this.flushing = draining;
       try {
@@ -130,6 +138,7 @@ export class ScoreQueue {
     if (this.timer !== null) {
       return;
     }
+
     this.timer = this.setTimer(() => {
       this.timer = null;
       this.triggerBackgroundFlush();
@@ -161,9 +170,11 @@ export class ScoreQueue {
           body: JSON.stringify(body),
           signal: AbortSignal.timeout(this.timeoutMs),
         });
+
         if (response.ok) {
           return;
         }
+
         if (response.status === 429 || response.status >= 500) {
           lastError = new Error(`Langfuse score batch failed with HTTP ${response.status}`);
         } else {
@@ -177,8 +188,10 @@ export class ScoreQueue {
         if (error instanceof LangfuseScoreError) {
           throw error;
         }
+
         lastError = error;
       }
+
       if (attempt < this.maxAttempts - 1) {
         await this.sleep(computeBackoff(attempt));
       }
@@ -201,14 +214,17 @@ export class ScoreQueue {
           this.pending.unshift(...batch);
           throw error;
         }
+
         if (error instanceof LangfuseScoreError) {
           permanentError ??= error;
           continue;
         }
+
         this.pending.unshift(...batch);
         throw error;
       }
     }
+
     if (permanentError !== undefined) {
       throw permanentError;
     }
@@ -221,16 +237,25 @@ function buildScoreBody(score: LangfuseScoreArgs): Record<string, unknown> {
     name: score.name,
     value: score.value,
   };
+
   if (score.observationId !== undefined) body.observationId = score.observationId;
+
   if (score.dataType !== undefined) body.dataType = score.dataType;
+
   if (score.comment !== undefined) body.comment = score.comment;
+
   if (score.metadata !== undefined) body.metadata = score.metadata;
+
   const configId = score.configId ?? score.scoreConfigId;
+
   if (configId !== undefined) body.configId = configId;
+
   if (score.environment !== undefined) body.environment = score.environment;
+
   if (score.timestamp !== undefined) {
     body.timestamp =
       score.timestamp instanceof Date ? score.timestamp.toISOString() : score.timestamp;
   }
+
   return body;
 }

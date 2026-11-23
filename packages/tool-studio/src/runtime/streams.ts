@@ -50,10 +50,12 @@ function withStudioStreamErrors<TEvent>(
 
           try {
             const next = await iterator.next();
+
             if (next.done === true) {
               done = true;
               return next;
             }
+
             return { done: false, value: serializeStreamError(next.value) };
           } catch (error) {
             done = true;
@@ -83,6 +85,7 @@ function serializeStreamError<TEvent>(event: TEvent): TEvent {
   ) {
     return event;
   }
+
   return { ...event, error: serializeError(event.error) } as TEvent;
 }
 

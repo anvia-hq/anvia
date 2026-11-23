@@ -52,11 +52,14 @@ export function MemoryPage(props: { agents: StudioConfig["agents"]; enabled: boo
       setSelectedSourceRef("");
       return;
     }
+
     setSourcesLoading(true);
     setError("");
     try {
       const response = await fetch("/memory/sources");
+
       if (!response.ok) throw new Error(`Memory sources failed with HTTP ${response.status}`);
+
       const body = (await response.json()) as StudioMemorySourcesPage;
       setSources(body.sources);
       setSelectedSourceRef((current) =>
@@ -78,6 +81,7 @@ export function MemoryPage(props: { agents: StudioConfig["agents"]; enabled: boo
   const loadMemory = useCallback(async () => {
     const requestId = memoryRequest.current + 1;
     memoryRequest.current = requestId;
+
     if (!props.enabled || selectedSource === undefined || !selectedSource.available) {
       setUsers([]);
       setConversations([]);
@@ -86,6 +90,7 @@ export function MemoryPage(props: { agents: StudioConfig["agents"]; enabled: boo
       setLoading(false);
       return;
     }
+
     setLoading(true);
     setError("");
     try {
@@ -94,16 +99,21 @@ export function MemoryPage(props: { agents: StudioConfig["agents"]; enabled: boo
         fetch(`${sourcePath}/users?limit=50`),
         fetch(`${sourcePath}/conversations?limit=100`),
       ]);
+
       if (!usersResponse.ok) {
         throw new Error(`Memory users failed with HTTP ${usersResponse.status}`);
       }
+
       if (!conversationsResponse.ok) {
         throw new Error(`Memory conversations failed with HTTP ${conversationsResponse.status}`);
       }
+
       const usersBody = (await usersResponse.json()) as StudioMemorySourceUsersPage;
       const conversationsBody =
         (await conversationsResponse.json()) as StudioMemorySourceConversationsPage;
+
       if (memoryRequest.current !== requestId) return;
+
       setUsers(usersBody.users);
       setConversations(conversationsBody.conversations);
       setSelectedConversationRef(
@@ -143,6 +153,7 @@ export function MemoryPage(props: { agents: StudioConfig["agents"]; enabled: boo
       setSteps(undefined);
       return;
     }
+
     const sourceRef = selectedSource.ref;
     let cancelled = false;
     async function loadDetail() {
@@ -156,12 +167,15 @@ export function MemoryPage(props: { agents: StudioConfig["agents"]; enabled: boo
           fetch(`${conversationPath}/messages`),
           fetch(`${conversationPath}/steps`),
         ]);
+
         if (!messagesResponse.ok) {
           throw new Error(`Conversation messages failed with HTTP ${messagesResponse.status}`);
         }
+
         if (!stepsResponse.ok) {
           throw new Error(`Conversation steps failed with HTTP ${stepsResponse.status}`);
         }
+
         if (!cancelled) {
           setMessages((await messagesResponse.json()) as StudioMemorySourceConversationMessages);
           setSteps((await stepsResponse.json()) as StudioMemorySourceConversationSteps);
@@ -199,12 +213,96 @@ export function MemoryPage(props: { agents: StudioConfig["agents"]; enabled: boo
       setSelectedConversationRef("");
       return;
     }
+
     if (
       !visibleConversations.some((conversation) => conversation.ref === selectedConversationRef)
     ) {
       setSelectedConversationRef(visibleConversations[0]?.ref ?? "");
     }
   }, [selectedConversationRef, visibleConversations]);
+
+  function renderContent() {
+    if (!props.enabled) {
+      return (
+        <StudioEmptyState
+          title="Memory unavailable"
+          text="No agent memory or Studio session store is configured."
+        />
+      );
+    }
+
+    if (sourcesLoading && sources.length === 0) {
+      return (
+        <StudioEmptyState title="Loading memory" text="Discovering configured memory sources." />
+      );
+    }
+
+    if (error.length > 0 && sources.length === 0) {
+      return <StudioEmptyState title="Memory error" text={error} />;
+    }
+
+    if (selectedSource === undefined) {
+      return (
+        <StudioEmptyState title="No memory sources" text="No registered agent exposes memory." />
+      );
+    }
+
+    if (!selectedSource.available) {
+      return <UnavailableSource source={selectedSource} />;
+    }
+
+    if (loading && conversations.length === 0) {
+      return <StudioEmptyState title="Loading memory" text={`Reading ${selectedSource.label}.`} />;
+    }
+
+    if (error.length > 0 && conversations.length === 0) {
+      return <StudioEmptyState title="Memory error" text={error} />;
+    }
+
+    if (conversations.length === 0) {
+      return (
+        <MemoryEmptyDashboard
+          source={selectedSource}
+          userCount={users.length}
+          onRefresh={() => void loadMemory()}
+        />
+      );
+    }
+
+    return (
+      <div
+        className={[
+          "grid h-full min-h-0 overflow-hidden",
+          error.length === 0 ? "grid-rows-[minmax(0,1fr)]" : "grid-rows-[auto_minmax(0,1fr)]",
+        ].join(" ")}
+      >
+        {error.length === 0 ? null : <InlineError message={error} />}
+        <div className="grid min-h-0 grid-cols-[260px_minmax(320px,0.78fr)_minmax(0,1.22fr)] overflow-hidden border-t border-hair max-xl:grid-cols-[240px_minmax(0,1fr)] max-xl:grid-rows-[minmax(240px,0.42fr)_minmax(0,1fr)] max-md:grid-cols-1 max-md:grid-rows-[auto_minmax(240px,0.38fr)_minmax(0,1fr)]">
+          <MemoryUserRail
+            users={users}
+            selectedUserId={selectedUserId}
+            totalConversations={conversations.length}
+            onSelect={setSelectedUserId}
+          />
+          <ConversationLedger
+            agents={props.agents}
+            conversations={visibleConversations}
+            selectedConversationRef={selectedConversation?.ref ?? ""}
+            source={selectedSource}
+            onSelect={setSelectedConversationRef}
+          />
+          <ConversationDetail
+            agents={props.agents}
+            conversation={selectedConversation}
+            detailLoading={detailLoading}
+            messages={messages}
+            source={selectedSource}
+            steps={steps}
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <StudioPageShell className="grid-rows-[auto_minmax(0,1fr)]" aria-label="Memory">
@@ -244,64 +342,7 @@ export function MemoryPage(props: { agents: StudioConfig["agents"]; enabled: boo
         }
       />
 
-      <StudioPageContent className="overflow-hidden">
-        {!props.enabled ? (
-          <StudioEmptyState
-            title="Memory unavailable"
-            text="No agent memory or Studio session store is configured."
-          />
-        ) : sourcesLoading && sources.length === 0 ? (
-          <StudioEmptyState title="Loading memory" text="Discovering configured memory sources." />
-        ) : error.length > 0 && sources.length === 0 ? (
-          <StudioEmptyState title="Memory error" text={error} />
-        ) : selectedSource === undefined ? (
-          <StudioEmptyState title="No memory sources" text="No registered agent exposes memory." />
-        ) : !selectedSource.available ? (
-          <UnavailableSource source={selectedSource} />
-        ) : loading && conversations.length === 0 ? (
-          <StudioEmptyState title="Loading memory" text={`Reading ${selectedSource.label}.`} />
-        ) : error.length > 0 && conversations.length === 0 ? (
-          <StudioEmptyState title="Memory error" text={error} />
-        ) : conversations.length === 0 ? (
-          <MemoryEmptyDashboard
-            source={selectedSource}
-            userCount={users.length}
-            onRefresh={() => void loadMemory()}
-          />
-        ) : (
-          <div
-            className={[
-              "grid h-full min-h-0 overflow-hidden",
-              error.length === 0 ? "grid-rows-[minmax(0,1fr)]" : "grid-rows-[auto_minmax(0,1fr)]",
-            ].join(" ")}
-          >
-            {error.length === 0 ? null : <InlineError message={error} />}
-            <div className="grid min-h-0 grid-cols-[260px_minmax(320px,0.78fr)_minmax(0,1.22fr)] overflow-hidden border-t border-hair max-xl:grid-cols-[240px_minmax(0,1fr)] max-xl:grid-rows-[minmax(240px,0.42fr)_minmax(0,1fr)] max-md:grid-cols-1 max-md:grid-rows-[auto_minmax(240px,0.38fr)_minmax(0,1fr)]">
-              <MemoryUserRail
-                users={users}
-                selectedUserId={selectedUserId}
-                totalConversations={conversations.length}
-                onSelect={setSelectedUserId}
-              />
-              <ConversationLedger
-                agents={props.agents}
-                conversations={visibleConversations}
-                selectedConversationRef={selectedConversation?.ref ?? ""}
-                source={selectedSource}
-                onSelect={setSelectedConversationRef}
-              />
-              <ConversationDetail
-                agents={props.agents}
-                conversation={selectedConversation}
-                detailLoading={detailLoading}
-                messages={messages}
-                source={selectedSource}
-                steps={steps}
-              />
-            </div>
-          </div>
-        )}
-      </StudioPageContent>
+      <StudioPageContent className="overflow-hidden">{renderContent()}</StudioPageContent>
     </StudioPageShell>
   );
 }
@@ -636,5 +677,6 @@ function sourceAgentLabel(
     const agentId = agentIds[0] ?? "agent";
     return agents.find((agent) => agent.id === agentId)?.name ?? agentId;
   }
+
   return source.label;
 }

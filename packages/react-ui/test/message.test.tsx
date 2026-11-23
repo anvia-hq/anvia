@@ -17,6 +17,7 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+
   if (originalClipboardDescriptor === undefined) {
     Reflect.deleteProperty(navigator, "clipboard");
   } else {
@@ -1061,7 +1062,9 @@ function partsStreamView(
   const partsProps: {
     filter?: NonNullable<ComponentProps<typeof Message.Parts>["filter"]>;
   } = {};
+
   if (filter !== undefined) partsProps.filter = filter;
+
   return (
     <ChatProvider controller={createChatController({ messages: [message] })}>
       <Thread.Root>
@@ -1124,7 +1127,9 @@ function entityMetadata(entities: readonly ComposerEntity[]): ClientMetadata[] {
       text: entity.text,
       range: { from: entity.range.from, to: entity.range.to },
     };
+
     if (entity.data !== undefined) metadata.data = entity.data;
+
     return metadata;
   });
 }
@@ -1133,9 +1138,11 @@ function collectNodeTypes(value: unknown, types: string[]): void {
   if (typeof value !== "object" || value === null) {
     return;
   }
+
   if ("type" in value && typeof value.type === "string") {
     types.push(value.type);
   }
+
   if ("children" in value && Array.isArray(value.children)) {
     for (const child of value.children) {
       collectNodeTypes(child, types);
@@ -1147,12 +1154,15 @@ function literalizeEntityNodes(value: unknown): void {
   if (typeof value !== "object" || value === null) {
     return;
   }
+
   if ("type" in value && value.type === "messageEntity") {
     value.type = "text";
+
     if ("entityIndex" in value) {
       delete value.entityIndex;
     }
   }
+
   if ("children" in value && Array.isArray(value.children)) {
     for (const child of value.children) {
       literalizeEntityNodes(child);

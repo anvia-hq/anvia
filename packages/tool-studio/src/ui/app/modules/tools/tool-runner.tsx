@@ -178,6 +178,7 @@ export function schemaType(value: unknown): string {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return "value";
   }
+
   const type = (value as { type?: unknown }).type;
   return typeof type === "string" ? type : "object";
 }
@@ -186,6 +187,7 @@ export function schemaPropertyCount(value: unknown): number {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return 0;
   }
+
   const properties = (value as { properties?: unknown }).properties;
   return typeof properties === "object" && properties !== null && !Array.isArray(properties)
     ? Object.keys(properties).length
@@ -204,24 +206,31 @@ export function parseStudioToolRunResponse(value: unknown): StudioToolRunRespons
   if (!isRecord(value)) {
     return undefined;
   }
+
   if (typeof value.agentId !== "string" || value.agentId.length === 0) {
     return undefined;
   }
+
   if (typeof value.toolName !== "string" || value.toolName.length === 0) {
     return undefined;
   }
+
   if (value.status !== "success" && value.status !== "error") {
     return undefined;
   }
+
   if (typeof value.durationMs !== "number" || !Number.isFinite(value.durationMs)) {
     return undefined;
   }
+
   if (typeof value.startedAt !== "string" || typeof value.endedAt !== "string") {
     return undefined;
   }
+
   if (!Array.isArray(value.events)) {
     return undefined;
   }
+
   return value as StudioToolRunResponse;
 }
 
@@ -229,6 +238,7 @@ function displayToolRunValue(value: unknown): unknown {
   if (typeof value !== "string") {
     return value;
   }
+
   const parsed = parseToolDisplayValue(value);
   return parsed.kind === "json" ? parsed.value : value;
 }

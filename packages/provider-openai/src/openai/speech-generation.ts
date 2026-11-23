@@ -49,9 +49,14 @@ export class OpenAISpeechGenerationModel implements SpeechGenerationModel<unknow
 
 function mediaTypeFromFormat(format: unknown): string {
   if (format === "wav") return "audio/wav";
+
   if (format === "flac") return "audio/flac";
+
   if (format === "opus") return "audio/opus";
+
   if (format === "aac") return "audio/aac";
+
   if (format === "pcm") return "audio/pcm";
+
   return "audio/mpeg";
 }

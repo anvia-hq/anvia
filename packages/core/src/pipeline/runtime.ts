@@ -118,6 +118,7 @@ export function pipelineAbortError(signal: AbortSignal | undefined): Error {
 
 async function emitEvent(context: PipelineRunContext, event: PipelineRunEvent): Promise<void> {
   if (context.observer === undefined) return;
+
   try {
     await context.observer.onEvent(event);
   } catch (error) {

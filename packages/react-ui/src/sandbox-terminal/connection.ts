@@ -60,10 +60,14 @@ export class TerminalConnection {
       message: (event, session: RelaySession) => {
         if (typeof event.data !== "string") {
           if (ready) options.onOutput(new Uint8Array(event.data as ArrayBuffer));
+
           return;
         }
+
         const message = parseMessage(event.data);
+
         if (message === undefined) return;
+
         if (message.type === "ready") {
           ready = true;
           options.onOpen(session.ready());
@@ -109,7 +113,9 @@ export class TerminalConnection {
 function parseMessage(text: string): ServerMessage | undefined {
   try {
     const value: unknown = JSON.parse(text);
+
     if (typeof value !== "object" || value === null) return undefined;
+
     const type = (value as { type?: unknown }).type;
     return type === "ready" || type === "exit" || type === "error"
       ? (value as ServerMessage)

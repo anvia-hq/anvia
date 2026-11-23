@@ -50,7 +50,9 @@ async function open(
   );
   const agent = makeAgent(model, [lookup(tool)]);
   const registration: DurableAgentRegistration = { agent, version: "1" };
+
   if (hook !== undefined) registration.hooks = { mode: "record", hook };
+
   const runtime = await DurableRuntime.open({
     store: new SqliteDurableStore(options.path ?? join(directory(), "runs.sqlite")),
     agents: [registration],
@@ -112,7 +114,9 @@ describe("recorded control hooks", () => {
     const run = await runtime.submit(submission);
     await status(run, "waiting");
     const pending = (await run.snapshot()).run.outcome;
+
     if (pending?.type !== "interaction") throw new Error("Missing approval");
+
     expect(tool).not.toHaveBeenCalled();
     await run.respond(pending.interaction.id, { type: "tool-approval", approved: true });
     expect(await run.result()).toMatchObject({ output: "done" });
@@ -124,7 +128,9 @@ describe("recorded control hooks", () => {
     let calls = 0;
     const onToolCall = vi.fn(() => {
       calls += 1;
+
       if (calls === 1) throw new Error("policy service down");
+
       return undefined;
     });
     const { runtime, tool } = await open({ onToolCall });

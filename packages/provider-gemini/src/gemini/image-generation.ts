@@ -43,7 +43,9 @@ export class GeminiImageGenerationModel implements ImageGenerationModel<unknown>
         aspectRatio: aspectRatio(request.width, request.height),
       },
     };
+
     if (options?.abortSignal !== undefined) config.abortSignal = options.abortSignal;
+
     const params: Record<string, unknown> = {
       ...providerTopLevel,
       model: this.modelId,
@@ -75,7 +77,9 @@ export class GeminiImagenGenerationModel implements ImageGenerationModel<unknown
       ...providerConfig,
       aspectRatio: aspectRatio(request.width, request.height),
     };
+
     if (options?.abortSignal !== undefined) config.abortSignal = options.abortSignal;
+
     const params: Record<string, unknown> = {
       ...providerTopLevel,
       model: this.modelId,
@@ -95,15 +99,19 @@ export function nativeImageResponseFromGemini(response: unknown): ImageGeneratio
     if (!isPlainObject(candidate) || !isPlainObject(candidate.content)) {
       return [];
     }
+
     const parts = Array.isArray(candidate.content.parts) ? candidate.content.parts : [];
     return parts.flatMap((part): GeneratedImage[] => {
       if (!isPlainObject(part) || !isPlainObject(part.inlineData)) {
         return [];
       }
+
       const data = part.inlineData.data;
+
       if (typeof data !== "string") {
         return [];
       }
+
       return [
         {
           data: decodeBase64Image(data),
@@ -131,10 +139,13 @@ export function imagenResponseFromGemini(response: unknown): ImageGenerationResu
       if (!isPlainObject(item) || !isPlainObject(item.image)) {
         return [];
       }
+
       const imageBytes = item.image.imageBytes;
+
       if (typeof imageBytes !== "string") {
         return [];
       }
+
       return [
         {
           data: decodeBase64Image(imageBytes),
@@ -176,9 +187,11 @@ function decodeBase64Image(value: string): Uint8Array {
   const normalized = value.replace(/\s/g, "").replace(/=+$/, "");
   const bytes = Buffer.from(value, "base64");
   const roundTrip = bytes.toString("base64").replace(/=+$/, "");
+
   if (normalized.length === 0 || bytes.length === 0 || roundTrip !== normalized) {
     throw new Error("Gemini image generation response contained invalid base64 image data.");
   }
+
   return new Uint8Array(bytes);
 }
 

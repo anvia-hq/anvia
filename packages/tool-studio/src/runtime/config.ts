@@ -39,9 +39,13 @@ export function agentConfig(agent: StudioAgent): StudioAgentConfig {
     id: agent.id,
     quickPrompts: agent.quickPrompts ?? [],
   };
+
   if (name !== undefined) config.name = name;
+
   if (description !== undefined) config.description = description;
+
   if (agent.metadata !== undefined) config.metadata = agent.metadata;
+
   return config;
 }
 
@@ -66,12 +70,17 @@ export function agentRuntimeSummary(agent: StudioAgent): StudioAgentRuntimeSumma
     hasLifecycle: agent.agent.lifecycle !== undefined,
     hasOutputSchema: agent.agent.outputSchema !== undefined,
   };
+
   if (name !== undefined) summary.name = name;
+
   if (description !== undefined) summary.description = description;
+
   if (agent.agent.defaultMaxTurns !== undefined) {
     summary.defaultMaxTurns = agent.agent.defaultMaxTurns;
   }
+
   if (agent.metadata !== undefined) summary.metadata = agent.metadata;
+
   return summary;
 }
 
@@ -86,9 +95,13 @@ export function pipelineConfig(pipeline: StudioPipeline): StudioPipelineConfig {
     agentCount: graph.nodes.filter((node) => node.kind === "agent").length,
     extractorCount: graph.nodes.filter((node) => node.kind === "extractor").length,
   };
+
   if (pipeline.name !== undefined) config.name = pipeline.name;
+
   if (pipeline.description !== undefined) config.description = pipeline.description;
+
   if (pipeline.metadata !== undefined) config.metadata = pipeline.metadata;
+
   return config;
 }
 
@@ -108,8 +121,11 @@ export function graphConfig(registration: StudioGraphRegistration): StudioGraphC
       }),
     ),
   };
+
   if (registration.name !== undefined) config.name = registration.name;
+
   if (registration.description !== undefined) config.description = registration.description;
+
   return config;
 }
 
@@ -137,10 +153,15 @@ export function buildConfig(
     capabilities: capabilityConfig(options, agents, pipelines, stores, sandboxCount),
     unsupportedCapabilities: unsupportedCapabilities(stores),
   };
+
   if (options.name !== undefined) config.name = options.name;
+
   if (options.description !== undefined) config.description = options.description;
+
   if (options.version !== undefined) config.version = options.version;
+
   if (models !== undefined) config.models = models;
+
   return config;
 }
 
@@ -160,27 +181,35 @@ export function capabilityConfig(
   if (stores.sessions !== undefined) {
     capabilities.sessions = { enabled: true };
   }
+
   if (stores.sessions !== undefined || agents.some((agent) => agent.agent.memory !== undefined)) {
     capabilities.memory = { enabled: true };
   }
+
   if (stores.traces !== undefined) {
     capabilities.traces = { enabled: true };
   }
+
   if (pipelines.length > 0) {
     capabilities.pipelines = { enabled: true };
   }
+
   if (_options.graphs.length > 0) {
     capabilities.graphs = { enabled: true };
   }
+
   if (_options.evals.length > 0) {
     capabilities.evals = { enabled: true };
   }
+
   if (agents.some((agent) => agent.agent.tools.length > 0)) {
     capabilities.tools = { enabled: true };
   }
+
   if (agents.some(agentHasMcpServers)) {
     capabilities.mcps = { enabled: true };
   }
+
   if (sandboxCount > 0) {
     capabilities.sandboxes = { enabled: true };
   }
@@ -192,9 +221,11 @@ export function capabilityConfig(
   ) {
     capabilities.interactions = { enabled: true };
   }
+
   if (agents.some(agentHasKnowledge)) {
     capabilities.knowledge = { enabled: true };
   }
+
   return capabilities;
 }
 
@@ -202,8 +233,11 @@ export function unsupportedCapabilities(
   stores: ResolvedStores,
 ): import("../types").StudioCapability[] {
   const capabilities: import("../types").StudioCapability[] = [];
+
   if (stores.sessions === undefined) capabilities.push("sessions");
+
   if (stores.traces === undefined) capabilities.push("traces");
+
   return capabilities;
 }
 

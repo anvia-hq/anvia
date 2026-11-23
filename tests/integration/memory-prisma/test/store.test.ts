@@ -47,6 +47,7 @@ for (const schemaOwner of [7, 8]) {
       await admin.query(`CREATE DATABASE "${database}"`);
       created = true;
       const env = { ...process.env, ANVIA_PRISMA_TEST_URL: url };
+
       if (schemaOwner === 7) {
         execFileSync(
           "node",
@@ -63,7 +64,9 @@ for (const schemaOwner of [7, 8]) {
     afterAll(async () => {
       await client7.$disconnect();
       await client8.close();
+
       if (created) await admin.query(`DROP DATABASE "${database}" WITH (FORCE)`);
+
       await admin.end();
     });
 
@@ -364,7 +367,9 @@ for (const schemaOwner of [7, 8]) {
             async beforeEncode(plan) {
               if (plan.sql.startsWith("INSERT INTO") && plan.sql.includes('"AgentMemorySession"')) {
                 arrived += 1;
+
                 if (arrived === 2) release();
+
                 await gate;
               }
             },

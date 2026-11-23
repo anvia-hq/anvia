@@ -19,6 +19,7 @@ afterEach(async () => {
 function blockingAgent(state: { started: number; aborted: boolean }) {
   return makeAgent(async (_request, signal) => {
     if (state.started++ > 0) return done();
+
     await new Promise<void>((_, reject) =>
       signal?.addEventListener("abort", () => {
         state.aborted = true;
@@ -40,7 +41,9 @@ async function open(
     store,
     agents: [{ agent: blockingAgent(state), version: "1" }],
   };
+
   if (pollIntervalMs !== undefined) options.pollIntervalMs = pollIntervalMs;
+
   const runtime = await DurableRuntime.open(options);
   runtimes.push(runtime);
   return { runtime, store };

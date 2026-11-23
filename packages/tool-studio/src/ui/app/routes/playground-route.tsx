@@ -16,22 +16,28 @@ export function PlaygroundRoute() {
     if (handledSessionIdRef.current === sessionId) {
       return;
     }
+
     if (!studio.pageEnabled("playground")) {
       return;
     }
+
     if (studio.runState !== "idle") {
       handledSessionIdRef.current = sessionId;
       return;
     }
+
     if (sessionId === undefined) {
       handledSessionIdRef.current = sessionId;
       studio.startNewChat({ updatePath: false });
       return;
     }
+
     if (!studio.sessionsEnabled) {
       return;
     }
+
     handledSessionIdRef.current = sessionId;
+
     if (sessionId !== studio.sessions.selectedSessionId) {
       void studio.sessions.loadSession(sessionId, { updatePath: false });
     }

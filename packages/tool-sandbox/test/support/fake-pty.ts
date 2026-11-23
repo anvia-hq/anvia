@@ -36,7 +36,9 @@ export class FakePty implements PtyProcess {
   }
   kill(signal: "SIGHUP" | "SIGKILL" = "SIGHUP"): void {
     this.signals.push(signal);
+
     if (this.ignoreHangup && signal !== "SIGKILL") return;
+
     this.killed = true;
     this.exitListener?.({ exitCode: signal === "SIGKILL" ? 137 : 0 });
   }

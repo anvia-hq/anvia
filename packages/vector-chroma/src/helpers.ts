@@ -24,6 +24,7 @@ export function parseDocument<T>(document: string | null | undefined): T {
   if (document === null || document === undefined) {
     return "" as T;
   }
+
   try {
     return JSON.parse(document) as T;
   } catch {
@@ -80,25 +81,31 @@ export function parseQueryResults<T, Metadata extends VectorMetadata>(
 
   const results = ids.flatMap((id, index) => {
     const score = distanceToScore(distances[index] ?? 0, metric);
+
     if (minScore !== undefined && score < minScore) {
       return [];
     }
+
     const result: VectorSearchResult<T, Metadata> = {
       id: logicalDocumentId(id),
       score,
       document: parseDocument(documents[index]),
     };
     const metadata = metadatas[index];
+
     if (metadata !== null && metadata !== undefined) {
       const { [documentIdMetadataKey]: _documentId, ...publicMetadata } = metadata;
+
       if (Object.keys(publicMetadata).length > 0) result.metadata = publicMetadata as Metadata;
     }
+
     return [result];
   });
 
   const byId = new Map<string, VectorSearchResult<T, Metadata>>();
   for (const result of results) {
     const current = byId.get(result.id);
+
     if (current === undefined || result.score > current.score) byId.set(result.id, result);
   }
   return [...byId.values()];
@@ -116,6 +123,7 @@ export async function getOrCreateCollection(
     return await client.getCollection(options);
   } catch (error) {
     if (!isMissingCollectionError(error)) throw error;
+
     return await client.createCollection(options);
   }
 }

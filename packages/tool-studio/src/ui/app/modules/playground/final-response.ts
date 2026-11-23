@@ -18,8 +18,11 @@ export function finalResponseEntryIds(
   };
   for (const entry of entries) {
     if (entry.kind === "message" && entry.role === "user") finish();
+
     lastEntry = entry;
   }
+
   if (!isStreaming) finish();
+
   return ids;
 }

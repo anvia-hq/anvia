@@ -24,6 +24,7 @@ function agent(id: string, prompts: string[] = [], gate?: Promise<void>) {
       completion: async (request, options) => {
         const last = request.chatHistory.at(-1);
         prompts.push(JSON.stringify(last?.content));
+
         if (gate !== undefined)
           await new Promise<void>((resolve, reject) => {
             void gate.then(resolve);
@@ -31,6 +32,7 @@ function agent(id: string, prompts: string[] = [], gate?: Promise<void>) {
               reject(options.abortSignal!.reason),
             );
           });
+
         return done();
       },
     },

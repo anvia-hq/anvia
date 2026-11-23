@@ -66,17 +66,21 @@ export class QdrantVectorStore<
   async ensure(): Promise<void> {
     const client = await this.owner.nativeClient();
     let exists: boolean | undefined;
+
     if (client.collectionExists !== undefined)
       exists = qdrantCollectionExists(await client.collectionExists(this.options.collectionName));
+
     if (exists === false) await this.createCollection(client);
     else if (exists === undefined) {
       try {
         await this.validate();
       } catch (error) {
         if (!isQdrantNotFoundError(error)) throw error;
+
         await this.createCollection(client);
       }
     }
+
     await this.validate();
   }
   async validate(): Promise<void> {
@@ -93,7 +97,9 @@ export class QdrantVectorStore<
   }
   async upsert(options: VectorStoreUpsertOptions<T, Metadata>): Promise<void> {
     validateDocuments(options.documents, this.options.dimensions, this.mode);
+
     if (options.documents.length === 0) return;
+
     const client = await this.owner.nativeClient();
     const points = options.documents.flatMap((document) =>
       qdrantPoints(document, {
@@ -110,6 +116,7 @@ export class QdrantVectorStore<
     const providerOptions = qdrantMutationRequest(
       (options.providerOptions ?? {}) as QdrantMutationOptions,
     );
+
     if (client.batchUpdate !== undefined && points.length > 0) {
       await client.batchUpdate(this.options.collectionName, {
         ...providerOptions,
@@ -117,9 +124,12 @@ export class QdrantVectorStore<
       });
       return;
     }
+
     if (client.delete === undefined)
       throw new TypeError("Qdrant document replacement requires delete(...) or batchUpdate(...).");
+
     await client.delete(this.options.collectionName, { ...providerOptions, wait: true, filter });
+
     if (points.length > 0)
       await client.upsert(this.options.collectionName, { ...providerOptions, points });
   }
@@ -130,45 +140,54 @@ export class QdrantVectorStore<
     const metric = distanceName(this.options.metric);
     let candidateLimit = request.topK;
     for (;;) {
+      let scoreThreshold: number | undefined;
+
+      if (request.minScore !== undefined) {
+        scoreThreshold = metric === "Euclid" ? -request.minScore : request.minScore;
+      }
+
       const common = {
         ...request.providerOptions,
         limit: candidateLimit,
         filter,
-        score_threshold:
-          request.minScore === undefined
-            ? undefined
-            : metric === "Euclid"
-              ? -request.minScore
-              : request.minScore,
+        score_threshold: scoreThreshold,
         with_payload: true,
       };
       const queryOptions = { ...common, query: request.vector };
+
       if (this.mode === "hybrid") Object.assign(queryOptions, { using: this.denseVectorName });
-      const response =
-        client.query !== undefined
-          ? await client.query(this.options.collectionName, queryOptions)
-          : client.search !== undefined
-            ? await client.search(this.options.collectionName, {
-                ...common,
-                vector:
-                  this.mode === "hybrid"
-                    ? { name: this.denseVectorName, vector: request.vector }
-                    : request.vector,
-              })
-            : (() => {
-                throw new TypeError("Qdrant search requires query(...) or search(...).");
-              })();
+
+      let response: unknown;
+
+      if (client.query !== undefined) {
+        response = await client.query(this.options.collectionName, queryOptions);
+      } else if (client.search !== undefined) {
+        response = await client.search(this.options.collectionName, {
+          ...common,
+          vector:
+            this.mode === "hybrid"
+              ? { name: this.denseVectorName, vector: request.vector }
+              : request.vector,
+        });
+      } else {
+        throw new TypeError("Qdrant search requires query(...) or search(...).");
+      }
+
       throwIfAborted(request.abortSignal);
       const unfiltered = parseQueryResults<T, Metadata>(response, undefined, metric);
       const results = selectResults(unfiltered, request);
+
       if (
         results.length >= request.topK ||
         qdrantResultCount(response) < candidateLimit ||
         hasResultBelowMinimum(unfiltered, request.minScore)
       )
         return results;
+
       const nextLimit = nextCandidateLimit(candidateLimit);
+
       if (nextLimit === candidateLimit) return results;
+
       candidateLimit = nextLimit;
     }
   }
@@ -177,19 +196,24 @@ export class QdrantVectorStore<
   ): Promise<Array<VectorSearchResult<T, Metadata>>> {
     if (this.mode !== "hybrid")
       throw new TypeError('Hybrid search requires vectorStore({ mode: "hybrid" }).');
+
     validateSearchRequest(request, this.options.dimensions);
     validateSparseVector(request.sparseVector);
     const client = await this.owner.nativeClient();
+
     if (client.query === undefined)
       throw new TypeError("Hybrid Qdrant search requires query(...).");
+
     const providerOptions = { ...request.providerOptions };
     const configuredPrefetchLimit = providerOptions.prefetchLimit;
     delete providerOptions.prefetchLimit;
+
     if (
       configuredPrefetchLimit !== undefined &&
       (!Number.isSafeInteger(configuredPrefetchLimit) || Number(configuredPrefetchLimit) < 1)
     )
       throw new RangeError("Qdrant prefetchLimit must be a positive safe integer.");
+
     let candidateLimit = request.topK;
     for (;;) {
       const prefetchLimit = Math.max(
@@ -219,14 +243,18 @@ export class QdrantVectorStore<
       throwIfAborted(request.abortSignal);
       const unfiltered = parseQueryResults<T, Metadata>(response, undefined);
       const results = selectResults(unfiltered, request);
+
       if (
         results.length >= request.topK ||
         qdrantResultCount(response) < candidateLimit ||
         hasResultBelowMinimum(unfiltered, request.minScore)
       )
         return results;
+
       const nextLimit = nextCandidateLimit(candidateLimit);
+
       if (nextLimit === candidateLimit) return results;
+
       candidateLimit = nextLimit;
     }
   }
@@ -249,9 +277,13 @@ export class QdrantVectorStore<
     providerOptions?: QdrantMutationOptions | undefined;
   }): Promise<void> {
     const ids = [...new Set(options.documentIds)];
+
     if (ids.length === 0) return;
+
     const client = await this.owner.nativeClient();
+
     if (client.delete === undefined) throw new TypeError("Qdrant deletion requires delete(...).");
+
     await client.delete(this.options.collectionName, {
       ...qdrantMutationRequest(options.providerOptions ?? {}),
       filter: qdrantDocumentFilter(ids, this.namespace),
@@ -259,7 +291,9 @@ export class QdrantVectorStore<
   }
   async get(options: { documentIds: string[] }): Promise<Array<VectorInspectItem<T, Metadata>>> {
     const ids = [...new Set(options.documentIds)];
+
     if (ids.length === 0) return [];
+
     const page = await qdrantDocumentPage<T, Metadata>(
       await this.owner.nativeClient(),
       this.options.collectionName,
@@ -284,9 +318,11 @@ export class QdrantVectorStore<
           }
         : { size: this.options.dimensions, distance: distanceName(this.options.metric) };
     const collectionOptions = { vectors };
+
     if (this.mode === "hybrid") {
       Object.assign(collectionOptions, { sparse_vectors: { [this.sparseVectorName]: {} } });
     }
+
     await client.createCollection(this.options.collectionName, collectionOptions);
   }
 }
@@ -333,7 +369,9 @@ export class QdrantHybridVectorStore<T, Metadata extends VectorMetadata = Vector
 }
 function distanceName(metric: QdrantVectorStoreOptions["metric"]): QdrantDistance {
   if (metric === "euclidean") return "Euclid";
+
   if (metric === "dotProduct") return "Dot";
+
   return "Cosine";
 }
 function throwIfAborted(signal: AbortSignal | undefined): void {
@@ -345,17 +383,22 @@ function throwIfAborted(signal: AbortSignal | undefined): void {
 }
 function validateSearchRequest(request: VectorSearchRequest, dimensions: number): void {
   throwIfAborted(request.abortSignal);
+
   if (!Number.isSafeInteger(request.topK) || request.topK < 1)
     throw new RangeError("Vector search topK must be a positive safe integer.");
+
   if (request.minScore !== undefined && !Number.isFinite(request.minScore))
     throw new RangeError("Vector search minScore must be a finite number.");
+
   if (request.vector.length !== dimensions) throw new Error("Vector dimension mismatch for query");
 }
 function validateSparseVector(vector: HybridVectorSearchRequest["sparseVector"]): void {
   if (vector.indices.length !== vector.values.length)
     throw new Error("Sparse vector indices and values must have equal lengths.");
+
   if (!vector.indices.every((index) => Number.isSafeInteger(index) && index >= 0))
     throw new Error("Sparse vector indices must be non-negative safe integers.");
+
   if (!vector.values.every(Number.isFinite))
     throw new Error("Sparse vector values must be finite numbers.");
 }
@@ -371,13 +414,17 @@ function validateDocuments<T, Metadata extends VectorMetadata>(
   const ids = new Set<string>();
   for (const document of documents) {
     if (ids.has(document.id)) throw new TypeError(`Duplicate vector document id: ${document.id}`);
+
     ids.add(document.id);
+
     if (document.embeddings.length === 0)
       throw new TypeError(`Vector document ${document.id} must contain at least one embedding.`);
+
     if (mode === "hybrid" && document.sparseEmbeddings?.length !== document.embeddings.length)
       throw new Error(
         `Hybrid document ${document.id} requires aligned dense and sparse embeddings`,
       );
+
     for (const embedding of document.embeddings)
       if (embedding.vector.length !== dimensions)
         throw new Error(`Vector dimension mismatch for document ${document.id}`);

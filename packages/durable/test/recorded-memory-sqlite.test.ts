@@ -96,10 +96,12 @@ it("does not store a write twice when the SQLite adapter committed it and the re
   let lost = true;
   store.append = async (options) => {
     const result = await real(options);
+
     if (lost) {
       lost = false;
       throw new Error("response lost");
     }
+
     return result;
   };
 

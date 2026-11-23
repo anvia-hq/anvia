@@ -110,15 +110,19 @@ export class SandboxDaemon {
 
   constructor(private readonly options: SandboxDaemonOptions) {
     const url = new URL(options.controlUrl);
+
     if (url.protocol !== "ws:" && url.protocol !== "wss:") {
       throw new TypeError("controlUrl must be a ws:// or wss:// URL.");
     }
+
     if (typeof options.token !== "string" || options.token.length === 0) {
       throw new TypeError("token must be a non-empty string.");
     }
+
     if (url.protocol === "ws:" && !isLoopback(url.hostname)) {
       this.log("warn", "controlUrl is not encrypted; the token is sent in clear text.");
     }
+
     this.sandbox = new LocalSandbox({
       workdir: options.workdir,
       limits: options.limits,
@@ -144,6 +148,7 @@ export class SandboxDaemon {
   /** Resolves after the first successful handshake with the control plane. */
   ready(): Promise<void> {
     if (this.everConnected) return Promise.resolve();
+
     return new Promise((resolve, reject) => this.readyWaiters.push({ resolve, reject }));
   }
 
@@ -174,6 +179,7 @@ export class SandboxDaemon {
         this.log("info", "connected to control plane");
         const closeCode = await session.closed;
         this.log("info", "disconnected from control plane");
+
         if (closeCode === CLOSE_CODE_SUPERSEDED) {
           // Reconnecting would only evict the daemon that replaced this one, and so on forever.
           this.log("error", "another daemon took over this sandbox; not reconnecting");
@@ -183,7 +189,9 @@ export class SandboxDaemon {
         this.log("warn", `connection failed: ${describe(error)}`);
       }
       this.session = undefined;
+
       if (this.stopController.signal.aborted) break;
+
       const delay = Math.min(max, initial * 2 ** Math.min(failures, 16));
       failures += 1;
       await sleep(delay * (0.8 + Math.random() * 0.4), this.stopController.signal);
@@ -203,6 +211,7 @@ export class SandboxDaemon {
     if (this.stopController.signal.aborted) {
       return Promise.reject(new Error("Sandbox daemon stopped."));
     }
+
     const handshakeTimeoutMs = this.options.handshakeTimeoutMs ?? defaultHandshakeTimeoutMs;
     return new Promise((resolve, reject) => {
       const socket = new WebSocket(this.options.controlUrl, {
@@ -213,6 +222,7 @@ export class SandboxDaemon {
       let settled = false;
       const fail = (error: Error) => {
         if (settled) return;
+
         settled = true;
         clearTimeout(timer);
         socket.terminate();
@@ -242,12 +252,16 @@ export class SandboxDaemon {
           this.options.binaryData === false
             ? features.capabilities
             : [...features.capabilities, binaryDataCapability];
+
         if (capabilities.length > 0) hello.capabilities = capabilities;
+
         socket.send(JSON.stringify(hello));
       });
       socket.once("message", (data) => {
         if (settled) return;
+
         const frame = parseHubFrame(data);
+
         if (frame?.type !== "welcome" || frame.protocolVersion !== PROTOCOL_VERSION) {
           fail(
             new Error(
@@ -258,6 +272,7 @@ export class SandboxDaemon {
           );
           return;
         }
+
         settled = true;
         clearTimeout(timer);
         this.stopController.signal.removeEventListener("abort", stop);
@@ -358,6 +373,7 @@ class DaemonSession {
         socket.terminate();
         return;
       }
+
       this.send({ type: "ping" });
     }, heartbeatIntervalMs);
     this.heartbeat.unref?.();
@@ -371,7 +387,9 @@ class DaemonSession {
 
   private send(frame: DaemonOutbound): void {
     if (this.socket.readyState !== WebSocket.OPEN) return;
+
     if (frame.type !== "tunnel.bytes") return this.socket.send(JSON.stringify(frame));
+
     if (this.deps.sendsBinary) {
       this.socket.send(encodeTunnelBytes(frame, "toHub"), { binary: true });
     } else {
@@ -391,6 +409,7 @@ class DaemonSession {
       // Only tunnel bytes travel as binary, and only once this daemon said it could take them.
       try {
         if (!this.deps.acceptsBinary) throw new TypeError("Binary frames were not negotiated.");
+
         const bytes = decodeTunnelBytes(rawDataToBytes(data), "toDaemon");
         this.tunnels.data(bytes.tunnelId, bytes.bytes);
       } catch {
@@ -398,13 +417,16 @@ class DaemonSession {
       }
       return;
     }
+
     const frame = parseHubFrame(data);
+
     if (frame === undefined) {
       // Answer under the caller's requestId when one can be recovered (an unknown method from a
       // newer hub, say), so that call fails fast instead of waiting on a link that stays healthy.
       this.send(encodeError(new TypeError("Malformed frame."), recoverRequestId(data)));
       return;
     }
+
     switch (frame.type) {
       case "ping":
         this.send({ type: "pong" });
@@ -540,12 +562,19 @@ function execOptions(
   abortSignal: AbortSignal,
 ): SandboxExecOptions {
   let options: SandboxExecOptions = { command: params.command, abortSignal };
+
   if (params.args !== undefined) options = { ...options, args: params.args };
+
   if (params.cwd !== undefined) options = { ...options, cwd: params.cwd };
+
   if (params.env !== undefined) options = { ...options, env: params.env };
+
   if (params.timeoutMs !== undefined) options = { ...options, timeoutMs: params.timeoutMs };
+
   const input = decodeInput(params.input);
+
   if (input !== undefined) options = { ...options, input };
+
   return options;
 }
 
@@ -566,16 +595,26 @@ function parseHubFrame(data: WebSocket.RawData) {
 function recoverRequestId(data: WebSocket.RawData): string | undefined {
   try {
     const value: unknown = JSON.parse(rawDataToString(data));
+
     if (typeof value !== "object" || value === null) return undefined;
+
     const record = value as Record<string, unknown>;
-    const id =
-      record.type === "request"
-        ? record.requestId
-        : record.type === "pty.open"
-          ? record.ptyId
-          : record.type === "tunnel.open"
-            ? record.tunnelId
-            : undefined;
+    let id: unknown;
+
+    switch (record.type) {
+      case "request":
+        id = record.requestId;
+        break;
+      case "pty.open":
+        id = record.ptyId;
+        break;
+      case "tunnel.open":
+        id = record.tunnelId;
+        break;
+      default:
+        id = undefined;
+    }
+
     return typeof id === "string" && id.length > 0 && id.length <= 128 ? id : undefined;
   } catch {
     return undefined;
@@ -593,6 +632,7 @@ function describe(error: unknown): string {
 function sleep(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
     if (signal.aborted) return resolve();
+
     const timer = setTimeout(done, ms);
     function done() {
       clearTimeout(timer);

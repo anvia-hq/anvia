@@ -166,7 +166,9 @@ describe("DurableClient", () => {
     const run = await client.agent("researcher").submit(submission("s"));
     await vi.waitFor(async () => expect((await run.status()).status).toBe("waiting"));
     const outcome = (await run.snapshot()).run.outcome;
+
     if (outcome?.type !== "interaction") throw new Error("Missing interaction");
+
     await run.respond(outcome.interaction.id, { type: "tool-approval", approved: true });
     expect(await run.result()).toMatchObject({ output: "done" });
   });
@@ -178,7 +180,9 @@ describe("DurableClient", () => {
       pool,
       async () => {
         calls++;
+
         if (calls === 1) throw new Error("model down");
+
         return done();
       },
       { modelRetry: { maxAttempts: 1, initialDelayMs: 1, maxDelayMs: 1 } },

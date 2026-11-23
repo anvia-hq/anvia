@@ -227,16 +227,19 @@ export function usageAttributesFromRecord(usage: Record<string, unknown>): Attri
 function modelParameters(
   request: AgentGenerationStartArgs["request"],
 ): Record<string, string | number | undefined> {
+  let toolChoice: string | undefined;
+
+  if (typeof request.toolChoice === "string") {
+    toolChoice = request.toolChoice;
+  } else if (request.toolChoice !== undefined) {
+    toolChoice = request.toolChoice.name;
+  }
+
   return {
     "anvia.generation.temperature": request.temperature,
     "anvia.generation.max_tokens": request.maxTokens,
     "anvia.generation.reasoning_effort": request.controls?.reasoningEffort,
-    "anvia.generation.tool_choice":
-      request.toolChoice === undefined
-        ? undefined
-        : typeof request.toolChoice === "string"
-          ? request.toolChoice
-          : request.toolChoice.name,
+    "anvia.generation.tool_choice": toolChoice,
   };
 }
 
@@ -247,9 +250,12 @@ export function metadataAttributes(
 ): Attributes {
   const attributes: Attributes = {};
   const transformed = transformMetadataRecord(metadata, options);
+
   if (transformed === undefined) return attributes;
+
   for (const [key, value] of Object.entries(transformed)) {
     const serialized = serializeMetadataValue(value);
+
     if (serialized !== undefined) {
       attributes[`${prefix}.${key}`] = serialized;
     }
@@ -266,8 +272,11 @@ function transformMetadataRecord(
   options: OtelObserverOptions,
 ): Record<string, unknown> | undefined {
   if (metadata === undefined) return undefined;
+
   const transform = options.transformMetadata;
+
   if (transform === undefined) return metadata;
+
   const transformed = transform(metadata);
   return isRecord(transformed) ? transformed : undefined;
 }
@@ -315,16 +324,20 @@ export function recordSpanError(
   options: OtelObserverOptions = {},
 ): void {
   const message = transformedErrorMessage(error, options);
+
   if (error instanceof Error) {
     const exception: { name: string; message: string; stack?: string } = {
       name: error.name,
       message,
     };
+
     if (error.stack !== undefined) exception.stack = transformedErrorMessage(error.stack, options);
+
     span.recordException(exception);
   } else {
     span.recordException(message);
   }
+
   span.setStatus({
     code: SpanStatusCode.ERROR,
     message,
@@ -355,6 +368,7 @@ export function capturedJson(
   options: OtelObserverOptions,
 ): string | undefined {
   if (options.captureMode === "safe") return undefined;
+
   const transform = direction === "input" ? options.transformInput : options.transformOutput;
   return boundString(jsonString(transform?.(value) ?? value), options.captureMaxBytes);
 }
@@ -365,6 +379,7 @@ export function capturedString(
   options: OtelObserverOptions,
 ): string | undefined {
   if (value === undefined || options.captureMode === "safe") return undefined;
+
   const transform = direction === "input" ? options.transformInput : options.transformOutput;
   const transformed = transform?.(value) ?? value;
   return boundString(
@@ -375,11 +390,14 @@ export function capturedString(
 
 function boundString(value: string, maxBytes: number | undefined): string {
   if (maxBytes === undefined || !Number.isFinite(maxBytes) || maxBytes <= 0) return value;
+
   const byteLimit = Math.floor(maxBytes);
   const bytes = new TextEncoder().encode(value);
+
   if (bytes.byteLength <= byteLimit) return value;
 
   const suffix = new TextEncoder().encode("<truncated>");
+
   if (byteLimit <= suffix.byteLength) {
     return new TextDecoder().decode(suffix.slice(0, byteLimit));
   }
@@ -404,9 +422,11 @@ function serializeMetadataValue(value: unknown): string | undefined {
   if (value === undefined) {
     return undefined;
   }
+
   if (typeof value === "string") {
     return value;
   }
+
   return jsonString(value);
 }
 
@@ -421,7 +441,9 @@ export function emptyToUndefined(value: string | undefined): string | undefined 
 function transformedErrorMessage(error: unknown, options: OtelObserverOptions): string {
   const message = error instanceof Error ? error.message : String(error);
   const transform = options.transformError;
+
   if (transform === undefined) return message;
+
   const transformed = transform(message);
   return typeof transformed === "string" ? transformed : message;
 }

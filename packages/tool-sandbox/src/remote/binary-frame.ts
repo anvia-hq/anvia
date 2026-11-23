@@ -34,9 +34,11 @@ export type BinaryDirection = "toHub" | "toDaemon";
 
 export function encodeTunnelBytes(frame: TunnelBytesFrame, direction: BinaryDirection): Buffer {
   const id = Buffer.from(frame.tunnelId, "utf8");
+
   if (id.byteLength === 0 || id.byteLength > maxIdBytes) {
     throw new RangeError("A tunnel id is 1 to 128 bytes.");
   }
+
   const header = Buffer.allocUnsafe(2 + id.byteLength + 4);
   header[0] = direction === "toHub" ? kindToHub : kindToDaemon;
   header[1] = id.byteLength;
@@ -49,14 +51,23 @@ export function encodeTunnelBytes(frame: TunnelBytesFrame, direction: BinaryDire
 export function decodeTunnelBytes(data: Uint8Array, direction: BinaryDirection): TunnelBytesFrame {
   const bad = (why: string) =>
     new DockerSandboxError(`Malformed binary frame: ${why}.`, "protocol");
+
   if (data.byteLength < 2) throw bad("too short");
+
   const kind = data[0];
+
   if (kind !== (direction === "toHub" ? kindToHub : kindToDaemon)) throw bad("unexpected kind");
+
   const idLength = data[1] ?? 0;
+
   if (idLength === 0 || idLength > maxIdBytes) throw bad("bad tunnel id length");
+
   const payloadAt = 2 + idLength + 4;
+
   if (data.byteLength < payloadAt) throw bad("truncated header");
+
   if (data.byteLength - payloadAt > maxPayloadBytes) throw bad("payload too large");
+
   const view = Buffer.from(data.buffer, data.byteOffset, data.byteLength);
   return {
     type: "tunnel.bytes",

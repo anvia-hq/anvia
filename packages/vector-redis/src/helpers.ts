@@ -31,9 +31,11 @@ export function parseDocument<T>(document: unknown): T {
   if (document === null || document === undefined) {
     return "" as T;
   }
+
   if (typeof document !== "string") {
     return document as T;
   }
+
   try {
     return JSON.parse(document) as T;
   } catch {
@@ -49,6 +51,7 @@ export function redisHashEntries<T, Metadata extends VectorMetadata>(
   if (document.embeddings.length === 0) {
     throw new Error(`Document ${document.id} has no embeddings`);
   }
+
   assertNoReservedMetadata(document.metadata);
 
   return document.embeddings.map((embedding, index) => {
@@ -62,11 +65,14 @@ export function redisHashEntries<T, Metadata extends VectorMetadata>(
     };
     for (const [key, type] of Object.entries(metadataSchema)) {
       const value = document.metadata?.[key];
+
       if (value === undefined) continue;
+
       if (type === "numeric") {
         if (typeof value !== "number" || !Number.isFinite(value)) {
           throw new TypeError(`Redis numeric metadata field ${key} requires finite numbers`);
         }
+
         fields[key] = value;
       } else {
         fields[key] = redisTagValue(value);
@@ -112,10 +118,13 @@ export function parseQueryResults<T, Metadata extends VectorMetadata>(
       document: parseDocument(value[documentField]),
     };
     const metadata = metadataFromFields<Metadata>(value);
+
     if (metadata !== undefined) {
       result.metadata = metadata;
     }
+
     const current = byId.get(id);
+
     if (current === undefined || result.score > current.score) {
       byId.set(id, result);
     }
@@ -128,14 +137,19 @@ function metadataFromFields<Metadata extends VectorMetadata>(
   fields: Record<string, unknown>,
 ): Metadata | undefined {
   const raw = fields[metadataField];
+
   if (raw === null || raw === undefined) return undefined;
+
   const metadata = (typeof raw === "string" ? JSON.parse(raw) : raw) as Metadata;
   return Object.keys(metadata).length === 0 ? undefined : metadata;
 }
 
 export function redisTagValue(value: string | number | boolean | null): string {
   if (value === null) return "n:";
+
   if (typeof value === "boolean") return value ? "b:1" : "b:0";
+
   if (typeof value === "number") return `d:${value}`;
+
   return `s:${value}`;
 }

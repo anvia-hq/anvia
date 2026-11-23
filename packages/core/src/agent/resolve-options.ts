@@ -29,6 +29,7 @@ export function resolveAgentOptions<Output, M extends CompletionModel, ContextDo
   const toolIndexes: ToolIndex[] = [];
   for (const tool of options.tools ?? []) {
     assertProviderToolShape(tool);
+
     if (isProviderTool(tool)) {
       providerTools.push(tool);
     } else if (isToolIndex(tool)) {
@@ -43,6 +44,7 @@ export function resolveAgentOptions<Output, M extends CompletionModel, ContextDo
       addUniqueTool(toolsByName, tool, "local tool");
     }
   }
+
   if (options.skills !== undefined) {
     for (const tool of options.skills.tools) {
       if (isMcpTool(tool)) {
@@ -50,9 +52,11 @@ export function resolveAgentOptions<Output, M extends CompletionModel, ContextDo
           `MCP tool "${tool.name}" must be registered through Agent.mcpServers, not Agent.skills.`,
         );
       }
+
       addUniqueTool(toolsByName, tool, "skill tool");
     }
   }
+
   const memory = resolveAgentMemory(options);
   const instructions = [options.instructions, options.skills?.instructions]
     .filter((part): part is string => part !== undefined && part.length > 0)
@@ -111,13 +115,16 @@ function resolveAgentMemory<Output, M extends CompletionModel, ContextDocument>(
   if (options.memory === undefined) {
     return undefined;
   }
+
   const { store, ...memoryOptions } = options.memory;
   const resolvedOptions = resolveMemoryOptions(memoryOptions);
+
   if (resolvedOptions.compaction !== undefined && store.compaction === undefined) {
     throw new TypeError(
       "Memory compaction requires a store with the optional compaction capability.",
     );
   }
+
   return { store, ...resolvedOptions };
 }
 
@@ -125,5 +132,6 @@ function addUniqueTool(tools: Map<string, AnyTool>, tool: AnyTool, source: strin
   if (tools.has(tool.name)) {
     throw new TypeError(`Duplicate ${source} name "${tool.name}".`);
   }
+
   tools.set(tool.name, tool);
 }

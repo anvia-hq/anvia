@@ -86,8 +86,10 @@ async function open(path: string, agent: Agent) {
 async function settled(run: DurableRun) {
   for (let attempt = 0; attempt < 250; attempt++) {
     const snapshot = await run.snapshot();
+
     if (["completed", "failed", "cancelled", "needs_attention"].includes(snapshot.run.status))
       return snapshot;
+
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
   throw new Error("The durable run did not settle.");
@@ -138,8 +140,11 @@ it("retrieves once per model call, not on replay of a completed turn", async () 
   let calls = 0;
   const flaky = vi.fn(async (request: CompletionRequest) => {
     calls += 1;
+
     if (!hasToolResult(request)) return toolResponse();
+
     if (calls === 2) throw new Error("provider down");
+
     return done();
   });
   const first = await open(path, agentWith(flaky, store, { tools: true }));

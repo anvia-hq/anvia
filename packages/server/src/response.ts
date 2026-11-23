@@ -57,6 +57,7 @@ export function resumeEventStreamResponse<TEvent>(
     if (error instanceof InvalidResumableAfterError) {
       return resumeAfterErrorResponse(error);
     }
+
     throw error;
   }
 }
@@ -84,9 +85,11 @@ export function encodeEventStreamResponse<TEvent>(
   if (!headers.has("cache-control")) {
     headers.set("cache-control", "no-cache, no-transform");
   }
+
   if (!headers.has("connection")) {
     headers.set("connection", "keep-alive");
   }
+
   if (!headers.has("x-accel-buffering")) {
     headers.set("x-accel-buffering", "no");
   }
@@ -104,9 +107,11 @@ export function encodeEventStreamResponse<TEvent>(
   }
 
   const responseInit: ResponseInit = { headers };
+
   if (options.status !== undefined) {
     responseInit.status = options.status;
   }
+
   if (options.statusText !== undefined) {
     responseInit.statusText = options.statusText;
   }
@@ -123,15 +128,22 @@ function copyResponseOptions<TEvent>(options: {
   sse?: unknown;
 }): EventStreamResponseOptions<TEvent> {
   const next: EventStreamResponseOptions<TEvent> = {};
+
   if (options.format !== undefined) next.format = options.format;
+
   if (options.headers !== undefined) next.headers = options.headers;
+
   if (options.status !== undefined) next.status = options.status;
+
   if (options.statusText !== undefined) next.statusText = options.statusText;
+
   if (options.jsonl !== undefined) {
     next.jsonl = options.jsonl as JsonlStreamOptions<ResponseStreamEvent<TEvent>>;
   }
+
   if (options.sse !== undefined) {
     next.sse = options.sse as SseStreamOptions<ResponseStreamEvent<TEvent>>;
   }
+
   return next;
 }

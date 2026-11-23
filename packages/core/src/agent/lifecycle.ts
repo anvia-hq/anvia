@@ -75,6 +75,7 @@ export function composeAgentLifecycle<Output = string, RawResponse = unknown>(
   second: AgentLifecycle<Output, RawResponse> | undefined,
 ): AgentLifecycle<Output, RawResponse> | undefined {
   if (first === undefined) return second;
+
   if (second === undefined) return first;
 
   return {
@@ -117,19 +118,24 @@ function cloneLifecycleFallback<T>(value: T, seen: WeakMap<object, object>): T {
   if (typeof value !== "object" || value === null) {
     return value;
   }
+
   const existing = seen.get(value);
+
   if (existing !== undefined) {
     return existing as T;
   }
+
   if (Array.isArray(value)) {
     const clone: unknown[] = [];
     seen.set(value, clone);
     clone.push(...value.map((item) => cloneLifecycleFallback(item, seen)));
     return clone as T;
   }
+
   if (Object.getPrototypeOf(value) !== Object.prototype) {
     return value;
   }
+
   const clone: Record<string, unknown> = {};
   seen.set(value, clone);
   for (const [key, item] of Object.entries(value)) {

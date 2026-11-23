@@ -29,6 +29,7 @@ const CompletionForm = forwardRef<HTMLFormElement, PrimitiveProps<"form">>(funct
     if (!canSubmit) {
       return;
     }
+
     await completion.submit();
   }, [canSubmit, completion]);
 
@@ -56,9 +57,11 @@ const CompletionForm = forwardRef<HTMLFormElement, PrimitiveProps<"form">>(funct
   const handleSubmit = useCallback(
     (event: FormEvent<HTMLFormElement>) => {
       (onSubmit as ((event: FormEvent<HTMLFormElement>) => void) | undefined)?.(event);
+
       if (event.defaultPrevented) {
         return;
       }
+
       event.preventDefault();
       void submit();
     },
@@ -87,6 +90,7 @@ const CompletionInput = forwardRef<HTMLTextAreaElement, PrimitiveProps<"textarea
     const handleChange = useCallback(
       (event: ChangeEvent<HTMLTextAreaElement>) => {
         onChange?.(event);
+
         if (!event.defaultPrevented) {
           input.setInput(event.currentTarget.value);
         }
@@ -97,6 +101,7 @@ const CompletionInput = forwardRef<HTMLTextAreaElement, PrimitiveProps<"textarea
     const handleKeyDown = useCallback(
       (event: KeyboardEvent<HTMLTextAreaElement>) => {
         onKeyDown?.(event);
+
         if (
           event.defaultPrevented ||
           event.key !== "Enter" ||
@@ -105,6 +110,7 @@ const CompletionInput = forwardRef<HTMLTextAreaElement, PrimitiveProps<"textarea
         ) {
           return;
         }
+
         event.preventDefault();
         void input.submit();
       },
@@ -153,9 +159,11 @@ const CompletionStop = forwardRef<HTMLButtonElement, PrimitiveProps<"button">>(
     const handleClick = useCallback(
       (event: MouseEvent<HTMLButtonElement>) => {
         onClick?.(event);
+
         if (event.defaultPrevented || disabled) {
           return;
         }
+
         input.stop();
       },
       [disabled, input, onClick],

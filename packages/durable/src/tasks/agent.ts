@@ -50,11 +50,15 @@ export async function spawnAgent(
     key,
     parent.id,
   );
+
   // Replaying a committed spawn needs its saved identity, not executable agent code.
   if (child.agentRunId !== undefined) return child.id;
+
   const registration = agents.get(input.agentId);
+
   if (registration === undefined)
     throw new DurableNotFoundError(`Unknown durable agent: ${input.agentId}`);
+
   assertMemoryFreeTask(registration, input.agentId, "owned agent tasks");
   const continued =
     input.continueFrom === undefined ? undefined : await continuable(tx, parent, input);
@@ -70,9 +74,12 @@ export async function spawnAgent(
     mcpServers.get(input.agentId),
     toolIndexes.get(input.agentId),
   );
+
   if (input.maxModelTurns !== undefined)
     run.maxModelTurns = Math.min(run.maxModelTurns, input.maxModelTurns);
+
   if (continued !== undefined) run.continueFrom = continued;
+
   await tx.putRun(run);
   await tx.appendEvent(
     run.id,
@@ -100,13 +107,17 @@ async function continuable(
     (child) => child.key === input.continueFrom,
   );
   const run = sibling?.agentRunId === undefined ? undefined : await tx.getRun(sibling.agentRunId);
+
   if (run === undefined)
     throw new TypeError("continueFrom must name an agent child of the same task.");
+
   if (run.agentId !== input.agentId)
     throw new TypeError("continueFrom must name a run of the same agent.");
+
   if (run.status !== "completed" && run.exhaustion === undefined)
     throw new DurableConflictError(
       "continueFrom must name a completed or turn-limited run; its conversation is otherwise unsettled.",
     );
+
   return run.id;
 }

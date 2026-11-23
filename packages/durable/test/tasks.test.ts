@@ -64,6 +64,7 @@ describe("durable task orchestration", () => {
               policy: "allSettled",
             },
           };
+
         return { status: "completed", output: (await ctx.children())[0]!.status };
       },
     });
@@ -148,6 +149,7 @@ describe("durable task orchestration", () => {
               policy: "allSettled",
             },
           };
+
         const child = (await ctx.children())[0]!;
         return child.outcome?.status === "completed"
           ? { status: "completed", output: String(child.outcome.output) }
@@ -242,8 +244,10 @@ describe("durable task orchestration", () => {
                     return async (...args: Parameters<DurableTransaction["putOperation"]>) => {
                       if (args[1].key === "write" && args[1].status === status)
                         throw new Error("disk failed");
+
                       return target.putOperation(...args);
                     };
+
                   return Reflect.get(target, key);
                 },
               }),
@@ -316,6 +320,7 @@ describe("durable task orchestration", () => {
             wait: { type: "children", ids, policy: "allSettled" },
           };
         }
+
         const total = (await ctx.children()).reduce(
           (sum, child) =>
             sum + (child.outcome?.status === "completed" ? Number(child.outcome.output) : 0),
@@ -389,12 +394,14 @@ describe("durable task orchestration", () => {
             checkpoint: "signal" as const,
             wait: { type: "timer", until: ctx.input },
           };
+
         if (ctx.checkpoint === "signal")
           return {
             status: "waiting",
             checkpoint: "done" as const,
             wait: { type: "signal", name: "approval" },
           };
+
         return { status: "completed", output: String(await ctx.signalValue("approval")) };
       },
     });
@@ -532,6 +539,7 @@ describe("durable task orchestration", () => {
               policy: "failFast",
             },
           };
+
         return { status: "completed", output: (await ctx.children()).map((child) => child.status) };
       },
     });

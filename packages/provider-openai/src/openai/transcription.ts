@@ -39,8 +39,11 @@ export class OpenAITranscriptionModel implements TranscriptionModel<unknown> {
     };
 
     if (request.language !== undefined) params.language = request.language;
+
     if (request.prompt !== undefined) params.prompt = request.prompt;
+
     if (request.temperature !== undefined) params.temperature = request.temperature;
+
     const response = await this.client.audio.transcriptions.create(params as never, {
       signal: options?.abortSignal,
       maxRetries: 0,
@@ -56,8 +59,10 @@ export function transcriptionText(response: unknown): string {
   if (typeof response === "string") {
     return response;
   }
+
   if (isPlainObject(response) && typeof response.text === "string") {
     return response.text;
   }
+
   throw new Error("OpenAI transcription response contained no text.");
 }

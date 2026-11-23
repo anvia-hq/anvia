@@ -35,10 +35,13 @@ export function useSmoothStreamItems<T>(
   adapterRef.current = options.adapter;
 
   const initialNowRef = useRef<number | undefined>(undefined);
+
   if (initialNowRef.current === undefined) {
     initialNowRef.current = currentTimeMs();
   }
+
   const stateRef = useRef<StreamSmoothingState<T> | undefined>(undefined);
+
   if (stateRef.current === undefined) {
     stateRef.current = createStreamSmoothingState(
       items,
@@ -57,6 +60,7 @@ export function useSmoothStreamItems<T>(
   const clearAnimationFrame = useCallback(() => {
     const frame = animationFrameRef.current;
     animationFrameRef.current = null;
+
     if (
       frame !== null &&
       typeof window !== "undefined" &&
@@ -77,9 +81,11 @@ export function useSmoothStreamItems<T>(
 
   const flushToTarget = useCallback(() => {
     const state = stateRef.current;
+
     if (state === undefined) {
       return;
     }
+
     clearAnimationFrame();
     commitState(flushStreamSmoothing(state, currentTimeMs(), adapterRef.current));
   }, [clearAnimationFrame, commitState]);
@@ -89,6 +95,7 @@ export function useSmoothStreamItems<T>(
       if (animationFrameRef.current !== null || !mountedRef.current) {
         return;
       }
+
       if (typeof window === "undefined" || typeof window.requestAnimationFrame !== "function") {
         flushToTarget();
         return;
@@ -97,10 +104,13 @@ export function useSmoothStreamItems<T>(
       animationFrameRef.current = window.requestAnimationFrame((nowMs) => {
         animationFrameRef.current = null;
         const state = stateRef.current;
+
         if (!mountedRef.current || state === undefined) {
           return;
         }
+
         const minimumCommitIntervalMs = 1_000 / streamSmoothingConfig.maxCommitFps;
+
         if (nowMs - state.lastAdvanceAtMs + 0.5 < minimumCommitIntervalMs) {
           scheduleFrame();
           return;
@@ -109,6 +119,7 @@ export function useSmoothStreamItems<T>(
         const nextState = advanceStreamSmoothing(state, nowMs, adapterRef.current);
         const nextSnapshot = getStreamSmoothingSnapshot(nextState, adapterRef.current);
         commitState(nextState);
+
         if (nextSnapshot.hasPendingContent) {
           scheduleFrame();
         }
@@ -143,12 +154,14 @@ export function useSmoothStreamItems<T>(
         );
 
     const hidden = typeof document !== "undefined" && document.visibilityState === "hidden";
+
     if (options.flushImmediately === true || hidden) {
       nextState = flushStreamSmoothing(nextState, nowMs, options.adapter);
     }
 
     const nextSnapshot = getStreamSmoothingSnapshot(nextState, options.adapter);
     commitState(nextState);
+
     if (nextSnapshot.hasPendingContent) {
       scheduleFrame();
     } else {
@@ -169,6 +182,7 @@ export function useSmoothStreamItems<T>(
     if (typeof document === "undefined") {
       return;
     }
+
     const handleVisibilityChange = () => {
       if (document.visibilityState === "hidden") {
         flushToTarget();
@@ -191,6 +205,7 @@ function currentTimeMs(): number {
   if (typeof performance !== "undefined" && typeof performance.now === "function") {
     return performance.now();
   }
+
   return Date.now();
 }
 
@@ -210,9 +225,11 @@ function streamSmoothingSnapshotsEqual<T>(
 
   return left.items.every((leftItem, index) => {
     const rightItem = right.items[index];
+
     if (rightItem === undefined || adapter.getKey(leftItem) !== adapter.getKey(rightItem)) {
       return false;
     }
+
     const leftText = adapter.getText(leftItem);
     const rightText = adapter.getText(rightItem);
     return leftText === undefined ? leftItem === rightItem : leftText === rightText;

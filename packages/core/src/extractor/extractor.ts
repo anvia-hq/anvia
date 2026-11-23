@@ -75,6 +75,7 @@ export async function extract<Output, Model extends CompletionModel>(
   if (!(options.outputSchema instanceof z.ZodType)) {
     throw new TypeError("extract outputSchema must be a Zod schema.");
   }
+
   if (typeof options.text !== "string") {
     throw new TypeError("extract text must be a string.");
   }
@@ -110,12 +111,14 @@ export async function extract<Output, Model extends CompletionModel>(
       if (error instanceof CompletionCapabilityError || isAbortError(error)) {
         throw error;
       }
+
       lastError = error;
       const retryOptions = retryOptionsForFailure(retries, {
         error,
         attempt,
         streaming: false,
       });
+
       if (retryOptions === undefined) {
         throw new ExtractionError("No data extracted", {
           cause: lastError,
@@ -123,6 +126,7 @@ export async function extract<Output, Model extends CompletionModel>(
           usage,
         });
       }
+
       await waitForRetry(retryDelayMs(retryOptions, attempt), options.abortSignal);
     }
   }
@@ -154,6 +158,7 @@ function resolveExtractionRetries(
   if (options === undefined || options === false) {
     return undefined;
   }
+
   return resolveRetryOptions({
     ...options,
     shouldRetry: options.shouldRetry ?? (() => true),

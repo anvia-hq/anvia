@@ -4,11 +4,14 @@ import { SqliteDurableStore } from "../../src/sqlite.js";
 import { done, hasToolResult, lookup, makeAgent, toolResponse } from "../helpers.js";
 
 const [database, effects] = process.argv.slice(2);
+
 if (database === undefined || effects === undefined) throw new Error("Missing fixture arguments");
+
 let id: string;
 const agent = makeAgent(
   async (request) => {
     if (!hasToolResult(request)) return toolResponse();
+
     await runtime.steer(id, { prompt: "queued before crash" }, { requestId: "pending" });
     process.send?.({ id, request });
     await new Promise<void>(() => {

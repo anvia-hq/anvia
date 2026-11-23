@@ -456,24 +456,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       await this.runRunStartHook(newMessages);
 
       if (this.continuationState !== undefined) {
-        const interactionAttributes: JsonObject = {};
-
-        if (this.resumedFrom?.runId !== undefined) {
-          interactionAttributes.sourceRunId = this.resumedFrom.runId;
-        }
-
-        if (this.resumedFrom?.interactionId !== undefined) {
-          interactionAttributes.interactionId = this.resumedFrom.interactionId;
-        }
-
-        if (this.interactionResponse?.type !== undefined) {
-          interactionAttributes.interactionType = this.interactionResponse.type;
-        }
-
-        await runObservers.event({
-          name: "agent.interaction_response",
-          attributes: interactionAttributes,
-        });
+        await this.recordInteractionResponseEvent(runObservers);
         try {
           const toolResults = await this.resolveContinuationTools(
             runId,
@@ -546,7 +529,11 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
           if (!contextReplayed) await this.recordMemoryCompaction(prepared, runObservers);
         }
 
-        const { request } = await this.createTurnRequest(prompt, prepared.messages, currentTurns);
+        const { request, selection } = await this.createTurnRequest(
+          prompt,
+          prepared.messages,
+          currentTurns,
+        );
 
         const modelReplayedPending = this.replayed({ kind: "model", turn: currentTurns });
         const modelReplayed =
@@ -555,7 +542,12 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
             : await modelReplayedPending;
         let response: CompletionResponse;
         try {
-          response = await this.runCompletion(request, currentTurns, runObservers);
+          response = await this.runCompletion(
+            request,
+            currentTurns,
+            runObservers,
+            selection?.matches,
+          );
         } catch (error) {
           await settleFailureCleanup([
             () => this.runCompletionErrorHook(prompt, error, newMessages),
@@ -832,6 +824,7 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
       await this.runRunStartHook(newMessages);
 
       if (this.continuationState !== undefined) {
+        await this.recordInteractionResponseEvent(runObservers);
         const responsePart =
           this.promptMessage.role === "tool" ? this.promptMessage.content[0] : undefined;
 
@@ -1094,6 +1087,10 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
             { closeWhenEmpty: true },
           );
           for (const receipt of appliedSteering) {
+            await runObservers.event({
+              name: "agent.steering_applied",
+              attributes: { id: receipt.id, turn: currentTurns },
+            });
             yield { type: "steering_applied", id: receipt.id, turn: currentTurns };
           }
 
@@ -1231,8 +1228,9 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     request: CompletionRequest,
     turn: number,
     runObservers: ActiveAgentRunObservers,
+    toolMatches?: readonly AgentGenerationToolMatch[] | undefined,
   ): Promise<CompletionResponse> {
-    const execute = () => this.runUncachedCompletion(request, turn, runObservers);
+    const execute = () => this.runUncachedCompletion(request, turn, runObservers, toolMatches);
     return this.execution === undefined
       ? execute()
       : this.execution.completion(turn, request, execute);
@@ -1242,13 +1240,14 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     request: CompletionRequest,
     turn: number,
     runObservers: ActiveAgentRunObservers,
+    toolMatches?: readonly AgentGenerationToolMatch[] | undefined,
   ): Promise<CompletionResponse> {
     assertCompletionRequestSupported(this.agent.model, request);
     this.validatedStructuredOutput = undefined;
     this.failedCompletionUsage = Usage.empty();
     const providerRequest = this.providerTraceRequest(request);
     const generationObservers = await runObservers.startGeneration(
-      this.generationStartArgs(turn, request, providerRequest),
+      this.generationStartArgs(turn, request, providerRequest, toolMatches),
     );
     let currentRequest = request;
     let failedAttemptUsage = Usage.empty();
@@ -2025,7 +2024,34 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     }
 
     this.activeGeneration = undefined;
-    await active.observers.error({ turn: active.turn, error });
+    await active.observers.error({
+      turn: active.turn,
+      error,
+      ...this.estimatedGenerationContext(active.turn),
+    });
+  }
+
+  private async recordInteractionResponseEvent(
+    runObservers: ActiveAgentRunObservers,
+  ): Promise<void> {
+    const interactionAttributes: JsonObject = {};
+
+    if (this.resumedFrom?.runId !== undefined) {
+      interactionAttributes.sourceRunId = this.resumedFrom.runId;
+    }
+
+    if (this.resumedFrom?.interactionId !== undefined) {
+      interactionAttributes.interactionId = this.resumedFrom.interactionId;
+    }
+
+    if (this.interactionResponse?.type !== undefined) {
+      interactionAttributes.interactionType = this.interactionResponse.type;
+    }
+
+    await runObservers.event({
+      name: "agent.interaction_response",
+      attributes: interactionAttributes,
+    });
   }
 
   private updateRunProgress(messages: MessageType[]): void {

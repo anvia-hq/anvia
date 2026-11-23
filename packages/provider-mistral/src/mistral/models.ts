@@ -21,6 +21,8 @@ export type KnownMistralCompletionModelId =
   | "ministral-8b-2512"
   | "mistral-large-2411"
   | "mistral-large-2512"
+  | "mistral-large-4"
+  | "mistral-large-4-0"
   | "mistral-large-latest"
   | "mistral-medium-2505"
   | "mistral-medium-2508"
@@ -66,6 +68,8 @@ export const MISTRAL_COMPLETION_MODEL_CONTEXT_LIMITS = {
   "ministral-8b-2512": CONTEXT_WINDOW_256K,
   "mistral-large-2411": { contextWindow: 131_072, maxOutputTokens: 16_384 },
   "mistral-large-2512": CONTEXT_262K,
+  "mistral-large-4": { contextWindow: 1_000_000, maxOutputTokens: 256_000 },
+  "mistral-large-4-0": { contextWindow: 1_000_000, maxOutputTokens: 256_000 },
   "mistral-large-latest": CONTEXT_262K,
   "mistral-medium-2505": { contextWindow: 131_072, maxOutputTokens: 131_072 },
   "mistral-medium-2508": CONTEXT_262K,

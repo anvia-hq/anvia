@@ -57,6 +57,14 @@ describe("OpenAIClient", () => {
     expectTypeOf(astraModel.controls!.reasoningEffort.options).items.toEqualTypeOf<
       "low" | "medium" | "high" | "xhigh" | "max"
     >();
+    const astra62Model = client.completionModel({ modelId: "gpt-6.2-astra", api: "responses" });
+    expectTypeOf(astra62Model.controls!.reasoningEffort.options).items.toEqualTypeOf<
+      "low" | "medium" | "high" | "xhigh" | "max"
+    >();
+    const sol62Model = client.completionModel({ modelId: "gpt-6.2-sol", api: "responses" });
+    expectTypeOf(sol62Model.controls!.reasoningEffort.options).items.toEqualTypeOf<
+      "low" | "medium" | "high" | "xhigh" | "max"
+    >();
     const proReasoningModel = client.completionModel({
       modelId: "gpt-5.4-pro",
       api: "responses",
@@ -87,6 +95,8 @@ describe("OpenAIClient", () => {
     client.embeddingModel({ modelId: "custom-embedding-model" });
 
     expectTypeOf("gpt-image-2").toMatchTypeOf<OpenAIImageGenerationModelId>();
+    expectTypeOf("gpt-image-2.6-sunburst").toMatchTypeOf<OpenAIImageGenerationModelId>();
+    expectTypeOf("gpt-image-2.6-flare").toMatchTypeOf<OpenAIImageGenerationModelId>();
     client.imageGenerationModel({ modelId: "custom-image-model" });
 
     expectTypeOf("tts-1-hd").toMatchTypeOf<OpenAISpeechGenerationModelId>();

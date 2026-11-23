@@ -47,6 +47,20 @@ describe("OpenAI Responses mapping", () => {
       },
     });
     expect(
+      client.completionModel({ modelId: "gpt-6.2-astra", api: "responses" }).controls,
+    ).toMatchObject({
+      reasoningEffort: {
+        options: ["low", "medium", "high", "xhigh", "max"],
+        defaultValue: "medium",
+      },
+    });
+    expect(
+      client.completionModel({ modelId: "gpt-6.2-sol", api: "responses" }).contextLimits,
+    ).toMatchObject({
+      contextWindow: 1_050_000,
+      maxOutputTokens: 128_000,
+    });
+    expect(
       client.completionModel({ modelId: "gpt-5.4-pro", api: "responses" }).controls,
     ).toMatchObject({
       reasoningEffort: {

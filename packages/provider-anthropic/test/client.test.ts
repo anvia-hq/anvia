@@ -41,6 +41,26 @@ describe("Anthropic client", () => {
     expectTypeOf(mythosPreview.controls!.reasoningEffort.options).items.toEqualTypeOf<
       "low" | "medium" | "high" | "max"
     >();
+    const opus55 = anthropic.completionModel({ modelId: "claude-opus-5-5" });
+    expectTypeOf(opus55.controls!.reasoningEffort.options).items.toEqualTypeOf<
+      "low" | "medium" | "high" | "xhigh" | "max"
+    >();
+    expect(opus55.controls?.reasoningEffort).toMatchObject({
+      options: ["low", "medium", "high", "xhigh", "max"],
+      defaultValue: "medium",
+    });
+    expect(opus55.contextLimits).toEqual({ contextWindow: 1_000_000, maxOutputTokens: 128_000 });
+    const sonnet55 = anthropic.completionModel({ modelId: "claude-sonnet-5-5" });
+    expect(sonnet55.controls?.reasoningEffort).toMatchObject({
+      options: ["low", "medium", "high", "xhigh", "max"],
+      defaultValue: "high",
+    });
+    const haiku55 = anthropic.completionModel({ modelId: "claude-haiku-5-5" });
+    expect(haiku55.controls?.reasoningEffort.defaultValue).toBe("medium");
+    const fable52 = anthropic.completionModel({ modelId: "claude-fable-5-2" });
+    expect(fable52.controls?.reasoningEffort.defaultValue).toBe("high");
+    const mythos52 = anthropic.completionModel({ modelId: "claude-mythos-5-2" });
+    expect(mythos52.controls?.reasoningEffort.defaultValue).toBe("high");
     anthropic.completionModel({ modelId: "custom-messages-model" });
   });
 

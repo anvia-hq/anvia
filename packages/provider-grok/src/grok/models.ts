@@ -5,6 +5,8 @@ export type KnownGrokCompletionModelId =
   | "grok-4.5"
   | "grok-4.6"
   | "grok-4.6-latest"
+  | "grok-4.7"
+  | "grok-4.7-latest"
   | "grok-4.20"
   | "grok-4.20-0309-non-reasoning"
   | "grok-4.20-0309-reasoning"
@@ -22,6 +24,8 @@ export const GROK_COMPLETION_MODEL_CONTEXT_LIMITS = {
   "grok-4.5": { contextWindow: 500_000 },
   "grok-4.6": { contextWindow: 500_000 },
   "grok-4.6-latest": { contextWindow: 500_000 },
+  "grok-4.7": { contextWindow: 500_000 },
+  "grok-4.7-latest": { contextWindow: 500_000 },
   "grok-4.20": CONTEXT_1M_30K,
   "grok-4.20-0309-non-reasoning": CONTEXT_1M_30K,
   "grok-4.20-0309-reasoning": CONTEXT_1M_30K,

@@ -15,6 +15,8 @@ export type GrokReasoningControls = ReasoningEffortControls<GrokReasoningEffort>
 export type GrokControlsFor<ModelId extends GrokCompletionModelId> = ModelId extends
   | "grok-4.6"
   | "grok-4.6-latest"
+  | "grok-4.7"
+  | "grok-4.7-latest"
   | "grok-4.20-multi-agent-0309"
   ? ReasoningEffortControls<"low" | "medium" | "high" | "xhigh">
   : ModelId extends "grok-4.5"
@@ -34,6 +36,8 @@ export function grokControlsForModel(modelId: string): GrokReasoningControls | u
   if (
     modelId === "grok-4.6" ||
     modelId === "grok-4.6-latest" ||
+    modelId === "grok-4.7" ||
+    modelId === "grok-4.7-latest" ||
     modelId === "grok-4.20-multi-agent-0309"
   ) {
     return GROK_REASONING_CONTROLS;

@@ -38,10 +38,23 @@ export type KnownOpenAICompletionModelId =
   | "gpt-5.5"
   | "gpt-5.5-pro"
   | "gpt-5.6"
+  | "gpt-5.6-cyber"
   | "gpt-5.6-luna"
   | "gpt-5.6-sol"
   | "gpt-5.6-terra"
   | "gpt-6-astra"
+  | "gpt-6-cyber"
+  | "gpt-6-luna"
+  | "gpt-6-rosalind"
+  | "gpt-6-sol"
+  | "gpt-6.1-sol"
+  | "gpt-6.1-terra"
+  | "gpt-6.2-astra"
+  | "gpt-6.2-astra-law"
+  | "gpt-6.2-sol"
+  | "gpt-daybreak-blue-latest"
+  | "gpt-daybreak-red-latest"
+  | "gpt-rosalind-research"
   | "o1"
   | "o1-pro"
   | "o3"
@@ -113,10 +126,20 @@ export const OPENAI_COMPLETION_MODEL_CONTEXT_LIMITS: Readonly<Record<string, Mod
     "gpt-5.5": CONTEXT_1M_128K,
     "gpt-5.5-pro": CONTEXT_1M_128K,
     "gpt-5.6": CONTEXT_1M_128K,
+    "gpt-5.6-cyber": CONTEXT_1M_128K,
     "gpt-5.6-luna": CONTEXT_1M_128K,
     "gpt-5.6-sol": CONTEXT_1M_128K,
     "gpt-5.6-terra": CONTEXT_1M_128K,
     "gpt-6-astra": CONTEXT_1M_128K,
+    "gpt-6-cyber": CONTEXT_1M_128K,
+    "gpt-6-luna": CONTEXT_1M_128K,
+    "gpt-6-rosalind": CONTEXT_1M_128K,
+    "gpt-6-sol": CONTEXT_1M_128K,
+    "gpt-6.1-sol": CONTEXT_1M_128K,
+    "gpt-6.1-terra": CONTEXT_1M_128K,
+    "gpt-6.2-astra": CONTEXT_1M_128K,
+    "gpt-6.2-astra-law": CONTEXT_1M_128K,
+    "gpt-6.2-sol": CONTEXT_1M_128K,
     o1: CONTEXT_200K_100K,
     "o1-pro": CONTEXT_200K_100K,
     o3: CONTEXT_200K_100K,
@@ -142,7 +165,13 @@ export type KnownOpenAIImageGenerationModelId =
   | "gpt-image-1-mini"
   | "gpt-image-1.5"
   | "gpt-image-2"
-  | "gpt-image-2-2026-04-21";
+  | "gpt-image-2-2026-04-21"
+  | "gpt-image-2.5-flare"
+  | "gpt-image-2.5-flare-2026-09-08"
+  | "gpt-image-2.5-sunburst"
+  | "gpt-image-2.5-sunburst-2026-09-08"
+  | "gpt-image-2.6-flare"
+  | "gpt-image-2.6-sunburst";
 
 export type OpenAIImageGenerationModelId = ModelId<KnownOpenAIImageGenerationModelId>;
 

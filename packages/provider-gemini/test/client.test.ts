@@ -34,6 +34,35 @@ describe("GeminiClient", () => {
     expectTypeOf(flash37.controls!.reasoningEffort.options).items.toEqualTypeOf<
       "low" | "medium" | "high"
     >();
+    const flash38 = client.completionModel({ modelId: "gemini-3.8-flash" });
+    expectTypeOf(flash38.controls!.reasoningEffort.options).items.toEqualTypeOf<
+      "low" | "medium" | "high"
+    >();
+    expect(flash38.controls?.reasoningEffort).toMatchObject({
+      options: ["low", "medium", "high"],
+      defaultValue: "medium",
+    });
+    const argon4 = client.completionModel({ modelId: "gemini-4-argon" });
+    expectTypeOf(argon4.controls!.reasoningEffort.options).items.toEqualTypeOf<
+      "low" | "medium" | "high"
+    >();
+    expect(argon4.controls?.reasoningEffort).toMatchObject({
+      options: ["low", "medium", "high"],
+      defaultValue: "medium",
+    });
+    const neon4 = client.completionModel({ modelId: "gemini-4-neon" });
+    expectTypeOf(neon4.controls!.reasoningEffort.options).items.toEqualTypeOf<
+      "low" | "medium" | "high" | "xhigh"
+    >();
+    expect(neon4.controls?.reasoningEffort).toMatchObject({
+      options: ["low", "medium", "high", "xhigh"],
+      defaultValue: "high",
+    });
+    expect(neon4.contextLimits).toEqual({
+      contextWindow: 1_048_576,
+      maxInputTokens: 1_048_576,
+      maxOutputTokens: 65_536,
+    });
     const liteImage = client.completionModel({ modelId: "gemini-3.1-flash-lite-image" });
     expectTypeOf(liteImage.controls!.reasoningEffort.options).items.toEqualTypeOf<
       "minimal" | "high"

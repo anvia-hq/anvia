@@ -184,5 +184,5 @@ speech, file or collection management, batches, stored completions, compaction, 
 - structural completion, image, speech, and transcription handle types
 - Grok completion and image model-ID types
 - typed `tools` factories for xAI server-executed tools
-- model constants such as `GROK_4_6`, `GROK_4_20`, and `GROK_IMAGINE_IMAGE`
+- model constants such as `GROK_4_7`, `GROK_4_6`, `GROK_4_20`, and `GROK_IMAGINE_IMAGE`
 - `grok`

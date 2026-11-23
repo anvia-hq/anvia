@@ -23,6 +23,11 @@ describe("MistralClient", () => {
     expectTypeOf(
       client.completionModel({ modelId: "mistral-large-latest" }).modelId,
     ).toEqualTypeOf<string>();
+    const large4 = client.completionModel({ modelId: "mistral-large-4" });
+    expect(large4.contextLimits).toEqual({
+      contextWindow: 1_000_000,
+      maxOutputTokens: 256_000,
+    });
     const completionId: MistralCompletionModelId = "custom-mistral-model";
     const completionModel = client.completionModel({ modelId: completionId });
     expectTypeOf(completionModel.controls).toEqualTypeOf<NoCompletionModelControls | undefined>();

@@ -40,8 +40,6 @@ export async function sandboxShell(
 }
 
 async function detectShell(sandbox: SandboxRuntime): Promise<SandboxShell> {
-  // Fixed, read-only infrastructure probe. Do not include caller input, cwd, or env.
-  // A caller's cancellation must not cancel detection shared with other tool calls.
   const result = await sandbox.exec({
     command: "sh",
     args: ["-c", "test -x /bin/bash"],

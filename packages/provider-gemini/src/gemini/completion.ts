@@ -382,8 +382,6 @@ function toolMessageToGeminiContent(
 function assistantMessageToGeminiContent(
   message: Extract<MessageType, { role: "assistant" }>,
 ): GeminiContent {
-  // Thought signatures are only valid for the provider that issued them. Keep them for Gemini's
-  // own turns (or history with unknown origin); drop them when another provider produced the turn.
   const origin = getAssistantGenerationMetadata(message)?.provider;
   const replaySignatures = origin === undefined || origin === "gemini";
   return {

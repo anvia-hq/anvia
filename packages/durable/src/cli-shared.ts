@@ -132,7 +132,6 @@ function init(spec: GeneratorSpec, options: Options, cwd: string, io: CliIo): vo
   const file = `${spec.header}\n\n${spec.body}`;
   const block = `${spec.startMarker}\n${spec.header}\n\n${spec.body.trimEnd()}\n${spec.endMarker}`;
 
-  // Refuse to define a name twice: check the user's schema (and the target) outside our own output.
   for (const path of new Set(
     [requested, target].filter((p) => existsSync(p) && !statSync(p).isDirectory()),
   )) {

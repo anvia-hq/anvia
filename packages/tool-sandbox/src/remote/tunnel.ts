@@ -154,8 +154,6 @@ class RemoteTunnelHandle implements TunnelHandle {
   ) {
     const profile = requested?.profile;
     this.stream = new InboundStream<TunnelExit>({
-      // The daemon may have a whole window in flight, plus the frame that crossed the mark, so the
-      // queue has to hold that much for a reader that is momentarily behind.
       maxBufferBytes:
         profile === undefined
           ? maxBufferBytes
@@ -164,8 +162,6 @@ class RemoteTunnelHandle implements TunnelHandle {
       overflowEnd: { reason: "error", message: "The tunnel consumer is too slow." },
       onConsumed: (bytes) => this.trySend({ type: "tunnel.ack", tunnelId, bytes }),
       onOverflow: () => this.trySend({ type: "tunnel.close", tunnelId }),
-      // Every way a tunnel ends, including an overflow, lands here: the registry entry goes, and
-      // writers parked waiting for room are woken to find the tunnel closed.
       onEnd: () => {
         this.connection.unregisterTunnel(tunnelId);
         this.wakeWriters();
@@ -175,10 +171,6 @@ class RemoteTunnelHandle implements TunnelHandle {
     this.exit = this.stream.ended;
     this.endpoint = {
       opened: (confirmed) => {
-        // The write window and the ack step are the daemon's to agree to: one that predates the
-        // profile ignores it and cuts a tunnel off at the default window, so the hub keeps the
-        // default until the daemon says it applied the profile. (The inbound buffer was sized for
-        // the profile at the start, which is harmless for a daemon that does not use it.)
         if (requested !== undefined && confirmed === requested.name) {
           this.writeWindowBytes = requested.profile.writeWindowBytes;
           this.stream.setAckStepBytes(requested.profile.ackStepBytes);
@@ -280,8 +272,6 @@ class RemoteTunnelHandle implements TunnelHandle {
   private trySend(frame: Parameters<HubConnection["sendFrame"]>[0]): void {
     try {
       this.connection.sendFrame(frame);
-    } catch {
-      // The link is down; the connection ends this tunnel itself.
-    }
+    } catch {}
   }
 }

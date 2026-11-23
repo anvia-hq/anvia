@@ -38,9 +38,9 @@ describe("VncChannel", () => {
     expect(channel.readyState).toBe(3);
     expect(onclose).toHaveBeenCalledWith({ code: 1011, reason: "port: refused" });
     channel.send(new Uint8Array([9]));
-    expect(wrapped.send).toHaveBeenCalledTimes(1); // Nothing is sent on a closed channel.
+    expect(wrapped.send).toHaveBeenCalledTimes(1);
     channel.close();
-    expect(wrapped.close).not.toHaveBeenCalled(); // Already closed by the relay.
+    expect(wrapped.close).not.toHaveBeenCalled();
   });
 
   it("closes the link when the client disconnects", () => {
@@ -53,8 +53,6 @@ describe("VncChannel", () => {
   });
 
   describe("with noVNC's own socket layer", () => {
-    // noVNC's Websock is what actually validates a channel and reads from it. It needs no canvas, so
-    // it can run here, unlike the full client, which is mocked in the component tests.
     async function websock() {
       const path = new URL("../node_modules/@novnc/novnc/core/websock.js", import.meta.url)
         .pathname;

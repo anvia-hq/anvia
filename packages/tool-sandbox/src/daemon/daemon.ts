@@ -181,7 +181,6 @@ export class SandboxDaemon {
         this.log("info", "disconnected from control plane");
 
         if (closeCode === CLOSE_CODE_SUPERSEDED) {
-          // Reconnecting would only evict the daemon that replaced this one, and so on forever.
           this.log("error", "another daemon took over this sandbox; not reconnecting");
           break;
         }
@@ -206,8 +205,6 @@ export class SandboxDaemon {
   }
 
   private dial(features: DaemonFeatures): Promise<DaemonSession> {
-    // Detection above is asynchronous, so a stop() may already have happened; its abort event
-    // would never reach a listener added now.
     if (this.stopController.signal.aborted) {
       return Promise.reject(new Error("Sandbox daemon stopped."));
     }
@@ -343,7 +340,6 @@ class DaemonSession {
     this.tunnels = new ConnectionTunnels({
       enabled: deps.tunnelsEnabled,
       options: deps.tunnelOptions,
-      // The desktop's VNC server is reached through a tunnel, whatever ports the daemon allows.
       alwaysAllowedPorts: () => (deps.desktop === undefined ? [] : [deps.desktop.vncPort]),
       send: (frame) => this.send(frame),
       bufferedAmount: () => socket.bufferedAmount,
@@ -352,12 +348,9 @@ class DaemonSession {
       socket.once("close", (code) => {
         this.ready = false;
         clearInterval(this.heartbeat);
-        // A request that has an operationId keeps running: the control plane retries it with the
-        // same id after reconnecting and gets the result. Anything else has no one to answer to.
         for (const { controller, detachable } of this.active.values()) {
           if (!detachable) controller.abort(new DOMException("Connection closed", "AbortError"));
         }
-        // Viewers belong to the connection that opened them. tmux sessions themselves persist.
         this.terminals.dispose();
         this.tunnels.dispose();
         resolve(code);
@@ -381,7 +374,6 @@ class DaemonSession {
 
   close(): void {
     this.socket.close(1000, "daemon stopping");
-    // Do not wait on a peer that never answers the close handshake.
     setTimeout(() => this.socket.terminate(), 1_000).unref?.();
   }
 
@@ -406,7 +398,6 @@ class DaemonSession {
 
   private onMessage(data: WebSocket.RawData, isBinary: boolean): void {
     if (isBinary) {
-      // Only tunnel bytes travel as binary, and only once this daemon said it could take them.
       try {
         if (!this.deps.acceptsBinary) throw new TypeError("Binary frames were not negotiated.");
 
@@ -421,8 +412,6 @@ class DaemonSession {
     const frame = parseHubFrame(data);
 
     if (frame === undefined) {
-      // Answer under the caller's requestId when one can be recovered (an unknown method from a
-      // newer hub, say), so that call fails fast instead of waiting on a link that stays healthy.
       this.send(encodeError(new TypeError("Malformed frame."), recoverRequestId(data)));
       return;
     }
@@ -482,12 +471,10 @@ class DaemonSession {
         operationId === undefined
           ? await execute()
           : await this.deps.operations.run(operationId, { method, params: frame.params }, execute, {
-              // Process state lives in daemon memory, so a restart must not replay these.
               durable: method !== "startProcess" && method !== "stopProcess",
             });
       this.send({ type: "response", requestId, result });
     } catch (error) {
-      // A cancelled caller has already stopped listening.
       if (!controller.signal.aborted) this.send(encodeError(error, requestId));
     } finally {
       this.active.delete(requestId);

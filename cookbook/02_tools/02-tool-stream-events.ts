@@ -35,7 +35,6 @@ const agent = new Agent({
   tools: [weatherTool],
 });
 
-// Provisional deltas let the UI show a tool as soon as the model names it.
 const preparedToolIds = new Set<string>();
 
 for await (const event of agent.stream({ prompt: "What is the weather in Jakarta?" })) {

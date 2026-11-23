@@ -727,7 +727,6 @@ describe("durable chat transport", () => {
   it("does not use a snapshot outcome from a later point than the status event", async () => {
     const fake = new FakeClient();
     fake.events = [event(1, "status", { status: "waiting" })];
-    // The run has already moved on, so its current outcome is not the waiting one.
     fake.snapshotRun = { status: "running" };
     const transport = createDurableChatTransport({
       client: clientOf(fake),
@@ -736,7 +735,6 @@ describe("durable chat transport", () => {
     });
     const frames = await collect(transport.send({ request: request("messages") }));
     expect(fake.snapshotCalls).toEqual([runId]);
-    // No interaction is shown for a point the run has already left; the run still ends suspended.
     const types = frames
       .filter((frame) => frame.type === "stream_event")
       .map((frame) => (frame.type === "stream_event" ? frame.event.type : ""));
@@ -905,7 +903,6 @@ describe("durable chat transport", () => {
 
 it("rejects resolveMemoryWrite when the client predates it", async () => {
   const transport = createDurableChatTransport({
-    // A client from before resolveMemoryWrite existed: it has no such method.
     client: {} as unknown as DurableChatClient,
     agentId: "agent-1",
     sessionId: "session-1",

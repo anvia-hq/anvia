@@ -150,8 +150,6 @@ export function streamCompletion<Output, Model extends StreamingCompletionModel>
   }
 
   const { request, pendingSchema } = requestFromOptionsSync(options);
-  // Schemas whose JSON Schema conversion is deferred still count as an output
-  // schema for capability validation.
   assertCompletionRequestSupported(
     options.model,
     pendingSchema === undefined

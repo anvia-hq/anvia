@@ -51,7 +51,6 @@ export type DurableChatClient = Pick<
   DurableClient,
   "submit" | "stream" | "snapshot" | "respond" | "resolveTool" | "retry" | "cancel" | "listRuns"
 > &
-  // Optional so a client written before these methods existed still satisfies the type.
   Partial<Pick<DurableClient, "resolveMemoryWrite" | "steer">>;
 
 /**
@@ -121,7 +120,6 @@ export function createDurableChatTransport(
   const notify = () => {
     for (const listener of listeners) listener();
   };
-  // A new run starts with an unknown status until the submit response or a status event reports it.
   const track = (runId: string, status: string | undefined) => {
     if (session.activeRunId === runId && session.status === status) return;
 
@@ -136,13 +134,10 @@ export function createDurableChatTransport(
     notify();
   };
 
-  // Cancel and retry change the status without a stream attached to report it.
   const refreshStatus = async (runId: string) => {
     try {
       observe(runId, (await options.client.snapshot(runId)).run.status);
-    } catch {
-      // Advisory only; the control itself succeeded.
-    }
+    } catch {}
   };
 
   const controller: DurableChatController = {
@@ -199,8 +194,6 @@ export function createDurableChatTransport(
     async *send(send) {
       const target = await begin(options, session, send);
 
-      // A new run, or a resume behind the applied cursor, needs a fresh projection. Reusing the
-      // run's existing projection keeps `run_start` and open messages from being emitted twice.
       if (session.activeRunId !== target.runId || target.after < session.cursor) {
         session.map = createDurableChatMapState(target.after);
       }
@@ -225,7 +218,6 @@ async function begin(
   if (resume !== undefined) {
     assertCursor(resume.after);
     const runId = requireId(resume.streamId, "streamId");
-    // Status events behind the cursor are not replayed, so read the current status once.
     return { runId, after: resume.after, status: await currentStatus(options.client, runId, send) };
   }
 
@@ -259,7 +251,6 @@ async function currentStatus(
     );
     return snapshot.run.status;
   } catch {
-    // The status is advisory; the stream below reports a missing run itself.
     return undefined;
   }
 }
@@ -300,8 +291,6 @@ async function* streamFrames(
   abortSignal: AbortSignal | undefined,
   observe: (runId: string, status: string | undefined) => void,
 ): AsyncIterable<ClientStreamFrame> {
-  // The event id is the durable sequence, which is not contiguous per stream. See the note in
-  // durable-chat-map.ts for why validateFrameSequence must not wrap this generator.
   yield {
     type: "stream_start",
     protocol: CLIENT_STREAM_PROTOCOL,
@@ -375,7 +364,6 @@ function lastUserPrompt(messages: readonly Message[]): AgentPrompt {
 }
 
 function isSessionBusy(error: unknown): error is DurableHttpError {
-  // A submit conflict means this session already has an unfinished run.
   return error instanceof DurableHttpError && error.status === 409;
 }
 

@@ -144,7 +144,6 @@ export type StudioAgent = {
   metadata?: JsonObject;
 };
 
-// Studio accepts arbitrary pipelines and validates run inputs at the HTTP boundary.
 export type StudioTarget =
   | Agent
   | AgentTeam<unknown>

@@ -108,7 +108,6 @@ describe("Anthropic history after a provider switch", () => {
   });
 
   it("keeps tool_use ids unique when a foreign history reuses a synthetic call id", () => {
-    // Gemini names calls without ids gemini-tool-<part index>, so two turns can share an id.
     const params = toAnthropicMessagesParams("claude-sonnet-5", {
       chatHistory: [
         Message.user("first"),

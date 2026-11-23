@@ -81,7 +81,6 @@ export function relayTerminal(
       return;
     }
 
-    // Input and resize before the terminal is ready, or from a read-only viewer, are dropped.
     if (handle === undefined || readOnly) return;
 
     if (parsed.type === "input") handle.write(parsed.data);
@@ -121,9 +120,7 @@ export function relayTerminal(
 
         await sendBinary(ws, chunk);
       }
-    } catch {
-      // A socket that failed mid-send ends the relay below.
-    }
+    } catch {}
     const exit = await handle.exit;
     sendJson(ws, { type: "exit", ...exit });
     ws.close(1000, "terminal ended");

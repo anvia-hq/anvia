@@ -1,13 +1,8 @@
-// Demonstrates: catching LangfuseScoreError. To force a failure, point
-// the queue at an invalid baseUrl so the POST returns a non-2xx. The
-// error exposes the failed scores on `.scores` and the cause on `.cause`.
-
 import { LangfuseClient, LangfuseScoreError } from "@anvia/langfuse";
 import { getLangfuseEnv } from "../_support/env.js";
 
 async function main(): Promise<void> {
   const env = getLangfuseEnv();
-  // Force failure: send to a clearly invalid host so the POST errors.
   await using tracing = new LangfuseClient({
     publicKey: env.publicKey,
     secretKey: env.secretKey,

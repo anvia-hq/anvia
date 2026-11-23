@@ -189,8 +189,6 @@ export class DrizzleMemoryStore implements MemoryStore {
   }
 
   async loadVersioned({ scope }: { scope: MemoryScope }): Promise<MemoryVersionedHistory> {
-    // The version is read first: a write landing in between leaves the version older than the
-    // messages, so a later expectedVersion write conflicts instead of silently overwriting.
     const scopeKey = this.scopeKey(scope);
     const version = await this.currentVersion(runtimeDatabase(this.db), scopeKey);
     return { messages: await this.load({ scope }), version };
@@ -215,8 +213,6 @@ export class DrizzleMemoryStore implements MemoryStore {
 
     return this.transaction(async (tx): Promise<MemoryAppendResult> => {
       await this.lock(tx, scopeKey);
-      // Without the advisory lock, the session upsert's row lock is what makes writers on one scope
-      // run in turn. An empty history keeps one version whether or not this row exists.
       const locked =
         versioned && this.options.lock === "none"
           ? await this.upsertSession(tx, input.scope, scopeKey)
@@ -228,7 +224,6 @@ export class DrizzleMemoryStore implements MemoryStore {
         const existing = await this.committedFingerprint(tx, scopeKey, idempotencyKey);
 
         if (existing !== undefined) {
-          // Checked before the version so a retry after success is a duplicate, not a conflict.
           return {
             status: existing === fingerprint ? "duplicate" : "conflict",
             version: await this.currentVersion(tx, scopeKey),
@@ -243,7 +238,6 @@ export class DrizzleMemoryStore implements MemoryStore {
       }
 
       if (writes !== undefined && idempotencyKey !== undefined && fingerprint !== undefined) {
-        // The unique index is the backstop when lock is "none" and two writers race past the read.
         const inserted = await tx
           .insert(writes)
           .values({ scopeKey, idempotencyKey, fingerprint })
@@ -551,7 +545,6 @@ export class DrizzleMemoryStore implements MemoryStore {
       ? Number(session.compactionState.generation ?? 0)
       : 0;
 
-    // An empty history has one version whether or not recordError created a session row for it.
     if (last[0]?.position === undefined) return "v1:empty";
 
     return `v1:${session.id}:${last[0].position}:${generation}`;

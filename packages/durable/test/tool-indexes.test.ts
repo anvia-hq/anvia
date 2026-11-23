@@ -123,8 +123,6 @@ it("rejects an unknown toolIndexes mode", async () => {
   ).toThrow(/unknown toolIndexes mode/);
 });
 
-// Registration matrix: the recorded marker admits tool indexes; an agent without indexes is
-// unaffected by the marker.
 it.each([
   ["an agent without tool indexes", false],
   ["an agent with tool indexes and the recorded marker", true],
@@ -155,7 +153,6 @@ it("offers the recorded selection to the model and records it before the model c
   const operations = (await run.snapshot({ operations: true })).operations;
   const selection = operations.find((operation) => operation.key === "0:tools:1");
   expect(selection).toMatchObject({ kind: "effect", status: "completed" });
-  // The model operation input carries the selected tool definitions.
   const modelOperation = operations.find((operation) => operation.key === "0:model:1");
   expect(JSON.stringify(modelOperation?.input)).toContain('"name":"recall"');
 });
@@ -214,7 +211,6 @@ it("blocks a retry whose tool index changed under the same version", async () =>
   expect(search).not.toHaveBeenCalled();
   await changed.close();
 
-  // Restoring the original index unblocks the same run.
   const restored = await open(
     path,
     indexedAgent(model, indexWith("Recall saved notes", searchResults())),

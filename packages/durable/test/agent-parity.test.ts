@@ -38,7 +38,6 @@ const toolIndex: ToolIndex = {
   search: async () => [],
 };
 
-// Live retrieval is still rejected; static documents are supported and covered below.
 const vectorContext = createVectorContext({
   model: { provider: "test", modelId: "embedding", embedTexts: async () => [] },
   store: {
@@ -223,7 +222,6 @@ it("reports frozen and unavailable settings without changing the registrations",
   expect(Object.isFrozen(report)).toBe(true);
   expect(Object.isFrozen(report?.frozen)).toBe(true);
   expect(Object.isFrozen(report?.unavailable)).toBe(true);
-  // A detached report cannot be used to alter what the runtime will execute.
   expect(() => {
     (report as unknown as { tools: string[] }).tools = ["injected"];
   }).toThrow(TypeError);
@@ -244,7 +242,6 @@ it("calls onCompatibility on open and after each registerAgents with a detached 
   runtime.registerAgents([{ agent: agentWith("second"), version: "2" }]);
   expect(reports).toHaveLength(2);
   expect(reports[1]?.map((entry) => entry.agentId)).toEqual(["first", "second"]);
-  // The earlier report is a snapshot, not a live view of the registration map.
   expect(reports[0]).toHaveLength(1);
   expect(reports[1]).not.toBe(reports[0]);
 

@@ -68,7 +68,6 @@ export class DesktopConnection {
         );
       },
       message: (event, session: RelaySession) => {
-        // The first thing the relay sends means it set the viewer up; a failure closes instead.
         if (!accepted && channel !== undefined) {
           accepted = true;
           options.onChannel(channel, session.ready());

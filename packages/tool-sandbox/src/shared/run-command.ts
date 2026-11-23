@@ -67,9 +67,7 @@ export function runCommand(
         try {
           process.kill(-child.pid, "SIGKILL");
           return;
-        } catch {
-          // The group is already gone; fall back to the direct child.
-        }
+        } catch {}
       }
 
       child.kill("SIGKILL");
@@ -121,7 +119,6 @@ export function runCommand(
 
     child.stdout.on("data", (chunk: Buffer) => stdout.accept(chunk));
     child.stderr.on("data", (chunk: Buffer) => stderr.accept(chunk));
-    // A command that exits without reading its input closes the pipe; that is not our failure.
     child.stdin.on("error", () => undefined);
 
     child.on("error", (error) => {

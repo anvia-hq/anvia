@@ -312,7 +312,6 @@ describe("completion model capabilities", () => {
       prompt: "override",
       controls: { reasoningEffort: "low" },
     })) {
-      // Consume the stream so the provider request runs.
     }
 
     expect(model.requests[0]?.controls).toEqual({ reasoningEffort: "low" });

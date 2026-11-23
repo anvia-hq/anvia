@@ -162,7 +162,6 @@ export class DesktopSupervisor {
     clearTimeout(this.recovery);
     this.abandonRecovery?.();
     await this.killAll();
-    // An ssh-agent or gpg-agent the autostart started daemonizes, so the group kill above missed it.
     await stopDesktopAgents(this.session);
     this.state = "stopped";
   }
@@ -202,8 +201,6 @@ export class DesktopSupervisor {
     this.output = undefined;
 
     if (options.backend === "xvnc") {
-      // The display is the VNC server, so one process and one wait. It starts at the size asked for
-      // and grows by RandR, which Xvnc allows far past any size we let `resize` ask for.
       const display = this.launch("xvnc", requiredBinary(options.binaries.xvnc, "Xvnc"), [
         options.display,
         ...xvncFlags(options),
@@ -257,7 +254,6 @@ export class DesktopSupervisor {
     const vnc = this.launch("vnc", requiredBinary(this.options.binaries.x11vnc, "x11vnc"), [
       "-display",
       this.options.display,
-      // No password: it listens on loopback only, so it is reachable through a tunnel and nothing else.
       "-localhost",
       "-rfbport",
       String(this.options.vncPort),
@@ -273,8 +269,6 @@ export class DesktopSupervisor {
 
   private launch(name: ProcessName, file: string, args: readonly string[]): Managed {
     const env = name === "xvfb" || name === "xvnc" ? this.options.env() : this.environment();
-    // Its own process group, so stopping it also stops the helpers it starts (a window manager's
-    // autostart launches dbus, at-spi, ssh-agent and gvfs). Those would otherwise outlive it.
     const child = spawn(file, [...args], {
       env,
       stdio: ["ignore", "ignore", "pipe"],
@@ -294,7 +288,6 @@ export class DesktopSupervisor {
   }
 
   private onExit(managed: Managed, code: number | null, signal: NodeJS.Signals | null): void {
-    // An old process of this name exiting after it was replaced is not news.
     if (this.processes.get(managed.name) !== managed) return;
 
     this.processes.delete(managed.name);
@@ -304,7 +297,6 @@ export class DesktopSupervisor {
     const how = signal === null ? `code ${code}` : `signal ${signal}`;
     this.options.log(`${managed.name} exited (${how}): ${managed.stderr.trim().slice(-300)}`);
 
-    // While starting, the start itself notices (its waits fail fast); only a running desktop recovers.
     if (this.state !== "running") return;
 
     this.recover(managed.name);
@@ -328,7 +320,6 @@ export class DesktopSupervisor {
     this.restarts += 1;
     this.state = "restarting";
     this.options.log(`restarting ${crashed} in ${delay}ms`);
-    // Callers arriving meanwhile wait for the restart instead of failing.
     const waiting = new Promise<void>((resolve, reject) => {
       this.abandonRecovery = () => {
         this.abandonRecovery = undefined;
@@ -339,9 +330,6 @@ export class DesktopSupervisor {
         this.abandonRecovery = undefined;
         void (async () => {
           try {
-            // A helper that exits because the display died is noticed first as often as not, and
-            // restarting just it would leave a "running" desktop with nothing to draw on. By now the
-            // display's own exit has been seen, so check it instead of trusting who was reported.
             if (crashed === "xvfb" || crashed === "xvnc" || !this.displayAlive()) {
               await this.killAll();
               await this.startStack();
@@ -385,7 +373,6 @@ export class DesktopSupervisor {
     const env = this.environment();
     const { xrandr } = this.options.binaries;
     const name = `anvia-${width}x${height}`;
-    // A mode that already exists, or is already attached, is fine; only the switch has to work.
     const modeline = [
       "60.00",
       width,
@@ -511,13 +498,11 @@ function xvncFlags(options: DesktopSupervisorOptions): string[] {
   return [
     "-rfbport",
     String(options.vncPort),
-    // No password: it listens on loopback only, so it is reachable through a tunnel and nothing else.
     "-localhost",
     "yes",
     "-SecurityTypes",
     "None",
     "-AlwaysShared",
-    // The viewer is not in charge of the display's size: `resize` is.
     "-AcceptSetDesktopSize=0",
     "-nolisten",
     "tcp",

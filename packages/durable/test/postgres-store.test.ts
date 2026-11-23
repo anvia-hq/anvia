@@ -29,7 +29,6 @@ describe("PostgresDurableStore ownership and schema", () => {
 
   it("lets a new owner take over an expired lease and fences the old owner", async () => {
     const { pool } = testPool();
-    // Heartbeat far slower than the lease: the first owner's lease expires while it is "paused".
     const stale = open(pool, { leaseMs: 50, heartbeatMs: 60_000 });
     await stale.acquire();
     await new Promise((resolve) => setTimeout(resolve, 120));
@@ -94,7 +93,6 @@ describe("PostgresDurableStore ownership and schema", () => {
     } finally {
       client.release();
     }
-    // Tables exist but no runtime ever initialised them: there is no owner row.
     await expect(open(pool, { schema: "verify" }).connect()).rejects.toThrow(
       /not been initialised/,
     );

@@ -111,9 +111,6 @@ const DEFAULT_MAX_CLOSED_STREAMS = 1000;
 export function createMemoryResumableStreamStore<TEvent = unknown>(
   options: MemoryResumableStreamStoreOptions = {},
 ): ResumableStreamStore<TEvent> {
-  // Clamp to at least 1 so a just-closed stream stays readable for resumers:
-  // with a zero TTL/cap, close() would evict the stream immediately and a
-  // later resume would report "missing" instead of the final status.
   const closedStreamTtlMs = Math.max(1, options.closedStreamTtlMs ?? DEFAULT_CLOSED_STREAM_TTL_MS);
   const maxClosedStreams = Math.max(1, options.maxClosedStreams ?? DEFAULT_MAX_CLOSED_STREAMS);
   const streams = new Map<string, MemoryStream<TEvent>>();
@@ -280,9 +277,6 @@ async function drainResumableStream<TEvent>(
   try {
     await openPromise;
   } catch {
-    // A rejected open() (for example a duplicate id for a running stream) must
-    // leave any existing stream untouched. The caller's iterator awaits the
-    // same openPromise and reports the failure, so there is nothing to drain.
     return;
   }
   try {
@@ -294,14 +288,10 @@ async function drainResumableStream<TEvent>(
     const event = errorEvent(error);
     try {
       await options.store.append({ streamId, event });
-    } catch {
-      // Recording the failure is best-effort once draining already failed.
-    }
+    } catch {}
     try {
       await options.store.close({ streamId, status: "error" });
-    } catch {
-      // Marking the stream failed is best-effort once draining already failed.
-    }
+    } catch {}
   }
 }
 

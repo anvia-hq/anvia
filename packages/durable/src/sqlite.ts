@@ -173,17 +173,14 @@ export class SqliteDurableStore implements DurableStore {
       )
         this.database.exec("ALTER TABLE anvia_durable_events ADD COLUMN history_encoding TEXT");
 
-      // Rows from schema versions 10 and older store user data unescaped; rewrite them first.
       const stored = this.database
         .prepare("SELECT version FROM anvia_durable_owner WHERE singleton = 1")
         .get()!.version;
 
       if (Number(stored) < 11) migrateLegacyRows(this.database);
 
-      // Version 11 and older store oversized prompts inline; move them behind blob references.
       if (Number(stored) < 12) migrateOversizedPrompts(this.database);
 
-      // Populate only legacy rows, under the exclusive owner transaction.
       for (const row of this.database
         .prepare(`SELECT r.record FROM anvia_durable_runs r
         LEFT JOIN anvia_durable_run_summaries s ON s.id = r.id WHERE s.id IS NULL`)
@@ -203,8 +200,6 @@ export class SqliteDurableStore implements DurableStore {
   }
 
   async connect(): Promise<void> {
-    // A writable store's constructor has already created the schema and taken write locks, so it
-    // could neither refuse a missing schema nor stay out of the owner's way.
     if (!this.readOnly)
       throw new Error(
         "Open the SQLite store with { readOnly: true } to observe it; a writable store creates its schema on construction.",
@@ -222,7 +217,6 @@ export class SqliteDurableStore implements DurableStore {
         "Durable database is not at the current schema version; open it once with a runtime to upgrade it before observing.",
       );
 
-    // Enforced by SQLite itself, so no code path on this connection can write.
     this.database.exec("PRAGMA query_only = ON");
     this.observing = true;
   }
@@ -534,12 +528,10 @@ export class SqliteDurableStore implements DurableStore {
   }
 
   private eventData(row: Record<string, unknown>) {
-    // Events are terminal, so their readers always see fully restored payloads.
     if (row.history_encoding !== null && row.history_encoding !== undefined) {
       if (row.history_encoding !== "linked-v1" || row.type !== "model_started")
         throw new Error("Unsupported durable event history encoding.");
 
-      // Packed histories may carry references inside message-log records, so always restore.
       return json(
         hydrateValue(this.blobs, this.histories.unpackEvent(json(readStored(String(row.data))))),
       );
@@ -647,7 +639,6 @@ export class SqliteDurableStore implements DurableStore {
       },
       putRun: (run) => {
         assertActive();
-        // Validate the logical record, then store its prompt and input behind blob references.
         const serialized = writeStored(externalizeRunRecord(this.blobs, parseRun(json(run))));
         this.database
           .prepare(`INSERT INTO anvia_durable_runs(id, session_id, request_id, status, record)
@@ -717,7 +708,6 @@ export class SqliteDurableStore implements DurableStore {
   private begin(): void {
     if (this.inTransaction) throw new Error("Nested durable transactions are not supported.");
 
-    // An observer never writes, so it must not take the write lock the owner depends on.
     this.database.exec(this.observing ? "BEGIN" : "BEGIN IMMEDIATE");
     this.inTransaction = true;
   }

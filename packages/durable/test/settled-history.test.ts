@@ -176,7 +176,6 @@ describe("settledProgress", () => {
     const run = await failedRun({
       exhaustion: { reason: "max_turns", messages: [user, assistant] },
     });
-    // The tail starts at input.length - 1, keeping the prompt the progress answers.
     expect(await settledProgress(txWith([]), run)).toEqual([user, assistant]);
   });
 
@@ -195,7 +194,6 @@ describe("settledProgress", () => {
       { kind: "model", key: "2:model:3", input: [user, assistant] },
       { kind: "context", key: "1:context:9", input: [user, assistant] },
     ]);
-    // Turn 3 is the latest for this epoch; the tail keeps the prompt plus progress.
     expect(await settledProgress(tx, run)).toEqual([user, assistant]);
   });
 
@@ -393,7 +391,6 @@ describe("settled session history", () => {
     });
     await store.transaction(async (tx) => {
       await tx.putRun(cancelled);
-      // The summary table is keyed at submission; refresh it so runtime status reads settle.
       await tx.putRun({ ...cancelled });
       await tx.putOperation(cancelled.id, context("2:context:1", [user]));
       await tx.putOperation(cancelled.id, context("2:context:3", [user, assistant]));

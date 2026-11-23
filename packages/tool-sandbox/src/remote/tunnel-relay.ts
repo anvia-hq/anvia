@@ -64,10 +64,6 @@ export function bridgeTunnel(
   let handle: TunnelHandle | undefined;
   let closed = false;
   let queued = 0;
-  // `ws` can pause its socket, which is how a browser that sends faster than the service reads is
-  // slowed down. Some runtimes substitute their own WebSocket for the package (Bun does) and it has
-  // no pause or resume, so ask once. Without them the limit below ends the connection instead of
-  // slowing it, which still bounds memory.
   const canPause = typeof ws.pause === "function" && typeof ws.resume === "function";
   const stopPing = keepAlive(ws);
   ws.on("error", () => undefined);
@@ -88,7 +84,6 @@ export function bridgeTunnel(
     },
   );
 
-  // Writes happen one at a time, in order, each waiting for room.
   let chain: Promise<void> = Promise.resolve();
   ws.on("message", (data, isBinary) => {
     if (!isBinary) {
@@ -128,8 +123,6 @@ export function bridgeTunnel(
 
         if (target !== undefined && !closed) await target.write(bytes);
       } catch {
-        // The tunnel ended while this frame was in flight. Its exit closes the socket, with the
-        // right code for why, so closing here too would only race it.
       } finally {
         queued -= size;
 
@@ -156,9 +149,7 @@ export function bridgeTunnel(
 
         await sendBinary(ws, chunk);
       }
-    } catch {
-      // A socket that failed mid-send ends the relay below.
-    }
+    } catch {}
     const exit = await target.exit;
     closeSocket(exit.reason === "remote" || exit.reason === "closed" ? 1000 : 1011, exit.reason);
   })();

@@ -14,7 +14,6 @@ const agent = new Agent({
   instructions: "You are a concise assistant.",
 });
 
-// toReadableStream() is useful when forwarding agent events from a web server.
 const stream = toReadableStream(
   agent.stream({ prompt: "Give three short reasons to use AsyncIterable for streaming." }),
 );

@@ -23,8 +23,6 @@ export function syncCursorRules(options: CursorRulesSyncOptions): SkillsSyncOutc
   let skipped = 0;
 
   for (const name of skillNames({ skillsDirectory: options.skillsDirectory })) {
-    // Skill directory names already carry their `anvia-` prefix (except the
-    // release-notes demo), so the rule file is simply `<name>.mdc`.
     const targetPath = join(options.rulesDirectory, `${name}.mdc`);
     const content = cursorRuleContent(options.skillsDirectory, name, options.canonicalDir);
 

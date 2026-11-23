@@ -144,13 +144,11 @@ export class RemoteSandboxHub {
     });
     this.terminalServer = new WebSocketServer({
       noServer: true,
-      // Browser messages are keystrokes and resizes; nothing here needs more.
       maxPayload: 128 * 1024,
       handleProtocols: selectTerminalProtocol,
     });
     this.tunnelServer = new WebSocketServer({
       noServer: true,
-      // A browser sends protocol bytes in small pieces; a tunnel never needs a huge frame.
       maxPayload: 1024 * 1024,
       handleProtocols: selectTunnelProtocol,
     });
@@ -457,7 +455,6 @@ export class RemoteSandboxHub {
             hello.capabilities?.includes(binaryDataCapability) === true,
         },
       );
-      // A daemon that reconnects before the hub noticed the old socket die replaces it.
       this.connections.get(sandboxId)?.close(CLOSE_CODE_SUPERSEDED, "replaced by newer connection");
       this.connections.set(sandboxId, connection);
       this.lastWorkdirs.set(sandboxId, hello.workdir);

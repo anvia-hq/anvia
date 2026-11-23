@@ -19,7 +19,6 @@ export class AzureOpenAIResponsesCompletionModel<
     const params = super.requestParams(request);
 
     if (Array.isArray(params.input)) {
-      // Foundry project endpoints require explicit message types. This is also valid on resource endpoints.
       params.input = params.input.map((item) =>
         typeof item === "object" && item !== null && "role" in item && !("type" in item)
           ? { ...item, type: "message" }

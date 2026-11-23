@@ -96,7 +96,6 @@ describe("searchTool", () => {
     });
     const results = await index.search({ query: "refund after a deploy" });
 
-    // "after" is a stop word, so both terms count: `mixed` matches two of two, the others one.
     expect(results.map((result) => result.id)).toEqual(["mixed", "deploy"]);
   });
 
@@ -155,7 +154,6 @@ describe("searchTool", () => {
     await index.search({ query: "refund" });
     await index.tools[0]!.call({ query: "oncall escalation" });
 
-    // Only the queries are embedded after the first build; the entries are embedded once.
     expect(afterFirst).toBeGreaterThan(runbooks.length);
     expect(model.texts.length).toBe(afterFirst + 2);
   });
@@ -180,7 +178,6 @@ describe("searchTool", () => {
       await index.search({ query: `deploy ${turn}` });
     }
 
-    // An evicted query re-runs the search instead of answering from a stale entry.
     expect(await index.tools[0]!.call({ query: "deploy 0" })).toContain("Rolling deployment");
   });
 
@@ -250,7 +247,6 @@ describe("searchTool in an agent", () => {
 
     expect(model.requests[0]?.tools.map((tool) => tool.name)).toEqual(["search_runbooks"]);
     expect(model.requests).toHaveLength(2);
-    // A later turn carries the conversation as chatHistory, not messages.
     const history = model.requests[1]?.chatHistory ?? [];
     const toolMessage = history.at(-1);
     expect(toolMessage?.role).toBe("tool");
@@ -290,8 +286,6 @@ describe("searchTool in an agent", () => {
       prompt: "how do I handle a refund?",
     });
 
-    // Turn 1 searches the user's words; turn 2 searches the result the model just received, which
-    // is how a discovered entity reaches the Ops turn instead of the original question again.
     expect(queries).toEqual([
       "how do I handle a refund?",
       "Refund a customer\nverify the order first",

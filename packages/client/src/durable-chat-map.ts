@@ -155,7 +155,6 @@ function mapStatus(
   settledOutcome: JsonObject | undefined,
 ): ClientStreamEvent[] {
   const status = text(data, "status");
-  // Older journals embed the outcome in the event; newer ones rely on the caller's snapshot.
   const outcome = asRecord(data?.outcome) ?? settledOutcome;
 
   if (status === "needs_attention") return needsAttention(event, data);
@@ -166,7 +165,6 @@ function mapStatus(
 
   if (status === "waiting" || status === "completed") return settled(event, outcome, status);
 
-  // The first non-terminal status stands in for `submitted` when a replay starts mid-journal.
   if (!state.runOpened && (status === "queued" || status === "pending" || status === "running")) {
     return openRun(event.runId, state);
   }
@@ -176,8 +174,6 @@ function mapStatus(
 
 function openRun(runId: string, state: DurableChatMapState): ClientStreamEvent[] {
   state.runOpened = true;
-  // The first model operation opens the assistant message; opening one here would leave an
-  // empty message ahead of the real one on every turn.
   return [{ type: "run_start", source: "agent", runId }];
 }
 
@@ -195,8 +191,6 @@ function mapModelStarted(
 
   if (model !== undefined) generation.model = model;
 
-  // `run_start` belongs to submitted / the first status. Repeat it only when this event is the
-  // first one the projection has seen, so a normal journal does not open the run twice.
   const events: ClientStreamEvent[] = [];
 
   if (!state.runOpened) events.push({ type: "run_start", source: "agent", runId: event.runId });
@@ -227,10 +221,8 @@ function mapAttemptStarted(
   const events: ClientStreamEvent[] = [];
 
   if (retried && state.messageId !== undefined) {
-    // Discard the partial attempt but keep the message identity the reducer already holds.
     events.push({ type: "message_reset", messageId: state.messageId, runId: event.runId });
   } else if (!opened) {
-    // A replay can start at the attempt rather than at `model_started`.
     events.push({ type: "message_start", messageId, role: "assistant", runId: event.runId });
   }
 
@@ -406,9 +398,6 @@ function mapAttemptFailed(
   data: JsonObject | undefined,
   state: DurableChatMapState,
 ): ClientStreamEvent[] {
-  // A failed attempt is not a failed run: `retry_wait` may follow. Emit a transient data
-  // event instead of `error`, which would leave `useChat` in a sticky error state even when
-  // the next attempt succeeds. The next `message_reset` clears the partial attempt.
   const attemptId = text(data, "attemptId");
   return [
     located(event, {
@@ -505,7 +494,6 @@ function mapToolCompleted(
   state: DurableChatMapState,
 ): ClientStreamEvent[] {
   const operationId = text(data, "operationId");
-  // `tool_completed` carries only the result; the call was recorded by `tool_started`.
   const call = operationId === undefined ? undefined : state.tools.get(operationId);
   const saved = asRecord(data?.result);
   const output = asToolOutput(saved?.output);

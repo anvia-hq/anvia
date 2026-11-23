@@ -940,8 +940,6 @@ function messageToResponsesInput(message: MessageType): ResponsesInputItem[] {
         arguments: JSON.stringify(content.input),
       };
 
-      // Item ids from another provider (for example Anthropic's toolu_...) are not valid here.
-      // They are left out; call_id still links the result. Unknown origin keeps the id.
       if (keepsFunctionCallItemId(origin, content.toolCallId)) {
         item.id = content.toolCallId;
       }

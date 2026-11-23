@@ -1075,7 +1075,6 @@ describe("PrismaMemoryStore versioned, idempotent appends", () => {
   it("rolls back the messages when recording the key fails", async () => {
     const prisma = new FakePrisma();
     const store = createTestMemoryStore(prisma.client);
-    // A concurrent writer committed the key after our lookup: the unique constraint rejects ours.
     const create = prisma.agentMemoryWrite.create;
     prisma.agentMemoryWrite.create = async (args: unknown) => {
       await create(args);

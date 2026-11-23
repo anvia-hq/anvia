@@ -31,7 +31,6 @@ export async function runTrace(
     durableEpoch: run.epoch,
   };
 
-  // Keeps the execution session discoverable when the observability session groups several.
   if (sessionId !== executionSessionId) {
     metadata.durableSessionId = executionSessionId;
   }
@@ -48,7 +47,6 @@ export async function runTrace(
   return {
     ...options,
     sessionId,
-    // Run IDs are UUIDs, so the hex digits form a valid 128-bit trace ID.
     traceId: run.id.replaceAll("-", ""),
     metadata,
   };

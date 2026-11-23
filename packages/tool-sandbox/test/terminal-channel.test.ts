@@ -56,8 +56,6 @@ describe("PtyChannel", () => {
 
   it("pauses a pausable PTY at the high-water mark and resumes once acked", async () => {
     const { channel, calls, sentBytes } = setup({ pausable: true });
-    // An unread consumer: nothing is acked, so the PTY is paused near the high-water mark. A
-    // paused PTY produces nothing more, so stop feeding once it is.
     for (let index = 0; index < 200 && calls.pause === 0; index += 1) {
       channel.push(new Uint8Array(1_000));
       await sleep(1);
@@ -76,7 +74,6 @@ describe("PtyChannel", () => {
     channel.push(new Uint8Array(40_000));
     await sleep(20);
     expect(sentBytes()).toBeLessThanOrEqual(11_000);
-    // Acking releases the held-back remainder.
     channel.ack(sentBytes());
     await sleep(20);
     expect(sentBytes()).toBeGreaterThan(11_000);
@@ -103,7 +100,6 @@ describe("PtyChannel", () => {
   });
 
   it("recovers a shared viewer whose very first batch overflows the window", async () => {
-    // No output was ever sent, so no ack can arrive; the channel must resync on its own.
     const snapshot = new TextEncoder().encode("FIRST-SCREEN");
     const { channel, outputs } = setup({ pausable: false, snapshot });
     channel.push(new Uint8Array(50_000));

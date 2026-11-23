@@ -6,7 +6,6 @@ const client = new OpenAIClient({
   apiKey: process.env.OPENAI_API_KEY ?? "",
 });
 
-// Provider clients create models; Agent composes model-independent behavior.
 const agentModel = client.completionModel({ modelId: "gpt-5.5", api: "responses" });
 
 const agent = new Agent({

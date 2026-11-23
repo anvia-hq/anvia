@@ -132,7 +132,6 @@ export function registerTeamRoutes(
       );
     }
     runs.set(run.id, run);
-    // Preserve core's attributed event union. Normalize nested errors before JSON encoding.
     const events = run.events();
     const iterator = events[Symbol.asyncIterator]();
     const response = streamStudioJsonl({

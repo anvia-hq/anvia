@@ -86,8 +86,6 @@ export class OperationStore {
         try {
           return (await running.promise) as T;
         } catch (error) {
-          // The first attempt was cancelled, so it never completed and this retry owns the
-          // operation now. Any other failure is real and is reported as is.
           if (isAbortError(error)) continue;
 
           throw error;
@@ -109,7 +107,6 @@ export class OperationStore {
         return stored.result as T;
       }
 
-      // Another retry may have started while the disk lookup was pending.
       if (this.inflight.has(operationId)) continue;
 
       const promise = execute().then(async (result) => {
@@ -170,8 +167,6 @@ export class OperationStore {
         await this.prune();
       }
     } catch (error) {
-      // The operation already ran. Losing its record weakens retry safety but must not turn a
-      // successful operation into a reported failure.
       this.options.onError?.(error);
     }
   }

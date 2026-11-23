@@ -1,7 +1,3 @@
-// Demonstrates: explicit trace provenance on an Agent result. Observer clients
-// do not expose ambient "current trace" state because concurrent runs would
-// make such a handle ambiguous.
-
 import { assertCompleted, buildSupportAgent } from "../_support/agent.js";
 import { buildOpenAIClient, defaultModelId } from "../_support/model.js";
 import { createTracing } from "../_support/tracing.js";

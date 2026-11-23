@@ -98,8 +98,6 @@ export class StreamChannel<Exit> {
           this.source.pause();
         }
       } else {
-        // The PTY is shared and keeps running, so give up on this viewer's backlog. The next
-        // flush with room to spare replaces it with a snapshot.
         this.stale = true;
         this.pending = [];
         this.pendingBytes = 0;
@@ -152,7 +150,6 @@ export class StreamChannel<Exit> {
 
     if (full === undefined) return;
 
-    // Cut to half the window so the whole snapshot goes out in one flight.
     const snapshot = full.subarray(Math.max(0, full.byteLength - this.lowWater));
     this.pending = [resetTerminal, snapshot];
     this.pendingBytes = resetTerminal.byteLength + snapshot.byteLength;
@@ -199,7 +196,6 @@ export class StreamChannel<Exit> {
     }
 
     if (start < merged.byteLength) {
-      // Held back by flow control; ack() sends it.
       this.pending = [merged.subarray(start)];
       this.pendingBytes = merged.byteLength - start;
     }

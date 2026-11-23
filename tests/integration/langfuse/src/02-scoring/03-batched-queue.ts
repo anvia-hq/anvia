@@ -1,7 +1,3 @@
-// Demonstrates: the in-memory score queue. scoreBatchSize triggers an
-// immediate flush, scoreFlushIntervalMs debounces, scoreMaxAttempts
-// retries 429/5xx. flush() drains whatever is left.
-
 import { createTracing } from "../_support/tracing.js";
 
 async function main(): Promise<void> {

@@ -164,8 +164,6 @@ export class SqliteMemoryStore implements MemoryStore {
   async loadVersioned({ scope }: { scope: MemoryScope }): Promise<MemoryVersionedHistory> {
     const db = await this.database();
     const scopeKey = this.scopeKey(scope);
-    // Messages and version are read in one transaction so the version always describes the
-    // returned history, even when another connection writes in between.
     try {
       db.exec("BEGIN");
       const rows = db
@@ -201,8 +199,6 @@ export class SqliteMemoryStore implements MemoryStore {
     try {
       db.exec("BEGIN IMMEDIATE");
 
-      // The duplicate check runs before the version check so a retry after success is not a
-      // conflict. Both run inside the write lock, which makes check-and-insert atomic.
       const fingerprint = keyed ? writeFingerprint(input) : undefined;
 
       if (input.idempotencyKey !== undefined && fingerprint !== undefined) {
@@ -271,7 +267,6 @@ export class SqliteMemoryStore implements MemoryStore {
         });
       }
 
-      // An empty keyed write still records its key so a repeat is a duplicate.
       if (input.idempotencyKey !== undefined && fingerprint !== undefined) {
         db.prepare(
           `INSERT INTO ${this.tables.idempotencyKeys} (
@@ -315,8 +310,6 @@ export class SqliteMemoryStore implements MemoryStore {
         }) as unknown as FingerprintRow | null | undefined;
       return row?.fingerprint;
     } catch (error) {
-      // Databases created before idempotency keys lack the table; plain appends keep working, but
-      // a keyed append must fail loudly rather than silently skip the guarantee.
       if (error instanceof Error && /no such table/i.test(error.message)) {
         throw new Error(
           `Sqlite memory idempotency table is missing: ${this.tables.idempotencyKeysName}. Run ensure() or add the table to your migrations.`,
@@ -608,8 +601,6 @@ export class SqliteMemoryStore implements MemoryStore {
       .get({ $scopeKey: scopeKey }) as unknown as SessionIdRow | undefined;
     const now = new Date().toISOString();
 
-    // bun:sqlite returns null for a missing row while node:sqlite returns
-    // undefined, so both no-row sentinels must be treated as absent.
     if (existing != null) {
       db.prepare(
         `UPDATE ${this.tables.sessions}

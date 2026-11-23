@@ -26,7 +26,6 @@ const tickets = new Map([
   ],
 ]);
 
-// Tools can close over application state without exposing it to the model directly.
 const getTicketTool = createTool({
   name: "get_ticket",
   description: "Read a support ticket from local application state.",

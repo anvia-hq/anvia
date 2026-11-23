@@ -27,8 +27,6 @@ describe.skipIf(!runGvisorTests)("gVisor sandbox integration", () => {
       });
       expect(result.status).toBe("exited");
       expect(decoder.decode(result.stdout).trim()).toBe("hello-gvisor");
-      // Guards against the --runtime flag silently dropping from createRunArgs:
-      // dmesg prints the gVisor banner only when the container really runs under runsc.
       const kernel = await sandbox.runtime.exec({ command: "dmesg" });
       expect(decoder.decode(kernel.stdout)).toContain("Starting gVisor");
 

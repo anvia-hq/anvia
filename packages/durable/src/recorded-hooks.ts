@@ -51,7 +51,6 @@ export function createRecordedHooks(
     const position = (sequence[name] = (sequence[name] ?? -1) + 1);
     const base = `${run.epoch}:hook:${name}:${position}:${toolCallId ?? ""}`;
     const retries = await store.transaction(async (tx) => (await tx.getRun(run.id))?.retries ?? 0);
-    // An errored hook is run again after retry() under the next key; a recorded action is final.
     let key = base;
     let existing = await store.transaction(async (tx) => tx.getOperation(run.id, key));
     for (let attempt = 1; existing?.status === "completed"; attempt++) {

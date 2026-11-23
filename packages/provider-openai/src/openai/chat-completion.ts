@@ -515,7 +515,6 @@ class OpenAIChatCompletionStreamState {
       if (event.type === "tool_call_delta") this.acceptToolCallDelta(event);
 
       if (event.type === "final") {
-        // Usage reports are snapshots; keep the latest until the stream emits its final event.
         this.finalResponse = event.response;
       }
     }

@@ -43,9 +43,7 @@ export function saveChatResumeState<Metadata extends ClientMetadata, Data extend
 
   try {
     storage.setItem(key, JSON.stringify(state));
-  } catch {
-    // Resume persistence is optional and must not interrupt a live stream.
-  }
+  } catch {}
 }
 
 export function clearChatResumeState(options: ChatResumeOptions | undefined): void {
@@ -56,9 +54,7 @@ export function clearChatResumeState(options: ChatResumeOptions | undefined): vo
 
   try {
     storage.removeItem(key);
-  } catch {
-    // Resume persistence is optional.
-  }
+  } catch {}
 }
 
 function resumeStorageKey(options: ChatResumeOptions | undefined): string | undefined {

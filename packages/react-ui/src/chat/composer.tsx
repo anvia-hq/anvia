@@ -488,7 +488,6 @@ const ComposerInput = forwardRef<HTMLDivElement, ComposerInputProps>(function Co
   const composer = useComposer();
   const composerRef = useRef(composer);
   composerRef.current = composer;
-  // Read through a ref so an inline function does not rebuild the editor on every render.
   const renderEntityRef = useRef(renderEntity);
   renderEntityRef.current = renderEntity;
   const customEntityView = renderEntity !== undefined;

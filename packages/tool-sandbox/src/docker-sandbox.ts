@@ -70,7 +70,6 @@ const labelPrefix = "anvia.sandbox.";
 const defaultWorkdir = "/workspace";
 const idPattern = /^[a-z0-9](?:[a-z0-9_.-]{0,62})$/;
 
-// The destination is an argv value, never interpolated into shell source.
 const writePathCheckScript = [
   "set -eu",
   "target=$1",
@@ -94,7 +93,6 @@ const labels = {
   maxProcesses: `${labelPrefix}runtime.max-processes`,
 } as const;
 
-// Exit 0 when a TCP listener is bound to the port inside the container.
 const portProbeScript = [
   'port="$(printf \'%04X\' "$1")"',
   "for table in /proc/net/tcp /proc/net/tcp6; do",

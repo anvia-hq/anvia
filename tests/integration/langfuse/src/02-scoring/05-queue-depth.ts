@@ -1,12 +1,10 @@
-// Demonstrates: monitoring scoreQueueDepth() while scores are enqueued.
-
 import { createTracing } from "../_support/tracing.js";
 
 async function main(): Promise<void> {
   await using tracing = createTracing({
     name: "langfuse-ops-scoring-05",
-    scoreBatchSize: 100, // large batch so the queue actually fills
-    scoreFlushIntervalMs: 5_000, // long debounce
+    scoreBatchSize: 100,
+    scoreFlushIntervalMs: 5_000,
   });
   const fakeTraceId = "00000000-0000-0000-0000-000000000005";
   for (let i = 0; i < 10; i += 1) {

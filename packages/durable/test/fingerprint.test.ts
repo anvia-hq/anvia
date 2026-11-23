@@ -130,7 +130,6 @@ describe('version: "auto"', () => {
     expect((await run.snapshot()).run.version).toBe(await agentVersion(hanging));
     await first.close();
 
-    // Same configuration (the completion is code, not configuration): the run resumes.
     const same = await open(path, build());
     await same.resume();
     expect(await (await same.getRun(run.id)).result()).toMatchObject({ output: "done" });

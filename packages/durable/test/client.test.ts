@@ -109,7 +109,7 @@ describe("DurableClient", () => {
 
   it("leaves a run queued until a worker registers its agent", async () => {
     const { pool } = testPool();
-    await openWorker(pool, async () => done()); // registers only "researcher"
+    await openWorker(pool, async () => done());
     const client = await openClient(pool);
     const run = await client.agent("writer").submit(submission("s"));
     await new Promise((resolve) => setTimeout(resolve, 150));
@@ -200,7 +200,6 @@ describe("DurableClient", () => {
     const { pool } = testPool();
     const client = await openClient(pool);
     const run = await client.agent("researcher").submit(submission("s"));
-    // The client's own reads work in a store that rejects writes, so they cannot hold run locks.
     expect(await client.status(run.id)).toMatchObject({ status: "queued" });
     expect(await client.snapshot(run.id)).toMatchObject({ run: { id: run.id } });
     const shared = store(pool);

@@ -107,9 +107,6 @@ function resolveDestination(options: PinoLoggerOptions): DestinationStream | und
     const onOpenError = (error: Error) => {
       destination.removeListener("ready", onReady);
       fileOpenErrors.set(destination, error);
-      // SonicBoom's destroy() waits for `ready` when the file never opened.
-      // No descriptor exists to close: mark this owned stream as destroyed and
-      // emit close so Pino unregisters its exit-time flush handler.
       (destination as FlushableStream).destroyed = true;
       destination.emit("close");
     };
@@ -171,8 +168,6 @@ class PinoLogger implements Logger {
 
   flush(): Promise<void> {
     if (this.destination === undefined) {
-      // Pino owns the stream: the default stdout destination, or a worker
-      // created by `pinoOptions.transport`. Delegate to Pino's own flush.
       return flushPinoInstance(this.logger);
     }
 
@@ -252,8 +247,6 @@ function flushStream(stream: FlushableStream): Promise<void> {
     });
   }
 
-  // A plain writable, such as `fs.createWriteStream`, exposes no flush API and
-  // offers nothing further to await.
   return Promise.resolve();
 }
 

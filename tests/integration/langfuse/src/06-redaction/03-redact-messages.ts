@@ -1,6 +1,3 @@
-// Demonstrates: redactMessages on a chat history. Only `text` parts are
-// redacted; non-text parts are left alone.
-
 import type { Message } from "@anvia/core/completion";
 import { createPiiRedactor } from "@anvia/langfuse";
 

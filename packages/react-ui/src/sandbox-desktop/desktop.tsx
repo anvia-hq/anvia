@@ -122,11 +122,8 @@ export const SandboxDesktop = forwardRef<SandboxDesktopHandle, SandboxDesktopPro
     const [control, setControl] = useState<SandboxDesktopControl | undefined>(undefined);
     const [notice, setNotice] = useState<SandboxDesktopNotice | undefined>(undefined);
 
-    // The viewer sends input only while this viewer holds control, so the agent's input and a
-    // person's never mix. Until the relay says who has control, nobody does.
     const viewOnly = readOnly || control?.readOnly === true || control?.you !== true;
 
-    // The latest props, read by long-lived callbacks without restarting the connection.
     const latest = useRef({
       ticket,
       reconnect,
@@ -187,7 +184,6 @@ export const SandboxDesktop = forwardRef<SandboxDesktopHandle, SandboxDesktopPro
 
         setStatus(next);
 
-        // Who has control is unknown while the link is down.
         if (next.state !== "open") setControl(undefined);
 
         latest.current.onStatusChange?.(next);
@@ -205,16 +201,12 @@ export const SandboxDesktop = forwardRef<SandboxDesktopHandle, SandboxDesktopPro
           reconnect: latest.current.reconnect,
           onStatus: publish,
           onChannel: (channel) => {
-            // noVNC clients are single-use: each attachment gets a new one.
             viewer.current?.disconnect();
             const rfb = new Rfb(container, channel);
             rfb.scaleViewport = latest.current.scaleToFit;
             rfb.clipViewport = false;
-            // The desktop's size is set through the hub's API, never by a viewer.
             rfb.resizeSession = false;
             rfb.viewOnly = latest.current.viewOnly;
-            // Set outright, not left to noVNC's defaults, so what a viewer asks of the server is
-            // stated here and can be changed.
             rfb.qualityLevel = latest.current.quality;
             rfb.compressionLevel = latest.current.compression;
             viewer.current = rfb;

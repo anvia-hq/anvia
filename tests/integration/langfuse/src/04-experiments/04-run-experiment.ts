@@ -1,6 +1,3 @@
-// Demonstrates: client.runExperiment({ datasetName, runName, run }).
-// We provide items directly to skip the getDataset round trip.
-
 import { createTracing } from "../_support/tracing.js";
 
 async function main(): Promise<void> {

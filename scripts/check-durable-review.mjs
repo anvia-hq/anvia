@@ -101,7 +101,6 @@ function checkDocument(entry) {
     }
   }
 
-  // Findings: each heading must carry the full finding contract.
   const matches = [...text.matchAll(findingPattern)];
 
   if (entry.path === REVIEW) {
@@ -119,7 +118,6 @@ function checkDocument(entry) {
     summary.findings += matches.length;
   }
 
-  // Citations: path must exist and cover the cited line.
   const seen = new Set();
   for (const match of text.matchAll(citationPattern)) {
     const [, path, rawLine] = match;

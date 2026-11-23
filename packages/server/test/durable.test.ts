@@ -143,7 +143,6 @@ describe("durable HTTP bridge", () => {
       client.respond(run.id, interactionId, { type: "tool-approval", approved: false }),
     ).rejects.toMatchObject({ status: 409 });
     for await (const _event of client.stream(run.id, { after: snapshot.cursor })) {
-      /* consume committed progress */
     }
     expect((await client.snapshot(run.id)).run.status).toBe("completed");
     expect(tool).toHaveBeenCalledTimes(1);
@@ -418,7 +417,6 @@ it("steers remotely with authorization, deduplication, validation, and persisted
 it("settles a conflicted memory write over HTTP", async () => {
   const scope = { sessionId: "allowed" };
   const { agent, store } = makeMemoryAgent(async (memory) => {
-    // Another writer commits while the run is in its model call.
     await memory.append({
       scope,
       runId: "other",

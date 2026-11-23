@@ -107,7 +107,6 @@ describe("custom tasks with shared workers", () => {
     const a = await worker(pool, { tasks: [delegating], agents: [researcher()] });
     await worker(pool, { agents: [researcher()] });
     const handle = await a.submitTask(delegating, submission("agent"));
-    // Whichever worker ran the owned run, the task settles from the run's outcome.
     expect(await handle.result()).toBe("completed");
   });
 
@@ -202,8 +201,6 @@ describe("custom tasks with shared workers", () => {
     });
     const a = await worker(pool, { tasks: [echo, other] });
     await worker(pool, { tasks: [echo] });
-    // An escaped NUL and a lone surrogate make jsonb reject the whole record, and a session id or
-    // input that looks like the `name` key must not be mistaken for it.
     const hostile = ["a\u0000b", "lone\ud800surrogate", '"name":"other"', '\\"name\\":\\"other\\"'];
     const handles = [];
     for (const [index, input] of hostile.entries())
@@ -251,7 +248,6 @@ describe("custom tasks with shared workers", () => {
       ),
     ).toBe(true);
     expect(record.indexOf('"name":"')).toBeLessThan(record.indexOf('"input"'));
-    // The claim query reads these four fields as one run of adjacent keys.
     expect(record).toMatch(/"name":"echo","version":1,"submissionVersion":1,"submissionInput":/);
   });
 
@@ -275,7 +271,6 @@ describe("custom tasks with shared workers", () => {
     const workers = await Promise.all([0, 1, 2].map(() => worker(pool, { tasks: [gather] })));
     const handle = await workers[0]!.submitTask(gather, submission("gather"));
     await vi.waitFor(async () => expect((await handle.snapshot()).task.status).toBe("waiting"));
-    // Each delivery reads and rewrites the task's signal map; unserialised, one would be lost.
     await Promise.all(
       names.map(async (name, index) =>
         (await workers[index % 3]!.getTask(handle.id)).signal(name, `r-${name}`, index),
@@ -338,7 +333,7 @@ describe("custom tasks with shared workers", () => {
     const a = await worker(pool, { tasks: [first], worker: { workerId: "a", leaseMs: 600_000 } });
     const handle = await a.submitTask(first, submission("resume"));
     await vi.waitFor(() => expect(started).toBe(1));
-    await a.close(); // releases the claim at once instead of waiting out the lease
+    await a.close();
     const b = await worker(pool, { tasks: [make(false)] });
     expect(await (await b.getTask(handle.id)).result()).toBe("second");
     release();

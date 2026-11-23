@@ -1,12 +1,3 @@
-// A remote sandbox with a desktop, inside Studio: the Sandboxes page lists its files and processes,
-// and the Playground opens a live desktop panel when the agent calls one of its tools, where you can
-// watch it and take control. Studio and the hub run in this one process.
-//
-// Start a desktop sandbox that dials this hub (see docs/packages/tool-sandbox.md for the image):
-//
-//   docker build -t my-desktop-sandbox packages/tool-sandbox/images/desktop
-//   docker run --rm -e ANVIA_CONTROL_URL=ws://host.docker.internal:8787/daemon \
-//     -e ANVIA_SANDBOX_TOKEN=local-dev-token my-desktop-sandbox
 import { Agent } from "@anvia/core/agent";
 import { OpenAIClient } from "@anvia/openai";
 import { createDesktopTools, createSandboxTools } from "@anvia/sandbox";

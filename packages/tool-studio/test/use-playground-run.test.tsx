@@ -167,7 +167,6 @@ describe("usePlaygroundRun suspended runs", () => {
       new Response(JSON.stringify({ error: { message: "Temporary failure" } }), { status: 500 }),
     );
 
-    // A transient failure keeps the run suspended and the approval retryable.
     await act(async () => {
       run.decideToolApproval("interaction_1", true);
     });
@@ -175,7 +174,6 @@ describe("usePlaygroundRun suspended runs", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(runStates.at(-1)).toBe("suspended");
 
-    // A permanent failure (continuation gone) abandons the suspended run.
     fetchMock.mockResolvedValueOnce(
       new Response(
         JSON.stringify({ error: { message: "Interaction continuation is unavailable" } }),

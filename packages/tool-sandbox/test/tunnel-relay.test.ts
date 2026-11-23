@@ -39,7 +39,6 @@ function slowTunnel() {
   const handle: TunnelHandle = {
     port: 1,
     write,
-    // Output that never arrives.
     output: { [Symbol.asyncIterator]: () => ({ next: () => new Promise<never>(() => undefined) }) },
     close: () => undefined,
     exit: new Promise(() => undefined),
@@ -83,15 +82,12 @@ describe("bridgeTunnel", () => {
     const { client, server } = await connect(Promise.resolve(tunnel.handle));
 
     const frame = Buffer.alloc(128 * 1024, 5);
-    const frames = 40; // 5 MiB, well past the 1 MiB the relay will queue.
+    const frames = 40;
     for (let index = 0; index < frames; index += 1) client.send(frame);
 
-    // Whatever the kernel buffers absorb, the relay's own queue passed its limit, so it paused the
-    // socket instead of reading everything into memory. Writes are one at a time, in order.
     await eventually(() => server.isPaused);
     expect(tunnel.write).toHaveBeenCalledTimes(1);
 
-    // As the service takes data the queue drains and reading resumes, until everything is through.
     await eventually(() => {
       tunnel.release();
       return tunnel.write.mock.calls.length === frames && !server.isPaused;
@@ -110,15 +106,13 @@ describe("bridgeTunnel", () => {
 
   describe("on a socket that cannot pause", () => {
     it("still relays every frame, in order, without throwing", async () => {
-      // Throwing from the write chain (ws.resume is not a function) is an unhandled rejection,
-      // which fails this run.
       const tunnel = recordingTunnel();
       const { client, server } = await connect(Promise.resolve(tunnel.handle), {
         withoutPause: true,
       });
       expect(server.pause).toBeUndefined();
 
-      const frames = 96; // 6 MiB in all, over the limit if nothing ever left the queue.
+      const frames = 96;
       for (let index = 0; index < frames; index += 1) client.send(Buffer.alloc(64 * 1024, index));
       await eventually(() => tunnel.written.length === frames, 15_000);
       expect(tunnel.written.map((frame) => frame[0])).toEqual(
@@ -131,7 +125,7 @@ describe("bridgeTunnel", () => {
     it("takes the largest clipboard message a viewer may send, which is not a disconnect", async () => {
       const tunnel = recordingTunnel();
       const { client } = await connect(Promise.resolve(tunnel.handle), { withoutPause: true });
-      client.send(Buffer.alloc(1024 * 1024 + 8, 3)); // The desktop filter's cap, plus its header.
+      client.send(Buffer.alloc(1024 * 1024 + 8, 3));
       await eventually(() => tunnel.written.length === 1);
       expect(tunnel.written[0]?.byteLength).toBe(1024 * 1024 + 8);
       expect(client.readyState).toBe(WebSocket.OPEN);
@@ -148,7 +142,6 @@ describe("bridgeTunnel", () => {
       await eventually(() => tunnel.write.mock.calls.length === 1);
       tunnel.release();
       await sleep(100);
-      // Had the first frame stayed counted, this one would pass the 4 MiB limit and end the socket.
       client.send(Buffer.alloc(3 * 1024 * 1024, 2));
       await eventually(() => tunnel.write.mock.calls.length === 2);
       tunnel.release();
@@ -164,13 +157,11 @@ describe("bridgeTunnel", () => {
         client.once("close", (code, reason) => resolve({ code, reason: reason.toString() })),
       );
 
-      // 8 MiB at a service that never finishes its first write.
       for (let index = 0; index < 64; index += 1) client.send(Buffer.alloc(128 * 1024, 5));
 
       const { code, reason } = await closing;
       expect(code).toBe(1008);
       expect(reason).toBe("sending faster than the service reads");
-      // One write was in flight, and nothing behind it kept going.
       expect(tunnel.write.mock.calls.length).toBeLessThanOrEqual(1);
     }, 30_000);
   });

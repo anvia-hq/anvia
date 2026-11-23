@@ -89,7 +89,6 @@ it("replays identical documents after a restart and retry", async () => {
   expect((await settled(submitted)).run.status).toBe("failed");
   await first.close();
 
-  // A rebuilt registration with fresh but identical documents resumes the run.
   const model = vi.fn(async (_request: CompletionRequest) => done());
   const runtime = await open(path, contextAgent(model, [{ ...documents[0]! }]));
   const run = await runtime.getRun(submitted.id);
@@ -121,7 +120,6 @@ it("blocks a retry whose registration documents changed under the same version",
   expect(model).not.toHaveBeenCalled();
   await changed.close();
 
-  // Restoring the original documents unblocks the same run.
   const restored = await open(path, contextAgent(model, [{ id: "doc-1", text: "version one" }]));
   const run = await restored.getRun(submitted.id);
   await run.retry();
@@ -133,12 +131,11 @@ itSqlite(
   "stores a large document set as a blob reference and hydrates it for readers",
   async () => {
     const path = database();
-    const big = "fact-".repeat(30_000); // 150 KB, over the 64 KiB inline threshold
+    const big = "fact-".repeat(30_000);
     const model = vi.fn(async (_request: CompletionRequest) => done());
     const runtime = await open(path, contextAgent(model, [{ id: "big", text: big }]));
     const run = await runtime.submit({ ...submission, prompt: "summarize" });
     await run.result();
-    // The model received the full document text.
     expect(model.mock.calls[0]![0].documents?.[0]?.text).toBe(big);
     const snapshot = await run.snapshot();
     expect(snapshot.run.contextDocuments?.documents).toEqual([{ id: "big", text: big }]);

@@ -25,8 +25,6 @@ describe("@anvia/memory-sqlite under Bun", () => {
     const client = new SqliteMemoryClient({ path: join(root, "managed.sqlite") });
     const store = client.memoryStore();
 
-    // ensure() validates foreign-key enforcement, so succeeding here proves
-    // the client provisioned a driver with the pragma enabled.
     await expect(store.ensure()).resolves.toBeUndefined();
     await expect(store.validate()).resolves.toBeUndefined();
     const database = await client.nativeClient();
@@ -45,15 +43,9 @@ describe("@anvia/memory-sqlite under Bun", () => {
       content: [{ type: "text", text: "remember this" }],
     };
 
-    // Strict compile-time proof against Bun's real declarations (bun-types is
-    // ambient in this workspace): the assignment below fails to typecheck if
-    // the package's driver surface ever diverges from bun:sqlite again.
     const realBunDatabase: Database = BunDatabase.open(path);
     const injected: SqliteMemoryDatabaseLike = realBunDatabase;
-    // The client constructor must accept the real driver type directly too.
     const client = new SqliteMemoryClient({ database: realBunDatabase });
-    // Keep the interface-typed alias in use so the assignability proof is not
-    // dead code, and reassert the caller-owned pragma duty.
     injected.exec("PRAGMA foreign_keys = ON");
     const store = client.memoryStore();
     await store.ensure();

@@ -50,8 +50,6 @@ describe("OpenAI Responses history after a provider switch", () => {
   });
 
   it("does not send an Anthropic tool id as a Responses function_call id", () => {
-    // Anthropic tool_use ids (toolu_...) come back as both toolCallId and callId.
-    // OpenAI only accepts function_call ids that start with "fc", so the id must be dropped.
     const items = openaiMessageHelpers.messageToResponsesInput(
       assistantFrom("anthropic", [
         {
@@ -75,8 +73,6 @@ describe("OpenAI Responses history after a provider switch", () => {
   });
 
   it("does not send a Chat Completions call id as a Responses function_call id", () => {
-    // Chat Completions also reports provider "openai", but its call ids (call_...) are not
-    // Responses item ids, so the id must be dropped for that history.
     const items = openaiMessageHelpers.messageToResponsesInput(
       assistantFrom("openai", [
         {
@@ -100,7 +96,6 @@ describe("OpenAI Responses history after a provider switch", () => {
   });
 
   it("does not send an Azure Chat Completions call id as a Responses function_call id", () => {
-    // Azure reports provider "azure-openai" for both its Chat Completions and Responses models.
     const items = openaiMessageHelpers.messageToResponsesInput(
       assistantFrom("azure-openai", [
         {

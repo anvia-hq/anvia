@@ -175,8 +175,6 @@ describe("SqliteMemoryClient", () => {
     const store = client.memoryStore();
     await store.ensure();
 
-    // bun:sqlite's Statement.get() returns null instead of undefined when a
-    // query matches no rows; the store must treat both sentinels as absent.
     const originalPrepare = database.prepare.bind(database);
     const nullReturningPrepare: typeof database.prepare = ((sql: string) => {
       const statement = originalPrepare(sql);

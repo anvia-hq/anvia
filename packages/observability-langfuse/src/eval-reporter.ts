@@ -190,7 +190,6 @@ function truncateValue(value: unknown, maxBytes: number): string | undefined {
     return serialized;
   }
 
-  // Truncate at byte boundary by slicing, then append the marker.
   const truncatedBytes = bytes.subarray(0, maxBytes);
   const decoder = new TextDecoder("utf-8", { fatal: false });
   return `${decoder.decode(truncatedBytes)}<truncated>`;
@@ -208,8 +207,6 @@ function readMessages(output: unknown): JsonValue[] | undefined {
     if (entry === null || typeof entry !== "object") return undefined;
 
     try {
-      // Round-trip via JSON to make sure we never put non-JSON values
-      // into a JsonValue-typed slot.
       serialized.push(JSON.parse(JSON.stringify(entry)) as JsonValue);
     } catch {
       return undefined;

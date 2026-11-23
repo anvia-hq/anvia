@@ -45,7 +45,6 @@ if (process.argv[1]?.endsWith("parallel-crash-worker.ts")) {
   const agent = makeAgent(
     async (request) => (hasToolResult(request) ? done() : twoCalls()),
     tools(effects, async () => {
-      // Let the fast call commit before reporting ready, then hang until killed.
       await new Promise((resolve) => setTimeout(resolve, 200));
       process.send?.({ ready: true, id });
       await new Promise<void>(() => setInterval(() => {}, 1000));

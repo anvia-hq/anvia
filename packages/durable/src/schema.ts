@@ -146,7 +146,6 @@ const runSchema = z
     agentId: id,
     sessionId: id,
     requestId: id,
-    // Older owned-agent submissions permitted whitespace-only string prompts.
     prompt: z.union([z.string(), promptSchema]),
     trace: traceOptionsSchema.optional(),
     version: id,
@@ -195,7 +194,6 @@ const runSchema = z
   .strict();
 
 export function parseRun(value: unknown): DurableRunRecord {
-  // The core owns richer optional outcome fields; the envelope and execution state are checked here.
   const run = carryReferences(value, runSchema.parse(value) as DurableRunRecord);
 
   if (

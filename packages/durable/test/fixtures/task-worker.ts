@@ -33,7 +33,6 @@ const parent = defineTask({
           appendFileSync(effects, `${operationId}\n`);
 
         if (mode !== "committed") {
-          // The child guarantee starts at its committed outcome, not its external append.
           while (!(await ctx.children()).every((task) => task.status === "completed"))
             await new Promise((resolve) => setTimeout(resolve, 5));
           process.send?.({ id: ctx.id });

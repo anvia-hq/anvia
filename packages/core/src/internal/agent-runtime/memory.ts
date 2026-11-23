@@ -433,8 +433,6 @@ async function selectCompactionPrefix(
       return none;
     }
 
-    // Legacy token retention still keeps complete user-led turns. The newest turn is always kept
-    // even when it alone exceeds the budget. Find the earliest fitting tail logarithmically.
     const tailTokenCounts = new Map<number, number>();
     const countTail = async (messageIndex: number): Promise<number> => {
       const cached = tailTokenCounts.get(messageIndex);

@@ -11,30 +11,9 @@ import {
   startDesktopSandbox,
 } from "./_support/desktop-sandbox";
 
-// A web app where you watch an agent use a real Linux desktop, and can take over.
-//
-//   pnpm cookbook:remote-sandbox:image    # once
-//   pnpm cookbook:remote-sandbox:02       # then open http://localhost:4030
-//
-// One Node server does everything:
-//   - the hub, where the container's daemon connects (/daemon),
-//   - the desktop relay, which the browser's noVNC viewer connects to (/desktop),
-//   - the page, bundled with esbuild at startup (needs `pnpm --filter @anvia/react-ui build`),
-//   - a small API: mint a ticket, run the agent, stop it, and stream what it does.
-//
-// Only the daemon connects from outside this machine (the container reaches it through
-// host.docker.internal, and the hub checks its token). The page, the API and the desktop relay
-// answer only to this machine: /api/run spends your API key and /desktop lets whoever connects
-// drive the desktop. To put it on a network, put real sign-in in front of /api/ticket first.
-//
-// The browser never gets a long-lived credential. Each connection of the viewer asks /api/ticket
-// for a single-use ticket, and the hub only lets the viewer in if it can redeem one. In a real app
-// that endpoint is where you check that the signed-in user may see this sandbox.
-
 const port = Number(process.env.PORT ?? 4030);
 const daemonToken = randomBytes(24).toString("base64url");
 
-// ---- tickets: single use, short lived ----------------------------------------------------------
 const tickets = new Map<string, number>();
 const mintTicket = () => {
   const ticket = randomBytes(24).toString("base64url");
@@ -49,7 +28,6 @@ const redeemTicket = (ticket: string | undefined) => {
   return expires !== undefined && expires > Date.now();
 };
 
-// ---- the hub ----------------------------------------------------------------------------------
 const hub = new RemoteSandboxHub({
   authorize: (token) => (token === daemonToken ? { sandboxId } : null),
   authorizeDesktop: (request) =>
@@ -57,7 +35,6 @@ const hub = new RemoteSandboxHub({
   connectTimeoutMs: 120_000,
 });
 
-// ---- what the agent does, streamed to the page -------------------------------------------------
 type AppEvent =
   | { type: "sandbox"; state: "starting" | "ready" | "failed"; message?: string }
   | { type: "status"; state: "idle" | "running" }
@@ -72,9 +49,6 @@ type AppEvent =
 let events: AppEvent[] = [{ type: "sandbox", state: "starting" }];
 const listeners = new Set<ServerResponse>();
 const emit = (event: AppEvent) => {
-  // A new run clears the log, but not what the page needs to know about the sandbox: without that,
-  // a page loaded after a run would wait for a sandbox that is long since ready. Everything else is
-  // kept so a page that connects late catches up.
   events =
     event.type === "reset"
       ? [...events.filter((kept) => kept.type === "sandbox"), event]
@@ -108,7 +82,6 @@ async function run(task: string): Promise<void> {
         }
       },
       onStepFinish({ response }) {
-        // Narration before a tool call. The last step's text is the answer, which has its own event.
         if (!response.choice.some((part) => part.type === "tool-call")) return;
 
         for (const part of response.choice) {
@@ -131,7 +104,6 @@ async function run(task: string): Promise<void> {
   }
 }
 
-// ---- the page ---------------------------------------------------------------------------------
 const bundle = await build({
   entryPoints: [new URL("./_support/desktop-app/client.tsx", import.meta.url).pathname],
   bundle: true,
@@ -161,9 +133,6 @@ const json = (response: ServerResponse, status: number, value: unknown) =>
 const isLocal = (request: IncomingMessage) =>
   ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(request.socket.remoteAddress ?? "");
 
-// Being on this machine is not enough: any page open in your browser can also reach localhost. A
-// cross-site POST needs no preflight, so a POST must come from this page's own origin, and the Host
-// header must be ours (which stops a DNS-rebinding page from posing as same-origin).
 const ownHosts = [`localhost:${port}`, `127.0.0.1:${port}`];
 const isOwnPage = (request: IncomingMessage) => {
   const { origin, host } = request.headers;
@@ -217,7 +186,6 @@ const server = createServer(async (request, response) => {
   }
 });
 
-// The container's daemon and the browser's viewer both upgrade to WebSockets on this one port.
 server.on("upgrade", (request, socket, head) => {
   const path = new URL(request.url ?? "/", "http://localhost").pathname;
 

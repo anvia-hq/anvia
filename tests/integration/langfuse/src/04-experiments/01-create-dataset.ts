@@ -1,6 +1,3 @@
-// Demonstrates: client.datasetClient().createDataset({...}).
-// Uses a unique name per run so the script is idempotent.
-
 import { createTracing } from "../_support/tracing.js";
 
 async function main(): Promise<void> {

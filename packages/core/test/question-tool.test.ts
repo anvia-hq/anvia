@@ -280,7 +280,6 @@ describe("createQuestionTool", () => {
     ["one choice", [{ ...question(), choices: choices(1) }]],
     ["five choices", [{ ...question(), choices: choices(5) }]],
   ])("still parses and resumes stored continuations containing %s", async (_, questions) => {
-    // Simulate the old tool input parser while retaining the real question-tool marker.
     const legacyTool = createQuestionTool();
     legacyTool.parseInput = (args) => ({
       questions: parseAgentQuestionPrompts((args as JsonObject).questions),

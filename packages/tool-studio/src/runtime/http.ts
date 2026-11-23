@@ -42,8 +42,6 @@ export function resolveStudioAllowedHostnames(options?: {
   if (bound !== "" && bound !== "0.0.0.0" && bound !== "::" && !allowed.has(bound)) {
     allowed.add(bound);
 
-    // Host headers carry IPv6 literals bracketed (e.g. "[2001:db8::1]"), while
-    // the configured bind address is unbracketed, so trust both spellings.
     if (bound.includes(":")) allowed.add(`[${bound}]`);
   }
 
@@ -66,8 +64,6 @@ export function createStudioHostGuard(options?: {
   hostname?: string;
 }): (c: Context, next: Next) => Promise<Response | void> {
   const allowed = resolveStudioAllowedHostnames(options);
-  // A missing Host header only happens for in-process fetch callers; servers
-  // on the wire always provide one, so there is nothing to validate.
   return async function studioHostGuard(c: Context, next: Next): Promise<Response | void> {
     const host = c.req.header("host");
 
@@ -100,7 +96,6 @@ function studioRequestHostname(hostHeader: string | undefined): string | undefin
 
   const colon = host.lastIndexOf(":");
 
-  // A single colon can only be a port separator; IPv6 literals arrive bracketed.
   if (colon !== -1 && host.indexOf(":") === colon) return host.slice(0, colon);
 
   return host;

@@ -111,14 +111,8 @@ export class SqliteMemoryClient implements AsyncDisposable {
     }
 
     const database = isBunDriver()
-      ? // bun:sqlite rejects node-only open options such as
-        // enableForeignKeyConstraints with SQLITE_MISUSE, and it has no
-        // equivalent, so open with defaults instead.
-        new (databaseSync())(path)
+      ? new (databaseSync())(path)
       : new (databaseSync())(path, { enableForeignKeyConstraints: true });
-    // bun:sqlite defaults to foreign keys OFF and has no open-time option, so
-    // the store's foreign-key validation would fail on it. Enforce the pragma
-    // directly; node:sqlite is already ON, making this a no-op there.
     database.exec("PRAGMA foreign_keys = ON");
     return database;
   }
@@ -163,7 +157,6 @@ function loadBunSqlite(require: NodeJS.Require): { Database: SyncDatabaseConstru
   try {
     return require("bun:sqlite") as { Database: SyncDatabaseConstructor };
   } catch {
-    // Fall through to node:sqlite and surface its loading error instead.
     return undefined;
   }
 }

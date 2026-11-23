@@ -2,7 +2,6 @@ import { extract } from "@anvia/core/extractor";
 import { OpenAIClient } from "@anvia/openai";
 import { z } from "zod";
 
-// extract uses the schema as the shape of the returned data.
 const personSchema = z.object({
   firstName: z.string().describe("The person's first name."),
   lastName: z.string().describe("The person's last name."),

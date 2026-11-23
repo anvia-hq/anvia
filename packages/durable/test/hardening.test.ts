@@ -210,7 +210,6 @@ it("backs up and restores task waits, identities, cursors, and committed effects
   await expect(backupSqlite(path, archive)).rejects.toMatchObject({ code: "EEXIST" });
   await expect(backupSqlite(join(dir, "missing"), archive)).rejects.toThrow();
   expect(existsSync(join(dir, "missing"))).toBe(false);
-  // A killed SQLite owner leaves a recoverable WAL that can overwrite a new main file.
   const crashed = spawnSync(process.execPath, [
     "--input-type=module",
     "-e",
@@ -222,8 +221,6 @@ it("backs up and restores task waits, identities, cursors, and committed effects
   `,
     restored,
   ]);
-  // Windows force-terminates the self-killed child instead of delivering POSIX signals,
-  // so spawnSync reports exit code 1 with a null signal rather than SIGKILL.
   expect([crashed.signal, crashed.status]).toEqual(
     process.platform === "win32" ? [null, 1] : ["SIGKILL", null],
   );
@@ -465,7 +462,6 @@ it("restores schema-3 backups and upgrades their runs without changing completed
   legacy.exec("UPDATE anvia_durable_owner SET version = 3");
   legacy.close();
   expect((await backupSqlite(path, archive)).schemaVersion).toBe(12);
-  // Reproduce a sealed pre-streaming backup: these records contain no streaming fields.
   const backup = new DatabaseSync(archive);
   backup.exec("UPDATE anvia_durable_owner SET version = 3");
   backup

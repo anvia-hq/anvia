@@ -38,7 +38,6 @@ function agentWith(
     model: {
       provider: "test",
       modelId: "test",
-      // The model must declare provider-tool support, or core rejects the request.
       capabilities: { ...capabilities, providerTools: true },
       completion: (request) => completion(request),
     },
@@ -120,7 +119,6 @@ describe("registration of provider tools", () => {
 
   it("rejects a provider tool whose configuration is not JSON, naming the tool", () => {
     const notJson = webSearch({ filter: undefined as never, sizes: [1n as never] } as never);
-    // Core rejects the tool when the Agent is built, before durable registration sees it.
     expect(() => agentWith(async () => done(), notJson)).toThrow(
       /Provider tool "web_search" is invalid.*configuration must be a JSON object/,
     );
@@ -156,7 +154,6 @@ describe("provider tools replay", () => {
       const submitted = await runtime.submit({ ...submission, prompt: "hello" });
       expect((await settled(submitted)).run.status).toBe("failed");
       expect(first).toHaveBeenCalledTimes(2);
-      // The provider's own tool call is part of the persisted response for turn 1.
       expect(storedModelRecord(path, submitted.id, 1)).toContain("ws_1");
       await runtime.close();
       runtimes.splice(runtimes.indexOf(runtime), 1);
@@ -166,7 +163,6 @@ describe("provider tools replay", () => {
       await (await reopened.getRun(submitted.id)).retry();
       expect((await settled(await reopened.getRun(submitted.id))).run.status).toBe("completed");
 
-      // Turn 1 was restored from the journal; only the second model turn ran again.
       expect(second).toHaveBeenCalledTimes(1);
       expect(hasToolResult(second.mock.calls[0]![0])).toBe(true);
     },

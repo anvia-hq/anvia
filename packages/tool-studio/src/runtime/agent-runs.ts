@@ -209,8 +209,6 @@ async function prepareAgentRun(
     return session;
   }
 
-  // Validate only the controls this request sent. Controls remembered from earlier runs may
-  // belong to another model, so they are filtered for the selected model below.
   const selectedModel = selectRunModel(c, props, agent, body, session);
 
   if (selectedModel instanceof Response) {
@@ -222,8 +220,6 @@ async function prepareAgentRun(
     body.controls === undefined && persistedControls !== undefined
       ? {
           ...body,
-          // Record the outcome even when nothing is compatible, so the session stops replaying
-          // controls that the model no longer offers.
           controls:
             compatibleControlValues(persistedControls, selectedModel.model ?? agent.agent.model) ??
             {},

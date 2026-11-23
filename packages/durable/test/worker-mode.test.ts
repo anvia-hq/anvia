@@ -84,7 +84,6 @@ describe("shared worker mode", () => {
   it("fences a worker whose lease was taken over so it cannot overwrite the result", async () => {
     const { pool } = testPool();
     const slow = gate();
-    // The first worker's heartbeat never fires, so its lease lapses while its model call is stuck.
     const stale = await openWorker(
       pool,
       slow.completion,
@@ -94,15 +93,13 @@ describe("shared worker mode", () => {
     const run = await stale.submit(submission("s"));
     await expect.poll(() => slow.state.started).toBe(1);
 
-    // The fresh worker takes the run over and is still working on it when the stale one returns:
-    // only the claim, not the run's status, can reject the stale write.
     const takeover = gate();
     const fresh = await openWorker(pool, takeover.completion, { workerId: "fresh" });
     await expect.poll(() => takeover.state.started).toBe(1);
 
-    slow.state.release(); // the stale worker's attempt now returns, too late
+    slow.state.release();
     await new Promise((resolve) => setTimeout(resolve, 150));
-    expect((await fresh.status(run.id)).status).toBe("running"); // its late result was fenced out
+    expect((await fresh.status(run.id)).status).toBe("running");
 
     takeover.state.release();
     expect(await (await fresh.getRun(run.id)).result()).toMatchObject({ output: "done" });
@@ -111,7 +108,7 @@ describe("shared worker mode", () => {
       if (event.type === "status" && (event.data as { status?: string }).status === "completed")
         completions.push(event);
     expect(completions).toHaveLength(1);
-    expect(stale.health().status).toBe("ready"); // losing a claim stops one run, not the runtime
+    expect(stale.health().status).toBe("ready");
   });
 
   it("stops a run another worker cancelled and never resurrects it", async () => {
@@ -149,7 +146,7 @@ describe("shared worker mode", () => {
       { workerId: "b" },
     );
     expect(await (await b.getRun(run.id)).result()).toMatchObject({ output: "done" });
-    expect(takenOver).toBe(1); // well inside the 10 minute lease a, which never renewed, held
+    expect(takenOver).toBe(1);
   });
 
   it("survives transient claim, renew and release failures", async () => {

@@ -86,7 +86,6 @@ describe("useTeamRun", () => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
       expect(cancelStream).toHaveBeenCalledTimes(1);
 
-      // Starting another task must not wait for the old response body to finish closing.
       await act(async () => {
         run.reset();
         void run.start("next task");

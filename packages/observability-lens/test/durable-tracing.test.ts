@@ -259,7 +259,6 @@ describe("native durable tracing through LensClient", () => {
     await run.cancel();
     await expect(run.result()).rejects.toMatchObject({ status: "cancelled" });
 
-    // The run settles before the aborted execution unwinds and ends its root span.
     let exported: ExportedSpan[] = [];
     await vi.waitFor(async () => {
       exported = await spans();
@@ -294,7 +293,6 @@ describe("native durable tracing through LensClient", () => {
     });
     await vi.waitFor(async () => expect((await run.snapshot()).run.status).toBe("waiting"));
 
-    // Every exported span has ended here, but the run is waiting for a human.
     const waiting = durableTrace(await spans(), run.id);
     expect(waiting.roots).toHaveLength(1);
     expect(waiting.roots[0]?.attributes["anvia.run.status"]).toBe("suspended");
@@ -310,10 +308,8 @@ describe("native durable tracing through LensClient", () => {
     const view = durableTrace(await spans(), run.id);
     expect(view.roots).toHaveLength(2);
     const [suspended, resumed] = view.roots;
-    // The first turn is replayed on resume, so each of the two model calls is observed once.
     expectChildrenOf(view, suspended!, "model.turn.", 1);
     expectChildrenOf(view, resumed!, "model.turn.", 1);
-    // The approval-suspended call and the approved execution.
     expectChildrenOf(view, suspended!, "tool.lookup", 1);
     expectChildrenOf(view, resumed!, "tool.lookup", 1);
     expect(lensStatus(view)).toBe("ok");
@@ -362,7 +358,6 @@ describe("native durable tracing through LensClient", () => {
 
     const view = durableTrace(await spans(), run.id);
     expect(view.roots).toHaveLength(2);
-    // Two model calls in total: the replayed question turn is not observed again.
     for (const root of view.roots) expectChildrenOf(view, root, "model.turn.", 1);
     expect(view.named("tool.ask_user")).toHaveLength(2);
     expect(lensStatus(view)).toBe("ok");
@@ -400,7 +395,6 @@ describe("native durable tracing through LensClient", () => {
       "cancelled",
       "completed",
     ]);
-    // The interrupted attempt must not keep the recovered run failed.
     expect(lensStatus(view)).toBe("ok");
   });
 
@@ -439,7 +433,6 @@ describe("native durable tracing through LensClient", () => {
       "failed",
       "completed",
     ]);
-    // Turn 1 and the tool are restored from the journal on retry; only turn 2 runs twice.
     expect(view.named("model.turn.").map((span) => span.name)).toEqual([
       "model.turn.1",
       "model.turn.2",
@@ -555,7 +548,6 @@ describe("native durable tracing through LensClient", () => {
 
               if (started === count) release();
 
-              // Hold every first turn open so all runs have live spans at the same time.
               await allStarted;
               return toolCall();
             },
@@ -666,7 +658,6 @@ describe("observability sessions through LensClient", () => {
         { agent: worker, version: "1" },
       ],
     });
-    // The application's chat identity: unique per chat, so it is scoped to the owning user.
     const chat = { sessionId: "chat-7f3a", userId: "user-1" };
     const otherChat = { sessionId: "chat-91c2", userId: "user-2" };
 
@@ -723,7 +714,6 @@ describe("observability sessions through LensClient", () => {
       roots.filter((root) => root.attributes["anvia.trace.session_id"] === sessionId);
     const chatRoots = bySession(chat.sessionId);
 
-    // Every root belongs to one of the two chats; neither chat sees the other's user.
     expect(chatRoots.length + bySession(otherChat.sessionId).length).toBe(roots.length);
     expect(new Set(chatRoots.map((root) => root.attributes["anvia.trace.user_id"]))).toEqual(
       new Set(["user-1"]),
@@ -732,8 +722,6 @@ describe("observability sessions through LensClient", () => {
       traceIdOf(other.id),
     ]);
 
-    // One trace per durable run: two turns, two goal rounds, and one subagent. The approval
-    // pause and its resumed attempt share the turn's trace.
     const chatRunIds = [...new Set(chatRoots.map((root) => root.attributes["anvia.run.id"]))];
     expect(chatRunIds).toHaveLength(5);
     expect(new Set(chatRoots.map((root) => root.traceId))).toEqual(
@@ -748,12 +736,10 @@ describe("observability sessions through LensClient", () => {
     for (const runId of chatRunIds)
       expect(lensStatus(durableTrace(exported, runId as string))).toBe("ok");
 
-    // Execution stays isolated: each run keeps its own durable session.
     expect(
       new Set(chatRoots.map((root) => root.attributes["anvia.trace.metadata.durableSessionId"])),
     ).toEqual(new Set(["chat-7f3a-turns", "chat-7f3a-goal", "chat-7f3a-research"]));
     expect((await turn2.snapshot()).run.sessionId).toBe("chat-7f3a-turns");
-    // The second turn continues the first; goal and subagent runs never see the chat history.
     expect(JSON.stringify(requests.get("researcher")?.at(-1)?.chatHistory)).toContain("hello");
     for (const request of requests.get("worker") ?? []) {
       expect(JSON.stringify(request.chatHistory)).not.toContain("look it up");

@@ -64,7 +64,6 @@ export function projectLoopContext(
 
 function retainedLoopMessages(messages: readonly Message[], coveredMessages: number): Message[] {
   const tail = messages.slice(coveredMessages);
-  // Keep the active user request verbatim even when all completed tool rounds are summarized.
   let latestUser = messages.length - 1;
   while (latestUser >= 0 && messages[latestUser]!.role !== "user") latestUser -= 1;
   return latestUser >= 0 && latestUser < coveredMessages ? [messages[latestUser]!, ...tail] : tail;
@@ -101,7 +100,6 @@ export async function planLoopContext(
 
       if (pending.size === 0) boundaries.push(index + 1);
     } else if (message.role === "assistant" && pending.size === 0 && boundaries.at(-1) === index) {
-      // A final answer belongs to the preceding completed round, not another retained tool round.
       boundaries[boundaries.length - 1] = index + 1;
     }
   }

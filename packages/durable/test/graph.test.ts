@@ -139,7 +139,6 @@ describe("durable task graphs", () => {
     expect(model).toHaveBeenCalledTimes(1);
     await (await runtime.getRun(snapshot.nodes[0]!.runId)).retry();
     for await (const _event of graph.stream({ after: snapshot.cursor })) {
-      /* observe completion */
     }
     expect((await graph.snapshot()).status).toBe("completed");
     expect(model).toHaveBeenCalledTimes(3);

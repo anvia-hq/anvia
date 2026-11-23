@@ -16,8 +16,6 @@ afterEach(async () => {
   for (const fn of cleanup.splice(0).reverse()) await fn();
 });
 
-// These tests use a Prisma-shaped client over Postgres (PGlite or a server). No Prisma engine or
-// generated client runs here: see the package docs for what that leaves unverified.
 describe("PrismaDurableStore", () => {
   it("runs a durable agent through $queryRawUnsafe and interactive $transaction", async () => {
     const { pool } = testPool();
@@ -43,7 +41,6 @@ describe("PrismaDurableStore", () => {
       prompt: "hi",
     });
     expect(await run.result()).toMatchObject({ type: "response", output: "done" });
-    // Prisma's default interactive timeout is five seconds; the store raises it.
     expect(JSON.parse(calls[0]!)).toEqual({ maxWait: 10_000, timeout: 60_000 });
   });
 
@@ -52,7 +49,6 @@ describe("PrismaDurableStore", () => {
     await migrate(pool);
     const client = prismaOver(pool);
     const query = client.$queryRawUnsafe.bind(client);
-    // Prisma returns int8 values as BigInt, whatever the driver does.
     client.$queryRawUnsafe = async (text, ...values) =>
       ((await query(text, ...values)) as Record<string, unknown>[]).map((row) =>
         Object.fromEntries(

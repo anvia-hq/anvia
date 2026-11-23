@@ -25,7 +25,6 @@ export function runStartAttributes(
 ): Attributes {
   return compactAttributes({
     "service.name": serviceName,
-    // Set at start too, so runs that fail or never end can still be correlated.
     "anvia.run.id": args.runId,
     "anvia.agent.name": args.agentName,
     "anvia.agent.description": args.agentDescription,
@@ -411,9 +410,7 @@ function decodeUtf8Prefix(bytes: Uint8Array, maxBytes: number): string {
   for (let length = Math.min(bytes.byteLength, maxBytes); length > 0; length -= 1) {
     try {
       return new TextDecoder("utf-8", { fatal: true }).decode(bytes.slice(0, length));
-    } catch {
-      // Retry without an incomplete trailing code point.
-    }
+    } catch {}
   }
   return "";
 }

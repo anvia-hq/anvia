@@ -182,8 +182,6 @@ const addTool = createTool({
 });
 
 beforeEach(() => {
-  // The observer group logs ignored failures through console.error; capture it so
-  // tests assert on the calls instead of printing them.
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
 
@@ -1650,7 +1648,6 @@ describe("active agent observer groups", () => {
 
         await expect(active.end(runEndArgs())).resolves.toBeUndefined();
         expect(reports).toEqual([{ phase, observer: "broken", error }]);
-        // Let the async sink reject and Node dispatch any unhandled rejection.
         await new Promise<void>((resolve) => setImmediate(resolve));
         expect(unhandled).toEqual([]);
         expect(vi.mocked(console.error)).not.toHaveBeenCalled();

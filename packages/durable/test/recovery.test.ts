@@ -112,7 +112,6 @@ itSqlite(
   "blocks an uncertain tool after SIGKILL and resumes from an explicitly reconciled result",
   async () => {
     const { id, database, effects } = await crash("tool");
-    // A new policy must not relax the policy recorded when this operation started.
     const { runtime, model, tool } = await restart(database, effects, "safe");
     const run = await runtime.getRun(id);
     await vi.waitFor(async () => expect((await run.snapshot()).run.status).toBe("needs_attention"));
@@ -138,7 +137,6 @@ itSqlite(
     const rejection = await run.result({ onBlocked: "throw" }).catch((error: unknown) => error);
     expect(rejection).toBeInstanceOf(DurableBlockedError);
     expect(rejection).toMatchObject({ runId: id, blockedOperation: operationId });
-    // Default behaviour is unchanged: it keeps waiting until the operator settles the run.
     const controller = new AbortController();
     const waiting = run.result({ abortSignal: controller.signal });
     controller.abort(new Error("stop waiting"));

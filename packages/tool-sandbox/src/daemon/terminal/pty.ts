@@ -53,7 +53,6 @@ interface NodePtyModule {
  */
 export async function loadNodePty(): Promise<PtySpawner | undefined> {
   try {
-    // A variable specifier keeps bundlers and type checkers from treating it as a hard import.
     const specifier = "node-pty";
     const loaded = (await import(specifier)) as NodePtyModule & { default?: NodePtyModule };
     const module = typeof loaded.spawn === "function" ? loaded : loaded.default;

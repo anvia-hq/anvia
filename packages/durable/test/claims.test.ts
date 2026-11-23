@@ -89,7 +89,7 @@ describe("run claims", () => {
 
     await joined.release!(claims);
     const again = store(pool);
-    await again.acquire(); // no live claim left
+    await again.acquire();
     await expect(joined.claim!(claimInput("w1"))).rejects.toThrow(/live owning runtime/);
   });
 
@@ -119,7 +119,6 @@ describe("run claims", () => {
     const joined = await worker(pool);
     const claims = await joined.claim!(claimInput("w"));
     expect(claims.map((claim) => claim.runId)).toEqual([first]);
-    // The head is claimed and unfinished, so the next run in the session stays blocked.
     expect(await joined.claim!(claimInput("w"))).toEqual([]);
     await settle(pool, first!);
     expect((await joined.claim!(claimInput("w"))).map((claim) => claim.runId)).toEqual([second]);
@@ -145,7 +144,6 @@ describe("run claims", () => {
       leaseMs: 60_000,
     });
     expect(new Set(lost)).toEqual(new Set([a, "nope"]));
-    // Another worker's claim id cannot be renewed by a worker that does not hold it.
     expect(
       (await joined.renew!({ workerId: "other", claims: refs, leaseMs: 60_000 })).lost,
     ).toHaveLength(2);
@@ -158,7 +156,7 @@ describe("run claims", () => {
     const stale = await worker(pool);
     const fresh = await worker(pool);
     const [first] = await stale.claim!(claimInput("stale", { leaseMs: 40 }));
-    expect(await fresh.claim!(claimInput("fresh"))).toEqual([]); // still live
+    expect(await fresh.claim!(claimInput("fresh"))).toEqual([]);
     await new Promise((resolve) => setTimeout(resolve, 120));
     const [second] = await fresh.claim!(claimInput("fresh"));
     expect(second!.runId).toBe(run);
@@ -185,9 +183,9 @@ describe("run claims", () => {
     const b = await worker(pool);
     const claims = await a.claim!(claimInput("a"));
     await a.release!(claims);
-    await a.release!(claims); // already gone: not an error
+    await a.release!(claims);
     expect((await b.claim!(claimInput("b"))).map((claim) => claim.runId)).toEqual([run]);
-    await a.release!(claims); // stale ref must not release b's claim
+    await a.release!(claims);
     expect(await a.claim!(claimInput("a"))).toEqual([]);
   });
 

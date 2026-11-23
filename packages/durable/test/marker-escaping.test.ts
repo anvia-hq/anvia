@@ -82,13 +82,11 @@ describe("user data shaped like blob markers", () => {
         prompt: "look it up",
       });
       expect(await run.result()).toMatchObject({ type: "response", output: "done" });
-      // The provider saw the tool output exactly as the tool returned it.
       const second = model.mock.calls[1]![0];
       expect(JSON.stringify(second.chatHistory)).toContain(JSON.stringify(spoof));
       expect(JSON.stringify(second.chatHistory.at(-1))).toContain(JSON.stringify(spoof));
       await runtime.close();
 
-      // After a restart the journal still reads the same data.
       const reopened = await open(
         path,
         makeAgent(async () => done(), [lookup(tool)]),
@@ -96,7 +94,6 @@ describe("user data shaped like blob markers", () => {
       const restored = await reopened.getRun(run.id);
       const messages = (await restored.snapshot()).run.outcome?.messages;
       expect(JSON.stringify(messages)).toContain(JSON.stringify(spoof));
-      // Stored form escapes the reserved keys, so no plain marker key is on disk.
       const raw = stored(path, "SELECT record FROM anvia_durable_operations");
       expect(raw.join("\n")).not.toContain('"anvia:blob"');
       expect(raw.join("\n")).toContain('"~anvia:blob"');
@@ -148,7 +145,6 @@ describe("user data shaped like blob markers", () => {
       await store.transaction(async (tx) => tx.putOperation("run-x", operation));
       const read = await store.transaction(async (tx) => tx.getOperation("run-x", "op"));
       expect(read).toEqual(operation);
-      // Hydration of plain user data is the identity.
       expect(
         await store.transaction(
           async (tx) => await tx.blobs((io) => hydrateValue(io, read!.result as JsonValue)),
@@ -166,7 +162,7 @@ describe("user data shaped like blob markers", () => {
 describe("rows written before schema version 11", () => {
   itSqlite("reads legacy user data unchanged and keeps real references", async () => {
     const path = database();
-    const big = { text: "legacy-".repeat(20_000) }; // over the inline threshold
+    const big = { text: "legacy-".repeat(20_000) };
     const store = new SqliteDurableStore(path);
     await store.acquire();
     const legit = await store.transaction(async (tx) => {
@@ -175,7 +171,6 @@ describe("rows written before schema version 11", () => {
     });
     await store.close();
 
-    // Rewrite the journal the way schema version 10 stored it: no escaping, markers unchecked.
     const message = spoofMessage as unknown as JsonValue;
     const messageText = JSON.stringify(message);
     const messageHash = sha(messageText);
@@ -239,8 +234,6 @@ describe("rows written before schema version 11", () => {
       db.close();
     }
 
-    // Opening migrates the rows. The spoofed user data reads back unchanged, and the real
-    // reference still restores its blob. The history rehash keeps the chain valid.
     const migrated = new SqliteDurableStore(path);
     await migrated.acquire();
     try {

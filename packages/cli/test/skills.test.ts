@@ -266,8 +266,6 @@ describe("adapter targets", () => {
     expect(result.targets.find((target) => target.target === "cursor")?.created.length).toBe(
       expectedSkills.length,
     );
-    // Re-running with the same directory stays up to date; switching directories
-    // refreshes the generated pointers instead of leaving stale links.
     const again = initSkills({
       cwd,
       dir: "agents",

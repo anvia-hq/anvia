@@ -83,7 +83,6 @@ export function recordedMemoryStore(options: {
       return readSnapshot(options, loadOptions);
     },
     async append(write: MemoryAppendOptions): Promise<MemoryAppendResult | void> {
-      // Durable owns the keys and the version chain; a caller-supplied value would bypass both.
       if (write.idempotencyKey !== undefined || write.expectedVersion !== undefined)
         throw new TypeError(
           "Durable memory derives idempotency keys and versions; memory writes must not set them.",
@@ -132,7 +131,6 @@ async function readSnapshot(
       kind: "memory",
       input: json({ scope: loadOptions.scope }),
       status: "completed",
-      // A read has no effect, so an interrupted one is simply read again.
       recovery: "safe",
       result: json({
         messages: await tx.blobs((io) => externalizeMessages(io, loaded.messages)),
@@ -183,8 +181,6 @@ export async function flushRecordedMemory(options: {
   const { store, run, source, signal } = options;
   const prefix = memoryPrefix(run);
   const writePrefix = `${prefix}:${WRITE_PREFIX}`;
-  // Each write is based on the version the previous step left behind, across the segments of a run
-  // that paused for an interaction: the last completed memory operation of any epoch decides it.
   let version = await store.transaction(async (tx) => {
     const settled = (await tx.operations(run.id))
       .filter((operation) => operation.kind === "memory" && operation.status === "completed")
@@ -211,7 +207,6 @@ export async function flushRecordedMemory(options: {
 
     signal.throwIfAborted();
     const input = await store.transaction(async (tx) => {
-      // Persisted before the store call, so a crash inside the call leaves the attempt visible.
       await tx.putOperation(run.id, { ...write, attempts: 1 });
       return (await tx.blobs((io) => hydrateValue(io, write.input))) as unknown as {
         scope: MemoryAppendOptions["scope"];

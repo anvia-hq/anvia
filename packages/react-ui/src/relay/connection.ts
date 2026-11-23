@@ -98,7 +98,6 @@ export class RelayConnection {
 
   /** Try again now, for a link that gave up. */
   retry(): void {
-    // Only a link that gave up needs this; otherwise an attempt is already under way.
     if (this.disposed || !this.finished) return;
 
     clearTimeout(this.timer);
@@ -133,16 +132,12 @@ export class RelayConnection {
 
     const { label } = this.options.protocol;
     this.options.onStatus({ state: "connecting" });
-    // A fatal error belongs to the attempt that hit it. Without this, one that was retried away
-    // would fail every later drop.
     this.fatalMessage = undefined;
 
     let ticket: string | undefined;
     try {
       ticket = await this.options.getTicket?.();
     } catch (error) {
-      // Fetching a ticket usually fails because the control plane is restarting, which is exactly
-      // when reconnecting is wanted, so it backs off like a dropped socket.
       if (this.disposed) return;
 
       const detail = error instanceof Error ? `: ${error.message}` : "";
@@ -156,7 +151,6 @@ export class RelayConnection {
     try {
       socket = new WebSocket(this.resolveUrl(), this.resolveProtocols(ticket));
     } catch (error) {
-      // A bad URL or a malformed ticket: trying again cannot fix either.
       this.fail(error instanceof Error ? error.message : `Could not open the ${label}.`);
       return;
     }

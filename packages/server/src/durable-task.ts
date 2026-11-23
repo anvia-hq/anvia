@@ -36,7 +36,6 @@ export async function handleDurableTaskRequest(
   )
     return jsonResponse({ error: "Tasks are not available from this backend." }, 501);
 
-  // Narrowed above; the optional members are only absent on a store-only client.
   const runtime = backend as typeof backend &
     Required<Pick<typeof backend, "getTask" | "listTasks" | "submitRegisteredTask">>;
   const authorize = async (task: TaskRecord, action: DurableHttpAction) => {
@@ -66,7 +65,6 @@ export async function handleDurableTaskRequest(
       rejectClientTrace(body);
       const input = parseTaskSubmission(body);
 
-      // Older engines cannot expose effective bindings safely; never authorize agent-less here.
       if (typeof runtime.taskSubmissionScope !== "function")
         throw new HttpInputError(
           503,
@@ -151,7 +149,6 @@ export async function handleDurableTaskRequest(
     if (suffix === "events")
       return durableEventsResponse(request, graph.cursor, async function* (streamOptions) {
         for await (const event of handle.stream(streamOptions)) {
-          // Children may be created after attachment; authorize each record before exposing its event.
           const task = (await (await runtime.getTask(event.taskId)).snapshot()).task;
           await authorize(task, "events");
           yield event;

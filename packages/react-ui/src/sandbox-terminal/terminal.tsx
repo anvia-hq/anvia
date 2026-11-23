@@ -75,7 +75,6 @@ export const SandboxTerminal = forwardRef<SandboxTerminalHandle, SandboxTerminal
     const terminal = useRef<Terminal | undefined>(undefined);
     const [status, setStatus] = useState<SandboxTerminalStatus>({ state: "loading" });
 
-    // The latest props, read by long-lived callbacks without restarting the terminal.
     const latest = useRef({ ticket, reconnect, terminalOptions, onStatusChange });
     latest.current = { ticket, reconnect, terminalOptions, onStatusChange };
 
@@ -130,7 +129,6 @@ export const SandboxTerminal = forwardRef<SandboxTerminalHandle, SandboxTerminal
           getTicket: resolveTicket(() => latest.current.ticket),
           size: () => ({ cols: xterm.cols, rows: xterm.rows }),
           onOutput: (bytes) => xterm.write(bytes),
-          // The hub redraws the session on every attach, so start from a clean screen.
           onOpen: (reconnected) => {
             if (reconnected) xterm.reset();
 

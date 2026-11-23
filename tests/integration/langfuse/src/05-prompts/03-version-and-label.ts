@@ -1,7 +1,3 @@
-// Demonstrates: getPrompt({ name, version }) and getPrompt({ name, label }).
-// Set LANGFUSE_VERSIONED_PROMPT_NAME in your .env to a prompt that has
-// multiple versions and labels.
-
 import { optionalEnv } from "../_support/env.js";
 import { createTracing } from "../_support/tracing.js";
 

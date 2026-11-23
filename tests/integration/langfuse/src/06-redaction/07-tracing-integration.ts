@@ -1,6 +1,3 @@
-// Demonstrates: observer-scoped redaction of inputs, outputs,
-// or both. Uses a static model so the LLM call is deterministic.
-
 import { Agent } from "@anvia/core/agent";
 import { assertCompleted } from "../_support/agent.js";
 import { getStaticModel } from "../_support/model.js";

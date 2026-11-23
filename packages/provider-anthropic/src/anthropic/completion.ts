@@ -1033,7 +1033,6 @@ export function fromAnthropicStreamEvent(event: unknown): CompletionModelStreamE
       ];
     }
 
-    // Tool argument deltas do not repeat the tool id and require stream-level state.
     if (delta.type === "input_json_delta") return [];
   }
 
@@ -1119,9 +1118,6 @@ function messageToAnthropicMessages(
     ];
   }
 
-  // Reasoning from another provider cannot be replayed: its signatures and encrypted
-  // payloads are only valid for the provider that produced them. History that carries
-  // no generation metadata is treated as unknown origin.
   const origin = getAssistantGenerationMetadata(message)?.provider;
   const replayReasoning = origin === undefined || origin === "anthropic";
   const content =
@@ -1156,7 +1152,6 @@ function messageToAnthropicMessages(
           return [];
         });
 
-  // Anthropic rejects an empty assistant turn, for example one that held only reasoning.
   if (Array.isArray(content) && content.length === 0) {
     return [];
   }
@@ -1220,8 +1215,6 @@ function toolResultToAnthropicContent(content: ToolResultPart): string | Anthrop
 }
 
 function reasoningContentToAnthropicBlocks(content: ReasoningDetail): AnthropicContentBlock[] {
-  // Anthropic only accepts thinking blocks that carry the signature it issued. Summaries and
-  // unsigned text cannot be replayed, so they are dropped instead of sent.
   if (content.type === "text" && content.signature !== undefined) {
     return [{ type: "thinking", thinking: content.text, signature: content.signature }];
   }

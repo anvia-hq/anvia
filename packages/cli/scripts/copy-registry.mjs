@@ -10,8 +10,6 @@ for (const filename of readdirSync(source).filter((entry) => entry.endsWith(".ts
   cpSync(new URL(filename, source), new URL(filename, destination));
 }
 
-// The CLI and React UI are released independently. Record the version matching
-// the registry sources while building, without requiring React UI at runtime.
 const reactUi = JSON.parse(
   readFileSync(new URL("../../react-ui/package.json", import.meta.url), "utf8"),
 );

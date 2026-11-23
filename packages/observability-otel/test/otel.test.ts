@@ -128,7 +128,6 @@ describe("OpenTelemetry eval reporter", () => {
     const broken = createOtelEvalReporter({
       logger: fakeLogger(emit),
       includeMetadata: true,
-      // A JavaScript caller can violate the declared return type; the guard must not ship raw data.
       transformMetadata: (() => undefined) as unknown as (
         metadata: Record<string, unknown>,
       ) => Record<string, unknown>,
@@ -985,7 +984,6 @@ describe("otel", () => {
       message: "run failed",
     });
     expect(tracer.spans[0]?.attributes["anvia.run.status"]).toBe("failed");
-    // Failed runs never reach end(), so the run ID must already be recorded at start.
     expect(tracer.spans[0]?.attributes["anvia.run.id"]).toBe("run_1");
     expect(tracer.spans.every((span) => span.ended)).toBe(true);
   });

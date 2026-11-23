@@ -34,7 +34,6 @@ export class StudioTeamRun {
       abortSignal: lease.abortSignal,
       resolveInteraction: (request) => this.requestInteraction(request),
     });
-    // Subscribe before reading result so core retains event consumption and bounds unread events.
     this.iterator = this.stream.events[Symbol.asyncIterator]();
     this.first = this.iterator.next();
     void this.first.catch(() => undefined);
@@ -83,7 +82,6 @@ export class StudioTeamRun {
       [Symbol.asyncIterator]: () => ({
         next: () => iterator.next(),
         return: async () => {
-          // Abort first: returning an async generator waits behind a pending next().
           this.cancel();
           return iterator.return();
         },
@@ -96,7 +94,6 @@ export class StudioTeamRun {
       yield { type: "team_run_started", teamId: this.teamId, runId: this.id };
       let next = await this.first;
       while (!next.done) {
-        // The attributed interaction event is sufficient; continuation state stays on the server.
         if (next.value.type !== "agent_event" || next.value.event.type !== "interaction")
           yield next.value;
 

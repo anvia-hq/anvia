@@ -197,8 +197,6 @@ function snapshotToolIndex(index: ToolIndex): ToolIndex {
     };
   }
 
-  // The snapshot is what a durable runtime fingerprints, so the index's own record of what it
-  // embedded has to survive the copy.
   const described = index as ToolIndexDescription;
 
   if (described.embeddingModel !== undefined) {

@@ -108,7 +108,6 @@ describe("SandboxTerminal", () => {
   });
 
   it("reconnects after a drop and starts the reattached screen clean", async () => {
-    // Long enough to observe the reconnecting state before the next attempt replaces it.
     await mount({ reconnect: { initialDelayMs: 150, maxDelayMs: 150 } });
     await ready();
     await act(async () => FakeSocket.last.serverClose());

@@ -24,7 +24,6 @@ export function fenceStore(store: DurableStore): DurableStore {
           target.transaction(async (tx) => {
             const claim = claimContext.getStore();
 
-            // A read cannot commit a stale write, and `FOR SHARE` is not allowed in a read-only one.
             if (claim !== undefined && options?.readOnly !== true)
               await tx.assertClaim?.(claim.runId, claim.claimId);
 

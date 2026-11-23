@@ -163,9 +163,6 @@ export class LocalSandbox {
     assertFileSize(options.data.byteLength, normalized, this.limits.maxFileBytes);
     options.abortSignal?.throwIfAborted();
 
-    // Reject a symlink in any component, including dangling parents, before and after creating
-    // parent directories so neither step follows a link out of the workspace. Best effort: the
-    // inspection and the write are separate operations.
     await this.assertNoSymlinks(normalized);
     await mkdir(containerPath(this.workdir, parentSandboxPath(normalized)), { recursive: true });
     await this.assertNoSymlinks(normalized);
@@ -174,8 +171,6 @@ export class LocalSandbox {
       normalized,
     );
 
-    // Write beside the target and rename so a reader never sees a partial file and a crash never
-    // leaves one. The rename replaces a directory entry; it never writes through a link.
     const target = containerPath(this.workdir, normalized);
     const temporary = `${target}.anvia-${randomUUID()}.tmp`;
     try {

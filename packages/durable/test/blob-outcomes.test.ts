@@ -53,7 +53,6 @@ it("passes an oversized graph dependency result, intact, into the downstream pro
     const input = JSON.stringify(request.chatHistory);
 
     if (input.includes("SYNTHESIS")) {
-      // The dependency suffix carries the full 140 KB result, not a null placeholder.
       expect(input).toContain("Task dependency results");
       expect(input.includes(big)).toBe(true);
       return done();
@@ -68,7 +67,6 @@ it("passes an oversized graph dependency result, intact, into the downstream pro
     expect(snapshot.nodes.every((node) => node.status === "completed")).toBe(true);
   });
   const snapshot = await submitted.snapshot();
-  // The graph's own node output is restored too, not `null`.
   expect(JSON.stringify(snapshot.nodes[0]?.output)).toContain(big);
   expect(model).toHaveBeenCalledTimes(2);
 });
@@ -76,9 +74,6 @@ it("passes an oversized graph dependency result, intact, into the downstream pro
 itSqlite(
   "replays an interrupted model call whose journal input is stored inline, as schema version 9 did",
   async () => {
-    // A model call that never returns is in flight when the runtime closes. On reopen it is re-run
-    // in the same epoch, so its saved input is compared with the new request. The saved input is
-    // rewritten here to the inline form that version 9 stored; the comparison must still match.
     const path = database();
     const context = [{ id: "doc-1", text: big }];
     const hangs = new Agent({
@@ -125,7 +120,6 @@ itSqlite(
       (row) => (JSON.parse(row.record) as { kind: string }).kind === "model",
     );
     expect(modelRows.length).toBeGreaterThan(0);
-    // The stored form must really be externalized, or this test proves nothing.
     expect(modelRows.some((row) => row.record.includes("anvia:blob"))).toBe(true);
     for (const row of modelRows) {
       const record = JSON.parse(row.record) as { input: JsonValue };
@@ -205,7 +199,6 @@ it("hands an oversized owned-agent output to its parent task intact", async () =
     input: null,
   });
   const result = await handle.result();
-  // The child's full output reaches the parent; a `null` placeholder would fail here.
   expect(JSON.stringify(result)).toContain(big);
 });
 

@@ -29,7 +29,7 @@ export async function findDesktopAgents(
   try {
     entries = await readdir(procRoot);
   } catch {
-    return []; // No process table (not Linux): nothing to find.
+    return [];
   }
   const marker = `${desktopSessionVariable}=${session}`;
   const found: Array<{ pid: number; name: string }> = [];
@@ -44,9 +44,7 @@ export async function findDesktopAgents(
       const environment = await readFile(`${procRoot}/${entry}/environ`, "utf8");
 
       if (environment.split("\0").includes(marker)) found.push({ pid: Number(entry), name });
-    } catch {
-      // The process exited while it was being read, or belongs to another user.
-    }
+    } catch {}
   }
   return found;
 }
@@ -79,9 +77,7 @@ export async function stopDesktopAgents(
 function signal(pid: number, name: NodeJS.Signals): void {
   try {
     process.kill(pid, name);
-  } catch {
-    // Already gone.
-  }
+  } catch {}
 }
 
 /** A zombie has exited already; it only waits for its parent, so it does not count as running. */

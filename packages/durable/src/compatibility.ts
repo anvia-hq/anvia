@@ -36,8 +36,6 @@ export function compatibilityReport(
 
 function describeRegistration(registration: DurableAgentRegistration): DurableAgentCompatibility {
   const options = getResolvedAgentOptions(registration.agent);
-  // The resolved model-turn budget is captured into each run record at submission, so it is
-  // always frozen for a registration; the remaining entries only apply when the agent sets them.
   const frozen: DurableFrozenAgentOption[] = ["maxTurns"];
 
   if (options.controls !== undefined) frozen.push("controls");

@@ -46,8 +46,6 @@ export function assistantResponseMetricsByEntryId(props: {
   const finalEntryIds = finalResponseEntryIds(props.entries, false);
   let terminalRunIndex = -1;
   for (const entry of props.entries) {
-    // Reserve a fallback log for every exchange, including those without a final reply.
-    // Transcripts without an initial user message still start at the first run.
     if ((entry.kind === "message" && entry.role === "user") || terminalRunIndex < 0) {
       terminalRunIndex += 1;
     }

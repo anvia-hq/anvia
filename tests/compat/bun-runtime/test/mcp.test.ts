@@ -195,13 +195,9 @@ describe("@anvia/mcp under Bun", () => {
 
       const pending = Promise.resolve(tool.call({ text: "slow" }));
 
-      // The receipt proves the fixture received the call and is parked in its
-      // delayed reply, so close() below really races an in-flight request.
       await waitForReceipt(receiptPath);
       const { pid } = JSON.parse(readFileSync(receiptPath, "utf8")) as { pid: number };
 
-      // Either close outcome is SDK-defined while a call is in flight; the
-      // contract is that close settles instead of hanging.
       const closed = within(
         client.close().then(
           () => "resolved" as const,
@@ -218,9 +214,6 @@ describe("@anvia/mcp under Bun", () => {
       ).resolves.toBe("settled");
       expect(["resolved", "rejected"]).toContain(await closed);
 
-      // The child must not outlive the client: closing the transport has to
-      // terminate the fixture (SIGTERM marker or dead pid), never leak it
-      // until the fixture's own 10s reply timer fires.
       const exitEvidence = await waitForExit(pid, exitMarkerPath);
       expect(["signaled", "dead"]).toContain(exitEvidence);
     } finally {
@@ -229,8 +222,6 @@ describe("@anvia/mcp under Bun", () => {
   }, 12_000);
 });
 
-// Watchdog, not a delay: the awaited signal is the close/settle event itself.
-// The timer only bounds a leaked-subprocess hang that has no deterministic signal.
 async function within<T>(promise: Promise<T>, timeoutMs = 3_000): Promise<T> {
   let timeout: Timer | undefined;
   try {
@@ -245,8 +236,6 @@ async function within<T>(promise: Promise<T>, timeoutMs = 3_000): Promise<T> {
   }
 }
 
-// Polls for the fixture's receipt file: proof the subprocess received the tool
-// call. The awaited signal is the file; the deadline only bounds a broken fixture.
 async function waitForReceipt(path: string, timeoutMs = 3_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -257,8 +246,6 @@ async function waitForReceipt(path: string, timeoutMs = 3_000): Promise<void> {
   throw new Error("Fixture never acknowledged the tool call");
 }
 
-// Waits for fixture termination after close(): either the SIGTERM marker it
-// writes on signal receipt or a dead pid. The deadline bounds a leaked child.
 async function waitForExit(
   pid: number,
   exitMarkerPath: string,

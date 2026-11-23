@@ -73,7 +73,6 @@ export function decodeTunnelBytes(data: Uint8Array, direction: BinaryDirection):
     type: "tunnel.bytes",
     tunnelId: view.toString("utf8", 2, 2 + idLength),
     seq: view.readUInt32BE(2 + idLength),
-    // A copy: the message buffer is the socket's to reuse.
     bytes: new Uint8Array(view.subarray(payloadAt)),
   };
 }

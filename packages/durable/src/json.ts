@@ -13,7 +13,6 @@ export function json(value: unknown): JsonValue {
 function normalize(value: unknown, ancestors: Set<object>): unknown {
   if (typeof value !== "object" || value === null) return value;
 
-  // Blob markers keep their identity, so the store can tell them from user data (references.ts).
   if (isReference(value)) return value;
 
   if (ancestors.has(value)) throw new TypeError("Durable state contains a cycle.");

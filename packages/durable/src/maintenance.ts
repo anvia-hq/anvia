@@ -38,8 +38,6 @@ function validate(db: DatabaseSync): void {
     throw new Error("Maintenance requires durable schema version 3 through 12.");
 }
 function sync(path: string): void {
-  // Windows maps fsync to _commit(), which fails with EPERM on a read-only handle;
-  // POSIX fsyncs directories through a read-only handle and cannot open them writable (EISDIR).
   const fd = openSync(path, process.platform === "win32" ? "r+" : "r");
   try {
     fsyncSync(fd);
@@ -82,7 +80,7 @@ async function copy(
     }
     sync(temporary);
     assertDestination(path);
-    linkSync(temporary, path); // Atomic, and EEXIST rather than replacing a database or symlink.
+    linkSync(temporary, path);
     sync(dirname(path));
   } finally {
     rmSync(directory, { recursive: true, force: true });

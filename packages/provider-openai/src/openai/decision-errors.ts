@@ -14,8 +14,6 @@ export function normalizeDecisionError(
   }
 
   if (error instanceof APIConnectionTimeoutError) {
-    // SDK timeouts may carry an internal AbortError. Keep it outside the cause chain
-    // so Core does not mistake a retryable timeout for caller cancellation.
     return Object.assign(new Error(error.message), { name: "TimeoutError", providerError: error });
   }
 

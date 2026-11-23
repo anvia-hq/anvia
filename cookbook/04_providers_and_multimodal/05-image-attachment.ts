@@ -12,7 +12,6 @@ const agent = new Agent({
   instructions: "Answer visual questions briefly.",
 });
 
-// Multimodal prompts combine text with image content parts.
 const response = await agent.generate({
   prompt: {
     role: "user",

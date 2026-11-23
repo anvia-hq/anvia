@@ -460,8 +460,6 @@ export const daemonFrameSchema = z.union([
 ]);
 export type DaemonFrame = z.infer<typeof daemonFrameSchema>;
 
-// ---- byte and value codecs -------------------------------------------------------------------
-
 export function encodeBytes(bytes: Uint8Array): string {
   return Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString("base64");
 }
@@ -539,8 +537,6 @@ export function compact<T extends Record<string, unknown>>(value: T): Compact<T>
     Object.entries(value).filter(([, item]) => item !== undefined),
   ) as Compact<T>;
 }
-
-// ---- errors ----------------------------------------------------------------------------------
 
 const knownCodes: ReadonlySet<string> = new Set(dockerSandboxErrorCodes);
 

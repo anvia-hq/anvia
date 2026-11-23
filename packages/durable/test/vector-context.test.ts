@@ -153,7 +153,6 @@ it("retrieves once per model call, not on replay of a completed turn", async () 
   expect(search).toHaveBeenCalledTimes(2);
   await first.close();
 
-  // The store now answers differently; the retry must still show the recorded documents.
   const changed = storeWith("v2 text");
   const model = vi.fn(async (request: CompletionRequest) => {
     expect(JSON.stringify(request.documents)).toContain("v1 text");
@@ -195,7 +194,6 @@ it("blocks a retry whose vector context settings changed under the same version"
     await runtime.close();
   }
 
-  // Restoring the original settings unblocks the same run.
   const model = vi.fn(async (_request: CompletionRequest) => done());
   const restored = await open(path, agentWith(model, storeWith("v1 text").store));
   const run = await restored.getRun(submitted.id);
@@ -217,7 +215,6 @@ itSqlite("externalizes an oversized document set into the blob table", async () 
   await run.result();
 
   expect(search).toHaveBeenCalledTimes(1);
-  // The stored operation stays bounded; the documents live behind a whole-value blob reference.
   const raw = new DatabaseSync(path);
   try {
     const row = raw

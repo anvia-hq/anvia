@@ -64,7 +64,7 @@ afterEach(async () => {
 const toolCall = (toolName: string, toolCallId: string) =>
   response([{ type: "tool-call", toolCallId, toolName, input: {} }]);
 
-const big = "A".repeat(150_000); // base64-like media, well over the 64 KiB inline threshold
+const big = "A".repeat(150_000);
 const media: UserMessage = {
   role: "user",
   content: [
@@ -103,13 +103,9 @@ itSqlite(
       prompt: media,
     });
     await run.result();
-    // The provider sees the full media, not a reference.
     expect(model.mock.calls[0]![0].chatHistory).toContainEqual(media);
     await runtime.close();
 
-    // The journal keeps neither the image nor the file bytes inline in operations or messages.
-    // The submission (run record and its `submitted` event) keeps the prompt inline, as before this
-    // change; the check covers the model input and the history rows that hold the media.
     for (const text of [
       ...stored(path, "SELECT record FROM anvia_durable_operations"),
       ...stored(path, "SELECT record FROM anvia_durable_messages"),
@@ -126,7 +122,6 @@ itSqlite(
       db.close();
     }
 
-    // A fresh owner runs a follow-up turn; the earlier media comes back from the blob table.
     const restarted = await open(path, mediaAgent(model));
     const followup = await restarted.submit({
       agentId: "researcher",
@@ -191,7 +186,6 @@ itSqlite(
     expect(approve).not.toHaveBeenCalled();
     await runtime.close();
 
-    // The waiting record keeps the oversized transcript out of line.
     for (const record of stored(path, "SELECT record FROM anvia_durable_runs")) {
       expect(record.length).toBeLessThan(10_000);
       expect(record).not.toContain("x".repeat(1_000));
@@ -208,7 +202,6 @@ itSqlite(
     expect(approve).toHaveBeenCalledTimes(1);
     const snapshot = await restored.snapshot();
     expect(snapshot.run.status).toBe("completed");
-    // The last model call after the restart received the full fetched output from the continuation.
     expect(JSON.stringify(seen.at(-1)!.chatHistory)).toContain(fetched);
   },
 );

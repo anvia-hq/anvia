@@ -312,7 +312,6 @@ describe("Lens eval ergonomics", () => {
       const body = server.bodies();
       expect(body).toContain("provider rejected <redacted>");
       expect(body).not.toContain("provider rejected person@example.com");
-      // Metadata stays untouched because it is opted into separately from error redaction.
       expect(body).toContain("anvia.trace.metadata.email");
       expect(body).toContain("person@example.com");
     } finally {

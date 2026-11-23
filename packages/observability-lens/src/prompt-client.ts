@@ -39,7 +39,6 @@ type PendingEntry = {
   promise: Promise<LensPrompt>;
   callers: number;
 };
-// Alternating literal text and variable placeholders, parsed exactly once per template.
 type TemplatePart = string | { variable: string };
 
 type PromptStores = {
@@ -130,7 +129,6 @@ export function createLensPromptClient(
         return cached.prompt;
       }
 
-      // Expired entries are never a fallback: a failed refresh must surface its error.
       if (cached !== undefined && cached.expires <= Date.now()) stores.cache.delete(key);
 
       const generation = epoch;
@@ -156,7 +154,6 @@ export function createLensPromptClient(
       } finally {
         entry.callers -= 1;
 
-        // The shared request only aborts once no caller is waiting on it anymore.
         if (entry.callers === 0) {
           if (stores.pending.get(key) === entry) stores.pending.delete(key);
 
@@ -188,7 +185,6 @@ function createPendingEntry(
       ? controller.signal
       : AbortSignal.any([controller.signal, lifecycleSignal]);
   let entry!: PendingEntry;
-  // The finally closure only reads `entry` asynchronously, after it is assigned below.
   const promise = requestPrompt(
     url,
     stores.authorization,
@@ -198,8 +194,6 @@ function createPendingEntry(
     selector,
   )
     .then((prompt) => {
-      // Only the current request may write: reload supersedes older retrievals,
-      // and clearCache invalidates in-flight results. No-store never writes.
       if (
         mode !== "no-store" &&
         generation === currentEpoch() &&
@@ -260,7 +254,6 @@ async function requestPrompt(
     }
 
     if (!response.ok) {
-      // Server messages may echo prompt content or credentials; only the code is kept.
       const code =
         isRecord(value) && isRecord(value.error) && typeof value.error.code === "string"
           ? value.error.code
@@ -343,7 +336,6 @@ function parsePrompt(
     throw invalid();
   }
 
-  // The response selector and identity must exactly match the normalized request.
   if ("label" in selector) {
     if (value.selector.label !== selector.label || !value.labels.includes(selector.label))
       throw invalid();
@@ -424,7 +416,6 @@ function parseTemplate(template: string, variables: Set<string>): TemplatePart[]
     parts.push(template.slice(offset, match.index));
 
     if (match[0].startsWith("\\")) {
-      // An escaped placeholder renders as its literal text without registering a variable.
       parts.push(match[0].slice(1));
     } else {
       const variable = match[1] as string;
@@ -461,7 +452,6 @@ function renderTemplate(parts: TemplatePart[], values: Readonly<Record<string, s
       );
     }
 
-    // Values are concatenated verbatim: no recursive replacement of placeholders.
     rendered += value;
   }
 

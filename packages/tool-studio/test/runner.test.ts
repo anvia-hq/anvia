@@ -452,9 +452,6 @@ const addTool = {
 
 let studioDbDir: string | undefined;
 
-// Stores created by a test are released before the temp directory is removed. An open
-// SQLite handle keeps the database file locked, so removing its directory fails with
-// EPERM on Windows until the store is closed.
 const openSqliteStores: Array<{ close(): void }> = [];
 
 function createTestSqliteStore(
@@ -852,7 +849,6 @@ describe("Anvia studio", () => {
     );
     expect(firstRun.status).toBe(200);
 
-    // The user switches to a model with no reasoningEffort control and sends no controls.
     const secondRun = await runner.fetch(
       new Request("http://runner.test/agents/support/runs", {
         method: "POST",
@@ -1402,8 +1398,6 @@ describe("Anvia studio", () => {
       pipelineId: "audit-pipeline",
       output: { reply: "SEED 0" },
     });
-    // The 1,001 seed inserts each commit on their own, and WAL fsyncs every commit. That takes
-    // about 9 seconds on a loaded disk, so the default 5-second budget is not enough here.
   }, 30_000);
 
   it("loads pipeline runs by exact id from built-in stores", () => {
@@ -4882,8 +4876,6 @@ describe("Anvia studio", () => {
 
     store.close();
 
-    // An open SQLite handle keeps the database file locked on Windows, so removing the
-    // directory fails with EPERM until the store releases it.
     expect(() => rmSync(directory, { force: true, recursive: true })).not.toThrow();
   });
 
@@ -4911,8 +4903,6 @@ describe("Anvia studio", () => {
       "legacy messages_json schema",
     );
 
-    // The error tells the user to delete or recreate the database. That only works if the
-    // failed initialization released its handle instead of leaking it.
     expect(() => rmSync(directory, { force: true, recursive: true })).not.toThrow();
   });
 

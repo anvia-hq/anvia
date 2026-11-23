@@ -795,7 +795,6 @@ describe("AgentTeam", () => {
         lifecycle: {
           async onFinish(event) {
             if (event.status === "completed" && event.output === "first finding") {
-              // onFinish runs after the final steering drain but before the member task settles.
               notifyClosing();
               await released;
             }

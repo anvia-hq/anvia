@@ -181,7 +181,6 @@ describe("TerminalConnection", () => {
     FakeSocket.last.serverMessage({ type: "ready" });
     expect(ctx.statuses.at(-1)?.state).toBe("open");
 
-    // A later drop is an ordinary drop, not the old error again.
     FakeSocket.last.serverClose();
     expect(ctx.statuses.at(-1)?.state).toBe("reconnecting");
   });

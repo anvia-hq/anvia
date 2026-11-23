@@ -51,7 +51,6 @@ export async function spawnAgent(
     parent.id,
   );
 
-  // Replaying a committed spawn needs its saved identity, not executable agent code.
   if (child.agentRunId !== undefined) return child.id;
 
   const registration = agents.get(input.agentId);

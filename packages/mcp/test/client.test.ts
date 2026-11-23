@@ -350,7 +350,6 @@ describe("McpClient", () => {
     await client.connect();
 
     expect(sdk.httpTransports[0]?.url.href).toBe("http://localhost:3000/mcp");
-    // SSRF rules are skipped, but response bounding still applies.
     expect(sdk.httpTransports[0]?.options).toHaveProperty("fetch", expect.any(Function));
     const fetchRequest = sdk.httpTransports[0]?.options.fetch as typeof fetch;
     await expect(fetchRequest("http://localhost:3000/mcp")).resolves.toBeInstanceOf(Response);

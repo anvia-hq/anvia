@@ -10,7 +10,6 @@ export type { SqlStoreOptions as DrizzleDurableStoreOptions } from "./sql/store.
  * (node-postgres, postgres-js, PGlite, Neon, ...) satisfies it.
  */
 export interface DrizzleDatabaseLike {
-  // Parameters are `any` so every Drizzle Postgres driver's `execute` is assignable.
   // oxlint-disable-next-line typescript/no-explicit-any
   execute(query: any): PromiseLike<any>;
   // oxlint-disable-next-line typescript/no-explicit-any

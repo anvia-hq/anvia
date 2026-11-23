@@ -1,4 +1,3 @@
-// Run from the repository root: pnpm exec tsx packages/durable/test/journal-benchmark.ts
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

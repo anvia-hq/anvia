@@ -5,7 +5,6 @@ const text = z.string().refine((value) => value.trim().length > 0);
 
 export const goalLimitsSchema = z
   .object({
-    // A task ownership tree has a maximum of 1000 nodes, including the goal itself.
     maxSessions: count.min(1).max(999),
     maxTotalModelTurns: count.min(1),
     maxConsecutiveNoProgressSessions: count.min(1),

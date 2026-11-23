@@ -317,7 +317,6 @@ function jsonEqual(left: JsonValue, right: JsonValue): boolean {
   if (left === null || right === null || typeof left !== "object" || typeof right !== "object")
     return false;
 
-  // Array.isArray does not narrow readonly JSON arrays out of the object union.
   const leftObject = left as Record<string, JsonValue>;
   const rightObject = right as Record<string, JsonValue>;
   const keys = Object.keys(leftObject);

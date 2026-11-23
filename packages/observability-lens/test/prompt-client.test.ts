@@ -46,7 +46,6 @@ describe("Lens prompt client", () => {
     expect(prompt.variables).toEqual(["name", "count"]);
     expect(prompt.template).toBe("Hello {{ name }}, {{count}} uses \\{{literal}}!");
     expect(prompt.messages).toBeNull();
-    // Config values are not variables: compilation requires them to be passed explicitly.
     expect(() => prompt.compile({ name: "Ada" })).toThrow(LensPromptCompilationError);
     expect(prompt.compile({ name: "Ada", count: "3", extra: "ignored" })).toBe(
       "Hello Ada, 3 uses {{literal}}!",
@@ -264,7 +263,6 @@ describe("Lens prompt client", () => {
     expect((await client.getPrompt({ name: "modes" })).version).toBe(2);
     expect((await client.getPrompt({ name: "modes", cache: "no-store" })).version).toBe(3);
     expect(fetchMock).toHaveBeenCalledTimes(3);
-    // no-store wrote nothing: the reloaded value is still served from cache.
     expect((await client.getPrompt({ name: "modes" })).version).toBe(2);
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });

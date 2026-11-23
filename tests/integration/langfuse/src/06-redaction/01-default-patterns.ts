@@ -1,6 +1,3 @@
-// Demonstrates: DEFAULT_PATTERNS and redactString. No tracing required
-// (this demo does not call the Langfuse API) so it can run offline.
-
 import { createPiiRedactor, DEFAULT_PATTERNS } from "@anvia/langfuse";
 
 function main(): void {

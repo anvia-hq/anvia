@@ -32,8 +32,8 @@ function serializationsOf(spy: { mock: { results: { value: unknown }[] } }, mark
 }
 
 const marker = "payload-marker ";
-const big = marker.repeat(20_000); // about 320 KB: under the default 1 MiB budget
-const huge = marker.repeat(200_000); // about 3.2 MB: over the default budget
+const big = marker.repeat(20_000);
+const huge = marker.repeat(200_000);
 
 afterEach(() => {
   vi.restoreAllMocks();

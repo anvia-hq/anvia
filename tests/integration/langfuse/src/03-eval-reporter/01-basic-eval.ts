@@ -1,7 +1,3 @@
-// Demonstrates: runEvalSuite + client.evalReporter() writing scores
-// to a real Langfuse trace. The case bundles a traceId in metadata so
-// the reporter can resolve the trace.
-
 import { Agent } from "@anvia/core/agent";
 import { agentEvalTarget, contains, runEvalSuite } from "@anvia/core/evals";
 import { getStaticModel } from "../_support/model.js";

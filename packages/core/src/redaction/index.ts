@@ -47,13 +47,6 @@ export type Redactor = {
  * identifiers such as order numbers survive redaction.
  */
 export const DEFAULT_PATTERNS: RedactionPattern[] = [
-  // Well-known provider token shapes without a sk-/token- prefix: fixed prefixes plus minimum
-  // lengths keep these precise enough for the precision-first default set. They run before PII
-  // patterns so card, IP, or phone matches cannot partially consume a credential. GitHub's
-  // stateless installation tokens (`ghs_APPID_JWT`) are base64url JWTs with underscores, dots,
-  // hyphens, and a variable length: that branch stops at its character-class boundary instead
-  // of a word boundary, so terminators like `-` or `_` cannot truncate the match. The legacy
-  // fixed-length families stay pinned to 36 characters with a word boundary.
   { name: "googleApiKey", regex: /\bAIza[0-9A-Za-z_-]{35}(?![0-9A-Za-z_-])/g },
   {
     name: "githubToken",
@@ -61,29 +54,22 @@ export const DEFAULT_PATTERNS: RedactionPattern[] = [
       /\b(?:gh[pour]_[A-Za-z0-9]{36}\b|ghs_[A-Za-z0-9_.-]{20,}|github_pat_[A-Za-z0-9_]{20,}\b)/g,
   },
   { name: "awsAccessKeyId", regex: /\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g },
-  // PEM blocks are unambiguous, so the whole block goes. A header without its footer (a
-  // truncated log or message) still redacts everything that follows it.
   {
     name: "pemPrivateKey",
     regex: /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z0-9 ]*PRIVATE KEY-----/g,
   },
   { name: "pemPrivateKeyTruncated", regex: /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*/g },
-  // AWS pairs a 40-character secret with its access key id. A bare 40-character base64 run is
-  // too common to replace, so the pattern requires the setting name in front of the value.
   {
     name: "awsSecretAccessKey",
     regex:
       /\b(?:aws_secret_access_key|secret_access_key|secretAccessKey)["']?\s*[:=]\s*["']?[A-Za-z0-9/+=]{40}(?![A-Za-z0-9/+=])["']?/gi,
   },
-  // Slack's documented families: bot/user tokens (xoxb/xoxa/xoxp/xoxs/xoxr), rotating access
-  // tokens (xoxe-, xoxe.xapp-, xoxe.xoxb-, xoxe.xoxp-), workflow (xwfp), and app-level (xapp).
   {
     name: "slackToken",
     regex:
       /\b(?:xox[baprsxe](?:\.x(?:app|oxb|oxp))?-[A-Za-z0-9.-]{10,}|xwfp-[A-Za-z0-9.-]{10,}|xapp-[A-Za-z0-9.-]{10,})\b/g,
   },
   { name: "email", regex: /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi },
-  // The final digit is separate so a trailing separator is not part of the match.
   { name: "creditCard", regex: /\b(?:\d[ -]?){12,18}\d\b/g, validate: isCardNumber, numeric: true },
   { name: "ipv4", regex: /\b(?:\d{1,3}\.){3}\d{1,3}\b/g },
   {
@@ -114,8 +100,6 @@ export function createRedactor(options: RedactionOptions = {}): Redactor {
 
       text = text.replace(pattern.regex, (...args: unknown[]) => {
         const match = String(args[0]);
-        // Capture groups shift the callback arguments. Regexes with named groups append the groups
-        // object after the input, so offset and input are the last two or three values.
         const hasGroups = typeof args[args.length - 1] === "object";
         const offset = Number(args[args.length - (hasGroups ? 3 : 2)]);
         const source = String(args[args.length - (hasGroups ? 2 : 1)]);
@@ -163,8 +147,6 @@ export function createRedactor(options: RedactionOptions = {}): Redactor {
       const record = value as Record<string, unknown>;
       const result: Record<string, unknown> = {};
       for (const [key, entry] of Object.entries(record)) {
-        // Encoded bodies are already opaque; scanning them only risks corrupting the payload.
-        // Structured data still needs traversal, so only encoded strings are preserved verbatim.
         if (key === "data" && typeof entry === "string" && isEncodedValue(record)) {
           result[key] = entry;
           continue;
@@ -173,7 +155,6 @@ export function createRedactor(options: RedactionOptions = {}): Redactor {
         const redacted = redactValue(entry, depth + 1, seen);
 
         if (key === "__proto__") {
-          // Assigning would invoke the prototype setter and change the copy's prototype.
           Object.defineProperty(result, key, {
             value: redacted,
             enumerable: true,
@@ -194,7 +175,6 @@ export function createRedactor(options: RedactionOptions = {}): Redactor {
   return {
     redact: (value: unknown) => redactValue(value, 0, new WeakSet<object>()),
     redactString,
-    // Callers declare the value type, so the redacted copy is cast back to it.
     redactObject: <T>(value: T): T => redactValue(value, 0, new WeakSet<object>()) as T,
     redactMessages: <M extends Message>(messages: M[]): M[] =>
       messages.map((message) => redactValue(message, 0, new WeakSet<object>()) as M),

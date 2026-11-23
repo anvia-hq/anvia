@@ -56,15 +56,11 @@ export function createExecution(
   ): Promise<DurableOperation> {
     check();
     return store.transaction(async (tx) => {
-      // The journal stores a bounded form; content addressing makes it deterministic, so the
-      // replay comparison below can run on stored forms directly.
       const stored =
         kind === "model" ? await tx.blobs((io) => externalizeModelInput(io, input)) : input;
       const previous = await tx.getOperation(run.id, key);
 
       if (previous !== undefined) {
-        // Compare restored forms: a journal written before blob references stores the input
-        // inline, and the same input now externalizes differently. Both restore to `input`.
         if (
           !sameJson(await tx.blobs((io) => hydrateValue(io, previous.input)), input) ||
           previous.kind !== kind
@@ -82,7 +78,6 @@ export function createExecution(
           );
         }
 
-        // Restored results are handed back to the agent loop fully hydrated.
         return previous.status === "completed"
           ? { ...previous, result: await tx.blobs((io) => hydrateValue(io, previous.result!)) }
           : previous;
@@ -91,7 +86,6 @@ export function createExecution(
       const current = (await tx.getRun(run.id))!;
 
       if (kind === "model") {
-        // Core's maxTurns counts tool-loop continuations in addition to the initial response.
         if (current.modelTurns >= current.maxModelTurns) {
           throw new Error("Durable run exhausted its model-turn budget.");
         }
@@ -121,7 +115,6 @@ export function createExecution(
 
       if (current.status !== "running") throw new Error("Durable run is no longer running.");
 
-      // Oversized results move to the blob table here, atomically with the referencing write.
       let stored: JsonValue = result;
 
       if (operation.kind === "tool") {
@@ -200,7 +193,6 @@ export function createExecution(
     operation: DurableOperation,
     response: CompletionResponse,
   ): Promise<CompletionResponse> {
-    // SDK response objects can contain classes, cycles, or credentials. Persist normalized fields only.
     const { rawResponse: _raw, ...normalized } = response;
     const saved = json({ ...normalized, rawResponse: null });
     await complete(operation, saved, response.usage);
@@ -208,8 +200,6 @@ export function createExecution(
   }
 
   const execution: AgentRunExecution = {
-    // Status only: tool args are not final yet, and a changed input fails in start() with a
-    // recovery error that the run's own span records.
     async replayed(step) {
       const key =
         step.kind === "tool"
@@ -221,7 +211,6 @@ export function createExecution(
       );
     },
     async prepareMessages(turn, messages, checkpoint) {
-      // Check before compaction too: an exhausted session must not spend another model call.
       const exhausted = await store.transaction(async (tx) => {
         const current = (await tx.getRun(run.id))!;
         return (
@@ -352,8 +341,6 @@ export function createExecution(
     execution.drainSteering = createSteeringDrain(store, run, signal);
   }
 
-  // Tool-index search is a read of an external index: its selection is recorded once, before the
-  // model call that uses it, so a replayed turn offers the same tools without searching again.
   if (
     registration.toolIndexes !== undefined &&
     (getResolvedAgentOptions(registration.agent).toolIndexes?.length ?? 0) > 0
@@ -377,7 +364,6 @@ export function createExecution(
         if ((await tx.getRun(run.id))?.status !== "running")
           throw new Error("Durable run is no longer running.");
 
-        // Stored in JSON form, so the first run and every replay hand the agent the same value.
         const operation: DurableOperation = {
           key,
           kind: "effect",
@@ -392,8 +378,6 @@ export function createExecution(
     };
   }
 
-  // Vector retrieval reads an external store: each context's documents are recorded once, before the
-  // model call that uses them, so a replayed turn sees the same documents without querying again.
   if (registration.context !== undefined) {
     execution.selectContext = async (turn, index, retrieve) => {
       const key = `${prefix}context-docs:${turn}:${index}`;
@@ -433,8 +417,6 @@ export function createExecution(
           input: json({ turn, index }),
           status: "completed",
           recovery: "manual",
-          // An oversized document set moves to the blob table here, like an oversized tool result,
-          // so one retrieval cannot exceed the operation payload limit.
           result: await tx.blobs((io) =>
             externalizeContextDocsResult(io, json({ documents: retrieved })),
           ),
@@ -455,7 +437,6 @@ async function closeCompletionStream(
   try {
     await stream.return?.();
   } catch (error) {
-    // Cleanup may fail independently, but must preserve an existing execution failure.
     if (!failed) throw error;
   }
 }

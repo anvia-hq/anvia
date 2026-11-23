@@ -13,7 +13,6 @@ export class DelayProxy {
     this.sockets.add(client).add(upstream);
     const forward = (from: net.Socket, to: net.Socket) => {
       from.on("data", (chunk) => {
-        // Equal delays keep timers in order, so bytes stay in order.
         if (this.oneWayMs === 0) to.write(chunk);
         else setTimeout(() => to.writable && to.write(chunk), this.oneWayMs);
       });

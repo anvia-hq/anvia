@@ -9,8 +9,6 @@ export function normalizeJevError(error: unknown, abortSignal?: AbortSignal): un
   }
 
   if (error instanceof APITimeoutError) {
-    // The SDK timeout cause is AbortError. Keep it outside the cause chain so core
-    // retries recognize a timeout without mistaking it for caller cancellation.
     return Object.assign(new Error(error.message), { name: "TimeoutError", providerError: error });
   }
 

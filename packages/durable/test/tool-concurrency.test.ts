@@ -150,7 +150,6 @@ itSqlite(
       runtimes.push(runtime);
       await runtime.resume();
       expect(await (await runtime.getRun(id)).result()).toMatchObject({ output: "done" });
-      // The committed `fast` call is replayed from the journal; only `stuck` runs again.
       expect(readFileSync(effects, "utf8").split("\n").sort()).toEqual([
         "",
         "fast",

@@ -149,7 +149,6 @@ test("compatible workspace peers prevent automatic major bumps for minor release
       false,
     );
 
-    // A real breaking dependency release must still be visible in the plan.
     writeChangeset(fixture, "a-minor", "major", "Change A's contract.", ["a"]);
     assert.equal(plan().find(({ name }) => name === "@fixture/b").type, "major");
   } finally {
@@ -307,7 +306,6 @@ test("workspace peers release unchanged dependents across the 0.x minor boundary
       ...readJson(dependentPath),
       peerDependencies: { "@fixture/a": "workspace:^" },
     });
-    // Only A changes: B must be released solely because its peer range is exceeded.
     writeChangeset(fixture, "a-minor", "minor", "Add an API to A.", ["a"]);
     const output = path.join(fixture, "plan.json");
     runCommand("pnpm", ["changeset", "status", "--output", output], fixture);
@@ -452,7 +450,6 @@ function createReleaseFixture() {
     packageManager: "pnpm@11.0.4",
     workspaces: ["packages/*"],
   });
-  // Fixtures borrow the repository install; pnpm must never reinstall through that symlink.
   writeFileSync(
     path.join(root, "pnpm-workspace.yaml"),
     "packages:\n  - packages/*\nverifyDepsBeforeRun: false\n",

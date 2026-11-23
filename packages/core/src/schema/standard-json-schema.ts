@@ -28,17 +28,12 @@ export function tryToProviderJsonSchemaFromStandardSchema(
 ): StandardSchemaJsonSchemaConversion {
   const props = schema["~standard"];
 
-  // Zod keeps its native converter. Prefer the output representation: it
-  // validates identically for schemas without input/output differences and
-  // carries zod's strict-object refinements (additionalProperties: false)
-  // that provider strict modes such as OpenAI structured outputs require.
   if (props.vendor === "zod") {
     return {
       jsonSchema: toProviderJsonSchemaShape(toProviderZodJsonSchema(schema as z.ZodType)),
     };
   }
 
-  // Generic support for any library implementing the Standard JSON Schema spec.
   const jsonSchema = (
     props as {
       jsonSchema?: StandardJSONSchemaV1["~standard"]["jsonSchema"] | undefined;
@@ -51,7 +46,6 @@ export function tryToProviderJsonSchemaFromStandardSchema(
     };
   }
 
-  // Vendor-specific converters may need to be loaded asynchronously.
   return { pendingSchema: schema };
 }
 
@@ -60,25 +54,14 @@ function toProviderZodJsonSchema(schema: z.ZodType): JsonObject {
   try {
     outputJsonSchema = toProviderJsonSchema(schema, { io: "output" });
   } catch {
-    // Transformed schemas are unrepresentable on the output side. Describe the
-    // validation input instead so the provider emits values the schema
-    // accepts, and the transformed output becomes the completion result.
     return toProviderJsonSchema(schema, { io: "input" });
   }
   let inputJsonSchema: JsonObject;
   try {
     inputJsonSchema = toProviderJsonSchema(schema, { io: "input" });
   } catch {
-    // The input side is not representable while the output side is; the
-    // output side remains the best available description.
     return outputJsonSchema;
   }
-  // The provider response is fed to `~standard.validate` as its input, so the
-  // output representation may only be used when it describes the same accepted
-  // values as the input side. Ignoring additionalProperties keeps zod's
-  // strict-object refinements (which provider strict modes such as OpenAI
-  // structured outputs require) while still detecting schemas whose input and
-  // output values genuinely differ, like `z.string().pipe(z.coerce.number())`.
   return jsonSchemaMatchesInputShape(inputJsonSchema, outputJsonSchema)
     ? outputJsonSchema
     : inputJsonSchema;
@@ -112,7 +95,6 @@ function jsonSchemaMatchesInputShape(input: JsonValue, output: JsonValue): boole
 
         if (outputKey === undefined || key !== outputKey) return false;
 
-        // Keys come from Object.keys, so the indexed values exist by construction.
         const inputValue = (input as Record<string, JsonValue>)[key] as JsonValue;
         const outputValue = (output as Record<string, JsonValue>)[outputKey] as JsonValue;
         return jsonSchemaMatchesInputShape(inputValue, outputValue);
@@ -255,7 +237,6 @@ function copyJsonData(
       throw new TypeError("Provider JSON schema records must not contain enumerable accessors.");
     }
 
-    // Define own data properties so __proto__ cannot change the copy's prototype.
     Object.defineProperty(copy, key, {
       value: copyJsonData(descriptor.value, ancestors),
       enumerable: true,
@@ -282,9 +263,6 @@ function completeStrictObjectRefinements(jsonSchema: unknown): void {
   completeSchemaNode(jsonSchema);
 }
 
-// Schema-bearing keywords of the drafts the converters are requested to
-// produce (draft-07, draft-2020-12), so literal values under const, enum,
-// annotations, and extension keywords are never rewritten.
 const SCHEMA_POSITIONS: ReadonlySet<string> = new Set([
   "additionalItems",
   "additionalProperties",
@@ -315,7 +293,6 @@ const SCHEMA_MAP_POSITIONS: ReadonlySet<string> = new Set([
 
 function completeSchemaNode(node: unknown): void {
   if (Array.isArray(node)) {
-    // Lists of schemas, like prefixItems and draft-07 items.
     for (const item of node) completeSchemaNode(item);
     return;
   }

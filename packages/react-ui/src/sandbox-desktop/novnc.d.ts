@@ -1,4 +1,3 @@
-// noVNC ships no types. This covers the part of its client API the viewer uses.
 declare module "@novnc/novnc" {
   interface RfbChannel {
     send(data: ArrayBufferLike | ArrayBufferView): void;

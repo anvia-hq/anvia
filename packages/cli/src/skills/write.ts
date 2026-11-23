@@ -65,14 +65,10 @@ function writeSkills(
   const cwd = options.cwd ?? process.cwd();
   const force = options.force === true || (options.mode === "update" && options.apply === true);
 
-  // Generated pointers (AGENTS.md section, Cursor rules) must reference the
-  // directory the canonical copy actually lands in.
   const canonicalDir = options.dir ?? "skills";
 
   const targets = new Set<SkillsTarget>(options.targets ?? ["anvia"]);
 
-  // The ./skills copy is the canonical content every pointer-based adapter
-  // references, so it is always written; the target flags add adapters on top.
   targets.add("anvia");
 
   const results: SkillsTargetResult[] = [];

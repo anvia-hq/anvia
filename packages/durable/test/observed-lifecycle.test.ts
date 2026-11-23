@@ -102,7 +102,6 @@ describe("observational lifecycle", () => {
     await run.retry();
     await run.result();
 
-    // The start and the failure were recorded, so the retry does not repeat them.
     expect(hooks.onStart).toHaveBeenCalledTimes(1);
     expect(hooks.onError).toHaveBeenCalledTimes(1);
     expect(hooks.onStepFinish).toHaveBeenCalledTimes(1);
@@ -128,7 +127,6 @@ describe("observational lifecycle", () => {
     const model = vi.fn(async (_request: CompletionRequest) => done());
     const agent = agentWith(model, {
       onStart(event) {
-        // A strict-mode write to a frozen snapshot throws; the hook fails and the run continues.
         (event.input as { content: unknown }).content = "changed by a hook";
       },
     });
@@ -153,7 +151,6 @@ describe("observational lifecycle", () => {
     expect((await settled(submitted)).run.status).toBe("failed");
     expect(hooks.onError).toHaveBeenCalledTimes(1);
 
-    // The retry fails again with no model turn in between, so only the retry count tells them apart.
     const run = await first.getRun(submitted.id);
     await run.retry();
     expect((await settled(submitted)).run.status).toBe("failed");
@@ -171,7 +168,6 @@ describe("observational lifecycle", () => {
     expect((await settled(submitted)).run.status).toBe("failed");
     await first.close();
 
-    // Simulate a crash inside onStart: its record is left at "started" with no completion.
     const db = new DatabaseSync(path);
     const rows = db
       .prepare("SELECT key, record FROM anvia_durable_operations WHERE run_id = ?")

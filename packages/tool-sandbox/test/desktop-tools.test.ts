@@ -39,7 +39,6 @@ function tools(
   desktop: SandboxDesktop,
   options: { tools?: readonly DesktopToolName[]; settleMs?: number } = {},
 ) {
-  // No settle delay unless a test asks for one: it would only slow the others down.
   const created = createDesktopTools({ sandbox: desktop, settleMs: 0, ...options });
   const call = (name: DesktopToolName, args: unknown, context: object = {}) => {
     const tool = created.find((candidate) => candidate.name === name);
@@ -102,7 +101,6 @@ describe("createDesktopTools", () => {
 
   it("marks looking and waiting safe to repeat, and every input idempotent", () => {
     const { created } = tools(fakeDesktop(1280, 800));
-    // Every tool has a recovery policy, and every policy names a real tool.
     expect(Object.keys(desktopToolRecovery).sort()).toEqual(names(created).sort());
     expect(desktopToolRecovery.desktop_screenshot).toBe("safe");
     expect(desktopToolRecovery.desktop_cursor_position).toBe("safe");
@@ -126,7 +124,6 @@ describe("screenshots", () => {
     const { call } = tools(desktop);
     const output = await call("desktop_screenshot", {});
 
-    // 2560x1440 is 3.7 MP, so the 1.15 MP budget bites before the 1568 edge and the daemon scales to 1430x804.
     expect(desktop.screenshot).toHaveBeenCalledWith(
       expect.objectContaining({ scale: 0.5585315257689379 }),
     );
@@ -152,9 +149,7 @@ describe("screenshots", () => {
   it("scales by whichever limit bites first, and never up", () => {
     const policy = { maxEdge: 1568, maxPixels: 1_150_000 };
     expect(viewOf(800, 600, policy)).toMatchObject({ scale: 1, imageWidth: 800, imageHeight: 600 });
-    // Within the pixel limit but too long an edge.
     expect(viewOf(3000, 300, policy).imageWidth).toBe(1568);
-    // Within the edge limit but too many pixels: 1568x1568 is 2.4 MP.
     const square = viewOf(1568, 1568, policy);
     expect(square.imageWidth * square.imageHeight).toBeLessThanOrEqual(1_150_000);
     expect(square.imageWidth).toBeLessThan(1568);
@@ -183,10 +178,8 @@ describe("coordinates", () => {
     await call("desktop_mouse_move", { coordinate: [view.imageWidth - 1, view.imageHeight - 1] });
 
     const [click, moveOrigin, moveCorner] = desktop.act.mock.calls.map(([action]) => action);
-    // The middle of the screenshot is the middle of the display.
     expect(click).toMatchObject({ type: "click", x: 1280, y: 720 });
     expect(moveOrigin).toMatchObject({ type: "mouse_move", x: 0, y: 0 });
-    // The far corner of the screenshot is the far corner of the display, not past it.
     expect(moveCorner).toMatchObject({ type: "mouse_move", x: 2559, y: 1439 });
   });
 
@@ -243,7 +236,6 @@ describe("coordinates", () => {
   it("reports the cursor in screenshot coordinates", async () => {
     const desktop = fakeDesktop(2560, 1440);
     const output = await tools(desktop).call("desktop_cursor_position", {});
-    // Display centre (1280, 720) falls in screenshot pixel (715, 402) of the 1430x804 view.
     expect(output).toEqual({ coordinate: [715, 402] });
   });
 });
@@ -343,7 +335,6 @@ describe("letting the application react", () => {
       () => (done = true),
     );
 
-    // The input has gone out, but the tool has not returned yet.
     await vi.advanceTimersByTimeAsync(0);
     expect(desktop.act).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(299);
@@ -374,7 +365,6 @@ describe("letting the application react", () => {
     const looking = [run("desktop_screenshot", {}), run("desktop_cursor_position", {})];
 
     await vi.advanceTimersByTimeAsync(10);
-    // Looking is done; every input is still settling.
     expect(finished.sort()).toEqual(["desktop_cursor_position", "desktop_screenshot"]);
     await vi.advanceTimersByTimeAsync(1_000);
     await Promise.all([...pending, ...looking]);

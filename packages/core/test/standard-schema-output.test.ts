@@ -331,9 +331,6 @@ describe("Standard Schema structured output", () => {
 
     await generateCompletion({ model, prompt: "extract", outputSchema: schema });
 
-    // Strict-object refinements are added at schema positions only; literal
-    // values under const and enum must stay untouched or const matching and
-    // enum membership would silently change.
     expect(model.requests[0]?.outputSchema).toEqual({
       type: "object",
       properties: {
@@ -373,8 +370,6 @@ describe("Standard Schema structured output", () => {
 
     expectTypeOf(result.output).toEqualTypeOf<{ count: number }>();
     expect(result.output).toEqual({ count: 42 });
-    // The provider must be asked for the validation input (string), not the
-    // transformed output (number), or the response would fail validation.
     expect(model.requests[0]?.outputSchema).toEqual({
       type: "object",
       properties: { count: { type: "string" } },
@@ -413,9 +408,6 @@ describe("Standard Schema structured output", () => {
 
     expectTypeOf(result.output).toEqualTypeOf<{ count: number }>();
     expect(result.output).toEqual({ count: 42 });
-    // The output side would describe a number while validation expects the
-    // string input, so the provider must receive the input representation,
-    // completed with strict-object refinements for provider strict modes.
     expect(model.requests[0]?.outputSchema).toEqual({
       type: "object",
       properties: { count: { type: "string" } },
@@ -433,8 +425,6 @@ describe("Standard Schema structured output", () => {
       outputSchema: z.object({ title: z.string() }),
     });
 
-    // Pure strictness refinements do not describe different accepted values,
-    // so the output representation (and its refinements) is preserved.
     expect(model.requests[0]?.outputSchema).toEqual({
       type: "object",
       properties: { title: { type: "string" } },

@@ -395,10 +395,7 @@ function reportObserverFailures(
       error: failure.error,
     };
     try {
-      // Reporting must not block the run or leak a rejected handler promise.
       void Promise.resolve(onObserverError(report)).catch(() => {});
-    } catch {
-      // A faulty sink must not turn an ignored observer failure into a rejected run.
-    }
+    } catch {}
   }
 }

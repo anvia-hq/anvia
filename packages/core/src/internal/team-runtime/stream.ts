@@ -22,7 +22,6 @@ export class TeamStream<Output> implements AgentTeamStream<Output> {
       if (this.mode !== "events" || this.bufferError !== undefined) return;
 
       if (this.bufferedEvents >= maxBufferedEvents) {
-        // Set the error before cancelling: cancellation emits further member events.
         this.bufferError = new AgentTeamLimitError("maxBufferedEvents");
         this.queue.throw(this.bufferError, { discardPending: true });
         this.run.cancel("Agent team stream exceeded maxBufferedEvents.");
@@ -41,7 +40,6 @@ export class TeamStream<Output> implements AgentTeamStream<Output> {
     return this.consumeText();
   }
   get result(): Promise<AgentTeamOutcome<Output>> {
-    // Let a synchronous event subscription win, as with AgentStream.result.
     if (this.mode === undefined)
       queueMicrotask(() => {
         this.mode ??= "result";
@@ -68,7 +66,6 @@ export class TeamStream<Output> implements AgentTeamStream<Output> {
     if (this.promise === undefined) {
       this.promise = this.run.execute().then(
         (outcome) => {
-          // Overflow can occur while publishing the terminal outcome, after the run closes.
           if (this.bufferError !== undefined) throw this.bufferError;
 
           return outcome;
@@ -77,7 +74,6 @@ export class TeamStream<Output> implements AgentTeamStream<Output> {
           throw this.bufferError ?? error;
         },
       );
-      // Observe failures for iterator-only consumers. queue.throw records the error and returns.
       this.promise.then(
         () => this.queue.close(),
         (error: unknown) => this.queue.throw(error),

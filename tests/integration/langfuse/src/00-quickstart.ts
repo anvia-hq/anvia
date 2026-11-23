@@ -1,7 +1,3 @@
-// One-shot end-to-end demo: build a real Anvia agent, trace it, attach scores,
-// run a one-case eval suite with the Langfuse eval reporter, flush, then log
-// every artifact ID.
-
 import { Agent } from "@anvia/core/agent";
 import { agentEvalTarget, contains, runEvalSuite } from "@anvia/core/evals";
 import { assertCompleted, buildSupportAgent, getTicket } from "./_support/agent.js";

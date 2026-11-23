@@ -1,6 +1,3 @@
-// Demonstrates: includeMessages controls whether output.messages is
-// included in score metadata. The case output bundles a messages array.
-
 import { contains, runEvalSuite } from "@anvia/core/evals";
 import { createTracing } from "../_support/tracing.js";
 
@@ -15,8 +12,6 @@ async function main(): Promise<void> {
         expected: "ok",
         metadata: {
           traceId: "00000000-0000-0000-0000-000000000015",
-          // The reporter reads output.messages from the case's resolved output.
-          // To attach messages here we wire them through the target.
         },
       },
     ],

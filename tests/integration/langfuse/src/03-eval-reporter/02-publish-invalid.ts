@@ -1,8 +1,3 @@
-// Demonstrates: publishInvalid: true surfaces invalid outcomes as zero
-// scores. By default (publishInvalid: false) invalid outcomes are
-// dropped silently. This script uses a real tracing instance and live
-// Langfuse eval reporter.
-
 import { agentEvalTarget, EvalOutcome, runEvalSuite } from "@anvia/core/evals";
 import { getStaticModel } from "../_support/model.js";
 import { createTracing } from "../_support/tracing.js";

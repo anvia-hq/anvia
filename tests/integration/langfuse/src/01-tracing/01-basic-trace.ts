@@ -1,5 +1,3 @@
-// Demonstrates: an owned Langfuse client, named observer registration, and automatic disposal.
-
 import { assertCompleted, buildSupportAgent } from "../_support/agent.js";
 import { buildOpenAIClient, defaultModelId } from "../_support/model.js";
 import { createTracing } from "../_support/tracing.js";

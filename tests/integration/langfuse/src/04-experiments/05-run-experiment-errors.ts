@@ -1,7 +1,3 @@
-// Demonstrates: per-item errors. The run function throws for half the
-// items; the result.errors array captures them and only successful
-// items reach the batched POST.
-
 import { createTracing } from "../_support/tracing.js";
 
 async function main(): Promise<void> {

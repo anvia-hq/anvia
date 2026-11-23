@@ -1,6 +1,3 @@
-// Demonstrates: streaming agent output and the text_delta/reasoning_delta/
-// tool_call updates on the generation observation in Langfuse.
-
 import { buildSupportAgent } from "../_support/agent.js";
 import { buildOpenAIClient, defaultModelId } from "../_support/model.js";
 import { createTracing } from "../_support/tracing.js";

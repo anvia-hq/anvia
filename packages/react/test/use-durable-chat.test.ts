@@ -125,7 +125,6 @@ describe("useDurableChat", () => {
     await waitFor(() => expect(before.result.current.run.status).toBe("running"));
     before.unmount();
 
-    // A new page: a fresh transport knows no run until the saved cursor reattaches it.
     const second = fakeClient({ events, status: "running" });
     const reloaded = createDurableChatTransport({
       client: second.client,

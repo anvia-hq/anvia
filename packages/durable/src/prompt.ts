@@ -10,7 +10,6 @@ const userMessage = messageSchema.transform((message, context) => {
   return z.NEVER;
 });
 
-// Use the core message contract, including image/file validation and JSON metadata.
 export const promptSchema: z.ZodType<AgentPrompt> = z
   .union([z.string(), userMessage])
   .refine((prompt) => {

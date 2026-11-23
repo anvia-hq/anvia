@@ -39,8 +39,6 @@ const server = Bun.serve({
     }
 
     if (url.pathname === "/v1beta/models/gemini-2.5-flash:streamGenerateContent") {
-      // Real Gemini streams end with a finishReason-only terminal chunk; the
-      // terminal chunk must not restate content that diverges from the deltas.
       return eventStream([
         {
           candidates: [{ content: { parts: [{ text: "Hello from " }], role: "model" }, index: 0 }],

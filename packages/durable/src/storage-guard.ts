@@ -42,7 +42,6 @@ export function guardStore(
               try {
                 return await Reflect.apply(method, target, args);
               } catch (error) {
-                // Losing a claim stops one run; it is not a journal failure.
                 if (error instanceof DurableClaimLostError) throw error;
 
                 throw fail(error);
@@ -52,7 +51,7 @@ export function guardStore(
         });
         try {
           const result = await callback(limitedTransaction(guarded, limits));
-          check(); // A caught write failure must roll back, never commit a partial transaction.
+          check();
           return result;
         } catch (error) {
           callbackFailed = true;
@@ -79,8 +78,6 @@ export function guardStore(
       if (key === "close") return method.bind(target);
 
       if (key === "claim" || key === "claimTasks" || key === "renew" || key === "release") {
-        // Lease traffic fails transiently (network, failover); the runtime retries it and
-        // stops affected runs itself, so it must not poison the journal.
         return async (...args: unknown[]) => {
           check();
           return Reflect.apply(method, target, args);

@@ -133,8 +133,6 @@ export class Studio implements AnviaStudio {
     };
     this.websocketServer = new WebSocketServer({ noServer: true });
     serverOptions.websocket = {
-      // @types/ws overloads are stricter than Hono's structural adapter, while Hono officially
-      // supports ws.WebSocketServer. Keep the interop assertion at this single ownership boundary.
       server: this.websocketServer as unknown as WebSocketServerLike,
     };
 
@@ -460,11 +458,6 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
   const sandboxRegistry = createStudioSandboxRegistry(agents, options.sandboxes ?? []);
   const memorySources = createStudioMemorySourceRegistry(agents, stores.sessions);
   const app = new HonoApp();
-  // Validate Host/Origin before any route handling so DNS rebinding and
-  // cross-origin pages cannot reach state-changing routes. The allowlist
-  // follows the serve options: an explicit non-wildcard bind hostname is
-  // trusted automatically, and operators binding 0.0.0.0 must list
-  // client-facing hostnames in allowedHosts.
   const guardOptions: { allowedHosts?: readonly string[]; hostname?: string } = {};
 
   if (options.allowedHosts !== undefined) guardOptions.allowedHosts = options.allowedHosts;
@@ -472,9 +465,6 @@ function createStudioApp(options: StudioRuntimeOptions): StudioApp {
   if (options.hostname !== undefined) guardOptions.hostname = options.hostname;
 
   app.use(createStudioHostGuard(guardOptions));
-  // Bound request bodies before any handler parses or persists them. Studio
-  // accepts rich transcripts, so the default stays generous, but an unbounded
-  // body lets a caller that passes the host guard grow memory and the stores.
   const maxBodyBytes = options.maxBodyBytes ?? defaultStudioMaxBodyBytes;
 
   if (!Number.isSafeInteger(maxBodyBytes) || maxBodyBytes < 1) {

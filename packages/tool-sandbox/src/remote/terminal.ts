@@ -146,8 +146,6 @@ export class RemoteSandboxTerminal implements SandboxTerminal {
     options: { abortSignal?: AbortSignal | undefined } = {},
   ): Promise<void> {
     assertSessionName(sessionName);
-    // Never repeated after a link loss: a second attempt would report the session as unknown,
-    // hiding that the first one worked.
     await rpc(
       this.options.source,
       "terminalKill",
@@ -289,9 +287,7 @@ class RemoteTerminalHandle implements TerminalHandle {
   private trySend(frame: Parameters<HubConnection["sendFrame"]>[0]): void {
     try {
       this.connection.sendFrame(frame);
-    } catch {
-      // The link is down; the connection ends this terminal itself.
-    }
+    } catch {}
   }
 }
 

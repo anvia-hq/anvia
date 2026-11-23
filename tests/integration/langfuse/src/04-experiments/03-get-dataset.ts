@@ -1,6 +1,3 @@
-// Demonstrates: client.getDataset({ name }) with pageSize. Creates a
-// dataset with several items first so pagination actually exercises.
-
 import { createTracing } from "../_support/tracing.js";
 
 async function main(): Promise<void> {

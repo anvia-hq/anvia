@@ -60,7 +60,7 @@ afterEach(async () => {
     rmSync(directory, { recursive: true, force: true });
 });
 
-const big = "result-".repeat(20_000); // 140 KB, over the 64 KiB inline threshold
+const big = "result-".repeat(20_000);
 
 itSqlite(
   "stores an oversized tool result externally; the model still receives the full result",
@@ -80,12 +80,10 @@ itSqlite(
     expect(await run.result()).toMatchObject({ type: "response", output: "done" });
     expect(tool).toHaveBeenCalledTimes(1);
     expect(model).toHaveBeenCalledTimes(2);
-    // The provider saw the full result, not a reference.
     const second = model.mock.calls[1]![0];
     expect(JSON.stringify(second.chatHistory)).toContain(big);
     await runtime.close();
 
-    // The journal holds a bounded reference, with the payload in the blob table.
     const operations = stored(path, "SELECT record FROM anvia_durable_operations");
     const toolRecord = operations.find((record) => record.includes('"kind":"tool"'))!;
     expect(toolRecord).toContain("anvia:blob");
@@ -131,8 +129,6 @@ it("restores an externalized tool result after a restart without re-running the 
   const run = await runtime.getRun(submitted.id);
   await run.retry();
   expect(await run.result()).toMatchObject({ type: "response", output: "done" });
-  // The completed tool operation was restored from the blob, not re-executed, and the retried
-  // model call received the full result content.
   expect(restartedTool).not.toHaveBeenCalled();
   const retried = model.mock.calls.at(-1)![0];
   expect(JSON.stringify(retried.chatHistory)).toContain(big);
@@ -160,7 +156,6 @@ itSqlite("hydrates externalized history for the next run of the session", async 
     prompt: "again",
   });
   await second.result();
-  // The continued session's model request carried the restored history.
   const last = model.mock.calls.at(-1)![0];
   expect(JSON.stringify(last.chatHistory)).toContain(big);
   await runtime.close();
@@ -188,7 +183,6 @@ itSqlite("externalizes an oversized outcome and reads it back after a restart", 
   for (const record of stored(path, "SELECT record FROM anvia_durable_runs"))
     expect(record.length).toBeLessThan(10_000);
 
-  // A fresh owner reads the full outcome back from the blob table.
   const reopened = await DurableRuntime.open({
     store: new SqliteDurableStore(path),
     agents: [{ agent: makeAgent(async () => done()), version: "1" }],
@@ -215,7 +209,6 @@ itSqlite("opens a schema version 9 store, migrates it, and keeps its runs readab
   await run.result();
   await runtime.close();
 
-  // Downgrade the marker and drop the blob table to look exactly like a version 9 store.
   const db = new DatabaseSync(path);
   db.exec("DROP TABLE anvia_durable_blobs");
   db.exec(

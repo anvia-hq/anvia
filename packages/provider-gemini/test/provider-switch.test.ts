@@ -38,7 +38,6 @@ describe("Gemini history after a provider switch", () => {
     ]);
 
     expect(JSON.stringify(contents)).not.toContain("anthropic-sig");
-    // The reasoning text is still replayed as a thought part, but without the foreign signature.
     expect(contents).toEqual([
       { role: "model", parts: [{ text: "Think.", thought: true }, { text: "Answer." }] },
     ]);

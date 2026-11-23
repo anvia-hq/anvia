@@ -26,7 +26,6 @@ export function createRecordedGuardrails(
 
   if (policies.length === 0) return undefined;
 
-  // Output checks run once per final response; a retry of the same turn gets a new key.
   const outputSlot = async () =>
     store.transaction(async (tx) => {
       const current = await tx.getRun(run.id);
@@ -42,9 +41,6 @@ export function createRecordedGuardrails(
   ): Promise<unknown> {
     const base = `${run.epoch}:guardrail:${boundary}:${slot}:${policy.id}:${guardrailId}`;
     const retries = await store.transaction(async (tx) => (await tx.getRun(run.id))?.retries ?? 0);
-    // An errored check (for example a moderation timeout) is run again after retry(). Its error
-    // stays recorded under the earlier key; the re-run gets the next key. A decision that was
-    // recorded (allow, block, rewrite) is reused as it was, so it stays terminal.
     let key = base;
     let existing = await store.transaction(async (tx) => tx.getOperation(run.id, key));
     for (let attempt = 1; existing?.status === "completed"; attempt++) {

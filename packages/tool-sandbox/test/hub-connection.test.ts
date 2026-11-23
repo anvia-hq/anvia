@@ -32,8 +32,6 @@ describe("HubConnection heartbeat", () => {
   });
 
   it("does not throw when a tick lands while the socket is closing", () => {
-    // Between close() and the "close" event the socket is CLOSING and the timer is still running.
-    // A throw from the timer callback is an uncaught exception, which ends the hub's process.
     vi.useFakeTimers();
     const socket = fakeSocket();
     const connection = new HubConnection(socket as unknown as WebSocket, "/w", 1_000);

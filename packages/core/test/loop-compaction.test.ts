@@ -173,7 +173,6 @@ it.each(["message", "turn", "run"] as MemorySavePolicy[])(
       });
       expect(compactor).toHaveBeenCalledTimes(3);
       expect(tool).toHaveBeenCalledTimes(3);
-      // Compact only the provider transcript; retrieval still follows the latest tool output.
       const queries = ["Find the answer", large, large, large];
       expect(definition.mock.calls.map(([query]) => query)).toEqual(queries);
       expect(search.mock.calls.map(([request]) => request.query)).toEqual(queries);

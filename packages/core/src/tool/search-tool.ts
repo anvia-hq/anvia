@@ -74,12 +74,8 @@ export function searchTool<Metadata extends VectorMetadata = VectorMetadata>(
   }
 
   const entities = loadEntities(options.entities);
-  // A rejected entities promise must not surface as an unhandled rejection before the first
-  // search reads it.
   void entities.catch(() => {});
   const format = options.format ?? defaultFormat;
-  // Built once: the entries do not change, and embedding them per call would re-embed the whole
-  // registry on every turn.
   const semantic = options.model === undefined ? undefined : rankerFor(entities, options, topK);
 
   const lookup = async (
@@ -104,10 +100,6 @@ export function searchTool<Metadata extends VectorMetadata = VectorMetadata>(
     },
   };
 
-  // The shared channel: the index searches, and the tool answers from the result of the query the
-  // agent just made for this turn. Both sides key on the query text, so a concurrent run with
-  // different text does not see this one's hits. Bounded, because a long-lived process would
-  // otherwise keep one entry per distinct turn text forever.
   const recent = new BoundedCache<SearchHit<Metadata>[]>(RECENT_LIMIT);
   const index: Mutable<ToolIndex<Metadata>> = {
     kind: "tool-index",
@@ -242,7 +234,6 @@ function rankerFor<Metadata extends VectorMetadata>(
 
       return { index: await createToolIndex(createOptions), byId };
     })();
-    // A failed build must not poison the promise for later searches.
     built.catch(() => {
       built = undefined;
     });

@@ -1,7 +1,3 @@
-// Demonstrates: the three onMissingTrace modes (ignore, warn, throw).
-// None of the cases have a traceId, so all three modes are exercised
-// in sequence by a single run.
-
 import { Agent } from "@anvia/core/agent";
 import { agentEvalTarget, contains, runEvalSuite } from "@anvia/core/evals";
 import { getStaticModel } from "../_support/model.js";
@@ -21,7 +17,6 @@ async function main(): Promise<void> {
     { id: "no-trace-2", input: "?", expected: "?" },
   ];
 
-  // ignore: dropped silently
   const ignoreResult = await runEvalSuite({
     name: "ignore-mode",
     cases,
@@ -31,7 +26,6 @@ async function main(): Promise<void> {
   });
   console.log("[eval-reporter:03] ignore:", ignoreResult.results[0]?.metrics[0]);
 
-  // warn: console.warn
   const warnResult = await runEvalSuite({
     name: "warn-mode",
     cases,
@@ -41,7 +35,6 @@ async function main(): Promise<void> {
   });
   console.log("[eval-reporter:03] warn:", warnResult.results[0]?.metrics[0]);
 
-  // throw: rejects
   try {
     await runEvalSuite({
       name: "throw-mode",

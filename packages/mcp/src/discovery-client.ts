@@ -42,8 +42,6 @@ export class DiscoveryClient extends Client {
     try {
       return await this.listTools(undefined, options);
     } finally {
-      // Tool calls can trigger SDK catalog refreshes after a header mismatch.
-      // The budget belongs only to the initial registration snapshot.
       this.#discovering = false;
     }
   }
@@ -70,8 +68,6 @@ export class DiscoveryClient extends Client {
             schemaOrOptions,
           );
 
-    // The SDK's listTools auto-aggregates pages. Enforce limits on each validated
-    // page before it reaches that aggregation/cache or Anvia's tool construction.
     if (this.#discovering && request.method === "tools/list" && this.#limits !== undefined) {
       const tools = (result as ListToolsResult).tools;
       this.#toolCount += tools.length;

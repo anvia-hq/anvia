@@ -145,7 +145,6 @@ export function createSteeringDrain(
       const entries = state.pending.splice(0);
       state.checkpoints[key] = { turn, closing, entries };
 
-      // Fence the gap between core's final drain and the durable outcome commit.
       if (closing && entries.length === 0) state.closed = true;
 
       await tx.putRun(current);

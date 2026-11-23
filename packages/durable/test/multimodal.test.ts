@@ -169,7 +169,6 @@ it.each([
 ])("rejects invalid prompts at both the HTTP and runtime boundaries: %j", async (prompt) => {
   expect(() => parseDurableSubmission({ ...submission, prompt })).toThrow();
   const runtime = await open();
-  // Exercise untyped callers, as an HTTP handler or JavaScript consumer could.
   await expect(runtime.submit({ ...submission, prompt: prompt as UserMessage })).rejects.toThrow();
   expect((await runtime.listRuns()).runs).toHaveLength(0);
 });

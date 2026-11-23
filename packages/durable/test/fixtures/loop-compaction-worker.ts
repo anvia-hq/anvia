@@ -39,7 +39,6 @@ const runtime = await DurableRuntime.open({
         trigger: { afterTokens: 500 },
         retention: { recentToolTurns: 0 },
         tokenCounter: async (messages) => {
-          // Kill after the provider returned, but before the projection transaction.
           if (stage === "prepared" && summaryReturned) await halt();
 
           return estimateMemoryTokens(messages);

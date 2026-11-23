@@ -170,7 +170,6 @@ export function taskInvocation(
 
         if (run === undefined) throw new DurableRecoveryError("Owned agent run is missing.");
 
-        // Goal rounds read outcomes and transcripts from this record, so restore any references.
         return (await tx.blobs((io) => hydrateValue(io, json(run)))) as DurableRunRecord;
       });
     },

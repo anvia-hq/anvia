@@ -1,6 +1,3 @@
-// Demonstrates: getPromptChat({ name }). Throws if the prompt is a text prompt.
-// Set LANGFUSE_CHAT_PROMPT_NAME in your .env to a chat prompt that exists.
-
 import { optionalEnv } from "../_support/env.js";
 import { createTracing } from "../_support/tracing.js";
 

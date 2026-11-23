@@ -1,5 +1,3 @@
-// Demonstrates: a custom replacement string instead of [REDACTED].
-
 import { createPiiRedactor } from "@anvia/langfuse";
 
 function main(): void {

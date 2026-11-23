@@ -202,7 +202,6 @@ it("does not enable compaction retroactively for an already submitted run", asyn
   const path = join(directory(), "runs.sqlite");
   const runtime = await open({ agent: makeAgent(async () => done()), version: "1" }, path);
   await turn(runtime, "1");
-  // Persist a queued record without allowing its scheduled attempt to finish.
   const pending = await submit(runtime, "2");
   await runtime.close();
   const compactor = summarize();

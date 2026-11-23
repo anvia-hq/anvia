@@ -60,7 +60,6 @@ describe("tasks from a store-only DurableClient", () => {
     expect(before).toMatchObject({ unadmitted: true, checkpoint: null, status: "pending" });
 
     await worker(pool, [definition]);
-    // The checkpoint came from the worker's `initial`, which the client never ran.
     expect(await handle.result()).toBe(41);
     const after = (await handle.snapshot()).task;
     expect(after.unadmitted).toBeUndefined();
@@ -123,7 +122,7 @@ describe("tasks from a store-only DurableClient", () => {
   it("runs a task on the worker that has its version during a rolling upgrade", async () => {
     const { pool } = testPool();
     const c = await client(pool);
-    await worker(pool, [counting(2)]); // newer code, cannot admit a version-1 submission
+    await worker(pool, [counting(2)]);
     await worker(pool, [counting(1)]);
     const handles = [];
     for (let index = 0; index < 4; index++)

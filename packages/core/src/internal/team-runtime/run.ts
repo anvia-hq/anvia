@@ -380,7 +380,6 @@ export class TeamRun<Output = unknown> {
         member.receipts.set(receipt.id, input);
         input.submitted = true;
       } catch (error) {
-        // Closing runs reject steering; leave this input pending for the next assignment.
         if (error instanceof AgentStreamClosedError) return;
 
         throw error;
@@ -484,7 +483,6 @@ export class TeamRun<Output = unknown> {
             ...baseSettings,
             ...nextInput,
             abortSignal: signal,
-            // Collaboration tools mutate one inbox/permit at a time; provider tools may still run independently across agents.
             toolConcurrency: 1,
             lifecycle: composeAgentLifecycle(baseSettings.lifecycle, {
               onStepFinish: (event) => {
@@ -532,7 +530,6 @@ export class TeamRun<Output = unknown> {
       member.activeRun = run;
       this.submitInputs(member);
       this.memberEvent(member, "agent_started");
-      // Caller-owned models/tools may ignore abort. Close the team promptly, and discard late events.
       const outcome = await abortable(this.consumeRun(member, run, streaming), signal);
       member.activeRun = undefined;
       member.usage = Usage.add(member.usage, outcome.usage);
@@ -656,7 +653,6 @@ export class TeamRun<Output = unknown> {
     });
   }
 
-  // Without a parent, final team settlement checks all descendants, including revived assignments.
   private childrenBusy(parent?: TeamMember): boolean {
     return [...this.instances.values()].some(
       (member) =>
@@ -758,9 +754,6 @@ export class TeamRun<Output = unknown> {
   }
 
   private stopDescendants(parent: TeamMember, reason: string): void {
-    // Instances are inserted after their parents; this also reaches idle descendants without recursion.
-    // The subtree root is already terminal, and each descendant's parent is stopped first.
-    // Only the subtree root reports cancellation to a surviving parent; descendant reports are suppressed.
     const stopped = new Set([parent.instanceId]);
     for (const member of this.instances.values()) {
       if (member.parentInstanceId !== undefined && stopped.has(member.parentInstanceId)) {

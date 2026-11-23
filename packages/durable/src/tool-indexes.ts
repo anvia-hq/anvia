@@ -32,7 +32,6 @@ export async function toolIndexesOf(
 }
 
 async function fingerprintIndex(index: ToolIndex): Promise<unknown> {
-  // The definitions a turn can offer, which a replay reads back; see fetchToolDefinitions.
   const definitions = new Map<string, unknown>();
   for (const tool of index.tools) {
     definitions.set(tool.name, json(await tool.definition("")));

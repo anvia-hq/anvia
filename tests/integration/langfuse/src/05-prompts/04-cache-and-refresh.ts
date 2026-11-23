@@ -1,5 +1,3 @@
-// Demonstrates: cacheTtlMs, the refresh: true flag, and client.refresh().
-
 import { optionalEnv } from "../_support/env.js";
 import { createTracing } from "../_support/tracing.js";
 
@@ -9,8 +7,8 @@ async function main(): Promise<void> {
   const name = optionalEnv("LANGFUSE_TEXT_PROMPT_NAME") ?? "support-system-text";
 
   const first = await client.getPrompt({ name: name });
-  const second = await client.getPrompt({ name: name }); // cache hit
-  const refreshed = await client.getPrompt({ name: name, refresh: true }); // re-fetch
+  const second = await client.getPrompt({ name: name });
+  const refreshed = await client.getPrompt({ name: name, refresh: true });
 
   console.log(
     "[prompts:04]",

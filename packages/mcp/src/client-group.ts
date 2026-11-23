@@ -48,9 +48,7 @@ export class McpClientGroup {
     } catch (error) {
       try {
         await closeAll(clients);
-      } catch {
-        // Preserve the registration validation failure that caused rollback.
-      }
+      } catch {}
       throw error;
     }
 
@@ -105,9 +103,7 @@ async function rollbackSuccessfulClients(
   const successful = clients.filter((_, index) => settled[index]?.status === "fulfilled");
   try {
     await closeAll(successful);
-  } catch {
-    // Preserve the connection failure that caused rollback.
-  }
+  } catch {}
 }
 
 async function closeAll(clients: readonly McpClient[]): Promise<void> {

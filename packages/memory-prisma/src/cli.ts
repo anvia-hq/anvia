@@ -407,7 +407,6 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-// Package managers may launch the bin through a symlink; Node resolves the module URL.
 if (
   process.argv[1] !== undefined &&
   existsSync(process.argv[1]) &&

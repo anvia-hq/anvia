@@ -33,9 +33,6 @@ describe("public boundary", () => {
 
 describe("error events", () => {
   it("keeps well-known diagnostic fields that live on the Error prototype", () => {
-    // Runtime-specific subclasses (for example bun:sqlite's SqliteError under
-    // JavaScriptCore) can define message and code on the prototype, where
-    // JSON.stringify would drop them and mask the failure cause.
     const error = Object.create(Object.getPrototypeOf(new Error("masked"))) as Error & {
       code?: unknown;
     };
@@ -236,7 +233,6 @@ describe("client stream responses", () => {
     });
     const firstDone = jsonl(first);
 
-    // Wait until the first producer's event is persisted so the stream is live.
     await vi.waitFor(async () => {
       expect((await store.status({ streamId: "dup_running" })).lastEventId).toBe(1);
     });
@@ -251,7 +247,6 @@ describe("client stream responses", () => {
       { type: "stream_end", streamId: "dup_running", eventId: 0, status: "error" },
     ]);
 
-    // The rejected reopen leaves the first stream running with its history intact.
     expect(await store.status({ streamId: "dup_running" })).toEqual({
       status: "running",
       lastEventId: 1,
@@ -312,7 +307,6 @@ describe("memory resumable stream store", () => {
       'Resumable stream "live" is already running',
     );
 
-    // History survives the rejected reopen.
     expect(await store.status({ streamId: "live" })).toEqual({
       status: "running",
       lastEventId: 2,
@@ -331,7 +325,6 @@ describe("memory resumable stream store", () => {
     await replay.return?.();
     expect(replayed).toEqual(["one", "two"]);
 
-    // The subscriber attached before the rejected reopen still receives new events.
     await store.append({ streamId: "live", event: { kind: "three" } });
     await pending;
     await iterator.return?.();
@@ -425,7 +418,6 @@ describe("resumable after cursor validation", () => {
             after,
             store,
           })) {
-            // The generator must throw before yielding anything.
           }
         })(),
       ).rejects.toThrowError(InvalidResumableAfterError);

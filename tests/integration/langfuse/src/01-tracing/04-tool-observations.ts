@@ -1,7 +1,3 @@
-// Demonstrates: tool observations in Langfuse. The tool span carries
-// toolDefinition, toolMetadata, and structuredResult on the matching
-// observation in the trace.
-
 import { assertCompleted, buildSupportAgent, getTicket } from "../_support/agent.js";
 import { buildOpenAIClient, defaultModelId } from "../_support/model.js";
 import { createTracing } from "../_support/tracing.js";

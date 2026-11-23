@@ -1,6 +1,3 @@
-// Demonstrates: string vs object redaction. redactString handles one
-// string; redactObject recurses through nested objects and arrays.
-
 import { createPiiRedactor } from "@anvia/langfuse";
 
 function main(): void {

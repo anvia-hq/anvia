@@ -1,6 +1,3 @@
-// Demonstrates: serviceName flowing into the OTel `service.name` resource
-// attribute and onto the root run observation.
-
 import { assertCompleted, buildSupportAgent } from "../_support/agent.js";
 import { buildOpenAIClient, defaultModelId } from "../_support/model.js";
 import { createTracing } from "../_support/tracing.js";

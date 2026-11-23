@@ -26,7 +26,6 @@ export function createObservedLifecycle(
 
   if (hooks === undefined) return undefined;
 
-  // Model turns alone repeat when a failed run is retried, so a retry count is part of the key.
   const failureSlot = async () =>
     store.transaction(async (tx) => {
       const current = await tx.getRun(run.id);
@@ -84,7 +83,6 @@ export function createObservedLifecycle(
       observe("onToolStart", event.step, event.toolCallId, event, (e) => hooks.onToolStart?.(e)),
     onToolFinish: (event) =>
       observe("onToolFinish", event.step, event.toolCallId, event, (e) => hooks.onToolFinish?.(e)),
-    // The model-turn count and retry count tell a later failure apart from an earlier one.
     onFinish: async (event) =>
       observe("onFinish", await failureSlot(), undefined, event, (e) => hooks.onFinish?.(e)),
     onError: async (event) =>

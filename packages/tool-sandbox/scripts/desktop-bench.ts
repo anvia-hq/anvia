@@ -4,25 +4,6 @@ import WebSocket from "ws";
 import { RemoteSandboxHub, relayTicket } from "../src/remote/index";
 import { DelayProxy } from "../test/support/delay-proxy";
 
-// Measures how smooth the reference desktop is, on three paths to the same VNC server:
-//
-//   direct   an RFB client inside the container, on the VNC port (no daemon, hub or relay)
-//   relay    an RFB client on a browser-style WebSocket to the hub's desktop relay, which reaches
-//            the VNC server through daemon -> hub -> relay (what a real viewer gets)
-//
-// The relay path runs at each simulated round-trip time. The delay is a TCP proxy between the
-// daemon and the hub (so it works on Docker Desktop, where tc netem does not reach the right
-// network), splitting the RTT across both directions. It does not delay the hub's own hop to the
-// viewer, which is local here.
-//
-//   pnpm cookbook:remote-sandbox:image      # build the reference image first
-//   pnpm --filter @anvia/sandbox bench:desktop -- --label baseline
-//
-// Options: --image <name> (default anvia-desktop), --rtt <ms,ms,...> (default 0,100),
-// --label <text> (names the run in the output), --seconds <n> (throughput run, default 8),
-// --moves <n> (latency samples, default 30), --flood move|scroll (the load for the throughput
-// runs: default move, the heavier one), --no-direct (skip the in-container path).
-
 const args = process.argv.slice(2);
 const option = (name: string, fallback: string) => {
   const at = args.indexOf(name);
@@ -45,7 +26,6 @@ const sandboxId = "bench";
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const now = () => performance.now();
 
-// ---- a minimal RFB client: just enough to know where each update ends ---------------------------
 interface Transport {
   write(data: Buffer): void;
   onData(handler: (data: Buffer) => void): void;
@@ -85,9 +65,7 @@ class RfbClient {
     transport.onData((data) => {
       this.buffer = this.buffer.length === 0 ? data : Buffer.concat([this.buffer, data]);
       try {
-        while (this.step()) {
-          // Keep parsing while a whole message is buffered.
-        }
+        while (this.step()) {}
       } catch (error) {
         this.failure?.(error instanceof Error ? error : new Error(String(error)));
       }
@@ -173,7 +151,7 @@ class RfbClient {
 
         if (result.readUInt32BE(0) !== 0) throw new Error("RFB security failed");
 
-        this.transport.write(Buffer.from([1])); // Shared.
+        this.transport.write(Buffer.from([1]));
         this.stage = "init";
         return true;
       }
@@ -209,7 +187,7 @@ class RfbClient {
     if (type === undefined) return false;
 
     if (type === 2) {
-      this.take(1); // Bell.
+      this.take(1);
       return true;
     }
 
@@ -221,7 +199,6 @@ class RfbClient {
 
     if (type !== 0) throw new Error(`Unexpected server message ${type}`);
 
-    // FramebufferUpdate: parse the whole thing before consuming any of it.
     if (this.buffer.length < 4) return false;
 
     const rects = this.buffer.readUInt16BE(2);
@@ -255,7 +232,6 @@ class RfbClient {
   }
 }
 
-// ---- the two paths to the VNC server ------------------------------------------------------------
 function dockerExec(container: string, argv: string[]): ChildProcess {
   return spawn("docker", ["exec", "-i", container, ...argv], { stdio: ["pipe", "pipe", "ignore"] });
 }
@@ -288,7 +264,6 @@ function relayTransport(url: string, ticket: string): Transport {
   };
 }
 
-// ---- a shell inside the container to act and to read CPU ----------------------------------------
 class Shell {
   private readonly child: ChildProcess;
   private output = "";
@@ -345,7 +320,6 @@ async function cpuTicks(shell: Shell): Promise<Map<string, number>> {
   );
 }
 
-// ---- measurements -------------------------------------------------------------------------------
 const percentile = (sorted: number[], p: number) =>
   sorted[Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length))] ?? Number.NaN;
 
@@ -383,7 +357,7 @@ async function measureLatency(
     shell.fire(`xdotool windowmove ${windowId} ${x} ${y}`);
     const at = await Promise.race([arrived, sleep(5_000).then(() => Number.NaN)]);
 
-    if (index >= 3 && !Number.isNaN(at)) samples.push(at - start); // The first few warm things up.
+    if (index >= 3 && !Number.isNaN(at)) samples.push(at - start);
   }
   return samples.sort((a, b) => a - b);
 }
@@ -409,7 +383,6 @@ async function measureThroughput(client: RfbClient, shell: Shell): Promise<Throu
   stop();
   const cpu = new Map<string, number>();
   for (const [name, ticks] of after) {
-    // 100 clock ticks a second, as a share of one core.
     cpu.set(name, ((ticks - (before.get(name) ?? ticks)) / 100 / seconds) * 100);
   }
 
@@ -422,7 +395,6 @@ async function measureThroughput(client: RfbClient, shell: Shell): Promise<Throu
   return { mbPerSecond: bytes / seconds / 1e6, updatesPerSecond: updates / seconds, cpu };
 }
 
-// ---- the run ------------------------------------------------------------------------------------
 interface Row {
   path: string;
   latencyMedian: number;
@@ -486,8 +458,6 @@ try {
   console.log(`Desktop up at ${status.width}x${status.height}; VNC on ${status.vncPort}.`);
   shell = new Shell(containerName);
 
-  // Two terminals: a small one to move around (latency), and a maximized one that scrolls random
-  // text as fast as it can (throughput).
   await shell.run(
     `lxterminal --geometry=60x14 -e sh -c 'sleep 100000' >/dev/null 2>&1 & sleep 3; echo ok`,
   );
@@ -504,10 +474,6 @@ try {
     await settle(client, 800);
     const samples = await measureLatency(client, shell as Shell, windowId);
 
-    // Flood the screen. "scroll": a maximized terminal printing random text, which is limited by
-    // how fast the terminal draws. "move": a big window of static text moved back and forth as fast
-    // as one xdotool can, so the desktop changes continuously and nothing the window draws is the
-    // limit.
     const shellRef = shell as Shell;
 
     if (flood === "scroll") {
@@ -550,7 +516,6 @@ try {
     client.close();
     await sleep(500);
 
-    // Same flood, Raw only: every changed region crosses the link uncompressed.
     const rawClient = makeClient([encodingRaw]);
     await rawClient.connect();
     rawClient.startRequesting();

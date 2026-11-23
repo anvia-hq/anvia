@@ -61,7 +61,6 @@ export async function prepareContext(
     return value;
   };
   const history = projection(run);
-  // Counting and summarizing see restored content; the journal keeps the bounded stored form.
   const expanded = await store.transaction(
     async (tx) => await tx.blobs((io) => hydrateMessages(io, history)),
   );
@@ -71,7 +70,6 @@ export async function prepareContext(
   const keep = run.compaction.retention?.recentTurns ?? 1;
   const starts = history.flatMap((message, index) => (message.role === "user" ? [index] : []));
   const end = keep === 0 ? history.length : (starts[Math.max(0, starts.length - keep)] ?? 0);
-  // Do not repeatedly summarize a checkpoint with no new canonical messages.
   const previousCount = run.contextCheckpoint?.compactedMessageCount ?? 0;
   const covered = previousCount + end - (run.contextCheckpoint === undefined ? 0 : 1);
 
@@ -107,7 +105,6 @@ export async function prepareContext(
     return started;
   });
 
-  // Completion, projected input, usage, and contextPrepared are committed together below.
   if (operation.status === "completed")
     throw new DurableRecoveryError(
       "Completed compaction is missing its prepared context.",
@@ -137,7 +134,6 @@ export async function prepareContext(
       compactedMessageCount: covered,
     });
     usage = result.usage ?? Usage.empty();
-    // Reject invalid usage before attempting any journal write.
     for (const value of [
       usage.inputTokens,
       usage.outputTokens,

@@ -1,7 +1,3 @@
-// Demonstrates: tracing.score() with all three data types (NUMERIC,
-// CATEGORICAL, BOOLEAN). Uses a fake traceId so the demo runs without
-// needing a real prior run; in practice, wire the score to a real trace.
-
 import { createTracing } from "../_support/tracing.js";
 
 async function main(): Promise<void> {

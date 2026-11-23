@@ -35,15 +35,12 @@ export function createContextPreparation(
 
     signal.throwIfAborted();
     const key = `${run.epoch}:context:${turn}`;
-    // The journal stores a bounded form of the transcript; content addressing keeps it
-    // deterministic, so the checkpoint comparison below uses stored forms directly.
     const input = await store.transaction(async (tx) =>
       json(await tx.blobs((io) => externalizeMessages(io, messages))),
     );
     let operation = await store.transaction(async (tx) => tx.getOperation(run.id, key));
 
     if (operation !== undefined) {
-      // Restored form, so journals from before blob references compare equal to the same transcript.
       const saved = await store.transaction(
         async (tx) => await tx.blobs((io) => hydrateValue(io, json(operation!.input))),
       );
@@ -62,15 +59,11 @@ export function createContextPreparation(
       }
     }
 
-    // A started operation is retryable intent. Its unfinished projection has never
-    // reached the main model; only the completed transaction below freezes replay.
     const options = registration.compaction;
 
     if (options === undefined)
       throw new DurableRecoveryError("Restore the saved agent's compaction implementation.");
 
-    // Histories can contain a long previous run, and approval epochs can start with a
-    // newly completed exchange. Both need the same check as subsequent model calls.
     const plan = !messages.some((message) => message.role === "tool")
       ? undefined
       : await planLoopContext(
@@ -128,7 +121,6 @@ export function createContextPreparation(
         signal.throwIfAborted();
         throw new DurableModelError(key, operation.attempts, error);
       }
-      // Counter and journal failures are local failures, not retryable provider failures.
       prepared = await finishLoopContext(
         plan,
         summary,

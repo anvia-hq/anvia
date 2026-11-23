@@ -338,7 +338,6 @@ describe("AgentTeam hierarchy", () => {
           (event) => event.type === "agent_cancelled" && event.member.agentId === "leaf",
         ),
       ).toHaveLength(1);
-      // Descendant cancellation must not enqueue a new assignment into its terminated parent.
       const cancelledAt = events.findIndex((event) => event.type === "agent_cancelled");
       expect(
         events
@@ -474,7 +473,6 @@ describe("AgentTeam hierarchy", () => {
         return say("first parent done");
       }),
     });
-    // Both parents have cancel_agent because both may spawn; knowing a sibling ID grants no authority.
     let otherTurn = 0;
     const secondParent = new Agent({
       id: "second",

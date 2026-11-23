@@ -47,7 +47,6 @@ export class TerminalConnection {
   private readonly relay: RelayConnection;
 
   constructor(options: TerminalConnectionOptions) {
-    // The relay only sends output once it has opened the terminal, which starts with our size.
     let ready = false;
     const protocol: RelayProtocol = {
       subprotocol: terminalSubprotocol,

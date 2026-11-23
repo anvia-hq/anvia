@@ -73,12 +73,10 @@ it("fails terminally when inherited history exceeds the payload limit", async ()
   expect(model).toHaveBeenCalledTimes(3);
   await roomy.close();
 
-  // The session history now fits the old limit but not the new one.
   const constrained = await open(path, 2_000, agent);
   const blocked = await constrained.submit({ ...submission, requestId: "turn-4", prompt: "next" });
   const snapshot = await settled(blocked);
   expect(snapshot.run.status).toBe("failed");
-  // The admission transaction rolled back, so the run never committed the history it could not fit.
   expect(snapshot.run.history).toEqual([]);
   expect(snapshot.run.error).toMatch(/payload byte limit exceeded/);
   expect(snapshot.run.error).toMatch(/run\.(input|history)/);
@@ -94,14 +92,12 @@ it("fails terminally when inherited history exceeds the payload limit", async ()
   );
   expect(model).toHaveBeenCalledTimes(3);
 
-  // Retrying cannot fit the same history, so it fails with the same typed error and stays failed.
   await expect(blocked.retry()).rejects.toBeInstanceOf(DurableLimitError);
   await expect(blocked.retry()).rejects.toThrow(/run\.(input|history)/);
   expect((await blocked.snapshot()).run.status).toBe("failed");
   expect((await blocked.snapshot()).run.history).toEqual([]);
   expect(model).toHaveBeenCalledTimes(3);
 
-  // Once the limit admits the inherited history, retry executes the whole conversation.
   await constrained.close();
   const raised = await open(path, 64 * 1024, agent);
   const retried = await raised.getRun(blocked.id);

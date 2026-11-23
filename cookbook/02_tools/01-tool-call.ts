@@ -3,7 +3,6 @@ import { createTool } from "@anvia/core/tool";
 import { OpenAIClient } from "@anvia/openai";
 import { z } from "zod";
 
-// Tools define a name, description, Zod input schema, and local implementation.
 const addTool = createTool({
   name: "add",
   description: "Add two numbers together.",

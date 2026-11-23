@@ -1,7 +1,3 @@
-// Demonstrates: getPromptText({ name }). Throws if the prompt is a chat prompt.
-// Set LANGFUSE_TEXT_PROMPT_NAME in your .env to a text prompt that exists
-// in your Langfuse project. Defaults to "support-system-text".
-
 import { optionalEnv } from "../_support/env.js";
 import { createTracing } from "../_support/tracing.js";
 

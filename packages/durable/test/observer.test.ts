@@ -93,7 +93,6 @@ describe("durable observer", () => {
     await owner(path);
     const observer = await observe(path);
     await observer.close();
-    // The owner is still live, so a second owner is still refused after the observer closed.
     await expect(DurableRuntime.open({ store: new SqliteDurableStore(path) })).rejects.toThrow(
       /live owner/,
     );
@@ -101,7 +100,7 @@ describe("durable observer", () => {
 
   it("cannot be used as an owner, and an owner cannot be observed through the same instance", async () => {
     const path = database();
-    await owner(path); // sets up the schema; an observer never creates it
+    await owner(path);
     const store = new SqliteDurableStore(path, { readOnly: true });
     await store.connect();
     closers.push(() => store.close());
@@ -150,7 +149,7 @@ describe("durable observer", () => {
 
   itSqlite("refuses a database that has not been upgraded to the current schema", async () => {
     const path = database();
-    new SqliteDurableStore(path).close(); // creates the tables
+    new SqliteDurableStore(path).close();
     const raw = new DatabaseSync(path);
     raw.prepare("UPDATE anvia_durable_owner SET version = 11 WHERE singleton = 1").run();
     raw.close();

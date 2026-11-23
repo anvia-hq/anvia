@@ -17,9 +17,7 @@ export async function responseErrorMessage(response: Response, label: string): P
     ) {
       detail = `: ${body.error.message}`;
     }
-  } catch {
-    // Ignore non-JSON error bodies.
-  }
+  } catch {}
   return `${label} with HTTP ${response.status}${detail}`;
 }
 
@@ -52,9 +50,7 @@ export function eventStreamResponseErrorMessage(
     ) {
       detail = `: ${body.error.message}`;
     }
-  } catch {
-    // Ignore non-JSON error bodies.
-  }
+  } catch {}
   return `${label} with HTTP ${error.response.status}${detail}`;
 }
 

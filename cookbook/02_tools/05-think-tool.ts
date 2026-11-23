@@ -22,7 +22,6 @@ const client = new OpenAIClient({
 });
 const agentModel = client.completionModel({ modelId: "gpt-5.5", api: "responses" });
 
-// The think tool gives models an explicit scratchpad step before final answers.
 const agent = new Agent({
   id: "agent",
   model: agentModel,

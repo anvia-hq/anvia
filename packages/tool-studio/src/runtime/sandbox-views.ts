@@ -130,7 +130,6 @@ export function registerSandboxViewRoutes(app: Hono, registry: StudioSandboxRegi
     try {
       await lease.release();
     } catch (error) {
-      // Keep the lease: the desktop may still be held, and the release can be tried again.
       return controlErrorResponse(c, error);
     }
     leases.delete(key);
@@ -188,9 +187,7 @@ function createStreamEvents(
           void (async () => {
             try {
               for await (const chunk of stream.output) downstream.send(chunk.slice());
-            } catch {
-              // The connection ended; `exit` closes the viewer with the reason.
-            }
+            } catch {}
           })();
           return stream;
         },
@@ -220,7 +217,6 @@ function createStreamEvents(
             try {
               await (await opening)?.write(message);
             } catch {
-              // The connection ended while this message was in flight; `exit` closes the viewer.
             } finally {
               pendingBytes -= message.byteLength;
             }

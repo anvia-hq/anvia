@@ -15,9 +15,6 @@ import { describe, expect, it } from "vitest";
 
 const distCli = join(import.meta.dirname, "../dist/cli.js");
 
-// Guards the dist-relative asset lookup (dist/skills/) that source-level tests
-// bypass by passing an explicit skillsDirectory. Skips when the package has
-// not been built; CI builds before testing so this runs there.
 describe.runIf(existsSync(distCli))("built CLI skills assets", () => {
   it("lists bundled skills from dist/skills", () => {
     const result = spawnSync(process.execPath, [distCli, "skills", "list"], {

@@ -182,7 +182,6 @@ describe("skills", () => {
     ).resolves.toEqual({ type: "text", value: "#!/bin/sh\necho helper\n" });
   });
 
-  // POSIX shebang scripts cannot be spawned directly on Windows (spawn EFTYPE).
   it.skipIf(process.platform === "win32")(
     "executes skill scripts and reports failures",
     async () => {

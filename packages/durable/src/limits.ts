@@ -108,9 +108,6 @@ export function limitedTransaction(
   tx: DurableTransaction,
   limits: DurableLimits,
 ): DurableTransaction {
-  // `serialized` is the JSON text of a value, already computed by the caller. Each field is
-  // stringified at most once per write: the change check compares those strings, and the size
-  // check measures the same string instead of serializing it again.
   const payload = (field: string, serialized: string | undefined) => {
     if (serialized === undefined) return;
 
@@ -131,8 +128,6 @@ export function limitedTransaction(
       { limit },
     );
   const terminal = (status: string) => ["completed", "failed", "cancelled"].includes(status);
-  // Each object is serialized at most once per check: the memo is keyed by identity, so the change
-  // check and the size check of a value measure the same string.
   const texts = new WeakMap<object, string>();
   const textOf = (value: unknown): string | undefined => {
     if (typeof value !== "object" || value === null) return JSON.stringify(value);
@@ -152,17 +147,11 @@ export function limitedTransaction(
     const nextText = textOf(next);
     return textOf(previous) === nextText ? undefined : nextText;
   };
-  // `putBlob`/`getBlob` pass through unchecked by design: the blob table is the overflow area, and
-  // the bounded reference that replaces the payload is what the checks below measure.
   return {
     ...tx,
     async appendEvent(id, type, data) {
       if (type === "model_delta") payload("event.model_delta", textOf(data));
 
-      // Status events are deliberately not checked. A status event is the only record of a
-      // failure or a blocked run, and its `error` text is not checked anywhere else, so a limit
-      // here would stop a run from reaching `failed` or `needs_attention` (the trap in DUR-03).
-      // Their size is bounded by construction: no outcome, only ids, status and error text.
       await tx.appendEvent(id, type, data);
     },
     async putRun(run) {
@@ -204,12 +193,9 @@ export function limitedTransaction(
 
       if (previous === undefined) payload("task.trace", textOf(task.trace));
 
-      // Allow control/status transitions after limits are lowered on restart.
       for (const key of ["input", "checkpoint", "signals"] as const)
         payload(`task.${key}`, changed(previous?.[key], task[key]));
 
-      // Owned-agent output was admitted with its run; copying it must survive lower quotas. Only the
-      // output is measured, so its bytes are serialized once, not once inside the outcome as well.
       if (task.agentRunId === undefined && task.outcome?.status === "completed") {
         const output = textOf(task.outcome.output);
         const previousOutput =

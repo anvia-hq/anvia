@@ -123,13 +123,10 @@ export class McpClient {
       resource.transport = transport;
 
       if (abortSignal.aborted) {
-        // close() may have completed while an asynchronous factory was pending.
         await transport.close().catch(() => {});
         throwIfAborted(abortSignal);
       }
 
-      // Negotiation starts before the SDK attaches Client.transport and does not
-      // observe request signals. Retain and cancel the transport itself.
       const onAbort = () => {
         void transport.close().catch(() => {});
       };
@@ -173,9 +170,7 @@ export class McpClient {
     } catch (error) {
       try {
         await closeResource(resource);
-      } catch {
-        // Preserve the actionable connection or discovery failure.
-      }
+      } catch {}
 
       if (this.#resource === resource) {
         this.#resource = undefined;
@@ -378,7 +373,6 @@ function requestOptions(signal?: AbortSignal | undefined): { signal?: AbortSigna
 function closeResource(resource: ClientResource): Promise<void> {
   resource.closePromise ??= (async () => {
     try {
-      // Also close a transport that has not yet been attached to the SDK client.
       if (resource.transport !== undefined && resource.client.transport !== resource.transport) {
         await resource.transport.close();
       }

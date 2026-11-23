@@ -2,20 +2,14 @@ import {
   AnthropicVertex,
   type ClientOptions as AnthropicVertexSdkOptions,
 } from "@anthropic-ai/vertex-sdk";
+import type { CompletionModelControls } from "@anvia/core/completion";
 import {
-  type CompletionModelControls,
-  defineCompletionModelControls,
-  type ModelContextLimits,
-  resolveModelContextLimits,
-  type StreamingCompletionModel,
-} from "@anvia/core/completion";
-import { AnthropicCompletionModel } from "./completion";
-import { anthropicControlsForModel, type AnthropicControlsFor } from "./controls";
-import {
-  ANTHROPIC_COMPLETION_MODEL_CONTEXT_LIMITS,
-  type AnthropicCompletionModelId,
-} from "./models";
-import { anthropicPromptCacheOptions, type AnthropicPromptCacheSettings } from "./prompt-cache";
+  type AnthropicCompletionModelHandle,
+  type AnthropicCompletionModelOptions,
+  createAnthropicCompletionModel,
+} from "./completion";
+import type { AnthropicControlsFor } from "./controls";
+import type { AnthropicCompletionModelId } from "./models";
 
 type AnthropicVertexManagedClientOptions = Omit<AnthropicVertexSdkOptions, "maxRetries"> & {
   client?: never;
@@ -34,20 +28,11 @@ export type AnthropicVertexClientOptions =
 export type AnthropicVertexCompletionModelOptions<
   ModelId extends AnthropicCompletionModelId = AnthropicCompletionModelId,
   Controls extends CompletionModelControls = AnthropicControlsFor<ModelId>,
-> = {
-  modelId: ModelId;
-  contextLimits?: ModelContextLimits | undefined;
-  controls?: Controls | undefined;
-  /**
-   * Adds Anthropic prompt-cache breakpoints to every request from this model.
-   * `true` uses the default breakpoints and the 5-minute cache.
-   */
-  promptCache?: AnthropicPromptCacheSettings | undefined;
-};
+> = AnthropicCompletionModelOptions<ModelId, Controls>;
 
 export type AnthropicVertexCompletionModelHandle<
   Controls extends CompletionModelControls = CompletionModelControls,
-> = StreamingCompletionModel<unknown, Controls>;
+> = AnthropicCompletionModelHandle<Controls>;
 
 export class AnthropicVertexClient {
   private readonly sdk: AnthropicVertex;
@@ -75,30 +60,6 @@ export class AnthropicVertexClient {
   >(
     options: AnthropicVertexCompletionModelOptions<ModelId, Controls>,
   ): AnthropicVertexCompletionModelHandle<Controls> {
-    const modelId = requireModelId(options.modelId);
-    const controls = (
-      options.controls === undefined
-        ? anthropicControlsForModel(modelId)
-        : defineCompletionModelControls(options.controls)
-    ) as Controls | undefined;
-    return new AnthropicCompletionModel(
-      this.sdk,
-      modelId,
-      resolveModelContextLimits(
-        modelId,
-        ANTHROPIC_COMPLETION_MODEL_CONTEXT_LIMITS,
-        options.contextLimits,
-      ),
-      controls,
-      anthropicPromptCacheOptions(options.promptCache),
-    );
+    return createAnthropicCompletionModel(this.sdk, options);
   }
-}
-
-function requireModelId<ModelId extends string>(modelId: ModelId): ModelId {
-  if (modelId.trim().length === 0) {
-    throw new TypeError("modelId must be a non-empty string");
-  }
-
-  return modelId;
 }

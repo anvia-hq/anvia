@@ -1,105 +1,53 @@
-import {
-  defineCompletionModelControls,
-  type NoCompletionModelControls,
-  type ReasoningEffortControls,
-} from "@anvia/core/completion";
-import type { AnthropicCompletionModelId } from "./models";
+import type { NoCompletionModelControls, ReasoningEffortControls } from "@anvia/core/completion";
+import { defineReasoningEffortControls } from "@anvia/core/internal/provider";
+import type { AnthropicCompletionModelId, KnownAnthropicCompletionModelId } from "./models";
 
 export const ANTHROPIC_REASONING_EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
 
 export type AnthropicReasoningEffort = (typeof ANTHROPIC_REASONING_EFFORTS)[number];
 export type AnthropicReasoningControls = ReasoningEffortControls<AnthropicReasoningEffort>;
 
-type AdvancedEffortModel =
-  | "claude-fable-5"
-  | "claude-fable-5-1"
-  | "claude-fable-5-2"
-  | "claude-haiku-5-5"
-  | "claude-mythos-5"
-  | "claude-mythos-5-1"
-  | "claude-mythos-5-2"
-  | "claude-opus-4-7"
-  | "claude-opus-4-8"
-  | "claude-opus-5"
-  | "claude-opus-5-5"
-  | "claude-sonnet-5"
-  | "claude-sonnet-5-5";
+const STANDARD_CONTROLS = defineReasoningEffortControls(["low", "medium", "high"] as const, "high");
+const MAX_CONTROLS = defineReasoningEffortControls(
+  ["low", "medium", "high", "max"] as const,
+  "high",
+);
+const ADVANCED_CONTROLS = defineReasoningEffortControls(ANTHROPIC_REASONING_EFFORTS, "high");
+const ADVANCED_MEDIUM_CONTROLS = defineReasoningEffortControls(
+  ANTHROPIC_REASONING_EFFORTS,
+  "medium",
+);
 
-type MaxEffortModel =
-  | AdvancedEffortModel
-  | "claude-mythos-preview"
-  | "claude-opus-4-6"
-  | "claude-sonnet-4-6";
-
-type EffortModel = MaxEffortModel | "claude-opus-4-5" | "claude-opus-4-5-20251101";
+const ANTHROPIC_MODEL_CONTROLS = {
+  "claude-fable-5": ADVANCED_CONTROLS,
+  "claude-fable-5-1": ADVANCED_CONTROLS,
+  "claude-fable-5-2": ADVANCED_CONTROLS,
+  "claude-haiku-5-5": ADVANCED_MEDIUM_CONTROLS,
+  "claude-mythos-5": ADVANCED_CONTROLS,
+  "claude-mythos-5-1": ADVANCED_CONTROLS,
+  "claude-mythos-5-2": ADVANCED_CONTROLS,
+  "claude-mythos-preview": MAX_CONTROLS,
+  "claude-opus-4-5": STANDARD_CONTROLS,
+  "claude-opus-4-5-20251101": STANDARD_CONTROLS,
+  "claude-opus-4-6": MAX_CONTROLS,
+  "claude-opus-4-7": ADVANCED_CONTROLS,
+  "claude-opus-4-8": ADVANCED_CONTROLS,
+  "claude-opus-5": ADVANCED_CONTROLS,
+  "claude-opus-5-5": ADVANCED_MEDIUM_CONTROLS,
+  "claude-sonnet-4-6": MAX_CONTROLS,
+  "claude-sonnet-5": ADVANCED_CONTROLS,
+  "claude-sonnet-5-5": ADVANCED_CONTROLS,
+} as const satisfies Partial<Record<KnownAnthropicCompletionModelId, AnthropicReasoningControls>>;
 
 export type AnthropicControlsFor<ModelId extends AnthropicCompletionModelId> =
-  ModelId extends AdvancedEffortModel
-    ? AnthropicReasoningControls
-    : ModelId extends MaxEffortModel
-      ? ReasoningEffortControls<"low" | "medium" | "high" | "max">
-      : ModelId extends EffortModel
-        ? ReasoningEffortControls<"low" | "medium" | "high">
-        : NoCompletionModelControls;
-
-const STANDARD_CONTROLS = reasoningControls(["low", "medium", "high"] as const);
-const MAX_CONTROLS = reasoningControls(["low", "medium", "high", "max"] as const);
-const ADVANCED_CONTROLS = reasoningControls(ANTHROPIC_REASONING_EFFORTS);
-const ADVANCED_MEDIUM_CONTROLS = reasoningControls(ANTHROPIC_REASONING_EFFORTS, "medium");
+  ModelId extends keyof typeof ANTHROPIC_MODEL_CONTROLS
+    ? (typeof ANTHROPIC_MODEL_CONTROLS)[ModelId]
+    : NoCompletionModelControls;
 
 export function anthropicControlsForModel(modelId: string): AnthropicReasoningControls | undefined {
-  if (modelId === "claude-haiku-5-5" || modelId === "claude-opus-5-5") {
-    return ADVANCED_MEDIUM_CONTROLS;
+  if (!Object.hasOwn(ANTHROPIC_MODEL_CONTROLS, modelId)) {
+    return undefined;
   }
 
-  if (isAdvancedEffortModel(modelId)) return ADVANCED_CONTROLS;
-
-  if (
-    modelId === "claude-mythos-preview" ||
-    modelId === "claude-opus-4-6" ||
-    modelId === "claude-sonnet-4-6"
-  ) {
-    return MAX_CONTROLS;
-  }
-
-  if (modelId === "claude-opus-4-5" || modelId === "claude-opus-4-5-20251101") {
-    return STANDARD_CONTROLS;
-  }
-
-  return undefined;
-}
-
-function isAdvancedEffortModel(modelId: string): modelId is AdvancedEffortModel {
-  return ADVANCED_EFFORT_MODELS.has(modelId);
-}
-
-const ADVANCED_EFFORT_MODELS = new Set<string>([
-  "claude-fable-5",
-  "claude-fable-5-1",
-  "claude-fable-5-2",
-  "claude-haiku-5-5",
-  "claude-mythos-5",
-  "claude-mythos-5-1",
-  "claude-mythos-5-2",
-  "claude-opus-4-7",
-  "claude-opus-4-8",
-  "claude-opus-5",
-  "claude-opus-5-5",
-  "claude-sonnet-5",
-  "claude-sonnet-5-5",
-]);
-
-function reasoningControls<const Efforts extends readonly AnthropicReasoningEffort[]>(
-  efforts: Efforts,
-  defaultValue: Efforts[number] = "high" as Efforts[number],
-): ReasoningEffortControls<Efforts[number]> {
-  return defineCompletionModelControls({
-    reasoningEffort: {
-      type: "select",
-      label: "Reasoning effort",
-      description: "Controls how much reasoning the model applies before responding.",
-      options: efforts,
-      defaultValue,
-    },
-  });
+  return ANTHROPIC_MODEL_CONTROLS[modelId as keyof typeof ANTHROPIC_MODEL_CONTROLS];
 }

@@ -1,4 +1,4 @@
-import { isPlainObject } from "../utils";
+import { isPlainObject } from "@anvia/core/internal/provider";
 
 /**
  * Anthropic prompt-cache TTL. `5m` is the default and the value Anthropic assumes when a

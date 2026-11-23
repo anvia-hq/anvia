@@ -52,8 +52,6 @@ export class DurableRunView<Output = unknown> {
 
     while (true) {
       options.abortSignal?.throwIfAborted();
-      // Read the status first: a terminal status is committed with its last event, so events read
-      // after it are complete. Reading in the other order could miss a final event.
       const run = await this.status();
       const events = await this.reader.events(this.id, cursor);
       for (const event of events) {
@@ -81,7 +79,6 @@ export class DurableRunView<Output = unknown> {
 
     while (true) {
       options.abortSignal?.throwIfAborted();
-      // Settle from the observed state: another caller may retry before the next snapshot.
       const run = await this.status();
 
       if (run.status === "failed" || run.status === "cancelled") {
@@ -101,11 +98,9 @@ export class DurableRunView<Output = unknown> {
 
         if (outcome === undefined) throw new Error("Completed durable run has no outcome.");
 
-        // The registration's agent produced this outcome, so its output matches `Output`.
         return outcome as AgentOutcome<Output>;
       }
 
-      // Cancelling a wait only detaches this subscriber.
       await delay(options.abortSignal);
     }
   }

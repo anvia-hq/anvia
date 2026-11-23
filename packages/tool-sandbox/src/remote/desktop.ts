@@ -137,7 +137,6 @@ export class RemoteSandboxDesktop implements SandboxDesktop {
     const status = await this.start(options);
     return this.options.tunnel.open(status.vncPort, {
       host: "127.0.0.1",
-      // A person is watching this, over a link of unknown length.
       profile: "interactive",
       abortSignal: options.abortSignal,
     });

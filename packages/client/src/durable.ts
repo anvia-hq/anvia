@@ -93,7 +93,6 @@ async function durableErrorBody(
   const record = body as Record<string, unknown>;
   const details: { message?: string; code?: string; field?: string } = {};
 
-  // Gateways and proxies often send their text as `message`; `error` is Anvia's own field.
   if (typeof record.error === "string") details.message = record.error;
   else if (typeof record.message === "string") details.message = record.message;
 

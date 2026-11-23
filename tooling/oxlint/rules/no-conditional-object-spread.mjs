@@ -19,7 +19,6 @@ export const noConditionalObjectSpread = {
 
         let argument = node.argument;
 
-        // TypeScript wrappers must not hide the expression being spread.
         while (
           argument.type === "ParenthesizedExpression" ||
           argument.type === "TSAsExpression" ||

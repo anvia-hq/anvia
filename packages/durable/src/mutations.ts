@@ -72,8 +72,6 @@ export async function setStatus(
   run.status = status;
   run.updatedAt = new Date().toISOString();
   await tx.putRun(run);
-  // Status events stay small: the outcome lives on the run record and clients read it from the
-  // snapshot. Embedding it here duplicated every completed outcome in the journal (DUR-07).
   await tx.appendEvent(
     run.id,
     "status",
@@ -128,7 +126,6 @@ export function submitRun(
   settling: () => boolean = () => false,
 ): Promise<string> {
   return store.transaction(async (tx) => {
-    // Without it two submitters could both see a session with no unfinished work.
     await tx.lockSession?.(submission.sessionId);
     const existing = await tx.findRequest(submission.sessionId, submission.requestId);
 
@@ -206,7 +203,6 @@ export async function respondToRun(
     }
     run.responses[interactionId] = json(response);
     const continuation = run.outcome.continuation;
-    // Core resumes with previous segments as history and returns messages from the new segment.
     run.history = [...run.history, ...run.outcome.messages];
     run.input = { continuation, response };
     run.epoch += 1;
@@ -243,7 +239,6 @@ export async function resolveToolForRun(
     if (checked.role !== "tool" || checked.content[0]?.type !== "tool-result")
       throw new TypeError("Invalid tool result.");
 
-    // A reconciled output gets the same bounded-reference treatment as a live tool result.
     const reconciledOutput = checked.content[0].output;
     const result = await tx.blobs((io) =>
       externalizeToolResult(io, json({ output: reconciledOutput, failed: false })),
@@ -331,8 +326,6 @@ export async function retryRun(
           isRecordedMemoryWrite(operation)) &&
         operation.status === "started"
       )
-        // An uncertain memory write is sent again only here, on an explicit retry; its key
-        // makes a repeat of a committed write a duplicate.
         await tx.putOperation(id, { ...operation, attempts: 0 });
     }
     delete run.error;
@@ -376,7 +369,6 @@ export function cancelGraphRuns(store: DurableStore, id: string): Promise<string
       run.error = "Durable graph cancelled.";
       await setStatus(tx, run, "cancelled");
     }
-    // Cancellation remains observable even when every task had already failed.
     await tx.appendEvent(runIds[0]!, "status", { graphCancelled: true });
     return runIds;
   });

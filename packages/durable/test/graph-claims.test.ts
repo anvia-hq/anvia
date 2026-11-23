@@ -81,7 +81,6 @@ describe("graphs with claims", () => {
       "completed",
       "completed",
     ]);
-    // The join task received its dependencies' outputs.
     expect(seen.at(-1)).toContain("Task dependency results");
   });
 

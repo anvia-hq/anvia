@@ -34,7 +34,6 @@ describe("OperationStore", () => {
 
     for (let index = 0; index < 12; index += 1) {
       await run(`op-${index}`);
-      // Distinct modification times keep eviction order deterministic.
       await new Promise((resolve) => setTimeout(resolve, 5));
     }
     expect(
@@ -89,7 +88,6 @@ describe("OperationStore", () => {
     expect(executions).toBe(1);
     await expect(readdir(directory)).rejects.toMatchObject({ code: "ENOENT" });
 
-    // A new store stands in for a restarted daemon: the in-memory result is gone.
     await reopen().run("op", request, execute, { durable: false });
     expect(executions).toBe(2);
   });

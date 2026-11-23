@@ -37,13 +37,10 @@ async function running(pid: number): Promise<boolean> {
   if (process.platform !== "linux") return true;
 
   try {
-    // Orphaned descendants can remain as zombies until PID 1 reaps them.
-    // The command name may contain parentheses, so read state after the last one.
     const stat = await readFile(`/proc/${pid}/stat`, "utf8");
     const state = stat.slice(stat.lastIndexOf(")") + 2, stat.lastIndexOf(")") + 3);
     return state !== "Z" && state !== "X";
   } catch (error) {
-    // The process may disappear before opening stat or while reading it.
     const code = (error as NodeJS.ErrnoException).code;
 
     if (code === "ENOENT" || code === "ESRCH") return false;

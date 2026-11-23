@@ -1,5 +1,3 @@
-// Demonstrates: redactObject on a nested object with mixed types.
-
 import { createPiiRedactor } from "@anvia/langfuse";
 
 function main(): void {

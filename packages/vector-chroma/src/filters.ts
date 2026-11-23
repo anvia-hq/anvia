@@ -30,7 +30,6 @@ export function filterToChromaWhere(filter: VectorFilter | undefined): unknown {
         throw new Error(`Chroma "${filter.type}" filter requires at least one child filter`);
       }
 
-      // Chroma rejects $and/$or with fewer than two expressions.
       if (filter.filters.length === 1) {
         return filterToChromaWhere(filter.filters[0]);
       }

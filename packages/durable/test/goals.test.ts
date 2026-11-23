@@ -72,7 +72,7 @@ it("continues bounded sessions, passes handoffs, and requires the assessor to ac
   const prompts: string[] = [];
   const agent = makeAgent(async (request) => {
     prompts.push(JSON.stringify(request.chatHistory));
-    return done(); // A model's final answer does not finish the goal.
+    return done();
   });
   const assess = vi.fn<GoalDefinition["assess"]>(async ({ previous }) =>
     decision(previous === null ? "continue" : "complete", previous === null ? "one" : "two"),
@@ -401,7 +401,6 @@ it("pauses on request after the current session, and applies edits and messages 
   const handle = await runtime.submitGoal(goal, input);
   await expect.poll(() => prompts.length).toBe(1);
   const task = (await handle.snapshot()).task;
-  // While a session runs, controls are stored for later; names never collide.
   expect(goalControlSignal(task, "pause")).toBe("pause:0");
   await handle.signal("pause:0", "pause-1", {});
   await handle.signal("edit:0", "edit-1", { objective: "Build fast search" });
@@ -409,7 +408,6 @@ it("pauses on request after the current session, and applies edits and messages 
   await handle.signal("message:0", "message-1", { text: "Use the new index." });
   expect(goalControlSignal((await handle.snapshot()).task, "edit")).toBe("edit:2");
   release();
-  // The running session finished and was assessed against the original goal.
   const stopped = await paused(handle, "requested");
   expect(stopped.checkpoint).toMatchObject({
     sessions: 1,
@@ -421,7 +419,6 @@ it("pauses on request after the current session, and applies edits and messages 
     { objective: "Build search", acceptanceCriteria: ["Search tests pass"] },
   ]);
   expect(prompts).toHaveLength(1);
-  // A later edit while paused also applies on resume.
   await handle.signal("edit:2", "edit-2", { acceptanceCriteria: ["Search p95 under 50ms"] });
   complete = true;
   await handle.signal("resume:0", "resume", { feedback: "Continue." });
@@ -451,7 +448,6 @@ it("delivers messages sent between sessions to exactly one session", async () =>
     assess: async () => {
       sessions++;
 
-      // Deliver while the goal is between sessions, before the next one is admitted.
       if (sessions === 1)
         await handle.signal("message:0", "message", { text: "Prefer the cached data." });
 
@@ -547,14 +543,12 @@ it("continues every round in the previous round's conversation when rounds conti
   );
   const handle = await runtime.submitGoal(goal, input);
   expect(await handle.result()).toMatchObject({ sessions: 2 });
-  // Round 1 starts a conversation; round 2 continues it after round 1's answer.
   expect(histories[0]).toEqual([expect.stringMatching(/^user:Work on the next bounded session/)]);
   expect(histories[1]).toEqual([
     expect.stringMatching(/^user:Work on the next bounded session/),
     "assistant:Answer 1",
     expect.stringMatching(/^user:Continue working toward the goal/),
   ]);
-  // The assessor sees only the round's own messages; whole conversations stay out of the journal.
   expect(rounds).toEqual([
     ["user", "assistant"],
     ["user", "assistant"],
@@ -577,7 +571,6 @@ it("keeps a turn-limited round's partial work for the next round", async () => {
 
       if (calls === 1) return toolResponse();
 
-      // The second round starts from the first round's tool result.
       expect(JSON.stringify(request.chatHistory)).toContain("artifact from round one");
       return done();
     }).model,
@@ -646,7 +639,6 @@ it("continues from the last usable round after a failed round is resumed", async
       calls++;
       histories.push(request.chatHistory.length);
 
-      // The second round fails outright, without a turn limit.
       if (calls === 2) throw new Error("Provider unavailable");
 
       return response([{ type: "text", text: `Answer ${calls}` }]);
@@ -657,6 +649,5 @@ it("continues from the last usable round after a failed round is resumed", async
   expect(task.checkpoint).toMatchObject({ previousChildKey: "session:1" });
   await handle.signal("resume:0", "resume", { feedback: "Provider is back." });
   expect(await handle.result()).toMatchObject({ sessions: 3 });
-  // The third round continues round one's conversation: its prompt and answer, then its own.
   expect(histories).toEqual([1, 3, 3]);
 });

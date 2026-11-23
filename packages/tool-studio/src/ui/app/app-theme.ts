@@ -59,9 +59,7 @@ export function storeStudioTheme(theme: StudioTheme): void {
 
   try {
     window.localStorage.setItem(studioThemeStorageKey, theme);
-  } catch {
-    // Ignore storage failures so private or restricted browsing still toggles the UI.
-  }
+  } catch {}
 }
 
 function studioAssetPath(asset: string): string {

@@ -325,7 +325,6 @@ export function validateQdrantCollection(
   const vectors = recordValue(params, "vectors");
 
   if (vectors === undefined) {
-    // Keep lightweight custom clients compatible when they do not return collection configuration.
     return;
   }
 

@@ -218,7 +218,6 @@ export class PostgresMemoryStore implements MemoryStore {
    * keeps plain load/append working on databases that have not created the key table yet.
    */
   async loadVersioned({ scope }: { scope: MemoryScope }): Promise<MemoryVersionedHistory> {
-    // One statement reads one snapshot, so the messages and the version cannot disagree.
     const result = await (
       await this.client()
     ).query(
@@ -278,7 +277,6 @@ export class PostgresMemoryStore implements MemoryStore {
         }
 
         if (input.idempotencyKey !== undefined && fingerprint !== undefined) {
-          // The primary key is the backstop when `lock: "none"` lets two writers pass the check.
           const inserted = await tx.query(
             `INSERT INTO ${this.tables.idempotencyKeys} (scope_key, idempotency_key, fingerprint)
              VALUES ($1, $2, $3)
@@ -765,7 +763,6 @@ function formatVersion(
   maxPosition: number | string | null,
   compactionState: unknown,
 ): string {
-  // An empty history has one version whether or not recordError created a session row for it.
   if (maxPosition === null) return NO_SESSION_VERSION;
 
   return `${sessionId}:${Number(maxPosition)}:${compactionGeneration(compactionState)}`;
@@ -780,7 +777,6 @@ function compactionGeneration(value: unknown): number {
   return typeof generation === "number" ? generation : 0;
 }
 
-// Keys are compared by digest so the key table never stores message payloads.
 function appendFingerprint(input: MemoryAppendOptions): string {
   return createHash("sha256")
     .update(JSON.stringify({ runId: input.runId, turn: input.turn, messages: input.messages }))

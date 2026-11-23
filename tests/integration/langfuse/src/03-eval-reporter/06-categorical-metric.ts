@@ -1,7 +1,3 @@
-// Demonstrates: defineMetric({ dataType, configId, metadata }) for
-// CATEGORICAL and BOOLEAN metrics. The reporter forwards dataType,
-// configId, and metadata to Langfuse.
-
 import { Agent } from "@anvia/core/agent";
 import { agentEvalTarget, defineMetric, EvalOutcome, runEvalSuite } from "@anvia/core/evals";
 import { getStaticModel } from "../_support/model.js";

@@ -18,7 +18,7 @@ function schemaOf(schema: unknown): JsonValue {
   try {
     return json(z.toJSONSchema(schema as z.ZodType));
   } catch {
-    return "opaque"; // A schema that has no JSON Schema form cannot contribute.
+    return "opaque";
   }
 }
 

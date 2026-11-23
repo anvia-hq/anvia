@@ -109,7 +109,6 @@ export class AgentTeam<
 
     return new TeamStream(
       (emit) =>
-        // The scheduler runs heterogeneous definitions. Public inputs are checked against M above.
         new TeamRun(
           this.coordinator,
           this.policy,

@@ -229,9 +229,6 @@ function serializeError(error: unknown): unknown {
       name: error.name,
       message: error.message,
     };
-    // Runtime-specific Error subclasses (for example bun:sqlite's SqliteError)
-    // can keep diagnostic fields such as `code` on the prototype, where
-    // JSON.stringify drops them. Copy well-known diagnostic fields explicitly.
     const code = (error as { code?: unknown }).code;
 
     if (code !== undefined) {
@@ -251,7 +248,5 @@ function serializeError(error: unknown): unknown {
     return error;
   }
 
-  // A thrown non-Error that is not JSON-safe would serialize as `{}` or lose
-  // its diagnostics entirely; degrade to a string payload instead.
   return { message: String(error) };
 }

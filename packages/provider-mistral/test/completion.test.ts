@@ -686,7 +686,6 @@ describe("Mistral completion mapping", () => {
         documents: [],
         tools: [],
       })) {
-        // Exhaust the provider stream.
       }
     };
 

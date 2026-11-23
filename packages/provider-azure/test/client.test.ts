@@ -163,7 +163,6 @@ describe("AzureOpenAIClient", () => {
 
       return jsonResponse({ text: "Hello" });
     });
-    // Declare the mock's Response implementation so the SDK need not probe it with data:,.
     Object.assign(fetch, { Response });
     const client = new AzureOpenAIClient({ endpoint, apiKey: "test-key", fetch });
     const images = client.imageGenerationModel({ modelId: "image-deployment" });

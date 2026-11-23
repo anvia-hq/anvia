@@ -38,7 +38,6 @@ export function registerTask<I, S, R>(task: TaskDefinition<I, S, R>): Registered
     parseCheckpoint: checkpoint,
     parseOutput: (value) => parse(task.output, value),
     initial: (value) => checkpoint(task.initial(value as I)),
-    // Both values came through the registered schemas before this invocation.
     run: async (context) =>
       (await task.run(context as unknown as TaskContext<I, S>)) as TaskTransition<
         JsonValue,

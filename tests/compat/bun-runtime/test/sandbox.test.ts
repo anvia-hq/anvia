@@ -6,11 +6,6 @@ import { join } from "node:path";
 import { SandboxDaemon } from "@anvia/sandbox/daemon";
 import { RemoteSandboxHub, relayTicket } from "@anvia/sandbox/remote";
 
-// Bun replaces the `ws` package with its own WebSocket, which has no pause() or resume(). The hub's
-// browser relays used both, so the first message from a browser threw inside a promise callback
-// and took the process down. This runs the real relay on Bun: a hub, a daemon and a service on its
-// loopback, and a browser-style client.
-
 const sandboxId = "bun-sandbox";
 const uncaught: unknown[] = [];
 const onUncaught = (error: unknown) => uncaught.push(error);
@@ -94,7 +89,7 @@ describe("sandbox browser relay on Bun", () => {
   it("relays a browser's frames to the service and back without throwing", async () => {
     const { socket, state } = await browser();
     const frame = new Uint8Array(16 * 1024).fill(7);
-    const frames = 64; // 1 MiB.
+    const frames = 64;
     for (let index = 0; index < frames; index += 1) {
       socket.send(frame);
 
@@ -108,8 +103,6 @@ describe("sandbox browser relay on Bun", () => {
   });
 
   it("survives a browser that outruns the service, and ends it with a reason if it queues too much", async () => {
-    // A daemon that opens tunnels and never acknowledges a byte, so the hub's writes back up at its
-    // window on any machine, whatever the kernel's buffers or the runtime's sockets do.
     const stalled = new RemoteSandboxHub({
       authorize: (token) => (token === "daemon-token" ? { sandboxId } : null),
       authorizeTunnel: (request) =>
@@ -145,11 +138,6 @@ describe("sandbox browser relay on Bun", () => {
     try {
       await until(() => stalled.isConnected(sandboxId));
       const { socket, state } = await browser(port);
-      // 50 MiB in one go. The relay cannot pause the browser's socket (nothing to pause with), so
-      // it must not crash and must not hold all of it. Where Bun's own sockets keep delivering, the
-      // relay passes its 4 MiB limit and closes the browser with a reason. Where they stop reading
-      // first (Bun on Linux does, after a few MB), the runtime's backpressure is the bound and the
-      // browser stays open. The relay's own limit is pinned in the hub's unit tests either way.
       const frame = new Uint8Array(128 * 1024).fill(1);
       for (let index = 0; index < 400; index += 1) socket.send(frame);
       await Bun.sleep(2_000);
@@ -162,7 +150,7 @@ describe("sandbox browser relay on Bun", () => {
         });
       }
 
-      expect(stalled.isConnected(sandboxId)).toBe(true); // The hub itself is fine.
+      expect(stalled.isConnected(sandboxId)).toBe(true);
     } finally {
       fakeDaemon.close();
       await stalled.close();

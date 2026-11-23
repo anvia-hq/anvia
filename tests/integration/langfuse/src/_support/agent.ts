@@ -4,8 +4,6 @@ import { type AnyTool, createTool } from "@anvia/core/tool";
 import type { LangfuseClient, LangfuseObserverOptions } from "@anvia/langfuse";
 import { z } from "zod";
 
-// Same tool as cookbook 10_integrations/03-langfuse-tracing.ts so the
-// tool-observation demo mirrors an existing real-world example.
 export const getTicket = createTool({
   name: "get_ticket",
   description: "Read a support ticket from local application state.",

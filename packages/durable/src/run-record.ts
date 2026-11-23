@@ -89,7 +89,6 @@ export async function admitRunRecord(
     record.stream = registration.stream;
   }
 
-  // Static context documents freeze with the run, so a restart or retry replays identical context.
   const contextDocuments = contextDocumentsOf(registration.agent);
 
   if (contextDocuments !== undefined) {
@@ -106,7 +105,6 @@ export async function admitRunRecord(
 
   if (toolIndexes !== undefined) record.toolIndexes = { ...toolIndexes };
 
-  // Live vector retrieval is recorded per model call; the settings freeze with the run.
   if (registration.context !== undefined) {
     const vectorContext = vectorContextOf(registration.agent);
 

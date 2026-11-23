@@ -56,9 +56,6 @@ export interface CreateDesktopToolsOptions {
   screenshot?: DesktopScreenshotPolicy;
 }
 
-// Claude's computer-use guidance: images beyond these sizes are downscaled before the model sees
-// them, so coordinates would drift. Scaling here first keeps what the model sees and what it
-// clicks in one coordinate space.
 const defaultSettleMs = 300;
 const defaultMaxEdge = 1568;
 const defaultMaxPixels = 1_150_000;
@@ -328,7 +325,6 @@ export function viewOf(
     policy.maxEdge / Math.max(displayWidth, displayHeight),
     Math.sqrt(policy.maxPixels / (displayWidth * displayHeight)),
   );
-  // The same rounding the daemon applies when it scales, so these sizes match its screenshots.
   return {
     displayWidth,
     displayHeight,
@@ -347,8 +343,6 @@ function toDisplay(view: View, x: number, y: number): { x: number; y: number } {
     );
   }
 
-  // A screenshot pixel covers several display pixels when scaled down. Aim at its centre, so the
-  // click lands where the model pointed and the display's far corner is reachable.
   return {
     x: Math.floor(((x + 0.5) * view.displayWidth) / view.imageWidth),
     y: Math.floor(((y + 0.5) * view.displayHeight) / view.imageHeight),

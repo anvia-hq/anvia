@@ -18,14 +18,9 @@ import type {
 } from "./types";
 
 const processMarkerPrefix = "ANVIA_PROCESS";
-// Establish a killable process group and report it before starting the user command. The wrapper
-// waits for a host acknowledgement, so cancelling startup before the marker is accepted can only
-// leave an idle wrapper that exits when Docker closes stdin, never an untracked user process.
 const processLauncher = [
   'wrapper="$1"',
   "shift",
-  // GNU setsid forks when it is already a process-group leader. `-w` keeps that launcher alive
-  // until the new session exits, so Docker does not detach from a still-running managed process.
   "if command -v setsid >/dev/null 2>&1 && setsid -w true >/dev/null 2>&1; then",
   '  exec setsid -w sh -c "$wrapper" "$@"',
   "fi",
@@ -341,9 +336,6 @@ export class DockerProcessManager {
     record.markerBuffer = Buffer.alloc(0);
     record.supervisorPid = supervisorPid;
     record.processGroupId = processGroupId;
-    // Keep stdin attached for the lifetime of `docker exec -i`. Closing it makes the Docker CLI
-    // return successfully while the in-container process keeps running, which would orphan the
-    // process from status, logs, and lifecycle management.
     record.child.stdin.write("start\n");
     record.resolveStarted();
   }

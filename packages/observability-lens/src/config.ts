@@ -85,8 +85,6 @@ export function assertCaptureMaxBytes(value: number): number {
 export function normalizeLensBaseUrl(value: string): string {
   const normalized = value.trim().replace(/\/+$/, "");
 
-  // WHATWG URL reports a terminal "?" or "#" as an empty query/fragment, but it still delimits the
-  // composed endpoint, so reject either delimiter before parsing.
   if (normalized.includes("?") || normalized.includes("#")) throw invalidBaseUrl(value);
 
   let parsed: URL;

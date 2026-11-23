@@ -287,7 +287,6 @@ describe("durable submissions", () => {
     const snapshot = run.status.bind(run);
     const observer = vi.spyOn(run, "status").mockImplementationOnce(async () => {
       const failed = await snapshot();
-      // Another caller retries after the waiter reads storage, before it consumes that state.
       await run.retry();
       return failed;
     });

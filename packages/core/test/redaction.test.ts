@@ -173,7 +173,6 @@ describe("createRedactor", () => {
       slackRotatingBot: "<redacted>",
       slackRotatingUser: "<redacted>",
       slackRefresh: "<redacted>",
-      // Precision guards: near-misses with the wrong length or case must survive.
       shortGoogle,
       awsLowercase,
       shortGithub,

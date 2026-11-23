@@ -18,7 +18,6 @@ export type OtelIdGenerator = {
 
 type PendingTraceId = { traceId: string | undefined };
 
-// Shared through globalThis so duplicate installed copies of this package agree on the request.
 const pendingKey = Symbol.for("@anvia/otel.pending-root-trace-id");
 const globals = globalThis as { [pendingKey]?: PendingTraceId };
 const pending: PendingTraceId = (globals[pendingKey] ??= { traceId: undefined });
@@ -37,7 +36,6 @@ export function createAnviaIdGenerator(base: OtelIdGenerator = randomIdGenerator
   return {
     generateTraceId() {
       const requested = pending.traceId;
-      // Consumed once, so nothing started later in the same call stack inherits it.
       pending.traceId = undefined;
       return requested ?? base.generateTraceId();
     },
@@ -76,7 +74,6 @@ export function startRootSpan(
     return tracer.startSpan(name, options, parent);
   }
 
-  // startSpan is synchronous, so no other run can observe the pending ID between set and clear.
   pending.traceId = traceId;
   let span: Span;
   try {

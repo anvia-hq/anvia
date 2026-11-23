@@ -169,8 +169,6 @@ const waitForPortInput = z.object({
   containerPort: z.number().int().min(1).max(65_535),
   timeoutMs: z.number().int().positive().max(300_000).optional(),
 });
-// Docker reports where the published port is reachable; runtimes without a host-reachable
-// endpoint only confirm the port is listening, so the address fields are optional here.
 const waitForPortOutput = z.object({
   port: publishedPortOutput.extend({
     host: z.string().optional(),
@@ -710,10 +708,6 @@ function assertCommandAllowed(
     throw toolPolicyError(`Command is rejected by sandbox tool policy: ${command}`);
   }
 
-  // Block shell interpreters by default to prevent command bypass via args
-  // Shell interpreters like sh, bash, etc. can execute arbitrary commands
-  // through their arguments (e.g., sh -c "rm -rf /")
-  // Also block path-qualified shells (e.g., /bin/sh, /usr/bin/bash)
   if (policy.mode === "allow" && policy.allowShellInterpreters !== true) {
     const commandBasename = command.split("/").pop() ?? command;
 

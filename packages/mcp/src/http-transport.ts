@@ -24,8 +24,6 @@ export class ManagedMcpHttpTransport extends StreamableHTTPClientTransport {
       if (this.#terminate && this.sessionId) {
         let timer: ReturnType<typeof setTimeout> | undefined;
         try {
-          // Race explicitly: even a stalled auth provider must not prevent close.
-          // super.close below aborts the pending HTTP request after the deadline.
           await Promise.race([
             this.terminateSession().catch(() => {}),
             new Promise<void>((resolve) => {

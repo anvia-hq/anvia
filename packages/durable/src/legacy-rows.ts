@@ -73,7 +73,6 @@ export function migrateLegacyRows(database: DatabaseSync): void {
 
   const digest = (text: string) => createHash("sha256").update(text).digest("hex");
 
-  // Message content and history chain. Built first, rewritten last, so no row is half-migrated.
   const messages = new Map<string, { hash: string; text: string }>();
   for (const row of database.prepare("SELECT hash, record FROM anvia_durable_messages").all()) {
     const text = JSON.stringify(encode(JSON.parse(String(row.record))));

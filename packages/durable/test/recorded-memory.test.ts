@@ -223,7 +223,6 @@ it("reuses the recorded read snapshot on retry, and flags a write made after it 
   expect((await settled(submitted)).run.status).toBe("failed");
   const firstRequest = userText(model.mock.calls[0]![0]);
 
-  // Another writer commits between the attempts; a replay must not see it.
   await store.append({
     scope,
     runId: "other",
@@ -234,7 +233,6 @@ it("reuses the recorded read snapshot on retry, and flags a write made after it 
   await run.retry();
   const snapshot = await settled(run);
 
-  // The late note moved the version on, so the retried write is a conflict, not a silent overwrite.
   expect(snapshot.run.status).toBe("needs_attention");
   expect(snapshot.run.blockedOperation).toBe("0:memory:write:0");
   expect(loads).toHaveBeenCalledTimes(1);
@@ -249,7 +247,6 @@ it("keeps a duplicate write from being stored twice after the store committed it
   store.append = async (options) => {
     const result = await real(options);
 
-    // The store commits, then the response is lost.
     if (lost) {
       lost = false;
       throw new Error("response lost");
@@ -277,7 +274,6 @@ it("needs attention on a conflict and writes nothing from the run", async () => 
   const runtime = await open(
     database(),
     agentWith(async () => {
-      // A concurrent writer commits while the run is in its model call.
       await store.append({
         scope,
         runId: "other",
@@ -304,7 +300,6 @@ it("resumes after a crash between the terminal checkpoint and the writes, withou
   const first = await open(path, agentWith(model, store, "message"));
   const submitted = await first.submit({ ...submission, prompt: "hello" });
 
-  // The first write is in flight when the process stops, so the store never sees it.
   let inFlight!: () => void;
   const started = new Promise<void>((resolve) => (inFlight = resolve));
   let stop!: () => void;
@@ -325,7 +320,6 @@ it("resumes after a crash between the terminal checkpoint and the writes, withou
   const second = await open(path, agentWith(model, store, "message"));
   const run = await second.getRun(submitted.id);
   expect((await run.snapshot()).run.status).toBe("running");
-  // The first write was attempted before the stop, so its outcome is unknown: it needs attention.
   await second.resume();
   const blocked = await settled(run);
   expect(blocked.run.status).toBe("needs_attention");
@@ -378,11 +372,10 @@ describe.each(["message", "run"] as const)(
       expect((await store.load({ scope })).map((message) => message.role)).toEqual([
         "user",
         "assistant",
-        "tool", // the approval response, which is the resumed run's input
-        "tool", // the tool result
+        "tool",
+        "tool",
         "assistant",
       ]);
-      // The resumed segment's writes are based on the version the paused segment left behind.
       const versions = appendSpy.mock.calls.map((call) => call[0].expectedVersion);
       expect(versions.every((version) => version !== undefined)).toBe(true);
       const keys = appendSpy.mock.calls.map((call) => call[0].idempotencyKey);
@@ -421,7 +414,6 @@ describe.each(["message", "run"] as const)(
 async function conflicted() {
   const store = new InMemoryMemoryStore();
   const model = vi.fn(async (_request: CompletionRequest) => {
-    // A concurrent writer commits while the run is in its model call.
     await store.append({
       scope,
       runId: "other",
@@ -664,7 +656,6 @@ itSqlite.each([
     const { store, model, run } = await recover(path, memoryPath, id);
     expect(await storedCount(store)).toBe(storedAtCrash);
 
-    // The attempt was persisted before the store call, so its outcome is unknown either way.
     const blocked = await settled(run);
     expect(blocked.run.status).toBe("needs_attention");
     expect(blocked.run.blockedOperation).toBe("0:memory:write:0");

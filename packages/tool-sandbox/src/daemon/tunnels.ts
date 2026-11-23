@@ -169,11 +169,9 @@ export class ConnectionTunnels {
       failure = error.message;
     });
     socket.once("close", () => {
-      if (this.entries.get(tunnelId) !== entry) return; // Closed from our side; already reported.
+      if (this.entries.get(tunnelId) !== entry) return;
 
       this.entries.delete(tunnelId);
-      // A write that fails after the service said goodbye (EPIPE) is the service closing, not a
-      // fault in the tunnel.
       channel.finish(
         failure === undefined || serviceHungUp
           ? { reason: "remote" }
@@ -236,7 +234,6 @@ export class ConnectionTunnels {
 
     const unacked = entry.written - entry.acknowledged;
 
-    // Step acks to keep traffic down, but never leave the hub waiting on the last few bytes.
     if (unacked < entry.ackStepBytes && entry.written < entry.received) return;
 
     if (unacked === 0) return;
@@ -287,7 +284,6 @@ async function connectLoopback(
   timeoutMs: number,
 ): Promise<net.Socket> {
   const candidates = host === undefined ? tunnelHosts : [host];
-  // Report the first failure: that is 127.0.0.1, the address people mean, not the ::1 fallback.
   let firstError: Error | undefined;
   for (const candidate of candidates) {
     try {

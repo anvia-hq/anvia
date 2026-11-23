@@ -319,7 +319,6 @@ describe("agent memory", () => {
           prompt: "next",
           session: { sessionId: "session_1" },
         })) {
-          // exhaust the stream
         }
       }
 
@@ -697,7 +696,6 @@ describe("agent memory", () => {
     await expect(store.load({ scope })).resolves.toEqual([Message.user("run tools")]);
 
     for await (const _event of agent.stream({ prompt: "continue", session: scope })) {
-      // exhaust the stream
     }
 
     expect(model.requests[1]?.chatHistory).toEqual([
@@ -878,7 +876,6 @@ describe("agent memory", () => {
       prompt: "delegate",
       session: { sessionId: "session_1" },
     })) {
-      // exhaust stream
     }
 
     expect(store.appendCalls.map((call) => call.messages.map((message) => message.role))).toEqual([

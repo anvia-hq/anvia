@@ -157,7 +157,6 @@ export class TaskScheduler {
   ): Promise<string> {
     const definition = this.definition(name, version);
     const task = await this.store.transaction(async (tx) => {
-      // Two submitters of one key would otherwise race to the unique constraint.
       await tx.lockSession?.(`task-submit:${sessionId}`);
       const task = await createTask(tx, definition, input, sessionId, key, undefined, trace);
       const agentIds = dependencies(definition, task);
@@ -345,7 +344,6 @@ export class TaskScheduler {
   }
 
   private async reconcile(root: string): Promise<void> {
-    // A fail-fast pass may mark earlier children cancelling; the second pass settles idle ones.
     for (let pass = 0; pass < 2; pass++) {
       const result = await this.locked(root, (tx) => reconcileTree(tx, root, this.busy));
       for (const id of result.abort)
@@ -367,7 +365,6 @@ export class TaskScheduler {
   private pumpTail: Promise<void> = Promise.resolve();
 
   private async pumpOnce(): Promise<void> {
-    // A client controls tasks but never executes them, so there is nothing to claim.
     if (this.closing || this.shared?.passive === true) return;
 
     clearTimeout(this.timer);
@@ -387,9 +384,7 @@ export class TaskScheduler {
             version,
           })),
         });
-      } catch {
-        // A transient store error retries on the next poll instead of ending the worker.
-      }
+      } catch {}
       for (const claim of claims)
         if (this.closing || this.active.has(claim.runId)) await this.release(claim);
         else this.launch(claim.runId, claim);
@@ -419,9 +414,7 @@ export class TaskScheduler {
 
     try {
       await this.store.release!([{ runId: claim.runId, claimId: claim.claimId }]);
-    } catch {
-      // The lease lapses on its own if the release did not reach the store.
-    }
+    } catch {}
   }
 
   private launch(id: string, claim?: DurableClaim): void {
@@ -449,7 +442,6 @@ export class TaskScheduler {
       })
       .finally(async () => {
         this.active.delete(id);
-        // Released before reconciling: a task with a live claim is not allowed to settle.
         await this.release(claim);
 
         if (!this.closing) {
@@ -471,8 +463,6 @@ export class TaskScheduler {
 
     const known = (await this.snapshot(id)).task;
 
-    // A shared worker can claim a task whose name the database could not filter on. It leaves
-    // a definition it does not register untouched; the claim is released when this returns.
     if (this.shared !== undefined && !this.definitions.has(known.name)) return;
 
     const rootId = known.rootId;
@@ -487,7 +477,6 @@ export class TaskScheduler {
           throw new Error("Task definition/version is unavailable.");
 
         if (saved.unadmitted === true) {
-          // A client submitted this without the definition; admit it as the version it named.
           if (definition.version !== saved.version)
             throw new Error(
               `Task version ${saved.version} is not registered on this worker (it has ${definition.version}).`,
@@ -497,7 +486,6 @@ export class TaskScheduler {
             saved.input = definition.parseInput(saved.input);
             saved.checkpoint = definition.initial(saved.input);
           } catch (error) {
-            // Invalid input cannot be fixed by a retry, so the task fails instead of blocking.
             saved.outcome = {
               status: "failed",
               error: `Invalid task input: ${errorMessage(error)}`,

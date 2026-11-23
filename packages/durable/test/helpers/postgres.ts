@@ -64,8 +64,6 @@ function serverPool(schema: string): PostgresPoolLike {
 
 function litePool(schema: string): PostgresPoolLike {
   lite ??= PGlite.create();
-  // One PGlite session serves every pool: a lock keeps one transaction at a time, and each
-  // acquisition selects its own schema.
   let tail: Promise<unknown> = Promise.resolve();
   let ready: Promise<unknown> | undefined;
   const acquire = async (): Promise<{ db: PGlite; release: () => void }> => {

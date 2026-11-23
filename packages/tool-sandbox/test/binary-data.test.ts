@@ -98,7 +98,6 @@ describe("binary tunnel data", () => {
     expect(sha(back)).toBe(sha(data));
     expect(recorder.binary("hub").bytes).toBeGreaterThanOrEqual(data.byteLength);
     expect(recorder.binary("daemon").bytes).toBeGreaterThanOrEqual(data.byteLength);
-    // Not one data byte went through base64 and JSON.
     expect(recorder.text("hub", "tunnel.data")).toBe(0);
     expect(recorder.text("daemon", "tunnel.data")).toBe(0);
     expect(recorder.text("daemon", "tunnel.ack")).toBeGreaterThan(0);
@@ -149,11 +148,9 @@ describe("binary tunnel data", () => {
     const handle = await h.hub.tunnel(sandboxId).open(port, { profile: "interactive" });
     await sleep(1_000);
 
-    // The window is 2 MiB, and a frame may cross the mark; nothing near an unbounded flood.
     const sent = recorder.binary("daemon").bytes;
     expect(sent).toBeGreaterThan(1024 * 1024);
     expect(sent).toBeLessThan(2.25 * 1024 * 1024);
-    // Reading releases more.
     let read = 0;
     for await (const chunk of handle.output) {
       read += chunk.byteLength;
@@ -192,8 +189,6 @@ describe("binary tunnel data", () => {
     );
 
     it("lets a daemon that predates binary frames work, as one that never mentions them", async () => {
-      // A daemon from before binary frames has tunnels but does not list binary-data, and it would
-      // not parse a binary message.
       const hubPort = await freePort();
       const hub = new RemoteSandboxHub({
         authorize: (candidate) => (candidate === token ? { sandboxId } : null),
@@ -273,7 +268,6 @@ describe("binary tunnel data", () => {
 
     it("makes the hub drop a daemon that sends binary it never agreed to", async () => {
       const { socket, closed } = await rogueDaemon({ binaryData: false });
-      // Well formed, but the hub did not say it could take binary.
       const frame = Buffer.concat([Buffer.from([1, 1, 0x74, 0, 0, 0, 0]), Buffer.from("x")]);
       socket.send(frame, { binary: true });
       expect(await closed).toBe(1002);
@@ -300,7 +294,6 @@ describe("binary tunnel data", () => {
           socket.on("message", (reply, binary) => {
             if (!binary) replies.push(JSON.parse(reply.toString()));
           });
-          // Wrong kind byte (a to-hub frame), then too short.
           setTimeout(() => {
             socket.send(Buffer.from([1, 1, 0x74, 0, 0, 0, 0, 5]), { binary: true });
             socket.send(Buffer.from([2]), { binary: true });
@@ -349,7 +342,6 @@ describe("binary tunnel data", () => {
       let mayType = false;
       const filter = new RfbClientFilter(() => mayType);
 
-      // What a hub does for a browser: a WebSocket on one side, a tunnel on the other.
       const server = http.createServer();
       const sockets = new WebSocketServer({ server });
       sockets.on("connection", (ws) => {
@@ -379,17 +371,14 @@ describe("binary tunnel data", () => {
       const allowed = join(handshake, setEncodings, updateRequest);
       await eventually(() => echoed.length >= allowed.length);
       await sleep(200);
-      // The service heard the handshake and the harmless requests, and nothing it could act on.
       expect(atService).toEqual([...allowed]);
       expect(echoed).toEqual([...allowed]);
 
-      // Control moves to this viewer: now its input passes.
       mayType = true;
       browser.send(keyEvent, { binary: true });
       await eventually(() => atService.length >= allowed.length + keyEvent.length);
       expect(atService.slice(allowed.length)).toEqual([...keyEvent]);
 
-      // All of it went over the daemon link as binary, none as base64.
       expect(recorder.binary("hub").bytes).toBeGreaterThanOrEqual(allowed.length + keyEvent.length);
       expect(recorder.text("hub", "tunnel.data")).toBe(0);
     }, 30_000);

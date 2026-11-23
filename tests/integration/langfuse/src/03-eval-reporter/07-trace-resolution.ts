@@ -1,6 +1,3 @@
-// Demonstrates: the three trace resolution tiers. Each case uses a
-// different tier so we can verify all three at once.
-
 import { contains, runEvalSuite } from "@anvia/core/evals";
 import { createTracing } from "../_support/tracing.js";
 

@@ -48,8 +48,6 @@ const record = z
     name: id,
     version: z.number().int().positive(),
     submissionVersion: z.number().int().positive(),
-    // Keep every field before `input` free of nested values: the claim query reads `name` from
-    // the record text and relies on that (see claimTasks).
     unadmitted: z.literal(true).optional(),
     submissionInput: value,
     input: value,

@@ -73,14 +73,12 @@ describe.skipIf(process.platform === "win32")("remote sandbox", () => {
 
       await h.hub.close();
       await eventually(() => !h.daemon.connected);
-      // Output produced while no hub was connected must still be there afterwards.
       await sleep(900);
 
       const hub2 = newHub({ authorize, connectTimeoutMs: 5_000 });
       await hub2.listen({ host: "127.0.0.1", port: h.port });
       const runtime2 = hub2.runtime(sandboxId);
 
-      // This call starts while the daemon is still backing off, so it also covers waiting.
       const listed = await runtime2.listProcesses();
       expect(listed).toHaveLength(1);
       expect(listed[0]).toMatchObject({ id: started.id, status: "running" });
@@ -163,7 +161,6 @@ describe.skipIf(process.platform === "win32")("remote sandbox", () => {
       await h.runtime.writeTextFile(write);
       await writeFile(path.join(h.workdir, "w.txt"), "tampered");
       await h.runtime.writeTextFile(write);
-      // The retry did not rewrite the file, because the write already happened.
       expect(await readFile(path.join(h.workdir, "w.txt"), "utf8")).toBe("tampered");
 
       const start = { command: "sleep", args: ["30"], operationId: "op-start" };
@@ -230,7 +227,6 @@ describe.skipIf(process.platform === "win32")("remote sandbox", () => {
 
       const restarted = h.startDaemon();
       await restarted.ready();
-      // The first process died with the old daemon, so this must start a real one.
       const second = await h.runtime.startProcess(request);
       const listed = await h.runtime.listProcesses();
       expect(listed.map((process) => process.id)).toEqual([second.id]);
@@ -448,7 +444,6 @@ describe.skipIf(process.platform === "win32")("remote sandbox", () => {
       expect(h.hub.isConnected(sandboxId)).toBe(false);
       expect(h.hub.runtime(sandboxId)).not.toBe(before);
 
-      // The daemon is still authorized, so it reconnects and the hub serves it again.
       await eventually(() => h.hub.isConnected(sandboxId));
       expect(await h.hub.runtime(sandboxId).listFiles()).toEqual([]);
     });
@@ -545,7 +540,6 @@ describe.skipIf(process.platform === "win32")("remote sandbox", () => {
           socket.send(
             JSON.stringify({ type: "request", requestId: "r1", method: "exec", params: {} }),
           );
-          // An unknown method, as a newer hub might send: the caller must get an answer.
           socket.send(
             JSON.stringify({
               type: "request",

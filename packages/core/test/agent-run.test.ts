@@ -2146,10 +2146,6 @@ describe("Agent execution", () => {
   });
 
   it("sanitizes tool error messages to prevent information disclosure", async () => {
-    // ToolCallError subclass with overridden toString() that leaks extra data.
-    // asToolCallError passes ToolCallError instances through unchanged, so
-    // the custom toString() reaches handleToolError. Without sanitization,
-    // error.toString() returns the full string including the synthetic leak.
     class LeakyToolCallError extends ToolCallError {
       toString() {
         return `${this.name}: ${this.message}\n    at /internal/secret.ts:42\n    password=hunter2`;
@@ -2173,9 +2169,6 @@ describe("Agent execution", () => {
 
     await expect(agent.generate({ prompt: "test" })).resolves.toMatchObject({ output: "handled" });
 
-    // Without sanitization, toString() would return:
-    //   "LeakyToolCallError: database connection failed\n    at /internal/secret.ts:42\n    password=hunter2"
-    // With sanitization, only name and message are kept.
     expect(model.requests[1]?.chatHistory.at(-1)).toEqual(
       Message.tool([
         {
@@ -2194,10 +2187,6 @@ describe("Agent execution", () => {
   });
 
   it("passes non-Error thrown values to the model without JSON quoting", async () => {
-    // Custom callTool implementations bypass asToolCallError wrapping, so a
-    // raw thrown string reaches handleToolError directly. Strings are JSON
-    // values, but they must be passed through as-is rather than
-    // JSON.stringify-quoted.
     class StringThrowingAgent extends Agent {
       override callTool(): never {
         throw "raw failure";
@@ -2418,7 +2407,6 @@ describe("Agent execution", () => {
     const agent = new Agent({ id: "test-agent", model, tools: [addTool], maxTurns: 0 });
 
     await expect(agent.generate({ prompt: "loop" })).rejects.toBeInstanceOf(MaxTurnsError);
-    // With maxTurns: 0, exactly 1 completion request is dispatched before hitting the turn limit.
     expect(model.requests).toHaveLength(1);
   });
 
@@ -2431,7 +2419,6 @@ describe("Agent execution", () => {
     const agent = new Agent({ id: "test-agent", model, tools: [addTool], maxTurns: 1 });
 
     await expect(agent.generate({ prompt: "loop" })).rejects.toBeInstanceOf(MaxTurnsError);
-    // With maxTurns: 1, exactly 2 completion requests (initial + 1 tool turn) are dispatched.
     expect(model.requests).toHaveLength(2);
   });
 

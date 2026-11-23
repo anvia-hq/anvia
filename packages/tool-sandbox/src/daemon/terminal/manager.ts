@@ -130,8 +130,6 @@ export class TerminalManager {
       return;
     }
 
-    // Viewers' `tmux attach` clients exit by themselves, possibly before the kill call returns,
-    // so the kill is recorded first and rolled back if it failed.
     const previous = this.killedAt.get(sessionName);
     this.killedAt.set(sessionName, Date.now());
     try {
@@ -152,8 +150,6 @@ export class TerminalManager {
     for (const session of Array.from(this.shellSessions.values())) session.kill();
   }
 
-  // ---- tmux ----------------------------------------------------------------------------------
-
   private tmux(tmuxPath: string, args: string[]): Promise<string> {
     return run(tmuxPath, ["-L", this.socketName, ...args], this.commandEnv(), 10_000);
   }
@@ -164,12 +160,10 @@ export class TerminalManager {
       output = await this.tmux(tmuxPath, [
         "list-sessions",
         "-F",
-        // tmux rewrites control characters in -F output, so no tab delimiter. The name goes last
-        // because it is the only field that can contain a space.
         "#{session_attached} #{session_created} #{session_name}",
       ]);
     } catch {
-      return []; // No server running means no sessions.
+      return [];
     }
     return output
       .split("\n")
@@ -216,8 +210,6 @@ export class TerminalManager {
       ]);
       try {
         await this.tmux(tmuxPath, [
-          // The server exits when it has no sessions, so options and the session are created in
-          // one invocation. window-size latest sizes a session to its most recent viewer.
           "start-server",
           ";",
           "set-option",
@@ -253,7 +245,6 @@ export class TerminalManager {
           ...environment,
         ]);
       } catch (error) {
-        // Another viewer may have created the same session in the meantime.
         const created = await this.tmux(tmuxPath, ["has-session", "-t", target]).then(
           () => true,
           () => false,
@@ -283,8 +274,6 @@ export class TerminalManager {
       onClosed: (attachment) => this.attachments.delete(attachment),
     });
   }
-
-  // ---- fallback ------------------------------------------------------------------------------
 
   private async openShell(request: TerminalOpenRequest): Promise<TerminalAttachment> {
     let session = this.shellSessions.get(request.sessionName);
@@ -327,9 +316,7 @@ async function pickShell(): Promise<string> {
     try {
       await access(candidate);
       return candidate;
-    } catch {
-      // Try the next one.
-    }
+    } catch {}
   }
   throw new DockerSandboxError("No shell found for the terminal.", "process");
 }

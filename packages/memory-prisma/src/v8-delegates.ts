@@ -11,8 +11,6 @@ type Field = {
 type Fields = Record<string, Field>;
 type Order = (fields: Fields) => unknown;
 
-// A private structural boundary: only the Prisma 8 operations used by our store.
-// No generated application contract or Prisma 7 runtime leaks into this entrypoint.
 type Collection = {
   where(filter: Row | ((fields: Fields) => unknown)): Collection;
   select(...fields: string[]): Collection;
@@ -34,7 +32,6 @@ type Client = {
 };
 type Transaction = Pick<Client, "orm"> & { execute(plan: unknown): PromiseLike<unknown> };
 
-// These inputs are produced exclusively by store.ts, never supplied by callers.
 type QueryArgs = {
   where?: Row;
   select?: Record<string, unknown>;
@@ -56,7 +53,6 @@ export function prisma8Delegates(options: PrismaMemoryStoreOptions): PrismaMemor
   }
 
   const client = options.client as Client;
-  // Reject invalid caller options before issuing any query, including on empty appends.
   isolationPlan(client, options.transaction?.isolationLevel);
   const names = {
     sessions: options.models?.sessions ?? "AgentMemorySession",
@@ -75,7 +71,6 @@ export function prisma8Delegates(options: PrismaMemoryStoreOptions): PrismaMemor
         ? undefined
         : collection(namespace[names.errors], names.errors);
 
-    // Missing in contracts that predate the idempotency ledger; keyed appends then fail by name.
     const writes =
       names.writes === null || namespace[names.writes] === undefined
         ? undefined
@@ -184,8 +179,6 @@ export function prisma8Delegates(options: PrismaMemoryStoreOptions): PrismaMemor
                 return writes.create({ ...(input as { data: Row }).data, createdAt: utcNow() });
               },
             },
-      // The shared store never opens nested transactions. All delegates rebound
-      // inside this callback use tx.orm, including inspection/compaction reads.
       transaction: async (operation, transactionOptions) => {
         const plan = isolationPlan(client, transactionOptions?.isolationLevel);
         return client.transaction(async (tx) => {
@@ -299,15 +292,12 @@ function normalizeRow(row: Row): Row {
 }
 
 function utcNow(): string {
-  // Existing Prisma 7 tables use timestamp(3) without a zone. Supply UTC on
-  // every create instead of letting PostgreSQL cast now() in its session zone.
   return new Date().toISOString().slice(0, -1);
 }
 
 function utcTimestamp(value: unknown): string {
   if (value instanceof Date) return value.toISOString();
 
-  // Also accept Temporal values returned by inferred Timestamp/Timestamptz fields.
   if (typeof value === "object" && value !== null && typeof value.toString === "function")
     value = value.toString();
 

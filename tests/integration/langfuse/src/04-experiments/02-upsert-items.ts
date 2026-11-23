@@ -1,6 +1,3 @@
-// Demonstrates: client.upsertItems({ name, items }). Creates a dataset
-// first (idempotently) and pushes a small set of items.
-
 import { createTracing } from "../_support/tracing.js";
 
 async function main(): Promise<void> {

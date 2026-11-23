@@ -255,8 +255,6 @@ export class DurableRuntime implements DurableSubmitClient {
     const added = registrations(values);
     for (const id of added.keys())
       if (this.agents.has(id)) throw new DurableConflictError(`Agent already registered: ${id}`);
-    // A pinned MCP fingerprint reads tool definitions, which may be asynchronous. It cannot be
-    // computed here without making registration async, so pinned servers are registered at open().
     for (const [id, registration] of added)
       if (registration.mcpServers !== undefined)
         throw new TypeError(
@@ -314,12 +312,9 @@ export class DurableRuntime implements DurableSubmitClient {
   private notifyCompatibility(): void {
     if (this.onCompatibility === undefined) return;
 
-    // A host logging hook must never change whether open or registerAgents succeeds.
     try {
       void Promise.resolve(this.onCompatibility(compatibilityReport(this.agents))).catch(() => {});
-    } catch {
-      // Ignore: the report is advisory.
-    }
+    } catch {}
   }
 
   /** Release an idle registration, preserving journal history and outcomes.
@@ -334,8 +329,6 @@ export class DurableRuntime implements DurableSubmitClient {
     if ([...this.active.values()].some((run) => run.agentId === id))
       throw new DurableConflictError(`Agent still has an active attempt: ${id}`);
 
-    // A shared worker only gives up claiming the agent: unfinished runs wait for a worker that
-    // registers it, so they are not a reason to refuse. An owner would strand them.
     if (this.worker === undefined)
       for (const status of [
         "queued",
@@ -452,7 +445,6 @@ export class DurableRuntime implements DurableSubmitClient {
     if (registration === undefined)
       throw new DurableNotFoundError(`Unknown durable agent: ${input.agentId}`);
 
-    // Fingerprinted before the transaction: server and index metadata is read asynchronously.
     const mcpServers = await mcpServersByAgent(this.agents, [input.agentId]);
     const toolIndexes = await toolIndexesByAgent(this.agents, [input.agentId]);
     const id = await submitRun(
@@ -644,9 +636,6 @@ export class DurableRuntime implements DurableSubmitClient {
 
     if (this.active.has(id)) throw new DurableConflictError("Run is still settling.");
 
-    // A run whose admission transaction rolled back has no committed history. Rebuild it from
-    // the session before execution so a retry never runs with less context than the original
-    // attempt; an over-limit history rejects the retry and leaves the run failed.
     await retryRun(this.store, id, (tx, run) =>
       inheritSessionHistory(tx, run, this.recordsMemory(run.agentId)),
     );
@@ -690,7 +679,6 @@ export class DurableRuntime implements DurableSubmitClient {
           agentIds: [...this.agents.keys()],
         });
       } catch {
-        // A transient store error retries on the next beat instead of ending the worker.
         this.wakeTimer = setTimeout(() => {
           this.pump().catch((error: unknown) => this.fail(error));
         }, this.worker.heartbeatMs);
@@ -735,8 +723,6 @@ export class DurableRuntime implements DurableSubmitClient {
     if (!["queued", "pending", "running", "retry_wait"].includes(status))
       return this.releaseClaim(claim);
 
-    // The agent may have been unregistered between claiming and here. Leave the run for a worker
-    // that registers it; there is no await between this check and `active.set` below.
     if (this.worker !== undefined && !this.agents.has(agentId)) return this.releaseClaim(claim);
 
     const controller = new AbortController();
@@ -748,8 +734,6 @@ export class DurableRuntime implements DurableSubmitClient {
 
         if (!(error instanceof DurableLimitError)) throw error;
 
-        // Admission failed, so no work is pending: settle terminally so result() and the
-        // event stream end instead of waiting for an operator action that cannot help.
         await fenced(() =>
           this.store.transaction(async (tx) => {
             const run = await requireRun(tx, id);
@@ -789,9 +773,7 @@ export class DurableRuntime implements DurableSubmitClient {
 
     try {
       await this.store.release!([{ runId: claim.runId, claimId: claim.claimId }]);
-    } catch {
-      // The lease lapses on its own if the release did not reach the store.
-    }
+    } catch {}
   }
 
   /** Recorded memory supplies a run's history, so the previous run's history is not copied in. */
@@ -802,8 +784,6 @@ export class DurableRuntime implements DurableSubmitClient {
 
   private async execute(id: string, signal: AbortSignal): Promise<void> {
     signal.throwIfAborted();
-    // A client-submitted run is admitted here, from this worker's registration. Server and index
-    // fingerprints are read before the transaction because they are asynchronous.
     const pending = await this.run(id);
     const admission =
       pending.unadmitted === true && this.agents.has(pending.agentId)
@@ -878,16 +858,12 @@ export class DurableRuntime implements DurableSubmitClient {
       verifyVectorContext(run, registration);
       const memory = recordedMemoryOf(registration);
 
-      // A checkpoint from an earlier attempt means the model work is finished: only the memory
-      // writes after it can remain, so the agent is not run again.
       if (run.outcome === undefined) {
         await prepareContext(this.store, run, registration, signal);
         const trace = await this.store.transaction(async (tx) => runTrace(tx, run));
-        // Stored records may carry blob references; the agent loop always sees restored content.
         const input = (await this.store.transaction(
           async (tx) => await tx.blobs((io) => hydrateValue(io, json(run.input))),
         )) as DurableRunRecord["input"];
-        // Core's appends are captured here and written only after the checkpoint below.
         const captured: MemoryAppendOptions[] = [];
         const options = withInternalAgentRunOptions(
           {
@@ -926,7 +902,6 @@ export class DurableRuntime implements DurableSubmitClient {
         await this.store.transaction(async (tx) => {
           const current = await requireRun(tx, id);
 
-          // Settled elsewhere (cancelled by a client or another worker): never overwrite it.
           if (SETTLED.includes(current.status)) return;
 
           current.outcome = (await tx.blobs((io) =>
@@ -938,7 +913,6 @@ export class DurableRuntime implements DurableSubmitClient {
             return;
           }
 
-          // The run stays running until its memory writes finish, so a crash here resumes them.
           await recordMemoryWrites(tx, current, captured);
           await tx.putRun(current);
         });
@@ -1070,8 +1044,6 @@ export class DurableRuntime implements DurableSubmitClient {
       this.renewing = true;
       void this.renewClaims(worker)
         .catch(() => {
-          // A transient failure retries on the next beat. Once a full lease passes without a
-          // successful renewal another worker may hold these runs, so stop them.
           if (Date.now() - this.lastRenewAt > worker.leaseMs) this.abortAllClaims();
         })
         .finally(() => {
@@ -1126,7 +1098,6 @@ export class DurableRuntime implements DurableSubmitClient {
     clearInterval(this.workerTimer);
     this.tasks?.stop(error);
     for (const active of this.active.values()) active.controller.abort(error);
-    // Diagnostics must never replace the journal failure or create an unhandled rejection.
     try {
       void Promise.resolve(this.onFatalError?.(error)).catch(() => {});
     } catch {}
@@ -1225,7 +1196,6 @@ async function inheritSessionHistory(
     return;
   }
 
-  // Recorded memory holds the session's conversation; copying the previous run in would repeat it.
   if (recordsMemory) {
     run.history = [];
     run.input = { messages: [promptMessage(run.prompt)] };

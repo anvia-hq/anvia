@@ -10,8 +10,6 @@ import {
 } from "../src/daemon/desktop/agents";
 import { type DesktopSupervisorOptions, DesktopSupervisor } from "../src/daemon/desktop/supervisor";
 
-// Fake agents: shell scripts named like the real ones. Each loop iteration is short, so nothing
-// outlives the test even when the script is killed without its trap running.
 const agentScript = (trap: string) => `#!/bin/sh\n${trap}\nwhile :; do sleep 0.1; done\n`;
 const exitsOnTerm = agentScript("trap 'exit 0' TERM");
 const ignoresTerm = agentScript("trap '' TERM");
@@ -71,7 +69,6 @@ describe("stopDesktopAgents", () => {
     const otherDesktop = start(agent, "desktop-b");
     const userAgent = start(agent, undefined);
     const notAnAgent = start(helper, session);
-    // Let each script reach its loop, so the signal lands after the trap is installed.
     await sleep(500);
 
     await stopDesktopAgents(session, { graceMs: 2_000 });
@@ -125,7 +122,6 @@ describe("DesktopSupervisor.stop", () => {
   it("stops an agent started with the desktop's environment, when the desktop stops", async () => {
     const supervisor = new DesktopSupervisor(supervisorOptions());
     const agent = await fakeProgram("ssh-agent", exitsOnTerm);
-    // What an autostart does: a program started with the desktop's environment, which daemonizes.
     const child = spawn(agent, [], { env: supervisor.environment(), stdio: "ignore" });
     children.push(child);
     await sleep(500);
@@ -147,10 +143,10 @@ describe("findDesktopAgents", () => {
     };
     await entry("100", "ssh-agent", [`${desktopSessionVariable}=abc`]);
     await entry("101", "gpg-agent", [`${desktopSessionVariable}=abc`, "HOME=/h"]);
-    await entry("102", "ssh-agent", [`${desktopSessionVariable}=abcd`]); // A longer id: no match.
-    await entry("103", "sleep", [`${desktopSessionVariable}=abc`]); // Not an agent.
-    await entry("104", "ssh-agent", ["HOME=/h"]); // No marker.
-    await entry("self", "ssh-agent", [`${desktopSessionVariable}=abc`]); // Not a pid.
+    await entry("102", "ssh-agent", [`${desktopSessionVariable}=abcd`]);
+    await entry("103", "sleep", [`${desktopSessionVariable}=abc`]);
+    await entry("104", "ssh-agent", ["HOME=/h"]);
+    await entry("self", "ssh-agent", [`${desktopSessionVariable}=abc`]);
 
     expect(await findDesktopAgents("abc", proc)).toEqual([
       { pid: 100, name: "ssh-agent" },

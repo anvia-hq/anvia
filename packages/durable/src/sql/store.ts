@@ -138,8 +138,6 @@ export class SqlDurableStore implements DurableStore {
           "Durable store already has a live owner. Only one runtime per database is supported.",
         );
 
-      // Shared workers coordinate through claims and an owner assumes it is the only writer, so an
-      // owner cannot start while a worker holds a live claim. The table is absent before claims.
       if (
         (await query("SELECT to_regclass('anvia_durable_claims') IS NOT NULL AS present"))[0]!
           .present === true
@@ -170,10 +168,7 @@ export class SqlDurableStore implements DurableStore {
     if (this.closed || this.acquired || this.observing)
       throw new Error("Durable store is closed or already open.");
 
-    // An observer never creates or migrates the schema, whatever `schema` says.
     await this.verifySchema();
-    // Tables with no owner row were never initialised by a runtime. Like the SQLite path, an
-    // observer needs a database an owner has set up.
     const owner = await this.driver.query(
       "SELECT version FROM anvia_durable_owner WHERE singleton = 1",
     );
@@ -265,13 +260,6 @@ export class SqlDurableStore implements DurableStore {
 
     return this.driver.transaction(async (query) => {
       await this.assertNoLiveOwner(query);
-      // No `name` or `version` column exists, and the record is JSON text that must not be cast:
-      // jsonb rejects valid records (an escaped NUL, a lone surrogate) and one such task would
-      // fail the query for every worker. The task schema writes `name`, `version`,
-      // `submissionVersion` and `unadmitted` as adjacent fields, after only string and number
-      // fields and before any nested value, and a JSON string cannot contain an unescaped quote,
-      // so the first match of this pattern is the top-level fields. A test pins that layout.
-      // Names compare in their JSON-escaped form.
       const candidates = await query(
         `SELECT t.id FROM anvia_durable_tasks t,
            LATERAL (SELECT regexp_match(t.record,
@@ -313,8 +301,6 @@ export class SqlDurableStore implements DurableStore {
 
     if (input.claims.length === 0) return { lost: [] };
 
-    // A claim names a run or a task. A run is held until it settles; a task only while it is
-    // executing (`pending` or `running`), since any other status means no invocation is running.
     const rows = await this.driver.query(
       `UPDATE anvia_durable_claims c SET expires_at = now() + ($3::bigint * interval '1 millisecond')
        FROM jsonb_to_recordset($2::text::jsonb) AS held(run_id text, claim_id text)
@@ -371,15 +357,12 @@ export class SqlDurableStore implements DurableStore {
     callback: (tx: DurableTransaction) => Promise<T>,
     options?: DurableTransactionOptions,
   ): Promise<T> {
-    // Only a shared store honours it: an owner is the sole writer and keeps its token check.
     const readOnly = options?.readOnly === true && this.joined;
     this.assertOpen();
     return this.gate.transaction(() => {
-      // Transactions queued before close() still run: close() waits for them.
       if (this.closed) throw new Error("Durable store is not acquired.");
 
       return this.driver.transaction(async (query) => {
-        // Enforced by Postgres, and no owner row lock is taken, so an observer never blocks the owner.
         if (this.observing || readOnly) await query("SET TRANSACTION READ ONLY");
         else if (!this.joined) await this.assertOwner(query);
 
@@ -630,8 +613,6 @@ export class SqlDurableStore implements DurableStore {
     });
   }
 
-  // ---------------------------------------------------------------------------------------------
-
   /** Runs a read after the open transaction, or at once from inside one. */
   private read<T>(fn: (query: SqlQuery) => Promise<T>): Promise<T> {
     this.assertOpen();
@@ -652,7 +633,6 @@ export class SqlDurableStore implements DurableStore {
     const histories = messageLog(staging);
     const blobs = blobIO(staging);
     const data = await staging.run(query, (): JsonValue => {
-      // Events are terminal, so their readers always see fully restored payloads.
       if (row.history_encoding !== null && row.history_encoding !== undefined) {
         if (row.history_encoding !== "linked-v1" || row.type !== "model_started")
           throw new Error("Unsupported durable event history encoding.");
@@ -682,8 +662,6 @@ export class SqlDurableStore implements DurableStore {
     assertActive: () => void,
     shared = false,
   ): DurableTransaction {
-    // With shared workers and clients, several processes read-modify-write the same run, so a
-    // run read in a read-write transaction is locked until it ends. An owner is the only writer.
     const lock = shared ? " FOR UPDATE" : "";
     const histories = messageLog(staging);
     const blobs = blobIO(staging);
@@ -825,7 +803,6 @@ export class SqlDurableStore implements DurableStore {
           session,
         ),
       lockSession: async (session) => {
-        // Serialises submissions of one session so "no unfinished work" cannot race.
         await guarded("SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))", [session]);
       },
       latestCompleted: (session) =>
@@ -847,7 +824,6 @@ export class SqlDurableStore implements DurableStore {
         ).length > 0,
       putRun: async (run) => {
         assertActive();
-        // Validate the logical record, then store its prompt and input behind blob references.
         const logical = parseRun(json(run));
         const serialized = await staging.run(query, () =>
           writeStored(externalizeRunRecord(blobs, logical)),
@@ -938,8 +914,6 @@ export class SqlDurableStore implements DurableStore {
           )
         ).length > 0,
       assertClaim: async (runId, claimId) => {
-        // FOR SHARE: a reclaim of this run waits for this transaction, so a stale worker cannot
-        // commit after another worker took the run.
         const held = await guarded(
           "SELECT 1 FROM anvia_durable_claims WHERE run_id = $1::text AND claim_id = $2::text FOR SHARE",
           [runId, claimId],
@@ -963,7 +937,6 @@ export class SqlDurableStore implements DurableStore {
 
   private async createSchema(): Promise<void> {
     await this.driver.transaction(async (query) => {
-      // Serializes concurrent first-time setups; released at commit.
       await query("SELECT pg_advisory_xact_lock(hashtext('anvia_durable_schema'))");
       for (const statement of POSTGRES_DDL) await query(statement);
     });
@@ -1001,9 +974,7 @@ export class SqlDurableStore implements DurableStore {
       );
 
       if (rows.length === 0) this.lost = true;
-    } catch {
-      // A failed renewal is retried on the next beat. Transactions still check the owner token.
-    }
+    } catch {}
   }
 
   private async assertOwner(query: SqlQuery): Promise<void> {

@@ -18,7 +18,6 @@ const agent = makeAgent(
   async (request) => {
     if (!hasToolResult(request)) return toolResponse();
 
-    // The hook decision is already committed when the model call of the second turn starts.
     if (crashAt === "model") await halt();
 
     return done();

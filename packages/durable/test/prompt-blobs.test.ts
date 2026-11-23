@@ -66,8 +66,8 @@ afterEach(async () => {
 });
 
 const threshold = 65_536;
-const small = "short question ".repeat(10); // well under the threshold
-const big = "prompt-".repeat(20_000); // 140 KB, over the threshold
+const small = "short question ".repeat(10);
+const big = "prompt-".repeat(20_000);
 
 itSqlite("keeps a prompt below the threshold inline", async () => {
   const path = database();
@@ -106,7 +106,6 @@ itSqlite(
       expect(record.length).toBeLessThan(10_000);
     for (const data of raw(path, "SELECT data FROM anvia_durable_events WHERE type = 'submitted'"))
       expect(data.length).toBeLessThan(10_000);
-    // The model still receives the whole prompt, and the snapshot shows it.
     expect(JSON.stringify(model.mock.calls[0]![0].chatHistory)).toContain(big);
     expect((await run.snapshot()).run.prompt).toBe(big);
   },
@@ -128,7 +127,6 @@ it("reads an oversized prompt back after a restart and treats a resubmit as a re
   const restarted = await open(path, async () => done());
   const restored = await restarted.getRun(run.id);
   expect((await restored.snapshot()).run.prompt).toBe(big);
-  // The same request with the same prompt returns the existing run; a different prompt conflicts.
   const again = await restarted.submit({
     agentId: "researcher",
     sessionId: "replay",
@@ -185,7 +183,6 @@ itSqlite(
     await first.close();
     runtimes.splice(runtimes.indexOf(first), 1);
 
-    // Write the version 11 shape: the prompt inline in the run record and the submitted event.
     const db = new DatabaseSync(path);
     const record = JSON.parse(
       String(db.prepare("SELECT record FROM anvia_durable_runs").get()!.record),
@@ -279,7 +276,6 @@ it("resumes a run that was in flight with an oversized prompt after a restart", 
   const started = vi.fn();
   const first = await open(path, async (_request, signal) => {
     started();
-    // Hold the model call open until the runtime closes, as if the process went down mid-turn.
     await new Promise<void>((_resolve, reject) =>
       signal?.addEventListener("abort", () => reject(new Error("closed"))),
     );

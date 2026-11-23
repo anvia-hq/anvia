@@ -1145,9 +1145,6 @@ class SqliteSessionStore
       this.db = db;
       return db;
     } catch (error) {
-      // Schema setup failed after the handle opened (for example the legacy messages_json
-      // guard). Release it so the database file is not left locked, and rethrow so the
-      // caller sees the real cause instead of a stale, half-initialized handle.
       db.close();
       throw error;
     }

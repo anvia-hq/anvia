@@ -253,9 +253,7 @@ async function readApiError(response: Response): Promise<{ code: string; message
             : `Lens request failed (${response.status})`,
       };
     }
-  } catch {
-    // Fall through to a stable error when the server did not return JSON.
-  }
+  } catch {}
   return { code: "request_failed", message: `Lens request failed (${response.status})` };
 }
 

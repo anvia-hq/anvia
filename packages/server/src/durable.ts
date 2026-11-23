@@ -121,14 +121,11 @@ function warnIfBodyLimitBelowPayloadLimit(
   maxBodyBytes: number,
 ): void {
   try {
-    // Runtimes before `limits()` throw here; the payload limit is then unknown and nothing is warned.
     const maxPayloadBytes = runtime.limits?.().maxPayloadBytes;
     const message = durableBodyLimitWarning(maxBodyBytes, maxPayloadBytes);
 
     if (message !== undefined) console.warn(message);
-  } catch {
-    // Ignore: the warning is advisory.
-  }
+  } catch {}
 }
 
 /** Fetch-compatible routes. The application owns runtime startup, shutdown, and authentication. */
@@ -294,7 +291,6 @@ export function createDurableHandler(
       if (error instanceof DurableNotFoundError)
         return json({ error: "Durable resource not found" }, 404);
 
-      // A payload limit can never succeed for the same request; capacity may clear later.
       if (error instanceof DurableLimitError) {
         const body: { error: string; code: string; field?: string } = {
           error: error.message,

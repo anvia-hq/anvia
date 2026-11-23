@@ -138,7 +138,7 @@ describe("tunnel", () => {
     try {
       v6 = await listen(echo, "::1");
     } catch {
-      return; // No IPv6 loopback here.
+      return;
     }
     const h = await harness();
     const handle = await h.hub.tunnel(sandboxId).open(v6.port);
@@ -234,13 +234,11 @@ describe("tunnel", () => {
         received.update(chunk);
         bytes += chunk.byteLength;
 
-        // A consumer that is slower than the service.
         if ((chunks += 1) % 4 === 0) await sleep(1);
       }
       expect(bytes).toBe(total);
       expect(received.digest("hex")).toBe(expected.digest("hex"));
       expect(await handle.exit).toEqual({ reason: "remote" });
-      // The service had to wait for the consumer, so the data was not read ahead into memory.
       expect(backpressured).toBeGreaterThan(0);
     }, 60_000);
 
@@ -267,7 +265,6 @@ describe("tunnel", () => {
       let exited = false;
       void handle.exit.then(() => (exited = true));
 
-      // Never read handle.output. Without flow control the daemon would drain the service.
       await sleep(1_500);
       const first = accepted;
       await sleep(500);
@@ -279,7 +276,6 @@ describe("tunnel", () => {
     }, 30_000);
 
     it("rejects a write that is waiting for room when the tunnel is cut off for overflowing", async () => {
-      // A daemon that ignores flow control: it never acks the hub's data, and floods it with output.
       const hub = new RemoteSandboxHub({
         authorize: (candidate) => (candidate === token ? { sandboxId } : null),
         connectTimeoutMs: 2_000,
@@ -316,14 +312,12 @@ describe("tunnel", () => {
       await eventually(() => hub.isConnected(sandboxId));
       const handle = await hub.tunnel(sandboxId).open(1234);
 
-      // More than the 256 KiB window and never acknowledged, so this write parks waiting for room.
       const parked = handle.write(new Uint8Array(1024 * 1024)).then(
         () => "written",
         (error: unknown) => (error as { code?: string }).code,
       );
       await sleep(200);
 
-      // Nobody reads handle.output, so this overflows the 64 KiB buffer.
       const chunk = Buffer.alloc(16 * 1024, 1).toString("base64");
       for (let seq = 0; seq < 8; seq += 1) {
         daemon.send(JSON.stringify({ type: "tunnel.data", tunnelId, seq, data: chunk }));
@@ -401,8 +395,6 @@ describe("tunnel", () => {
         await tunnel.open(port, { profile: "interactive" }),
         total,
       );
-      // 256 KiB per 100 ms is about 2.6 MB/s, so the default needs over two seconds; a 2 MiB
-      // window is ten times that. Compare, so a slow machine does not decide it.
       expect(plain).toBeGreaterThan(1_500);
       expect(interactive * 2.5).toBeLessThan(plain);
     }, 60_000);
@@ -446,8 +438,6 @@ describe("tunnel", () => {
       });
       const h = await harness();
       const handle = await h.hub.tunnel(sandboxId).open(port, { profile: "interactive" });
-      // Nobody reads: the daemon sends its whole 2 MiB window and stops. Over the default 1 MiB
-      // buffer that would end the tunnel as "too slow".
       await sleep(1_000);
       let ended = false;
       void handle.exit.then(() => {
@@ -476,7 +466,6 @@ describe("tunnel", () => {
         h.hub.tunnel(sandboxId).open(port, profile === undefined ? {} : { profile });
       const free = await timeTransfer(await open("interactive"), smaller);
 
-      // Same daemon settings, but this port is held to a 32 KiB window.
       const limited = await harnessOverSlowLink(100, {
         daemon: {
           tunnel: {
@@ -540,8 +529,6 @@ describe("tunnel", () => {
       }
 
       it("stays at the default window until the daemon confirms the profile", async () => {
-        // An older daemon ignores the profile and cuts a tunnel off a little over 1 MiB unwritten, so
-        // the hub must not send it a 1 MiB window.
         const { hub, sent } = await stalledDaemon(false);
         const handle = await hub.tunnel(sandboxId).open(1, { profile: "interactive" });
         void handle.write(new Uint8Array(2 * 1024 * 1024)).catch(() => undefined);
@@ -611,7 +598,6 @@ describe("tunnel", () => {
           socket.send(
             JSON.stringify({ type: "tunnel.open", tunnelId: "t1", port: 1234, host: "10.0.0.1" }),
           );
-          // The same fast failure applies to terminals: an invalid open must not strand its caller.
           socket.send(
             JSON.stringify({
               type: "pty.open",
@@ -747,7 +733,6 @@ describe("browser tunnel relay", () => {
     const { url } = await relay({ port });
     for (const viewer of [
       browser(`${url}?ticket=ok`),
-      // noVNC offers `binary`; the ticket rides along as a second subprotocol.
       browser(url, { protocols: ["binary", "anvia.ticket.ok"] }),
     ]) {
       expect(await viewer.refused).toBe(0);
@@ -814,13 +799,10 @@ describe("browser tunnel relay", () => {
     await viewer.refused;
 
     const frame = Buffer.alloc(128 * 1024, 9);
-    const frames = 96; // 12 MiB, far more than the hub should hold for a service that is not reading.
+    const frames = 96;
     for (let index = 0; index < frames; index += 1) viewer.socket.send(frame);
     await sleep(1_000);
 
-    // The service reads nothing, so nothing reaches it. (That the relay stops reading from the
-    // browser meanwhile is tested deterministically in tunnel-relay.test.ts: how much the kernel
-    // buffers on the way is up to the machine.)
     expect(received).toBe(0);
 
     serviceSocket?.resume();

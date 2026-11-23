@@ -211,7 +211,6 @@ it.each([false, true])(
     expect(
       (await runtime.events(run.id, 0)).filter((event) => event.type === "compaction_completed"),
     ).toHaveLength(2);
-    // A single previous user-led turn can itself be too large for the next submission.
     await (await runtime.submit({ ...submission, requestId: "2", prompt: "Continue" })).result();
     expect(
       requests
@@ -248,8 +247,6 @@ itSqlite.each(["summary", "prepared", "model"])(
     const exit = once(child, "exit");
     child.kill("SIGKILL");
     await exit;
-    // An uncommitted retry may return a different summary and usage. Once committed,
-    // neither callback may run again, even if it would return a different result.
     const retryUsage = { ...Usage.empty(), inputTokens: 8, outputTokens: 3, totalTokens: 11 };
     const compactor = vi.fn(async () => ({
       summary: "Summary from the retry.",

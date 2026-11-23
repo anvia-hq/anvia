@@ -9,7 +9,6 @@ export class SqliteDurableStore extends DrizzleDurableStore {
     super(
       {
         ...drizzleOver(pool),
-        // Migrate lazily, before the first statement, as a migration tool would.
         execute: lazy(pool, drizzleOver(pool).execute),
         transaction: drizzleOver(pool).transaction,
       },

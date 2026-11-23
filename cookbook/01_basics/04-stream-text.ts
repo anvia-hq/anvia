@@ -13,7 +13,6 @@ const agent = new Agent({
   instructions: "You are a concise assistant.",
 });
 
-// Streaming yields normalized events; text_delta contains the visible answer text.
 for await (const event of agent.stream({
   prompt: "Write a short haiku about TypeScript agents.",
 })) {

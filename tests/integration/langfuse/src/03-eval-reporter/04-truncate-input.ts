@@ -1,6 +1,3 @@
-// Demonstrates: truncateInputAt caps the byte size of caseInputSummary
-// and caseExpectedSummary metadata keys, appending `<truncated>`.
-
 import { Agent } from "@anvia/core/agent";
 import { agentEvalTarget, contains, runEvalSuite } from "@anvia/core/evals";
 import { getStaticModel } from "../_support/model.js";
@@ -15,7 +12,7 @@ async function main(): Promise<void> {
     instructions: "x",
   });
 
-  const longInput = "lorem ipsum ".repeat(500); // > 6 KB
+  const longInput = "lorem ipsum ".repeat(500);
   const result = await runEvalSuite({
     name: "truncation-suite",
     cases: [

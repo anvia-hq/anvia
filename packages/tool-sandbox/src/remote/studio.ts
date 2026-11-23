@@ -130,9 +130,6 @@ export function studioDesktopView(
   desktop: SandboxDesktop,
   options: { id?: string; label?: string } = {},
 ): StudioDesktopView {
-  // Studio allows one person in control of a view at a time, so one lease is tracked per view.
-  // Input from the viewer is filtered here, not left to the browser: it passes only while that
-  // lease is held and unexpired.
   const lease: { holder?: string; expiresAt: number } = { expiresAt: 0 };
   const mayType = () => lease.holder !== undefined && Date.now() < lease.expiresAt;
   const remember = (holder: string, control: DesktopControl) => {
@@ -170,7 +167,6 @@ export function studioDesktopView(
             expiresAt = renewed.expiresAt ?? expiresAt;
             return snapshotOf(renewed);
           } catch (error) {
-            // Studio drops a lease whose renewal failed, so the viewer must stop typing too.
             forget();
             throw error;
           }
@@ -206,7 +202,6 @@ function filteredStream(handle: TunnelHandle, filter: RfbClientFilter): StudioVi
       try {
         forward = filter.push(data);
       } catch (error) {
-        // A stream the filter cannot follow cannot be relayed safely, so end it.
         handle.close();
         throw error;
       }

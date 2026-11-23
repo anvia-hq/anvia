@@ -104,7 +104,6 @@ describe("durable HTTP routes over a store-only DurableClient", () => {
         }),
       }),
     );
-    // Authorizing a task submission needs the definitions' agent dependencies.
     expect(submitted.status).toBe(503);
   });
 });

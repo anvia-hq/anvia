@@ -24,7 +24,6 @@ const multiplyTool = createTool({
   execute: (args) => args.x * args.y,
 });
 
-// Lifecycle callbacks observe each model step and tool execution.
 const lifecycle = {
   onStepFinish({ step, response }) {
     console.log("step finished:", step, response.choice.length);

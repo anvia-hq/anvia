@@ -14,7 +14,6 @@ const updateRequest = bytes(3, 1, 0, 0, 0, 0, 3, 0, 2, 0);
 const keyEvent = bytes(4, 1, 0, 0, 0, 0, 0, 0x61);
 const pointerEvent = bytes(5, 1, 0, 10, 0, 20);
 const cutText = (text: string) => join(bytes(6, 0, 0, 0, 0, 0, 0, text.length), ascii(text));
-// Extended Clipboard: the length is negative, and its absolute value is the payload size.
 const extendedCutText = (payload: number) =>
   join(
     bytes(6, 0, 0, 0),
@@ -57,8 +56,6 @@ describe("RfbClientFilter", () => {
   });
 
   it("measures an Extended Clipboard message, whose length is negative, and treats it as input", () => {
-    // This is what noVNC sends as soon as the server advertises the extension. Reading the length
-    // as unsigned made it look like a four-gigabyte clipboard and ended the session.
     const clipboard = extendedCutText(8);
     expect(clipboard.byteLength).toBe(16);
     const stream = join(handshake(), clipboard, updateRequest);
@@ -75,8 +72,6 @@ describe("RfbClientFilter", () => {
   });
 
   it("passes what TigerVNC's extensions add, for a viewer that may only watch", () => {
-    // noVNC sends these as soon as the server advertises the extensions, and Xvnc does. Refusing
-    // one (as an unknown type) made every viewer on Xvnc fail with "unsupported message".
     const continuousUpdates = bytes(150, 1, 0, 0, 0, 0, 5, 0, 3, 0x20);
     const fence = join(bytes(248, 0, 0, 0, 0, 0, 0, 3, 4), ascii("ping"));
     const xvp = bytes(250, 0, 1, 2);
@@ -144,7 +139,6 @@ describe("RfbClientFilter", () => {
     expect(() => run(true, handshake(), bytes(6, 0, 0, 0, 0x7f, 0xff, 0xff, 0xff))).toThrow(
       /too large/,
     );
-    // A huge negative length is just as large a payload.
     expect(() => run(true, handshake(), bytes(6, 0, 0, 0, 0x80, 0, 0, 1))).toThrow(/too large/);
   });
 });

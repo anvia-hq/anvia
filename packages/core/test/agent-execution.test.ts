@@ -246,7 +246,6 @@ it("lets an execution runtime wrap the tool selection made for each model call",
   };
   await agent.generate(withInternalAgentRunOptions({ prompt: "write" }, { execution }));
   expect(selectTools).toHaveBeenCalledTimes(2);
-  // Turns are numbered as the model operation keys are, starting at 1.
   expect(selectTools.mock.calls.map(([turn]) => turn)).toEqual([1, 2]);
   const request = vi.mocked(agent.model.completion).mock.calls[0]![0] as { tools?: unknown[] };
   expect(request.tools).toEqual(selected);

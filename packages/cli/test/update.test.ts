@@ -142,8 +142,6 @@ describe("updateInstalledItems", () => {
 
   it("restores missing files of installed items only", () => {
     const cwd = createProject();
-    // attachment.tsx makes composer installed (attachment + composer) but leaves markdown
-    // uninstalled, so update must restore composer.tsx while never creating markdown.tsx.
     writeFileSync(installedPath(cwd, "attachment.tsx"), registryContent("attachment.tsx"));
     const { updated } = updateInstalledItems({
       cwd,

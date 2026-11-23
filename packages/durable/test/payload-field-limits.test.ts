@@ -79,8 +79,6 @@ it("fills every field group from the default when only the default is given", as
 });
 
 it("applies a prompt override to the submitted prompt and leaves operations on the default", async () => {
-  // The prompt is admitted at 6,000 bytes, but the model request that carries it is 3,000+ bytes
-  // and the operation budget is still 2,000, so the run fails on the operation, not the prompt.
   const runtime = await open({ default: 2_000, prompt: 6_000 });
   const run = await settle(runtime, "p".repeat(3_000));
   expect(run.status).toBe("failed");
@@ -89,7 +87,6 @@ it("applies a prompt override to the submitted prompt and leaves operations on t
 });
 
 it("admits a large prompt when the prompt and operation overrides both cover it", async () => {
-  // The settled history keeps the prompt too, so the outcome budget covers the same text.
   const runtime = await open({ default: 2_000, prompt: 6_000, operation: 8_000, outcome: 8_000 });
   const run = await settle(runtime, "p".repeat(3_000));
   expect(run.status).toBe("completed");
@@ -97,8 +94,6 @@ it("admits a large prompt when the prompt and operation overrides both cover it"
 });
 
 it("applies an outcome override to the settled outcome only", async () => {
-  // A 1,000-character answer has an outcome of about 3 KB: over the 2,000 default, under the
-  // outcome override. Its model result is about 1 KB, which still fits the operation default.
   const answer = "a".repeat(1_000);
   const answering = () => response([{ type: "text", text: answer }]);
 
@@ -118,8 +113,6 @@ it("applies an outcome override to the settled outcome only", async () => {
 });
 
 it("does not let an outcome override raise the operation budget", async () => {
-  // A 3,000-character answer fits the outcome override, but its model result exceeds the
-  // operation default, so the failure names the operation and not the outcome.
   const answer = "a".repeat(3_000);
   const runtime = await open(
     { default: 2_000, outcome: 16_000 },
@@ -136,7 +129,6 @@ it("applies an event override to streamed deltas only", async () => {
     yield { type: "text_delta", delta } satisfies CompletionModelStreamEvent;
     yield { type: "final", response: response([{ type: "text", text: delta }]) };
   });
-  // The default event budget rejects the 3 KB delta, which is the only event-budget field.
   const plain = await DurableRuntime.open({
     store: new SqliteDurableStore(":memory:"),
     agents: [{ agent: streamed, version: "1", stream: true }],
@@ -154,7 +146,6 @@ it("applies an event override to streamed deltas only", async () => {
   const admitted = await DurableRuntime.open({
     store: new SqliteDurableStore(":memory:"),
     agents: [{ agent: streamedAgain, version: "1", stream: true }],
-    // The final response repeats the streamed text three times in the outcome.
     limits: {
       maxPayloadBytes: { default: 2_000, event: 8_000, operation: 8_000, outcome: 16_000 },
     },

@@ -41,15 +41,11 @@ export function registrations(
 
     if (result.has(agent.id)) throw new TypeError(`Duplicate durable agent: ${agent.id}`);
 
-    // Agent-level retries would restart a model request without a persisted attempt, so the
-    // runtime executes with retries disabled. Reject the setting instead of silently disabling it.
     if (retriesEnabled(options.retries))
       throw new TypeError(
         `Durable agent "${agent.id}" defines retries, which the durable runtime cannot honour: every run executes with retries disabled so a replay never repeats an unrecorded attempt. Configure modelRetry on the registration instead, or remove retries from the agent.`,
       );
 
-    // Hooks, middleware, guardrails and provider tools each need their own marker and persistence
-    // boundary, so none of them is replayed silently.
     if (
       registration.middlewares !== undefined &&
       (registration.middlewares as { mode?: unknown }).mode !== "pure"
@@ -110,9 +106,6 @@ export function registrations(
 
     if (registration.guardrails !== undefined) assertUniqueGuardrailIds(agent);
 
-    // Core does not classify a provider tool with non-JSON configuration as a provider tool, so it
-    // is checked in the configured tool list, where it is still visible. Provider tool configuration
-    // is persisted with the model request, so it must be JSON.
     if (registration.providerTools !== undefined)
       for (const tool of options.tools ?? []) {
         const candidate = tool as { kind?: unknown; name?: unknown; configuration?: unknown };
@@ -133,7 +126,6 @@ export function registrations(
     const unsupported = unsupportedFeatures(options, registration);
 
     if (unsupported.length > 0) {
-      // Each feature with a marker names it, so the fix is one line away.
       const hints = [
         unsupported.includes("memory") ? `memory needs { memory: { mode: "recorded" } }` : "",
         unsupported.includes("middleware")
@@ -170,8 +162,6 @@ export function registrations(
     let compaction: DurableAgentRegistration["compaction"];
 
     if (registration.compaction !== undefined) {
-      // Registration compaction projects the run's own history, which recorded memory leaves empty:
-      // the conversation lives in the memory store, so the policy would silently do nothing.
       if (registration.memory !== undefined)
         throw new TypeError(
           `Durable agent "${agent.id}" sets both compaction and memory: { mode: "recorded" }. Registration compaction works on the run's history, which recorded memory keeps in the memory store, so it would not apply. Remove one of them.`,
@@ -330,19 +320,15 @@ function unsupportedFeatures(
 
   if (options.memory !== undefined && registration.memory === undefined) features.push("memory");
 
-  // Observational hooks are gated by the registration's marker; anything else can change the run.
   if (options.lifecycle !== undefined && registration.lifecycle === undefined)
     features.push("lifecycle");
 
-  // Pure middleware and recorded guardrails are gated by their markers, like lifecycle hooks.
   if ((options.middlewares?.length ?? 0) > 0 && registration.middlewares === undefined)
     features.push("middleware");
 
   if ((options.guardrails?.length ?? 0) > 0 && registration.guardrails === undefined)
     features.push("guardrails");
 
-  // Static documents are snapshotted into each run record at submission; live vector retrieval
-  // is still not checkpointed.
   if (
     (options.context ?? []).some((input) => isVectorContext(input)) &&
     registration.context === undefined

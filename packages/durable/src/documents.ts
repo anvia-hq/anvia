@@ -12,7 +12,6 @@ import { canonicalJson, json } from "./json.js";
 export type DurableContextDocuments = { hash: string; documents: Document[] };
 
 export function contextDocumentsOf(agent: Agent<unknown>): DurableContextDocuments | undefined {
-  // The registration gate has already rejected vector contexts, so every entry is a Document.
   const documents = agent.context
     .filter((input) => !isVectorContext(input))
     .map((input) => json(input) as Document);

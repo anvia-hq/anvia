@@ -13,10 +13,6 @@ afterEach(async () => {
 });
 
 describe("DockerProcessManager abort lifecycle", () => {
-  // The fake Docker CLI below is a POSIX shebang script. Node cannot spawn a script file
-  // directly on Windows (spawn ENOENT), and a `.cmd` shim would need `shell: true`, which
-  // the manager must not use. The lifecycle logic under test is platform-agnostic, so it
-  // still runs in full on POSIX; on Windows it is skipped rather than failing the suite.
   it.skipIf(process.platform === "win32")(
     "keeps the Docker exec session attached after acknowledging startup",
     async () => {

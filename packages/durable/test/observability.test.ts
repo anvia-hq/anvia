@@ -52,7 +52,6 @@ function recorder(): { observer: AgentObserver; recorded: Recorded } {
 
 /** One tool round, then a transient failure on the second model call that durable retries. */
 function flakyAgent(observer: AgentObserver, toolOutput = "found") {
-  // Replayed turns never reach the model, so the provider sees exactly three calls.
   let calls = 0;
   const pick = (): CompletionResponse => {
     calls += 1;
@@ -131,10 +130,8 @@ describe("durable observability", () => {
           metadata: { plan: "pro", durableRunId: run.id, durableEpoch: 0 },
         });
       }
-      // Turn 2 is observed for the failed and the retried attempt; turn 1 and the tool only once.
       expect(recorded.generations).toEqual([1, 2, 2]);
       expect(recorded.tools).toEqual(["lookup"]);
-      // Replayed steps add no usage, so the two executions report 3 + 3 rather than 3 + 6.
       expect(recorded.usage).toEqual([3, 3]);
       expect(result.usage.totalTokens).toBe(6);
     },
@@ -171,7 +168,6 @@ describe("durable observability", () => {
     expect(compactor).toHaveBeenCalledTimes(1);
     expect(recorded.runs).toHaveLength(2);
     expect(recorded.events).toEqual(["memory.compaction"]);
-    // First execution: turn 1 plus the summary. Second: only the retried turn 2.
     expect(recorded.usage).toEqual([10, 3]);
     expect(result.usage.totalTokens).toBe(13);
   });
@@ -298,7 +294,6 @@ describe("durable observability", () => {
     await run.result();
 
     expect(tool).toHaveBeenCalledTimes(1);
-    // Suspended at approval, executed after it, then restored without a span on the retry.
     expect(recorded.tools).toEqual(["lookup", "lookup"]);
     expect(recorded.runs.map((started) => started.trace?.metadata?.["durableEpoch"])).toEqual([
       0, 1, 1,
@@ -431,7 +426,6 @@ describe("durable observability", () => {
         metadata: { durableRunId: isolated.id, durableEpoch: 0, durableSessionId: "side-work" },
       },
     ]);
-    // Same observability session, separate execution sessions: no history crosses over.
     expect(JSON.stringify(requests[1]?.chatHistory)).not.toContain("first");
     expect((await isolated.snapshot()).run.sessionId).toBe("side-work");
   });

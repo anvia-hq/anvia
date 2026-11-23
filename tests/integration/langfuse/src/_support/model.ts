@@ -18,8 +18,6 @@ export function defaultModelId(): string {
   return optionalEnv("ANVIA_MODEL") ?? "gpt-5";
 }
 
-// Deterministic model that always returns the same text. Used by demos
-// where a real LLM call would add noise and cost.
 export function getStaticModel(text: string): CompletionModel {
   return {
     provider: "langfuse-ops-static",

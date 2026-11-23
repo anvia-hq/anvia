@@ -46,7 +46,6 @@ export function normalizeOpenAIUsage(options: {
 }
 
 export function parseToolArguments(toolCallId: string, text: string, usage?: Usage): JsonValue {
-  // Some OpenAI-compatible backends send "" for zero-argument tool calls.
   if (text.trim() === "") return {};
 
   let value: unknown;

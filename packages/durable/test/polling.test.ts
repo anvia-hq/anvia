@@ -88,7 +88,7 @@ describe("store polling", () => {
     await new Promise((resolve) => setTimeout(resolve, 200));
 
     expect(state.aborted).toBe(false);
-    await runtime.cancel(first.id); // an in-process call still aborts it
+    await runtime.cancel(first.id);
     await expect.poll(() => state.aborted).toBe(true);
   });
 
@@ -101,6 +101,6 @@ describe("store polling", () => {
         DurableRuntime.open({ store: new SqliteDurableStore(path), pollIntervalMs }),
       ).rejects.toThrow(/pollIntervalMs/);
     const runtime = await DurableRuntime.open({ store: new SqliteDurableStore(path) });
-    runtimes.push(runtime); // opens fine, so the failed attempts never took the lease
+    runtimes.push(runtime);
   });
 });

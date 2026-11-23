@@ -96,7 +96,6 @@ export function defineGoal(policy: GoalDefinition): DefinedGoal {
     run: async (ctx) => {
       const state = ctx.checkpoint;
 
-      // Pin legacy goals before any new session or assessment can run.
       if (state.agentId === undefined)
         return { status: "pending", checkpoint: { ...state, agentId: agentId(ctx.input) } };
 
@@ -108,10 +107,8 @@ export function defineGoal(policy: GoalDefinition): DefinedGoal {
         const parsed = goalResumeSchema.safeParse(signal);
 
         if (!parsed.success)
-          // Consume this immutable signal name and expose a new one for a corrected delivery.
           return pause({ ...state, resumeIndex: state.resumeIndex + 1 }, state.pauseReason!);
 
-        // Edits and messages sent while paused take effect now; earlier pause requests are moot.
         const controlled = (await readControls(ctx, state)).state;
         return {
           status: "pending",
@@ -129,8 +126,6 @@ export function defineGoal(policy: GoalDefinition): DefinedGoal {
 
       if (state.phase === "ready") {
         const key = `session:${state.sessions + 1}`;
-        // A spawn may have committed just before the parent phase was interrupted. Its prompt
-        // already holds the controls read then; read them again only for a new session.
         const existing = (await ctx.children()).find((child) => child.key === key);
         let admitted = state;
 
@@ -194,7 +189,6 @@ export function defineGoal(policy: GoalDefinition): DefinedGoal {
               ].join("\n"),
             });
           } catch (error) {
-            // A registration can disappear between sessions or across a restart.
             if (error instanceof DurableNotFoundError)
               throw new DurableRecoveryError(error.message);
 
@@ -202,7 +196,6 @@ export function defineGoal(policy: GoalDefinition): DefinedGoal {
           }
         }
 
-        // Messages go to one session only.
         const { messages: _delivered, ...rest } = admitted;
         return {
           status: "waiting",
@@ -222,8 +215,6 @@ export function defineGoal(policy: GoalDefinition): DefinedGoal {
         totalTokens: state.totalTokens + run.usage.totalTokens,
       };
       let session: GoalSession;
-      // Only a usable conversation can be continued: a failed session leaves the previous
-      // one as the round to continue after a resume.
       const continueAfter = () => {
         if (settled !== undefined) next.previousChildKey = settled.key;
       };
@@ -261,8 +252,6 @@ export function defineGoal(policy: GoalDefinition): DefinedGoal {
       const assessmentInput = {
         ...effective(ctx.input, state),
         previous: state.handoff,
-        // A continuing round's conversation grows with every round; its settled run ID
-        // identifies it, so the journal does not store the whole conversation each time.
         session:
           policy.rounds === "continue" ? { ...journaled, messages: roundMessages } : journaled,
       };
@@ -274,7 +263,6 @@ export function defineGoal(policy: GoalDefinition): DefinedGoal {
       const decision = journaledDecision(
         await ctx.effect(
           `assess:${next.sessions}`,
-          // Keep the existing journal input shape. The session's runId already binds its agent.
           json(assessmentInput),
           async (_, signal) => {
             let value: GoalDecision;

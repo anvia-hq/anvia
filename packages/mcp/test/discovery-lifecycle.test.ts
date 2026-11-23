@@ -75,7 +75,6 @@ it.each(["abort", "close"])(
     if (action === "abort") controller.abort();
     else await mcp.close();
 
-    // The server never releases the response. A connection still probing will time out this test.
     await rejected;
     await mcp.close();
   },

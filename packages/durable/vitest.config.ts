@@ -59,7 +59,6 @@ export default defineConfig({
 function project(name: string, shim: string, only?: string[]) {
   return {
     extends: true as const,
-    // The scenarios are unchanged: only the store behind `SqliteDurableStore` differs.
     resolve: { alias: [{ find: /^(\.\.\/)+src\/sqlite\.js$/, replacement: shimFor(shim) }] },
     test: {
       name,

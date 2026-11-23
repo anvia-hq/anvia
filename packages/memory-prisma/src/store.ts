@@ -95,7 +95,6 @@ export class PrismaMemoryStore implements MemoryStore {
           }
         : undefined;
 
-    // The version is built from the session row, so it needs the sessions findUnique delegate.
     if (typeof delegates.sessions.findUnique === "function") {
       this.loadVersioned = (options) => this.readVersioned(options.scope);
     }
@@ -153,9 +152,6 @@ export class PrismaMemoryStore implements MemoryStore {
     const scopeKey = this.scopeKey(input.scope);
 
     return this.delegates.transaction(async (tx): Promise<MemoryAppendResult> => {
-      // The upsert takes the session row's lock until commit, so writers on one scope run in turn
-      // and each checks the version the previous one left. An empty history keeps one version
-      // whether or not this row exists, so creating it here changes nothing a caller can see.
       let session = versioned ? await upsertSession(tx, input.scope, scopeKey) : undefined;
 
       if (input.idempotencyKey !== undefined) {
@@ -170,7 +166,6 @@ export class PrismaMemoryStore implements MemoryStore {
           select: { fingerprint: true },
         });
 
-        // Checked before the version so a retry after success is a duplicate, not a conflict.
         if (committed !== null) {
           const status =
             committed.fingerprint === writeFingerprint(input) ? "duplicate" : "conflict";
@@ -207,8 +202,6 @@ export class PrismaMemoryStore implements MemoryStore {
       }
 
       if (input.idempotencyKey !== undefined) {
-        // The session row lock already serializes writers; the unique (scopeKey, idempotencyKey)
-        // constraint backstops a writer that reaches here without it.
         await tx.writes!.create({
           data: {
             scopeKey,
@@ -231,8 +224,6 @@ export class PrismaMemoryStore implements MemoryStore {
   }
 
   private async readVersioned(scope: MemoryScope): Promise<MemoryVersionedHistory> {
-    // Version first: a write that lands between the two reads makes the version stale, which
-    // fails safe as a conflict, whereas the reverse order could hide a newer commit.
     const version = await currentVersion(this.delegates, this.scopeKey(scope));
     return { messages: await this.load({ scope }), version };
   }
@@ -477,7 +468,6 @@ async function currentVersion(delegates: PrismaMemoryDelegates, scopeKey: string
     select: { position: true },
   });
 
-  // An empty history has one version whether or not recordError created a session row for it.
   if (tail === null || tail === undefined) return "none";
 
   return formatVersion(session.id, tail.position, generationOf(session.compactionState));
@@ -742,8 +732,6 @@ function compactionTransactionOptions(
 ): PrismaMemoryTransactionOptions {
   return {
     ...options,
-    // Compaction reads messages and updates a checkpoint without advisory locks.
-    // Serializable prevents concurrent commits from both passing the revision check.
     isolationLevel: "Serializable",
   };
 }

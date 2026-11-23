@@ -155,7 +155,6 @@ it("records the MCP fingerprint on an owned agent task child, so it is not block
     requestId: "one",
     input: null,
   });
-  // Before the fix the child run had no fingerprint, so its first execution failed as "changed".
   expect(await handle.result()).toBe("completed");
   expect(call).toHaveBeenCalledTimes(1);
 });
@@ -203,7 +202,6 @@ it("offers the pinned tools to the model and records the fingerprint with the ru
 it("reuses completed calls after a restart and does not call the tool again", async () => {
   const path = database();
   const call = vi.fn(async (_args: unknown, _context?: ToolCallContext) => "docs found");
-  // The first attempt completes the MCP call, then the model fails on the next turn.
   const failing = vi.fn(async (request: CompletionRequest) => {
     if (hasToolResult(request)) throw new Error("provider down");
 
@@ -239,7 +237,6 @@ it("blocks a retry whose server tool list changed under the same version", async
   const recorded = (await submitted.snapshot()).run.mcpServers!.hash;
   await first.close();
 
-  // The server now describes its search tool differently, under the same registration version.
   const model = vi.fn(async (_request: CompletionRequest) => done());
   const changed = await open(
     path,
@@ -255,7 +252,6 @@ it("blocks a retry whose server tool list changed under the same version", async
   expect(call).toHaveBeenCalledTimes(1);
   await changed.close();
 
-  // Restoring the original tool list unblocks the same run.
   const restored = await open(path, mcpAgent(model, docsServer(mcpTool(call))));
   const run = await restored.getRun(submitted.id);
   await run.retry();
@@ -268,7 +264,6 @@ it("blocks an uncertain MCP call for reconciliation after a restart", async () =
   const path = database();
   let started!: () => void;
   const startedCall = new Promise<void>((resolve) => (started = resolve));
-  // The call never answers; closing the runtime aborts it, so its outcome is unknown.
   const call = vi.fn(
     (_args: unknown, context?: ToolCallContext) =>
       new Promise<string>((_resolve, reject) => {
@@ -284,13 +279,11 @@ it("blocks an uncertain MCP call for reconciliation after a restart", async () =
 
   const next = vi.fn(async (_request: CompletionRequest) => done());
   const retried = await open(path, mcpAgent(next, docsServer(mcpTool(call))));
-  // The run was in flight, not failed, so a restart resumes it rather than retrying it.
   await retried.resume();
   const run = await retried.getRun(submitted.id);
   const snapshot = await settled(run);
   expect(snapshot.run.status).toBe("needs_attention");
   expect(snapshot.run.blockedOperation).toBeDefined();
-  // The call is not repeated and the model is not asked again until the outcome is reconciled.
   expect(call).toHaveBeenCalledTimes(1);
   expect(next).not.toHaveBeenCalled();
   await run.resolveTool(snapshot.run.blockedOperation!, { type: "text", value: "reconciled" });

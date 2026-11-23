@@ -1,5 +1,3 @@
-// Demonstrates: adding a custom regex pattern (e.g. SSN) while keeping defaults.
-
 import { createPiiRedactor, DEFAULT_PATTERNS } from "@anvia/langfuse";
 
 function main(): void {

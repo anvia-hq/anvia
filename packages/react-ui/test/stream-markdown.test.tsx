@@ -119,7 +119,6 @@ describe("StreamMarkdown", () => {
     const nextNodes = revealElements(container);
     clock.mockRestore();
 
-    // 60 ms into a 180 ms reveal leaves 120 ms on the tail still showing; "XYZ" starts a fresh 180 ms lifecycle.
     expect(
       nextNodes.map((element) => element.style.getPropertyValue("--anvia-stream-reveal-duration")),
     ).toEqual([...Array<string>(21).fill("120ms"), "180ms", "180ms", "180ms"]);

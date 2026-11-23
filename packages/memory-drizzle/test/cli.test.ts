@@ -296,8 +296,6 @@ function io(events: Event[]) {
 }
 
 function normalizedEvents(events: Event[]): Event[] {
-  // The CLI prints paths with the host OS separator (node:path join/relative);
-  // normalize so path assertions pass on both POSIX and Windows.
   return events.map((event) => ({ ...event, message: event.message.replaceAll("\\", "/") }));
 }
 

@@ -182,7 +182,6 @@ it.each([false, true])(
         })
       ).agentIds,
     ).toEqual(["original"]);
-    // Deduplication uses the original submission and saved binding, not the changed default.
     expect((await restored.submitGoal(restoredGoal, submission)).id).toBe(saved.id);
     await saved.retry();
     expect(await saved.result()).toMatchObject({ sessions: 2 });

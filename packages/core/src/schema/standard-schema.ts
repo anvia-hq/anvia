@@ -1,7 +1,9 @@
-// Vendor of the Standard Schema v1 specification interfaces
-// (https://standardschema.dev, MIT license). The spec recommends that
-// consumers copy the interfaces instead of taking a runtime dependency, so
-// only the type surface and small validation helpers live here.
+/**
+ * Vendor of the Standard Schema v1 specification interfaces
+ * (https://standardschema.dev, MIT license). The spec recommends that
+ * consumers copy the interfaces instead of taking a runtime dependency, so
+ * only the type surface and small validation helpers live here.
+ */
 
 /** The Standard Typed interface. This is a base type extended by other specs. */
 export interface StandardTypedV1<Input = unknown, Output = Input> {
@@ -154,12 +156,7 @@ export declare namespace StandardJSONSchemaV1 {
   }
 
   /** The target version of the generated JSON Schema. */
-  export type Target =
-    | "draft-2020-12"
-    | "draft-07"
-    | "openapi-3.0"
-    // Accepts any string for future targets while preserving autocomplete.
-    | ({} & string);
+  export type Target = "draft-2020-12" | "draft-07" | "openapi-3.0" | ({} & string);
 
   /** The Standard types interface. */
   export interface Types<Input = unknown, Output = Input> extends StandardTypedV1.Types<

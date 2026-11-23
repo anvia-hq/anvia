@@ -123,7 +123,6 @@ export function relayDesktop(
       stopped = true;
       for (const timer of timers) clearInterval(timer);
 
-      // A viewer that leaves must not keep the agent locked out.
       if (youHold()) void desktop.release({ holder }).catch(() => undefined);
     },
   });

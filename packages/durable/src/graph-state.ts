@@ -27,7 +27,6 @@ export async function createGraph(
    */
   allowUnregistered = false,
 ): Promise<string> {
-  // Two submitters of one graph request would otherwise race to the unique constraint.
   await tx.lockSession?.(`${GRAPH_SESSION_PREFIX}${submission.sessionId}`);
   const existing = await tx.findGraphRequest(submission.sessionId, submission.requestId);
 

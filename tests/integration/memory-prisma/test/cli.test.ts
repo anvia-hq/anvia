@@ -36,7 +36,6 @@ it.each(["7", "8"])(
       ];
 
       if (version === "7") {
-        // Prisma 7 writes a separate model file beside an existing schema.
         writeFileSync(join(directory, output), 'datasource db {\n  provider = "postgresql"\n}\n');
       }
 

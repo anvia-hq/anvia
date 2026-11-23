@@ -10,24 +10,10 @@ import {
   startDesktopSandbox,
 } from "./_support/desktop-sandbox";
 
-// An agent that drives a real Linux desktop in a container, through screenshots and input tools.
-//
-// The container runs the reference image (pnpm cookbook:remote-sandbox:image). Its daemon dials
-// OUT to the hub below, so the container needs no published ports. Nothing graphical starts until
-// the agent first looks at the screen. For the same thing in a browser, where you can watch the
-// desktop and take over, see 02-desktop-app.ts.
-//
-// Set ANVIA_DEMO_TAKEOVER=1 to have a "person" take control for 15 seconds as the agent starts its
-// second action: its inputs fail (the error says who holds control), it waits, and carries on once
-// control is handed back.
-//
-// Screenshots are saved to ./desktop-demo-out as it goes (and one at the end), so you can watch.
-
 const outDir = "desktop-demo-out";
-const task = process.env.ANVIA_DEMO_TASK ?? defaultTask; // Not argv: scripts get a dotenv arg there.
+const task = process.env.ANVIA_DEMO_TASK ?? defaultTask;
 const takeover = process.env.ANVIA_DEMO_TAKEOVER === "1";
 
-// The hub: where the sandbox's daemon connects. It authorizes the daemon by token.
 const daemonToken = randomBytes(24).toString("base64url");
 const hub = new RemoteSandboxHub({
   authorize: (token) => (token === daemonToken ? { sandboxId } : null),
@@ -54,7 +40,6 @@ try {
   const status = await desktop.status();
   console.log(`Desktop running at ${status.width}x${status.height}.`);
 
-  // Save a screenshot every few seconds so you can follow along.
   await rm(outDir, { recursive: true, force: true });
   await mkdir(outDir, { recursive: true });
   let frame = 0;
@@ -66,8 +51,6 @@ try {
   await saveFrame();
   snapshots = setInterval(() => void saveFrame(), 3_000);
 
-  // Optionally act as the person who takes control, then hands it back. This happens as the agent
-  // starts its second action, so the lock lands in the middle of the task however fast the model is.
   let toolCalls = 0;
   const personTakesControl = async () => {
     console.log("\n>>> A person takes control of the desktop for 15 seconds.\n");

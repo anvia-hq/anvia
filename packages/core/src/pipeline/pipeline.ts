@@ -417,7 +417,6 @@ export class Pipeline<Input, Output = Input> {
           abortSignal: context.abortSignal,
         });
         const answer = result.answers.route;
-        // decide() validates the choice against the question options, which match the branches.
         const node = branchNodes.get(answer.choice) as PipelineGraphNode;
         const branch = branchPipelines.get(answer.choice) as Pipeline<Awaited<Output>, unknown>;
         const path = [...routePath, node.id];

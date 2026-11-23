@@ -20,41 +20,41 @@ type AddressRange = readonly [network: string, prefix: number];
 
 /** Non-global IPv4 ranges plus transition mechanisms that can encode another address. */
 const BLOCKED_IPV4: readonly AddressRange[] = [
-  ["0.0.0.0", 8], // "this network"
-  ["10.0.0.0", 8], // private network
-  ["100.64.0.0", 10], // shared address space (carrier-grade NAT)
-  ["127.0.0.0", 8], // loopback
-  ["169.254.0.0", 16], // link-local, includes cloud metadata at 169.254.169.254
-  ["172.16.0.0", 12], // private network
-  ["192.0.0.0", 24], // IETF protocol assignments
-  ["192.0.2.0", 24], // documentation (TEST-NET-1)
-  ["192.88.99.0", 24], // 6to4 relay anycast (deprecated)
-  ["192.168.0.0", 16], // private network
-  ["198.18.0.0", 15], // benchmarking
-  ["198.51.100.0", 24], // documentation (TEST-NET-2)
-  ["203.0.113.0", 24], // documentation (TEST-NET-3)
-  ["224.0.0.0", 4], // multicast
-  ["240.0.0.0", 4], // reserved, includes 255.255.255.255
+  ["0.0.0.0", 8],
+  ["10.0.0.0", 8],
+  ["100.64.0.0", 10],
+  ["127.0.0.0", 8],
+  ["169.254.0.0", 16],
+  ["172.16.0.0", 12],
+  ["192.0.0.0", 24],
+  ["192.0.2.0", 24],
+  ["192.88.99.0", 24],
+  ["192.168.0.0", 16],
+  ["198.18.0.0", 15],
+  ["198.51.100.0", 24],
+  ["203.0.113.0", 24],
+  ["224.0.0.0", 4],
+  ["240.0.0.0", 4],
 ];
 
 /** Non-global IPv6 ranges plus transition mechanisms that can encode another address. */
 const BLOCKED_IPV6: readonly AddressRange[] = [
-  ["::", 96], // unspecified, loopback, and deprecated IPv4-compatible addresses
-  ["::ffff:0:0", 96], // IPv4-mapped (alternate spelling of an IPv4 destination)
-  ["64:ff9b:1::", 48], // NAT64 local-use prefix
-  ["100::", 64], // discard-only
-  ["100:0:0:1::", 64], // dummy IPv6 prefix
-  ["2001::", 32], // Teredo
-  ["2001:2::", 48], // benchmarking
-  ["2001:10::", 28], // ORCHID (deprecated)
-  ["2001:db8::", 32], // documentation
-  ["2002::", 16], // 6to4
-  ["3fff::", 20], // documentation
-  ["5f00::", 16], // segment routing SIDs
-  ["fc00::", 7], // unique local
-  ["fe80::", 10], // link-local
-  ["fec0::", 10], // site-local (deprecated)
-  ["ff00::", 8], // multicast
+  ["::", 96],
+  ["::ffff:0:0", 96],
+  ["64:ff9b:1::", 48],
+  ["100::", 64],
+  ["100:0:0:1::", 64],
+  ["2001::", 32],
+  ["2001:2::", 48],
+  ["2001:10::", 28],
+  ["2001:db8::", 32],
+  ["2002::", 16],
+  ["3fff::", 20],
+  ["5f00::", 16],
+  ["fc00::", 7],
+  ["fe80::", 10],
+  ["fec0::", 10],
+  ["ff00::", 8],
 ];
 
 /** IANA marks these two /32s globally reachable although 192.0.0.0/24 is not. */
@@ -134,8 +134,6 @@ function parseIpv4(value: string): number | null {
 
 /** Parse an IPv6 address (with optional embedded IPv4) into its 128-bit value. */
 function parseIpv6(value: string): bigint | null {
-  // Zone identifiers (`fe80::1%eth0`) are invalid inside URLs; strip the zone so a
-  // caller passing one directly still gets the address classified.
   const zone = value.indexOf("%");
   const address = zone === -1 ? value : value.slice(0, zone);
 

@@ -196,7 +196,6 @@ export class ShellViewer implements TerminalAttachment {
     private readonly readOnly: boolean,
     private readonly onClosed: (attachment: TerminalAttachment) => void,
   ) {
-    // Start with the scrollback so a new viewer sees what the others already saw.
     const history = session.snapshot();
     this.early = history.byteLength > 0 ? [history] : [];
     session.viewers.add(this);

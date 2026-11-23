@@ -63,7 +63,6 @@ describe("SandboxDesktop", () => {
     expect(screen.queryByRole("status")).toBeNull();
     expect(FakeRfb.instances).toHaveLength(1);
     expect(FakeRfb.last.target).toBeInstanceOf(HTMLElement);
-    // The desktop is fitted to the element, and only the hub's API ever resizes it.
     expect(FakeRfb.last).toMatchObject({
       scaleViewport: true,
       clipViewport: false,
@@ -87,7 +86,7 @@ describe("SandboxDesktop", () => {
     expect(FakeSocket.last.sentBinary).toHaveLength(1);
 
     await act(async () => FakeSocket.last.serverMessage(control()));
-    expect(FakeRfb.last.received).toHaveLength(1); // Only the banner reached noVNC.
+    expect(FakeRfb.last.received).toHaveLength(1);
   });
 
   it("scales to fit by default, and follows the prop", async () => {
@@ -114,7 +113,7 @@ describe("SandboxDesktop", () => {
         <SandboxDesktop url={url} data-testid="desktop" qualityLevel={9} compressionLevel={0} />,
       );
       expect(FakeRfb.last).toMatchObject({ qualityLevel: 9, compressionLevel: 0 });
-      expect(FakeRfb.instances).toHaveLength(1); // The connection was not restarted for it.
+      expect(FakeRfb.instances).toHaveLength(1);
     });
 
     it("rounds and clamps levels noVNC would refuse, and ignores nonsense", async () => {
@@ -178,7 +177,6 @@ describe("SandboxDesktop", () => {
       expect(FakeRfb.last.viewOnly).toBe(true);
       expect(root().getAttribute("data-control")).toBe("other");
 
-      // Control frees up, but the viewer types only after it takes over.
       await act(async () => FakeSocket.last.serverMessage(control()));
       expect(FakeRfb.last.viewOnly).toBe(true);
     });

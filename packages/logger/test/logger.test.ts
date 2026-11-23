@@ -98,7 +98,6 @@ describe("createPinoLogger", () => {
     const logger = createPinoLogger({ name: "test-app", level: "info", filePath });
 
     logger.info("file log", { value: 1 });
-    // Flushing through the child also asserts that `child()` stays flushable.
     const child = logger.child({ requestId: "req_1" });
     child.warn("child log");
     await child.flush();
@@ -124,7 +123,6 @@ describe("createPinoLogger", () => {
 
     logger.info("durable log");
 
-    // No flush: the default `sync: true` must already have reached the file.
     expect(JSON.parse((await readFile(filePath, "utf8")).trim())).toMatchObject({
       msg: "durable log",
     });
@@ -246,8 +244,6 @@ describe("createPinoLogger", () => {
     const filePath = join(directory, "in-flight.log");
     const destination = pino.destination({ dest: filePath, sync: false });
     const logger = createPinoLogger({ destination });
-    // SonicBoom does not declare `_writing`, but it is the only signal that an
-    // asynchronous write started by `logger.info` has not completed yet.
     const stream = destination as unknown as { _writing: boolean; flushSync: () => void };
     const flushSync = stream.flushSync.bind(destination);
     const inFlightDuringFlushSync: boolean[] = [];
@@ -258,8 +254,6 @@ describe("createPinoLogger", () => {
 
     logger.info("in-flight record");
 
-    // The asynchronous write starts synchronously, so it cannot have completed
-    // by the time this assertion runs. `flushSync` on its own would skip it.
     expect(stream._writing).toBe(true);
 
     await logger.flush();

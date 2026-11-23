@@ -79,7 +79,6 @@ describe.skipIf(!baseUrl)("versioned memory against PostgreSQL", () => {
 
   beforeAll(async () => {
     await admin.connect();
-    // The name is generated locally from a UUID; the supplied database is never changed.
     await admin.query(`CREATE DATABASE "${database}"`);
     created = true;
     await pool.query(drizzleDdl);
@@ -99,8 +98,6 @@ describe.skipIf(!baseUrl)("versioned memory against PostgreSQL", () => {
   }, 30_000);
 
   afterAll(async () => {
-    // Ending the pool first and dropping without FORCE keeps the server from killing a connection
-    // that is still closing, which surfaces as an uncaught "terminating connection" error.
     await pool.end();
 
     if (created) await admin.query(`DROP DATABASE "${database}"`);

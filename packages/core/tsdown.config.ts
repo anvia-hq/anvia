@@ -6,7 +6,6 @@ const shared: UserConfig = {
   fixedExtension: false,
 };
 
-// Keep source module boundaries so unrelated initializers can be tree-shaken.
 export const sourceEntries: string[] = ["src/**/*.ts"];
 
 export default defineConfig([
@@ -19,7 +18,6 @@ export default defineConfig([
   },
   {
     ...shared,
-    // Declarations only for the public entrypoints listed in package.json exports.
     entry: [
       "src/index.ts",
       "src/agent/index.ts",

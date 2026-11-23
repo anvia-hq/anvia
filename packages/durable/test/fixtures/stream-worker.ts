@@ -24,7 +24,6 @@ const agent = new Agent({
         yield { type: "final", response: toolResponse() };
       } else {
         yield { type: "text_delta", delta: "partial" };
-        // The durable boundary has persisted the delta before requesting the next event.
         process.send?.({ id });
         await new Promise<void>(() => {
           setInterval(() => {}, 1000);

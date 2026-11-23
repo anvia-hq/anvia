@@ -203,19 +203,16 @@ export function hydrateValue<T extends JsonValue>(io: Pick<DurableBlobIO, "getBl
   if (typeof value !== "object" || value === null) return value;
 
   const object = value as JsonObject;
-  // A whole `{ "anvia:blob" }` carrier is replaced by the blob, whatever it sits inside.
   const whole = isWholeValueReference(object);
 
   if (whole !== undefined) return io.getBlob(whole.hash) as T;
 
-  // A `{ type: "json", value: <carrier> }` tool output stands in for the whole output object.
   if (object.type === "json") {
     const wrapped = isWholeValueReference(object.value);
 
     if (wrapped !== undefined) return io.getBlob(wrapped.hash) as T;
   }
 
-  // Restored leaves are placed after the walk, so blob content is never interpreted as a marker.
   const restores: PathMarker[] = [];
   let rest = object;
 
@@ -400,7 +397,7 @@ export function externalizeMessage(io: DurableBlobIO, message: Message): Message
   const anvia = metadata.anvia;
 
   if (anvia !== undefined && (typeof anvia !== "object" || anvia === null || Array.isArray(anvia)))
-    return message; // The marker namespace is taken; the payload limit applies as before.
+    return message;
 
   metadata.anvia = {
     ...(anvia as JsonObject | undefined),

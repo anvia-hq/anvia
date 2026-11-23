@@ -19,16 +19,13 @@ function cancelTeamRun(run: ActiveTeamRun | undefined) {
   if (!run || run.controller.signal.aborted) return;
 
   if (run.runId) {
-    // Keep server cancellation independent of stream teardown, including page navigation.
     void fetch(`${run.base}/${encodeURIComponent(run.runId)}/cancel`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: "{}",
       keepalive: true,
       signal: AbortSignal.timeout(5_000),
-    }).catch(() => {
-      // Teardown cannot wait for the server; disconnect remains the fallback on network failure.
-    });
+    }).catch(() => {});
   }
 
   run.controller.abort();
@@ -85,7 +82,6 @@ export function useTeamRun(teamId: string) {
         const terminal =
           event.type === "response" || event.type === "blocked" || event.type === "error";
 
-        // Finish before rendering the result; closing the response body may still be pending.
         if (terminal) active.current = undefined;
 
         dispatch({ type: "event", event });

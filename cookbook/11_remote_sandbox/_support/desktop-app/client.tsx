@@ -2,9 +2,6 @@ import { SandboxDesktop, type SandboxDesktopControl } from "@anvia/react-ui/sand
 import { type CSSProperties, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 
-// The browser side of 02-desktop-app.ts: the live desktop on the left, the agent's task and a log of
-// what it does on the right. Taking over from the desktop's own button pauses the agent.
-
 type AppEvent =
   | { type: "sandbox"; state: "starting" | "ready" | "failed"; message?: string }
   | { type: "status"; state: "idle" | "running" }
@@ -86,7 +83,6 @@ function App() {
           {sandbox === "ready" ? (
             <SandboxDesktop
               url="/desktop"
-              // Single use, so a function: every reconnect fetches a fresh ticket.
               ticket={async () =>
                 (
                   (await (await fetch("/api/ticket", { method: "POST" })).json()) as {

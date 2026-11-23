@@ -10,8 +10,6 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    // These tests start real shells, tmux servers and daemons. Under a loaded CI runner the
-    // default 5s budget is too tight for the flood and flow-control cases.
     testTimeout: 20_000,
   },
 });

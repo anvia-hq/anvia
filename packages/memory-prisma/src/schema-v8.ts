@@ -1,8 +1,5 @@
 import { generatedSchemaHeader } from "./schema.js";
 
-// Preserve Prisma 7's text IDs, jsonb, and timestamp(3) columns. TimestampString
-// avoids imposing a Temporal implementation on the caller. The adapter explicitly
-// supplies UTC timestamps on writes rather than relying on the database defaults.
 export const prisma8MemorySchema = `model AgentMemorySession {
   id              String @id @onCreate(cuid(2))
   scopeKey        String @unique
@@ -61,7 +58,6 @@ model AgentMemoryWrite {
 }
 `;
 
-// Prisma 8 CLI (rc.24+) only loads PSL files that opt in with this directive.
 export const prisma8Directive = "// use prisma-8";
 export const prisma8StartMarker = "// BEGIN ANVIA MEMORY PRISMA 8 MODELS";
 export const prisma8EndMarker = "// END ANVIA MEMORY PRISMA 8 MODELS";

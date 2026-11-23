@@ -25,7 +25,6 @@ export class DurableTaskGraph {
     const taskIds = new Map(initial.nodes.map((node) => [node.runId, node.id]));
     while (true) {
       options.abortSignal?.throwIfAborted();
-      // Status first: events read after a terminal observation are complete.
       const snapshot = await this.snapshot();
       const events = await this.runtime.graphEvents(this.id, cursor);
       for (const event of events) {

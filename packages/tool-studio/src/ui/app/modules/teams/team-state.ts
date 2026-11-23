@@ -111,7 +111,6 @@ export function teamReducer(state: TeamState, action: TeamAction): TeamState {
     return {
       ...state,
       status: event.type === "response" ? "completed" : "blocked",
-      // Terminal outcomes contain descendants only; retain the coordinator as the tree root.
       members: {
         ...state.members,
         ...Object.fromEntries(event.members.map((member) => [member.instanceId, member])),

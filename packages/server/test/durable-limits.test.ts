@@ -100,7 +100,6 @@ describe("createDurableHandler Retry-After", () => {
         }),
       );
 
-    // Payload probes run first: the pending-run cap would otherwise answer them with 429.
     const payload = await post({ ...submission, requestId: "three", prompt: "x".repeat(3_000) });
     expect(payload.status).toBe(413);
     expect(payload.headers.has("retry-after")).toBe(false);

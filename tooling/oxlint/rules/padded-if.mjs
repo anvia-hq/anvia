@@ -33,8 +33,6 @@ function checkStatementList(context, statements) {
     let anchorPrev = prevLastToken;
     let firstRemainingCommentIndex = 0;
 
-    // Attach trailing same-line comments to the preceding statement unless both
-    // statements share a single line.
     if (prevLastToken.loc.end.line < nextFirstToken.loc.start.line) {
       while (firstRemainingCommentIndex < comments.length) {
         const comment = comments[firstRemainingCommentIndex];

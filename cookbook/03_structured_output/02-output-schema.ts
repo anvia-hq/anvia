@@ -2,7 +2,6 @@ import { Agent } from "@anvia/core/agent";
 import { OpenAIClient } from "@anvia/openai";
 import { z } from "zod";
 
-// outputSchema asks the model to answer with data matching this schema.
 const summarySchema = z
   .object({
     title: z.string(),

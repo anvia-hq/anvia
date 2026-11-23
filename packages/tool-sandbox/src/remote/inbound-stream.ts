@@ -64,7 +64,6 @@ export class InboundStream<End> {
     if (this.finished !== undefined) return;
 
     if (this.queued + data.byteLength > this.options.maxBufferBytes) {
-      // The sender honours acks, so this is a peer ignoring flow control or a reader that stopped.
       this.failure = new DockerSandboxError(
         `${this.options.label} consumer is too slow.`,
         "protocol",
@@ -90,8 +89,6 @@ export class InboundStream<End> {
 
   private async *read(): AsyncGenerator<Uint8Array, void, void> {
     while (true) {
-      // With a step, hold the ack back while there is more to read, but never leave the last bytes
-      // unacknowledged, or a sender stopped at its window would wait for them forever.
       this.acknowledge(this.queue.length === 0);
       const chunk = this.queue.shift();
 

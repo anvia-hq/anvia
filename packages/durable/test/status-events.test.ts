@@ -10,7 +10,6 @@ async function eventsOf(run: { stream(): AsyncIterable<{ type: string; data: unk
 }
 
 it("keeps status events small when the outcome is large, and leaves the outcome on the run", async () => {
-  // The outcome repeats the text (output, text and the assistant message), so about 600 KB here.
   const text = "o".repeat(200_000);
   const runtime = await DurableRuntime.open({
     store: new SqliteDurableStore(":memory:"),
@@ -31,12 +30,10 @@ it("keeps status events small when the outcome is large, and leaves the outcome 
       "completed",
     ]);
     for (const event of statuses) {
-      // Only the small fields: status, error, blocked operation and retry time. No outcome.
       expect(JSON.stringify(event.data).length).toBeLessThan(512);
       expect(event.data).not.toHaveProperty("outcome");
     }
 
-    // The outcome is still complete on the run record, which is where clients read it.
     const snapshot = await run.snapshot();
     expect(snapshot.run.status).toBe("completed");
     expect(snapshot.run.outcome).toMatchObject({ type: "response", text });

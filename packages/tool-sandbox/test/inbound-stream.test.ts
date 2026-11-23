@@ -27,12 +27,12 @@ describe("InboundStream", () => {
     const reader = inbound.chunks[Symbol.asyncIterator]();
 
     await reader.next();
-    expect(acks).toEqual([]); // The reader still holds the first chunk.
+    expect(acks).toEqual([]);
     await reader.next();
     expect(acks).toEqual([10]);
     inbound.end({ reason: "done" });
     await reader.next();
-    expect(acks).toEqual([10]); // Nothing is acknowledged once the stream has ended.
+    expect(acks).toEqual([10]);
   });
 
   it("acknowledges in steps, and always once the reader has caught up", async () => {
@@ -41,11 +41,8 @@ describe("InboundStream", () => {
     const reader = inbound.chunks[Symbol.asyncIterator]();
 
     for (let index = 0; index < 4; index += 1) await reader.next();
-    // After ten and twenty bytes the ack waits: under a step, and more is queued. After thirty it
-    // goes out. The fourth chunk is still being handled.
     expect(acks).toEqual([30]);
 
-    // The reader is out of chunks and asks for more: everything it handled is acknowledged.
     const waiting = reader.next();
     expect(acks).toEqual([30, 40]);
     inbound.end({ reason: "done" });
@@ -57,7 +54,7 @@ describe("InboundStream", () => {
     const reader = inbound.chunks[Symbol.asyncIterator]();
     inbound.push(bytes(5));
     await reader.next();
-    const waiting = reader.next(); // The reader is out of chunks and asks for more.
+    const waiting = reader.next();
     expect(acks).toEqual([5]);
     inbound.end({ reason: "done" });
     await waiting;
@@ -80,7 +77,6 @@ describe("InboundStream", () => {
     expect(onOverflow).toHaveBeenCalledTimes(1);
     expect(await inbound.ended).toEqual({ reason: "error" });
 
-    // The reader still drains what was queued, then sees why it ended.
     const reader = inbound.chunks[Symbol.asyncIterator]();
     expect((await reader.next()).value?.byteLength).toBe(30);
     await expect(reader.next()).rejects.toMatchObject({
@@ -95,7 +91,6 @@ describe("InboundStream", () => {
     closed.inbound.end({ reason: "again" });
     expect(closed.onEnd.mock.calls).toEqual([[{ reason: "done" }]]);
 
-    // An overflow ends the stream too, so the owner hears about it through the same hook.
     const overflowed = stream(10);
     overflowed.inbound.push(bytes(20));
     expect(overflowed.onOverflow).toHaveBeenCalledTimes(1);

@@ -65,13 +65,9 @@ describe("memory resumable stream store eviction", () => {
     await store.append({ streamId: "s1", event: "hello" });
     expect(await iterator.next()).toMatchObject({ done: false, value: { event: "hello" } });
 
-    // Closing ends the subscriber: queued records are drained first, then
-    // the iterator completes.
     await store.close({ streamId: "s1", status: "completed" });
     expect(await iterator.next()).toEqual({ value: undefined, done: true });
 
-    // An evicted stream reports missing: subscribing after the TTL yields
-    // no records and the final status is gone.
     await vi.advanceTimersByTimeAsync(1_000);
     const records: unknown[] = [];
     for await (const record of store.subscribe({ streamId: "s1" })) {
@@ -91,8 +87,6 @@ describe("memory resumable stream store eviction", () => {
       await store.append({ streamId: "s1", event: "a" });
       await store.close({ streamId: "s1", status: "completed" });
 
-      // Zero TTL/cap are clamped so close() does not evict immediately: the
-      // final state must still be visible to resumers.
       expect(await store.status({ streamId: "s1" })).toEqual({
         status: "completed",
         lastEventId: 1,

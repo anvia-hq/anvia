@@ -49,9 +49,7 @@ export async function resolveActualText<Input, Output, Expected>(
     const serialized = JSON.stringify(value);
 
     if (serialized !== undefined) return serialized;
-  } catch {
-    // The caller receives one consistent boundary error below.
-  }
+  } catch {}
   throw new TypeError("Text metric actual value must be a string or JSON-serializable value.");
 }
 

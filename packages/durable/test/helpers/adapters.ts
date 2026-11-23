@@ -59,8 +59,6 @@ export function drizzleOver(pool: PostgresPoolLike): DrizzleDatabaseLike {
  * `$queryRawUnsafe` and interactive `$transaction`, including Prisma's BigInt results.
  */
 export function prismaOver(pool: PostgresPoolLike): PrismaClientLike {
-  // Prisma returns int8 columns as BigInt; mirror that for numeric strings is not needed because the
-  // store casts to text, but plain bigint-typed results must still convert.
   const normalize = (rows: Record<string, unknown>[]) => rows;
   return {
     async $queryRawUnsafe(text: string, ...values: unknown[]) {

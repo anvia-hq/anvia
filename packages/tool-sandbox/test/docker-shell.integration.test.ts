@@ -65,7 +65,6 @@ describe.skipIf(!canRunDockerTests)("natural shell command lines on Debian", () 
         image,
         workspace: { type: "ephemeral" },
         network: { mode: "none" },
-        // Seed independently so the conditional does not depend on the brace-expansion test.
         directories: ["repro"],
         runtime: { commandTimeoutMs: 10_000, maxOutputBytes: 64_000 },
       });

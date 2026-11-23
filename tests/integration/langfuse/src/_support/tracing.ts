@@ -42,5 +42,4 @@ export function createTracing(options: CreateTracingOptions = {}): LangfuseClien
   return new LangfuseClient(clientOptions);
 }
 
-// Re-exported for convenience so demo scripts only need one import path.
 export type { LangfuseScoreArgs };

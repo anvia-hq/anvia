@@ -38,7 +38,6 @@ export function addMetadata(
 
   const transformed = transform === undefined ? metadata : transform(metadata);
 
-  // A transform that does not return a record would silently ship unredacted metadata, so drop it.
   if (!isRecord(transformed)) return;
 
   attributes[key] = toAnyValue(transformed);

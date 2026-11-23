@@ -71,7 +71,6 @@ export class DesktopService {
     const searchPath = deps.env().PATH;
     const binaries = options?.binaries;
     const choice = options?.backend ?? "auto";
-    // Naming a program picks the backend it belongs to; otherwise use Xvnc if it is there.
     let backend: DesktopBackend;
 
     if (choice !== "auto") {
@@ -111,14 +110,12 @@ export class DesktopService {
     }
 
     if (backend === "xvnc") {
-      // Not required: without it the clipboard does not sync, and nothing else is lost.
       const vncconfig = await findExecutable(binaries?.vncconfig ?? "vncconfig", searchPath);
 
       if (vncconfig !== undefined) found.vncconfig = vncconfig;
     }
 
     if (missing.length > 0) {
-      // With nothing chosen, say that either backend would do, not just the fallback's programs.
       const chosen =
         choice !== "auto" ||
         binaries?.xvnc !== undefined ||
@@ -138,9 +135,6 @@ export class DesktopService {
       return { missing: missing.map(([, name]) => name) };
     }
 
-    // A window manager is optional: without one the desktop still works, windows just have no frame.
-    // `openbox-session` is openbox that also runs ~/.config/openbox/autostart, which is how an image
-    // adds a wallpaper or a taskbar. It ships in the same package as `openbox`.
     let requested: string | false;
 
     if (options?.windowManager !== undefined) {
@@ -192,7 +186,6 @@ export class DesktopService {
   ): Promise<MethodResult<"desktopScreenshot">> {
     await this.supervisor.ensureRunning();
     const { width: displayWidth, height: displayHeight } = this.supervisor.status();
-    // No `-silent`: placed before `-resize` it makes ImageMagick's import ignore the resize.
     const args = ["-window", "root"];
 
     if (scale !== undefined && scale < 1) {
@@ -233,14 +226,11 @@ export class DesktopService {
 
   /** Perform an input as the agent. Fails with `desktop_locked` while a human holds control. */
   async act(action: DesktopAction, signal?: AbortSignal): Promise<void> {
-    // Check the input first: a bad coordinate must not start a desktop or wait on the lock. The
-    // size is known before the display is up.
     const { width, height } = this.supervisor.status();
     const args = this.xdotoolArguments(action, width, height);
     await this.control.assertAgentInput(signal);
     await this.supervisor.ensureRunning();
     await this.serialize(async () => {
-      // The hold may have been taken while this action waited its turn.
       await this.control.assertAgentInput(signal);
       await this.onDisplay(() =>
         runTool(this.binaries.xdotool, args, {

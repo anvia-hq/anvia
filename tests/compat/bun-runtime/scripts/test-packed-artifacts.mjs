@@ -409,9 +409,6 @@ function consumerTsconfig() {
   };
 }
 
-// Type-only consumer: every entrypoint is referenced by name so its installed
-// declaration file must resolve, and the calls mirror the runtime smoke so the
-// signatures have to accept the same usage a real consumer would write.
 function consumerSource() {
   return `
 import { Agent } from "@anvia/core";

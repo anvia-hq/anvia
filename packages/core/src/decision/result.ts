@@ -121,7 +121,6 @@ function validDistribution(value: unknown, labels: string[], exclusive: boolean)
 }
 
 function sumsToOne(values: number[]): boolean {
-  // Permit ordinary rounding in provider probability distributions.
   return Math.abs(values.reduce((sum, probability) => sum + probability, 0) - 1) <= 1e-5;
 }
 

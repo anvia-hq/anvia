@@ -1,6 +1,3 @@
-// Demonstrates: client.runEvalExperiment(). Runs a one-case eval suite and
-// also posts a dataset run to Langfuse.
-
 import { agentEvalTarget, contains } from "@anvia/core/evals";
 import { getStaticModel } from "../_support/model.js";
 import { createTracing } from "../_support/tracing.js";

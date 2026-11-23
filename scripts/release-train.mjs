@@ -224,7 +224,6 @@ export function assertNoMajorVersionChanges(root, baseRef) {
     });
 
     if (previous.status !== 0) {
-      // A newly introduced package has no previous version to compare.
       const exists = spawnSync("git", ["cat-file", "-e", `${base.stdout.trim()}:${manifestPath}`], {
         cwd: root,
       });

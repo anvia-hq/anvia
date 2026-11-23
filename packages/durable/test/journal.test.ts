@@ -92,7 +92,6 @@ it.each([false, true])(
         );
       const unique = bytes("anvia_durable_messages");
       expect(stored).toBeLessThan(unique * 3);
-      // Events retain tool results and the final transcript, but must not repeat model histories.
       expect(bytes("anvia_durable_events", "length(CAST(data AS BLOB))")).toBeLessThan(unique * 3);
       await expectJournalRequests(runtime, handle.id);
 
@@ -172,7 +171,6 @@ it("resumes an unfinished journal actually written by 0.6.0, preserving embedded
   const directory = mkdtempSync(join(tmpdir(), "anvia-legacy-journal-"));
   directories.push(directory);
   const path = join(directory, "journal.sqlite");
-  // Restore the old on-disk tables verbatim, with neither a message log nor summaries.
   const db = new DatabaseSync(path);
   db.exec(`
     CREATE TABLE anvia_durable_owner(singleton INTEGER PRIMARY KEY, version INTEGER, token TEXT, pid INTEGER, host TEXT);

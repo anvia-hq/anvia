@@ -936,7 +936,6 @@ describe("PostgresMemoryStore", () => {
     });
 
     it("lets only one concurrent writer commit a shared key", async () => {
-      // The fake does not model locking, so this exercises the key-insert backstop only.
       const store = await createTestMemoryStore({ client: new FakePgClient() });
       const results = await Promise.all([
         store.append({ ...write("run-1"), idempotencyKey: "k1" }),

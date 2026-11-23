@@ -90,7 +90,6 @@ describe("AgentTeam stream buffering", () => {
         for await (const _event of stream[channel]) {
           break;
         }
-        // Let Node report any ignored rejected promises; never read stream.result or stream.text.
         await new Promise<void>((resolve) => setImmediate(resolve));
         expect(failures).toHaveLength(1);
         expect(failures[0]).toMatchObject({
@@ -145,13 +144,11 @@ describe("AgentTeam stream buffering", () => {
     const iterator = stream[Symbol.asyncIterator]();
     expect((await iterator.next()).value).toMatchObject({ type: "agent_started" });
 
-    // Leave the iterator paused while producers run.
     const error = await stream.result.catch((error: unknown) => error);
     expect(error).toBeInstanceOf(AgentTeamLimitError);
     expect(error).toMatchObject({ limit: "maxBufferedEvents" });
     expect(model.produced).toBeLessThanOrEqual(capacity + 1);
     expect(model.signal?.aborted).toBe(true);
-    // Overflow discards buffered progress rather than delivering stale events before the error.
     await expect(iterator.next()).rejects.toBe(error);
     await expect(stream.text).rejects.toBe(error);
   });
@@ -200,7 +197,6 @@ describe("AgentTeam stream buffering", () => {
     )
       event = await iterator.next();
     expect(event.value).toMatchObject({ type: "agent_event", event: { type: "response" } });
-    // agent_idle fills the single slot; the final team outcome then exceeds capacity.
     const error = await stream.result.catch((error: unknown) => error);
     expect(error).toMatchObject({ name: "AgentTeamLimitError", limit: "maxBufferedEvents" });
     await expect(iterator.next()).rejects.toBe(error);

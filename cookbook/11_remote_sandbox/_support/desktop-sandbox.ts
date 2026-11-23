@@ -5,8 +5,6 @@ import { createDesktopTools, createSandboxTools, type SandboxDesktop } from "@an
 import type { SandboxRuntime } from "@anvia/sandbox";
 import type { RemoteSandboxHub } from "@anvia/sandbox/remote";
 
-// What the desktop examples share: starting a desktop sandbox, and an agent that can drive it.
-
 export const sandboxId = "desktop-demo";
 export const defaultImage = process.env.ANVIA_DESKTOP_IMAGE ?? "anvia-desktop";
 
@@ -61,7 +59,7 @@ export async function startDesktopSandbox(options: {
 
   try {
     const desktop = options.hub.desktop(sandboxId);
-    const status = await desktop.start(); // Waits for the daemon, then starts the display.
+    const status = await desktop.start();
     await options.hub.runtime(sandboxId).startProcess({
       command: "anvia-chromium",
       args: [
@@ -118,7 +116,6 @@ export function createDesktopAgent(options: {
     maxTurns: 40,
     tools: [
       ...createDesktopTools({ sandbox: options.desktop }),
-      // Only the ability to start a program, so the agent can bring the browser back.
       ...createSandboxTools({ sandbox: options.runtime, tools: ["start_process"] }),
     ],
     lifecycle: options.lifecycle,

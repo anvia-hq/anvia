@@ -30,7 +30,6 @@ const hubs: RemoteSandboxHub[] = [];
 afterEach(async () => {
   await Promise.all(hubs.splice(0).map((hub) => hub.close()));
   await Promise.all(harnesses.splice(0).map((harness) => harness.cleanup()));
-  // tmux servers outlive the daemon, so end each test's server explicitly.
   await Promise.all(
     sockets.splice(0).map(
       (socket) =>
@@ -184,7 +183,6 @@ for (const mode of ["shell", "tmux"] as const) {
       await eventually(async () => (await terminal.list()).length === 1);
 
       await terminal.kill("doomed");
-      // Viewers are told it was killed, not that their shell happened to exit.
       expect(await handle.exit).toMatchObject({ reason: "killed" });
       expect(await terminal.list()).toEqual([]);
       await expect(terminal.kill("doomed")).rejects.toMatchObject({ code: "invalid_state" });
@@ -198,7 +196,6 @@ for (const mode of ["shell", "tmux"] as const) {
       await terminal.kill("reused");
       await first.exit;
 
-      // Same name, new session: its own exit is not a kill.
       const second = await open("reused");
       watch(second);
       second.write("exit 0\n");
@@ -250,7 +247,6 @@ for (const mode of ["shell", "tmux"] as const) {
         slowest = Math.max(slowest, Date.now() - before);
         expect(result).toMatchObject({ status: "exited", exitCode: 0 });
       }
-      // The link also answered every heartbeat: three missed ones would have dropped it.
       expect(h.hub.isConnected(sandboxId)).toBe(true);
       expect(slowest).toBeLessThan(1_000);
       await h.hub.terminal(sandboxId).kill("flood");
@@ -260,8 +256,6 @@ for (const mode of ["shell", "tmux"] as const) {
       const { h, open } = await start({ hub: { maxTerminalBufferBytes: 1024 * 1024 } });
       const handle = await open("stalled");
       handle.write("yes stalled | head -c 20000000\n");
-      // Nobody reads handle.output, so the daemon must hold back or drop rather than let the
-      // hub's buffer overflow and cut the viewer off.
       await sleep(1_500);
       let exited = false;
       void handle.exit.then(() => (exited = true));
@@ -269,7 +263,6 @@ for (const mode of ["shell", "tmux"] as const) {
       expect(exited).toBe(false);
       expect((await h.runtime.exec({ command: "true" })).status).toBe("exited");
 
-      // Once it reads again it catches up and the session is still usable.
       const view = watch(handle);
       handle.write("\necho resumed$((1+1))\n");
       await eventually(() => view.state.text.includes("resumed2"), 15_000);
@@ -358,7 +351,6 @@ describe("terminal capability negotiation", () => {
     });
     await expect(terminal.list()).rejects.toMatchObject({ code: "unsupported" });
     await expect(terminal.kill("a")).rejects.toMatchObject({ code: "unsupported" });
-    // Nothing the old daemon cannot parse was ever sent, so the link is intact.
     await sleep(100);
     expect(received.filter((frame) => frame.type.startsWith("pty."))).toEqual([]);
     expect(hub.isConnected(sandboxId)).toBe(true);
@@ -381,7 +373,6 @@ describe("terminal capability negotiation", () => {
     server.on("connection", (socket) => {
       socket.once("message", (data) => {
         hellos.push(JSON.parse(data.toString()));
-        // An old hub's welcome carries no capabilities.
         socket.send(
           JSON.stringify({ type: "welcome", protocolVersion: 1, heartbeatIntervalMs: 60_000 }),
         );

@@ -93,7 +93,6 @@ export async function* readSseFrames<TEvent>(
     data = [];
     event = "";
 
-    // Whitespace-only payloads (for example `data:` heartbeats) carry no JSON event.
     if (!hasData || raw.trim().length === 0) return undefined;
 
     const parsed = parseJson(raw, options, () => ({
@@ -139,7 +138,6 @@ export async function* readSseFrames<TEvent>(
       if (/^\d+$/.test(value)) retry = Number(value);
     }
   }
-  // Leniently dispatch a final event that was not followed by a blank line.
   const frame = dispatch();
 
   if (frame !== undefined) yield frame;
@@ -223,7 +221,5 @@ function parseJson(
 async function cancelReader(reader: ReadableStreamDefaultReader<Uint8Array>): Promise<void> {
   try {
     await reader.cancel();
-  } catch {
-    // The request may already have been aborted by its owner.
-  }
+  } catch {}
 }

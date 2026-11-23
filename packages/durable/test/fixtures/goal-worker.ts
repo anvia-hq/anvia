@@ -17,7 +17,6 @@ const { goal, registration } = recoveryGoal(
 );
 
 if (binding === "legacy") {
-  // Older controllers read the definition's agent directly, without pinning a phase first.
   const run = goal.registration.run;
   goal.registration.run = (ctx) =>
     run({
@@ -34,7 +33,6 @@ store.transaction = async <T>(callback: (tx: DurableTransaction) => Promise<T>):
     callback({
       ...tx,
       async putTask(task) {
-        // Reproduce the original persisted goal shape, including its assessment journal.
         const persisted =
           binding === "legacy" && task.name === goal.name
             ? {
@@ -56,7 +54,6 @@ store.transaction = async <T>(callback: (tx: DurableTransaction) => Promise<T>):
         if (!stopped && stop) {
           stopped = true;
           process.send?.({ id: task.id });
-          // Roll back this phase only. The earlier spawn/assessment transaction is committed.
           throw new DurableStorageError("Injected interruption at goal boundary");
         }
 

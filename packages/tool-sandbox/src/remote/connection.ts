@@ -113,8 +113,6 @@ export class HubConnection {
         return;
       }
 
-      // A tick can land after the socket started closing and before "close" clears this timer.
-      // `send` throws then, and an exception from a timer ends the process.
       this.trySend({ type: "ping" });
     }, heartbeatIntervalMs);
     this.heartbeat.unref?.();
@@ -164,7 +162,6 @@ export class HubConnection {
     return new Promise<MethodResult<M>>((resolve, reject) => {
       const abort = () => {
         if (this.pending.delete(requestId)) {
-          // Tell the daemon to stop work nobody is waiting for.
           this.trySend({ type: "cancel", requestId });
         }
 
@@ -223,7 +220,6 @@ export class HubConnection {
         if (pending === undefined) return;
 
         if (frame.seq !== pending.nextSeq) {
-          // Frames on one socket are ordered; a gap means the stream cannot be trusted.
           this.fail(frame.requestId, new LinkClosedError("Sandbox stream frames out of order."));
           return;
         }
@@ -254,7 +250,6 @@ export class HubConnection {
         if (entry === undefined) return;
 
         if (frame.seq !== entry.nextSeq) {
-          // Frames on one socket are ordered; a gap means this terminal cannot be trusted.
           this.ptys.delete(frame.ptyId);
           this.trySend({ type: "pty.close", ptyId: frame.ptyId });
           entry.endpoint.exit({ reason: "error" });
@@ -306,7 +301,6 @@ export class HubConnection {
         const tunnel = this.tunnels.get(frame.requestId);
 
         if (tunnel !== undefined) {
-          // As for terminals, the only error a tunnel gets is a refusal to open.
           this.tunnels.delete(frame.requestId);
           tunnel.endpoint.failed(decodeError(frame));
           return;
@@ -315,7 +309,6 @@ export class HubConnection {
         const terminal = this.ptys.get(frame.requestId);
 
         if (terminal !== undefined) {
-          // The only error a PTY gets is a refusal to open, which the daemon sends under its id.
           this.ptys.delete(frame.requestId);
           terminal.endpoint.failed(decodeError(frame));
           return;
@@ -351,7 +344,6 @@ export class HubConnection {
 
     if (entry === undefined) return;
 
-    // A binary header carries 32 bits of the sequence number, so it is compared as such.
     if (seq !== (wraps ? entry.nextSeq >>> 0 : entry.nextSeq)) {
       this.tunnels.delete(tunnelId);
       this.trySend({ type: "tunnel.close", tunnelId });
@@ -394,8 +386,6 @@ export class HubConnection {
   private trySend(frame: HubFrame): void {
     try {
       this.send(frame);
-    } catch {
-      // Closed links drop their own pending work.
-    }
+    } catch {}
   }
 }

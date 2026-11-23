@@ -12,7 +12,6 @@ const agent = new Agent({
   instructions: "Summarize attached documents in concise bullets.",
 });
 
-// Document content parts include a URL, MIME type, and optional filename.
 const response = await agent.generate({
   prompt: {
     role: "user",

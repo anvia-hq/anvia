@@ -1,11 +1,4 @@
-// Centralized env loading. The actual dotenv loading happens via
-// `tsx -r dotenv/config ... dotenv_config_path=../../../.env` in the script
-// line, but every demo imports this module for typed accessors.
-
-export function loadEnv(): void {
-  // No-op. Kept for symmetry so every script reads the same way.
-  // Real env loading is handled by tsx + dotenv at the process level.
-}
+export function loadEnv(): void {}
 
 export function requireEnv(name: string): string {
   const value = process.env[name];

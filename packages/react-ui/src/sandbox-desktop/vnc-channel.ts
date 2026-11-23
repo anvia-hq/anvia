@@ -4,7 +4,6 @@ export interface VncLink {
   close(): void;
 }
 
-// WebSocket ready states, written out so this works wherever noVNC's own checks do.
 const OPEN = 1;
 const CLOSED = 3;
 

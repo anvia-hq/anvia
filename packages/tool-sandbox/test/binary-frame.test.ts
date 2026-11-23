@@ -56,7 +56,6 @@ describe("binary tunnel frames", () => {
     expect(() => decodeTunnelBytes(Uint8Array.from([1, 0, 0, 0, 0, 0]), "toHub")).toThrow(
       /id length/,
     );
-    // The header says an id of 36 bytes, and then stops short.
     expect(() => decodeTunnelBytes(good.subarray(0, 20), "toHub")).toThrow(/truncated/);
     expect(() => decodeTunnelBytes(Uint8Array.from([9, ...good.subarray(1)]), "toHub")).toThrow(
       /unexpected kind/,

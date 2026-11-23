@@ -1,6 +1,3 @@
-// Demonstrates: a multi-turn agent session, where memory carries context
-// across traced generations.
-
 import { Agent } from "@anvia/core/agent";
 import type { Message } from "@anvia/core/completion";
 import type { MemoryAppendOptions, MemoryScope, MemoryStore } from "@anvia/core/memory";

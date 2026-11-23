@@ -135,7 +135,6 @@ class DefaultAgentStream<Output, M extends CompletionModel> implements AgentStre
   private async drain(): Promise<void> {
     try {
       for await (const _event of this.consume()) {
-        // Accessing a final promise consumes unobserved stream events.
       }
     } catch (error) {
       if (!this.settled) {

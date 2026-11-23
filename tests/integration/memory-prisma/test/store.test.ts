@@ -27,7 +27,6 @@ const summary = (content: string): MemoryCompactionMessage => ({
   metadata: { anvia: { memoryCompaction: { version: 1, compactedMessageCount: 2 } } },
 });
 
-// Both schema owners must yield the same store behavior and PostgreSQL column types.
 for (const schemaOwner of [7, 8]) {
   describe.skipIf(!baseUrl)(`Prisma ${schemaOwner} schema with both clients`, () => {
     const database = `anvia_memory_${randomUUID().replaceAll("-", "")}`;
@@ -43,7 +42,6 @@ for (const schemaOwner of [7, 8]) {
 
     beforeAll(async () => {
       await admin.connect();
-      // The name is generated locally from a UUID; the supplied database is never changed.
       await admin.query(`CREATE DATABASE "${database}"`);
       created = true;
       const env = { ...process.env, ANVIA_PRISMA_TEST_URL: url };

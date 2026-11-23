@@ -87,7 +87,6 @@ describe("createDockerSandboxTools", () => {
 
       if (tool === undefined) throw new Error("Expected exec_command tool.");
 
-      // Exercise the private resolver through its caller without exporting it just for tests.
       await tool.call({ command });
 
       expect(sandbox.exec).toHaveBeenCalledTimes(2);
@@ -164,7 +163,6 @@ describe("createDockerSandboxTools", () => {
         code: "tool_policy",
         message: expect.stringContaining("/bin/bash"),
       });
-      // Only the fixed probe runs; a denied Bash selection must not fall back to sh.
       expect(sandbox.exec).toHaveBeenCalledExactlyOnceWith({
         command: "sh",
         args: ["-c", "test -x /bin/bash"],
@@ -242,7 +240,7 @@ describe("createDockerSandboxTools", () => {
       ),
     ]);
     await exec!.call({ command: "echo third" });
-    expect(sandbox.exec).toHaveBeenCalledTimes(3); // One probe plus two user executions.
+    expect(sandbox.exec).toHaveBeenCalledTimes(3);
     expect(sandbox.exec).toHaveBeenNthCalledWith(1, {
       command: "sh",
       args: ["-c", "test -x /bin/bash"],
@@ -264,7 +262,7 @@ describe("createDockerSandboxTools", () => {
       code: "tool_policy",
     });
     expect(sandbox.exec).toHaveBeenCalledTimes(3);
-    const other = createRuntime(); // Same sandbox ID, different runtime handle: detect again.
+    const other = createRuntime();
     const [otherExec] = createDockerSandboxTools({ sandbox: other, tools: ["exec_command"] });
     await otherExec!.call({ command: "echo other" });
     expect(other.exec).toHaveBeenCalledTimes(2);
@@ -370,8 +368,6 @@ describe("createDockerSandboxTools", () => {
 
     if (tool === undefined) throw new Error("Expected exec_command tool.");
 
-    // sh is in the allow list, but args with -c can execute arbitrary commands
-    // This should be blocked by default
     await expect(tool.call({ command: "sh", args: ["-c", "rm -rf /"] })).rejects.toMatchObject({
       code: "tool_policy",
     });
@@ -389,7 +385,6 @@ describe("createDockerSandboxTools", () => {
 
     if (tool === undefined) throw new Error("Expected exec_command tool.");
 
-    // With allowShellInterpreters: true, sh with args should work
     await expect(tool.call({ command: "sh", args: ["-c", "echo hello"] })).resolves.toMatchObject({
       status: "exited",
     });
@@ -411,7 +406,6 @@ describe("createDockerSandboxTools", () => {
 
     if (tool === undefined) throw new Error("Expected exec_command tool.");
 
-    // In block mode, shell interpreters are allowed if not in the block list
     await expect(tool.call({ command: "sh", args: ["-c", "echo hello"] })).resolves.toMatchObject({
       status: "exited",
     });
@@ -483,7 +477,6 @@ describe("createDockerSandboxTools", () => {
 
     if (tool === undefined) throw new Error("Expected exec_command tool.");
 
-    // Path-qualified shells should also be blocked by the basename check
     await expect(tool.call({ command: "/bin/sh", args: ["-c", "rm -rf /"] })).rejects.toMatchObject(
       {
         code: "tool_policy",

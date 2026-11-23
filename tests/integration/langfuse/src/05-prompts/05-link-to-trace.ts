@@ -1,6 +1,3 @@
-// Demonstrates: linking a prompt version to a trace through
-// trace.metadata keys promptName/promptVersion.
-
 import { assertCompleted, buildSupportAgent } from "../_support/agent.js";
 import { optionalEnv } from "../_support/env.js";
 import { buildOpenAIClient, defaultModelId } from "../_support/model.js";
@@ -18,8 +15,6 @@ async function main(): Promise<void> {
     { tracing },
   );
 
-  // The trace option exposes AgentTraceOptions, so prompt linkage is provided
-  // through metadata on this code path.
   const response = await agent.generate({
     prompt: "Summarize ticket TICKET-1001.",
     trace: {
@@ -31,7 +26,6 @@ async function main(): Promise<void> {
   assertCompleted(response);
   console.log("[prompts:05] output (metadata):", response.output);
 
-  // Repeat with a second trace to show the same prompt metadata on another run.
   const response2 = await agent.generate({
     prompt: "Summarize ticket TICKET-1001.",
     trace: {

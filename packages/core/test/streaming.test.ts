@@ -2016,9 +2016,6 @@ describe("Agent streaming", () => {
   it("keeps well-known Error diagnostic fields through readable error lines", async () => {
     async function* events() {
       yield { type: "text_delta", delta: "a" };
-      // Runtime-specific subclasses (for example bun:sqlite's SqliteError under
-      // JavaScriptCore) can define code on the prototype, where JSON.stringify
-      // would drop it and mask the failure cause.
       const error = Object.create(new Error("prototype message")) as Error & { code?: unknown };
       Object.defineProperty(error, "message", { value: "SQLITE_BUSY", enumerable: false });
       Object.defineProperty(error, "code", { value: "SQLITE_BUSY", enumerable: false });
@@ -2322,7 +2319,6 @@ describe("Agent streaming", () => {
 
     expect(errorEvent).toBeDefined();
     expect(errorEvent?.error).toBeInstanceOf(MaxTurnsError);
-    // With maxTurns: 0, exactly 1 turn should be dispatched before failing.
     expect(model.requests).toHaveLength(1);
   });
 });

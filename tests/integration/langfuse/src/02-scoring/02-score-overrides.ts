@@ -1,6 +1,3 @@
-// Demonstrates: per-score configId, environment override, timestamp
-// (Date and ISO), comment, and metadata.
-
 import { createTracing } from "../_support/tracing.js";
 
 async function main(): Promise<void> {
@@ -27,7 +24,6 @@ async function main(): Promise<void> {
     configId: "ops-quality-config",
   });
 
-  // scoreConfigId is an alias for configId
   await tracing.score({
     traceId: fakeTraceId,
     name: "quality-alias",

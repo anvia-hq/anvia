@@ -60,7 +60,6 @@ export class RfbClientFilter {
 
         if (match === null) throw new RfbProtocolError("Not an RFB handshake.");
 
-        // From 3.7 the client picks a security type; in 3.3 the server dictates it.
         this.hasSecurityByte = Number(match[1]) >= 7;
         this.stage = this.hasSecurityByte ? "security" : "init";
         forward.push(buffer.subarray(0, versionLength));
@@ -89,11 +88,10 @@ export class RfbClientFilter {
     let length: number | undefined;
     let kind: "pass" | "input" | "drop" = "pass";
     switch (type) {
-      case 0: // SetPixelFormat
+      case 0:
         length = 20;
         break;
       case 2: {
-        // SetEncodings
         if (buffer.byteLength < 4) return 0;
 
         const count = (buffer[2] ?? 0) * 256 + (buffer[3] ?? 0);
@@ -103,22 +101,18 @@ export class RfbClientFilter {
         length = 4 + 4 * count;
         break;
       }
-      case 3: // FramebufferUpdateRequest
+      case 3:
         length = 10;
         break;
-      case 4: // KeyEvent
+      case 4:
         length = 8;
         kind = "input";
         break;
-      case 5: // PointerEvent
+      case 5:
         length = 6;
         kind = "input";
         break;
       case 6: {
-        // ClientCutText. The length is signed: a negative one marks an Extended Clipboard message,
-        // and its absolute value is the size of the payload that follows. noVNC sends one as soon
-        // as the server lists the extension. Either way it is clipboard data headed for the
-        // desktop, so it is input.
         if (buffer.byteLength < 8) return 0;
 
         const text = Math.abs(readInt32(buffer, 4));
@@ -129,21 +123,19 @@ export class RfbClientFilter {
         kind = "input";
         break;
       }
-      case 150: // EnableContinuousUpdates: only changes how the server sends, so it is not input.
+      case 150:
         length = 10;
         break;
       case 248: {
-        // ClientFence
         if (buffer.byteLength < 9) return 0;
 
         length = 9 + (buffer[8] ?? 0);
         break;
       }
-      case 250: // xvp
+      case 250:
         length = 4;
         break;
       case 251: {
-        // SetDesktopSize: the size is set through the API, never by a viewer.
         if (buffer.byteLength < 8) return 0;
 
         length = 8 + 16 * (buffer[6] ?? 0);
@@ -151,7 +143,6 @@ export class RfbClientFilter {
         break;
       }
       case 255: {
-        // QEMU extended messages: only the extended key event is known, and it is input.
         if (buffer.byteLength < 2) return 0;
 
         if (buffer[1] !== 0) throw new RfbProtocolError("Unsupported QEMU message.");

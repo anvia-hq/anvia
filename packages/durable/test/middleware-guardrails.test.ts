@@ -189,7 +189,6 @@ describe("pure middleware", () => {
     await (await reopened.getRun(submitted.id)).retry();
     expect((await settled(await reopened.getRun(submitted.id))).run.status).toBe("completed");
 
-    // The tool result was restored from the journal, not executed again.
     expect(tool).toHaveBeenCalledTimes(1);
     expect(second).toHaveBeenCalledTimes(1);
     expect(second.mock.calls[0]![0]).toMatchObject({ temperature: 0.2 });
@@ -341,7 +340,6 @@ describe("recorded guardrails", () => {
     await (await reopened.getRun(submitted.id)).retry();
     const snapshot = await settled(await reopened.getRun(submitted.id));
     expect(snapshot.run.status).toBe("completed");
-    // The input check was recorded before the first failure, so the retry reuses it.
     expect(inputCheck).toHaveBeenCalledTimes(1);
     expect(outputCheck).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(snapshot.run.outcome ?? snapshot)).toContain("redacted");
@@ -369,7 +367,6 @@ describe("recorded guardrails", () => {
     await runtime.close();
     runtimes.splice(runtimes.indexOf(runtime), 1);
 
-    // The moderation service recovers. The retry runs the check once more, and the run completes.
     fail = false;
     const second = vi.fn(async (_request: CompletionRequest) => done());
     const reopened = await open(

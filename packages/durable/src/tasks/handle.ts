@@ -70,7 +70,6 @@ export class DurableTaskHandle<R = JsonValue> {
     while (true) {
       this.assertOpen();
       options.abortSignal?.throwIfAborted();
-      // Settledness first: events read after a terminal observation are complete.
       const settled = terminal((await this.scheduler.snapshot(initial.task.rootId)).task);
       const events = await this.store.taskEvents(initial.task.rootId, cursor, 100);
       for (const event of events) {

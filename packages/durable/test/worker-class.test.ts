@@ -51,7 +51,6 @@ describe("DurableWorker", () => {
 
   it("stops claiming an unregistered agent and resumes when it is registered again", async () => {
     const { pool } = testPool();
-    // The long poll interval keeps the first poll from claiming the run before it is unregistered.
     const worker = await DurableWorker.start({
       store: store(pool),
       agents: [registration()],
@@ -64,9 +63,8 @@ describe("DurableWorker", () => {
       .agent<string>("researcher")
       .submit({ sessionId: "s", requestId: "r", prompt: "hi" });
 
-    // Unfinished work in the store does not block unregistering on a shared worker.
     expect(await worker.unregisterAgent("researcher")).toBe(true);
-    await new Promise((resolve) => setTimeout(resolve, 900)); // longer than two polls
+    await new Promise((resolve) => setTimeout(resolve, 900));
     expect(await run.status()).toMatchObject({ status: "queued" });
 
     worker.registerAgents([registration()]);
@@ -132,7 +130,6 @@ describe("DurableWorker", () => {
       pollIntervalMs: 20,
     });
     closers.push(() => worker.close());
-    // A runtime in worker mode submits; the DurableWorker above executes.
     const submitter = await DurableRuntime.open({
       store: store(pool),
       tasks: [echo],

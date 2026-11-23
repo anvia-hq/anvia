@@ -1,4 +1,4 @@
-const noConditionalObjectSpread = {
+export const noConditionalObjectSpread = {
   meta: {
     type: "suggestion",
     docs: {
@@ -18,6 +18,7 @@ const noConditionalObjectSpread = {
         }
 
         let argument = node.argument;
+
         // TypeScript wrappers must not hide the expression being spread.
         while (
           argument.type === "ParenthesizedExpression" ||
@@ -39,9 +40,4 @@ const noConditionalObjectSpread = {
       },
     };
   },
-};
-
-export default {
-  meta: { name: "anvia" },
-  rules: { "no-conditional-object-spread": noConditionalObjectSpread },
 };

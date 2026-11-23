@@ -54,6 +54,8 @@ export type EvalTarget<Input, Output, Expected = unknown> = (
 
 export type EvalTargetContext = {
   signal: AbortSignal;
+  /** 1-based trial index when running multi-trial evaluations. */
+  trial?: number | undefined;
 };
 
 export type EvalOutcomeStatus = "pass" | "fail" | "invalid";

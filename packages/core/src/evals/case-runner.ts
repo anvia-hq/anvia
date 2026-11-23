@@ -1,5 +1,5 @@
 import { Usage as UsageValue } from "../completion";
-import { defaultEvalCacheKey } from "./cache";
+import { defaultEvalCacheKey, unwrapCachedEvalTarget } from "./cache";
 import {
   abortable,
   type ConcurrencyLimiter,
@@ -220,7 +220,12 @@ async function executeSingleTrial<
     let targetDurationMs = 0;
     let cached = false;
 
-    const cache = options.targetCache as EvalTargetCache<Input, Output, Expected> | undefined;
+    const unwrapped =
+      options.targetCache === undefined ? unwrapCachedEvalTarget(options.target) : undefined;
+    const effectiveTarget = unwrapped?.target ?? options.target;
+    const cache = (options.targetCache ?? unwrapped?.cache) as
+      | EvalTargetCache<Input, Output, Expected>
+      | undefined;
     let cacheKey: string | undefined;
 
     if (cache !== undefined) {
@@ -263,7 +268,10 @@ async function executeSingleTrial<
               : abortable(
                   caseSignal.signal,
                   Promise.resolve(
-                    options.target(testCase.input, testCase, { signal: caseSignal.signal }),
+                    effectiveTarget(testCase.input, testCase, {
+                      signal: caseSignal.signal,
+                      trial,
+                    }),
                   ),
                 ));
           } finally {

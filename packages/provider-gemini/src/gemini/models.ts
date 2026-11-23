@@ -24,7 +24,12 @@ export type KnownGeminiCompletionModelId =
   | "gemini-3.5-flash-lite"
   | "gemini-3.6-flash"
   | "gemini-3.7-flash"
+  | "gemini-3.8-flash"
   | "gemini-3-pro-image"
+  | "gemini-4-argon"
+  | "gemini-4-carbon"
+  | "gemini-4-hydrogen"
+  | "gemini-4-neon"
   | "gemini-flash-latest"
   | "gemini-flash-lite-latest"
   | "gemma-4-26b-a4b-it"
@@ -97,11 +102,16 @@ export const GEMINI_COMPLETION_MODEL_CONTEXT_LIMITS = {
   "gemini-3.5-flash-lite": CONTEXT_1M_64K,
   "gemini-3.6-flash": CONTEXT_1M_64K,
   "gemini-3.7-flash": CONTEXT_1M_64K,
+  "gemini-3.8-flash": CONTEXT_1M_64K,
   "gemini-3-pro-image": {
     contextWindow: 65_536,
     maxInputTokens: 65_536,
     maxOutputTokens: 32_768,
   },
+  "gemini-4-argon": CONTEXT_1M_64K,
+  "gemini-4-carbon": CONTEXT_1M_64K,
+  "gemini-4-hydrogen": CONTEXT_1M_64K,
+  "gemini-4-neon": CONTEXT_1M_64K,
   "gemini-flash-latest": CONTEXT_1M_64K,
   "gemini-flash-lite-latest": CONTEXT_1M_64K,
   "gemma-4-26b-a4b-it": {

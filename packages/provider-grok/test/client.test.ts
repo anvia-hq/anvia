@@ -2,6 +2,7 @@ import type { ModelListingError } from "@anvia/core/model-listing";
 import { describe, expect, expectTypeOf, it } from "vitest";
 import {
   GROK_4_5,
+  GROK_4_7,
   GrokClient,
   type GrokClientOptions,
   type GrokCompletionModelId,
@@ -42,6 +43,11 @@ describe("GrokClient", () => {
     expectTypeOf(reasoningModel.controls!.reasoningEffort.options).items.toEqualTypeOf<
       "low" | "medium" | "high" | "xhigh"
     >();
+    const grok47 = client.completionModel({ modelId: GROK_4_7, api: "responses" });
+    expectTypeOf(grok47.controls!.reasoningEffort.options).items.toEqualTypeOf<
+      "low" | "medium" | "high" | "xhigh"
+    >();
+    expect(grok47.contextLimits).toEqual({ contextWindow: 500_000 });
     const grok45 = client.completionModel({ modelId: "grok-4.5", api: "responses" });
     expectTypeOf(grok45.controls!.reasoningEffort.options).items.toEqualTypeOf<
       "low" | "medium" | "high"
@@ -90,6 +96,13 @@ describe("GrokClient", () => {
     expect(
       client.completionModel({ modelId: "grok-4.6", api: "responses" }).controls?.reasoningEffort
         .options,
+    ).toEqual(["low", "medium", "high", "xhigh"]);
+    expect(
+      client.completionModel({ modelId: "grok-4.7", api: "responses" }).controls?.reasoningEffort,
+    ).toMatchObject({ options: ["low", "medium", "high", "xhigh"], defaultValue: "high" });
+    expect(
+      client.completionModel({ modelId: "grok-4.7-latest", api: "responses" }).controls
+        ?.reasoningEffort.options,
     ).toEqual(["low", "medium", "high", "xhigh"]);
     expect(
       client.completionModel({ modelId: "grok-4.5", api: "responses" }).controls?.reasoningEffort,

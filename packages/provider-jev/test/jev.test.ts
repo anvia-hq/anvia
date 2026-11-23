@@ -9,7 +9,7 @@ import {
   score,
 } from "@anvia/core/decision";
 import { ModelListingError } from "@anvia/core/model-listing";
-import { JevClient, JEV_LATEST, jev } from "../src/index";
+import { JevClient, JEV_LATEST, JEV_PREVIEW, jev } from "../src/index";
 
 function fixture(answers: unknown) {
   return { model: "jev-test", answers, usage: { input_tokens: 12, output_tokens: 3 } };
@@ -410,6 +410,12 @@ describe("Jev client", () => {
       data: [{ id: "jev-1", name: "jev-1", description: "Decision model", type: "decision" }],
     });
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("supports known Jev decision model constants", () => {
+    const { client } = clientWithResponse({});
+    expect(client.decisionModel({ modelId: JEV_LATEST }).modelId).toBe("jev-latest");
+    expect(client.decisionModel({ modelId: JEV_PREVIEW }).modelId).toBe("jev-preview");
   });
 
   it("wraps invalid model metadata and listing transport failures", async () => {

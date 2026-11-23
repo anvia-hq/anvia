@@ -4,4 +4,9 @@ export {
   type JevDecisionModelOptions,
   type JevDecisionModelHandle,
 } from "./client";
-export { JEV_LATEST, type KnownJevDecisionModelId, type JevDecisionModelId } from "./models";
+export {
+  JEV_LATEST,
+  JEV_PREVIEW,
+  type KnownJevDecisionModelId,
+  type JevDecisionModelId,
+} from "./models";

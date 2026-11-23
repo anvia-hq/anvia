@@ -34,7 +34,7 @@ console.log(result.answers.category.choice);
 ```
 
 `apiKey` falls back to `TYPESAFE_API_KEY` when omitted. An explicitly blank key is rejected.
-`modelId` is required and accepts `JEV_LATEST` (`"jev-latest"`) or other non-empty model IDs.
+`modelId` is required and accepts `JEV_LATEST` (`"jev-latest"`), `JEV_PREVIEW` (`"jev-preview"`), or other non-empty model IDs.
 
 ## Injecting the official SDK
 
@@ -88,7 +88,7 @@ SDK model names map to `id` and `name`, with `description` and `type: "decision"
 ## Public exports
 
 `JevClient`, `JevClientOptions`, `JevDecisionModelOptions`, `JevDecisionModelHandle`,
-`JEV_LATEST`, `KnownJevDecisionModelId`, and `JevDecisionModelId`, plus the `jev` namespace.
+`JEV_LATEST`, `JEV_PREVIEW`, `KnownJevDecisionModelId`, and `JevDecisionModelId`, plus the `jev` namespace.
 
 Question helpers and operations live in `@anvia/core/decision` and `@anvia/core`.
 

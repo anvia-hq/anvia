@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeAzureResponsesStream } from "../src/responses-stream";
+import { normalizeAzureResponsesStream } from "../src/azure/responses-stream";
 
 function added(id: string, name: string) {
   return {

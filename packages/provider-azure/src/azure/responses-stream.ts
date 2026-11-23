@@ -1,4 +1,5 @@
 import { CompletionProviderOutputError } from "@anvia/core/completion";
+import { isPlainObject } from "@anvia/core/internal/provider";
 
 /** Azure streams may omit the terminal function name; resolve it within this request. */
 export async function* normalizeAzureResponsesStream(
@@ -6,14 +7,14 @@ export async function* normalizeAzureResponsesStream(
 ): AsyncIterable<unknown> {
   const namesByItemId = new Map<string, string>();
   for await (const event of stream) {
-    if (!isRecord(event)) {
+    if (!isPlainObject(event)) {
       yield event;
       continue;
     }
 
     if (
       event.type === "response.output_item.added" &&
-      isRecord(event.item) &&
+      isPlainObject(event.item) &&
       event.item.type === "function_call" &&
       typeof event.item.name === "string"
     ) {
@@ -35,8 +36,4 @@ export async function* normalizeAzureResponsesStream(
       yield event;
     }
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

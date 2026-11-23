@@ -1,3 +1,4 @@
+import { rejectManagedOptionsWithInjectedClient } from "@anvia/core/internal/provider";
 import OpenAI from "openai";
 
 type AzureOpenAIEndpointOptions =
@@ -31,19 +32,14 @@ export type AzureOpenAIClientOptions =
 
 export function createAzureOpenAISdk(options: AzureOpenAIClientOptions): OpenAI {
   if (options.client !== undefined) {
-    const conflict = [
+    rejectManagedOptionsWithInjectedClient("AzureOpenAIClient", options, [
       "endpoint",
       "baseUrl",
       "apiKey",
       "azureADTokenProvider",
       "headers",
       "fetch",
-    ].find((key) => key in options);
-
-    if (conflict !== undefined) {
-      throw new TypeError(`AzureOpenAIClient cannot combine client with ${conflict}.`);
-    }
-
+    ]);
     return options.client;
   }
 

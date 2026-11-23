@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "pretypecheck": "pnpm --filter @anvia/openai --filter @anvia/studio build",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsrs --noEmit"
   },
   "dependencies": {
     "@anvia/core": "workspace:*",

@@ -32,7 +32,7 @@
     "build": "tsdown src/index.ts src/durable.ts --format esm --dts --sourcemap --clean --no-fixed-extension",
     "coverage": "vitest run --coverage",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsrs --noEmit"
   },
   "devDependencies": {
     "@anvia/client": "workspace:*",

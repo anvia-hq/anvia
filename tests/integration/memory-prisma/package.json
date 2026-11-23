@@ -6,7 +6,7 @@
   "scripts": {
     "generate": "tsx scripts/generate.ts",
     "pretypecheck": "pnpm generate",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsrs --noEmit",
     "test": "vitest run",
     "pretest": "pnpm generate",
     "test:postgres": "pnpm generate && vitest run"

@@ -29,7 +29,7 @@
     "build": "tsdown src/index.ts --format esm --dts --sourcemap --clean --no-fixed-extension",
     "test": "vitest run",
     "pretypecheck": "pnpm --filter @anvia/otel build",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsrs --noEmit"
   },
   "dependencies": {
     "@anvia/otel": "workspace:*",

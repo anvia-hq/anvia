@@ -124,7 +124,7 @@ Package manifests follow a consistent shape:
 - Build output goes to `dist/`.
 - Public package entry points are declared in `exports`.
 - Build scripts use `tsdown` for package output.
-- Typechecking uses `tsc --noEmit`.
+- Typechecking uses `tsrs --noEmit`.
 - Tests use `vitest run`.
 
 When adding a public entry point:

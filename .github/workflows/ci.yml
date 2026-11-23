@@ -60,7 +60,7 @@ jobs:
 
       - name: Typecheck packages
         # tsrs reads the dist output built above, so it skips the per-package build:deps
-        # rebuilds that forced --workspace-concurrency=1 with tsc.
+        # rebuilds that raced with other typechecks.
         run: pnpm typecheck:tsrs
 
       - name: Typecheck cookbook and internal tests
@@ -142,7 +142,7 @@ jobs:
       - run: pnpm --filter @anvia/core build
       - run: pnpm --filter @anvia/memory-prisma build
       - run: pnpm --filter memory-prisma-integration test:postgres
-      - run: pnpm --filter memory-prisma-integration exec tsc --noEmit
+      - run: pnpm --filter memory-prisma-integration exec tsrs --noEmit
 
   postgres-memory:
     name: Postgres and Drizzle memory (PostgreSQL)

@@ -33,7 +33,7 @@
     "build": "tsdown src/index.ts src/adapters.ts --format esm --dts --sourcemap --clean --no-fixed-extension",
     "pretypecheck": "test -f ../core/dist/index.d.ts || pnpm --filter @anvia/core build",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsrs --noEmit"
   },
   "dependencies": {
     "openai": "^7.62.0"

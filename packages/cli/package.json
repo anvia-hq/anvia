@@ -31,7 +31,7 @@
   "scripts": {
     "build": "tsdown src/index.ts src/cli.ts --format esm --dts --sourcemap --clean --no-fixed-extension && node scripts/copy-registry.mjs && node scripts/copy-skills.mjs && chmod +x dist/cli.js",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit && tsc --project registry/tsconfig.json --noEmit"
+    "typecheck": "tsrs --noEmit && tsrs --project registry/tsconfig.json --noEmit"
   },
   "dependencies": {
     "shadcn": "^4.23.0"

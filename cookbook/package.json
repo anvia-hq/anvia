@@ -158,13 +158,13 @@
     "multimodal:01": "tsx -r dotenv/config 04_providers_and_multimodal/07-openai-image-generation.ts dotenv_config_path=../.env",
     "multimodal:02": "tsx -r dotenv/config 04_providers_and_multimodal/08-openai-audio-and-transcription.ts dotenv_config_path=../.env",
     "multimodal:03": "tsx -r dotenv/config 04_providers_and_multimodal/09-gemini-image-and-transcription.ts dotenv_config_path=../.env",
-    "build": "tsc --noEmit",
+    "build": "tsrs --noEmit",
     "test": "echo \"No tests for cookbook\"",
     "remote-sandbox": "tsx -r dotenv/config 11_remote_sandbox/01-desktop-agent.ts dotenv_config_path=../.env",
     "remote-sandbox:01": "tsx -r dotenv/config 11_remote_sandbox/01-desktop-agent.ts dotenv_config_path=../.env",
     "remote-sandbox:02": "tsx -r dotenv/config 11_remote_sandbox/02-desktop-app.ts dotenv_config_path=../.env",
     "remote-sandbox:image": "sh 11_remote_sandbox/build-desktop-image.sh",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p 11_remote_sandbox/_support/desktop-app"
+    "typecheck": "tsrs --noEmit && tsrs --noEmit -p 11_remote_sandbox/_support/desktop-app"
   },
   "dependencies": {
     "@anvia/anthropic": "workspace:*",

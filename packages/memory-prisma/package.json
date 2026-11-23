@@ -34,7 +34,7 @@
   "scripts": {
     "build": "tsdown src/index.ts src/v8.ts src/cli.ts --format esm --dts --sourcemap --clean --no-fixed-extension",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsrs --noEmit"
   },
   "devDependencies": {
     "@anvia/core": "workspace:*",

@@ -7,8 +7,8 @@ import { fileURLToPath } from "node:url";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(scriptDirectory, "../../../..");
-const require = createRequire(import.meta.url);
-const tscEntrypoint = require.resolve("typescript/bin/tsc");
+const rootRequire = createRequire(join(repositoryRoot, "package.json"));
+const tsrsEntrypoint = resolve(dirname(rootRequire.resolve("tsrs/package.json")), "bin/tsrs");
 const temporaryRoot = await mkdtemp(join(tmpdir(), "anvia-bun-packed-"));
 const packsDirectory = join(temporaryRoot, "packs");
 const consumerDirectory = join(temporaryRoot, "consumer");
@@ -71,7 +71,7 @@ try {
     `${JSON.stringify(consumerTsconfig(), undefined, 2)}\n`,
   );
   await writeFile(join(consumerDirectory, "consumer.ts"), consumerSource());
-  await run(process.execPath, [tscEntrypoint, "-p", join(consumerDirectory, "tsconfig.json")], {
+  await run(process.execPath, [tsrsEntrypoint, "-p", join(consumerDirectory, "tsconfig.json")], {
     cwd: consumerDirectory,
   });
   console.log("Packed TypeScript consumer compiles against installed declarations.");

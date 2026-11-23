@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { isJsonValue } from "../completion/json";
-import type { JsonObject, JsonValue, ToolQuestionAnswer } from "../completion/types";
+import { isJsonValue } from "../../completion/json";
+import type { JsonObject, JsonValue, ToolQuestionAnswer } from "../../completion/types";
 
 export type AgentQuestionChoice = Readonly<{
   label: string;
@@ -58,6 +58,25 @@ export type AgentContinuation = Readonly<{
   state: JsonObject;
 }>;
 
+export type QuestionPromptsSchemaOptions = {
+  minQuestions?: number | undefined;
+  maxQuestions?: number | undefined;
+  minChoices?: number | undefined;
+  maxChoices?: number | undefined;
+  messages?:
+    | {
+        id?: string | undefined;
+        text?: string | undefined;
+        choiceLabel?: string | undefined;
+        choiceValue?: string | undefined;
+        minChoices?: string | undefined;
+        maxChoices?: string | undefined;
+        minQuestions?: string | undefined;
+        maxQuestions?: string | undefined;
+      }
+    | undefined;
+};
+
 const nonblank = z.string().trim().min(1);
 const jsonValueSchema = z.custom<JsonValue>(isJsonValue, {
   message: "Expected a strict JSON value",
@@ -68,43 +87,80 @@ const jsonObjectSchema = z.custom<JsonObject>(
   { message: "Expected a strict JSON object" },
 );
 
-const questionChoiceSchema = z
-  .object({
-    label: nonblank,
-    value: nonblank,
-  })
-  .strict();
+export function createQuestionPromptsSchema(options: QuestionPromptsSchemaOptions = {}) {
+  const minQuestions = options.minQuestions ?? 1;
+  const minChoices = options.minChoices ?? 1;
+  const messages = options.messages;
 
-const questionPromptSchema = z
-  .object({
-    id: nonblank,
-    text: nonblank,
-    choices: z.array(questionChoiceSchema).min(1).optional(),
-    allowCustom: z.boolean().optional(),
-  })
-  .strict()
-  .superRefine((question, context) => {
-    if (question.choices === undefined && question.allowCustom === false) {
-      context.addIssue({
-        code: "custom",
-        message: "A free-text question cannot disable custom answers.",
-        path: ["allowCustom"],
-      });
-    }
+  const choiceSchema = z
+    .object({
+      label: z.string().trim().min(1, messages?.choiceLabel),
+      value: z.string().trim().min(1, messages?.choiceValue),
+    })
+    .strict();
 
-    const values = new Set<string>();
-    for (const [index, choice] of (question.choices ?? []).entries()) {
-      if (values.has(choice.value)) {
+  let choicesArray = z.array(choiceSchema).min(minChoices, messages?.minChoices);
+
+  if (options.maxChoices !== undefined) {
+    choicesArray = choicesArray.max(options.maxChoices, messages?.maxChoices);
+  }
+
+  const promptSchema = z
+    .object({
+      id: z.string().trim().min(1, messages?.id),
+      text: z.string().trim().min(1, messages?.text),
+      choices: choicesArray
+        .superRefine((choices, context) => {
+          const values = new Set<string>();
+          for (const [index, choice] of choices.entries()) {
+            if (values.has(choice.value)) {
+              context.addIssue({
+                code: "custom",
+                message: "Question choice values must be unique.",
+                path: [index, "value"],
+              });
+            }
+
+            values.add(choice.value);
+          }
+        })
+        .optional(),
+      allowCustom: z.boolean().optional(),
+    })
+    .strict()
+    .superRefine((question, context) => {
+      if (question.choices === undefined && question.allowCustom === false) {
         context.addIssue({
           code: "custom",
-          message: "Question choice values must be unique.",
-          path: ["choices", index, "value"],
+          message: "A free-text question cannot disable custom answers.",
+          path: ["allowCustom"],
+        });
+      }
+    });
+
+  let questionsArray = z.array(promptSchema).min(minQuestions, messages?.minQuestions);
+
+  if (options.maxQuestions !== undefined) {
+    questionsArray = questionsArray.max(options.maxQuestions, messages?.maxQuestions);
+  }
+
+  return questionsArray.superRefine((questions, context) => {
+    const ids = new Set<string>();
+    for (const [index, question] of questions.entries()) {
+      if (ids.has(question.id)) {
+        context.addIssue({
+          code: "custom",
+          message: "Question IDs must be unique.",
+          path: [index, "id"],
         });
       }
 
-      values.add(choice.value);
+      ids.add(question.id);
     }
   });
+}
+
+const questionPromptsSchema = createQuestionPromptsSchema();
 
 const questionAnswerSchema = z
   .object({
@@ -134,23 +190,9 @@ const questionRequestSchema = z
   .object({
     type: z.literal("tool-question"),
     ...interactionBase,
-    questions: z.array(questionPromptSchema).min(1),
+    questions: questionPromptsSchema,
   })
-  .strict()
-  .superRefine((request, context) => {
-    const ids = new Set<string>();
-    for (const [index, question] of request.questions.entries()) {
-      if (ids.has(question.id)) {
-        context.addIssue({
-          code: "custom",
-          message: "Question IDs must be unique.",
-          path: ["questions", index, "id"],
-        });
-      }
-
-      ids.add(question.id);
-    }
-  });
+  .strict();
 
 export const agentInteractionRequestSchema = z.discriminatedUnion("type", [
   approvalRequestSchema,

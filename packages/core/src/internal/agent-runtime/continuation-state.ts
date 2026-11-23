@@ -1,6 +1,6 @@
 import type { LoopContextCheckpoint } from "./loop-context";
 import type { AgentInteractionRequest, AgentQuestionAnswer } from "../../agent/interactions";
-import { parseAgentQuestionPrompts } from "../../agent/interactions";
+import { parseAgentQuestionPrompts } from "../../agent/interactions/schemas";
 import {
   isJsonValue,
   type JsonObject,

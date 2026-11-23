@@ -1,5 +1,9 @@
 import { z } from "zod";
-import type { AgentQuestionAnswer, AgentQuestionPrompt } from "../agent/interactions";
+import {
+  type AgentQuestionAnswer,
+  type AgentQuestionPrompt,
+  createQuestionPromptsSchema,
+} from "../agent/interactions/schemas";
 import { createTool } from "./create-tool";
 import type { Tool } from "./tool";
 
@@ -58,73 +62,22 @@ export function createQuestionTool(
     description: options.description ?? DEFAULT_QUESTION_TOOL_DESCRIPTION,
     inputSchema: z
       .object({
-        questions: z
-          .array(
-            z
-              .object({
-                id: z.string().trim().min(1, "Question IDs must not be empty."),
-                text: z.string().trim().min(1, "Question text must not be empty."),
-                choices: z
-                  .array(
-                    z
-                      .object({
-                        label: z
-                          .string()
-                          .trim()
-                          .min(1, "Question choice labels must not be empty."),
-                        value: z
-                          .string()
-                          .trim()
-                          .min(1, "Question choice values must not be empty."),
-                      })
-                      .strict(),
-                  )
-                  .min(2, "Questions with choices must have at least 2 choices.")
-                  .max(4, "Questions must have no more than 4 choices.")
-                  .superRefine((choices, context) => {
-                    const values = new Set<string>();
-                    for (const [index, choice] of choices.entries()) {
-                      if (values.has(choice.value)) {
-                        context.addIssue({
-                          code: "custom",
-                          message: "Question choice values must be unique.",
-                          path: [index, "value"],
-                        });
-                      }
-
-                      values.add(choice.value);
-                    }
-                  })
-                  .optional(),
-                allowCustom: z.boolean().optional(),
-              })
-              .strict()
-              .superRefine((question, context) => {
-                if (question.choices === undefined && question.allowCustom === false) {
-                  context.addIssue({
-                    code: "custom",
-                    message: "A free-text question cannot disable custom answers.",
-                    path: ["allowCustom"],
-                  });
-                }
-              }),
-          )
-          .min(1, "Provide at least 1 question.")
-          .max(4, "Ask no more than 4 questions per call.")
-          .superRefine((questions, context) => {
-            const ids = new Set<string>();
-            for (const [index, question] of questions.entries()) {
-              if (ids.has(question.id)) {
-                context.addIssue({
-                  code: "custom",
-                  message: "Question IDs must be unique.",
-                  path: [index, "id"],
-                });
-              }
-
-              ids.add(question.id);
-            }
-          }),
+        questions: createQuestionPromptsSchema({
+          minQuestions: 1,
+          maxQuestions: 4,
+          minChoices: 2,
+          maxChoices: 4,
+          messages: {
+            id: "Question IDs must not be empty.",
+            text: "Question text must not be empty.",
+            choiceLabel: "Question choice labels must not be empty.",
+            choiceValue: "Question choice values must not be empty.",
+            minChoices: "Questions with choices must have at least 2 choices.",
+            maxChoices: "Questions must have no more than 4 choices.",
+            minQuestions: "Provide at least 1 question.",
+            maxQuestions: "Ask no more than 4 questions per call.",
+          },
+        }),
       })
       .strict(),
     handler(): never {

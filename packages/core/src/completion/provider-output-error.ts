@@ -1,18 +1,13 @@
 import { isJsonValue } from "./json";
+import {
+  COMPLETION_PROVIDER_OUTPUT_ERROR_CODE,
+  type CompletionProviderOutputErrorKind,
+  PROVIDER_OUTPUT_ERROR_KINDS,
+} from "./provider-output-constants";
 import type { CompletionFinishReason, CompletionResponse, ToolCallPart, Usage } from "./types";
 
-export const COMPLETION_PROVIDER_OUTPUT_ERROR_CODE = "ANVIA_COMPLETION_PROVIDER_OUTPUT" as const;
-
-export type CompletionProviderOutputErrorKind =
-  | "malformed-tool-arguments"
-  | "invalid-tool-arguments"
-  | "invalid-stream-event"
-  | "invalid-response"
-  | "incomplete-stream"
-  | "incomplete-tool-call"
-  | "invalid-tool-call"
-  | "truncated-tool-call"
-  | "filtered-tool-call";
+export { COMPLETION_PROVIDER_OUTPUT_ERROR_CODE };
+export type { CompletionProviderOutputErrorKind };
 
 type CompletionProviderOutputErrorBaseOptions = Readonly<{
   toolCallId?: string | undefined;
@@ -41,18 +36,6 @@ export type CompletionProviderOutputErrorOptions =
         finishReason?: Exclude<CompletionFinishReason, "length" | "content-filter"> | undefined;
       }
     >;
-
-const PROVIDER_OUTPUT_ERROR_KINDS = new Set<CompletionProviderOutputErrorKind>([
-  "malformed-tool-arguments",
-  "invalid-tool-arguments",
-  "invalid-stream-event",
-  "invalid-response",
-  "incomplete-stream",
-  "incomplete-tool-call",
-  "invalid-tool-call",
-  "truncated-tool-call",
-  "filtered-tool-call",
-]);
 
 /**
  * A provider returned incomplete output or a tool call that cannot be consumed safely.

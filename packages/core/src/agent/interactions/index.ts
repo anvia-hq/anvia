@@ -7,7 +7,7 @@ export type {
   AgentQuestionPrompt,
   AgentToolApprovalRequest,
   AgentToolQuestionRequest,
-} from "../interactions";
+} from "./schemas";
 export {
   agentContinuationSchema,
   agentInteractionRequestSchema,
@@ -16,4 +16,4 @@ export {
   parseAgentContinuation,
   parseAgentInteractionRequest,
   parseAgentInteractionResponse,
-} from "../interactions";
+} from "./schemas";

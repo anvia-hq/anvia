@@ -1,3 +1,11 @@
+import {
+  COMPLETION_PROVIDER_OUTPUT_ERROR_CODE,
+  type CompletionProviderOutputErrorKind,
+  PROVIDER_OUTPUT_ERROR_KINDS,
+  PROVIDER_OUTPUT_FINISH_REASONS,
+  RETRYABLE_PROVIDER_OUTPUT_KINDS,
+  RETRYABLE_STRUCTURED_OUTPUT_PHASES,
+} from "./completion/provider-output-constants";
 import type { JsonObject, Usage } from "./completion/types";
 import { abortError, isAbortError, waitForAbortableDelay } from "./internal/abort";
 
@@ -37,29 +45,6 @@ const RETRYABLE_ERROR_NAMES = new Set([
   "APIConnectionTimeoutError",
   "TimeoutError",
 ]);
-const RETRYABLE_STRUCTURED_OUTPUT_PHASES = new Set(["truncated", "parse", "schema"]);
-const RETRYABLE_PROVIDER_OUTPUT_KINDS = new Set([
-  "malformed-tool-arguments",
-  "invalid-tool-arguments",
-  "invalid-stream-event",
-  "incomplete-stream",
-  "incomplete-tool-call",
-  "invalid-tool-call",
-  "truncated-tool-call",
-]);
-const PROVIDER_OUTPUT_KINDS = new Set([
-  ...RETRYABLE_PROVIDER_OUTPUT_KINDS,
-  "filtered-tool-call",
-  "invalid-response",
-]);
-const PROVIDER_OUTPUT_FINISH_REASONS = new Set([
-  "stop",
-  "length",
-  "content-filter",
-  "tool-calls",
-  "other",
-]);
-const COMPLETION_PROVIDER_OUTPUT_ERROR_CODE = "ANVIA_COMPLETION_PROVIDER_OUTPUT";
 const RETRYABLE_ERROR_CODES = new Set([
   "DEADLINE_EXCEEDED",
   "EAI_AGAIN",
@@ -255,7 +240,7 @@ function isCompletionProviderOutputErrorRecord(error: Record<string, unknown>): 
   return (
     isCompletionProviderOutputErrorMarker(error) &&
     kind !== undefined &&
-    PROVIDER_OUTPUT_KINDS.has(kind) &&
+    PROVIDER_OUTPUT_ERROR_KINDS.has(kind as CompletionProviderOutputErrorKind) &&
     hasConsistentProviderOutputFinish(error, kind)
   );
 }

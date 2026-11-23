@@ -714,7 +714,11 @@ export class ToolCallExecutor {
 
     if (toolMetadata !== undefined) toolStartArgs = { ...toolStartArgs, toolMetadata };
 
-    const observers = await observation?.runObservers.startTool(toolStartArgs);
+    const replayedPending = this.replayed(toolCall);
+    const replayed = typeof replayedPending === "boolean" ? replayedPending : await replayedPending;
+    const observers = replayed
+      ? undefined
+      : await observation?.runObservers.startTool(toolStartArgs);
     const toolObservation = new ToolObserverScope(observers);
 
     try {

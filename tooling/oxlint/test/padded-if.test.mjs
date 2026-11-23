@@ -8,7 +8,8 @@ test("valid padded if statements and boundaries produce no diagnostics", (t) => 
   const result = lintCode(
     t,
     "valid.ts",
-    `export function example(a: boolean, b: boolean, x: number) {
+    `/* oxlint-disable anvia/no-inline-comments */
+export function example(a: boolean, b: boolean, x: number) {
   if (a) {
     return 1;
   }
@@ -103,7 +104,8 @@ test("reports missing blank lines before, after, and between if statements", (t)
 });
 
 test("autofix inserts blank lines around if statements and preserves comments", (t) => {
-  const input = `export function example(a: boolean, b: boolean) {
+  const input = `/* oxlint-disable anvia/no-inline-comments */
+export function example(a: boolean, b: boolean) {
   const first = 1; // keep trailing comment on prev line
   // leading comment stays attached to if
   if (a) {
@@ -116,7 +118,8 @@ test("autofix inserts blank lines around if statements and preserves comments", 
   return 3;
 }
 `;
-  const expected = `export function example(a: boolean, b: boolean) {
+  const expected = `/* oxlint-disable anvia/no-inline-comments */
+export function example(a: boolean, b: boolean) {
   const first = 1; // keep trailing comment on prev line
 
   // leading comment stays attached to if

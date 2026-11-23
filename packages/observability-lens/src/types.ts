@@ -1,4 +1,4 @@
-import type { JsonValue } from "@anvia/core/completion";
+import type { JsonObject, JsonValue } from "@anvia/core/completion";
 import type { RedactionOptions, RedactionPattern } from "@anvia/core/redaction";
 import type { EvalReporter } from "@anvia/core/evals";
 import type { OtelScoreArgs } from "@anvia/otel";
@@ -83,7 +83,8 @@ export type LensDatasetItem<Input = unknown, Expected = unknown> = {
   expected?: Expected | undefined;
   context?: string[] | undefined;
   retrievalContext?: string[] | undefined;
-  metadata?: Record<string, JsonValue | undefined> | undefined;
+  tags?: string[] | undefined;
+  metadata?: JsonObject | undefined;
 };
 
 export type LensDataset<Input = unknown, Expected = unknown> = {

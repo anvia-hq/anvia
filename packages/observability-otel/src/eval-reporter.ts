@@ -151,6 +151,27 @@ function emitEvaluation<Input, Output, Score, Expected>(
     attributes["anvia.eval.score.threshold"] = args.metric.threshold;
   }
 
+  if (args.metric.model !== undefined) {
+    attributes["anvia.eval.metric.provider"] = args.metric.model.provider;
+    attributes["anvia.eval.metric.model"] = args.metric.model.modelId;
+  }
+
+  if (args.case.tags !== undefined && args.case.tags.length > 0) {
+    attributes["anvia.eval.case.tags"] = [...args.case.tags];
+  }
+
+  if (args.trial !== undefined) {
+    attributes["anvia.eval.trial"] = args.trial;
+  }
+
+  if (args.trialCount !== undefined) {
+    attributes["anvia.eval.trial_count"] = args.trialCount;
+  }
+
+  if (args.cached === true) {
+    attributes["anvia.eval.cached"] = true;
+  }
+
   if (args.outcome.usage !== undefined) {
     attributes["anvia.eval.usage.input_tokens"] = args.outcome.usage.inputTokens;
     attributes["anvia.eval.usage.output_tokens"] = args.outcome.usage.outputTokens;
@@ -279,6 +300,10 @@ function emitRunFinished(
     "anvia.eval.run.case_count": args.caseCount,
     "anvia.eval.run.metric_names": args.metricNames,
   };
+
+  if (args.passed !== undefined) {
+    attributes["anvia.eval.run.passed"] = args.passed;
+  }
 
   if (args.metrics !== undefined) {
     addTotals(attributes, "anvia.eval.run.metrics", args.metrics);

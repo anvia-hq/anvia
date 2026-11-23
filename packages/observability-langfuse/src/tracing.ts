@@ -1,5 +1,5 @@
 import type { Message } from "@anvia/core/completion";
-import type { EvalReporter } from "@anvia/core/evals";
+import type { EvalMetric, EvalReporter } from "@anvia/core/evals";
 import type {
   AgentGenerationEndArgs,
   AgentGenerationErrorArgs,
@@ -295,9 +295,26 @@ export class LangfuseClient {
     };
   }
 
-  runEvalExperiment<Input, Output, Expected = unknown>(
-    options: LangfuseEvalExperimentOptions<Input, Output, Expected>,
-  ): Promise<LangfuseEvalExperimentResult<Input, Output, Expected>> {
+  runEvalExperiment<
+    Input,
+    Output,
+    Expected = unknown,
+    const Metrics extends readonly EvalMetric<
+      NoInfer<Input>,
+      NoInfer<Output>,
+      unknown,
+      NoInfer<Expected>,
+      string
+    >[] = readonly EvalMetric<
+      NoInfer<Input>,
+      NoInfer<Output>,
+      unknown,
+      NoInfer<Expected>,
+      string
+    >[],
+  >(
+    options: LangfuseEvalExperimentOptions<Input, Output, Expected, Metrics>,
+  ): Promise<LangfuseEvalExperimentResult<Input, Output, Expected, Metrics>> {
     this.assertOpen();
     return runLangfuseEvalExperiment(this, options);
   }

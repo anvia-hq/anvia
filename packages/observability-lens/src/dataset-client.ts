@@ -229,6 +229,10 @@ function parseItem<Input, Expected>(
     item.retrievalContext = stringArray(value.retrievalContext, response, "retrieval context");
   }
 
+  if (value.tags !== undefined) {
+    item.tags = stringArray(value.tags, response, "tags");
+  }
+
   if (value.metadata !== undefined) {
     if (!isJsonRecord(value.metadata)) {
       throw invalidResponse(response, "Lens returned invalid case metadata");

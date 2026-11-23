@@ -1,7 +1,6 @@
 import type { Agent } from "../../agent/agent";
 import { parseAgentQuestionPrompts } from "../../agent/interactions";
 import { type AgentLifecycle, lifecycleSnapshot } from "../../agent/lifecycle";
-import type { AgentChildStreamEvent } from "../../agent/run-types";
 import type {
   JsonObject,
   ToolCallPart,
@@ -10,48 +9,32 @@ import type {
   ToolResultOutput,
   ToolResultPart,
 } from "../../completion";
-import { isJsonValue, Usage } from "../../completion";
+import { Usage } from "../../completion";
 import { assertCompletionResponseIntegrity } from "../../completion/provider-output-error";
 import type { AgentHook, ToolApprovalRequestOptions, ToolHookArgs } from "../../hooks";
 import { runControl, toolCallControl } from "../../hooks";
-import { isMcpTool } from "../../mcp";
-import type { ActiveAgentRunObservers, ActiveToolObservers } from "../../observability/group";
-import type {
-  AgentToolEndArgs,
-  AgentToolErrorArgs,
-  AgentToolStartArgs,
-  AgentToolStreamEventArgs,
-  AgentToolSuspendedArgs,
-} from "../../observability/types";
+import type { ActiveAgentRunObservers } from "../../observability/group";
+import type { AgentToolStartArgs, AgentToolStreamEventArgs } from "../../observability/types";
 import type {
   AnyTool,
   NormalizedToolOutput,
   ToolApprovalContext,
   ToolApprovalRunContext,
   ToolCallContext,
-  ToolCallStreamEvent,
   ToolRequiresApproval,
 } from "../../tool";
-import {
-  normalizeToolResultOutput,
-  parseToolArgs,
-  ToolOutput,
-  toolResultContentToText,
-} from "../../tool";
-import type {
-  AgentMiddleware,
-  ToolOutputMiddlewareArgs,
-  ToolOutputMiddlewareResult,
-} from "../../tool/middleware";
+import { parseToolArgs } from "../../tool";
+import type { AgentMiddleware } from "../../tool/middleware";
 import { isQuestionTool } from "../../tool/question-tool";
 import { isSkillTool } from "../../tool/skill-tool-marker";
 import { throwIfAborted } from "../abort";
-import type { AgentRunExecution, AgentToolExecutionResult } from "./execution";
 import { mapWithConcurrency } from "../concurrency";
 import type { ToolApprovalRequest } from "./approval-request";
 import { assertToolApprovalRequirement, toolMayRequireApproval } from "./approval-requirement";
+import type { AgentRunExecution, AgentToolExecutionResult } from "./execution";
 import {
   AgentInteractionSignal,
+  approvalInteraction,
   type PendingToolExecution,
   ToolExecutionSuspension,
 } from "./interaction-suspension";
@@ -60,6 +43,24 @@ import {
   prepareToolCall as prepareRegisteredToolCall,
   prepareToolCallFromInput,
 } from "./prepared-tool-call";
+import {
+  runToolInputMiddlewares,
+  runToolResultMiddlewares,
+  sanitizeToolErrorMessage,
+  toolOutputToStructuredResult,
+  toolOutputToText,
+} from "./tool-middleware";
+import {
+  type AgentToolEventPayload,
+  agentToolEventPayload,
+  approvalEventAttributes,
+  buildToolHookArgs,
+  buildToolStartArgs,
+  toolErrorArgs,
+  ToolObserverScope,
+} from "./tool-observation";
+
+export type { AgentToolEventPayload } from "./tool-observation";
 
 export type ToolResultEventPayload = {
   type: "tool_result";
@@ -71,16 +72,6 @@ export type ToolResultEventPayload = {
   output: ToolResultOutput;
   result: string;
   structuredResult?: readonly ToolResultContentPart[] | undefined;
-};
-
-export type AgentToolEventPayload = {
-  type: "agent_tool_event";
-  toolName: string;
-  toolCallId?: string;
-  internalCallId: string;
-  agentId: string;
-  agentName?: string;
-  event: AgentChildStreamEvent<unknown, unknown>;
 };
 
 export type ToolExecutionEventPayload = ToolResultEventPayload | AgentToolEventPayload;
@@ -97,39 +88,19 @@ export type ToolExecutionRunContext = {
   metadata?: JsonObject | undefined;
 };
 
-export type ToolApprovalDecision =
-  | { approved: true; reason?: string }
-  | { approved: false; reason?: string };
-
-export type ToolApprovalHandler = (request: ToolApprovalRequest) => Promise<ToolApprovalDecision>;
-
 type ToolExecutionAgent = Pick<Agent, "id" | "getTool" | "callTool" | "middlewares">;
 type ToolExecutionLifecycle = Pick<AgentLifecycle, "onToolStart" | "onToolFinish">;
 
-function sanitizeToolErrorMessage(error: unknown): string {
-  if (error instanceof Error) {
-    // Return only name and message, omitting stack traces and internal details
-    return `${error.name}: ${error.message}`;
-  }
-
-  if (typeof error === "string") {
-    // Strings are JSON values, but JSON.stringify would add surrounding quotes.
-    return error;
-  }
-
-  if (isJsonValue(error)) {
-    return JSON.stringify(error);
-  }
-
-  // Non-Error thrown values
-  return String(error);
-}
+type OpenedToolCall = {
+  hookArgs: ToolHookArgs;
+  toolStartArgs: AgentToolStartArgs;
+  toolObservation: ToolObserverScope;
+};
 
 export class ToolCallExecutor {
   constructor(
     private readonly agent: ToolExecutionAgent,
     private readonly activeHook: AgentHook | undefined,
-    private readonly approvalHandler: ToolApprovalHandler,
     private readonly lifecycle: ToolExecutionLifecycle | undefined,
     private readonly runContext: ToolExecutionRunContext,
     private readonly concurrency: number,
@@ -157,46 +128,14 @@ export class ToolCallExecutor {
       throwIfAborted(this.abortSignal);
       const args = JSON.stringify(toolCall.input);
       const internalCallId = globalThis.crypto.randomUUID();
-      const hookArgs: ToolHookArgs = {
-        toolName: toolCall.toolName,
-        toolCallId: toolCall.toolCallId,
-        internalCallId,
-        args,
-      };
-
-      if (toolCall.callId !== undefined) {
-        hookArgs.callId = toolCall.callId;
-      }
-
       const tool = this.agent.getTool(toolCall.toolName);
-      const toolDefinition = observation?.toolDefinitions?.find(
-        (definition) => definition.name === toolCall.toolName,
-      );
-      const toolMetadata = toolTraceMetadata(tool);
-
-      let toolStartArgs: AgentToolStartArgs = {
-        turn: observation?.turn ?? 0,
+      const { hookArgs, toolStartArgs, toolObservation } = await this.openToolCall(
         toolCall,
-        toolName: toolCall.toolName,
         internalCallId,
         args,
-      };
-
-      if (toolCall.callId !== undefined) {
-        toolStartArgs = { ...toolStartArgs, toolCallId: toolCall.callId };
-      }
-
-      if (toolDefinition !== undefined) toolStartArgs = { ...toolStartArgs, toolDefinition };
-
-      if (toolMetadata !== undefined) toolStartArgs = { ...toolStartArgs, toolMetadata };
-
-      const replayedPending = this.replayed(toolCall);
-      const replayed =
-        typeof replayedPending === "boolean" ? replayedPending : await replayedPending;
-      const toolObservers = replayed
-        ? undefined
-        : await observation?.runObservers.startTool(toolStartArgs);
-      const toolObservation = new ToolObserverScope(toolObservers);
+        tool,
+        observation,
+      );
 
       let output: NormalizedToolOutput | undefined;
       let skipped = false;
@@ -218,7 +157,7 @@ export class ToolCallExecutor {
           skipped = true;
         } else {
           try {
-            effectiveArgs = await this.runToolInputMiddlewares({
+            effectiveArgs = await runToolInputMiddlewares(this.activeMiddlewares(), {
               ...hookArgs,
               turn: observation?.turn ?? 0,
               originalArgs: args,
@@ -284,59 +223,24 @@ export class ToolCallExecutor {
                 this.agent,
                 this.runContext,
               );
-              const approvalDecision =
-                callAction?.type === "approval_request"
-                  ? await this.requestApproval(approvalContext, callAction, observation)
-                  : ((await this.evaluateToolApproval(tool, approvalContext, observation)) ?? {
-                      approved: true as const,
-                    });
 
-              if (!approvalDecision.approved) {
-                output = { type: "execution-denied", reason: approvalDecision.result };
-                skipped = true;
+              if (callAction?.type === "approval_request") {
+                await this.requestApproval(approvalContext, callAction, observation);
               } else {
-                const step = observation?.turn ?? 0;
-                const lifecycleEvent = {
-                  runId: this.runContext.runId,
-                  step,
-                  toolName: toolCall.toolName,
-                  input: lifecycleSnapshot(prepared.input),
-                };
-
-                if (toolCall.callId !== undefined) {
-                  Object.assign(lifecycleEvent, { toolCallId: toolCall.callId });
-                }
-
-                await this.lifecycle?.onToolStart?.(lifecycleEvent);
-                const startedAt = Date.now();
-                const outcome = await this.runApprovedToolCall(
-                  prepared,
-                  toolCall,
-                  hookArgs,
-                  effectiveArgs,
-                  toolObservation,
-                  observation,
-                  onStreamEvent,
-                );
-                output = outcome.output;
-                toolExecutionFailed = outcome.failed;
-                const durationMs = Date.now() - startedAt;
-                await this.lifecycle?.onToolFinish?.(
-                  outcome.failed
-                    ? {
-                        ...lifecycleEvent,
-                        durationMs,
-                        success: false,
-                        error: lifecycleSnapshot(outcome.error),
-                      }
-                    : {
-                        ...lifecycleEvent,
-                        durationMs,
-                        success: true,
-                        output: lifecycleSnapshot(output),
-                      },
-                );
+                await this.evaluateToolApproval(tool, approvalContext, observation);
               }
+
+              const outcome = await this.runLifecycleToolCall(
+                prepared,
+                toolCall,
+                hookArgs,
+                effectiveArgs,
+                toolObservation,
+                observation,
+                onStreamEvent,
+              );
+              output = outcome.output;
+              toolExecutionFailed = outcome.failed;
             }
           } catch (error) {
             if (error instanceof AgentInteractionSignal) {
@@ -358,79 +262,19 @@ export class ToolCallExecutor {
           throw new Error(`Tool "${toolCall.toolName}" did not produce an execution result.`);
         }
 
-        let result = toolOutputToText(output);
-        let structuredResult = toolOutputToStructuredResult(output);
-
-        if (!isSkillTool(tool)) {
-          const middlewareReplacement = await this.runToolResultMiddlewares({
-            ...hookArgs,
-            args: effectiveArgs,
-            result,
-            originalResult: result,
-            structuredResult,
-            originalStructuredResult: structuredResult,
-            turn: observation?.turn ?? 0,
-          });
-
-          if (middlewareReplacement !== undefined) {
-            output = middlewareReplacement;
-            result = toolOutputToText(middlewareReplacement);
-            structuredResult = toolOutputToStructuredResult(middlewareReplacement);
-          }
-        }
-
-        const resultAction = await this.activeHook?.onToolResult?.({
-          ...hookArgs,
-          args: effectiveArgs,
-          result,
-          structuredResult,
-          run: runControl,
-        });
-
-        if (!toolExecutionFailed) {
-          await toolObservation.end({
-            turn: observation?.turn ?? 0,
-            toolCall,
-            toolName: toolCall.toolName,
-            internalCallId,
-            args: effectiveArgs,
-            result,
-            structuredResult,
-            skipped,
-            toolCallId: toolCall.callId,
-          });
-        }
-
-        if (resultAction?.type === "terminate") {
-          throw this.cancel(resultAction.reason);
-        }
-
-        const resultPayload: ToolResultEventPayload = {
-          type: "tool_result",
-          toolName: toolCall.toolName,
-          toolCallId: toolCall.toolCallId,
+        return await this.finalizeToolOutput({
+          tool,
+          toolCall,
           internalCallId,
-          args: effectiveArgs,
+          hookArgs,
+          effectiveArgs,
           output,
-          result,
-          structuredResult,
-        };
-
-        if (toolCall.callId !== undefined) resultPayload.callId = toolCall.callId;
-
-        onResult?.(resultPayload);
-        let resultPart: ToolResultPart = {
-          type: "tool-result" as const,
-          toolCallId: toolCall.toolCallId,
-          toolName: toolCall.toolName,
-          output,
-        };
-
-        if (toolCall.callId !== undefined) {
-          resultPart = { ...resultPart, callId: toolCall.callId };
-        }
-
-        return resultPart;
+          skipped,
+          failed: toolExecutionFailed,
+          toolObservation,
+          observation,
+          onResult,
+        });
       } catch (error) {
         if (error instanceof AgentInteractionSignal) {
           const pending: PendingToolExecution = {
@@ -475,20 +319,6 @@ export class ToolCallExecutor {
     return mapWithConcurrency(toolCalls, this.concurrency, executeOne);
   }
 
-  /**
-   * A turn that calls a tool that may ask for approval or a question can suspend part-way, and
-   * resuming needs the ordered completed/remaining split. Such a turn runs sequentially.
-   */
-  private maySuspend(toolCalls: readonly ToolCallPart[]): boolean {
-    return toolCalls.some((toolCall) => {
-      const tool = this.agent.getTool(toolCall.toolName);
-      return (
-        tool !== undefined &&
-        (toolMayRequireApproval(tool.requiresApproval) || isQuestionTool(tool))
-      );
-    });
-  }
-
   async executeResumed(
     pending: PendingToolExecution,
     onResult?: (result: ToolResultEventPayload) => void,
@@ -509,61 +339,17 @@ export class ToolCallExecutor {
       throw new TypeError("Question interactions are resolved from their submitted answers.");
     }
 
-    const hookArgs: ToolHookArgs = {
-      toolName: toolCall.toolName,
-      toolCallId: toolCall.toolCallId,
-      internalCallId,
-      args: effectiveArgs,
-    };
-
-    if (toolCall.callId !== undefined) hookArgs.callId = toolCall.callId;
-
-    const toolDefinition = observation?.toolDefinitions?.find(
-      (definition) => definition.name === toolCall.toolName,
-    );
-    const toolMetadata = toolTraceMetadata(tool);
-    let toolStartArgs: AgentToolStartArgs = {
-      turn: observation?.turn ?? 0,
+    const { hookArgs, toolObservation } = await this.openToolCall(
       toolCall,
-      toolName: toolCall.toolName,
       internalCallId,
-      args: effectiveArgs,
-    };
-
-    if (toolCall.callId !== undefined) {
-      toolStartArgs = { ...toolStartArgs, toolCallId: toolCall.callId };
-    }
-
-    if (toolDefinition !== undefined) toolStartArgs = { ...toolStartArgs, toolDefinition };
-
-    if (toolMetadata !== undefined) toolStartArgs = { ...toolStartArgs, toolMetadata };
-
-    const replayedPending = this.replayed(toolCall);
-    const replayed = typeof replayedPending === "boolean" ? replayedPending : await replayedPending;
-    const observers = replayed
-      ? undefined
-      : await observation?.runObservers.startTool(toolStartArgs);
-    const toolObservation = new ToolObserverScope(observers);
-    let output: NormalizedToolOutput;
-    let failed = false;
+      effectiveArgs,
+      tool,
+      observation,
+    );
 
     try {
       const prepared = prepareToolCallFromInput(tool, pending.input);
-      const step = observation?.turn ?? 0;
-      const lifecycleEvent = {
-        runId: this.runContext.runId,
-        step,
-        toolName: toolCall.toolName,
-        input: lifecycleSnapshot(prepared.input),
-      };
-
-      if (toolCall.callId !== undefined) {
-        Object.assign(lifecycleEvent, { toolCallId: toolCall.callId });
-      }
-
-      await this.lifecycle?.onToolStart?.(lifecycleEvent);
-      const startedAt = Date.now();
-      const outcome = await this.runApprovedToolCall(
+      const outcome = await this.runLifecycleToolCall(
         prepared,
         toolCall,
         hookArgs,
@@ -572,95 +358,19 @@ export class ToolCallExecutor {
         observation,
         onStreamEvent,
       );
-      output = outcome.output;
-      failed = outcome.failed;
-      const durationMs = Date.now() - startedAt;
-      await this.lifecycle?.onToolFinish?.(
-        outcome.failed
-          ? {
-              ...lifecycleEvent,
-              durationMs,
-              success: false,
-              error: lifecycleSnapshot(outcome.error),
-            }
-          : {
-              ...lifecycleEvent,
-              durationMs,
-              success: true,
-              output: lifecycleSnapshot(output),
-            },
-      );
-
-      let result = toolOutputToText(output);
-      let structuredResult = toolOutputToStructuredResult(output);
-
-      if (!isSkillTool(tool)) {
-        const replacement = await this.runToolResultMiddlewares({
-          ...hookArgs,
-          args: effectiveArgs,
-          result,
-          originalResult: result,
-          structuredResult,
-          originalStructuredResult: structuredResult,
-          turn: step,
-        });
-
-        if (replacement !== undefined) {
-          output = replacement;
-          result = toolOutputToText(replacement);
-          structuredResult = toolOutputToStructuredResult(replacement);
-        }
-      }
-
-      const resultAction = await this.activeHook?.onToolResult?.({
-        ...hookArgs,
-        result,
-        structuredResult,
-        run: runControl,
-      });
-
-      if (!failed) {
-        await toolObservation.end({
-          turn: step,
-          toolCall,
-          toolName: toolCall.toolName,
-          internalCallId,
-          args: effectiveArgs,
-          result,
-          structuredResult,
-          skipped: false,
-          toolCallId: toolCall.callId,
-        });
-      }
-
-      if (resultAction?.type === "terminate") {
-        throw this.cancel(resultAction.reason);
-      }
-
-      const resultPayload: ToolResultEventPayload = {
-        type: "tool_result",
-        toolName: toolCall.toolName,
-        toolCallId: toolCall.toolCallId,
+      return await this.finalizeToolOutput({
+        tool,
+        toolCall,
         internalCallId,
-        args: effectiveArgs,
-        output,
-        result,
-        structuredResult,
-      };
-
-      if (toolCall.callId !== undefined) resultPayload.callId = toolCall.callId;
-
-      onResult?.(resultPayload);
-      let resultPart: ToolResultPart = {
-        type: "tool-result",
-        toolName: toolCall.toolName,
-        toolCallId: toolCall.toolCallId,
-        output,
-      };
-
-      if (toolCall.callId !== undefined) resultPart = { ...resultPart, callId: toolCall.callId };
-
-      return resultPart;
+        hookArgs,
+        effectiveArgs,
+        output: outcome.output,
+        skipped: false,
+        failed: outcome.failed,
+        toolObservation,
+        observation,
+        onResult,
+      });
     } catch (error) {
       await toolObservation.error(
         toolErrorArgs(observation?.turn ?? 0, toolCall, internalCallId, effectiveArgs, error),
@@ -685,111 +395,28 @@ export class ToolCallExecutor {
       );
     }
 
-    const hookArgs: ToolHookArgs = {
-      toolName: toolCall.toolName,
-      toolCallId: toolCall.toolCallId,
-      internalCallId,
-      args: effectiveArgs,
-    };
-
-    if (toolCall.callId !== undefined) hookArgs.callId = toolCall.callId;
-
-    const toolDefinition = observation?.toolDefinitions?.find(
-      (definition) => definition.name === toolCall.toolName,
-    );
-    const toolMetadata = toolTraceMetadata(tool);
-    let toolStartArgs: AgentToolStartArgs = {
-      turn: observation?.turn ?? 0,
+    const { hookArgs, toolObservation } = await this.openToolCall(
       toolCall,
-      toolName: toolCall.toolName,
       internalCallId,
-      args: effectiveArgs,
-    };
-
-    if (toolCall.callId !== undefined) {
-      toolStartArgs = { ...toolStartArgs, toolCallId: toolCall.callId };
-    }
-
-    if (toolDefinition !== undefined) toolStartArgs = { ...toolStartArgs, toolDefinition };
-
-    if (toolMetadata !== undefined) toolStartArgs = { ...toolStartArgs, toolMetadata };
-
-    const replayedPending = this.replayed(toolCall);
-    const replayed = typeof replayedPending === "boolean" ? replayedPending : await replayedPending;
-    const observers = replayed
-      ? undefined
-      : await observation?.runObservers.startTool(toolStartArgs);
-    const toolObservation = new ToolObserverScope(observers);
+      effectiveArgs,
+      tool,
+      observation,
+    );
 
     try {
-      let output = initialOutput;
-      let result = toolOutputToText(output);
-      let structuredResult = toolOutputToStructuredResult(output);
-
-      if (!isSkillTool(tool)) {
-        const replacement = await this.runToolResultMiddlewares({
-          ...hookArgs,
-          args: effectiveArgs,
-          result,
-          originalResult: result,
-          structuredResult,
-          originalStructuredResult: structuredResult,
-          turn: observation?.turn ?? 0,
-        });
-
-        if (replacement !== undefined) {
-          output = replacement;
-          result = toolOutputToText(replacement);
-          structuredResult = toolOutputToStructuredResult(replacement);
-        }
-      }
-
-      const resultAction = await this.activeHook?.onToolResult?.({
-        ...hookArgs,
-        result,
-        structuredResult,
-        run: runControl,
-      });
-      await toolObservation.end({
-        turn: observation?.turn ?? 0,
+      return await this.finalizeToolOutput({
+        tool,
         toolCall,
-        toolName: toolCall.toolName,
         internalCallId,
-        args: effectiveArgs,
-        result,
-        structuredResult,
+        hookArgs,
+        effectiveArgs,
+        output: initialOutput,
         skipped: true,
-        toolCallId: toolCall.callId,
+        failed: false,
+        toolObservation,
+        observation,
+        onResult,
       });
-
-      if (resultAction?.type === "terminate") {
-        throw this.cancel(resultAction.reason);
-      }
-
-      const resultPayload: ToolResultEventPayload = {
-        type: "tool_result",
-        toolName: toolCall.toolName,
-        toolCallId: toolCall.toolCallId,
-        internalCallId,
-        args: effectiveArgs,
-        output,
-        result,
-        structuredResult,
-      };
-
-      if (toolCall.callId !== undefined) resultPayload.callId = toolCall.callId;
-
-      onResult?.(resultPayload);
-      let resultPart: ToolResultPart = {
-        type: "tool-result",
-        toolName: toolCall.toolName,
-        toolCallId: toolCall.toolCallId,
-        output,
-      };
-
-      if (toolCall.callId !== undefined) resultPart = { ...resultPart, callId: toolCall.callId };
-
-      return resultPart;
     } catch (error) {
       await toolObservation.error(
         toolErrorArgs(observation?.turn ?? 0, toolCall, internalCallId, effectiveArgs, error),
@@ -798,7 +425,185 @@ export class ToolCallExecutor {
     }
   }
 
-  /** A restored result was observed when the tool ran; observing it again duplicates it. */
+  private async openToolCall(
+    toolCall: ToolCallPart,
+    internalCallId: string,
+    args: string,
+    tool: AnyTool | undefined,
+    observation: ToolExecutionObservation | undefined,
+  ): Promise<OpenedToolCall> {
+    const hookArgs = buildToolHookArgs(toolCall, internalCallId, args);
+    const toolStartArgs = buildToolStartArgs(
+      observation?.turn ?? 0,
+      toolCall,
+      internalCallId,
+      args,
+      tool,
+      observation?.toolDefinitions,
+    );
+    const replayedPending = this.replayed(toolCall);
+    const replayed = typeof replayedPending === "boolean" ? replayedPending : await replayedPending;
+    const observers = replayed
+      ? undefined
+      : await observation?.runObservers.startTool(toolStartArgs);
+    return {
+      hookArgs,
+      toolStartArgs,
+      toolObservation: new ToolObserverScope(observers),
+    };
+  }
+
+  private async runLifecycleToolCall(
+    prepared: PreparedToolCall,
+    toolCall: ToolCallPart,
+    hookArgs: ToolHookArgs,
+    effectiveArgs: string,
+    toolObservation: ToolObserverScope,
+    observation: ToolExecutionObservation | undefined,
+    onStreamEvent?: (event: AgentToolEventPayload) => void,
+  ): Promise<AgentToolExecutionResult> {
+    const step = observation?.turn ?? 0;
+    const lifecycleEvent = {
+      runId: this.runContext.runId,
+      step,
+      toolName: toolCall.toolName,
+      input: lifecycleSnapshot(prepared.input),
+    };
+
+    if (toolCall.callId !== undefined) {
+      Object.assign(lifecycleEvent, { toolCallId: toolCall.callId });
+    }
+
+    await this.lifecycle?.onToolStart?.(lifecycleEvent);
+    const startedAt = Date.now();
+    const outcome = await this.runApprovedToolCall(
+      prepared,
+      toolCall,
+      hookArgs,
+      effectiveArgs,
+      toolObservation,
+      observation,
+      onStreamEvent,
+    );
+    const durationMs = Date.now() - startedAt;
+    await this.lifecycle?.onToolFinish?.(
+      outcome.failed
+        ? {
+            ...lifecycleEvent,
+            durationMs,
+            success: false,
+            error: lifecycleSnapshot(outcome.error),
+          }
+        : {
+            ...lifecycleEvent,
+            durationMs,
+            success: true,
+            output: lifecycleSnapshot(outcome.output),
+          },
+    );
+    return outcome;
+  }
+
+  private async finalizeToolOutput(args: {
+    tool: AnyTool | undefined;
+    toolCall: ToolCallPart;
+    internalCallId: string;
+    hookArgs: ToolHookArgs;
+    effectiveArgs: string;
+    output: NormalizedToolOutput;
+    skipped: boolean;
+    failed: boolean;
+    toolObservation: ToolObserverScope;
+    observation: ToolExecutionObservation | undefined;
+    onResult?: ((result: ToolResultEventPayload) => void) | undefined;
+  }): Promise<ToolResultPart> {
+    const turn = args.observation?.turn ?? 0;
+    let output = args.output;
+    let result = toolOutputToText(output);
+    let structuredResult = toolOutputToStructuredResult(output);
+
+    if (!isSkillTool(args.tool)) {
+      const middlewareReplacement = await runToolResultMiddlewares(this.activeMiddlewares(), {
+        ...args.hookArgs,
+        args: args.effectiveArgs,
+        result,
+        originalResult: result,
+        structuredResult,
+        originalStructuredResult: structuredResult,
+        turn,
+      });
+
+      if (middlewareReplacement !== undefined) {
+        output = middlewareReplacement;
+        result = toolOutputToText(middlewareReplacement);
+        structuredResult = toolOutputToStructuredResult(middlewareReplacement);
+      }
+    }
+
+    const resultAction = await this.activeHook?.onToolResult?.({
+      ...args.hookArgs,
+      args: args.effectiveArgs,
+      result,
+      structuredResult,
+      run: runControl,
+    });
+
+    if (!args.failed) {
+      await args.toolObservation.end({
+        turn,
+        toolCall: args.toolCall,
+        toolName: args.toolCall.toolName,
+        internalCallId: args.internalCallId,
+        args: args.effectiveArgs,
+        result,
+        structuredResult,
+        skipped: args.skipped,
+        toolCallId: args.toolCall.callId,
+      });
+    }
+
+    if (resultAction?.type === "terminate") {
+      throw this.cancel(resultAction.reason);
+    }
+
+    const resultPayload: ToolResultEventPayload = {
+      type: "tool_result",
+      toolName: args.toolCall.toolName,
+      toolCallId: args.toolCall.toolCallId,
+      internalCallId: args.internalCallId,
+      args: args.effectiveArgs,
+      output,
+      result,
+      structuredResult,
+    };
+
+    if (args.toolCall.callId !== undefined) resultPayload.callId = args.toolCall.callId;
+
+    args.onResult?.(resultPayload);
+    let resultPart: ToolResultPart = {
+      type: "tool-result",
+      toolCallId: args.toolCall.toolCallId,
+      toolName: args.toolCall.toolName,
+      output,
+    };
+
+    if (args.toolCall.callId !== undefined) {
+      resultPart = { ...resultPart, callId: args.toolCall.callId };
+    }
+
+    return resultPart;
+  }
+
+  private maySuspend(toolCalls: readonly ToolCallPart[]): boolean {
+    return toolCalls.some((toolCall) => {
+      const tool = this.agent.getTool(toolCall.toolName);
+      return (
+        tool !== undefined &&
+        (toolMayRequireApproval(tool.requiresApproval) || isQuestionTool(tool))
+      );
+    });
+  }
+
   private replayed(toolCall: ToolCallPart): boolean | Promise<boolean> {
     return this.execution?.replayed?.({ kind: "tool", toolCall }) ?? false;
   }
@@ -811,10 +616,7 @@ export class ToolCallExecutor {
     toolObservation: ToolObserverScope,
     observation: ToolExecutionObservation | undefined,
     onStreamEvent?: (event: AgentToolEventPayload) => void,
-  ): Promise<
-    | { output: NormalizedToolOutput; failed: false }
-    | { output: NormalizedToolOutput; failed: true; error: unknown }
-  > {
+  ): Promise<AgentToolExecutionResult> {
     const execute = (context?: Pick<ToolCallContext, "operationId">) =>
       this.runUncachedToolCall(
         prepared,
@@ -934,70 +736,6 @@ export class ToolCallExecutor {
     };
   }
 
-  private async runToolResultMiddlewares(
-    args: ToolOutputMiddlewareArgs,
-  ): Promise<NormalizedToolOutput | undefined> {
-    let result = args.result;
-    let structuredResult = args.structuredResult;
-    let replaced = false;
-    for (const middleware of this.activeMiddlewares()) {
-      const outputReplacement = await middleware.onToolOutput?.({
-        ...args,
-        result,
-        structuredResult,
-      });
-
-      if (outputReplacement !== undefined) {
-        const normalized = normalizeToolOutputMiddlewareResult(outputReplacement);
-
-        if (normalized.result !== undefined) {
-          result = normalized.result;
-          structuredResult = undefined;
-        }
-
-        if (normalized.structuredResult !== undefined) {
-          structuredResult = normalized.structuredResult;
-          result = toolResultContentToText(normalized.structuredResult);
-        }
-
-        replaced = true;
-      }
-    }
-
-    if (!replaced) {
-      return undefined;
-    }
-
-    return structuredResult === undefined
-      ? { type: "text", value: result }
-      : { type: "content", value: structuredResult };
-  }
-
-  private async runToolInputMiddlewares(
-    args: ToolHookArgs & { turn: number; originalArgs: string },
-  ): Promise<string> {
-    let current = args.args;
-    for (const middleware of this.activeMiddlewares()) {
-      const replacement = await middleware.onToolInput?.({
-        ...args,
-        args: current,
-      });
-
-      if (replacement?.args !== undefined) {
-        if (typeof replacement.args === "string") {
-          current = replacement.args;
-        } else {
-          if (!isJsonValue(replacement.args)) {
-            throw new TypeError("Tool input middleware args must be a strict JSON value.");
-          }
-
-          current = JSON.stringify(replacement.args);
-        }
-      }
-    }
-    return current;
-  }
-
   private activeMiddlewares(): AgentMiddleware[] {
     return [...this.agent.middlewares, ...this.requestMiddlewares];
   }
@@ -1006,26 +744,26 @@ export class ToolCallExecutor {
     tool: AnyTool | undefined,
     context: ToolApprovalContext,
     observation: ToolExecutionObservation | undefined,
-  ): Promise<{ approved: true } | { approved: false; result: string } | undefined> {
+  ): Promise<void> {
     const requirement = tool?.requiresApproval as ToolRequiresApproval<unknown> | undefined;
 
-    if (requirement === undefined) return undefined;
+    if (requirement === undefined) return;
 
     const resolved =
       typeof requirement === "function" ? await requirement(context.args, context) : requirement;
     assertToolApprovalRequirement(resolved, { allowFunction: false });
 
-    if (resolved === false) return { approved: true };
+    if (resolved === false) return;
 
     const reason = resolved === true ? undefined : resolved.reason;
-    return this.requestApproval(context, reason === undefined ? {} : { reason }, observation);
+    await this.requestApproval(context, reason === undefined ? {} : { reason }, observation);
   }
 
   private async requestApproval(
     context: ToolApprovalContext,
     options: ToolApprovalRequestOptions,
     observation: ToolExecutionObservation | undefined,
-  ): Promise<{ approved: true } | { approved: false; result: string }> {
+  ): Promise<never> {
     const request: ToolApprovalRequest = {
       ...context,
       id: globalThis.crypto.randomUUID(),
@@ -1043,44 +781,7 @@ export class ToolCallExecutor {
       name: "tool.approval_requested",
       attributes: approvalEventAttributes(request, observation.turn),
     });
-    let decision: ToolApprovalDecision;
-    try {
-      decision = await this.approvalHandler(request);
-    } catch (error) {
-      if (error instanceof AgentInteractionSignal) {
-        throw error;
-      }
-
-      await observation?.runObservers.event({
-        name: "tool.approval_failed",
-        level: "ERROR",
-        attributes: {
-          ...approvalEventAttributes(request, observation.turn),
-          errorName: error instanceof Error ? error.name : typeof error,
-        },
-      });
-      throw error;
-    }
-    const attributes: JsonObject = {
-      ...approvalEventAttributes(request, observation?.turn ?? 0),
-      approved: decision.approved,
-    };
-
-    if (decision.reason !== undefined) attributes.decisionReason = decision.reason;
-
-    await observation?.runObservers.event({
-      name: "tool.approval_resolved",
-      attributes,
-    });
-
-    if (decision.approved) {
-      return { approved: true };
-    }
-
-    return {
-      approved: false,
-      result: decision.reason ?? request.rejectMessage ?? "Tool approval was rejected.",
-    };
+    throw new AgentInteractionSignal(approvalInteraction(request), request.rejectMessage);
   }
 }
 
@@ -1117,199 +818,4 @@ function createApprovalContext(
   }
 
   return context;
-}
-
-function approvalEventAttributes(request: ToolApprovalRequest, turn: number): JsonObject {
-  const attributes: JsonObject = {
-    turn,
-    approvalId: request.id,
-    toolName: request.toolName,
-    internalCallId: request.internalCallId,
-  };
-
-  if (request.toolCallId !== undefined) attributes.toolCallId = request.toolCallId;
-
-  if (request.reason !== undefined) attributes.reason = request.reason;
-
-  return attributes;
-}
-
-function normalizeToolOutputMiddlewareResult(result: ToolOutputMiddlewareResult): {
-  result?: string | undefined;
-  structuredResult?: readonly ToolResultContentPart[] | undefined;
-} {
-  if (typeof result === "string") {
-    return { result };
-  }
-
-  if (typeof result !== "object" || result === null) {
-    throw new TypeError("Tool output middleware must return text or structured content.");
-  }
-
-  const prototype = Object.getPrototypeOf(result);
-
-  if (prototype !== Object.prototype && prototype !== null) {
-    throw new TypeError("Tool output middleware must return text or structured content.");
-  }
-
-  const keys = Reflect.ownKeys(result);
-  const hasResult = keys.includes("result");
-  const hasStructuredResult = keys.includes("structuredResult");
-
-  if (
-    hasResult === hasStructuredResult ||
-    keys.some((key) => key !== "result" && key !== "structuredResult")
-  ) {
-    throw new TypeError(
-      "Tool output middleware must return exactly one of result or structuredResult.",
-    );
-  }
-
-  if (hasResult) {
-    const descriptor = Object.getOwnPropertyDescriptor(result, "result");
-
-    if (
-      descriptor === undefined ||
-      !("value" in descriptor) ||
-      typeof descriptor.value !== "string"
-    ) {
-      throw new TypeError("Tool output middleware result must be a string.");
-    }
-
-    return { result: descriptor.value };
-  }
-
-  const descriptor = Object.getOwnPropertyDescriptor(result, "structuredResult");
-
-  if (descriptor === undefined || !("value" in descriptor)) {
-    throw new TypeError("Tool output middleware structuredResult must be valid tool content.");
-  }
-
-  const normalized = normalizeToolResultOutput(ToolOutput.content(descriptor.value as never));
-
-  if (normalized.type !== "content") {
-    throw new TypeError("Tool output middleware structuredResult must be valid tool content.");
-  }
-
-  return { structuredResult: normalized.value };
-}
-
-function toolTraceMetadata(tool: AnyTool | undefined): JsonObject | undefined {
-  if (tool === undefined) {
-    return undefined;
-  }
-
-  const result: JsonObject = {
-    approvalRequired: toolMayRequireApproval(tool.requiresApproval),
-  };
-
-  if (isMcpTool(tool)) {
-    result.mcpServerName = tool.mcp.serverName;
-    result.mcpRemoteName = tool.mcp.remoteName;
-  }
-
-  return result;
-}
-
-function toolErrorArgs(
-  turn: number,
-  toolCall: ToolCallPart,
-  internalCallId: string,
-  args: string,
-  error: unknown,
-): AgentToolErrorArgs {
-  let observerArgs: AgentToolErrorArgs = {
-    turn,
-    toolCall,
-    toolName: toolCall.toolName,
-    internalCallId,
-    args,
-    error,
-  };
-
-  if (toolCall.callId !== undefined) {
-    observerArgs = { ...observerArgs, toolCallId: toolCall.callId };
-  }
-
-  return observerArgs;
-}
-
-class ToolObserverScope {
-  private terminal = false;
-
-  constructor(private readonly observers: ActiveToolObservers | undefined) {}
-
-  streamEvent(args: AgentToolStreamEventArgs): Promise<void> | undefined {
-    return this.observers?.streamEvent(args);
-  }
-
-  async end(args: AgentToolEndArgs): Promise<void> {
-    if (this.terminal) return;
-
-    this.terminal = true;
-    await this.observers?.end(args);
-  }
-
-  async suspend(args: AgentToolSuspendedArgs): Promise<void> {
-    if (this.terminal) return;
-
-    this.terminal = true;
-    await this.observers?.suspend(args);
-  }
-
-  async error(args: AgentToolErrorArgs): Promise<void> {
-    if (this.terminal) return;
-
-    this.terminal = true;
-    await this.observers?.error(args);
-  }
-}
-
-function toolOutputToText(output: NormalizedToolOutput): string {
-  switch (output.type) {
-    case "text":
-    case "error-text":
-      return output.value;
-    case "json":
-    case "error-json":
-      return JSON.stringify(output.value);
-    case "content":
-      return toolResultContentToText(output.value);
-    case "execution-denied":
-      return output.reason ?? "Tool execution was denied.";
-  }
-}
-
-function toolOutputToStructuredResult(
-  output: NormalizedToolOutput,
-): readonly ToolResultContentPart[] | undefined {
-  return output.type === "content" ? output.value : undefined;
-}
-
-function agentToolEventPayload(
-  toolCall: ToolCallPart,
-  internalCallId: string,
-  event: ToolCallStreamEvent,
-): AgentToolEventPayload | undefined {
-  if (typeof event.agentId !== "string" || event.agentId.length === 0) {
-    return undefined;
-  }
-
-  const payload: AgentToolEventPayload = {
-    type: "agent_tool_event" as const,
-    toolName: toolCall.toolName,
-    internalCallId,
-    agentId: event.agentId,
-    event: event.event as AgentChildStreamEvent<unknown, unknown>,
-  };
-
-  if (toolCall.callId !== undefined) {
-    payload.toolCallId = toolCall.callId;
-  }
-
-  if (event.agentName !== undefined) {
-    payload.agentName = event.agentName;
-  }
-
-  return payload;
 }

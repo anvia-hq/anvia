@@ -1,5 +1,11 @@
 # @anvia/neo4j
 
+## 1.1.9
+
+### Patch Changes
+
+- 59b308b: Update runtime dependencies to their latest compatible minor and patch releases.
+
 ## 1.1.8
 
 ### Patch Changes

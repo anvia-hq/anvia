@@ -1,5 +1,14 @@
 # @anvia/azure
 
+## 0.1.11
+
+### Patch Changes
+
+- 59b308b: Update runtime dependencies to their latest compatible minor and patch releases.
+- Updated dependencies [4ca1e68]
+- Updated dependencies [59b308b]
+  - @anvia/openai@1.4.0
+
 ## 0.1.10
 
 ### Patch Changes

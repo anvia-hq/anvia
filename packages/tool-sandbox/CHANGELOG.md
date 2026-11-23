@@ -1,5 +1,11 @@
 # @anvia/sandbox
 
+## 1.3.5
+
+### Patch Changes
+
+- 59b308b: Update runtime dependencies to their latest compatible minor and patch releases.
+
 ## 1.3.4
 
 ### Patch Changes

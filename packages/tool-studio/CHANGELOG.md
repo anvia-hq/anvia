@@ -1,5 +1,13 @@
 # @anvia/studio
 
+## 1.5.1
+
+### Patch Changes
+
+- 59b308b: Update runtime dependencies to their latest compatible minor and patch releases.
+- Updated dependencies [59b308b]
+  - @anvia/react-ui@1.3.3
+
 ## 1.5.0
 
 ### Minor Changes

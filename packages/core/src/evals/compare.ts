@@ -1,3 +1,4 @@
+import { scopeEvalTargetCache, unwrapCachedEvalTarget } from "./cache";
 import type { EvalOutputWriters } from "./cli";
 import { type EvalRedactor, serializeEvalResultJson } from "./redact";
 import { projectEvalOutcome } from "./reporting";
@@ -9,6 +10,7 @@ import type {
   EvalScoreDirection,
   EvalSuiteResult,
   EvalTarget,
+  EvalTargetCache,
   RunEvalSuiteOptions,
 } from "./types";
 
@@ -283,6 +285,7 @@ export function printEvalComparison(
 }
 
 export type SaveEvalResultOptions = {
+  /** Optional redactor applied before writing the snapshot. Avoid masking `kind: "score"` if the snapshot will be used as a baseline for `compareEvalResults`. */
   redact?: EvalRedactor | undefined;
   maxValueLength?: number | undefined;
 };
@@ -404,11 +407,27 @@ export async function compareEvalTargets<
   const results: Record<string, EvalSuiteResult<Input, Output, Expected, Metrics>> = {};
 
   for (const [targetName, target] of Object.entries(targets)) {
-    results[targetName] = await runEvalSuite({
+    const targetSuiteOptions: RunEvalSuiteOptions<Input, Output, Expected, Metrics> = {
       ...(suiteOptions as Omit<RunEvalSuiteOptions<Input, Output, Expected, Metrics>, "target">),
       name: `${options.name}:${targetName}`,
       target,
-    });
+    };
+
+    if (targetSuiteOptions.targetCache !== undefined) {
+      targetSuiteOptions.targetCache = scopeEvalTargetCache(
+        targetSuiteOptions.targetCache as EvalTargetCache<Input, Output, Expected>,
+        targetName,
+      );
+    } else {
+      const unwrapped = unwrapCachedEvalTarget(target);
+
+      if (unwrapped !== undefined) {
+        targetSuiteOptions.target = unwrapped.target;
+        targetSuiteOptions.targetCache = scopeEvalTargetCache(unwrapped.cache, targetName);
+      }
+    }
+
+    results[targetName] = await runEvalSuite(targetSuiteOptions);
   }
 
   const baselineResult = results[baselineTarget] as EvalSuiteResult<

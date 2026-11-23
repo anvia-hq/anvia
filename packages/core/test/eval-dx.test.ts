@@ -327,6 +327,32 @@ describe("evals DX improvements", () => {
       expect(await wrapped("hello", { id: "a", input: "hello" })).toBe("HELLO");
       expect(calls).toBe(1);
 
+      const trialCache = createMemoryEvalCache<string, string>();
+      let trialTargetCalls = 0;
+      const wrappedMultiTrial = cachedEvalTarget((_input: string, _testCase, context) => {
+        trialTargetCalls += 1;
+        return `trial-${context?.trial ?? 0}`;
+      }, trialCache);
+      await trialCache.set(
+        't1::trial=1::"q"',
+        { output: "trial-1", targetDurationMs: 250, cachedAt: new Date().toISOString() },
+        { id: "t1", input: "q" },
+      );
+      const wrappedSuite = await runEvalSuite({
+        name: "wrapped-multi-trial",
+        cases: [{ id: "t1", input: "q" }],
+        target: wrappedMultiTrial,
+        metrics: [maxDurationMs(100)],
+        trials: { count: 2, minPassRate: 0.5 },
+      });
+      expect(trialTargetCalls).toBe(1);
+      expect(wrappedSuite.results[0]?.trials?.runs[0]?.cached).toBe(true);
+      expect(wrappedSuite.results[0]?.trials?.runs[0]?.output).toBe("trial-1");
+      expect(wrappedSuite.results[0]?.trials?.runs[0]?.outcome).toBe("fail");
+      expect(wrappedSuite.results[0]?.trials?.runs[1]?.cached).toBeUndefined();
+      expect(wrappedSuite.results[0]?.trials?.runs[1]?.output).toBe("trial-2");
+      expect(wrappedSuite.results[0]?.trials?.runs[1]?.outcome).toBe("pass");
+
       const failingCache = {
         get: async () => {
           throw new Error("cache read unavailable");
@@ -802,20 +828,55 @@ describe("evals DX improvements", () => {
         const savedAfterInvalid = await loadEvalResult(savedAfterInvalidPath);
         expect(savedAfterInvalid.results[0]?.output).toBe("ok");
 
+        const sharedTargetCache = createMemoryEvalCache<string, string>();
+        let v1Calls = 0;
+        let v2Calls = 0;
         const matrix = await compareEvalTargets({
           name: "prompt-ab",
           cases: [{ id: "c1", input: "hello", expected: "HELLO" }],
           targets: {
-            v1: (input) => input,
-            v2: (input) => input.toUpperCase(),
+            v1: (input) => {
+              v1Calls += 1;
+              return input;
+            },
+            v2: (input) => {
+              v2Calls += 1;
+              return input.toUpperCase();
+            },
           },
           metrics: [exactMatch()],
+          targetCache: sharedTargetCache,
         });
+        expect(v1Calls).toBe(1);
+        expect(v2Calls).toBe(1);
         expect(matrix.baselineTarget).toBe("v1");
         expect(matrix.results.v1?.passed).toBe(false);
         expect(matrix.results.v2?.passed).toBe(true);
         expect(matrix.comparisons.v2?.improvements).toHaveLength(1);
         expect(matrix.comparisons.v2?.hasRegressions).toBe(false);
+
+        const cachedMatrix = await compareEvalTargets({
+          name: "prompt-ab",
+          cases: [{ id: "c1", input: "hello", expected: "HELLO" }],
+          targets: {
+            v1: (input) => {
+              v1Calls += 1;
+              return input;
+            },
+            v2: (input) => {
+              v2Calls += 1;
+              return input.toUpperCase();
+            },
+          },
+          metrics: [exactMatch()],
+          targetCache: sharedTargetCache,
+        });
+        expect(v1Calls).toBe(1);
+        expect(v2Calls).toBe(1);
+        expect(cachedMatrix.results.v1?.results[0]?.cached).toBe(true);
+        expect(cachedMatrix.results.v2?.results[0]?.cached).toBe(true);
+        expect(cachedMatrix.results.v1?.results[0]?.output).toBe("hello");
+        expect(cachedMatrix.results.v2?.results[0]?.output).toBe("HELLO");
       } finally {
         await rm(dir, { recursive: true, force: true });
       }

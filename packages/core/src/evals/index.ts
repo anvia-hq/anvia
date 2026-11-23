@@ -1,7 +1,12 @@
 export * from "./advanced-metrics";
 export * from "./agent-metrics";
 export * from "./agent-target";
-export * from "./cache";
+export {
+  cachedEvalTarget,
+  createFileEvalCache,
+  createMemoryEvalCache,
+  defaultEvalCacheKey,
+} from "./cache";
 export * from "./cli";
 export * from "./cli-args";
 export * from "./compare";

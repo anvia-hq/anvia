@@ -1,5 +1,12 @@
 import type { EvalCase, EvalTarget, EvalTargetCache, EvalTargetCacheEntry } from "./types";
 
+const CACHED_EVAL_TARGET_META = Symbol("anvia.eval.cachedTarget");
+
+type CachedEvalTargetMeta<Input, Output, Expected> = {
+  target: EvalTarget<Input, Output, Expected>;
+  cache: EvalTargetCache<Input, Output, Expected>;
+};
+
 /** Builds a deterministic cache key from a case id, serialized input, and trial index. */
 export function defaultEvalCacheKey<Input, Expected>(
   testCase: EvalCase<Input, Expected>,
@@ -130,8 +137,9 @@ export function cachedEvalTarget<Input, Output, Expected = unknown>(
   target: EvalTarget<Input, Output, Expected>,
   cache: EvalTargetCache<Input, Output, Expected>,
 ): EvalTarget<Input, Output, Expected> {
-  return async (input, testCase, context) => {
-    const key = cache.keyFor ? cache.keyFor(testCase, 1) : defaultEvalCacheKey(testCase, 1);
+  const wrapped: EvalTarget<Input, Output, Expected> = async (input, testCase, context) => {
+    const trial = context?.trial ?? 1;
+    const key = cache.keyFor ? cache.keyFor(testCase, trial) : defaultEvalCacheKey(testCase, trial);
     const hit = await cache.get(key, testCase);
 
     if (hit !== undefined) {
@@ -150,5 +158,35 @@ export function cachedEvalTarget<Input, Output, Expected = unknown>(
       testCase,
     );
     return output;
+  };
+
+  Object.defineProperty(wrapped, CACHED_EVAL_TARGET_META, {
+    value: { target, cache } satisfies CachedEvalTargetMeta<Input, Output, Expected>,
+    enumerable: false,
+    configurable: false,
+    writable: false,
+  });
+
+  return wrapped;
+}
+
+export function unwrapCachedEvalTarget<Input, Output, Expected>(
+  target: EvalTarget<Input, Output, Expected>,
+): CachedEvalTargetMeta<Input, Output, Expected> | undefined {
+  const candidate = target as unknown as Record<symbol, unknown>;
+  const meta = candidate[CACHED_EVAL_TARGET_META];
+  return meta as CachedEvalTargetMeta<Input, Output, Expected> | undefined;
+}
+
+export function scopeEvalTargetCache<Input, Output, Expected>(
+  cache: EvalTargetCache<Input, Output, Expected>,
+  namespace: string,
+): EvalTargetCache<Input, Output, Expected> {
+  const baseKeyFor = cache.keyFor;
+  return {
+    get: (key, testCase) => cache.get(key, testCase),
+    set: (key, entry, testCase) => cache.set(key, entry, testCase),
+    keyFor: (testCase, trial) =>
+      `${namespace}::${baseKeyFor ? baseKeyFor(testCase, trial) : defaultEvalCacheKey(testCase, trial)}`,
   };
 }

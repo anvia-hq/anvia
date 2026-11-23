@@ -77,6 +77,7 @@ export async function runEvalCase<
       testCase,
       run,
       trial: 1,
+      trialCount: 1,
       targetLimit,
       metricLimit,
       completedCases,
@@ -112,6 +113,7 @@ export async function runEvalCase<
       testCase,
       run,
       trial: trialIndex,
+      trialCount,
       targetLimit,
       metricLimit,
       completedCases,
@@ -192,13 +194,23 @@ async function executeSingleTrial<
   testCase: EvalCase<Input, Expected>;
   run: EvalRunContext;
   trial: number;
+  trialCount: number;
   targetLimit: ConcurrencyLimiter;
   metricLimit: ConcurrencyLimiter;
   completedCases: () => number;
   progress: (event: EvalProgressEvent<Input, Output, Expected>) => void | Promise<void>;
 }): Promise<SingleTrialExecution<Output>> {
-  const { options, testCase, run, trial, targetLimit, metricLimit, completedCases, progress } =
-    args;
+  const {
+    options,
+    testCase,
+    run,
+    trial,
+    trialCount,
+    targetLimit,
+    metricLimit,
+    completedCases,
+    progress,
+  } = args;
   const trialStartedAt = performance.now();
   const caseSignal = createEvalCaseSignal(options.signal, options.caseTimeoutMs);
   try {
@@ -217,8 +229,8 @@ async function executeSingleTrial<
         : defaultEvalCacheKey(testCase, trial);
     }
 
-    try {
-      if (cache !== undefined && cacheKey !== undefined) {
+    if (cache !== undefined && cacheKey !== undefined) {
+      try {
         const hit = await abortable(
           caseSignal.signal,
           Promise.resolve(cache.get(cacheKey, testCase)),
@@ -229,9 +241,20 @@ async function executeSingleTrial<
           targetDurationMs = hit.targetDurationMs ?? 0;
           cached = true;
         }
-      }
+      } catch (error) {
+        if (options.signal?.aborted === true) {
+          throw suiteAbortReason(options.signal);
+        }
 
-      if (!cached) {
+        if (caseSignal.signal.aborted) {
+          targetStatus = "failed";
+          targetError = error;
+        }
+      }
+    }
+
+    if (!cached && targetStatus === "succeeded") {
+      try {
         output = await targetLimit(async () => {
           const targetStartedAt = performance.now();
           try {
@@ -247,8 +270,17 @@ async function executeSingleTrial<
             targetDurationMs = performance.now() - targetStartedAt;
           }
         });
+      } catch (error) {
+        if (options.signal?.aborted === true) {
+          throw suiteAbortReason(options.signal);
+        }
 
-        if (cache !== undefined && cacheKey !== undefined) {
+        targetStatus = "failed";
+        targetError = error;
+      }
+
+      if (targetStatus === "succeeded" && cache !== undefined && cacheKey !== undefined) {
+        try {
           await abortable(
             caseSignal.signal,
             Promise.resolve(
@@ -263,15 +295,12 @@ async function executeSingleTrial<
               ),
             ),
           );
+        } catch {
+          if (options.signal?.aborted === true) {
+            throw suiteAbortReason(options.signal);
+          }
         }
       }
-    } catch (error) {
-      if (options.signal?.aborted === true) {
-        throw suiteAbortReason(options.signal);
-      }
-
-      targetStatus = "failed";
-      targetError = error;
     }
 
     await progress({
@@ -306,7 +335,7 @@ async function executeSingleTrial<
                   error: targetError,
                 });
           const durationMs = performance.now() - metricStartedAt;
-          const reporterErrors = await reportOutcome({
+          const reportInput: Parameters<typeof reportOutcome<Input, Output, Expected>>[0] = {
             run,
             suiteName: options.name,
             testCase,
@@ -319,7 +348,16 @@ async function executeSingleTrial<
             traceError: traceResult.error,
             reporters: options.reporters ?? [],
             reporterErrorPolicy: options.reporterErrorPolicy ?? "collect",
-          });
+          };
+
+          if (trialCount > 1) {
+            reportInput.trial = trial;
+            reportInput.trialCount = trialCount;
+          }
+
+          if (cached) reportInput.cached = true;
+
+          const reporterErrors = await reportOutcome(reportInput);
           await progress({
             type: "metric-complete",
             suiteName: options.name,

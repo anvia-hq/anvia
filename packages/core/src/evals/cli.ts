@@ -328,10 +328,6 @@ export async function runEvalCli<
 
   const result = await runEvalSuite(suiteOptions);
 
-  if (savePath !== undefined) {
-    await saveEvalResult(savePath, result as EvalSuiteResult<unknown, unknown, unknown>);
-  }
-
   printEvalResult(result as EvalSuiteResult<unknown, unknown, unknown>, {
     format,
     output,
@@ -371,6 +367,10 @@ export async function runEvalCli<
     if (failOnRegression !== false && comparison.hasRegressions && code === 0) {
       code = 1;
     }
+  }
+
+  if (savePath !== undefined) {
+    await saveEvalResult(savePath, result as EvalSuiteResult<unknown, unknown, unknown>);
   }
 
   const currentExitCode =

@@ -292,6 +292,9 @@ export type EvalReportArgs<Input, Output, Score = unknown, Expected = unknown> =
   trace?: EvalTraceRef | undefined;
   metric: EvalMetricDescriptor<Score>;
   outcome: EvalOutcome<Score>;
+  trial?: number | undefined;
+  trialCount?: number | undefined;
+  cached?: boolean | undefined;
 };
 
 export type EvalRunStartArgs = {
@@ -303,9 +306,11 @@ export type EvalRunStartArgs = {
 
 export type EvalRunEndArgs = EvalRunStartArgs & {
   status: "completed" | "failed";
+  passed?: boolean | undefined;
   completedAt: string;
   durationMs: number;
   metrics?: EvalTotals | undefined;
+  metricSummaries?: Record<string, EvalMetricSummary> | undefined;
   cases?: EvalTotals | undefined;
   usage?: EvalUsageSummary | undefined;
   cost?: EvalCostSummary | undefined;

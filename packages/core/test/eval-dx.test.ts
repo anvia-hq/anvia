@@ -296,6 +296,25 @@ describe("evals DX improvements", () => {
       expect(await wrapped("hello", { id: "a", input: "hello" })).toBe("HELLO");
       expect(calls).toBe(1);
 
+      const failingCache = {
+        get: async () => {
+          throw new Error("cache read unavailable");
+        },
+        set: async () => {
+          throw new Error("disk full");
+        },
+      };
+      const resilient = await runEvalSuite({
+        name: "resilient-cache",
+        cases: [{ id: "a", input: "hello", expected: "HELLO" }],
+        target: (input) => input.toUpperCase(),
+        metrics: [exactMatch()],
+        targetCache: failingCache,
+      });
+      expect(resilient.passed).toBe(true);
+      expect(resilient.results[0]?.targetStatus).toBe("succeeded");
+      expect(resilient.results[0]?.output).toBe("HELLO");
+
       const dir = await mkdtemp(join(tmpdir(), "anvia-eval-cache-"));
       try {
         const cachePath = join(dir, "cache.json");
@@ -595,6 +614,47 @@ describe("evals DX improvements", () => {
         expect(diff.improvements.map((item) => item.caseId)).toEqual(["c2"]);
         expect(diff.addedCases).toEqual(["c3"]);
         expect(formatEvalComparison(diff)).toContain("1 regression(s) / 1 improvement(s)");
+
+        const droppedCase = await runEvalSuite({
+          name: "support",
+          cases: [{ id: "c1", input: "good", expected: "good" }],
+          target: (input) => input,
+          metrics: [notBlank()],
+        });
+        const droppedDiff = compareEvalResults(loaded, droppedCase);
+        expect(droppedDiff.hasRegressions).toBe(true);
+        expect(droppedDiff.removedCases).toEqual(["c2"]);
+        expect(droppedDiff.missingMetrics).toEqual([
+          { caseId: "c1", metricName: "exact_match", baselineOutcome: "pass" },
+        ]);
+        expect(
+          compareEvalResults(loaded, droppedCase, {
+            ignoreRemovedCases: true,
+            ignoreMissingMetrics: true,
+          }).hasRegressions,
+        ).toBe(false);
+
+        const samePath = join(dir, "rolling-baseline.json");
+        await saveEvalResult(samePath, loaded);
+        let cliOut = "";
+        await runEvalCli({
+          name: "support",
+          cases: [
+            { id: "c1", input: "regressed", expected: "good" },
+            { id: "c2", input: "good", expected: "good" },
+          ],
+          target: (input) => input,
+          metrics: [exactMatch()],
+          argv: ["--baseline", samePath, "--save", samePath],
+          output: {
+            stdout: (text) => {
+              cliOut += text;
+            },
+          },
+        });
+        expect(cliOut).toContain("1 regression(s) / 1 improvement(s)");
+        const updatedSnapshot = await loadEvalResult(samePath);
+        expect(updatedSnapshot.results[0]?.output).toBe("regressed");
 
         const matrix = await compareEvalTargets({
           name: "prompt-ab",

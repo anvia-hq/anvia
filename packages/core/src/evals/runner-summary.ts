@@ -141,6 +141,9 @@ export async function reportOutcome<Input, Output, Expected>(args: {
   traceError: unknown;
   reporters: readonly EvalReporter<Input, Output, Expected>[];
   reporterErrorPolicy: "collect" | "throw";
+  trial?: number | undefined;
+  trialCount?: number | undefined;
+  cached?: boolean | undefined;
 }): Promise<unknown[]> {
   const errors: unknown[] = [];
 
@@ -150,7 +153,7 @@ export async function reportOutcome<Input, Output, Expected>(args: {
 
   for (const reporter of args.reporters) {
     try {
-      await reporter.report({
+      const reportArgs: Parameters<EvalReporter<Input, Output, Expected>["report"]>[0] = {
         run: args.run,
         suiteName: args.suiteName,
         case: args.testCase,
@@ -160,21 +163,21 @@ export async function reportOutcome<Input, Output, Expected>(args: {
         trace: args.trace,
         metric: args.metric,
         outcome: args.outcome,
-      });
+      };
+
+      if (args.trial !== undefined) reportArgs.trial = args.trial;
+
+      if (args.trialCount !== undefined) reportArgs.trialCount = args.trialCount;
+
+      if (args.cached === true) reportArgs.cached = true;
+
+      await reporter.report(reportArgs);
     } catch (error) {
       errors.push(error);
     }
   }
   throwReporterErrors("report", errors, args.reporterErrorPolicy);
   return errors;
-}
-
-export function emptyUsageSummary() {
-  return {
-    target: UsageValue.empty(),
-    evaluation: UsageValue.empty(),
-    total: UsageValue.empty(),
-  };
 }
 
 export function caseOutcome(

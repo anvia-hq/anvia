@@ -1,5 +1,5 @@
 import type { Agent } from "../../agent/agent";
-import { parseAgentQuestionPrompts } from "../../agent/interactions";
+import { parseAgentQuestionPrompts } from "../../agent/interactions/schemas";
 import { type AgentLifecycle, lifecycleSnapshot } from "../../agent/lifecycle";
 import type {
   JsonObject,

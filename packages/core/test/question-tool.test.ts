@@ -14,7 +14,7 @@ import {
   type JsonObject,
   type QuestionToolInput,
 } from "./helpers/imports";
-import { parseAgentQuestionPrompts } from "../src/agent/interactions";
+import { parseAgentQuestionPrompts } from "../src/agent/interactions/schemas";
 
 const question = (id = "format") => ({ id, text: "Which format should I use?" });
 const choices = (count: number) =>

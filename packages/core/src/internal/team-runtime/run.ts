@@ -672,6 +672,7 @@ export class TeamRun<Output = unknown> {
     status: "waiting" | "awaiting_interaction",
     work: () => Promise<T>,
   ): Promise<T> {
+    throwIfAborted(member.controller.signal);
     member.release?.();
     member.release = undefined;
     member.status = status;

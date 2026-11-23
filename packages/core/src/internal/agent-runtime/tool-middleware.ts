@@ -1,13 +1,13 @@
 import type { ToolResultContentPart } from "../../completion";
 import { isJsonValue } from "../../completion";
-import type { ToolHookArgs } from "../../hooks";
+import type { ToolHookArgs } from "../hooks";
 import type { NormalizedToolOutput } from "../../tool";
 import { normalizeToolResultOutput, ToolOutput, toolResultContentToText } from "../../tool";
 import type {
   AgentMiddleware,
   ToolOutputMiddlewareArgs,
   ToolOutputMiddlewareResult,
-} from "../../tool/middleware";
+} from "../../agent/middleware";
 
 export function sanitizeToolErrorMessage(error: unknown): string {
   if (error instanceof Error) {

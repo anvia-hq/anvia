@@ -1,7 +1,7 @@
 import type { AgentLifecycle } from "../../agent/lifecycle";
 import type { Message } from "../../completion";
 import type { GuardrailPolicy } from "../../guardrails";
-import type { AgentHook } from "../../hooks";
+import type { AgentHook } from "../hooks";
 import type { MemoryCompactionInfo, MemoryScope, MemoryStore } from "../../memory";
 import type { AgentRunExecution } from "./execution";
 

@@ -250,8 +250,8 @@ export type {
   ToolOutputMiddlewareArgs,
   ToolOutputMiddlewareResult,
   ToolResultMiddlewareArgs,
-} from "./tool/middleware";
-export { createMiddleware } from "./tool/middleware";
+} from "./agent/middleware";
+export { createMiddleware } from "./agent/middleware";
 export type {
   TranscribeOptions,
   TranscriptionAudio,

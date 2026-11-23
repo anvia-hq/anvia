@@ -1,6 +1,6 @@
 import type { AgentChildStreamEvent } from "../../agent/run-types";
 import type { JsonObject, ToolCallPart, ToolDefinition } from "../../completion";
-import type { ToolHookArgs } from "../../hooks";
+import type { ToolHookArgs } from "../hooks";
 import { isMcpTool } from "../../mcp";
 import type { ActiveToolObservers } from "../../observability/group";
 import type {
@@ -12,7 +12,7 @@ import type {
 } from "../../observability/types";
 import type { AnyTool, ToolCallStreamEvent } from "../../tool";
 import type { ToolApprovalRequest } from "./approval-request";
-import { toolMayRequireApproval } from "./approval-requirement";
+import { toolMayRequireApproval } from "../../tool/approval-requirement";
 
 export type AgentToolEventPayload = {
   type: "agent_tool_event";

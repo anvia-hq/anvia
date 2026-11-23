@@ -51,7 +51,7 @@ import {
   runInputGuardrails,
   runOutputGuardrails,
 } from "../../guardrails";
-import type { AgentHook } from "../../hooks";
+import type { AgentHook } from "../hooks";
 import { MemoryCompactionError } from "../../memory/errors";
 import type { MemoryCompactionInfo, MemoryScope } from "../../memory/types";
 import {
@@ -69,7 +69,7 @@ import {
   type ResolvedRetryOptions,
   resolveRetryOptions,
 } from "../../retry";
-import type { AgentMiddleware } from "../../tool/middleware";
+import type { AgentMiddleware } from "../../agent/middleware";
 import { isQuestionTool } from "../../tool/question-tool";
 import { abortError, throwIfAborted } from "../abort";
 import { createAsyncQueue } from "../async-queue";

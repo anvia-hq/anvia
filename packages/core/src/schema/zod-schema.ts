@@ -1,5 +1,5 @@
 import { toJSONSchema, type z } from "zod";
-import type { JsonObject } from "../completion/index";
+import type { JsonObject } from "../completion/types";
 
 export type ZodSchema<T = unknown> = z.ZodType<T>;
 

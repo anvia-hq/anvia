@@ -1,11 +1,11 @@
 import type { z } from "zod";
 import type { JsonValue } from "../completion";
-import { assertToolApprovalRequirement } from "../internal/agent-runtime/approval-requirement";
+import { assertToolApprovalRequirement } from "./approval-requirement";
 import {
   attachPreparedToolOwner,
   preparedToolInput,
   withoutPreparedToolInput,
-} from "../internal/agent-runtime/prepared-tool-call";
+} from "./prepared-tool-call";
 import { toProviderJsonSchema, type ZodSchema } from "../schema/zod-schema";
 import type { Tool, ToolCallContext, ToolRequiresApproval } from "./tool";
 

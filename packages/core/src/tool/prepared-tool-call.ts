@@ -1,11 +1,11 @@
-import { ToolCallError, ToolJsonError } from "../../tool/errors";
+import { ToolCallError, ToolJsonError } from "./errors";
 import {
   type AnyTool,
   type NormalizedToolOutput,
   normalizeToolResultOutput,
   parseToolArgs,
   type ToolCallContext,
-} from "../../tool/tool";
+} from "./tool";
 
 const preparedToolInputSymbol = Symbol("preparedToolInput");
 const preparedToolOwnerSymbol = Symbol("preparedToolOwner");

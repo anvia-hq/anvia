@@ -1,6 +1,3 @@
-import { spawn } from "node:child_process";
-import { readFile } from "node:fs/promises";
-import { isAbsolute, relative, resolve } from "node:path";
 import { z } from "zod";
 import { abortError, throwIfAborted } from "../internal/abort";
 import { type AnyTool, createTool } from "../tool";
@@ -11,6 +8,8 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 const MAX_OUTPUT_CHARS = 20_000;
 const TERMINATION_GRACE_MS = 250;
 const TERMINATION_WATCHDOG_MS = 1_250;
+
+type PathModule = typeof import("node:path");
 
 export function createSkillTools(skills: Skill[]): AnyTool[] {
   const registry = new SkillRegistry(skills);
@@ -90,24 +89,26 @@ class SkillRegistry {
 
   async readReference(skillName: string, referencePath: string): Promise<string> {
     const skill = this.get(skillName);
-    const path = this.resolveContainedPath(skill, "references", referencePath);
+    const [fs, pathModule] = await Promise.all([import("node:fs/promises"), import("node:path")]);
+    const path = this.resolveContainedPath(pathModule, skill, "references", referencePath);
 
     if (!skill.references.includes(referencePath)) {
       throw new Error(`Skill reference not found: ${skillName}/${referencePath}`);
     }
 
-    return readFile(path, "utf8");
+    return fs.readFile(path, "utf8");
   }
 
   async readScript(skillName: string, scriptPath: string): Promise<string> {
     const skill = this.get(skillName);
-    const path = this.resolveContainedPath(skill, "scripts", scriptPath);
+    const [fs, pathModule] = await Promise.all([import("node:fs/promises"), import("node:path")]);
+    const path = this.resolveContainedPath(pathModule, skill, "scripts", scriptPath);
 
     if (!skill.scripts.includes(scriptPath)) {
       throw new Error(`Skill script not found: ${skillName}/${scriptPath}`);
     }
 
-    return readFile(path, "utf8");
+    return fs.readFile(path, "utf8");
   }
 
   async runScript(
@@ -118,7 +119,8 @@ class SkillRegistry {
     abortSignal?: AbortSignal,
   ): Promise<string> {
     const skill = this.get(skillName);
-    const script = this.resolveContainedPath(skill, "scripts", scriptPath);
+    const pathModule = await import("node:path");
+    const script = this.resolveContainedPath(pathModule, skill, "scripts", scriptPath);
 
     if (!skill.scripts.includes(scriptPath)) {
       throw new Error(`Skill script not found: ${skillName}/${scriptPath}`);
@@ -128,17 +130,18 @@ class SkillRegistry {
   }
 
   private resolveContainedPath(
+    pathModule: PathModule,
     skill: Skill,
     section: "references" | "scripts",
     requestedPath: string,
   ): string {
-    if (requestedPath.length === 0 || isAbsolute(requestedPath)) {
+    if (requestedPath.length === 0 || pathModule.isAbsolute(requestedPath)) {
       throw new Error(`Invalid skill path: ${requestedPath}`);
     }
 
-    const root = resolve(skill.directory, section);
-    const resolved = resolve(root, requestedPath);
-    const rel = relative(root, resolved);
+    const root = pathModule.resolve(skill.directory, section);
+    const resolved = pathModule.resolve(root, requestedPath);
+    const rel = pathModule.relative(root, resolved);
 
     if (rel === ".." || rel.startsWith(`..${"/"}`) || rel.startsWith(`..${"\\"}`)) {
       throw new Error(`Invalid skill path: ${requestedPath}`);
@@ -148,13 +151,15 @@ class SkillRegistry {
   }
 }
 
-function runExecutable(
+async function runExecutable(
   command: string,
   args: string[],
   cwd: string,
   timeoutMs: number,
   abortSignal?: AbortSignal,
 ): Promise<string> {
+  throwIfAborted(abortSignal);
+  const { spawn } = await import("node:child_process");
   return new Promise((resolvePromise, reject) => {
     throwIfAborted(abortSignal);
     const child = spawn(command, args, {
@@ -193,7 +198,6 @@ function runExecutable(
     }
 
     function finishTermination(): void {
-      // Descendants can hold inherited pipes after the direct child has exited.
       child.stdout.destroy();
       child.stderr.destroy();
       settle(firstCause);

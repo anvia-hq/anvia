@@ -23,6 +23,7 @@ export default defineConfig([
       "src/agent/index.ts",
       "src/agent/interactions/index.ts",
       "src/internal/agent.ts",
+      "src/internal/provider.ts",
       "src/speech-generation/index.ts",
       "src/completion/index.ts",
       "src/embeddings/index.ts",

@@ -36,6 +36,10 @@
       "types": "./dist/internal/agent.d.ts",
       "import": "./dist/internal/agent.js"
     },
+    "./internal/provider": {
+      "types": "./dist/internal/provider.d.ts",
+      "import": "./dist/internal/provider.js"
+    },
     "./speech-generation": {
       "types": "./dist/speech-generation/index.d.ts",
       "import": "./dist/speech-generation/index.js"

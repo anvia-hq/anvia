@@ -112,11 +112,7 @@ import {
   questionResult,
   serializeContinuationState,
 } from "./continuation-state";
-import {
-  AgentInteractionSignal,
-  approvalInteraction,
-  ToolExecutionSuspension,
-} from "./interaction-suspension";
+import { ToolExecutionSuspension } from "./interaction-suspension";
 import type {
   AgentCompletionStream,
   AgentCompletionStreamEvent,
@@ -1875,9 +1871,6 @@ export class AgentRun<Output = string, M extends CompletionModel = CompletionMod
     return new ToolCallExecutor(
       this.agent,
       this.activeHook,
-      async (request) => {
-        throw new AgentInteractionSignal(approvalInteraction(request), request.rejectMessage);
-      },
       this.activeLifecycle,
       {
         runId,

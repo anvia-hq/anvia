@@ -17,6 +17,7 @@ import type {
 export type EvalComparisonItem = {
   caseId: string;
   metricName: string;
+  required: boolean;
   baselineOutcome: EvalOutcomeStatus;
   candidateOutcome: EvalOutcomeStatus;
   baselineScore?: number | undefined;
@@ -40,6 +41,7 @@ export type EvalMetricDelta = {
 export type EvalMissingMetric = {
   caseId: string;
   metricName: string;
+  required: boolean;
   baselineOutcome: EvalOutcomeStatus;
 };
 
@@ -77,6 +79,8 @@ export type CompareEvalResultsOptions = {
   scoreTolerance?: number | undefined;
   ignoreRemovedCases?: boolean | undefined;
   ignoreMissingMetrics?: boolean | undefined;
+  /** When true, regressions or missing entries on optional (`required: false`) metrics also set `hasRegressions` to true. Defaults to false. */
+  includeOptionalMetrics?: boolean | undefined;
 };
 
 /** Compares a candidate eval result against a baseline to surface regressions, improvements, and metric deltas. */
@@ -93,6 +97,7 @@ export function compareEvalResults(
 
   const ignoreRemovedCases = options.ignoreRemovedCases ?? false;
   const ignoreMissingMetrics = options.ignoreMissingMetrics ?? false;
+  const includeOptionalMetrics = options.includeOptionalMetrics ?? false;
   const baselineCases = new Map(baseline.results.map((entry) => [entry.case.id, entry]));
   const candidateCases = new Map(candidate.results.map((entry) => [entry.case.id, entry]));
 
@@ -124,6 +129,7 @@ export function compareEvalResults(
         missingMetrics.push({
           caseId,
           metricName: baseMetric.metricName,
+          required: baseMetric.required ?? true,
           baselineOutcome: baseMetric.outcome.outcome,
         });
         continue;
@@ -145,6 +151,7 @@ export function compareEvalResults(
       const item: EvalComparisonItem = {
         caseId,
         metricName: baseMetric.metricName,
+        required: candMetric.required ?? baseMetric.required ?? true,
         baselineOutcome: baseMetric.outcome.outcome,
         candidateOutcome: candMetric.outcome.outcome,
         kind,
@@ -165,10 +172,16 @@ export function compareEvalResults(
   }
 
   const metricDeltas = computeMetricDeltas(baseline, candidate);
+  const gatingRegressions = includeOptionalMetrics
+    ? regressions
+    : regressions.filter((item) => item.required);
+  const gatingMissingMetrics = includeOptionalMetrics
+    ? missingMetrics
+    : missingMetrics.filter((item) => item.required);
   const hasRegressions =
-    regressions.length > 0 ||
+    gatingRegressions.length > 0 ||
     (!ignoreRemovedCases && removedCases.length > 0) ||
-    (!ignoreMissingMetrics && missingMetrics.length > 0);
+    (!ignoreMissingMetrics && gatingMissingMetrics.length > 0);
   const comparison: EvalComparisonResult = {
     baselineName: baseline.name,
     candidateName: candidate.name,
@@ -240,7 +253,8 @@ export function formatEvalComparison(comparison: EvalComparisonResult): string {
   if (comparison.regressions.length > 0) {
     lines.push("", "Regressions:");
     for (const item of comparison.regressions) {
-      lines.push(`  - ${item.caseId}.${item.metricName}: ${formatItemChange(item)}`);
+      const optionalTag = item.required ? "" : " [optional]";
+      lines.push(`  - ${item.caseId}.${item.metricName}${optionalTag}: ${formatItemChange(item)}`);
     }
   }
 

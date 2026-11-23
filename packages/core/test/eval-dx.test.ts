@@ -706,7 +706,7 @@ describe("evals DX improvements", () => {
         expect(droppedDiff.hasRegressions).toBe(true);
         expect(droppedDiff.removedCases).toEqual(["c2"]);
         expect(droppedDiff.missingMetrics).toEqual([
-          { caseId: "c1", metricName: "exact_match", baselineOutcome: "pass" },
+          { caseId: "c1", metricName: "exact_match", required: true, baselineOutcome: "pass" },
         ]);
         expect(
           compareEvalResults(loaded, droppedCase, {
@@ -832,6 +832,29 @@ describe("evals DX improvements", () => {
             .hasRegressions,
         ).toBe(false);
 
+        const optionalBaseline = await runEvalSuite({
+          name: "optional-gate",
+          cases: [{ id: "c1", input: "ok", expected: "ok" }],
+          target: (input) => input,
+          metrics: [exactMatch(), contains("ok", { name: "opt_check", required: false })],
+        });
+        const optionalCandidate = await runEvalSuite({
+          name: "optional-gate",
+          cases: [{ id: "c1", input: "ok", expected: "ok" }],
+          target: (input) => input,
+          metrics: [exactMatch(), contains("missing", { name: "opt_check", required: false })],
+        });
+        const optionalDiff = compareEvalResults(optionalBaseline, optionalCandidate);
+        expect(optionalDiff.regressions).toHaveLength(1);
+        expect(optionalDiff.regressions[0]?.required).toBe(false);
+        expect(optionalDiff.hasRegressions).toBe(false);
+        expect(
+          compareEvalResults(optionalBaseline, optionalCandidate, { includeOptionalMetrics: true })
+            .hasRegressions,
+        ).toBe(true);
+
+        let subsetSaveErr = "";
+        let jsonOut = "";
         const prevExitCode = process.exitCode;
         process.exitCode = 0;
         try {
@@ -851,10 +874,33 @@ describe("evals DX improvements", () => {
               },
             ],
             exitCode: true,
-            argv: ["--tag", "smoke", "--baseline", fullBaselinePath, "--score-tolerance", "0.05"],
-            output: { stdout: () => {} },
+            argv: [
+              "--format",
+              "json",
+              "--tag",
+              "smoke",
+              "--baseline",
+              fullBaselinePath,
+              "--save",
+              fullBaselinePath,
+              "--score-tolerance",
+              "0.05",
+            ],
+            output: {
+              stdout: (text) => {
+                jsonOut += text;
+              },
+              stderr: (text) => {
+                subsetSaveErr += text;
+              },
+            },
           });
           expect(process.exitCode).toBe(0);
+          expect(() => JSON.parse(jsonOut)).not.toThrow();
+          expect(subsetSaveErr).toContain("Comparison:");
+          expect(subsetSaveErr).toContain("Skipping overwrite of baseline");
+          const intactBaseline = await loadEvalResult(fullBaselinePath);
+          expect(intactBaseline.results.map((entry) => entry.case.id)).toEqual(["c1", "c2"]);
         } finally {
           process.exitCode = prevExitCode;
         }

@@ -392,6 +392,7 @@ async function executeSingleTrial<
       targetStatus,
       metrics,
       signal: options.signal,
+      cached,
     });
 
     const execution: SingleTrialExecution<Output> = {

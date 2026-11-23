@@ -37,8 +37,8 @@ await runEvalCli({
 - `runEvalCli` prints per-metric summaries and per-case details, optionally parses
   CLI flags (`argv: true` supports `--format`, `--case`, `--tag`, `--concurrency`,
   `--timeout`, `--trials`, `--shard`, `--fail-fast`, `--failed-only`, `--color`,
-  `--progress`, `--baseline`, `--save`), asserts `expectations`, and with
-  `exitCode: true` fails CI on regressions. Always set `exitCode: true` in CI.
+  `--progress`, `--baseline`, `--save`, `--score-tolerance`), asserts `expectations`,
+  and with `exitCode: true` fails CI on regressions. Always set `exitCode: true` in CI.
 - `assertEvalPassed(result, expectations?)` throws a detailed `EvalAssertionError`
   for test runners like Vitest.
 - Use `saveEvalResult` / `loadEvalResult` + `compareEvalResults` (or

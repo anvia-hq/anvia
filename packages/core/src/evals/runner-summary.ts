@@ -207,17 +207,18 @@ export async function computeCaseUsageAndCost<
   targetStatus: "succeeded" | "failed";
   metrics: EvalMetricResult[];
   signal: AbortSignal | undefined;
+  cached?: boolean | undefined;
 }): Promise<{
   usage: { target: Usage; evaluation: Usage; total: Usage };
   cost?: EvalCostSummary | undefined;
 }> {
-  const { options, testCase, output, targetStatus, metrics, signal } = args;
+  const { options, testCase, output, targetStatus, metrics, signal, cached } = args;
   let caseTargetUsage = UsageValue.empty();
   let caseEvaluationUsage = UsageValue.empty();
   let caseTargetCost = 0;
   let caseEvaluationCost = 0;
 
-  if (targetStatus === "succeeded") {
+  if (targetStatus === "succeeded" && cached !== true) {
     const usage = await resolveTargetUsage(options, testCase, output as Output, signal);
 
     if (usage !== undefined) {

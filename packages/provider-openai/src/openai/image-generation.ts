@@ -6,14 +6,11 @@ import type {
   ImageGenerationResult,
   ModelCallOptions,
 } from "@anvia/core/image-generation";
+import { isPlainObject } from "@anvia/core/internal/provider";
 import type { OpenAI } from "openai";
-import { isPlainObject } from "../utils";
-import type { OpenAIImageGenerationModelId } from "./models";
+import { DALL_E_2, DALL_E_3, type OpenAIImageGenerationModelId } from "./models";
 
-export const DALL_E_2 = "dall-e-2";
-export const DALL_E_3 = "dall-e-3";
-export const GPT_IMAGE_1 = "gpt-image-1";
-export const GPT_IMAGE_2 = "gpt-image-2";
+export { DALL_E_2, DALL_E_3, GPT_IMAGE_1, GPT_IMAGE_2 } from "./models";
 
 export class OpenAIImageGenerationModel implements ImageGenerationModel<unknown> {
   readonly provider = "openai";
@@ -48,7 +45,7 @@ export class OpenAIImageGenerationModel implements ImageGenerationModel<unknown>
 }
 
 export function imageResponseFromOpenAI(response: unknown): ImageGenerationResult<unknown> {
-  const raw = response as Record<string, unknown>;
+  const raw = isPlainObject(response) ? response : {};
   const mediaType = mediaTypeFromFormat(
     typeof raw.output_format === "string" ? raw.output_format : "png",
   );

@@ -1,3 +1,4 @@
+import { isPlainObject } from "@anvia/core/internal/provider";
 import type {
   ModelCallOptions,
   SpeechGenerationModel,
@@ -5,12 +6,9 @@ import type {
   SpeechGenerationResult,
 } from "@anvia/core/speech-generation";
 import type { OpenAI } from "openai";
-import { isPlainObject } from "../utils";
 import type { OpenAISpeechGenerationModelId } from "./models";
 
-export const TTS_1 = "tts-1";
-export const TTS_1_HD = "tts-1-hd";
-export const GPT_4O_MINI_TTS = "gpt-4o-mini-tts";
+export { GPT_4O_MINI_TTS, TTS_1, TTS_1_HD } from "./models";
 
 export class OpenAISpeechGenerationModel implements SpeechGenerationModel<unknown> {
   readonly provider = "openai";

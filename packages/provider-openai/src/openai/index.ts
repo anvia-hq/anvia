@@ -2,9 +2,10 @@ export {
   OpenAIClient,
   type OpenAIClientOptions,
   type OpenAICompletionModel,
+  type OpenAICompletionModelHandle,
   type OpenAICompletionModelOptions,
-  type OpenAIDecisionModelOptions,
   type OpenAIDecisionModelHandle,
+  type OpenAIDecisionModelOptions,
   type OpenAIEmbeddingModelHandle,
   type OpenAIImageGenerationModelHandle,
   type OpenAIImageGenerationModelOptions,
@@ -13,34 +14,37 @@ export {
   type OpenAITranscriptionModelHandle,
   type OpenAITranscriptionModelOptions,
 } from "./client";
-export type { OpenAIEmbeddingModelOptions } from "./embedding";
 export {
   OPENAI_REASONING_EFFORTS,
   type OpenAIControlsFor,
   type OpenAIReasoningControls,
   type OpenAIReasoningEffort,
 } from "./controls";
-export { DALL_E_2, DALL_E_3, GPT_IMAGE_1, GPT_IMAGE_2 } from "./image-generation";
-export type {
-  KnownOpenAICompletionModelId,
-  KnownOpenAIDecisionModelId,
-  KnownOpenAIEmbeddingModelId,
-  KnownOpenAIImageGenerationModelId,
-  KnownOpenAISpeechGenerationModelId,
-  KnownOpenAITranscriptionModelId,
-  OpenAICompletionModelId,
-  OpenAIDecisionModelId,
-  OpenAIEmbeddingModelId,
-  OpenAIImageGenerationModelId,
-  OpenAISpeechGenerationModelId,
-  OpenAITranscriptionModelId,
-} from "./models";
-export { GPT_6_LUNA } from "./models";
-export { GPT_4O_MINI_TTS, TTS_1, TTS_1_HD } from "./speech-generation";
+export type { OpenAIEmbeddingModelOptions } from "./embedding";
 export {
+  DALL_E_2,
+  DALL_E_3,
   GPT_4O_MINI_TRANSCRIBE,
+  GPT_4O_MINI_TTS,
   GPT_4O_TRANSCRIBE,
   GPT_4O_TRANSCRIBE_DIARIZE,
+  GPT_6_LUNA,
+  GPT_IMAGE_1,
+  GPT_IMAGE_2,
   GPT_TRANSCRIBE,
+  type KnownOpenAICompletionModelId,
+  type KnownOpenAIDecisionModelId,
+  type KnownOpenAIEmbeddingModelId,
+  type KnownOpenAIImageGenerationModelId,
+  type KnownOpenAISpeechGenerationModelId,
+  type KnownOpenAITranscriptionModelId,
+  type OpenAICompletionModelId,
+  type OpenAIDecisionModelId,
+  type OpenAIEmbeddingModelId,
+  type OpenAIImageGenerationModelId,
+  type OpenAISpeechGenerationModelId,
+  type OpenAITranscriptionModelId,
+  TTS_1,
+  TTS_1_HD,
   WHISPER_1,
-} from "./transcription";
+} from "./models";

@@ -5,22 +5,25 @@ import {
   resolveModelContextLimits,
   type StreamingCompletionModel,
 } from "@anvia/core/completion";
-import type { EmbeddingModel } from "@anvia/core/embeddings";
 import type { DecisionModel } from "@anvia/core/decision";
+import type { EmbeddingModel } from "@anvia/core/embeddings";
 import type { ImageGenerationModel } from "@anvia/core/image-generation";
 import {
-  type ModelList,
-  type ModelListingClient,
-  ModelListingError,
-} from "@anvia/core/model-listing";
+  rejectManagedOptionsWithInjectedClient,
+  requireApiKey,
+  requireModelId,
+  validateOptionalPositiveSafeInteger,
+} from "@anvia/core/internal/provider";
+import type { ModelList, ModelListingClient } from "@anvia/core/model-listing";
 import type { SpeechGenerationModel } from "@anvia/core/speech-generation";
 import type { TranscriptionModel } from "@anvia/core/transcription";
 import OpenAI from "openai";
 import { OpenAIChatCompletionModel } from "./chat-completion";
-import { OpenAIDecisionModel } from "./decision";
 import { type OpenAIControlsFor, openAIControlsForModel } from "./controls";
+import { OpenAIDecisionModel } from "./decision";
 import { OpenAIEmbeddingModel, type OpenAIEmbeddingModelOptions } from "./embedding";
 import { OpenAIImageGenerationModel } from "./image-generation";
+import { listOpenAIModels } from "./model-listing";
 import type {
   OpenAICompletionModelId,
   OpenAIDecisionModelId,
@@ -68,6 +71,9 @@ export type OpenAITranscriptionModelOptions = { modelId: OpenAITranscriptionMode
 export type OpenAICompletionModel<
   Controls extends CompletionModelControls = CompletionModelControls,
 > = StreamingCompletionModel<unknown, Controls>;
+export type OpenAICompletionModelHandle<
+  Controls extends CompletionModelControls = CompletionModelControls,
+> = OpenAICompletionModel<Controls>;
 export type OpenAIEmbeddingModelHandle = EmbeddingModel;
 export type OpenAIImageGenerationModelHandle = ImageGenerationModel<unknown>;
 export type OpenAISpeechGenerationModelHandle = SpeechGenerationModel<unknown>;
@@ -78,13 +84,17 @@ export class OpenAIClient implements ModelListingClient {
 
   constructor(options: OpenAIClientOptions) {
     if (options.client !== undefined) {
-      rejectManagedOptionsWithInjectedClient(options, ["apiKey", "baseUrl", "headers"]);
+      rejectManagedOptionsWithInjectedClient("OpenAIClient", options, [
+        "apiKey",
+        "baseUrl",
+        "headers",
+      ]);
       this.sdk = options.client;
       return;
     }
 
     this.sdk = new OpenAI({
-      apiKey: requireApiKey(options.apiKey),
+      apiKey: requireApiKey("OpenAI", "OpenAIClient", options.apiKey),
       baseURL: options.baseUrl,
       defaultHeaders: options.headers,
       maxRetries: 0,
@@ -139,175 +149,6 @@ export class OpenAIClient implements ModelListingClient {
   }
 
   async listModels(options: { abortSignal?: AbortSignal | undefined } = {}): Promise<ModelList> {
-    try {
-      const response = await this.sdk.models.list({
-        signal: options.abortSignal,
-        maxRetries: 0,
-      });
-      const data = (await collectModelsFromResponse(response))
-        .map(toListedModel)
-        .filter(isListedModel);
-      return { data };
-    } catch (error) {
-      throw toModelListingError("OpenAI", error);
-    }
+    return listOpenAIModels(this.sdk, options);
   }
-}
-
-function rejectManagedOptionsWithInjectedClient(options: object, keys: readonly string[]): void {
-  const conflict = keys.find((key) => key in options);
-
-  if (conflict !== undefined) {
-    throw new TypeError(`OpenAIClient cannot combine client with ${conflict}.`);
-  }
-}
-
-function requireApiKey(apiKey: string | undefined): string {
-  if (apiKey === undefined || apiKey.trim().length === 0) {
-    throw new Error("Missing OpenAI credentials. Pass apiKey when constructing OpenAIClient.");
-  }
-
-  return apiKey;
-}
-
-function requireModelId<ModelId extends string>(modelId: ModelId): ModelId {
-  if (modelId.trim().length === 0) {
-    throw new TypeError("modelId must be a non-empty string");
-  }
-
-  return modelId;
-}
-
-function validateOptionalPositiveSafeInteger(value: number | undefined, name: string): void {
-  if (value !== undefined && (!Number.isSafeInteger(value) || value <= 0)) {
-    throw new TypeError(`${name} must be a positive safe integer`);
-  }
-}
-
-async function collectModelsFromResponse(response: unknown): Promise<unknown[]> {
-  if (isAsyncIterable(response)) {
-    const models: unknown[] = [];
-    for await (const model of response) {
-      models.push(model);
-    }
-    return models;
-  }
-
-  if (Array.isArray(response)) {
-    return response;
-  }
-
-  if (isObject(response) && Array.isArray(response.data)) {
-    return response.data;
-  }
-
-  return [];
-}
-
-function toListedModel(model: unknown): ModelList["data"][number] | undefined {
-  if (!isObject(model) || typeof model.id !== "string") {
-    return undefined;
-  }
-
-  const listedModel: ModelList["data"][number] = {
-    id: model.id,
-  };
-
-  if (typeof model.name === "string") {
-    listedModel.name = model.name;
-  }
-
-  if (typeof model.description === "string") {
-    listedModel.description = model.description;
-  }
-
-  if (typeof model.type === "string") {
-    listedModel.type = model.type;
-  } else if (typeof model.object === "string") {
-    listedModel.type = model.object;
-  }
-
-  if (typeof model.created === "number") {
-    listedModel.createdAt = model.created;
-  }
-
-  if (typeof model.created_at === "number") {
-    listedModel.createdAt = model.created_at;
-  }
-
-  if (typeof model.owned_by === "string") {
-    listedModel.ownedBy = model.owned_by;
-  }
-
-  if (typeof model.context_length === "number") {
-    listedModel.contextLength = model.context_length;
-  }
-
-  if (typeof model.contextLength === "number") {
-    listedModel.contextLength = model.contextLength;
-  }
-
-  if (
-    Array.isArray(model.supported_parameters) &&
-    model.supported_parameters.every((parameter) => typeof parameter === "string")
-  ) {
-    listedModel.supportedParameters = model.supported_parameters;
-  }
-
-  if (isObject(model.reasoning) && !Array.isArray(model.reasoning)) {
-    listedModel.reasoning = model.reasoning;
-  }
-
-  if (isObject(model.pricing) && !Array.isArray(model.pricing)) {
-    listedModel.pricing = model.pricing;
-  }
-
-  return listedModel;
-}
-
-function isListedModel(
-  model: ModelList["data"][number] | undefined,
-): model is ModelList["data"][number] {
-  return model !== undefined;
-}
-
-function toModelListingError(provider: string, error: unknown): ModelListingError {
-  if (error instanceof ModelListingError) {
-    return error;
-  }
-
-  const statusCode = getStatusCode(error);
-  return new ModelListingError(`${provider} model listing failed: ${getErrorMessage(error)}`, {
-    provider,
-    statusCode,
-    cause: error,
-  });
-}
-
-function getStatusCode(error: unknown): number | undefined {
-  if (!isObject(error)) {
-    return undefined;
-  }
-
-  if (typeof error.status === "number") {
-    return error.status;
-  }
-
-  if (typeof error.statusCode === "number") {
-    return error.statusCode;
-  }
-
-  return undefined;
-}
-
-function getErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function isAsyncIterable(value: unknown): value is AsyncIterable<unknown> {
-  return isObject(value) && Symbol.asyncIterator in value;
 }

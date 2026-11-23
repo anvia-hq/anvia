@@ -1,4 +1,5 @@
 import type { Embedding, EmbeddingModel, ModelCallOptions } from "@anvia/core/embeddings";
+import { embedTextBatches, indexedEmbeddingDataFromResponse } from "@anvia/core/internal/provider";
 import type OpenAI from "openai";
 import type { OpenAIEmbeddingModelId } from "./models";
 
@@ -27,12 +28,7 @@ export class OpenAIEmbeddingModel implements EmbeddingModel {
   }
 
   async embedTexts(texts: string[], options?: ModelCallOptions): Promise<Embedding[]> {
-    const embeddings: Embedding[] = [];
-    for (let index = 0; index < texts.length; index += this.maxBatchSize) {
-      const batch = texts.slice(index, index + this.maxBatchSize);
-      embeddings.push(...(await this.embedBatch(batch, options)));
-    }
-    return embeddings;
+    return embedTextBatches(texts, this.maxBatchSize, (batch) => this.embedBatch(batch, options));
   }
 
   private async embedBatch(texts: string[], options?: ModelCallOptions): Promise<Embedding[]> {
@@ -57,7 +53,7 @@ export class OpenAIEmbeddingModel implements EmbeddingModel {
       signal: options?.abortSignal,
       maxRetries: 0,
     });
-    const data = embeddingDataFromResponse(response, texts.length);
+    const data = indexedEmbeddingDataFromResponse(response, texts.length);
 
     if (data.length !== texts.length) {
       throw new Error(
@@ -78,51 +74,4 @@ export class OpenAIEmbeddingModel implements EmbeddingModel {
       };
     });
   }
-}
-
-type EmbeddingData = {
-  index: number;
-  embedding: number[];
-};
-
-function embeddingDataFromResponse(response: unknown, inputLength: number): EmbeddingData[] {
-  const raw = response as Record<string, unknown>;
-  const data = Array.isArray(raw.data) ? raw.data : [];
-  const byIndex = new Map<number, EmbeddingData>();
-
-  for (const [position, item] of data.entries()) {
-    if (!isObject(item) || typeof item.index !== "number" || !Number.isInteger(item.index)) {
-      throw new Error(`Embedding response item ${position} contained an invalid index`);
-    }
-
-    const index = item.index;
-
-    if (index < 0 || index >= inputLength) {
-      throw new Error(
-        `Embedding response index ${index} was outside input range 0..${inputLength - 1}`,
-      );
-    }
-
-    if (byIndex.has(index)) {
-      throw new Error(`Embedding response contained duplicate index ${index}`);
-    }
-
-    if (!isNumberArray(item.embedding)) {
-      throw new Error(`Embedding response item ${position} contained an invalid embedding`);
-    }
-
-    byIndex.set(index, { index, embedding: item.embedding });
-  }
-
-  return Array.from({ length: inputLength }, (_, index) => byIndex.get(index)).filter(
-    (item): item is EmbeddingData => item !== undefined,
-  );
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isNumberArray(value: unknown): value is number[] {
-  return Array.isArray(value) && value.every((item) => typeof item === "number");
 }

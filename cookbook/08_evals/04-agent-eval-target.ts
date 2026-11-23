@@ -1,6 +1,12 @@
-import type { AgentResponse } from "@anvia/core/agent";
 import { Agent } from "@anvia/core/agent";
-import { agentEvalTarget, contains, exactMatch, runEvalSuite } from "@anvia/core/evals";
+import {
+  agentEvalTarget,
+  contains,
+  maxTurns,
+  notBlank,
+  printEvalResult,
+  runEvalSuite,
+} from "@anvia/core/evals";
 import { OpenAIClient } from "@anvia/openai";
 
 const openAIClient = new OpenAIClient({
@@ -36,37 +42,8 @@ const cases = [
 const result = await runEvalSuite({
   name: "support-agent-target",
   cases,
-  target: agentEvalTarget<string>({
-    agent,
-    request: ({ input }) => ({ prompt: input }),
-  }),
-  metrics: [
-    contains<string, AgentResponse, string>({
-      actual: ({ output }) => output.output,
-    }),
-    exactMatch<string, AgentResponse, string>({
-      name: "not_blank",
-      actual: ({ output }) => output.output.trim().length > 0,
-      expected: true,
-    }),
-  ],
+  target: agentEvalTarget(agent),
+  metrics: [contains(), notBlank(), maxTurns(2)],
 });
 
-console.table(
-  result.results.flatMap((caseResult) =>
-    caseResult.metrics.map((metric) => ({
-      case: caseResult.case.id,
-      metric: metric.metricName,
-      outcome: metric.outcome.outcome,
-      score: metric.outcome.score ?? "",
-      output: caseResult.output?.output ?? "",
-      comment: metric.outcome.comment ?? "",
-    })),
-  ),
-);
-
-console.log({
-  passed: result.metrics.passed,
-  failed: result.metrics.failed,
-  invalid: result.metrics.invalid,
-});
+printEvalResult(result);

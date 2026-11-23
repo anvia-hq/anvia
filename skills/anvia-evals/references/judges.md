@@ -4,7 +4,7 @@ Use judges when wording varies but meaning is checkable — policy compliance,
 tone, grading scales. Judges need a model and explicit pass criteria.
 
 ```ts
-import { llmJudge, llmScore } from "@anvia/core/evals";
+import { createJudgeMetrics, llmJudge, llmScore } from "@anvia/core/evals";
 
 llmJudge({
   model,
@@ -24,26 +24,36 @@ llmScore({
 });
 ```
 
-## RAG quality metrics
+`llmJudge` automatically extracts `reason` / `feedback` / `explanation` into the
+outcome `comment` (or pass a custom `comment` selector).
 
-Cases carry `context` and `retrievalContext`; the metrics check grounding:
+## Shared judge config & RAG quality metrics
+
+Use `createJudgeMetrics` to bind a shared `model`, `retries`, and
+`includeReason: "on-fail"` (skips the extra explanation LLM call on passing cases):
 
 ```ts
-import { answerRelevancy, faithfulness, hallucination, gEval } from "@anvia/core/evals";
+import { createJudgeMetrics } from "@anvia/core/evals";
 
-answerRelevancy({ model: judgeModel, threshold: 0.8 });
-faithfulness({ model: judgeModel, threshold: 0.8 });
-hallucination({ model: judgeModel, threshold: 0.1 }); // lower is better — note the direction
-gEval({
-  name: "correctness",
+const judge = createJudgeMetrics({
   model: judgeModel,
-  evaluationParams: ["actualOutput", "expectedOutput"],
-  evaluationSteps: [
-    "Check whether the answer preserves the expected refund window.",
-    "Allow different wording when the policy meaning is unchanged.",
-  ],
-  threshold: 0.8,
+  includeReason: "on-fail",
 });
+
+metrics: [
+  judge.answerRelevancy({ threshold: 0.8 }),
+  judge.faithfulness({ threshold: 0.8 }),
+  judge.hallucination({ threshold: 0.1 }), // lower is better — note the direction
+  judge.gEval({
+    name: "correctness",
+    evaluationParams: ["actualOutput", "expectedOutput"],
+    evaluationSteps: [
+      "Check whether the answer preserves the expected refund window.",
+      "Allow different wording when the policy meaning is unchanged.",
+    ],
+    threshold: 0.8,
+  }),
+];
 ```
 
 Related: `promptAlignment`, `jsonCorrectness`, `abstention`, `summarization` for
@@ -57,5 +67,7 @@ specialized outputs; `turnRelevancy` and `knowledgeRetention` for conversations
   self-judging inflates scores.
 - `threshold` direction matters: most metrics pass at/above it, `hallucination`
   passes at/below it.
+- Use `includeReason: "on-fail"` on large suites to avoid paying for explanation
+  calls on passing cases.
 - Keep judge `instructions` / `criteria` / `evaluationSteps` in the eval file
   under version control — they are part of the test, not ambient prompt text.

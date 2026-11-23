@@ -1,4 +1,3 @@
-import { z } from "zod";
 import type { Agent } from "../agent/agent";
 import { AgentRunBlockedError } from "../agent/errors";
 import type { AgentInput, AgentRunOptions, AgentRunSettings } from "../agent/run-types";
@@ -22,7 +21,6 @@ import { assertQuestion } from "../decision/validation";
 import { type ExtractOptions, extract as extractData } from "../extractor";
 import { throwIfAborted } from "../internal/abort";
 import { mapWithConcurrency } from "../internal/concurrency";
-import type { AgentTraceOptions } from "../observability";
 import type { RetrySetting } from "../retry";
 import { PipelineAgentSuspensionError } from "./errors";
 import {
@@ -41,6 +39,14 @@ import {
   runNode,
   stageContext,
 } from "./runtime";
+import {
+  assertRouteBranchesMatchOptions,
+  isZodSchema,
+  normalizeBranches,
+  normalizePipelineId,
+  normalizeRunId,
+  withPipelineParentTrace,
+} from "./stages";
 import type {
   ParallelOutput,
   PipelineBatchItem,
@@ -56,7 +62,6 @@ import type {
   PipelineStageContext,
   PipelineStageMetadata,
   PipelineState,
-  PipelineTraceInfo,
   RouteOutput,
 } from "./types";
 
@@ -539,109 +544,8 @@ function createDerivedPipeline<Input, Output>(
   return new Pipeline<Input, Output>(options as unknown as PipelineOptions<Input, Output>);
 }
 
-function withPipelineParentTrace(
-  trace: AgentTraceOptions | undefined,
-  parent: PipelineTraceInfo | undefined,
-  agentPrimaryTrace: string | undefined,
-): AgentTraceOptions | undefined {
-  if (parent?.traceId === undefined) return trace;
-
-  if (parent.observer !== agentPrimaryTrace) return trace;
-
-  if (trace?.traceId !== undefined && trace.traceId !== parent.traceId) return trace;
-
-  const resolved = { ...trace, traceId: parent.traceId };
-
-  if (trace?.parentObservationId === undefined && parent.observationId !== undefined) {
-    resolved.parentObservationId = parent.observationId;
-  }
-
-  return resolved;
-}
-
 function isInternalPipelineOptions<Input, Output>(
   options: PipelineOptions<Input, Output> | InternalPipelineOptions<Input, Output>,
 ): options is InternalPipelineOptions<Input, Output> {
   return internalPipelineOptions in options;
-}
-
-function isZodSchema(value: unknown): value is z.ZodType {
-  return value instanceof z.ZodType;
-}
-
-function normalizePipelineId(id: string): string {
-  if (typeof id !== "string") {
-    throw new TypeError("Pipeline id must be a string.");
-  }
-
-  const normalized = id.trim();
-
-  if (normalized.length === 0) {
-    throw new TypeError("Pipeline id must be a non-empty string.");
-  }
-
-  return normalized;
-}
-
-function normalizeRunId(runId: string): string {
-  if (typeof runId !== "string") {
-    throw new TypeError("Pipeline runId must be a string.");
-  }
-
-  const normalized = runId.trim();
-
-  if (normalized.length === 0) {
-    throw new TypeError("Pipeline runId must be a non-empty string.");
-  }
-
-  return normalized;
-}
-
-function normalizeBranches<Branch>(
-  branches: Readonly<Record<string, Branch>>,
-  kind: "parallel" | "route",
-): Array<readonly [string, Branch]> {
-  const entries: Array<readonly [string, Branch]> = [];
-  const ids = new Set<string>();
-  for (const key of Object.keys(branches)) {
-    const pipeline = branches[key] as Branch;
-    const id = key.trim();
-
-    if (id.length === 0) {
-      throw new TypeError(`Pipeline ${kind} branch id must be a non-empty string.`);
-    }
-
-    if (ids.has(id)) {
-      throw new TypeError(`Pipeline ${kind} branch id "${id}" is already registered.`);
-    }
-
-    ids.add(id);
-
-    if (id !== key) {
-      throw new TypeError(`Pipeline ${kind} branch ids must not contain surrounding whitespace.`);
-    }
-
-    entries.push([id, pipeline]);
-  }
-  return entries;
-}
-
-function assertRouteBranchesMatchOptions(
-  routeId: string,
-  branchEntries: ReadonlyArray<readonly [string, unknown]>,
-  options: DecisionOptions,
-): void {
-  const branchKeys = new Set(branchEntries.map(([key]) => key));
-  for (const label of Object.keys(options)) {
-    if (!branchKeys.has(label)) {
-      throw new TypeError(`Pipeline route "${routeId}" is missing a branch for option "${label}".`);
-    }
-  }
-  for (const key of branchKeys) {
-    if (!Object.hasOwn(options, key)) {
-      throw new TypeError(
-        `Pipeline route "${routeId}" branch "${key}" is not an option of its question.`,
-      );
-    }
-  }
 }

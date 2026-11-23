@@ -103,6 +103,7 @@ export class HubConnection {
     socket.on("error", () => undefined);
     socket.on("message", (data, isBinary) => {
       this.lastSeen = Date.now();
+
       if (isBinary) this.onBinary(data);
       else this.onMessage(data);
     });
@@ -111,6 +112,7 @@ export class HubConnection {
         socket.terminate();
         return;
       }
+
       // A tick can land after the socket started closing and before "close" clears this timer.
       // `send` throws then, and an exception from a timer ends the process.
       this.trySend({ type: "ping" });
@@ -154,7 +156,9 @@ export class HubConnection {
     options: CallOptions = {},
   ): Promise<MethodResult<M>> {
     options.signal?.throwIfAborted();
+
     if (!this.isOpen) throw new LinkClosedError();
+
     const requestId = randomUUID();
 
     return new Promise<MethodResult<M>>((resolve, reject) => {
@@ -163,6 +167,7 @@ export class HubConnection {
           // Tell the daemon to stop work nobody is waiting for.
           this.trySend({ type: "cancel", requestId });
         }
+
         reject(options.signal?.reason ?? new DOMException("Aborted", "AbortError"));
       };
       const settle =
@@ -181,7 +186,9 @@ export class HubConnection {
       options.signal?.addEventListener("abort", abort, { once: true });
       try {
         const frame: Record<string, unknown> = { type: "request", requestId, method, params };
+
         if (options.operationId !== undefined) frame.operationId = options.operationId;
+
         this.send(frame as HubFrame);
       } catch (error) {
         this.pending.delete(requestId);
@@ -194,10 +201,12 @@ export class HubConnection {
     let frame: DaemonFrame;
     try {
       const parsed = daemonFrameSchema.safeParse(JSON.parse(rawDataToString(data)));
+
       if (!parsed.success) {
         this.socket.close(1002, "invalid frame");
         return;
       }
+
       frame = parsed.data;
     } catch {
       this.socket.close(1002, "malformed frame");
@@ -210,23 +219,30 @@ export class HubConnection {
         return;
       case "stream": {
         const pending = this.pending.get(frame.requestId);
+
         if (pending === undefined) return;
+
         if (frame.seq !== pending.nextSeq) {
           // Frames on one socket are ordered; a gap means the stream cannot be trusted.
           this.fail(frame.requestId, new LinkClosedError("Sandbox stream frames out of order."));
           return;
         }
+
         pending.nextSeq += 1;
         pending.onStream?.(frame.stream, decodeBytes(frame.data));
         return;
       }
       case "response": {
         const pending = this.pending.get(frame.requestId);
+
         if (pending === undefined) return;
+
         this.pending.delete(frame.requestId);
         const parsed = methodResults[pending.method].safeParse(frame.result);
+
         if (parsed.success) pending.resolve(parsed.data);
         else pending.reject(new LinkClosedError("Sandbox returned an invalid result."));
+
         return;
       }
       case "pty.opened":
@@ -234,7 +250,9 @@ export class HubConnection {
         return;
       case "pty.output": {
         const entry = this.ptys.get(frame.ptyId);
+
         if (entry === undefined) return;
+
         if (frame.seq !== entry.nextSeq) {
           // Frames on one socket are ordered; a gap means this terminal cannot be trusted.
           this.ptys.delete(frame.ptyId);
@@ -242,13 +260,16 @@ export class HubConnection {
           entry.endpoint.exit({ reason: "error" });
           return;
         }
+
         entry.nextSeq += 1;
         entry.endpoint.output(decodeBytes(frame.data));
         return;
       }
       case "pty.exit": {
         const entry = this.ptys.get(frame.ptyId);
+
         if (entry === undefined) return;
+
         this.ptys.delete(frame.ptyId);
         entry.endpoint.exit(
           frame.exitCode === undefined
@@ -268,7 +289,9 @@ export class HubConnection {
         return;
       case "tunnel.close": {
         const entry = this.tunnels.get(frame.tunnelId);
+
         if (entry === undefined) return;
+
         this.tunnels.delete(frame.tunnelId);
         entry.endpoint.exit(
           frame.message === undefined
@@ -279,22 +302,29 @@ export class HubConnection {
       }
       case "error": {
         if (frame.requestId === undefined) return;
+
         const tunnel = this.tunnels.get(frame.requestId);
+
         if (tunnel !== undefined) {
           // As for terminals, the only error a tunnel gets is a refusal to open.
           this.tunnels.delete(frame.requestId);
           tunnel.endpoint.failed(decodeError(frame));
           return;
         }
+
         const terminal = this.ptys.get(frame.requestId);
+
         if (terminal !== undefined) {
           // The only error a PTY gets is a refusal to open, which the daemon sends under its id.
           this.ptys.delete(frame.requestId);
           terminal.endpoint.failed(decodeError(frame));
           return;
         }
+
         const pending = this.pending.get(frame.requestId);
+
         if (pending === undefined) return;
+
         this.pending.delete(frame.requestId);
         pending.reject(decodeError(frame));
         return;
@@ -308,6 +338,7 @@ export class HubConnection {
   private onBinary(data: WebSocket.RawData): void {
     try {
       if (!this.binary.accepts) throw new TypeError("Binary frames were not negotiated.");
+
       const frame = decodeTunnelBytes(rawDataToBytes(data), "toHub");
       this.onTunnelBytes(frame.tunnelId, frame.seq, frame.bytes, true);
     } catch {
@@ -317,7 +348,9 @@ export class HubConnection {
 
   private onTunnelBytes(tunnelId: string, seq: number, bytes: Uint8Array, wraps: boolean): void {
     const entry = this.tunnels.get(tunnelId);
+
     if (entry === undefined) return;
+
     // A binary header carries 32 bits of the sequence number, so it is compared as such.
     if (seq !== (wraps ? entry.nextSeq >>> 0 : entry.nextSeq)) {
       this.tunnels.delete(tunnelId);
@@ -325,13 +358,16 @@ export class HubConnection {
       entry.endpoint.exit({ reason: "error", message: "Tunnel frames arrived out of order." });
       return;
     }
+
     entry.nextSeq += 1;
     entry.endpoint.output(bytes);
   }
 
   private fail(requestId: string, error: Error): void {
     const pending = this.pending.get(requestId);
+
     if (pending === undefined) return;
+
     this.pending.delete(requestId);
     this.trySend({ type: "cancel", requestId });
     pending.reject(error);
@@ -339,7 +375,9 @@ export class HubConnection {
 
   private send(frame: HubFrame | TunnelBytesFrame): void {
     if (!this.isOpen) throw new LinkClosedError();
+
     if (frame.type !== "tunnel.bytes") return this.socket.send(JSON.stringify(frame));
+
     if (this.binary.sends) {
       this.socket.send(encodeTunnelBytes(frame, "toDaemon"), { binary: true });
     } else {

@@ -73,11 +73,14 @@ export class DesktopConnection {
           accepted = true;
           options.onChannel(channel, session.ready());
         }
+
         if (typeof event.data !== "string") {
           channel?.receive(event.data as ArrayBuffer);
           return;
         }
+
         const message = parseText(event.data);
+
         if (message?.type === "control") {
           const { type: _type, ...control } = message;
           options.onControl(control);
@@ -91,6 +94,7 @@ export class DesktopConnection {
       close: (event, session) => {
         channel?.closed(event);
         const match = closeReason.exec(event.reason);
+
         if (match !== null && !retryableCodes.has(match[1] ?? "")) {
           session.fatal(match[2] ?? "The desktop could not be opened.");
         } else if (event.code === policyViolation) {
@@ -132,7 +136,9 @@ export class DesktopConnection {
 function parseText(text: string): ControlMessage | ErrorMessage | undefined {
   try {
     const value: unknown = JSON.parse(text);
+
     if (typeof value !== "object" || value === null) return undefined;
+
     const type = (value as { type?: unknown }).type;
     return type === "control" || type === "error"
       ? (value as ControlMessage | ErrorMessage)

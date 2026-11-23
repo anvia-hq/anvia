@@ -80,9 +80,11 @@ class DefaultAgentStream<Output, M extends CompletionModel> implements AgentStre
     if (this.completed) {
       throw new Error("Agent stream has already been consumed.");
     }
+
     if (this.consuming) {
       throw new Error("Agent stream is already running.");
     }
+
     this.consuming = true;
     try {
       for await (const event of this.run.events()) {
@@ -93,16 +95,19 @@ class DefaultAgentStream<Output, M extends CompletionModel> implements AgentStre
           this.settled = true;
           this.rejectResult(event.error);
         }
+
         yield event;
       }
     } finally {
       if (!this.completed) {
         const cancellation = this.run.cancel("Agent stream consumer closed the stream.");
+
         if (!this.settled && cancellation !== undefined) {
           this.settled = true;
           this.rejectResult(cancellation);
         }
       }
+
       this.consuming = false;
       this.completed = true;
     }
@@ -116,10 +121,13 @@ class DefaultAgentStream<Output, M extends CompletionModel> implements AgentStre
 
   private scheduleDrain(): void {
     if (this.completed || this.consuming || this.drainScheduled) return;
+
     this.drainScheduled = true;
     queueMicrotask(() => {
       this.drainScheduled = false;
+
       if (this.completed || this.consuming) return;
+
       void this.drain();
     });
   }

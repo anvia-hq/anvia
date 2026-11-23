@@ -27,9 +27,11 @@ export function parseDocument<T>(document: unknown): T {
   if (document === null || document === undefined) {
     return "" as T;
   }
+
   if (typeof document !== "string") {
     return document as T;
   }
+
   try {
     return JSON.parse(document) as T;
   } catch {
@@ -43,6 +45,7 @@ export function weaviateObjects<T, Metadata extends VectorMetadata>(
   if (document.embeddings.length === 0) {
     throw new Error(`Document ${document.id} has no embeddings`);
   }
+
   assertNoReservedMetadata(document.metadata);
 
   return document.embeddings.map((embedding, index) => {
@@ -73,7 +76,11 @@ export function parseQueryResults<T, Metadata extends VectorMetadata>(
     const properties = (item.properties as Record<string, unknown> | undefined) ?? {};
     const metadata = item.metadata as Record<string, unknown> | undefined;
     const distance = metadata?.distance as number | undefined;
-    const score = distance === undefined ? 0 : metric === "cosine" ? 1 - distance : -distance;
+    let score = 0;
+
+    if (distance !== undefined) {
+      score = metric === "cosine" ? 1 - distance : -distance;
+    }
 
     if (minScore !== undefined && score < minScore) {
       continue;
@@ -86,10 +93,13 @@ export function parseQueryResults<T, Metadata extends VectorMetadata>(
       document: parseDocument(properties[documentPropertyKey]),
     };
     const publicMetadata = metadataFromProperties<Metadata>(properties);
+
     if (publicMetadata !== undefined) {
       result.metadata = publicMetadata;
     }
+
     const current = byId.get(id);
+
     if (current === undefined || result.score > current.score) {
       byId.set(id, result);
     }

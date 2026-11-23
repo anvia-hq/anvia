@@ -30,27 +30,34 @@ export async function createGraph(
   // Two submitters of one graph request would otherwise race to the unique constraint.
   await tx.lockSession?.(`${GRAPH_SESSION_PREFIX}${submission.sessionId}`);
   const existing = await tx.findGraphRequest(submission.sessionId, submission.requestId);
+
   if (existing !== undefined) {
     if (!sameJson(existing.submission, submission))
       throw new DurableConflictError("Graph requestId already belongs to a different submission.");
+
     return existing.id;
   }
+
   const id = globalThis.crypto.randomUUID();
   const runs: { task: (typeof submission.tasks)[number]; run: DurableRunRecord }[] = [];
   for (const task of submission.tasks) {
     const registration = agents.get(task.agentId);
+
     if (registration === undefined && !allowUnregistered)
       throw new DurableNotFoundError(`Unknown durable agent: ${task.agentId}`);
+
     const submitted = {
       agentId: task.agentId,
       sessionId: `${GRAPH_SESSION_PREFIX}${id}:${task.id}`,
       requestId: task.id,
       prompt: task.prompt,
     };
+
     if (registration === undefined) {
       runs.push({ task, run: createUnadmittedRunRecord(submitted) });
       continue;
     }
+
     assertMemoryFreeTask(registration, task.agentId, "graph tasks");
     runs.push({
       task,
@@ -93,7 +100,9 @@ export async function requireGraph(
   id: string,
 ): Promise<DurableGraphRecord> {
   const graph = await tx.getGraph(id);
+
   if (graph === undefined) throw new DurableNotFoundError(`Unknown durable graph: ${id}`);
+
   return graph;
 }
 
@@ -108,20 +117,25 @@ export async function graphSnapshot(
   const nodes: DurableGraphSnapshot["nodes"] = [];
   for (const task of graph.submission.tasks) {
     const run = runs.get(task.id)!;
+
     if (run === undefined || run.graphId !== id || run.taskId !== task.id)
       throw new Error("Graph task/run mapping changed.");
+
     let wait: DurableTaskWait | undefined;
+
     if (run.status === "queued") {
       const incomplete = (task.dependsOn ?? []).filter(
         (dependency) => !successful(runs.get(dependency)!),
       );
       const failed = incomplete.filter((dependency) => dependencyFailed(runs.get(dependency)!));
-      wait =
-        failed.length > 0
-          ? { type: "dependency_failed", taskIds: failed }
-          : incomplete.length > 0
-            ? { type: "dependencies", taskIds: incomplete }
-            : { type: "capacity" };
+
+      if (failed.length > 0) {
+        wait = { type: "dependency_failed", taskIds: failed };
+      } else if (incomplete.length > 0) {
+        wait = { type: "dependencies", taskIds: incomplete };
+      } else {
+        wait = { type: "capacity" };
+      }
     } else if (run.status === "retry_wait") wait = { type: "retry", until: run.nextAttemptAt! };
     else if (run.status === "waiting" && run.outcome?.type === "interaction")
       wait = { type: "interaction", interactionId: run.outcome.interaction.id };
@@ -161,20 +175,23 @@ export async function graphSnapshot(
     nodes.push(node);
   }
   const all = [...runs.values()];
-  const status = graph.cancelled
-    ? "cancelled"
-    : all.every(successful)
-      ? "completed"
-      : nodes.some(
-            (node) =>
-              node.status === "running" ||
-              node.status === "pending" ||
-              node.wait?.type === "capacity",
-          )
-        ? "running"
-        : all.some((run) => dependencyFailed(run) || run.status === "needs_attention")
-          ? "blocked"
-          : "waiting";
+  let status: DurableGraphSnapshot["status"] = "waiting";
+
+  if (graph.cancelled) {
+    status = "cancelled";
+  } else if (all.every(successful)) {
+    status = "completed";
+  } else if (
+    nodes.some(
+      (node) =>
+        node.status === "running" || node.status === "pending" || node.wait?.type === "capacity",
+    )
+  ) {
+    status = "running";
+  } else if (all.some((run) => dependencyFailed(run) || run.status === "needs_attention")) {
+    status = "blocked";
+  }
+
   return {
     id,
     sessionId: graph.submission.sessionId,
@@ -208,6 +225,7 @@ export async function graphInput(
   const values: Record<string, JsonValue> = {};
   for (const dependency of run.dependencies ?? []) {
     const prerequisite = await tx.getRun(dependency);
+
     if (
       prerequisite === undefined ||
       prerequisite.graphId !== run.graphId ||
@@ -215,13 +233,18 @@ export async function graphInput(
       prerequisite.outcome?.type !== "response"
     )
       throw new DurableConflictError("Task dependencies are not successful.");
+
     values[prerequisite.taskId!] = json(
       (await tx.blobs((io) => hydratedOutcomeOutput(io, json(prerequisite.outcome)))) ?? null,
     );
   }
+
   if (Object.keys(values).length === 0) return run.prompt;
+
   const suffix = `\n\nTask dependency results (JSON):\n${JSON.stringify(values)}`;
+
   if (typeof run.prompt === "string") return run.prompt + suffix;
+
   const content = run.prompt.content;
   return {
     ...run.prompt,

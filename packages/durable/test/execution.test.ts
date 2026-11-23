@@ -65,6 +65,7 @@ it("preserves storage failures when iterator cleanup also fails", async () => {
         ...tx,
         async appendEvent(id, type, data) {
           if (type === "model_delta") throw primary;
+
           await tx.appendEvent(id, type, data);
         },
       }),

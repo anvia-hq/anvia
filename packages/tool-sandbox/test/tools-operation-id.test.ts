@@ -42,7 +42,9 @@ describe("createSandboxTools operationId", () => {
     });
     const call = (name: string, args: unknown, operationId?: string) => {
       const tool = tools.find((candidate) => candidate.name === name);
+
       if (tool === undefined) throw new Error(name);
+
       return tool.call(args as never, operationId === undefined ? {} : { operationId });
     };
 

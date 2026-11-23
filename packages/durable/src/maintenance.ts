@@ -18,9 +18,11 @@ export type DurableBackupInfo = { createdAt: string; schemaVersion: number };
 function validate(db: DatabaseSync): void {
   if (db.prepare("PRAGMA integrity_check").get()!.integrity_check !== "ok")
     throw new Error("Durable database integrity check failed.");
+
   const version = db
     .prepare("SELECT version FROM anvia_durable_owner WHERE singleton = 1")
     .get()?.version;
+
   if (
     version !== 3 &&
     version !== 4 &&
@@ -94,6 +96,7 @@ export async function backupSqlite(
 ): Promise<DurableBackupInfo> {
   if (!statSync(source).isFile())
     throw new TypeError("Backup source must be an existing database file.");
+
   const validation = new DatabaseSync(source, { readOnly: true });
   try {
     validate(validation);
@@ -131,6 +134,7 @@ export async function restoreSqlite(
     validate(db);
     const row = db.prepare("SELECT metadata FROM anvia_durable_backup").get();
     const info = JSON.parse(String(row?.metadata)) as DurableBackupInfo;
+
     if (
       (info.schemaVersion !== 3 &&
         info.schemaVersion !== 4 &&
@@ -148,6 +152,7 @@ export async function restoreSqlite(
       !Number.isFinite(Date.parse(info.createdAt))
     )
       throw new Error("Invalid durable backup metadata.");
+
     await copy(db, destination, (snapshot) => {
       snapshot.exec(
         "DROP TABLE anvia_durable_backup; UPDATE anvia_durable_owner SET token = NULL, pid = NULL, host = NULL WHERE singleton = 1",

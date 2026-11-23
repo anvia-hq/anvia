@@ -28,13 +28,17 @@ export function useAgentModels(props: {
     async function loadAgentModels() {
       try {
         const response = await fetch(`/agents/${encodeURIComponent(agentId)}/models`);
+
         if (!response.ok) {
           throw new Error(`Agent models failed with HTTP ${response.status}`);
         }
+
         const body = (await response.json()) as StudioAgentModelsSummary;
+
         if (cancelled) {
           return;
         }
+
         setAgentModels(body);
         setSelectedModelRef((current) =>
           modelRefAvailable(body.models, current)

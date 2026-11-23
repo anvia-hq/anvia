@@ -43,8 +43,11 @@ export class DurableWorker {
     const { workerId, leaseMs, heartbeatMs, ...rest } = options;
     const id = workerId ?? `worker-${globalThis.crypto.randomUUID()}`;
     const worker: DurableWorkerOptions = { workerId: id };
+
     if (leaseMs !== undefined) worker.leaseMs = leaseMs;
+
     if (heartbeatMs !== undefined) worker.heartbeatMs = heartbeatMs;
+
     const runtime = await DurableRuntime.open({ ...rest, worker });
     return new DurableWorker(runtime, id);
   }

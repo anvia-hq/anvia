@@ -14,17 +14,21 @@ export function SessionLogsPanel(props: {
 
   useEffect(() => {
     const node = scrollerRef.current;
+
     if (node === null || !stickToBottomRef.current) {
       return;
     }
+
     node.scrollTop = node.scrollHeight;
   });
 
   function updateStickiness() {
     const node = scrollerRef.current;
+
     if (node === null) {
       return;
     }
+
     stickToBottomRef.current = node.scrollHeight - node.scrollTop - node.clientHeight < 24;
   }
 
@@ -111,9 +115,11 @@ function LogRow(props: { log: StudioSessionLogEntry }) {
 
 function formatLogTime(value: string): string {
   const date = new Date(value);
+
   if (Number.isNaN(date.getTime())) {
     return "";
   }
+
   return date.toLocaleTimeString([], {
     hour: "2-digit",
     minute: "2-digit",

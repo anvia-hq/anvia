@@ -22,9 +22,13 @@ export function evalConfig(suite: StudioEvalSuite): StudioEvalSuiteConfig {
     casePreviews,
     metricSummaries,
   };
+
   if (suite.description !== undefined) config.description = suite.description;
+
   if (suite.concurrency !== undefined) config.concurrency = suite.concurrency;
+
   if (suite.metadata !== undefined) config.metadata = suite.metadata;
+
   return config;
 }
 
@@ -40,10 +44,15 @@ function casePreview(testCase: unknown, index: number): StudioEvalCasePreview {
     id:
       typeof testCase.id === "string" && testCase.id.length > 0 ? testCase.id : `case-${index + 1}`,
   };
+
   if ("input" in testCase) preview.input = previewValue(testCase.input);
+
   if ("expected" in testCase) preview.expected = previewValue(testCase.expected);
+
   const keys = metadataKeys(testCase.metadata);
+
   if (keys !== undefined) preview.metadataKeys = keys;
+
   return preview;
 }
 
@@ -59,25 +68,36 @@ function metricSummary(metric: unknown, index: number): StudioEvalMetricSummary 
         : `metric-${index + 1}`,
   };
   const dataType = metricDataType(metric.dataType);
+
   if (dataType !== undefined) summary.dataType = dataType;
+
   if (typeof metric.required === "boolean") summary.required = metric.required;
+
   if (metric.direction === "higher_is_better" || metric.direction === "lower_is_better") {
     summary.direction = metric.direction;
   }
+
   if (typeof metric.threshold === "number") summary.threshold = metric.threshold;
+
   if (typeof metric.configId === "string") summary.configId = metric.configId;
+
   if (typeof metric.scoreConfigId === "string") summary.scoreConfigId = metric.scoreConfigId;
+
   const keys = metadataKeys(metric.metadata);
+
   if (keys !== undefined) summary.metadataKeys = keys;
+
   return summary;
 }
 
 function previewValue(value: unknown) {
   const jsonValue = toJsonValue(value);
   const serialized = JSON.stringify(jsonValue);
+
   if (serialized.length <= PREVIEW_VALUE_MAX_LENGTH) {
     return jsonValue;
   }
+
   return `${serialized.slice(0, PREVIEW_VALUE_MAX_LENGTH)}...`;
 }
 
@@ -85,6 +105,7 @@ function metadataKeys(value: unknown): string[] | undefined {
   if (!isRecord(value)) {
     return undefined;
   }
+
   const keys = Object.keys(value).filter((key) => value[key] !== undefined);
   return keys.length > 0 ? keys : undefined;
 }

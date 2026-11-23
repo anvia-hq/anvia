@@ -61,12 +61,14 @@ export function createStudioMemorySourceRegistry(
 
   for (const agent of agents) {
     const store = agent.agent.memory?.store;
+
     if (store === undefined) {
       agentsWithoutMemory.push(agent);
       continue;
     }
 
     const existing = byStore.get(store);
+
     if (existing !== undefined) {
       existing.summary.agentIds.push(agent.id);
       existing.summary.label = "Shared agent memory";
@@ -110,6 +112,7 @@ export function registerMemoryRoutes(
   },
 ): void {
   registerMemorySourceRoutes(app, props.sources);
+
   if (props.sessionStore !== undefined) {
     registerLegacyMemoryRoutes(app, props.sessionStore);
   }
@@ -122,13 +125,17 @@ function registerMemorySourceRoutes(app: Hono, registry: StudioMemorySourceRegis
 
   app.get("/memory/sources/:sourceRef/users", async (c) => {
     const limit = parseLimit(c.req.query("limit"));
+
     if (limit === undefined) {
       return errorResponse(c, 400, "bad_request", "limit must be a positive integer");
     }
+
     const source = registry.get(c.req.param("sourceRef"));
+
     if (source === undefined) {
       return errorResponse(c, 404, "not_found", "Memory source not found");
     }
+
     if (!source.summary.available) return unavailableSourceResponse(c, source.summary);
 
     const conversations = await source.listConversations({ limit: USER_DISCOVERY_LIMIT });
@@ -142,18 +149,24 @@ function registerMemorySourceRoutes(app: Hono, registry: StudioMemorySourceRegis
 
   app.get("/memory/sources/:sourceRef/conversations", async (c) => {
     const limit = parseLimit(c.req.query("limit"));
+
     if (limit === undefined) {
       return errorResponse(c, 400, "bad_request", "limit must be a positive integer");
     }
+
     const source = registry.get(c.req.param("sourceRef"));
+
     if (source === undefined) {
       return errorResponse(c, 404, "not_found", "Memory source not found");
     }
+
     if (!source.summary.available) return unavailableSourceResponse(c, source.summary);
 
     const userId = optionalQueryString(c.req.query("userId"));
     const listOptions: MemoryConversationListOptions = { limit };
+
     if (userId !== undefined) listOptions.userId = userId;
+
     const conversations = await source.listConversations(listOptions);
     return c.json({
       source: source.summary,
@@ -164,15 +177,19 @@ function registerMemorySourceRoutes(app: Hono, registry: StudioMemorySourceRegis
 
   app.get("/memory/sources/:sourceRef/conversations/:conversationRef/messages", async (c) => {
     const source = registry.get(c.req.param("sourceRef"));
+
     if (source === undefined) {
       return errorResponse(c, 404, "not_found", "Memory source not found");
     }
+
     if (!source.summary.available) return unavailableSourceResponse(c, source.summary);
 
     const detail = await source.getConversation(c.req.param("conversationRef"));
+
     if (detail === undefined) {
       return errorResponse(c, 404, "not_found", "Conversation not found");
     }
+
     const messages = detail.records.map((record) => record.message);
     return c.json({
       source: source.summary,
@@ -185,15 +202,19 @@ function registerMemorySourceRoutes(app: Hono, registry: StudioMemorySourceRegis
 
   app.get("/memory/sources/:sourceRef/conversations/:conversationRef/steps", async (c) => {
     const source = registry.get(c.req.param("sourceRef"));
+
     if (source === undefined) {
       return errorResponse(c, 404, "not_found", "Memory source not found");
     }
+
     if (!source.summary.available) return unavailableSourceResponse(c, source.summary);
 
     const detail = await source.getConversation(c.req.param("conversationRef"));
+
     if (detail === undefined) {
       return errorResponse(c, 404, "not_found", "Conversation not found");
     }
+
     return c.json({
       source: source.summary,
       conversation: detail.conversation,
@@ -205,6 +226,7 @@ function registerMemorySourceRoutes(app: Hono, registry: StudioMemorySourceRegis
 function registerLegacyMemoryRoutes(app: Hono, sessionStore: StudioSessionStore): void {
   app.get("/memory/users", async (c) => {
     const limit = parseLimit(c.req.query("limit"));
+
     if (limit === undefined) {
       return errorResponse(c, 400, "bad_request", "limit must be a positive integer");
     }
@@ -214,6 +236,7 @@ function registerLegacyMemoryRoutes(app: Hono, sessionStore: StudioSessionStore)
     for (const session of sessions) {
       const userId = sessionUserId(session);
       const existing = users.get(userId);
+
       if (existing === undefined) {
         users.set(userId, {
           userId,
@@ -223,8 +246,11 @@ function registerLegacyMemoryRoutes(app: Hono, sessionStore: StudioSessionStore)
         });
         continue;
       }
+
       existing.conversationCount += 1;
+
       if (!existing.agentIds.includes(session.agentId)) existing.agentIds.push(session.agentId);
+
       if (new Date(session.updatedAt).getTime() > new Date(existing.lastInteractionAt).getTime()) {
         existing.lastInteractionAt = session.updatedAt;
       }
@@ -241,6 +267,7 @@ function registerLegacyMemoryRoutes(app: Hono, sessionStore: StudioSessionStore)
 
   app.get("/memory/conversations", async (c) => {
     const limit = parseLimit(c.req.query("limit"));
+
     if (limit === undefined) {
       return errorResponse(c, 400, "bad_request", "limit must be a positive integer");
     }
@@ -248,7 +275,9 @@ function registerLegacyMemoryRoutes(app: Hono, sessionStore: StudioSessionStore)
     const agentId = optionalQueryString(c.req.query("agentId"));
     const userId = optionalQueryString(c.req.query("userId"));
     const listInput: Parameters<typeof sessionStore.listSessions>[0] = { limit: 100 };
+
     if (agentId !== undefined) listInput.agentId = agentId;
+
     const sessions = await sessionStore.listSessions(listInput);
     const conversations = sessions
       .map(memoryConversationSummary)
@@ -263,9 +292,11 @@ function registerLegacyMemoryRoutes(app: Hono, sessionStore: StudioSessionStore)
 
   app.get("/memory/conversations/:conversationId/messages", async (c) => {
     const session = await sessionStore.getSession(c.req.param("conversationId"));
+
     if (session === undefined) {
       return errorResponse(c, 404, "not_found", "Conversation not found");
     }
+
     return c.json({
       conversation: memoryConversationSummary(session),
       messages: session.messages,
@@ -275,9 +306,11 @@ function registerLegacyMemoryRoutes(app: Hono, sessionStore: StudioSessionStore)
 
   app.get("/memory/conversations/:conversationId/steps", async (c) => {
     const session = await sessionStore.getSession(c.req.param("conversationId"));
+
     if (session === undefined) {
       return errorResponse(c, 404, "not_found", "Conversation not found");
     }
+
     return c.json({
       conversation: memoryConversationSummary(session),
       steps: session.transcript,
@@ -299,6 +332,7 @@ function agentMemorySource(
     agentIds: [agentId],
     available: true,
   };
+
   if (storeKindValue !== undefined) summary.storeKind = storeKindValue;
 
   return {
@@ -307,9 +341,11 @@ function agentMemorySource(
       const inspectorOptions: MemoryConversationListOptions = {
         limit: options.userId === DEFAULT_USER_ID ? USER_DISCOVERY_LIMIT : options.limit,
       };
+
       if (options.userId !== undefined && options.userId !== DEFAULT_USER_ID) {
         inspectorOptions.userId = options.userId;
       }
+
       const conversations = await inspector.listConversations(inspectorOptions);
       return conversations
         .map((conversation) => sourceConversationSummary(conversation, summary.agentIds))
@@ -341,7 +377,9 @@ function unavailableAgentSource(
     available: false,
     reason: "This memory store does not expose the optional inspector capability.",
   };
+
   if (storeKindValue !== undefined) summary.storeKind = storeKindValue;
+
   return {
     summary,
     listConversations: async () => [],
@@ -378,9 +416,11 @@ function studioSessionSource(
     },
     async getConversation(conversationRef) {
       const session = await sessionStore.getSession(conversationRef);
+
       if (session === undefined || (restrictAgents && !allowedAgents.has(session.agentId))) {
         return undefined;
       }
+
       return {
         conversation: studioSourceConversationSummary(session),
         records: session.messages.map((message, position) => ({
@@ -408,7 +448,9 @@ function sourceConversationSummary(
     updatedAt: conversation.updatedAt,
     messageCount: conversation.messageCount,
   };
+
   if (conversation.metadata !== undefined) summary.metadata = conversation.metadata;
+
   return summary;
 }
 
@@ -434,8 +476,11 @@ function studioSourceConversationSummary(
     updatedAt: session.updatedAt,
     messageCount: session.messageCount,
   };
+
   if (session.title !== undefined) summary.title = session.title;
+
   if (session.metadata !== undefined) summary.metadata = session.metadata;
+
   return summary;
 }
 
@@ -446,6 +491,7 @@ function memoryUsers(
   const users = new Map<string, StudioMemoryUsersPage["users"][number]>();
   for (const conversation of conversations) {
     const existing = users.get(conversation.userId);
+
     if (existing === undefined) {
       users.set(conversation.userId, {
         userId: conversation.userId,
@@ -455,10 +501,12 @@ function memoryUsers(
       });
       continue;
     }
+
     existing.conversationCount += 1;
     for (const agentId of conversation.agentIds) {
       if (!existing.agentIds.includes(agentId)) existing.agentIds.push(agentId);
     }
+
     if (
       new Date(conversation.updatedAt).getTime() > new Date(existing.lastInteractionAt).getTime()
     ) {
@@ -487,8 +535,11 @@ function memoryConversationSummary(
     updatedAt: session.updatedAt,
     messageCount: session.messageCount,
   };
+
   if (session.title !== undefined) summary.title = session.title;
+
   if (session.metadata !== undefined) summary.metadata = session.metadata;
+
   return summary;
 }
 

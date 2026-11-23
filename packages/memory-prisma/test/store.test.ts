@@ -113,13 +113,16 @@ class FakePrisma {
     upsert: async (rawArgs: unknown) => {
       const args = rawArgs as UpsertArgs;
       const existing = this.sessions.get(args.where.scopeKey);
+
       if (existing !== undefined) {
         existing.sessionId = args.update.sessionId;
         existing.userId = args.update.userId ?? undefined;
         existing.metadata = args.update.metadata;
+
         if ("compactionState" in args.update) {
           existing.compactionState = args.update.compactionState;
         }
+
         return { id: existing.id };
       }
 
@@ -129,12 +132,15 @@ class FakePrisma {
         sessionId: args.create.sessionId,
         metadata: args.create.metadata,
       };
+
       if (args.create.userId !== undefined) {
         session.userId = args.create.userId;
       }
+
       if (args.create.compactionState !== undefined) {
         session.compactionState = args.create.compactionState;
       }
+
       this.nextSessionId += 1;
       this.sessions.set(args.where.scopeKey, session);
       return { id: session.id };
@@ -142,9 +148,11 @@ class FakePrisma {
     deleteMany: async (rawArgs: unknown) => {
       const args = rawArgs as DeleteManyArgs;
       const session = this.sessions.get(args.where.scopeKey);
+
       if (session === undefined) {
         return { count: 0 };
       }
+
       this.sessions.delete(args.where.scopeKey);
       removeWhere(this.messages, (message) => message.memorySessionId === session.id);
       removeWhere(this.errors, (error) => error.memorySessionId === session.id);
@@ -179,7 +187,9 @@ class FakePrisma {
         args.where.scopeKey === undefined
           ? [...this.sessions.values()].find((item) => item.id === args.where.id)
           : this.sessions.get(args.where.scopeKey);
+
       if (session === undefined) return null;
+
       return {
         id: session.id,
         sessionId: session.sessionId,
@@ -199,6 +209,7 @@ class FakePrisma {
   readonly agentMemoryMessage = {
     findMany: async (rawArgs: unknown) => {
       const args = rawArgs as FindManyArgs;
+
       if ("memorySessionId" in args.where) {
         const { memorySessionId, position } = args.where;
         return this.messages
@@ -215,8 +226,11 @@ class FakePrisma {
             message: message.message,
           }));
       }
+
       const session = this.sessions.get(args.where.memorySession.scopeKey);
+
       if (session === undefined) return [];
+
       return this.messages
         .filter((message) => message.memorySessionId === session.id)
         .sort((left, right) => left.position - right.position)
@@ -266,6 +280,7 @@ class FakePrisma {
     },
     create: async (rawArgs: unknown) => {
       const { data } = rawArgs as { data: WriteRow };
+
       if (
         this.writes.some(
           (item) => item.scopeKey === data.scopeKey && item.idempotencyKey === data.idempotencyKey,
@@ -273,6 +288,7 @@ class FakePrisma {
       ) {
         throw new Error("Unique constraint failed on (scopeKey, idempotencyKey)");
       }
+
       this.writes.push({ ...data });
       return data;
     },
@@ -436,9 +452,11 @@ describe("PrismaMemoryStore", () => {
     const prisma = new FakePrisma();
     const store = createTestMemoryStore(prisma.client);
     const compaction = store.compaction;
+
     if (compaction === undefined) {
       throw new Error("Expected Prisma compaction capability");
     }
+
     const context = { sessionId: "thread-compaction", userId: "user-1" };
     await store.append({
       scope: context,
@@ -852,7 +870,9 @@ describe("PrismaMemoryStore versioned, idempotent appends", () => {
 
   async function loadedVersion(store: PrismaMemoryStore): Promise<string> {
     const history = await store.loadVersioned?.({ scope });
+
     if (history === undefined) throw new Error("Expected loadVersioned");
+
     return history.version;
   }
 
@@ -1087,6 +1107,7 @@ function createTestMemoryStoreFromDelegates(
 function removeWhere<T>(items: T[], predicate: (item: T) => boolean): void {
   for (let index = items.length - 1; index >= 0; index -= 1) {
     const item = items[index];
+
     if (item !== undefined && predicate(item)) {
       items.splice(index, 1);
     }

@@ -35,6 +35,7 @@ export class RedisVectorStore<
       await client.ft.info(this.options.indexName);
     } catch (error) {
       if (!isMissingIndexError(error)) throw error;
+
       await client.ft.create(
         this.options.indexName,
         {
@@ -57,17 +58,22 @@ export class RedisVectorStore<
     const info = (await (await this.owner.nativeClient()).ft.info(this.options.indexName)) as {
       attributes?: Array<Record<string, unknown>>;
     };
+
     if (info.attributes === undefined) return;
+
     const vector = info.attributes?.find(
       (attribute) => attribute.identifier === vectorField || attribute.attribute === vectorField,
     );
+
     if (vector === undefined) {
       throw new Error(`Redis index ${this.options.indexName} is missing ${vectorField}`);
     }
+
     if (vector.dim !== undefined && Number(vector.dim) !== this.options.dimensions)
       throw new Error(
         `Redis index ${this.options.indexName} has ${String(vector.dim)} dimensions; expected ${this.options.dimensions}`,
       );
+
     if (
       typeof vector.distance_metric === "string" &&
       vector.distance_metric.toUpperCase() !== distanceName(this.options.metric)
@@ -75,6 +81,7 @@ export class RedisVectorStore<
       throw new Error(
         `Redis index ${this.options.indexName} uses ${vector.distance_metric}; expected ${distanceName(this.options.metric)}`,
       );
+
     for (const key of Object.keys(this.options.metadataSchema ?? {})) {
       if (
         !info.attributes.some(
@@ -87,7 +94,9 @@ export class RedisVectorStore<
   }
   async upsert(options: VectorStoreUpsertOptions<T, Metadata>): Promise<void> {
     validateDocuments(options.documents, this.options.dimensions);
+
     if (options.documents.length === 0) return;
+
     const records = options.documents.flatMap((document) =>
       redisHashEntries(this.keyPrefix, document, this.options.metadataSchema ?? {}),
     );
@@ -96,7 +105,9 @@ export class RedisVectorStore<
       .map((document) => escapeRedis(document.id))
       .join("|")}}`;
     const keys = await matchingKeys(client, this.options.indexName, query);
+
     if (keys.length > 0) await client.del(keys);
+
     for (const record of records) await client.hSet(record.key, record.fields);
   }
   async search(request: VectorSearchRequest): Promise<Array<VectorSearchResult<T, Metadata>>> {
@@ -124,14 +135,18 @@ export class RedisVectorStore<
       const results = selectResults(unfiltered, request);
       const candidateCount =
         (response as { documents?: Array<Record<string, unknown>> }).documents?.length ?? 0;
+
       if (
         results.length >= request.topK ||
         candidateCount < candidateLimit ||
         hasResultBelowMinimum(unfiltered, request.minScore)
       )
         return results;
+
       const nextLimit = nextCandidateLimit(candidateLimit);
+
       if (nextLimit === candidateLimit) return results;
+
       candidateLimit = nextLimit;
     }
   }
@@ -157,6 +172,7 @@ function validateMetadataSchema(
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) || key.startsWith("__anvia_")) {
       throw new TypeError(`Invalid Redis metadata schema field: ${key}`);
     }
+
     if (type !== "numeric" && type !== "tag") {
       throw new TypeError(`Invalid Redis metadata schema type for ${key}: ${String(type)}`);
     }
@@ -185,7 +201,9 @@ function nextCandidateLimit(current: number): number {
 }
 function distanceName(metric: RedisVectorStoreOptions["metric"]): RedisDistance {
   if (metric === "euclidean") return "L2";
+
   if (metric === "dotProduct") return "IP";
+
   return "COSINE";
 }
 function escapeRedis(value: string): string {
@@ -209,9 +227,12 @@ function validateDocuments<T, Metadata extends VectorMetadata>(
   const ids = new Set<string>();
   for (const document of documents) {
     if (ids.has(document.id)) throw new TypeError(`Duplicate vector document id: ${document.id}`);
+
     ids.add(document.id);
+
     if (document.embeddings.length === 0)
       throw new TypeError(`Vector document ${document.id} must contain at least one embedding.`);
+
     for (const embedding of document.embeddings)
       if (embedding.vector.length !== dimensions)
         throw new Error(`Vector dimension mismatch for document ${document.id}`);
@@ -236,6 +257,7 @@ async function matchingKeys(
     keys.push(
       ...documents.flatMap((document) => (typeof document.id === "string" ? [document.id] : [])),
     );
+
     if (
       documents.length < pageSize ||
       (page.total !== undefined && from + documents.length >= page.total)
@@ -253,11 +275,15 @@ function isMissingIndexError(error: unknown): boolean {
 
 function validateSearchRequest(request: VectorSearchRequest, dimensions: number): void {
   throwIfAborted(request.abortSignal);
+
   if (!Number.isSafeInteger(request.topK) || request.topK < 1)
     throw new RangeError("Vector search topK must be a positive safe integer.");
+
   if (request.minScore !== undefined && !Number.isFinite(request.minScore))
     throw new RangeError("Vector search minScore must be a finite number.");
+
   if (request.vector.length !== dimensions) throw new Error("Vector dimension mismatch for query");
+
   if (!request.vector.every(Number.isFinite))
     throw new Error("Vector search query must contain only finite numbers");
 }

@@ -107,7 +107,9 @@ describe("embedding helpers", () => {
       modelId: "retry",
       async embedTexts(texts) {
         attempts += 1;
+
         if (attempts === 1) throw Object.assign(new Error("busy"), { status: 503 });
+
         return texts.map((document) => ({ document, vector: [1] }));
       },
     };
@@ -298,6 +300,7 @@ describe.each(["dense", "sparse"] as const)("%s batch cardinality", (channel) =>
       });
       const provider = fixture(async (_, attempt) => {
         if (attempt === 1) return retained;
+
         started();
         return new Promise((resolve) => {
           finish = resolve;
@@ -306,9 +309,13 @@ describe.each(["dense", "sparse"] as const)("%s batch cardinality", (channel) =>
       const result = provider.run(["a", "b", "c", "d"], { concurrency: 2 });
       await siblingStarted;
       await new Promise<void>((resolve) => setImmediate(resolve));
+
       if (mutation === "pop") retained.pop();
+
       if (mutation === "push") retained.push(vector("extra"));
+
       if (mutation === "replace") retained[0] = vector("replacement");
+
       finish([vector("c"), vector("d")]);
       const { embeddings } = await result;
       expect(embeddings.map((item) => item.document)).toEqual(["a", "b", "c", "d"]);
@@ -330,6 +337,7 @@ describe.each(["dense", "sparse"] as const)("%s batch cardinality", (channel) =>
           finishFirst = resolve;
         });
       }
+
       secondFinished();
       return texts.map(vector);
     });
@@ -426,6 +434,7 @@ describe("embedding document batch controls", () => {
         active[current] += 1;
         try {
           if (current === opposite) await pending;
+
           return malformed && current === channel ? texts.slice(0, 1) : texts;
         } finally {
           active[current] -= 1;
@@ -480,6 +489,7 @@ describe("embedding document batch controls", () => {
         await new Promise<void>((resolve) => setImmediate(resolve));
         expect(calls[opposite]).toEqual([["a", "b"]]);
         expect(active[opposite]).toBe(1);
+
         if (malformed) {
           const outcome = await observed;
           expect(outcome.error?.message).toBe(
@@ -595,7 +605,9 @@ describe("vector stores and retrieval", () => {
     const store = InMemoryVectorStore.fromDocuments({ documents, dimensions: 2 });
     expect(await store.search({ vector: [1, 1], topK: 1 })).toMatchObject([{ id: "cat" }]);
     const firstDocument = documents[0];
+
     if (firstDocument === undefined) throw new Error("Expected an embedded document");
+
     await store.upsert({
       documents: [{ ...firstDocument, document: { id: "cat", text: "updated" } }],
     });
@@ -721,8 +733,10 @@ describe("vector stores and retrieval", () => {
       modelId: "retry-retrieval",
       async embedTexts(texts) {
         embeddingAttempts += 1;
+
         if (embeddingAttempts === 1)
           throw Object.assign(new Error("embedding busy"), { status: 503 });
+
         return texts.map((document) => ({ document, vector: [1] }));
       },
     };
@@ -732,7 +746,9 @@ describe("vector stores and retrieval", () => {
       async upsert() {},
       async search() {
         searchAttempts += 1;
+
         if (searchAttempts === 1) throw Object.assign(new Error("search busy"), { status: 503 });
+
         return [{ id: "doc", score: 1, document: "result" }];
       },
     };

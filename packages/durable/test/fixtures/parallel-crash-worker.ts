@@ -38,7 +38,9 @@ export const recovery = { fast: "safe", stuck: "safe" } as const;
 
 if (process.argv[1]?.endsWith("parallel-crash-worker.ts")) {
   const [database, effects] = process.argv.slice(2);
+
   if (database === undefined || effects === undefined) throw new Error("Missing arguments");
+
   let id = "";
   const agent = makeAgent(
     async (request) => (hasToolResult(request) ? done() : twoCalls()),

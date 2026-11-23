@@ -21,19 +21,23 @@ export function registerEvalRoutes(
 
   app.get("/evals/:evalId", (c) => {
     const suite = props.evalMap.get(c.req.param("evalId"));
+
     if (suite === undefined) {
       return errorResponse(c, 404, "not_found", "Eval suite not found");
     }
+
     return c.json(evalConfig(suite));
   });
 
   app.post("/evals/:evalId/runs", async (c) => {
     const suite = props.evalMap.get(c.req.param("evalId"));
+
     if (suite === undefined) {
       return errorResponse(c, 404, "not_found", "Eval suite not found");
     }
 
     const body = await parseEvalRunRequest(c);
+
     if ("error" in body) {
       return body.error;
     }
@@ -41,7 +45,9 @@ export function registerEvalRoutes(
     const runId = globalThis.crypto.randomUUID();
     const startedAt = Date.now();
     const runOptions: Parameters<typeof runEvalSuite>[0] = { ...suite };
+
     if (body.concurrency !== undefined) runOptions.concurrency = body.concurrency;
+
     const result = await runEvalSuite(runOptions);
     const endedAt = Date.now();
     const jsonResult = toJsonValue(result);
@@ -72,13 +78,16 @@ async function parseEvalRunRequest(
   }
 
   const request: StudioEvalRunRequest = {};
+
   if ("concurrency" in body) {
     if (!isPositiveInteger(body.concurrency)) {
       return {
         error: errorResponse(c, 400, "bad_request", "concurrency must be a positive integer"),
       };
     }
+
     request.concurrency = body.concurrency;
   }
+
   return request;
 }

@@ -103,9 +103,14 @@ function parseTraceExport(body: string): ExportedSpan[] {
 
 function anyValue(value: OtlpAnyValue): unknown {
   if (value.stringValue !== undefined) return value.stringValue;
+
   if (value.boolValue !== undefined) return value.boolValue;
+
   if (value.intValue !== undefined) return Number(value.intValue);
+
   if (value.doubleValue !== undefined) return value.doubleValue;
+
   if (value.arrayValue !== undefined) return (value.arrayValue.values ?? []).map(anyValue);
+
   return undefined;
 }

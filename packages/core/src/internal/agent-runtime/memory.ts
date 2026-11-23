@@ -40,7 +40,9 @@ export class AgentRunMemory {
     signal: AbortSignal,
   ): Promise<PreparedLoopContext> {
     const options = this.memory()?.compaction;
+
     if (options === undefined || this.memoryScope === undefined) return { messages: [...messages] };
+
     const plan = await planLoopContext(
       messages,
       checkpoint,
@@ -51,7 +53,9 @@ export class AgentRunMemory {
       },
       signal,
     );
+
     if (plan === undefined) return { messages: projectLoopContext(messages, checkpoint) };
+
     const summary = await summarizeLoopContext(plan, options.compactor, this.memoryScope, signal);
     const prepared = await finishLoopContext(plan, summary, options.tokenCounter, signal);
     return prepared;
@@ -78,6 +82,7 @@ export class AgentRunMemory {
     abortSignal?: AbortSignal | undefined,
   ): Promise<MemoryPreparation> {
     const memory = this.memory();
+
     if (memory === undefined || this.memoryScope === undefined) {
       return {
         history: this.initialHistory,
@@ -105,16 +110,21 @@ export class AgentRunMemory {
   ): Promise<MemoryCompactionResult> {
     const memory = this.memory();
     const scope = this.memoryScope;
+
     if (memory === undefined || scope === undefined) {
       throw new TypeError("Manual memory compaction requires an Agent with configured memory.");
     }
+
     if (memory.compaction === undefined || memory.store.compaction === undefined) {
       throw new TypeError("Manual memory compaction requires a configured compaction policy.");
     }
+
     const preparation = await this.prepareStoredHistory(memory, runId, [], abortSignal, true);
+
     if (preparation.compaction !== undefined) {
       return { type: "compacted", ...preparation.compaction };
     }
+
     return {
       type: "skipped",
       reason: "nothing_to_compact",
@@ -127,6 +137,7 @@ export class AgentRunMemory {
 
   async commitAcceptedInput(runId: string, messages: MessageType[]): Promise<void> {
     const memory = this.memory();
+
     if (
       memory === undefined ||
       this.memoryScope === undefined ||
@@ -151,9 +162,11 @@ export class AgentRunMemory {
     pendingTurnMessages: MessageType[],
   ): Promise<void> {
     const memory = this.memory();
+
     if (memory === undefined || this.memoryScope === undefined || messages.length === 0) {
       return;
     }
+
     if (memory.savePolicy === "message") {
       await memory.store.append({
         scope: this.memoryScope,
@@ -172,6 +185,7 @@ export class AgentRunMemory {
     pendingTurnMessages: MessageType[],
   ): Promise<void> {
     const memory = this.memory();
+
     if (
       memory === undefined ||
       this.memoryScope === undefined ||
@@ -180,6 +194,7 @@ export class AgentRunMemory {
     ) {
       return;
     }
+
     await memory.store.append({
       scope: this.memoryScope,
       runId,
@@ -197,9 +212,11 @@ export class AgentRunMemory {
   ): Promise<void> {
     await this.commitCompletedTurn(runId, turn, pendingTurnMessages);
     const memory = this.memory();
+
     if (memory === undefined || this.memoryScope === undefined || memory.savePolicy !== "run") {
       return;
     }
+
     await memory.store.append({
       scope: this.memoryScope,
       runId,
@@ -210,9 +227,11 @@ export class AgentRunMemory {
 
   async recordError(runId: string, error: unknown, newMessages: MessageType[]): Promise<void> {
     const memory = this.memory();
+
     if (memory === undefined || this.memoryScope === undefined) {
       return;
     }
+
     await memory.store.recordError?.({
       scope: this.memoryScope,
       runId,
@@ -223,8 +242,11 @@ export class AgentRunMemory {
 
   private memory(): AgentMemory | undefined {
     if (this.memoryScope === undefined) return undefined;
+
     const memory = this.agent.memory;
+
     if (memory === undefined || this.storeOverride === undefined) return memory;
+
     return { ...memory, store: this.storeOverride };
   }
 
@@ -236,11 +258,14 @@ export class AgentRunMemory {
     force = false,
   ): Promise<MemoryPreparation> {
     const scope = this.memoryScope;
+
     if (scope === undefined) {
       return { history: [], usage: Usage.empty() };
     }
+
     const options = memory.compaction;
     const capability = memory.store.compaction;
+
     if (options === undefined || capability === undefined) {
       return {
         history: await memory.store.load({ scope }),
@@ -264,6 +289,7 @@ export class AgentRunMemory {
       );
       throwIfAborted(abortSignal);
       const compactedMessageCount = selection.compactedMessageCount;
+
       if (compactedMessageCount === 0) {
         return {
           history: snapshot.messages,
@@ -283,20 +309,25 @@ export class AgentRunMemory {
       } catch (error) {
         throw remappedCompactorError(error, usage);
       }
+
       if (result.usage !== undefined) {
         usage = Usage.add(usage, result.usage);
       }
+
       if (typeof result?.summary !== "string") {
         throw new MemoryCompactionError("Memory compactor must return a summary string.", {
           usage,
         });
       }
+
       const summaryText = result.summary.trim();
+
       if (summaryText.length === 0) {
         throw new MemoryCompactionError("Memory compactor returned an empty summary.", {
           usage,
         });
       }
+
       const summary = createMemoryCompactionSummary(
         summaryText,
         cumulativeCompactedMessageCount(prefix),
@@ -324,6 +355,7 @@ export class AgentRunMemory {
           usage,
         });
       }
+
       if (replacement.status === "committed") {
         return {
           history: [summary, ...retained],
@@ -341,6 +373,7 @@ export class AgentRunMemory {
           },
         };
       }
+
       throwIfAborted(abortSignal);
     }
 
@@ -374,18 +407,22 @@ async function selectCompactionPrefix(
     compactedTokenCount: 0,
     retainedTokenCount: originalTokenCount,
   };
+
   if (!force && originalTokenCount + incomingTokenCount <= afterTokens) {
     return none;
   }
+
   const userMessageIndexes = messages.flatMap((message, index) =>
     message.role === "user" ? [index] : [],
   );
   let compactedMessageCount: number;
   let retainedTokenCount: number;
+
   if (retention.recentTurns !== undefined) {
     if (userMessageIndexes.length <= retention.recentTurns) {
       return none;
     }
+
     compactedMessageCount =
       retention.recentTurns === 0
         ? messages.length
@@ -401,7 +438,9 @@ async function selectCompactionPrefix(
     const tailTokenCounts = new Map<number, number>();
     const countTail = async (messageIndex: number): Promise<number> => {
       const cached = tailTokenCounts.get(messageIndex);
+
       if (cached !== undefined) return cached;
+
       const count = await countTokens(tokenCounter, messages.slice(messageIndex));
       tailTokenCounts.set(messageIndex, count);
       return count;
@@ -412,6 +451,7 @@ async function selectCompactionPrefix(
     while (lower <= upper) {
       const middle = Math.floor((lower + upper) / 2);
       const candidate = userMessageIndexes[middle] ?? 0;
+
       if ((await countTail(candidate)) <= retention.recentTokens) {
         retainedBoundary = middle;
         upper = middle - 1;
@@ -424,9 +464,11 @@ async function selectCompactionPrefix(
       tailTokenCounts.get(compactedMessageCount) ??
       (await countTokens(tokenCounter, messages.slice(compactedMessageCount)));
   }
+
   if (compactedMessageCount === 0) {
     return none;
   }
+
   const compactedTokenCount = await countTokens(
     tokenCounter,
     messages.slice(0, compactedMessageCount),
@@ -449,28 +491,36 @@ async function countTokens(
   } catch (error) {
     throw new MemoryCompactionError("Memory token counter failed.", { cause: error });
   }
+
   if (!Number.isSafeInteger(count) || count < 0) {
     throw new MemoryCompactionError("Memory token counter must return a nonnegative safe integer.");
   }
+
   return count;
 }
 
 function remappedCompactorError(error: unknown, usage: ReturnType<typeof Usage.empty>): Error {
   if (error instanceof MemoryCompactionError) {
-    const mergedUsage =
-      error.usage === undefined
-        ? usage
-        : isEmptyUsage(usage)
-          ? error.usage
-          : Usage.add(usage, error.usage);
+    let mergedUsage: ReturnType<typeof Usage.empty>;
+
+    if (error.usage === undefined) {
+      mergedUsage = usage;
+    } else if (isEmptyUsage(usage)) {
+      mergedUsage = error.usage;
+    } else {
+      mergedUsage = Usage.add(usage, error.usage);
+    }
+
     if (mergedUsage === error.usage || (error.usage === undefined && isEmptyUsage(usage))) {
       return error;
     }
+
     return new MemoryCompactionError(error.message, {
       cause: error,
       usage: mergedUsage,
     });
   }
+
   return new MemoryCompactionError("Memory compactor failed.", {
     cause: error,
     usage,

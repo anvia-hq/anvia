@@ -20,9 +20,11 @@ export class WsRecorder {
   constructor(hubPort: number) {
     this.server.on("connection", (client, request) => {
       const headers: Record<string, string> = {};
+
       if (request.headers.authorization !== undefined) {
         headers.authorization = request.headers.authorization;
       }
+
       const upstream = new WebSocket(`ws://127.0.0.1:${hubPort}`, { headers });
       const waiting: Array<[WebSocket.RawData, boolean]> = [];
       const forward =
@@ -48,6 +50,7 @@ export class WsRecorder {
   async listen(): Promise<number> {
     if (!this.server.address())
       await new Promise((resolve) => this.server.once("listening", resolve));
+
     return (this.server.address() as { port: number }).port;
   }
 
@@ -78,13 +81,20 @@ function describe(
   const size = Array.isArray(data)
     ? data.reduce((total, part) => total + part.byteLength, 0)
     : data.byteLength;
+
   if (binary) return { from, binary, size };
+
   try {
-    const buffer = Array.isArray(data)
-      ? Buffer.concat(data)
-      : Buffer.isBuffer(data)
-        ? data
-        : Buffer.from(data);
+    let buffer: Buffer;
+
+    if (Array.isArray(data)) {
+      buffer = Buffer.concat(data);
+    } else if (Buffer.isBuffer(data)) {
+      buffer = data;
+    } else {
+      buffer = Buffer.from(data);
+    }
+
     const text = buffer.toString();
     const parsed: unknown = JSON.parse(text);
     const type = (parsed as { type?: unknown }).type;

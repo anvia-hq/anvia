@@ -251,6 +251,7 @@ itSqlite(
               policy: "allSettled",
             },
           };
+
         return { status: "completed", output: (await ctx.children())[0]!.status };
       },
     });

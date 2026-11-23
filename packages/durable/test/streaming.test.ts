@@ -116,9 +116,12 @@ it("streams persisted deltas before completion and detaches subscribers without 
   try {
     while (true) {
       const next = await iterator.next();
+
       if (next.done) throw new Error("Stream ended before delta");
+
       parseDurableEvent(next.value);
       cursor = next.value.sequence;
+
       if (next.value.type === "model_delta" && JSON.stringify(next.value.data).includes('"do"'))
         break;
     }
@@ -255,7 +258,9 @@ it("preserves tool approval and continues with streaming after a restart", async
   const run = await runtime.submit(submission);
   await vi.waitFor(async () => expect((await run.snapshot()).run.status).toBe("waiting"));
   const outcome = (await run.snapshot()).run.outcome;
+
   if (outcome?.type !== "interaction") throw new Error("Missing interaction");
+
   expect(tool).not.toHaveBeenCalled();
   await runtime.close();
   const reopened = await open(agent, path);
@@ -279,7 +284,9 @@ it("uses the same streaming execution for graph nodes and owned agent tasks", as
     run: async (ctx) => {
       const id = await ctx.spawnAgent("child", { agentId: agent.id, prompt: "hello" });
       const child = (await ctx.children()).find((child) => child.id === id)!;
+
       if (child.outcome?.status === "completed") return { status: "completed", output: "done" };
+
       return {
         status: "waiting",
         checkpoint: null,
@@ -469,6 +476,7 @@ it("treats a delta write failure as fatal storage failure and recovers with a ne
         ...tx,
         async appendEvent(id, type, data) {
           if (type === "model_delta") throw new Error("injected delta write failure");
+
           await tx.appendEvent(id, type, data);
         },
       }),

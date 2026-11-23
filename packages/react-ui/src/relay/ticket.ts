@@ -9,6 +9,7 @@ export function resolveTicket(
   read: () => TicketSource | undefined,
 ): (() => string | Promise<string>) | undefined {
   if (read() === undefined) return undefined;
+
   return () => {
     const ticket = read();
     return typeof ticket === "function" ? ticket() : (ticket as string);

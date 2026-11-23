@@ -16,6 +16,7 @@ export function registerMcpRoutes(
   app.get("/agents/:agentId/mcps", async (c) => {
     const agentId = c.req.param("agentId");
     const agent = props.agentMap.get(agentId);
+
     if (agent === undefined) {
       return errorResponse(c, 404, "not_found", "Agent not found");
     }

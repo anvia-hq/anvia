@@ -29,13 +29,17 @@ export async function embedText(options: EmbedTextOptions): Promise<EmbedTextRes
     abortSignal: options.abortSignal,
   });
   const embedding = embeddings[0];
+
   if (embedding === undefined) throw new Error("Embedding model returned no embeddings");
+
   return { embedding };
 }
 
 export async function embedTexts(options: EmbedTextsOptions): Promise<EmbedTextsResult> {
   throwIfAborted(options.abortSignal);
+
   if (options.texts.length === 0) return { embeddings: [] };
+
   const batches = chunk(options.texts, batchSize(options.model.maxBatchSize, options.texts.length));
   const results = await mapWithConcurrency(batches, concurrency(options.concurrency), (batch) =>
     embedDenseBatch(options.model, batch, options),
@@ -48,7 +52,9 @@ export async function embedSparseTexts(
   options: EmbedSparseTextsOptions,
 ): Promise<EmbedSparseTextsResult> {
   throwIfAborted(options.abortSignal);
+
   if (options.texts.length === 0) return { embeddings: [] };
+
   const batches = chunk(options.texts, batchSize(options.model.maxBatchSize, options.texts.length));
   const results = await mapWithConcurrency(batches, concurrency(options.concurrency), (batch) =>
     embedSparseBatch(options.model, batch, options),
@@ -148,11 +154,13 @@ export async function embedDocuments<T, Metadata extends VectorMetadata = Vector
     documents: prepared.map((item, index) => {
       const embeddings = denseByDocument.get(index) ?? [];
       const sparseEmbeddings = sparseByDocument.get(index) ?? [];
+
       if (embeddings.length !== sparseEmbeddings.length) {
         throw new Error(
           `Hybrid embedding produced ${embeddings.length} dense and ${sparseEmbeddings.length} sparse vectors for document ${item.id}`,
         );
       }
+
       return embeddedDocument(item, embeddings, sparseEmbeddings);
     }),
   };
@@ -203,12 +211,17 @@ function prepareDocuments<T, Metadata extends VectorMetadata>(
   const ids = new Set<string>();
   return documents.map((document, index) => {
     const id = options.id?.(document, index) ?? `doc${index}`;
+
     if (id.length === 0) throw new TypeError("Embedded document ids must not be empty");
+
     if (ids.has(id)) throw new TypeError(`Duplicate embedded document id: ${id}`);
+
     ids.add(id);
     const content = options.content(document, index);
+
     if (Array.isArray(content) && content.length === 0)
       throw new TypeError(`Embedded document ${id} must contain at least one text chunk`);
+
     return {
       id,
       document,
@@ -228,12 +241,15 @@ function embeddedDocument<T, Metadata extends VectorMetadata>(
     document: item.document,
     embeddings,
   };
+
   if (item.metadata !== undefined) {
     result = { ...result, metadata: item.metadata };
   }
+
   if (sparseEmbeddings !== undefined) {
     result = { ...result, sparseEmbeddings };
   }
+
   return result;
 }
 
@@ -273,17 +289,21 @@ function chunk<T>(items: T[], size: number): T[][] {
 
 function batchSize(configured: number | undefined, fallback: number): number {
   if (configured === undefined) return fallback;
+
   if (!Number.isSafeInteger(configured) || configured < 1) {
     throw new RangeError("Embedding model maxBatchSize must be a positive safe integer");
   }
+
   return configured;
 }
 
 function concurrency(configured: number | undefined): number {
   if (configured === undefined) return 1;
+
   if (!Number.isSafeInteger(configured) || configured < 1) {
     throw new RangeError("Embedding concurrency must be a positive safe integer");
   }
+
   return configured;
 }
 
@@ -295,12 +315,15 @@ function validateDenseEmbedding(
   if (embedding.vector.length === 0) {
     throw new TypeError(`Embedding model returned an empty vector at index ${index}`);
   }
+
   if (!embedding.vector.every(Number.isFinite)) {
     throw new TypeError(`Embedding model returned a non-finite vector at index ${index}`);
   }
+
   if (dimensions !== undefined) {
     if (!Number.isSafeInteger(dimensions) || dimensions < 1)
       throw new TypeError("Embedding model dimensions must be a positive safe integer");
+
     if (embedding.vector.length !== dimensions) {
       throw new Error(
         `Embedding model returned ${embedding.vector.length} dimensions at index ${index}; expected ${dimensions}`,
@@ -311,15 +334,19 @@ function validateDenseEmbedding(
 
 function validateSparseEmbedding(embedding: SparseEmbedding, index: number | "query"): void {
   const { indices, values } = embedding.vector;
+
   if (indices.length !== values.length) {
     throw new Error(`Sparse embedding at ${index} has mismatched indices and values`);
   }
+
   if (!indices.every((value) => Number.isSafeInteger(value) && value >= 0)) {
     throw new TypeError(`Sparse embedding at ${index} has an invalid index`);
   }
+
   if (new Set(indices).size !== indices.length) {
     throw new TypeError(`Sparse embedding at ${index} has duplicate indices`);
   }
+
   if (!values.every(Number.isFinite)) {
     throw new TypeError(`Sparse embedding at ${index} has a non-finite value`);
   }

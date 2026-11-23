@@ -19,6 +19,7 @@ export function memoryGenerationRows(records: StudioMemoryMessageRecord[]): Memo
     if (record.message.role !== "assistant") {
       return [];
     }
+
     return [
       {
         position: record.position,
@@ -110,10 +111,12 @@ function assistantPreview(message: AssistantMessage): string {
       ? truncatePreview(message.content)
       : "Assistant response";
   }
+
   const text = message.content
     .flatMap((content) => (content.type === "text" ? [content.text] : []))
     .join("\n")
     .trim();
+
   if (text.length > 0) {
     return truncatePreview(text);
   }
@@ -121,6 +124,7 @@ function assistantPreview(message: AssistantMessage): string {
   const toolNames = message.content.flatMap((content) =>
     content.type === "tool-call" ? [content.toolName] : [],
   );
+
   if (toolNames.length > 0) {
     return `Tool call${toolNames.length === 1 ? "" : "s"}: ${toolNames.join(", ")}`;
   }
@@ -129,6 +133,7 @@ function assistantPreview(message: AssistantMessage): string {
     .flatMap((content) => (content.type === "reasoning" ? [content.text] : []))
     .join("\n")
     .trim();
+
   if (reasoning.length > 0) {
     return truncatePreview(reasoning);
   }

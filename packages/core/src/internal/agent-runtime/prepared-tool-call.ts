@@ -40,6 +40,7 @@ export function preparedToolInput(
   if (context === undefined || !(preparedToolInputSymbol in context)) {
     return undefined;
   }
+
   const prepared = (context as PreparedToolCallContext)[preparedToolInputSymbol];
   return prepared?.owner === owner ? { input: prepared.input } : undefined;
 }
@@ -48,6 +49,7 @@ export function withoutPreparedToolInput(context: ToolCallContext): ToolCallCont
   if (!(preparedToolInputSymbol in context)) {
     return context;
   }
+
   const { [preparedToolInputSymbol]: _prepared, ...publicContext } =
     context as PreparedToolCallContext;
   return publicContext;
@@ -109,6 +111,7 @@ function asToolCallError(toolName: string, error: unknown): ToolCallError {
   if (error instanceof ToolCallError) {
     return error;
   }
+
   return error instanceof Error
     ? new ToolCallError(error.message, error)
     : new ToolCallError(`Tool ${toolName} failed`, error);

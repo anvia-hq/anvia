@@ -5,15 +5,19 @@ export function quoteIdentifier(value: string): string {
   if (typeof value !== "string" || value.length === 0) {
     throw new TypeError("Memgraph identifier must be a non-empty string.");
   }
+
   if (value.includes("\u0000")) {
     throw new TypeError("Memgraph identifiers must not contain NUL.");
   }
+
   return `\`${value.replaceAll("`", "``")}\``;
 }
 
 export function throwIfAborted(signal: AbortSignal | undefined): void {
   if (signal?.aborted !== true) return;
+
   if (signal.reason instanceof Error) throw signal.reason;
+
   throw abortError();
 }
 
@@ -27,6 +31,7 @@ export function positiveInteger(value: number, label: string, maximum?: number):
       `${label} must be a positive safe integer${maximum === undefined ? "." : ` no greater than ${maximum}.`}`,
     );
   }
+
   return value;
 }
 
@@ -37,11 +42,14 @@ export function strictProperties(value: unknown, label: string): GraphProperties
 export function driverNumber(value: unknown, label: string): number {
   if (isInt(value)) {
     if (!value.inSafeRange()) throw new TypeError(`${label} must be a safe number.`);
+
     return value.toNumber();
   }
+
   if (typeof value !== "number" || !Number.isFinite(value)) {
     throw new TypeError(`${label} must be a finite number.`);
   }
+
   return value;
 }
 
@@ -52,20 +60,26 @@ export function stableObject(value: Readonly<Record<string, unknown>>): string {
 function normalizeDriverValue(value: unknown, label: string): unknown {
   if (isInt(value)) {
     if (!value.inSafeRange()) throw new TypeError(`${label} contains an unsafe integer.`);
+
     return value.toNumber();
   }
+
   if (Array.isArray(value)) return value.map((item) => normalizeDriverValue(item, label));
+
   if (typeof value === "object" && value !== null) {
     return Object.fromEntries(
       Object.entries(value).map(([key, item]) => [key, normalizeDriverValue(item, label)]),
     );
   }
+
   return value;
 }
 
 function normalizeForComparison(value: unknown): unknown {
   if (isInt(value)) return value.inSafeRange() ? value.toNumber() : value.toString();
+
   if (Array.isArray(value)) return value.map(normalizeForComparison);
+
   if (typeof value === "object" && value !== null) {
     return Object.fromEntries(
       Object.entries(value)
@@ -73,5 +87,6 @@ function normalizeForComparison(value: unknown): unknown {
         .map(([key, item]) => [key, normalizeForComparison(item)]),
     );
   }
+
   return value;
 }

@@ -27,6 +27,7 @@ export function agentToolItems(agent: StudioAgent): AgentToolItem[] {
 
 export function approvalMetadata(tool: AnyTool): StudioAgentToolApprovalMetadata {
   const approval = tool.requiresApproval;
+
   if (approval === undefined || approval === false) {
     return { required: false };
   }
@@ -37,7 +38,9 @@ export function approvalMetadata(tool: AnyTool): StudioAgentToolApprovalMetadata
 
   const policy = approval as { reason?: unknown };
   const metadata: StudioAgentToolApprovalMetadata = { required: true };
+
   if (typeof policy.reason === "string") metadata.reason = policy.reason;
+
   return metadata;
 }
 

@@ -108,9 +108,11 @@ export function tabCountLabel(
   evidenceCount: number,
 ): string {
   const sourceKind = sourceKindForTab(tab);
+
   if (sourceKind === undefined) {
     return `${evidenceCount} entries`;
   }
+
   const tabSources = sources.filter((source) => source.source.kind === sourceKind);
   const itemCount = sumKind(
     tabSources.map((source) => source.source),

@@ -482,7 +482,9 @@ describe("useChat", () => {
     const transport: ClientTransport<ClientStreamRequest> = {
       async *send() {
         attempt += 1;
+
         if (attempt > 1) throw new Error("Network unavailable");
+
         yield {
           type: "stream_start",
           protocol: CLIENT_STREAM_PROTOCOL,
@@ -680,6 +682,7 @@ describe("terminal stream errors", () => {
           eventId: 0,
           resumable: false,
         };
+
         if (detailed)
           yield {
             type: "stream_event",
@@ -687,6 +690,7 @@ describe("terminal stream errors", () => {
             eventId: 1,
             event: { type: "error", runId: "run", error: { message: "Configure a provider key." } },
           };
+
         yield { type: "stream_end", streamId: "error", eventId: detailed ? 2 : 1, status: "error" };
       },
     };

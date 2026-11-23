@@ -37,7 +37,9 @@ export class Staging implements BlobBackend, MessageBackend {
 
   get(hash: string): Blob | undefined {
     const row = this.blobs.get(hash);
+
     if (row === undefined) throw new MissingRow("blob", hash);
+
     return row ?? undefined;
   }
 
@@ -53,10 +55,15 @@ export class Staging implements BlobBackend, MessageBackend {
 
   getHistory(hash: string) {
     const row = this.histories.get(hash);
+
     if (row === undefined) throw new MissingRow("history", hash);
+
     if (row === null) return undefined;
+
     const record = this.messages.get(row.message);
+
     if (record === undefined) throw new MissingRow("history", hash);
+
     return { previous: row.previous, message: row.message, record };
   }
 
@@ -68,6 +75,7 @@ export class Staging implements BlobBackend, MessageBackend {
         result = fn();
       } catch (error) {
         if (!(error instanceof MissingRow)) throw error;
+
         await this.load(query, error);
         continue;
       }
@@ -89,6 +97,7 @@ export class Staging implements BlobBackend, MessageBackend {
       );
       return;
     }
+
     const rows = await query(
       `WITH RECURSIVE chain(hash, previous, message) AS (
          SELECT hash, previous, message FROM anvia_durable_histories WHERE hash = $1::text
@@ -100,7 +109,9 @@ export class Staging implements BlobBackend, MessageBackend {
        LEFT JOIN anvia_durable_messages m ON m.hash = c.message`,
       [missing.hash],
     );
+
     if (rows.length === 0) this.histories.set(missing.hash, null);
+
     for (const row of rows) {
       const hash = String(row.hash);
       const message = String(row.message);
@@ -108,6 +119,7 @@ export class Staging implements BlobBackend, MessageBackend {
         previous: row.previous === null ? null : String(row.previous),
         message,
       });
+
       if (row.record !== null) this.messages.set(message, String(row.record));
     }
   }
@@ -123,6 +135,7 @@ export class Staging implements BlobBackend, MessageBackend {
         [JSON.stringify(rows)],
       );
     }
+
     if (this.newHistories.size > 0) {
       const rows = [...this.newHistories].map(([hash, row]) => ({ hash, ...row }));
       this.newHistories.clear();
@@ -134,6 +147,7 @@ export class Staging implements BlobBackend, MessageBackend {
         [JSON.stringify(rows)],
       );
     }
+
     if (this.newBlobs.size > 0) {
       const rows = [...this.newBlobs].map(([hash, row]) => ({ hash, ...row }));
       this.newBlobs.clear();

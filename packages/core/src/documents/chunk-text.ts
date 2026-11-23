@@ -27,6 +27,7 @@ type TextRange = Readonly<{
 
 export function chunkText(options: ChunkTextOptions): readonly TextChunk[] {
   const validated = validateOptions(options);
+
   if (validated.text.length === 0) {
     return [];
   }
@@ -63,15 +64,18 @@ function validateOptions(options: ChunkTextOptions):
   }
 
   const value = options as unknown as Record<string, unknown>;
+
   if (typeof value.text !== "string") {
     throw new TypeError("chunkText text must be a string");
   }
+
   if (!Number.isSafeInteger(value.maxSize) || (value.maxSize as number) <= 0) {
     throw new RangeError("chunkText maxSize must be a positive safe integer");
   }
 
   const maxSize = value.maxSize as number;
   const overlap = value.overlap === undefined ? 0 : value.overlap;
+
   if (!Number.isSafeInteger(overlap) || (overlap as number) < 0 || (overlap as number) >= maxSize) {
     throw new RangeError(
       "chunkText overlap must be a non-negative safe integer smaller than maxSize",
@@ -82,6 +86,7 @@ function validateOptions(options: ChunkTextOptions):
     if ("separators" in value) {
       throw new TypeError("chunkText fixed strategy does not accept separators");
     }
+
     return {
       text: value.text,
       strategy: "fixed",
@@ -93,6 +98,7 @@ function validateOptions(options: ChunkTextOptions):
   if (value.strategy !== "recursive") {
     throw new TypeError('chunkText strategy must be either "fixed" or "recursive"');
   }
+
   if (!Array.isArray(value.separators) || value.separators.length === 0) {
     throw new TypeError("chunkText recursive separators must be a non-empty array");
   }
@@ -103,9 +109,11 @@ function validateOptions(options: ChunkTextOptions):
     if (typeof separator !== "string" || separator.length === 0) {
       throw new TypeError("chunkText recursive separators must contain non-empty strings");
     }
+
     if (seen.has(separator)) {
       throw new TypeError("chunkText recursive separators must not contain duplicates");
     }
+
     seen.add(separator);
   }
 
@@ -125,9 +133,11 @@ function chunkFixed(text: string, maxSize: number, overlap: number): readonly Te
   while (start < text.length) {
     const end = Math.min(start + maxSize, text.length);
     chunks.push(createChunk(text, chunks.length, start, end));
+
     if (end === text.length) {
       break;
     }
+
     start = end - overlap;
   }
 
@@ -147,9 +157,11 @@ function resolveRecursiveRanges(
 
   while (pending.length > 0) {
     const current = pending.pop();
+
     if (current === undefined) {
       break;
     }
+
     if (current.range.end - current.range.start <= maxSize) {
       resolved.push(current.range);
       continue;
@@ -159,6 +171,7 @@ function resolveRecursiveRanges(
     let nextSeparatorIndex = separators.length;
     for (let index = current.separatorIndex; index < separators.length; index += 1) {
       const candidate = splitAfterSeparator(text, current.range, separators[index] as string);
+
       if (candidate.length > 1) {
         pieces = candidate;
         nextSeparatorIndex = index + 1;
@@ -186,13 +199,17 @@ function splitAfterSeparator(text: string, range: TextRange, separator: string):
 
   while (searchFrom < range.end) {
     const separatorStart = text.indexOf(separator, searchFrom);
+
     if (separatorStart < 0 || separatorStart + separator.length > range.end) {
       break;
     }
+
     const end = separatorStart + separator.length;
+
     if (end > start) {
       ranges.push({ start, end });
     }
+
     start = end;
     searchFrom = end;
   }
@@ -200,6 +217,7 @@ function splitAfterSeparator(text: string, range: TextRange, separator: string):
   if (start < range.end) {
     ranges.push({ start, end: range.end });
   }
+
   return ranges;
 }
 
@@ -228,9 +246,11 @@ function applyRecursiveOverlap(
     const end = boundary !== undefined && boundary > previousEnd ? boundary : limit;
 
     chunks.push(createChunk(text, chunks.length, start, end));
+
     if (end === text.length) {
       break;
     }
+
     previousEnd = end;
     start = Math.max(0, end - overlap);
   }
@@ -243,6 +263,7 @@ function findLastBoundaryAtMost(boundaries: readonly number[], limit: number): n
   let high = boundaries.length;
   while (low < high) {
     const middle = low + Math.floor((high - low) / 2);
+
     if ((boundaries[middle] as number) <= limit) {
       low = middle + 1;
     } else {

@@ -38,21 +38,26 @@ export async function retrieveGraphContext<Schema extends GraphSchemaLike>(
   if (!(options.graph instanceof MemgraphKnowledgeGraphBase)) {
     throw new TypeError("retrieveGraphContext requires a Memgraph knowledge graph registration.");
   }
+
   throwIfAborted(options.abortSignal);
   validateSearch(options.search);
   validateTraversal(options.graph.schema, options.traversal);
   validateEvidence(options.graph, options.evidence);
   const selected = options.search.seeds.map((name) => ({ name, seed: options.graph.seed(name) }));
   const dimensions = new Set(selected.map(({ seed }) => seed.vectorIndex.dimensions));
+
   if (dimensions.size !== 1) {
     throw new TypeError("Selected Memgraph graph seeds must use the same vector dimensions.");
   }
+
   const expectedDimensions = [...dimensions][0];
+
   if (expectedDimensions === undefined || options.model.dimensions !== expectedDimensions) {
     throw new TypeError(
       `Embedding model dimensions ${options.model.dimensions} do not match Memgraph graph dimensions ${expectedDimensions}.`,
     );
   }
+
   if (options.search.type === "hybrid") {
     for (const { name, seed } of selected) {
       if (seed.textIndex === undefined) {
@@ -60,15 +65,18 @@ export async function retrieveGraphContext<Schema extends GraphSchemaLike>(
       }
     }
   }
+
   const { embedding } = await embedText({
     model: options.model,
     text: options.query,
     retries: options.retries,
     abortSignal: options.abortSignal,
   });
+
   if (embedding.vector.length !== expectedDimensions) {
     throw new TypeError("Query embedding dimensions do not match the Memgraph graph dimensions.");
   }
+
   const lists: SearchHit[][] = [];
   for (const { seed } of selected) {
     const limit =
@@ -76,6 +84,7 @@ export async function retrieveGraphContext<Schema extends GraphSchemaLike>(
     lists.push(
       await vectorSearch(options.graph, seed, embedding.vector, limit, options.abortSignal),
     );
+
     if (options.search.type === "hybrid") {
       lists.push(await textSearch(options.graph, seed, options.query, limit, options.abortSignal));
     }
@@ -126,6 +135,7 @@ async function textSearch(
   abortSignal?: AbortSignal,
 ): Promise<SearchHit[]> {
   if (seed.textIndex === undefined) throw new TypeError("Hybrid search requires a text index.");
+
   const result = await graph.query(
     `CALL text_search.search_all($indexName, $query, {limit: $limit})
 YIELD node, score
@@ -142,6 +152,7 @@ RETURN id(node) AS internalId, labels(node) AS labels, properties(node) AS prope
 function parseSearchHit(record: DriverRecord): SearchHit {
   const labels = record.get("labels");
   const properties = record.get("properties");
+
   if (
     !Array.isArray(labels) ||
     !labels.every((label) => typeof label === "string") ||
@@ -151,6 +162,7 @@ function parseSearchHit(record: DriverRecord): SearchHit {
   ) {
     throw new TypeError("Memgraph search returned a malformed result.");
   }
+
   return {
     internalId: driverNumber(record.get("internalId"), "Memgraph search internal id"),
     labels,
@@ -202,7 +214,9 @@ RETURN DISTINCT id(entry) AS internalId`,
       traversalIds.add(driverNumber(record.get("internalId"), "Memgraph traversal entry id"));
     }
   }
+
   if (traversalIds.size === 0) return { nodes: [], relationships: [] };
+
   const seedIds = [...traversalIds].slice(0, options.maxNodes);
   const types = options.relationships.map(quoteIdentifier).join("|");
   const pattern = traversalPattern(types, options.direction, options.maxDepth);
@@ -228,7 +242,9 @@ LIMIT $pathLimit`,
   const keys = new Map<number, string>();
   const addNode = (value: Record<string, unknown>) => {
     const parsed = contextNode(value, graph.schema);
+
     if (!nodes.has(parsed.node.key) && nodes.size >= options.maxNodes) return;
+
     nodes.set(parsed.node.key, parsed.node);
     keys.set(parsed.internalId, parsed.node.key);
   };
@@ -240,6 +256,7 @@ LIMIT $pathLimit`,
   for (const record of paths.records) {
     for (const value of listOfMaps(record.get("relationships"), "traversal relationships")) {
       const parsed = contextRelationship(value, keys);
+
       if (parsed !== undefined && relationships.size < options.maxRelationships) {
         relationships.set(parsed.key, parsed);
       }
@@ -256,9 +273,11 @@ function traversalPattern(
   if (direction === "outgoing") {
     return `(seed)-[:${types} *BFS 1..${maxDepth}]->(node)`;
   }
+
   if (direction === "incoming") {
     return `(seed)<-[:${types} *BFS 1..${maxDepth}]-(node)`;
   }
+
   return `(seed)-[:${types} *BFS 1..${maxDepth}]-(node)`;
 }
 
@@ -268,22 +287,27 @@ function contextNode(
 ): { internalId: number; node: GraphContextNode } {
   const labels = value.labels;
   const raw = value.properties;
+
   if (!Array.isArray(labels) || !labels.every((label) => typeof label === "string")) {
     throw new TypeError("Memgraph traversal returned malformed node labels.");
   }
+
   const map = requiredMap(raw, "node properties");
   const properties = applicationProperties(map, "Memgraph graph node");
   const type = labels.find((label) => label in schema.nodes) ?? labels[0] ?? "Node";
   const definition = schema.nodes[type];
   const identity: Record<string, string | number | boolean> = {};
+
   if (definition !== undefined) {
     for (const property of definition.identity) {
       const item = properties[property];
+
       if (typeof item === "string" || typeof item === "number" || typeof item === "boolean") {
         identity[property] = item;
       }
     }
   }
+
   const internalId = driverNumber(value.internalId, "Memgraph node internal id");
   return {
     internalId,
@@ -305,7 +329,9 @@ function contextRelationship(
   const internalId = driverNumber(value.internalId, "Memgraph relationship internal id");
   const from = nodeKeys.get(driverNumber(value.from, "Memgraph relationship source"));
   const to = nodeKeys.get(driverNumber(value.to, "Memgraph relationship target"));
+
   if (from === undefined || to === undefined) return undefined;
+
   return {
     key: stringProperty(raw, "__anvia_key") ?? String(internalId),
     type: stringValue(value.type, "Memgraph relationship type"),
@@ -323,9 +349,11 @@ async function hydrateEvidence(
   abortSignal?: AbortSignal,
 ): Promise<GraphEvidence[]> {
   if (options.type === "none") return [];
+
   if (!(graph instanceof ManagedMemgraphKnowledgeGraph)) {
     throw new TypeError("Chunk evidence requires a managed Memgraph knowledge graph.");
   }
+
   const chunkIds: string[] = [];
   const seen = new Set<string>();
   for (const ids of [
@@ -335,13 +363,18 @@ async function hydrateEvidence(
   ]) {
     for (const id of ids) {
       if (seen.has(id)) continue;
+
       seen.add(id);
       chunkIds.push(id);
+
       if (chunkIds.length === options.maxChunks) break;
     }
+
     if (chunkIds.length === options.maxChunks) break;
   }
+
   if (chunkIds.length === 0) return [];
+
   const result = await graph.query(
     `MATCH (d:${quoteIdentifier(graph.resources.labels.document)})-[:${quoteIdentifier("ANVIA_HAS_CHUNK")}]->(c:${quoteIdentifier(graph.resources.labels.chunk)})
 WHERE c.${quoteIdentifier("__anvia_id")} IN $chunkIds
@@ -361,8 +394,10 @@ RETURN c.${quoteIdentifier("__anvia_id")} AS chunkId,
   );
   return chunkIds.map((id) => {
     const evidence = byId.get(id);
+
     if (evidence === undefined)
       throw new Error(`Memgraph evidence references missing chunk ${id}.`);
+
     return evidence;
   });
 }
@@ -380,15 +415,18 @@ function evidenceFromRecord(record: DriverRecord): GraphEvidence {
 
 function validateSearch(search: GraphRetrieveOptions<GraphSchemaLike>["search"]): void {
   positiveInteger(search.topK, "Memgraph graph search topK");
+
   if (search.seeds.length === 0 || new Set(search.seeds).size !== search.seeds.length) {
     throw new TypeError("Memgraph graph search requires unique seed names.");
   }
+
   if (search.type === "vector") {
     if (search.seeds.length !== 1) {
       throw new TypeError(
         "Vector graph search accepts exactly one seed; use hybrid search to fuse seeds.",
       );
     }
+
     if (search.minScore !== undefined && !Number.isFinite(search.minScore)) {
       throw new TypeError("Memgraph graph search minScore must be finite.");
     }
@@ -405,15 +443,18 @@ function validateTraversal(
   if (!(["outgoing", "incoming", "both"] as const).includes(traversal.direction)) {
     throw new TypeError("Memgraph traversal direction must be outgoing, incoming, or both.");
   }
+
   positiveInteger(traversal.maxDepth, "Memgraph traversal maxDepth", 8);
   positiveInteger(traversal.maxNodes, "Memgraph traversal maxNodes");
   positiveInteger(traversal.maxRelationships, "Memgraph traversal maxRelationships");
+
   if (
     traversal.relationships.length === 0 ||
     new Set(traversal.relationships).size !== traversal.relationships.length
   ) {
     throw new TypeError("Memgraph traversal requires unique relationship types.");
   }
+
   for (const type of traversal.relationships) {
     if (!(type in schema.relationships)) {
       throw new TypeError(`Memgraph traversal references unknown relationship type ${type}.`);
@@ -426,7 +467,9 @@ function validateEvidence(
   evidence: GraphRetrieveOptions<GraphSchemaLike>["evidence"],
 ): void {
   if (evidence.type === "none") return;
+
   positiveInteger(evidence.maxChunks, "Memgraph graph evidence maxChunks");
+
   if (graph.evidenceCapability !== "chunks") {
     throw new TypeError("Chunk evidence requires a managed Memgraph knowledge graph.");
   }
@@ -465,11 +508,13 @@ function requiredMap(value: unknown, label: string): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new TypeError(`Memgraph ${label} must be an object.`);
   }
+
   return value as Record<string, unknown>;
 }
 
 function listOfMaps(value: unknown, label: string): Record<string, unknown>[] {
   if (!Array.isArray(value)) throw new TypeError(`Memgraph ${label} must be an array.`);
+
   return value.map((item) => requiredMap(item, label));
 }
 
@@ -480,15 +525,19 @@ function stringProperty(value: Record<string, unknown>, property: string): strin
 
 function stringArrayProperty(value: Record<string, unknown>, property: string): string[] {
   const item = value[property];
+
   if (item === undefined) return [];
+
   if (!Array.isArray(item) || !item.every((entry) => typeof entry === "string")) {
     throw new TypeError(`Memgraph property ${property} must be a string array.`);
   }
+
   return [...item];
 }
 
 function stringValue(value: unknown, label: string): string {
   if (typeof value !== "string") throw new TypeError(`${label} must be a string.`);
+
   return value;
 }
 

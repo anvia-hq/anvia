@@ -93,6 +93,7 @@ export function assertCompletionResponseIntegrity(
         usage: response.usage,
       });
     }
+
     if (response.finishReason === "length") {
       throw new CompletionProviderOutputError({
         kind: "truncated-tool-call",
@@ -100,6 +101,7 @@ export function assertCompletionResponseIntegrity(
         usage: response.usage,
       });
     }
+
     if (response.finishReason === "content-filter") {
       throw new CompletionProviderOutputError({
         kind: "filtered-tool-call",
@@ -107,6 +109,7 @@ export function assertCompletionResponseIntegrity(
         usage: response.usage,
       });
     }
+
     if (response.finishReason === "other") {
       throw new CompletionProviderOutputError({
         kind: "invalid-tool-call",
@@ -128,19 +131,25 @@ export function assertCompletionResponseIntegrity(
     if (!isNonblankString(toolCall.toolCallId) || !isNonblankString(toolCall.toolName)) {
       throw invalidToolCall(toolCall.toolCallId, response.usage);
     }
+
     if (toolCall.callId !== undefined && !isNonblankString(toolCall.callId)) {
       throw invalidToolCall(toolCall.toolCallId, response.usage);
     }
+
     if (toolCallIds.has(toolCall.toolCallId)) {
       throw invalidToolCall(toolCall.toolCallId, response.usage);
     }
+
     toolCallIds.add(toolCall.toolCallId);
+
     if (toolCall.callId !== undefined) {
       if (callIds.has(toolCall.callId)) {
         throw invalidToolCall(toolCall.toolCallId, response.usage);
       }
+
       callIds.add(toolCall.callId);
     }
+
     if (!isJsonValue(toolCall.input)) {
       throw new CompletionProviderOutputError({
         kind: "invalid-tool-arguments",
@@ -163,33 +172,41 @@ function assertProviderOutputErrorOptions(options: CompletionProviderOutputError
   if (typeof options !== "object" || options === null) {
     throw new TypeError("CompletionProviderOutputError options must be an object.");
   }
+
   if (!PROVIDER_OUTPUT_ERROR_KINDS.has(options.kind)) {
     throw new TypeError("CompletionProviderOutputError kind is invalid.");
   }
+
   if (options.toolCallId !== undefined && !isNonblankString(options.toolCallId)) {
     throw new TypeError("CompletionProviderOutputError toolCallId must be a non-empty string.");
   }
+
   if (options.finishReason !== undefined && !isCompletionFinishReason(options.finishReason)) {
     throw new TypeError("CompletionProviderOutputError finishReason is invalid.");
   }
+
   if (options.kind === "truncated-tool-call" && options.finishReason !== "length") {
     throw new TypeError('CompletionProviderOutputError truncated-tool-call requires "length".');
   }
+
   if (options.kind === "filtered-tool-call" && options.finishReason !== "content-filter") {
     throw new TypeError(
       'CompletionProviderOutputError filtered-tool-call requires "content-filter".',
     );
   }
+
   if (options.finishReason === "length" && options.kind !== "truncated-tool-call") {
     throw new TypeError(
       'CompletionProviderOutputError finishReason "length" requires truncated-tool-call.',
     );
   }
+
   if (options.finishReason === "content-filter" && options.kind !== "filtered-tool-call") {
     throw new TypeError(
       'CompletionProviderOutputError finishReason "content-filter" requires filtered-tool-call.',
     );
   }
+
   if (options.usage !== undefined) {
     assertUsage(options.usage);
   }
@@ -201,30 +218,39 @@ function providerOutputErrorMessage(
 ): string {
   const toolCall =
     toolCallId === undefined ? "tool call" : `tool call ${JSON.stringify(displayId(toolCallId))}`;
+
   if (kind === "malformed-tool-arguments") {
     return `Completion provider returned ${toolCall} with malformed JSON arguments.`;
   }
+
   if (kind === "invalid-tool-arguments") {
     return `Completion provider returned ${toolCall} with arguments that are not a JSON value.`;
   }
+
   if (kind === "invalid-stream-event") {
     return "Completion provider returned an invalid stream event.";
   }
+
   if (kind === "invalid-response") {
     return "Completion provider returned a response that cannot be consumed safely.";
   }
+
   if (kind === "incomplete-tool-call") {
     return "Completion provider stream ended before its tool call was complete.";
   }
+
   if (kind === "incomplete-stream") {
     return "Completion provider stream ended without a terminal response.";
   }
+
   if (kind === "truncated-tool-call") {
     return "Completion provider stopped at its output limit before a tool call could be consumed safely.";
   }
+
   if (kind === "filtered-tool-call") {
     return "Completion provider content filtering prevented a tool call from being consumed safely.";
   }
+
   return `Completion provider returned an invalid ${toolCall}.`;
 }
 
@@ -263,6 +289,7 @@ function assertUsage(usage: Usage): void {
       throw new TypeError("CompletionProviderOutputError usage must contain finite token counts.");
     }
   }
+
   if (usage.details !== undefined) {
     for (const value of Object.values(usage.details)) {
       if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
@@ -282,6 +309,8 @@ function copyUsage(usage: Usage): Usage {
     cachedInputTokens: usage.cachedInputTokens,
     cacheCreationInputTokens: usage.cacheCreationInputTokens,
   };
+
   if (usage.details !== undefined) copied.details = { ...usage.details };
+
   return copied;
 }

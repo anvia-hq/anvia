@@ -49,19 +49,23 @@ export function useGraphExplorerContext<
   Schema extends GraphSchemaLike = GraphSchemaLike,
 >(): GraphExplorerController<Schema> {
   const value = useContext(GraphExplorerContext);
+
   if (value === undefined) {
     throw new Error("Graph explorer primitives must be used inside GraphExplorerProvider.");
   }
+
   return value as unknown as GraphExplorerController<Schema>;
 }
 
 export function useGraphExplorerNode(): GraphExplorerNodeContextValue {
   const value = useContext(GraphExplorerNodeContext);
+
   if (value === undefined) {
     throw new Error(
       "Graph explorer node primitives must be used inside GraphExplorerNodePrimitive.Root or GraphExplorerPrimitive.Nodes.",
     );
   }
+
   return value;
 }
 

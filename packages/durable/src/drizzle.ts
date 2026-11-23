@@ -54,6 +54,7 @@ function toSql(text: string, params: readonly unknown[]) {
 /** node-postgres and PGlite return `{ rows }`; postgres-js returns the rows themselves. */
 function rowsOf(result: unknown): SqlRow[] {
   if (Array.isArray(result)) return result as SqlRow[];
+
   const rows = (result as { rows?: unknown } | null)?.rows;
   return Array.isArray(rows) ? (rows as SqlRow[]) : [];
 }

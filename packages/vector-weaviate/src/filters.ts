@@ -30,11 +30,13 @@ export function filterToWeaviateWhere(filter: VectorFilter | undefined): unknown
       if (filter.values.length === 0) {
         throw new Error(`Weaviate "in" filter for ${filter.key} requires at least one value`);
       }
+
       if (filter.values.includes(null)) {
         throw new Error(
           `Weaviate does not support null values in "in" filters (property ${filter.key})`,
         );
       }
+
       return {
         operator: "ContainsAny",
         target: { property: filter.key },

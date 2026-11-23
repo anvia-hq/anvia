@@ -288,7 +288,9 @@ export function describeSandboxRuntimeConformance(name: string, options: Conform
           const byName = Object.fromEntries(tools.map((tool) => [tool.name, tool]));
           const call = (name: string, args: unknown) => {
             const tool = byName[name];
+
             if (tool === undefined) throw new Error(`Missing tool ${name}`);
+
             return tool.call(args as never, {});
           };
 
@@ -323,7 +325,9 @@ async function eventually<T>(check: () => Promise<T>, timeoutMs = 10_000): Promi
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const value = await check();
+
     if (value) return value as NonNullable<T>;
+
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
   throw new Error("Condition was not met in time.");

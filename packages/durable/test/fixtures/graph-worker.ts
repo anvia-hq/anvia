@@ -15,6 +15,7 @@ const runtime = await DurableRuntime.open({
             setInterval(() => {}, 1000);
           });
         }
+
         return done();
       }),
       version: "1",

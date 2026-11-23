@@ -13,6 +13,7 @@ export function filterToPgVectorWhere(
   if (filter === undefined) {
     return undefined;
   }
+
   const state: FilterState = { nextIndex: startIndex, values: [] };
   const sql = buildFilterSql(filter, state);
   return { sql, values: state.values };
@@ -26,6 +27,7 @@ function buildFilterSql(filter: VectorFilter, state: FilterState): string {
       if (filter.value === null) {
         return `NOT ${equalitySql(filter.key, filter.value, state)}`;
       }
+
       const keyIndex = bind(state, filter.key);
       const valueIndex = bind(state, serializeMetadataValue(filter.value));
       return `(metadata ->> $${keyIndex}) IS DISTINCT FROM $${valueIndex}`;
@@ -43,16 +45,20 @@ function buildFilterSql(filter: VectorFilter, state: FilterState): string {
       if (filter.values.length === 0) {
         throw new Error(`PgVector in filter for ${filter.key} requires at least one value`);
       }
+
       const nonNull = filter.values.filter((value) => value !== null);
       const parts: string[] = [];
+
       if (nonNull.length > 0) {
         const keyIndex = bind(state, filter.key);
         const valueIndex = bind(state, nonNull.map(serializeMetadataValue));
         parts.push(`(metadata ->> $${keyIndex}) = ANY($${valueIndex}::text[])`);
       }
+
       if (nonNull.length < filter.values.length) {
         parts.push(equalitySql(filter.key, null, state));
       }
+
       return parts.length > 1 ? `(${parts.join(" OR ")})` : parts.join("");
     }
     case "and":
@@ -69,9 +75,11 @@ function buildFilterSql(filter: VectorFilter, state: FilterState): string {
 
 function equalitySql(key: string, value: VectorMetadataValue, state: FilterState): string {
   const keyIndex = bind(state, key);
+
   if (value === null) {
     return `(metadata ? $${keyIndex} AND metadata -> $${keyIndex} = 'null'::jsonb)`;
   }
+
   const valueIndex = bind(state, serializeMetadataValue(value));
   return `(metadata ->> $${keyIndex}) = $${valueIndex}`;
 }

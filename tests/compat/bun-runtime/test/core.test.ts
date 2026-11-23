@@ -121,9 +121,11 @@ describe("@anvia/core under Bun", () => {
     expect(lines).toHaveLength(2);
     const firstLine = lines[0];
     const errorLine = lines[1];
+
     if (firstLine === undefined || errorLine === undefined) {
       throw new Error("Expected an event line and an error line");
     }
+
     expect(JSON.parse(firstLine)).toEqual({ type: "text_delta", delta: "one" });
     expect(JSON.parse(errorLine)).toMatchObject({
       type: "error",
@@ -186,7 +188,9 @@ describe("@anvia/core under Bun", () => {
     const pidPath = join(directory, "pid");
     const skillSet = await loadSkills(skill.local(directory));
     const tool = skillSet.tools.find((item) => item.name === "run_skill_script");
+
     if (tool === undefined) throw new Error("Missing public skill tool");
+
     const controller = new AbortController();
     const result = Promise.resolve(
       tool.call(
@@ -199,11 +203,14 @@ describe("@anvia/core under Bun", () => {
       for (let attempt = 0; attempt < 200; attempt++) {
         try {
           pid = Number(await readFile(pidPath, "utf8"));
+
           if (pid > 0) break;
         } catch {}
         await delay(5);
       }
+
       if (pid === undefined || pid <= 0) throw new Error("Missing child PID");
+
       const start = performance.now();
       controller.abort("bun cancellation");
       expect(await result).toMatchObject({ name: "AbortError", cause: "bun cancellation" });
@@ -217,6 +224,7 @@ describe("@anvia/core under Bun", () => {
       }
     } finally {
       if (pid !== undefined && pid > 0) killIfRunning(pid);
+
       await result;
     }
   });

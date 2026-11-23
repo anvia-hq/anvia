@@ -44,21 +44,25 @@ export function InternalMessagePartProvider({
 
 export function useMessage(): MessageContextValue {
   const value = useContext(MessageContext);
+
   if (value === undefined) {
     throw new Error(
       "Message primitives must be used inside MessagePrimitive.Root or ThreadPrimitive.Messages.",
     );
   }
+
   return value;
 }
 
 export function useMessagePart(): MessagePartContextValue {
   const value = useContext(MessagePartContext);
+
   if (value === undefined) {
     throw new Error(
       "Message part primitives must be used inside MessagePrimitive.Parts or MessagePrimitive.Part.",
     );
   }
+
   return value;
 }
 

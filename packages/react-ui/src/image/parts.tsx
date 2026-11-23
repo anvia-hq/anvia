@@ -53,11 +53,16 @@ const ImageRoot = forwardRef<HTMLElement, ImageRootProps>(function ImageRoot(
       zoomOpen,
       setZoomOpen,
     };
+
     if (src !== undefined) context.src = src;
+
     if (attachment.name !== undefined) context.name = attachment.name;
+
     if (attachment.mediaType !== undefined) context.mediaType = attachment.mediaType;
+
     return context;
   }, [attachment, isImage, src, zoomOpen]);
+
   if (!isImage && renderWhen !== "always") {
     return null;
   }
@@ -104,12 +109,13 @@ const ImagePreview = forwardRef<HTMLDivElement, ImagePreviewProps>(function Imag
     setState(src === undefined ? "error" : "loading");
   }, [src]);
 
-  const fallback =
-    state === "loading"
-      ? (loadingFallback ?? "Loading image")
-      : state === "error"
-        ? (errorFallback ?? "Image unavailable")
-        : null;
+  let fallback: ReactNode = null;
+
+  if (state === "loading") {
+    fallback = loadingFallback ?? "Loading image";
+  } else if (state === "error") {
+    fallback = errorFallback ?? "Image unavailable";
+  }
 
   return renderPrimitive(
     "div",
@@ -176,9 +182,11 @@ const ImageCopy = forwardRef<HTMLButtonElement, PrimitiveProps<"button">>(functi
   const handleClick = useCallback(
     async (event: MouseEvent<HTMLButtonElement>) => {
       onClick?.(event);
+
       if (event.defaultPrevented || disabled || image.src === undefined) {
         return;
       }
+
       try {
         await copyImage(image);
         setCopyState("done");
@@ -217,9 +225,11 @@ const ImageDownload = forwardRef<HTMLButtonElement, ImageDownloadProps>(function
   const handleClick = useCallback(
     async (event: MouseEvent<HTMLButtonElement>) => {
       onClick?.(event);
+
       if (event.defaultPrevented || disabled || image.src === undefined) {
         return;
       }
+
       try {
         await downloadImage(image, filename);
       } catch {
@@ -251,9 +261,11 @@ const ImageZoomTrigger = forwardRef<HTMLButtonElement, PrimitiveProps<"button">>
     const handleClick = useCallback(
       (event: MouseEvent<HTMLButtonElement>) => {
         onClick?.(event);
+
         if (event.defaultPrevented || disabled) {
           return;
         }
+
         image.setZoomOpen(true);
       },
       [disabled, image, onClick],
@@ -289,10 +301,13 @@ const ImageZoomOverlay = forwardRef<HTMLDivElement, ImageZoomOverlayProps>(
       if (!image.zoomOpen) {
         return;
       }
+
       const document = globalThis.document;
+
       if (document === undefined) {
         return;
       }
+
       const handleKeyDown = (event: globalThis.KeyboardEvent) => {
         if (event.key === "Escape") {
           image.setZoomOpen(false);
@@ -308,6 +323,7 @@ const ImageZoomOverlay = forwardRef<HTMLDivElement, ImageZoomOverlayProps>(
       if (!image.zoomOpen) {
         return;
       }
+
       const activeElement = globalThis.document?.activeElement;
       const previousFocus = activeElement instanceof HTMLElement ? activeElement : undefined;
       focusOverlay(overlayRef.current);
@@ -321,6 +337,7 @@ const ImageZoomOverlay = forwardRef<HTMLDivElement, ImageZoomOverlayProps>(
     const handleClick = useCallback(
       (event: MouseEvent<HTMLDivElement>) => {
         onClick?.(event);
+
         if (!event.defaultPrevented) {
           image.setZoomOpen(false);
         }
@@ -331,13 +348,16 @@ const ImageZoomOverlay = forwardRef<HTMLDivElement, ImageZoomOverlayProps>(
     const handleKeyDown = useCallback(
       (event: KeyboardEvent<HTMLDivElement>) => {
         onKeyDown?.(event);
+
         if (event.defaultPrevented) {
           return;
         }
+
         if (event.key === "Escape") {
           image.setZoomOpen(false);
           return;
         }
+
         if (event.key === "Tab") {
           trapOverlayFocus(event, overlayRef.current);
         }
@@ -375,12 +395,15 @@ function imageSource(attachment: UIAttachment): string | undefined {
   if (!isImageAttachment(attachment)) {
     return safeImageSrc(attachment.url);
   }
+
   if (attachment.url !== undefined) {
     return safeImageSrc(attachment.url);
   }
+
   if (attachment.data !== undefined && attachment.mediaType !== undefined) {
     return safeImageSrc(`data:${attachment.mediaType};base64,${attachment.data}`);
   }
+
   return undefined;
 }
 
@@ -388,13 +411,16 @@ async function copyImage(image: ImageContextValue): Promise<void> {
   if (image.src === undefined) {
     throw new Error("Image source is unavailable.");
   }
+
   const clipboard = globalThis.navigator?.clipboard as
     | (Clipboard & { write?: (items: ClipboardItem[]) => Promise<void> })
     | undefined;
   const ClipboardItemConstructor = globalThis.ClipboardItem;
+
   if (clipboard?.write === undefined || ClipboardItemConstructor === undefined) {
     throw new Error("Clipboard image copy is unavailable.");
   }
+
   const blob = await imageBlob(image);
   await clipboard.write([new ClipboardItemConstructor({ [blob.type]: blob })]);
 }
@@ -406,9 +432,11 @@ async function imageBlob(image: ImageContextValue): Promise<Blob> {
       image.attachment.mediaType ?? image.mediaType ?? "image/png",
     );
   }
+
   if (image.src === undefined || globalThis.fetch === undefined) {
     throw new Error("Image source is unavailable.");
   }
+
   const response = await fetch(image.src);
   return response.blob();
 }
@@ -428,9 +456,11 @@ async function downloadImage(
 ): Promise<void> {
   const document = globalThis.document;
   const url = globalThis.URL;
+
   if (image.src === undefined || document === undefined || url?.createObjectURL === undefined) {
     return;
   }
+
   const blobUrl = url.createObjectURL(await imageBlob(image));
   const link = document.createElement("a");
   try {
@@ -454,6 +484,7 @@ function focusOverlay(overlay: HTMLDivElement | null): void {
   if (overlay === null) {
     return;
   }
+
   const [firstFocusable] = focusableElements(overlay);
   (firstFocusable ?? overlay).focus();
 }
@@ -465,7 +496,9 @@ function trapOverlayFocus(
   if (overlay === null) {
     return;
   }
+
   const focusable = focusableElements(overlay);
+
   if (focusable.length === 0) {
     event.preventDefault();
     overlay.focus();
@@ -475,16 +508,19 @@ function trapOverlayFocus(
   const firstFocusable = focusable[0];
   const lastFocusable = focusable[focusable.length - 1];
   const activeElement = globalThis.document?.activeElement;
+
   if (event.shiftKey && activeElement === firstFocusable) {
     event.preventDefault();
     lastFocusable?.focus();
     return;
   }
+
   if (!event.shiftKey && activeElement === lastFocusable) {
     event.preventDefault();
     firstFocusable?.focus();
     return;
   }
+
   if (activeElement instanceof Node && !overlay.contains(activeElement)) {
     event.preventDefault();
     (event.shiftKey ? lastFocusable : firstFocusable)?.focus();

@@ -81,9 +81,11 @@ export class OpenAIResponsesCompletionModel<
     options: { stream?: boolean | undefined } = {},
   ): JsonObject {
     const params = this.requestParams(request);
+
     if (options.stream === true) {
       params.stream = true;
     }
+
     return providerRequestSummary(params, request, options);
   }
 
@@ -113,6 +115,7 @@ export class OpenAIResponsesCompletionModel<
     const streamState = new OpenAIResponsesStreamState();
     for await (const event of this.normalizeStream(stream as unknown as AsyncIterable<unknown>)) {
       const mapped = streamState.mapEvent(event);
+
       if (mapped !== undefined) {
         yield mapped.type === "final"
           ? {
@@ -120,6 +123,7 @@ export class OpenAIResponsesCompletionModel<
               response: withContextUsage(mapped.response, this.modelInfo()),
             }
           : mapped;
+
         if (mapped.type === "final" || mapped.type === "error") return;
       }
     }
@@ -147,6 +151,7 @@ export function toOpenAIResponsesParams(
   ) {
     throw new TypeError("OpenAI Responses providerOptions must be a JSON object.");
   }
+
   const providerOptions = request.providerOptions ?? {};
   const reasoning = isPlainObject(providerOptions.reasoning)
     ? { ...providerOptions.reasoning }
@@ -157,6 +162,7 @@ export function toOpenAIResponsesParams(
     model: modelId,
     input: requestMessages(request).flatMap(messageToResponsesInput),
   };
+
   if (reasoningEffort !== undefined) {
     params.reasoning = { ...reasoning, effort: reasoningEffort };
   }
@@ -194,6 +200,7 @@ export function toOpenAIResponsesParams(
     ...request.tools.map(toolDefinitionToOpenAI),
     ...(request.providerTools ?? []).map(providerToolToOpenAI),
   ];
+
   if (tools.length > 0) {
     params.tools = tools;
   } else {
@@ -228,6 +235,7 @@ function providerRequestSummary(
       if (!isPlainObject(tool)) {
         return [];
       }
+
       const name = stringFrom(tool.name) ?? stringFrom(tool.type);
       return name === undefined ? [] : [name];
     }),
@@ -246,6 +254,7 @@ function toolChoiceSummary(toolChoice: ToolChoice | undefined): JsonValue | unde
   if (toolChoice === undefined || typeof toolChoice === "string") {
     return toolChoice;
   }
+
   return { type: toolChoice.type, name: toolChoice.name };
 }
 
@@ -255,6 +264,7 @@ function compactJsonObject(values: Record<string, unknown>): JsonObject {
       if (!isJsonValue(value)) {
         return [];
       }
+
       return [[key, value]];
     }),
   ) as JsonObject;
@@ -266,16 +276,21 @@ function requestMessages(request: CompletionRequest): MessageType[] {
 
 export function fromOpenAIResponse(response: unknown): CompletionResponse {
   if (!isPlainObject(response)) throw invalidToolCallError();
+
   const raw = response;
   const usage = usageFromOpenAIResponse(raw.usage);
   const errorUsage = isPlainObject(raw.usage) ? usage : undefined;
+
   if (raw.output !== undefined && !Array.isArray(raw.output)) {
     throw invalidOpenAIResponse(errorUsage);
   }
+
   const output = raw.output ?? [];
+
   if (output.some((item) => !isPlainObject(item))) {
     throw invalidOpenAIResponse(errorUsage);
   }
+
   const choice: AssistantContentPart[] = [];
   const providerToolCalls: ProviderToolCall[] = [];
   const hasFunctionCalls = output.some(
@@ -318,6 +333,7 @@ export function fromOpenAIResponse(response: unknown): CompletionResponse {
     }
 
     const providerToolCall = providerToolCallFromOutputItem(item);
+
     if (providerToolCall !== undefined) {
       providerToolCalls.push(providerToolCall);
     }
@@ -328,9 +344,11 @@ export function fromOpenAIResponse(response: unknown): CompletionResponse {
   if (typeof raw.id === "string") {
     result.messageId = raw.id;
   }
+
   if (sources.length > 0) {
     result.sources = sources;
   }
+
   if (providerToolCalls.length > 0) {
     result.providerToolCalls = providerToolCalls;
   }
@@ -347,6 +365,7 @@ function applyOpenAIResponseFinishReason(
   const incompleteDetails = isPlainObject(raw.incomplete_details) ? raw.incomplete_details : {};
   const incompleteReason = stringFrom(incompleteDetails.reason);
   let finishReason: CompletionFinishReason;
+
   if (status === "incomplete") {
     if (incompleteReason === "max_output_tokens") {
       finishReason = "length";
@@ -362,8 +381,10 @@ function applyOpenAIResponseFinishReason(
   } else {
     finishReason = "other";
   }
+
   response.finishReason = finishReason;
   const providerFinishReason = incompleteReason ?? status;
+
   if (providerFinishReason !== undefined) {
     response.providerFinishReason = providerFinishReason;
   }
@@ -385,33 +406,41 @@ export function fromOpenAIStreamEvent(event: unknown): CompletionModelStreamEven
     if (typeof event.delta !== "string") {
       return undefined;
     }
+
     const mapped: CompletionModelStreamEvent = { type: "reasoning_delta", delta: event.delta };
     const id = stringFrom(event.item_id);
+
     if (id !== undefined) {
       mapped.id = id;
     }
+
     if (event.type === "response.reasoning_summary_text.delta") {
       mapped.contentType = "summary";
     } else {
       mapped.contentType = "text";
     }
+
     return mapped;
   }
 
   if (event.type === "response.output_item.added" && isPlainObject(event.item)) {
     const item = event.item;
+
     if (item.type === "function_call") {
       const { id, callId } = openAIFunctionCallIdentity(item);
       const name = requiredToolCallString(item.name, id);
+
       if (item.arguments !== undefined && typeof item.arguments !== "string") {
         throw invalidToolArgumentsError(id);
       }
+
       return toolCallDelta(id, {
         callId,
         name,
         argumentsDelta: typeof item.arguments === "string" ? item.arguments : undefined,
       });
     }
+
     if (typeof item.id === "string") {
       const providerToolCall = providerToolCallFromOutputItem(item);
       return providerToolCall === undefined
@@ -427,7 +456,9 @@ export function fromOpenAIStreamEvent(event: unknown): CompletionModelStreamEven
 
   if (event.type === "response.function_call_arguments.delta") {
     const id = requiredToolCallString(event.item_id);
+
     if (typeof event.delta !== "string") throw invalidToolArgumentsError(id);
+
     return toolCallDelta(id, { argumentsDelta: event.delta });
   }
 
@@ -445,6 +476,7 @@ export function fromOpenAIStreamEvent(event: unknown): CompletionModelStreamEven
 
   if (event.type === "response.output_item.done" && isPlainObject(event.item)) {
     const item = event.item;
+
     if (item.type === "function_call") {
       const { id, callId } = openAIFunctionCallIdentity(item);
       assertCompletedFunctionCallStatus(item.status, id);
@@ -461,7 +493,9 @@ export function fromOpenAIStreamEvent(event: unknown): CompletionModelStreamEven
         toolCall,
       };
     }
+
     const providerToolCall = providerToolCallFromOutputItem(item);
+
     if (providerToolCall !== undefined) {
       return { type: "provider_tool_call", toolCall: providerToolCall };
     }
@@ -482,9 +516,11 @@ export function fromOpenAIStreamEvent(event: unknown): CompletionModelStreamEven
       type: "error",
       error: event.response.error ?? event.response,
     };
+
     if (isPlainObject(event.response.usage)) {
       mapped.usage = usageFromOpenAIResponse(event.response.usage);
     }
+
     return mapped;
   }
 
@@ -514,8 +550,10 @@ class OpenAIResponsesStreamState {
       mapped = fromOpenAIStreamEvent(event);
     } catch (error) {
       if (this.deferTerminalToolArgumentsError(event, error)) return undefined;
+
       throw error;
     }
+
     if (!isPlainObject(event) || typeof event.type !== "string") return mapped;
 
     if (mapped?.type === "tool_call_delta") {
@@ -531,24 +569,28 @@ class OpenAIResponsesStreamState {
     if (event.type === "response.function_call_arguments.delta") {
       this.assertArgumentsOpen(requiredToolCallString(event.item_id));
     }
+
     if (event.type === "response.function_call_arguments.done") {
       this.markArgumentsDone(requiredToolCallString(event.item_id));
     }
 
     if (mapped?.type === "final") {
       if (this.terminal) throw invalidToolCallError();
+
       assertSafeOpenAIResponseToolFinishReason(
         mapped.response,
         this.toolCalls.size > 0 || mapped.response.choice.some((part) => part.type === "tool-call"),
         mapped.response.usage,
       );
       this.assertFinalToolCalls(mapped.response);
+
       if (this.deferredToolArgumentsError !== undefined) {
         throw terminalArgumentsErrorWithUsage(
           this.deferredToolArgumentsError,
           mapped.response.usage,
         );
       }
+
       this.terminal = true;
     } else if (mapped?.type === "error") {
       this.terminal = true;
@@ -559,6 +601,7 @@ class OpenAIResponsesStreamState {
 
   assertComplete(): void {
     if (this.terminal) return;
+
     if (this.toolCalls.size > 0) {
       const id = this.toolCalls.size === 1 ? this.toolCalls.keys().next().value : undefined;
       throw new CompletionProviderOutputError({
@@ -566,28 +609,36 @@ class OpenAIResponsesStreamState {
         toolCallId: id,
       });
     }
+
     throw new CompletionProviderOutputError({ kind: "incomplete-stream" });
   }
 
   private acceptToolCall(id: string, name?: string, callId?: string): void {
     const existing = this.toolCalls.get(id) ?? { id, argumentsDone: false };
+
     if (name !== undefined) {
       if (existing.name !== undefined && existing.name !== name) {
         throw invalidToolCallError(id);
       }
+
       existing.name = name;
     }
+
     if (callId !== undefined) {
       if (existing.callId !== undefined && existing.callId !== callId) {
         throw invalidToolCallError(id);
       }
+
       const existingId = this.toolCallIdsByCallId.get(callId);
+
       if (existingId !== undefined && existingId !== id) {
         throw invalidToolCallError(id);
       }
+
       existing.callId = callId;
       this.toolCallIdsByCallId.set(callId, id);
     }
+
     this.toolCalls.set(id, existing);
   }
 
@@ -599,7 +650,9 @@ class OpenAIResponsesStreamState {
 
   private markArgumentsDone(id: string): void {
     const existing = this.toolCalls.get(id) ?? { id, argumentsDone: false };
+
     if (existing.argumentsDone) throw invalidToolCallError(id);
+
     existing.argumentsDone = true;
     this.toolCalls.set(id, existing);
   }
@@ -614,6 +667,7 @@ class OpenAIResponsesStreamState {
     ) {
       return false;
     }
+
     if (event.type === "response.function_call_arguments.done") {
       const id = requiredToolCallString(event.item_id);
       const name = event.name === undefined ? undefined : requiredToolCallString(event.name, id);
@@ -630,6 +684,7 @@ class OpenAIResponsesStreamState {
     } else {
       return false;
     }
+
     this.deferredToolArgumentsError ??= error;
     return true;
   }
@@ -638,6 +693,7 @@ class OpenAIResponsesStreamState {
     const finalIds = new Set<string>();
     for (const content of response.choice) {
       if (content.type !== "tool-call") continue;
+
       this.acceptToolCall(content.toolCallId, content.toolName, content.callId);
       finalIds.add(content.toolCallId);
     }
@@ -659,9 +715,11 @@ function assertSafeOpenAIResponseToolFinishReason(
   usage: Usage | undefined,
 ): void {
   if (!hasToolCalls) return;
+
   if (response.finishReason === undefined) {
     throw new CompletionProviderOutputError({ kind: "incomplete-tool-call", usage });
   }
+
   if (response.finishReason === "length") {
     throw new CompletionProviderOutputError({
       kind: "truncated-tool-call",
@@ -669,6 +727,7 @@ function assertSafeOpenAIResponseToolFinishReason(
       usage,
     });
   }
+
   if (response.finishReason === "content-filter") {
     throw new CompletionProviderOutputError({
       kind: "filtered-tool-call",
@@ -676,6 +735,7 @@ function assertSafeOpenAIResponseToolFinishReason(
       usage,
     });
   }
+
   if (response.finishReason === "other") {
     throw new CompletionProviderOutputError({
       kind: "invalid-tool-call",
@@ -687,6 +747,7 @@ function assertSafeOpenAIResponseToolFinishReason(
 
 function requiredToolCallString(value: unknown, toolCallId?: unknown, usage?: Usage): string {
   if (!isNonblankString(value)) throw invalidToolCallError(toolCallId, usage);
+
   return value;
 }
 
@@ -705,7 +766,9 @@ function assertOpenAIResponseStatus(
   usage?: Usage,
 ): void {
   if (value === undefined || value === "completed" || value === "incomplete") return;
+
   if (hasFunctionCalls) return;
+
   throw invalidOpenAIResponse(usage);
 }
 
@@ -719,6 +782,7 @@ function assertCompletedFunctionCallStatus(
   usage?: Usage,
 ): void {
   if (value === undefined || value === "completed") return;
+
   if (value === "in_progress" || value === "incomplete") {
     throw new CompletionProviderOutputError({
       kind: "incomplete-tool-call",
@@ -726,6 +790,7 @@ function assertCompletedFunctionCallStatus(
       usage,
     });
   }
+
   throw invalidToolCallError(toolCallId, usage);
 }
 
@@ -737,6 +802,7 @@ function requiredTerminalArguments(toolCallId: string, value: unknown, usage?: U
       usage,
     });
   }
+
   return value;
 }
 
@@ -774,6 +840,7 @@ function terminalArgumentsErrorWithUsage(
   ) {
     throw error;
   }
+
   return new CompletionProviderOutputError({
     kind: error.kind,
     toolCallId: error.toolCallId,
@@ -817,6 +884,7 @@ function messageToResponsesInput(message: MessageType): ResponsesInputItem[] {
     if (typeof message.content === "string") {
       return [{ role: "user", content: message.content }];
     }
+
     const inputContent: ResponsesInputItem[] = [];
 
     for (const content of message.content) {
@@ -839,18 +907,22 @@ function messageToResponsesInput(message: MessageType): ResponsesInputItem[] {
           "Anvia interaction responses must be resolved by Agent before provider calls.",
         );
       }
+
       return toolContentToOpenAIResponsesItem(content);
     });
   }
 
   const items: ResponsesInputItem[] = [];
+
   if (typeof message.content === "string") {
     return [{ role: "assistant", content: message.content }];
   }
+
   const origin = getAssistantGenerationMetadata(message)?.provider;
   const text = message.content
     .flatMap((content) => (content.type === "text" ? [content.text] : []))
     .join("\n");
+
   if (text.length > 0) {
     items.push({ role: "assistant", content: text });
   }
@@ -859,6 +931,7 @@ function messageToResponsesInput(message: MessageType): ResponsesInputItem[] {
     if (content.type === "reasoning" && content.id !== undefined) {
       items.push(reasoningToOpenAIInput(content));
     }
+
     if (content.type === "tool-call") {
       const item: ResponsesInputItem = {
         type: "function_call",
@@ -866,13 +939,16 @@ function messageToResponsesInput(message: MessageType): ResponsesInputItem[] {
         name: content.toolName,
         arguments: JSON.stringify(content.input),
       };
+
       // Item ids from another provider (for example Anthropic's toolu_...) are not valid here.
       // They are left out; call_id still links the result. Unknown origin keeps the id.
       if (keepsFunctionCallItemId(origin, content.toolCallId)) {
         item.id = content.toolCallId;
       }
+
       items.push(item);
     }
+
     if (content.type === "image" || content.type === "file") {
       throw new Error(
         "OpenAI Responses does not support image or file content in assistant history",
@@ -891,6 +967,7 @@ function messageToResponsesInput(message: MessageType): ResponsesInputItem[] {
  */
 function keepsFunctionCallItemId(origin: string | undefined, toolCallId: string): boolean {
   if (origin === undefined) return true;
+
   return (origin.startsWith("openai") || origin.startsWith("azure")) && toolCallId.startsWith("fc");
 }
 
@@ -913,21 +990,26 @@ function toolResultContentToOpenAIResponsesOutput(
     if (item.type === "text") {
       return { type: "input_text", text: item.text };
     }
+
     return fileToOpenAIResponsesPart(item);
   });
 }
 
 function toolResultToOpenAIResponsesOutput(content: ToolResultPart): string | ResponsesInputItem[] {
   const output = content.output;
+
   if (output.type === "text" || output.type === "error-text") {
     return output.value;
   }
+
   if (output.type === "json" || output.type === "error-json") {
     return JSON.stringify(output.value);
   }
+
   if (output.type === "execution-denied") {
     return output.reason ?? "Tool execution was denied.";
   }
+
   return toolResultContentToOpenAIResponsesOutput(output.value);
 }
 
@@ -941,36 +1023,45 @@ function reasoningItemToAssistantContent(item: Record<string, unknown>): Reasoni
     type: "reasoning",
     text,
   };
+
   if (id !== undefined) reasoning = { ...reasoning, id };
+
   if (content.length > 0) reasoning = { ...reasoning, details: content };
+
   return reasoning;
 }
 
 function reasoningContentFromOpenAIItem(item: Record<string, unknown>): ReasoningDetail[] {
   const content: ReasoningDetail[] = [];
+
   if (Array.isArray(item.content)) {
     for (const part of item.content) {
       if (!isPlainObject(part)) {
         continue;
       }
+
       if (part.type === "reasoning_text" && typeof part.text === "string") {
         content.push({ type: "text", text: part.text });
       }
     }
   }
+
   if (Array.isArray(item.summary)) {
     for (const summary of item.summary) {
       if (!isPlainObject(summary)) {
         continue;
       }
+
       if (typeof summary.text === "string") {
         content.push({ type: "summary", text: summary.text });
       }
     }
   }
+
   if (typeof item.encrypted_content === "string") {
     content.push({ type: "encrypted", data: item.encrypted_content });
   }
+
   return content;
 }
 
@@ -988,13 +1079,17 @@ function reasoningToOpenAIInput(reasoning: ReasoningPart): ResponsesInputItem {
   const textContent = reasoning.details?.flatMap((content) =>
     content.type === "text" ? [{ type: "reasoning_text", text: content.text }] : [],
   );
+
   if (textContent !== undefined && textContent.length > 0) {
     item.content = textContent;
   }
+
   const encrypted = reasoning.details?.find((content) => content.type === "encrypted");
+
   if (encrypted?.type === "encrypted") {
     item.encrypted_content = encrypted.data;
   }
+
   return item;
 }
 
@@ -1005,9 +1100,11 @@ function userContentToOpenAIResponsesParts(content: UserContentPart): ResponsesI
 
   if (content.type === "image") {
     const part: ResponsesInputItem = { type: "input_image", image_url: imageUrl(content) };
+
     if (content.detail !== undefined) {
       part.detail = content.detail;
     }
+
     return [part];
   }
 
@@ -1026,6 +1123,7 @@ function imageUrl(image: ImagePart): string {
   if (image.mediaType === undefined) {
     throw new Error("OpenAI Responses image data requires mediaType");
   }
+
   return `data:${image.mediaType};base64,${image.image.data}`;
 }
 
@@ -1124,20 +1222,25 @@ function providerToolCallFromOutputItem(
   if (typeof item.type !== "string" || !PROVIDER_TOOL_OUTPUT_TYPES.has(item.type)) {
     return undefined;
   }
+
   const toolCall: ProviderToolCall = {
     id: requiredToolCallString(item.id),
     name: item.type.replace(/_call$/, ""),
   };
   const status = stringFrom(item.status);
+
   if (status !== undefined) {
     toolCall.status = status;
   }
+
   const detailEntries = Object.entries(item).filter(
     ([key, value]) => key !== "id" && key !== "type" && key !== "status" && value !== undefined,
   );
+
   if (detailEntries.length > 0) {
     toolCall.details = compactJsonObject(Object.fromEntries(detailEntries));
   }
+
   return toolCall;
 }
 
@@ -1146,31 +1249,38 @@ function sourcesFromOpenAIResponse(
   output: unknown[],
 ): CompletionSource[] {
   const sources: CompletionSource[] = [];
+
   if (Array.isArray(response.citations)) {
     for (const citation of response.citations) {
       if (typeof citation === "string") {
         sources.push({ type: "url", url: citation });
       } else if (isPlainObject(citation)) {
         const source = sourceFromAnnotation(citation);
+
         if (source !== undefined) {
           sources.push(source);
         }
       }
     }
   }
+
   for (const item of output) {
     if (!isPlainObject(item) || item.type !== "message" || !Array.isArray(item.content)) {
       continue;
     }
+
     for (const content of item.content) {
       if (!isPlainObject(content) || !Array.isArray(content.annotations)) {
         continue;
       }
+
       for (const annotation of content.annotations) {
         if (!isPlainObject(annotation)) {
           continue;
         }
+
         const source = sourceFromAnnotation(annotation);
+
         if (source !== undefined) {
           sources.push(source);
         }
@@ -1182,18 +1292,28 @@ function sourcesFromOpenAIResponse(
 
 function sourceFromAnnotation(annotation: Record<string, unknown>): CompletionSource | undefined {
   const url = stringFrom(annotation.url);
+
   if (url === undefined) {
     return undefined;
   }
+
   const source: CompletionSource = { type: "url", url };
   const title = stringFrom(annotation.title);
+
   if (title !== undefined) source.title = title;
+
   const id = stringFrom(annotation.id);
+
   if (id !== undefined) source.id = id;
+
   const startIndex = numberFromOptional(annotation.start_index ?? annotation.startIndex);
+
   if (startIndex !== undefined) source.startIndex = startIndex;
+
   const endIndex = numberFromOptional(annotation.end_index ?? annotation.endIndex);
+
   if (endIndex !== undefined) source.endIndex = endIndex;
+
   return source;
 }
 
@@ -1219,13 +1339,17 @@ function dedupeSources(sources: CompletionSource[]): CompletionSource[] {
       source.id === undefined &&
       source.startIndex === undefined &&
       source.endIndex === undefined;
+
     if (isBare && urlsWithStructuredSources.has(source.url)) {
       return false;
     }
+
     const key = `${source.url}\u0000${source.startIndex ?? ""}\u0000${source.endIndex ?? ""}`;
+
     if (seen.has(key)) {
       return false;
     }
+
     seen.add(key);
     return true;
   });
@@ -1241,10 +1365,15 @@ function toolCallDelta(
   },
 ): CompletionModelStreamEvent {
   const event: CompletionModelStreamEvent = { type: "tool_call_delta", id };
+
   if (values.callId !== undefined) event.callId = values.callId;
+
   if (values.name !== undefined) event.name = values.name;
+
   if (values.argumentsDelta !== undefined) event.argumentsDelta = values.argumentsDelta;
+
   if (values.argumentsMode !== undefined) event.argumentsMode = values.argumentsMode;
+
   return event;
 }
 

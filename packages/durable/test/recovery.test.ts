@@ -62,9 +62,11 @@ async function crash(crashAt: "tool" | "model" | "budget", recovery: ToolRecover
 async function restart(database: string, effects: string, recovery: ToolRecovery = "manual") {
   const tool = vi.fn(async (_args: unknown, context?: ToolCallContext) => {
     const effect = recovery === "idempotent" ? `${context?.operationId}\n` : "effect\n";
+
     if (recovery !== "idempotent" || !readFileSync(effects, "utf8").includes(effect)) {
       appendFileSync(effects, effect);
     }
+
     return "stored result";
   });
   const model = vi.fn(async (request) => (hasToolResult(request) ? done() : toolResponse()));

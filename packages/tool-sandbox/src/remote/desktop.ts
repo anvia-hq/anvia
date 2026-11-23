@@ -125,8 +125,11 @@ export class RemoteSandboxDesktop implements SandboxDesktop {
     options: { holder?: string; force?: boolean } & DesktopInputOptions = {},
   ): Promise<DesktopControl> {
     const params: { holder?: string; force?: boolean } = {};
+
     if (options.holder !== undefined) params.holder = options.holder;
+
     if (options.force !== undefined) params.force = options.force;
+
     return this.call("desktopRelease", params, input(options));
   }
 

@@ -33,8 +33,10 @@ export function useCompletionContext<
   Data extends ClientDataMap = ClientDataMap,
 >(): CompletionController<Metadata, Data> {
   const value = useContext(CompletionContext);
+
   if (value === undefined) {
     throw new Error("Anvia completion primitives must be used inside CompletionProvider.");
   }
+
   return value as unknown as CompletionController<Metadata, Data>;
 }

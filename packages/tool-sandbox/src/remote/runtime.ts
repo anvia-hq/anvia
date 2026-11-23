@@ -111,6 +111,7 @@ export class RemoteSandboxRuntime implements SandboxRuntime {
     const push = (event: SandboxExecStreamEvent) => {
       if (event.type !== "result") {
         queuedBytes += event.data.byteLength;
+
         if (queuedBytes > this.maxStreamBufferBytes) {
           streamAbort.abort(
             new DockerSandboxError("Sandbox stream consumer is too slow.", "protocol"),
@@ -118,6 +119,7 @@ export class RemoteSandboxRuntime implements SandboxRuntime {
           return;
         }
       }
+
       queue.push(event);
       wake?.();
       wake = undefined;
@@ -143,18 +145,23 @@ export class RemoteSandboxRuntime implements SandboxRuntime {
     try {
       while (!complete || queue.length > 0) {
         const event = queue.shift();
+
         if (event !== undefined) {
           if (event.type !== "result") queuedBytes -= event.data.byteLength;
+
           yield event;
           continue;
         }
+
         await new Promise<void>((resolve) => {
           wake = resolve;
         });
       }
+
       if (failure !== undefined) throw failure;
     } finally {
       if (!complete) streamAbort.abort(new DOMException("Stream closed", "AbortError"));
+
       await run.catch(() => undefined);
     }
   }
@@ -186,7 +193,9 @@ export class RemoteSandboxRuntime implements SandboxRuntime {
 
   async writeFile(options: SandboxWriteFileOptions): Promise<void> {
     assertOptionsObject(options);
+
     if (!(options.data instanceof Uint8Array)) throw new TypeError("data must be a Uint8Array.");
+
     assertOperationId(options.operationId);
     await this.call(
       "writeFile",
@@ -197,7 +206,9 @@ export class RemoteSandboxRuntime implements SandboxRuntime {
 
   async writeTextFile(options: SandboxWriteTextFileOptions): Promise<void> {
     assertOptionsObject(options);
+
     if (typeof options.text !== "string") throw new TypeError("text must be a string.");
+
     await this.writeFile(
       compact({
         path: options.path,
@@ -242,8 +253,10 @@ export class RemoteSandboxRuntime implements SandboxRuntime {
   async readProcessLogs(options: SandboxReadProcessLogsOptions): Promise<SandboxProcessLogs> {
     assertOptionsObject(options);
     assertNonEmptyString(options.processId, "processId");
+
     if (options.tailBytes !== undefined)
       assertNonNegativeSafeInteger(options.tailBytes, "tailBytes");
+
     const result = await this.call(
       "readProcessLogs",
       compact({ processId: options.processId, tailBytes: options.tailBytes }),
@@ -255,9 +268,11 @@ export class RemoteSandboxRuntime implements SandboxRuntime {
   async stopProcess(options: SandboxStopProcessOptions): Promise<SandboxProcessInfo> {
     assertOptionsObject(options);
     assertNonEmptyString(options.processId, "processId");
+
     if (options.gracePeriodMs !== undefined) {
       assertNonNegativeSafeInteger(options.gracePeriodMs, "gracePeriodMs");
     }
+
     assertOperationId(options.operationId);
     const result = await this.call(
       "stopProcess",
@@ -300,6 +315,7 @@ function execParams(options: SandboxExecOptions): MethodParams<"exec"> {
 
 function assertOperationId(value: string | undefined): void {
   if (value === undefined) return;
+
   if (typeof value !== "string" || value.length === 0 || value.length > 256) {
     throw new TypeError("operationId must be a non-empty string of at most 256 characters.");
   }

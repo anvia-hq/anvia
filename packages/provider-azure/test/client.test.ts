@@ -156,9 +156,11 @@ describe("AzureOpenAIClient", () => {
       if (String(url).endsWith("/images/generations")) {
         return jsonResponse({ data: [{ b64_json: "AQI=" }] });
       }
+
       if (String(url).endsWith("/audio/speech")) {
         return new Response(new Uint8Array([1, 2]), { headers: { "Content-Type": "audio/mpeg" } });
       }
+
       return jsonResponse({ text: "Hello" });
     });
     // Declare the mock's Response implementation so the SDK need not probe it with data:,.

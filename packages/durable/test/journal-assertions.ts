@@ -10,12 +10,15 @@ export async function expectJournalRequests(runtime: DurableRuntime, id: string)
   const requests = new Map<string, string>();
   while (true) {
     const events = await runtime.events(id, cursor);
+
     if (events.length === 0) break;
+
     for (const event of events) {
       if (event.type === "model_started") {
         const data = event.data as JsonObject;
         requests.set(String(data.operationId), JSON.stringify((data.input as JsonObject).request));
       }
+
       cursor = event.sequence;
     }
   }

@@ -34,8 +34,10 @@ async function settle(runtime: DurableRuntime, prompt = "hi") {
   });
   for (let attempt = 0; attempt < 250; attempt++) {
     const snapshot = await run.snapshot();
+
     if (["completed", "failed", "cancelled", "needs_attention"].includes(snapshot.run.status))
       return snapshot.run;
+
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
   throw new Error("The durable run did not settle.");
@@ -185,6 +187,8 @@ it("returns a detached copy of per-field budgets", async () => {
   const runtime = await open({ default: 2_000, outcome: 8_000 });
   const limits = runtime.limits();
   expect(limits.maxPayloadBytes).toMatchObject({ outcome: 8_000 });
+
   if (typeof limits.maxPayloadBytes === "object") limits.maxPayloadBytes.outcome = 1;
+
   expect(runtime.limits().maxPayloadBytes).toMatchObject({ outcome: 8_000 });
 });

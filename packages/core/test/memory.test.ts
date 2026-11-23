@@ -50,9 +50,11 @@ class QueueModel implements CompletionModel {
   async completion(request: CompletionRequest): Promise<CompletionResponse> {
     this.requests.push(request);
     const response = this.responses.shift();
+
     if (response === undefined) {
       throw new Error("No queued response");
     }
+
     return response;
   }
 }
@@ -80,9 +82,11 @@ class StreamingQueueModel implements StreamingCompletionModel {
   async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionModelStreamEvent> {
     this.requests.push(request);
     const response = this.responses.shift();
+
     if (response === undefined) {
       throw new Error("No queued response");
     }
+
     yield* response;
   }
 }
@@ -129,7 +133,9 @@ function response(
     usage,
     rawResponse: {},
   };
+
   if (contextUsage !== undefined) response = { ...response, contextUsage };
+
   return response;
 }
 
@@ -374,9 +380,11 @@ describe("agent memory", () => {
       capabilities: delegate.capabilities,
       async completion(request) {
         attempts += 1;
+
         if (attempts === 1) {
           throw Object.assign(new Error("temporarily unavailable"), { status: 503 });
         }
+
         return delegate.completion(request);
       },
     };
@@ -442,6 +450,7 @@ describe("agent memory", () => {
       ["assistant"],
     ]);
     await expect(store.load({ scope })).resolves.toHaveLength(2);
+
     if (pending.type !== "interaction") throw new Error("Expected suspension");
 
     await expect(
@@ -556,7 +565,9 @@ describe("agent memory", () => {
     expect(result.contextUsage).toEqual(contextUsage);
     const persistedKnownContext = (await store.load({ scope })).at(-1);
     expect(persistedKnownContext).toBeDefined();
+
     if (persistedKnownContext === undefined) throw new Error("Expected persisted response");
+
     expect(getAssistantGenerationMetadata(persistedKnownContext)?.contextUsage).toEqual(
       contextUsage,
     );
@@ -566,7 +577,9 @@ describe("agent memory", () => {
     expect(unknownResult.contextUsage).toBeUndefined();
     const persistedUnknownContext = (await store.load({ scope })).at(-1);
     expect(persistedUnknownContext).toBeDefined();
+
     if (persistedUnknownContext === undefined) throw new Error("Expected persisted response");
+
     expect(getAssistantGenerationMetadata(persistedUnknownContext)?.contextUsage).toBeUndefined();
   });
 
@@ -782,6 +795,7 @@ describe("agent memory", () => {
         },
       });
       const scope = { sessionId: `session-${mode}` };
+
       if (mode === "buffered") {
         await expect(agent.generate({ prompt: "hello", session: scope })).rejects.toBe(
           persistenceError,
@@ -793,6 +807,7 @@ describe("agent memory", () => {
         }
         expect(streamEvents.at(-1)).toMatchObject({ type: "error", error: persistenceError });
       }
+
       expect(events).toEqual([
         "memory:append",
         "lifecycle:error",

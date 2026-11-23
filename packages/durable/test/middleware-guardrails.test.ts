@@ -37,9 +37,12 @@ function agentWith(
       completion: (request) => completion(request),
     },
   };
+
   if (options.middlewares !== undefined) definition.middlewares = options.middlewares;
+
   if (options.guardrails !== undefined)
     definition.guardrails = defineGuardrailPolicy(options.guardrails);
+
   return new Agent<unknown>(definition);
 }
 
@@ -59,8 +62,10 @@ async function open(
 async function settled(run: DurableRun) {
   for (let attempt = 0; attempt < 250; attempt++) {
     const snapshot = await run.snapshot();
+
     if (["completed", "failed", "cancelled", "needs_attention"].includes(snapshot.run.status))
       return snapshot;
+
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
   throw new Error("The durable run did not settle.");
@@ -161,6 +166,7 @@ describe("pure middleware", () => {
     const path = database();
     const first = vi.fn(async (request: CompletionRequest) => {
       if (!hasToolResult(request)) return toolResponse();
+
       throw new Error("provider down");
     });
     const runtime = await open(
@@ -194,6 +200,7 @@ describe("pure middleware", () => {
     const path = database();
     const first = vi.fn(async (request: CompletionRequest) => {
       if (!hasToolResult(request)) return toolResponse();
+
       throw new Error("provider down");
     });
     const tool = vi.fn(async () => "found");
@@ -248,6 +255,7 @@ describe("pure middleware", () => {
     const path = database();
     const first = vi.fn(async (request: CompletionRequest) => {
       if (!hasToolResult(request)) return toolResponse();
+
       throw new Error("provider down");
     });
     const runtime = await open(
@@ -343,6 +351,7 @@ describe("recorded guardrails", () => {
     let fail = true;
     const check = vi.fn(async () => {
       if (fail) throw new Error("moderation timeout");
+
       return undefined;
     });
     const path = database();

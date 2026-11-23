@@ -640,6 +640,7 @@ class FakeDrizzleDb {
 
   replaceFirstMessage(message: unknown): void {
     const first = [...this.messages.values()][0]?.[0];
+
     if (first !== undefined) {
       first.message = message;
     }
@@ -713,9 +714,11 @@ class FakeDrizzleDb {
     if (hasSelection(selection, "message")) {
       const scopeKey = String(extractParam(condition));
       const session = this.sessions.get(scopeKey);
+
       if (session === undefined) {
         return [];
       }
+
       return [...(this.messages.get(session.id) ?? [])]
         .sort((left, right) => left.position - right.position)
         .map((row) => ({ message: row.message }));
@@ -736,10 +739,12 @@ class FakeDrizzleDb {
     const row = assertRecord(value);
     const scopeKey = String(row.scopeKey);
     const existing = this.sessions.get(scopeKey);
+
     if (existing !== undefined) {
       if ("compactionState" in row) {
         existing.compactionState = row.compactionState;
       }
+
       return existing;
     }
 
@@ -812,10 +817,12 @@ class FakeDrizzleDb {
 
     const scopeKey = String(extractParam(condition));
     const session = this.sessions.get(scopeKey);
+
     if (session !== undefined) {
       this.messages.delete(session.id);
       removeWhere(this.errors, (error) => error.memorySessionId === session.id);
     }
+
     this.sessions.delete(scopeKey);
   }
 }
@@ -874,9 +881,11 @@ class FakeInsertBuilder {
 
   values(value: unknown): this {
     this.value = value;
+
     if (this.table !== agentMemorySessions && this.table !== agentMemoryWrites) {
       this.db.insertRows(this.table, this.value);
     }
+
     return this;
   }
 
@@ -892,13 +901,17 @@ class FakeInsertBuilder {
     if (this.table === agentMemoryWrites) {
       const record = assertRecord(this.value);
       const id = `${String(record.scopeKey)}\u0000${String(record.idempotencyKey)}`;
+
       if (this.db.writes.has(id)) return [];
+
       this.db.writes.set(id, String(record.fingerprint));
       return [{ id }];
     }
+
     if (this.table !== agentMemorySessions) {
       return [];
     }
+
     return [this.db.upsertSession(this.value)];
   }
 }
@@ -940,13 +953,16 @@ function extractParams(condition: unknown): unknown[] {
       }
       return;
     }
+
     if (!isRecord(value)) {
       return;
     }
+
     if (value.constructor.name === "Param") {
       values.push(value.value);
       return;
     }
+
     if (Array.isArray(value.queryChunks)) {
       for (const chunk of value.queryChunks) {
         visit(chunk);
@@ -965,6 +981,7 @@ function assertRecord(value: unknown): Record<string, unknown> {
   if (!isRecord(value)) {
     throw new TypeError("Expected a record.");
   }
+
   return value;
 }
 
@@ -975,6 +992,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function removeWhere<T>(items: T[], predicate: (item: T) => boolean): void {
   for (let index = items.length - 1; index >= 0; index -= 1) {
     const item = items[index];
+
     if (item !== undefined && predicate(item)) {
       items.splice(index, 1);
     }

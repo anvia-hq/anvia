@@ -37,6 +37,7 @@ async function main(): Promise<void> {
 
   console.log("[quickstart] agent output:", response.output);
   console.log("[quickstart] trace:", response.trace?.traceId);
+
   if (response.trace?.traceId !== undefined) {
     console.log(
       "[quickstart] inspect in Langfuse:",
@@ -71,13 +72,17 @@ async function main(): Promise<void> {
     input: "How long do refunds stay available?",
     expected: "30 days",
   };
+
   if (response.trace?.traceId !== undefined) {
     const metadata: Record<string, string> = { traceId: response.trace.traceId };
+
     if (response.trace.observationId !== undefined) {
       metadata.observationId = response.trace.observationId;
     }
+
     evalCase.metadata = metadata;
   }
+
   const evalAgent = new Agent({
     id: "eval-target",
     model: client.completionModel({ modelId: defaultModelId(), api: "responses" }),

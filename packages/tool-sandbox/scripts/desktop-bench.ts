@@ -35,7 +35,9 @@ const rtts = option("--rtt", "0,100")
   .map((value) => Number(value));
 const label = option("--label", "run");
 const flood = option("--flood", "move");
+
 if (flood !== "move" && flood !== "scroll") throw new Error("--flood is move or scroll.");
+
 const throughputSeconds = Number(option("--seconds", "8"));
 const moves = Number(option("--moves", "30"));
 const sandboxId = "bench";
@@ -111,6 +113,7 @@ class RfbClient {
   /** Ask for changes, and keep asking each time an update lands. */
   startRequesting(): void {
     if (this.requesting) return;
+
     this.requesting = true;
     this.request(false);
     this.onUpdate(() => this.request(true));
@@ -133,6 +136,7 @@ class RfbClient {
 
   private take(length: number): Buffer | undefined {
     if (this.buffer.length < length) return undefined;
+
     const taken = this.buffer.subarray(0, length);
     this.buffer = this.buffer.subarray(length);
     return taken;
@@ -143,33 +147,44 @@ class RfbClient {
     switch (this.stage) {
       case "version": {
         if (this.take(12) === undefined) return false;
+
         this.transport.write(Buffer.from("RFB 003.008\n"));
         this.stage = "security";
         return true;
       }
       case "security": {
         const count = this.buffer[0];
+
         if (count === undefined || this.buffer.length < 1 + count) return false;
+
         const types = [...this.buffer.subarray(1, 1 + count)];
         this.buffer = this.buffer.subarray(1 + count);
+
         if (!types.includes(1)) throw new Error(`No "none" security type (got ${types.join()})`);
+
         this.transport.write(Buffer.from([1]));
         this.stage = "result";
         return true;
       }
       case "result": {
         const result = this.take(4);
+
         if (result === undefined) return false;
+
         if (result.readUInt32BE(0) !== 0) throw new Error("RFB security failed");
+
         this.transport.write(Buffer.from([1])); // Shared.
         this.stage = "init";
         return true;
       }
       case "init": {
         if (this.buffer.length < 24) return false;
+
         const nameLength = this.buffer.readUInt32BE(20);
         const init = this.take(24 + nameLength);
+
         if (init === undefined) return false;
+
         this.width = init.readUInt16BE(0);
         this.height = init.readUInt16BE(2);
         this.bytesPerPixel = (init[4] ?? 32) / 8;
@@ -190,37 +205,47 @@ class RfbClient {
 
   private message(): boolean {
     const type = this.buffer[0];
+
     if (type === undefined) return false;
+
     if (type === 2) {
       this.take(1); // Bell.
       return true;
     }
+
     if (type === 3) {
       if (this.buffer.length < 8) return false;
+
       return this.take(8 + this.buffer.readUInt32BE(4)) !== undefined;
     }
+
     if (type !== 0) throw new Error(`Unexpected server message ${type}`);
 
     // FramebufferUpdate: parse the whole thing before consuming any of it.
     if (this.buffer.length < 4) return false;
+
     const rects = this.buffer.readUInt16BE(2);
     let offset = 4;
     for (let index = 0; index < rects; index += 1) {
       if (this.buffer.length < offset + 12) return false;
+
       const width = this.buffer.readUInt16BE(offset + 4);
       const height = this.buffer.readUInt16BE(offset + 6);
       const encoding = this.buffer.readInt32BE(offset + 8);
       offset += 12;
+
       if (encoding === encodingRaw) {
         offset += width * height * this.bytesPerPixel;
       } else if (encoding === encodingCopyRect) {
         offset += 4;
       } else if (encoding === encodingZrle) {
         if (this.buffer.length < offset + 4) return false;
+
         offset += 4 + this.buffer.readUInt32BE(offset);
       } else {
         throw new Error(`Unexpected encoding ${encoding}`);
       }
+
       if (this.buffer.length < offset) return false;
     }
     this.take(offset);
@@ -275,6 +300,7 @@ class Shell {
       this.output += chunk.toString("utf8");
       const waiting = this.waiting;
       const at = waiting === undefined ? -1 : this.output.indexOf(waiting.marker);
+
       if (waiting !== undefined && at !== -1) {
         this.waiting = undefined;
         const text = this.output.slice(0, at);
@@ -356,6 +382,7 @@ async function measureLatency(
     const start = now();
     shell.fire(`xdotool windowmove ${windowId} ${x} ${y}`);
     const at = await Promise.race([arrived, sleep(5_000).then(() => Number.NaN)]);
+
     if (index >= 3 && !Number.isNaN(at)) samples.push(at - start); // The first few warm things up.
   }
   return samples.sort((a, b) => a - b);
@@ -385,11 +412,13 @@ async function measureThroughput(client: RfbClient, shell: Shell): Promise<Throu
     // 100 clock ticks a second, as a share of one core.
     cpu.set(name, ((ticks - (before.get(name) ?? ticks)) / 100 / seconds) * 100);
   }
+
   if (process.env.ANVIA_BENCH_DEBUG) {
     console.log(
       `  ${updates} updates, ${(bytes / Math.max(1, updates) / 1024).toFixed(0)} KiB each`,
     );
   }
+
   return { mbPerSecond: bytes / seconds / 1e6, updatesPerSecond: updates / seconds, cpu };
 }
 
@@ -465,6 +494,7 @@ try {
   const windowId = (
     await shell.run(`xdotool search --onlyvisible --class lxterminal | tail -1`)
   ).trim();
+
   if (windowId === "") throw new Error("No terminal window to move.");
 
   const runCase = async (path: string, makeClient: (encodings?: number[]) => RfbClient) => {
@@ -479,6 +509,7 @@ try {
     // as one xdotool can, so the desktop changes continuously and nothing the window draws is the
     // limit.
     const shellRef = shell as Shell;
+
     if (flood === "scroll") {
       shellRef.fire(
         `lxterminal --geometry=200x50 -e sh -c 'base64 /dev/urandom; sleep 99999' >/dev/null 2>&1 &`,
@@ -488,10 +519,12 @@ try {
         `lxterminal --geometry=150x40 -e sh -c 'base64 /dev/urandom | head -c 30000; sleep 99999' >/dev/null 2>&1 &`,
       );
     }
+
     await sleep(2500);
     const floodWindow = (
       await shellRef.run(`xdotool search --onlyvisible --class lxterminal | tail -1`)
     ).trim();
+
     if (flood === "scroll") {
       await shellRef.run(
         `xdotool windowmove ${floodWindow} 0 0 windowsize ${floodWindow} ${status.width} ${status.height - 80}`,
@@ -502,13 +535,18 @@ try {
         `rm -f /tmp/stop-flood; while [ ! -e /tmp/stop-flood ]; do xdotool $(i=0; while [ $i -lt 20 ]; do echo windowmove ${floodWindow} 0 0 windowmove ${floodWindow} 240 120; i=$((i+1)); done); done &`,
       );
     }
+
     await sleep(1000);
+
     if (process.env.ANVIA_BENCH_DEBUG) {
       const shot = await desktop.screenshot();
       await (await import("node:fs/promises")).writeFile("/tmp/anvia-bench-flood.png", shot.png);
     }
+
     const throughput = await measureThroughput(client, shellRef);
+
     if (process.env.ANVIA_BENCH_DEBUG) console.log([...throughput.cpu].join(" "));
+
     client.close();
     await sleep(500);
 
@@ -539,6 +577,7 @@ try {
       "direct (in the container)",
       (encodings) => new RfbClient(directTransport(containerName, status.vncPort), encodings),
     );
+
   for (const rtt of rtts) {
     proxy.oneWayMs = rtt / 2;
     await runCase(`relay, RTT ${rtt} ms`, (encodings) => {

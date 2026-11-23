@@ -39,12 +39,16 @@ export class VectorInspectCursorError extends RangeError {
 
 export function parseVectorInspectCursor(cursor: string | undefined): number {
   if (cursor === undefined) return 0;
+
   if (!INSPECT_CURSOR_PATTERN.test(cursor)) {
     throw new VectorInspectCursorError(cursor);
   }
+
   const offset = Number(cursor);
+
   if (!Number.isSafeInteger(offset)) {
     throw new VectorInspectCursorError(cursor);
   }
+
   return offset;
 }

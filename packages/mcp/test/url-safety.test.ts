@@ -132,10 +132,12 @@ function runLookup(lookup: LookupFunction, hostname: string): Promise<LookupAddr
         reject(error);
         return;
       }
+
       if (!Array.isArray(addresses)) {
         reject(new TypeError("Expected lookup to return all addresses."));
         return;
       }
+
       resolve(addresses);
     });
   });

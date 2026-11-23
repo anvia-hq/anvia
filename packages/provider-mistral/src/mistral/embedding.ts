@@ -41,6 +41,7 @@ export class MistralEmbeddingModel implements EmbeddingModel {
       model: this.modelId,
       inputs: texts,
     };
+
     if (this.dimensions !== undefined) {
       params.outputDimension = this.dimensions;
     }
@@ -50,6 +51,7 @@ export class MistralEmbeddingModel implements EmbeddingModel {
       { signal: options?.abortSignal, retries: { strategy: "none" } } as never,
     );
     const data = dataFromResponse(response, texts.length);
+
     if (data.length !== texts.length) {
       throw new Error(
         `Embedding response length ${data.length} did not match input length ${texts.length}`,
@@ -79,15 +81,19 @@ function dataFromResponse(response: unknown, inputLength: number): EmbeddingData
     }
 
     const index = item.index;
+
     if (typeof index !== "number" || !Number.isInteger(index)) {
       throw new Error(`Invalid Mistral embedding response index at position ${position}.`);
     }
+
     if (index < 0 || index >= inputLength) {
       throw new Error(`Mistral embedding response index ${index} was outside the input range.`);
     }
+
     if (byIndex.has(index)) {
       throw new Error(`Duplicate Mistral embedding response index ${index}.`);
     }
+
     if (!isNumberArray(item.embedding)) {
       throw new Error(`Invalid Mistral embedding response vector at position ${position}.`);
     }

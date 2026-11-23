@@ -85,7 +85,9 @@ it.each([false, true])(
     const requests: CompletionRequest[] = [];
     const completion = async (request: CompletionRequest) => {
       requests.push(request);
+
       if (requests.length === 1) await held.promise;
+
       return done();
     };
     const agent = stream
@@ -201,7 +203,9 @@ it("keeps steering pending across approval and restart without granting approval
   const second = await open(agent, path);
   const restored = await second.getRun(run.id);
   const pending = (await restored.snapshot()).run.outcome;
+
   if (pending?.type !== "interaction") throw new Error("Missing approval");
+
   await restored.respond(pending.interaction.id, { type: "tool-approval", approved: true });
   await restored.result();
   expect(tool).toHaveBeenCalledTimes(1);
@@ -212,6 +216,7 @@ it("applies queued input before the first model and validates user-only transpor
   const held = gate();
   const model = vi.fn(async (request: CompletionRequest) => {
     if (request.chatHistory.at(-1)?.content === "hello") await held.promise;
+
     return done();
   });
   const runtime = await open(makeAgent(model));

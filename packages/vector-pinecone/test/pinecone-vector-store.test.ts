@@ -98,6 +98,7 @@ describe("PineconeVectorClient", () => {
           metadata: { __anvia_document_id: "a", __anvia_document: "A" },
         },
       ];
+
       if (options.topK !== 2) {
         matches.push(
           {
@@ -112,6 +113,7 @@ describe("PineconeVectorClient", () => {
           },
         );
       }
+
       return { matches };
     });
     const namespace: PineconeNamespaceLike = {

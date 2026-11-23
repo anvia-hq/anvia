@@ -97,6 +97,7 @@ function weatherToolCallStream(
     item_id: functionCall.id,
     arguments: functionCall.arguments,
   };
+
   if (options.omitDoneName !== true) {
     argumentsDone.name = options.doneName ?? functionCall.name;
   }

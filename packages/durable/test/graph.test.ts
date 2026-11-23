@@ -51,11 +51,13 @@ describe("durable task graphs", () => {
     });
     const model = vi.fn(async (request) => {
       const input = JSON.stringify(request.chatHistory);
+
       if (input.includes("SYNTHESIS")) {
         expect(input).toContain("left result");
         expect(input).toContain("right result");
         return done();
       }
+
       const isLeft = input.includes("LEFT");
       await (isLeft ? left : right);
       return response([{ type: "text", text: isLeft ? "left result" : "right result" }]);

@@ -56,6 +56,7 @@ export function analyzeTracePayload(
     const unrecognized: unknown[] = [];
     value.forEach((item, index) => {
       const message = parseMessage(item, `message:${index}`, defaultRole);
+
       if (message === undefined) unrecognized.push(item);
       else messages.push(message);
     });
@@ -72,6 +73,7 @@ export function analyzeTracePayload(
   }
 
   const directMessage = parseMessage(value, "message:direct");
+
   if (directMessage !== undefined) {
     const messageFields = new Set([
       "role",
@@ -98,6 +100,7 @@ export function analyzeTracePayload(
   }
 
   const consumed = new Set<string>();
+
   if (typeof value.instructions === "string" && value.instructions.trim().length > 0) {
     messages.push({
       key: "instructions",
@@ -110,17 +113,22 @@ export function analyzeTracePayload(
 
   for (const key of messageKeys) {
     const candidate = value[key];
+
     if (Array.isArray(candidate)) {
       const parsed = candidate
         .map((item, index) => parseMessage(item, `${key}:${index}`, defaultRole))
         .filter((message): message is TracePayloadMessage => message !== undefined);
+
       if (parsed.length > 0) {
         messages.push(...parsed);
         consumed.add(key);
       }
+
       continue;
     }
+
     const parsed = parseMessage(candidate, `${key}:direct`, defaultRole);
+
     if (parsed !== undefined) {
       messages.push(parsed);
       consumed.add(key);
@@ -131,6 +139,7 @@ export function analyzeTracePayload(
     const parsed = value.choices
       .map((choice, index) => {
         if (!isRecord(choice)) return undefined;
+
         return parseMessage(
           choice.message ?? choice.delta ?? choice,
           `choices:${index}`,
@@ -138,6 +147,7 @@ export function analyzeTracePayload(
         );
       })
       .filter((message): message is TracePayloadMessage => message !== undefined);
+
     if (parsed.length > 0) {
       messages.push(...parsed);
       consumed.add("choices");
@@ -146,7 +156,9 @@ export function analyzeTracePayload(
 
   for (const key of toolKeys) {
     const candidate = value[key];
+
     if (!Array.isArray(candidate)) continue;
+
     tools.push(...candidate.map((tool, index) => parseTool(tool, `${key}:${index}`)));
     consumed.add(key);
   }
@@ -165,15 +177,20 @@ export function flattenTracePayload(value: unknown): TraceStructuredEntry[] {
   const visit = (current: unknown, path: string) => {
     if (Array.isArray(current)) {
       if (current.length === 0) entries.push({ path, label: path || "Value", value: current });
+
       current.forEach((item, index) => visit(item, path ? `${path}.${index}` : String(index)));
       return;
     }
+
     if (isRecord(current)) {
       const nested = Object.entries(current);
+
       if (nested.length === 0) entries.push({ path, label: path || "Value", value: current });
+
       nested.forEach(([key, item]) => visit(item, path ? `${path}.${key}` : key));
       return;
     }
+
     entries.push({
       path,
       label: path ? tracePayloadLabel(path.split(".").at(-1) ?? path) : "Value",
@@ -186,9 +203,13 @@ export function flattenTracePayload(value: unknown): TraceStructuredEntry[] {
 
 export function compactTracePayloadValue(value: unknown): string {
   if (value === null) return "null";
+
   if (value === undefined) return "undefined";
+
   if (typeof value === "string") return value;
+
   if (typeof value === "number" || typeof value === "boolean") return String(value);
+
   return tracePayloadJson(value);
 }
 
@@ -214,7 +235,9 @@ function parseMessage(
   defaultRole?: string,
 ): TracePayloadMessage | undefined {
   if (!isRecord(value)) return undefined;
+
   const role = messageRole(value) ?? (hasContentShape(value) ? defaultRole : undefined);
+
   if (role === undefined) return undefined;
 
   const content = messageContent(
@@ -225,7 +248,9 @@ function parseMessage(
     ...toolCallsFrom(value.toolCalls, `${key}:tool-calls`),
     ...toolCallsFromContent(value.content, `${key}:content-tool-call`),
   ];
+
   if (isToolPayload(value)) toolCalls.push(parseTool(value, `${key}:tool`));
+
   return { key, role, content, toolCalls };
 }
 
@@ -245,44 +270,62 @@ function hasContentShape(value: Record<string, unknown>): boolean {
 
 function messageRole(value: Record<string, unknown>): string | undefined {
   if (typeof value.role === "string") return value.role.toLowerCase();
+
   if (value.type === "reasoning") return "reasoning";
+
   if (isToolPayload(value)) return "tool";
+
   return undefined;
 }
 
 function messageContent(value: unknown): string {
   if (value === null || value === undefined) return "";
+
   if (typeof value === "string") return value;
+
   if (typeof value === "number" || typeof value === "boolean") return String(value);
+
   if (Array.isArray(value)) {
     return value
       .map((item) => {
         if (!isRecord(item)) return messageContent(item);
+
         if (isToolPayload(item)) return "";
+
         if (typeof item.text === "string") return item.text;
+
         if (typeof item.content === "string") return item.content;
+
         if (item.type === "image" || item.type === "image_url") return "[Image]";
+
         if (item.type === "file") return "[File]";
+
         if (item.type === "audio") return "[Audio]";
+
         return compactTracePayloadValue(item);
       })
       .filter(Boolean)
       .join("\n");
   }
+
   if (isRecord(value)) {
     if (typeof value.text === "string") return value.text;
+
     if (typeof value.content === "string") return value.content;
   }
+
   return compactTracePayloadValue(value);
 }
 
 function toolCallsFrom(value: unknown, key: string): TracePayloadTool[] {
   if (!Array.isArray(value)) return [];
+
   return value.map((tool, index) => parseTool(tool, `${key}:${index}`));
 }
 
 function toolCallsFromContent(value: unknown, key: string): TracePayloadTool[] {
   if (!Array.isArray(value)) return [];
+
   return value
     .filter((item) => isRecord(item) && isToolPayload(item))
     .map((tool, index) => parseTool(tool, `${key}:${index}`));
@@ -290,6 +333,7 @@ function toolCallsFromContent(value: unknown, key: string): TracePayloadTool[] {
 
 function parseTool(value: unknown, key: string): TracePayloadTool {
   if (!isRecord(value)) return { key, name: "Tool", value };
+
   const fn = isRecord(value.function) ? value.function : undefined;
   const name =
     stringValue(value.toolName) ??
@@ -307,12 +351,15 @@ function parseTool(value: unknown, key: string): TracePayloadTool {
     value.content ??
     value;
   const tool: TracePayloadTool = { key, name, value: parseJsonString(payload) };
+
   if (description !== undefined) tool.description = description;
+
   return tool;
 }
 
 function parseJsonString(value: unknown): unknown {
   if (typeof value !== "string") return value;
+
   try {
     return JSON.parse(value);
   } catch {

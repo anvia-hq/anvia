@@ -66,6 +66,7 @@ try {
   });
 
   if (response.type !== "response") throw new Error("Unexpected tool approval request.");
+
   console.log(response.output);
   console.log("trace:", response.trace);
 } finally {

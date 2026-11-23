@@ -4,20 +4,25 @@ export function textFromMessage(message: Message): string {
   if (message.role === "system") {
     return message.content;
   }
+
   if (typeof message.content === "string") {
     return message.content;
   }
+
   return message.content
     .flatMap((content) => {
       if (content.type === "text") {
         return [content.text];
       }
+
       if (content.type === "file" && content.data.type === "text") {
         return [content.data.text];
       }
+
       if (content.type === "tool-result") {
         return textFromToolResult(content.output);
       }
+
       return [];
     })
     .join("\n");
@@ -27,6 +32,7 @@ export function rewriteMessageText(message: Message, text: string): Message {
   if (message.role === "system") {
     return { ...message, content: text };
   }
+
   if (message.role === "user") {
     const content = typeof message.content === "string" ? [] : message.content;
     return {
@@ -39,9 +45,11 @@ export function rewriteMessageText(message: Message, text: string): Message {
       ],
     };
   }
+
   if (message.role === "assistant") {
     return { ...message, content: [{ type: "text", text }] };
   }
+
   return message;
 }
 

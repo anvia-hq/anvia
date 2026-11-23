@@ -39,12 +39,14 @@ export function TracePayloadSection(props: {
   );
   const options = useMemo<ViewOption[]>(() => {
     if (tooLarge) return [{ id: "raw", label: props.field === "metadata" ? "JSON" : "Raw" }];
+
     if (props.field === "metadata") {
       return [
         { id: "table", label: "Table" },
         { id: "raw", label: "JSON" },
       ];
     }
+
     if (analysis?.hasMessages) {
       return [
         { id: "readable", label: props.field === "output" ? "Response" : "Messages" },
@@ -52,6 +54,7 @@ export function TracePayloadSection(props: {
         { id: "raw", label: "Raw" },
       ];
     }
+
     return [
       { id: "structure", label: "Structure" },
       { id: "raw", label: "Raw" },
@@ -64,24 +67,37 @@ export function TracePayloadSection(props: {
     ? preferredMode
     : (options[0]?.id ?? "raw");
 
-  const content =
-    props.value === null || props.value === undefined ? (
-      <EmptyPayload />
-    ) : tooLarge ? (
-      <RawJsonBlock json={serialized} title={props.title} truncated />
-    ) : mode === "raw" ? (
-      <RawJsonBlock json={serialized} title={props.title} />
-    ) : mode === "table" ? (
-      <MetadataTable value={props.value} />
-    ) : mode === "readable" && analysis?.hasMessages ? (
-      <ReadableMessages
-        additional={analysis.additional}
-        messages={analysis.messages}
-        tools={analysis.tools}
-      />
-    ) : (
-      <TraceJsonTree value={props.value} />
-    );
+  function renderContent() {
+    if (props.value === null || props.value === undefined) {
+      return <EmptyPayload />;
+    }
+
+    if (tooLarge) {
+      return <RawJsonBlock json={serialized} title={props.title} truncated />;
+    }
+
+    if (mode === "raw") {
+      return <RawJsonBlock json={serialized} title={props.title} />;
+    }
+
+    if (mode === "table") {
+      return <MetadataTable value={props.value} />;
+    }
+
+    if (mode === "readable" && analysis?.hasMessages) {
+      return (
+        <ReadableMessages
+          additional={analysis.additional}
+          messages={analysis.messages}
+          tools={analysis.tools}
+        />
+      );
+    }
+
+    return <TraceJsonTree value={props.value} />;
+  }
+
+  const content = renderContent();
 
   if (props.field === "metadata") {
     const fieldCount =
@@ -128,6 +144,7 @@ function PayloadModeSwitch(props: {
   onChange: (mode: TracePayloadMode) => void;
 }) {
   if (props.options.length < 2) return null;
+
   return (
     <fieldset
       className="flex h-7 shrink-0 items-center rounded-md border p-0.5"
@@ -172,7 +189,8 @@ function ReadableMessages(props: {
                 <p className="m-0 whitespace-pre-wrap break-words text-sm leading-6">
                   {message.content}
                 </p>
-              ) : message.toolCalls.length === 0 ? (
+              ) : null}
+              {message.content.length === 0 && message.toolCalls.length === 0 ? (
                 <span className="text-sm italic text-muted-foreground">No text content</span>
               ) : null}
               {message.toolCalls.map((tool) => (
@@ -303,6 +321,7 @@ function MetadataTable({ value }: { value: unknown }) {
 function StructuredPayload({ value }: { value: unknown }) {
   if (Array.isArray(value)) {
     if (value.length === 0) return <PrimitiveValue value={value} />;
+
     return (
       <div className="grid gap-1">
         {value.map((item, index) => (
@@ -316,9 +335,12 @@ function StructuredPayload({ value }: { value: unknown }) {
       </div>
     );
   }
+
   if (isRecord(value)) {
     const entries = Object.entries(value);
+
     if (entries.length === 0) return <PrimitiveValue value={value} />;
+
     return (
       <div className="grid gap-1">
         {entries.map(([key, item]) => (
@@ -327,11 +349,13 @@ function StructuredPayload({ value }: { value: unknown }) {
       </div>
     );
   }
+
   return <PrimitiveValue value={value} />;
 }
 
 function StructuredRow(props: { label: string; value: unknown; depth: number }) {
   const nested = Array.isArray(props.value) || isRecord(props.value);
+
   if (!nested) {
     return (
       <div className="grid min-w-0 grid-cols-[minmax(7rem,0.34fr)_minmax(0,1fr)] gap-4 py-2 text-xs max-sm:grid-cols-1 max-sm:gap-1">
@@ -340,11 +364,15 @@ function StructuredRow(props: { label: string; value: unknown; depth: number }) 
       </div>
     );
   }
-  const entries = Array.isArray(props.value)
-    ? props.value.map((item, index) => [String(index), item] as const)
-    : isRecord(props.value)
-      ? Object.entries(props.value)
-      : [];
+
+  let entries: Array<readonly [string, unknown]> = [];
+
+  if (Array.isArray(props.value)) {
+    entries = props.value.map((item, index) => [String(index), item] as const);
+  } else if (isRecord(props.value)) {
+    entries = Object.entries(props.value);
+  }
+
   return (
     <details open={props.depth < 1} className="group/row py-2">
       <summary className="flex cursor-pointer list-none items-center gap-2 font-mono text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-3 [&::-webkit-details-marker]:hidden">
@@ -412,7 +440,9 @@ function RawJsonBlock(props: { json: string; title: string; truncated?: boolean 
         variant="secondary"
         onClick={() => {
           const write = navigator.clipboard?.writeText(props.json);
+
           if (write === undefined) return;
+
           void write.then(
             () => {
               setCopied(true);

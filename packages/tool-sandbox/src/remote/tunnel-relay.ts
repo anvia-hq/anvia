@@ -17,6 +17,7 @@ const binarySubprotocol = "binary";
 
 export function selectTunnelProtocol(protocols: Set<string>): string | false {
   if (protocols.has(tunnelSubprotocol)) return tunnelSubprotocol;
+
   return protocols.has(binarySubprotocol) ? binarySubprotocol : false;
 }
 
@@ -74,7 +75,9 @@ export function bridgeTunnel(
   const opened = opening.then(
     (value) => {
       handle = value;
+
       if (closed) value.close();
+
       return value;
     },
     (error: unknown) => {
@@ -91,9 +94,12 @@ export function bridgeTunnel(
     if (!isBinary) {
       if (hooks.onText === undefined) closeSocket(1003, "binary frames only");
       else hooks.onText(rawDataToString(data));
+
       return;
     }
+
     let bytes = toBytes(data);
+
     if (hooks.filter !== undefined) {
       try {
         bytes = hooks.filter(bytes);
@@ -101,9 +107,12 @@ export function bridgeTunnel(
         closeSocket(1008, error instanceof Error ? error.message : "unsupported message");
         return;
       }
+
       if (bytes.byteLength === 0) return;
     }
+
     queued += bytes.byteLength;
+
     if (canPause && queued > maxQueuedBytes) {
       ws.pause();
     } else if (!canPause && queued > maxQueuedBytesUnpausable) {
@@ -111,16 +120,19 @@ export function bridgeTunnel(
       closeSocket(1008, "sending faster than the service reads");
       return;
     }
+
     const size = bytes.byteLength;
     chain = chain.then(async () => {
       try {
         const target = await opened;
+
         if (target !== undefined && !closed) await target.write(bytes);
       } catch {
         // The tunnel ended while this frame was in flight. Its exit closes the socket, with the
         // right code for why, so closing here too would only race it.
       } finally {
         queued -= size;
+
         if (canPause && queued <= maxQueuedBytes / 2) ws.resume();
       }
     });
@@ -135,10 +147,13 @@ export function bridgeTunnel(
 
   void (async () => {
     const target = await opened;
+
     if (target === undefined) return;
+
     try {
       for await (const chunk of target.output) {
         if (closed) break;
+
         await sendBinary(ws, chunk);
       }
     } catch {
@@ -157,7 +172,9 @@ export function bridgeTunnel(
 
 function toBytes(data: WebSocket.RawData): Uint8Array {
   if (Array.isArray(data)) return new Uint8Array(Buffer.concat(data));
+
   if (Buffer.isBuffer(data)) return new Uint8Array(data);
+
   return new Uint8Array(data);
 }
 

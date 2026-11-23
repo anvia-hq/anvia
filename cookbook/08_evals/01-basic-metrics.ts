@@ -44,11 +44,14 @@ function answerSupportQuestion(question: string): string {
   if (question.includes("Negative control")) {
     return "Refunds are available for 90 days.";
   }
+
   if (question.includes("refund")) {
     return "Refunds are available for 30 days.";
   }
+
   if (question.includes("billing")) {
     return "Workspace owners can change billing settings.";
   }
+
   return "Please contact support.";
 }

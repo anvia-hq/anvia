@@ -78,16 +78,21 @@ export function createDirectClientTransport<
   return {
     async *send(sendOptions) {
       const resume = sendOptions.resume ?? resumeCursorFromRequest(sendOptions.request);
+
       if (resume !== undefined) {
         throw new ClientProtocolError("Direct client transports do not support resume cursors.");
       }
+
       const handlerOptions: Parameters<typeof options.handler>[0] = {
         request: sendOptions.request,
       };
+
       if (sendOptions.abortSignal !== undefined) {
         handlerOptions.abortSignal = sendOptions.abortSignal;
       }
+
       if (sendOptions.headers !== undefined) handlerOptions.headers = sendOptions.headers;
+
       const events = await options.handler(handlerOptions);
       const iterator = events[Symbol.asyncIterator]();
       const streamId = createClientId("stream");
@@ -113,7 +118,9 @@ export function createDirectClientTransport<
         try {
           while (!sendOptions.abortSignal?.aborted) {
             const next = await iterator.next();
+
             if (next.done) break;
+
             const event = parseClientStreamEvent<Metadata, Data>(
               next.value,
               protocolOptions(options),
@@ -142,14 +149,18 @@ async function* validateFrameSequence<Metadata extends JsonObject, Data extends 
   let ended = false;
   for await (const frame of frames) {
     if (ended) throw new ClientProtocolError("Received a frame after stream_end.", frame);
+
     if (streamId === undefined) {
       if (frame.type !== "stream_start") {
         throw new ClientProtocolError("The first client stream frame must be stream_start.", frame);
       }
+
       streamId = frame.streamId;
+
       if (resume !== undefined && frame.streamId !== resume.streamId) {
         throw new ClientProtocolError("Resume response streamId does not match the cursor.", frame);
       }
+
       if (resume !== undefined && !frame.resumable) {
         throw new ClientProtocolError("Resume response must identify a resumable stream.", frame);
       }
@@ -158,19 +169,24 @@ async function* validateFrameSequence<Metadata extends JsonObject, Data extends 
     } else if (frame.streamId !== streamId) {
       throw new ClientProtocolError("Client streamId changed during the response.", frame);
     }
+
     if (frame.type === "stream_event") {
       if (frame.eventId !== lastEventId + 1) {
         throw new ClientProtocolError("Client stream event IDs must be contiguous.", frame);
       }
+
       lastEventId = frame.eventId;
     } else if (frame.type === "stream_end") {
       if (frame.eventId !== lastEventId) {
         throw new ClientProtocolError("stream_end has an invalid eventId.", frame);
       }
+
       ended = true;
     }
+
     yield frame;
   }
+
   if (streamId === undefined || !ended) {
     throw new ClientProtocolError("Client stream ended without a complete frame sequence.");
   }
@@ -187,16 +203,23 @@ function protocolOptions<Metadata extends JsonObject, Data extends ClientDataMap
     metadataSchema?: ClientMetadataSchema<Metadata>;
     dataSchemas?: ClientDataSchemas<Data>;
   } = {};
+
   if (options.metadataSchema !== undefined) result.metadataSchema = options.metadataSchema;
+
   if (options.dataSchemas !== undefined) result.dataSchemas = options.dataSchemas;
+
   return result;
 }
 
 function resumeCursorFromRequest(value: unknown): ClientStreamCursor | undefined {
   if (typeof value !== "object" || value === null || !("resume" in value)) return undefined;
+
   const resume = value.resume;
+
   if (typeof resume !== "object" || resume === null) return undefined;
+
   if (!("streamId" in resume) || !("after" in resume)) return undefined;
+
   return typeof resume.streamId === "string" &&
     typeof resume.after === "number" &&
     Number.isSafeInteger(resume.after) &&

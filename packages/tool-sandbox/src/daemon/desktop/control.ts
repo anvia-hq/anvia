@@ -35,6 +35,7 @@ export class DesktopControlLock {
 
   snapshot(): DesktopControl {
     if (this.holder === undefined) return { held: false };
+
     return { held: true, holder: this.holder, expiresAt: new Date(this.expiresAt).toISOString() };
   }
 
@@ -46,6 +47,7 @@ export class DesktopControlLock {
         "desktop_locked",
       );
     }
+
     const lease = Math.min(leaseMs ?? this.leaseMs, this.maxLeaseMs);
     this.holder = holder;
     this.expiresAt = Date.now() + lease;
@@ -63,6 +65,7 @@ export class DesktopControlLock {
         "desktop_locked",
       );
     }
+
     this.clear();
     return this.snapshot();
   }
@@ -70,7 +73,9 @@ export class DesktopControlLock {
   /** Called before an agent input. Fails, or waits for a release if configured to. */
   async assertAgentInput(signal?: AbortSignal): Promise<void> {
     if (this.holder === undefined) return;
+
     if (this.waitForReleaseMs > 0) await this.waitForRelease(signal);
+
     if (this.holder !== undefined) {
       throw new DockerSandboxError(
         `The desktop is controlled by ${this.holder}; agent input is paused until they release it.`,
@@ -100,6 +105,7 @@ export class DesktopControlLock {
       };
       const timeout = setTimeout(done, this.waitForReleaseMs);
       this.waiters.push(done);
+
       if (signal?.aborted === true) abort();
       else signal?.addEventListener("abort", abort, { once: true });
     });

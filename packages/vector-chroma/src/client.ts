@@ -31,8 +31,11 @@ export class ChromaVectorClient {
 
   async close(): Promise<void> {
     if (this.closed) return;
+
     this.closed = true;
+
     if (this.injected !== undefined || this.clientPromise === undefined) return;
+
     const client = await this.clientPromise;
     await client.close?.();
   }

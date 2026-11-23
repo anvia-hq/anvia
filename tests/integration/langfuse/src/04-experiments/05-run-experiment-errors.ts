@@ -23,6 +23,7 @@ async function main(): Promise<void> {
       if (item.id.startsWith("bad-")) {
         throw new Error(`intentional failure for ${item.id}`);
       }
+
       return { output: `answer-for-${item.id}`, trace: { traceId: `trace-${item.id}` } };
     },
   });

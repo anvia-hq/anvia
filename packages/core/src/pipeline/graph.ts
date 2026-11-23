@@ -25,9 +25,13 @@ export function initialPipelineState(options: {
     nodes: [input],
     edges: [],
   };
+
   if (options.name !== undefined) graph.name = options.name;
+
   if (options.description !== undefined) graph.description = options.description;
+
   if (options.metadata !== undefined) graph.metadata = options.metadata;
+
   return {
     graph,
     terminalPaths: [input.path],
@@ -48,9 +52,11 @@ export function appendStageNode(
   } = {},
 ): { state: PipelineState; node: PipelineGraphNode } {
   const id = validateStageId(stage.id);
+
   if (state.stageIds.has(id)) {
     throw new TypeError(`Pipeline stage id "${id}" is already registered.`);
   }
+
   const node = graphNode(id, [id], kind, stage.name ?? options.defaultLabel ?? id, {
     description: stage.description,
     metadata: stage.metadata,
@@ -108,9 +114,11 @@ export function appendBranches(
 export function withOutputNode(state: PipelineState): PipelineGraph {
   const graph = cloneGraph(state.graph);
   const outputPath = [OUTPUT_ID];
+
   if (graph.nodes.some((node) => pathEquals(node.path, outputPath))) {
     return graph;
   }
+
   graph.nodes.push(graphNode(OUTPUT_ID, outputPath, "output", "Output"));
   graph.edges.push(
     ...state.terminalPaths.map((source, index) => ({
@@ -154,17 +162,21 @@ function appendChildGraph(
     const sourceIsInput = isInputPath(edge.source);
     const targetIsOutput = isOutputPath(edge.target);
     const source = sourceIsInput ? [...parentPath] : [...parentPath, ...edge.source];
+
     if (targetIsOutput) {
       terminalPaths.push(source);
       continue;
     }
+
     const target = [...parentPath, ...edge.target];
     let childEdge: PipelineGraphEdge = {
       id: `edge_${nextEdgeIndex}`,
       source,
       target,
     };
+
     if (edge.label !== undefined) childEdge = { ...childEdge, label: edge.label };
+
     childEdges.push(childEdge);
     nextEdgeIndex += 1;
   }
@@ -195,11 +207,15 @@ function appendNode(
       source: [...source],
       target: [...node.path],
     };
+
     if (edgeLabel !== undefined) edge.label = edgeLabel;
+
     return edge;
   });
   const stageIds = new Set(state.stageIds);
+
   if (stageId !== undefined) stageIds.add(stageId);
+
   return {
     graph: {
       ...state.graph,
@@ -228,13 +244,21 @@ function graphNode(
   } = {},
 ): PipelineGraphNode {
   const node: PipelineGraphNode = { id, path: [...path], kind, label };
+
   if (options.description !== undefined) node.description = options.description;
+
   if (options.metadata !== undefined) node.metadata = options.metadata;
+
   if (options.agentId !== undefined) node.agentId = options.agentId;
+
   if (options.agentName !== undefined) node.agentName = options.agentName;
+
   if (options.pipelineId !== undefined) node.pipelineId = options.pipelineId;
+
   if (options.branchKey !== undefined) node.branchKey = options.branchKey;
+
   if (options.branchOf !== undefined) node.branchOf = options.branchOf;
+
   return node;
 }
 
@@ -242,13 +266,17 @@ function validateStageId(value: string): string {
   if (typeof value !== "string") {
     throw new TypeError("Pipeline stage id must be a string.");
   }
+
   const id = value.trim();
+
   if (id.length === 0) {
     throw new TypeError("Pipeline stage id must be a non-empty string.");
   }
+
   if (RESERVED_STAGE_IDS.has(id)) {
     throw new TypeError(`Pipeline stage id "${id}" is reserved.`);
   }
+
   return id;
 }
 

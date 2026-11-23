@@ -71,8 +71,10 @@ it.each(["abort", "close"])(
     const discovery = mcp.connect({ abortSignal: controller.signal });
     const rejected = expect(discovery).rejects.toThrow();
     await pending;
+
     if (action === "abort") controller.abort();
     else await mcp.close();
+
     // The server never releases the response. A connection still probing will time out this test.
     await rejected;
     await mcp.close();
@@ -105,27 +107,38 @@ it.each([
           token: request.headers.authorization,
           path: request.url,
         });
+
         if (scenario === "DELETE stalls") return;
-        response
-          .writeHead(
-            scenario === "DELETE unsupported" ? 405 : scenario === "DELETE fails" ? 500 : 204,
-          )
-          .end();
+
+        let status = 204;
+
+        if (scenario === "DELETE unsupported") {
+          status = 405;
+        } else if (scenario === "DELETE fails") {
+          status = 500;
+        }
+
+        response.writeHead(status).end();
         return;
       }
+
       if (request.method !== "POST") {
         response.writeHead(405).end();
         return;
       }
+
       const message = await body(request);
+
       if (message.method === "notifications/initialized" && scenario === "initialization error") {
         response.writeHead(500).end("Initialization rejected");
         return;
       }
+
       if (message.id === undefined) {
         response.writeHead(202).end();
         return;
       }
+
       if (
         message.method === "server/discover" ||
         (message.method === "tools/list" && scenario === "tool error")
@@ -139,10 +152,12 @@ it.each([
         );
         return;
       }
+
       if (message.method === "tools/list" && scenario === "cancelled") {
         controller.abort();
         return;
       }
+
       json(
         response,
         message.id,
@@ -159,10 +174,12 @@ it.each([
     const mcp = client(url, scenario === "persistent" ? {} : { terminate: true });
     const started = performance.now();
     const discovery = mcp.connect({ abortSignal: controller.signal });
+
     if (scenario === "tool error") await expect(discovery).rejects.toThrow("Unavailable");
     else if (["initialization error", "cancelled"].includes(scenario))
       await expect(discovery).rejects.toThrow();
     else expect((await discovery).tools).toEqual([]);
+
     await Promise.all([mcp.close(), mcp.close()]);
     expect(deletions).toEqual(
       scenario === "persistent"
@@ -180,6 +197,7 @@ it.each(["within limits", "tool count", "catalog bytes"])(
     let pages = 0;
     const url = await fixture(async (request, response) => {
       const message = await body(request);
+
       if (message.method === "server/discover") {
         json(response, message.id, {
           supportedVersions: ["2026-07-28"],
@@ -187,6 +205,7 @@ it.each(["within limits", "tool count", "catalog bytes"])(
         });
         return;
       }
+
       pages++;
       expect(message.params?.cursor).toBe(pages === 1 ? undefined : String(pages - 1));
 
@@ -209,6 +228,7 @@ it.each(["within limits", "tool count", "catalog bytes"])(
     });
     const mcp = client(url, { limits: { maxTools: 200, maxBytes: 256_000 } });
     const discovery = mcp.connect();
+
     if (scenario === "within limits") expect((await discovery).tools).toHaveLength(200);
     else
       await expect(discovery).rejects.toThrow(
@@ -216,6 +236,7 @@ it.each(["within limits", "tool count", "catalog bytes"])(
           ? "MCP tool count limit exceeded"
           : "MCP tool catalog byte limit exceeded",
       );
+
     expect(pages).toBe(scenario === "tool count" ? 3 : 2);
     await mcp.close();
   },
@@ -286,6 +307,7 @@ it("resets discovery budgets when retrying a failed connection", async () => {
   let attempts = 0;
   const url = await fixture(async (request, response) => {
     const message = await body(request);
+
     if (message.method === "server/discover") {
       attempts++;
       json(response, message.id, {
@@ -294,6 +316,7 @@ it("resets discovery budgets when retrying a failed connection", async () => {
       });
       return;
     }
+
     json(response, message.id, {
       resultType: "complete",
       ttlMs: 0,
@@ -314,6 +337,7 @@ it.each([4, 3])("counts array syntax for every empty tool page (maxBytes=%s)", a
   let pages = 0;
   const url = await fixture(async (request, response) => {
     const message = await body(request);
+
     if (message.method === "server/discover") {
       json(response, message.id, {
         supportedVersions: ["2026-07-28"],
@@ -321,6 +345,7 @@ it.each([4, 3])("counts array syntax for every empty tool page (maxBytes=%s)", a
       });
       return;
     }
+
     pages++;
 
     const result: Record<string, unknown> = {
@@ -337,8 +362,10 @@ it.each([4, 3])("counts array syntax for every empty tool page (maxBytes=%s)", a
     json(response, message.id, result);
   });
   const mcp = client(url, { limits: { maxTools: 200, maxBytes } });
+
   if (maxBytes === 4) expect((await mcp.connect()).tools).toEqual([]);
   else await expect(mcp.connect()).rejects.toThrow("MCP tool catalog byte limit exceeded");
+
   expect(pages).toBe(2);
   await mcp.close();
 });
@@ -354,7 +381,9 @@ it("preserves SDK header refresh and output validation after initial discovery r
       response.writeHead(204).end();
       return;
     }
+
     const message = await body(request);
+
     if (message.method === "server/discover") {
       json(response, message.id, {
         supportedVersions: ["2026-07-28"],
@@ -362,6 +391,7 @@ it("preserves SDK header refresh and output validation after initial discovery r
       });
       return;
     }
+
     if (message.method === "tools/list") {
       pages++;
       json(response, message.id, {
@@ -387,8 +417,10 @@ it("preserves SDK header refresh and output validation after initial discovery r
       });
       return;
     }
+
     calls++;
     headers.push(request.headers["mcp-param-query"]);
+
     if (calls === 1) {
       response.writeHead(200, { "content-type": "application/json" }).end(
         JSON.stringify({
@@ -399,6 +431,7 @@ it("preserves SDK header refresh and output validation after initial discovery r
       );
       return;
     }
+
     json(response, message.id, {
       resultType: "complete",
       content: [],

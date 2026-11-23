@@ -111,7 +111,9 @@ export function formatEvalResult(
   options: Omit<PrintEvalResultOptions, "output"> = {},
 ): string {
   const format = options.format ?? "pretty";
+
   if (format === "quiet") return "";
+
   validatePrintOptions(options);
   return format === "json" ? jsonResult(result, options) : prettyResult(result, options);
 }
@@ -121,7 +123,9 @@ export function printEvalResult(
   options: PrintEvalResultOptions = {},
 ): void {
   const format = options.format ?? "pretty";
+
   if (format === "quiet") return;
+
   const write = options.output?.stdout ?? ((text: string) => process.stdout.write(text));
   write(`${formatEvalResult(result, options)}\n`);
 }
@@ -133,10 +137,15 @@ export function evalExitCode(
   const hasExpectations =
     expectations?.totals !== undefined || expectations?.outcomes !== undefined;
   const mismatches = hasExpectations ? expectationMismatches(result, expectations) : [];
+
   if (hasExpectations && mismatches.length === 0) return 0;
+
   if (hasExpectations && hasUnexpectedInvalid(result, expectations)) return 2;
+
   if (hasExpectations) return 1;
+
   if (requiredMetricCount(result, "invalid") > 0) return 2;
+
   return requiredMetricCount(result, "fail") > 0 ? 1 : 0;
 }
 
@@ -145,6 +154,7 @@ export function assertEvalTotals(
   expected: EvalExpectedTotals,
 ): void {
   const mismatches = totalMismatches(result, expected);
+
   if (mismatches.length > 0) {
     throw new EvalAssertionError("Evaluation totals did not match expectations.", mismatches);
   }
@@ -155,6 +165,7 @@ export function assertEvalOutcomes(
   expected: EvalExpectedOutcomes,
 ): void {
   const mismatches = outcomeMismatches(result, expected);
+
   if (mismatches.length > 0) {
     throw new EvalAssertionError("Evaluation outcomes did not match expectations.", mismatches);
   }
@@ -182,15 +193,19 @@ export async function runEvalCli<
   printEvalResult(result, { format, output, maxValueLength, redact });
   const code = evalExitCode(result, expectations);
   const mismatches = expectationMismatches(result, expectations);
+
   if (mismatches.length > 0 && format !== "quiet") {
     const write = output?.stderr ?? ((text: string) => process.stderr.write(text));
     write(
       `Evaluation expectation mismatches:\n${mismatches.map((value) => `- ${value}`).join("\n")}\n`,
     );
   }
+
   const currentExitCode =
     typeof process.exitCode === "number" ? process.exitCode : Number(process.exitCode ?? 0);
+
   if (exitCode === true && code > currentExitCode) process.exitCode = code;
+
   return result;
 }
 
@@ -205,6 +220,7 @@ function prettyResult(
   ];
   for (const caseResult of result.results) {
     lines.push(``, `[${caseResult.outcome.toUpperCase()}] ${caseResult.case.id}`);
+
     if (caseResult.targetStatus === "succeeded") {
       lines.push(
         `  output: ${displayValue(
@@ -213,6 +229,7 @@ function prettyResult(
         )}`,
       );
     }
+
     if (caseResult.targetStatus === "failed") {
       lines.push(
         `  target error: ${errorText(
@@ -221,8 +238,10 @@ function prettyResult(
         )}`,
       );
     }
+
     for (const metric of caseResult.metrics) {
       const parts = [`  - ${metric.metricName}: ${metric.outcome.outcome}`];
+
       if (metric.outcome.score !== undefined) {
         parts.push(
           `score=${displayValue(
@@ -235,13 +254,18 @@ function prettyResult(
           )}`,
         );
       }
+
       if (metric.threshold !== undefined) parts.push(`threshold=${metric.threshold}`);
+
       if (metric.direction !== undefined) parts.push(`direction=${metric.direction}`);
+
       if (!metric.required) parts.push("optional");
+
       lines.push(parts.join(" | "));
       const explanation =
         metric.outcome.comment ??
         (metric.outcome.outcome === "invalid" ? metric.outcome.reason : undefined);
+
       if (explanation !== undefined) {
         lines.push(
           `    ${displayValue(
@@ -260,11 +284,13 @@ function prettyResult(
     ``,
     `Usage: target=${result.usage.target.totalTokens} evaluation=${result.usage.evaluation.totalTokens} total=${result.usage.total.totalTokens} tokens`,
   );
+
   if (result.cost !== undefined) {
     lines.push(
       `Cost: target=${result.cost.target} evaluation=${result.cost.evaluation} total=${result.cost.total} ${result.cost.currency}`,
     );
   }
+
   lines.push(`Duration: ${result.durationMs}ms`);
   return lines.join("\n");
 }
@@ -279,8 +305,11 @@ function jsonResult(
       if (value instanceof Error) {
         return { name: value.name, message: value.message, stack: value.stack };
       }
+
       if (value instanceof RegExp) return String(value);
+
       if (typeof value === "string") return truncate(value, options.maxValueLength);
+
       return value;
     },
     2,
@@ -292,13 +321,17 @@ function expectationMismatches(
   expectations?: EvalExpectations,
 ): string[] {
   if (expectations === undefined) return [];
+
   const mismatches: string[] = [];
+
   if (expectations.totals !== undefined) {
     mismatches.push(...totalMismatches(result, expectations.totals));
   }
+
   if (expectations.outcomes !== undefined) {
     mismatches.push(...outcomeMismatches(result, expectations.outcomes));
   }
+
   return mismatches;
 }
 
@@ -307,10 +340,15 @@ function totalMismatches(
   expected: EvalExpectedTotals,
 ): string[] {
   const directMetrics: Partial<EvalTotals> = {};
+
   if (expected.total !== undefined) directMetrics.total = expected.total;
+
   if (expected.passed !== undefined) directMetrics.passed = expected.passed;
+
   if (expected.failed !== undefined) directMetrics.failed = expected.failed;
+
   if (expected.invalid !== undefined) directMetrics.invalid = expected.invalid;
+
   return [
     ...totalsGroupMismatches("metrics", result.metrics, {
       ...directMetrics,
@@ -326,6 +364,7 @@ function totalsGroupMismatches(
   expected: Partial<EvalTotals> | undefined,
 ): string[] {
   if (expected === undefined) return [];
+
   const mismatches: string[] = [];
   for (const key of ["total", "passed", "failed", "invalid"] as const) {
     if (expected[key] !== undefined && actual[key] !== expected[key]) {
@@ -343,12 +382,15 @@ function outcomeMismatches(
   const actualCases = new Map(result.results.map((caseResult) => [caseResult.case.id, caseResult]));
   for (const [caseId, metrics] of Object.entries(expected)) {
     const caseResult = actualCases.get(caseId);
+
     if (caseResult === undefined) {
       mismatches.push(`${caseId}: expected case was not present`);
       continue;
     }
+
     for (const [metricName, expectedOutcome] of Object.entries(metrics)) {
       const metric = caseResult.metrics.find((candidate) => candidate.metricName === metricName);
+
       if (metric === undefined) {
         mismatches.push(`${caseId}.${metricName}: expected metric was not present`);
       } else if (metric.outcome.outcome !== expectedOutcome) {
@@ -361,9 +403,12 @@ function outcomeMismatches(
   for (const caseResult of result.results) {
     for (const metric of caseResult.metrics) {
       if (!metric.required) continue;
+
       const expectedOutcome = expected[caseResult.case.id]?.[metric.metricName] ?? "pass";
+
       if (metric.outcome.outcome !== expectedOutcome) {
         const message = `${caseResult.case.id}.${metric.metricName}: expected ${expectedOutcome}, received ${metric.outcome.outcome}`;
+
         if (!mismatches.includes(message)) mismatches.push(message);
       }
     }
@@ -385,6 +430,7 @@ function hasUnexpectedInvalid(
       ),
     );
   }
+
   const expectedInvalid = expectations?.totals?.metrics?.invalid ?? expectations?.totals?.invalid;
   return result.metrics.invalid > (expectedInvalid ?? 0);
 }
@@ -408,6 +454,7 @@ function totalsText(totals: EvalTotals): string {
 
 function displayValue(value: unknown, maxValueLength?: number): string {
   let text: string;
+
   if (typeof value === "string") text = value;
   else {
     try {
@@ -416,6 +463,7 @@ function displayValue(value: unknown, maxValueLength?: number): string {
       text = String(value);
     }
   }
+
   return truncate(text, maxValueLength);
 }
 

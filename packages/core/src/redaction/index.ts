@@ -111,6 +111,7 @@ export function createRedactor(options: RedactionOptions = {}): Redactor {
     let text = input;
     for (const pattern of compiled) {
       if (numericOnly && !pattern.numeric) continue;
+
       text = text.replace(pattern.regex, (...args: unknown[]) => {
         const match = String(args[0]);
         // Capture groups shift the callback arguments. Regexes with named groups append the groups
@@ -128,27 +129,37 @@ export function createRedactor(options: RedactionOptions = {}): Redactor {
 
   const redactString = (value: string): string => {
     if (typeof value !== "string") return value;
+
     if (DATA_URL_PATTERN.test(value)) return value;
+
     return applyPatterns(value, false);
   };
 
   const redactValue = (value: unknown, depth: number, seen: WeakSet<object>): unknown => {
     if (typeof value === "string") return redactString(value);
+
     if (typeof value === "number") {
       if (!Number.isFinite(value)) return value;
+
       const text = String(value);
       const redacted = applyPatterns(text, true);
       return redacted === text ? value : redacted;
     }
+
     if (value === null || typeof value !== "object") return value;
+
     if (value instanceof ArrayBuffer || ArrayBuffer.isView(value)) return value;
+
     if (depth >= MAX_DEPTH) return MAX_DEPTH_MARKER;
+
     if (seen.has(value)) return CIRCULAR_MARKER;
+
     seen.add(value);
     try {
       if (Array.isArray(value)) {
         return value.map((entry) => redactValue(entry, depth + 1, seen));
       }
+
       const record = value as Record<string, unknown>;
       const result: Record<string, unknown> = {};
       for (const [key, entry] of Object.entries(record)) {
@@ -158,7 +169,9 @@ export function createRedactor(options: RedactionOptions = {}): Redactor {
           result[key] = entry;
           continue;
         }
+
         const redacted = redactValue(entry, depth + 1, seen);
+
         if (key === "__proto__") {
           // Assigning would invoke the prototype setter and change the copy's prototype.
           Object.defineProperty(result, key, {
@@ -169,6 +182,7 @@ export function createRedactor(options: RedactionOptions = {}): Redactor {
           });
           continue;
         }
+
         result[key] = redacted;
       }
       return result;
@@ -198,7 +212,9 @@ function isEncodedValue(record: Record<string, unknown>): boolean {
  */
 function isCardNumber(match: string): boolean {
   const digits = match.replaceAll(/[^0-9]/g, "");
+
   if (digits.length < 13 || digits.length > 19) return false;
+
   return startsWithIssuerPrefix(digits) && passesLuhn(digits);
 }
 
@@ -215,22 +231,30 @@ function isStandalonePhoneRun(match: string, offset: number, input: string): boo
 function startsWithIssuerPrefix(digits: string): boolean {
   const two = digits.slice(0, 2);
   const four = digits.slice(0, 4);
+
   if (digits.startsWith("4")) return true;
+
   if (two === "34" || two === "37" || two === "65" || two === "35") return true;
+
   if (two >= "51" && two <= "55") return true;
+
   return four === "6011" || (four >= "2221" && four <= "2720");
 }
 
 export function passesLuhn(digits: string): boolean {
   if (!/^\d+$/.test(digits)) return false;
+
   let sum = 0;
   let double = false;
   for (let index = digits.length - 1; index >= 0; index -= 1) {
     let value = digits.charCodeAt(index) - 48;
+
     if (double) {
       value *= 2;
+
       if (value > 9) value -= 9;
     }
+
     sum += value;
     double = !double;
   }

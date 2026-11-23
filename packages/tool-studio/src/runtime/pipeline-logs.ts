@@ -21,6 +21,7 @@ export async function* emitPipelineLog(
   input: StudioPipelineLogAppendInput,
 ): AsyncIterable<{ type: "pipeline_log"; log: StudioPipelineLogEntry }> {
   const log = await appendPipelineLog(store, input);
+
   if (log !== undefined) {
     yield { type: "pipeline_log", log };
   }
@@ -38,7 +39,9 @@ export function pipelineRunReceivedLog(props: {
     metadataKeys: Object.keys(props.metadata ?? {}),
   };
   const inputBytes = byteLength(formatUnknown(props.input));
+
   if (inputBytes !== undefined) metadata.inputBytes = inputBytes;
+
   return {
     pipelineId: props.pipeline.id,
     runId: props.runId,
@@ -78,7 +81,9 @@ export function pipelineRunCompletedLog(props: {
 }): StudioPipelineLogAppendInput {
   const metadata: JsonObject = { durationMs: props.durationMs };
   const outputBytes = byteLength(formatUnknown(props.output));
+
   if (outputBytes !== undefined) metadata.outputBytes = outputBytes;
+
   return {
     pipelineId: props.pipelineId,
     runId: props.runId,
@@ -115,6 +120,7 @@ export function pipelineStageLog(
   studioPipelineId: string = event.pipelineId,
 ): StudioPipelineLogAppendInput {
   const category = stageCategory(event.node);
+
   if (event.type === "stage_started") {
     return {
       pipelineId: studioPipelineId,
@@ -126,6 +132,7 @@ export function pipelineStageLog(
       metadata: nodeMetadata(event.node),
     };
   }
+
   if (event.type === "stage_completed") {
     return {
       pipelineId: studioPipelineId,
@@ -140,6 +147,7 @@ export function pipelineStageLog(
       },
     };
   }
+
   return {
     pipelineId: studioPipelineId,
     runId: event.runId,
@@ -159,18 +167,23 @@ function stageCategory(node: PipelineGraphNode): StudioPipelineLogAppendInput["c
   if (node.kind === "branch") {
     return node.branchOf === "route" ? "decision" : "parallel";
   }
+
   if (node.kind === "parallel") {
     return "parallel";
   }
+
   if (node.kind === "agent") {
     return "agent";
   }
+
   if (node.kind === "extractor") {
     return "extractor";
   }
+
   if (node.kind === "decision" || node.kind === "route") {
     return "decision";
   }
+
   return "stage";
 }
 
@@ -181,10 +194,15 @@ function nodeMetadata(node: PipelineGraphNode): JsonObject {
     kind: node.kind,
     label: node.label,
   };
+
   if (node.agentId !== undefined) metadata.agentId = node.agentId;
+
   if (node.pipelineId !== undefined) metadata.pipelineId = node.pipelineId;
+
   if (node.branchKey !== undefined) metadata.branchKey = node.branchKey;
+
   if (node.branchOf !== undefined) metadata.branchOf = node.branchOf;
+
   return metadata;
 }
 

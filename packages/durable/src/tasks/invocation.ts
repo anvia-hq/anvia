@@ -31,6 +31,7 @@ export function taskInvocation(
       return await store.transaction(callback);
     } catch (error) {
       if (error instanceof DurableStorageError) fatal = error;
+
       throw error;
     }
   };
@@ -38,8 +39,11 @@ export function taskInvocation(
   const keys = new Set<string>();
   const assertActive = async () => {
     if (fatal !== undefined) throw fatal;
+
     controller.signal.throwIfAborted();
+
     if (!open) throw new DurableConflictError("Task invocation has finished.");
+
     await transaction(async (tx) => {
       if ((await requireTask(tx, task.id)).status !== "running")
         throw new DurableConflictError("Task is no longer running.");
@@ -53,19 +57,25 @@ export function taskInvocation(
   ): Promise<T> => {
     await assertActive();
     taskKey(key);
+
     if (!["manual", "safe", "idempotent"].includes(recovery))
       throw new TypeError("Invalid effect recovery policy.");
+
     if (keys.has(key))
       throw new DurableConflictError("Concurrent use of one effect key is not allowed.");
+
     keys.add(key);
     try {
       const saved = await transaction(async (tx) => {
         const existing = await tx.getOperation(task.id, key);
+
         if (existing !== undefined) {
           if (!sameJson(existing.input, input) || existing.recovery !== recovery)
             throw new DurableRecoveryError("Effect input or recovery policy changed.", key);
+
           return existing;
         }
+
         const operation = {
           key,
           kind: "effect" as const,
@@ -76,9 +86,12 @@ export function taskInvocation(
         await tx.putOperation(task.id, operation);
         return undefined;
       });
+
       if (saved?.status === "completed") return json(saved.result) as T;
+
       if (saved?.recovery === "manual")
         throw new DurableRecoveryError("Effect requires external reconciliation.", key);
+
       const output = await execute(`${task.id}/${key}`, controller.signal);
       let result: JsonValue;
       try {
@@ -101,11 +114,13 @@ export function taskInvocation(
             "Effect result exceeds the payload limit; reconcile its external result.",
             key,
           );
+
         throw error;
       }
       return result as T;
     } catch (error) {
       if (error instanceof DurableRecoveryError) fatal ??= error;
+
       throw error;
     } finally {
       keys.delete(key);
@@ -119,8 +134,10 @@ export function taskInvocation(
     spawn: async (key, definition, input) => {
       await assertActive();
       const registered = definitions.get(definition.name);
+
       if (registered === undefined || registered.version !== definition.version)
         throw new DurableRecoveryError(`Task definition is not registered: ${definition.name}`);
+
       const child = await transaction(async (tx) => {
         await tx.lockSession?.(`task-root:${task.rootId}`);
         return createTask(tx, registered, input, task.sessionId, key, task.id);
@@ -145,10 +162,14 @@ export function taskInvocation(
       await assertActive();
       return transaction(async (tx) => {
         const child = await requireTask(tx, childId);
+
         if (child.parentId !== task.id || child.agentRunId === undefined)
           throw new DurableConflictError("Expected a direct owned agent child.");
+
         const run = await tx.getRun(child.agentRunId);
+
         if (run === undefined) throw new DurableRecoveryError("Owned agent run is missing.");
+
         // Goal rounds read outcomes and transcripts from this record, so restore any references.
         return (await tx.blobs((io) => hydrateValue(io, json(run)))) as DurableRunRecord;
       });
@@ -172,12 +193,16 @@ export function taskInvocation(
     context,
     async finish() {
       open = false;
+
       if (effects.size > 0) {
         controller.abort(new Error("Task returned before its effects settled."));
         await Promise.allSettled(effects);
+
         if (fatal !== undefined) throw fatal;
+
         throw new Error("Task returned before its effects settled.");
       }
+
       if (fatal !== undefined) throw fatal;
     },
   };

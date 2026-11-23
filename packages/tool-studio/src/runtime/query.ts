@@ -20,18 +20,23 @@ export function parseLimit(
   if (value === undefined || value.trim().length === 0) {
     return defaultMax;
   }
+
   const limit = Number(value);
+
   if (!Number.isInteger(limit) || limit <= 0) {
     return undefined;
   }
+
   return Math.min(limit, max);
 }
 
 export function parseTraceStatus(value: string | undefined): StudioTraceStatus | undefined | false {
   const status = optionalQueryString(value);
+
   if (status === undefined) {
     return undefined;
   }
+
   return status === "running" ||
     status === "success" ||
     status === "suspended" ||
@@ -51,9 +56,12 @@ export function parseAfter(value: string | undefined): number | undefined | fals
   if (value === undefined || value.trim().length === 0) {
     return undefined;
   }
+
   const after = Number(value);
+
   if (!Number.isInteger(after) || after < 0) {
     return false;
   }
+
   return after;
 }

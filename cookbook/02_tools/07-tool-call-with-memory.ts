@@ -52,9 +52,11 @@ const getTicketTool = createTool({
   }),
   execute({ id }) {
     const ticket = tickets.get(id);
+
     if (ticket === undefined) {
       throw new Error(`Ticket not found: ${id}`);
     }
+
     return ticket;
   },
 });
@@ -98,5 +100,7 @@ const followUp = await agent.generate({
   prompt: "Who owns the ticket we just discussed?",
   session,
 });
+
 if (followUp.type !== "response") throw new Error("Unexpected tool approval request.");
+
 console.log(followUp.output);

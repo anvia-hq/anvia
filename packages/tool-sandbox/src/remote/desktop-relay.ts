@@ -26,6 +26,7 @@ const binarySubprotocol = "binary";
 
 export function selectDesktopProtocol(protocols: Set<string>): string | false {
   if (protocols.has(desktopSubprotocol)) return desktopSubprotocol;
+
   return protocols.has(binarySubprotocol) ? binarySubprotocol : false;
 }
 
@@ -67,8 +68,11 @@ export function relayDesktop(
   const publish = (next: DesktopControl) => {
     control = next;
     const message = JSON.stringify({ type: "control", ...next, you: youHold(), readOnly });
+
     if (message === sent) return;
+
     sent = message;
+
     if (!stopped) sendJson(ws, JSON.parse(message));
   };
   const refresh = () => desktop.control().then(publish, () => undefined);
@@ -84,6 +88,7 @@ export function relayDesktop(
   void opening.then(
     () => {
       if (stopped) return;
+
       void refresh();
       timers = [
         setInterval(() => void refresh(), pollMs),
@@ -100,10 +105,12 @@ export function relayDesktop(
     filter: (bytes) => filter.push(bytes),
     onText: (text) => {
       const message = parseText(text);
+
       if (message === undefined) {
         ws.close(1003, "unknown control message");
         return;
       }
+
       if (readOnly) {
         fail(new DockerSandboxError("This viewer is read-only.", "tool_policy"));
       } else if (message.type === "takeover") {
@@ -115,6 +122,7 @@ export function relayDesktop(
     onClose: () => {
       stopped = true;
       for (const timer of timers) clearInterval(timer);
+
       // A viewer that leaves must not keep the agent locked out.
       if (youHold()) void desktop.release({ holder }).catch(() => undefined);
     },

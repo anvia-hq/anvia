@@ -188,6 +188,7 @@ it("does not cancel children created while asynchronous authorization is pending
         release();
         await vi.waitFor(async () => expect((await task.graph()).nodes).toHaveLength(2));
       }
+
       return resource.agentId === undefined;
     },
   });
@@ -235,7 +236,9 @@ it("reauthorizes children created after an event subscription before exposing th
     (async () => {
       while (true) {
         const next = await iterator.next();
+
         if (next.done) return;
+
         received.push(next.value.taskId);
       }
     })(),

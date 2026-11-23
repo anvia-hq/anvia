@@ -23,14 +23,17 @@ describe("mapWithConcurrency", () => {
 
     const mapped = mapWithConcurrency([0, 1, 2], 2, async (input) => {
       started.push(input);
+
       if (input === 0) {
         await failFirst.promise;
         throw failure;
       }
+
       if (input === 1) {
         secondStarted.resolve();
         await releaseSecond.promise;
       }
+
       completed.push(input);
       return input;
     });

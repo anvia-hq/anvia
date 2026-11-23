@@ -61,19 +61,24 @@ export function usePipelines(props: {
       try {
         const params = new URLSearchParams({ limit: "1000" });
         const response = await fetch(`/pipelines/${encodeURIComponent(pipelineId)}/logs?${params}`);
+
         if (!response.ok) {
           throw new Error(`Pipeline logs failed with HTTP ${response.status}`);
         }
+
         const body = (await response.json()) as { logs: StudioPipelineLogEntry[] };
+
         if (pipelineLogRequestRef.current === requestId) {
           setPipelineLogs(body.logs);
         }
+
         return body.logs;
       } catch (loadError) {
         if (pipelineLogRequestRef.current === requestId) {
           props.onError(errorMessage(loadError));
           setPipelineLogs([]);
         }
+
         return [];
       } finally {
         if (pipelineLogRequestRef.current === requestId) {
@@ -95,9 +100,11 @@ export function usePipelines(props: {
       try {
         const params = new URLSearchParams({ limit: "50" });
         const response = await fetch(`/pipelines/${encodeURIComponent(pipelineId)}/runs?${params}`);
+
         if (!response.ok) {
           throw new Error(`Pipeline runs failed with HTTP ${response.status}`);
         }
+
         const body = (await response.json()) as { runs: StudioPipelineRunRecord[] };
         setPipelineRuns(body.runs);
         return body.runs;
@@ -128,13 +135,17 @@ export function usePipelines(props: {
       props.onError("");
       try {
         const response = await fetch(`/pipelines/${encodeURIComponent(pipelineId)}`);
+
         if (!response.ok) {
           throw new Error(`Pipeline load failed with HTTP ${response.status}`);
         }
+
         const detail = (await response.json()) as StudioPipelineDetail;
+
         if (pipelineDetailRequestRef.current !== requestId) {
           return;
         }
+
         setSelectedPipelineId(pipelineId);
         setPipelineDetail(detail);
         await Promise.all([loadPipelineLogs(pipelineId), loadPipelineRuns(pipelineId)]);
@@ -156,7 +167,9 @@ export function usePipelines(props: {
     if (!props.active) {
       return;
     }
+
     const pipelineId = selectedPipelineId || props.pipelines[0]?.id || "";
+
     if (pipelineId.length > 0) {
       void loadPipeline(pipelineId);
     }
@@ -168,15 +181,18 @@ export function usePipelines(props: {
         if (event.log.runId !== undefined) {
           setActivePipelineRunId((current) => current || event.log.runId || "");
         }
+
         appendPipelineLogEntry(event.log);
         await nextPaint();
         continue;
       }
+
       if (isPipelineFinalEvent(event)) {
         setPipelineRunOutput(formatPipelineOutput(event.output));
         await nextPaint();
         continue;
       }
+
       if (isErrorStreamEvent(event)) {
         throw new Error(JSON.stringify(event.error));
       }
@@ -185,6 +201,7 @@ export function usePipelines(props: {
 
   async function runPipeline() {
     const pipelineId = selectedPipelineId || props.pipelines[0]?.id || "";
+
     if (pipelineId.length === 0 || pipelineRunState === "running") {
       return;
     }
@@ -225,6 +242,7 @@ export function usePipelines(props: {
 
   async function replayPipelineRun(runId: string) {
     const pipelineId = selectedPipelineId || props.pipelines[0]?.id || "";
+
     if (pipelineId.length === 0 || runId.length === 0 || pipelineRunState === "running") {
       return;
     }
@@ -268,6 +286,7 @@ export function usePipelines(props: {
       if (current.some((item) => item.id === log.id)) {
         return current;
       }
+
       return [...current, log].sort((left, right) => left.sequence - right.sequence);
     });
   }
@@ -295,6 +314,7 @@ function pipelineStreamErrorMessage(error: unknown, label: string): string {
   if (error instanceof EventStreamHttpError) {
     return eventStreamResponseErrorMessage(error, label);
   }
+
   return errorMessage(error);
 }
 

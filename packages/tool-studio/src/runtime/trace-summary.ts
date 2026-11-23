@@ -9,15 +9,25 @@ export function traceSummary(trace: StudioTrace): StudioTraceSummary {
     startedAt: trace.startedAt,
     observationCount: trace.observations.length,
   };
+
   if (trace.runId !== undefined) summary.runId = trace.runId;
+
   if (trace.name !== undefined) summary.name = trace.name;
+
   if (trace.endedAt !== undefined) summary.endedAt = trace.endedAt;
+
   if (trace.durationMs !== undefined) summary.durationMs = trace.durationMs;
+
   if (trace.output !== undefined) summary.output = trace.output;
+
   if (trace.error !== undefined) summary.error = trace.error;
+
   if (trace.usage !== undefined) summary.usage = trace.usage;
+
   if (trace.context !== undefined) summary.context = trace.context;
+
   if (trace.metadata !== undefined) summary.metadata = trace.metadata;
+
   return summary;
 }
 
@@ -30,8 +40,11 @@ export function traceContextBreakdown(
 ): ContextBreakdown | undefined {
   for (let index = observations.length - 1; index >= 0; index -= 1) {
     const observation = observations[index];
+
     if (observation?.kind !== "generation") continue;
+
     const context = observation.metadata?.context;
+
     if (isContextBreakdown(context)) return context;
   }
   return undefined;
@@ -39,6 +52,7 @@ export function traceContextBreakdown(
 
 function isContextBreakdown(value: unknown): value is ContextBreakdown {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+
   const candidate = value as Partial<ContextBreakdown>;
   return (
     typeof candidate.estimatedTokens === "number" &&

@@ -81,9 +81,11 @@ class ConsoleLogger implements Logger {
 
 function createInitialBindings(options: LoggerOptions): LogContext {
   const bindings: LogContext = {};
+
   if (options.name !== undefined) {
     bindings.name = options.name;
   }
+
   Object.assign(bindings, options.bindings);
   return bindings;
 }

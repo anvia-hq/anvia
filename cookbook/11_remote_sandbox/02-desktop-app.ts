@@ -43,7 +43,9 @@ const mintTicket = () => {
 };
 const redeemTicket = (ticket: string | undefined) => {
   const expires = ticket === undefined ? undefined : tickets.get(ticket);
+
   if (ticket !== undefined) tickets.delete(ticket);
+
   return expires !== undefined && expires > Date.now();
 };
 
@@ -85,6 +87,7 @@ let current: AbortController | undefined;
 
 async function run(task: string): Promise<void> {
   if (sandbox === undefined) throw new Error("The sandbox is not ready yet.");
+
   const controller = new AbortController();
   current = controller;
   emit({ type: "reset" });
@@ -107,6 +110,7 @@ async function run(task: string): Promise<void> {
       onStepFinish({ response }) {
         // Narration before a tool call. The last step's text is the answer, which has its own event.
         if (!response.choice.some((part) => part.type === "tool-call")) return;
+
         for (const part of response.choice) {
           if (part.type === "text" && part.text.trim() !== "")
             emit({ type: "text", text: part.text });
@@ -116,6 +120,7 @@ async function run(task: string): Promise<void> {
   });
   try {
     const response = await agent.generate({ prompt: task, abortSignal: controller.signal });
+
     if (response.type === "response") emit({ type: "answer", text: response.output });
   } catch (error) {
     if (controller.signal.aborted) emit({ type: "stopped" });
@@ -162,7 +167,9 @@ const isLocal = (request: IncomingMessage) =>
 const ownHosts = [`localhost:${port}`, `127.0.0.1:${port}`];
 const isOwnPage = (request: IncomingMessage) => {
   const { origin, host } = request.headers;
+
   if (host === undefined || !ownHosts.includes(host)) return false;
+
   return (
     request.method === "GET" ||
     origin === undefined ||
@@ -172,6 +179,7 @@ const isOwnPage = (request: IncomingMessage) => {
 
 const server = createServer(async (request, response) => {
   const path = new URL(request.url ?? "/", "http://localhost").pathname;
+
   if (!isLocal(request) || !isOwnPage(request)) {
     response.writeHead(403).end();
   } else if (request.method === "GET" && path === "/") {
@@ -189,12 +197,16 @@ const server = createServer(async (request, response) => {
     request.on("close", () => listeners.delete(response));
   } else if (request.method === "POST" && path === "/api/run") {
     const { task } = await readJson(request);
+
     if (sandbox === undefined)
       return json(response, 409, { error: "The sandbox is not ready yet." });
+
     if (current !== undefined)
       return json(response, 409, { error: "The agent is already running." });
+
     if (typeof task !== "string" || task.trim() === "")
       return json(response, 400, { error: "Give it a task." });
+
     void run(task);
     json(response, 202, { ok: true });
   } else if (request.method === "POST" && path === "/api/stop") {
@@ -208,6 +220,7 @@ const server = createServer(async (request, response) => {
 // The container's daemon and the browser's viewer both upgrade to WebSockets on this one port.
 server.on("upgrade", (request, socket, head) => {
   const path = new URL(request.url ?? "/", "http://localhost").pathname;
+
   if (path === "/daemon") hub.handleUpgrade(request, socket, head);
   else if (path === "/desktop" && isLocal(request)) hub.handleDesktopUpgrade(request, socket, head);
   else socket.destroy();

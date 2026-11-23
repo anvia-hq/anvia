@@ -46,17 +46,22 @@ export class StudioObservabilityHub {
 
 export function observeStores(stores: ResolvedStores, hub: StudioObservabilityHub): ResolvedStores {
   const observed: ResolvedStores = { ...stores };
+
   if (stores.sessions !== undefined) observed.sessions = observeSessionStore(stores.sessions, hub);
+
   if (stores.traces !== undefined) observed.traces = observeTraceStore(stores.traces, hub);
+
   if (stores.pipelineLogs !== undefined) {
     observed.pipelineLogs = observePipelineLogStore(stores.pipelineLogs, hub);
   }
+
   return observed;
 }
 
 export function registerObservabilityRoutes(app: Hono, hub: StudioObservabilityHub): void {
   app.get("/observability/events", (c) => {
     const types = parseEventTypes(c.req.query("type"));
+
     if (types === false) {
       return c.json(
         {
@@ -78,7 +83,9 @@ function observabilityEvents(
   types: Set<StudioObservabilityEventType> | undefined,
 ): AsyncIterable<StudioObservabilityEvent> {
   const options: { types?: Set<StudioObservabilityEventType> } = {};
+
   if (types !== undefined) options.types = types;
+
   const subscription = hub.subscribe(options);
 
   return {
@@ -110,26 +117,33 @@ function createSubscription(
     },
     next() {
       const value = values.shift();
+
       if (value !== undefined) {
         return Promise.resolve({ done: false, value });
       }
+
       if (closed) {
         return Promise.resolve({ done: true, value: undefined });
       }
+
       return new Promise((resolve) => resolvers.push(resolve));
     },
     push(event) {
       if (closed || (types !== undefined && !types.has(event.type))) {
         return;
       }
+
       const resolve = resolvers.shift();
+
       if (resolve !== undefined) {
         resolve({ done: false, value: event });
         return;
       }
+
       if (values.length >= defaultBufferSize) {
         values.shift();
       }
+
       values.push(event);
     },
   };
@@ -144,10 +158,13 @@ function observeSessionStore(
       if (property !== "appendSessionLog") {
         return boundProperty(target, property, receiver);
       }
+
       const appendSessionLog = target.appendSessionLog?.bind(target);
+
       if (appendSessionLog === undefined) {
         return undefined;
       }
+
       return async (...args: Parameters<NonNullable<StudioSessionStore["appendSessionLog"]>>) => {
         const log = await appendSessionLog(...args);
         hub.emit({ type: "session_log", log });
@@ -168,6 +185,7 @@ function observePipelineLogStore(
       if (property !== "appendPipelineLog") {
         return boundProperty(target, property, receiver);
       }
+
       const appendPipelineLog = target.appendPipelineLog.bind(target);
       return async (...args: Parameters<StudioPipelineLogStore["appendPipelineLog"]>) => {
         const log = await appendPipelineLog(...args);
@@ -186,6 +204,7 @@ function observeTraceStore(store: StudioTraceStore, hub: StudioObservabilityHub)
       if (property !== "saveTrace") {
         return boundProperty(target, property, receiver);
       }
+
       const saveTrace = target.saveTrace.bind(target);
       return async (...args: Parameters<StudioTraceStore["saveTrace"]>) => {
         const trace = await saveTrace(...args);
@@ -221,9 +240,11 @@ function parseEventTypes(
   const types = new Set<StudioObservabilityEventType>();
   for (const type of value.split(",")) {
     const trimmed = type.trim();
+
     if (!isEventType(trimmed)) {
       return false;
     }
+
     types.add(trimmed);
   }
   return types;

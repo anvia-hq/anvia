@@ -65,6 +65,7 @@ export function startRootSpan(
   if (!isValidTraceId(traceId)) {
     return tracer.startSpan(name, options, context.active());
   }
+
   if (isValidSpanId(parentObservationId)) {
     const parent = trace.setSpanContext(ROOT_CONTEXT, {
       traceId,
@@ -74,6 +75,7 @@ export function startRootSpan(
     });
     return tracer.startSpan(name, options, parent);
   }
+
   // startSpan is synchronous, so no other run can observe the pending ID between set and clear.
   pending.traceId = traceId;
   let span: Span;
@@ -82,14 +84,17 @@ export function startRootSpan(
   } finally {
     pending.traceId = undefined;
   }
+
   if (span.isRecording() && span.spanContext().traceId !== traceId) {
     warnUnsupportedTracer();
   }
+
   return span;
 }
 
 function warnUnsupportedTracer(): void {
   if (warnedUnsupportedTracer) return;
+
   warnedUnsupportedTracer = true;
   diag.warn(
     "@anvia/otel: the tracer provider ignored a supplied trace ID, so runs that share one " +

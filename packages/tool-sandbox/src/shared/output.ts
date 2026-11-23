@@ -10,6 +10,7 @@ export class TailOutputCollector {
 
   accept(chunk: Buffer): void {
     if (chunk.length === 0) return;
+
     if (this.maxBytes <= 0) {
       this.didTruncate = true;
       return;
@@ -26,8 +27,11 @@ export class TailOutputCollector {
     this.length += chunk.length;
     while (this.length > this.maxBytes) {
       const first = this.chunks[0];
+
       if (first === undefined) break;
+
       const overflow = this.length - this.maxBytes;
+
       if (first.length <= overflow) {
         this.chunks.shift();
         this.length -= first.length;
@@ -35,6 +39,7 @@ export class TailOutputCollector {
         this.chunks[0] = first.subarray(overflow);
         this.length -= overflow;
       }
+
       this.didTruncate = true;
     }
   }
@@ -43,13 +48,18 @@ export class TailOutputCollector {
     if (tailBytes !== undefined && (!Number.isInteger(tailBytes) || tailBytes < 0)) {
       throw processError("Process tailBytes must be a non-negative integer.");
     }
+
     const bytes = Buffer.concat(this.chunks, this.length);
-    const selected =
-      tailBytes === 0
-        ? Buffer.alloc(0)
-        : tailBytes === undefined || bytes.length <= tailBytes
-          ? bytes
-          : bytes.subarray(bytes.length - tailBytes);
+    let selected: Buffer;
+
+    if (tailBytes === 0) {
+      selected = Buffer.alloc(0);
+    } else if (tailBytes === undefined || bytes.length <= tailBytes) {
+      selected = bytes;
+    } else {
+      selected = bytes.subarray(bytes.length - tailBytes);
+    }
+
     return {
       bytes: new Uint8Array(selected.buffer, selected.byteOffset, selected.byteLength).slice(),
       truncated: this.didTruncate || selected.length < bytes.length,
@@ -69,9 +79,13 @@ export function copyProcessInfo(info: SandboxProcessInfo): SandboxProcessInfo {
     status: info.status,
     startedAt: info.startedAt,
   };
+
   if (info.cwd !== undefined) copy = { ...copy, cwd: info.cwd };
+
   if (info.exitCode !== undefined) copy = { ...copy, exitCode: info.exitCode };
+
   if (info.endedAt !== undefined) copy = { ...copy, endedAt: info.endedAt };
+
   return copy;
 }
 
@@ -92,13 +106,16 @@ export async function waitForPromise(
       }),
       new Promise<boolean>((_, reject) => {
         if (abortSignal === undefined) return;
+
         abort = () => reject(abortSignal.reason ?? new DOMException("Aborted", "AbortError"));
+
         if (abortSignal.aborted) abort();
         else abortSignal.addEventListener("abort", abort, { once: true });
       }),
     ]);
   } finally {
     if (timeout !== undefined) clearTimeout(timeout);
+
     if (abort !== undefined) abortSignal?.removeEventListener("abort", abort);
   }
 }

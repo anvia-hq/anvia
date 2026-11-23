@@ -55,7 +55,9 @@ describe("eval type safety", () => {
     const result = await runEvalSuite(suite);
     const caseResult = result.results[0];
     expect(caseResult).toBeDefined();
+
     if (caseResult === undefined) throw new Error("Expected an eval case result.");
+
     expectTypeOf(caseResult.scores.correct).toEqualTypeOf<
       ReturnType<typeof EvalOutcome.pass<boolean>>
     >();

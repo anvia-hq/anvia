@@ -229,7 +229,9 @@ describe("createQuestionTool", () => {
       ],
     });
     const pending = await agent.generate({ prompt: "Prepare a report" });
+
     if (pending.type !== "interaction") throw new Error("Expected question interaction");
+
     expect(pending.interaction).toMatchObject({
       type: "tool-question",
       toolName: "ask_user",
@@ -285,7 +287,9 @@ describe("createQuestionTool", () => {
     });
     const { agent, requests } = askingAgent({ questions }, legacyTool);
     const pending = await agent.generate({ prompt: "Legacy question" });
+
     if (pending.type !== "interaction") throw new Error("Expected legacy interaction");
+
     expect(parseAgentInteractionRequest(JSON.parse(JSON.stringify(pending.interaction)))).toEqual(
       pending.interaction,
     );
@@ -361,6 +365,7 @@ describe("question response validation", () => {
           type: "tool-question",
           answers: [{ questionId: "format", value: "custom" }],
         });
+
       if (allowCustom === true) expect(validate).not.toThrow();
       else expect(validate).toThrow("configured choices");
     },

@@ -25,6 +25,7 @@ function formatMetadata(additionalProps: Record<string, string> | undefined): st
   const entries = Object.entries(additionalProps).sort(([left], [right]) =>
     left.localeCompare(right),
   );
+
   if (entries.length === 0) {
     return undefined;
   }

@@ -56,15 +56,18 @@ export class GeminiEmbeddingModel implements EmbeddingModel {
     }
 
     const config = { ...this.embeddingConfig() };
+
     if (options?.abortSignal !== undefined) {
       Object.assign(config, { abortSignal: options.abortSignal });
     }
+
     const response = await this.client.models.embedContent({
       model: this.modelId,
       contents: texts,
       config: disableGeminiNativeRetries(config),
     } as never);
     const rawEmbeddings = embeddingsFromResponse(response);
+
     if (rawEmbeddings.length !== texts.length) {
       throw new Error(
         `Embedding response length ${rawEmbeddings.length} did not match input length ${texts.length}`,
@@ -79,21 +82,28 @@ export class GeminiEmbeddingModel implements EmbeddingModel {
 
   private embeddingConfig(): Record<string, unknown> {
     const config: Record<string, unknown> = {};
+
     if (this.dimensions !== undefined) config.outputDimensionality = this.dimensions;
+
     if (this.taskType !== undefined) config.taskType = this.taskType;
+
     if (this.title !== undefined) config.title = this.title;
+
     return config;
   }
 }
 
 function embeddingsFromResponse(response: unknown): number[][] {
   const raw = response as Record<string, unknown>;
+
   if (Array.isArray(raw.embeddings)) {
     return raw.embeddings.map((embedding, index) => vectorFromEmbedding(embedding, index));
   }
+
   if (raw.embedding !== undefined) {
     return [vectorFromEmbedding(raw.embedding, 0)];
   }
+
   return [];
 }
 
@@ -101,6 +111,7 @@ function vectorFromEmbedding(embedding: unknown, position: number): number[] {
   if (!isObject(embedding) || !isNumberArray(embedding.values)) {
     throw new Error(`Invalid Gemini embedding response vector at position ${position}.`);
   }
+
   return embedding.values;
 }
 

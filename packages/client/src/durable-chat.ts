@@ -124,12 +124,14 @@ export function createDurableChatTransport(
   // A new run starts with an unknown status until the submit response or a status event reports it.
   const track = (runId: string, status: string | undefined) => {
     if (session.activeRunId === runId && session.status === status) return;
+
     session.activeRunId = runId;
     session.status = status;
     notify();
   };
   const observe = (runId: string, status: string | undefined) => {
     if (status === undefined || session.activeRunId !== runId || session.status === status) return;
+
     session.status = status;
     notify();
   };
@@ -162,7 +164,9 @@ export function createDurableChatTransport(
     },
     async steer(input, runId) {
       const steer = options.client.steer;
+
       if (steer === undefined) throw new TypeError("The durable client does not support steer.");
+
       await steer.call(options.client, resolveRun(session, runId), input);
     },
     async cancel(runId) {
@@ -180,10 +184,12 @@ export function createDurableChatTransport(
     },
     resolveMemoryWrite(operationKey, resolution, runId) {
       const resolve = options.client.resolveMemoryWrite;
+
       if (resolve === undefined)
         return Promise.reject(
           new TypeError("The durable client does not support resolveMemoryWrite."),
         );
+
       return resolve.call(options.client, resolveRun(session, runId), operationKey, resolution);
     },
   };
@@ -192,11 +198,13 @@ export function createDurableChatTransport(
     controller,
     async *send(send) {
       const target = await begin(options, session, send);
+
       // A new run, or a resume behind the applied cursor, needs a fresh projection. Reusing the
       // run's existing projection keeps `run_start` and open messages from being emitted twice.
       if (session.activeRunId !== target.runId || target.after < session.cursor) {
         session.map = createDurableChatMapState(target.after);
       }
+
       session.cursor = target.after;
       track(
         target.runId,
@@ -213,16 +221,19 @@ async function begin(
   send: ClientTransportSendOptions<ClientStreamRequest>,
 ): Promise<{ runId: string; after: number; status?: string | undefined }> {
   const resume = send.resume ?? send.request.resume;
+
   if (resume !== undefined) {
     assertCursor(resume.after);
     const runId = requireId(resume.streamId, "streamId");
     // Status events behind the cursor are not replayed, so read the current status once.
     return { runId, after: resume.after, status: await currentStatus(options.client, runId, send) };
   }
+
   if (send.request.type === "interaction_response") {
     if (session.activeRunId === undefined) {
       throw new Error("No active durable run to receive the interaction response.");
     }
+
     await options.client.respond(
       session.activeRunId,
       send.request.interactionId,
@@ -231,6 +242,7 @@ async function begin(
     );
     return { runId: session.activeRunId, after: session.cursor };
   }
+
   const submitted = await submitPrompt(options, send);
   return { runId: submitted.runId, after: 0, status: submitted.status };
 }
@@ -259,12 +271,15 @@ async function submitPrompt(
   if (send.request.type !== "messages") {
     throw new TypeError("Unsupported durable chat request.");
   }
+
   const prompt = lastUserPrompt(send.request.messages);
   const requestId = options.requestId?.() ?? createClientId("durable");
   const requestOptions: { enqueue: boolean; abortSignal?: AbortSignal } = {
     enqueue: options.enqueue ?? true,
   };
+
   if (send.abortSignal !== undefined) requestOptions.abortSignal = send.abortSignal;
+
   try {
     const snapshot = await options.client.submit(
       { agentId: options.agentId, sessionId: options.sessionId, requestId, prompt },
@@ -273,6 +288,7 @@ async function submitPrompt(
     return { runId: snapshot.run.id, status: snapshot.run.status };
   } catch (error) {
     if (!isSessionBusy(error)) throw error;
+
     throw new DurableBusyError(await findBusyRun(options, send.abortSignal), error.message);
   }
 }
@@ -319,6 +335,7 @@ async function* streamFrames(
     if (!isAbort(error, abortSignal)) {
       yield { type: "stream_end", streamId: runId, eventId: lastEventId, status: "error" };
     }
+
     throw error;
   }
   yield { type: "stream_end", streamId: runId, eventId: lastEventId, status: "completed" };
@@ -336,7 +353,9 @@ async function snapshotOutcome(
   abortSignal: AbortSignal | undefined,
 ): Promise<JsonObject | undefined> {
   const snapshot = await client.snapshot(runId, abortSignal === undefined ? {} : { abortSignal });
+
   if (snapshot.run.status !== statusEventStatus(event)) return undefined;
+
   const outcome: unknown = snapshot.run.outcome;
   return typeof outcome === "object" &&
     outcome !== null &&
@@ -349,6 +368,7 @@ async function snapshotOutcome(
 function lastUserPrompt(messages: readonly Message[]): AgentPrompt {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
+
     if (message?.role === "user") return message;
   }
   throw new TypeError("Durable chat requires a user message to submit.");
@@ -382,6 +402,7 @@ function requireId(value: string | undefined, label: string): string {
   if (value === undefined || value.trim().length === 0) {
     throw new Error(label === "run" ? "No active durable run." : `${label} must not be empty.`);
   }
+
   return value;
 }
 

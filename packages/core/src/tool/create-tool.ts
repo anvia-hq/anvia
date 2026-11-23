@@ -93,9 +93,11 @@ export function createTool<
   const { name, description, inputSchema, outputSchema } = options;
   const run = resolveHandler(name, options);
   const requiresApproval = snapshotApprovalRequirement(options.requiresApproval);
+
   if (requiresApproval !== undefined) {
     assertToolApprovalRequirement(requiresApproval, { allowFunction: true });
   }
+
   const parameters = toProviderJsonSchema(inputSchema);
   const examples = renderExamples(name, inputSchema, options.examples);
   const preparedInputOwner = {};
@@ -129,6 +131,7 @@ export function createTool<
     call,
     parseInput,
   };
+
   if (requiresApproval !== undefined) {
     Object.defineProperty(tool, "requiresApproval", {
       configurable: false,
@@ -137,6 +140,7 @@ export function createTool<
       writable: false,
     });
   }
+
   return attachPreparedToolOwner(tool, preparedInputOwner);
 }
 
@@ -154,16 +158,20 @@ function renderExamples<InputSchema extends ZodSchema>(
   examples: readonly ToolExample<InputSchema>[] | undefined,
 ): string | undefined {
   if (examples === undefined) return undefined;
+
   if (!Array.isArray(examples) || examples.length === 0) {
     throw new TypeError(`Tool "${name}" examples must be a non-empty array when set.`);
   }
+
   const lines = examples.map((example, index) => {
     if (typeof example !== "object" || example === null) {
       throw new TypeError(`Tool "${name}" example ${index + 1} must be an object.`);
     }
+
     if (example.note !== undefined && typeof example.note !== "string") {
       throw new TypeError(`Tool "${name}" example ${index + 1} note must be a string.`);
     }
+
     const args = inputSchema.parse(example.input);
     const note = example.note === undefined ? "" : ` ${example.note}`;
     return `- ${name}(${JSON.stringify(args, jsonReplacer)})${note}`;
@@ -173,8 +181,11 @@ function renderExamples<InputSchema extends ZodSchema>(
 
 function jsonReplacer(_key: string, value: unknown): JsonValue {
   if (value === undefined) return null;
+
   if (typeof value === "bigint") return value.toString();
+
   if (typeof value === "function" || typeof value === "symbol") return null;
+
   return value as JsonValue;
 }
 
@@ -183,14 +194,18 @@ function resolveHandler<Args, Context, Result>(
   options: { handler?: unknown; execute?: unknown },
 ): (args: Args, context: Context) => Result {
   const { handler, execute } = options;
+
   if (handler !== undefined && execute !== undefined) {
     throw new TypeError(
       `Tool "${name}" sets both "handler" and "execute". Use "handler"; "execute" is deprecated.`,
     );
   }
+
   const run = handler ?? execute;
+
   if (typeof run !== "function") {
     throw new TypeError(`Tool "${name}" requires a "handler" function.`);
   }
+
   return run as (args: Args, context: Context) => Result;
 }

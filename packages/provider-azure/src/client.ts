@@ -37,6 +37,7 @@ export class AzureOpenAIClient implements ModelListingClient {
     const Controls extends CompletionModelControls = OpenAIControlsFor<ModelId>,
   >(options: OpenAICompletionModelOptions<ModelId, Controls>): OpenAICompletionModel<Controls> {
     const model = this.adapter.completionModel(options);
+
     if (options.api === "responses") {
       return new AzureOpenAIResponsesCompletionModel(
         this.sdk,
@@ -45,6 +46,7 @@ export class AzureOpenAIClient implements ModelListingClient {
         model.controls,
       );
     }
+
     return {
       provider: "azure-openai",
       modelId: model.modelId,

@@ -133,6 +133,7 @@ describe("Anthropic client", () => {
         messages: {
           create: async (params: Record<string, unknown>) => {
             calls.push(params);
+
             if (params.stream === true) {
               return asyncIterable([
                 { type: "message_start", message: { id: "msg_stream" } },
@@ -150,6 +151,7 @@ describe("Anthropic client", () => {
                 },
               ]);
             }
+
             return {
               id: "msg_completion",
               content: [{ type: "text", text: "completed" }],

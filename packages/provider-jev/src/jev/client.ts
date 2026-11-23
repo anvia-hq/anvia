@@ -34,10 +34,13 @@ export class JevClient implements ModelListingClient {
       if (["apiKey", "baseUrl", "headers"].some((key) => key in options)) {
         throw new TypeError("JevClient cannot combine an injected client with managed options.");
       }
+
       this.sdk = options.client;
       return;
     }
+
     const apiKey = options.apiKey ?? process.env.TYPESAFE_API_KEY;
+
     if (typeof apiKey !== "string" || apiKey.trim().length === 0) {
       throw new TypeError("JevClient requires apiKey or TYPESAFE_API_KEY.");
     }
@@ -63,6 +66,7 @@ export class JevClient implements ModelListingClient {
     if (typeof options.modelId !== "string" || options.modelId.trim().length === 0) {
       throw new TypeError("Jev modelId must be a non-empty string.");
     }
+
     return new JevDecisionModel(this.sdk, options.modelId);
   }
 
@@ -77,6 +81,7 @@ export class JevClient implements ModelListingClient {
       }
 
       const models = await this.sdk.models.list(requestOptions);
+
       if (
         !Array.isArray(models) ||
         models.some(
@@ -88,6 +93,7 @@ export class JevClient implements ModelListingClient {
       ) {
         throw new TypeError("Jev returned invalid model metadata.");
       }
+
       return {
         data: models.map((model) => ({
           id: model.name,
@@ -98,9 +104,11 @@ export class JevClient implements ModelListingClient {
       };
     } catch (error) {
       const normalized = normalizeJevError(error, options?.abortSignal);
+
       if (options?.abortSignal?.aborted) {
         throw normalized;
       }
+
       throw new ModelListingError("Failed to list Jev models.", {
         provider: "jev",
         cause: normalized,

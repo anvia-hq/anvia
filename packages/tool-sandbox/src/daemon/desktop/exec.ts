@@ -27,7 +27,9 @@ export function runTool(file: string, args: readonly string[], options: RunToolO
       },
       (error, stdout, stderr) => {
         if (error === null) return resolve(stdout);
+
         if (options.signal?.aborted === true) return reject(options.signal.reason ?? error);
+
         const detail = stderr.toString("utf8").trim() || error.message;
         reject(new DockerSandboxError(`${path.basename(file)} failed: ${detail}`, "process"));
       },
@@ -41,9 +43,12 @@ export async function findExecutable(
   searchPath: string | undefined,
 ): Promise<string | undefined> {
   if (name.includes("/")) return (await isExecutable(name)) ? name : undefined;
+
   for (const directory of (searchPath ?? "").split(path.delimiter)) {
     if (directory === "") continue;
+
     const candidate = path.join(directory, name);
+
     if (await isExecutable(candidate)) return candidate;
   }
   return undefined;

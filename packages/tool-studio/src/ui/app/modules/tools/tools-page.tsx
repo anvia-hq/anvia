@@ -66,6 +66,7 @@ export function ToolsPage(props: {
       setSelectedToolName("");
       return;
     }
+
     if (!tools.some((tool) => tool.name === selectedToolName)) {
       setSelectedToolName(tools[0]?.name ?? "");
     }
@@ -75,6 +76,7 @@ export function ToolsPage(props: {
     if (selectedToolRunKeyRef.current === selectedToolRunKey) {
       return;
     }
+
     selectedToolRunKeyRef.current = selectedToolRunKey;
     runRequestIdRef.current += 1;
     setRunState("idle");
@@ -86,6 +88,7 @@ export function ToolsPage(props: {
     if (selectedAgent === undefined || selectedTool === undefined) {
       return;
     }
+
     let args: unknown;
     try {
       args = JSON.parse(argsText);
@@ -117,15 +120,20 @@ export function ToolsPage(props: {
         },
       );
       const rawBody = await response.json();
+
       if (!isCurrentRun()) {
         return;
       }
+
       const body = parseStudioToolRunResponse(rawBody);
+
       if (body === undefined) {
         setRunError(`Unexpected Studio tool run response: ${formatJson(rawBody)}`);
         return;
       }
+
       setRunResponse(body);
+
       if (!response.ok || body.status === "error") {
         setRunError(formatJson(body.error ?? body));
       }
@@ -138,6 +146,46 @@ export function ToolsPage(props: {
         setRunState("idle");
       }
     }
+  }
+
+  function renderContent() {
+    if (!props.enabled) {
+      return (
+        <StudioEmptyState
+          title="Tools unavailable"
+          text="No registered Studio agent exposes static or dynamic tools."
+        />
+      );
+    }
+
+    if (props.loading) {
+      return <StudioEmptyState title="Loading tools" text="Reading registered tool metadata." />;
+    }
+
+    if (tools.length === 0) {
+      return (
+        <StudioEmptyState title="No tools" text="The selected agent has no registered tools." />
+      );
+    }
+
+    return (
+      <div className="grid w-full gap-5">
+        <ToolRegistryTable
+          selectedToolName={selectedTool?.name ?? ""}
+          tools={tools}
+          onSelectTool={setSelectedToolName}
+        />
+        <ToolRunner
+          argsText={argsText}
+          runError={runError}
+          runResponse={runResponse}
+          runState={runState}
+          selectedTool={selectedTool}
+          onArgsTextChange={setArgsText}
+          onRun={() => void runSelectedTool()}
+        />
+      </div>
+    );
   }
 
   return (
@@ -170,35 +218,7 @@ export function ToolsPage(props: {
         }
       />
 
-      <StudioPageContent className="overflow-auto">
-        {!props.enabled ? (
-          <StudioEmptyState
-            title="Tools unavailable"
-            text="No registered Studio agent exposes static or dynamic tools."
-          />
-        ) : props.loading ? (
-          <StudioEmptyState title="Loading tools" text="Reading registered tool metadata." />
-        ) : tools.length === 0 ? (
-          <StudioEmptyState title="No tools" text="The selected agent has no registered tools." />
-        ) : (
-          <div className="grid w-full gap-5">
-            <ToolRegistryTable
-              selectedToolName={selectedTool?.name ?? ""}
-              tools={tools}
-              onSelectTool={setSelectedToolName}
-            />
-            <ToolRunner
-              argsText={argsText}
-              runError={runError}
-              runResponse={runResponse}
-              runState={runState}
-              selectedTool={selectedTool}
-              onArgsTextChange={setArgsText}
-              onRun={() => void runSelectedTool()}
-            />
-          </div>
-        )}
-      </StudioPageContent>
+      <StudioPageContent className="overflow-auto">{renderContent()}</StudioPageContent>
     </StudioPageShell>
   );
 }
@@ -317,17 +337,21 @@ function summarizeTools(tools: StudioAgentToolMetadata[]) {
   return tools.reduce(
     (totals, tool) => {
       totals.total += 1;
+
       if (tool.source === "dynamic") {
         totals.dynamic += 1;
       } else {
         totals.static += 1;
       }
+
       if (tool.mcpServerName !== undefined) {
         totals.mcp += 1;
       }
+
       if (tool.approval.required) {
         totals.approvals += 1;
       }
+
       return totals;
     },
     { approvals: 0, dynamic: 0, mcp: 0, static: 0, total: 0 },

@@ -47,9 +47,11 @@ const getTicket = createTool({
   }),
   execute: ({ id }) => {
     const ticket = tickets.get(id);
+
     if (ticket === undefined) {
       throw new Error(`Unknown ticket: ${id}`);
     }
+
     return ticket;
   },
 });

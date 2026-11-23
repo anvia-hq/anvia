@@ -41,6 +41,7 @@ export function pageLocationFromLocation(): PageLocation {
   if (pathname === normalizedUiPath) {
     return { page: "playground" };
   }
+
   if (!pathname.startsWith(`${normalizedUiPath}/`)) {
     return { page: "playground" };
   }
@@ -55,54 +56,75 @@ export function pageLocationFromLocation(): PageLocation {
 
 function pageLocationFromSegments(segments: string[]): PageLocation {
   const [first, second, third] = segments;
+
   if (first === "tracing") {
     if (second === "sessions") {
       const location: PageLocation = { page: "tracing" };
+
       if (third !== undefined) location.traceSessionId = third;
+
       return location;
     }
+
     const location: PageLocation = { page: "tracing" };
+
     if (second !== undefined) location.traceId = second;
+
     return location;
   }
+
   if (first === "sessions") {
     return { page: "sessions" };
   }
+
   if (first === "agents") {
     return { page: "agents" };
   }
+
   if (first === "tools") {
     return { page: "tools" };
   }
+
   if (first === "sandboxes") {
     return { page: "sandboxes" };
   }
+
   if (first === "mcps") {
     return { page: "mcps" };
   }
+
   if (first === "graphs") {
     return { page: "graphs" };
   }
+
   if (first === "pipelines") {
     return { page: "pipelines" };
   }
+
   if (first === "memory") {
     return { page: "memory" };
   }
+
   if (first === "status") {
     return { page: "status" };
   }
+
   if (first === "knowledge") {
     return { page: "knowledge", knowledgeTab: knowledgeTabFromSegment(second) };
   }
+
   if (first === "playground") {
     const location: PageLocation = { page: "playground" };
+
     if (second !== undefined) location.sessionId = second;
+
     return location;
   }
+
   if (first !== undefined && second === undefined) {
     return { page: "playground", sessionId: first };
   }
+
   return { page: "playground" };
 }
 
@@ -111,6 +133,7 @@ export function updatePagePath(page: ActivePage): void {
     updateKnowledgePath(defaultKnowledgeTab);
     return;
   }
+
   const basePath = canonicalUiPath();
   const nextPath = page === "playground" ? `${basePath}/playground` : `${basePath}/${page}`;
   updateLocationPath(nextPath);
@@ -147,9 +170,11 @@ function canonicalUiPath(): string {
 
 function updateLocationPath(nextPath: string): void {
   const nextUrl = `${nextPath}${window.location.search}${window.location.hash}`;
+
   if (`${window.location.pathname}${window.location.search}${window.location.hash}` === nextUrl) {
     return;
   }
+
   window.history.pushState({}, "", nextUrl);
 }
 

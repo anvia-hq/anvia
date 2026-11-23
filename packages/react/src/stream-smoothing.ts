@@ -87,6 +87,7 @@ export function updateStreamSmoothingTarget<T>(
   displayedItems = revealWithinBudget(displayedItems, targetItems, 0, adapter);
 
   let sourceSamples = state.sourceSamples;
+
   if (options.isStreaming) {
     sourceSamples = updateSourceSamples(
       sourceSamples,
@@ -96,15 +97,20 @@ export function updateStreamSmoothingTarget<T>(
     );
   }
 
+  let drainDeadlineAtMs: number | null;
+
+  if (options.isStreaming) {
+    drainDeadlineAtMs = null;
+  } else if (state.drainDeadlineAtMs !== null) {
+    drainDeadlineAtMs = state.drainDeadlineAtMs;
+  } else {
+    drainDeadlineAtMs = options.nowMs + streamSmoothingConfig.completionDrainMs;
+  }
+
   let nextState: StreamSmoothingState<T> = {
     ...state,
     displayedItems,
-    drainDeadlineAtMs:
-      options.isStreaming || state.drainDeadlineAtMs !== null
-        ? options.isStreaming
-          ? null
-          : state.drainDeadlineAtMs
-        : options.nowMs + streamSmoothingConfig.completionDrainMs,
+    drainDeadlineAtMs,
     isSourceStreaming: options.isStreaming,
     sourceSamples,
     targetItems,
@@ -221,9 +227,11 @@ export function getBufferedPlaybackTarget(
 ): number {
   const playbackAtMs = nowMs - streamSmoothingConfig.targetBufferMs;
   const firstSample = samples[0];
+
   if (firstSample === undefined) {
     return 0;
   }
+
   if (playbackAtMs <= firstSample.atMs) {
     return firstSample.totalChars;
   }
@@ -231,6 +239,7 @@ export function getBufferedPlaybackTarget(
   for (let index = 1; index < samples.length; index += 1) {
     const previousSample = samples[index - 1];
     const nextSample = samples[index];
+
     if (
       previousSample === undefined ||
       nextSample === undefined ||
@@ -271,6 +280,7 @@ function updateSourceSamples(
 
   const nextSamples = [...samples];
   const lastSample = nextSamples.at(-1);
+
   if (lastSample === undefined) {
     nextSamples.push({
       atMs: nowMs - streamSmoothingConfig.initialSampleSpreadMs,
@@ -282,6 +292,7 @@ function updateSourceSamples(
       totalChars: previousTotalChars,
     });
   }
+
   nextSamples.push({ atMs: nowMs, totalChars: targetChars });
   return nextSamples.slice(-streamSmoothingConfig.maxSourceSamples);
 }
@@ -293,6 +304,7 @@ function applyBackpressure<T>(
   const displayedChars = getSmoothCharacterCount(state.displayedItems, adapter);
   const targetChars = getSmoothCharacterCount(state.targetItems, adapter);
   const excess = targetChars - displayedChars - streamSmoothingConfig.maxPendingChars;
+
   if (excess <= 0) {
     return state;
   }
@@ -324,9 +336,11 @@ function revealWithinBudget<T>(
 
   for (let index = 0; index < targetItems.length; index += 1) {
     const targetItem = targetItems[index];
+
     if (targetItem === undefined) {
       continue;
     }
+
     const displayedItem = displayedItems[index];
     const displayedMatches =
       displayedItem !== undefined && adapter.getKey(displayedItem) === adapter.getKey(targetItem);
@@ -337,11 +351,13 @@ function revealWithinBudget<T>(
         nextItems.push(targetItem);
         continue;
       }
+
       break;
     }
 
     const displayedText =
       displayedMatches && displayedItem !== undefined ? (adapter.getText(displayedItem) ?? "") : "";
+
     if (displayedText === targetText) {
       nextItems.push(targetItem);
       continue;
@@ -351,6 +367,7 @@ function revealWithinBudget<T>(
       if (displayedMatches || displayedText.length > 0) {
         nextItems.push(adapter.withText(targetItem, displayedText));
       }
+
       break;
     }
 
@@ -383,6 +400,7 @@ function reconcileDisplayedItems<T>(
   for (let index = 0; index < targetItems.length; index += 1) {
     const targetItem = targetItems[index];
     const displayedItem = displayedItems[index];
+
     if (
       targetItem === undefined ||
       displayedItem === undefined ||
@@ -393,11 +411,14 @@ function reconcileDisplayedItems<T>(
 
     const targetText = adapter.getText(targetItem);
     const displayedText = adapter.getText(displayedItem);
+
     if (targetText === undefined) {
       nextItems.push(targetItem);
+
       if (displayedText !== undefined) {
         continue;
       }
+
       continue;
     }
 
@@ -405,6 +426,7 @@ function reconcileDisplayedItems<T>(
       nextItems.push(adapter.withText(targetItem, ""));
       break;
     }
+
     if (targetText.startsWith(displayedText)) {
       nextItems.push(
         displayedText === targetText ? targetItem : adapter.withText(targetItem, displayedText),
@@ -435,14 +457,17 @@ function hasPendingItems<T>(
   if (displayedItems.length !== targetItems.length) {
     return true;
   }
+
   return targetItems.some((targetItem, index) => {
     const displayedItem = displayedItems[index];
+
     if (
       displayedItem === undefined ||
       adapter.getKey(displayedItem) !== adapter.getKey(targetItem)
     ) {
       return true;
     }
+
     const targetText = adapter.getText(targetItem);
     const displayedText = adapter.getText(displayedItem);
     return targetText === undefined ? displayedItem !== targetItem : displayedText !== targetText;
@@ -486,9 +511,11 @@ function findCommonGraphemePrefixLength(left: string, right: string): number {
   for (let index = 0; index < length; index += 1) {
     const leftSegment = leftSegments[index];
     const rightSegment = rightSegments[index];
+
     if (leftSegment === undefined || leftSegment !== rightSegment) {
       break;
     }
+
     offset += leftSegment.length;
   }
   return offset;
@@ -499,15 +526,18 @@ function findSemanticBoundaryAtOrAfter(content: string, requestedLength: number)
   const scanEnd = Math.min(content.length, safeRequestedLength + 64);
   for (let index = safeRequestedLength; index < scanEnd; index += 1) {
     const character = content[index];
+
     if (character === "\n") {
       return findGraphemeBoundaryAtOrAfter(content, index + 1);
     }
+
     if (
       (character === "." || character === "!" || character === "?") &&
       /\s/u.test(content[index + 1] ?? "")
     ) {
       return findGraphemeBoundaryAtOrAfter(content, index + 1);
     }
+
     if (/\s/u.test(character ?? "")) {
       return findGraphemeBoundaryAtOrAfter(content, index + 1);
     }
@@ -517,31 +547,39 @@ function findSemanticBoundaryAtOrAfter(content: string, requestedLength: number)
 
 function findGraphemeBoundaryAtOrAfter(content: string, requestedLength: number): number {
   const clampedLength = Math.min(Math.max(requestedLength, 0), content.length);
+
   if (clampedLength === 0 || clampedLength === content.length) {
     return clampedLength;
   }
 
   const segmenter = createGraphemeSegmenter();
+
   if (segmenter !== undefined) {
     const segment = segmenter.segment(content).containing(clampedLength - 1);
+
     if (segment !== undefined) {
       return segment.index + segment.segment.length;
     }
+
     return content.length;
   }
 
   const code = content.charCodeAt(clampedLength - 1);
+
   if (code >= 0xd800 && code <= 0xdbff) {
     return Math.min(content.length, clampedLength + 1);
   }
+
   return clampedLength;
 }
 
 function segmentGraphemes(content: string): string[] {
   const segmenter = createGraphemeSegmenter();
+
   if (segmenter !== undefined) {
     return [...segmenter.segment(content)].map((segment) => segment.segment);
   }
+
   return [...content];
 }
 
@@ -549,5 +587,6 @@ function createGraphemeSegmenter(): Intl.Segmenter | undefined {
   if (typeof Intl === "undefined" || typeof Intl.Segmenter !== "function") {
     return undefined;
   }
+
   return new Intl.Segmenter(undefined, { granularity: "grapheme" });
 }

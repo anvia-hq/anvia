@@ -43,9 +43,11 @@ class QueueModel implements CompletionModel {
   async completion(request: CompletionRequest): Promise<CompletionResponse> {
     this.requests.push(request);
     const response = this.responses.shift();
+
     if (response === undefined) {
       throw new Error("No queued response");
     }
+
     return response;
   }
 }
@@ -75,12 +77,15 @@ class FlakyQueueModel implements CompletionModel {
   async completion(request: CompletionRequest): Promise<CompletionResponse> {
     this.requests.push(request);
     const outcome = this.outcomes.shift();
+
     if (outcome === undefined) {
       throw new Error("No queued outcome");
     }
+
     if ("error" in outcome) {
       throw outcome.error;
     }
+
     return outcome.response;
   }
 }
@@ -369,7 +374,9 @@ describe("Agent execution", () => {
 
     const result = await agent.generate({ prompt: "answer" });
     expect(result.type).toBe("response");
+
     if (result.type !== "response") throw new Error("Expected a completed result.");
+
     expectTypeOf(result.output).toEqualTypeOf<{ answer: string }>();
     expect(result.output).toEqual({ answer: "typed" });
     expect(result.text).toBe('{"answer":"typed"}');
@@ -659,9 +666,11 @@ describe("Agent execution", () => {
         tools: [tracked("first"), tracked("second"), tracked("guarded", true)],
       });
       const pending = await agent.generate({ prompt: "go", toolConcurrency: 3 });
+
       if (pending.type !== "interaction" || pending.interaction.type !== "tool-approval") {
         throw new Error("Expected approval suspension");
       }
+
       await expect(
         agent.resume(pending.continuation, { type: "tool-approval", approved: true }),
       ).resolves.toMatchObject({ type: "response", output: "done" });
@@ -1295,9 +1304,11 @@ describe("Agent execution", () => {
       prompt: "run guarded",
       ...withInternalAgentRunOptions({}, { hook }),
     });
+
     if (pending.type !== "interaction" || pending.interaction.type !== "tool-approval") {
       throw new Error("Expected approval suspension");
     }
+
     await expect(
       agent.resume(pending.continuation, { type: "tool-approval", approved: true }),
     ).resolves.toMatchObject({
@@ -1334,7 +1345,9 @@ describe("Agent execution", () => {
       prompt: "run guarded",
       ...withInternalAgentRunOptions({}, { hook }),
     });
+
     if (pending.type !== "interaction") throw new Error("Expected suspension");
+
     await expect(
       agent.generate({
         continuation: pending.continuation,
@@ -1371,7 +1384,9 @@ describe("Agent execution", () => {
     ]);
     const agent = new Agent({ id: "test-agent", model, tools: [guardedTool] });
     const pending = await agent.generate({ prompt: "run guarded" });
+
     if (pending.type !== "interaction") throw new Error("Expected suspension");
+
     const events: string[] = [];
     const middleware = createMiddleware({
       onToolOutput({ result, originalResult }) {
@@ -1508,7 +1523,9 @@ describe("Agent execution", () => {
     const agent = new Agent({ id: "test-agent", model, tools: [guardedTool] });
 
     const pending = await agent.generate({ prompt: "run guarded" });
+
     if (pending.type !== "interaction") throw new Error("Expected suspension");
+
     requests.push(pending.interaction);
     await expect(
       agent.generate({
@@ -1572,9 +1589,11 @@ describe("Agent execution", () => {
     const sequenceBeforeRun = sequence;
 
     const pending = await agent.generate({ prompt: "run guarded" });
+
     if (pending.type !== "interaction" || pending.interaction.type !== "tool-approval") {
       throw new Error("Expected approval suspension");
     }
+
     expect(pending.interaction.input).toEqual(approvalInput);
     expect(sequence).toBe(sequenceBeforeRun + 1);
     const approvedInput = approvalInput;
@@ -1612,12 +1631,15 @@ describe("Agent execution", () => {
     const agent = new Agent({ id: "test-agent", model, tools: [guardedTool] });
 
     const pending = await agent.generate({ prompt: "run guarded" });
+
     if (pending.type !== "interaction") throw new Error("Expected suspension");
+
     const continuation = parseAgentContinuation(JSON.parse(JSON.stringify(pending.continuation)));
     expect(Object.isFrozen(continuation)).toBe(true);
     expect(Object.isFrozen(continuation.state)).toBe(true);
     pending.usage.totalTokens = 999;
     const pendingUser = pending.messages[0];
+
     if (
       pendingUser?.role === "user" &&
       typeof pendingUser.content !== "string" &&
@@ -1630,7 +1652,9 @@ describe("Agent execution", () => {
       continuation,
       response: { type: "tool-approval", approved: true },
     });
+
     if (result.type !== "response") throw new Error("Expected completed result");
+
     expect(result.runId).not.toBe(pending.runId);
     expect(result.resumedFrom).toEqual({
       runId: pending.runId,
@@ -1669,9 +1693,11 @@ describe("Agent execution", () => {
     const agent = new Agent({ id: "test-agent", model, tools: [questionTool] });
 
     const pending = await agent.generate({ prompt: "prepare a report" });
+
     if (pending.type !== "interaction" || pending.interaction.type !== "tool-question") {
       throw new Error("Expected question suspension");
     }
+
     expect(pending.interaction.questions).toHaveLength(2);
     const otherAgent = new Agent({ id: "other-agent", model: new QueueModel([]) });
     expect(() =>
@@ -1876,7 +1902,9 @@ describe("Agent execution", () => {
     });
 
     const pending = await agent.generate({ prompt: "run guarded" });
+
     if (pending.type !== "interaction") throw new Error("Expected suspension");
+
     approvalRequests.push(pending.interaction);
     await expect(
       agent.generate({
@@ -1917,7 +1945,9 @@ describe("Agent execution", () => {
     const agent = new Agent({ id: "test-agent", model, tools: [guardedTool] });
 
     const pending = await agent.generate({ prompt: "run guarded" });
+
     if (pending.type !== "interaction") throw new Error("Expected suspension");
+
     await expect(
       agent.generate({
         continuation: pending.continuation,
@@ -1987,7 +2017,9 @@ describe("Agent execution", () => {
       type: "interaction",
       interaction: { type: "tool-approval", toolName: "guarded", input: {} },
     });
+
     if (pending.type !== "interaction") throw new Error("Expected suspension");
+
     await expect(
       agent.generate({
         continuation: pending.continuation,
@@ -2019,6 +2051,7 @@ describe("Agent execution", () => {
     ]);
     const agent = new Agent({ id: "test-agent", model, tools: [guardedTool] });
     const pending = await agent.generate({ prompt: "run guarded" });
+
     if (pending.type !== "interaction") throw new Error("Expected suspension");
 
     const result = await agent.generate({
@@ -2245,6 +2278,7 @@ describe("Agent execution", () => {
             input.role === "user" && typeof input.content !== "string"
               ? input.content[0]
               : undefined;
+
           if (text?.type === "text") (text as { text: string }).text = "mutated";
         },
         onStepFinish(event) {
@@ -2262,15 +2296,17 @@ describe("Agent execution", () => {
 
       lifecycle: {
         onStart(event) {
-          observed.push(
-            event.input.role !== "user"
-              ? "missing"
-              : typeof event.input.content === "string"
-                ? event.input.content
-                : event.input.content[0]?.type === "text"
-                  ? event.input.content[0].text
-                  : "missing",
-          );
+          let inputText = "missing";
+
+          if (event.input.role === "user") {
+            if (typeof event.input.content === "string") {
+              inputText = event.input.content;
+            } else if (event.input.content[0]?.type === "text") {
+              inputText = event.input.content[0].text;
+            }
+          }
+
+          observed.push(inputText);
         },
         onStepFinish(event) {
           observed.push(textFromChoice(event.response.choice as CompletionResponse["choice"]));
@@ -2283,7 +2319,9 @@ describe("Agent execution", () => {
 
     expect(observed).toEqual(["hello", "done", "2"]);
     expect(model.requests[0]?.chatHistory).toEqual([Message.user("hello")]);
+
     if (result.type !== "response") throw new Error("Expected completed result");
+
     expect(result.output).toBe("done");
     expect(result.messages).toHaveLength(2);
     expect(result.messages[0]).toEqual(Message.user("hello"));
@@ -2328,6 +2366,7 @@ describe("Agent execution", () => {
             events.push(`tool_error:${event.step}:${event.toolName}`);
             return;
           }
+
           const output = event.output as { type?: string; value?: unknown };
           events.push(
             `tool_finish:${event.step}:${event.toolName}:${

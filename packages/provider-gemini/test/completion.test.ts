@@ -1127,9 +1127,11 @@ function finalResponseFrom(events: CompletionModelStreamEvent[]) {
     (event): event is Extract<CompletionModelStreamEvent, { type: "final" }> =>
       event.type === "final",
   );
+
   if (final === undefined) {
     throw new Error("Expected a final Gemini stream event.");
   }
+
   return final.response;
 }
 

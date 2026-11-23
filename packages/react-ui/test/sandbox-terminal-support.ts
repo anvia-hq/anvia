@@ -35,6 +35,7 @@ export class FakeSocket {
 
   close(code?: number): void {
     if (this.readyState === FakeSocket.CLOSED) return;
+
     this.closedWith = code;
     this.readyState = FakeSocket.CLOSED;
     this.emit("close", { code: code ?? 1005, reason: "" });
@@ -66,7 +67,9 @@ export class FakeSocket {
 
   static get last(): FakeSocket {
     const socket = FakeSocket.instances.at(-1);
+
     if (socket === undefined) throw new Error("No socket was opened.");
+
     return socket;
   }
 }
@@ -129,7 +132,9 @@ export class FakeXterm {
 
   static get last(): FakeXterm {
     const term = FakeXterm.instances.at(-1);
+
     if (term === undefined) throw new Error("No terminal was created.");
+
     return term;
   }
 }

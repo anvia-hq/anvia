@@ -89,8 +89,10 @@ async function open(path: string, agent: Agent) {
 async function settled(run: DurableRun) {
   for (let attempt = 0; attempt < 250; attempt++) {
     const snapshot = await run.snapshot();
+
     if (["completed", "failed", "cancelled", "needs_attention"].includes(snapshot.run.status))
       return snapshot;
+
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
   throw new Error("The durable run did not settle.");
@@ -138,6 +140,7 @@ it("records the MCP fingerprint on an owned agent task child, so it is not block
             policy: "allSettled",
           },
         };
+
       return { status: "completed", output: (await ctx.children())[0]!.status };
     },
   });
@@ -203,6 +206,7 @@ it("reuses completed calls after a restart and does not call the tool again", as
   // The first attempt completes the MCP call, then the model fails on the next turn.
   const failing = vi.fn(async (request: CompletionRequest) => {
     if (hasToolResult(request)) throw new Error("provider down");
+
     return askForSearch();
   });
   const first = await open(path, mcpAgent(failing, docsServer(mcpTool(call))));
@@ -226,6 +230,7 @@ it("blocks a retry whose server tool list changed under the same version", async
   const call = vi.fn(async (_args: unknown, _context?: ToolCallContext) => "docs found");
   const failing = vi.fn(async (request: CompletionRequest) => {
     if (hasToolResult(request)) throw new Error("provider down");
+
     return askForSearch();
   });
   const first = await open(path, mcpAgent(failing, docsServer(mcpTool(call))));

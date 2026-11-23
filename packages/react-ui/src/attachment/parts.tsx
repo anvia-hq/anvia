@@ -67,9 +67,11 @@ const AttachmentRemove = forwardRef<HTMLButtonElement, PrimitiveProps<"button">>
     const handleClick = useCallback(
       (event: MouseEvent<HTMLButtonElement>) => {
         onClick?.(event);
+
         if (event.defaultPrevented || disabled) {
           return;
         }
+
         remove?.();
       },
       [disabled, onClick, remove],
@@ -103,12 +105,14 @@ function defaultAttachment(remove: (() => void) | undefined): ReactNode {
 function defaultPreview(attachment: UIAttachment): ReactNode {
   if (isImageAttachment(attachment)) {
     const source = safeImageSrc(attachment.url ?? attachmentDataUrl(attachment));
+
     if (source !== undefined) {
       return <img alt={attachment.name ?? "Attachment"} src={source} />;
     }
   }
 
   const href = safeLinkHref(attachment.url);
+
   if (href !== undefined) {
     return <a href={href}>{attachmentLabel(attachment)}</a>;
   }
@@ -128,6 +132,7 @@ function attachmentDataUrl(attachment: UIAttachment): string | undefined {
   if (attachment.data === undefined || attachment.mediaType === undefined) {
     return undefined;
   }
+
   return `data:${attachment.mediaType};base64,${attachment.data}`;
 }
 

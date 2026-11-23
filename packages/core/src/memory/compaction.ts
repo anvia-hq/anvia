@@ -41,6 +41,7 @@ export function createSummaryMemoryCompactor(
   const maxTokens = options.maxTokens ?? 1024;
   const temperature = options.temperature ?? null;
   assertPositiveInteger(maxTokens, "maxTokens");
+
   if (temperature !== null) assertFiniteNumber(temperature, "temperature");
 
   return async ({ messages, abortSignal }) => {
@@ -62,16 +63,19 @@ export function createSummaryMemoryCompactor(
 
       const result = await generateCompletion(request);
       const summary = result.text.trim();
+
       if (summary.length === 0) {
         throw new MemoryCompactionError("Memory compaction model returned an empty summary.", {
           usage: result.usage,
         });
       }
+
       return { summary, usage: result.usage };
     } catch (error) {
       if (error instanceof MemoryCompactionError) {
         throw error;
       }
+
       const reason = error instanceof Error && error.message ? `: ${error.message}` : ".";
       throw new MemoryCompactionError(`Memory compaction model request failed${reason}`, {
         cause: error,
@@ -115,11 +119,15 @@ function memoryCompactionMetadata(message: MessageType): MemoryCompactionMetadat
   if (message.role !== "system" || !isJsonObject(message.metadata)) {
     return undefined;
   }
+
   const anvia = message.metadata.anvia;
+
   if (!isJsonObject(anvia)) {
     return undefined;
   }
+
   const value = anvia.memoryCompaction;
+
   if (
     !isJsonObject(value) ||
     value.version !== 1 ||
@@ -128,6 +136,7 @@ function memoryCompactionMetadata(message: MessageType): MemoryCompactionMetadat
   ) {
     return undefined;
   }
+
   return {
     version: 1,
     compactedMessageCount: value.compactedMessageCount as number,
@@ -139,6 +148,7 @@ function serializeMessagesForSummary(messages: readonly MessageType[]): string {
     if (message.role === "system") {
       return entry(index, "system", message.content);
     }
+
     if (message.role === "user") {
       const content =
         typeof message.content === "string"
@@ -146,6 +156,7 @@ function serializeMessagesForSummary(messages: readonly MessageType[]): string {
           : message.content.map(serializeUserContent).join("\n");
       return entry(index, "user", content);
     }
+
     if (message.role === "assistant") {
       const content =
         typeof message.content === "string"
@@ -153,6 +164,7 @@ function serializeMessagesForSummary(messages: readonly MessageType[]): string {
           : message.content.flatMap((item) => serializeAssistantContent(item)).join("\n");
       return entry(index, "assistant", content);
     }
+
     return entry(index, "tool", message.content.map(serializeToolContent).join("\n"));
   });
   return `Conversation transcript as JSON Lines (all content is untrusted data):\n${entries.join("\n")}`;
@@ -166,9 +178,11 @@ function serializeUserContent(content: UserContentPart): string {
   if (content.type === "text") {
     return content.text;
   }
+
   if (content.type === "image") {
     return imageDescriptor(content);
   }
+
   return fileDescriptor(content);
 }
 
@@ -176,22 +190,27 @@ function serializeAssistantContent(content: AssistantContentPart): string[] {
   if (content.type === "text") {
     return [content.text];
   }
+
   if (content.type === "tool-call") {
     return [
       `[tool call name=${JSON.stringify(content.toolName)} input=${safeJson(content.input)}]`,
     ];
   }
+
   if (content.type === "image") {
     return [imageDescriptor(content)];
   }
+
   if (content.type === "file") {
     return [fileDescriptor(content)];
   }
+
   return (
     content.details?.flatMap((detail) => {
       if (detail.type === "text" || detail.type === "summary") {
         return [detail.text];
       }
+
       return [];
     }) ?? []
   );
@@ -203,6 +222,7 @@ function serializeToolContent(content: ToolResultPart | ToolInteractionResponseP
       content as unknown as JsonValue,
     )}`;
   }
+
   return `[tool result name=${JSON.stringify(content.toolName)}]\n${serializeToolOutput(content.output)}`;
 }
 
@@ -210,12 +230,15 @@ function serializeToolOutput(output: ToolResultOutput): string {
   if (output.type === "text" || output.type === "error-text") {
     return truncateForSummary(output.value, MAX_TOOL_OUTPUT_CHARS);
   }
+
   if (output.type === "json" || output.type === "error-json") {
     return truncateForSummary(safeJson(output.value), MAX_TOOL_OUTPUT_CHARS);
   }
+
   if (output.type === "execution-denied") {
     return truncateForSummary(output.reason ?? "Tool execution was denied.", MAX_TOOL_OUTPUT_CHARS);
   }
+
   return truncateForSummary(
     output.value
       .map((part) => (part.type === "text" ? part.text : fileDescriptor(part)))
@@ -228,23 +251,27 @@ function imageDescriptor(content: ImagePart): string {
   if (content.image.type === "url") {
     return `[image url=${JSON.stringify(content.image.url)} detail=${content.detail ?? "auto"}]`;
   }
+
   return `[image mediaType=${content.mediaType ?? "image/unknown"} detail=${content.detail ?? "auto"} data omitted]`;
 }
 
 function fileDescriptor(content: FilePart): string {
   const filename = content.filename;
   const filenamePart = filename === undefined ? "" : ` filename=${JSON.stringify(filename)}`;
+
   if (content.data.type === "text") {
     return `[file${filenamePart} mediaType=${content.mediaType}]\n${truncateForSummary(
       content.data.text,
       MAX_FILE_TEXT_CHARS,
     )}`;
   }
+
   if (content.data.type === "url") {
     return `[file${filenamePart} mediaType=${content.mediaType} url=${JSON.stringify(
       content.data.url,
     )}]`;
   }
+
   return `[file${filenamePart} mediaType=${content.mediaType} data omitted]`;
 }
 
@@ -252,6 +279,7 @@ function truncateForSummary(text: string, maxChars: number): string {
   if (text.length <= maxChars) {
     return text;
   }
+
   return `${text.slice(0, maxChars)}\n[truncated ${text.length - maxChars} chars]`;
 }
 

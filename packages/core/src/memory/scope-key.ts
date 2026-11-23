@@ -21,6 +21,7 @@ function metadataValue(metadata: JsonObject | undefined, path: string): JsonValu
     if (!isJsonObject(current)) {
       return undefined;
     }
+
     current = current[part];
   }
   return current;

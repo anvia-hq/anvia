@@ -24,6 +24,7 @@ export function isAgentTraceOptions(value: unknown): value is AgentTraceOptions 
   if (!isObject(value)) {
     return false;
   }
+
   if (
     !Object.keys(value).every((key) =>
       ["name", "userId", "sessionId", "metadata", "tags", "version", "traceId"].includes(key),
@@ -31,6 +32,7 @@ export function isAgentTraceOptions(value: unknown): value is AgentTraceOptions 
   ) {
     return false;
   }
+
   return (
     optionalString(value.name) &&
     optionalString(value.userId) &&

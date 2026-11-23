@@ -212,6 +212,7 @@ class SqliteSessionStore
    */
   close(): void {
     if (this.db === undefined) return;
+
     const db = this.db;
     this.db = undefined;
     db.close();
@@ -266,8 +267,11 @@ class SqliteSessionStore
       updatedAt: now,
       messageCount: 0,
     };
+
     if (input.title !== undefined) session.title = input.title;
+
     if (input.metadata !== undefined) session.metadata = input.metadata;
+
     return session;
   }
 
@@ -294,9 +298,11 @@ class SqliteSessionStore
         $metadata: metadata === undefined ? null : JSON.stringify(metadata),
         $now: now,
       });
+
     if (result.changes === 0) {
       return undefined;
     }
+
     return this.getSession(id);
   }
 
@@ -341,6 +347,7 @@ class SqliteSessionStore
       if (db.isTransaction) {
         db.exec("ROLLBACK");
       }
+
       throw error;
     }
   }
@@ -372,6 +379,7 @@ class SqliteSessionStore
       if (db.isTransaction) {
         db.exec("ROLLBACK");
       }
+
       throw error;
     }
   }
@@ -399,30 +407,37 @@ class SqliteSessionStore
     if (!Number.isSafeInteger(input.messageCount) || input.messageCount < 1) {
       throw new RangeError("messageCount must be a positive integer.");
     }
+
     const db = this.database();
     try {
       db.exec("BEGIN IMMEDIATE");
       const session = this.getCompactionSessionRow(input.scope.sessionId);
       const state = parseStudioCompactionState(session?.compaction_state_json ?? null);
       const rows = this.listCompactionMessages(input.scope.sessionId, state);
+
       if (session === undefined || studioCompactionRevision(rows, state) !== input.revision) {
         db.exec("ROLLBACK");
         return Promise.resolve({ status: "conflict" });
       }
+
       const physicalPrefixCount = input.messageCount - (state === undefined ? 0 : 1);
       const activeRows = activeStudioCompactionMessages(rows, state);
+
       if (physicalPrefixCount < 0 || physicalPrefixCount > activeRows.length) {
         db.exec("ROLLBACK");
         return Promise.resolve({ status: "conflict" });
       }
+
       const summarizedThroughPosition =
         physicalPrefixCount === 0
           ? state?.summarizedThroughPosition
           : activeRows[physicalPrefixCount - 1]?.position;
+
       if (summarizedThroughPosition === undefined) {
         db.exec("ROLLBACK");
         return Promise.resolve({ status: "conflict" });
       }
+
       const nextState: StoredStudioCompactionState = {
         version: 1,
         generation: (state?.generation ?? 0) + 1,
@@ -444,6 +459,7 @@ class SqliteSessionStore
       return Promise.resolve({ status: "committed" });
     } catch (error) {
       if (db.isTransaction) db.exec("ROLLBACK");
+
       throw error;
     }
   }
@@ -455,10 +471,12 @@ class SqliteSessionStore
     try {
       db.exec("BEGIN IMMEDIATE");
       const row = this.getSessionRow(input.id);
+
       if (row === undefined) {
         db.exec("ROLLBACK");
         return undefined;
       }
+
       const current = toSession(
         row,
         this.listSessionMessages(input.id),
@@ -520,6 +538,7 @@ class SqliteSessionStore
       if (db.isTransaction) {
         db.exec("ROLLBACK");
       }
+
       throw error;
     }
   }
@@ -531,9 +550,11 @@ class SqliteSessionStore
     try {
       db.exec("BEGIN IMMEDIATE");
       const row = this.getSessionRow(input.sessionId);
+
       if (row === undefined) {
         throw new Error("Session not found");
       }
+
       const sequence = this.nextSessionLogSequence(input.sessionId);
       const entry: StudioSessionLogEntry = {
         id: globalThis.crypto.randomUUID(),
@@ -545,7 +566,9 @@ class SqliteSessionStore
         event: input.event,
         message: input.message,
       };
+
       if (input.runId !== undefined) entry.runId = input.runId;
+
       if (input.metadata !== undefined) entry.metadata = input.metadata;
 
       db.prepare(
@@ -591,6 +614,7 @@ class SqliteSessionStore
       if (db.isTransaction) {
         db.exec("ROLLBACK");
       }
+
       throw error;
     }
   }
@@ -634,7 +658,9 @@ class SqliteSessionStore
         event: input.event,
         message: input.message,
       };
+
       if (input.runId !== undefined) entry.runId = input.runId;
+
       if (input.metadata !== undefined) entry.metadata = input.metadata;
 
       db.prepare(
@@ -680,6 +706,7 @@ class SqliteSessionStore
       if (db.isTransaction) {
         db.exec("ROLLBACK");
       }
+
       throw error;
     }
   }
@@ -762,11 +789,17 @@ class SqliteSessionStore
       input: input.input,
       startedAt: input.startedAt,
     };
+
     if (input.output !== undefined) record.output = input.output;
+
     if (input.error !== undefined) record.error = input.error;
+
     if (input.metadata !== undefined) record.metadata = input.metadata;
+
     if (input.endedAt !== undefined) record.endedAt = input.endedAt;
+
     if (input.durationMs !== undefined) record.durationMs = input.durationMs;
+
     return record;
   }
 
@@ -828,6 +861,7 @@ class SqliteSessionStore
       if (db.isTransaction) {
         db.exec("ROLLBACK");
       }
+
       throw error;
     }
   }
@@ -845,10 +879,12 @@ class SqliteSessionStore
       );
       values.$agentId = options.agentId;
     }
+
     if (options.sessionId !== undefined) {
       filters.push("t.session_id = $sessionId");
       values.$sessionId = options.sessionId;
     }
+
     if (options.status !== undefined) {
       filters.push("t.status = $status");
       values.$status = options.status;
@@ -1277,9 +1313,11 @@ class SqliteSessionStore
 
     messages.forEach((message, messageOffset) => {
       const messageIndex = startIndex + messageOffset;
+
       if (message.metadata !== undefined && !isJsonValue(message.metadata)) {
         throw new TypeError("Studio message metadata must be a strict JSON value.");
       }
+
       insertMessage.run({
         $sessionId: sessionId,
         $messageIndex: messageIndex,
@@ -1327,8 +1365,11 @@ function toSessionSummary(row: SessionSummaryRow): StudioSessionSummary {
     updatedAt: row.updated_at,
     messageCount: row.message_count,
   };
+
   if (row.title !== null) summary.title = row.title;
+
   if (metadata !== undefined) summary.metadata = metadata;
+
   return summary;
 }
 
@@ -1344,8 +1385,11 @@ function toSessionLog(row: SessionLogRow): StudioSessionLogEntry {
     event: row.event,
     message: row.message,
   };
+
   if (row.run_id !== null) entry.runId = row.run_id;
+
   if (metadata !== undefined) entry.metadata = metadata;
+
   return entry;
 }
 
@@ -1361,8 +1405,11 @@ function toPipelineLog(row: PipelineLogRow): StudioPipelineLogEntry {
     event: row.event,
     message: row.message,
   };
+
   if (row.run_id !== null) entry.runId = row.run_id;
+
   if (metadata !== undefined) entry.metadata = metadata;
+
   return entry;
 }
 
@@ -1377,11 +1424,17 @@ function toPipelineRun(row: PipelineRunRow): StudioPipelineRunRecord {
     input: JSON.parse(row.input_json) as JsonValue,
     startedAt: row.started_at,
   };
+
   if (output !== undefined) record.output = output;
+
   if (error !== undefined) record.error = error;
+
   if (metadata !== undefined) record.metadata = metadata;
+
   if (row.ended_at !== null) record.endedAt = row.ended_at;
+
   if (row.duration_ms !== null) record.durationMs = row.duration_ms;
+
   return record;
 }
 
@@ -1393,6 +1446,7 @@ function messageParts(message: Message): StoredMessagePart[] {
   if (typeof message.content === "string") {
     return [{ type: "text", value: { type: "text", text: message.content } }];
   }
+
   return message.content.map((content) => ({
     type: content.type,
     value: content,
@@ -1402,6 +1456,7 @@ function messageParts(message: Message): StoredMessagePart[] {
 function messageFromRows(row: MessageRow, partRows: MessagePartRow[]): Message {
   const parts = partRows.map((partRow) => JSON.parse(partRow.part_json) as unknown);
   const metadata = parseJsonValue<JsonObject>(row.metadata_json);
+
   if (
     metadata !== undefined &&
     (!isJsonValue(metadata) ||
@@ -1411,37 +1466,50 @@ function messageFromRows(row: MessageRow, partRows: MessagePartRow[]): Message {
   ) {
     throw new TypeError("Stored Studio message metadata is not a strict JSON object.");
   }
+
   if (row.role === "system") {
     let message: Extract<Message, { role: "system" }> = {
       role: "system",
       content: systemContentFromParts(parts),
     };
+
     if (metadata !== undefined) message = { ...message, metadata };
+
     return message;
   }
+
   if (row.role === "user") {
     let message: Extract<Message, { role: "user" }> = {
       role: "user",
       content: parts as Extract<Message, { role: "user" }>["content"],
     };
+
     if (metadata !== undefined) message = { ...message, metadata };
+
     return message;
   }
+
   if (row.role === "assistant") {
     let message: Extract<Message, { role: "assistant" }> = {
       role: "assistant",
       content: parts as Extract<Message, { role: "assistant" }>["content"],
     };
+
     if (row.message_id !== null) message = { ...message, id: row.message_id };
+
     if (metadata !== undefined) message = { ...message, metadata };
+
     return message;
   }
+
   if (row.role === "tool") {
     let message: Extract<Message, { role: "tool" }> = {
       role: "tool",
       content: parts as Extract<Message, { role: "tool" }>["content"],
     };
+
     if (metadata !== undefined) message = { ...message, metadata };
+
     return message;
   }
 
@@ -1450,6 +1518,7 @@ function messageFromRows(row: MessageRow, partRows: MessagePartRow[]): Message {
 
 function systemContentFromParts(parts: unknown[]): string {
   const first = parts[0];
+
   if (
     typeof first === "object" &&
     first !== null &&
@@ -1460,11 +1529,13 @@ function systemContentFromParts(parts: unknown[]): string {
   ) {
     return first.text;
   }
+
   return "";
 }
 
 function guardAgainstLegacySessionSchema(db: DatabaseSyncType): void {
   const columns = db.prepare("PRAGMA table_info('anvia_studio_sessions')").all() as TableInfoRow[];
+
   if (columns.some((column) => column.name === "messages_json")) {
     throw new Error(
       "Existing Studio SQLite DB uses the legacy messages_json schema. Delete or recreate the Studio SQLite DB to use normalized session messages.",
@@ -1476,6 +1547,7 @@ function ensureMessageMetadataColumn(db: DatabaseSyncType): void {
   const columns = db
     .prepare("PRAGMA table_info('anvia_studio_session_messages')")
     .all() as TableInfoRow[];
+
   if (!columns.some((column) => column.name === "metadata_json")) {
     db.exec("ALTER TABLE anvia_studio_session_messages ADD COLUMN metadata_json TEXT");
   }
@@ -1483,6 +1555,7 @@ function ensureMessageMetadataColumn(db: DatabaseSyncType): void {
 
 function ensureSessionCompactionStateColumn(db: DatabaseSyncType): void {
   const columns = db.prepare("PRAGMA table_info('anvia_studio_sessions')").all() as TableInfoRow[];
+
   if (!columns.some((column) => column.name === "compaction_state_json")) {
     db.exec("ALTER TABLE anvia_studio_sessions ADD COLUMN compaction_state_json TEXT");
   }
@@ -1513,8 +1586,11 @@ function toTrace(row: TraceRow): StudioTrace {
     ...toTraceSummary(row),
     observations: parseJsonArray<StudioTrace["observations"][number]>(row.observations_json),
   };
+
   if (trace !== undefined) result.trace = trace;
+
   if (input !== undefined) result.input = input;
+
   return result;
 }
 
@@ -1530,16 +1606,27 @@ function toTraceSummary(row: TraceRow): StudioTraceSummary {
     startedAt: row.started_at,
     observationCount: observations.length,
   };
+
   if (row.name !== null) summary.name = row.name;
+
   if (row.ended_at !== null) summary.endedAt = row.ended_at;
+
   if (row.duration_ms !== null) summary.durationMs = row.duration_ms;
+
   if (row.output !== null) summary.output = row.output;
+
   if (error !== undefined) summary.error = error;
+
   if (usage !== undefined) summary.usage = usage;
+
   const context = traceContextBreakdown(observations);
+
   if (context !== undefined) summary.context = context;
+
   if (metadata !== undefined) summary.metadata = metadata;
+
   if (typeof metadata?.runId === "string") summary.runId = metadata.runId;
+
   return summary;
 }
 
@@ -1552,6 +1639,7 @@ function parseJsonValue<T>(value: string | null): T | undefined {
   if (value === null) {
     return undefined;
   }
+
   return JSON.parse(value) as T;
 }
 
@@ -1567,6 +1655,7 @@ function serializeJsonError(error: unknown): JsonValue {
       message: error.message,
     };
   }
+
   if (
     error === null ||
     typeof error === "string" ||
@@ -1575,5 +1664,6 @@ function serializeJsonError(error: unknown): JsonValue {
   ) {
     return error;
   }
+
   return String(error);
 }

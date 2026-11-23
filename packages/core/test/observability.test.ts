@@ -75,9 +75,11 @@ class QueueModel implements CompletionModel {
   async completion(request: CompletionRequest): Promise<CompletionResponse> {
     this.requests.push(request);
     const response = this.responses.shift();
+
     if (response === undefined) {
       throw new Error("No queued response");
     }
+
     return response;
   }
 }
@@ -114,9 +116,11 @@ class StreamingQueueModel implements StreamingCompletionModel {
   async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionModelStreamEvent> {
     this.requests.push(request);
     const response = this.responses.shift();
+
     if (response === undefined) {
       throw new Error("No queued response");
     }
+
     yield* response;
   }
 }
@@ -212,8 +216,11 @@ describe("agent observability", () => {
           onCompletionRequest: ({ request, promptRef }) => {
             seen.push(promptRef);
             expect(request).not.toHaveProperty("promptRef");
+
             if (seen.length === 1) return { request, promptRef: overrideRef };
+
             if (seen.length === 2) return { request, promptRef: null };
+
             return undefined;
           },
         },
@@ -347,9 +354,11 @@ describe("agent observability", () => {
       capabilities: delegate.capabilities,
       async completion(request) {
         attempts += 1;
+
         if (attempts === 1) {
           throw retryError;
         }
+
         return delegate.completion(request);
       },
     };
@@ -406,6 +415,7 @@ describe("agent observability", () => {
       capabilities: new QueueModel([]).capabilities,
       async completion() {
         attempts += 1;
+
         if (attempts === 1) {
           throw new CompletionProviderOutputError({
             kind: "malformed-tool-arguments",
@@ -413,6 +423,7 @@ describe("agent observability", () => {
             usage: failedUsage,
           });
         }
+
         return response([AssistantContent.text("recovered")]);
       },
     };
@@ -632,7 +643,9 @@ describe("agent observability", () => {
     });
 
     const pending = await agent.generate({ prompt: "run guarded" });
+
     if (pending.type !== "interaction") throw new Error("Expected suspension");
+
     expect(eventTypes(observer)).toContain("tool_start");
     expect(eventTypes(observer)).toContain("tool_suspended");
     expect(eventTypes(observer)).not.toContain("tool_error");
@@ -1166,7 +1179,9 @@ describe("active agent observer groups", () => {
                 };
                 mutable.request.chatHistory.splice(0);
                 const document = mutable.request.documents[0];
+
                 if (document !== undefined) document.text = "mutated";
+
                 return {
                   end(endArgs) {
                     const mutableEnd = endArgs as unknown as {
@@ -1232,6 +1247,7 @@ describe("active agent observer groups", () => {
       },
       event(args) {
         const mutable = args.attributes as Record<string, unknown> | undefined;
+
         if (mutable !== undefined) mutable.label = "mutated";
       },
       startGeneration() {
@@ -1619,6 +1635,7 @@ describe("active agent observer groups", () => {
             broken: {
               startRun: () => {
                 if (phase === "startRun") throw error;
+
                 return createRunObserver({
                   end: () => {
                     throw error;

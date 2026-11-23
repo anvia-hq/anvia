@@ -42,9 +42,11 @@ async function main(): Promise<void> {
           trace: { traceId: tier1TraceId, observationId: "obs-tier-1" },
         };
       }
+
       if (typeof input === "object" && input !== null && "answer" in input) {
         return { output: String(input.answer) };
       }
+
       return { output: String(input) };
     },
     metrics: [contains()],

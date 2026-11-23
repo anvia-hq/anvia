@@ -84,47 +84,58 @@ export function useGraphExplorer<Schema extends GraphSchemaLike = GraphSchemaLik
       const externalSignal = request.abortSignal;
       const abortFromExternal = () => {
         controller.abort();
+
         if (requestId === requestIdRef.current) {
           abortRef.current = undefined;
           setStatus("ready");
         }
       };
+
       if (externalSignal?.aborted === true) {
         abortFromExternal();
         setError(undefined);
         return undefined;
       }
+
       externalSignal?.addEventListener("abort", abortFromExternal, { once: true });
 
       const nextRequest = {
         ...request,
         abortSignal: controller.signal,
       } as GraphExploreOptions<Schema>;
+
       if (request.mode === "overview") overviewRef.current = withoutAbortSignal(request);
+
       setStatus("loading");
       setError(undefined);
 
       try {
         const next = await load(nextRequest);
+
         if (controller.signal.aborted || requestId !== requestIdRef.current) return undefined;
+
         setResult((current) =>
           request.mode === "expand" ? mergeGraphExploreResults(current, next) : next,
         );
+
         if (request.mode === "overview") {
           expansionDefaultsRef.current = expansionDefaults(request);
           setSelectedNodeId((current) =>
             next.nodes.some((node) => node.id === current) ? current : undefined,
           );
         }
+
         setStatus("ready");
         return next;
       } catch (caught) {
         if (controller.signal.aborted || requestId !== requestIdRef.current) return undefined;
+
         setError(caught);
         setStatus("error");
         throw caught;
       } finally {
         externalSignal?.removeEventListener("abort", abortFromExternal);
+
         if (abortRef.current === controller) abortRef.current = undefined;
       }
     },
@@ -134,6 +145,7 @@ export function useGraphExplorer<Schema extends GraphSchemaLike = GraphSchemaLik
   const expandNode = useCallback(
     (nodeId: string, expandOptions: GraphExplorerExpandNodeOptions<Schema> = {}) => {
       if (nodeId.length === 0) throw new TypeError("Graph explorer node id must be non-empty.");
+
       return explore({
         ...expansionDefaultsRef.current,
         ...expandOptions,
@@ -242,10 +254,13 @@ export function graphExplorerNodeMatches(
   searchText?: ((node: GraphExploreNode) => string) | undefined,
 ): boolean {
   const normalizedQuery = query.trim().toLocaleLowerCase();
+
   if (normalizedQuery.length === 0) return true;
+
   if (searchText !== undefined) {
     return searchText(node).toLocaleLowerCase().includes(normalizedQuery);
   }
+
   return defaultGraphExplorerNodeSearchValues(node).some((value) =>
     String(value ?? "")
       .toLocaleLowerCase()

@@ -24,6 +24,7 @@ const decoder = new TextDecoder();
 
 while (true) {
   const result = await reader.read();
+
   if (result.done) {
     break;
   }

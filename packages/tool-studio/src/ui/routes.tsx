@@ -23,7 +23,9 @@ export function resolveStudioUiOptions(
     redirectRoot: options.redirectRoot ?? true,
     protectShell: options.protectShell ?? false,
   };
+
   if (options.clientScript !== undefined) resolved.clientScript = options.clientScript;
+
   return resolved;
 }
 
@@ -110,6 +112,7 @@ export function registerStudioUi(app: Hono, options: ResolvedStudioUiOptions): v
     if (options.clientScript === undefined) {
       return new Response(null, { status: 404 });
     }
+
     return new Response(options.clientScript, {
       headers: {
         "content-type": "text/javascript; charset=utf-8",
@@ -130,13 +133,17 @@ export function registerStudioUi(app: Hono, options: ResolvedStudioUiOptions): v
 
   app.get(`${options.path}/assets/:asset`, async (c) => {
     const asset = c.req.param("asset");
+
     if (asset.includes("/") || asset.includes("..")) {
       return new Response(null, { status: 404 });
     }
+
     const source = await readBundledUiAsset(asset);
+
     if (source === undefined) {
       return new Response(null, { status: 404 });
     }
+
     const body = new ArrayBuffer(source.byteLength);
     new Uint8Array(body).set(source);
     return new Response(body, {
@@ -151,9 +158,11 @@ export function registerStudioUi(app: Hono, options: ResolvedStudioUiOptions): v
 function shellWhenHtml(renderShell: () => Promise<string>) {
   return async (c: Context, next: Next) => {
     const accept = c.req.header("accept") ?? "";
+
     if (!accept.includes("text/html")) {
       return next();
     }
+
     return c.html(await renderShell());
   };
 }
@@ -163,6 +172,7 @@ function shellWhenKnowledgeTab(renderShell: () => Promise<string>) {
     if (!isKnowledgeTabRoute(c.req.param("tab"))) {
       return next();
     }
+
     return c.html(await renderShell());
   };
 }
@@ -183,6 +193,7 @@ async function renderStudioUi(props: {
   stylesheet: string;
 }): Promise<string> {
   const { options } = props;
+
   if (options.clientScript !== undefined) {
     return renderLegacyStudioUiShell({
       title: options.title,
@@ -192,6 +203,7 @@ async function renderStudioUi(props: {
       stylesheet: props.stylesheet,
     });
   }
+
   const index = await readBundledUiIndex();
   return index
     .replace(/<title>.*?<\/title>/, `<title>${escapeHtml(options.title)}</title>`)
@@ -241,9 +253,11 @@ function normalizeUiPath(path: string): string {
   const trimmed = path.trim();
   const withSlash = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
   const withoutTrailingSlash = withSlash.length > 1 ? withSlash.replace(/\/+$/, "") : withSlash;
+
   if (withoutTrailingSlash.length === 0 || withoutTrailingSlash === "/") {
     return "/ui";
   }
+
   return withoutTrailingSlash;
 }
 
@@ -268,6 +282,7 @@ async function readBundledUiIndex(): Promise<string> {
     if (!isNotFoundError(error)) {
       throw error;
     }
+
     return readFile(fileURLToPath(new URL("./app/index.html", import.meta.url)), "utf8");
   }
 }
@@ -286,6 +301,7 @@ async function readBundledUiAsset(asset: string): Promise<Uint8Array | undefined
     if (!isNotFoundError(error)) {
       throw error;
     }
+
     try {
       return await readFile(
         fileURLToPath(new URL(`../../dist/ui/assets/${asset}`, import.meta.url)),
@@ -294,6 +310,7 @@ async function readBundledUiAsset(asset: string): Promise<Uint8Array | undefined
       if (!isNotFoundError(fallbackError)) {
         throw fallbackError;
       }
+
       return undefined;
     }
   }
@@ -306,6 +323,7 @@ async function readBundledLegacyStylesheet(): Promise<string> {
     if (!isNotFoundError(error)) {
       throw error;
     }
+
     try {
       return await readFile(
         fileURLToPath(new URL("../../dist/ui/styles.css", import.meta.url)),
@@ -315,6 +333,7 @@ async function readBundledLegacyStylesheet(): Promise<string> {
       if (!isNotFoundError(fallbackError)) {
         throw fallbackError;
       }
+
       return "";
     }
   }
@@ -333,18 +352,23 @@ function contentTypeForAsset(asset: string): string {
   if (asset.endsWith(".js")) {
     return "text/javascript; charset=utf-8";
   }
+
   if (asset.endsWith(".css")) {
     return "text/css; charset=utf-8";
   }
+
   if (asset.endsWith(".svg")) {
     return "image/svg+xml";
   }
+
   if (asset.endsWith(".png")) {
     return "image/png";
   }
+
   if (asset.endsWith(".woff2")) {
     return "font/woff2";
   }
+
   return "application/octet-stream";
 }
 

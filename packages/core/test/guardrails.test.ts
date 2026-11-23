@@ -42,9 +42,11 @@ class QueueModel implements CompletionModel {
   async completion(request: CompletionRequest): Promise<CompletionResponse> {
     this.requests.push(request);
     const response = this.responses.shift();
+
     if (response === undefined) {
       throw new Error("No queued response");
     }
+
     return response;
   }
 }
@@ -72,9 +74,11 @@ class StreamingQueueModel implements StreamingCompletionModel {
   async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionModelStreamEvent> {
     this.requests.push(request);
     const response = this.responses.shift();
+
     if (response === undefined) {
       throw new Error("No queued response");
     }
+
     yield* response;
   }
 }
@@ -161,7 +165,9 @@ describe("guardrails", () => {
       message: "Input blocked.",
       text: "Input blocked.",
     });
+
     if (result.type !== "blocked") throw new Error("Expected a blocked result.");
+
     expect(model.requests).toHaveLength(0);
     expect(result.guardrails).toMatchObject([
       { guardrailId: "block-input", action: "block", applied: true },
@@ -199,7 +205,9 @@ describe("guardrails", () => {
     const result = await agent.generate({ prompt: "blocked" });
 
     expect(result).toMatchObject({ type: "blocked", stage: "input", text: "Input blocked." });
+
     if (result.type !== "blocked") throw new Error("Expected a blocked result.");
+
     expect(result.trace).toEqual({ observer: "test", ...trace });
     expect(observedEvents).toMatchObject([
       {

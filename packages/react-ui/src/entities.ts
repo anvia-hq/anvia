@@ -52,19 +52,23 @@ export function validComposerEntities(text: string, metadata: unknown): Composer
   let groupHasOverlap = false;
   for (let index = 1; index <= individuallyValid.length; index += 1) {
     const current = individuallyValid[index];
+
     if (current !== undefined && current.entity.range.from < groupEnd) {
       groupHasOverlap = true;
       groupEnd = Math.max(groupEnd, current.entity.range.to);
       continue;
     }
+
     if (groupHasOverlap) {
       for (let groupIndex = groupStart; groupIndex < index; groupIndex += 1) {
         const candidate = individuallyValid[groupIndex];
+
         if (candidate !== undefined) {
           overlapping.add(candidate.index);
         }
       }
     }
+
     groupStart = index;
     groupEnd = current?.entity.range.to ?? 0;
     groupHasOverlap = false;
@@ -83,6 +87,7 @@ export function entitiesForTextSegment(
     if (entity.range.from < segment.from || entity.range.to > segment.to) {
       return [];
     }
+
     return [
       {
         ...entity,
@@ -102,6 +107,7 @@ export function shiftComposerEntityRanges(
   if (offset === 0) {
     return entities;
   }
+
   return entities.map((entity) => ({
     ...entity,
     range: {
@@ -115,6 +121,7 @@ function composerEntityCandidates(metadata: unknown): unknown[] {
   if (!isRecord(metadata) || !isRecord(metadata.composer)) {
     return [];
   }
+
   return Array.isArray(metadata.composer.entities) ? metadata.composer.entities : [];
 }
 
@@ -122,6 +129,7 @@ function parseComposerEntity(value: unknown, text: string): ComposerEntity | und
   if (!isRecord(value) || !isRecord(value.range)) {
     return undefined;
   }
+
   if (
     !isNonEmptyString(value.id) ||
     !isNonEmptyString(value.triggerId) ||
@@ -131,7 +139,9 @@ function parseComposerEntity(value: unknown, text: string): ComposerEntity | und
   ) {
     return undefined;
   }
+
   const { from, to } = value.range;
+
   if (
     typeof from !== "number" ||
     typeof to !== "number" ||
@@ -144,7 +154,9 @@ function parseComposerEntity(value: unknown, text: string): ComposerEntity | und
   ) {
     return undefined;
   }
+
   if (value.data !== undefined && !isComposerEntityData(value.data)) return undefined;
+
   const entity: ComposerEntity = {
     id: value.id,
     triggerId: value.triggerId,
@@ -153,7 +165,9 @@ function parseComposerEntity(value: unknown, text: string): ComposerEntity | und
     text: value.text,
     range: { from, to },
   };
+
   if (value.data !== undefined) entity.data = value.data;
+
   return entity;
 }
 

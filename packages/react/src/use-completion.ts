@@ -97,20 +97,27 @@ export function useCompletion<
           abortSignal: controller.signal,
         })) {
           if (abortRef.current !== controller || controller.signal.aborted) return;
+
           if (frame.type === "stream_start") continue;
+
           if (frame.type === "stream_event") {
             setStatus("streaming");
             const event = frame.event;
             setEvents((current) => appendRetainedEvent(current, event, maxRetainedEvents));
             options.onEvent?.(event);
             const contextUsageUpdate = contextUsageUpdateFromEvent(event);
+
             if (contextUsageUpdate !== undefined) {
               setContextUsage(contextUsageUpdate.contextUsage);
             }
+
             const nextUsage = runUsageUpdateFromEvent(event);
+
             if (nextUsage !== undefined) setUsage(nextUsage);
+
             messagesRef.current = applyClientStreamEvent(messagesRef.current, event);
             setCompletion(assistantText(messagesRef.current));
+
             if (event.type === "error") {
               const eventError = normalizeClientError(event.error);
               streamError ??= eventError;
@@ -118,8 +125,10 @@ export function useCompletion<
               setStatus("error");
               options.onError?.(eventError);
             }
+
             continue;
           }
+
           if (frame.status !== "completed") {
             throw new ClientProtocolError(
               `Client completion stream ended with status ${frame.status}.`,
@@ -127,15 +136,19 @@ export function useCompletion<
             );
           }
         }
+
         if (abortRef.current === controller && !controller.signal.aborted) {
           setStatus(streamError === undefined ? "ready" : "error");
         }
       } catch (caught) {
         if (isAbortError(caught)) {
           if (abortRef.current === controller) setStatus("ready");
+
           return;
         }
+
         if (abortRef.current !== controller) return;
+
         const nextError = normalizeClientError(caught);
         setError(nextError);
         setStatus("error");

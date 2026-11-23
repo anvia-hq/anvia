@@ -34,15 +34,18 @@ export async function generateSpeech<Model extends SpeechGenerationModel>(
   assertNonEmptyString(options.voice, "Speech voice");
   throwIfAborted(options.abortSignal);
   const speed = options.speed ?? 1;
+
   if (!Number.isFinite(speed) || speed <= 0) {
     throw new RangeError("Speech speed must be a positive finite number.");
   }
 
   const request: SpeechGenerationRequest = { text: options.text, voice: options.voice, speed };
+
   if (options.providerOptions !== undefined) {
     assertJsonObject(options.providerOptions, "providerOptions");
     request.providerOptions = options.providerOptions;
   }
+
   return runWithRetries(
     () => {
       throwIfAborted(options.abortSignal);

@@ -52,6 +52,7 @@ const messagePartStreamAdapter: SmoothStreamItemAdapter<UIMessagePart> = {
     if (part.type === "text" || part.type === "reasoning") {
       return part.text === text ? part : { ...part, text };
     }
+
     return part;
   },
 };
@@ -67,6 +68,7 @@ const MessageParts = forwardRef<HTMLDivElement, MessagePartsProps>(function Mess
 ) {
   const { message } = useMessage();
   const parts = filter === undefined ? message.parts : message.parts.filter(filter);
+
   if (stream !== undefined) {
     return (
       <SmoothedMessageParts {...props} parts={parts} ref={ref} stream={stream}>
@@ -99,9 +101,11 @@ const SmoothedMessageParts = forwardRef<HTMLDivElement, SmoothedMessagePartsProp
       isStreaming: stream.isStreaming,
       resetKey: stream.resetKey,
     };
+
     if (stream.flushImmediately !== undefined) {
       Object.assign(streamOptions, { flushImmediately: stream.flushImmediately });
     }
+
     const smooth = useSmoothStreamItems(parts, streamOptions);
 
     return renderPrimitive(
@@ -110,12 +114,27 @@ const SmoothedMessageParts = forwardRef<HTMLDivElement, SmoothedMessagePartsProp
         ...props,
         children: renderMessagePartNodes(smooth.items, children, smooth.liveItemKey),
         "data-role": "parts",
-        "data-state": smooth.isDraining ? "draining" : stream.isStreaming ? "streaming" : "idle",
+        "data-state": streamDataState(smooth.isDraining, stream.isStreaming),
       } as PrimitiveProps<"div">,
       ref,
     );
   },
 );
+
+function streamDataState(
+  isDraining: boolean,
+  isStreaming: boolean,
+): "draining" | "streaming" | "idle" {
+  if (isDraining) {
+    return "draining";
+  }
+
+  if (isStreaming) {
+    return "streaming";
+  }
+
+  return "idle";
+}
 
 function renderMessagePartNodes(
   parts: readonly UIMessagePart[],
@@ -161,6 +180,7 @@ type MessageTextProps = PrimitiveProps<"span"> & MessageStreamProps;
 
 const MessageText = forwardRef<HTMLSpanElement, MessageTextProps>(function MessageText(props, ref) {
   const { part, streamControlled } = useMessagePart();
+
   if (part.type !== "text") {
     return null;
   }
@@ -189,9 +209,11 @@ const MessageTextContent = forwardRef<HTMLSpanElement, MessageTextContentProps>(
       isStreaming: ownsStream ? stream.isStreaming : false,
       resetKey: ownsStream ? stream.resetKey : partId,
     };
+
     if (ownsStream && stream.flushImmediately !== undefined) {
       Object.assign(streamOptions, { flushImmediately: stream.flushImmediately });
     }
+
     const smooth = useSmoothStreamText(content, streamOptions);
 
     return renderPrimitive(
@@ -201,11 +223,7 @@ const MessageTextContent = forwardRef<HTMLSpanElement, MessageTextContentProps>(
         children: props.children ?? (ownsStream ? smooth.text : content),
         "data-role": "text",
         "data-state": ownsStream
-          ? smooth.isDraining
-            ? "draining"
-            : stream.isStreaming
-              ? "streaming"
-              : "idle"
+          ? streamDataState(smooth.isDraining, stream.isStreaming)
           : undefined,
       } as PrimitiveProps<"span">,
       ref,
@@ -228,6 +246,7 @@ const MessageMarkdown = forwardRef<HTMLDivElement, MessageMarkdownProps>(functio
   const { message } = useMessage();
   const partContext = useOptionalMessagePart();
   const part = partContext?.part;
+
   if (part !== undefined && part.type !== "text") {
     return null;
   }
@@ -293,9 +312,11 @@ const MessageMarkdownContent = forwardRef<HTMLDivElement, MessageMarkdownContent
       isStreaming: ownsStream ? stream.isStreaming : false,
       resetKey: ownsStream ? stream.resetKey : resetKey,
     };
+
     if (ownsStream && stream.flushImmediately !== undefined) {
       Object.assign(streamOptions, { flushImmediately: stream.flushImmediately });
     }
+
     const smooth = useSmoothStreamText(markdown, streamOptions);
     const renderedMarkdown = ownsStream ? smooth.text : markdown;
     const renderedEntities = useMemo(
@@ -330,13 +351,7 @@ const MessageMarkdownContent = forwardRef<HTMLDivElement, MessageMarkdownContent
         {...props}
         components={renderedComponents}
         content={renderedMarkdown}
-        data-state={
-          ownsStream && smooth.isDraining
-            ? "draining"
-            : ownsStream && stream.isStreaming
-              ? "streaming"
-              : "idle"
-        }
+        data-state={ownsStream ? streamDataState(smooth.isDraining, stream.isStreaming) : "idle"}
         live={live}
         ref={ref}
         remarkPlugins={renderedRemarkPlugins}
@@ -375,13 +390,16 @@ function markdownComponents(
         if (renderEntity !== undefined) {
           return renderEntity(entity);
         }
+
         const entityProps = {
           ...consumerProps,
           "data-role": "entity",
         };
+
         if (consumerSpan !== undefined) {
           return createElement(consumerSpan, entityProps);
         }
+
         const { node: _node, ...elementProps } = entityProps;
         return <MessageEntity {...elementProps} entity={entity} />;
       }
@@ -389,6 +407,7 @@ function markdownComponents(
       if (consumerSpan !== undefined) {
         return createElement(consumerSpan, consumerProps);
       }
+
       const { node: _node, ...elementProps } = consumerProps;
       return <span {...elementProps} />;
     },
@@ -422,6 +441,7 @@ const MessageCodeBlock = forwardRef<HTMLPreElement, MessageCodeBlockProps>(
 const MessageReasoning = forwardRef<HTMLDetailsElement, PrimitiveProps<"details">>(
   function MessageReasoning(props, ref) {
     const { part } = useMessagePart();
+
     if (part.type !== "reasoning") {
       return null;
     }
@@ -452,9 +472,11 @@ const MessageTool = forwardRef<HTMLDivElement, MessageToolProps>(function Messag
   ref,
 ) {
   const { part } = useMessagePart();
+
   if (part.type !== "tool" || !shouldRenderTool(part, renderWhen)) {
     return null;
   }
+
   const renderedChildren =
     typeof children === "function" ? children(part) : (children ?? defaultToolContent());
 
@@ -473,6 +495,7 @@ const MessageTool = forwardRef<HTMLDivElement, MessageToolProps>(function Messag
 const MessageToolName = forwardRef<HTMLSpanElement, PrimitiveProps<"span">>(
   function MessageToolName(props, ref) {
     const { part } = useMessagePart();
+
     if (part.type !== "tool") {
       return null;
     }
@@ -491,6 +514,7 @@ const MessageToolName = forwardRef<HTMLSpanElement, PrimitiveProps<"span">>(
 const MessageToolStatus = forwardRef<HTMLSpanElement, PrimitiveProps<"span">>(
   function MessageToolStatus(props, ref) {
     const { part } = useMessagePart();
+
     if (part.type !== "tool") {
       return null;
     }
@@ -510,6 +534,7 @@ const MessageToolStatus = forwardRef<HTMLSpanElement, PrimitiveProps<"span">>(
 const MessageToolInput = forwardRef<HTMLPreElement, PrimitiveProps<"pre">>(
   function MessageToolInput(props, ref) {
     const { part } = useMessagePart();
+
     if (part.type !== "tool") {
       return null;
     }
@@ -528,6 +553,7 @@ const MessageToolInput = forwardRef<HTMLPreElement, PrimitiveProps<"pre">>(
 const MessageToolOutput = forwardRef<HTMLPreElement, PrimitiveProps<"pre">>(
   function MessageToolOutput(props, ref) {
     const { part } = useMessagePart();
+
     if (part.type !== "tool" || part.state !== "output-available") {
       return null;
     }
@@ -546,6 +572,7 @@ const MessageToolOutput = forwardRef<HTMLPreElement, PrimitiveProps<"pre">>(
 const MessageToolError = forwardRef<HTMLDivElement, PrimitiveProps<"div">>(
   function MessageToolError(props, ref) {
     const { part } = useMessagePart();
+
     if (part.type !== "tool" || part.state !== "error") {
       return null;
     }
@@ -569,9 +596,11 @@ type MessageAttachmentProps = Omit<PrimitiveProps<"div">, "children"> & {
 const MessageAttachment = forwardRef<HTMLDivElement, MessageAttachmentProps>(
   function MessageAttachment({ children, ...props }, ref) {
     const { part } = useMessagePart();
+
     if (part.type !== "attachment") {
       return null;
     }
+
     const renderedChildren =
       typeof children === "function"
         ? children(part.attachment)
@@ -595,6 +624,7 @@ const MessageAttachment = forwardRef<HTMLDivElement, MessageAttachmentProps>(
 const MessageData = forwardRef<HTMLPreElement, PrimitiveProps<"pre">>(
   function MessageData(props, ref) {
     const { part } = useMessagePart();
+
     if (part.type !== "data") {
       return null;
     }
@@ -613,6 +643,7 @@ const MessageData = forwardRef<HTMLPreElement, PrimitiveProps<"pre">>(
 const MessageError = forwardRef<HTMLDivElement, PrimitiveProps<"div">>(
   function MessageError(props, ref) {
     const { part } = useMessagePart();
+
     if (part.type !== "error") {
       return null;
     }
@@ -633,18 +664,23 @@ function defaultPart(part: UIMessagePart): ReactNode {
   if (part.type === "text") {
     return <MessageText />;
   }
+
   if (part.type === "reasoning") {
     return <MessageReasoning />;
   }
+
   if (part.type === "tool") {
     return <MessageTool />;
   }
+
   if (part.type === "attachment") {
     return <MessageAttachment />;
   }
+
   if (part.type === "data") {
     return <MessageData />;
   }
+
   return <MessageError />;
 }
 
@@ -685,9 +721,11 @@ function shouldRenderTool(part: MessageToolPart, renderWhen: MessageToolRenderWh
   if (renderWhen === "always") {
     return true;
   }
+
   if (renderWhen === "pending") {
     return part.state === "input-streaming" || part.state === "input-available";
   }
+
   return part.state === "output-available" || part.state === "error";
 }
 
@@ -695,9 +733,11 @@ function toolStateLabel(state: MessageToolPart["state"]): string {
   if (state === "output-available") {
     return "Done";
   }
+
   if (state === "error") {
     return "Error";
   }
+
   return "Running";
 }
 

@@ -248,6 +248,7 @@ describe("QdrantVectorClient", () => {
           payload: { __anvia_document_id: "a", __anvia_document: "A" },
         },
       ];
+
       if (options.limit !== 2) {
         points.push(
           {
@@ -262,6 +263,7 @@ describe("QdrantVectorClient", () => {
           },
         );
       }
+
       return { result: { points } };
     });
     const store = new QdrantVectorClient({ client }).vectorStore<string>({

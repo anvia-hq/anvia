@@ -39,40 +39,54 @@ export function parseUIMessage<
   } = {},
 ): UIMessage<Metadata, Data> {
   const message = requireRecord(value, "UI message");
+
   if (!isJsonValue(message)) {
     throw new ClientProtocolError("UI messages must be strict JSON values.", value);
   }
+
   requireOnlyKeys(
     message,
     ["id", "role", "parts", "modelMessageId", "metadata", "generation"],
     "UI message",
   );
+
   if (typeof message.id !== "string") invalid("UI message.id", value);
+
   requireOneOf(message.role, ["system", "user", "assistant", "tool"], "UI message.role", value);
+
   if (!Array.isArray(message.parts)) invalid("UI message.parts", value);
+
   const parts = message.parts.map((part) => parseUIMessagePart(part, options.dataSchemas, value));
+
   if (message.modelMessageId !== undefined && typeof message.modelMessageId !== "string") {
     invalid("UI message.modelMessageId", value);
   }
+
   const metadata =
     message.metadata === undefined
       ? undefined
       : parseMetadata(message.metadata, options.metadataSchema, value);
+
   if (message.generation !== undefined && !isUIMessageGeneration(message.generation)) {
     invalid("UI message.generation", value);
   }
+
   let parsed: UIMessage<Metadata, Data> = {
     id: message.id as string,
     role: message.role as UIMessage<Metadata, Data>["role"],
     parts,
   };
+
   if (message.modelMessageId !== undefined) {
     parsed = { ...parsed, modelMessageId: message.modelMessageId as string };
   }
+
   if (metadata !== undefined) parsed = { ...parsed, metadata };
+
   if (message.generation !== undefined) {
     parsed = { ...parsed, generation: message.generation as UIMessageGeneration };
   }
+
   return parsed;
 }
 
@@ -89,6 +103,7 @@ export function parseUIMessages<
   if (!Array.isArray(value)) {
     throw new ClientProtocolError("UI messages must be an array.", value);
   }
+
   return value.map((message) => parseUIMessage<Metadata, Data>(message, options));
 }
 
@@ -105,10 +120,13 @@ export function parseClientStreamRequest(value: unknown): ClientStreamRequest {
     "Client stream request.type",
     value,
   );
+
   if (input.metadata !== undefined && !isJsonObject(input.metadata)) {
     throw new ClientProtocolError("Client stream request.metadata must be a JSON object.", value);
   }
+
   let request: ClientStreamRequest;
+
   if (input.type === "messages") {
     if (input.interactionId !== undefined || input.response !== undefined) {
       throw new ClientProtocolError(
@@ -116,6 +134,7 @@ export function parseClientStreamRequest(value: unknown): ClientStreamRequest {
         value,
       );
     }
+
     let messages: Message[];
     try {
       messages = parseMessages(input.messages);
@@ -130,6 +149,7 @@ export function parseClientStreamRequest(value: unknown): ClientStreamRequest {
         value,
       );
     }
+
     try {
       request = {
         type: "interaction_response",
@@ -140,18 +160,23 @@ export function parseClientStreamRequest(value: unknown): ClientStreamRequest {
       throw new ClientProtocolError("Client interaction response is invalid.", value);
     }
   }
+
   if (input.metadata !== undefined) request.metadata = input.metadata as JsonObject;
+
   if (input.resume !== undefined) {
     const resume = requireRecord(input.resume, "Client stream request.resume");
     requireOnlyKeys(resume, ["streamId", "after"], "Client stream request.resume");
+
     if (typeof resume.streamId !== "string" || !isEventId(resume.after)) {
       throw new ClientProtocolError(
         "Client stream resume cursor requires streamId and a nonnegative safe integer after.",
         value,
       );
     }
+
     request.resume = { streamId: resume.streamId, after: resume.after };
   }
+
   return request;
 }
 
@@ -166,18 +191,22 @@ export function parseClientStreamEvent<
   } = {},
 ): ClientStreamEvent<Metadata, Data> {
   const event = requireRecord(value, "Client stream event");
+
   if (!isJsonValue(event)) {
     throw new ClientProtocolError("Client stream events must be strict JSON values.", value);
   }
+
   if (typeof event.type !== "string" || typeof event.runId !== "string") {
     throw new ClientProtocolError("Client stream events require type and runId.", value);
   }
+
   if (event.turn !== undefined && !isPositiveEventId(event.turn)) {
     throw new ClientProtocolError(
       "Client stream event.turn must be a positive safe integer.",
       value,
     );
   }
+
   if (event.scope !== undefined && !isScope(event.scope)) {
     throw new ClientProtocolError("Client stream event.scope is invalid.", value);
   }
@@ -189,10 +218,13 @@ export function parseClientStreamEvent<
       break;
     case "turn_start":
       requireEventKeys(event, []);
+
       if (!isPositiveEventId(event.turn)) invalid("turn_start.turn", value);
+
       break;
     case "generation_start":
       requireEventKeys(event, ["model"]);
+
       if (
         event.model !== undefined &&
         (!isRecord(event.model) ||
@@ -202,6 +234,7 @@ export function parseClientStreamEvent<
       ) {
         invalid("generation_start.model", value);
       }
+
       break;
     case "message_reset":
       requireEventKeys(event, ["messageId"]);
@@ -210,7 +243,9 @@ export function parseClientStreamEvent<
     case "message_start":
       requireEventKeys(event, ["messageId", "role", "metadata"]);
       requireStrings(event, ["messageId"], value);
+
       if (event.role !== "assistant") invalid("message_start.role", value);
+
       break;
     case "text_start":
       requireEventKeys(event, ["messageId", "partId"]);
@@ -224,12 +259,14 @@ export function parseClientStreamEvent<
       requireEventKeys(event, ["messageId", "partId", "delta", "contentType", "signature"]);
       requireStrings(event, ["messageId", "partId", "delta"], value);
       requireOptionalStrings(event, ["signature"], value);
+
       if (
         event.contentType !== undefined &&
         !["text", "summary", "encrypted", "redacted"].includes(event.contentType as string)
       ) {
         invalid("reasoning_delta.contentType", value);
       }
+
       break;
     case "text_end":
       requireEventKeys(event, ["messageId", "partId", "text", "signature"]);
@@ -245,12 +282,14 @@ export function parseClientStreamEvent<
       requireEventKeys(event, ["messageId", "partId", "text", "content"]);
       requireStrings(event, ["messageId", "partId"], value);
       requireOptionalStrings(event, ["text"], value);
+
       if (
         event.content !== undefined &&
         (!Array.isArray(event.content) || !event.content.every(isReasoningContent))
       ) {
         invalid("reasoning_end.content", value);
       }
+
       break;
     case "tool_call_start":
       requireEventKeys(event, ["messageId", "partId", "toolCallId", "callId", "toolName"]);
@@ -285,7 +324,9 @@ export function parseClientStreamEvent<
       ]);
       requireStrings(event, ["messageId", "partId", "toolCallId", "toolName"], value);
       requireOptionalStrings(event, ["callId", "signature"], value);
+
       if (!isJsonValue(event.input)) invalid("tool_call_end.input", value);
+
       break;
     case "tool_result":
       requireEventKeys(event, [
@@ -300,8 +341,11 @@ export function parseClientStreamEvent<
       ]);
       requireStrings(event, ["messageId", "partId", "toolCallId", "toolName"], value);
       requireOptionalStrings(event, ["callId", "internalCallId"], value);
+
       if (!isJsonValue(event.input)) invalid("tool_result.input", value);
+
       if (!isRecord(event.result)) invalid("tool_result.result", value);
+
       if (event.result.status === "success") {
         if (
           !hasOnlyKeys(event.result, ["status", "output", "content"]) ||
@@ -322,20 +366,27 @@ export function parseClientStreamEvent<
       } else {
         invalid("tool_result.result.status", value);
       }
+
       break;
     case "source":
       requireEventKeys(event, ["messageId", "partId", "source"]);
       requireStrings(event, ["messageId", "partId"], value);
+
       if (!isCompletionSource(event.source)) invalid("source.source", value);
+
       break;
     case "attachment":
       requireEventKeys(event, ["messageId", "partId", "attachment"]);
       requireStrings(event, ["messageId", "partId"], value);
+
       if (!isAttachment(event.attachment)) invalid("attachment.attachment", value);
+
       break;
     case "provider_tool_call":
       requireEventKeys(event, ["toolCall"]);
+
       if (!isProviderToolCall(event.toolCall)) invalid("provider_tool_call.toolCall", value);
+
       break;
     case "interaction":
       requireEventKeys(event, ["interaction"]);
@@ -347,15 +398,20 @@ export function parseClientStreamEvent<
       break;
     case "guardrail_decision":
       requireEventKeys(event, ["decision"]);
+
       if (!isGuardrailDecision(event.decision)) invalid("guardrail_decision.decision", value);
+
       break;
     case "data":
       requireEventKeys(event, ["name", "data", "transient"]);
       requireStrings(event, ["name"], value);
+
       if (!isJsonValue(event.data)) invalid("data.data", value);
+
       if (event.transient !== undefined && typeof event.transient !== "boolean") {
         invalid("data.transient", value);
       }
+
       return {
         ...event,
         data: parseDataEvent(event.name as string, event.data, options.dataSchemas, value),
@@ -371,8 +427,10 @@ export function parseClientStreamEvent<
       ]);
       requireStrings(event, ["messageId"], value);
       requireOptionalStrings(event, ["modelMessageId"], value);
+
       if (event.parts !== undefined) {
         if (!Array.isArray(event.parts)) invalid("message_end.parts", value);
+
         const parts = event.parts.map((part) =>
           parseUIMessagePart(part, options.dataSchemas, value),
         );
@@ -383,14 +441,18 @@ export function parseClientStreamEvent<
           value,
         ) as ClientStreamEvent<Metadata, Data>;
       }
+
       validateUsageAndContext(event, value);
       break;
     case "turn_end":
       requireEventKeys(event, ["usage", "contextUsage", "firstDeltaMs"]);
+
       if (!isPositiveEventId(event.turn)) invalid("turn_end.turn", value);
+
       if (event.firstDeltaMs !== undefined && !isNonnegativeNumber(event.firstDeltaMs)) {
         invalid("turn_end.firstDeltaMs", value);
       }
+
       validateUsageAndContext(event, value);
       break;
     case "memory_compaction":
@@ -426,9 +488,12 @@ export function parseClientStreamEvent<
       );
       requireOptionalStrings(event, ["text"], value);
       validateUsageAndContext(event, value);
+
       if (event.trace !== undefined && !isTrace(event.trace)) invalid("run_end.trace", value);
+
       if (event.memoryCompaction !== undefined) {
         if (!isRecord(event.memoryCompaction)) invalid("run_end.memoryCompaction", value);
+
         requireOnlyKeys(
           event.memoryCompaction,
           [
@@ -446,11 +511,15 @@ export function parseClientStreamEvent<
         );
         validateMemoryCompactionInfo(event.memoryCompaction, value);
       }
+
       break;
     case "error":
       requireEventKeys(event, ["error", "usage"]);
+
       if (!isClientStreamError(event.error)) invalid("error.error", value);
+
       if (event.usage !== undefined && !isUsage(event.usage)) invalid("error.usage", value);
+
       break;
     default:
       throw new ClientProtocolError(`Unknown client stream event type "${event.type}".`, value);
@@ -473,24 +542,29 @@ export function parseClientStreamFrame<
   } = {},
 ): ClientStreamFrame<Metadata, Data> {
   const frame = requireRecord(value, "Client stream frame");
+
   if (!isJsonValue(frame)) {
     throw new ClientProtocolError("Client stream frames must be strict JSON values.", value);
   }
+
   if (typeof frame.type !== "string") {
     throw new ClientProtocolError("Client stream frames require type.", value);
   }
+
   if (frame.type === "stream_start") {
     requireOnlyKeys(
       frame,
       ["type", "protocol", "streamId", "eventId", "resumable"],
       "stream_start frame",
     );
+
     if (frame.protocol === "anvia.client.v1" || frame.protocol === "anvia.client.v2") {
       throw new ClientProtocolError(
         `Client stream protocol ${frame.protocol.slice(-2)} is not supported.`,
         value,
       );
     }
+
     if (
       frame.protocol !== CLIENT_STREAM_PROTOCOL ||
       typeof frame.streamId !== "string" ||
@@ -499,24 +573,32 @@ export function parseClientStreamFrame<
     ) {
       throw new ClientProtocolError("Invalid client stream_start frame.", value);
     }
+
     return frame as ClientStreamFrame<Metadata, Data>;
   }
+
   if (frame.type === "stream_event") {
     requireOnlyKeys(frame, ["type", "streamId", "eventId", "event"], "stream_event frame");
+
     if (typeof frame.streamId !== "string" || !isPositiveEventId(frame.eventId)) {
       throw new ClientProtocolError("Invalid client stream_event frame.", value);
     }
+
     const event = parseClientStreamEvent(frame.event, options);
     return { ...frame, event } as ClientStreamFrame<Metadata, Data>;
   }
+
   if (frame.type === "stream_end") {
     requireOnlyKeys(frame, ["type", "streamId", "eventId", "status"], "stream_end frame");
+
     if (typeof frame.streamId !== "string" || !isEventId(frame.eventId)) {
       throw new ClientProtocolError("Invalid client stream_end frame.", value);
     }
+
     requireOneOf(frame.status, ["completed", "error", "missing"], "stream_end.status", value);
     return frame as ClientStreamFrame<Metadata, Data>;
   }
+
   throw new ClientProtocolError(`Unknown client stream frame type "${frame.type}".`, value);
 }
 
@@ -526,11 +608,15 @@ export function maskedClientError(): ClientStreamError {
 
 export function normalizeClientError(value: unknown): Error {
   if (value instanceof Error) return value;
+
   if (isClientStreamError(value)) {
     const error = new Error(value.message);
+
     if (value.name !== undefined) error.name = value.name;
+
     return error;
   }
+
   return new Error(typeof value === "string" ? value : "An unexpected error occurred.");
 }
 
@@ -541,14 +627,19 @@ function parseDataEvent<TData extends ClientDataMap>(
   value: unknown,
 ): JsonValue {
   if (schemas === undefined) return data as JsonValue;
+
   const schema = schemas[name as keyof TData];
+
   if (schema === undefined) {
     throw new ClientProtocolError(`Invalid data event "${name}".`, value);
   }
+
   const parsed = schema.safeParse(data);
+
   if (parsed.success !== true || !isJsonValue(parsed.data)) {
     throw new ClientProtocolError(`Invalid data event "${name}".`, value);
   }
+
   return parsed.data;
 }
 
@@ -560,9 +651,11 @@ function parseUIMessagePart<Data extends ClientDataMap>(
   if (!isUIMessagePart(value)) {
     throw new ClientProtocolError("UI message contains an invalid part.", root);
   }
+
   if (value.type !== "data") {
     return value as UIMessagePart<Data>;
   }
+
   return {
     ...value,
     data: parseDataEvent(value.name, value.data, schemas, root),
@@ -578,12 +671,16 @@ function parseMetadata<Metadata extends JsonObject>(
     if (!isJsonObject(value)) {
       throw new ClientProtocolError("Client metadata must be a JSON object.", root);
     }
+
     return value as Metadata;
   }
+
   const parsed = schema.safeParse(value);
+
   if (parsed.success !== true || !isJsonObject(parsed.data)) {
     throw new ClientProtocolError("Invalid client metadata.", root);
   }
+
   return parsed.data;
 }
 
@@ -593,16 +690,19 @@ function parseEventMetadata<Metadata extends JsonObject>(
   root: unknown,
 ): Record<string, unknown> {
   if (event.metadata === undefined) return event;
+
   return { ...event, metadata: parseMetadata(event.metadata, schema, root) };
 }
 
 function isUIMessageGeneration(value: unknown): value is UIMessageGeneration {
   if (!isRecord(value)) return false;
+
   if (
     !hasOnlyKeys(value, ["runId", "status", "usage", "contextUsage", "trace", "memoryCompaction"])
   ) {
     return false;
   }
+
   return (
     (value.runId === undefined || typeof value.runId === "string") &&
     (value.status === undefined ||
@@ -660,6 +760,7 @@ function isClientStreamError(value: unknown): value is ClientStreamError {
 
 function isScope(value: unknown): boolean {
   if (!isRecord(value)) return false;
+
   const keys = [
     "agentId",
     "agentName",
@@ -676,7 +777,9 @@ function isScope(value: unknown): boolean {
 
 function isAttachment(value: unknown): boolean {
   if (!isRecord(value) || typeof value.id !== "string") return false;
+
   if (value.type !== "image" && value.type !== "document" && value.type !== "file") return false;
+
   return (
     hasOnlyKeys(value, [
       "id",
@@ -703,6 +806,7 @@ function isUIMessagePart(value: unknown): value is UIMessagePart {
   if (!isRecord(value) || typeof value.id !== "string" || typeof value.type !== "string") {
     return false;
   }
+
   if (value.type === "text") {
     return (
       hasOnlyKeys(value, ["id", "type", "text", "signature"]) &&
@@ -710,6 +814,7 @@ function isUIMessagePart(value: unknown): value is UIMessagePart {
       (value.signature === undefined || typeof value.signature === "string")
     );
   }
+
   if (value.type === "reasoning") {
     return (
       hasOnlyKeys(value, ["id", "type", "text", "reasoningId", "content"]) &&
@@ -719,9 +824,11 @@ function isUIMessagePart(value: unknown): value is UIMessagePart {
         (Array.isArray(value.content) && value.content.every(isReasoningContent)))
     );
   }
+
   if (value.type === "source") {
     return hasOnlyKeys(value, ["id", "type", "source"]) && isCompletionSource(value.source);
   }
+
   if (value.type === "data") {
     return (
       hasOnlyKeys(value, ["id", "type", "name", "data"]) &&
@@ -729,12 +836,15 @@ function isUIMessagePart(value: unknown): value is UIMessagePart {
       isJsonValue(value.data)
     );
   }
+
   if (value.type === "attachment") {
     return hasOnlyKeys(value, ["id", "type", "attachment"]) && isAttachment(value.attachment);
   }
+
   if (value.type === "error") {
     return hasOnlyKeys(value, ["id", "type", "error"]) && isClientStreamError(value.error);
   }
+
   if (
     value.type !== "tool" ||
     !hasOnlyKeys(value, [
@@ -761,6 +871,7 @@ function isUIMessagePart(value: unknown): value is UIMessagePart {
   ) {
     return false;
   }
+
   if (value.state === "input-streaming") {
     return (
       typeof value.input === "string" &&
@@ -769,6 +880,7 @@ function isUIMessagePart(value: unknown): value is UIMessagePart {
       value.error === undefined
     );
   }
+
   if (value.state === "input-available") {
     return (
       isJsonValue(value.input) &&
@@ -777,6 +889,7 @@ function isUIMessagePart(value: unknown): value is UIMessagePart {
       value.error === undefined
     );
   }
+
   if (value.state === "output-available") {
     return (
       isJsonValue(value.input) &&
@@ -786,6 +899,7 @@ function isUIMessagePart(value: unknown): value is UIMessagePart {
       value.error === undefined
     );
   }
+
   return (
     value.state === "error" &&
     isJsonValue(value.input) &&
@@ -797,6 +911,7 @@ function isUIMessagePart(value: unknown): value is UIMessagePart {
 
 function isReasoningContent(value: unknown): boolean {
   if (!isRecord(value) || typeof value.type !== "string") return false;
+
   if (value.type === "text") {
     return (
       hasOnlyKeys(value, ["type", "text", "signature"]) &&
@@ -804,17 +919,21 @@ function isReasoningContent(value: unknown): boolean {
       (value.signature === undefined || typeof value.signature === "string")
     );
   }
+
   if (value.type === "summary") {
     return hasOnlyKeys(value, ["type", "text"]) && typeof value.text === "string";
   }
+
   if (value.type === "encrypted" || value.type === "redacted") {
     return hasOnlyKeys(value, ["type", "data"]) && typeof value.data === "string";
   }
+
   return false;
 }
 
 function isToolResultContent(value: unknown): boolean {
   if (!isRecord(value)) return false;
+
   if (value.type === "text") {
     return (
       hasOnlyKeys(value, ["type", "text", "signature"]) &&
@@ -822,6 +941,7 @@ function isToolResultContent(value: unknown): boolean {
       (value.signature === undefined || typeof value.signature === "string")
     );
   }
+
   return (
     value.type === "file" &&
     hasOnlyKeys(value, ["type", "data", "mediaType", "filename"]) &&
@@ -833,12 +953,15 @@ function isToolResultContent(value: unknown): boolean {
 
 function isFileData(value: unknown): boolean {
   if (!isRecord(value)) return false;
+
   if (value.type === "url") {
     return hasOnlyKeys(value, ["type", "url"]) && typeof value.url === "string";
   }
+
   if (value.type === "data") {
     return hasOnlyKeys(value, ["type", "data"]) && typeof value.data === "string";
   }
+
   return (
     value.type === "text" && hasOnlyKeys(value, ["type", "text"]) && typeof value.text === "string"
   );
@@ -918,6 +1041,7 @@ function isUsage(value: unknown): boolean {
   ) {
     return false;
   }
+
   return (
     value.details === undefined ||
     (isRecord(value.details) && Object.values(value.details).every(isNonnegativeNumber))
@@ -926,6 +1050,7 @@ function isUsage(value: unknown): boolean {
 
 function isContextUsage(value: unknown): boolean {
   if (!isRecord(value) || !isRecord(value.model) || !isRecord(value.model.context)) return false;
+
   const context = value.model.context;
   return (
     hasOnlyKeys(value, [
@@ -952,6 +1077,7 @@ function validateUsageAndContext(event: Record<string, unknown>, original: unkno
   if (event.usage !== undefined && !isUsage(event.usage)) {
     invalid(`${String(event.type)}.usage`, original);
   }
+
   if (event.contextUsage !== undefined && !isContextUsage(event.contextUsage)) {
     invalid(`${String(event.type)}.contextUsage`, original);
   }
@@ -969,7 +1095,9 @@ function validateMemoryCompactionInfo(value: Record<string, unknown>, original: 
   ]) {
     if (!isEventId(value[field])) invalid(`memory_compaction.${field}`, original);
   }
+
   if (!isPositiveEventId(value.attempts)) invalid("memory_compaction.attempts", original);
+
   if (!isUsage(value.usage)) invalid("memory_compaction.usage", original);
 }
 
@@ -986,6 +1114,7 @@ function isTrace(value: unknown): boolean {
 
 function requireRecord(value: unknown, label: string): Record<string, unknown> {
   if (!isRecord(value)) throw new ClientProtocolError(`${label} must be an object.`, value);
+
   return value;
 }
 

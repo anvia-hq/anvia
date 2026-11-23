@@ -24,11 +24,15 @@ export async function* fetchEventStream<TEvent>(
   options: FetchEventStreamOptions,
 ): AsyncIterable<TEvent> {
   const fetchImpl = options.fetch ?? globalThis.fetch;
+
   if (fetchImpl === undefined) throw new Error("fetchEventStream requires a fetch implementation.");
 
   const response = await fetchImpl(options.input, fetchOptions(options));
+
   if (!response.ok) throw new EventStreamHttpError(response, await response.text());
+
   options.validateResponse?.(response);
+
   if (response.body === null) throw new Error("Event stream response does not include a body.");
 
   const format =
@@ -36,7 +40,9 @@ export async function* fetchEventStream<TEvent>(
       ? inferEventStreamFormat(response.headers.get("content-type"))
       : options.format;
   const readOptions: EventStreamReadOptions = {};
+
   if (options.onParseError !== undefined) readOptions.onParseError = options.onParseError;
+
   if (format === "sse") {
     yield* readSseStream<TEvent>(response.body, readOptions);
   } else {

@@ -58,6 +58,7 @@ export function sqliteMessageBackend(database: DatabaseSync): MessageBackend {
 export function messageLog(backend: MessageBackend) {
   function pack(messages: JsonValue): JsonValue {
     if (!Array.isArray(messages)) throw new Error("Invalid operation history.");
+
     let head: string | null = null;
     for (const message of messages) {
       const record = writeStored(message);
@@ -72,6 +73,7 @@ export function messageLog(backend: MessageBackend) {
 
   function unpack(value: JsonValue): JsonValue[] {
     const ref = value as JsonObject;
+
     if (
       ref === null ||
       typeof ref !== "object" ||
@@ -81,21 +83,28 @@ export function messageLog(backend: MessageBackend) {
       (ref.head !== null && typeof ref.head !== "string")
     )
       throw new Error("Invalid operation history reference.");
+
     const messages: JsonValue[] = [];
     let head = ref.head;
     for (let index = 0; index < Number(ref.length); index++) {
       if (typeof head !== "string") throw new Error("Truncated operation history.");
+
       const row = backend.getHistory(head);
+
       if (row === undefined) throw new Error("Missing operation history content.");
+
       if (
         digest(String(row.record)) !== row.message ||
         digest(JSON.stringify([row.previous, row.message])) !== head
       )
         throw new Error("Corrupt operation history content.");
+
       messages.push(readStored(String(row.record)));
       head = row.previous;
     }
+
     if (head !== null) throw new Error("Invalid operation history length.");
+
     return messages.reverse();
   }
 
@@ -103,6 +112,7 @@ export function messageLog(backend: MessageBackend) {
     if (operation.kind === "model") {
       return { ...operation, input: requestInput(operation.input, transform) };
     }
+
     const result = operation.result as JsonObject | undefined;
     const mapped: DurableOperation = {
       ...operation,
@@ -136,10 +146,12 @@ export function messageLog(backend: MessageBackend) {
         (operation.kind !== "model" && operation.kind !== "context")
       )
         return operation;
+
       return { ...map(operation, pack), historyEncoding: "linked-v1" };
     },
     unpack(operation: DurableOperation): DurableOperation {
       if (operation.historyEncoding === undefined) return operation;
+
       const { historyEncoding: _, ...expanded } = map(operation, unpack);
       return expanded;
     },

@@ -53,9 +53,11 @@ class QueueModel implements CompletionModel {
   async completion(request: CompletionRequest): Promise<CompletionResponse> {
     this.requests.push(request);
     const response = this.responses.shift();
+
     if (response === undefined) {
       throw new Error("No queued response");
     }
+
     return response;
   }
 }
@@ -300,7 +302,9 @@ describe("evals", () => {
       target: async (_input, _case, context) =>
         new Promise<string>((_resolve, reject) => {
           const signal = context?.signal;
+
           if (signal === undefined) throw new Error("Expected an eval target signal.");
+
           signal.addEventListener("abort", () => reject(signal.reason), { once: true });
         }),
       metrics: [exactMatch()],
@@ -520,9 +524,11 @@ describe("evals", () => {
       interactions: {
         respond({ interaction, phase }) {
           phases.push(phase);
+
           if (interaction.type !== "tool-approval") {
             throw new Error("Unexpected question interaction");
           }
+
           return { type: "tool-approval", approved: true };
         },
       },
@@ -646,6 +652,7 @@ describe("evals", () => {
               events.push("failure");
               throw new Error("publish failed");
             }
+
             if (testCase.id === "active") {
               events.push("active-start");
               markActiveStarted();
@@ -653,6 +660,7 @@ describe("evals", () => {
               events.push("active-end");
               return;
             }
+
             events.push("late-result");
           },
           onRunEnd: () => {
@@ -980,5 +988,6 @@ function vectorFor(text: string): number[] {
   if (text.includes("cat") || text.includes("pet")) {
     return [1, 0, 0];
   }
+
   return [0, 1, 0];
 }

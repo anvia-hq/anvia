@@ -16,6 +16,7 @@ const directories: string[] = [];
 afterEach(async () => {
   for (const child of children.splice(0)) {
     if (child.exitCode !== null || child.signalCode !== null) continue;
+
     const exited = once(child, "exit");
     child.kill("SIGKILL");
     await exited;
@@ -66,12 +67,14 @@ it.each(
     });
     runtimes.push(runtime);
     const handle = await runtime.getTask(id);
+
     if (binding === "legacy") {
       const { task, operations } = await handle.snapshot({ operations: true });
       expect(task.input).not.toHaveProperty("agentId");
       expect(task.checkpoint).not.toHaveProperty("agentId");
       for (const operation of operations) expect(operation.input).not.toHaveProperty("agentId");
     }
+
     const before = (await handle.graph()).nodes.map((node) => node.id);
     await runtime.resume();
     expect(await handle.result()).toMatchObject({ sessions: 2, modelTurns: 4, totalTokens: 12 });

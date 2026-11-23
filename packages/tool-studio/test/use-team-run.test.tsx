@@ -30,6 +30,7 @@ beforeEach(() => {
   cancelStream = vi.fn(async () => {});
   fetchMock = vi.fn<typeof fetch>(async (input, init) => {
     if (String(input).endsWith("/cancel")) return new Response("{}");
+
     signal = init!.signal!;
     return new Response(
       new ReadableStream<Uint8Array>({
@@ -78,7 +79,9 @@ describe("useTeamRun", () => {
       await emit(event);
       await act(async () => staleStop());
       expect(run.state.status).toBe(status);
+
       if (status === "failed") expect(run.state.error).toBe("Team failed");
+
       expect(firstSignal.aborted).toBe(false);
       expect(fetchMock).toHaveBeenCalledTimes(1);
       expect(cancelStream).toHaveBeenCalledTimes(1);
@@ -222,7 +225,9 @@ describe("useTeamRun", () => {
       expect(request).toMatchObject({ method: "POST", body: "{}", keepalive: true });
       expect(request?.signal).not.toBe(streamSignal);
       expect(request?.signal?.aborted).toBe(false);
+
       if (action === "stop") expect(run.state.status).toBe("cancelled");
+
       await act(async () => resolveCancel(new Response("{}")));
     },
   );

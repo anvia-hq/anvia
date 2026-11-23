@@ -55,7 +55,9 @@ export async function detectTmux(candidate = "tmux"): Promise<string | undefined
   try {
     const output = await run(candidate, ["-V"], {}, 5_000);
     const match = /(\d+)\.(\d+)/.exec(output);
+
     if (match === null) return undefined;
+
     const major = Number(match[1]);
     const minor = Number(match[2]);
     const ok = major > minTmuxMajor || (major === minTmuxMajor && minor >= minTmuxMinor);
@@ -112,17 +114,22 @@ export class TerminalManager {
         createdAt: session.createdAt,
       }));
     }
+
     return this.listTmux(this.tmuxPath);
   }
 
   async kill(sessionName: string): Promise<void> {
     assertSessionName(sessionName);
+
     if (this.tmuxPath === undefined) {
       const session = this.shellSessions.get(sessionName);
+
       if (session === undefined) throw unknownSession(sessionName);
+
       session.kill();
       return;
     }
+
     // Viewers' `tmux attach` clients exit by themselves, possibly before the kill call returns,
     // so the kill is recorded first and rolled back if it failed.
     const previous = this.killedAt.get(sessionName);
@@ -132,6 +139,7 @@ export class TerminalManager {
     } catch {
       if (previous === undefined) this.killedAt.delete(sessionName);
       else this.killedAt.set(sessionName, previous);
+
       throw unknownSession(sessionName);
     }
     const forget = setTimeout(() => this.killedAt.delete(sessionName), killWindowMs * 2);
@@ -175,9 +183,11 @@ export class TerminalManager {
           persistent: true,
         };
         const seconds = Number(created);
+
         if (Number.isFinite(seconds) && seconds > 0) {
           info.createdAt = new Date(seconds * 1_000).toISOString();
         }
+
         return info;
       });
   }
@@ -191,6 +201,7 @@ export class TerminalManager {
       () => true,
       () => false,
     );
+
     if (!exists) {
       if ((await this.listTmux(tmuxPath)).length >= this.maxSessions) {
         throw new DockerSandboxError(
@@ -198,6 +209,7 @@ export class TerminalManager {
           "process",
         );
       }
+
       const environment = Object.entries(request.env).flatMap(([key, value]) => [
         "-e",
         `${key}=${value}`,
@@ -246,6 +258,7 @@ export class TerminalManager {
           () => true,
           () => false,
         );
+
         if (!created) throw failed("Could not create the terminal session", error);
       }
     }
@@ -275,6 +288,7 @@ export class TerminalManager {
 
   private async openShell(request: TerminalOpenRequest): Promise<TerminalAttachment> {
     let session = this.shellSessions.get(request.sessionName);
+
     if (session === undefined) {
       if (this.shellSessions.size >= this.maxSessions) {
         throw new DockerSandboxError(
@@ -282,6 +296,7 @@ export class TerminalManager {
           "process",
         );
       }
+
       const shell = await pickShell();
       const pty = this.spawn({
         file: shell,
@@ -296,10 +311,13 @@ export class TerminalManager {
       });
       this.shellSessions.set(request.sessionName, session);
     }
+
     const viewer = new ShellViewer(session, request.readOnly, (attachment) =>
       this.attachments.delete(attachment),
     );
+
     if (!request.readOnly) session.resize(request.cols, request.rows);
+
     return viewer;
   }
 }

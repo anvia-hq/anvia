@@ -48,17 +48,21 @@ export function registerPipelineRoutes(
 
   app.get("/pipelines/:pipelineId", (c) => {
     const pipeline = props.pipelineMap.get(c.req.param("pipelineId"));
+
     if (pipeline === undefined) {
       return errorResponse(c, 404, "not_found", "Pipeline not found");
     }
+
     return c.json(pipelineDetail(pipeline));
   });
 
   app.get("/pipelines/:pipelineId/logs", async (c) => {
     const pipelineId = c.req.param("pipelineId");
+
     if (!props.pipelineMap.has(pipelineId)) {
       return errorResponse(c, 404, "not_found", "Pipeline not found");
     }
+
     if (props.logStore === undefined) {
       return errorResponse(
         c,
@@ -70,10 +74,13 @@ export function registerPipelineRoutes(
     }
 
     const limit = parsePipelineLogLimit(c.req.query("limit"));
+
     if (limit === undefined) {
       return errorResponse(c, 400, "bad_request", "limit must be a positive integer");
     }
+
     const after = parsePipelineLogAfter(c.req.query("after"));
+
     if (after === false) {
       return errorResponse(c, 400, "bad_request", "after must be a non-negative integer");
     }
@@ -82,19 +89,25 @@ export function registerPipelineRoutes(
       pipelineId,
       limit,
     };
+
     if (after !== undefined) listInput.after = after;
+
     const logs = await props.logStore.listPipelineLogs(listInput);
     const last = logs.at(-1);
     const response: { logs: typeof logs; nextCursor?: number } = { logs };
+
     if (logs.length === limit && last !== undefined) response.nextCursor = last.sequence;
+
     return c.json(response);
   });
 
   app.get("/pipelines/:pipelineId/runs", async (c) => {
     const pipelineId = c.req.param("pipelineId");
+
     if (!props.pipelineMap.has(pipelineId)) {
       return errorResponse(c, 404, "not_found", "Pipeline not found");
     }
+
     if (props.runStore === undefined) {
       return errorResponse(
         c,
@@ -106,6 +119,7 @@ export function registerPipelineRoutes(
     }
 
     const limit = parsePipelineLogLimit(c.req.query("limit"));
+
     if (limit === undefined) {
       return errorResponse(c, 400, "bad_request", "limit must be a positive integer");
     }
@@ -116,11 +130,13 @@ export function registerPipelineRoutes(
 
   app.post("/pipelines/:pipelineId/runs", async (c) => {
     const pipeline = props.pipelineMap.get(c.req.param("pipelineId"));
+
     if (pipeline === undefined) {
       return errorResponse(c, 404, "not_found", "Pipeline not found");
     }
 
     const body = await parsePipelineRunRequest(c);
+
     if ("error" in body) {
       return body.error;
     }
@@ -130,9 +146,11 @@ export function registerPipelineRoutes(
 
   app.post("/pipelines/:pipelineId/runs/:runId/replay", async (c) => {
     const pipeline = props.pipelineMap.get(c.req.param("pipelineId"));
+
     if (pipeline === undefined) {
       return errorResponse(c, 404, "not_found", "Pipeline not found");
     }
+
     if (props.runStore === undefined) {
       return errorResponse(
         c,
@@ -144,6 +162,7 @@ export function registerPipelineRoutes(
     }
 
     const body = await parsePipelineReplayRequest(c);
+
     if ("error" in body) {
       return body.error;
     }
@@ -153,9 +172,11 @@ export function registerPipelineRoutes(
       pipelineId: pipeline.id,
       runId: sourceRunId,
     });
+
     if (sourceRun === undefined) {
       return errorResponse(c, 404, "not_found", "Pipeline run not found");
     }
+
     if (sourceRun.status === "running") {
       return errorResponse(c, 409, "conflict", "Cannot replay a running pipeline run");
     }
@@ -164,7 +185,9 @@ export function registerPipelineRoutes(
       input: sourceRun.input,
       metadata: replayMetadata(sourceRun.metadata, body.metadata, sourceRun.runId),
     };
+
     if (body.stream !== undefined) replayRequest.stream = body.stream;
+
     return executeTrackedPipelineRun(c, props, pipeline, replayRequest);
   });
 }
@@ -180,9 +203,11 @@ async function executeTrackedPipelineRun(
   body: StudioPipelineRunRequest,
 ): Promise<Response> {
   const lease = props.runLifecycle.start(c.req.raw.signal);
+
   if (lease === undefined) {
     return errorResponse(c, 503, "service_unavailable", "Anvia Studio is shutting down");
   }
+
   try {
     return await executePipelineRun(c, props, pipeline, body, lease);
   } catch (error) {
@@ -210,7 +235,9 @@ async function executePipelineRun(
     stream: body.stream === true,
     input: body.input,
   };
+
   if (body.metadata !== undefined) receivedInput.metadata = body.metadata;
+
   await appendPipelineLog(props.logStore, pipelineRunReceivedLog(receivedInput));
   const runningRecord: StudioPipelineRunSaveInput = {
     runId,
@@ -219,7 +246,9 @@ async function executePipelineRun(
     input: body.input,
     startedAt: startedAtIso,
   };
+
   if (body.metadata !== undefined) runningRecord.metadata = body.metadata;
+
   await savePipelineRun(props.runStore, runningRecord);
 
   if (body.stream === true) {
@@ -231,9 +260,13 @@ async function executePipelineRun(
       startedAtIso,
       onFinish: lease.finish,
     };
+
     if (body.metadata !== undefined) streamOptions.metadata = body.metadata;
+
     if (props.logStore !== undefined) streamOptions.logStore = props.logStore;
+
     if (props.runStore !== undefined) streamOptions.runStore = props.runStore;
+
     streamOptions.abortSignal = lease.abortSignal;
     return streamPipelineRun(c, streamOptions);
   }
@@ -265,7 +298,9 @@ async function executePipelineRun(
       endedAt: new Date(endedAt).toISOString(),
       durationMs: endedAt - startedAt,
     };
+
     if (body.metadata !== undefined) successRecord.metadata = body.metadata;
+
     await savePipelineRun(props.runStore, successRecord);
     await appendPipelineLog(
       props.logStore,
@@ -294,7 +329,9 @@ async function executePipelineRun(
       endedAt: new Date(endedAt).toISOString(),
       durationMs: endedAt - startedAt,
     };
+
     if (body.metadata !== undefined) errorRecord.metadata = body.metadata;
+
     await savePipelineRun(props.runStore, errorRecord);
     await appendPipelineLog(
       props.logStore,
@@ -360,6 +397,7 @@ async function* pipelineRunEvents(props: {
             props.logStore,
             pipelineStageLog(event, props.pipeline.id),
           );
+
           if (log !== undefined) {
             events.push({ type: "pipeline_log", log });
           }
@@ -380,7 +418,9 @@ async function* pipelineRunEvents(props: {
         endedAt: new Date(endedAt).toISOString(),
         durationMs: endedAt - props.startedAt,
       };
+
       if (props.metadata !== undefined) successRecord.metadata = props.metadata;
+
       await savePipelineRun(props.runStore, successRecord);
       const log = await appendPipelineLog(
         props.logStore,
@@ -391,9 +431,11 @@ async function* pipelineRunEvents(props: {
           output: jsonOutput,
         }),
       );
+
       if (log !== undefined) {
         events.push({ type: "pipeline_log", log });
       }
+
       events.push({
         type: "pipeline_final",
         runId: props.runId,
@@ -413,15 +455,19 @@ async function* pipelineRunEvents(props: {
         endedAt: new Date(endedAt).toISOString(),
         durationMs: endedAt - props.startedAt,
       };
+
       if (props.metadata !== undefined) errorRecord.metadata = props.metadata;
+
       await savePipelineRun(props.runStore, errorRecord);
       const log = await appendPipelineLog(
         props.logStore,
         pipelineRunFailedLog(props.pipeline.id, props.runId, error, props.startedAt),
       );
+
       if (log !== undefined) {
         events.push({ type: "pipeline_log", log });
       }
+
       events.push({ type: "error", error: serializeError(error), usage: Usage.empty() });
     })
     .finally(() => events.close());
@@ -429,9 +475,11 @@ async function* pipelineRunEvents(props: {
   try {
     while (true) {
       const next = await events.next();
+
       if (next.done === true) {
         break;
       }
+
       yield next.value;
     }
   } finally {
@@ -463,6 +511,7 @@ async function parsePipelineRunRequest(
   if (!isObject(body)) {
     return { error: errorResponse(c, 400, "bad_request", "Request body must be an object") };
   }
+
   if (!("input" in body) || !isJsonValue(body.input)) {
     return { error: errorResponse(c, 400, "bad_request", "input must be JSON-compatible") };
   }
@@ -470,18 +519,23 @@ async function parsePipelineRunRequest(
   const request: StudioPipelineRunRequest = {
     input: body.input,
   };
+
   if ("stream" in body) {
     if (typeof body.stream !== "boolean") {
       return { error: errorResponse(c, 400, "bad_request", "stream must be a boolean") };
     }
+
     request.stream = body.stream;
   }
+
   if ("metadata" in body) {
     if (!isJsonObject(body.metadata)) {
       return { error: errorResponse(c, 400, "bad_request", "metadata must be an object") };
     }
+
     request.metadata = body.metadata;
   }
+
   return request;
 }
 
@@ -500,18 +554,23 @@ async function parsePipelineReplayRequest(
   }
 
   const request: StudioPipelineReplayRequest = {};
+
   if ("stream" in body) {
     if (typeof body.stream !== "boolean") {
       return { error: errorResponse(c, 400, "bad_request", "stream must be a boolean") };
     }
+
     request.stream = body.stream;
   }
+
   if ("metadata" in body) {
     if (!isJsonObject(body.metadata)) {
       return { error: errorResponse(c, 400, "bad_request", "metadata must be an object") };
     }
+
     request.metadata = body.metadata;
   }
+
   return request;
 }
 
@@ -530,10 +589,13 @@ function parsePipelineLogLimit(value: string | undefined): number | undefined {
   if (value === undefined || value.trim().length === 0) {
     return 200;
   }
+
   const limit = Number(value);
+
   if (!Number.isInteger(limit) || limit <= 0) {
     return undefined;
   }
+
   return Math.min(limit, 1000);
 }
 
@@ -541,9 +603,12 @@ function parsePipelineLogAfter(value: string | undefined): number | undefined | 
   if (value === undefined || value.trim().length === 0) {
     return undefined;
   }
+
   const after = Number(value);
+
   if (!Number.isInteger(after) || after < 0) {
     return false;
   }
+
   return after;
 }

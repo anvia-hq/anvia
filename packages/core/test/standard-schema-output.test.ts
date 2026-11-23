@@ -41,7 +41,9 @@ class QueueModel implements CompletionModel {
   async completion(request: CompletionRequest): Promise<CompletionResponse> {
     this.requests.push(request);
     const output = this.outputs.shift();
+
     if (output === undefined) throw new Error("No queued model output.");
+
     return typeof output === "string" ? response(output) : output;
   }
 }
@@ -58,11 +60,14 @@ class StreamingQueueModel extends QueueModel implements StreamingCompletionModel
   async *streamCompletion(request: CompletionRequest): AsyncIterable<CompletionModelStreamEvent> {
     this.requests.push(request);
     const output = this.streamingOutputs.shift();
+
     if (output === undefined) throw new Error("No queued streaming model output.");
+
     if (typeof output === "string") {
       yield { type: "final", response: response(output) };
       return;
     }
+
     yield* output;
   }
 }
@@ -110,6 +115,7 @@ function deepFreeze<T>(value: T): T {
     for (const child of Object.values(value)) deepFreeze(child);
     Object.freeze(value);
   }
+
   return value;
 }
 
@@ -197,7 +203,9 @@ describe("Standard Schema structured output", () => {
     const final = events.at(-1);
 
     expect(final?.type).toBe("final");
+
     if (final?.type !== "final") throw new Error("Expected a final event.");
+
     expectTypeOf(final.result.output).toEqualTypeOf<{
       title: string;
       priority: "low" | "high";

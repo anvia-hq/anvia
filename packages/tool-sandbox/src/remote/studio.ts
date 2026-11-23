@@ -108,8 +108,11 @@ export function studioSandbox(
       readProcessLogs: runtime.readProcessLogs.bind(runtime),
     },
   };
+
   if (options.agentIds !== undefined) registration.agentIds = [...options.agentIds];
+
   if (options.toolNames !== undefined) registration.toolNames = [...options.toolNames];
+
   if (options.desktop !== false) {
     registration.views = [
       studioDesktopView(hub.desktop(sandboxId), {
@@ -118,6 +121,7 @@ export function studioSandbox(
       }),
     ];
   }
+
   return registration;
 }
 
@@ -206,6 +210,7 @@ function filteredStream(handle: TunnelHandle, filter: RfbClientFilter): StudioVi
         handle.close();
         throw error;
       }
+
       if (forward.byteLength > 0) await handle.write(forward);
     },
     output: handle.output,
@@ -228,14 +233,19 @@ async function takeover(
     if (error instanceof DockerSandboxError && error.code === "desktop_locked") {
       throw Object.assign(new Error(error.message, { cause: error }), { code: lockedCode });
     }
+
     throw error;
   }
 }
 
 function snapshotOf(control: DesktopControl): StudioViewControlSnapshot {
   if (!control.held) return { mode: "agent" };
+
   const snapshot: StudioViewControlSnapshot = { mode: "human" };
+
   if (control.holder !== undefined) snapshot.ownerId = control.holder;
+
   if (control.expiresAt !== undefined) snapshot.expiresAt = control.expiresAt;
+
   return snapshot;
 }

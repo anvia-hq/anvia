@@ -42,10 +42,13 @@ for await (const frame of transport.send({
   request: { type: "messages", messages: [{ role: "user", content: "Hello" }] },
 })) {
   if (frame.type !== "stream_event") continue;
+
   const event = frame.event;
+
   if (event.type === "text_delta") {
     output += event.delta;
   }
+
   if (event.type === "run_end") {
     console.log(event.text);
   }

@@ -34,19 +34,27 @@ export async function transcribe<Model extends TranscriptionModel>(
   options: TranscribeOptions<Model>,
 ): Promise<TranscriptionResult<RawResponseOf<Model>>> {
   const data = toUint8Array(options.audio.data);
+
   if (data.byteLength === 0) {
     throw new Error("Transcription audio cannot be empty.");
   }
+
   if (typeof options.audio.filename !== "string" || options.audio.filename.trim().length === 0) {
     throw new TypeError("Transcription filename must be a non-empty string.");
   }
+
   throwIfAborted(options.abortSignal);
 
   const request: TranscriptionRequest = { data, filename: options.audio.filename };
+
   if (options.audio.mediaType !== undefined) request.mediaType = options.audio.mediaType;
+
   if (options.language !== undefined) request.language = options.language;
+
   if (options.prompt !== undefined) request.prompt = options.prompt;
+
   if (options.temperature !== undefined) request.temperature = options.temperature;
+
   if (options.providerOptions !== undefined) {
     assertJsonObject(options.providerOptions, "providerOptions");
     request.providerOptions = options.providerOptions;
@@ -78,5 +86,6 @@ function toUint8Array(bytes: Uint8Array | ArrayBuffer): Uint8Array {
       bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
     );
   }
+
   return new Uint8Array(bytes.slice(0));
 }

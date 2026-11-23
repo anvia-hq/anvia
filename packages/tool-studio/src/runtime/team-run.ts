@@ -52,9 +52,12 @@ export class StudioTeamRun {
 
   steer(input: StudioTeamRunRequest) {
     if (input.prompt !== undefined) return this.stream.steer({ prompt: input.prompt });
+
     const messages = input.messages.filter((message) => message.role === "user");
+
     if (messages.length !== input.messages.length)
       throw new TypeError("Steering accepts only user messages.");
+
     return this.stream.steer({ messages });
   }
   cancel() {
@@ -63,8 +66,11 @@ export class StudioTeamRun {
 
   respond(id: string, response: AgentInteractionResponse): "accepted" | "missing" | "claimed" {
     if (this.claimed.has(id)) return "claimed";
+
     const pending = this.pending.get(id);
+
     if (pending === undefined) return "missing";
+
     assertAgentInteractionResponse(pending.request.interaction, response);
     this.claimed.add(id);
     pending.resolve(response);
@@ -93,10 +99,12 @@ export class StudioTeamRun {
         // The attributed interaction event is sufficient; continuation state stays on the server.
         if (next.value.type !== "agent_event" || next.value.event.type !== "interaction")
           yield next.value;
+
         next = await this.iterator.next();
       }
     } finally {
       if (!this.finished) this.cancel();
+
       await this.iterator.return?.();
     }
   }
@@ -112,14 +120,17 @@ export class StudioTeamRun {
         cleanup();
         reject(new Error("Team interaction cancelled."));
       };
+
       if (request.abortSignal.aborted || this.finished) {
         abort();
         return;
       }
+
       if (this.pending.has(id) || this.claimed.has(id)) {
         reject(new Error("Duplicate interaction ID."));
         return;
       }
+
       this.pending.set(id, {
         request,
         resolve: (response) => {

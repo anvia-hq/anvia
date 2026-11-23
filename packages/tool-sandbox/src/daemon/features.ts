@@ -31,12 +31,17 @@ export async function detectFeatures(
   const terminals = await detectTerminals(options.terminal, sandbox, log);
   const desktop = await detectDesktop(options.desktop, sandbox, log);
   const capabilities: string[] = [];
+
   if (terminals !== undefined) {
     capabilities.push(terminalCapability);
+
     if (terminals.persistent) capabilities.push(terminalTmuxCapability);
   }
+
   if (options.tunnel !== false) capabilities.push(tunnelCapability);
+
   if (desktop !== undefined) capabilities.push(desktopCapability);
+
   return { terminals, desktop, capabilities };
 }
 
@@ -46,11 +51,14 @@ async function detectTerminals(
   log: (level: SandboxDaemonLogLevel, message: string) => void,
 ): Promise<TerminalManager | undefined> {
   if (config === false) return undefined;
+
   const spawn = config?.spawn ?? (await loadNodePty());
+
   if (spawn === undefined) {
     log("info", "terminals unavailable: node-pty is not installed");
     return undefined;
   }
+
   const tmuxPath =
     config?.tmuxPath === false ? undefined : await detectTmux(config?.tmuxPath ?? "tmux");
   log("info", `terminals enabled (${tmuxPath === undefined ? "plain shell" : "tmux"})`);
@@ -70,14 +78,17 @@ async function detectDesktop(
   log: (level: SandboxDaemonLogLevel, message: string) => void,
 ): Promise<DesktopService | undefined> {
   if (config === false) return undefined;
+
   const found = await DesktopService.detect(config, {
     env: () => sandbox.commandEnvironment(),
     log: (message) => log("info", `desktop: ${message}`),
   });
+
   if ("missing" in found) {
     log("info", `desktop unavailable: ${found.missing.join(", ")} not installed`);
     return undefined;
   }
+
   log("info", "desktop available (starts on first use)");
   return found.service;
 }

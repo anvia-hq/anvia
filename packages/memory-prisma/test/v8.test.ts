@@ -117,7 +117,9 @@ describe("Prisma 8 boundary", () => {
         AgentMemorySession: sessions,
         AgentMemoryMessage: messages,
       };
+
       if (withWrites) models.AgentMemoryWrite = writes;
+
       const orm = { public: models };
       Object.assign(client, { orm });
       client.transaction.mockImplementation(async (operation: (tx: unknown) => unknown) =>

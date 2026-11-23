@@ -15,11 +15,13 @@ export class PostgresMemoryClient implements AsyncDisposable {
   constructor(private readonly options: PostgresMemoryClientOptions) {
     const hasClient = options.client !== undefined;
     const hasConnectionString = options.connectionString !== undefined;
+
     if (hasClient === hasConnectionString) {
       throw new TypeError(
         "PostgresMemoryClient requires exactly one of connectionString or client.",
       );
     }
+
     this.injected = options.client;
   }
 
@@ -33,6 +35,7 @@ export class PostgresMemoryClient implements AsyncDisposable {
 
   nativeClient(): Promise<PostgresMemoryClientLike> {
     this.assertOpen();
+
     if (this.clientPromise !== undefined) {
       return this.clientPromise;
     }
@@ -72,9 +75,11 @@ export class PostgresMemoryClient implements AsyncDisposable {
 
   private connectionString(): string {
     const connectionString = this.options.connectionString;
+
     if (connectionString === undefined) {
       throw new TypeError("PostgresMemoryClient requires either connectionString or client.");
     }
+
     return connectionString;
   }
 

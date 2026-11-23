@@ -52,8 +52,10 @@ function usageToJson(usage: Usage): JsonObject {
     cachedInputTokens: usage.cachedInputTokens,
     cacheCreationInputTokens: usage.cacheCreationInputTokens,
   };
+
   if (usage.details !== undefined) {
     value.details = { ...usage.details };
   }
+
   return value;
 }

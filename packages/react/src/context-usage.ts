@@ -18,15 +18,20 @@ export function contextUsageFromMessages<
 >(messages: readonly UIMessage<Metadata, Data>[]): ContextUsage | undefined {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
+
     if (message?.role !== "assistant") continue;
+
     if (message.generation?.contextUsage !== undefined) return message.generation.contextUsage;
+
     if (isRecord(message.metadata)) {
       const anvia = message.metadata.anvia;
       const generation = isRecord(anvia) ? anvia.generation : undefined;
+
       if (isRecord(generation) && isContextUsage(generation.contextUsage)) {
         return generation.contextUsage;
       }
     }
+
     return undefined;
   }
   return undefined;

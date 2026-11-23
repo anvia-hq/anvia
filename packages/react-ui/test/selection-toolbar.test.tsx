@@ -17,6 +17,7 @@ const originalClipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, "
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+
   if (originalClipboardDescriptor === undefined) {
     Reflect.deleteProperty(navigator, "clipboard");
   } else {

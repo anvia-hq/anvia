@@ -27,9 +27,11 @@ export type StudioAgentRunRequest = AgentRunRequest & { agentId: string };
 
 export function studioModelRefFromKey(value: string): StudioModelRef {
   const separator = value.indexOf(":");
+
   if (separator <= 0 || separator === value.length - 1) {
     throw new TypeError(`Invalid Studio model ref: ${value}`);
   }
+
   return {
     providerId: value.slice(0, separator),
     modelId: value.slice(separator + 1),
@@ -76,14 +78,17 @@ export function enrichTranscriptWithTraceIds(
     if (pendingAssistantIndex === undefined) {
       return;
     }
+
     const traceId = sortedTraceIds[traceIndex];
     traceIndex += 1;
     const entry = next[pendingAssistantIndex];
+
     if (entry?.kind === "message" && entry.role === "assistant" && entry.traceId === undefined) {
       if (traceId !== undefined) {
         next[pendingAssistantIndex] = { ...entry, traceId };
       }
     }
+
     pendingAssistantIndex = undefined;
   }
 
@@ -92,6 +97,7 @@ export function enrichTranscriptWithTraceIds(
       assignPendingTraceId();
       continue;
     }
+
     if (entry.kind === "message" && entry.role === "assistant") {
       pendingAssistantIndex = index;
     }
@@ -108,7 +114,9 @@ export function sessionModelRef(session: StudioSession): string {
 
 export function sessionControls(session: StudioSession): Record<string, string> {
   const value = session.metadata?.[studioControlsMetadataKey];
+
   if (typeof value !== "object" || value === null || Array.isArray(value)) return {};
+
   return Object.fromEntries(
     Object.entries(value).filter(
       (entry): entry is [string, string] => typeof entry[1] === "string",
@@ -126,7 +134,9 @@ export function controlsForSelectedModel(
   current: Record<string, string>,
 ): Record<string, string> {
   if (selectedModelRef.length === 0) return {};
+
   if (selectedModel === undefined) return current;
+
   const modelControls = selectedModel.controls;
   return Object.fromEntries(
     Object.entries(current).filter(
@@ -153,9 +163,11 @@ export function modelSelectLabel(model: StudioModelSummary): string {
 export async function fileToAttachment(file: File): Promise<PromptAttachment> {
   const mediaType = file.type || mediaTypeFromName(file.name);
   const kind = mediaType.startsWith("image/") ? "image" : "document";
+
   if (!isSupportedAttachment(mediaType, file.name)) {
     throw new Error(`Unsupported attachment type: ${file.name}`);
   }
+
   return {
     id: globalThis.crypto.randomUUID(),
     name: file.name,
@@ -172,10 +184,12 @@ function fileToBase64(file: File): Promise<string> {
     reader.onerror = () => reject(reader.error ?? new Error(`Failed to read ${file.name}`));
     reader.onload = () => {
       const value = reader.result;
+
       if (typeof value !== "string") {
         reject(new Error(`Failed to read ${file.name}`));
         return;
       }
+
       resolve(value.slice(value.indexOf(",") + 1));
     };
     reader.readAsDataURL(file);
@@ -191,9 +205,11 @@ function userContentWithAttachments(
   attachments: PromptAttachment[],
 ): UserContentPart[] {
   const content: UserContentPart[] = [];
+
   if (text.length > 0) {
     content.push({ type: "text", text });
   }
+
   for (const attachment of attachments) {
     if (attachment.kind === "image") {
       content.push({
@@ -203,6 +219,7 @@ function userContentWithAttachments(
       });
       continue;
     }
+
     content.push({
       type: "file",
       data: { type: "data", data: attachment.data },
@@ -246,12 +263,20 @@ function isSupportedAttachment(mediaType: string, name: string): boolean {
 
 function mediaTypeFromName(name: string): string {
   if (/\.png$/i.test(name)) return "image/png";
+
   if (/\.jpe?g$/i.test(name)) return "image/jpeg";
+
   if (/\.webp$/i.test(name)) return "image/webp";
+
   if (/\.gif$/i.test(name)) return "image/gif";
+
   if (/\.pdf$/i.test(name)) return "application/pdf";
+
   if (/\.md$/i.test(name)) return "text/markdown";
+
   if (/\.csv$/i.test(name)) return "text/csv";
+
   if (/\.json$/i.test(name)) return "application/json";
+
   return "text/plain";
 }

@@ -16,7 +16,9 @@ export function contextDocumentsOf(agent: Agent<unknown>): DurableContextDocumen
   const documents = agent.context
     .filter((input) => !isVectorContext(input))
     .map((input) => json(input) as Document);
+
   if (documents.length === 0) return undefined;
+
   return { hash: hashDocuments(documents), documents };
 }
 

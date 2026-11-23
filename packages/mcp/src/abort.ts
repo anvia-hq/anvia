@@ -5,6 +5,7 @@ export function linkAbortSignal(
   if (source === undefined) {
     return () => undefined;
   }
+
   if (source.aborted) {
     target.abort(source.reason);
     return () => undefined;
@@ -39,9 +40,11 @@ function isAbortError(error: unknown): error is Error {
   let current = error;
   while (typeof current === "object" && current !== null && !seen.has(current)) {
     seen.add(current);
+
     if ("name" in current && current.name === "AbortError") {
       return true;
     }
+
     current = "cause" in current ? current.cause : undefined;
   }
   return false;

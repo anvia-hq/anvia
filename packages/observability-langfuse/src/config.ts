@@ -65,6 +65,7 @@ export function getResolvedLangfuseConfig(value: unknown): LangfuseResolvedConfi
   if (typeof value !== "object" || value === null) {
     return undefined;
   }
+
   return (value as LangfuseResolvedConfigCarrier)[langfuseResolvedConfigSymbol];
 }
 

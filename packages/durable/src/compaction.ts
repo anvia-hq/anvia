@@ -41,17 +41,23 @@ export async function prepareContext(
 ): Promise<void> {
   if (run.compaction === undefined || run.contextPrepared === true || run.graphId !== undefined)
     return;
+
   if (run.epoch !== 0 || !("messages" in run.input))
     throw new DurableRecoveryError("Compaction requires an unprepared initial run.");
+
   const options = registration.compaction;
+
   if (options === undefined)
     throw new DurableRecoveryError("Restore the saved agent's compaction implementation.");
+
   const counter = options.tokenCounter ?? estimateMemoryTokens;
   const count = async (messages: readonly Message[]) => {
     const value = await counter(structuredClone(messages));
     signal.throwIfAborted();
+
     if (!Number.isSafeInteger(value) || value < 0)
       throw new TypeError("Compaction token counter must return a nonnegative safe integer.");
+
     return value;
   };
   const history = projection(run);
@@ -68,10 +74,12 @@ export async function prepareContext(
   // Do not repeatedly summarize a checkpoint with no new canonical messages.
   const previousCount = run.contextCheckpoint?.compactedMessageCount ?? 0;
   const covered = previousCount + end - (run.contextCheckpoint === undefined ? 0 : 1);
+
   if (inputTokens <= run.compaction.trigger.afterTokens || end === 0 || covered <= previousCount) {
     await commit(history);
     return;
   }
+
   const prefix = history.slice(0, end);
   const tail = history.slice(end);
   const retainedTokenCount = await count(expanded.slice(end));
@@ -79,11 +87,14 @@ export async function prepareContext(
   const input = json({ policy: run.compaction, messages: prefix, compactedMessageCount: covered });
   const operation = await store.transaction(async (tx): Promise<DurableOperation> => {
     const saved = await tx.getOperation(run.id, "compaction");
+
     if (saved !== undefined) {
       if (saved.kind !== "compaction" || !sameJson(saved.input, input))
         throw new DurableRecoveryError("Compaction changed at a saved checkpoint.", "compaction");
+
       return saved;
     }
+
     const started: DurableOperation = {
       key: "compaction",
       kind: "compaction",
@@ -95,18 +106,21 @@ export async function prepareContext(
     await tx.appendEvent(run.id, "compaction_started", { operationId: started.key });
     return started;
   });
+
   // Completion, projected input, usage, and contextPrepared are committed together below.
   if (operation.status === "completed")
     throw new DurableRecoveryError(
       "Completed compaction is missing its prepared context.",
       operation.key,
     );
+
   if (run.modelRetry !== undefined && (operation.attempts ?? 0) >= run.modelRetry.maxAttempts)
     throw new DurableModelError(
       operation.key,
       operation.attempts!,
       new Error("Compaction attempt budget exhausted."),
     );
+
   operation.attempts = (operation.attempts ?? 0) + 1;
   await store.transaction(async (tx) => tx.putOperation(run.id, operation));
   let checkpoint: DurableContextCheckpoint;
@@ -133,11 +147,13 @@ export async function prepareContext(
     ])
       if (!Number.isSafeInteger(value) || value < 0)
         throw new TypeError("Invalid compaction usage.");
+
     if (
       usage.details !== undefined &&
       Object.values(usage.details).some((value) => !Number.isFinite(value))
     )
       throw new TypeError("Invalid compaction usage details.");
+
     json(usage);
   } catch (error) {
     signal.throwIfAborted();
@@ -168,9 +184,12 @@ export async function prepareContext(
     signal.throwIfAborted();
     const saved = await store.transaction(async (tx) => {
       const current = (await tx.getRun(run.id))!;
+
       if (current.status !== "running") throw new Error("Durable run is no longer running.");
+
       current.input = { messages: [...messages, prompt] };
       current.contextPrepared = true;
+
       if (result !== undefined) {
         current.contextCheckpoint = result.checkpoint;
         current.usage = Usage.add(current.usage, result.info.usage);
@@ -185,6 +204,7 @@ export async function prepareContext(
           json({ operationId: result.operation.key, ...result.info }),
         );
       }
+
       await tx.putRun(current);
       return current;
     });

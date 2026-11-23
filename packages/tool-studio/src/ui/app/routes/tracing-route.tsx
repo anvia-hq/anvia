@@ -16,17 +16,22 @@ export function TracingRoute() {
       params.sessionId === undefined
         ? `trace:${params.traceId ?? ""}`
         : `session:${params.sessionId}`;
+
     if (handledTraceLocationRef.current === locationKey) {
       return;
     }
+
     if (!studio.pageEnabled("tracing")) {
       return;
     }
+
     handledTraceLocationRef.current = locationKey;
+
     if (params.sessionId !== undefined) {
       void studio.traces.showSessionTraces(params.sessionId, { updatePath: false });
       return;
     }
+
     studio.traces.setTraceLocation(params.traceId ?? "", undefined);
   }, [params.sessionId, params.traceId, studio]);
 

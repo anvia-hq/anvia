@@ -74,6 +74,7 @@ export async function startAgentRunObservers(
   for (const [name, observer] of Object.entries(observers)) {
     try {
       const runObserver = await observer.startRun(observerSnapshot(args));
+
       if (runObserver !== undefined) {
         runObservers.push({ name, observer: runObserver, terminal: false });
       }
@@ -81,6 +82,7 @@ export async function startAgentRunObservers(
       failures.push({ observer: name, error });
     }
   }
+
   if (options.errorPolicy === "throw" && failures.length > 0) {
     const startupError = new AgentObserverDispatchError("startRun", failures);
     const cleanupFailures = await terminateObservers(runObservers, (observer) =>
@@ -95,9 +97,11 @@ export async function startAgentRunObservers(
     );
     throw new AgentObserverDispatchError("startRun", [...failures, ...cleanupFailures]);
   }
+
   if (options.errorPolicy === "ignore") {
     reportObserverFailures("startRun", failures, options.onObserverError ?? defaultOnObserverError);
   }
+
   return new ActiveAgentRunObservers(runObservers, options);
 }
 
@@ -129,8 +133,10 @@ export class ActiveAgentRunObservers {
     const failures: AgentObserverFailure[] = [];
     for (const entry of this.runObservers) {
       if (entry.observer.startGeneration === undefined) continue;
+
       try {
         const observer = await entry.observer.startGeneration(observerSnapshot(args));
+
         if (observer !== undefined) {
           generationObservers.push({ name: entry.name, observer, terminal: false });
         }
@@ -138,6 +144,7 @@ export class ActiveAgentRunObservers {
         failures.push({ observer: entry.name, error });
       }
     }
+
     if (this.options.errorPolicy === "throw" && failures.length > 0) {
       const startupError = new AgentObserverDispatchError("startGeneration", failures);
       const cleanupFailures = await terminateObservers(generationObservers, (observer) =>
@@ -145,9 +152,11 @@ export class ActiveAgentRunObservers {
       );
       throw new AgentObserverDispatchError("startGeneration", [...failures, ...cleanupFailures]);
     }
+
     if (this.options.errorPolicy === "ignore") {
       reportObserverFailures("startGeneration", failures, this.onObserverError);
     }
+
     return new ActiveGenerationObservers(
       generationObservers,
       this.options.errorPolicy,
@@ -160,8 +169,10 @@ export class ActiveAgentRunObservers {
     const failures: AgentObserverFailure[] = [];
     for (const entry of this.runObservers) {
       if (entry.observer.startTool === undefined) continue;
+
       try {
         const observer = await entry.observer.startTool(observerSnapshot(args));
+
         if (observer !== undefined) {
           toolObservers.push({ name: entry.name, observer, terminal: false });
         }
@@ -169,6 +180,7 @@ export class ActiveAgentRunObservers {
         failures.push({ observer: entry.name, error });
       }
     }
+
     if (this.options.errorPolicy === "throw" && failures.length > 0) {
       const startupError = new AgentObserverDispatchError("startTool", failures);
       const cleanupFailures = await terminateObservers(toolObservers, (observer) =>
@@ -176,9 +188,11 @@ export class ActiveAgentRunObservers {
       );
       throw new AgentObserverDispatchError("startTool", [...failures, ...cleanupFailures]);
     }
+
     if (this.options.errorPolicy === "ignore") {
       reportObserverFailures("startTool", failures, this.onObserverError);
     }
+
     return new ActiveToolObservers(toolObservers, this.options.errorPolicy, this.onObserverError);
   }
 
@@ -343,6 +357,7 @@ async function terminateObservers<T>(
   const failures: AgentObserverFailure[] = [];
   for (const entry of observers) {
     if (entry.terminal) continue;
+
     entry.terminal = true;
     try {
       await dispatch(entry.observer);
@@ -360,9 +375,11 @@ function throwObserverFailures(
   onObserverError: AgentObserverErrorHandler,
 ): void {
   if (failures.length === 0) return;
+
   if (errorPolicy === "throw") {
     throw new AgentObserverDispatchError(phase, failures);
   }
+
   reportObserverFailures(phase, failures, onObserverError);
 }
 

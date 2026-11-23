@@ -47,7 +47,9 @@ function script(
 ) {
   return model((request) => {
     const reply = replies.shift();
+
     if (reply === undefined) throw new Error("No scripted response");
+
     return typeof reply === "function" ? reply(request) : reply;
   });
 }
@@ -56,7 +58,9 @@ function tools(request: CompletionRequest) {
 }
 function instanceFrom(request: CompletionRequest): string {
   const match = history(request).match(/instanceId\\?":\\?"([^"\\]+)/);
+
   if (!match?.[1]) throw new Error("No instance ID");
+
   return match[1];
 }
 async function collect(team: AgentTeam) {
@@ -199,6 +203,7 @@ describe("AgentTeam hierarchy", () => {
         model: model((request) => {
           if (!history(request).includes("spawn_worker"))
             return call("spawn_worker", { prompt: "recurse" });
+
           return say(history(request).includes(limit) ? `reached ${limit}` : "done");
         }),
       });
@@ -299,6 +304,7 @@ describe("AgentTeam hierarchy", () => {
         ...options,
         model: script(call("spawn_leaf", { prompt: "work" }), say("early"), () => {
           if (termination === "fail") throw new Error("parent failed");
+
           return say("parent done");
         }),
       });
@@ -430,22 +436,30 @@ describe("AgentTeam hierarchy", () => {
       id: "leaf",
       model: model((request) => {
         const ownId = request.instructions!.match(/Your instance ID is ([^.]+)\./)![1]!;
+
         if (firstLeafId === "") {
           firstLeafId = ownId;
           return say("first leaf done");
         }
+
         if (ownId === firstLeafId) return say("first leaf done");
+
         const h = history(request);
         secondLeafTurn++;
+
         if (secondLeafTurn === 1) return call("list_agents");
+
         if (secondLeafTurn === 2) {
           expect(h).not.toContain(firstLeafId);
           expect(h).not.toContain(firstParentId);
           return call("send_message", { to: firstLeafId, content: "cousin cannot send" });
         }
+
         expect(h).toContain("not an accessible");
+
         if (secondLeafTurn === 3)
           return call("wait_for_agent", { instanceId: coordinatorId, timeoutMs: 0 });
+
         return say("second leaf done");
       }),
     });
@@ -454,7 +468,9 @@ describe("AgentTeam hierarchy", () => {
       id: "worker",
       model: model(() => {
         workerTurn++;
+
         if (workerTurn === 1) return call("spawn_leaf", { prompt: "work" });
+
         return say("first parent done");
       }),
     });
@@ -464,16 +480,21 @@ describe("AgentTeam hierarchy", () => {
       id: "second",
       model: model((request) => {
         otherTurn++;
+
         if (otherTurn === 1) return call("cancel_agent", { instanceId: firstParentId });
+
         if (otherTurn === 2) {
           expect(history(request)).toContain("Only a parent can cancel its child");
           return call("send_message", { to: firstLeafId, content: "uncle cannot send" });
         }
+
         if (otherTurn === 3) {
           expect(history(request)).toContain("not an accessible");
           return call("wait_for_agent", { instanceId: firstLeafId, timeoutMs: 0 });
         }
+
         if (otherTurn === 4) return call("spawn_leaf", { prompt: "work" });
+
         return say("second parent done");
       }),
     });
@@ -484,12 +505,16 @@ describe("AgentTeam hierarchy", () => {
         model: model((request) => {
           leadTurn++;
           coordinatorId = request.instructions!.match(/Your instance ID is ([^.]+)\./)![1]!;
+
           if (leadTurn === 1) return call("spawn_worker", { prompt: "work" });
+
           if (leadTurn === 2) {
             firstParentId = instanceFrom(request);
             return call("wait_for_agent", { instanceId: firstParentId });
           }
+
           if (leadTurn === 3) return call("spawn_second", { prompt: "work" });
+
           return say("done");
         }),
         members: [worker, secondParent, leaf],
@@ -547,13 +572,17 @@ describe("AgentTeam hierarchy", () => {
     let parentId = "";
     const lead = model(async (request) => {
       turn++;
+
       if (turn === 1) return call("spawn_worker", { prompt: "work" });
+
       if (turn === 2) {
         parentId = instanceFrom(request);
         await leafStarted;
         return call("cancel_agent", { instanceId: parentId });
       }
+
       if (turn === 3) return call("spawn_sibling", { prompt: "work" });
+
       return say("done");
     });
     const { result } = await collect(

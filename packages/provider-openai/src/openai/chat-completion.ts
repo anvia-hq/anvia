@@ -88,11 +88,13 @@ export class OpenAIChatCompletionModel<
     options: { stream?: boolean | undefined } = {},
   ): JsonObject {
     const params: ChatCompletionParams = toOpenAIChatCompletionParams(this.modelId, request);
+
     if (options.stream === true) {
       params.stream = true;
       const streamOptions = isPlainObject(params.stream_options) ? params.stream_options : {};
       params.stream_options = { ...streamOptions, include_usage: true };
     }
+
     return providerRequestSummary(params, request, options);
   }
 
@@ -133,6 +135,7 @@ export class OpenAIChatCompletionModel<
     }
     streamState.assertComplete();
     const finalEvent = streamState.finalEvent();
+
     if (finalEvent !== undefined) {
       yield {
         ...finalEvent,
@@ -152,12 +155,14 @@ export function toOpenAIChatCompletionParams(
   ) {
     throw new TypeError("OpenAI Chat Completions providerOptions must be a JSON object.");
   }
+
   const providerOptions = request.providerOptions ?? {};
   const params: ChatCompletionParams = {
     ...providerOptions,
     model: modelId,
     messages: requestMessages(request).flatMap(messageToChatMessages),
   };
+
   if (request.controls?.reasoningEffort !== undefined) {
     params.reasoning_effort = request.controls.reasoningEffort;
   }
@@ -229,6 +234,7 @@ function toolChoiceSummary(toolChoice: ToolChoice | undefined): JsonValue | unde
   if (toolChoice === undefined || typeof toolChoice === "string") {
     return toolChoice;
   }
+
   return { type: toolChoice.type, name: toolChoice.name };
 }
 
@@ -238,6 +244,7 @@ function compactJsonObject(values: Record<string, unknown>): JsonObject {
       if (!isJsonValue(value)) {
         return [];
       }
+
       return [[key, value]];
     }),
   ) as JsonObject;
@@ -249,17 +256,21 @@ function requestMessages(request: CompletionRequest): MessageType[] {
 
 export function fromOpenAIChatCompletionResponse(response: unknown): CompletionResponse {
   if (!isPlainObject(response)) throw invalidToolCallError();
+
   const raw = response;
   const usage = usageFromOpenAIChatCompletion(raw.usage);
   const errorUsage = isPlainObject(raw.usage) ? usage : undefined;
   const firstChoice = primaryStreamChoice(raw.choices);
+
   if (firstChoice === undefined || !isPlainObject(firstChoice.message)) {
     throw invalidToolCallError(undefined, errorUsage);
   }
+
   const message = firstChoice.message;
   const choice: AssistantContentPart[] = [];
 
   const reasoning = stringFrom(message.reasoning) ?? stringFrom(message.reasoning_content);
+
   if (reasoning !== undefined && reasoning.length > 0) {
     choice.push({
       type: "reasoning",
@@ -280,9 +291,11 @@ export function fromOpenAIChatCompletionResponse(response: unknown): CompletionR
     message.tool_calls !== undefined &&
     (!Array.isArray(message.tool_calls) || message.tool_calls.length > 0);
   assertSafeOpenAIChatToolFinishReason(firstChoice?.finish_reason, hasRawToolCall, errorUsage);
+
   if (message.tool_calls !== undefined && !Array.isArray(message.tool_calls)) {
     throw invalidToolCallError(undefined, errorUsage);
   }
+
   const toolCalls = message.tool_calls ?? [];
   for (const toolCall of toolCalls) {
     if (!isPlainObject(toolCall)) {
@@ -292,6 +305,7 @@ export function fromOpenAIChatCompletionResponse(response: unknown): CompletionR
     if (!isPlainObject(toolCall.function)) {
       throw invalidToolCallError(toolCall.id, errorUsage);
     }
+
     assertFunctionToolCallType(toolCall.type, toolCall.id, errorUsage, false);
     const fn = toolCall.function;
     const id = requiredToolCallString(toolCall.id, undefined, errorUsage);
@@ -346,25 +360,32 @@ function mapOpenAIChatCompletionStreamChunk(
   const hasUnsafeToolFinish =
     rawToolMarker &&
     (choice?.finish_reason === "length" || choice?.finish_reason === "content_filter");
+
   if (hasUnsafeToolFinish && options.deferUnsafeToolFinish !== true) {
     throw unsafeOpenAIChatToolFinishError(
       choice?.finish_reason,
       isPlainObject(chunk.usage) ? usageFromOpenAIChatCompletion(chunk.usage) : undefined,
     );
   }
+
   let hasToolCalls = hasUnsafeToolFinish;
 
   if (!hasUnsafeToolFinish && choice !== undefined && isPlainObject(choice.delta)) {
     const delta = choice.delta;
+
     if (delta.tool_calls !== undefined && !Array.isArray(delta.tool_calls)) {
       throw invalidToolCallError();
     }
+
     const reasoning = stringFrom(delta.reasoning) ?? stringFrom(delta.reasoning_content);
+
     if (reasoning !== undefined && reasoning.length > 0) {
       const event: CompletionModelStreamEvent = { type: "reasoning_delta", delta: reasoning };
+
       if (reasoningId !== undefined) {
         event.id = reasoningId;
       }
+
       events.push(event);
     }
 
@@ -381,10 +402,13 @@ function mapOpenAIChatCompletionStreamChunk(
       if (!isPlainObject(toolCall)) {
         throw invalidToolCallError();
       }
+
       hasToolCalls = true;
+
       if (!isPlainObject(toolCall.function)) {
         throw invalidToolCallError(toolCall.id);
       }
+
       assertFunctionToolCallType(toolCall.type, toolCall.id, undefined, true);
       const fn = toolCall.function;
       assertOptionalToolCallString(toolCall.id);
@@ -412,9 +436,11 @@ function mapOpenAIChatCompletionStreamChunk(
       usage: usageFromOpenAIChatCompletion(chunk.usage),
       rawResponse: chunk,
     };
+
     if (typeof chunk.id === "string") {
       response.messageId = chunk.id;
     }
+
     events.push({ type: "final", response });
   }
 
@@ -425,6 +451,7 @@ function mapOpenAIChatCompletionStreamChunk(
     hasChoices: Array.isArray(chunk.choices) && chunk.choices.length > 0,
     hasPrimaryChoice: choice !== undefined,
   };
+
   if (mapping.hasFinishReason) {
     mapping.finishReason = choice?.finish_reason;
     for (const event of mapping.events) {
@@ -433,6 +460,7 @@ function mapOpenAIChatCompletionStreamChunk(
       }
     }
   }
+
   return mapping;
 }
 
@@ -453,6 +481,7 @@ class OpenAIChatCompletionStreamState {
       deferUnsafeToolFinish: true,
     });
     this.accept(mapping, chunk);
+
     if (this.hasFinishReason) {
       for (const event of mapping.events) {
         if (event.type === "final") {
@@ -460,6 +489,7 @@ class OpenAIChatCompletionStreamState {
         }
       }
     }
+
     return mapping;
   }
 
@@ -473,25 +503,31 @@ class OpenAIChatCompletionStreamState {
         event.type === "source" ||
         event.type === "provider_tool_call",
     );
+
     if (this.hasFinishReason && hasSemanticProgress) {
       throw invalidToolCallError();
     }
+
     this.hasToolCalls ||= mapping.hasToolCalls;
     this.hasChoices ||= mapping.hasChoices;
     this.hasPrimaryChoice ||= mapping.hasPrimaryChoice;
     for (const event of mapping.events) {
       if (event.type === "tool_call_delta") this.acceptToolCallDelta(event);
+
       if (event.type === "final") {
         // Usage reports are snapshots; keep the latest until the stream emits its final event.
         this.finalResponse = event.response;
       }
     }
+
     if (!mapping.hasFinishReason) {
       return;
     }
+
     if (this.hasFinishReason && mapping.finishReason !== this.finishReason) {
       throw invalidToolCallError(undefined, this.errorUsage());
     }
+
     this.hasFinishReason = true;
     this.finishReason = mapping.finishReason;
     this.terminalChunk = chunk;
@@ -499,15 +535,18 @@ class OpenAIChatCompletionStreamState {
 
   finalEvent(): Extract<CompletionModelStreamEvent, { type: "final" }> | undefined {
     if (!this.hasFinishReason && this.finalResponse === undefined) return undefined;
+
     const response: CompletionResponse = this.finalResponse ?? {
       choice: [],
       usage: Usage.empty(),
       rawResponse: this.terminalChunk,
     };
     applyOpenAIChatFinishReason(response, this.finishReason);
+
     if (isPlainObject(this.terminalChunk) && typeof this.terminalChunk.id === "string") {
       response.messageId = this.terminalChunk.id;
     }
+
     return { type: "final", response };
   }
 
@@ -515,15 +554,18 @@ class OpenAIChatCompletionStreamState {
     if (this.hasChoices && !this.hasPrimaryChoice) {
       throw invalidToolCallError(undefined, this.errorUsage());
     }
+
     if (!this.hasToolCalls) {
       return;
     }
+
     if (!this.hasFinishReason) {
       throw new CompletionProviderOutputError({
         kind: "incomplete-tool-call",
         usage: this.errorUsage(),
       });
     }
+
     this.assertSupportedFinishReason();
     for (const toolCall of this.toolCalls.values()) {
       if (toolCall.callId === undefined || toolCall.name === undefined) {
@@ -533,6 +575,7 @@ class OpenAIChatCompletionStreamState {
           usage: this.errorUsage(),
         });
       }
+
       parseToolArguments(toolCall.id, toolCall.argumentsText, this.errorUsage());
     }
   }
@@ -545,6 +588,7 @@ class OpenAIChatCompletionStreamState {
         usage: this.errorUsage(),
       });
     }
+
     if (this.finishReason === "content_filter") {
       throw new CompletionProviderOutputError({
         kind: "filtered-tool-call",
@@ -552,6 +596,7 @@ class OpenAIChatCompletionStreamState {
         usage: this.errorUsage(),
       });
     }
+
     if (
       this.finishReason !== "tool_calls" &&
       this.finishReason !== "stop" &&
@@ -566,26 +611,36 @@ class OpenAIChatCompletionStreamState {
   ): void {
     const existing = this.toolCalls.get(event.id);
     const toolCall = existing ?? { id: event.id, argumentsText: "" };
+
     if (event.callId !== undefined) {
       if (!isNonblankString(event.callId)) throw invalidToolCallError(event.id, this.errorUsage());
+
       if (toolCall.callId !== undefined && toolCall.callId !== event.callId) {
         throw invalidToolCallError(event.id, this.errorUsage());
       }
+
       const existingId = this.toolCallIdsByCallId.get(event.callId);
+
       if (existingId !== undefined && existingId !== event.id) {
         throw invalidToolCallError(event.id, this.errorUsage());
       }
+
       toolCall.callId = event.callId;
       this.toolCallIdsByCallId.set(event.callId, event.id);
     }
+
     if (event.name !== undefined) {
       if (!isNonblankString(event.name)) throw invalidToolCallError(event.id, this.errorUsage());
+
       if (toolCall.name !== undefined && toolCall.name !== event.name) {
         throw invalidToolCallError(event.id, this.errorUsage());
       }
+
       toolCall.name = event.name;
     }
+
     if (event.argumentsDelta !== undefined) toolCall.argumentsText += event.argumentsDelta;
+
     this.toolCalls.set(event.id, toolCall);
   }
 
@@ -600,9 +655,11 @@ function assertSafeOpenAIChatToolFinishReason(
   usage: Usage | undefined,
 ): void {
   if (!hasToolCalls) return;
+
   if (!isTerminalFinishReason(value)) {
     throw new CompletionProviderOutputError({ kind: "incomplete-tool-call", usage });
   }
+
   if (value === "length") {
     throw new CompletionProviderOutputError({
       kind: "truncated-tool-call",
@@ -610,6 +667,7 @@ function assertSafeOpenAIChatToolFinishReason(
       usage,
     });
   }
+
   if (value === "content_filter") {
     throw new CompletionProviderOutputError({
       kind: "filtered-tool-call",
@@ -617,6 +675,7 @@ function assertSafeOpenAIChatToolFinishReason(
       usage,
     });
   }
+
   if (
     isTerminalFinishReason(value) &&
     value !== "tool_calls" &&
@@ -638,6 +697,7 @@ function unsafeOpenAIChatToolFinishError(
       usage,
     });
   }
+
   return new CompletionProviderOutputError({
     kind: "filtered-tool-call",
     finishReason: "content-filter",
@@ -647,24 +707,33 @@ function unsafeOpenAIChatToolFinishError(
 
 function applyOpenAIChatFinishReason(response: CompletionResponse, value: unknown): void {
   if (!isTerminalFinishReason(value)) return;
+
   response.finishReason = openAIChatFinishReason(value);
+
   if (typeof value === "string") response.providerFinishReason = value;
 }
 
 function openAIChatFinishReason(value: unknown): CompletionFinishReason {
   if (value === "stop") return "stop";
+
   if (value === "length") return "length";
+
   if (value === "content_filter") return "content-filter";
+
   if (value === "tool_calls" || value === "function_call") return "tool-calls";
+
   return "other";
 }
 
 function primaryStreamChoice(value: unknown): Record<string, unknown> | undefined {
   if (value === undefined) return undefined;
+
   if (!Array.isArray(value) || !value.every(isPlainObject)) {
     throw invalidToolCallError();
   }
+
   const choices = value;
+
   if (choices.length === 0) {
     return undefined;
   }
@@ -676,9 +745,11 @@ function primaryStreamChoice(value: unknown): Record<string, unknown> | undefine
       unindexedChoices.push(choice);
       continue;
     }
+
     if (!isStreamIndex(choice.index)) {
       throw invalidToolCallError();
     }
+
     indexedChoices.push({ choice, index: choice.index });
   }
 
@@ -686,13 +757,16 @@ function primaryStreamChoice(value: unknown): Record<string, unknown> | undefine
     if (indexedChoices.length > 0 || unindexedChoices.length > 1) {
       throw invalidToolCallError();
     }
+
     return unindexedChoices[0];
   }
 
   const primaryChoices = indexedChoices.filter(({ index }) => index === 0);
+
   if (primaryChoices.length > 1) {
     throw invalidToolCallError();
   }
+
   return primaryChoices[0]?.choice;
 }
 
@@ -700,6 +774,7 @@ function toolCallIndex(value: unknown): number {
   if (!isStreamIndex(value)) {
     throw invalidToolCallError();
   }
+
   return value;
 }
 
@@ -717,6 +792,7 @@ function requiredToolCallString(value: unknown, toolCallId?: unknown, usage?: Us
   if (!isNonblankString(value)) {
     throw invalidToolCallError(toolCallId, usage);
   }
+
   return value;
 }
 
@@ -742,6 +818,7 @@ function assertFunctionToolCallType(
   allowMissing: boolean,
 ): void {
   if (value === "function" || (allowMissing && value === undefined)) return;
+
   throw invalidToolCallError(toolCallId, usage);
 }
 
@@ -753,6 +830,7 @@ function parseTerminalToolArguments(toolCallId: string, value: unknown, usage?: 
       usage,
     });
   }
+
   return parseToolArguments(toolCallId, value, usage);
 }
 
@@ -795,6 +873,7 @@ function messageToChatMessages(message: MessageType): ChatMessage[] {
     if (typeof message.content === "string") {
       return [{ role: "user", content: message.content }];
     }
+
     const contentParts: ChatMessage[] = [];
 
     for (const content of message.content) {
@@ -817,6 +896,7 @@ function messageToChatMessages(message: MessageType): ChatMessage[] {
           "Anvia interaction responses must be resolved by Agent before provider calls.",
         );
       }
+
       return toolContentToChatMessage(content);
     });
   }
@@ -824,6 +904,7 @@ function messageToChatMessages(message: MessageType): ChatMessage[] {
   if (typeof message.content === "string") {
     return [{ role: "assistant", content: message.content }];
   }
+
   const text = message.content
     .flatMap((content) => (content.type === "text" ? [content.text] : []))
     .join("\n");
@@ -831,11 +912,13 @@ function messageToChatMessages(message: MessageType): ChatMessage[] {
     .flatMap((content) => (content.type === "reasoning" ? [content.text] : []))
     .filter((text) => text.length > 0)
     .join("\n");
+
   if (message.content.some((content) => content.type === "image" || content.type === "file")) {
     throw new Error(
       "OpenAI chat completions does not support image or file content in assistant history",
     );
   }
+
   const toolCalls = message.content
     .filter((content) => content.type === "tool-call")
     .map((content) => ({
@@ -850,14 +933,17 @@ function messageToChatMessages(message: MessageType): ChatMessage[] {
   const chatMessage: ChatMessage = {
     role: "assistant",
   };
+
   if (text.length > 0) {
     chatMessage.content = text;
   } else if (toolCalls.length === 0) {
     chatMessage.content = " ";
   }
+
   if (reasoning.length > 0) {
     chatMessage.reasoning_content = reasoning;
   }
+
   if (toolCalls.length > 0) {
     chatMessage.tool_calls = toolCalls;
   }
@@ -880,9 +966,11 @@ function userContentToChatParts(content: UserContentPart): ChatMessage[] {
 
   if (content.type === "image") {
     const image_url: ChatMessage = { url: imageUrl(content) };
+
     if (content.detail !== undefined) {
       image_url.detail = content.detail;
     }
+
     return [{ type: "image_url", image_url }];
   }
 
@@ -901,6 +989,7 @@ function imageUrl(image: ImagePart): string {
   if (image.mediaType === undefined) {
     throw new Error("OpenAI chat image data requires mediaType");
   }
+
   return `data:${image.mediaType};base64,${image.image.data}`;
 }
 
@@ -914,15 +1003,19 @@ function fileToChatParts(file: FilePart): ChatMessage[] {
 
 function toolResultToText(content: ToolResultPart): string {
   const output = content.output;
+
   if (output.type === "text" || output.type === "error-text") {
     return output.value;
   }
+
   if (output.type === "json" || output.type === "error-json") {
     return JSON.stringify(output.value);
   }
+
   if (output.type === "execution-denied") {
     return output.reason ?? "Tool execution was denied.";
   }
+
   return output.value
     .map((part) => (part.type === "text" ? part.text : `[file:${part.mediaType}]`))
     .join("\n");
@@ -961,9 +1054,13 @@ function toolCallDelta(
   },
 ): CompletionModelStreamEvent {
   const event: CompletionModelStreamEvent = { type: "tool_call_delta", id };
+
   if (values.callId !== undefined && values.callId.length > 0) event.callId = values.callId;
+
   if (values.name !== undefined && values.name.length > 0) event.name = values.name;
+
   if (values.argumentsDelta !== undefined) event.argumentsDelta = values.argumentsDelta;
+
   return event;
 }
 

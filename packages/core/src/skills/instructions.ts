@@ -22,11 +22,14 @@ export function skillInstructions(skills: Skill[]): string {
 
 function formatSkill(skill: Skill): string {
   const lines = [`- ${skill.name}: ${skill.description}`];
+
   if (skill.references.length > 0) {
     lines.push(`  references: ${skill.references.join(", ")}`);
   }
+
   if (skill.scripts.length > 0) {
     lines.push(`  scripts: ${skill.scripts.join(", ")}`);
   }
+
   return lines.join("\n");
 }

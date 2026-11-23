@@ -117,6 +117,7 @@ function advanceForFrameRate(target: Item[], framesPerSecond: number): number {
     if (now - state.lastAdvanceAtMs + 0.5 < 1_000 / streamSmoothingConfig.maxCommitFps) {
       continue;
     }
+
     state = advanceStreamSmoothing(state, now, adapter);
   }
   const first = state.displayedItems[0];

@@ -326,9 +326,11 @@ describe("OpenAI chat-completions client path", () => {
     const turnEnd = events.find((event) => event.type === "turn_end");
 
     expect(turnEnd?.type).toBe("turn_end");
+
     if (turnEnd?.type !== "turn_end") {
       throw new Error("Expected Agent to emit a turn_end event");
     }
+
     expect(turnEnd.response.choice).toEqual([
       {
         type: "reasoning",
@@ -1504,9 +1506,11 @@ function chatChoice(toolCalls: unknown[], index = 0, finishReason: unknown = nul
 
 function toolCallDelta(index: unknown, id: string, name: string, argumentsText?: string): unknown {
   const fn: Record<string, unknown> = { name };
+
   if (argumentsText !== undefined) {
     fn.arguments = argumentsText;
   }
+
   return { index, id, type: "function", function: fn };
 }
 

@@ -41,21 +41,29 @@ export function createCompletionRequest(
   const providerTools = configuredTools.filter(isProviderTool);
 
   if (providerTools.length > 0) request.providerTools = providerTools;
+
   if (options.instructions !== undefined && options.instructions.length > 0) {
     request.instructions = options.instructions;
   }
+
   if (options.temperature !== undefined) request.temperature = options.temperature;
+
   if (options.maxTokens !== undefined) request.maxTokens = options.maxTokens;
+
   if (options.toolChoice !== undefined) request.toolChoice = options.toolChoice;
+
   if (options.outputSchema !== undefined) request.outputSchema = options.outputSchema;
+
   if (options.controls !== undefined) {
     const controls = Object.fromEntries(
       Object.entries(options.controls).filter(
         (entry): entry is [string, string] => typeof entry[1] === "string",
       ),
     );
+
     if (Object.keys(controls).length > 0) request.controls = Object.freeze(controls);
   }
+
   if (options.providerOptions !== undefined) {
     assertJsonObject(options.providerOptions, "providerOptions");
     request.providerOptions = options.providerOptions;
@@ -78,11 +86,14 @@ function messagesFromInput(input: string | MessageType | readonly MessageType[])
   if (typeof input === "string") {
     return [{ role: "user", content: input }];
   }
+
   if (Array.isArray(input)) {
     if (input.length === 0) {
       throw new Error("input must contain at least one Message.");
     }
+
     return parseMessages(input);
   }
+
   return [parseMessage(input)];
 }

@@ -116,8 +116,11 @@ test("a restarted generation clears partial content while keeping completed turn
   let retryMessageId: string | undefined;
   for await (const event of agentToClientStream({ events: events() })) {
     messages = applyClientStreamEvent(messages, parseClientStreamEvent(event));
+
     if (event.type === "source" && event.source.url === source.url) sharedSources++;
+
     if (event.type === "message_start" && event.turn === 2) retryMessageId = event.messageId;
+
     if (event.type === "message_reset") {
       expect(event.messageId).toBe(retryMessageId);
       resets++;
@@ -127,10 +130,12 @@ test("a restarted generation clears partial content while keeping completed turn
         state: "output-available",
       });
     }
+
     if (event.type === "text_delta" && event.delta === "fresh ") {
       expect(messageText(messages[1]!)).toBe("fresh ");
       expect(JSON.stringify(messages[1])).not.toContain("obsolete");
     }
+
     if (event.type === "tool_call_delta" && event.delta === "{}")
       expect(messages[1]!.parts.find((part) => part.type === "tool")).toMatchObject({
         input: "{}",

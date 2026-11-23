@@ -26,12 +26,15 @@ export function applyClientStreamEvent<Metadata extends JsonObject, Data extends
       );
     case "message_start": {
       if (messages.some((message) => message.id === event.messageId)) return messages;
+
       let message: UIMessage<Metadata, Data> = {
         id: event.messageId,
         role: event.role,
         parts: [],
       };
+
       if (event.metadata !== undefined) message = { ...message, metadata: event.metadata };
+
       return [...messages, message];
     }
     case "text_start":
@@ -53,7 +56,9 @@ export function applyClientStreamEvent<Metadata extends JsonObject, Data extends
           type: "text",
           text: event.text ?? (part?.type === "text" ? part.text : ""),
         };
+
         if (event.signature !== undefined) next.signature = event.signature;
+
         return next;
       });
     case "reasoning_start": {
@@ -62,7 +67,9 @@ export function applyClientStreamEvent<Metadata extends JsonObject, Data extends
         type: "reasoning",
         text: "",
       };
+
       if (event.reasoningId !== undefined) reasoning.reasoningId = event.reasoningId;
+
       return upsertPart(messages, event.messageId, reasoning);
     }
     case "reasoning_delta":
@@ -72,14 +79,18 @@ export function applyClientStreamEvent<Metadata extends JsonObject, Data extends
           type: "reasoning",
           text: part?.type === "reasoning" ? `${part.text}${event.delta}` : event.delta,
         };
+
         if (part?.type === "reasoning" && part.reasoningId !== undefined) {
           reasoning.reasoningId = part.reasoningId;
         }
+
         const content = appendReasoningContent(
           part?.type === "reasoning" ? part.content : undefined,
           event,
         );
+
         if (content !== undefined) reasoning.content = content;
+
         return reasoning;
       });
     case "reasoning_end":
@@ -89,14 +100,17 @@ export function applyClientStreamEvent<Metadata extends JsonObject, Data extends
           type: "reasoning",
           text: event.text ?? (part?.type === "reasoning" ? part.text : ""),
         };
+
         if (part?.type === "reasoning" && part.reasoningId !== undefined) {
           reasoning.reasoningId = part.reasoningId;
         }
+
         if (event.content !== undefined) {
           reasoning.content = event.content;
         } else if (part?.type === "reasoning" && part.content !== undefined) {
           reasoning.content = part.content;
         }
+
         return reasoning;
       });
     case "tool_call_start": {
@@ -108,8 +122,11 @@ export function applyClientStreamEvent<Metadata extends JsonObject, Data extends
         state: "input-streaming",
         input: "",
       };
+
       if (event.callId !== undefined) part.callId = event.callId;
+
       if (event.turn !== undefined) part.turn = event.turn;
+
       return upsertPart(messages, event.messageId, part);
     }
     case "tool_call_delta":
@@ -125,10 +142,15 @@ export function applyClientStreamEvent<Metadata extends JsonObject, Data extends
               };
         const previous =
           current?.type === "tool" && typeof current.input === "string" ? current.input : "";
+
         if (event.toolName !== undefined) part.toolName = event.toolName;
+
         if (event.callId !== undefined) part.callId = event.callId;
+
         if (event.signature !== undefined) part.signature = event.signature;
+
         if (event.turn !== undefined) part.turn = event.turn;
+
         return {
           ...part,
           state: "input-streaming",
@@ -144,9 +166,13 @@ export function applyClientStreamEvent<Metadata extends JsonObject, Data extends
         state: "input-available",
         input: event.input,
       };
+
       if (event.callId !== undefined) part.callId = event.callId;
+
       if (event.turn !== undefined) part.turn = event.turn;
+
       if (event.signature !== undefined) part.signature = event.signature;
+
       return upsertPart(messages, event.messageId, part);
     }
     case "tool_result":
@@ -160,9 +186,13 @@ export function applyClientStreamEvent<Metadata extends JsonObject, Data extends
                 toolName: event.toolName,
                 toolCallId: event.toolCallId,
               };
+
         if (event.callId !== undefined) part.callId = event.callId;
+
         if (event.internalCallId !== undefined) part.internalCallId = event.internalCallId;
+
         if (event.turn !== undefined) part.turn = event.turn;
+
         if (event.result.status === "error") {
           return {
             ...part,
@@ -171,13 +201,16 @@ export function applyClientStreamEvent<Metadata extends JsonObject, Data extends
             error: event.result.error,
           };
         }
+
         const completed: Extract<UIToolMessagePart, { state: "output-available" }> = {
           ...part,
           state: "output-available",
           input: event.input,
           output: event.result.output,
         };
+
         if (event.result.content !== undefined) completed.resultContent = event.result.content;
+
         return completed;
       });
     case "source":
@@ -194,6 +227,7 @@ export function applyClientStreamEvent<Metadata extends JsonObject, Data extends
       });
     case "data":
       if (event.transient === true) return messages;
+
       return appendToLastAssistant(messages, {
         id: createClientId("data"),
         type: "data",
@@ -203,26 +237,34 @@ export function applyClientStreamEvent<Metadata extends JsonObject, Data extends
     case "message_end":
       return messages.map((message) => {
         if (message.id !== event.messageId) return message;
+
         const metadata = mergeMetadata(message.metadata, event.metadata);
         const generationUpdate: UIMessageGeneration = {
           runId: event.runId,
         };
+
         if (event.usage !== undefined) generationUpdate.usage = event.usage;
+
         if (event.contextUsage !== undefined) {
           generationUpdate.contextUsage = event.contextUsage;
         }
+
         const generation = mergeGeneration(message.generation, generationUpdate);
         let updated: UIMessage<Metadata, Data> = {
           ...message,
           generation,
         };
+
         if (event.parts !== undefined) {
           updated = { ...updated, parts: reconcileFinalParts(message.parts, event.parts) };
         }
+
         if (event.modelMessageId !== undefined) {
           updated = { ...updated, modelMessageId: event.modelMessageId };
         }
+
         if (metadata !== undefined) updated = { ...updated, metadata };
+
         return updated;
       });
     case "run_end": {
@@ -230,11 +272,15 @@ export function applyClientStreamEvent<Metadata extends JsonObject, Data extends
         runId: event.runId,
         status: event.status,
       };
+
       if (event.contextUsage !== undefined) generation.contextUsage = event.contextUsage;
+
       if (event.trace !== undefined) generation.trace = event.trace;
+
       if (event.memoryCompaction !== undefined) {
         generation.memoryCompaction = event.memoryCompaction;
       }
+
       return updateLastAssistantGeneration(messages, generation);
     }
     case "error":
@@ -257,12 +303,17 @@ function toolPartBase(
     toolName: part.toolName,
     toolCallId: part.toolCallId,
   };
+
   if (part.callId !== undefined) Object.assign(base, { callId: part.callId });
+
   if (part.internalCallId !== undefined) {
     Object.assign(base, { internalCallId: part.internalCallId });
   }
+
   if (part.turn !== undefined) Object.assign(base, { turn: part.turn });
+
   if (part.signature !== undefined) Object.assign(base, { signature: part.signature });
+
   return base;
 }
 
@@ -281,9 +332,11 @@ function appendReasoningContent(
   event: Extract<ClientStreamEvent, { type: "reasoning_delta" }>,
 ): Extract<UIMessagePart, { type: "reasoning" }>["content"] {
   if (event.contentType === undefined && event.signature === undefined) return current;
+
   const type = event.contentType ?? "text";
   const next = [...(current ?? [])];
   const last = next.at(-1);
+
   if (type === "text") {
     if (last?.type === "text" && last.signature === event.signature) {
       next[next.length - 1] = { ...last, text: `${last.text}${event.delta}` };
@@ -295,26 +348,35 @@ function appendReasoningContent(
         type,
         text: event.delta,
       };
+
       if (event.signature !== undefined) detail = { ...detail, signature: event.signature };
+
       next.push(detail);
     }
+
     return next;
   }
+
   if (type === "summary") {
     if (last?.type === "summary") {
       next[next.length - 1] = { ...last, text: `${last.text}${event.delta}` };
     } else next.push({ type, text: event.delta });
+
     return next;
   }
+
   if (type === "encrypted") {
     if (last?.type === "encrypted") {
       next[next.length - 1] = { ...last, data: `${last.data}${event.delta}` };
     } else next.push({ type, data: event.delta });
+
     return next;
   }
+
   if (last?.type === "redacted") {
     next[next.length - 1] = { ...last, data: `${last.data}${event.delta}` };
   } else next.push({ type, data: event.delta });
+
   return next;
 }
 
@@ -348,8 +410,11 @@ function updatePart<Metadata extends JsonObject, Data extends ClientDataMap>(
   const current = ensureAssistant(messages, messageId);
   return current.map((message) => {
     if (message.id !== messageId) return message;
+
     const index = message.parts.findIndex((part) => part.id === partId);
+
     if (index === -1) return { ...message, parts: [...message.parts, update(undefined)] };
+
     const parts = [...message.parts];
     parts[index] = update(parts[index]);
     return { ...message, parts };
@@ -370,9 +435,11 @@ function appendToLastAssistant<Metadata extends JsonObject, Data extends ClientD
   part: UIMessagePart<Data>,
 ): readonly UIMessage<Metadata, Data>[] {
   const index = findLastIndex(messages, (message) => message.role === "assistant");
+
   if (index === -1) {
     return [...messages, { id: createClientId("msg"), role: "assistant", parts: [part] }];
   }
+
   const next = [...messages];
   const message = next[index] as UIMessage<Metadata, Data>;
   next[index] = { ...message, parts: [...message.parts, part] };
@@ -384,7 +451,9 @@ function updateLastAssistantGeneration<Metadata extends JsonObject, Data extends
   value: UIMessageGeneration,
 ): readonly UIMessage<Metadata, Data>[] {
   const index = findLastIndex(messages, (message) => message.role === "assistant");
+
   if (index === -1) return messages;
+
   const next = [...messages];
   const message = next[index] as UIMessage<Metadata, Data>;
   next[index] = { ...message, generation: mergeGeneration(message.generation, value) };
@@ -396,7 +465,9 @@ function mergeMetadata<Metadata extends JsonObject>(
   provided: Metadata | undefined,
 ): Metadata | undefined {
   if (provided === undefined) return current;
+
   if (!isRecord(current) || !isRecord(provided)) return provided;
+
   const next = { ...current, ...provided };
   return isJsonValue(next) ? (next as Metadata) : provided;
 }

@@ -87,8 +87,10 @@ export class StreamChannel<Exit> {
 
   push(chunk: Uint8Array): void {
     if (this.finished || this.stale) return;
+
     this.pending.push(chunk);
     this.pendingBytes += chunk.byteLength;
+
     if (this.pendingBytes + this.inFlightBytes > this.highWater) {
       if (this.source.pausable) {
         if (!this.paused) {
@@ -103,33 +105,42 @@ export class StreamChannel<Exit> {
         this.pendingBytes = 0;
       }
     }
+
     this.schedule();
   }
 
   /** The hub consumed `bytes` of output in total. */
   ack(bytes: number): void {
     if (this.finished) return;
+
     this.ackedBytes = Math.max(this.ackedBytes, Math.min(bytes, this.sentBytes));
     const backlog = this.pendingBytes + this.inFlightBytes;
+
     if (this.paused && backlog <= this.lowWater) {
       this.paused = false;
       this.source.resume();
     }
+
     if (this.stale || this.pendingBytes > 0) this.schedule();
   }
 
   /** Flush what is queued and report the end, in that order. */
   finish(info: Exit): void {
     if (this.finished) return;
+
     this.flush(true);
     this.finished = true;
+
     if (this.timer !== undefined) clearTimeout(this.timer);
+
     this.io.send(this.frames.exit(info));
   }
 
   dispose(): void {
     this.finished = true;
+
     if (this.timer !== undefined) clearTimeout(this.timer);
+
     this.pending = [];
     this.pendingBytes = 0;
   }
@@ -138,7 +149,9 @@ export class StreamChannel<Exit> {
   private resync(): void {
     this.stale = false;
     const full = this.source.snapshot();
+
     if (full === undefined) return;
+
     // Cut to half the window so the whole snapshot goes out in one flight.
     const snapshot = full.subarray(Math.max(0, full.byteLength - this.lowWater));
     this.pending = [resetTerminal, snapshot];
@@ -147,6 +160,7 @@ export class StreamChannel<Exit> {
 
   private schedule(): void {
     if (this.timer !== undefined || this.finished) return;
+
     this.timer = setTimeout(() => {
       this.timer = undefined;
       this.flush(false);
@@ -156,11 +170,14 @@ export class StreamChannel<Exit> {
 
   private flush(force: boolean): void {
     if (this.stale && this.inFlightBytes <= this.lowWater) this.resync();
+
     if (this.pendingBytes === 0) return;
+
     if (!force && this.io.bufferedAmount() > this.socketBufferBytes) {
       this.schedule();
       return;
     }
+
     const merged = new Uint8Array(this.pendingBytes);
     let offset = 0;
     for (const chunk of this.pending) {
@@ -173,12 +190,14 @@ export class StreamChannel<Exit> {
     let start = 0;
     while (start < merged.byteLength) {
       if (!force && this.inFlightBytes >= this.highWater) break;
+
       const end = Math.min(merged.byteLength, start + this.frameBytes);
       const slice = merged.subarray(start, end);
       this.sentBytes += slice.byteLength;
       this.io.send(this.frames.output(this.seq++, slice));
       start = end;
     }
+
     if (start < merged.byteLength) {
       // Held back by flow control; ack() sends it.
       this.pending = [merged.subarray(start)];

@@ -20,8 +20,10 @@ export class StudioRunLifecycle {
       abortSignal: AbortSignal.any([requestSignal, this.shutdownController.signal]),
       finish: () => {
         if (finished) return;
+
         finished = true;
         this.active.delete(token);
+
         if (this.active.size === 0) {
           this.resolveDrain?.();
           this.resolveDrain = undefined;
@@ -33,12 +35,14 @@ export class StudioRunLifecycle {
 
   close(): void {
     if (this.closed) return;
+
     this.closed = true;
     this.shutdownController.abort(new Error("Anvia Studio is shutting down."));
   }
 
   async drain(timeoutMs: number): Promise<void> {
     this.close();
+
     if (this.active.size === 0) return;
 
     this.drainPromise ??= new Promise<void>((resolve) => {

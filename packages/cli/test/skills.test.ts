@@ -49,6 +49,7 @@ function skillSource(name: string, relativePath: string): string {
  */
 function expectExecutableScript(path: string): void {
   if (process.platform === "win32") return;
+
   expect(statSync(path).mode & 0o111).not.toBe(0);
 }
 

@@ -48,7 +48,9 @@ export class PgVectorStore<
   }
   async upsert(options: VectorStoreUpsertOptions<T, Metadata>): Promise<void> {
     validateDocuments(options.documents, this.options.dimensions);
+
     if (options.documents.length === 0) return;
+
     const client = await this.owner.nativeClient();
     const documentIds = options.documents.map((document) => document.id);
     await queryWithProviderOptions(
@@ -58,7 +60,9 @@ export class PgVectorStore<
       options.providerOptions,
     );
     const rows = options.documents.flatMap((document) => pgVectorRows(document));
+
     if (rows.length === 0) return;
+
     const values: unknown[] = [];
     const placeholders = rows.map((row, index) => {
       const offset = index * 5;
@@ -108,14 +112,18 @@ LIMIT $${limitParameter}`,
       }>;
       const unfiltered = parseSearchRows<T, Metadata>(rows, undefined, this.distance);
       const results = selectResults(unfiltered, request);
+
       if (
         results.length >= request.topK ||
         rows.length < candidateLimit ||
         hasResultBelowMinimum(unfiltered, request.minScore)
       )
         return results;
+
       const nextLimit = nextCandidateLimit(candidateLimit);
+
       if (nextLimit === candidateLimit) return results;
+
       candidateLimit = nextLimit;
     }
   }
@@ -143,7 +151,9 @@ function nextCandidateLimit(current: number): number {
 }
 function distanceName(metric: PgVectorStoreOptions["metric"]): PgVectorDistance {
   if (metric === "euclidean") return "l2";
+
   if (metric === "dotProduct") return "innerProduct";
+
   return "cosine";
 }
 function throwIfAborted(signal: AbortSignal | undefined): void {
@@ -164,9 +174,12 @@ function validateDocuments<T, Metadata extends VectorMetadata>(
   const ids = new Set<string>();
   for (const document of documents) {
     if (ids.has(document.id)) throw new TypeError(`Duplicate vector document id: ${document.id}`);
+
     ids.add(document.id);
+
     if (document.embeddings.length === 0)
       throw new TypeError(`Vector document ${document.id} must contain at least one embedding.`);
+
     for (const embedding of document.embeddings)
       if (embedding.vector.length !== dimensions)
         throw new Error(`Vector dimension mismatch for document ${document.id}`);
@@ -188,11 +201,15 @@ async function queryWithProviderOptions(
 
 function validateSearchRequest(request: VectorSearchRequest, dimensions: number): void {
   throwIfAborted(request.abortSignal);
+
   if (!Number.isSafeInteger(request.topK) || request.topK < 1)
     throw new RangeError("Vector search topK must be a positive safe integer.");
+
   if (request.minScore !== undefined && !Number.isFinite(request.minScore))
     throw new RangeError("Vector search minScore must be a finite number.");
+
   if (request.vector.length !== dimensions) throw new Error("Vector dimension mismatch for query");
+
   if (!request.vector.every(Number.isFinite))
     throw new Error("Vector search query must contain only finite numbers");
 }

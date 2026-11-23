@@ -39,7 +39,9 @@ class QueueJudgeModel implements CompletionModel {
   async completion(request: CompletionRequest): Promise<CompletionResponse> {
     this.requests.push(request);
     const response = this.responses.shift();
+
     if (response === undefined) throw new Error("No queued judge response");
+
     return response;
   }
 }
@@ -77,8 +79,11 @@ class RoutedJudgeModel implements CompletionModel {
     this.requests.push(request);
     const requestText = JSON.stringify(request);
     const routeIndex = this.routes.findIndex((route) => requestText.includes(route.matches));
+
     if (routeIndex < 0) throw new Error(`No judge response matched request: ${requestText}`);
+
     const [route] = this.routes.splice(routeIndex, 1);
+
     if (route === undefined) throw new Error("Matched judge route was unavailable");
 
     this.activeRequests += 1;
@@ -87,6 +92,7 @@ class RoutedJudgeModel implements CompletionModel {
       if (this.delayMs > 0) {
         await new Promise((resolve) => setTimeout(resolve, this.delayMs));
       }
+
       return route.response;
     } finally {
       this.activeRequests -= 1;
@@ -190,7 +196,9 @@ describe("advanced eval metrics", () => {
       ],
       target: (input) => {
         if (input === "valid") return '{"name":"Anvia"}';
+
         if (input === "wrong") return '{"name":1}';
+
         return "{'name':'Anvia'}";
       },
       metrics: [jsonCorrectness({ schema })],

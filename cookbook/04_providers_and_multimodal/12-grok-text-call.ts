@@ -14,5 +14,7 @@ const agent = new Agent({
 });
 
 const response = await agent.generate({ prompt: "Explain what a context-aware agent does." });
+
 if (response.type !== "response") throw new Error("Unexpected tool approval request.");
+
 console.log(response.output);

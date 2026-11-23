@@ -29,7 +29,9 @@ class QueueModel implements CompletionModel {
   async completion(request: CompletionRequest): Promise<CompletionResponse> {
     this.requests.push(request);
     const response = this.responses.shift();
+
     if (response === undefined) throw new Error("No queued response");
+
     return response;
   }
 }

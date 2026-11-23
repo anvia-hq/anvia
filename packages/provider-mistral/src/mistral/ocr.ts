@@ -109,9 +109,11 @@ export class MistralOcrModel {
         type: "document_url",
         documentUrl: source.url,
       };
+
       if (source.documentName !== undefined) {
         document.documentName = source.documentName;
       }
+
       return { document };
     }
 
@@ -134,9 +136,11 @@ export class MistralOcrModel {
     }
 
     const data = toUint8Array(source.data);
+
     if (data.byteLength === 0) {
       throw new Error("Mistral OCR byte source cannot be empty.");
     }
+
     if (source.filename.length === 0) {
       throw new Error("Mistral OCR byte source filename cannot be empty.");
     }
@@ -148,7 +152,9 @@ export class MistralOcrModel {
       },
       purpose: "ocr",
     };
+
     if (source.expiry !== undefined) uploadParams.expiry = source.expiry;
+
     if (source.visibility !== undefined) uploadParams.visibility = source.visibility;
 
     const uploadResponse = await this.client.files.upload(
@@ -178,23 +184,33 @@ export class MistralOcrModel {
     };
 
     if (request.pages !== undefined) params.pages = request.pages;
+
     if (request.includeImageBase64 !== undefined) {
       params.includeImageBase64 = request.includeImageBase64;
     }
+
     if (request.imageLimit !== undefined) params.imageLimit = request.imageLimit;
+
     if (request.imageMinSize !== undefined) params.imageMinSize = request.imageMinSize;
+
     if (request.bboxAnnotationFormat !== undefined) {
       params.bboxAnnotationFormat = request.bboxAnnotationFormat;
     }
+
     if (request.documentAnnotationFormat !== undefined) {
       params.documentAnnotationFormat = request.documentAnnotationFormat;
     }
+
     if (request.documentAnnotationPrompt !== undefined) {
       params.documentAnnotationPrompt = request.documentAnnotationPrompt;
     }
+
     if (request.tableFormat !== undefined) params.tableFormat = request.tableFormat;
+
     if (request.extractHeader !== undefined) params.extractHeader = request.extractHeader;
+
     if (request.extractFooter !== undefined) params.extractFooter = request.extractFooter;
+
     if (request.confidenceScoresGranularity !== undefined) {
       params.confidenceScoresGranularity = request.confidenceScoresGranularity;
     }
@@ -217,18 +233,23 @@ function normalizeOcrResponse(
     pages,
     rawResponse: response,
   };
+
   if (typeof raw.model === "string") {
     normalized.model = raw.model;
   }
+
   if (raw.usageInfo !== undefined) {
     normalized.usageInfo = raw.usageInfo;
   }
+
   if (typeof raw.documentAnnotation === "string" || raw.documentAnnotation === null) {
     normalized.documentAnnotation = raw.documentAnnotation;
   }
+
   if (uploadedFile !== undefined) {
     normalized.uploadedFile = uploadedFile;
   }
+
   return normalized;
 }
 
@@ -239,24 +260,31 @@ function normalizeOcrPage(page: unknown): MistralOcrPage {
     markdown: typeof raw.markdown === "string" ? raw.markdown : "",
     images: Array.isArray(raw.images) ? raw.images : [],
   };
+
   if (Array.isArray(raw.tables)) {
     normalized.tables = raw.tables;
   }
+
   if (isStringArray(raw.hyperlinks)) {
     normalized.hyperlinks = raw.hyperlinks;
   }
+
   if (typeof raw.header === "string" || raw.header === null) {
     normalized.header = raw.header;
   }
+
   if (typeof raw.footer === "string" || raw.footer === null) {
     normalized.footer = raw.footer;
   }
+
   if (raw.dimensions !== undefined) {
     normalized.dimensions = raw.dimensions;
   }
+
   if (raw.confidenceScores !== undefined) {
     normalized.confidenceScores = raw.confidenceScores;
   }
+
   return normalized;
 }
 
@@ -269,15 +297,19 @@ function uploadedFileFromResponse(response: unknown): MistralOcrUploadedFile {
     id: response.id,
     rawResponse: response,
   };
+
   if (typeof response.filename === "string") {
     uploadedFile.filename = response.filename;
   }
+
   if (typeof response.sizeBytes === "number") {
     uploadedFile.sizeBytes = response.sizeBytes;
   }
+
   if (typeof response.purpose === "string") {
     uploadedFile.purpose = response.purpose;
   }
+
   return uploadedFile;
 }
 

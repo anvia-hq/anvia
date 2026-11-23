@@ -81,13 +81,17 @@ describe("DurableWorker", () => {
     const racing = new Proxy(inner, {
       get(target, key) {
         const value: unknown = Reflect.get(target, key);
+
         if (key !== "claim" || typeof value !== "function") return value;
+
         return async (...args: unknown[]) => {
           const claims = (await Reflect.apply(value, target, args)) as unknown[];
+
           if (claims.length > 0 && !unregistered) {
             unregistered = true;
             await worker!.unregisterAgent("researcher");
           }
+
           return claims;
         };
       },

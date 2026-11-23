@@ -26,8 +26,10 @@ export function InternalCompletionInputProvider({
 
 export function useCompletionInput(): CompletionInputContextValue {
   const value = useContext(CompletionInputContext);
+
   if (value === undefined) {
     throw new Error("Completion input primitives must be used inside CompletionPrimitive.Form.");
   }
+
   return value;
 }

@@ -18,10 +18,13 @@ export const prismaSpec = {
 
 function schemaFromConfig(cwd: string): string {
   const config = resolve(cwd, "prisma.config.ts");
+
   if (existsSync(config)) {
     const match = readFileSync(config, "utf8").match(/\bschema\s*:\s*["']([^"']+)["']/);
+
     if (match?.[1] !== undefined) return resolve(cwd, match[1]);
   }
+
   return resolve(cwd, "prisma", "schema.prisma");
 }
 

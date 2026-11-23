@@ -16,6 +16,7 @@ describe("SandboxesPage", () => {
     root = createRoot(container);
     fetchMock = vi.fn(async (input: string | URL | Request) => {
       const url = String(input);
+
       if (url === "/sandboxes") {
         return jsonResponse({
           sandboxes: [
@@ -32,11 +33,13 @@ describe("SandboxesPage", () => {
           ],
         });
       }
+
       if (url.includes("/files/content?")) {
         return new Response("<script>globalThis.compromised = true</script>", {
           headers: { "content-type": "application/octet-stream" },
         });
       }
+
       if (url.includes("/files?")) {
         return jsonResponse({
           sandboxRef: "sandbox_ref",
@@ -47,12 +50,14 @@ describe("SandboxesPage", () => {
           ],
         });
       }
+
       if (url.endsWith("/ports")) {
         return jsonResponse({
           sandboxRef: "sandbox_ref",
           ports: [{ containerPort: 5173, host: "127.0.0.1", hostPort: 49152, protocol: "tcp" }],
         });
       }
+
       if (url.endsWith("/processes")) {
         return jsonResponse({
           sandboxRef: "sandbox_ref",
@@ -67,6 +72,7 @@ describe("SandboxesPage", () => {
           ],
         });
       }
+
       if (url.includes("/processes/process_1/logs")) {
         return jsonResponse({
           sandboxRef: "sandbox_ref",
@@ -77,6 +83,7 @@ describe("SandboxesPage", () => {
           stderrTruncated: false,
         });
       }
+
       return new Response(null, { status: 404 });
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -154,9 +161,11 @@ describe("SandboxesPage", () => {
     const button = [...container.querySelectorAll("button")].find((item) =>
       item.textContent?.includes(text),
     );
+
     if (!(button instanceof HTMLButtonElement)) {
       throw new Error(`Button not found: ${text}`);
     }
+
     return button;
   }
 });

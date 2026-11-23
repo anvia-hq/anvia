@@ -14,9 +14,11 @@ export function messageElementFromNode(
 
   while (element !== undefined && element !== null) {
     const messageId = messageIds.get(element);
+
     if (messageId !== undefined) {
       return { element, messageId };
     }
+
     element = element.parentElement ?? undefined;
   }
   return undefined;

@@ -45,6 +45,7 @@ type UpsertArgs = { where: Row; create: Row; update: Row };
 
 export function prisma8Delegates(options: PrismaMemoryStoreOptions): PrismaMemoryDelegates {
   const candidate = record(options.client, "client");
+
   if (
     typeof candidate.transaction !== "function" ||
     typeof record(candidate.raw, "client.raw").sql !== "function"
@@ -53,6 +54,7 @@ export function prisma8Delegates(options: PrismaMemoryStoreOptions): PrismaMemor
       "Prisma 8 memory requires a PostgreSQL client with transaction() and raw.sql.",
     );
   }
+
   const client = options.client as Client;
   // Reject invalid caller options before issuing any query, including on empty appends.
   isolationPlan(client, options.transaction?.isolationLevel);
@@ -81,9 +83,11 @@ export function prisma8Delegates(options: PrismaMemoryStoreOptions): PrismaMemor
 
     function sessionQuery(args: QueryArgs): Collection {
       let query = refine(sessions, args);
+
       if (args.select?._count !== undefined) {
         query = query.include("messages", (rows) => rows.count());
       }
+
       return query;
     }
 
@@ -92,6 +96,7 @@ export function prisma8Delegates(options: PrismaMemoryStoreOptions): PrismaMemor
       const scopeFilter = where.memorySession;
       delete where.memorySession;
       let query = messages;
+
       if (scopeFilter !== undefined) {
         const session = await sessions
           .where(record(scopeFilter, "session filter"))
@@ -101,6 +106,7 @@ export function prisma8Delegates(options: PrismaMemoryStoreOptions): PrismaMemor
           fields.memorySessionId!.in(session === null ? [] : [session.id]),
         );
       }
+
       return refine(query, { ...args, where });
     }
 
@@ -114,8 +120,10 @@ export function prisma8Delegates(options: PrismaMemoryStoreOptions): PrismaMemor
             create: { ...args.create, createdAt: updatedAt, updatedAt },
             update: { ...args.update, updatedAt },
           });
+
           if (typeof row.id !== "string")
             throw new TypeError("Prisma 8 memory session id must be a string.");
+
           return { id: row.id };
         },
         async deleteMany(input) {
@@ -136,9 +144,12 @@ export function prisma8Delegates(options: PrismaMemoryStoreOptions): PrismaMemor
         },
         async findFirst(input) {
           const row = await (await messageQuery(input as QueryArgs)).first();
+
           if (row === null) return null;
+
           if (!Number.isSafeInteger(row.position))
             throw new TypeError("Prisma 8 memory position must be an integer.");
+
           return { position: row.position as number };
         },
         async createMany(input) {
@@ -161,9 +172,12 @@ export function prisma8Delegates(options: PrismaMemoryStoreOptions): PrismaMemor
           : {
               async findFirst(input) {
                 const row = await refine(writes, input as QueryArgs).first();
+
                 if (row === null) return null;
+
                 if (typeof row.fingerprint !== "string")
                   throw new TypeError("Prisma 8 memory write fingerprint must be a string.");
+
                 return { fingerprint: row.fingerprint };
               },
               async create(input) {
@@ -176,6 +190,7 @@ export function prisma8Delegates(options: PrismaMemoryStoreOptions): PrismaMemor
         const plan = isolationPlan(client, transactionOptions?.isolationLevel);
         return client.transaction(async (tx) => {
           if (plan !== undefined) await tx.execute(plan);
+
           return operation(bind(tx));
         });
       },
@@ -190,16 +205,21 @@ function refine(collection: Collection, args: QueryArgs): Collection {
   let query = collection;
   const where = { ...args.where };
   const position = where.position;
+
   if (typeof position === "object" && position !== null) {
     delete where.position;
     const gte = (position as { gte: number }).gte;
     query = query.where((fields) => fields.position!.gte(gte));
   }
+
   if (Object.keys(where).length > 0) query = query.where(where);
+
   if (args.select !== undefined) {
     const fields = Object.keys(args.select).filter((key) => args.select?.[key] === true);
+
     if (fields.length > 0) query = query.select(...fields);
   }
+
   if (args.orderBy !== undefined) {
     const orders = Array.isArray(args.orderBy) ? args.orderBy : [args.orderBy];
     query = query.orderBy(
@@ -212,7 +232,9 @@ function refine(collection: Collection, args: QueryArgs): Collection {
       ),
     );
   }
+
   if (args.take !== undefined) query = query.limit(args.take);
+
   return query;
 }
 
@@ -240,6 +262,7 @@ function isolationPlan(client: Client, level: string | undefined): unknown {
 function record(value: unknown, name: string): Row {
   if (typeof value !== "object" || value === null)
     throw new TypeError(`Prisma 8 memory expected ${name} to be an object.`);
+
   return value as Row;
 }
 
@@ -266,10 +289,12 @@ function normalizeRow(row: Row): Row {
   for (const field of ["createdAt", "updatedAt"]) {
     if (result[field] !== undefined) result[field] = utcTimestamp(result[field]);
   }
+
   if (typeof row.messages === "number") {
     result._count = { messages: row.messages };
     delete result.messages;
   }
+
   return result;
 }
 
@@ -281,15 +306,20 @@ function utcNow(): string {
 
 function utcTimestamp(value: unknown): string {
   if (value instanceof Date) return value.toISOString();
+
   // Also accept Temporal values returned by inferred Timestamp/Timestamptz fields.
   if (typeof value === "object" && value !== null && typeof value.toString === "function")
     value = value.toString();
+
   if (typeof value !== "string")
     throw new TypeError("Prisma 8 memory received an invalid timestamp.");
+
   const normalized = value.replace(" ", "T");
   const zoned = /(?:Z|[+-]\d{2}(?::?\d{2})?)$/i.test(normalized) ? normalized : `${normalized}Z`;
   const date = new Date(zoned);
+
   if (!Number.isFinite(date.getTime()))
     throw new TypeError("Prisma 8 memory received an invalid timestamp.");
+
   return date.toISOString();
 }

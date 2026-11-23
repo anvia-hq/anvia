@@ -44,6 +44,7 @@ export function createLangfuseDatasetClient(
       ...init,
       headers,
     });
+
     if (!response.ok) {
       const body = await readErrorBody(response);
       throw new LangfuseScoreError(
@@ -51,9 +52,11 @@ export function createLangfuseDatasetClient(
         [],
       );
     }
+
     if (response.status === 204) {
       return undefined as T;
     }
+
     return (await response.json()) as T;
   }
 
@@ -72,8 +75,11 @@ export function createLangfuseDatasetClient(
         name: dataset.name,
         items: [],
       };
+
       if (dataset.description !== undefined) result.description = dataset.description;
+
       if (dataset.metadata !== undefined) result.metadata = dataset.metadata;
+
       return result;
     },
 
@@ -100,25 +106,33 @@ export function createLangfuseDatasetClient(
           }>;
           meta?: { totalPages?: number | undefined };
         }>(url.toString(), { method: "GET" });
+
         if (description === undefined && response.description !== undefined) {
           description = response.description;
         }
+
         if (metadata === undefined && response.metadata !== undefined) {
           metadata = response.metadata;
         }
+
         for (const item of response.items) {
           const normalized: LangfuseDatasetItem<Input, Expected> = {
             id: item.id,
             input: item.input,
           };
+
           if (item.expected !== undefined) normalized.expected = item.expected;
+
           if (item.metadata !== undefined) normalized.metadata = item.metadata;
+
           items.push(normalized);
         }
         const totalPages = response.meta?.totalPages;
+
         if (totalPages !== undefined && page >= totalPages) {
           break;
         }
+
         if (totalPages === undefined && response.items.length < pageSize) {
           break;
         }
@@ -127,8 +141,11 @@ export function createLangfuseDatasetClient(
         name,
         items,
       };
+
       if (description !== undefined) dataset.description = description;
+
       if (metadata !== undefined) dataset.metadata = metadata;
+
       return dataset;
     },
 
@@ -148,10 +165,12 @@ export function createLangfuseDatasetClient(
       opts: LangfuseRunExperimentOptions<Input, Output, Expected>,
     ): Promise<LangfuseRunExperimentResult> {
       let items = opts.items;
+
       if (items === undefined) {
         const dataset = await this.getDataset<Input, Expected>({ name: opts.datasetName });
         items = dataset.items;
       }
+
       if (items === undefined || items.length === 0) {
         return {
           runName: opts.runName,
@@ -160,6 +179,7 @@ export function createLangfuseDatasetClient(
           errors: [],
         };
       }
+
       const datasetItemRuns: Array<{
         datasetItemId: string;
         traceId?: string;
@@ -174,10 +194,13 @@ export function createLangfuseDatasetClient(
             datasetItemId: item.id,
             output: toJsonValue(result.output),
           };
+
           if (result.trace?.traceId !== undefined) datasetItemRun.traceId = result.trace.traceId;
+
           if (result.trace?.observationId !== undefined) {
             datasetItemRun.observationId = result.trace.observationId;
           }
+
           datasetItemRuns.push(datasetItemRun);
         } catch (error) {
           errors.push({ itemId: item.id, error });
@@ -188,8 +211,11 @@ export function createLangfuseDatasetClient(
         runName: opts.runName,
         datasetItemRuns,
       };
+
       if (opts.description !== undefined) body.runDescription = opts.description;
+
       if (opts.metadata !== undefined) body.metadata = opts.metadata;
+
       await request<unknown>(url, {
         method: "POST",
         body: JSON.stringify(body),
@@ -211,6 +237,7 @@ function buildAuthHeader(
   if (publicKey === undefined || secretKey === undefined) {
     return {};
   }
+
   const encoded = Buffer.from(`${publicKey}:${secretKey}`).toString("base64");
   return { Authorization: `Basic ${encoded}` };
 }
@@ -225,8 +252,11 @@ async function readErrorBody(response: Response): Promise<string> {
 
 function toJsonValue(value: unknown): JsonValue {
   if (value === null) return null;
+
   if (typeof value === "string" || typeof value === "boolean") return value;
+
   if (typeof value === "number") return value;
+
   try {
     return JSON.parse(JSON.stringify(value)) as JsonValue;
   } catch {

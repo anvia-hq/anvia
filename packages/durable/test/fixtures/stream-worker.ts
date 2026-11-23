@@ -6,7 +6,9 @@ import { SqliteDurableStore } from "../../src/sqlite.js";
 import { capabilities, done, hasToolResult, lookup, toolResponse } from "../helpers.js";
 
 const [database, effects] = process.argv.slice(2);
+
 if (database === undefined || effects === undefined) throw new Error("Missing fixture arguments");
+
 let id: string;
 const agent = new Agent({
   id: "researcher",

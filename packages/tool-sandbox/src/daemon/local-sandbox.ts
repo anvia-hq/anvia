@@ -68,6 +68,7 @@ export class LocalSandbox {
     if (!path.posix.isAbsolute(options.workdir)) {
       throw new TypeError("workdir must be an absolute path.");
     }
+
     validateRuntimeLimits(options.limits);
     this.workdir = path.posix.normalize(options.workdir);
     this.limits = resolveRuntimeLimits(options.limits);
@@ -89,9 +90,11 @@ export class LocalSandbox {
     validateExecOptions(options);
     options.abortSignal?.throwIfAborted();
     const cwd = containerPath(this.workdir, options.cwd ?? ".");
+
     if (!(await isDirectory(cwd))) {
       return missingWorkingDirectory(options.cwd ?? ".");
     }
+
     const result = await runCommand(options.command, options.args ?? [], {
       cwd,
       env: this.environment(options.env),
@@ -126,15 +129,18 @@ export class LocalSandbox {
     const target = containerPath(this.workdir, normalized);
     await this.assertInsideWorkdir(path.posix.dirname(target), normalized);
     const metadata = await lstatOrNull(target);
+
     if (metadata === null) {
       throw new DockerSandboxError(`Sandbox file not found: ${normalized}`, "invalid_path");
     }
+
     if (metadata.isSymbolicLink() || !metadata.isFile()) {
       throw new DockerSandboxError(
         `Sandbox path is not a regular file: ${normalized}`,
         "invalid_path",
       );
     }
+
     assertFileSize(metadata.size, normalized, this.limits.maxFileBytes);
     const bytes = await readFile(target, { signal: options.abortSignal });
     assertFileSize(bytes.byteLength, normalized, this.limits.maxFileBytes);
@@ -150,7 +156,9 @@ export class LocalSandbox {
 
   async writeFile(options: SandboxWriteFileOptions): Promise<void> {
     assertOptionsObject(options);
+
     if (!(options.data instanceof Uint8Array)) throw new TypeError("data must be a Uint8Array.");
+
     const normalized = normalizeSandboxPath(options.path);
     assertFileSize(options.data.byteLength, normalized, this.limits.maxFileBytes);
     options.abortSignal?.throwIfAborted();
@@ -206,7 +214,9 @@ export class LocalSandbox {
     const entries: SandboxFileEntry[] = [];
     for (const name of names) {
       const metadata = await lstatOrNull(path.posix.join(directory, name));
+
       if (metadata === null) continue;
+
       const type = mapFileMode(metadata.mode);
       const entryPath = normalized === "." ? name : path.posix.join(normalized, name);
       entries.push(
@@ -215,18 +225,26 @@ export class LocalSandbox {
           : { path: entryPath, type },
       );
     }
-    return entries.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+    return entries.sort((a, b) => {
+      if (a.path < b.path) return -1;
+
+      if (a.path > b.path) return 1;
+
+      return 0;
+    });
   }
 
   async startProcess(options: SandboxProcessStartOptions): Promise<SandboxProcessInfo> {
     validateProcessStartOptions(options);
     const cwd = containerPath(this.workdir, options.cwd ?? ".");
+
     if (!(await isDirectory(cwd))) {
       throw new DockerSandboxError(
         `Sandbox working directory not found: ${options.cwd ?? "."}`,
         "invalid_path",
       );
     }
+
     return this.processes.start(options, cwd, options.abortSignal);
   }
 
@@ -240,8 +258,10 @@ export class LocalSandbox {
   }): Promise<SandboxProcessLogs> {
     assertOptionsObject(options);
     assertNonEmptyString(options.processId, "processId");
+
     if (options.tailBytes !== undefined)
       assertNonNegativeSafeInteger(options.tailBytes, "tailBytes");
+
     return this.processes.logs(options.processId, options.tailBytes);
   }
 
@@ -252,9 +272,11 @@ export class LocalSandbox {
   }): Promise<SandboxProcessInfo> {
     assertOptionsObject(options);
     assertNonEmptyString(options.processId, "processId");
+
     if (options.gracePeriodMs !== undefined) {
       assertNonNegativeSafeInteger(options.gracePeriodMs, "gracePeriodMs");
     }
+
     return this.processes.stop(options.processId, options.gracePeriodMs, options.abortSignal);
   }
 
@@ -267,15 +289,18 @@ export class LocalSandbox {
     const deadline = Date.now() + timeoutMs;
     while (true) {
       options.abortSignal.throwIfAborted();
+
       if (await probePort(options.containerPort, Math.min(1_000, timeoutMs))) {
         return { containerPort: options.containerPort, protocol: "tcp" };
       }
+
       if (Date.now() >= deadline) {
         throw new DockerSandboxError(
           `Waiting for sandbox port timed out: ${options.containerPort}`,
           "timeout",
         );
       }
+
       await waitWithSignal(Math.min(intervalMs, deadline - Date.now()), options.abortSignal);
     }
   }
@@ -286,12 +311,14 @@ export class LocalSandbox {
     env?: Readonly<Record<string, string>>,
   ): Promise<{ cwd: string; env: Record<string, string> }> {
     const resolved = containerPath(this.workdir, cwd ?? ".");
+
     if (!(await isDirectory(resolved))) {
       throw new DockerSandboxError(
         `Sandbox working directory not found: ${cwd ?? "."}`,
         "invalid_path",
       );
     }
+
     return { cwd: resolved, env: this.commandEnvironment(env) };
   }
 
@@ -318,7 +345,9 @@ export class LocalSandbox {
     for (const part of sandboxPath.split("/")) {
       current = path.posix.join(current, part);
       const metadata = await lstatOrNull(current);
+
       if (metadata === null) return;
+
       if (metadata.isSymbolicLink()) {
         throw new DockerSandboxError(
           `Sandbox path contains a symbolic link: ${sandboxPath}`,
@@ -342,6 +371,7 @@ export class LocalSandbox {
       );
     }
     const resolvedWorkdir = await realpath(this.workdir);
+
     if (!isPathInside(resolvedWorkdir, resolvedDirectory, { allowSame: true })) {
       throw new DockerSandboxError(
         `Sandbox path escapes the workspace: ${sandboxPath}`,
@@ -356,6 +386,7 @@ async function lstatOrNull(target: string) {
     return await lstat(target);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+
     throw error;
   }
 }
@@ -389,6 +420,7 @@ async function probePort(port: number, timeoutMs: number): Promise<boolean> {
       socket.once("connect", () => finish(true));
       socket.once("error", () => finish(false));
     });
+
     if (connected) return true;
   }
   return false;

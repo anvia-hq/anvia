@@ -48,11 +48,14 @@ export class AsyncEventQueue<T> {
     if (this.closed) {
       return;
     }
+
     const resolver = this.resolvers.shift();
+
     if (resolver !== undefined) {
       resolver({ done: false, value });
       return;
     }
+
     this.values.push(value);
   }
 
@@ -65,12 +68,15 @@ export class AsyncEventQueue<T> {
 
   next(): Promise<IteratorResult<T>> {
     const value = this.values.shift();
+
     if (value !== undefined) {
       return Promise.resolve({ done: false, value });
     }
+
     if (this.closed) {
       return Promise.resolve({ done: true, value: undefined });
     }
+
     return new Promise((resolve) => this.resolvers.push(resolve));
   }
 }
@@ -102,6 +108,7 @@ function studioEventToClientEvent(
       transient: true,
     };
   }
+
   if (event.type === "pipeline_log" && isJsonValue(event.log)) {
     return {
       type: "data",
@@ -111,6 +118,7 @@ function studioEventToClientEvent(
       transient: true,
     };
   }
+
   if (event.type === "pipeline_final" && isJsonValue(event.output)) {
     return {
       type: "data",
@@ -119,6 +127,7 @@ function studioEventToClientEvent(
       data: event.output,
     };
   }
+
   return undefined;
 }
 
@@ -135,6 +144,7 @@ function withAgentRunCancellation(
     if (cancellationHandled) {
       return;
     }
+
     cancellationHandled = true;
     await onCancel?.();
   };
@@ -146,18 +156,24 @@ function withAgentRunCancellation(
           if (done) {
             return { done: true, value: undefined };
           }
+
           try {
             const next = await iterator.next();
+
             if (next.done === true) {
               done = true;
+
               if (!terminal) {
                 await handleCancellation();
               }
+
               return next;
             }
+
             if (isTerminalAgentEvent(next.value)) {
               terminal = true;
             }
+
             return next;
           } catch (error) {
             done = true;
@@ -169,19 +185,24 @@ function withAgentRunCancellation(
           if (done) {
             return { done: true, value: undefined };
           }
+
           done = true;
           let closeError: unknown;
           const closePromise = iterator.return?.().catch((error: unknown) => {
             closeError = error;
             return { done: true, value: undefined } as IteratorResult<AgentRunStreamEvent>;
           });
+
           if (!terminal) {
             await handleCancellation();
           }
+
           await closePromise;
+
           if (closeError !== undefined) {
             throw closeError;
           }
+
           return { done: true, value: undefined };
         },
       };
@@ -195,13 +216,19 @@ export function traceForRun(
   session: StudioSession | undefined,
 ): AgentTraceOptions {
   const options: AgentTraceOptions = {};
+
   if (trace !== undefined) Object.assign(options, trace);
+
   const metadata: JsonObject = {};
+
   if (trace?.metadata !== undefined) Object.assign(metadata, trace.metadata);
+
   metadata.agentId = agentId;
   options.metadata = metadata;
+
   if (trace?.sessionId !== undefined) options.sessionId = trace.sessionId;
   else if (session !== undefined) options.sessionId = session.id;
+
   return options;
 }
 
@@ -229,6 +256,7 @@ export function createPersistedStreamingSessionTranscript(props: {
   ): Promise<void> => {
     const operation = saveTail.then(async () => {
       const nextSession = await props.store.saveSessionRunTranscript(input);
+
       if (nextSession === undefined) {
         throw new Error("Session not found");
       }
@@ -245,6 +273,7 @@ export function createPersistedStreamingSessionTranscript(props: {
       transcript,
       status: "running",
     });
+
     if (isCancelled()) {
       return;
     }
@@ -254,18 +283,22 @@ export function createPersistedStreamingSessionTranscript(props: {
         if (isCancelled()) {
           return;
         }
+
         acceptTranscriptStreamEvent(transcript, event);
+
         if (isTerminalAgentEvent(event)) {
           assignTranscriptRunDuration(transcript, Date.now() - props.startedAt);
         }
-        const eventStatus =
-          event.type === "response" || event.type === "interaction" || event.type === "blocked"
-            ? event.type === "interaction"
-              ? "suspended"
-              : "success"
-            : event.type === "error"
-              ? "error"
-              : "running";
+
+        let eventStatus: "running" | "success" | "suspended" | "error" = "running";
+
+        if (event.type === "interaction") {
+          eventStatus = "suspended";
+        } else if (event.type === "response" || event.type === "blocked") {
+          eventStatus = "success";
+        } else if (event.type === "error") {
+          eventStatus = "error";
+        }
 
         const saveInput: Parameters<typeof props.store.saveSessionRunTranscript>[0] = {
           id: props.session.id,
@@ -274,12 +307,15 @@ export function createPersistedStreamingSessionTranscript(props: {
           transcript,
           status: eventStatus,
         };
+
         if (event.type === "error") saveInput.error = serializeError(event.error);
+
         await saveTranscript(saveInput);
         const generatedMessages =
           event.type === "response" || event.type === "interaction" || event.type === "blocked"
             ? event.messages.slice(props.generatedMessagesStartIndex ?? 1)
             : [];
+
         if (props.persistGeneratedMessages === true && generatedMessages.length > 0) {
           await props.store.append({
             scope: { sessionId: props.session.id },
@@ -288,9 +324,11 @@ export function createPersistedStreamingSessionTranscript(props: {
             messages: generatedMessages,
           });
         }
+
         if (isCancelled()) {
           return;
         }
+
         status = eventStatus;
 
         yield event;
@@ -299,6 +337,7 @@ export function createPersistedStreamingSessionTranscript(props: {
       if (status !== "running") {
         throw error;
       }
+
       status = "error";
       appendTranscriptAssistantError(transcript, errorText(error));
       assignTranscriptRunDuration(transcript, Date.now() - props.startedAt);
@@ -320,6 +359,7 @@ export function createPersistedStreamingSessionTranscript(props: {
       if (status !== "running") {
         return;
       }
+
       status = "cancelled";
       cancelPendingTranscriptInputs(transcript, new Date().toISOString());
       assignTranscriptRunDuration(transcript, Date.now() - props.startedAt);
@@ -341,10 +381,12 @@ export function assignTranscriptRunDuration(
   const normalizedDurationMs = Math.max(0, durationMs);
   for (let index = transcript.length - 1; index >= 0; index -= 1) {
     const entry = transcript[index];
+
     if (entry?.kind === "message" && entry.role === "assistant") {
       entry.durationMs = normalizedDurationMs;
       return;
     }
+
     if (entry?.kind === "message" && entry.role === "user") {
       break;
     }
@@ -366,6 +408,7 @@ function cancelPendingTranscriptInputs(
     if (entry.kind !== "tool") {
       continue;
     }
+
     if (entry.approval?.status === "pending") {
       entry.approval = {
         ...entry.approval,
@@ -374,6 +417,7 @@ function cancelPendingTranscriptInputs(
         reason: "Run cancelled in Anvia Studio.",
       };
     }
+
     if (entry.question?.status === "pending") {
       entry.question = {
         ...entry.question,
@@ -391,9 +435,11 @@ function acceptTranscriptStreamEvent(
   if (event.type === "text_delta") {
     appendTranscriptAssistantText(transcript, event.delta);
   }
+
   if (event.type === "reasoning_delta") {
     appendTranscriptReasoningText(transcript, event.delta, event.id);
   }
+
   if (event.type === "tool_call") {
     transcript.push({
       entryId: transcript.length,
@@ -403,29 +449,40 @@ function acceptTranscriptStreamEvent(
       args: formatJson(event.toolCall.input),
     });
   }
+
   if (event.type === "tool_result") {
     const matched = findTranscriptToolEntry(transcript, event.toolName, event.toolCallId);
+
     if (matched === undefined) {
       const entry: Extract<StudioTranscriptEntry, { kind: "tool" }> = {
         entryId: transcript.length,
         kind: "tool",
         toolName: event.toolName,
       };
+
       if (event.toolCallId !== undefined) entry.callId = event.toolCallId;
+
       if (event.args !== undefined) entry.args = event.args;
+
       if (event.result !== undefined) entry.result = event.result;
+
       if (event.structuredResult !== undefined) entry.structuredResult = event.structuredResult;
+
       transcript.push(entry);
       return;
     }
+
     matched.args = matched.args ?? event.args;
     matched.result = event.result;
+
     if (event.structuredResult !== undefined) {
       matched.structuredResult = event.structuredResult;
     }
   }
+
   if (event.type === "agent_tool_event") {
     const matched = findTranscriptToolEntry(transcript, event.toolName, event.toolCallId);
+
     if (matched === undefined) {
       const entry: Extract<StudioTranscriptEntry, { kind: "tool" }> = {
         entryId: transcript.length,
@@ -435,12 +492,16 @@ function acceptTranscriptStreamEvent(
           (childEvent): childEvent is StudioTranscriptChildAgentEvent => childEvent !== undefined,
         ),
       };
+
       if (event.toolCallId !== undefined) entry.callId = event.toolCallId;
+
       transcript.push(entry);
       return;
     }
+
     appendChildAgentTranscriptEvent(matched, event);
   }
+
   if (event.type === "interaction") {
     const interaction = event.interaction;
     const matched = findTranscriptToolEntry(
@@ -448,15 +509,19 @@ function acceptTranscriptStreamEvent(
       interaction.toolName,
       interaction.callId ?? interaction.toolCallId,
     );
+
     if (matched !== undefined && interaction.type === "tool-approval") {
       const approval: NonNullable<typeof matched.approval> = {
         id: interaction.id,
         status: "pending",
         requestedAt: new Date().toISOString(),
       };
+
       if (interaction.reason !== undefined) approval.reason = interaction.reason;
+
       matched.approval = approval;
     }
+
     if (matched !== undefined && interaction.type === "tool-question") {
       matched.question = {
         id: interaction.id,
@@ -471,6 +536,7 @@ function acceptTranscriptStreamEvent(
       };
     }
   }
+
   if (event.type === "interaction_response") {
     const response = event.response;
     const matched = findTranscriptToolEntry(
@@ -479,15 +545,19 @@ function acceptTranscriptStreamEvent(
       response.callId ?? response.toolCallId,
     );
     const respondedAt = new Date().toISOString();
+
     if (matched?.approval !== undefined && response.type === "tool-approval-response") {
       const approval: NonNullable<typeof matched.approval> = {
         ...matched.approval,
         status: response.approved ? "approved" : "rejected",
         resolvedAt: respondedAt,
       };
+
       if (response.reason !== undefined) approval.reason = response.reason;
+
       matched.approval = approval;
     }
+
     if (matched?.question !== undefined && response.type === "tool-question-response") {
       matched.question = {
         ...matched.question,
@@ -500,12 +570,14 @@ function acceptTranscriptStreamEvent(
       };
     }
   }
+
   if (
     (event.type === "response" || event.type === "interaction" || event.type === "blocked") &&
     event.trace?.traceId !== undefined
   ) {
     assignTranscriptTraceId(transcript, event.trace.traceId);
   }
+
   if (event.type === "error") {
     appendTranscriptAssistantError(transcript, errorText(event.error));
   }
@@ -516,12 +588,16 @@ function appendChildAgentTranscriptEvent(
   event: Extract<AgentRunStreamEvent, { type: "agent_tool_event" }>,
 ): void {
   const childEvent = childAgentTranscriptEvent(event);
+
   if (childEvent === undefined) {
     return;
   }
+
   const childEvents = entry.childEvents ?? [];
+
   if (childEvent.kind === "message") {
     const last = childEvents.at(-1);
+
     if (last?.kind === "message" && last.agentId === childEvent.agentId) {
       last.text = `${last.text}${childEvent.text}`;
     } else {
@@ -529,6 +605,7 @@ function appendChildAgentTranscriptEvent(
     }
   } else if (childEvent.kind === "reasoning") {
     const last = childEvents.at(-1);
+
     if (
       last?.kind === "reasoning" &&
       last.agentId === childEvent.agentId &&
@@ -540,17 +617,20 @@ function appendChildAgentTranscriptEvent(
     }
   } else {
     const matched = findChildAgentToolEvent(childEvents, childEvent);
+
     if (matched === undefined) {
       childEvents.push(childEvent);
     } else {
       if (matched.args === undefined && childEvent.args !== undefined) {
         matched.args = childEvent.args;
       }
+
       if (childEvent.result !== undefined) {
         matched.result = childEvent.result;
       }
     }
   }
+
   entry.childEvents = childEvents;
 }
 
@@ -558,25 +638,33 @@ function childAgentTranscriptEvent(
   event: Extract<AgentRunStreamEvent, { type: "agent_tool_event" }>,
 ): StudioTranscriptChildAgentEvent | undefined {
   const child = event.event;
+
   if (child.type === "text_delta") {
     const entry: Extract<StudioTranscriptChildAgentEvent, { kind: "message" }> = {
       kind: "message",
       agentId: event.agentId,
       text: child.delta,
     };
+
     if (event.agentName !== undefined) entry.agentName = event.agentName;
+
     return entry;
   }
+
   if (child.type === "reasoning_delta") {
     const entry: Extract<StudioTranscriptChildAgentEvent, { kind: "reasoning" }> = {
       kind: "reasoning",
       agentId: event.agentId,
       text: child.delta,
     };
+
     if (event.agentName !== undefined) entry.agentName = event.agentName;
+
     if (child.id !== undefined) entry.reasoningId = child.id;
+
     return entry;
   }
+
   if (child.type === "tool_call") {
     const entry: Extract<StudioTranscriptChildAgentEvent, { kind: "tool" }> = {
       kind: "tool",
@@ -585,31 +673,44 @@ function childAgentTranscriptEvent(
       callId: child.toolCall.callId ?? child.toolCall.toolCallId,
       args: formatJson(child.toolCall.input),
     };
+
     if (event.agentName !== undefined) entry.agentName = event.agentName;
+
     return entry;
   }
+
   if (child.type === "tool_result") {
     const entry: Extract<StudioTranscriptChildAgentEvent, { kind: "tool" }> = {
       kind: "tool",
       agentId: event.agentId,
       toolName: child.toolName,
     };
+
     if (event.agentName !== undefined) entry.agentName = event.agentName;
+
     if (child.toolCallId !== undefined) entry.callId = child.toolCallId;
+
     if (child.args !== undefined) entry.args = child.args;
+
     if (child.result !== undefined) entry.result = child.result;
+
     if (child.structuredResult !== undefined) entry.structuredResult = child.structuredResult;
+
     return entry;
   }
+
   if (child.type === "error") {
     const entry: Extract<StudioTranscriptChildAgentEvent, { kind: "message" }> = {
       kind: "message",
       agentId: event.agentId,
       text: `Error: ${errorText(child.error)}`,
     };
+
     if (event.agentName !== undefined) entry.agentName = event.agentName;
+
     return entry;
   }
+
   return undefined;
 }
 
@@ -617,6 +718,7 @@ function errorText(error: unknown): string {
   if (typeof error === "string") {
     return error;
   }
+
   return JSON.stringify(serializeError(error));
 }
 
@@ -626,6 +728,7 @@ function findChildAgentToolEvent(
 ): Extract<StudioTranscriptChildAgentEvent, { kind: "tool" }> | undefined {
   for (let index = childEvents.length - 1; index >= 0; index -= 1) {
     const childEvent = childEvents[index];
+
     if (
       childEvent?.kind !== "tool" ||
       childEvent.agentId !== event.agentId ||
@@ -634,6 +737,7 @@ function findChildAgentToolEvent(
     ) {
       continue;
     }
+
     if (event.callId === undefined || childEvent.callId === event.callId) {
       return childEvent;
     }
@@ -652,16 +756,20 @@ function messageToTranscriptEntry(
     role,
     text: extractMessageText(message),
   };
+
   if (role === "user") Object.assign(entry, optionalTranscriptAttachments(message));
+
   return entry;
 }
 
 function appendTranscriptAssistantText(transcript: StudioTranscriptEntry[], delta: string): void {
   const last = transcript.at(-1);
+
   if (last?.kind === "message" && last.role === "assistant" && last.tone !== "error") {
     last.text = `${last.text}${delta}`;
     return;
   }
+
   transcript.push({
     entryId: transcript.length,
     kind: "message",
@@ -672,6 +780,7 @@ function appendTranscriptAssistantText(transcript: StudioTranscriptEntry[], delt
 
 function appendTranscriptAssistantError(transcript: StudioTranscriptEntry[], text: string): void {
   const last = transcript.at(-1);
+
   if (
     last?.kind === "message" &&
     last.role === "assistant" &&
@@ -680,6 +789,7 @@ function appendTranscriptAssistantError(transcript: StudioTranscriptEntry[], tex
   ) {
     return;
   }
+
   transcript.push({
     entryId: transcript.length,
     kind: "message",
@@ -692,6 +802,7 @@ function appendTranscriptAssistantError(transcript: StudioTranscriptEntry[], tex
 function assignTranscriptTraceId(transcript: StudioTranscriptEntry[], traceId: string): void {
   for (let index = transcript.length - 1; index >= 0; index -= 1) {
     const entry = transcript[index];
+
     if (entry?.kind === "message" && entry.role === "assistant") {
       transcript[index] = { ...entry, traceId };
       return;
@@ -705,16 +816,20 @@ function appendTranscriptReasoningText(
   reasoningId: string | undefined,
 ): void {
   const last = transcript.at(-1);
+
   if (last?.kind === "reasoning" && (last.reasoningId ?? "") === (reasoningId ?? "")) {
     last.text = `${last.text}${delta}`;
     return;
   }
+
   const entry: Extract<StudioTranscriptEntry, { kind: "reasoning" }> = {
     entryId: transcript.length,
     kind: "reasoning",
     text: delta,
   };
+
   if (reasoningId !== undefined) entry.reasoningId = reasoningId;
+
   transcript.push(entry);
 }
 
@@ -725,9 +840,11 @@ function findTranscriptToolEntry(
 ): Extract<StudioTranscriptEntry, { kind: "tool" }> | undefined {
   for (let index = transcript.length - 1; index >= 0; index -= 1) {
     const entry = transcript[index];
+
     if (entry?.kind !== "tool" || entry.toolName !== toolName || entry.result !== undefined) {
       continue;
     }
+
     if (callId === undefined || entry.callId === callId) {
       return entry;
     }
@@ -737,9 +854,11 @@ function findTranscriptToolEntry(
 
 function titleFromMessage(message: string | Message): string | undefined {
   const text = extractMessageText(message).replace(/\s+/g, " ").trim();
+
   if (text.length === 0) {
     return undefined;
   }
+
   return text.length > 72 ? `${text.slice(0, 69)}...` : text;
 }
 
@@ -752,23 +871,29 @@ function extractMessageText(message: string | Message): string {
   if (typeof message === "string") {
     return message;
   }
+
   if (message.role === "system") {
     return message.content;
   }
+
   if (typeof message.content === "string") {
     return message.content;
   }
+
   return message.content
     .flatMap((item) => {
       if (item.type === "text" || item.type === "reasoning") {
         return [item.text];
       }
+
       if (item.type === "tool-call") {
         return [`${item.toolName}(${formatJson(item.input)})`];
       }
+
       if (item.type === "tool-result") {
         return [toolResultOutputText(item.output)];
       }
+
       return [];
     })
     .join("\n");
@@ -780,28 +905,40 @@ function optionalTranscriptAttachments(message: string | Message): {
   if (typeof message === "string" || message.role !== "user") {
     return {};
   }
+
   if (typeof message.content === "string") {
     return {};
   }
+
   const attachments = message.content.flatMap((content): StudioTranscriptAttachment[] => {
     if (content.type === "image") {
       const attachment: StudioTranscriptAttachment = { kind: "image" };
+
       if (content.image.type === "data") {
         attachment.data = content.image.data;
+
         if (content.mediaType !== undefined) attachment.mediaType = content.mediaType;
       } else {
         attachment.url = content.image.url;
       }
+
       return [attachment];
     }
+
     if (content.type === "file") {
       const attachment: StudioTranscriptAttachment = { kind: "document" };
+
       if (content.filename !== undefined) attachment.name = content.filename;
+
       attachment.mediaType = content.mediaType;
+
       if (content.data.type === "data") attachment.data = content.data.data;
+
       if (content.data.type === "url") attachment.url = content.data.url;
+
       return [attachment];
     }
+
     return [];
   });
   return attachments.length === 0 ? {} : { attachments };
@@ -831,6 +968,7 @@ export async function parseRunRequest(c: Context): Promise<AgentRunRequest | { e
   }
 
   const request = parseRunRequestBody(c, body);
+
   if ("error" in request) {
     return request;
   }
@@ -846,6 +984,7 @@ function parseRunRequestBody(
     if (typeof body.interactionId !== "string" || body.interactionId.trim().length === 0) {
       return { error: errorResponse(c, 400, "bad_request", "interactionId must be a string") };
     }
+
     if (
       body.messages !== undefined ||
       body.sessionId !== undefined ||
@@ -861,6 +1000,7 @@ function parseRunRequestBody(
         ),
       };
     }
+
     try {
       return {
         type: "interaction_response",
@@ -873,6 +1013,7 @@ function parseRunRequestBody(
       };
     }
   }
+
   if (body.type !== "messages") {
     return {
       error: errorResponse(
@@ -883,6 +1024,7 @@ function parseRunRequestBody(
       ),
     };
   }
+
   let messages: Message[];
   try {
     messages = parseMessages(body.messages);
@@ -899,11 +1041,13 @@ function parseRunRequestBody(
   }
 
   const message = messages.at(-1);
+
   if (message === undefined) {
     return {
       error: errorResponse(c, 400, "bad_request", "messages must be a non-empty Message array"),
     };
   }
+
   if (message.role !== "user") {
     return {
       error: errorResponse(c, 400, "bad_request", "The final message must be user-authored"),
@@ -922,11 +1066,13 @@ function parseRunRequestOptions(
     if (typeof body.sessionId !== "string" || body.sessionId.trim().length === 0) {
       return { error: errorResponse(c, 400, "bad_request", "sessionId must be a string") };
     }
+
     if (request.messages.length !== 1 || request.messages[0]?.role !== "user") {
       return {
         error: errorResponse(c, 400, "bad_request", "sessionId requires exactly one user message"),
       };
     }
+
     request.sessionId = body.sessionId;
   }
 
@@ -934,6 +1080,7 @@ function parseRunRequestOptions(
     if (typeof body.stream !== "boolean") {
       return { error: errorResponse(c, 400, "bad_request", "stream must be a boolean") };
     }
+
     request.stream = body.stream;
   }
 
@@ -943,6 +1090,7 @@ function parseRunRequestOptions(
         error: errorResponse(c, 400, "bad_request", "maxTurns must be a non-negative integer"),
       };
     }
+
     request.maxTurns = body.maxTurns;
   }
 
@@ -952,6 +1100,7 @@ function parseRunRequestOptions(
         error: errorResponse(c, 400, "bad_request", "toolConcurrency must be a positive integer"),
       };
     }
+
     request.toolConcurrency = body.toolConcurrency;
   }
 
@@ -986,6 +1135,7 @@ function parseRunRequestOptions(
         error: errorResponse(c, 400, "bad_request", "controls must be an object of string values"),
       };
     }
+
     request.controls = body.controls as Record<string, string>;
   }
 
@@ -993,6 +1143,7 @@ function parseRunRequestOptions(
     if (!isJsonObject(body.metadata)) {
       return { error: errorResponse(c, 400, "bad_request", "metadata must be an object") };
     }
+
     request.metadata = body.metadata;
   }
 
@@ -1002,6 +1153,7 @@ function parseRunRequestOptions(
         error: errorResponse(c, 400, "bad_request", "trace must be an AgentTraceOptions object"),
       };
     }
+
     request.trace = body.trace;
   }
 
@@ -1010,8 +1162,11 @@ function parseRunRequestOptions(
 
 function toolResultOutputText(output: ToolResultOutput): string {
   if (output.type === "text" || output.type === "error-text") return output.value;
+
   if (output.type === "json" || output.type === "error-json") return formatJson(output.value);
+
   if (output.type === "execution-denied") return output.reason ?? "Execution denied";
+
   return output.value
     .map((part) =>
       part.type === "text"

@@ -23,15 +23,19 @@ export async function handleDurableTaskRequest(
 ): Promise<Response | undefined> {
   const url = new URL(request.url);
   const path = `${base}/tasks`;
+
   if (url.pathname !== path && !url.pathname.startsWith(`${path}/`)) return undefined;
+
   const parts = url.pathname.slice(path.length).split("/").filter(Boolean).map(decodeURIComponent);
   const backend = options.runtime;
+
   if (
     backend.getTask === undefined ||
     backend.listTasks === undefined ||
     backend.submitRegisteredTask === undefined
   )
     return jsonResponse({ error: "Tasks are not available from this backend." }, 501);
+
   // Narrowed above; the optional members are only absent on a store-only client.
   const runtime = backend as typeof backend &
     Required<Pick<typeof backend, "getTask" | "listTasks" | "submitRegisteredTask">>;
@@ -55,17 +59,20 @@ export async function handleDurableTaskRequest(
       throw new HttpInputError(403, "Forbidden");
     }
   };
+
   if (parts.length === 0) {
     if (request.method === "POST") {
       const body = await readJson(request, maxBytes);
       rejectClientTrace(body);
       const input = parseTaskSubmission(body);
+
       // Older engines cannot expose effective bindings safely; never authorize agent-less here.
       if (typeof runtime.taskSubmissionScope !== "function")
         throw new HttpInputError(
           503,
           "Task submission authorization needs the task definitions, so it is not available from this backend (or from @anvia/durable older than 0.6).",
         );
+
       const { sessionId, taskName, agentIds } = await runtime.taskSubmissionScope(input);
       for (const agentId of agentIds.length === 0 ? [undefined] : agentIds) {
         const resource: DurableAuthorization = {
@@ -92,40 +99,55 @@ export async function handleDurableTaskRequest(
         202,
       );
     }
+
     if (request.method === "GET") {
       const filter = parseTaskListOptions(listQuery(url));
+
       if (filter.sessionId === undefined) throw new TypeError("Listing requires sessionId.");
+
       if (!(await options.authorize(request, { action: "list", sessionId: filter.sessionId })))
         throw new HttpInputError(403, "Forbidden");
+
       const page = await runtime.listTasks(filter);
       for (const task of page.tasks) await authorize(task, "list");
       return jsonResponse(page);
     }
+
     return jsonResponse({ error: "Method not allowed" }, 405);
   }
+
   const suffix = parts[1];
+
   if (
     parts.length > 2 ||
     (suffix !== undefined &&
       !["graph", "events", "signal", "resolve-effect", "retry", "cancel"].includes(suffix))
   )
     return jsonResponse({ error: "Not found" }, 404);
+
   const action =
     suffix === undefined || suffix === "graph" ? "inspect" : (suffix as DurableHttpAction);
+
   if (request.method !== (["inspect", "events"].includes(action) ? "GET" : "POST"))
     return jsonResponse({ error: "Method not allowed" }, 405);
+
   const handle = await runtime.getTask(parts[0]!);
   const snapshot = await handle.snapshot();
   await authorize(snapshot.task, action);
+
   if (suffix === undefined) return jsonResponse(snapshot);
+
   if (suffix === "graph" || suffix === "events" || suffix === "cancel") {
     const graph = await handle.graph();
     for (const task of graph.nodes) await authorize(task, action);
+
     if (suffix === "graph") return jsonResponse(graph);
+
     if (suffix === "cancel") {
       await handle.cancel({ expectedTreeIds: graph.nodes.map((task) => task.id) });
       return new Response(null, { status: 204, headers: { "cache-control": "no-store" } });
     }
+
     if (suffix === "events")
       return durableEventsResponse(request, graph.cursor, async function* (streamOptions) {
         for await (const event of handle.stream(streamOptions)) {
@@ -136,6 +158,7 @@ export async function handleDurableTaskRequest(
         }
       });
   }
+
   if (suffix === "signal") {
     const body = parseTaskSignal(await readJson(request, maxBytes));
     await handle.signal(body.name, body.requestId, body.value);
@@ -143,5 +166,6 @@ export async function handleDurableTaskRequest(
     const body = parseTaskResolution(await readJson(request, maxBytes));
     await handle.resolveEffect(body.key, body.value);
   } else if (suffix === "retry") await handle.retry();
+
   return new Response(null, { status: 204, headers: { "cache-control": "no-store" } });
 }

@@ -30,10 +30,12 @@ export class LanceDBVectorStore<
 
   async ensure(): Promise<void> {
     const connection = await this.owner.nativeClient();
+
     if (!(await connection.tableNames()).includes(this.options.tableName)) {
       if (connection.createEmptyTable === undefined) {
         throw new TypeError("LanceDB provisioning requires createEmptyTable(...).");
       }
+
       const { Field, FixedSizeList, Float32, Schema, Utf8 } = await import("apache-arrow");
       await connection.createEmptyTable(
         this.options.tableName,
@@ -50,21 +52,28 @@ export class LanceDBVectorStore<
         ]),
       );
     }
+
     await this.validate();
   }
 
   async validate(): Promise<void> {
     const table = await (await this.owner.nativeClient()).openTable(this.options.tableName);
+
     if (table.schema === undefined) return;
+
     const schema = await table.schema();
     const vectorField = schema.fields?.find((field) => field.name === vectorColumn);
+
     if (vectorField === undefined) {
       throw new Error(`LanceDB table ${this.options.tableName} is missing ${vectorColumn}`);
     }
+
     if (!schema.fields?.some((field) => field.name === metadataColumn)) {
       throw new Error(`LanceDB table ${this.options.tableName} is missing ${metadataColumn}`);
     }
+
     const listSize = (vectorField.type as { listSize?: unknown } | undefined)?.listSize;
+
     if (typeof listSize === "number" && listSize !== this.options.dimensions) {
       throw new Error(
         `LanceDB table ${this.options.tableName} has ${listSize} dimensions; expected ${this.options.dimensions}`,
@@ -74,11 +83,14 @@ export class LanceDBVectorStore<
 
   async upsert(options: VectorStoreUpsertOptions<T, Metadata>): Promise<void> {
     validateDocuments(options.documents, this.options.dimensions);
+
     if (options.documents.length === 0) return;
+
     const table = await (await this.owner.nativeClient()).openTable(this.options.tableName);
     const ids = options.documents.map((document) => sqlString(document.id)).join(", ");
     await table.delete(`${documentIdColumn} IN (${ids})`);
     const rows = options.documents.flatMap((document) => lanceRows(document));
+
     if (rows.length > 0) await table.add(rows, options.providerOptions);
   }
 
@@ -95,14 +107,18 @@ export class LanceDBVectorStore<
       throwIfAborted(request.abortSignal);
       const unfiltered = parseQueryResults<T, Metadata>(response, undefined, this.options.metric);
       const results = selectResults(unfiltered, request);
+
       if (
         results.length >= request.topK ||
         response.length < candidateLimit ||
         hasResultBelowMinimum(unfiltered, request.minScore)
       )
         return results;
+
       const nextLimit = nextCandidateLimit(candidateLimit);
+
       if (nextLimit === candidateLimit) return results;
+
       candidateLimit = nextLimit;
     }
   }
@@ -154,12 +170,16 @@ function validateDocuments<T, Metadata extends VectorMetadata>(
   const ids = new Set<string>();
   for (const document of documents) {
     if (ids.has(document.id)) throw new TypeError(`Duplicate vector document id: ${document.id}`);
+
     ids.add(document.id);
+
     if (document.embeddings.length === 0)
       throw new TypeError(`Vector document ${document.id} must contain at least one embedding.`);
+
     for (const embedding of document.embeddings) {
       if (embedding.vector.length !== dimensions)
         throw new Error(`Vector dimension mismatch for document ${document.id}`);
+
       if (!embedding.vector.every(Number.isFinite))
         throw new Error(`Vector for document ${document.id} must contain only finite numbers`);
     }
@@ -168,21 +188,27 @@ function validateDocuments<T, Metadata extends VectorMetadata>(
 
 function metricName(metric: LanceDBVectorStoreOptions["metric"]): "cosine" | "l2" | "dot" {
   if (metric === "euclidean") return "l2";
+
   if (metric === "dotProduct") return "dot";
+
   return "cosine";
 }
 
 function validateSearchRequest(request: VectorSearchRequest, dimensions: number): void {
   throwIfAborted(request.abortSignal);
+
   if (!Number.isSafeInteger(request.topK) || request.topK < 1)
     throw new RangeError("Vector search topK must be a positive safe integer.");
+
   if (request.minScore !== undefined && !Number.isFinite(request.minScore))
     throw new RangeError("Vector search minScore must be a finite number.");
+
   if (request.vector.length !== dimensions) {
     throw new Error(
       `Vector dimension mismatch: expected ${dimensions} dimensions but received ${request.vector.length} for query`,
     );
   }
+
   if (!request.vector.every(Number.isFinite))
     throw new Error("Vector search query must contain only finite numbers");
 }

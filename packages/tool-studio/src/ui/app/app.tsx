@@ -79,9 +79,11 @@ export function StudioConsole() {
 
   function updateTranscriptStickiness() {
     const node = transcriptScrollerRef.current;
+
     if (node === null) {
       return;
     }
+
     transcriptStickToBottomRef.current =
       node.scrollHeight - node.scrollTop - node.clientHeight < 80;
   }
@@ -94,11 +96,14 @@ export function StudioConsole() {
     ) {
       return;
     }
+
     const frame = window.requestAnimationFrame(() => {
       const node = transcriptScrollerRef.current;
+
       if (node === null) {
         return;
       }
+
       node.scrollTop = node.scrollHeight;
     });
     return () => window.cancelAnimationFrame(frame);
@@ -108,14 +113,19 @@ export function StudioConsole() {
     if (activePage !== "playground" || typeof ResizeObserver === "undefined") {
       return;
     }
+
     const scroller = transcriptScrollerRef.current;
+
     if (scroller === null) {
       return;
     }
+
     const content = scroller.querySelector<HTMLElement>("[data-studio-transcript-content]");
+
     if (content === null) {
       return;
     }
+
     const observer = new ResizeObserver(() => {
       if (transcriptStickToBottomRef.current) {
         scroller.scrollTop = scroller.scrollHeight;
@@ -130,10 +140,12 @@ export function StudioConsole() {
     setError("");
     try {
       const response = await fetch("/config");
+
       if (response.status === 401) {
         setStatus("Authentication required");
         return;
       }
+
       if (!response.ok) {
         throw new Error(`Config failed with HTTP ${response.status}`);
       }
@@ -173,6 +185,7 @@ export function StudioConsole() {
       setBrowserWorkspaceOpen(false);
       return;
     }
+
     const controller = new AbortController();
     void requestJson<StudioSandboxesSummary>("/sandboxes", "Sandboxes", controller.signal)
       .then((summary) => setSandboxes(summary.sandboxes))
@@ -189,6 +202,7 @@ export function StudioConsole() {
       void studioRouter.navigate({ to: "/playground" });
       return;
     }
+
     void studioRouter.navigate({
       to: "/playground/$sessionId",
       params: { sessionId },
@@ -272,6 +286,7 @@ export function StudioConsole() {
         selectedAgent?.id ?? selectedAgentId,
         toolName,
       );
+
       if (workspace !== undefined) {
         setBrowserWorkspace(workspace);
         setBrowserWorkspaceOpen(true);
@@ -295,6 +310,7 @@ export function StudioConsole() {
       setAttachments([]);
       setBrowserWorkspace(undefined);
       setBrowserWorkspaceOpen(false);
+
       if (options.updatePath !== false) {
         setActivePage("playground");
         navigateSessionPath(session.id);
@@ -305,9 +321,11 @@ export function StudioConsole() {
   const handleSessionDeleted = useCallback(
     (sessionId: string, wasSelected: boolean) => {
       traces.removeSessionTraces(sessionId);
+
       if (!wasSelected) {
         return;
       }
+
       resetTranscriptSequence();
       setTranscriptResetKey((current) => current + 1);
       setMessages([]);
@@ -316,6 +334,7 @@ export function StudioConsole() {
       setAttachments([]);
       setBrowserWorkspace(undefined);
       setBrowserWorkspaceOpen(false);
+
       if (activePage === "playground") {
         navigateSessionPath(undefined);
       }
@@ -376,6 +395,7 @@ export function StudioConsole() {
       if (runState !== "idle") {
         return;
       }
+
       resetTranscriptSequence();
       setTranscriptResetKey((current) => current + 1);
       sessions.clearSelectedSession();
@@ -387,9 +407,11 @@ export function StudioConsole() {
       setBrowserWorkspaceOpen(false);
       setActivePage("playground");
       setError("");
+
       if (options.updatePath !== false) {
         navigateSessionPath(undefined);
       }
+
       requestAnimationFrame(() => resizeTextarea(promptRef.current));
     },
     [navigateSessionPath, runState, sessions, setMessages],
@@ -428,6 +450,7 @@ export function StudioConsole() {
   async function addPromptAttachments(event: ChangeEvent<HTMLInputElement>) {
     const files = Array.from(event.currentTarget.files ?? []);
     event.currentTarget.value = "";
+
     if (files.length === 0) {
       return;
     }
@@ -465,11 +488,13 @@ export function StudioConsole() {
       }
 
       setActivePage(page);
+
       if (page === "tracing") {
         traces.clearTraceSelection();
         void studioRouter.navigate({ to: "/tracing" });
         return;
       }
+
       if (page === "knowledge") {
         traces.clearTraceSelection();
         void studioRouter.navigate({
@@ -478,11 +503,14 @@ export function StudioConsole() {
         });
         return;
       }
+
       traces.clearTraceSelection();
+
       if (page === "playground" && sessions.selectedSessionId.length > 0) {
         navigateSessionPath(sessions.selectedSessionId);
         return;
       }
+
       void studioRouter.navigate({ to: `/${page}` });
     },
     [knowledgeTab, navigateSessionPath, pageAvailability, sessions.selectedSessionId, traces],
@@ -512,7 +540,9 @@ export function StudioConsole() {
         navigateFallback(page);
         return;
       }
+
       setActivePage(page);
+
       if (page !== "tracing") {
         traces.clearTraceSelection();
       }

@@ -42,6 +42,7 @@ export function parseMcpToolArguments(args: unknown): JsonObject {
   if (!isMcpJsonObject(args)) {
     throw new TypeError("MCP tool arguments must be a strict JSON object");
   }
+
   return args;
 }
 
@@ -59,9 +60,11 @@ export function mapMcpToolResult(result: McpToolCallResult): readonly ToolResult
   }
 
   const content = result.content.map(mapMcpContent);
+
   if (content.length === 0 && result.structuredContent !== undefined) {
     content.push({ type: "text", text: serializeMcpValue(result.structuredContent) });
   }
+
   return content;
 }
 
@@ -125,8 +128,10 @@ function serializeMcpValue(value: unknown): string {
   } catch (error) {
     throw new TypeError("MCP tool results must be strict JSON values.", { cause: error });
   }
+
   if (serialized === undefined) {
     throw new TypeError("MCP tool results must be strict JSON values.");
   }
+
   return serialized;
 }

@@ -64,6 +64,7 @@ export class DurableObserver implements DurableRunReader {
   /** Closes the store connection. It never touches the owner's run state or lease. */
   async close(): Promise<void> {
     if (this.closed) return;
+
     this.closed = true;
     await this.store.close();
   }

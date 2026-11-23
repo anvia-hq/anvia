@@ -40,9 +40,11 @@ export async function retrieveGraphContext<Schema extends Neo4jGraphSchema>(
   if (!(options.graph instanceof Neo4jKnowledgeGraphBase)) {
     throw new TypeError("retrieveGraphContext requires a Neo4j knowledge graph registration.");
   }
+
   if (typeof options.query !== "string" || options.query.trim().length === 0) {
     throw new TypeError("Graph retrieval query must be a non-empty string.");
   }
+
   validateSearch(options.search);
   validateTraversal(options.graph.schema, options.traversal);
   validateEvidence(options.graph.evidenceCapability, options.evidence);
@@ -50,17 +52,20 @@ export async function retrieveGraphContext<Schema extends Neo4jGraphSchema>(
   const graph = options.graph as Neo4jKnowledgeGraphBase<Schema>;
   const selectedSeeds = options.search.seeds.map((name) => ({ name, seed: graph.seed(name) }));
   const expectedDimensions = selectedSeeds[0]?.seed.vectorIndex.dimensions;
+
   if (
     expectedDimensions === undefined ||
     selectedSeeds.some((item) => item.seed.vectorIndex.dimensions !== expectedDimensions)
   ) {
     throw new TypeError("Selected Neo4j graph seeds must use the same vector dimensions.");
   }
+
   if (options.model.dimensions !== undefined && options.model.dimensions !== expectedDimensions) {
     throw new TypeError(
       `Embedding model dimensions ${options.model.dimensions} do not match Neo4j graph dimensions ${expectedDimensions}.`,
     );
   }
+
   if (options.search.type === "hybrid") {
     for (const { name, seed } of selectedSeeds) {
       if (seed.fulltextIndex === undefined) {
@@ -68,12 +73,14 @@ export async function retrieveGraphContext<Schema extends Neo4jGraphSchema>(
       }
     }
   }
+
   const { embedding } = await embedText({
     model: options.model,
     text: options.query,
     retries: options.retries,
     abortSignal: options.abortSignal,
   });
+
   if (embedding.vector.length !== expectedDimensions) {
     throw new TypeError(
       `Query embedding dimensions ${embedding.vector.length} do not match Neo4j graph dimensions ${expectedDimensions}.`,
@@ -95,11 +102,14 @@ export async function retrieveGraphContext<Schema extends Neo4jGraphSchema>(
         options.abortSignal,
       ),
     );
+
     if (options.search.type === "hybrid") {
       const fulltextIndex = seed.fulltextIndex;
+
       if (fulltextIndex === undefined) {
         throw new TypeError("Hybrid Neo4j graph retrieval requires a full-text index.");
       }
+
       resultLists.push(
         await fulltextSearch(
           graph,
@@ -186,6 +196,7 @@ function parseSearchHit(record: Neo4jRecord): SearchHit {
   const labels = record.get("labels");
   const properties = record.get("properties");
   const score = record.get("score");
+
   if (
     typeof elementId !== "string" ||
     !Array.isArray(labels) ||
@@ -197,6 +208,7 @@ function parseSearchHit(record: Neo4jRecord): SearchHit {
   ) {
     throw new TypeError("Neo4j search returned a malformed result.");
   }
+
   return { elementId, labels, properties: properties as Record<string, unknown>, score };
 }
 
@@ -226,9 +238,11 @@ async function hydrateEvidence(
   abortSignal?: AbortSignal,
 ): Promise<Neo4jGraphEvidence[]> {
   if (options.type === "none") return [];
+
   if (!(graph instanceof ManagedNeo4jKnowledgeGraph)) {
     throw new TypeError("Chunk evidence requires a managed Neo4j knowledge graph.");
   }
+
   const chunkIds: string[] = [];
   const seen = new Set<string>();
   for (const sourceChunkIds of [
@@ -238,13 +252,18 @@ async function hydrateEvidence(
   ]) {
     for (const chunkId of sourceChunkIds) {
       if (seen.has(chunkId)) continue;
+
       seen.add(chunkId);
       chunkIds.push(chunkId);
+
       if (chunkIds.length === options.maxChunks) break;
     }
+
     if (chunkIds.length === options.maxChunks) break;
   }
+
   if (chunkIds.length === 0) return [];
+
   throwIfAborted(abortSignal);
   const result = await graph.query(
     `MATCH (d:${quoteIdentifier(graph.resources.labels.document)})-[:${quoteIdentifier("ANVIA_HAS_CHUNK")}]->(c:${quoteIdentifier(graph.resources.labels.chunk)})
@@ -261,16 +280,20 @@ RETURN c.${quoteIdentifier("__anvia_id")} AS chunkId,
   const byId = new Map<string, Neo4jGraphEvidence>();
   for (const record of result.records) {
     const evidence = evidenceFromRecord(record);
+
     if (byId.has(evidence.chunkId)) {
       throw new TypeError(`Neo4j evidence returned duplicate chunk ${evidence.chunkId}.`);
     }
+
     byId.set(evidence.chunkId, evidence);
   }
   return chunkIds.map((chunkId) => {
     const evidence = byId.get(chunkId);
+
     if (evidence === undefined) {
       throw new Error(`Neo4j graph evidence references missing chunk ${chunkId}.`);
     }
+
     return evidence;
   });
 }
@@ -281,9 +304,11 @@ function evidenceFromRecord(record: Neo4jRecord): Neo4jGraphEvidence {
   const index = safeIntegerValue(record.get("index"), "Neo4j evidence chunk index");
   const text = stringValue(record.get("text"), "Neo4j evidence text");
   const raw = record.get("properties");
+
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
     throw new TypeError("Neo4j evidence properties must be an object.");
   }
+
   return {
     chunkId,
     documentId,
@@ -295,15 +320,19 @@ function evidenceFromRecord(record: Neo4jRecord): Neo4jGraphEvidence {
 
 function safeIntegerValue(value: unknown, label: string): number {
   let number = value;
+
   if (isInt(value)) {
     number = undefined;
+
     if (value.inSafeRange()) {
       number = value.toNumber();
     }
   }
+
   if (typeof number !== "number" || !Number.isSafeInteger(number)) {
     throw new TypeError(`${label} must be a safe integer.`);
   }
+
   return number;
 }
 
@@ -345,7 +374,9 @@ RETURN DISTINCT elementId(entry) AS elementId`,
       traversalSeedIds.add(stringValue(record.get("elementId"), "Neo4j entry elementId"));
     }
   }
+
   if (traversalSeedIds.size === 0) return { nodes: [], relationships: [] };
+
   const limitedSeedIds = [...traversalSeedIds].slice(0, options.maxNodes);
   const pattern = traversalPattern(options.direction, options.maxDepth);
   const pathLimit = Math.max(options.maxNodes, options.maxRelationships);
@@ -377,21 +408,27 @@ LIMIT $pathLimit`,
   const seedNodesByElementId = new Map<string, Record<string, unknown>>();
   for (const record of seedNodes.records) {
     const value = record.get("node");
+
     if (typeof value !== "object" || value === null || Array.isArray(value)) {
       throw new TypeError("Neo4j traversal returned a malformed seed node.");
     }
+
     const map = value as Record<string, unknown>;
     seedNodesByElementId.set(stringValue(map.elementId, "Neo4j seed node elementId"), map);
   }
   const addNode = (value: Record<string, unknown>) => {
     const parsed = contextNode(value, graph.schema);
     const existing = nodes.get(parsed.node.key);
+
     if (existing === undefined && nodes.size >= options.maxNodes) return;
+
     if (existing === undefined) nodes.set(parsed.node.key, parsed.node);
+
     nodeKeysByElementId.set(parsed.elementId, parsed.node.key);
   };
   for (const elementId of limitedSeedIds) {
     const value = seedNodesByElementId.get(elementId);
+
     if (value !== undefined) addNode(value);
   }
   for (const record of result.records) {
@@ -402,6 +439,7 @@ LIMIT $pathLimit`,
   for (const record of result.records) {
     for (const value of listOfMaps(record.get("relationships"), "Neo4j traversal relationships")) {
       const relationship = contextRelationship(value, nodeKeysByElementId);
+
       if (
         relationship !== undefined &&
         !relationships.has(relationship.key) &&
@@ -418,9 +456,11 @@ function traversalPattern(direction: "outgoing" | "incoming" | "both", maxDepth:
   if (direction === "outgoing") {
     return `(seed)-[*1..${maxDepth}]->(node)`;
   }
+
   if (direction === "incoming") {
     return `(seed)<-[*1..${maxDepth}]-(node)`;
   }
+
   return `(seed)-[*1..${maxDepth}]-(node)`;
 }
 
@@ -487,24 +527,30 @@ function contextNode(
 ): { elementId: string; node: Neo4jGraphContextNode } {
   const labels = value.labels;
   const raw = value.properties;
+
   if (!Array.isArray(labels) || !labels.every((label) => typeof label === "string")) {
     throw new TypeError("Neo4j traversal returned malformed node labels.");
   }
+
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
     throw new TypeError("Neo4j traversal returned malformed node properties.");
   }
+
   const properties = applicationProperties(raw as Record<string, unknown>, "Neo4j graph node");
   const type = labels.find((label) => label in schema.nodes) ?? labels[0] ?? "Node";
   const definition = schema.nodes[type];
   const identity: Record<string, string | number | boolean> = {};
+
   if (definition !== undefined) {
     for (const property of definition.identity) {
       const item = properties[property];
+
       if (typeof item === "string" || typeof item === "number" || typeof item === "boolean") {
         identity[property] = item;
       }
     }
   }
+
   const elementId = stringValue(value.elementId, "Neo4j node elementId");
   return {
     elementId,
@@ -526,15 +572,19 @@ function contextRelationship(
   nodeKeysByElementId: ReadonlyMap<string, string>,
 ): Neo4jGraphContextRelationship | undefined {
   const raw = value.properties;
+
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
     throw new TypeError("Neo4j traversal returned malformed relationship properties.");
   }
+
   const elementId = stringValue(value.elementId, "Neo4j relationship elementId");
   const fromElementId = stringValue(value.from, "Neo4j relationship source");
   const toElementId = stringValue(value.to, "Neo4j relationship target");
   const from = nodeKeysByElementId.get(fromElementId);
   const to = nodeKeysByElementId.get(toElementId);
+
   if (from === undefined || to === undefined) return undefined;
+
   return {
     key: stringProperty(raw as Record<string, unknown>, "__anvia_key") ?? elementId,
     type: stringValue(value.type, "Neo4j relationship type"),
@@ -559,14 +609,17 @@ function fuseResults(lists: readonly SearchHit[][], topK: number, rrfK: number):
 
 function validateSearch(search: RetrieveGraphContextOptions<Neo4jGraphSchema>["search"]): void {
   positiveInteger(search.topK, "Neo4j graph search topK");
+
   if (search.seeds.length === 0 || new Set(search.seeds).size !== search.seeds.length) {
     throw new TypeError("Neo4j graph search requires unique seed names.");
   }
+
   if (search.type === "vector") {
     if (search.seeds.length !== 1)
       throw new TypeError(
         "Vector graph search accepts exactly one seed; use hybrid search to fuse multiple seeds.",
       );
+
     finiteScore(search.minScore, "Neo4j graph search minScore");
   } else {
     positiveInteger(search.candidatesPerSeed, "Neo4j hybrid candidatesPerSeed");
@@ -581,11 +634,15 @@ function validateEvidence(
   if (typeof evidence !== "object" || evidence === null) {
     throw new TypeError("Neo4j graph retrieval requires an explicit evidence mode.");
   }
+
   if (evidence.type === "none") return;
+
   if (evidence.type !== "chunks") {
     throw new TypeError("Unknown Neo4j graph evidence mode.");
   }
+
   positiveInteger(evidence.maxChunks, "Neo4j graph evidence maxChunks");
+
   if (capability !== "chunks") {
     throw new TypeError("Chunk evidence requires a managed Neo4j knowledge graph.");
   }
@@ -602,15 +659,18 @@ function validateTraversal(
   ) {
     throw new TypeError("Neo4j traversal direction must be outgoing, incoming, or both.");
   }
+
   positiveInteger(traversal.maxDepth, "Neo4j traversal maxDepth", 8);
   positiveInteger(traversal.maxNodes, "Neo4j traversal maxNodes");
   positiveInteger(traversal.maxRelationships, "Neo4j traversal maxRelationships");
+
   if (
     traversal.relationships.length === 0 ||
     new Set(traversal.relationships).size !== traversal.relationships.length
   ) {
     throw new TypeError("Neo4j traversal requires unique relationship types.");
   }
+
   for (const type of traversal.relationships) {
     if (!(type in schema.relationships))
       throw new TypeError(`Neo4j traversal references unknown relationship type ${type}.`);
@@ -626,21 +686,27 @@ function applicationProperties(value: Record<string, unknown>, label: string) {
 
 function stringProperty(value: Record<string, unknown>, property: string): string | undefined {
   const item = value[property];
+
   if (item === undefined) return undefined;
+
   return stringValue(item, `Neo4j property ${property}`);
 }
 
 function stringArrayProperty(value: Record<string, unknown>, property: string): string[] {
   const item = value[property];
+
   if (item === undefined) return [];
+
   if (!Array.isArray(item) || !item.every((entry) => typeof entry === "string")) {
     throw new TypeError(`Neo4j property ${property} must be a string array.`);
   }
+
   return [...item];
 }
 
 function stringValue(value: unknown, label: string): string {
   if (typeof value !== "string") throw new TypeError(`${label} must be a string.`);
+
   return value;
 }
 
@@ -651,6 +717,7 @@ function listOfMaps(value: unknown, label: string): Record<string, unknown>[] {
   ) {
     throw new TypeError(`${label} must be an array of objects.`);
   }
+
   return value as Record<string, unknown>[];
 }
 
@@ -678,6 +745,7 @@ function groupBy<Value, Key>(
   for (const value of values) {
     const key = keyFor(value);
     const group = groups.get(key);
+
     if (group === undefined) groups.set(key, [value]);
     else group.push(value);
   }

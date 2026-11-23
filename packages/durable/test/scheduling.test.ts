@@ -104,7 +104,9 @@ describe("run discovery and scheduling", () => {
     await queued.cancel();
     expect((await queued.snapshot()).run.status).toBe("cancelled");
     const outcome = (await first.snapshot()).run.outcome;
+
     if (outcome?.type !== "interaction") throw new Error("Missing interaction");
+
     await first.respond(outcome.interaction.id, { type: "tool-approval", approved: true });
     await first.result();
     expect((await queued.snapshot()).operations).toEqual([]);

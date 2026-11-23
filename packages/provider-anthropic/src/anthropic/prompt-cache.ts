@@ -39,6 +39,7 @@ export function withAnthropicPromptCache(
 ): Record<string, unknown> {
   const cacheControl = cacheControlFrom(options);
   let remaining = MAX_CACHE_BREAKPOINTS - countCacheBreakpoints(params);
+
   if (remaining <= 0) return params;
 
   let result = params;
@@ -46,6 +47,7 @@ export function withAnthropicPromptCache(
   if (remaining > 0 && Array.isArray(result.tools) && result.tools.length > 0) {
     const index = result.tools.length - 1;
     const tool = result.tools[index];
+
     if (isPlainObject(tool) && tool.cache_control === undefined) {
       result = { ...result, tools: withBlockCacheControl(result.tools, index, cacheControl) };
       remaining -= 1;
@@ -54,6 +56,7 @@ export function withAnthropicPromptCache(
 
   if (remaining > 0) {
     const system = withSystemCacheControl(result.system, cacheControl);
+
     if (system !== undefined) {
       result = { ...result, system };
       remaining -= 1;
@@ -62,6 +65,7 @@ export function withAnthropicPromptCache(
 
   if (remaining > 0 && Array.isArray(result.messages)) {
     const messages = withMessagesCacheControl(result.messages, cacheControl);
+
     if (messages !== undefined) {
       result = { ...result, messages };
     }
@@ -78,19 +82,24 @@ export function anthropicPromptCacheOptions(
   settings: AnthropicPromptCacheSettings | undefined,
 ): AnthropicPromptCacheOptions | undefined {
   if (settings === undefined || settings === false) return undefined;
+
   if (settings === true) return {};
+
   cacheControlFrom(settings);
   return settings;
 }
 
 function cacheControlFrom(options: AnthropicPromptCacheOptions): Record<string, unknown> {
   const ttl = options.ttl;
+
   if (ttl === undefined || ttl === "5m") {
     return { type: "ephemeral" };
   }
+
   if (ttl !== "1h") {
     throw new TypeError('Anthropic prompt cache ttl must be "5m" or "1h".');
   }
+
   return { type: "ephemeral", ttl };
 }
 
@@ -105,10 +114,15 @@ function withSystemCacheControl(
   }
 
   if (!Array.isArray(system)) return undefined;
+
   const index = lastCacheableIndex(system);
+
   if (index === -1) return undefined;
+
   const block = system[index];
+
   if (!isPlainObject(block) || block.cache_control !== undefined) return undefined;
+
   return withBlockCacheControl(system, index, cacheControl);
 }
 
@@ -123,10 +137,12 @@ function withMessagesCacheControl(
 ): unknown[] | undefined {
   for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
     const message = messages[messageIndex];
+
     if (!isPlainObject(message)) continue;
 
     if (typeof message.content === "string") {
       if (message.content.length === 0) continue;
+
       return replaceAt(messages, messageIndex, {
         ...message,
         content: [{ type: "text", text: message.content, cache_control: cacheControl }],
@@ -134,10 +150,15 @@ function withMessagesCacheControl(
     }
 
     if (!Array.isArray(message.content)) continue;
+
     const blockIndex = lastCacheableIndex(message.content);
+
     if (blockIndex === -1) continue;
+
     const block = message.content[blockIndex];
+
     if (!isPlainObject(block) || block.cache_control !== undefined) return undefined;
+
     return replaceAt(messages, messageIndex, {
       ...message,
       content: withBlockCacheControl(message.content, blockIndex, cacheControl),
@@ -150,8 +171,11 @@ function withMessagesCacheControl(
 function lastCacheableIndex(blocks: unknown[]): number {
   for (let index = blocks.length - 1; index >= 0; index -= 1) {
     const block = blocks[index];
+
     if (!isPlainObject(block)) continue;
+
     if (typeof block.type !== "string" || !CACHEABLE_BLOCK_TYPES.has(block.type)) continue;
+
     return index;
   }
   return -1;
@@ -163,7 +187,9 @@ function withBlockCacheControl(
   cacheControl: Record<string, unknown>,
 ): unknown[] {
   const block = blocks[index];
+
   if (!isPlainObject(block)) return blocks;
+
   return replaceAt(blocks, index, { ...block, cache_control: cacheControl });
 }
 
@@ -187,6 +213,7 @@ function countCacheBreakpoints(params: Record<string, unknown>): number {
   if (Array.isArray(params.messages)) {
     for (const message of params.messages) {
       if (!isPlainObject(message) || !Array.isArray(message.content)) continue;
+
       for (const block of message.content) {
         count += countBlockBreakpoints(block);
       }
@@ -201,10 +228,13 @@ function countCacheBreakpoints(params: Record<string, unknown>): number {
  */
 function countBlockBreakpoints(block: unknown): number {
   if (!isPlainObject(block)) return 0;
+
   let count = block.cache_control === undefined ? 0 : 1;
+
   if (Array.isArray(block.content)) {
     count += block.content.filter(hasCacheControl).length;
   }
+
   return count;
 }
 

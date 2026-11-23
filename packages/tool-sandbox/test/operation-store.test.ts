@@ -54,7 +54,9 @@ describe("OperationStore", () => {
     const run = () =>
       operations.run("op", request, async () => {
         attempts += 1;
+
         if (attempts === 1) throw new Error("boom");
+
         return "ok";
       });
     await expect(run()).rejects.toThrow("boom");

@@ -18,10 +18,15 @@ export function resolveStores(options: StudioRuntimeOptions): ResolvedStores {
   const pipelineLogs = resolvePipelineLogStore(options, sessions, defaultStore);
   const pipelineRuns = resolvePipelineRunStore(options, sessions, pipelineLogs, defaultStore);
   const stores: ResolvedStores = {};
+
   if (sessions !== undefined) stores.sessions = sessions;
+
   if (traces !== undefined) stores.traces = traces;
+
   if (pipelineLogs !== undefined) stores.pipelineLogs = pipelineLogs;
+
   if (pipelineRuns !== undefined) stores.pipelineRuns = pipelineRuns;
+
   return stores;
 }
 
@@ -39,6 +44,7 @@ function resolveSessionStore(
   if (options.stores?.sessions === false) {
     return undefined;
   }
+
   if (options.stores?.sessions !== undefined) {
     return options.stores.sessions;
   }
@@ -54,12 +60,15 @@ function resolveTraceStore(
   if (options.stores?.traces !== undefined) {
     return options.stores.traces;
   }
+
   if (sessionStore === undefined) {
     return undefined;
   }
+
   if (isTraceStore(sessionStore)) {
     return sessionStore;
   }
+
   return defaultStore;
 }
 
@@ -71,12 +80,15 @@ function resolvePipelineLogStore(
   if (options.stores?.pipelineLogs === false) {
     return undefined;
   }
+
   if (options.stores?.pipelineLogs !== undefined) {
     return options.stores.pipelineLogs;
   }
+
   if (sessionStore !== undefined && isPipelineLogStore(sessionStore)) {
     return sessionStore;
   }
+
   return defaultStore;
 }
 
@@ -89,15 +101,19 @@ function resolvePipelineRunStore(
   if (options.stores?.pipelineRuns === false) {
     return undefined;
   }
+
   if (options.stores?.pipelineRuns !== undefined) {
     return options.stores.pipelineRuns;
   }
+
   if (sessionStore !== undefined && isPipelineRunStore(sessionStore)) {
     return sessionStore;
   }
+
   if (pipelineLogStore !== undefined && isPipelineRunStore(pipelineLogStore)) {
     return pipelineLogStore;
   }
+
   return defaultStore;
 }
 
@@ -133,12 +149,15 @@ export function normalizeAgents(agents: StudioAgent[]): StudioAgent[] {
   const ids = new Set<string>();
   return agents.map((agent) => {
     const id = agent.id.trim();
+
     if (id.length === 0) {
       throw new Error("Studio agent id cannot be empty");
     }
+
     if (ids.has(id)) {
       throw new Error(`Duplicate runner agent id: ${id}`);
     }
+
     ids.add(id);
     return { ...agent, id };
   });
@@ -148,12 +167,15 @@ export function normalizePipelines(pipelines: StudioPipeline[]): StudioPipeline[
   const ids = new Set<string>();
   return pipelines.map((pipeline) => {
     const id = pipeline.id.trim();
+
     if (id.length === 0) {
       throw new Error("Studio pipeline id cannot be empty");
     }
+
     if (ids.has(id)) {
       throw new Error(`Duplicate Studio pipeline id: ${id}`);
     }
+
     ids.add(id);
     return { ...pipeline, id };
   });

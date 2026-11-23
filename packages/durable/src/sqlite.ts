@@ -67,8 +67,10 @@ export class SqliteDurableStore implements DurableStore {
           .get() !== undefined
       )
         throw new Error("Sealed durable backup; restore it into a new database before opening.");
+
       if (this.readOnly) {
         this.database.exec("PRAGMA busy_timeout = 5000");
+
         if (
           this.database
             .prepare("SELECT 1 FROM sqlite_master WHERE name = 'anvia_durable_owner'")
@@ -117,9 +119,11 @@ export class SqliteDurableStore implements DurableStore {
           id TEXT PRIMARY KEY, record TEXT NOT NULL
         );
       `);
+
       const version = this.database
         .prepare("SELECT version FROM anvia_durable_owner WHERE singleton = 1")
         .get();
+
       if (
         version?.version !== 1 &&
         version?.version !== 2 &&
@@ -135,6 +139,7 @@ export class SqliteDurableStore implements DurableStore {
         version?.version !== 12
       )
         throw new Error("Unsupported durable database schema version.");
+
       this.histories = messageLog(sqliteMessageBackend(this.database));
       this.blobs = blobStatements(this.database);
     } catch (error) {
@@ -145,17 +150,21 @@ export class SqliteDurableStore implements DurableStore {
 
   async acquire(): Promise<void> {
     if (this.readOnly) throw new Error("A read-only durable store can only be connected.");
+
     if (this.closed || this.acquired || this.observing)
       throw new Error("Durable store is closed or already acquired.");
+
     this.atomic(() => {
       const owner = this.database
         .prepare("SELECT token, pid, host FROM anvia_durable_owner WHERE singleton = 1")
         .get()!;
+
       if (owner.token !== null && (owner.host !== hostname() || processExists(Number(owner.pid)))) {
         throw new Error(
           "Durable store already has a live owner. Only one runtime per database is supported.",
         );
       }
+
       if (
         !this.database
           .prepare("PRAGMA table_info(anvia_durable_events)")
@@ -163,13 +172,17 @@ export class SqliteDurableStore implements DurableStore {
           .some((column) => column.name === "history_encoding")
       )
         this.database.exec("ALTER TABLE anvia_durable_events ADD COLUMN history_encoding TEXT");
+
       // Rows from schema versions 10 and older store user data unescaped; rewrite them first.
       const stored = this.database
         .prepare("SELECT version FROM anvia_durable_owner WHERE singleton = 1")
         .get()!.version;
+
       if (Number(stored) < 11) migrateLegacyRows(this.database);
+
       // Version 11 and older store oversized prompts inline; move them behind blob references.
       if (Number(stored) < 12) migrateOversizedPrompts(this.database);
+
       // Populate only legacy rows, under the exclusive owner transaction.
       for (const row of this.database
         .prepare(`SELECT r.record FROM anvia_durable_runs r
@@ -196,15 +209,19 @@ export class SqliteDurableStore implements DurableStore {
       throw new Error(
         "Open the SQLite store with { readOnly: true } to observe it; a writable store creates its schema on construction.",
       );
+
     if (this.closed || this.acquired || this.observing)
       throw new Error("Durable store is closed or already open.");
+
     const stored = this.database
       .prepare("SELECT version FROM anvia_durable_owner WHERE singleton = 1")
       .get()?.version;
+
     if (Number(stored) !== 12)
       throw new Error(
         "Durable database is not at the current schema version; open it once with a runtime to upgrade it before observing.",
       );
+
     // Enforced by SQLite itself, so no code path on this connection can write.
     this.database.exec("PRAGMA query_only = ON");
     this.observing = true;
@@ -212,6 +229,7 @@ export class SqliteDurableStore implements DurableStore {
 
   async close(): Promise<void> {
     if (this.closed) return;
+
     await this.gate.read(() => undefined);
     try {
       if (this.acquired) {
@@ -242,6 +260,7 @@ export class SqliteDurableStore implements DurableStore {
       let active = true;
       try {
         if (!this.observing) this.assertOwner();
+
         const api = promisify<DurableTransaction>({
           ...this.transactionApi(() => {
             if (!active) throw new Error("Durable transaction has finished.");
@@ -315,6 +334,7 @@ export class SqliteDurableStore implements DurableStore {
 
   private taskEventsSync(rootId: string, after: number, limit: number): DurableEvent[] {
     this.assertOpen();
+
     if (
       !Number.isSafeInteger(after) ||
       after < 0 ||
@@ -323,6 +343,7 @@ export class SqliteDurableStore implements DurableStore {
       limit > 1000
     )
       throw new TypeError("Invalid task event cursor or page size.");
+
     return this.database
       .prepare(`SELECT e.* FROM anvia_durable_events e JOIN anvia_durable_tasks t ON t.id = e.run_id
       WHERE t.root_id = ? AND e.sequence > ? ORDER BY e.sequence LIMIT ?`)
@@ -338,6 +359,7 @@ export class SqliteDurableStore implements DurableStore {
 
   private graphEventsSync(graphId: string, after: number, limit: number): DurableEvent[] {
     this.assertOpen();
+
     if (
       !Number.isSafeInteger(after) ||
       after < 0 ||
@@ -346,6 +368,7 @@ export class SqliteDurableStore implements DurableStore {
       limit > 1000
     )
       throw new TypeError("Invalid graph event cursor or page size.");
+
     return this.database
       .prepare(`SELECT e.* FROM anvia_durable_events e JOIN anvia_durable_runs r ON r.id = e.run_id
       WHERE json_extract(r.record, '$.graphId') = ? AND e.sequence > ? ORDER BY e.sequence LIMIT ?`)
@@ -400,7 +423,9 @@ export class SqliteDurableStore implements DurableStore {
     excludedSessions: readonly string[],
   ): { ids: string[]; nextAttemptAt?: string } {
     this.assertOpen();
+
     if (!Number.isSafeInteger(limit) || limit < 1) throw new TypeError("Invalid scheduler limit.");
+
     const exclude =
       excludedSessions.length === 0
         ? ""
@@ -435,6 +460,7 @@ export class SqliteDurableStore implements DurableStore {
 
   private eventsSync(runId: string, after: number, limit: number): DurableEvent[] {
     this.assertOpen();
+
     if (
       !Number.isSafeInteger(after) ||
       after < 0 ||
@@ -444,6 +470,7 @@ export class SqliteDurableStore implements DurableStore {
     ) {
       throw new TypeError("Invalid durable event cursor or page size.");
     }
+
     return this.database
       .prepare(
         "SELECT * FROM anvia_durable_events WHERE run_id = ? AND sequence > ? ORDER BY sequence LIMIT ?",
@@ -500,7 +527,9 @@ export class SqliteDurableStore implements DurableStore {
    */
   private decodeRun(text: string): DurableRunRecord {
     const value = readStored(text) as Record<string, JsonValue>;
+
     if (!text.includes("anvia:blob") && !text.includes("durableBlobs")) return parseRun(value);
+
     return parseRun({ ...value, prompt: hydrateValue(this.blobs, json(value.prompt)) });
   }
 
@@ -509,14 +538,18 @@ export class SqliteDurableStore implements DurableStore {
     if (row.history_encoding !== null && row.history_encoding !== undefined) {
       if (row.history_encoding !== "linked-v1" || row.type !== "model_started")
         throw new Error("Unsupported durable event history encoding.");
+
       // Packed histories may carry references inside message-log records, so always restore.
       return json(
         hydrateValue(this.blobs, this.histories.unpackEvent(json(readStored(String(row.data))))),
       );
     }
+
     const text = String(row.data);
+
     if (!text.includes("anvia:blob") && !text.includes("durableBlobs"))
       return json(readStored(text));
+
     return json(hydrateValue(this.blobs, json(readStored(text))));
   }
 
@@ -683,6 +716,7 @@ export class SqliteDurableStore implements DurableStore {
 
   private begin(): void {
     if (this.inTransaction) throw new Error("Nested durable transactions are not supported.");
+
     // An observer never writes, so it must not take the write lock the owner depends on.
     this.database.exec(this.observing ? "BEGIN" : "BEGIN IMMEDIATE");
     this.inTransaction = true;
@@ -690,14 +724,17 @@ export class SqliteDurableStore implements DurableStore {
 
   private atomic<T>(callback: () => T): T {
     if (this.inTransaction) throw new Error("Nested durable transactions are not supported.");
+
     this.database.exec("BEGIN IMMEDIATE");
     this.inTransaction = true;
     try {
       const result = callback();
+
       if (result !== null && typeof result === "object" && "then" in result) {
         void Promise.resolve(result).catch(() => {});
         throw new TypeError("Durable transactions must be synchronous.");
       }
+
       this.database.exec("COMMIT");
       return result;
     } catch (error) {
@@ -717,12 +754,14 @@ export class SqliteDurableStore implements DurableStore {
     const owner = this.database
       .prepare("SELECT token FROM anvia_durable_owner WHERE singleton = 1")
       .get();
+
     if (owner?.token !== this.token) throw new Error("Durable store ownership was lost.");
   }
 }
 
 function processExists(pid: number): boolean {
   if (!Number.isSafeInteger(pid) || pid <= 0) return true;
+
   try {
     process.kill(pid, 0);
     return true;

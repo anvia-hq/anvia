@@ -37,7 +37,9 @@ describe("durable browser client", () => {
         fetch: async () => stream(values, cancel),
       });
       const iterator = client.stream("run", { after: 1 })[Symbol.asyncIterator]();
+
       if (values.length === 2) expect((await iterator.next()).value).toEqual(event);
+
       await expect(iterator.next()).rejects.toThrow();
       expect(cancel).toHaveBeenCalledTimes(1);
     }
@@ -254,7 +256,9 @@ it("validates custom-task root identity and monotonic cursors and releases malfo
           : Response.json({ task, operations: [], cursor: 1 }),
     });
     const iterator = client.streamTask("task", { after: 1 })[Symbol.asyncIterator]();
+
     if (values.length === 2) expect((await iterator.next()).value).toEqual(taskEvent);
+
     await expect(iterator.next()).rejects.toThrow();
     expect(cancel).toHaveBeenCalledTimes(1);
   }

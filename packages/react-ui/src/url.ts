@@ -10,6 +10,7 @@ function schemeOf(value: string): string | undefined {
   let normalized = "";
   for (const character of value) {
     const code = character.charCodeAt(0);
+
     if (code > 0x20 && code !== 0x7f) normalized += character;
   }
   const match = /^([a-z][a-z0-9+.-]*):/i.exec(normalized);
@@ -25,10 +26,13 @@ export function safeLinkHref(value: string | undefined): string | undefined {
   if (value === undefined) {
     return undefined;
   }
+
   const scheme = schemeOf(value);
+
   if (scheme === undefined) {
     return value;
   }
+
   return linkProtocols.has(scheme) ? value : undefined;
 }
 
@@ -41,12 +45,16 @@ export function safeImageSrc(value: string | undefined): string | undefined {
   if (value === undefined) {
     return undefined;
   }
+
   const scheme = schemeOf(value);
+
   if (scheme === undefined) {
     return value;
   }
+
   if (scheme === "data:") {
     return /^data:image\//i.test(value) ? value : undefined;
   }
+
   return imageProtocols.has(scheme) ? value : undefined;
 }

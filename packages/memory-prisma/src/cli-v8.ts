@@ -21,12 +21,15 @@ export function initPrisma8Memory(
   if (options.contract === undefined || !options.contract.endsWith(".prisma")) {
     throw new Error("Prisma 8 init requires --contract <path.prisma> (a single PSL contract).");
   }
+
   const path = resolve(cwd, options.contract);
   const displayPath = relative(cwd, path);
   const exists = existsSync(path);
+
   if (exists && !options.appendToContract) {
     throw new Error(`${displayPath} already exists. Use --append-to-contract to modify it.`);
   }
+
   if (!exists && options.appendToContract) {
     throw new Error(
       `Prisma 8 contract not found at ${displayPath}. Omit --append-to-contract to create it.`,
@@ -37,6 +40,7 @@ export function initPrisma8Memory(
   const start = current.indexOf(prisma8StartMarker);
   const end = current.indexOf(prisma8EndMarker);
   const hasBlock = start !== -1 || end !== -1;
+
   if (
     hasBlock &&
     (start === -1 ||
@@ -46,33 +50,44 @@ export function initPrisma8Memory(
   ) {
     throw new Error("Found incomplete or duplicate Anvia memory Prisma 8 markers.");
   }
+
   if (hasBlock && !options.force) {
     throw new Error("Anvia memory Prisma 8 block already exists. Use --force to replace it.");
   }
+
   const prefix = hasBlock ? current.slice(0, start) : current;
   const suffix = hasBlock ? current.slice(end + prisma8EndMarker.length) : "";
   const outside = `${prefix}\n${suffix}`.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, "");
   const conflicts = prismaMemoryModelNames.filter((name) =>
     new RegExp(`\\bmodel\\s+${name}\\b`).test(outside),
   );
+
   if (conflicts.length > 0)
     throw new Error(`Existing Prisma models conflict: ${conflicts.join(", ")}`);
+
   const block = prisma8SchemaBlock();
   const hasDirective = /^[ \t]*\/\/[ \t]*use prisma-8\b/m.test(current);
-  const next = hasBlock
-    ? `${prefix}${block.trimEnd()}${suffix}`
-    : exists
-      ? `${current}${current.length > 0 ? "\n\n" : ""}${block}`
-      : `${prisma8Directive}\n\n${block}`;
+  let next: string;
+
+  if (hasBlock) {
+    next = `${prefix}${block.trimEnd()}${suffix}`;
+  } else if (exists) {
+    const separator = current.length > 0 ? "\n\n" : "";
+    next = `${current}${separator}${block}`;
+  } else {
+    next = `${prisma8Directive}\n\n${block}`;
+  }
 
   if (exists)
     io.warn(
       "Warning: appending modifies your existing Prisma 8 contract. Review before migrating.",
     );
+
   if (exists && !hasDirective)
     io.warn(
       `Warning: ${displayPath} has no "${prisma8Directive}" line. Add it at the top; the Prisma 8 CLI ignores contracts without it.`,
     );
+
   if (options.write) {
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, next);
@@ -81,6 +96,7 @@ export function initPrisma8Memory(
     io.log(`Would ${exists ? "update" : "create"} ${displayPath}`);
     io.log(block);
   }
+
   io.log("\nConfigure prisma.config.ts with:");
   io.log('  import { definePrismaConfig } from "prisma/config";');
   io.log('  import { defineConfig } from "@prisma/orm-postgres/config";');

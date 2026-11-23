@@ -129,14 +129,17 @@ export class DrizzleMemoryStore implements MemoryStore {
   constructor(options: DrizzleMemoryStoreOptions) {
     const db = runtimeDatabase(options.db);
     const resolvedOptions = resolveOptions(options);
+
     if (typeof db.transaction !== "function") {
       throw new TypeError("DrizzleMemoryStore requires db.transaction for atomic memory writes.");
     }
+
     if (resolvedOptions.lock === "advisory" && typeof db.execute !== "function") {
       throw new TypeError(
         'DrizzleMemoryStore with lock: "advisory" requires db.execute. Pass lock: "none" only when the database provides equivalent serialization.',
       );
     }
+
     this.db = options.db;
     this.schema = options.schema ?? drizzleMemorySchema;
     this.options = resolvedOptions;
@@ -161,6 +164,7 @@ export class DrizzleMemoryStore implements MemoryStore {
       .from(sessions)
       .leftJoin(messages, eq(messages.memorySessionId, sessions.id))
       .limit(0);
+
     if (this.options.errorPolicy === "store") {
       await db
         .select({ id: errors.id, memorySessionId: errors.memorySessionId, error: errors.error })
@@ -194,6 +198,7 @@ export class DrizzleMemoryStore implements MemoryStore {
 
   async append(input: MemoryAppendOptions): Promise<MemoryAppendResult> {
     const { idempotencyKey, expectedVersion } = input;
+
     if (
       input.messages.length === 0 &&
       idempotencyKey === undefined &&
@@ -201,6 +206,7 @@ export class DrizzleMemoryStore implements MemoryStore {
     ) {
       return { status: "committed" };
     }
+
     this.validateInputMessages(input.messages);
     const writes = idempotencyKey === undefined ? undefined : this.writesTable();
     const versioned = idempotencyKey !== undefined || expectedVersion !== undefined;
@@ -216,9 +222,11 @@ export class DrizzleMemoryStore implements MemoryStore {
           ? await this.upsertSession(tx, input.scope, scopeKey)
           : undefined;
       let fingerprint: string | undefined;
+
       if (writes !== undefined && idempotencyKey !== undefined) {
         fingerprint = writeFingerprint(input);
         const existing = await this.committedFingerprint(tx, scopeKey, idempotencyKey);
+
         if (existing !== undefined) {
           // Checked before the version so a retry after success is a duplicate, not a conflict.
           return {
@@ -227,10 +235,13 @@ export class DrizzleMemoryStore implements MemoryStore {
           };
         }
       }
+
       if (expectedVersion !== undefined) {
         const version = await this.currentVersion(tx, scopeKey);
+
         if (version !== expectedVersion) return { status: "conflict", version };
       }
+
       if (writes !== undefined && idempotencyKey !== undefined && fingerprint !== undefined) {
         // The unique index is the backstop when lock is "none" and two writers race past the read.
         const inserted = await tx
@@ -238,6 +249,7 @@ export class DrizzleMemoryStore implements MemoryStore {
           .values({ scopeKey, idempotencyKey, fingerprint })
           .onConflictDoNothing()
           .returning({ id: writes.id });
+
         if (inserted.length === 0) {
           const existing = await this.committedFingerprint(tx, scopeKey, idempotencyKey);
           return {
@@ -269,6 +281,7 @@ export class DrizzleMemoryStore implements MemoryStore {
           })),
         );
       }
+
       return versioned
         ? { status: "committed", version: await this.currentVersion(tx, scopeKey) }
         : { status: "committed" };
@@ -285,6 +298,7 @@ export class DrizzleMemoryStore implements MemoryStore {
     if (this.options.errorPolicy === "ignore") {
       return;
     }
+
     this.validateInputMessages(input.messages);
 
     const scopeKey = this.scopeKey(input.scope);
@@ -310,9 +324,11 @@ export class DrizzleMemoryStore implements MemoryStore {
       .where(eq(sessions.scopeKey, this.scopeKey(context)))
       .limit(1)) as CompactionSessionRow[];
     const session = sessionRows[0];
+
     if (session === undefined) {
       return { revision: compactionRevision([], undefined), messages: [] };
     }
+
     const state = this.compactionStateFromValue(session.compactionState);
     const rows = (await db
       .select({
@@ -354,7 +370,9 @@ export class DrizzleMemoryStore implements MemoryStore {
         .where(eq(sessions.scopeKey, scopeKey))
         .limit(1)) as CompactionSessionRow[];
       const session = sessionRows[0];
+
       if (session === undefined) return { status: "conflict" };
+
       const state = this.compactionStateFromValue(session.compactionState);
       const rows = (await tx
         .select({
@@ -374,6 +392,7 @@ export class DrizzleMemoryStore implements MemoryStore {
         .orderBy(asc(messages.position))) as CompactionMessageRow[];
       const activeRows = activeCompactionRows(rows, state);
       const physicalPrefixCount = input.messageCount - (state === undefined ? 0 : 1);
+
       if (
         compactionRevision(rows, state) !== input.revision ||
         physicalPrefixCount < 0 ||
@@ -381,13 +400,16 @@ export class DrizzleMemoryStore implements MemoryStore {
       ) {
         return { status: "conflict" };
       }
+
       const summarizedThroughPosition =
         physicalPrefixCount === 0
           ? state?.summarizedThroughPosition
           : activeRows[physicalPrefixCount - 1]?.position;
+
       if (summarizedThroughPosition === undefined) {
         return { status: "conflict" };
       }
+
       await this.upsertSession(tx, input.scope, scopeKey, {
         version: 1,
         generation: (state?.generation ?? 0) + 1,
@@ -416,9 +438,11 @@ export class DrizzleMemoryStore implements MemoryStore {
       })
       .from(sessions)
       .leftJoin(messages, eq(messages.memorySessionId, sessions.id));
+
     if (options.userId !== undefined) {
       query = query.where(eq(sessions.userId, options.userId));
     }
+
     const rows = (await query
       .groupBy(sessions.id)
       .orderBy(desc(sessions.updatedAt), desc(sessions.id))
@@ -445,6 +469,7 @@ export class DrizzleMemoryStore implements MemoryStore {
       .groupBy(sessions.id)
       .limit(1)) as InspectionSessionRow[];
     const summary = summaries[0];
+
     if (summary === undefined) return undefined;
 
     const rows = (await db
@@ -475,11 +500,13 @@ export class DrizzleMemoryStore implements MemoryStore {
 
   private writesTable(): NonNullable<DrizzleMemorySchema["agentMemoryWrites"]> {
     const writes = this.schema.agentMemoryWrites;
+
     if (writes === undefined) {
       throw new Error(
         "DrizzleMemoryStore needs the agent_memory_writes table (schema.agentMemoryWrites) for idempotencyKey. Regenerate the schema with `anvia-memory-drizzle init --force` and run drizzle-kit generate and migrate.",
       );
     }
+
     return writes;
   }
 
@@ -511,7 +538,9 @@ export class DrizzleMemoryStore implements MemoryStore {
       .where(eq(sessions.scopeKey, scopeKey))
       .limit(1)) as CompactionSessionRow[];
     const session = sessionRows[0];
+
     if (session === undefined) return "v1:empty";
+
     const last = (await db
       .select({ position: messages.position })
       .from(messages)
@@ -521,16 +550,20 @@ export class DrizzleMemoryStore implements MemoryStore {
     const generation = isRecord(session.compactionState)
       ? Number(session.compactionState.generation ?? 0)
       : 0;
+
     // An empty history has one version whether or not recordError created a session row for it.
     if (last[0]?.position === undefined) return "v1:empty";
+
     return `v1:${session.id}:${last[0].position}:${generation}`;
   }
 
   private async transaction<T>(operation: (tx: DrizzleRuntimeDatabase) => Promise<T>): Promise<T> {
     const db = runtimeDatabase(this.db);
+
     if (typeof db.transaction !== "function") {
       throw new Error("DrizzleMemoryStore requires db.transaction for atomic memory writes.");
     }
+
     return db.transaction(operation);
   }
 
@@ -538,9 +571,11 @@ export class DrizzleMemoryStore implements MemoryStore {
     if (this.options.lock === "none") {
       return;
     }
+
     if (typeof db.execute !== "function") {
       throw new Error("DrizzleMemoryStore advisory locking requires db.execute.");
     }
+
     await db.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${scopeKey}))`);
   }
 
@@ -557,17 +592,21 @@ export class DrizzleMemoryStore implements MemoryStore {
       userId: context.userId ?? null,
       metadata: metadata(context),
     };
+
     if (compactionState !== undefined) {
       values.compactionState = compactionState;
     }
+
     const set: PgUpdateSetSource<typeof sessions> = {
       sessionId: context.sessionId,
       userId: context.userId ?? null,
       metadata: metadata(context),
     };
+
     if (compactionState !== undefined) {
       set.compactionState = compactionState;
     }
+
     set.updatedAt = sql`now()`;
     const rows = (await db
       .insert(sessions)
@@ -579,9 +618,11 @@ export class DrizzleMemoryStore implements MemoryStore {
       .returning({ id: sessions.id })) as SessionRow[];
 
     const session = rows[0];
+
     if (session === undefined) {
       throw new Error("DrizzleMemoryStore failed to upsert memory session.");
     }
+
     return session;
   }
 
@@ -589,6 +630,7 @@ export class DrizzleMemoryStore implements MemoryStore {
     if (typeof this.options.scopeKey === "function") {
       return this.options.scopeKey({ scope: context });
     }
+
     return createMemoryScopeKey({ scope: context, ...this.options.scopeKey });
   }
 
@@ -602,6 +644,7 @@ export class DrizzleMemoryStore implements MemoryStore {
 
   private compactionStateFromValue(value: unknown): StoredCompactionState | undefined {
     if (value === null || value === undefined) return undefined;
+
     return parseCompactionState(value, (message) =>
       this.options.validateMessages ? parseMemoryMessage(message) : (message as Message),
     );
@@ -621,6 +664,7 @@ function runtimeDatabase(db: DrizzleMemoryDatabaseLike): DrizzleRuntimeDatabase 
   if (!isRecord(db)) {
     throw new TypeError("DrizzleMemoryStore expected a Drizzle database-like object.");
   }
+
   for (const method of ["select", "insert", "delete"]) {
     if (typeof db[method] !== "function") {
       throw new TypeError(`DrizzleMemoryStore expected db.${method} to be a function.`);
@@ -652,6 +696,7 @@ function projectedMessages(
   message: (row: CompactionMessageRow) => Message,
 ): Message[] {
   if (state === undefined) return rows.map(message);
+
   return [state.summary, ...activeCompactionRows(rows, state).map(message)];
 }
 
@@ -660,10 +705,13 @@ function activeCompactionRows(
   state: StoredCompactionState | undefined,
 ): CompactionMessageRow[] {
   if (state === undefined) return rows;
+
   const boundaryIndex = rows.findIndex((row) => row.position === state.summarizedThroughPosition);
+
   if (boundaryIndex === -1) {
     throw new Error("Drizzle memory compaction state boundary is invalid.");
   }
+
   return rows.slice(boundaryIndex + 1);
 }
 
@@ -674,7 +722,9 @@ function parseCompactionState(
   if (typeof value !== "object" || value === null) {
     throw new Error("Drizzle memory compaction state must be an object.");
   }
+
   const record = value as Record<string, unknown>;
+
   if (
     record.version !== 1 ||
     !Number.isSafeInteger(record.generation) ||
@@ -684,10 +734,13 @@ function parseCompactionState(
   ) {
     throw new Error("Drizzle memory compaction state is invalid.");
   }
+
   const summary = parseMessage(record.summary);
+
   if (!isMemoryCompactionMessage(summary)) {
     throw new Error("Drizzle memory compaction state summary is invalid.");
   }
+
   return {
     version: 1,
     generation: record.generation as number,
@@ -715,7 +768,9 @@ function inspectionSummary(row: InspectionSessionRow): MemoryConversationSummary
     updatedAt: isoTimestamp(row.updatedAt),
     messageCount: Number(row.messageCount),
   };
+
   if (row.userId !== null) summary.userId = row.userId;
+
   return summary;
 }
 

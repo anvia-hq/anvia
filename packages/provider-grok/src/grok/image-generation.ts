@@ -84,12 +84,15 @@ export function aspectRatio(width: number, height: number): string {
   const normalizedHeight = validateDimension(height, "height");
   const divisor = gcd(normalizedWidth, normalizedHeight);
   const reduced = `${normalizedWidth / divisor}:${normalizedHeight / divisor}`;
+
   if (reduced === "13:6") {
     return "19.5:9";
   }
+
   if (reduced === "6:13") {
     return "9:19.5";
   }
+
   return SUPPORTED_ASPECT_RATIOS.has(reduced) ? reduced : "auto";
 }
 
@@ -141,6 +144,7 @@ async function fetchGeneratedImage(
     validatedUrl,
     abortSignal === undefined ? undefined : { signal: abortSignal },
   );
+
   if (!response.ok) {
     throw new Error(`Failed to fetch Grok image URL: ${response.status}`);
   }
@@ -165,6 +169,7 @@ function validateGeneratedImageUrl(url: string): string {
   }
 
   const allowedHosts = new Set(["imgen.x.ai", "api.x.ai"]);
+
   if (!allowedHosts.has(parsed.hostname)) {
     throw new Error("Grok image generation image URL host is not allowed.");
   }
@@ -174,11 +179,13 @@ function validateGeneratedImageUrl(url: string): string {
 
 function imageMediaType(item: Record<string, unknown>, raw: Record<string, unknown>): string {
   const mimeType = item.mime_type ?? item.mimeType;
+
   if (typeof mimeType === "string" && mimeType.length > 0) {
     return mimeType;
   }
 
   const outputFormat = raw.output_format ?? raw.outputFormat;
+
   if (typeof outputFormat === "string" && outputFormat.length > 0) {
     return mediaTypeFromFormat(outputFormat);
   }
@@ -193,15 +200,19 @@ function decodeBase64Image(value: string): Uint8Array {
 
 function mediaTypeFromFormat(format: string): string {
   const normalized = format.toLowerCase();
+
   if (normalized === "jpeg" || normalized === "jpg") {
     return "image/jpeg";
   }
+
   if (normalized === "webp") {
     return "image/webp";
   }
+
   if (normalized === "gif") {
     return "image/gif";
   }
+
   return "image/png";
 }
 

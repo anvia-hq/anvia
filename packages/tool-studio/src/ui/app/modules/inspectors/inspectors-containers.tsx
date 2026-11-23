@@ -30,9 +30,11 @@ export function ToolsContainer(props: {
       setToolsLoadState("loading");
       try {
         const response = await fetch(`/agents/${encodeURIComponent(agentId)}/tools`);
+
         if (!response.ok) {
           throw new Error(`Tools failed with HTTP ${response.status}`);
         }
+
         setTools((await response.json()) as StudioAgentToolsSummary);
       } catch (loadError) {
         props.onError(errorMessage(loadError));
@@ -86,9 +88,11 @@ export function McpsContainer(props: {
       setMcpsLoadState("loading");
       try {
         const response = await fetch(`/agents/${encodeURIComponent(agentId)}/mcps`);
+
         if (!response.ok) {
           throw new Error(`MCPs failed with HTTP ${response.status}`);
         }
+
         setMcps((await response.json()) as StudioAgentMcpsSummary);
       } catch (loadError) {
         props.onError(errorMessage(loadError));
@@ -140,9 +144,11 @@ export function KnowledgeContainer(props: {
     setKnowledgeLoadState("loading");
     try {
       const response = await fetch("/knowledge?limit=25");
+
       if (!response.ok) {
         throw new Error(`Knowledge failed with HTTP ${response.status}`);
       }
+
       setKnowledge((await response.json()) as StudioKnowledgeSummary);
     } catch (loadError) {
       props.onError(errorMessage(loadError));

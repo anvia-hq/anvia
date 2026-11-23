@@ -38,6 +38,7 @@ const HumanInputQuestions = forwardRef<HTMLDivElement, HumanInputQuestionsProps>
     const humanInput = useHumanInput();
     const questions = filter === "all" ? humanInput.questions.all : humanInput.questions.pending;
     const empty = questions.length === 0;
+
     if (empty && !keepMounted) {
       return null;
     }
@@ -94,6 +95,7 @@ const HumanInputQuestionPrompt = forwardRef<HTMLDivElement, HumanInputQuestionPr
     const prompt =
       question.request.questions.find((item) => item.id === promptId) ??
       question.request.questions[0];
+
     if (prompt === undefined) {
       return null;
     }
@@ -130,9 +132,11 @@ const HumanInputQuestionChoice = forwardRef<HTMLButtonElement, HumanInputQuestio
     const handleClick = useCallback(
       (event: MouseEvent<HTMLButtonElement>) => {
         onClick?.(event);
+
         if (event.defaultPrevented || choiceValue.length === 0) {
           return;
         }
+
         const nextAnswer: AgentQuestionAnswer = {
           questionId: prompt.id,
           value: custom ? (answer ?? choice?.label ?? choiceValue) : choiceValue,
@@ -165,9 +169,11 @@ const HumanInputQuestionTextAnswer = forwardRef<HTMLTextAreaElement, PrimitivePr
     const handleChange = useCallback(
       (event: ChangeEvent<HTMLTextAreaElement>) => {
         onChange?.(event);
+
         if (event.defaultPrevented) {
           return;
         }
+
         const answer = event.currentTarget.value;
         question.setAnswer(prompt, {
           questionId: prompt.id,
@@ -211,9 +217,11 @@ const HumanInputQuestionSubmit = forwardRef<HTMLButtonElement, PrimitiveProps<"b
     const handleClick = useCallback(
       (event: MouseEvent<HTMLButtonElement>) => {
         onClick?.(event);
+
         if (event.defaultPrevented || disabled) {
           return;
         }
+
         void chat.respondToInteraction({
           interactionId: question.question.request.id,
           response: { type: "tool-question", answers },

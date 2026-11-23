@@ -51,6 +51,11 @@ export default defineConfig({
   },
 });
 
+const groupOrders: Record<string, number> = {
+  postgres: 1,
+  drizzle: 2,
+};
+
 function project(name: string, shim: string, only?: string[]) {
   return {
     extends: true as const,
@@ -62,7 +67,7 @@ function project(name: string, shim: string, only?: string[]) {
       testTimeout: 30_000,
       hookTimeout: 30_000,
       maxWorkers: 4,
-      sequence: { groupOrder: name === "postgres" ? 1 : name === "drizzle" ? 2 : 3 },
+      sequence: { groupOrder: groupOrders[name] ?? 3 },
       include: only ?? ["**/*.{test,spec}.?(c|m)[jt]s?(x)"],
       exclude: ["**/node_modules/**", ...sqliteOnly],
     },

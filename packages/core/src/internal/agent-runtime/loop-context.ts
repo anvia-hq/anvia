@@ -43,8 +43,10 @@ async function countContextTokens(
   throwIfAborted(signal);
   const value = await counter(structuredClone(messages));
   throwIfAborted(signal);
+
   if (!Number.isSafeInteger(value) || value < 0)
     throw new TypeError("Compaction token counter must return a nonnegative safe integer.");
+
   return value;
 }
 
@@ -53,6 +55,7 @@ export function projectLoopContext(
   checkpoint?: LoopContextCheckpoint,
 ): Message[] {
   if (checkpoint === undefined) return [...messages];
+
   return [
     createMemoryCompactionSummary(checkpoint.summary, checkpoint.compactedMessageCount),
     ...retainedLoopMessages(messages, checkpoint.coveredMessages),
@@ -81,7 +84,9 @@ export async function planLoopContext(
   const counter = options.tokenCounter ?? estimateMemoryTokens;
   const projected = projectLoopContext(messages, checkpoint);
   const originalTokenCount = await countContextTokens(counter, projected, signal);
+
   if (originalTokenCount <= options.afterTokens) return undefined;
+
   const boundaries: number[] = [];
   const pending = new Set<string>();
   for (const [index, message] of messages.entries()) {
@@ -89,9 +94,11 @@ export async function planLoopContext(
       for (const part of message.content)
         if (part.type === "tool-call") pending.add(part.toolCallId);
     }
+
     if (message.role === "tool" && pending.size > 0) {
       for (const part of message.content)
         if (part.type === "tool-result") pending.delete(part.toolCallId);
+
       if (pending.size === 0) boundaries.push(index + 1);
     } else if (message.role === "assistant" && pending.size === 0 && boundaries.at(-1) === index) {
       // A final answer belongs to the preceding completed round, not another retained tool round.
@@ -99,7 +106,9 @@ export async function planLoopContext(
     }
   }
   const end = boundaries[boundaries.length - 1 - (options.recentToolTurns ?? 1)] ?? 0;
+
   if (end <= (checkpoint?.coveredMessages ?? 0)) return undefined;
+
   const prefix =
     checkpoint === undefined
       ? messages.slice(0, end)
@@ -135,8 +144,10 @@ export async function summarizeLoopContext(
   });
   throwIfAborted(signal);
   const usage = result?.usage ?? Usage.empty();
+
   if (typeof result?.summary !== "string" || result.summary.trim().length === 0)
     throw new MemoryCompactionError("Memory compactor returned an empty summary.", { usage });
+
   for (const value of [
     usage.inputTokens,
     usage.outputTokens,
@@ -145,11 +156,13 @@ export async function summarizeLoopContext(
     usage.cacheCreationInputTokens,
   ])
     if (!Number.isSafeInteger(value) || value < 0) throw new TypeError("Invalid compaction usage.");
+
   if (
     usage.details !== undefined &&
     Object.values(usage.details).some((value) => !Number.isFinite(value))
   )
     throw new TypeError("Invalid compaction usage details.");
+
   return { summary: result.summary.trim(), usage };
 }
 

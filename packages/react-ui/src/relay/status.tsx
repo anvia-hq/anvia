@@ -15,6 +15,7 @@ const statusStyle: CSSProperties = {
 
 export function DefaultStatus({ status, retry }: { status: RelayStatus; retry: () => void }) {
   if (status.state === "open") return null;
+
   return (
     <div role="status" data-relay-status={status.state} style={statusStyle}>
       {describe(status)}

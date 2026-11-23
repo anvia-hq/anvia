@@ -31,6 +31,7 @@ function resolvePrimaryTrace<T extends { readonly trace?: PipelineObserverTraceI
   primaryTrace: string | undefined,
 ): PipelineTraceInfo | undefined {
   if (primaryTrace === undefined) return undefined;
+
   const primary = observers.find((entry) => entry.name === primaryTrace);
   return primary?.observer.trace === undefined
     ? undefined
@@ -41,11 +42,13 @@ export function snapshotPipelineObservability(
   observability: PipelineObservabilityOptions | undefined,
 ): PipelineObservabilityOptions | undefined {
   if (observability === undefined) return undefined;
+
   const observers: Record<string, PipelineObserverMap[string]> = {};
   for (const [name, observer] of Object.entries(observability.observers)) {
     if (name.trim().length === 0) {
       throw new TypeError("Pipeline observer names must not be empty.");
     }
+
     if (
       typeof observer !== "object" ||
       observer === null ||
@@ -53,14 +56,18 @@ export function snapshotPipelineObservability(
     ) {
       throw new TypeError(`Pipeline observer "${name}" must implement startRun().`);
     }
+
     observers[name] = observer;
   }
+
   if (observability.primaryTrace !== undefined && !(observability.primaryTrace in observers)) {
     throw new TypeError(
       `Pipeline primaryTrace "${observability.primaryTrace}" must name a configured observer.`,
     );
   }
+
   const errorPolicy = observability.errorPolicy ?? "ignore";
+
   if (errorPolicy !== "ignore" && errorPolicy !== "throw") {
     throw new TypeError('Pipeline observability.errorPolicy must be "ignore" or "throw".');
   }
@@ -90,6 +97,7 @@ export async function startPipelineRunObservers(
   for (const [name, observer] of Object.entries(observers)) {
     try {
       const runObserver = await observer.startRun(observerSnapshot(args));
+
       if (runObserver !== undefined) {
         runObservers.push({ name, observer: runObserver, terminal: false });
       }
@@ -97,6 +105,7 @@ export async function startPipelineRunObservers(
       failures.push({ observer: name, error });
     }
   }
+
   if (options.errorPolicy === "throw" && failures.length > 0) {
     const startupError = new PipelineObserverDispatchError("startRun", failures);
     const cleanupFailures = await terminateObservers(runObservers, (observer) =>
@@ -112,6 +121,7 @@ export async function startPipelineRunObservers(
     );
     throw new PipelineObserverDispatchError("startRun", [...failures, ...cleanupFailures]);
   }
+
   return new ActivePipelineRunObservers(runObservers, options);
 }
 
@@ -133,8 +143,10 @@ export class ActivePipelineRunObservers {
     const failures: PipelineObserverFailure[] = [];
     for (const entry of this.observers) {
       if (entry.observer.startStage === undefined) continue;
+
       try {
         const observer = await entry.observer.startStage(observerSnapshot(args));
+
         if (observer !== undefined) {
           stageObservers.push({ name: entry.name, observer, terminal: false });
         }
@@ -142,6 +154,7 @@ export class ActivePipelineRunObservers {
         failures.push({ observer: entry.name, error });
       }
     }
+
     if (this.options.errorPolicy === "throw" && failures.length > 0) {
       const startupError = new PipelineObserverDispatchError("startStage", failures);
       const cleanupFailures = await terminateObservers(stageObservers, (observer) =>
@@ -149,6 +162,7 @@ export class ActivePipelineRunObservers {
       );
       throw new PipelineObserverDispatchError("startStage", [...failures, ...cleanupFailures]);
     }
+
     return new ActivePipelineStageObservers(stageObservers, this.options);
   }
 
@@ -210,6 +224,7 @@ async function dispatchTerminalObservers<T>(
   errorPolicy: PipelineObserverErrorPolicy,
 ): Promise<void> {
   const failures = await terminateObservers(observers, dispatch);
+
   if (errorPolicy === "throw" && failures.length > 0) {
     throw new PipelineObserverDispatchError(phase, failures);
   }
@@ -222,6 +237,7 @@ async function terminateObservers<T>(
   const failures: PipelineObserverFailure[] = [];
   for (const entry of observers) {
     if (entry.terminal) continue;
+
     entry.terminal = true;
     try {
       await dispatch(entry.observer);

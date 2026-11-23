@@ -34,8 +34,10 @@ export function getRegisteredAgentTool(agent: object, toolName: string): AnyTool
 
 function getStoredAgentToolState(agent: object): StoredAgentToolState {
   const state = agentToolStates.get(agent);
+
   if (state === undefined) {
     throw new TypeError("Agent tool state is unavailable.");
   }
+
   return state;
 }

@@ -30,6 +30,13 @@ const orders: Record<string, OrderSnapshot> = {
   },
 };
 
+const orderNextActions: Record<OrderSnapshot["status"], string> = {
+  blocked: "Ask warehouse operations to confirm allocation.",
+  processing: "Monitor the next warehouse wave.",
+  shipped: "Share the active tracking status with the customer.",
+  unknown: "Ask the customer to verify the order id.",
+};
+
 const orderStatusPipeline = new Pipeline({
   id: "order-status-pipeline",
   inputSchema: z.string(),
@@ -67,14 +74,7 @@ const orderStatusPipeline = new Pipeline({
       title: `Order ${order.id}`,
       status: order.status,
       customer: order.customer,
-      nextAction:
-        order.status === "blocked"
-          ? "Ask warehouse operations to confirm allocation."
-          : order.status === "processing"
-            ? "Monitor the next warehouse wave."
-            : order.status === "shipped"
-              ? "Share the active tracking status with the customer."
-              : "Ask the customer to verify the order id.",
+      nextAction: orderNextActions[order.status],
       notes: order.notes,
     }),
   });

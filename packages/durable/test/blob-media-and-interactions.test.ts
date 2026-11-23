@@ -46,8 +46,10 @@ function stored(path: string, sql: string): string[] {
 async function waiting(run: DurableRun) {
   for (let attempt = 0; attempt < 250; attempt++) {
     const outcome = (await run.snapshot()).run.outcome;
+
     if ((await run.snapshot()).run.status === "waiting" && outcome?.type === "interaction")
       return outcome;
+
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
   throw new Error("The durable run did not wait for an interaction.");
@@ -158,8 +160,11 @@ function fetchThenApprove(seen: CompletionRequest[], fetched: string) {
     async (request) => {
       seen.push(request);
       const results = request.chatHistory.filter((message) => message.role === "tool").length;
+
       if (results === 0) return toolCall("fetch", "call-1");
+
       if (results === 1) return toolCall("approve", "call-2");
+
       return done();
     },
     [named("fetch", fetch, false), named("approve", approve, true)],
@@ -194,7 +199,9 @@ itSqlite(
 
     const restarted = await open(path, agent);
     const restored = await restarted.getRun(run.id);
+
     if (pending.type !== "interaction") throw new Error("Missing approval");
+
     await restored.respond(pending.interaction.id, { type: "tool-approval", approved: true });
     expect(await restored.result()).toMatchObject({ type: "response", output: "done" });
     expect(fetch).toHaveBeenCalledTimes(1);

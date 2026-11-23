@@ -53,7 +53,9 @@ describe("typed durable events", () => {
     const events = await collect();
     const first = <T extends DurableEvent["type"]>(type: T) => {
       const event = events.find((candidate) => isDurableEvent(candidate, type));
+
       if (event === undefined || !isDurableEvent(event, type)) throw new Error(`no ${type} event`);
+
       return event;
     };
 
@@ -68,6 +70,7 @@ describe("typed durable events", () => {
     expect(first("tool_started").data.operationId).toBeTypeOf("string");
     expect(first("tool_completed").data).toHaveProperty("result");
     const attempt = events.find((event) => event.type === "model_attempt_started");
+
     if (attempt !== undefined && isDurableEvent(attempt, "model_attempt_started"))
       expect(attempt.data.attempt).toBeTypeOf("number");
   });
@@ -75,9 +78,11 @@ describe("typed durable events", () => {
   it("narrows by type, including several types at once", async () => {
     const events = await collect();
     const event = events[0]!;
+
     if (isDurableEvent(event, "tool_started", "tool_completed")) {
       expectTypeOf(event.data.operationId).toBeString();
     }
+
     expectTypeOf<DurableEventOf<"steering_applied">["data"]>().toEqualTypeOf<{
       id: string;
       epoch: number;

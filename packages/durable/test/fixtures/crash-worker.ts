@@ -4,7 +4,9 @@ import { SqliteDurableStore } from "../../src/sqlite.js";
 import { done, hasToolResult, lookup, makeAgent, toolResponse } from "../helpers.js";
 
 const [database, effects, crashAt, recovery = "manual"] = process.argv.slice(2);
+
 if (database === undefined || effects === undefined) throw new Error("Missing fixture arguments");
+
 let id: string;
 const halt = async () => {
   process.send?.({ ready: true, id });
@@ -15,13 +17,17 @@ const halt = async () => {
 const agent = makeAgent(
   async (request) => {
     if (!hasToolResult(request)) return toolResponse();
+
     if (crashAt === "model" || crashAt === "budget") await halt();
+
     return done();
   },
   [
     lookup(async (_args, context) => {
       appendFileSync(effects, recovery === "idempotent" ? `${context?.operationId}\n` : "effect\n");
+
       if (crashAt === "tool") await halt();
+
       return "stored result";
     }),
   ],

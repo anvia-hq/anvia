@@ -32,9 +32,11 @@ function createProject(
       2,
     )}\n`,
   );
+
   if (options.components !== false) {
     mkdirSync(join(cwd, "src/components/anvia"), { recursive: true });
   }
+
   return cwd;
 }
 
@@ -50,7 +52,9 @@ function itemReport(cwd: string, name: "composer" | "markdown") {
   const report = inspectInstalledItems({ cwd, items: [name], registryDirectory });
   expect(report).toHaveLength(1);
   const item = report[0];
+
   if (item === undefined) throw new Error("missing report item");
+
   return item;
 }
 
@@ -101,7 +105,9 @@ describe("inspectInstalledItems", () => {
       items: ["message"],
       registryDirectory,
     })[0];
+
     if (message === undefined) throw new Error("missing report item");
+
     expect(message.files.map((file) => file.status)).toEqual([
       "up-to-date",
       "missing",

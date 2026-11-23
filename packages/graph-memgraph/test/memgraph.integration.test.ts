@@ -171,7 +171,9 @@ describe.skipIf(!enabled)("Memgraph integration", () => {
       expect.objectContaining({ type: "AFFECTS", properties: { severity: "high" } }),
     ]);
     const incidentNode = overview.nodes.find((node) => node.type === "Incident");
+
     if (incidentNode === undefined) throw new Error("Expected an incident explorer node");
+
     const expanded = await graph.explore({
       mode: "expand",
       nodeIds: [incidentNode.id],

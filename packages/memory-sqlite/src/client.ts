@@ -26,9 +26,11 @@ export class SqliteMemoryClient implements AsyncDisposable {
   constructor(private readonly options: SqliteMemoryClientOptions) {
     const hasDatabase = options.database !== undefined;
     const hasPath = options.path !== undefined;
+
     if (hasDatabase === hasPath) {
       throw new TypeError("SqliteMemoryClient requires exactly one of path or database.");
     }
+
     this.injected = options.database;
   }
 
@@ -42,6 +44,7 @@ export class SqliteMemoryClient implements AsyncDisposable {
 
   nativeClient(): Promise<SqliteMemoryDatabaseLike> {
     this.assertOpen();
+
     if (this.clientPromise !== undefined) {
       return this.clientPromise;
     }
@@ -78,14 +81,17 @@ export class SqliteMemoryClient implements AsyncDisposable {
 
   [sqliteMemoryExistingClient](): Promise<SqliteMemoryDatabaseLike> {
     this.assertOpen();
+
     if (this.injected !== undefined || this.clientPromise !== undefined) {
       return this.nativeClient();
     }
 
     const path = this.options.path;
+
     if (path === undefined || path === ":memory:" || !existsSync(path)) {
       throw new Error("Sqlite memory database does not exist. Call store.ensure() first.");
     }
+
     return this.nativeClient();
   }
 
@@ -95,12 +101,15 @@ export class SqliteMemoryClient implements AsyncDisposable {
     }
 
     const path = this.options.path;
+
     if (path === undefined) {
       throw new TypeError("SqliteMemoryClient requires either path or database.");
     }
+
     if (path !== ":memory:") {
       mkdirSync(dirname(resolve(path)), { recursive: true });
     }
+
     const database = isBunDriver()
       ? // bun:sqlite rejects node-only open options such as
         // enableForeignKeyConstraints with SQLITE_MISUSE, and it has no
@@ -128,6 +137,7 @@ function databaseSync(): SyncDatabaseConstructor {
 
   const require = createRequire(import.meta.url);
   const bun = loadBunSqlite(require);
+
   if (bun !== undefined) {
     DatabaseSync = bun.Database;
     return DatabaseSync;
@@ -149,6 +159,7 @@ function loadBunSqlite(require: NodeJS.Require): { Database: SyncDatabaseConstru
   if (!isBunDriver()) {
     return undefined;
   }
+
   try {
     return require("bun:sqlite") as { Database: SyncDatabaseConstructor };
   } catch {

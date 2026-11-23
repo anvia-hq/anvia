@@ -56,18 +56,22 @@ const snapshot = z
   .strict();
 function parse<T>(schema: z.ZodType<T>, value: unknown): T {
   const parsed = schema.safeParse(value);
+
   if (!parsed.success) throw new TypeError("Invalid durable graph payload.");
+
   return parsed.data;
 }
 export function parseDurableGraphSnapshot(value: unknown): DurableGraphSnapshot {
   const parsed = parse(snapshot, value);
   const ids = new Set(parsed.nodes.map((node) => node.id));
+
   if (
     ids.size !== parsed.nodes.length ||
     new Set(parsed.nodes.map((node) => node.runId)).size !== parsed.nodes.length ||
     parsed.edges.some((edge) => !ids.has(edge.source) || !ids.has(edge.target))
   )
     throw new TypeError("Invalid durable graph topology.");
+
   return parsed as DurableGraphSnapshot;
 }
 export function parseDurableGraphListOptions(value: unknown): DurableGraphListOptions {

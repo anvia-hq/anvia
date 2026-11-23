@@ -76,12 +76,15 @@ export class RemoteSandboxTunnel implements SandboxTunnel {
     if (!Number.isInteger(port) || port < 1 || port > 65_535) {
       throw new RangeError("port must be an integer from 1 to 65535.");
     }
+
     if (options.host !== undefined && !tunnelHosts.includes(options.host)) {
       throw new TypeError(
         "host must be 127.0.0.1 or ::1: tunnels only reach the sandbox's loopback.",
       );
     }
+
     const connection = await this.options.source.acquire(options.abortSignal);
+
     if (!connection.capabilities.has(tunnelCapability)) {
       throw new DockerSandboxError(
         `Sandbox ${this.options.id} does not support tunnels. Its daemon needs a version that ` +
@@ -114,6 +117,7 @@ export class RemoteSandboxTunnel implements SandboxTunnel {
       await handle.opened(this.openTimeoutMs, options.abortSignal);
     } catch (error) {
       connection.unregisterTunnel(tunnelId);
+
       if (error instanceof LinkClosedError) {
         throw new DockerSandboxError(
           `Sandbox ${this.options.id} connection dropped.`,
@@ -122,6 +126,7 @@ export class RemoteSandboxTunnel implements SandboxTunnel {
           { cause: error },
         );
       }
+
       throw error;
     }
     return handle;
@@ -178,6 +183,7 @@ class RemoteTunnelHandle implements TunnelHandle {
           this.writeWindowBytes = requested.profile.writeWindowBytes;
           this.stream.setAckStepBytes(requested.profile.ackStepBytes);
         }
+
         this.settleOpen?.resolve();
       },
       failed: (error) => this.settleOpen?.reject(error),
@@ -221,6 +227,7 @@ class RemoteTunnelHandle implements TunnelHandle {
           reject(error);
         },
       };
+
       if (signal?.aborted) abort();
       else signal?.addEventListener("abort", abort, { once: true });
     });
@@ -243,6 +250,7 @@ class RemoteTunnelHandle implements TunnelHandle {
 
   close(): void {
     if (this.stream.endedWith !== undefined) return;
+
     this.trySend({ type: "tunnel.close", tunnelId: this.tunnelId });
     this.end({ reason: "closed" });
   }
@@ -250,8 +258,10 @@ class RemoteTunnelHandle implements TunnelHandle {
   private async waitForRoom(): Promise<void> {
     while (this.sent - this.acknowledged >= this.writeWindowBytes) {
       if (this.stream.endedWith !== undefined) break;
+
       await new Promise<void>((resolve) => this.roomWaiters.push(resolve));
     }
+
     if (this.stream.endedWith !== undefined) {
       throw new DockerSandboxError("The tunnel is closed.", "invalid_state");
     }

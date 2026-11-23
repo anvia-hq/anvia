@@ -36,9 +36,11 @@ export function useSmoothStreamText(
     isStreaming: options.isStreaming,
     resetKey: options.resetKey,
   };
+
   if (options.flushImmediately !== undefined) {
     Object.assign(streamOptions, { flushImmediately: options.flushImmediately });
   }
+
   const smooth = useSmoothStreamItems(items, streamOptions);
 
   return {

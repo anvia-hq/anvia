@@ -132,7 +132,9 @@ describe("OpenTelemetry Pipeline observer", () => {
       pipelineId: "failing",
       input: "input",
     });
+
     if (run === undefined) throw new Error("Expected a Pipeline run observer");
+
     const stage = await run.startStage?.({
       runId: "pipeline-run",
       pipelineId: "failing",

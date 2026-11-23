@@ -62,6 +62,7 @@ export class InboundStream<End> {
 
   push(data: Uint8Array): void {
     if (this.finished !== undefined) return;
+
     if (this.queued + data.byteLength > this.options.maxBufferBytes) {
       // The sender honours acks, so this is a peer ignoring flow control or a reader that stopped.
       this.failure = new DockerSandboxError(
@@ -72,6 +73,7 @@ export class InboundStream<End> {
       this.end(this.options.overflowEnd);
       return;
     }
+
     this.queue.push(data);
     this.queued += data.byteLength;
     this.signal();
@@ -79,6 +81,7 @@ export class InboundStream<End> {
 
   end(info: End): void {
     if (this.finished !== undefined) return;
+
     this.finished = info;
     this.options.onEnd(info);
     this.resolveEnded(info);
@@ -91,14 +94,18 @@ export class InboundStream<End> {
       // unacknowledged, or a sender stopped at its window would wait for them forever.
       this.acknowledge(this.queue.length === 0);
       const chunk = this.queue.shift();
+
       if (chunk !== undefined) {
         this.queued -= chunk.byteLength;
         this.consumed += chunk.byteLength;
         yield chunk;
         continue;
       }
+
       if (this.failure !== undefined) throw this.failure;
+
       if (this.finished !== undefined) return;
+
       await new Promise<void>((resolve) => {
         this.wake = resolve;
       });
@@ -108,7 +115,9 @@ export class InboundStream<End> {
   /** Report consumption once the reader has asked for more, i.e. after it handled the last chunk. */
   private acknowledge(drained: boolean): void {
     if (this.consumed === this.acknowledged || this.finished !== undefined) return;
+
     if (!drained && this.consumed - this.acknowledged < this.ackStepBytes) return;
+
     this.acknowledged = this.consumed;
     this.options.onConsumed(this.consumed);
   }

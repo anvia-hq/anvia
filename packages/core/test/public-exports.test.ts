@@ -155,6 +155,7 @@ describe("public exports", () => {
     expectTypeOf<Awaited<ReturnType<PublicAgentType["generate"]>>>().toEqualTypeOf<AgentOutcome>();
     expectTypeOf<ReturnType<PublicAgentType["stream"]>>().toEqualTypeOf<AgentStream>();
     const agent = null as unknown as PublicAgentType;
+
     if (Date.now() === Number.NEGATIVE_INFINITY) {
       // @ts-expect-error Agent.generate no longer accepts a positional prompt.
       agent.generate("hello");
@@ -412,6 +413,7 @@ describe("public exports", () => {
       // @ts-expect-error McpServer is a registration snapshot and does not own lifecycle.
       server.close();
     }
+
     expect(vectorStore).toHaveProperty("InMemoryVectorStore");
     expect(vectorStore).toHaveProperty("retrieveDocuments");
     expect(vectorStore).toHaveProperty("createVectorSearchTool");
@@ -498,6 +500,7 @@ describe("public exports", () => {
 
     const capability = null as unknown as import("../src/memory").MemoryCompactionCapability;
     const model = null as unknown as import("../src/completion").CompletionModel;
+
     if (Date.now() === Number.NEGATIVE_INFINITY) {
       // @ts-expect-error Old compaction snapshot method was removed.
       capability.load({ sessionId: "session_1" });

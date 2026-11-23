@@ -79,8 +79,10 @@ it.each(["committed", "manual", "idempotent"] as const)(
           { amount: 1 },
           async (operationId) => {
             effectCalls++;
+
             if (!readFileSync(effects, "utf8").includes(operationId))
               appendFileSync(effects, `${operationId}\n`);
+
             return "receipt";
           },
           mode === "idempotent" ? "idempotent" : "manual",
@@ -95,10 +97,12 @@ it.each(["committed", "manual", "idempotent"] as const)(
     runtimes.push(runtime);
     await runtime.resume();
     const handle = await runtime.getTask(id);
+
     if (mode === "manual") {
       await expect.poll(async () => (await handle.snapshot()).task.status).toBe("needs_attention");
       await handle.resolveEffect("external", "receipt");
     }
+
     expect(await handle.result()).toBe("receipt");
     expect(effectCalls).toBe(mode === "idempotent" ? 1 : 0);
     const lines = readFileSync(effects, "utf8").trim().split("\n");

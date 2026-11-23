@@ -72,6 +72,7 @@ export async function runCli(
     } else {
       initPrismaMemory(options, cwd, io);
     }
+
     return 0;
   } catch (error) {
     io.error(error instanceof Error ? error.message : String(error));
@@ -81,6 +82,7 @@ export async function runCli(
 
 function initPrismaMemory(options: CliOptions, cwd: string, io: CliIo): void {
   const schemaPath = resolveSchemaPath(cwd, options.schema);
+
   if (!existsSync(schemaPath)) {
     throw new Error(
       `Prisma schema not found at ${relative(cwd, schemaPath)}. Pass --schema <path> if your schema lives elsewhere.`,
@@ -172,9 +174,11 @@ function replaceOrAppendBlock(current: string, force: boolean): string {
     if (start === -1 || end === -1 || end < start) {
       throw new Error("Found incomplete Anvia memory schema markers in schema.prisma.");
     }
+
     if (!force) {
       throw new Error("Anvia memory schema block already exists. Use --force to replace it.");
     }
+
     return `${current.slice(0, start).trimEnd()}\n\n${block}\n${current
       .slice(end + appendEndMarker.length)
       .trimStart()}`;
@@ -195,6 +199,7 @@ function assertNoUnsafeModelConflicts(input: {
     const content = readFileSync(file, "utf8");
     const normalizedFile = resolve(file);
     const conflictNames = modelConflicts(content);
+
     if (conflictNames.length === 0) {
       continue;
     }
@@ -203,9 +208,11 @@ function assertNoUnsafeModelConflicts(input: {
       if (input.appendToSchema && hasGeneratedAppendBlock(content)) {
         const outsideBlock = contentWithoutGeneratedAppendBlock(content);
         const outsideConflicts = modelConflicts(outsideBlock);
+
         if (outsideConflicts.length > 0) {
           throw new Error(`Existing Prisma models conflict: ${outsideConflicts.join(", ")}`);
         }
+
         continue;
       }
 
@@ -227,9 +234,11 @@ function modelConflicts(content: string): string[] {
 function contentWithoutGeneratedAppendBlock(content: string): string {
   const start = content.indexOf(appendStartMarker);
   const end = content.indexOf(appendEndMarker);
+
   if (start === -1 || end === -1 || end < start) {
     return content;
   }
+
   return `${content.slice(0, start)}${content.slice(end + appendEndMarker.length)}`;
 }
 
@@ -241,6 +250,7 @@ function prismaSchemaFiles(schemaDir: string): string[] {
   if (!existsSync(schemaDir)) {
     return [];
   }
+
   return walk(schemaDir).filter((file) => file.endsWith(".prisma"));
 }
 
@@ -257,6 +267,7 @@ function resolveSchemaPath(cwd: string, explicitSchema: string | undefined): str
   }
 
   const configSchema = schemaPathFromPrismaConfig(cwd);
+
   if (configSchema !== undefined) {
     return configSchema;
   }
@@ -273,11 +284,13 @@ function schemaPathFromPrismaConfig(cwd: string): string | undefined {
     "prisma.config.mjs",
   ]) {
     const path = resolve(cwd, filename);
+
     if (!existsSync(path)) {
       continue;
     }
 
     const match = readFileSync(path, "utf8").match(/\bschema\s*:\s*["']([^"']+)["']/);
+
     if (match?.[1] === undefined) {
       continue;
     }
@@ -318,6 +331,7 @@ function parseArgs(argv: string[]): CliOptions {
 
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
+
     if (arg === "--help" || arg === "-h") {
       options.help = true;
     } else if (arg === "--write") {
@@ -330,20 +344,26 @@ function parseArgs(argv: string[]): CliOptions {
       options.appendToContract = true;
     } else if (arg === "--prisma-version") {
       const value = args[index + 1];
+
       if (value !== "7" && value !== "8") throw new Error("--prisma-version must be 7 or 8.");
+
       options.prismaVersion = value;
       index += 1;
     } else if (arg === "--contract") {
       const value = args[index + 1];
+
       if (value === undefined || value.startsWith("-"))
         throw new Error("--contract requires a path.");
+
       options.contract = value;
       index += 1;
     } else if (arg === "--schema") {
       const value = args[index + 1];
+
       if (value === undefined || value.startsWith("-")) {
         throw new Error("--schema requires a path.");
       }
+
       options.schema = value;
       index += 1;
     } else {
@@ -356,12 +376,14 @@ function parseArgs(argv: string[]): CliOptions {
       "Prisma 8 uses --contract and --append-to-contract, not --schema or --append-to-schema.",
     );
   }
+
   if (
     options.prismaVersion === "7" &&
     (options.contract !== undefined || options.appendToContract)
   ) {
     throw new Error("--contract and --append-to-contract require --prisma-version 8.");
   }
+
   return options;
 }
 

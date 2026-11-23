@@ -45,17 +45,20 @@ export function assertPackedInternalVersions(manifest, packagesByName) {
   for (const field of DEPENDENCY_FIELDS) {
     for (const [name, range] of Object.entries(manifest[field] ?? {})) {
       const internalPackage = packagesByName.get(name);
+
       if (internalPackage === undefined) {
         continue;
       }
+
       const version = internalPackage.packageJson.version;
       const sourceRange = packagesByName.get(manifest.name)?.packageJson[field]?.[name];
-      const expected =
-        field === "peerDependencies"
-          ? sourceRange === "workspace:^"
-            ? `^${version}`
-            : sourceRange?.replace(/^workspace:/, "")
-          : version;
+      let expected = version;
+
+      if (field === "peerDependencies") {
+        expected =
+          sourceRange === "workspace:^" ? `^${version}` : sourceRange?.replace(/^workspace:/, "");
+      }
+
       if (range !== expected) {
         throw new Error(
           `${manifest.name} packed ${field}.${name} as ${range}; expected ${expected}.`,
@@ -73,6 +76,7 @@ function packAndReadManifest(pkg) {
       encoding: "utf8",
       env: process.env,
     });
+
     if (packed.status !== 0) {
       throw new Error(`Failed to pack ${pkg.packageJson.name}: ${packed.stderr || packed.stdout}`);
     }
@@ -82,9 +86,11 @@ function packAndReadManifest(pkg) {
     const extracted = spawnSync("tar", ["-xOf", filename, "package/package.json"], {
       encoding: "utf8",
     });
+
     if (extracted.status !== 0) {
       throw new Error(`Failed to read ${pkg.packageJson.name} tarball: ${extracted.stderr}`);
     }
+
     return JSON.parse(extracted.stdout);
   } finally {
     rmSync(tempDir, { recursive: true, force: true });

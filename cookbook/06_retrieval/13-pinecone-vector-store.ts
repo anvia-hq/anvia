@@ -55,8 +55,10 @@ await client.close();
 
 function requireEnv(name: string): string {
   const value = process.env[name];
+
   if (value === undefined || value.length === 0) {
     throw new Error(`Set ${name} before running this cookbook example.`);
   }
+
   return value;
 }

@@ -36,6 +36,7 @@ const failed = [];
 
 for (const pkg of sortedPackages) {
   const { name, version, publishConfig } = pkg.packageJson;
+
   if (await isVersionPublished(name, version)) {
     console.warn(
       `${name} is not being published because version ${version} is already published on npm`,
@@ -46,6 +47,7 @@ for (const pkg of sortedPackages) {
 
   console.info(`Packing "${name}" at "${version}"`);
   const packedPackage = packPackage(pkg);
+
   if (packedPackage === undefined) {
     failed.push({ name, version });
     continue;
@@ -112,13 +114,16 @@ function findPackageDirs(dir) {
   const dirs = [];
   for (const entry of entries) {
     const entryPath = path.join(dir, entry);
+
     if (!statSync(entryPath).isDirectory()) {
       continue;
     }
+
     if (existsSync(path.join(entryPath, "package.json"))) {
       dirs.push(entryPath);
       continue;
     }
+
     dirs.push(...findPackageDirs(entryPath));
   }
   return dirs;
@@ -140,11 +145,13 @@ function writePublishedPackages(releases) {
 
 function readOption(name, fallback) {
   const index = process.argv.indexOf(name);
+
   if (index === -1) {
     return fallback;
   }
 
   const value = process.argv[index + 1];
+
   if (value === undefined || value.startsWith("--")) {
     throw new Error(`${name} requires a value`);
   }
@@ -154,9 +161,11 @@ function readOption(name, fallback) {
 
 async function isVersionPublished(name, version) {
   const args = ["view", `${name}@${version}`, "version", "--json"];
+
   if (registry !== undefined && registry.length > 0) {
     args.push("--registry", registry);
   }
+
   const result = spawnSync("npm", args, {
     cwd: root,
     env: process.env,
@@ -168,6 +177,7 @@ async function isVersionPublished(name, version) {
   }
 
   const output = `${result.stdout}\n${result.stderr}`;
+
   if (output.includes("E404") || output.includes("No match found for version")) {
     return false;
   }
@@ -194,9 +204,11 @@ function packPackage(pkg) {
 
   try {
     const packed = JSON.parse(result.stdout);
+
     if (typeof packed.filename !== "string" || !existsSync(packed.filename)) {
       throw new Error("pnpm pack did not return a package filename");
     }
+
     return { filename: packed.filename, cleanup };
   } catch (error) {
     cleanup();
@@ -211,14 +223,18 @@ function createGitTags(releases) {
       cwd: root,
       encoding: "utf8",
     });
+
     if (existing.status === 0) {
       const taggedCommit = gitOutput(["rev-list", "-n", "1", tag]);
       const currentCommit = gitOutput(["rev-parse", "HEAD"]);
+
       if (taggedCommit !== currentCommit) {
         throw new Error(`${tag} already exists on ${taggedCommit}, not ${currentCommit}.`);
       }
+
       continue;
     }
+
     console.info("New tag:", tag);
     run("git", ["tag", tag], root);
   }
@@ -229,13 +245,16 @@ function recoverablePackageTags() {
     cwd: root,
     encoding: "utf8",
   });
+
   if (currentResult.status !== 0) {
     throw new Error("Unable to list package tags on the current commit.");
   }
+
   const recoverable = new Set(currentResult.stdout.split(/\r?\n/).filter(Boolean));
 
   for (const pkg of packages) {
     const tag = `${pkg.packageJson.name}@${pkg.packageJson.version}`;
+
     if (!tagExists(tag) && packageManifestChangedAtHead(pkg.dir)) {
       recoverable.add(tag);
     }
@@ -258,17 +277,21 @@ function packageManifestChangedAtHead(dir) {
     cwd: root,
     stdio: "ignore",
   });
+
   if (result.status !== 0 && result.status !== 1) {
     throw new Error(`Unable to inspect the release history for ${relativeManifest}.`);
   }
+
   return result.status === 1;
 }
 
 function gitOutput(args) {
   const result = spawnSync("git", args, { cwd: root, encoding: "utf8" });
+
   if (result.status !== 0) {
     throw new Error(`git ${args.join(" ")} failed`);
   }
+
   return result.stdout.trim();
 }
 
@@ -286,9 +309,11 @@ function topologicalSort(items, workspaceNames) {
 
   function visit(item) {
     const name = item.packageJson.name;
+
     if (visited.has(name)) {
       return;
     }
+
     if (visiting.has(name)) {
       throw new Error(`Circular workspace dependency detected at ${name}`);
     }
@@ -296,6 +321,7 @@ function topologicalSort(items, workspaceNames) {
     visiting.add(name);
     for (const dependency of workspaceDependencies(item.packageJson, workspaceNames)) {
       const dependencyItem = itemByName.get(dependency);
+
       if (dependencyItem !== undefined) {
         visit(dependencyItem);
       }
@@ -320,6 +346,7 @@ function run(command, args, cwd) {
     env: process.env,
     stdio: "inherit",
   });
+
   if (result.status !== 0) {
     throw new Error(`${command} ${args.join(" ")} failed`);
   }

@@ -6,6 +6,7 @@ export function abortable<T>(work: Promise<T>, signal: AbortSignal): Promise<T> 
     void work.catch(() => undefined);
     return Promise.reject(abortError(signal.reason));
   }
+
   return new Promise((resolve, reject) => {
     const cleanup = () => signal.removeEventListener("abort", abort);
     const abort = () => {
@@ -38,12 +39,15 @@ export class TeamChanges {
 
   wait(version: number, signal: AbortSignal, timeoutMs?: number): Promise<void> {
     throwIfAborted(signal);
+
     if (version !== this.version) return Promise.resolve();
+
     return new Promise((resolve, reject) => {
       let timer: ReturnType<typeof setTimeout> | undefined;
       const cleanup = () => {
         this.listeners.delete(done);
         signal.removeEventListener("abort", abort);
+
         if (timer !== undefined) clearTimeout(timer);
       };
       const done = () => {
@@ -56,6 +60,7 @@ export class TeamChanges {
       };
       this.listeners.add(done);
       signal.addEventListener("abort", abort, { once: true });
+
       if (timeoutMs !== undefined) timer = setTimeout(done, timeoutMs);
     });
   }
@@ -76,6 +81,7 @@ export class TeamSlots {
       while (true) {
         throwIfAborted(signal);
         const version = this.changes.version;
+
         if (this.queue[0] === ticket && this.active < this.maximum) {
           this.queue.shift();
           this.active += 1;
@@ -83,16 +89,20 @@ export class TeamSlots {
           let released = false;
           return () => {
             if (released) return;
+
             released = true;
             this.active -= 1;
             this.changes.notify();
           };
         }
+
         await this.changes.wait(version, signal);
       }
     } finally {
       const index = this.queue.indexOf(ticket);
+
       if (index !== -1) this.queue.splice(index, 1);
+
       this.changes.notify();
     }
   }

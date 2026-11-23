@@ -62,9 +62,11 @@ async function connect(opening: Promise<TunnelHandle>, options: { withoutPause?:
   const sockets: WebSocket[] = [];
   server.on("connection", (ws) => {
     sockets.push(ws);
+
     if (options.withoutPause === true) {
       Object.assign(ws, { pause: undefined, resume: undefined });
     }
+
     bridgeTunnel(ws, opening);
   });
   await new Promise((resolve) => server.once("listening", resolve));

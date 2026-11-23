@@ -28,6 +28,7 @@ export const TranscriptItem = memo(function TranscriptItem(props: {
   onOpenTrace: (traceId: string) => void;
 }) {
   const displayText = props.displayText ?? ("text" in props.entry ? props.entry.text : "");
+
   if (props.entry.kind === "reasoning") {
     return (
       <article
@@ -135,6 +136,7 @@ function AssistantResponseFooter(props: {
     if (typeof navigator === "undefined" || navigator.clipboard === undefined) {
       return;
     }
+
     try {
       await navigator.clipboard.writeText(props.text);
       setCopied(true);
@@ -232,20 +234,26 @@ function responseMetricRows(metrics: AssistantResponseMetrics | undefined): Arra
 }> {
   const rows: Array<{ label: string; value: string }> = [];
   const usage = metrics?.usage;
+
   if (usage?.totalTokens !== undefined) {
     rows.push({ label: "Total", value: `${formatMetricNumber(usage.totalTokens)} tokens` });
   }
+
   if (usage?.inputTokens !== undefined) {
     rows.push({ label: "Input", value: formatMetricNumber(usage.inputTokens) });
   }
+
   if (usage?.outputTokens !== undefined) {
     rows.push({ label: "Output", value: formatMetricNumber(usage.outputTokens) });
   }
+
   pushOptionalUsageRow(rows, "Cached", usage, "cachedInputTokens");
   pushOptionalUsageRow(rows, "Cache create", usage, "cacheCreationInputTokens");
+
   if (metrics?.durationMs !== undefined) {
     rows.push({ label: "Duration", value: formatResponseDuration(metrics.durationMs) });
   }
+
   return rows;
 }
 
@@ -256,6 +264,7 @@ function pushOptionalUsageRow(
   key: keyof ResponseUsageMetrics,
 ) {
   const value = usage?.[key];
+
   if (value !== undefined && value > 0) {
     rows.push({ label, value: formatMetricNumber(value) });
   }
@@ -267,9 +276,11 @@ function metricsTitle(metrics: AssistantResponseMetrics | undefined): string {
     metrics?.context === undefined
       ? undefined
       : `Context: ${metrics.context.totalTokens.toLocaleString()} tokens`;
+
   if (rows.length === 0 && context === undefined) {
     return "Cost unavailable. No usage metrics yet.";
   }
+
   return ["Cost unavailable", ...rows.map((row) => `${row.label}: ${row.value}`), context]
     .filter((part): part is string => part !== undefined)
     .join(". ");
@@ -283,6 +294,7 @@ function formatResponseDuration(value: number): string {
   if (value < 1000) {
     return `${value}ms`;
   }
+
   return `${(value / 1000).toFixed(1)}s`;
 }
 
@@ -311,6 +323,7 @@ function MessageAttachments(props: {
     <div className="mt-2 flex max-w-full flex-wrap gap-2">
       {props.attachments.map((attachment, index) => {
         const key = `${attachment.kind}-${attachment.name ?? attachment.mediaType ?? index}-${index}`;
+
         if (attachment.kind === "image") {
           const src =
             attachment.url ??
@@ -333,6 +346,7 @@ function MessageAttachments(props: {
             </div>
           );
         }
+
         return (
           <span
             className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-hair bg-card px-2 py-1 text-xs font-medium text-muted-foreground"
@@ -390,19 +404,21 @@ function ToolEntry(props: {
   const timedOutApproval = approval?.status === "timed_out";
   const deciding = approval !== undefined && props.decidingApprovals.has(approval.id);
   const answering = question !== undefined && props.answeringQuestions.has(question.id);
-  const status = pendingApproval
-    ? "Approval required"
-    : pendingQuestion
-      ? "Input required"
-      : cancelledInteraction
-        ? "Cancelled"
-        : rejectedApproval
-          ? "Rejected"
-          : timedOutApproval
-            ? "Timed out"
-            : props.live === true && props.entry.result === undefined
-              ? "Running"
-              : undefined;
+  let status: string | undefined;
+
+  if (pendingApproval) {
+    status = "Approval required";
+  } else if (pendingQuestion) {
+    status = "Input required";
+  } else if (cancelledInteraction) {
+    status = "Cancelled";
+  } else if (rejectedApproval) {
+    status = "Rejected";
+  } else if (timedOutApproval) {
+    status = "Timed out";
+  } else if (props.live === true && props.entry.result === undefined) {
+    status = "Running";
+  }
 
   return (
     <article
@@ -491,6 +507,7 @@ function ChildAgentActivity(props: { events: NonNullable<ToolMessage["childEvent
       <div className="grid gap-3 p-3">
         {props.events.map((event) => {
           const agentLabel = event.agentName ?? event.agentId;
+
           if (event.kind === "message" || event.kind === "reasoning") {
             return (
               <div
@@ -509,6 +526,7 @@ function ChildAgentActivity(props: { events: NonNullable<ToolMessage["childEvent
               </div>
             );
           }
+
           return (
             <div
               className="grid gap-2 rounded-none border border-hair bg-card p-3"
@@ -554,8 +572,11 @@ function ToolQuestionPanel(props: {
       questionId: question.id,
       answer: answer?.trim() ?? "",
     };
+
     if (draft?.choice !== undefined) normalized.choice = draft.choice;
+
     if (customAnswer.length > 0) normalized.custom = true;
+
     return normalized;
   });
   const activeIndex = total === 0 ? 0 : Math.min(activeQuestionIndex, total - 1);
@@ -584,25 +605,9 @@ function ToolQuestionPanel(props: {
       [questionId]: value,
     }));
 
-  return (
-    <div className="grid gap-3">
-      {props.question.status === "cancelled" ? (
-        <div className="rounded-none border border-hair bg-muted px-3 py-2.5 text-sm font-medium text-muted-foreground">
-          Question cancelled
-        </div>
-      ) : null}
-      <QuestionPromptControl
-        key={activeQuestion.id}
-        disabled={props.disabled || !pending}
-        index={activeIndex}
-        total={total}
-        question={activeQuestion}
-        value={values[activeQuestion.id]}
-        answer={props.question.answers?.find((answer) => answer.questionId === activeQuestion.id)}
-        onChange={(value) => updateDraft(activeQuestion.id, value)}
-        onAdvance={lastQuestion ? undefined : goNext}
-      />
-      {pending ? (
+  function renderFooter() {
+    if (pending) {
+      return (
         <div className="flex min-w-0 items-center justify-between gap-3 rounded-none bg-muted px-3 py-2">
           <div className="min-w-0 text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
             {answeredCount}/{total} answered
@@ -634,7 +639,11 @@ function ToolQuestionPanel(props: {
             )}
           </div>
         </div>
-      ) : total > 1 ? (
+      );
+    }
+
+    if (total > 1) {
+      return (
         <div className="flex min-w-0 items-center justify-between gap-3 rounded-none bg-muted px-3 py-2">
           <div className="min-w-0 text-xs font-semibold uppercase tracking-[0.2em] text-foreground">
             Answered
@@ -648,7 +657,31 @@ function ToolQuestionPanel(props: {
             </Button>
           </div>
         </div>
+      );
+    }
+
+    return null;
+  }
+
+  return (
+    <div className="grid gap-3">
+      {props.question.status === "cancelled" ? (
+        <div className="rounded-none border border-hair bg-muted px-3 py-2.5 text-sm font-medium text-muted-foreground">
+          Question cancelled
+        </div>
       ) : null}
+      <QuestionPromptControl
+        key={activeQuestion.id}
+        disabled={props.disabled || !pending}
+        index={activeIndex}
+        total={total}
+        question={activeQuestion}
+        value={values[activeQuestion.id]}
+        answer={props.question.answers?.find((answer) => answer.questionId === activeQuestion.id)}
+        onChange={(value) => updateDraft(activeQuestion.id, value)}
+        onAdvance={lastQuestion ? undefined : goNext}
+      />
+      {renderFooter()}
     </div>
   );
 }
@@ -671,8 +704,13 @@ function QuestionPromptControl(props: {
 }) {
   const submittedAnswer = props.answer?.answer;
   const draftAnswer = questionDraftAnswer(props.value);
-  const state =
-    submittedAnswer !== undefined ? "Answered" : draftAnswer.length > 0 ? "Ready" : "Waiting";
+  let state: "Answered" | "Ready" | "Waiting" = "Waiting";
+
+  if (submittedAnswer !== undefined) {
+    state = "Answered";
+  } else if (draftAnswer.length > 0) {
+    state = "Ready";
+  }
 
   return (
     <section className="grid gap-4 rounded-none border border-hair bg-background p-4">
@@ -701,7 +739,7 @@ function QuestionPromptControl(props: {
           {submittedAnswer}
         </div>
       )}
-      {submittedAnswer !== undefined ? null : props.question.choices.length > 0 ? (
+      {submittedAnswer === undefined && props.question.choices.length > 0 ? (
         <div className="flex flex-wrap gap-2">
           {props.question.choices.map((choice) => {
             const active = props.value?.choice === choice.value;

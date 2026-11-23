@@ -40,18 +40,23 @@ export function useTraces(props: {
     try {
       const params = new URLSearchParams({ include: "detail", limit: "50" });
       const response = await fetch(`/traces?${params.toString()}`);
+
       if (!response.ok) {
         throw new Error(`Traces failed with HTTP ${response.status}`);
       }
+
       const body = (await response.json()) as { traces: StudioTrace[] };
       const loaded = body.traces;
+
       if (selectedTraceId.length > 0 && !loaded.some((trace) => trace.id === selectedTraceId)) {
         const traceResponse = await fetch(`/traces/${encodeURIComponent(selectedTraceId)}`);
+
         if (traceResponse.ok) {
           setTraces([(await traceResponse.json()) as StudioTrace, ...loaded]);
           return;
         }
       }
+
       setTraces(loaded);
     } catch (loadError) {
       onError(errorMessage(loadError));
@@ -70,9 +75,11 @@ export function useTraces(props: {
       try {
         const params = new URLSearchParams({ include: "detail", limit: "50", sessionId });
         const response = await fetch(`/traces?${params.toString()}`);
+
         if (!response.ok) {
           throw new Error(`Session traces failed with HTTP ${response.status}`);
         }
+
         const body = (await response.json()) as { traces: StudioTrace[] };
         const loaded = body.traces;
         const ordered = [...loaded].sort(
@@ -80,17 +87,22 @@ export function useTraces(props: {
         );
         setTraces(ordered);
         const firstTraceId = ordered[0]?.id;
+
         if (firstTraceId === undefined) {
           setSelectedTraceId("");
           setTraceSessionDetailId(sessionId);
+
           if (options.updatePath !== false) {
             onOpenTraceSession(sessionId);
           }
+
           return;
         }
+
         onNavigateTracing();
         setSelectedTraceId(firstTraceId);
         setTraceSessionDetailId(sessionId);
+
         if (options.updatePath !== false) {
           onOpenTraceSession(sessionId);
         }
@@ -111,9 +123,11 @@ export function useTraces(props: {
 
       const params = new URLSearchParams({ limit: "100" });
       const response = await fetch(`/sessions/${encodeURIComponent(sessionId)}/traces?${params}`);
+
       if (!response.ok) {
         return [];
       }
+
       const body = (await response.json()) as { traces: StudioTraceSummary[] };
       return body.traces;
     },
@@ -124,6 +138,7 @@ export function useTraces(props: {
     if (activePage !== "tracing" || traceSessionDetailId !== undefined) {
       return;
     }
+
     void loadTraces();
   }, [activePage, loadTraces, traceSessionDetailId]);
 
@@ -142,10 +157,12 @@ export function useTraces(props: {
       onNavigateTracing();
       setSelectedTraceId(traceId);
       setTraceSessionDetailId(undefined);
+
       if (traceId.length === 0) {
         onOpenTraceIndex();
         return;
       }
+
       onOpenTrace(traceId);
     },
     [onNavigateTracing, onOpenTrace, onOpenTraceIndex],

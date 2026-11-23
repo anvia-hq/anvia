@@ -96,14 +96,17 @@ export abstract class MemgraphKnowledgeGraphBase<
     );
     for (const seed of Object.values(this.seeds)) {
       const actual = vectorRecords.get(seed.vectorIndex.name);
+
       if (actual === undefined) {
         throw new Error(`Memgraph vector index ${seed.vectorIndex.name} does not exist.`);
       }
+
       validateVectorRecord(actual, seed);
     }
     const expectedTextNames = Object.values(this.seeds).flatMap((seed) =>
       seed.textIndex === undefined ? [] : [seed.textIndex.name],
     );
+
     if (expectedTextNames.length > 0) {
       const indexes = await this.query("SHOW INDEX INFO", {}, options.abortSignal);
       for (const name of expectedTextNames) {
@@ -134,9 +137,11 @@ export abstract class MemgraphKnowledgeGraphBase<
     const sessionOptions: SessionConfig = {
       defaultAccessMode: access === "read" ? "READ" : "WRITE",
     };
+
     if (this.owner.database !== undefined) {
       Object.assign(sessionOptions, { database: this.owner.database });
     }
+
     const session = this.owner.nativeDriver().session(sessionOptions);
     let rejectAbort: ((error: Error) => void) | undefined;
     const aborted = new Promise<never>((_resolve, reject) => {
@@ -156,7 +161,9 @@ export abstract class MemgraphKnowledgeGraphBase<
 
   seed(name: string): MemgraphSeedRegistration {
     const seed = this.seeds[name];
+
     if (seed === undefined) throw new TypeError(`Unknown Memgraph graph seed: ${name}`);
+
     return seed;
   }
 
@@ -176,9 +183,11 @@ export abstract class MemgraphKnowledgeGraphBase<
     const sessionOptions: SessionConfig = {
       defaultAccessMode: access === "read" ? "READ" : "WRITE",
     };
+
     if (this.owner.database !== undefined) {
       Object.assign(sessionOptions, { database: this.owner.database });
     }
+
     const session = this.owner.nativeDriver().session(sessionOptions);
     const transaction = session.beginTransaction();
     let rejectAbort: ((error: Error) => void) | undefined;
@@ -196,11 +205,15 @@ export abstract class MemgraphKnowledgeGraphBase<
       return value;
     } catch (error) {
       if (transaction.isOpen()) await transaction.rollback();
+
       if (!committing && abortSignal?.aborted) throw abortError();
+
       throw error;
     } finally {
       abortSignal?.removeEventListener("abort", onAbort);
+
       if (transaction.isOpen()) await transaction.rollback();
+
       await session.close();
     }
   }
@@ -209,8 +222,11 @@ export abstract class MemgraphKnowledgeGraphBase<
     const result = await this.query("SHOW VERSION", {}, abortSignal);
     const record = result.records[0];
     const value = record === undefined ? undefined : firstString(record);
+
     if (value === undefined) throw new TypeError("Memgraph returned a non-string server version.");
+
     const match = /(?:Memgraph\s+)?v?(\d+)\.(\d+)/i.exec(value);
+
     if (
       match === null ||
       Number(match[1]) < 3 ||
@@ -229,9 +245,11 @@ export class MemgraphKnowledgeGraph<
 
   constructor(owner: MemgraphClient, options: MemgraphKnowledgeGraphOptions<Schema>) {
     super(owner, options.schema);
+
     if (Object.keys(options.seeds).length === 0) {
       throw new TypeError("An existing Memgraph knowledge graph requires at least one seed.");
     }
+
     this.seeds = Object.freeze(
       Object.fromEntries(
         Object.entries(options.seeds).map(([name, seed]) => [
@@ -296,6 +314,7 @@ export class ManagedMemgraphKnowledgeGraph<
       const existing = vectors.records.find(
         (record) => record.get("index_name") === seed.vectorIndex.name,
       );
+
       if (existing === undefined) {
         await this.query(createVectorIndex(seed), {}, options.abortSignal, "write");
       } else {
@@ -330,15 +349,19 @@ export class ManagedMemgraphKnowledgeGraph<
     options: ReplaceMemgraphDocumentsOptions<Schema>,
   ): Promise<GraphWriteResult> {
     validateReplacement(options, this.resources.indexes, this.schema);
+
     if (options.documents.length === 0) return emptyWriteResult();
+
     const documentIds = options.documents.map((document) => document.id);
     const chunksById = new Map(options.chunks.map((chunk) => [chunk.id, chunk.document]));
     const sourceDocuments = (chunkIds: readonly string[]) => [
       ...new Set(
         chunkIds.map((id) => {
           const chunk = chunksById.get(id);
+
           if (chunk === undefined)
             throw new TypeError(`Graph fact references unknown chunk ${id}.`);
+
           return chunk.documentId;
         }),
       ),
@@ -386,7 +409,9 @@ export class ManagedMemgraphKnowledgeGraph<
   async deleteDocuments(options: DeleteMemgraphDocumentsOptions): Promise<GraphWriteResult> {
     validateOrphanPolicy(options.orphanEntities);
     const ids = uniqueIds(options.documentIds, "document");
+
     if (ids.length === 0) return emptyWriteResult();
+
     const targets = documentSnapshotTargets(ids);
     return this.transaction(options.abortSignal, async (transaction) => {
       const before = await snapshotGraph(transaction, this.name, this.resources.labels, targets);
@@ -427,6 +452,7 @@ export class ManagedMemgraphKnowledgeGraph<
 
 function requiredString(value: unknown, label: string): string {
   if (typeof value !== "string") throw new TypeError(`Memgraph ${label} must be a string.`);
+
   return value;
 }
 
@@ -438,6 +464,7 @@ function validateReplacement<Schema extends GraphSchemaLike>(
   if (!(["error", "overwrite", "keep-existing"] as const).includes(options.conflict)) {
     throw new TypeError("Unknown Memgraph graph conflict policy.");
   }
+
   validateOrphanPolicy(options.orphanEntities);
   const documentIds = new Set(
     uniqueIds(
@@ -463,18 +490,23 @@ function validateReplacement<Schema extends GraphSchemaLike>(
   for (const chunk of options.chunks) {
     if (chunk.id !== chunk.document.id)
       throw new TypeError("Embedded chunk id must match its document id.");
+
     if (!documentIds.has(chunk.document.documentId)) {
       throw new TypeError(`Graph chunk ${chunk.id} references unknown document.`);
     }
+
     if (!Number.isSafeInteger(chunk.document.index) || chunk.document.index < 0) {
       throw new TypeError(`Graph chunk ${chunk.id} index must be a non-negative safe integer.`);
     }
+
     if (typeof chunk.document.text !== "string") {
       throw new TypeError(`Graph chunk ${chunk.id} text must be a string.`);
     }
+
     if (chunk.document.metadata !== undefined) {
       parseGraphProperties(chunk.document.metadata, `chunk ${chunk.id} metadata`);
     }
+
     validateEmbedding(chunk.embeddings, indexes.chunks.vector.dimensions, `chunk ${chunk.id}`);
   }
   const mentioned = new Map<string, Set<string>>();
@@ -482,17 +514,23 @@ function validateReplacement<Schema extends GraphSchemaLike>(
     if (!chunkIds.has(mention.chunkId) || !entityIds.has(mention.entityKey)) {
       throw new TypeError("Graph mention references an unknown chunk or entity.");
     }
+
     const chunks = mentioned.get(mention.entityKey) ?? new Set<string>();
+
     if (chunks.has(mention.chunkId)) throw new TypeError("Duplicate graph mention.");
+
     chunks.add(mention.chunkId);
     mentioned.set(mention.entityKey, chunks);
   }
   for (const entity of options.entities) {
     if (entity.id !== entity.document.key)
       throw new TypeError("Embedded entity id must match its key.");
+
     const definition = schema.nodes[entity.document.type];
+
     if (definition === undefined)
       throw new TypeError(`Unknown graph entity ${entity.document.type}.`);
+
     const properties = parseGraphProperties(
       definition.properties.parse(entity.document.properties),
       `entity ${entity.id}`,
@@ -500,11 +538,14 @@ function validateReplacement<Schema extends GraphSchemaLike>(
     const expectedIdentity = Object.fromEntries(
       definition.identity.map((property) => [property, properties[property]]),
     );
+
     if (stableObject(expectedIdentity) !== stableObject(entity.document.identity)) {
       throw new TypeError(`Graph entity ${entity.id} identity does not match its properties.`);
     }
+
     validateSourceChunkIds(entity.document.sourceChunkIds, chunkIds, `entity ${entity.id}`);
     const actualMentions = mentioned.get(entity.id) ?? new Set<string>();
+
     if (
       actualMentions.size !== entity.document.sourceChunkIds.length ||
       entity.document.sourceChunkIds.some((id) => !actualMentions.has(id))
@@ -513,25 +554,32 @@ function validateReplacement<Schema extends GraphSchemaLike>(
         `Graph entity ${entity.id} source chunks must exactly match its mentions.`,
       );
     }
+
     validateEmbedding(entity.embeddings, indexes.entities.vector.dimensions, `entity ${entity.id}`);
   }
   const relationshipKeys = new Set<string>();
   for (const relationship of options.relationships) {
     if (relationshipKeys.has(relationship.key))
       throw new TypeError("Duplicate graph relationship key.");
+
     relationshipKeys.add(relationship.key);
     const definition = schema.relationships[relationship.type];
+
     if (definition === undefined) {
       throw new TypeError(`Unknown graph relationship ${relationship.type}.`);
     }
+
     const from = options.entities.find((entity) => entity.id === relationship.from)?.document;
     const to = options.entities.find((entity) => entity.id === relationship.to)?.document;
+
     if (from === undefined || to === undefined) {
       throw new TypeError(`Graph relationship ${relationship.key} references an unknown entity.`);
     }
+
     if (from.type !== definition.from || to.type !== definition.to) {
       throw new TypeError(`Graph relationship ${relationship.key} has invalid endpoint types.`);
     }
+
     parseGraphProperties(
       definition.properties.parse(relationship.properties),
       `relationship ${relationship.key}`,
@@ -543,6 +591,7 @@ function validateReplacement<Schema extends GraphSchemaLike>(
     );
     const fromChunks = new Set(from.sourceChunkIds);
     const toChunks = new Set(to.sourceChunkIds);
+
     if (relationship.sourceChunkIds.some((id) => !fromChunks.has(id) || !toChunks.has(id))) {
       throw new TypeError(
         `Relationship ${relationship.key} provenance must support both endpoint entities.`,
@@ -559,6 +608,7 @@ function validateEmbedding(
   if (embeddings.length !== 1 || embeddings[0]?.vector.length !== dimensions) {
     throw new TypeError(`${label} requires exactly one ${dimensions}-dimensional embedding.`);
   }
+
   if (!embeddings[0].vector.every(Number.isFinite)) {
     throw new TypeError(`${label} embedding must contain only finite numbers.`);
   }
@@ -572,6 +622,7 @@ function validateSourceChunkIds(
   if (values.length === 0 || new Set(values).size !== values.length) {
     throw new TypeError(`${label} requires unique source chunk ids.`);
   }
+
   for (const value of values) {
     if (!known.has(value)) throw new TypeError(`${label} references unknown chunk ${value}.`);
   }
@@ -589,7 +640,9 @@ function uniqueIds(values: readonly string[], label: string): string[] {
     if (typeof value !== "string" || value.length === 0) {
       throw new TypeError(`Graph ${label} id must be a non-empty string.`);
     }
+
     if (ids.has(value)) throw new TypeError(`Duplicate graph ${label} id: ${value}`);
+
     ids.add(value);
   }
   return [...ids];
@@ -609,9 +662,11 @@ RETURN collect(c.${quoteIdentifier("__anvia_id")}) AS chunkIds`,
     { documentIds },
   );
   const value = chunks.records[0]?.get("chunkIds");
+
   if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) {
     throw new TypeError("Memgraph replacement returned malformed chunk ids.");
   }
+
   const chunkIds = value;
   await transaction.run(
     `MATCH ()-[r]->()
@@ -691,6 +746,7 @@ CREATE (d)-[:${quoteIdentifier("ANVIA_HAS_CHUNK")}]->(c)`,
         ? [{ from: row.id, to: next.id }]
         : [];
     });
+
   if (pairs.length > 0) {
     await transaction.run(
       `UNWIND $rows AS row
@@ -719,9 +775,11 @@ async function writeEntities<Schema extends GraphSchemaLike>(
       sourceDocumentIds: sourceDocuments(entity.document.sourceChunkIds),
       sourceChunkIds: entity.document.sourceChunkIds,
     }));
+
     if (conflict === "error") {
       await assertEntityConflicts(transaction, graphName, entityLabel, rows);
     }
+
     const propertySet = conflictPropertySet("e", conflict);
     const embedding = entityEmbeddingExpression(conflict);
     await transaction.run(
@@ -744,14 +802,17 @@ function conflictPropertySet(variable: "e" | "r", conflict: MemgraphGraphConflic
   const existingSources = `WITH ${variable}, row,
      coalesce(${variable}.${sourceDocuments}, []) AS existingDocumentIds,
      coalesce(${variable}.${sourceChunks}, []) AS existingChunkIds`;
+
   if (conflict === "keep-existing") {
     return `ON CREATE SET ${variable} += row.properties
 ${existingSources}`;
   }
+
   if (conflict === "overwrite") {
     return `${existingSources}
 SET ${variable} = row.properties`;
   }
+
   return `${existingSources}
 SET ${variable} += row.properties`;
 }
@@ -760,6 +821,7 @@ function entityEmbeddingExpression(conflict: MemgraphGraphConflict): string {
   if (conflict === "keep-existing") {
     return `coalesce(e.${quoteIdentifier("__anvia_embedding")}, row.embedding)`;
   }
+
   return "row.embedding";
 }
 
@@ -779,6 +841,7 @@ RETURN key, properties(e) AS properties`,
   const incoming = new Map(rows.map((row) => [row.key, row.properties]));
   for (const record of result.records) {
     const key = requiredString(record.get("key"), "entity key");
+
     if (
       stableObject(applicationProperties(record.get("properties"))) !==
       stableObject(incoming.get(key) ?? {})
@@ -795,6 +858,7 @@ async function writeMentions(
   mentions: readonly { chunkId: string; entityKey: string }[],
 ): Promise<void> {
   if (mentions.length === 0) return;
+
   await transaction.run(
     `UNWIND $rows AS row
 MATCH (c:${quoteIdentifier(labels.chunk)} {${quoteIdentifier("__anvia_id")}: row.chunkId}),
@@ -822,6 +886,7 @@ async function writeRelationships<Schema extends GraphSchemaLike>(
       sourceDocumentIds: sourceDocuments(relationship.sourceChunkIds),
       sourceChunkIds: relationship.sourceChunkIds,
     }));
+
     if (conflict === "error") {
       const existing = await transaction.run(
         `UNWIND $keys AS key
@@ -833,6 +898,7 @@ RETURN key, properties(r) AS properties`,
       const incoming = new Map(rows.map((row) => [row.key, row.properties]));
       for (const record of existing.records) {
         const key = requiredString(record.get("key"), "relationship key");
+
         if (
           stableObject(applicationProperties(record.get("properties"))) !==
           stableObject(incoming.get(key) ?? {})
@@ -841,6 +907,7 @@ RETURN key, properties(r) AS properties`,
         }
       }
     }
+
     const propertySet = conflictPropertySet("r", conflict);
     await transaction.run(
       `UNWIND $rows AS row
@@ -948,7 +1015,9 @@ function expandSnapshotTargets(targets: SnapshotTargets, snapshot: Snapshot): Sn
   const entityKeys = new Set([...targets.entityKeys, ...snapshot.entities.keys()]);
   for (const mention of snapshot.mentions.keys()) {
     const separator = mention.indexOf("\u0000");
+
     if (separator === -1) continue;
+
     chunkIds.add(mention.slice(0, separator));
     entityKeys.add(mention.slice(separator + 1));
   }
@@ -968,15 +1037,19 @@ function snapshotProperties(
     records.map((record) => {
       const key = requiredString(record.get("key"), "snapshot key");
       const properties = record.get("properties");
+
       if (typeof properties !== "object" || properties === null || Array.isArray(properties)) {
         throw new TypeError("Memgraph snapshot properties must be an object.");
       }
+
       const snapshot: Record<string, unknown> = {
         properties: properties as Record<string, unknown>,
       };
+
       if (discriminator !== undefined) {
         snapshot[discriminator] = record.get(discriminator);
       }
+
       return [key, stableObject(snapshot)];
     }),
   );
@@ -999,6 +1072,7 @@ function diffMaps(before: ReadonlyMap<string, string>, after: ReadonlyMap<string
   let unchanged = 0;
   for (const [key, value] of after) {
     const previous = before.get(key);
+
     if (previous === undefined) created += 1;
     else if (previous === value) unchanged += 1;
     else updated += 1;
@@ -1022,6 +1096,7 @@ function applicationProperties(value: unknown): GraphProperties {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new TypeError("Memgraph properties must be an object.");
   }
+
   return strictProperties(
     Object.fromEntries(
       Object.entries(value).filter(([property]) => !property.startsWith("__anvia_")),

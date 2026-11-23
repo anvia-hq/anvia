@@ -45,17 +45,23 @@ export function webSearch(options: GrokWebSearchOptions = {}): GrokProviderTool 
   const allowedDomains = validateStringList(options.allowedDomains, "allowedDomains", 5);
   const excludedDomains = validateStringList(options.excludedDomains, "excludedDomains", 5);
   const filters: JsonObject = {};
+
   if (allowedDomains !== undefined) filters.allowed_domains = allowedDomains;
+
   if (excludedDomains !== undefined) filters.excluded_domains = excludedDomains;
 
   const configuration: JsonObject = {};
+
   if (Object.keys(filters).length > 0) configuration.filters = filters;
+
   if (options.enableImageUnderstanding !== undefined) {
     configuration.enable_image_understanding = options.enableImageUnderstanding;
   }
+
   if (options.enableImageSearch !== undefined) {
     configuration.enable_image_search = options.enableImageSearch;
   }
+
   return grokProviderTool("web_search", configuration);
 }
 
@@ -70,21 +76,29 @@ export function xSearch(options: GrokXSearchOptions = {}): GrokProviderTool {
   const excludedHandles = validateStringList(options.excludedHandles, "excludedHandles", 20);
   const fromDate = validateDate(options.fromDate, "fromDate");
   const toDate = validateDate(options.toDate, "toDate");
+
   if (fromDate !== undefined && toDate !== undefined && fromDate > toDate) {
     throw new TypeError("Grok X Search fromDate must not be after toDate.");
   }
 
   const configuration: JsonObject = {};
+
   if (allowedHandles !== undefined) configuration.allowed_x_handles = allowedHandles;
+
   if (excludedHandles !== undefined) configuration.excluded_x_handles = excludedHandles;
+
   if (fromDate !== undefined) configuration.from_date = fromDate;
+
   if (toDate !== undefined) configuration.to_date = toDate;
+
   if (options.enableImageUnderstanding !== undefined) {
     configuration.enable_image_understanding = options.enableImageUnderstanding;
   }
+
   if (options.enableVideoUnderstanding !== undefined) {
     configuration.enable_video_understanding = options.enableVideoUnderstanding;
   }
+
   return grokProviderTool("x_search", configuration);
 }
 
@@ -98,17 +112,22 @@ export function fileSearch(options: GrokFileSearchOptions): GrokProviderTool {
     "vectorStoreIds",
     Number.POSITIVE_INFINITY,
   );
+
   if (vectorStoreIds === undefined || vectorStoreIds.length === 0) {
     throw new TypeError("Grok File Search vectorStoreIds must contain at least one id.");
   }
+
   if (
     options.maxNumResults !== undefined &&
     (!Number.isInteger(options.maxNumResults) || options.maxNumResults <= 0)
   ) {
     throw new TypeError("Grok File Search maxNumResults must be a positive integer.");
   }
+
   const configuration: JsonObject = { vector_store_ids: vectorStoreIds };
+
   if (options.maxNumResults !== undefined) configuration.max_num_results = options.maxNumResults;
+
   return grokProviderTool("file_search", configuration);
 }
 
@@ -119,12 +138,15 @@ export function mcp(options: GrokMcpOptions): GrokProviderTool {
   } catch {
     throw new TypeError("Grok MCP serverUrl must be a valid URL.");
   }
+
   if (serverUrl.protocol !== "https:") {
     throw new TypeError("Grok MCP serverUrl must use HTTPS.");
   }
+
   if (isPrivateOrReservedHost(serverUrl.hostname)) {
     throw new TypeError("Grok MCP serverUrl must not target a private or reserved host.");
   }
+
   const serverLabel = validateNonemptyString(options.serverLabel, "serverLabel");
   const allowedTools = validateStringList(
     options.allowedTools,
@@ -145,17 +167,22 @@ export function mcp(options: GrokMcpOptions): GrokProviderTool {
     server_url: serverUrl.toString(),
     server_label: serverLabel,
   };
+
   if (options.serverDescription !== undefined) {
     configuration.server_description = validateNonemptyString(
       options.serverDescription,
       "serverDescription",
     );
   }
+
   if (allowedTools !== undefined) configuration.allowed_tools = allowedTools;
+
   if (options.authorization !== undefined) {
     configuration.authorization = validateNonemptyString(options.authorization, "authorization");
   }
+
   if (headers !== undefined) configuration.headers = headers;
+
   return grokProviderTool("mcp", configuration);
 }
 
@@ -173,9 +200,11 @@ function grokProviderTool(name: string, configuration?: JsonObject): GrokProvide
     provider: "grok",
     name,
   };
+
   if (configuration !== undefined && Object.keys(configuration).length > 0) {
     tool = { ...tool, configuration };
   }
+
   return tool;
 }
 
@@ -198,17 +227,21 @@ function validateStringList(
   if (values === undefined) {
     return undefined;
   }
+
   if (values.length > max) {
     throw new TypeError(`Grok Search ${name} supports at most ${max.toString()} values.`);
   }
+
   return values.map((value) => validateNonemptyString(value, name));
 }
 
 function validateNonemptyString(value: string, name: string): string {
   const normalized = value.trim();
+
   if (normalized.length === 0) {
     throw new TypeError(`Grok ${name} must be a non-empty string.`);
   }
+
   return normalized;
 }
 
@@ -216,7 +249,9 @@ function validateDate(value: string | undefined, name: string): string | undefin
   if (value === undefined) {
     return undefined;
   }
+
   const date = new Date(`${value}T00:00:00Z`);
+
   if (
     !/^\d{4}-\d{2}-\d{2}$/.test(value) ||
     Number.isNaN(date.getTime()) ||
@@ -224,5 +259,6 @@ function validateDate(value: string | undefined, name: string): string | undefin
   ) {
     throw new TypeError(`Grok X Search ${name} must use YYYY-MM-DD format.`);
   }
+
   return value;
 }

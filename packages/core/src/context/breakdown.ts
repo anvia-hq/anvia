@@ -100,6 +100,7 @@ export function estimateContextBreakdown(
   const buckets = new Map<ContextSegmentId, string[]>();
   const add = (id: ContextSegmentId, content: string): void => {
     const parts = buckets.get(id);
+
     if (parts === undefined) buckets.set(id, [content]);
     else parts.push(content);
   };
@@ -134,7 +135,9 @@ export function estimateContextBreakdown(
   const segments: ContextSegment[] = [];
   for (const id of SEGMENT_ORDER) {
     const parts = buckets.get(id);
+
     if (parts === undefined || parts.length === 0) continue;
+
     const content = parts.join("");
     segments.push({
       id,
@@ -177,6 +180,7 @@ export function scaleContextBreakdown(
   ) {
     return breakdown;
   }
+
   const exactTotal = Math.trunc(reportedInputTokens);
   const ratio = exactTotal / breakdown.estimatedTokens;
   const scaled = breakdown.segments.map((segment) => segment.tokens * ratio);
@@ -187,8 +191,11 @@ export function scaleContextBreakdown(
     .sort((left, right) => right.fraction - left.fraction || left.index - right.index);
   for (const entry of byLargestRemainder) {
     if (remaining <= 0) break;
+
     const current = tokens[entry.index];
+
     if (current === undefined) continue;
+
     tokens[entry.index] = current + 1;
     remaining -= 1;
   }

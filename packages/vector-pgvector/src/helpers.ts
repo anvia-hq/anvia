@@ -24,6 +24,7 @@ export function pgVectorRows<T, Metadata extends VectorMetadata>(
   if (document.embeddings.length === 0) {
     throw new Error(`Document ${document.id} has no embeddings`);
   }
+
   assertNoReservedMetadata(document.metadata);
 
   return document.embeddings.map((embedding, index) => {
@@ -77,18 +78,23 @@ export function parseSearchRows<T, Metadata extends VectorMetadata>(
 
   for (const row of rows) {
     const score = scoreFromDistance(Number(row.distance), distanceStrategy);
+
     if (minScore !== undefined && score < minScore) {
       continue;
     }
+
     const result: VectorSearchResult<T, Metadata> = {
       id: row.document_id,
       score,
       document: row.document as T,
     };
+
     if (row.metadata !== null) {
       result.metadata = row.metadata;
     }
+
     const current = byId.get(result.id);
+
     if (current === undefined || result.score > current.score) {
       byId.set(result.id, result);
     }
@@ -99,9 +105,11 @@ export function parseSearchRows<T, Metadata extends VectorMetadata>(
 
 export function quoteQualifiedIdentifier(identifier: string): string {
   const parts = identifier.split(".");
+
   if (parts.length === 0 || parts.some((part) => part.length === 0)) {
     throw new Error(`Invalid Postgres identifier: ${identifier}`);
   }
+
   return parts.map(quoteIdentifier).join(".");
 }
 
@@ -109,6 +117,7 @@ function quoteIdentifier(identifier: string): string {
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(identifier)) {
     throw new Error(`Invalid Postgres identifier: ${identifier}`);
   }
+
   return `"${identifier.replaceAll('"', '""')}"`;
 }
 
@@ -126,10 +135,13 @@ WHERE a.attrelid = $1::regclass
     [tableName],
   );
   const rawSize = result.rows[0]?.vector_size;
+
   if (rawSize === undefined) {
     throw new Error(`PgVector table ${tableName} is missing an embedding vector column`);
   }
+
   const actualSize = Number(rawSize);
+
   if (actualSize !== vectorSize) {
     throw new Error(
       `PgVector table ${tableName} has vector size ${actualSize}; expected ${vectorSize}`,
@@ -140,8 +152,10 @@ WHERE a.attrelid = $1::regclass
 export async function defaultPgClient(connectionString: string | undefined): Promise<PgClientLike> {
   const pg = await import("pg");
   const options: { connectionString?: string } = {};
+
   if (connectionString !== undefined) {
     options.connectionString = connectionString;
   }
+
   return new pg.Pool(options) as PgClientLike;
 }

@@ -13,14 +13,18 @@ export function orderedRequestMessages(
   options: OrderedRequestMessagesOptions = {},
 ): MessageType[] {
   const messages: MessageType[] = [];
+
   if (options.includeInstructionsAsSystem === true && request.instructions !== undefined) {
     messages.push({ role: "system", content: request.instructions });
   }
+
   messages.push(...request.chatHistory.filter((message) => message.role === "system"));
   const documents = normalizeDocuments(request.documents);
+
   if (documents !== undefined) {
     messages.push(documents);
   }
+
   messages.push(...request.chatHistory.filter((message) => message.role !== "system"));
   return messages;
 }

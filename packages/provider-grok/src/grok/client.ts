@@ -74,6 +74,7 @@ export class GrokClient implements ModelListingClient {
 
   constructor(options: GrokClientOptions) {
     const managed = options.client === undefined;
+
     if (managed) {
       if ("http" in options) {
         throw new TypeError("GrokClient cannot combine managed credentials with http.");
@@ -81,6 +82,7 @@ export class GrokClient implements ModelListingClient {
     } else {
       rejectManagedOptionsWithInjectedClient(options, ["apiKey", "baseUrl", "headers", "fetch"]);
     }
+
     const http = managed
       ? {
           apiKey: requireApiKey(options.apiKey),
@@ -165,6 +167,7 @@ export class GrokClient implements ModelListingClient {
 
 function rejectManagedOptionsWithInjectedClient(options: object, keys: readonly string[]): void {
   const conflict = keys.find((key) => key in options);
+
   if (conflict !== undefined) {
     throw new TypeError(`GrokClient cannot combine client with ${conflict}.`);
   }
@@ -182,6 +185,7 @@ function requireModelId<ModelId extends string>(modelId: ModelId): ModelId {
   if (modelId.trim().length === 0) {
     throw new TypeError("modelId must be a non-empty string");
   }
+
   return modelId;
 }
 
@@ -217,32 +221,41 @@ function toListedModel(model: unknown): ModelList["data"][number] | undefined {
   const listedModel: ModelList["data"][number] = {
     id: model.id,
   };
+
   if (typeof model.name === "string") {
     listedModel.name = model.name;
   }
+
   if (typeof model.description === "string") {
     listedModel.description = model.description;
   }
+
   if (typeof model.type === "string") {
     listedModel.type = model.type;
   } else if (typeof model.object === "string") {
     listedModel.type = model.object;
   }
+
   if (typeof model.created === "number") {
     listedModel.createdAt = model.created;
   }
+
   if (typeof model.created_at === "number") {
     listedModel.createdAt = model.created_at;
   }
+
   if (typeof model.owned_by === "string") {
     listedModel.ownedBy = model.owned_by;
   }
+
   if (typeof model.context_length === "number") {
     listedModel.contextLength = model.context_length;
   }
+
   if (typeof model.contextLength === "number") {
     listedModel.contextLength = model.contextLength;
   }
+
   return listedModel;
 }
 

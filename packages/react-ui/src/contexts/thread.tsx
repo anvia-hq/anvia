@@ -29,8 +29,10 @@ export function InternalThreadProvider({
 
 export function useThread(): ThreadContextValue {
   const value = useContext(ThreadContext);
+
   if (value === undefined) {
     throw new Error("Thread primitives must be used inside ThreadPrimitive.Root.");
   }
+
   return value;
 }

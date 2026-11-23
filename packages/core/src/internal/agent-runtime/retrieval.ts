@@ -20,7 +20,9 @@ export async function fetchContextDocuments<Output, M extends CompletionModel, C
       documents.push(input);
       continue;
     }
+
     if (ragText === undefined || ragText.length === 0) continue;
+
     const retrieve = () => retrieveContext(input, ragText, abortSignal);
     documents.push(
       ...(selectContext !== undefined ? await selectContext(index, retrieve) : await retrieve()),
@@ -54,10 +56,12 @@ async function retrieveContext(
       : await retrieveDocuments({ ...request, store: input.store, model: input.model });
   for (const result of results) {
     const formatted = input.format?.(result);
+
     if (formatted !== undefined) {
       documents.push(formatted);
       continue;
     }
+
     const metadata = formatMetadata(result.metadata);
     const document: Document = {
       id: result.id,
@@ -66,7 +70,9 @@ async function retrieveContext(
           ? result.document
           : JSON.stringify(result.document, null, 2),
     };
+
     if (metadata !== undefined) document.additionalProps = metadata;
+
     documents.push(document);
   }
   return documents;
@@ -97,6 +103,7 @@ export async function fetchToolDefinitions<Output, M extends CompletionModel, Co
   const staticDefinitions = await Promise.all(
     state.staticTools.map((tool) => tool.definition(ragText ?? "")),
   );
+
   if (ragText === undefined || ragText.length === 0 || state.toolIndexes.length === 0) {
     return { definitions: staticDefinitions, matches: [] };
   }
@@ -109,8 +116,11 @@ export async function fetchToolDefinitions<Output, M extends CompletionModel, Co
     for (const result of results) {
       const toolName = result.document.toolName;
       const tool = index.tools.find((candidate) => candidate.name === toolName);
+
       if (tool === undefined) continue;
+
       if (names.has(toolName)) continue;
+
       matches.push({ toolName, index: indexPosition, score: result.score });
       names.add(toolName);
       definitions.push(await tool.definition(ragText));
@@ -123,5 +133,6 @@ function formatMetadata(
   metadata: Record<string, unknown> | undefined,
 ): Record<string, string> | undefined {
   if (metadata === undefined) return undefined;
+
   return Object.fromEntries(Object.entries(metadata).map(([key, value]) => [key, String(value)]));
 }

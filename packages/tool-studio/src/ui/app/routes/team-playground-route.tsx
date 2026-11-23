@@ -12,12 +12,14 @@ export function TeamPlaygroundRoute() {
   const { teamId } = useParams({ strict: false });
   const navigate = useNavigate();
   const team = studio.teams?.find((item) => item.id === teamId);
+
   if (!team)
     return (
       <p className="p-6 text-sm text-muted-foreground">
         {studio.teams === undefined ? "Loading team…" : "This team is not registered in Studio."}
       </p>
     );
+
   return (
     <Suspense fallback={<p className="p-6 text-sm text-muted-foreground">Loading team…</p>}>
       <TeamPlayground

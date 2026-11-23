@@ -39,11 +39,17 @@ function describeRegistration(registration: DurableAgentRegistration): DurableAg
   // The resolved model-turn budget is captured into each run record at submission, so it is
   // always frozen for a registration; the remaining entries only apply when the agent sets them.
   const frozen: DurableFrozenAgentOption[] = ["maxTurns"];
+
   if (options.controls !== undefined) frozen.push("controls");
+
   if (options.toolChoice !== undefined) frozen.push("toolChoice");
+
   if (options.temperature !== undefined) frozen.push("temperature");
+
   if (options.maxTokens !== undefined) frozen.push("maxTokens");
+
   if (options.providerOptions !== undefined) frozen.push("providerOptions");
+
   if (options.outputSchema !== undefined) frozen.push("outputSchema");
 
   return Object.freeze({

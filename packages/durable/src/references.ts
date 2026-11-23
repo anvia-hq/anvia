@@ -44,8 +44,11 @@ export function escapeKey(key: string): string {
 /** The stored form of one logical JSON value. Registered markers are emitted unchanged. */
 export function encodeStored(value: JsonValue): JsonValue {
   if (isReference(value)) return value;
+
   if (Array.isArray(value)) return value.map((entry) => encodeStored(entry));
+
   if (value === null || typeof value !== "object") return value;
+
   const output: JsonObject = {};
   for (const [key, entry] of Object.entries(value)) {
     if (isReference(entry)) output[key] = entry;
@@ -60,7 +63,9 @@ export function encodeStored(value: JsonValue): JsonValue {
  */
 export function decodeStored(value: JsonValue): JsonValue {
   if (Array.isArray(value)) return value.map((entry) => decodeStored(entry));
+
   if (value === null || typeof value !== "object") return value;
+
   const output: JsonObject = {};
   for (const [key, entry] of Object.entries(value)) {
     if (key.startsWith("~")) {
@@ -80,8 +85,11 @@ export function decodeStored(value: JsonValue): JsonValue {
  */
 export function carryReferences<T>(input: unknown, output: T): T {
   if (typeof input !== "object" || input === null) return output;
+
   if (typeof output !== "object" || output === null) return output;
+
   if (isReference(input)) reference(output as object);
+
   if (Array.isArray(input) && Array.isArray(output)) {
     input.forEach((entry, index) => carryReferences(entry, output[index]));
   } else if (!Array.isArray(input) && !Array.isArray(output)) {
@@ -93,6 +101,7 @@ export function carryReferences<T>(input: unknown, output: T): T {
         );
     }
   }
+
   return output;
 }
 

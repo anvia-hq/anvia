@@ -41,7 +41,9 @@ async function fakeProgram(name: string, body: string): Promise<string> {
 /** Start a fake program with the given desktop session id in its environment (or none). */
 function start(file: string, session: string | undefined): ChildProcess {
   const env: Record<string, string> = { PATH: process.env.PATH ?? "/usr/bin:/bin" };
+
   if (session !== undefined) env[desktopSessionVariable] = session;
+
   const child = spawn(file, [], { env, stdio: "ignore" });
   children.push(child);
   return child;

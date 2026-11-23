@@ -119,5 +119,6 @@ export function defineEvalSuite(
   | DefinedEvalSuite<readonly EvalCaseLike[], unknown, readonly EvalMetric<unknown, unknown>[]>
   | EvalMetricFactory<unknown, unknown, unknown> {
   if (options !== undefined) return options;
+
   return createEvalTypes();
 }

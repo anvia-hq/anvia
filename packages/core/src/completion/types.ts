@@ -205,14 +205,17 @@ export function reasoningDisplayText(
   reasoning: ReasoningPart | readonly ReasoningDetail[],
 ): string {
   const details = "type" in reasoning ? reasoning.details : reasoning;
+
   if (details === undefined) {
     return "type" in reasoning ? reasoning.text : "";
   }
+
   return details
     .flatMap((item) => {
       if (item.type === "text" || item.type === "summary") {
         return [item.text];
       }
+
       return [];
     })
     .join("");
@@ -258,6 +261,7 @@ export function isProviderTool(value: unknown): value is ProviderTool {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return false;
   }
+
   const candidate = value as Partial<ProviderTool>;
   return (
     candidate.kind === "provider" &&
@@ -279,7 +283,9 @@ export function isProviderTool(value: unknown): value is ProviderTool {
  */
 export function assertProviderToolShape(value: unknown): void {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return;
+
   if ((value as { kind?: unknown }).kind !== "provider" || isProviderTool(value)) return;
+
   const name = (value as { name?: unknown }).name;
   const label = typeof name === "string" && name.length > 0 ? `"${name}"` : "(unnamed)";
   throw new TypeError(
@@ -435,9 +441,11 @@ export const Usage = {
       cacheCreationInputTokens: left.cacheCreationInputTokens + right.cacheCreationInputTokens,
     };
     const details = addUsageDetails(left, right);
+
     if (details !== undefined) {
       result.details = details;
     }
+
     return result;
   },
   /** Returns true when every bucket, including `details`, is zero. */
@@ -453,12 +461,15 @@ function addUsageDetails(left: Usage, right: Usage): UsageDetails | undefined {
   if (isEmptyUsage(left) && left.details === undefined) {
     return right.details === undefined ? undefined : { ...right.details };
   }
+
   if (isEmptyUsage(right) && right.details === undefined) {
     return left.details === undefined ? undefined : { ...left.details };
   }
+
   if (left.details === undefined || right.details === undefined) {
     return undefined;
   }
+
   const details: UsageDetails = { ...left.details };
   for (const [key, value] of Object.entries(right.details)) {
     details[key] = (details[key] ?? 0) + value;
@@ -486,11 +497,15 @@ export function getAssistantGenerationMetadata(
   if (message.role !== "assistant" || !isJsonObjectValue(message.metadata)) {
     return undefined;
   }
+
   const frameworkMetadata = message.metadata.anvia;
+
   if (!isJsonObjectValue(frameworkMetadata)) {
     return undefined;
   }
+
   const generation = frameworkMetadata.generation;
+
   if (
     !isJsonObjectValue(generation) ||
     typeof generation.provider !== "string" ||
@@ -499,21 +514,27 @@ export function getAssistantGenerationMetadata(
   ) {
     return undefined;
   }
+
   let usage: Usage = { ...generation.usage };
+
   if (generation.usage.details !== undefined) {
     usage = { ...usage, details: { ...generation.usage.details } };
   }
+
   const metadata: AssistantGenerationMetadata = {
     provider: generation.provider,
     modelId: generation.modelId,
     usage,
   };
+
   if (isCompletionFinishReason(generation.finishReason)) {
     metadata.finishReason = generation.finishReason;
   }
+
   if (typeof generation.providerFinishReason === "string") {
     metadata.providerFinishReason = generation.providerFinishReason;
   }
+
   if (isContextUsageValue(generation.contextUsage)) {
     metadata.contextUsage = {
       ...generation.contextUsage,
@@ -523,18 +544,23 @@ export function getAssistantGenerationMetadata(
       },
     };
   }
+
   if (isCompletionSourceArray(generation.sources)) {
     metadata.sources = generation.sources.map((source) => ({ ...source }));
   }
+
   if (isProviderToolCallArray(generation.providerToolCalls)) {
     metadata.providerToolCalls = generation.providerToolCalls.map((toolCall) => {
       let copy: ProviderToolCall = { ...toolCall };
+
       if (toolCall.details !== undefined) {
         copy = { ...copy, details: { ...toolCall.details } };
       }
+
       return copy;
     });
   }
+
   return metadata;
 }
 
@@ -546,7 +572,9 @@ function isContextUsageValue(value: JsonValue | undefined): value is JsonObject 
   if (!isJsonObjectValue(value) || !isJsonObjectValue(value.model)) {
     return false;
   }
+
   const context = value.model.context;
+
   if (
     typeof value.model.modelId === "string" &&
     isJsonObjectValue(context) &&
@@ -568,6 +596,7 @@ function isContextUsageValue(value: JsonValue | undefined): value is JsonObject 
       approximatelyEqual(value.remainingPercent, remainingPercent)
     );
   }
+
   return false;
 }
 
@@ -592,6 +621,7 @@ function isUsageValue(value: JsonValue | undefined): value is JsonObject & Usage
   if (!isJsonObjectValue(value)) {
     return false;
   }
+
   return (
     isNonnegativeFiniteNumber(value.inputTokens) &&
     isNonnegativeFiniteNumber(value.outputTokens) &&
@@ -610,15 +640,18 @@ function isUsageDetailsValue(value: JsonValue | undefined): value is JsonObject 
   if (value === undefined) {
     return true;
   }
+
   if (!isJsonObjectValue(value)) {
     return false;
   }
+
   let total: number | undefined;
   let bucketSum = 0;
   for (const [key, detail] of Object.entries(value)) {
     if (detail === undefined || !isNonnegativeFiniteNumber(detail)) {
       return false;
     }
+
     if (key === "total") {
       total = detail;
     } else {
@@ -948,16 +981,19 @@ export function assertCompletionControlsSupported(
   const modelLabel = `${model.provider}:${model.modelId}`;
   for (const [controlId, value] of Object.entries(controls ?? {})) {
     if (value === undefined) continue;
+
     const modelControls = model.controls;
     const control =
       modelControls !== undefined && Object.hasOwn(modelControls, controlId)
         ? modelControls[controlId]
         : undefined;
+
     if (control === undefined) {
       throw new CompletionCapabilityError(
         `${modelLabel} does not support completion control "${controlId}".`,
       );
     }
+
     if (!control.options.includes(value)) {
       throw new CompletionCapabilityError(
         `${modelLabel} completion control "${controlId}" does not support value "${value}".`,

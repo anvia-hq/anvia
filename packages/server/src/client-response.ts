@@ -96,6 +96,7 @@ export function resumeClientStreamResponse<
     if (error instanceof InvalidResumableAfterError) {
       return resumeAfterErrorResponse(error);
     }
+
     throw error;
   }
 }
@@ -149,6 +150,7 @@ function frameResumableClientStream<Metadata extends ClientMetadata, Data extend
   let open: Promise<void> | undefined;
   function start(): Promise<void> {
     if (open !== undefined) return open;
+
     open = store.open({ streamId }).then(() => undefined);
     void drainClientStream(events, streamId, store, metadataSchema, dataSchemas, open);
     return open;
@@ -241,16 +243,20 @@ function parseResumableEvent<Metadata extends ClientMetadata, Data extends Clien
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new ClientProtocolError("Invalid client resumable record.", value);
   }
+
   const record = value as { protocol?: unknown; event?: unknown };
+
   if (record.protocol === "anvia.client.v1") {
     throw new ClientProtocolError("Client resumable protocol v1 is not supported.", value);
   }
+
   if (record.protocol !== CLIENT_STREAM_PROTOCOL || !("event" in record)) {
     throw new ClientProtocolError(
       "Client resumable records must use the current client protocol.",
       value,
     );
   }
+
   return parseEvent(record.event, metadataSchema, dataSchemas);
 }
 
@@ -260,8 +266,11 @@ function parseEvent<Metadata extends ClientMetadata, Data extends ClientDataMap>
   dataSchemas: ClientDataSchemas<Data> | undefined,
 ): ClientStreamEvent<Metadata, Data> {
   const options: Parameters<typeof parseClientStreamEvent<Metadata, Data>>[1] = {};
+
   if (metadataSchema !== undefined) options.metadataSchema = metadataSchema;
+
   if (dataSchemas !== undefined) options.dataSchemas = dataSchemas;
+
   return parseClientStreamEvent<Metadata, Data>(value, options);
 }
 
@@ -296,10 +305,15 @@ function clientResponse<Metadata extends ClientMetadata, Data extends ClientData
     events: frames,
     headers,
   };
+
   if (options.format !== undefined) responseOptions.format = options.format;
+
   if (options.status !== undefined) responseOptions.status = options.status;
+
   if (options.statusText !== undefined) responseOptions.statusText = options.statusText;
+
   if (options.sse !== undefined) responseOptions.sse = options.sse;
+
   return encodeEventStreamResponse(responseOptions);
 }
 
@@ -320,6 +334,7 @@ function propagateCancellation<TSource, TOutput>(
         next: () => outputIterator.next(),
         async return(): Promise<IteratorResult<TOutput>> {
           if (returned) return { done: true, value: undefined };
+
           returned = true;
           const sourceReturn = sourceIterator.return?.();
           const outputReturn = outputIterator.return?.();

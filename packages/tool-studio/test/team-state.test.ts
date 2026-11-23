@@ -18,7 +18,9 @@ const member = (instanceId: string, parentInstanceId?: string): AgentTeamMemberS
     usage: Usage.empty(),
     depth: parentInstanceId ? 1 : 0,
   };
+
   if (parentInstanceId) summary.parentInstanceId = parentInstanceId;
+
   return summary;
 };
 const apply = (state: TeamState, event: StudioTeamRunEvent) =>

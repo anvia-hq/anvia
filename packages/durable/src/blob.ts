@@ -62,11 +62,16 @@ export function blobIO(backend: BlobBackend): DurableBlobIO {
     },
     getBlob(hash) {
       const row = backend.get(hash);
+
       if (row === undefined) throw new Error("Missing durable blob content.");
+
       const record = String(row.record);
+
       if (byteLength(record) !== Number(row.bytes)) throw new Error("Corrupt durable blob record.");
+
       if (createHash("sha256").update(record).digest("hex") !== hash)
         throw new Error("Corrupt durable blob content.");
+
       return JSON.parse(record) as JsonValue;
     },
   };
@@ -104,15 +109,20 @@ function isHash(value: unknown): value is string {
 
 function readMarker(value: unknown): BlobMarker | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+
   const candidate = value as Record<string, unknown>;
+
   if (candidate.v !== 1 || !isHash(candidate.hash)) return undefined;
+
   if (!Number.isSafeInteger(candidate.bytes) || (candidate.bytes as number) < 0) return undefined;
+
   return candidate as unknown as BlobMarker;
 }
 
 /** A whole-value marker, only when the carrier's marker is a registered object (see references.ts). */
 function isWholeValueReference(value: unknown): BlobMarker | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+
   const mark = (value as Record<string, unknown>)[WHOLE_VALUE_MARKER];
   return isReference(mark) ? readMarker(mark) : undefined;
 }
@@ -124,12 +134,17 @@ function registeredPathMarkers(value: unknown): PathMarker[] | undefined {
 
 function readPathMarkers(value: unknown): PathMarker[] | undefined {
   if (!Array.isArray(value)) return undefined;
+
   const markers: PathMarker[] = [];
   for (const entry of value) {
     if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return undefined;
+
     const candidate = entry as Record<string, unknown>;
+
     if (typeof candidate.path !== "string" || !isHash(candidate.hash)) return undefined;
+
     if (!Number.isSafeInteger(candidate.bytes)) return undefined;
+
     markers.push(entry as unknown as PathMarker);
   }
   return markers;
@@ -154,19 +169,23 @@ function setPath(value: JsonValue, path: string, leaf: JsonValue): JsonValue {
   const segments = path.split(".");
   const rebuild = (node: JsonValue, depth: number): JsonValue => {
     const segment = segments[depth]!;
+
     if (depth === segments.length - 1) {
       if (Array.isArray(node)) {
         const copy = [...node];
         copy[Number(segment)] = leaf;
         return copy;
       }
+
       return { ...(node as JsonObject), [segment]: leaf };
     }
+
     if (Array.isArray(node)) {
       const copy = [...node];
       copy[Number(segment)] = rebuild(node[Number(segment)]!, depth + 1);
       return copy;
     }
+
     const object = node as JsonObject;
     return { ...object, [segment]: rebuild(object[segment]!, depth + 1) };
   };
@@ -180,36 +199,47 @@ function setPath(value: JsonValue, path: string, leaf: JsonValue): JsonValue {
  */
 export function hydrateValue<T extends JsonValue>(io: Pick<DurableBlobIO, "getBlob">, value: T): T {
   if (Array.isArray(value)) return value.map((entry) => hydrateValue(io, entry)) as unknown as T;
+
   if (typeof value !== "object" || value === null) return value;
+
   const object = value as JsonObject;
   // A whole `{ "anvia:blob" }` carrier is replaced by the blob, whatever it sits inside.
   const whole = isWholeValueReference(object);
+
   if (whole !== undefined) return io.getBlob(whole.hash) as T;
+
   // A `{ type: "json", value: <carrier> }` tool output stands in for the whole output object.
   if (object.type === "json") {
     const wrapped = isWholeValueReference(object.value);
+
     if (wrapped !== undefined) return io.getBlob(wrapped.hash) as T;
   }
+
   // Restored leaves are placed after the walk, so blob content is never interpreted as a marker.
   const restores: PathMarker[] = [];
   let rest = object;
+
   if (isMessageShape(object)) {
     const anvia =
       typeof object.metadata === "object" && object.metadata !== null
         ? ((object.metadata as JsonObject).anvia as JsonObject | undefined)
         : undefined;
     const markers = registeredPathMarkers(anvia?.[MESSAGE_MARKER]);
+
     if (markers !== undefined) {
       restores.push(...markers);
       rest = clearMessageMarker(rest) as JsonObject;
     }
   }
+
   const pathMarkers = registeredPathMarkers(rest[PATH_MARKER]);
+
   if (pathMarkers !== undefined) {
     restores.push(...pathMarkers);
     const { [PATH_MARKER]: _dropped, ...others } = rest;
     rest = others;
   }
+
   let result: JsonValue = Object.fromEntries(
     Object.entries(rest).map(([key, entry]) => [key, hydrateValue(io, entry)]),
   );
@@ -228,11 +258,15 @@ function clearMessageMarker(message: JsonObject): JsonValue {
   const metadata = { ...(message.metadata as JsonObject) };
   const anvia = { ...(metadata.anvia as JsonObject | undefined) };
   delete anvia[MESSAGE_MARKER];
+
   if (Object.keys(anvia).length === 0) delete metadata.anvia;
   else metadata.anvia = anvia;
+
   const result: JsonObject = { ...message };
+
   if (Object.keys(metadata).length === 0) delete result.metadata;
   else result.metadata = metadata;
+
   return result;
 }
 
@@ -250,15 +284,19 @@ function externalizeLeaf(io: DurableBlobIO, value: JsonValue): PathMarker {
  */
 export function externalizeMessage(io: DurableBlobIO, message: Message): Message {
   if (sizeOf(message as JsonValue) <= BLOB_THRESHOLD_BYTES) return message;
+
   const markers: PathMarker[] = [];
   let content = message.content as JsonValue;
   const leaf = (path: string, value: JsonValue): PathMarker | undefined => {
     if (sizeOf(value) <= BLOB_THRESHOLD_BYTES) return undefined;
+
     const mark = externalizeLeaf(io, value);
     return { ...mark, path };
   };
+
   if (typeof content === "string") {
     const mark = leaf("content", content);
+
     if (mark !== undefined) {
       markers.push(mark);
       content = PLACEHOLDER_TEXT;
@@ -266,20 +304,27 @@ export function externalizeMessage(io: DurableBlobIO, message: Message): Message
   } else if (Array.isArray(content)) {
     content = content.map((part, index) => {
       if (typeof part !== "object" || part === null || Array.isArray(part)) return part;
+
       const record = { ...(part as JsonObject) };
       const type = record.type;
       const paths: [string, JsonValue][] = [];
+
       if (type === "text" || type === "reasoning") {
         if (typeof record.text === "string") paths.push([`content.${index}.text`, record.text]);
+
         if (Array.isArray(record.details))
           record.details = record.details.map((detail, detailIndex) => {
             if (typeof detail !== "object" || detail === null) return detail;
+
             const entry = { ...(detail as JsonObject) };
             for (const key of ["text", "data"] as const) {
               const value = entry[key];
+
               if (typeof value !== "string") continue;
+
               const path = `content.${index}.details.${detailIndex}.${key}`;
               const mark = leaf(path, value);
+
               if (mark !== undefined) {
                 markers.push(mark);
                 entry[key] = PLACEHOLDER_TEXT;
@@ -289,6 +334,7 @@ export function externalizeMessage(io: DurableBlobIO, message: Message): Message
           });
       } else if (type === "image") {
         const image = record.image;
+
         if (
           typeof image === "object" &&
           image !== null &&
@@ -298,6 +344,7 @@ export function externalizeMessage(io: DurableBlobIO, message: Message): Message
         ) {
           const path = `content.${index}.image.data`;
           const mark = leaf(path, (image as JsonObject).data!);
+
           if (mark !== undefined) {
             markers.push(mark);
             record.image = { ...(image as JsonObject), data: PLACEHOLDER_TEXT };
@@ -305,13 +352,16 @@ export function externalizeMessage(io: DurableBlobIO, message: Message): Message
         }
       } else if (type === "file") {
         const data = record.data;
+
         if (typeof data === "object" && data !== null && !Array.isArray(data)) {
           const entry = data as JsonObject;
-          const key = entry.type === "data" ? "data" : entry.type === "text" ? "text" : undefined;
+          const key = entry.type === "data" || entry.type === "text" ? entry.type : undefined;
           const value = key === undefined ? undefined : entry[key];
+
           if (key !== undefined && typeof value === "string") {
             const path = `content.${index}.data.${key}`;
             const mark = leaf(path, value);
+
             if (mark !== undefined) {
               markers.push(mark);
               record.data = { ...entry, [key]: PLACEHOLDER_TEXT };
@@ -323,26 +373,35 @@ export function externalizeMessage(io: DurableBlobIO, message: Message): Message
       } else if (type === "tool-result") {
         if (record.output !== undefined) paths.push([`content.${index}.output`, record.output]);
       }
+
       for (const [path, value] of paths) {
         const mark = leaf(path, value);
+
         if (mark === undefined) continue;
+
         markers.push(mark);
         const key = path.slice(path.lastIndexOf(".") + 1);
-        record[key] =
-          key === "output"
-            ? { type: "json", value: null }
-            : key === "input"
-              ? null
-              : PLACEHOLDER_TEXT;
+
+        if (key === "output") {
+          record[key] = { type: "json", value: null };
+        } else if (key === "input") {
+          record[key] = null;
+        } else {
+          record[key] = PLACEHOLDER_TEXT;
+        }
       }
       return record;
     });
   }
+
   if (markers.length === 0) return message;
+
   const metadata = { ...(message.metadata as JsonObject | undefined) };
   const anvia = metadata.anvia;
+
   if (anvia !== undefined && (typeof anvia !== "object" || anvia === null || Array.isArray(anvia)))
     return message; // The marker namespace is taken; the payload limit applies as before.
+
   metadata.anvia = {
     ...(anvia as JsonObject | undefined),
     [MESSAGE_MARKER]: reference(markers),
@@ -372,9 +431,12 @@ export function externalizeContextDocsResult(io: DurableBlobIO, result: JsonValu
 /** A completed tool result (`{ output, failed, error? }`): the output object is blobbed whole. */
 export function externalizeToolResult(io: DurableBlobIO, result: JsonValue): JsonValue {
   if (typeof result !== "object" || result === null || Array.isArray(result)) return result;
+
   const record = result as JsonObject;
   const output = record.output;
+
   if (output === undefined || sizeOf(output) <= BLOB_THRESHOLD_BYTES) return result;
+
   return {
     ...record,
     output: { type: "json", value: wholeValueReference(io, output) },
@@ -387,6 +449,7 @@ export function externalizeToolResult(io: DurableBlobIO, result: JsonValue): Jso
  */
 export function externalizeModelResult(io: DurableBlobIO, result: JsonValue): JsonValue {
   if (sizeOf(result) <= BLOB_THRESHOLD_BYTES) return result;
+
   const record = result as JsonObject;
   return {
     choice: [{ type: "text", text: PLACEHOLDER_TEXT }],
@@ -405,23 +468,31 @@ export function externalizeModelResult(io: DurableBlobIO, result: JsonValue): Js
 /** A model operation input (`{ provider, modelId, request }`): history and documents are walked. */
 export function externalizeModelInput(io: DurableBlobIO, input: JsonValue): JsonValue {
   if (typeof input !== "object" || input === null || Array.isArray(input)) return input;
+
   const record = input as JsonObject;
   const request = record.request;
+
   if (typeof request !== "object" || request === null || Array.isArray(request)) return input;
+
   const value = { ...(request as JsonObject) };
+
   if (Array.isArray(value.chatHistory))
     value.chatHistory = externalizeMessages(io, value.chatHistory as Message[]);
+
   if (Array.isArray(value.documents))
     value.documents = value.documents.map((document) =>
       externalizeDocument(io, document as JsonObject),
     );
+
   return { ...record, request: value };
 }
 
 /** A request document: only the `text` leaf is bounded; a path reference sits beside it. */
 function externalizeDocument(io: DurableBlobIO, document: JsonObject): JsonValue {
   const text = document.text;
+
   if (typeof text !== "string" || sizeOf(text) <= BLOB_THRESHOLD_BYTES) return document;
+
   const mark = externalizeLeaf(io, text);
   return {
     ...document,
@@ -433,8 +504,11 @@ function externalizeDocument(io: DurableBlobIO, document: JsonObject): JsonValue
 /** A completed loop-context result (`{ messages, checkpoint?, compaction? }`; strict schema). */
 export function externalizeContextResult(io: DurableBlobIO, result: JsonValue): JsonValue {
   if (typeof result !== "object" || result === null || Array.isArray(result)) return result;
+
   const record = result as JsonObject;
+
   if (!Array.isArray(record.messages)) return result;
+
   return { ...record, messages: externalizeMessages(io, record.messages as Message[]) };
 }
 
@@ -447,7 +521,9 @@ export function externalizeContextDocuments(
   value: { hash: string; documents: JsonValue },
 ): JsonValue {
   const full = json(value);
+
   if (sizeOf(full) <= BLOB_THRESHOLD_BYTES) return full;
+
   return { hash: value.hash, [WHOLE_VALUE_MARKER]: ioMarker(io, full) };
 }
 
@@ -467,30 +543,39 @@ export function hydratedOutcomeOutput(
 /** A run outcome: messages walk, oversized `text` moves out, continuation state is walked. */
 export function externalizeOutcome<T extends JsonValue>(io: DurableBlobIO, outcome: T): T {
   if (typeof outcome !== "object" || outcome === null || Array.isArray(outcome)) return outcome;
+
   const record = { ...(outcome as JsonObject) };
   const markers: PathMarker[] = [];
+
   if (Array.isArray(record.messages))
     record.messages = externalizeMessages(io, record.messages as Message[]);
+
   if (typeof record.text === "string" && sizeOf(record.text) > BLOB_THRESHOLD_BYTES) {
     const mark = externalizeLeaf(io, record.text);
     markers.push({ ...mark, path: "text" });
     record.text = PLACEHOLDER_TEXT;
   }
+
   if (record.output !== undefined && sizeOf(record.output) > BLOB_THRESHOLD_BYTES) {
     const mark = externalizeLeaf(io, record.output);
     markers.push({ ...mark, path: "output" });
     record.output = null;
   }
+
   const continuation = record.continuation;
+
   if (typeof continuation === "object" && continuation !== null && !Array.isArray(continuation)) {
     const state = (continuation as JsonObject).state;
+
     if (typeof state === "object" && state !== null && !Array.isArray(state))
       record.continuation = {
         ...(continuation as JsonObject),
         state: externalizeContinuationState(io, state as JsonObject),
       };
   }
+
   if (markers.length > 0) record[PATH_MARKER] = reference(markers);
+
   return record as T;
 }
 
@@ -499,16 +584,22 @@ function externalizeContinuationState(io: DurableBlobIO, state: JsonObject): Jso
   const result = { ...state };
   for (const key of ["history", "messages"] as const) {
     const value = result[key];
+
     if (Array.isArray(value)) result[key] = externalizeMessages(io, value as Message[]);
   }
+
   if (Array.isArray(result.steering))
     result.steering = result.steering.map((entry) => {
       if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return entry;
+
       const queued = { ...(entry as JsonObject) };
+
       if (Array.isArray(queued.messages))
         queued.messages = externalizeMessages(io, queued.messages as Message[]);
+
       return queued;
     });
+
   return result;
 }
 
@@ -519,7 +610,9 @@ function externalizeContinuationState(io: DurableBlobIO, state: JsonObject): Jso
  */
 export function externalizePrompt(io: DurableBlobIO, prompt: AgentPrompt): JsonValue {
   if (sizeOf(prompt as JsonValue) <= BLOB_THRESHOLD_BYTES) return prompt as JsonValue;
+
   if (typeof prompt === "string") return wholeValueReference(io, prompt);
+
   return externalizeMessage(io, prompt) as JsonValue;
 }
 
@@ -530,23 +623,30 @@ export function externalizePrompt(io: DurableBlobIO, prompt: AgentPrompt): JsonV
  */
 export function externalizeRunRecord<T extends object>(io: DurableBlobIO, run: T): T {
   const record = { ...run } as Record<string, JsonValue | undefined>;
+
   if (record.prompt !== undefined)
     record.prompt = externalizePrompt(io, record.prompt as AgentPrompt);
+
   const input = record.input;
+
   if (typeof input === "object" && input !== null && !Array.isArray(input)) {
     const messages = (input as JsonObject).messages;
+
     if (Array.isArray(messages))
       record.input = {
         ...(input as JsonObject),
         messages: externalizeMessages(io, messages as unknown as Message[]) as JsonValue,
       };
   }
+
   return record as T;
 }
 
 /** A `submitted` event (run or graph task): its `prompt` moves out like the run's prompt. */
 export function externalizeSubmittedEvent<T extends object>(io: DurableBlobIO, data: T): T {
   const record = data as { prompt?: AgentPrompt };
+
   if (record.prompt === undefined) return data;
+
   return { ...data, prompt: externalizePrompt(io, record.prompt) } as unknown as T;
 }

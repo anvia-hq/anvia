@@ -25,6 +25,7 @@ export class WeaviateVectorStore<
   }
   async ensure(): Promise<void> {
     const client = await this.owner.nativeClient();
+
     if (!(await client.collections.exists(this.options.collectionName))) {
       const module = await import("weaviate-client");
       const weaviate = module.default ?? module;
@@ -41,17 +42,22 @@ export class WeaviateVectorStore<
         ],
       });
     }
+
     await this.validate();
   }
   async validate(): Promise<void> {
     const collections = (await this.owner.nativeClient()).collections;
+
     if (!(await collections.exists(this.options.collectionName)))
       throw new Error(`Weaviate collection ${this.options.collectionName} does not exist`);
+
     if (collections.export === undefined) return;
+
     const config = (await collections.export(this.options.collectionName)) as {
       vectorizers?: Record<string, { indexConfig?: { distance?: unknown } }>;
     };
     const actualMetric = Object.values(config.vectorizers ?? {})[0]?.indexConfig?.distance;
+
     if (typeof actualMetric === "string" && actualMetric !== distanceName(this.options.metric)) {
       throw new Error(
         `Weaviate collection ${this.options.collectionName} uses ${actualMetric}; expected ${distanceName(this.options.metric)}`,
@@ -60,13 +66,17 @@ export class WeaviateVectorStore<
   }
   async upsert(options: VectorStoreUpsertOptions<T, Metadata>): Promise<void> {
     validateDocuments(options.documents, this.options.dimensions);
+
     if (options.documents.length === 0) return;
+
     const client = await this.owner.nativeClient();
     const collection = client.collections.get(this.options.collectionName);
+
     if (collection.data === undefined)
       throw new TypeError(
         "Weaviate document replacement requires collection.data.deleteMany(...) and insertMany(...).",
       );
+
     const deletion = await collection.data.deleteMany(
       {
         target: { property: documentIdPropertyKey },
@@ -77,7 +87,9 @@ export class WeaviateVectorStore<
     );
     assertDeleteManySucceeded(deletion);
     const objects = options.documents.flatMap((document) => weaviateObjects(document));
+
     if (objects.length === 0) return;
+
     const insertion = await collection.data.insertMany(objects);
     assertInsertManySucceeded(insertion);
   }
@@ -108,14 +120,18 @@ export class WeaviateVectorStore<
       const results = selectResults(unfiltered, request);
       const candidateCount =
         (response as { objects?: Array<Record<string, unknown>> }).objects?.length ?? 0;
+
       if (
         results.length >= request.topK ||
         candidateCount < candidateLimit ||
         hasResultBelowMinimum(unfiltered, request.minScore)
       )
         return results;
+
       const nextLimit = nextCandidateLimit(candidateLimit);
+
       if (nextLimit === candidateLimit) return results;
+
       candidateLimit = nextLimit;
     }
   }
@@ -123,6 +139,7 @@ export class WeaviateVectorStore<
 
 function assertDeleteManySucceeded(result: unknown): void {
   const failed = (result as { failed?: unknown } | null | undefined)?.failed;
+
   if (typeof failed === "number" && failed > 0) {
     throw new Error(`Weaviate failed to delete ${failed} existing vector objects.`);
   }
@@ -134,6 +151,7 @@ function assertInsertManySucceeded(result: unknown): void {
     | null
     | undefined;
   const errorCount = Object.keys(batch?.errors ?? {}).length;
+
   if (batch?.hasErrors === true || errorCount > 0) {
     throw new Error(`Weaviate failed to insert ${errorCount || "one or more"} vector objects.`);
   }
@@ -161,7 +179,9 @@ function nextCandidateLimit(current: number): number {
 }
 function distanceName(metric: WeaviateVectorStoreOptions["metric"]): WeaviateDistance {
   if (metric === "euclidean") return "l2-squared";
+
   if (metric === "dotProduct") return "dot";
+
   return metric ?? "cosine";
 }
 function throwIfAborted(signal: AbortSignal | undefined): void {
@@ -182,9 +202,12 @@ function validateDocuments<T, Metadata extends VectorMetadata>(
   const ids = new Set<string>();
   for (const document of documents) {
     if (ids.has(document.id)) throw new TypeError(`Duplicate vector document id: ${document.id}`);
+
     ids.add(document.id);
+
     if (document.embeddings.length === 0)
       throw new TypeError(`Vector document ${document.id} must contain at least one embedding.`);
+
     for (const embedding of document.embeddings)
       if (embedding.vector.length !== dimensions)
         throw new Error(`Vector dimension mismatch for document ${document.id}`);
@@ -195,11 +218,15 @@ function validateDocuments<T, Metadata extends VectorMetadata>(
 
 function validateSearchRequest(request: VectorSearchRequest, dimensions: number): void {
   throwIfAborted(request.abortSignal);
+
   if (!Number.isSafeInteger(request.topK) || request.topK < 1)
     throw new RangeError("Vector search topK must be a positive safe integer.");
+
   if (request.minScore !== undefined && !Number.isFinite(request.minScore))
     throw new RangeError("Vector search minScore must be a finite number.");
+
   if (request.vector.length !== dimensions) throw new Error("Vector dimension mismatch for query");
+
   if (!request.vector.every(Number.isFinite))
     throw new Error("Vector search query must contain only finite numbers");
 }

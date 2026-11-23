@@ -82,9 +82,11 @@ try {
 
 function requireArchive(archives, prefix) {
   const archive = archives.find((entry) => entry.startsWith(prefix) && entry.endsWith(".tgz"));
+
   if (archive === undefined) {
     throw new Error(`Packed archive not found for ${prefix}`);
   }
+
   return archive;
 }
 
@@ -102,6 +104,7 @@ function run(command, args, options) {
         resolvePromise();
         return;
       }
+
       reject(
         new Error(
           `${command} ${args.join(" ")} failed with ${

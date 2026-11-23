@@ -65,6 +65,7 @@ async function connect(authorization: TerminalAuthorization) {
     send({ type: "open", cols: 100, rows: 30 });
     for (let attempt = 0; attempt < 100; attempt += 1) {
       if (messages.some((message) => message.type === "ready")) return;
+
       await sleep(10);
     }
     throw new Error("terminal never became ready");

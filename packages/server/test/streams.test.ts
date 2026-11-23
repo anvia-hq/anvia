@@ -300,8 +300,10 @@ describe("memory resumable stream store", () => {
     const iterator = store.subscribe({ streamId: "live", after: 2 })[Symbol.asyncIterator]();
     const pending = (async () => {
       const next = await iterator.next();
+
       if (next.done !== true) {
         const event = next.value.event;
+
         if ("kind" in event) seen.push(event.kind);
       }
     })();
@@ -319,8 +321,11 @@ describe("memory resumable stream store", () => {
     const replayed: string[] = [];
     for (let i = 0; i < 2; i++) {
       const next = await replay.next();
+
       if (next.done === true) break;
+
       const event = next.value.event;
+
       if ("kind" in event) replayed.push(event.kind);
     }
     await replay.return?.();

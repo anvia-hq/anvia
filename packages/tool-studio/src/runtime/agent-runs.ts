@@ -96,12 +96,14 @@ export function registerAgentRunRoute(app: Hono, props: AgentRunRouteProps): voi
 
 async function handleAgentRun(c: Context, props: AgentRunRouteProps): Promise<Response> {
   const lease = props.runLifecycle.start(c.req.raw.signal);
+
   if (lease === undefined) {
     return errorResponse(c, 503, "service_unavailable", "Anvia Studio is shutting down");
   }
 
   try {
     const prepared = await prepareAgentRun(c, props, lease.abortSignal);
+
     if (prepared instanceof Response) {
       lease.finish();
       return prepared;
@@ -110,6 +112,7 @@ async function handleAgentRun(c: Context, props: AgentRunRouteProps): Promise<Re
     if (prepared.body.stream === true) {
       return handleStreamingAgentRun(c, prepared, props, lease);
     }
+
     try {
       return await handleBufferedAgentRun(c, prepared, props);
     } finally {
@@ -128,11 +131,13 @@ async function prepareAgentRun(
 ): Promise<PreparedAgentRun | Response> {
   const agentId = c.req.param("agentId") as string;
   const agent = props.agentMap.get(agentId);
+
   if (agent === undefined) {
     return errorResponse(c, 404, "not_found", "Agent not found");
   }
 
   const body = await parseRunRequest(c);
+
   if ("error" in body) {
     return body.error;
   }
@@ -143,24 +148,32 @@ async function prepareAgentRun(
       agentId,
       body.response,
     );
+
     if (registration.status === "missing") {
       return errorResponse(c, 404, "not_found", "Interaction continuation is unavailable");
     }
+
     if (registration.status === "claimed") {
       return errorResponse(c, 409, "conflict", "Interaction response was already claimed");
     }
+
     if (registration.status === "invalid") {
       return errorResponse(c, 400, "bad_request", registration.error.message);
     }
+
     const { registration: claimed } = registration;
     const source = claimed.context;
     const runId = globalThis.crypto.randomUUID();
     let resumedBody: PreparedAgentRun["body"] = {
       ...source.body,
     };
+
     if (body.stream !== undefined) resumedBody = { ...resumedBody, stream: body.stream };
+
     if (body.metadata !== undefined) resumedBody = { ...resumedBody, metadata: body.metadata };
+
     if (body.trace !== undefined) resumedBody = { ...resumedBody, trace: body.trace };
+
     const runOptions = createRunOptions(resumedBody, agentId, source.session, abortSignal);
     const execution: RunExecution = {
       generate: (options) =>
@@ -191,6 +204,7 @@ async function prepareAgentRun(
   }
 
   const session = await resolveRunSession(c, body, agentId, props.stores);
+
   if (session instanceof Response) {
     return session;
   }
@@ -198,9 +212,11 @@ async function prepareAgentRun(
   // Validate only the controls this request sent. Controls remembered from earlier runs may
   // belong to another model, so they are filtered for the selected model below.
   const selectedModel = selectRunModel(c, props, agent, body, session);
+
   if (selectedModel instanceof Response) {
     return selectedModel;
   }
+
   const persistedControls = sessionControlValues(session?.metadata);
   const runBody =
     body.controls === undefined && persistedControls !== undefined
@@ -246,6 +262,7 @@ async function prepareAgentRun(
     session !== undefined &&
     sessionStore !== undefined &&
     !usesStoreAsAgentMemory(runAgent, sessionStore);
+
   if (shouldPersistSessionMessages) {
     await sessionStore.append({
       scope: { sessionId: session.id, metadata: memoryMetadata },
@@ -314,12 +331,15 @@ async function resolveRunSession(
 
   const session =
     body.sessionId === undefined ? undefined : await stores.sessions?.getSession(body.sessionId);
+
   if (body.sessionId !== undefined && session === undefined) {
     return errorResponse(c, 404, "not_found", "Session not found");
   }
+
   if (session !== undefined && session.agentId !== agentId) {
     return errorResponse(c, 400, "bad_request", "Session belongs to another agent");
   }
+
   return session;
 }
 
@@ -340,6 +360,7 @@ function selectRunModel(
     if (error instanceof ModelSelectionError) {
       return errorResponse(c, 400, "bad_request", error.message);
     }
+
     throw error;
   }
 }
@@ -364,10 +385,13 @@ async function recordRunReceived(props: {
     stream: props.body.stream === true,
     hasTrace: props.body.trace !== undefined,
   };
+
   if (props.body.maxTurns !== undefined) input.maxTurns = props.body.maxTurns;
+
   if (props.body.toolConcurrency !== undefined) {
     input.toolConcurrency = props.body.toolConcurrency;
   }
+
   if (
     props.body.metadata !== undefined ||
     props.selectedModel.ref !== undefined ||
@@ -375,14 +399,18 @@ async function recordRunReceived(props: {
   ) {
     const metadata: JsonObject = {};
     Object.assign(metadata, props.body.metadata);
+
     if (props.selectedModel.ref !== undefined) {
       metadata[STUDIO_MODEL_METADATA_KEY] = props.selectedModel.ref;
     }
+
     if (props.body.controls !== undefined) {
       metadata[STUDIO_CONTROLS_METADATA_KEY] = props.body.controls;
     }
+
     input.metadata = metadata;
   }
+
   await appendSessionLog(props.store, runReceivedLog(input));
 }
 
@@ -408,6 +436,7 @@ async function recordSelectedModelWarnings(props: {
       metadata: warning,
     });
   }
+
   if (
     sessionModelRef(props.session.metadata) !== props.selectedModel.ref ||
     props.body.controls !== undefined
@@ -415,9 +444,11 @@ async function recordSelectedModelWarnings(props: {
     const metadata: JsonObject = {};
     Object.assign(metadata, props.session.metadata);
     metadata[STUDIO_MODEL_METADATA_KEY] = props.selectedModel.ref;
+
     if (props.body.controls !== undefined) {
       metadata[STUDIO_CONTROLS_METADATA_KEY] = props.body.controls;
     }
+
     await props.store?.updateSessionMetadata?.(props.session.id, metadata);
   }
 }
@@ -430,8 +461,11 @@ function runMemoryMetadata(
 ): JsonObject {
   const metadata: JsonObject = { agentId };
   Object.assign(metadata, body.metadata);
+
   if (selectedModel.ref !== undefined) metadata[STUDIO_MODEL_METADATA_KEY] = selectedModel.ref;
+
   if (body.controls !== undefined) metadata[STUDIO_CONTROLS_METADATA_KEY] = body.controls;
+
   metadata.studioRunId = runId;
   return metadata;
 }
@@ -445,6 +479,7 @@ function createRunExecution(props: {
   session: StudioSession | undefined;
 }): RunExecution {
   const session = props.session;
+
   if (session !== undefined && props.runAgent.memory !== undefined) {
     return {
       generate: (options) =>
@@ -477,16 +512,21 @@ function createRunOptions(
   abortSignal: AbortSignal,
 ): AgentRunSettings {
   const options: AgentRunSettings = { abortSignal };
+
   if (body.type === "messages" && body.maxTurns !== undefined) options.maxTurns = body.maxTurns;
+
   if (body.type === "messages" && body.toolConcurrency !== undefined) {
     options.toolConcurrency = body.toolConcurrency;
   }
+
   if (body.type === "messages" && body.controls !== undefined) options.controls = body.controls;
+
   if (body.trace !== undefined) {
     options.trace = traceForRun(body.trace, agentId, session);
   } else if (session !== undefined) {
     options.trace = traceForRun(undefined, agentId, session);
   }
+
   return options;
 }
 
@@ -504,6 +544,7 @@ function handleStreamingAgentRun(
   );
   let stream: AsyncIterable<AgentRunStreamEvent> = runStream;
   let persistedRun: ReturnType<typeof createPersistedStreamingSessionTranscript> | undefined;
+
   if (run.session !== undefined && run.sessionStore !== undefined) {
     persistedRun = createPersistedStreamingSessionTranscript({
       stream: streamSessionRunLogs({
@@ -528,9 +569,11 @@ function handleStreamingAgentRun(
     runId: run.runId,
     onCancel: async () => {
       const persistence: Promise<unknown>[] = [];
+
       if (persistedRun !== undefined) {
         persistence.push(persistedRun.cancel());
       }
+
       if (run.session !== undefined && run.sessionStore !== undefined) {
         persistence.push(
           appendSessionLog(
@@ -539,6 +582,7 @@ function handleStreamingAgentRun(
           ),
         );
       }
+
       await Promise.all(persistence);
     },
   });
@@ -563,9 +607,11 @@ async function handleBufferedAgentRun(
   try {
     const runtimeOptions = await startBufferedSessionRun(run);
     const result = await run.execution.generate(runtimeOptions);
+
     if (result.type === "interaction") {
       props.continuationRegistry.register({ continuation: result.continuation, context: run });
     }
+
     await completeBufferedSessionRun(run, result);
     return c.json(agentRunResponse(result));
   } catch (error) {
@@ -576,6 +622,7 @@ async function handleBufferedAgentRun(
 
 function agentRunResponse(result: AgentOutcome): AgentRunResponse {
   if (result.type !== "interaction") return result;
+
   const { continuation: _continuation, messages: _messages, ...response } = result;
   return response;
 }
@@ -585,12 +632,14 @@ async function startBufferedSessionRun(run: PreparedAgentRun): Promise<AgentRunS
     await appendSessionLog(run.sessionStore, runStartedLog(run.session, run.runId));
     await appendSessionLog(run.sessionStore, memoryLoadedLog(run.session, run.runId));
   }
+
   const internalOptions: InternalAgentRunOptions = {
     onFailure: ({ messages }) => {
       run.failureMessages = structuredClone(messages);
     },
     runId: run.runId,
   };
+
   if (run.session !== undefined && run.sessionStore !== undefined) {
     const sessionId = run.session.id;
     const sessionStore = run.sessionStore;
@@ -606,6 +655,7 @@ async function startBufferedSessionRun(run: PreparedAgentRun): Promise<AgentRunS
       run.memoryCompactionLogged = true;
     };
   }
+
   return withInternalAgentRunOptions({ ...run.options }, internalOptions);
 }
 
@@ -618,6 +668,7 @@ async function* registerStreamingContinuation(
     if (event.type === "interaction") {
       registry.register({ continuation: event.continuation, context: run });
     }
+
     yield event;
   }
 }
@@ -629,8 +680,10 @@ async function completeBufferedSessionRun(
   if (run.session === undefined || run.sessionStore === undefined) {
     return;
   }
+
   if (run.shouldPersistSessionMessages) {
     const generatedMessages = response.messages.slice(run.generatedMessagesStartIndex);
+
     if (generatedMessages.length > 0) {
       await run.sessionStore.append({
         scope: { sessionId: run.session.id, metadata: run.memoryMetadata },
@@ -640,6 +693,7 @@ async function completeBufferedSessionRun(
       });
     }
   }
+
   const durationMs = Date.now() - run.runStartedAt;
   const transcript = transcriptFromMessages(response.messages);
   assignTranscriptRunDuration(transcript, durationMs);
@@ -650,6 +704,7 @@ async function completeBufferedSessionRun(
     transcript,
     status: response.type === "interaction" ? "suspended" : "success",
   });
+
   if (response.memoryCompaction !== undefined && !run.memoryCompactionLogged) {
     await appendSessionLog(
       run.sessionStore,
@@ -661,6 +716,7 @@ async function completeBufferedSessionRun(
     );
     run.memoryCompactionLogged = true;
   }
+
   await appendSessionLog(
     run.sessionStore,
     response.type === "interaction"
@@ -687,9 +743,11 @@ async function completeBufferedSessionRun(
           messageCount: response.messages.length,
         }),
   );
+
   if (response.resumedFrom !== undefined) {
     const responseMessage = response.messages[0];
     const responsePart = responseMessage?.role === "tool" ? responseMessage.content[0] : undefined;
+
     if (responsePart !== undefined && responsePart.type !== "tool-result") {
       const metadata: JsonObject = {
         interactionId: responsePart.interactionId,
@@ -698,12 +756,14 @@ async function completeBufferedSessionRun(
         toolName: responsePart.toolName,
         sourceRunId: response.resumedFrom.runId,
       };
+
       if (responsePart.type === "tool-approval-response") {
         metadata.approved = responsePart.approved;
         metadata.hasReason = responsePart.reason !== undefined;
       } else {
         metadata.answerCount = responsePart.answers.length;
       }
+
       await appendSessionLog(run.sessionStore, {
         sessionId: run.session.id,
         runId: run.runId,
@@ -714,6 +774,7 @@ async function completeBufferedSessionRun(
         metadata,
       });
     }
+
     await appendSessionLog(run.sessionStore, {
       sessionId: run.session.id,
       runId: run.runId,
@@ -728,6 +789,7 @@ async function completeBufferedSessionRun(
       },
     });
   }
+
   await appendSessionLog(
     run.sessionStore,
     memorySavedLog({

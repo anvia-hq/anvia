@@ -41,6 +41,7 @@ const server = Bun.serve({
         model: form.get("model"),
       };
     }
+
     requests.push(recorded);
     const body = isRecord(recorded.body) ? recorded.body : {};
 
@@ -68,6 +69,7 @@ const server = Bun.serve({
           headers: { "content-type": "application/json" },
         });
       }
+
       const response = responsesPayload();
       return body.stream === true
         ? eventStream([
@@ -315,10 +317,12 @@ function eventStream(events: readonly unknown[]): Response {
     new ReadableStream({
       pull(controller) {
         const chunk = chunks[index];
+
         if (chunk === undefined) {
           controller.close();
           return;
         }
+
         index += 1;
         controller.enqueue(encoder.encode(chunk));
       },

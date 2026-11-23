@@ -7,24 +7,32 @@ process.stdin.on("data", (chunk) => {
   buffer += chunk;
   while (true) {
     const newline = buffer.indexOf("\n");
+
     if (newline === -1) return;
+
     const line = buffer.slice(0, newline);
     buffer = buffer.slice(newline + 1);
+
     if (line.trim() === "") continue;
+
     respond(JSON.parse(line));
   }
 });
 
 process.on("SIGTERM", () => {
   const exitMarkerPath = process.env.MCP_SLOW_EXIT;
+
   if (exitMarkerPath) writeFileSync(exitMarkerPath, "");
+
   process.exit(143);
 });
 
 function respond(message) {
   if (message.method === "tools/call") {
     const receiptPath = process.env.MCP_SLOW_RECEIPT;
+
     if (receiptPath) writeFileSync(receiptPath, JSON.stringify({ pid: process.pid }));
+
     setTimeout(() => {
       process.stdout.write(
         `${JSON.stringify({
@@ -60,6 +68,7 @@ function resultFor(message) {
       },
     };
   }
+
   if (message.method === "tools/list") {
     return {
       resultType: "complete",
@@ -77,5 +86,6 @@ function resultFor(message) {
       ],
     };
   }
+
   return {};
 }

@@ -21,6 +21,7 @@ export class Neo4jClient {
 
   constructor(options: Neo4jClientOptions) {
     this.database = options.database;
+
     if ("driver" in options) {
       this.driver = options.driver;
       this.ownsDriver = false;
@@ -28,6 +29,7 @@ export class Neo4jClient {
       if (typeof options.uri !== "string" || options.uri.length === 0) {
         throw new TypeError("Neo4jClient uri must be a non-empty string.");
       }
+
       if (
         typeof options.auth.username !== "string" ||
         options.auth.username.length === 0 ||
@@ -35,6 +37,7 @@ export class Neo4jClient {
       ) {
         throw new TypeError("Neo4jClient requires explicit username and password credentials.");
       }
+
       this.driver = createDriver(
         options.uri,
         auth.basic(options.auth.username, options.auth.password),
@@ -69,7 +72,9 @@ export class Neo4jClient {
 
   async close(): Promise<void> {
     if (this.closed) return;
+
     this.closed = true;
+
     if (this.ownsDriver) await this.driver.close();
   }
 
@@ -103,5 +108,6 @@ export class Neo4jTenant {
 function tenantNamespace(tenantId: string): string {
   if (typeof tenantId !== "string" || tenantId.trim().length === 0)
     throw new TypeError("Neo4j tenant id must be a non-empty string.");
+
   return createHash("sha256").update(tenantId).digest("hex");
 }

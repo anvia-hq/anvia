@@ -34,6 +34,7 @@ export async function runInputGuardrails(
       if (policy.mode === "observe") {
         continue;
       }
+
       if (result.action.action === "block") {
         return {
           prompt,
@@ -43,6 +44,7 @@ export async function runInputGuardrails(
           decisions,
         };
       }
+
       if (result.action.action === "rewrite") {
         if (result.action.prompt !== undefined) {
           prompt = result.action.prompt;
@@ -76,6 +78,7 @@ export async function runOutputGuardrails(
       if (policy.mode === "observe") {
         continue;
       }
+
       if (result.action.action === "block") {
         return {
           outputText,
@@ -84,6 +87,7 @@ export async function runOutputGuardrails(
           decisions,
         };
       }
+
       if (result.action.action === "rewrite") {
         outputText = result.action.outputText;
       }
@@ -119,6 +123,7 @@ async function runGuardrail<TAction extends { action: GuardrailActionName } & Gu
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+
     if (policy.mode === "observe") {
       return {
         action: allow(),
@@ -134,6 +139,7 @@ async function runGuardrail<TAction extends { action: GuardrailActionName } & Gu
         },
       };
     }
+
     throw error;
   }
 }
@@ -155,10 +161,14 @@ function decisionRecord(args: {
     applied,
     latencyMs: args.latencyMs,
   };
+
   if (args.action.reason !== undefined) record.reason = args.action.reason;
+
   if ("message" in args.action && typeof args.action.message === "string") {
     record.message = args.action.message;
   }
+
   if (args.action.metadata !== undefined) record.metadata = args.action.metadata;
+
   return record;
 }

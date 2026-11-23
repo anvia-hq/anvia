@@ -37,9 +37,12 @@ export async function runLangfuseEvalExperiment<Input, Output, Expected = unknow
   const evalOptions = options.suite;
   const experimentOptions = options.experiment;
   const clientOptions: LangfuseDatasetClientOptions = {};
+
   if (experimentOptions.pageSize !== undefined) clientOptions.pageSize = experimentOptions.pageSize;
+
   if (experimentOptions.timeoutMs !== undefined)
     clientOptions.timeoutMs = experimentOptions.timeoutMs;
+
   const datasetClient = client.datasetClient(clientOptions);
 
   const suiteOptions: RunEvalSuiteOptions<Input, Output, Expected> =
@@ -62,21 +65,27 @@ export async function runLangfuseEvalExperiment<Input, Output, Expected = unknow
       id: testCase.id,
       input: testCase.input,
     };
+
     if (testCase.expected !== undefined) {
       item.expected = testCase.expected;
     }
+
     const metadata: Record<string, JsonValue | undefined> = {
       ...testCase.metadata,
     };
+
     if (experimentOptions.includeContexts === true && testCase.context !== undefined) {
       metadata.context = [...testCase.context];
     }
+
     if (experimentOptions.includeContexts === true && testCase.retrievalContext !== undefined) {
       metadata.retrievalContext = [...testCase.retrievalContext];
     }
+
     if (Object.keys(metadata).length > 0) {
       item.metadata = metadata;
     }
+
     return item;
   });
 
@@ -91,21 +100,26 @@ export async function runLangfuseEvalExperiment<Input, Output, Expected = unknow
     items,
     run: (item) => {
       const result = datasetItemMap.get(item.id);
+
       if (result === undefined) {
         return {
           output: undefined as Output,
           trace: undefined,
         };
       }
+
       const output = (result.output ?? undefined) as Output;
       const trace = readTraceFromOutput(result.output);
       return { output, trace };
     },
   };
+
   if (experimentOptions.description !== undefined) {
     runOptions.description = experimentOptions.description;
   }
+
   if (experimentOptions.metadata !== undefined) runOptions.metadata = experimentOptions.metadata;
+
   const datasetRun = await datasetClient.runExperiment<Input, Output, Expected>(runOptions);
 
   return { suite, datasetRun };
@@ -117,17 +131,24 @@ function readTraceFromOutput(
   if (typeof output !== "object" || output === null || !("trace" in output)) {
     return undefined;
   }
+
   const trace = (output as { trace?: unknown }).trace;
+
   if (typeof trace !== "object" || trace === null) {
     return undefined;
   }
+
   const traceId = (trace as { traceId?: unknown }).traceId;
+
   if (typeof traceId !== "string") {
     return undefined;
   }
+
   const observationId = (trace as { observationId?: unknown }).observationId;
+
   if (typeof observationId === "string") {
     return { traceId, observationId };
   }
+
   return { traceId };
 }

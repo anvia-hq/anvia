@@ -70,9 +70,11 @@ function answerSupportQuestion(question: string): string {
   if (question.includes("refund")) {
     return "Refunds are available for 30 days.";
   }
+
   if (question.includes("billing")) {
     return "Workspace owners can change billing settings.";
   }
+
   return "Please contact support.";
 }
 
@@ -80,9 +82,11 @@ function scoreForTable(score: unknown): string | number | boolean {
   if (typeof score === "number" || typeof score === "boolean") {
     return score;
   }
+
   if (typeof score === "object" && score !== null && "score" in score) {
     const nested = score as { score?: unknown };
     return typeof nested.score === "number" ? nested.score : "";
   }
+
   return "";
 }

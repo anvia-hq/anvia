@@ -20,6 +20,7 @@ describe("DockerSandboxClient ownership", () => {
       if (args[0] === "container" && args[1] === "inspect") {
         return dockerResult({ stderr: new TextEncoder().encode("No such container"), exitCode: 1 });
       }
+
       return dockerResult();
     });
   });
@@ -126,6 +127,7 @@ describe("DockerSandboxClient ownership", () => {
       if (args[0] === "container" && args[1] === "inspect") {
         return dockerResult({ stdout: encodedInspection(true) });
       }
+
       return dockerResult();
     });
     const client = new DockerSandboxClient();
@@ -151,6 +153,7 @@ describe("DockerSandboxClient ownership", () => {
       if (args[0] === "container" && args[1] === "inspect") {
         return dockerResult({ stdout: encodedInspection(true) });
       }
+
       return dockerResult();
     });
     const client = new DockerSandboxClient();
@@ -176,6 +179,7 @@ describe("DockerSandboxClient ownership", () => {
               : encodedInspection(true, [4310], 49152),
         });
       }
+
       return dockerResult();
     });
     const client = new DockerSandboxClient();
@@ -192,9 +196,11 @@ describe("DockerSandboxClient ownership", () => {
       if (args[0] === "container" && args[1] === "inspect") {
         return dockerResult({ stdout: encodedInspection(true, [], undefined, "symlink-write") });
       }
+
       if (args[0] === "exec" && args.includes("anvia-write-path-check")) {
         return dockerResult({ exitCode: 1 });
       }
+
       return dockerResult();
     });
     const client = new DockerSandboxClient();
@@ -212,9 +218,11 @@ describe("DockerSandboxClient ownership", () => {
       if (args[0] === "container" && args[1] === "inspect") {
         return dockerResult({ stdout: encodedInspection(true, [], undefined, "regular-write") });
       }
+
       if (args[0] === "exec" && args.includes("anvia-write-path-check")) {
         return dockerResult({ exitCode: 0 });
       }
+
       return dockerResult();
     });
     const client = new DockerSandboxClient();
@@ -232,9 +240,11 @@ describe("DockerSandboxClient ownership", () => {
       if (args[0] === "container" && args[1] === "inspect") {
         return dockerResult({ stdout: encodedInspection(true, [], undefined, "parent-write") });
       }
+
       if (args[0] === "exec" && args.includes("anvia-write-path-check")) {
         return dockerResult({ exitCode: 1 });
       }
+
       return dockerResult();
     });
     const sandbox = await new DockerSandboxClient().resumeSandbox({ id: "parent-write" });
@@ -258,9 +268,11 @@ describe("DockerSandboxClient ownership", () => {
           stdout: encodedInspection(true, [], undefined, "failed-write-check"),
         });
       }
+
       if (args[0] === "exec" && args.includes("anvia-write-path-check")) {
         return dockerResult({ exitCode: 127 });
       }
+
       return dockerResult();
     });
     const sandbox = await new DockerSandboxClient().resumeSandbox({ id: "failed-write-check" });
@@ -285,9 +297,11 @@ describe("DockerSandboxClient ownership", () => {
           stdout: encodedInspection(true, [], undefined, "changed-write-path"),
         });
       }
+
       if (args[0] === "exec" && args.includes("anvia-write-path-check")) {
         return dockerResult({ exitCode: ++checks === 1 ? 0 : 1 });
       }
+
       return dockerResult();
     });
     const sandbox = await new DockerSandboxClient().resumeSandbox({ id: "changed-write-path" });

@@ -158,7 +158,9 @@ class StudioRunTraceObserver implements AgentRunObserver {
       status: args.status,
       text: args.text,
     };
+
     if (args.resumedFrom !== undefined) result.resumedFrom = args.resumedFrom;
+
     if (args.status === "completed") {
       result.output = toJsonValue(args.output);
     } else if (args.status === "blocked") {
@@ -166,6 +168,7 @@ class StudioRunTraceObserver implements AgentRunObserver {
     } else {
       result.interaction = toJsonValue(args.interaction);
     }
+
     await this.save(args.status === "suspended" ? "suspended" : "success", {
       endedAt: new Date(),
       output: args.status === "completed" ? traceOutput(args.output) : args.text,
@@ -197,12 +200,15 @@ class StudioRunTraceObserver implements AgentRunObserver {
   ): Promise<void> {
     const sessionId = this.props.args.trace?.sessionId;
     const store = this.props.store;
+
     if (sessionId === undefined || store === undefined) {
       return;
     }
 
     const metadata = traceMetadata(this.props.args, result.messages);
+
     if (result.result !== undefined) metadata.result = result.result;
+
     const trace: StudioTrace = {
       id: this.props.id,
       runId: this.props.args.runId,
@@ -221,11 +227,17 @@ class StudioRunTraceObserver implements AgentRunObserver {
       observations: this.observations,
       observationCount: this.observations.length,
     };
+
     if (this.props.args.trace?.name !== undefined) trace.name = this.props.args.trace.name;
+
     if (result.output !== undefined) trace.output = result.output;
+
     if (result.error !== undefined) trace.error = result.error;
+
     if (result.usage !== undefined) trace.usage = result.usage;
+
     const context = traceContextBreakdown(this.observations);
+
     if (context !== undefined) trace.context = context;
 
     await store.saveTrace(trace);
@@ -263,6 +275,7 @@ class ChildAgentToolTraceAccumulator {
   accept(args: AgentToolStreamEventArgs): void {
     const wrapper = args.event;
     const child = isRecord(wrapper.event) ? wrapper.event : undefined;
+
     if (child === undefined) {
       return;
     }
@@ -276,7 +289,9 @@ class ChildAgentToolTraceAccumulator {
         startedAt: new Date(),
         agentId,
       };
+
       if (agentName !== undefined) start.agentName = agentName;
+
       this.agentStarts.set(agentId, start);
     }
 
@@ -290,7 +305,9 @@ class ChildAgentToolTraceAccumulator {
         agentId,
         childTurn,
       };
+
       if (agentName !== undefined) start.agentName = agentName;
+
       this.generationStarts.set(generationKey(agentId, childTurn), start);
       return;
     }
@@ -308,7 +325,9 @@ class ChildAgentToolTraceAccumulator {
         output: toJsonValue(child.response),
         metadata: this.childMetadata(agentId, agentName, childTurn),
       };
+
       if (start?.input !== undefined) observation.input = start.input;
+
       this.completedObservations.push(traceObservation(observation));
       return;
     }
@@ -316,12 +335,14 @@ class ChildAgentToolTraceAccumulator {
     if (child.type === "tool_call" && isRecord(child.toolCall)) {
       const toolCall = child.toolCall;
       const toolName = typeof toolCall.toolName === "string" ? toolCall.toolName : "tool";
-      const callId =
-        typeof toolCall.toolCallId === "string"
-          ? toolCall.toolCallId
-          : typeof toolCall.callId === "string"
-            ? toolCall.callId
-            : undefined;
+      let callId: string | undefined;
+
+      if (typeof toolCall.toolCallId === "string") {
+        callId = toolCall.toolCallId;
+      } else if (typeof toolCall.callId === "string") {
+        callId = toolCall.callId;
+      }
+
       const start: (typeof this.toolStarts)[number] = {
         startedAt: new Date(),
         agentId,
@@ -330,8 +351,11 @@ class ChildAgentToolTraceAccumulator {
         input: toJsonValue("input" in toolCall ? toolCall.input : {}),
         completed: false,
       };
+
       if (agentName !== undefined) start.agentName = agentName;
+
       if (callId !== undefined) start.toolCallId = callId;
+
       this.toolStarts.push(start);
       return;
     }
@@ -344,12 +368,17 @@ class ChildAgentToolTraceAccumulator {
       const start = this.findToolStart(agentId, toolName, toolCallId);
       const input =
         start?.input ?? (typeof child.args === "string" ? parseOrString(child.args) : undefined);
+
       if (start !== undefined) {
         start.completed = true;
       }
+
       const metadata = this.childMetadata(agentId, agentName, childTurn);
+
       if (toolCallId !== undefined) metadata.toolCallId = toolCallId;
+
       if (internalCallId !== undefined) metadata.internalCallId = internalCallId;
+
       const observation: Parameters<typeof traceObservation>[0] = {
         kind: "tool",
         name: `${agentLabel(agentId, agentName)}.${toolName}`,
@@ -358,15 +387,20 @@ class ChildAgentToolTraceAccumulator {
         startedAt: start?.startedAt ?? new Date(),
         metadata,
       };
+
       if (input !== undefined) observation.input = input;
+
       if (typeof child.result === "string") observation.output = parseOrString(child.result);
+
       this.completedObservations.push(traceObservation(observation));
       return;
     }
 
     if (child.type === "error") {
       const metadata = this.childMetadata(agentId, agentName, childTurn);
+
       if (isRecord(child.usage)) metadata.usage = toJsonValue(child.usage);
+
       const status = child.error instanceof AgentRunCancelledError ? "cancelled" : "error";
       this.completedObservations.push(
         traceObservation({
@@ -402,15 +436,19 @@ class ChildAgentToolTraceAccumulator {
           : new Date(Math.min(agentStart.startedAt.getTime(), ...childStartTimes));
       const endedAt =
         childEndTimes.length === 0 ? new Date() : new Date(Math.max(...childEndTimes));
+      let agentStatus: "error" | "cancelled" | "success" = "success";
+
+      if (agentChildren.some((observation) => observation.status === "error")) {
+        agentStatus = "error";
+      } else if (agentChildren.some((observation) => observation.status === "cancelled")) {
+        agentStatus = "cancelled";
+      }
+
       const agentObservation = traceObservation({
         parentObservationId,
         kind: "agent",
         name: `${agentLabel(agentStart.agentId, agentStart.agentName)}.run`,
-        status: agentChildren.some((observation) => observation.status === "error")
-          ? "error"
-          : agentChildren.some((observation) => observation.status === "cancelled")
-            ? "cancelled"
-            : "success",
+        status: agentStatus,
         turn: this.parent.turn,
         startedAt,
         endedAt,
@@ -442,6 +480,7 @@ class ChildAgentToolTraceAccumulator {
   ): (typeof this.toolStarts)[number] | undefined {
     for (let index = this.toolStarts.length - 1; index >= 0; index -= 1) {
       const start = this.toolStarts[index];
+
       if (
         start === undefined ||
         start.completed ||
@@ -450,6 +489,7 @@ class ChildAgentToolTraceAccumulator {
       ) {
         continue;
       }
+
       if (toolCallId === undefined || start.toolCallId === toolCallId) {
         return start;
       }
@@ -506,13 +546,19 @@ function traceObservation(props: {
     endedAt: endedAt.toISOString(),
     durationMs: durationMs(props.startedAt, endedAt),
   };
+
   if (props.parentObservationId !== undefined) {
     observation.parentObservationId = props.parentObservationId;
   }
+
   if (props.input !== undefined) observation.input = props.input;
+
   if (props.output !== undefined) observation.output = props.output;
+
   if (props.error !== undefined) observation.error = props.error;
+
   if (props.metadata !== undefined) observation.metadata = props.metadata;
+
   return observation;
 }
 
@@ -620,6 +666,7 @@ function providerResponseSummary(
   if (rawResponse === undefined) {
     return undefined;
   }
+
   const reasoning = isRecord(rawResponse.reasoning) ? rawResponse.reasoning : undefined;
   const text = isRecord(rawResponse.text) ? rawResponse.text : undefined;
   const toolUsage = isRecord(rawResponse.tool_usage) ? rawResponse.tool_usage : undefined;
@@ -694,6 +741,7 @@ function traceOutput(value: unknown): string {
   if (typeof value === "string") {
     return value;
   }
+
   try {
     return JSON.stringify(toJsonValue(value));
   } catch {

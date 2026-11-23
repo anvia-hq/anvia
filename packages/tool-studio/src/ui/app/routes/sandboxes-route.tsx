@@ -8,6 +8,7 @@ export function SandboxesRoute() {
   const params = useParams({ strict: false }) as { sandboxRef?: string };
   const navigate = useNavigate();
   const pageProps: { initialSandboxRef?: string } = {};
+
   if (params.sandboxRef !== undefined) pageProps.initialSandboxRef = params.sandboxRef;
 
   return (

@@ -84,6 +84,7 @@ const defaultCompressionLevel = 2;
 /** A level noVNC accepts: a whole number from 0 to 9. Anything else falls back to the default. */
 function level(value: number | undefined, fallback: number): number {
   if (value === undefined || !Number.isFinite(value)) return fallback;
+
   return Math.min(9, Math.max(0, Math.round(value)));
 }
 
@@ -175,21 +176,27 @@ export const SandboxDesktop = forwardRef<SandboxDesktopHandle, SandboxDesktopPro
 
     useEffect(() => {
       const container = screen.current;
+
       if (container === null) return undefined;
+
       let disposed = false;
       let teardown: (() => void) | undefined;
 
       const publish = (next: RelayStatus) => {
         if (disposed) return;
+
         setStatus(next);
+
         // Who has control is unknown while the link is down.
         if (next.state !== "open") setControl(undefined);
+
         latest.current.onStatusChange?.(next);
       };
       publish({ state: "loading" });
 
       void (async () => {
         const { default: Rfb } = await import("@novnc/novnc");
+
         if (disposed) return;
 
         const link = new DesktopConnection({
@@ -214,6 +221,7 @@ export const SandboxDesktop = forwardRef<SandboxDesktopHandle, SandboxDesktopPro
           },
           onControl: (next) => {
             if (disposed) return;
+
             setControl(next);
             setNotice(undefined);
             latest.current.onControlChange?.(next);
@@ -267,12 +275,20 @@ export const SandboxDesktop = forwardRef<SandboxDesktopHandle, SandboxDesktopPro
         renderControls(controlsState)
       );
 
+    let controlState: "you" | "other" | "none" = "none";
+
+    if (control?.you === true) {
+      controlState = "you";
+    } else if (control?.held === true) {
+      controlState = "other";
+    }
+
     return (
       <div
         {...rest}
         data-state={status.state}
         data-readonly={viewOnly ? "" : undefined}
-        data-control={control?.you === true ? "you" : control?.held === true ? "other" : "none"}
+        data-control={controlState}
         style={{ ...rootStyle, ...style }}
       >
         <div ref={screen} style={screenStyle} />
@@ -307,25 +323,39 @@ function DefaultControls({
   release,
 }: SandboxDesktopControlsState) {
   if (status.state !== "open" || control === undefined) return null;
-  const who = control.you
-    ? "You have control"
-    : control.held
-      ? `${control.holder ?? "Someone"} has control`
-      : readOnly
-        ? "View only"
-        : "The agent has control";
+
+  let who: string;
+
+  if (control.you) {
+    who = "You have control";
+  } else if (control.held) {
+    who = `${control.holder ?? "Someone"} has control`;
+  } else if (readOnly) {
+    who = "View only";
+  } else {
+    who = "The agent has control";
+  }
+
+  let actionButton: ReactNode = null;
+
+  if (control.you) {
+    actionButton = (
+      <button type="button" onClick={release}>
+        Release
+      </button>
+    );
+  } else if (!readOnly && !control.held) {
+    actionButton = (
+      <button type="button" onClick={takeOver}>
+        Take over
+      </button>
+    );
+  }
+
   return (
     <div data-sandbox-desktop-controls="" style={controlsStyle}>
       <span>{who}</span>
-      {control.you ? (
-        <button type="button" onClick={release}>
-          Release
-        </button>
-      ) : !readOnly && !control.held ? (
-        <button type="button" onClick={takeOver}>
-          Take over
-        </button>
-      ) : null}
+      {actionButton}
       {notice === undefined ? null : <span role="alert">{notice.message}</span>}
     </div>
   );

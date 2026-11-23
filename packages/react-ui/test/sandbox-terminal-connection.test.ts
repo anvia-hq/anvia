@@ -191,7 +191,9 @@ describe("TerminalConnection", () => {
     const ctx = setup({
       getTicket: async () => {
         attempts += 1;
+
         if (attempts < 3) throw new Error("ticket endpoint is down");
+
         return "good";
       },
       reconnect: { initialDelayMs: 100, maxDelayMs: 1_000 },

@@ -15,6 +15,7 @@ import { parseSkillsTargets } from "./skills-targets";
 
 export function runCli(args: string[]): void {
   const [group, ...rest] = args;
+
   if (group === undefined || group === "--help" || group === "-h") {
     printUsage();
     return;
@@ -45,11 +46,13 @@ export function runCli(args: string[]): void {
       };
   const flags =
     command !== undefined && Object.hasOwn(commands, command) ? commands[command] : undefined;
+
   if (command === undefined || flags === undefined) {
     throw new Error(
       `Unknown command "${args.slice(0, grouped ? 2 : 1).join(" ")}". Run \`anvia --help\`.`,
     );
   }
+
   if (commandArgs.includes("--help") || commandArgs.includes("-h")) {
     printUsage(skills ? "skills" : "ui");
     return;
@@ -73,13 +76,16 @@ function parseArguments(args: string[], flags: string[]): string[] {
   const positional: string[] = [];
   for (let index = 0; index < args.length; index += 1) {
     const value = args[index]!;
+
     if (!value.startsWith("-")) {
       positional.push(value);
       continue;
     }
+
     if (!flags.includes(value)) {
       throw new Error(`Unknown option "${value}". Run \`anvia --help\`.`);
     }
+
     if (value === "--cwd" || value === "--dir") {
       optionValue(args.slice(index), value);
       index += 1;
@@ -234,10 +240,12 @@ function handleSkills(
   }
 
   const result = updateSkills(skillsOptions);
+
   if (!skillsOptions.apply && !skillsOptions.force) {
     reportSkillsPreview(result);
     return;
   }
+
   const changed = reportSkills(result, "update");
   printAdapterTargets(result.targets, changed);
 }
@@ -299,8 +307,16 @@ function printUsage(group?: "ui" | "skills"): void {
   const skills = `  anvia skills list
   anvia skills init [--claude] [--codex] [--cursor] [--agents] [--dir <path>] [--cwd <path>] [--force]
   anvia skills update [--claude] [--codex] [--cursor] [--agents] [--dir <path>] [--cwd <path>] [--apply]`;
+  let commands = `${ui}\n${skills}`;
+
+  if (group === "ui") {
+    commands = ui;
+  } else if (group === "skills") {
+    commands = skills;
+  }
+
   console.log(`Usage:
-${group === "ui" ? ui : group === "skills" ? skills : `${ui}\n${skills}`}
+${commands}
 
 Updates preview changes without writing files. Use --apply to write them.
 Compatibility: init/add/update alias ui commands; ui update --overwrite and skills update --force alias --apply.`);

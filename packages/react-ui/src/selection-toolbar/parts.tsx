@@ -40,6 +40,7 @@ const SelectionToolbarRoot = forwardRef<HTMLDivElement, SelectionToolbarRootProp
           if (sameSelection(currentSelection, nextSelection)) {
             return currentSelection;
           }
+
           onSelectionChange?.(nextSelection);
           return nextSelection;
         });
@@ -56,6 +57,7 @@ const SelectionToolbarRoot = forwardRef<HTMLDivElement, SelectionToolbarRootProp
       if (selection === undefined) {
         return;
       }
+
       await globalThis.navigator?.clipboard?.writeText(selection.text);
       clear();
     }, [clear, selection]);
@@ -64,18 +66,22 @@ const SelectionToolbarRoot = forwardRef<HTMLDivElement, SelectionToolbarRootProp
       if (selection === undefined) {
         return;
       }
+
       onQuote?.(selection);
       clear();
     }, [clear, onQuote, selection]);
 
     const value = useMemo<SelectionToolbarContextValue>(() => {
       const context: SelectionToolbarContextValue = { quote, copy, clear };
+
       if (selection !== undefined) context.selection = selection;
+
       return context;
     }, [clear, copy, quote, selection]);
 
     useEffect(() => {
       const document = globalThis.document;
+
       if (document === undefined) {
         return;
       }
@@ -186,9 +192,11 @@ function useSelectionToolbarAction(
   const handleClick = useCallback(
     (event: MouseEvent<HTMLButtonElement>) => {
       onClick?.(event);
+
       if (event.defaultPrevented || disabled) {
         return;
       }
+
       void action();
     },
     [action, disabled, onClick],
@@ -198,16 +206,20 @@ function useSelectionToolbarAction(
 
 function selectionFromDocument(document: Document): SelectionToolbarSelection | undefined {
   const selection = document.getSelection();
+
   if (selection === null || selection.rangeCount === 0) {
     return undefined;
   }
+
   const text = selection.toString();
+
   if (text.trim().length === 0) {
     return undefined;
   }
 
   const anchorMessage = messageElementFromNode(selection.anchorNode);
   const focusMessage = messageElementFromNode(selection.focusNode);
+
   if (
     anchorMessage === undefined ||
     focusMessage === undefined ||
@@ -229,17 +241,23 @@ function selectionRect(range: Range): DOMRect {
     getBoundingClientRect?: () => DOMRect;
   };
   const rect = rangeWithRect.getBoundingClientRect?.();
+
   if (rect !== undefined && (rect.width > 0 || rect.height > 0)) {
     return rect;
   }
+
   const firstRect = range.getClientRects().item(0);
+
   if (firstRect !== null) {
     return firstRect;
   }
+
   const DOMRectConstructor = globalThis.DOMRect;
+
   if (DOMRectConstructor !== undefined) {
     return new DOMRectConstructor(0, 0, 0, 0);
   }
+
   return {
     bottom: 0,
     height: 0,
@@ -260,6 +278,7 @@ function sameSelection(
   if (currentSelection === undefined || nextSelection === undefined) {
     return currentSelection === nextSelection;
   }
+
   return (
     currentSelection.text === nextSelection.text &&
     currentSelection.messageId === nextSelection.messageId &&

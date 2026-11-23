@@ -34,10 +34,12 @@ export async function generateImage<Model extends ImageGenerationModel>(
   assertPositiveInteger(height, "Image height");
 
   const request: ImageGenerationRequest = { prompt: options.prompt, width, height };
+
   if (options.providerOptions !== undefined) {
     assertJsonObject(options.providerOptions, "providerOptions");
     request.providerOptions = options.providerOptions;
   }
+
   const result = await runWithRetries(
     () => {
       throwIfAborted(options.abortSignal);
@@ -49,9 +51,11 @@ export async function generateImage<Model extends ImageGenerationModel>(
     resolveRetries(options.retries),
     { streaming: false, abortSignal: options.abortSignal },
   );
+
   if (!Array.isArray(result.images) || result.images.length === 0) {
     throw new Error("The image generation model returned no images.");
   }
+
   return result;
 }
 

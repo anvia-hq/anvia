@@ -174,7 +174,9 @@ describe.skipIf(!live)("Neo4j integration", () => {
       expect(overwritten.records[0]?.get("obsolete")).toBeNull();
       const documentIds = overwritten.records[0]?.get("documentIds");
       expect(Array.isArray(documentIds)).toBe(true);
+
       if (!Array.isArray(documentIds)) throw new TypeError("Expected document provenance ids.");
+
       expect([...documentIds].sort()).toEqual(["integration", "shared"]);
       const embeddingModel: EmbeddingModel = {
         provider: "test",

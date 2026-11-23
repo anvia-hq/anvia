@@ -120,6 +120,7 @@ export function SandboxesPage(props: {
       setSandboxes([]);
       return;
     }
+
     const controller = new AbortController();
     setSummaryLoadState("loading");
     setLocalError("");
@@ -162,6 +163,7 @@ export function SandboxesPage(props: {
       setFileLoadState("idle");
       return;
     }
+
     const controller = new AbortController();
     setFileLoadState("loading");
     const params = new URLSearchParams({ path: currentPath });
@@ -188,10 +190,12 @@ export function SandboxesPage(props: {
     if (selectedSandboxRef === undefined) {
       return;
     }
+
     const controller = new AbortController();
     setRuntimeLoadState("loading");
     const base = `/sandboxes/${encodeURIComponent(selectedSandboxRef)}`;
     const requests: Promise<void>[] = [];
+
     if (supportsPorts) {
       requests.push(
         requestJson<StudioSandboxPortsResponse>(
@@ -204,6 +208,7 @@ export function SandboxesPage(props: {
     } else {
       setPorts([]);
     }
+
     if (supportsProcesses) {
       requests.push(
         requestJson<StudioSandboxProcessesResponse>(
@@ -222,6 +227,7 @@ export function SandboxesPage(props: {
       setProcesses([]);
       setSelectedProcessId("");
     }
+
     void Promise.all(requests)
       .catch((error: unknown) => {
         if (!controller.signal.aborted) reportError(error);
@@ -237,6 +243,7 @@ export function SandboxesPage(props: {
       setProcessLogs(undefined);
       return;
     }
+
     const controller = new AbortController();
     const base = `/sandboxes/${encodeURIComponent(selectedSandboxRef)}/processes`;
     void requestJson<StudioSandboxProcessLogsResponse>(
@@ -269,15 +276,19 @@ export function SandboxesPage(props: {
     async (file: StudioSandboxFileEntry) => {
       previewRequest.current?.abort();
       previewRequest.current = undefined;
+
       if (selectedSandboxRef === undefined) {
         return;
       }
+
       if ((file.size ?? 0) > maxInlinePreviewBytes) {
         setPreview({ kind: "large", file });
         return;
       }
+
       const extension = fileExtension(file.path);
       const imageType = imageTypes.get(extension);
+
       if (!textExtensions.has(extension) && imageType === undefined) {
         setPreview({ kind: "binary", file });
         return;
@@ -291,19 +302,24 @@ export function SandboxesPage(props: {
         const response = await fetch(fileContentUrl(selectedSandboxRef, file.path), {
           signal: controller.signal,
         });
+
         if (!response.ok) {
           throw new Error(await responseErrorMessage(response, "Sandbox file"));
         }
+
         const bytes = await response.arrayBuffer();
+
         if (bytes.byteLength > maxInlinePreviewBytes) {
           setPreview({ kind: "large", file });
           return;
         }
+
         if (imageType !== undefined) {
           const url = URL.createObjectURL(new Blob([bytes], { type: imageType }));
           setPreview({ kind: "image", file, url });
           return;
         }
+
         try {
           const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
           setPreview({ kind: "text", file, text });
@@ -312,6 +328,7 @@ export function SandboxesPage(props: {
         }
       } catch (error) {
         if (controller.signal.aborted) return;
+
         reportError(error);
         setPreview({ kind: "binary", file });
       } finally {
@@ -675,6 +692,75 @@ function RuntimePanel(props: {
   supportsProcesses: boolean;
   onSelectProcess: (processId: string) => void;
 }) {
+  function renderPorts() {
+    if (!props.supportsPorts) {
+      return <RuntimeEmpty text="Published ports are not supported by this sandbox." />;
+    }
+
+    if (props.ports.length === 0) {
+      return <RuntimeEmpty text="No ports are published." />;
+    }
+
+    return (
+      <div className="grid gap-1">
+        {props.ports.map((port) => (
+          <div
+            className="grid grid-cols-[90px_minmax(0,1fr)] gap-3 rounded-md border border-hair px-3 py-2 font-mono text-xs"
+            key={`${port.containerPort}:${port.hostPort}`}
+          >
+            <span className="text-foreground">
+              {port.containerPort}/{port.protocol}
+            </span>
+            <span className="truncate text-muted-foreground">
+              {port.host}:{port.hostPort}
+            </span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  function renderProcesses() {
+    if (!props.supportsProcesses) {
+      return <RuntimeEmpty text="Managed processes are not supported by this sandbox." />;
+    }
+
+    if (props.processes.length === 0) {
+      return <RuntimeEmpty text="No managed processes are recorded." />;
+    }
+
+    return (
+      <div className="grid gap-1">
+        {props.processes.map((process) => (
+          <Button
+            className={cn(
+              "grid h-auto min-h-11 w-full grid-cols-[minmax(0,1fr)_auto] justify-stretch gap-3 rounded-md px-3 py-2 text-left",
+              process.id === props.selectedProcessId && "border-border bg-accent text-foreground",
+            )}
+            key={process.id}
+            type="button"
+            variant="ghost"
+            onClick={() => props.onSelectProcess(process.id)}
+          >
+            <span className="flex min-w-0 items-center gap-2">
+              <StudioIcon
+                className="text-muted-foreground"
+                icon={TerminalWindow}
+                aria-hidden="true"
+              />
+              <span className="truncate font-mono text-xs text-foreground">
+                {[process.command, ...process.args].join(" ")}
+              </span>
+            </span>
+            <StudioStatusBadge className="px-1.5 py-0.5 text-[10px]">
+              {process.status}
+            </StudioStatusBadge>
+          </Button>
+        ))}
+      </div>
+    );
+  }
+
   return (
     <StudioSurface className="p-4">
       <div className="flex items-center justify-between gap-3">
@@ -690,67 +776,9 @@ function RuntimePanel(props: {
       </div>
 
       <div className="mt-4 grid gap-4">
-        <RuntimeSection title="Ports">
-          {!props.supportsPorts ? (
-            <RuntimeEmpty text="Published ports are not supported by this sandbox." />
-          ) : props.ports.length === 0 ? (
-            <RuntimeEmpty text="No ports are published." />
-          ) : (
-            <div className="grid gap-1">
-              {props.ports.map((port) => (
-                <div
-                  className="grid grid-cols-[90px_minmax(0,1fr)] gap-3 rounded-md border border-hair px-3 py-2 font-mono text-xs"
-                  key={`${port.containerPort}:${port.hostPort}`}
-                >
-                  <span className="text-foreground">
-                    {port.containerPort}/{port.protocol}
-                  </span>
-                  <span className="truncate text-muted-foreground">
-                    {port.host}:{port.hostPort}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </RuntimeSection>
+        <RuntimeSection title="Ports">{renderPorts()}</RuntimeSection>
 
-        <RuntimeSection title="Processes">
-          {!props.supportsProcesses ? (
-            <RuntimeEmpty text="Managed processes are not supported by this sandbox." />
-          ) : props.processes.length === 0 ? (
-            <RuntimeEmpty text="No managed processes are recorded." />
-          ) : (
-            <div className="grid gap-1">
-              {props.processes.map((process) => (
-                <Button
-                  className={cn(
-                    "grid h-auto min-h-11 w-full grid-cols-[minmax(0,1fr)_auto] justify-stretch gap-3 rounded-md px-3 py-2 text-left",
-                    process.id === props.selectedProcessId &&
-                      "border-border bg-accent text-foreground",
-                  )}
-                  key={process.id}
-                  type="button"
-                  variant="ghost"
-                  onClick={() => props.onSelectProcess(process.id)}
-                >
-                  <span className="flex min-w-0 items-center gap-2">
-                    <StudioIcon
-                      className="text-muted-foreground"
-                      icon={TerminalWindow}
-                      aria-hidden="true"
-                    />
-                    <span className="truncate font-mono text-xs text-foreground">
-                      {[process.command, ...process.args].join(" ")}
-                    </span>
-                  </span>
-                  <StudioStatusBadge className="px-1.5 py-0.5 text-[10px]">
-                    {process.status}
-                  </StudioStatusBadge>
-                </Button>
-              ))}
-            </div>
-          )}
-        </RuntimeSection>
+        <RuntimeSection title="Processes">{renderProcesses()}</RuntimeSection>
 
         {props.selectedProcessId.length > 0 ? (
           <RuntimeSection title="Process logs">
@@ -824,7 +852,9 @@ function sandboxBreadcrumbs(filePath: string): Array<{ label: string; path: stri
 
 function fileContentUrl(sandboxRef: string, filePath: string, download = false): string {
   const params = new URLSearchParams({ path: filePath });
+
   if (download) params.set("download", "1");
+
   return `/sandboxes/${encodeURIComponent(sandboxRef)}/files/content?${params}`;
 }
 
@@ -840,7 +870,10 @@ function basename(filePath: string): string {
 
 function formatBytes(size: number | undefined): string {
   if (size === undefined) return "-";
+
   if (size < 1024) return `${size} B`;
+
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KiB`;
+
   return `${(size / (1024 * 1024)).toFixed(1)} MiB`;
 }

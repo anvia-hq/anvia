@@ -90,12 +90,15 @@ export const SandboxTerminal = forwardRef<SandboxTerminalHandle, SandboxTerminal
 
     useEffect(() => {
       const container = screen.current;
+
       if (container === null) return undefined;
+
       let disposed = false;
       let teardown: (() => void) | undefined;
 
       const publish = (next: SandboxTerminalStatus) => {
         if (disposed) return;
+
         setStatus(next);
         latest.current.onStatusChange?.(next);
       };
@@ -106,6 +109,7 @@ export const SandboxTerminal = forwardRef<SandboxTerminalHandle, SandboxTerminal
           import("@xterm/xterm"),
           import("@xterm/addon-fit"),
         ]);
+
         if (disposed) return;
 
         const xterm = new XTerm({
@@ -129,6 +133,7 @@ export const SandboxTerminal = forwardRef<SandboxTerminalHandle, SandboxTerminal
           // The hub redraws the session on every attach, so start from a clean screen.
           onOpen: (reconnected) => {
             if (reconnected) xterm.reset();
+
             if (!readOnly) xterm.focus();
           },
           onStatus: publish,

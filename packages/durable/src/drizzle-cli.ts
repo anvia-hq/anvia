@@ -30,9 +30,13 @@ function schemaFromConfig(cwd: string): string {
     "drizzle.config.mjs",
   ]) {
     const path = resolve(cwd, name);
+
     if (!existsSync(path)) continue;
+
     const match = readFileSync(path, "utf8").match(/\bschema\s*:\s*["']([^"']+)["']/);
+
     if (match?.[1] === undefined || /[*?{}[\]]/.test(match[1])) continue;
+
     const found = resolve(cwd, match[1]);
     return [".ts", ".js", ".mts", ".mjs", ".cts", ".cjs"].includes(extname(found))
       ? found

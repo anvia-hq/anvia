@@ -66,6 +66,7 @@ export async function runCli(
 
 function initDrizzleMemory(options: CliOptions, cwd: string, io: CliIo): void {
   const schemaPath = resolveSchemaPath(cwd, options.schema);
+
   if (!existsSync(schemaPath)) {
     throw new Error(
       `Drizzle schema not found at ${relative(cwd, schemaPath)}. Pass --schema <path> if your schema lives elsewhere.`,
@@ -95,11 +96,13 @@ function initDrizzleMemory(options: CliOptions, cwd: string, io: CliIo): void {
 
   io.log("");
   io.log("Next:");
+
   if (!options.appendToSchema) {
     io.log(
       `  Ensure ${relative(cwd, targetPath)} is included by the schema setting in drizzle.config.ts`,
     );
   }
+
   io.log("  npx drizzle-kit generate");
   io.log("  npx drizzle-kit migrate");
 }
@@ -161,9 +164,11 @@ function replaceOrAppendBlock(current: string, force: boolean): string {
     if (start === -1 || end === -1 || end < start) {
       throw new Error("Found incomplete Anvia memory schema markers in the Drizzle schema.");
     }
+
     if (!force) {
       throw new Error("Anvia memory schema block already exists. Use --force to replace it.");
     }
+
     return `${current.slice(0, start).trimEnd()}\n\n${block}\n${current
       .slice(end + appendEndMarker.length)
       .trimStart()}`;
@@ -183,6 +188,7 @@ function assertNoUnsafeSchemaConflicts(input: {
     const content = readFileSync(file, "utf8");
     const normalizedFile = resolve(file);
     const conflictNames = schemaConflicts(content);
+
     if (conflictNames.length === 0) {
       continue;
     }
@@ -191,11 +197,13 @@ function assertNoUnsafeSchemaConflicts(input: {
       if (input.appendToSchema && hasGeneratedAppendBlock(content)) {
         const outsideBlock = contentWithoutGeneratedAppendBlock(content);
         const outsideConflicts = schemaConflicts(outsideBlock);
+
         if (outsideConflicts.length > 0) {
           throw new Error(
             `Existing Drizzle schema exports conflict: ${outsideConflicts.join(", ")}`,
           );
         }
+
         continue;
       }
 
@@ -215,9 +223,11 @@ function schemaConflicts(content: string): string[] {
 function contentWithoutGeneratedAppendBlock(content: string): string {
   const start = content.indexOf(appendStartMarker);
   const end = content.indexOf(appendEndMarker);
+
   if (start === -1 || end === -1 || end < start) {
     return content;
   }
+
   return `${content.slice(0, start)}${content.slice(end + appendEndMarker.length)}`;
 }
 
@@ -231,6 +241,7 @@ function resolveSchemaPath(cwd: string, explicitSchema: string | undefined): str
   }
 
   const configSchema = schemaPathFromDrizzleConfig(cwd);
+
   if (configSchema !== undefined) {
     return configSchema;
   }
@@ -246,11 +257,13 @@ function schemaPathFromDrizzleConfig(cwd: string): string | undefined {
     "drizzle.config.mjs",
   ]) {
     const path = resolve(cwd, filename);
+
     if (!existsSync(path)) {
       continue;
     }
 
     const match = readFileSync(path, "utf8").match(/\bschema\s*:\s*["']([^"']+)["']/);
+
     if (match?.[1] === undefined || containsGlob(match[1])) {
       continue;
     }
@@ -282,6 +295,7 @@ function parseArgs(argv: string[]): CliOptions {
 
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
+
     if (arg === "--help" || arg === "-h") {
       options.help = true;
     } else if (arg === "--write") {
@@ -292,9 +306,11 @@ function parseArgs(argv: string[]): CliOptions {
       options.force = true;
     } else if (arg === "--schema") {
       const value = args[index + 1];
+
       if (value === undefined || value.startsWith("-")) {
         throw new Error("--schema requires a path.");
       }
+
       options.schema = value;
       index += 1;
     } else {

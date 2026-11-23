@@ -82,6 +82,7 @@ function deduplicateResults<T, Metadata extends VectorMetadata>(
   const bestById = new Map<string, VectorSearchResult<T, Metadata>>();
   for (const result of results) {
     const current = bestById.get(result.id);
+
     if (current === undefined || result.score > current.score) bestById.set(result.id, result);
   }
   return [...bestById.values()].sort((left, right) => right.score - left.score);

@@ -61,12 +61,16 @@ export type DefinedGoal = DefinedTask<GoalInput, GoalCheckpoint, GoalResult>;
 /** A sequential goal controller using the normal task scheduler, ownership, and effect journal. */
 export function defineGoal(policy: GoalDefinition): DefinedGoal {
   const defaultAgentId = policy.agentId;
+
   if (defaultAgentId !== undefined && !defaultAgentId.trim())
     throw new TypeError("Goal agentId must be nonblank.");
+
   const agentId = (input: GoalInput, checkpoint?: GoalCheckpoint): string => {
     const id = checkpoint?.agentId ?? input.agentId ?? defaultAgentId;
+
     if (id === undefined)
       throw new TypeError("Goal agentId is required in the submission or definition.");
+
     return id;
   };
   const goal: DefinedGoal = defineTask({
@@ -91,16 +95,22 @@ export function defineGoal(policy: GoalDefinition): DefinedGoal {
     }),
     run: async (ctx) => {
       const state = ctx.checkpoint;
+
       // Pin legacy goals before any new session or assessment can run.
       if (state.agentId === undefined)
         return { status: "pending", checkpoint: { ...state, agentId: agentId(ctx.input) } };
+
       if (state.phase === "paused") {
         const signal = await ctx.signalValue(`resume:${state.resumeIndex}`);
+
         if (signal === undefined) return pause(state, state.pauseReason!);
+
         const parsed = goalResumeSchema.safeParse(signal);
+
         if (!parsed.success)
           // Consume this immutable signal name and expose a new one for a corrected delivery.
           return pause({ ...state, resumeIndex: state.resumeIndex + 1 }, state.pauseReason!);
+
         // Edits and messages sent while paused take effect now; earlier pause requests are moot.
         const controlled = (await readControls(ctx, state)).state;
         return {
@@ -123,16 +133,22 @@ export function defineGoal(policy: GoalDefinition): DefinedGoal {
         // already holds the controls read then; read them again only for a new session.
         const existing = (await ctx.children()).find((child) => child.key === key);
         let admitted = state;
+
         if (existing === undefined) {
           const controlled = await readControls(ctx, state);
+
           if (controlled.pause) return pause(controlled.state, "requested");
+
           admitted = controlled.state;
           const reason = admissionStop(admitted);
+
           if (reason !== undefined) return pause(admitted, reason);
         }
+
         const goal = effective(ctx.input, admitted);
         const continueFrom = policy.rounds === "continue" ? admitted.previousChildKey : undefined;
         let childId = existing?.id;
+
         if (childId === undefined) {
           try {
             const input: Omit<TaskAgentInput, "prompt"> = {
@@ -181,9 +197,11 @@ export function defineGoal(policy: GoalDefinition): DefinedGoal {
             // A registration can disappear between sessions or across a restart.
             if (error instanceof DurableNotFoundError)
               throw new DurableRecoveryError(error.message);
+
             throw error;
           }
         }
+
         // Messages go to one session only.
         const { messages: _delivered, ...rest } = admitted;
         return {
@@ -209,6 +227,7 @@ export function defineGoal(policy: GoalDefinition): DefinedGoal {
       const continueAfter = () => {
         if (settled !== undefined) next.previousChildKey = settled.key;
       };
+
       if (run.status === "completed" && run.outcome?.type === "response") {
         continueAfter();
         session = {
@@ -237,6 +256,7 @@ export function defineGoal(policy: GoalDefinition): DefinedGoal {
           "session_failed",
         );
       }
+
       const { roundMessages, ...journaled } = session;
       const assessmentInput = {
         ...effective(ctx.input, state),
@@ -264,8 +284,10 @@ export function defineGoal(policy: GoalDefinition): DefinedGoal {
               throw new DurableRecoveryError(`Goal assessment failed: ${errorMessage(error)}`);
             }
             const parsed = goalDecisionSchema.safeParse(value);
+
             if (!parsed.success)
               throw new DurableRecoveryError("Goal assessor returned an invalid decision.");
+
             return json(parsed.data);
           },
           "safe",
@@ -274,6 +296,7 @@ export function defineGoal(policy: GoalDefinition): DefinedGoal {
       next.handoff = decision;
       next.noProgressSessions =
         decision.progressKey === state.handoff?.progressKey ? state.noProgressSessions + 1 : 0;
+
       if (decision.status === "complete") {
         return {
           status: "completed",
@@ -285,9 +308,12 @@ export function defineGoal(policy: GoalDefinition): DefinedGoal {
           },
         };
       }
+
       if (decision.status === "blocked") return pause(next, "blocked");
+
       if (next.noProgressSessions >= next.limits.maxConsecutiveNoProgressSessions)
         return pause(next, "no_progress");
+
       return { status: "pending", checkpoint: next };
     },
   });
@@ -315,8 +341,10 @@ function pause(
  */
 export function journaledDecision(value: JsonValue): GoalDecision {
   const parsed = goalDecisionSchema.safeParse(value);
+
   if (!parsed.success)
     throw new DurableRecoveryError("Goal assessment journal holds an invalid decision.");
+
   return parsed.data;
 }
 
@@ -344,25 +372,32 @@ async function readControls(
   for (let value; (value = await ctx.signalValue(`edit:${controls.edit}`)) !== undefined;) {
     controls.edit++;
     const edit = goalEditSchema.safeParse(value);
+
     if (!edit.success) continue;
+
     if (edit.data.objective !== undefined) next.objective = edit.data.objective;
+
     if (edit.data.acceptanceCriteria !== undefined)
       next.acceptanceCriteria = edit.data.acceptanceCriteria;
   }
   for (let value; (value = await ctx.signalValue(`message:${controls.message}`)) !== undefined;) {
     controls.message++;
     const message = goalMessageSchema.safeParse(value);
+
     if (message.success) messages.push(message.data.text);
   }
   for (let value; (value = await ctx.signalValue(`pause:${controls.pause}`)) !== undefined;) {
     controls.pause++;
+
     if (goalPauseSchema.safeParse(value).success) pause = true;
   }
   const unchanged =
     controls.edit === (state.controls?.edit ?? 0) &&
     controls.message === (state.controls?.message ?? 0) &&
     controls.pause === (state.controls?.pause ?? 0);
+
   if (unchanged) return { state, pause };
+
   next.controls = controls;
 
   if (messages.length) {
@@ -386,10 +421,15 @@ export function goalControlSignal(task: TaskRecord, family: keyof GoalControls):
 
 function admissionStop(state: GoalCheckpoint): GoalPauseReason | undefined {
   const limits = state.limits;
+
   if (state.sessions >= limits.maxSessions) return "max_sessions";
+
   if (state.modelTurns >= limits.maxTotalModelTurns) return "max_model_turns";
+
   if (limits.maxTotalTokens !== undefined && state.totalTokens >= limits.maxTotalTokens)
     return "max_tokens";
+
   if (limits.deadline !== undefined && Date.now() >= Date.parse(limits.deadline)) return "deadline";
+
   return undefined;
 }

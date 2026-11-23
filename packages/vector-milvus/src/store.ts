@@ -41,7 +41,9 @@ export class MilvusVectorStore<
   async validate(): Promise<void> {
     const client = await this.owner.nativeClient();
     const { value } = await client.hasCollection({ collection_name: this.options.collectionName });
+
     if (!value) throw new Error(`Milvus collection ${this.options.collectionName} does not exist`);
+
     if (client.describeCollection !== undefined) {
       validateMilvusCollection(
         await client.describeCollection({ collection_name: this.options.collectionName }),
@@ -49,12 +51,15 @@ export class MilvusVectorStore<
         this.options.dimensions,
       );
     }
+
     await client.loadCollection({ collection_name: this.options.collectionName });
   }
 
   async upsert(options: VectorStoreUpsertOptions<T, Metadata>): Promise<void> {
     validateDocuments(options.documents, this.options.dimensions);
+
     if (options.documents.length === 0) return;
+
     const client = await this.owner.nativeClient();
     const ids = options.documents.map((document) => JSON.stringify(document.id)).join(", ");
     await client.delete({
@@ -62,6 +67,7 @@ export class MilvusVectorStore<
       filter: `${documentIdFieldName} in [${ids}]`,
     });
     const data = options.documents.flatMap((document) => milvusRows(document));
+
     if (data.length > 0)
       await client.insert({
         ...options.providerOptions,
@@ -90,14 +96,18 @@ export class MilvusVectorStore<
         metricName(this.options.metric),
       );
       const results = selectResults(unfiltered, request);
+
       if (
         results.length >= request.topK ||
         milvusResultCount(response) < candidateLimit ||
         hasResultBelowMinimum(unfiltered, request.minScore)
       )
         return results;
+
       const nextLimit = nextCandidateLimit(candidateLimit);
+
       if (nextLimit === candidateLimit) return results;
+
       candidateLimit = nextLimit;
     }
   }
@@ -126,7 +136,9 @@ function nextCandidateLimit(current: number): number {
 
 function metricName(metric: MilvusVectorStoreOptions["metric"]): MilvusMetric {
   if (metric === "euclidean") return "L2";
+
   if (metric === "dotProduct") return "IP";
+
   return "COSINE";
 }
 function throwIfAborted(signal: AbortSignal | undefined): void {
@@ -147,9 +159,12 @@ function validateDocuments<T, Metadata extends VectorMetadata>(
   const ids = new Set<string>();
   for (const document of documents) {
     if (ids.has(document.id)) throw new TypeError(`Duplicate vector document id: ${document.id}`);
+
     ids.add(document.id);
+
     if (document.embeddings.length === 0)
       throw new TypeError(`Vector document ${document.id} must contain at least one embedding.`);
+
     for (const embedding of document.embeddings)
       if (embedding.vector.length !== dimensions)
         throw new Error(`Vector dimension mismatch for document ${document.id}`);
@@ -160,11 +175,15 @@ function validateDocuments<T, Metadata extends VectorMetadata>(
 
 function validateSearchRequest(request: VectorSearchRequest, dimensions: number): void {
   throwIfAborted(request.abortSignal);
+
   if (!Number.isSafeInteger(request.topK) || request.topK < 1)
     throw new RangeError("Vector search topK must be a positive safe integer.");
+
   if (request.minScore !== undefined && !Number.isFinite(request.minScore))
     throw new RangeError("Vector search minScore must be a finite number.");
+
   if (request.vector.length !== dimensions) throw new Error("Vector dimension mismatch for query");
+
   if (!request.vector.every(Number.isFinite))
     throw new Error("Vector search query must contain only finite numbers");
 }

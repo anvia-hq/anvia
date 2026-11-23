@@ -186,7 +186,9 @@ describe("model call cancellation", () => {
       capabilities: { ...capabilities, streaming: false },
       async completion(_request, options) {
         calls += 1;
+
         if (options?.abortSignal !== undefined) providerSignals.push(options.abortSignal);
+
         controller.abort("caller stopped");
         throw Object.assign(new Error("provider unavailable"), { status: 503 });
       },
@@ -257,7 +259,9 @@ class CompletionQueueModel implements CompletionModel {
     _options?: ModelCallOptions,
   ): Promise<CompletionResponse> {
     const next = this.responses.shift();
+
     if (next === undefined) throw new Error("No queued response.");
+
     return next;
   }
 }

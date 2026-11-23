@@ -42,6 +42,7 @@ describe("Studio sandbox registration and routes", () => {
     expect(listResponse.headers.get("cache-control")).toBe("no-store");
     const summary = (await listResponse.json()) as StudioSandboxesSummary;
     const ref = summary.sandboxes[0]?.ref;
+
     if (ref === undefined) throw new Error("Expected a sandbox reference");
 
     const files = await app.request(`http://studio.test/sandboxes/${ref}/files?path=.`);
@@ -100,7 +101,9 @@ describe("Studio sandbox registration and routes", () => {
   it("rejects incomplete inspectors and unknown agent associations", () => {
     const inspector = createSandboxInspector();
     const listFiles = inspector.listFiles;
+
     if (listFiles === undefined) throw new Error("Expected file inspection.");
+
     expect(() =>
       createStudioSandboxRegistry(
         [],
@@ -133,6 +136,7 @@ describe("Studio sandbox registration and routes", () => {
       await app.request("http://studio.test/sandboxes")
     ).json()) as StudioSandboxesSummary;
     const ref = summary.sandboxes[0]?.ref;
+
     if (ref === undefined) throw new Error("Expected a sandbox reference");
 
     expect((await app.request(`http://studio.test/sandboxes/${ref}/files`)).status).toBe(501);
@@ -142,7 +146,9 @@ describe("Studio sandbox registration and routes", () => {
   it("maps unavailable owner state without exposing internals", async () => {
     const inspector = createSandboxInspector();
     const listFiles = inspector.listFiles;
+
     if (listFiles === undefined) throw new Error("Expected file inspection.");
+
     vi.mocked(listFiles).mockRejectedValueOnce(
       Object.assign(new Error("destroyed details"), { code: "invalid_state" }),
     );
@@ -151,7 +157,9 @@ describe("Studio sandbox registration and routes", () => {
       await app.request("http://studio.test/sandboxes")
     ).json()) as StudioSandboxesSummary;
     const ref = summary.sandboxes[0]?.ref;
+
     if (ref === undefined) throw new Error("Expected a sandbox reference");
+
     const response = await app.request(`http://studio.test/sandboxes/${ref}/files`);
     expect(response.status).toBe(409);
     expect(await response.text()).not.toContain("destroyed details");

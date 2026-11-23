@@ -45,6 +45,7 @@ export class InMemoryMemoryStore implements MemoryStore {
 
     if (options.idempotencyKey !== undefined) {
       const committed = state.writes.get(options.idempotencyKey);
+
       if (committed !== undefined) {
         const status = committed === fingerprint ? "duplicate" : "conflict";
         return { status, version: String(state.version) };
@@ -60,9 +61,11 @@ export class InMemoryMemoryStore implements MemoryStore {
 
     state.messages.push(...options.messages);
     state.version += 1;
+
     if (options.idempotencyKey !== undefined) {
       state.writes.set(options.idempotencyKey, fingerprint);
     }
+
     return { status: "committed", version: String(state.version) };
   }
 
@@ -75,10 +78,12 @@ export class InMemoryMemoryStore implements MemoryStore {
   private state(scope: MemoryLoadOptions["scope"]): ScopeState {
     const key = createMemoryScopeKey({ scope, includeUserId: true });
     let state = this.scopes.get(key);
+
     if (state === undefined) {
       state = { messages: [], version: 0, writes: new Map() };
       this.scopes.set(key, state);
     }
+
     return state;
   }
 }

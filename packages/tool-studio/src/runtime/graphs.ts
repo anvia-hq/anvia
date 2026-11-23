@@ -14,11 +14,15 @@ export function registerGraphRoutes(
   app.get("/graphs", (c) => c.json({ graphs: [...graphs.values()].map(graphConfig) }));
   app.post("/graphs/:graphId/explore", async (c) => {
     const registration = graphs.get(c.req.param("graphId"));
+
     if (registration === undefined) {
       return errorResponse(c, 404, "not_found", "Graph not found");
     }
+
     const body = await parseJsonBody(c, (value) => parseExploreRequest(c, value));
+
     if ("error" in body) return body.error;
+
     const input = exploreOptionsWithSignal(body, c.req.raw.signal);
     let options: ReturnType<typeof resolveGraphExploreOptions>;
     try {
@@ -43,9 +47,11 @@ function graphRegistry(
     if (typeof registration.id !== "string" || registration.id.length === 0) {
       throw new TypeError("Studio graph id must be a non-empty string.");
     }
+
     if (graphs.has(registration.id)) {
       throw new TypeError(`Duplicate Studio graph id: ${registration.id}.`);
     }
+
     graphs.set(registration.id, registration);
   }
   return graphs;
@@ -58,18 +64,25 @@ function parseExploreRequest(
   if (!isObject(value) || (value.mode !== "overview" && value.mode !== "expand")) {
     return { error: errorResponse(c, 400, "bad_request", "mode must be overview or expand") };
   }
+
   const common = parseCommonOptions(c, value);
+
   if ("error" in common) return common;
+
   if (value.mode === "overview") return { ...common, mode: "overview" };
+
   const nodeIds = stringList(value.nodeIds);
+
   if (nodeIds === undefined) {
     return { error: errorResponse(c, 400, "bad_request", "nodeIds must be a string array") };
   }
+
   const request: Extract<StudioGraphExploreRequest, { mode: "expand" }> = {
     ...common,
     mode: "expand",
     nodeIds,
   };
+
   if (
     value.direction === "outgoing" ||
     value.direction === "incoming" ||
@@ -81,10 +94,12 @@ function parseExploreRequest(
       error: errorResponse(c, 400, "bad_request", "direction must be outgoing, incoming, or both"),
     };
   }
+
   if (typeof value.maxDepth === "number") request.maxDepth = value.maxDepth;
   else if (value.maxDepth !== undefined) {
     return { error: errorResponse(c, 400, "bad_request", "maxDepth must be a number") };
   }
+
   return request;
 }
 
@@ -107,11 +122,15 @@ function parseCommonOptions(
     ["relationships", "relationships"],
   ] as const) {
     const selected = value[key];
+
     if (selected === undefined) continue;
+
     const values = stringList(selected);
+
     if (values === undefined) {
       return { error: errorResponse(c, 400, "bad_request", `${label} must be a string array`) };
     }
+
     request[key] = values;
   }
   for (const [key, label] of [
@@ -119,10 +138,13 @@ function parseCommonOptions(
     ["maxRelationships", "maxRelationships"],
   ] as const) {
     const selected = value[key];
+
     if (selected === undefined) continue;
+
     if (typeof selected !== "number") {
       return { error: errorResponse(c, 400, "bad_request", `${label} must be a number`) };
     }
+
     request[key] = selected;
   }
   return request;
@@ -137,5 +159,6 @@ function exploreOptionsWithSignal(
 
 function stringList(value: unknown): string[] | undefined {
   if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) return undefined;
+
   return value;
 }

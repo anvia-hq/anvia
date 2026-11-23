@@ -14,6 +14,7 @@ export function createAgentTool<Output, M extends CompletionModel, ContextDocume
   if (options.suspension !== "reject") {
     throw new TypeError('Agent.asTool() requires suspension: "reject".');
   }
+
   const description =
     options.description ?? agent.description ?? `Prompt the ${options.name} agent.`;
 
@@ -42,40 +43,52 @@ export function createAgentTool<Output, M extends CompletionModel, ContextDocume
             agentId: agent.id,
             event,
           };
+
           if (agent.name !== undefined) {
             streamEvent.agentName = agent.name;
           }
+
           await context.emitStreamEvent(streamEvent);
+
           if (event.type === "error") {
             throw event.error;
           }
+
           if (event.type === "interaction") {
             throw new AgentToolSuspensionError(event);
           }
+
           if (event.type === "blocked") {
             throw new AgentRunBlockedError(event);
           }
+
           if (event.type === "response") {
             output = event.output;
             completed = true;
           }
         }
+
         if (!completed) {
           throw new Error(`Agent tool "${options.name}" ended without a final result.`);
         }
+
         return output;
       }
+
       const response = await agent.generate({
         prompt,
         maxTurns: options.maxTurns,
         abortSignal: context.abortSignal,
       });
+
       if (response.type === "interaction") {
         throw new AgentToolSuspensionError(response);
       }
+
       if (response.type === "blocked") {
         throw new AgentRunBlockedError(response);
       }
+
       return response.output;
     },
   });

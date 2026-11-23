@@ -22,17 +22,23 @@ export function createTracing(options: CreateTracingOptions = {}): LangfuseClien
     release: env.release,
     serviceName: options.name ?? env.serviceName ?? "langfuse-ops",
   };
+
   if (hasScoreOptions) {
     const scores: NonNullable<(typeof clientOptions)["scores"]> = {};
+
     if (options.scoreBatchSize !== undefined) scores.batchSize = options.scoreBatchSize;
+
     if (options.scoreFlushIntervalMs !== undefined) {
       scores.flushIntervalMs = options.scoreFlushIntervalMs;
     }
+
     if (options.scoreMaxAttempts !== undefined) {
       scores.retries = { maxAttempts: options.scoreMaxAttempts };
     }
+
     clientOptions.scores = scores;
   }
+
   return new LangfuseClient(clientOptions);
 }
 

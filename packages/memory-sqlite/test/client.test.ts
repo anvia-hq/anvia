@@ -183,6 +183,7 @@ describe("SqliteMemoryClient", () => {
       return new Proxy(statement, {
         get(target, property) {
           const value = Reflect.get(target, property, target);
+
           if (property === "get") {
             const boundGet = (target as { get: (...getArgs: unknown[]) => unknown }).get;
             return (...args: unknown[]) => {
@@ -190,6 +191,7 @@ describe("SqliteMemoryClient", () => {
               return row === undefined ? null : row;
             };
           }
+
           return typeof value === "function" ? value.bind(target) : value;
         },
       }) as typeof statement;

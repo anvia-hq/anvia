@@ -118,7 +118,9 @@ export class RemoteSandboxTerminal implements SandboxTerminal {
       await handle.opened(this.openTimeoutMs, options.abortSignal);
     } catch (error) {
       connection.unregisterPty(ptyId);
+
       if (error instanceof LinkClosedError) throw this.unavailable(error);
+
       throw error;
     }
     return handle;
@@ -246,6 +248,7 @@ class RemoteTerminalHandle implements TerminalHandle {
           reject(error);
         },
       };
+
       if (signal?.aborted) abort();
       else signal?.addEventListener("abort", abort, { once: true });
     });
@@ -253,6 +256,7 @@ class RemoteTerminalHandle implements TerminalHandle {
 
   write(data: string | Uint8Array): void {
     if (this.stream.endedWith !== undefined) return;
+
     const bytes = typeof data === "string" ? new TextEncoder().encode(data) : data;
     for (let start = 0; start < bytes.byteLength; start += inputChunkBytes) {
       this.trySend({
@@ -265,12 +269,15 @@ class RemoteTerminalHandle implements TerminalHandle {
 
   resize(cols: number, rows: number): void {
     assertSize(cols, rows);
+
     if (this.stream.endedWith !== undefined) return;
+
     this.trySend({ type: "pty.resize", ptyId: this.ptyId, cols, rows });
   }
 
   close(): void {
     if (this.stream.endedWith !== undefined) return;
+
     this.trySend({ type: "pty.close", ptyId: this.ptyId });
     this.end({ reason: "closed" });
   }

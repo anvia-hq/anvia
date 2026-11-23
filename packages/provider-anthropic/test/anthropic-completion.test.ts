@@ -1367,9 +1367,11 @@ function finalResponseFrom(events: CompletionModelStreamEvent[]): CompletionResp
   const event = events.find(
     (item): item is Extract<CompletionModelStreamEvent, { type: "final" }> => item.type === "final",
   );
+
   if (event === undefined) {
     throw new Error("Expected final stream event");
   }
+
   return event.response;
 }
 
@@ -1452,6 +1454,7 @@ function thrownProviderOutputError(call: () => unknown): CompletionProviderOutpu
     call();
   } catch (error) {
     if (error instanceof CompletionProviderOutputError) return error;
+
     throw error;
   }
   throw new Error("Expected CompletionProviderOutputError");

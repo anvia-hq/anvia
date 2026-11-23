@@ -26,8 +26,11 @@ export class WeaviateVectorClient {
   }
   async close(): Promise<void> {
     if (this.closed) return;
+
     this.closed = true;
+
     if (this.injected !== undefined || this.clientPromise === undefined) return;
+
     await (await this.clientPromise).close?.();
   }
   private async createClient(): Promise<WeaviateClientLike> {
@@ -54,8 +57,10 @@ function port(
   protocol: string,
 ): number {
   const value = configured ?? (environment === undefined ? fallback : Number(environment));
+
   if (!Number.isSafeInteger(value) || value < 1 || value > 65_535) {
     throw new RangeError(`Weaviate ${protocol} port must be an integer between 1 and 65535.`);
   }
+
   return value;
 }

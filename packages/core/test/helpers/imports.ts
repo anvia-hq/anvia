@@ -53,7 +53,9 @@ export const AssistantContent = {
   },
   reasoning(text: string, id?: string): ReasoningPart {
     let part: ReasoningPart = { type: "reasoning", text };
+
     if (id !== undefined) part = { ...part, id };
+
     return part;
   },
   reasoningFromContent(details: readonly ReasoningDetail[], id?: string): ReasoningPart {
@@ -63,7 +65,9 @@ export const AssistantContent = {
       )
       .join("");
     let part: ReasoningPart = { type: "reasoning", text, details };
+
     if (id !== undefined) part = { ...part, id };
+
     return part;
   },
   reasoningSummary(text: string, id?: string): ReasoningPart {
@@ -72,7 +76,9 @@ export const AssistantContent = {
       text,
       details: [{ type: "summary", text }],
     };
+
     if (id !== undefined) part = { ...part, id };
+
     return part;
   },
   toolCall(toolCallId: string, toolName: string, input: JsonValue, callId?: string): ToolCallPart {
@@ -82,7 +88,9 @@ export const AssistantContent = {
       toolName,
       input,
     };
+
     if (callId !== undefined) part = { ...part, callId };
+
     return part;
   },
   imageBase64(data: string, mediaType: string): ImagePart {
@@ -137,18 +145,25 @@ export const ToolContent = {
     const callId = typeof options === "string" ? options : options?.callId;
     const toolName =
       typeof options === "object" ? (options.toolName ?? "tool") : positionalToolName;
+    let output: ToolResultPart["output"];
+
+    if (typeof value === "string") {
+      output = { type: "text", value };
+    } else if (Array.isArray(value)) {
+      output = { type: "content", value: value as unknown as readonly ToolResultContentPart[] };
+    } else {
+      output = { type: "json", value: value as JsonValue };
+    }
+
     let part: ToolResultPart = {
       type: "tool-result",
       toolCallId,
       toolName,
-      output:
-        typeof value === "string"
-          ? { type: "text", value }
-          : Array.isArray(value)
-            ? { type: "content", value: value as unknown as readonly ToolResultContentPart[] }
-            : { type: "json", value: value as JsonValue },
+      output,
     };
+
     if (callId !== undefined) part = { ...part, callId };
+
     return part;
   },
 };
@@ -190,12 +205,16 @@ export const Message = {
     const toolResultOptions: { callId?: string; toolName: string } = {
       toolName: options?.toolName ?? "tool",
     };
+
     if (options?.callId !== undefined) toolResultOptions.callId = options.callId;
+
     let message: ToolMessage = {
       role: "tool",
       content: [ToolContent.toolResult(toolCallId, value, toolResultOptions)],
     };
+
     if (options?.metadata !== undefined) message = { ...message, metadata: options.metadata };
+
     return message;
   },
 };
@@ -204,27 +223,35 @@ function normalizeToolResult(value: unknown): ToolResultPart {
   if (typeof value !== "object" || value === null) {
     throw new TypeError("Invalid test tool result fixture");
   }
+
   if ("type" in value && value.type === "tool-result") {
     return value as ToolResultPart;
   }
+
   const legacy = value as {
     id?: string;
     callId?: string;
     toolName?: string;
     content?: unknown;
   };
-  const legacyContent = Array.isArray(legacy.content)
-    ? legacy.content
-    : typeof legacy.content === "object" &&
-        legacy.content !== null &&
-        "content" in legacy.content &&
-        Array.isArray(legacy.content.content)
-      ? legacy.content.content
-      : [];
+  let legacyContent: unknown[] = [];
+
+  if (Array.isArray(legacy.content)) {
+    legacyContent = legacy.content;
+  } else if (
+    typeof legacy.content === "object" &&
+    legacy.content !== null &&
+    "content" in legacy.content &&
+    Array.isArray(legacy.content.content)
+  ) {
+    legacyContent = legacy.content.content;
+  }
+
   const content = legacyContent.map((part): ToolResultContentPart => {
     if (typeof part !== "object" || part === null) {
       throw new TypeError("Invalid test tool result content fixture");
     }
+
     if ("type" in part && part.type === "image") {
       const image = part as { data?: string; mediaType?: string };
       return {
@@ -233,26 +260,35 @@ function normalizeToolResult(value: unknown): ToolResultPart {
         mediaType: image.mediaType ?? "image/png",
       };
     }
+
     return part as ToolResultContentPart;
   });
   const text = content.length === 1 && content[0]?.type === "text" ? content[0].text : undefined;
-  const output =
-    text?.startsWith("ToolCallError:") === true
-      ? ({ type: "error-text", value: text } as const)
-      : text === "Rejected by hook." ||
-          text === "Tool approval was rejected." ||
-          text === "Not allowed."
-        ? ({ type: "execution-denied", reason: text } as const)
-        : text !== undefined
-          ? numericJsonOutput(text)
-          : ({ type: "content", value: content } as const);
+  let output: ToolResultPart["output"];
+
+  if (text?.startsWith("ToolCallError:") === true) {
+    output = { type: "error-text", value: text };
+  } else if (
+    text === "Rejected by hook." ||
+    text === "Tool approval was rejected." ||
+    text === "Not allowed."
+  ) {
+    output = { type: "execution-denied", reason: text };
+  } else if (text !== undefined) {
+    output = numericJsonOutput(text);
+  } else {
+    output = { type: "content", value: content };
+  }
+
   let result: ToolResultPart = {
     type: "tool-result",
     toolCallId: legacy.id ?? "tool",
     toolName: legacy.toolName ?? "tool",
     output,
   };
+
   if (legacy.callId !== undefined) result = { ...result, callId: legacy.callId };
+
   return result;
 }
 
@@ -262,6 +298,7 @@ function numericJsonOutput(
   if (!/^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(text)) {
     return { type: "text", value: text };
   }
+
   return { type: "json", value: JSON.parse(text) as JsonValue };
 }
 

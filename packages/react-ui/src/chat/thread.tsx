@@ -34,9 +34,11 @@ const ThreadRoot = forwardRef<HTMLDivElement, PrimitiveProps<"div">>(
     const [atBottom, setAtBottom] = useState(true);
     const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
       const viewport = viewportRef.current;
+
       if (viewport === null) {
         return;
       }
+
       viewport.scrollTo({ top: viewport.scrollHeight, behavior });
     }, []);
     const thread = useMemo<ThreadContextValue>(
@@ -80,6 +82,7 @@ const ThreadViewport = forwardRef<HTMLDivElement, ThreadViewportProps>(function 
 
   useEffect(() => {
     const hasMessages = messages.length > 0;
+
     if (autoScroll && (thread.atBottom || !hasMessages)) {
       thread.scrollToBottom("auto");
     }
@@ -87,13 +90,17 @@ const ThreadViewport = forwardRef<HTMLDivElement, ThreadViewportProps>(function 
 
   useEffect(() => {
     const viewport = thread.viewportRef.current;
+
     if (viewport === null || !autoScroll || typeof ResizeObserver !== "function") {
       return;
     }
+
     const content = thread.messagesRef.current;
+
     if (content === null) {
       return;
     }
+
     const observer = new ResizeObserver(() => {
       if (thread.atBottom) {
         thread.scrollToBottom("auto");
@@ -140,6 +147,7 @@ const ThreadViewportFooter = forwardRef<HTMLDivElement, PrimitiveProps<"div">>(
 const ThreadEmpty = forwardRef<HTMLDivElement, PrimitiveProps<"div">>(
   function ThreadEmpty(props, ref) {
     const chat = useChatContext();
+
     if (chat.messages.length > 0) {
       return null;
     }
@@ -179,6 +187,7 @@ const ThreadStatus = forwardRef<HTMLDivElement, ThreadStatusProps>(function Thre
 const ThreadLoading = forwardRef<HTMLDivElement, PrimitiveProps<"div">>(
   function ThreadLoading(props, ref) {
     const chat = useChatContext();
+
     if (chat.status !== "submitted" && chat.status !== "streaming") {
       return null;
     }
@@ -203,9 +212,11 @@ const ThreadError = forwardRef<HTMLDivElement, ThreadErrorProps>(function Thread
   ref,
 ) {
   const chat = useChatContext();
+
   if (chat.status !== "error" && chat.error === undefined) {
     return null;
   }
+
   const renderedChildren = typeof children === "function" ? children(chat.error) : children;
 
   return renderPrimitive(
@@ -238,6 +249,7 @@ const ThreadMessages = forwardRef<HTMLDivElement, ThreadMessagesProps>(function 
     [ref, thread.messagesRef],
   );
   const empty = chat.messages.length === 0;
+
   if (empty && !keepMounted) {
     return null;
   }
@@ -267,6 +279,7 @@ const ThreadSuggestions = forwardRef<HTMLDivElement, ThreadSuggestionsProps>(
     const chat = useChatContext();
     const suggestions = chat.suggestions ?? [];
     const empty = suggestions.length === 0;
+
     if (empty && !keepMounted) {
       return null;
     }
@@ -309,9 +322,11 @@ const ThreadSuggestion = forwardRef<HTMLButtonElement, ThreadSuggestionProps>(
     const handleClick = useCallback(
       (event: MouseEvent<HTMLButtonElement>) => {
         onClick?.(event);
+
         if (event.defaultPrevented || disabled) {
           return;
         }
+
         void chat.sendMessage({ text: suggestionPrompt });
       },
       [chat, disabled, onClick, suggestionPrompt],
@@ -340,9 +355,11 @@ const ThreadScrollToBottom = forwardRef<HTMLButtonElement, PrimitiveProps<"butto
     const handleClick = useCallback(
       (event: MouseEvent<HTMLButtonElement>) => {
         onClick?.(event);
+
         if (event.defaultPrevented || disabled) {
           return;
         }
+
         thread.scrollToBottom();
       },
       [disabled, onClick, thread],
@@ -378,9 +395,11 @@ function errorMessage(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
   }
+
   if (typeof error === "string") {
     return error;
   }
+
   return "Something went wrong.";
 }
 

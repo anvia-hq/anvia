@@ -5,6 +5,7 @@ export async function responseErrorMessage(response: Response, label: string): P
   let detail = "";
   try {
     const body = (await response.json()) as unknown;
+
     if (
       typeof body === "object" &&
       body !== null &&
@@ -28,6 +29,7 @@ export function agentRunErrorMessage(error: unknown): string {
       ? "Authentication required"
       : `Run failed with HTTP ${error.response.status}`;
   }
+
   return errorMessage(error);
 }
 
@@ -38,6 +40,7 @@ export function eventStreamResponseErrorMessage(
   let detail = "";
   try {
     const body = JSON.parse(error.body) as unknown;
+
     if (
       typeof body === "object" &&
       body !== null &&
@@ -59,9 +62,11 @@ export function serializedStreamErrorText(error: unknown): string {
   if (typeof error === "string") {
     return error;
   }
+
   if (error instanceof Error) {
     return error.message;
   }
+
   try {
     return JSON.stringify(error) ?? String(error);
   } catch {

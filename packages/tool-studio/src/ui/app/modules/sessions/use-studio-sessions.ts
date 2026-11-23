@@ -56,9 +56,11 @@ export function useStudioSessions(props: {
 
     try {
       const response = await fetch("/sessions?limit=100");
+
       if (!response.ok) {
         throw new Error(`Sessions failed with HTTP ${response.status}`);
       }
+
       const body = (await response.json()) as { sessions: StudioSessionSummary[] };
       setAllSessions(body.sessions);
     } catch (loadError) {
@@ -81,9 +83,11 @@ export function useStudioSessions(props: {
       try {
         const params = new URLSearchParams({ limit: "1000" });
         const response = await fetch(`/sessions/${encodeURIComponent(sessionId)}/logs?${params}`);
+
         if (!response.ok) {
           throw new Error(`Session logs failed with HTTP ${response.status}`);
         }
+
         const body = (await response.json()) as { logs: StudioSessionLogEntry[] };
         setSessionLogs(body.logs);
         return body.logs;
@@ -104,7 +108,9 @@ export function useStudioSessions(props: {
       options: { updatePath?: boolean } = {},
     ): Promise<StudioSessionSummary> => {
       const metadata: Record<string, unknown> = { source: "anvia-studio" };
+
       if (selectedModelRef.length > 0) metadata[studioModelMetadataKey] = selectedModelRef;
+
       metadata[studioControlsMetadataKey] = selectedControls;
       const response = await fetch("/sessions", {
         method: "POST",
@@ -115,15 +121,19 @@ export function useStudioSessions(props: {
           metadata,
         }),
       });
+
       if (!response.ok) {
         throw new Error(await responseErrorMessage(response, "Session create failed"));
       }
+
       const session = (await response.json()) as StudioSessionSummary;
       setSelectedSessionId(session.id);
       setAllSessions((current) => [session, ...current.filter((item) => item.id !== session.id)]);
+
       if (options.updatePath !== false) {
         onSessionCreated(session.id);
       }
+
       await loadSessionLogs(session.id);
       return session;
     },
@@ -141,17 +151,21 @@ export function useStudioSessions(props: {
       onError("");
       try {
         const response = await fetch(`/sessions/${encodeURIComponent(sessionId)}`);
+
         if (!response.ok) {
           throw new Error(`Session load failed with HTTP ${response.status}`);
         }
+
         const session = (await response.json()) as StudioSession;
         const [traceSummaries] = await Promise.all([
           loadSessionTraceSummaries(session.id),
           loadSessionLogs(session.id),
         ]);
+
         if (sessionLoadRequestRef.current !== sessionId) {
           return;
         }
+
         setSelectedSessionId(session.id);
         onSessionLoaded(session, traceSummaries, options);
         onStatus("Connected");
@@ -179,16 +193,19 @@ export function useStudioSessions(props: {
         const response = await fetch(`/sessions/${encodeURIComponent(session.id)}`, {
           method: "DELETE",
         });
+
         if (!response.ok) {
           throw new Error(`Session delete failed with HTTP ${response.status}`);
         }
 
         const wasSelected = selectedSessionId === session.id;
         setAllSessions((current) => current.filter((item) => item.id !== session.id));
+
         if (wasSelected) {
           setSelectedSessionId("");
           setSessionLogs([]);
         }
+
         onSessionDeleted(session.id, wasSelected);
         onStatus("Connected");
       } catch (deleteError) {
@@ -208,6 +225,7 @@ export function useStudioSessions(props: {
       if (current.some((item) => item.id === log.id)) {
         return current;
       }
+
       return [...current, log].sort((left, right) => left.sequence - right.sequence);
     });
   }, []);

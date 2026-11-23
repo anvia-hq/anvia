@@ -70,9 +70,11 @@ export async function ingestVectorDocuments<Metadata extends VectorMetadata = Ve
     id: (document) => document.id,
     content: (document) => {
       const documentChunks = chunksByDocument.get(document.id);
+
       if (documentChunks === undefined) {
         throw new TypeError(`Text document ${document.id} has no chunks`);
       }
+
       return documentChunks.map((chunk) => chunk.text);
     },
     metadata: (document) => document.metadata,
@@ -91,9 +93,11 @@ function validateVectorMetadata(metadata: VectorMetadata | undefined, documentId
   if (metadata === undefined) {
     return;
   }
+
   if (typeof metadata !== "object" || metadata === null || Array.isArray(metadata)) {
     throw new TypeError(`Text document ${documentId} metadata must be an object`);
   }
+
   for (const [key, value] of Object.entries(metadata)) {
     validateVectorMetadataValue(value, `Text document ${documentId} metadata.${key}`);
   }
@@ -103,9 +107,11 @@ function validateVectorMetadataValue(value: VectorMetadataValue, label: string):
   if (value === null || typeof value === "string" || typeof value === "boolean") {
     return;
   }
+
   if (typeof value !== "number" || !Number.isFinite(value)) {
     throw new TypeError(`${label} must be a finite vector metadata value`);
   }
+
   if (Number.isInteger(value) && !Number.isSafeInteger(value)) {
     throw new TypeError(`${label} must be a safe integer`);
   }
@@ -117,6 +123,7 @@ function groupChunksByDocument<Metadata>(
   const grouped = new Map<string, TextDocumentChunk<Metadata>[]>();
   for (const chunk of chunks) {
     const documentChunks = grouped.get(chunk.documentId);
+
     if (documentChunks === undefined) {
       grouped.set(chunk.documentId, [chunk]);
     } else {

@@ -306,7 +306,9 @@ async function createStore(
   databases.add(database);
   const store = new SqliteMemoryClient({ database }).memoryStore(storeOptions) as TestStore;
   store.nativeDatabase = () => database;
+
   if (ensure) await store.ensure();
+
   return store;
 }
 

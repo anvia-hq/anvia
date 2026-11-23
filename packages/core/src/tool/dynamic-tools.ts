@@ -82,7 +82,9 @@ export async function embedTools<Metadata extends VectorMetadata = VectorMetadat
       definition,
       text: texts.join("\n"),
     };
+
     if (metadata !== undefined) document = { ...document, metadata };
+
     return { tool, document, texts, metadata };
   });
 
@@ -121,6 +123,7 @@ export async function createToolIndex<Metadata extends VectorMetadata = VectorMe
 
 export function isToolIndex(value: unknown): value is ToolIndex {
   if (typeof value !== "object" || value === null) return false;
+
   const candidate = value as {
     kind?: unknown;
     tools?: unknown;
@@ -197,6 +200,7 @@ function defaultToolEmbeddingText(
   mode: ToolEmbeddingText = "default",
 ): string[] {
   if (mode === "compact") return compactToolEmbeddingText(definition);
+
   return [definition.name, definition.description, JSON.stringify(definition.parameters)];
 }
 
@@ -216,7 +220,9 @@ function defaultToolEmbeddingText(
 function compactToolEmbeddingText(definition: ToolDefinition): string[] {
   const fields: string[] = [];
   const properties = definition.parameters.properties;
+
   if (isJsonObject(properties)) collectProperties(properties, fields);
+
   return fields.length === 0
     ? [definition.name, definition.description]
     : [definition.name, definition.description, fields.join(" ")];
@@ -228,7 +234,9 @@ const FIELD_LIMIT = 64;
 function collectProperties(schema: JsonObject, words: string[], depth = 0): void {
   for (const [name, value] of Object.entries(schema as Record<string, unknown>)) {
     if (words.length >= FIELD_LIMIT) return;
+
     words.push(name);
+
     if (isJsonObject(value)) collectPropertySchema(value, words, depth);
   }
 }
@@ -236,11 +244,16 @@ function collectProperties(schema: JsonObject, words: string[], depth = 0): void
 /** `schema` is one property's schema: `description` and `title` here are metadata. */
 function collectPropertySchema(schema: JsonObject, words: string[], depth: number): void {
   if (depth > 2) return;
+
   const description = schema.description;
+
   if (typeof description === "string") words.push(description);
+
   for (const key of ["properties", "items", "anyOf", "oneOf", "allOf"] as const) {
     if (words.length >= FIELD_LIMIT) return;
+
     const nested = schema[key];
+
     if (key === "properties" && isJsonObject(nested)) collectProperties(nested, words, depth + 1);
     else if (Array.isArray(nested)) {
       for (const item of nested) {

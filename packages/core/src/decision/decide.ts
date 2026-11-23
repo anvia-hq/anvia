@@ -59,9 +59,11 @@ export async function decideBatch<
   options: DecideBatchOptions<Questions, Model>,
 ): Promise<DecisionBatchResult<Questions, DecisionRawResponseOf<Model>>> {
   throwIfAborted(options.abortSignal);
+
   if (!Number.isSafeInteger(options.concurrency) || options.concurrency <= 0) {
     throw new RangeError("concurrency must be a positive safe integer.");
   }
+
   const inputs = Array.from(options.inputs);
   const items = await mapWithConcurrency(
     inputs.map((input, index) => ({ input, index })),

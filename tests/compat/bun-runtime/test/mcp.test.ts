@@ -67,7 +67,9 @@ describe("@anvia/mcp under Bun", () => {
       });
       expect(registration.tools).toHaveLength(1);
       const tool = registration.tools[0];
+
       if (tool === undefined) throw new Error("Expected the Bun MCP fixture tool");
+
       expect(tool.name).toBe("bun_echo");
 
       const output = normalizeToolResultOutput(await tool.call({ text: "hello from Bun" }));
@@ -117,6 +119,7 @@ describe("@anvia/mcp under Bun", () => {
         serverInfo: { name: "bun-stdio-fixture", version: "1.0.0" },
       });
       const tool = registration.tools[0];
+
       if (tool === undefined) throw new Error("Expected the Bun stdio fixture tool");
 
       await expect(
@@ -187,6 +190,7 @@ describe("@anvia/mcp under Bun", () => {
     try {
       const registration = await client.connect();
       const tool = registration.tools[0];
+
       if (tool === undefined) throw new Error("Expected the slow MCP fixture tool");
 
       const pending = Promise.resolve(tool.call({ text: "slow" }));
@@ -247,6 +251,7 @@ async function waitForReceipt(path: string, timeoutMs = 3_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (existsSync(path)) return;
+
     await Bun.sleep(10);
   }
   throw new Error("Fixture never acknowledged the tool call");
@@ -262,6 +267,7 @@ async function waitForExit(
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (existsSync(exitMarkerPath)) return "signaled";
+
     try {
       process.kill(pid, 0);
     } catch {
@@ -286,6 +292,7 @@ function resultFor(message: RpcRequest): Record<string, unknown> {
       },
     };
   }
+
   if (message.method === "tools/list") {
     return {
       resultType: "complete",
@@ -304,6 +311,7 @@ function resultFor(message: RpcRequest): Record<string, unknown> {
       ],
     };
   }
+
   if (message.method === "tools/call") {
     const text = message.params?.arguments;
     const value =
@@ -317,6 +325,7 @@ function resultFor(message: RpcRequest): Record<string, unknown> {
       content: [{ type: "text", text: `echo:${value}` }],
     };
   }
+
   return {};
 }
 

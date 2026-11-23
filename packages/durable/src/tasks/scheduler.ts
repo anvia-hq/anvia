@@ -72,6 +72,7 @@ export class TaskScheduler {
   /** Stops the invocation of a task whose claim was lost. */
   lose(id: string): void {
     const entry = this.active.get(id);
+
     if (entry?.claim !== undefined)
       entry.controller.abort(new DurableClaimLostError(id, entry.claim.claimId));
   }
@@ -82,6 +83,7 @@ export class TaskScheduler {
    */
   async poll(): Promise<void> {
     if (this.closing) return;
+
     let cursor: number | undefined = 0;
     while (cursor !== undefined && !this.closing) {
       const page = await this.store.unsettledTaskRoots(cursor);
@@ -108,6 +110,7 @@ export class TaskScheduler {
         (await tx.isClaimed!(task.id)) ||
         (task.agentRunId !== undefined && (await tx.isClaimed!(task.agentRunId)))
       );
+
     return (
       this.active.has(task.id) ||
       (task.agentRunId !== undefined && this.agentActive(task.agentRunId))
@@ -120,6 +123,7 @@ export class TaskScheduler {
 
   async agentChanged(id: string): Promise<void> {
     if (this.closing) return;
+
     await this.reconcile((await this.snapshot(id)).task.rootId);
     await this.pump();
   }
@@ -157,6 +161,7 @@ export class TaskScheduler {
       await tx.lockSession?.(`task-submit:${sessionId}`);
       const task = await createTask(tx, definition, input, sessionId, key, undefined, trace);
       const agentIds = dependencies(definition, task);
+
       if (
         expectedAgentIds !== undefined &&
         !sameJson(agentIds, [...new Set(expectedAgentIds)].sort())
@@ -164,6 +169,7 @@ export class TaskScheduler {
         throw new DurableConflictError(
           "Task agents changed during authorization; retry submission.",
         );
+
       for (const agentId of agentIds)
         if (!this.agents.has(agentId))
           throw new DurableNotFoundError(`Unknown durable agent: ${agentId}`);
@@ -187,8 +193,10 @@ export class TaskScheduler {
 
   private definition(name: string, version: number): RegisteredTask {
     const definition = this.definitions.get(name);
+
     if (definition === undefined || definition.version !== version)
       throw new DurableConflictError(`Task definition/version is not registered: ${name}`);
+
     return definition;
   }
 
@@ -232,6 +240,7 @@ export class TaskScheduler {
       for (const task of nodes) {
         if (task.parentId !== undefined)
           edges.push({ source: task.parentId, target: task.id, type: "owns" });
+
         if (task.wait?.type === "children")
           for (const child of task.wait.ids)
             edges.push({ source: task.id, target: child, type: "waits" });
@@ -246,11 +255,13 @@ export class TaskScheduler {
       if (expectedTreeIds !== undefined) {
         const current = await tx.taskTree(root);
         const expected = new Set(expectedTreeIds);
+
         if (current.length !== expected.size || current.some((task) => !expected.has(task.id)))
           throw new DurableConflictError(
             "Task tree changed during authorization; retry cancellation.",
           );
       }
+
       return cancelTree(tx, id, "Durable task cancelled.");
     });
     for (const task of ids)
@@ -265,15 +276,20 @@ export class TaskScheduler {
     const rootOf = (await this.snapshot(id)).task.rootId;
     const root = await this.locked(rootOf, async (tx) => {
       const task = await requireTask(tx, id);
+
       if (Object.hasOwn(task.signals, name)) {
         if (!sameJson(task.signals[name], { requestId, value: json(value) }))
           throw new DurableConflictError("Signal already has a different delivery.");
+
         return task.rootId;
       }
+
       if (terminal(task) || ["completing", "cancelling"].includes(task.status))
         throw new DurableConflictError("Task cannot receive a signal.");
+
       if (Object.keys(task.signals).length >= 1000)
         throw new DurableConflictError("Task signal limit reached.");
+
       Object.defineProperty(task.signals, name, {
         value: { requestId, value: json(value) },
         enumerable: true,
@@ -287,12 +303,15 @@ export class TaskScheduler {
 
   async retry(id: string): Promise<void> {
     if (this.active.has(id)) throw new DurableConflictError("Task invocation is still settling.");
+
     await this.locked((await this.snapshot(id)).task.rootId, async (tx) => {
       const task = await requireTask(tx, id);
+
       if (task.status !== "needs_attention")
         throw new DurableConflictError(
           "Only tasks needing attention can resume; terminal outcomes are immutable.",
         );
+
       delete task.error;
       delete task.blockedOperation;
       task.status = "pending";
@@ -303,9 +322,11 @@ export class TaskScheduler {
 
   async resolveEffect(id: string, key: string, value: JsonValue): Promise<void> {
     if (this.active.has(id)) throw new DurableConflictError("Task invocation is still settling.");
+
     await this.locked((await this.snapshot(id)).task.rootId, async (tx) => {
       const task = await requireTask(tx, id);
       const operation = await tx.getOperation(id, key);
+
       if (
         task.status !== "needs_attention" ||
         task.blockedOperation !== key ||
@@ -313,6 +334,7 @@ export class TaskScheduler {
         operation.kind !== "effect"
       )
         throw new DurableConflictError("No matching effect awaiting reconciliation.");
+
       await tx.putOperation(id, { ...operation, status: "completed", result: json(value) });
       task.status = "pending";
       delete task.blockedOperation;
@@ -328,6 +350,7 @@ export class TaskScheduler {
       const result = await this.locked(root, (tx) => reconcileTree(tx, root, this.busy));
       for (const id of result.abort)
         this.active.get(id)?.controller.abort(new Error("Sibling task failed."));
+
       if (result.deadline === undefined) this.deadlines.delete(root);
       else this.deadlines.set(root, result.deadline);
     }
@@ -346,10 +369,12 @@ export class TaskScheduler {
   private async pumpOnce(): Promise<void> {
     // A client controls tasks but never executes them, so there is nothing to claim.
     if (this.closing || this.shared?.passive === true) return;
+
     clearTimeout(this.timer);
     for (const [root, deadline] of this.deadlines)
       if (deadline <= Date.now()) await this.reconcile(root);
     const capacity = this.capacity - this.active.size;
+
     if (capacity > 0 && this.shared !== undefined) {
       let claims: DurableClaim[] = [];
       try {
@@ -371,6 +396,7 @@ export class TaskScheduler {
     } else if (capacity > 0)
       for (const id of await this.store.scheduleTasks([...this.active.keys()], capacity))
         if (!this.closing && !this.active.has(id)) this.launch(id);
+
     if (this.deadlines.size > 0) {
       const deadline = Math.min(...this.deadlines.values());
       this.timer = setTimeout(
@@ -390,6 +416,7 @@ export class TaskScheduler {
 
   private async release(claim: DurableClaim | undefined): Promise<void> {
     if (claim === undefined) return;
+
     try {
       await this.store.release!([{ runId: claim.runId, claimId: claim.claimId }]);
     } catch {
@@ -405,7 +432,9 @@ export class TaskScheduler {
       .then(() => fenced(() => this.execute(id, controller)))
       .catch(async (error: unknown) => {
         if (error instanceof DurableClaimLostError) return;
+
         if (!(error instanceof DurableLimitError)) throw error;
+
         const root = (await this.snapshot(id)).task.rootId;
         await fenced(() =>
           this.locked(root, async (tx) => {
@@ -422,6 +451,7 @@ export class TaskScheduler {
         this.active.delete(id);
         // Released before reconciling: a task with a live claim is not allowed to settle.
         await this.release(claim);
+
         if (!this.closing) {
           await this.reconcile((await this.snapshot(id)).task.rootId);
           await this.pump();
@@ -429,6 +459,7 @@ export class TaskScheduler {
       })
       .catch((error: unknown) => {
         if (error instanceof DurableClaimLostError || controller.signal.aborted) return;
+
         this.stop(error);
         this.fatal(error);
       });
@@ -437,24 +468,31 @@ export class TaskScheduler {
 
   private async execute(id: string, controller: AbortController): Promise<void> {
     if (controller.signal.aborted) return;
+
     const known = (await this.snapshot(id)).task;
+
     // A shared worker can claim a task whose name the database could not filter on. It leaves
     // a definition it does not register untouched; the claim is released when this returns.
     if (this.shared !== undefined && !this.definitions.has(known.name)) return;
+
     const rootId = known.rootId;
     const task = await this.locked(rootId, async (tx) => {
       const saved = await requireTask(tx, id);
+
       if (!["pending", "running"].includes(saved.status)) return undefined;
+
       const definition = this.definitions.get(saved.name);
       try {
         if (definition === undefined || definition.version < saved.version)
           throw new Error("Task definition/version is unavailable.");
+
         if (saved.unadmitted === true) {
           // A client submitted this without the definition; admit it as the version it named.
           if (definition.version !== saved.version)
             throw new Error(
               `Task version ${saved.version} is not registered on this worker (it has ${definition.version}).`,
             );
+
           try {
             saved.input = definition.parseInput(saved.input);
             saved.checkpoint = definition.initial(saved.input);
@@ -472,11 +510,13 @@ export class TaskScheduler {
         } else if (definition.version !== saved.version) {
           if (definition.migrate === undefined)
             throw new Error("Task checkpoint requires a migration.");
+
           const migrated = definition.migrate(saved.input, saved.checkpoint, saved.version);
           saved.input = migrated.input;
           saved.checkpoint = migrated.checkpoint;
           saved.version = definition.version;
         }
+
         saved.input = definition.parseInput(saved.input);
         saved.checkpoint = definition.parseCheckpoint(saved.checkpoint);
         saved.status = "running";
@@ -488,7 +528,9 @@ export class TaskScheduler {
       await saveTask(tx, saved);
       return saved;
     });
+
     if (task?.status !== "running") return;
+
     const definition = this.definitions.get(task.name)!;
     const invocation = taskInvocation(
       this.store,
@@ -514,15 +556,22 @@ export class TaskScheduler {
     } catch (error) {
       failure = error;
     }
+
     if (failure instanceof DurableStorageError) throw failure;
+
     if (this.closing) return;
+
     const abort = await this.locked(task.rootId, async (tx) => {
       const current = await requireTask(tx, id);
+
       if (current.status !== "running") return [];
+
       let cancelChildren = false;
       try {
         if (failure !== undefined) throw failure;
+
         if (transition === undefined) throw new TypeError("Task must return a transition.");
+
         switch (transition.status) {
           case "pending":
             current.checkpoint = definition.parseCheckpoint(transition.checkpoint);
@@ -530,14 +579,18 @@ export class TaskScheduler {
             break;
           case "waiting": {
             const wait = taskWaitSchema.parse(transition.wait);
+
             if (wait.type === "agent")
               throw new TypeError("Agent waits are managed by spawnAgent().");
+
             if (wait.type === "children") {
               let direct = new Set(wait.ids).size === wait.ids.length;
               for (const child of wait.ids)
                 if ((await requireTask(tx, child)).parentId !== id) direct = false;
+
               if (!direct) throw new TypeError("Tasks may wait only on distinct direct children.");
             }
+
             current.checkpoint = definition.parseCheckpoint(transition.checkpoint);
             current.wait = wait;
             current.status = "waiting";
@@ -563,8 +616,10 @@ export class TaskScheduler {
         delete current.wait;
         delete current.outcome;
         current.error = errorMessage(error);
+
         if (error instanceof DurableRecoveryError || error instanceof DurableLimitError) {
           current.status = "needs_attention";
+
           if (error instanceof DurableRecoveryError && error.operationId !== undefined)
             current.blockedOperation = error.operationId;
         } else {

@@ -51,17 +51,21 @@ const sdk = vi.hoisted(() => {
     async connect(transport: unknown, options: unknown): Promise<void> {
       this.connectCalls.push({ transport, options });
       await this.behavior.connect?.(options);
+
       if (this.behavior.connectError !== undefined) throw this.behavior.connectError;
     }
 
     async listTools(params: unknown, options: unknown) {
       this.listToolsCalls.push({ params, options });
+
       if (this.behavior.listError !== undefined) throw this.behavior.listError;
+
       if (params === undefined && this.behavior.pages !== undefined) {
         return {
           tools: this.behavior.pages.flatMap((page) => page.tools),
         };
       }
+
       return this.behavior.pages?.[this.page++] ?? { tools: [] };
     }
 
@@ -84,6 +88,7 @@ const sdk = vi.hoisted(() => {
 
     async close(): Promise<void> {
       this.closeCalls += 1;
+
       if (this.behavior.closeError !== undefined) throw this.behavior.closeError;
     }
   }

@@ -62,21 +62,29 @@ export function resolveGraphExploreOptions<Schema extends GraphSchemaLike>(
     ),
     includeProvenance: options.includeProvenance ?? false,
   };
+
   if (options.abortSignal !== undefined) base.abortSignal = options.abortSignal;
+
   if (options.mode === "overview") {
     return { ...base, mode: "overview" };
   }
+
   const nodeIds = uniqueNonEmptyStrings(options.nodeIds, "node id");
+
   if (nodeIds.length === 0) {
     throw new TypeError("Graph expansion requires at least one node id.");
   }
+
   if (nodeIds.length > maximumRoots) {
     throw new RangeError(`Graph expansion accepts at most ${maximumRoots} root nodes.`);
   }
+
   const direction = options.direction ?? "both";
+
   if (direction !== "outgoing" && direction !== "incoming" && direction !== "both") {
     throw new TypeError("Graph expansion direction must be outgoing, incoming, or both.");
   }
+
   return {
     ...base,
     mode: "expand",
@@ -93,9 +101,11 @@ function resolveNames(
   allowEmpty = false,
 ): string[] {
   const values = selected === undefined ? [...available] : uniqueNonEmptyStrings(selected, label);
+
   if (!allowEmpty && values.length === 0) {
     throw new TypeError(`Graph exploration requires at least one ${label}.`);
   }
+
   const known = new Set(available);
   for (const value of values) {
     if (!known.has(value))
@@ -110,7 +120,9 @@ function uniqueNonEmptyStrings(values: readonly string[], label: string): string
     if (typeof value !== "string" || value.length === 0) {
       throw new TypeError(`Graph ${label} must be a non-empty string.`);
     }
+
     if (unique.has(value)) throw new TypeError(`Duplicate graph ${label}: ${value}.`);
+
     unique.add(value);
   }
   return [...unique];
@@ -123,8 +135,10 @@ function boundedInteger(
   label: string,
 ): number {
   const resolved = value ?? fallback;
+
   if (!Number.isSafeInteger(resolved) || resolved < 1 || resolved > maximum) {
     throw new RangeError(`Graph exploration ${label} must be between 1 and ${maximum}.`);
   }
+
   return resolved;
 }

@@ -27,9 +27,11 @@ export class GeminiTranscriptionModel implements TranscriptionModel<unknown> {
     const config: Record<string, unknown> = isPlainObject(request.providerOptions)
       ? { ...request.providerOptions }
       : {};
+
     if (request.temperature !== undefined) {
       config.temperature = request.temperature;
     }
+
     if (options?.abortSignal !== undefined) config.abortSignal = options.abortSignal;
 
     const response = await this.client.models.generateContent({
@@ -65,14 +67,17 @@ export class GeminiTranscriptionModel implements TranscriptionModel<unknown> {
 
 export function textFromGenerateContentResponse(response: unknown): string {
   const raw = response as Record<string, unknown>;
+
   if (typeof raw.text === "string") {
     return raw.text;
   }
+
   const candidates = Array.isArray(raw.candidates) ? raw.candidates : [];
   for (const candidate of candidates) {
     if (!isPlainObject(candidate) || !isPlainObject(candidate.content)) {
       continue;
     }
+
     const parts = Array.isArray(candidate.content.parts) ? candidate.content.parts : [];
     for (const part of parts) {
       if (isPlainObject(part) && typeof part.text === "string") {
@@ -85,12 +90,19 @@ export function textFromGenerateContentResponse(response: unknown): string {
 
 function mimeTypeFromFilename(filename: string): string {
   const lower = filename.toLowerCase();
+
   if (lower.endsWith(".wav")) return "audio/wav";
+
   if (lower.endsWith(".aac")) return "audio/aac";
+
   if (lower.endsWith(".ogg")) return "audio/ogg";
+
   if (lower.endsWith(".flac")) return "audio/flac";
+
   if (lower.endsWith(".m4a")) return "audio/m4a";
+
   if (lower.endsWith(".opus")) return "audio/opus";
+
   return "audio/mpeg";
 }
 

@@ -8,5 +8,6 @@ export function serializeError(error: unknown): JsonValue {
       message: error.message,
     };
   }
+
   return serializeUnknown(error);
 }

@@ -12,8 +12,12 @@ export function runSummary(run: DurableRunRecord): DurableRunSummary {
     createdAt,
     updatedAt,
   };
+
   if (run.error !== undefined) summary.error = run.error;
+
   if (run.blockedOperation !== undefined) summary.blockedOperation = run.blockedOperation;
+
   if (run.nextAttemptAt !== undefined) summary.nextAttemptAt = run.nextAttemptAt;
+
   return summary;
 }

@@ -22,15 +22,18 @@ export function AgentsPage(props: { agents: StudioConfig["agents"]; selectedAgen
         props.agents.map(async (agent) => {
           try {
             const response = await fetch(`/agents/${encodeURIComponent(agent.id)}/runtime`);
+
             if (!response.ok) {
               return [agent.id, undefined] as const;
             }
+
             return [agent.id, (await response.json()) as StudioAgentRuntimeSummary] as const;
           } catch {
             return [agent.id, undefined] as const;
           }
         }),
       );
+
       if (!cancelled) {
         setRuntimeByAgentId(Object.fromEntries(entries));
       }
@@ -112,12 +115,15 @@ function AgentRegistryRow(props: {
   active: boolean;
 }) {
   const runtime = props.runtime;
-  const modelLabel =
-    runtime === undefined
-      ? "Runtime unavailable"
-      : runtime.model === undefined
-        ? "No model reported"
-        : formatModelValue(runtime.model);
+  let modelLabel: string;
+
+  if (runtime === undefined) {
+    modelLabel = "Runtime unavailable";
+  } else if (runtime.model === undefined) {
+    modelLabel = "No model reported";
+  } else {
+    modelLabel = formatModelValue(runtime.model);
+  }
 
   return (
     <tr>
@@ -219,10 +225,12 @@ function registryTotals(agents: StudioConfig["agents"], runtimeByAgentId: Runtim
     (totals, agent) => {
       const runtime = runtimeByAgentId[agent.id];
       totals.prompts += agent.quickPrompts.length;
+
       if (runtime !== undefined) {
         totals.tools += runtime.toolCount + runtime.mcpToolCount;
         totals.context += runtime.staticContextCount + runtime.dynamicContextCount;
       }
+
       return totals;
     },
     { context: 0, prompts: 0, tools: 0 },
@@ -233,12 +241,15 @@ function formatModelValue(value: unknown): string {
   if (value === null) {
     return "null";
   }
+
   if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
     return String(value);
   }
+
   if (Array.isArray(value)) {
     return `[${value.length}]`;
   }
+
   if (typeof value === "object") {
     const model = objectString(value, "modelId");
     const provider = objectString(value, "provider");
@@ -248,8 +259,10 @@ function formatModelValue(value: unknown): string {
     if (provider !== undefined && modelName !== undefined && provider !== modelName) {
       return `${provider} / ${modelName}`;
     }
+
     return modelName ?? provider ?? "Custom model";
   }
+
   return "";
 }
 

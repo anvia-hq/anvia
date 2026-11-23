@@ -21,9 +21,11 @@ export function parseDocument<T>(document: unknown): T {
   if (document === null || document === undefined) {
     return "" as T;
   }
+
   if (typeof document !== "string") {
     return document as T;
   }
+
   try {
     return JSON.parse(document) as T;
   } catch {
@@ -76,6 +78,7 @@ export function parseQueryResults<T, Metadata extends VectorMetadata>(
   for (const match of matches) {
     const rawScore = match.score ?? 0;
     const score = metric === "L2" ? -rawScore : rawScore;
+
     if (minScore !== undefined && score < minScore) {
       continue;
     }
@@ -87,11 +90,13 @@ export function parseQueryResults<T, Metadata extends VectorMetadata>(
       document: parseDocument(match[documentFieldName]),
     };
     const metadata = metadataFromRow<Metadata>(match);
+
     if (metadata !== undefined) {
       result.metadata = metadata;
     }
 
     const current = byId.get(id);
+
     if (current === undefined || result.score > current.score) {
       byId.set(id, result);
     }
@@ -125,6 +130,7 @@ export async function ensureCollection(
   metric: MilvusMetric,
 ): Promise<void> {
   const { value: exists } = await client.hasCollection({ collection_name: collectionName });
+
   if (exists) {
     return;
   }
@@ -156,7 +162,9 @@ export function validateMilvusCollection(
   dimensions: number,
 ): void {
   const schema = (response as { schema?: { fields?: unknown[] } }).schema;
+
   if (schema?.fields === undefined) return;
+
   const vector = schema.fields.find(
     (
       field,
@@ -169,11 +177,14 @@ export function validateMilvusCollection(
       field !== null &&
       (field as { name?: unknown }).name === "vector",
   );
+
   if (vector === undefined) {
     throw new Error(`Milvus collection ${collectionName} is missing its vector field`);
   }
+
   const rawDimensions =
     vector.dim ?? vector.type_params?.find((parameter) => parameter.key === "dim")?.value;
+
   if (rawDimensions !== undefined && Number(rawDimensions) !== dimensions) {
     throw new Error(
       `Milvus collection ${collectionName} has ${String(rawDimensions)} dimensions; expected ${dimensions}`,

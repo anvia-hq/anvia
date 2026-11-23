@@ -91,9 +91,11 @@ export class AnthropicCompletionModel<
     options: { stream?: boolean | undefined } = {},
   ): JsonObject {
     const params = toAnthropicMessagesParams(this.modelId, request, this.promptCache);
+
     if (options.stream === true) {
       params.stream = true;
     }
+
     return providerRequestSummary(params, request, options);
   }
 
@@ -137,9 +139,11 @@ export class AnthropicCompletionModel<
     let streamProviderFinishReason: unknown;
     for await (const event of stream as unknown as AsyncIterable<unknown>) {
       const hadProviderFinishReason = streamProviderFinishReason !== undefined;
+
       if (isPlainObject(event)) {
         if (event.type === "message_start" && isPlainObject(event.message)) {
           streamMessageId = stringFrom(event.message.id) ?? streamMessageId;
+
           if (event.message.stop_reason !== undefined && event.message.stop_reason !== null) {
             streamProviderFinishReason = acceptAnthropicStreamFinishReason(
               streamProviderFinishReason,
@@ -148,6 +152,7 @@ export class AnthropicCompletionModel<
             );
           }
         }
+
         if (event.type === "message_delta" && isPlainObject(event.delta)) {
           if (event.delta.stop_reason !== undefined && event.delta.stop_reason !== null) {
             streamProviderFinishReason = acceptAnthropicStreamFinishReason(
@@ -157,6 +162,7 @@ export class AnthropicCompletionModel<
             );
           }
         }
+
         hasStreamUsage =
           applyAnthropicStreamUsage(event, streamUsage, streamUsageFields) || hasStreamUsage;
       }
@@ -172,9 +178,11 @@ export class AnthropicCompletionModel<
         event.content_block.type === "tool_use"
       ) {
         const state = startAnthropicStreamTool(event.index, event.content_block, streamUsage);
+
         if (toolsByIndex.has(state.index) || toolIndexesById.has(state.id)) {
           throw providerOutputError("invalid-tool-call", streamUsage, state.id);
         }
+
         toolsByIndex.set(state.index, state);
         toolIndexesById.set(state.id, state.index);
         hasToolProgress = true;
@@ -194,18 +202,23 @@ export class AnthropicCompletionModel<
       ) {
         const index = anthropicToolStreamIndex(event.index, streamUsage);
         const state = toolsByIndex.get(index);
+
         if (state === undefined) {
           throw providerOutputError("invalid-tool-call", streamUsage);
         }
+
         if (state.closed || state.finalized) {
           throw providerOutputError("invalid-tool-call", streamUsage, state.id);
         }
+
         if (typeof event.delta.partial_json !== "string") {
           throw providerOutputError("invalid-tool-arguments", streamUsage, state.id);
         }
+
         if (state.initialInput.type === "complete") {
           throw providerOutputError("invalid-tool-arguments", streamUsage, state.id);
         }
+
         state.hasPartialJson ||= event.delta.partial_json.length > 0;
         state.partialJson += event.delta.partial_json;
         yield toolCallDelta(state.id, { argumentsDelta: event.delta.partial_json });
@@ -215,10 +228,12 @@ export class AnthropicCompletionModel<
       if (isPlainObject(event) && event.type === "content_block_stop") {
         const index = optionalAnthropicToolStreamIndex(event.index);
         const state = index === undefined ? undefined : toolsByIndex.get(index);
+
         if (state !== undefined) {
           if (state.closed) {
             throw providerOutputError("invalid-tool-call", streamUsage, state.id);
           }
+
           state.closed = true;
           continue;
         }
@@ -227,6 +242,7 @@ export class AnthropicCompletionModel<
       if (isPlainObject(event) && event.type === "message_stop") {
         hasTerminalEvent = true;
         const finalMessage = isPlainObject(event.message) ? event.message : undefined;
+
         if (finalMessage?.stop_reason !== undefined && finalMessage.stop_reason !== null) {
           streamProviderFinishReason = acceptAnthropicStreamFinishReason(
             streamProviderFinishReason,
@@ -234,7 +250,9 @@ export class AnthropicCompletionModel<
             streamUsage,
           );
         }
+
         const hasFinalMessageToolUse = anthropicMessageHasToolUse(finalMessage);
+
         if (hasToolProgress || hasFinalMessageToolUse) {
           const baseUsage =
             finalMessage === undefined ? Usage.empty() : anthropicMessageUsage(finalMessage);
@@ -249,8 +267,10 @@ export class AnthropicCompletionModel<
           applyAnthropicFinishReason(terminalResponse, streamProviderFinishReason);
           assertAnthropicResponseIntegrity(terminalResponse, true);
         }
+
         for (const state of toolsByIndex.values()) {
           const finalDelta = finalizeAnthropicStreamTool(state, streamUsage);
+
           if (finalDelta !== undefined) yield finalDelta;
         }
 
@@ -326,17 +346,20 @@ function applyAnthropicStreamUsage(
 
   if (event.type === "message_start" && isPlainObject(event.message)) {
     const source = isPlainObject(event.message.usage) ? event.message.usage : undefined;
+
     if (source !== undefined) {
       if ("input_tokens" in source) {
         uncachedInputTokens = numberFrom(source.input_tokens);
         fields.inputTokens = true;
         changed = true;
       }
+
       if ("cache_read_input_tokens" in source) {
         usage.cachedInputTokens = numberFrom(source.cache_read_input_tokens);
         fields.cachedInputTokens = true;
         changed = true;
       }
+
       if ("cache_creation_input_tokens" in source) {
         usage.cacheCreationInputTokens = numberFrom(source.cache_creation_input_tokens);
         fields.cacheCreationInputTokens = true;
@@ -347,6 +370,7 @@ function applyAnthropicStreamUsage(
 
   if (event.type === "message_delta") {
     const source = isPlainObject(event.usage) ? event.usage : undefined;
+
     if (source !== undefined && "output_tokens" in source) {
       usage.outputTokens = Math.max(usage.outputTokens, numberFrom(source.output_tokens));
       fields.outputTokens = true;
@@ -398,7 +422,9 @@ function mergeUsage(base: Usage, stream: Usage, fields: AnthropicStreamUsageFiel
 
 function copyUsage(usage: Usage): Usage {
   let copy: Usage = { ...usage };
+
   if (usage.details !== undefined) copy = { ...copy, details: { ...usage.details } };
+
   return copy;
 }
 
@@ -412,7 +438,9 @@ function emptyAnthropicStreamResponse(
     usage: copyUsage(usage),
     rawResponse,
   };
+
   if (messageId !== undefined) response.messageId = messageId;
+
   return response;
 }
 
@@ -450,9 +478,11 @@ function anthropicStreamToolInput(
   }
 
   const text = JSON.stringify(input);
+
   if (text === undefined) {
     throw providerOutputError("invalid-tool-arguments", usage, toolCallId);
   }
+
   return { type: "complete", text };
 }
 
@@ -472,15 +502,18 @@ function finalizeAnthropicStreamTool(
     state.finalized = true;
     return undefined;
   }
+
   state.finalized = true;
   return toolCallDelta(state.id, { argumentsDelta: "{}" });
 }
 
 function assertSerializedToolInput(text: string, toolCallId: string, usage: Usage): void {
   const parsed = parseSerializedToolInput(text);
+
   if (parsed.type === "malformed") {
     throw providerOutputError("malformed-tool-arguments", usage, toolCallId);
   }
+
   if (parsed.type === "invalid") {
     throw providerOutputError("invalid-tool-arguments", usage, toolCallId);
   }
@@ -511,6 +544,7 @@ function requiredToolCallId(value: unknown, usage: Usage): string {
   if (typeof value !== "string" || value.trim().length === 0) {
     throw providerOutputError("invalid-tool-call", usage);
   }
+
   return value;
 }
 
@@ -518,14 +552,17 @@ function requiredToolName(value: unknown, toolCallId: string, usage: Usage): str
   if (typeof value !== "string" || value.trim().length === 0) {
     throw providerOutputError("invalid-tool-call", usage, toolCallId);
   }
+
   return value;
 }
 
 function anthropicToolStreamIndex(value: unknown, usage: Usage): number {
   const index = optionalAnthropicToolStreamIndex(value);
+
   if (index === undefined) {
     throw providerOutputError("invalid-tool-call", usage);
   }
+
   return index;
 }
 
@@ -540,12 +577,14 @@ export function toAnthropicMessagesParams(
 ): AnthropicCreateParams {
   const messages = requestMessages(request);
   const system = systemFromMessages(request, messages);
+
   if (
     request.providerOptions !== undefined &&
     (!isPlainObject(request.providerOptions) || !isJsonValue(request.providerOptions))
   ) {
     throw new TypeError("Anthropic providerOptions must be a JSON object.");
   }
+
   const providerOptions = request.providerOptions ?? {};
   const params: AnthropicCreateParams = {
     ...providerOptions,
@@ -555,6 +594,7 @@ export function toAnthropicMessagesParams(
   };
 
   const reasoningEffort = request.controls?.reasoningEffort;
+
   if (reasoningEffort !== undefined) {
     const outputConfig = isPlainObject(params.output_config) ? params.output_config : {};
     params.output_config = { ...outputConfig, effort: reasoningEffort };
@@ -614,6 +654,7 @@ function providerRequestSummary(
 
 function hasSystemPrompt(system: unknown): boolean {
   if (typeof system === "string") return system.length > 0;
+
   return Array.isArray(system) && system.length > 0;
 }
 
@@ -621,6 +662,7 @@ function toolChoiceSummary(toolChoice: ToolChoice | undefined): JsonValue | unde
   if (toolChoice === undefined || typeof toolChoice === "string") {
     return toolChoice;
   }
+
   return { type: toolChoice.type, name: toolChoice.name };
 }
 
@@ -630,6 +672,7 @@ function compactJsonObject(values: Record<string, unknown>): JsonObject {
       if (!isJsonValue(value)) {
         return [];
       }
+
       return [[key, value]];
     }),
   ) as JsonObject;
@@ -646,9 +689,11 @@ function systemFromMessages(
   const systemMessages = messages.flatMap((message) =>
     message.role === "system" ? [message.content] : [],
   );
+
   if (request.instructions !== undefined) {
     systemMessages.unshift(request.instructions);
   }
+
   return systemMessages.length === 0 ? undefined : systemMessages.join("\n\n");
 }
 
@@ -693,9 +738,11 @@ function fromAnthropicMessageUnchecked(response: unknown): CompletionResponse {
     if (block.type === "tool_use") {
       const id = requiredToolCallId(block.id, usage);
       const name = requiredToolName(block.name, id, usage);
+
       if (!isPlainObject(block.input) || !isJsonValue(block.input)) {
         throw providerOutputError("invalid-tool-arguments", usage, id);
       }
+
       choice.push({
         type: "tool-call",
         toolCallId: id,
@@ -722,15 +769,21 @@ function fromAnthropicMessageUnchecked(response: unknown): CompletionResponse {
 
 function applyAnthropicFinishReason(response: CompletionResponse, value: unknown): void {
   if (value === undefined || value === null) return;
+
   response.finishReason = typeof value === "string" ? anthropicFinishReason(value) : "other";
+
   if (typeof value === "string") response.providerFinishReason = value;
 }
 
 function anthropicFinishReason(value: string): CompletionFinishReason {
   if (value === "end_turn" || value === "stop_sequence") return "stop";
+
   if (value === "max_tokens" || value === "model_context_window_exceeded") return "length";
+
   if (value === "tool_use") return "tool-calls";
+
   if (value === "refusal") return "content-filter";
+
   return "other";
 }
 
@@ -739,6 +792,7 @@ function assertAnthropicResponseIntegrity(
   hasAccumulatedToolProgress: boolean,
 ): void {
   const toolCalls = response.choice.filter((content) => content.type === "tool-call");
+
   if (hasAccumulatedToolProgress || toolCalls.length > 0) {
     assertSafeToolFinishReason(response);
   } else if (response.finishReason === "tool-calls") {
@@ -755,12 +809,14 @@ function assertAnthropicResponseIntegrity(
     if (ids.has(toolCall.toolCallId)) {
       throw providerOutputError("invalid-tool-call", response.usage, toolCall.toolCallId);
     }
+
     ids.add(toolCall.toolCallId);
   }
 }
 
 function assertAnthropicRawToolFinish(response: unknown): void {
   if (!isPlainObject(response) || !anthropicMessageHasToolUse(response)) return;
+
   const usage = anthropicMessageUsage(response);
   const terminal: CompletionResponse = { choice: [], usage, rawResponse: response };
   applyAnthropicFinishReason(terminal, response.stop_reason);
@@ -789,6 +845,7 @@ function assertSafeToolFinishReason(response: CompletionResponse): void {
   if (response.finishReason === undefined) {
     throw providerOutputError("incomplete-tool-call", response.usage);
   }
+
   if (response.finishReason === "length") {
     throw providerOutputError(
       "truncated-tool-call",
@@ -797,6 +854,7 @@ function assertSafeToolFinishReason(response: CompletionResponse): void {
       response.finishReason,
     );
   }
+
   if (response.finishReason === "content-filter") {
     throw providerOutputError(
       "filtered-tool-call",
@@ -805,6 +863,7 @@ function assertSafeToolFinishReason(response: CompletionResponse): void {
       response.finishReason,
     );
   }
+
   if (response.finishReason === "other") {
     throw providerOutputError(
       "invalid-tool-call",
@@ -813,6 +872,7 @@ function assertSafeToolFinishReason(response: CompletionResponse): void {
       response.finishReason,
     );
   }
+
   if (response.finishReason !== "tool-calls") {
     throw providerOutputError(
       "invalid-tool-call",
@@ -825,9 +885,11 @@ function assertSafeToolFinishReason(response: CompletionResponse): void {
 
 function acceptAnthropicStreamFinishReason(current: unknown, next: unknown, usage: Usage): unknown {
   if (current === undefined) return next;
+
   if (current !== next) {
     throw providerOutputError("invalid-tool-call", usage);
   }
+
   return current;
 }
 
@@ -838,10 +900,12 @@ function providerOutputError(
   finishReason?: CompletionFinishReason,
 ): CompletionProviderOutputError {
   const copiedUsage = copyUsage(usage);
+
   if (kind === "truncated-tool-call") {
     if (finishReason !== "length") {
       throw new TypeError('Anthropic truncated-tool-call errors require finish reason "length".');
     }
+
     return new CompletionProviderOutputError({
       kind,
       usage: copiedUsage,
@@ -849,12 +913,14 @@ function providerOutputError(
       finishReason,
     });
   }
+
   if (kind === "filtered-tool-call") {
     if (finishReason !== "content-filter") {
       throw new TypeError(
         'Anthropic filtered-tool-call errors require finish reason "content-filter".',
       );
     }
+
     return new CompletionProviderOutputError({
       kind,
       usage: copiedUsage,
@@ -862,9 +928,11 @@ function providerOutputError(
       finishReason,
     });
   }
+
   if (finishReason === "length" || finishReason === "content-filter") {
     throw new TypeError("Anthropic provider output error kind contradicts its finish reason.");
   }
+
   return new CompletionProviderOutputError({
     kind,
     usage: copiedUsage,
@@ -910,6 +978,7 @@ export function fromAnthropicStreamEvent(event: unknown): CompletionModelStreamE
 
   if (event.type === "content_block_start" && isPlainObject(event.content_block)) {
     const block = event.content_block;
+
     if (block.type === "tool_use") {
       const state = startAnthropicStreamTool(event.index, block, Usage.empty());
       return [
@@ -919,6 +988,7 @@ export function fromAnthropicStreamEvent(event: unknown): CompletionModelStreamE
         }),
       ];
     }
+
     if (block.type === "redacted_thinking" && typeof block.data === "string") {
       return [
         {
@@ -929,11 +999,13 @@ export function fromAnthropicStreamEvent(event: unknown): CompletionModelStreamE
         },
       ];
     }
+
     return [];
   }
 
   if (event.type === "content_block_delta" && isPlainObject(event.delta)) {
     const delta = event.delta;
+
     if (delta.type === "text_delta" && typeof delta.text === "string") {
       return [{ type: "text_delta", delta: delta.text }];
     }
@@ -1021,6 +1093,7 @@ function messageToAnthropicMessages(
     if (typeof message.content === "string") {
       return [{ role: "user", content: message.content }];
     }
+
     return [
       {
         role: "user",
@@ -1039,6 +1112,7 @@ function messageToAnthropicMessages(
               "Anvia interaction responses must be resolved by Agent before provider calls.",
             );
           }
+
           return toolContentToAnthropicBlock(content, toolUseIds);
         }),
       },
@@ -1086,6 +1160,7 @@ function messageToAnthropicMessages(
   if (Array.isArray(content) && content.length === 0) {
     return [];
   }
+
   return [{ role: "assistant", content }];
 }
 
@@ -1098,6 +1173,7 @@ function toolContentToAnthropicBlock(
     tool_use_id: toolUseIds.forResult(content.callId ?? content.toolCallId),
     content: toolResultToAnthropicContent(content),
   };
+
   if (
     content.output.type === "error-text" ||
     content.output.type === "error-json" ||
@@ -1105,6 +1181,7 @@ function toolContentToAnthropicBlock(
   ) {
     block.is_error = true;
   }
+
   return block;
 }
 
@@ -1119,21 +1196,26 @@ function toolResultContentToAnthropicContent(
     if (item.type === "text") {
       return { type: "text", text: item.text };
     }
+
     return fileToAnthropicBlock(item);
   });
 }
 
 function toolResultToAnthropicContent(content: ToolResultPart): string | AnthropicContentBlock[] {
   const output = content.output;
+
   if (output.type === "text" || output.type === "error-text") {
     return output.value;
   }
+
   if (output.type === "json" || output.type === "error-json") {
     return JSON.stringify(output.value);
   }
+
   if (output.type === "execution-denied") {
     return output.reason ?? "Tool execution was denied.";
   }
+
   return toolResultContentToAnthropicContent(output.value);
 }
 
@@ -1257,8 +1339,11 @@ function toolCallDelta(
   values: { name?: string | undefined; argumentsDelta?: string | undefined },
 ): CompletionModelStreamEvent {
   const event: CompletionModelStreamEvent = { type: "tool_call_delta", id };
+
   if (values.name !== undefined) event.name = values.name;
+
   if (values.argumentsDelta !== undefined) event.argumentsDelta = values.argumentsDelta;
+
   return event;
 }
 

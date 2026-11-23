@@ -58,6 +58,7 @@ function assertUniqueAgentToolNames(options: {
     if (!isToolIndex(index)) {
       throw new TypeError("Invalid tool index: search, tools, and a numeric topK are required.");
     }
+
     assertPositiveSearchLimit(index.topK);
     assertFiniteMinScore(index.minScore);
     for (const tool of index.tools) {
@@ -66,6 +67,7 @@ function assertUniqueAgentToolNames(options: {
           `MCP tool "${tool.name}" must be registered through Agent.mcpServers, not a tool index.`,
         );
       }
+
       registerToolOwner(owners, tool.name, `tool index ${indexPosition + 1}`);
     }
   }
@@ -73,11 +75,13 @@ function assertUniqueAgentToolNames(options: {
 
 function registerToolOwner(owners: Map<string, string>, name: string, owner: string): void {
   const existing = owners.get(name);
+
   if (existing !== undefined) {
     throw new TypeError(
       `Tool name collision for "${name}" between ${existing} and ${owner}. Tool names must be unique across every Agent tool source.`,
     );
   }
+
   owners.set(name, owner);
 }
 
@@ -85,9 +89,11 @@ function snapshotProviderTool(tool: ProviderTool): ProviderTool {
   let snapshot: ProviderTool = {
     ...tool,
   };
+
   if (tool.configuration !== undefined) {
     snapshot = { ...snapshot, configuration: cloneFrozenPlainData(tool.configuration) };
   }
+
   return Object.freeze(snapshot);
 }
 
@@ -95,10 +101,12 @@ function snapshotMcpServer(server: McpServer): McpServer {
   if (server.name.trim() === "") {
     throw new TypeError("MCP server name must not be empty.");
   }
+
   for (const tool of server.tools) {
     if (!isMcpTool(tool)) {
       throw new TypeError(`MCP server "${server.name}" contains an invalid MCP tool.`);
     }
+
     if (tool.mcp.serverName !== server.name) {
       throw new TypeError(
         `MCP tool "${tool.name}" belongs to server "${tool.mcp.serverName}", not "${server.name}".`,
@@ -110,15 +118,19 @@ function snapshotMcpServer(server: McpServer): McpServer {
     name: server.name,
     tools: Object.freeze(tools),
   };
+
   if (server.serverInfo !== undefined) {
     snapshot = { ...snapshot, serverInfo: cloneFrozenPlainData(server.serverInfo) };
   }
+
   if (server.capabilities !== undefined) {
     snapshot = { ...snapshot, capabilities: cloneFrozenPlainData(server.capabilities) };
   }
+
   if (server.instructions !== undefined) {
     snapshot = { ...snapshot, instructions: server.instructions };
   }
+
   return Object.freeze(snapshot);
 }
 
@@ -126,6 +138,7 @@ function snapshotMcpTool(tool: McpServer["tools"][number]): McpServer["tools"][n
   if (Object.isFrozen(tool) && Object.isFrozen(tool.mcp)) {
     return tool;
   }
+
   const parseInput = tool.parseInput;
   let snapshot: McpServer["tools"][number] = {
     name: tool.name,
@@ -133,15 +146,18 @@ function snapshotMcpTool(tool: McpServer["tools"][number]): McpServer["tools"][n
     definition: (prompt: string) => tool.definition(prompt),
     call: (args: unknown, context?: ToolCallContext) => tool.call(args, context),
   };
+
   if (tool.requiresApproval !== undefined) {
     snapshot = { ...snapshot, requiresApproval: tool.requiresApproval };
   }
+
   if (parseInput !== undefined) {
     snapshot = {
       ...snapshot,
       parseInput: (args: JsonValue) => parseInput.call(tool, args),
     };
   }
+
   return Object.freeze(snapshot);
 }
 
@@ -151,6 +167,7 @@ function assertUniqueMcpServerNames(servers: readonly McpServer[]): void {
     if (names.has(server.name)) {
       throw new TypeError(`Duplicate MCP server name "${server.name}".`);
     }
+
     names.add(server.name);
   }
 }
@@ -164,28 +181,35 @@ function snapshotToolIndex(index: ToolIndex): ToolIndex {
     search: (options: { query: string; abortSignal?: AbortSignal | undefined }) =>
       index.search(options),
   };
+
   if (index.minScore !== undefined) {
     snapshot = { ...snapshot, minScore: index.minScore };
   }
+
   if (index.filter !== undefined) {
     snapshot = { ...snapshot, filter: cloneFrozenPlainData(index.filter) };
   }
+
   if (inspect !== undefined) {
     snapshot = {
       ...snapshot,
       inspect: (request: VectorInspectRequest) => inspect.call(index, request),
     };
   }
+
   // The snapshot is what a durable runtime fingerprints, so the index's own record of what it
   // embedded has to survive the copy.
   const described = index as ToolIndexDescription;
+
   if (described.embeddingModel !== undefined) {
     snapshot = { ...snapshot, embeddingModel: described.embeddingModel };
   }
+
   if (described.embeddedDocuments !== undefined) {
     const embeddedDocuments = described.embeddedDocuments.map((item) => Object.freeze({ ...item }));
     snapshot = { ...snapshot, embeddedDocuments: Object.freeze(embeddedDocuments) };
   }
+
   return Object.freeze(snapshot);
 }
 

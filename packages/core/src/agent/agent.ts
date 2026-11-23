@@ -89,9 +89,11 @@ export class Agent<
     this.context = snapshotAgentContext(resolved.context);
     this.temperature = resolved.temperature;
     this.maxTokens = resolved.maxTokens;
+
     if (resolved.providerOptions !== undefined) {
       assertJsonObject(resolved.providerOptions, "Agent providerOptions");
     }
+
     this.providerOptions = cloneFrozenPlainData(resolved.providerOptions);
     assertCompletionControlsSupported(this.model, resolved.controls);
     this.controls = cloneFrozenPlainData(resolved.controls);
@@ -134,9 +136,11 @@ export class Agent<
     options: AgentRunOptions<Output, RawResponseOf<M>, CompletionModelControlsOf<M>>,
   ): AgentStream<Output, RawResponseOf<M>> {
     const run = AgentRun.fromAgent(this, options);
+
     if (!this.model.capabilities.streaming || !isStreamingCompletionModel(this.model)) {
       throw new Error("This completion model does not support streaming");
     }
+
     return createAgentStream(run);
   }
 
@@ -144,6 +148,7 @@ export class Agent<
     if (typeof options !== "object" || options === null || Array.isArray(options)) {
       throw new TypeError("Manual memory compaction requires an options object.");
     }
+
     const scope = normalizeMemoryScope(options.session, "Manual memory compaction");
     const memory = new AgentRunMemory(this, scope, []);
     return memory.compact(
@@ -166,9 +171,11 @@ export class Agent<
     context?: ToolCallContext,
   ): Promise<NormalizedToolOutput> {
     const tool = this.getTool(toolName);
+
     if (tool === undefined) {
       throw new ToolNotFoundError(toolName);
     }
+
     return prepareToolCall(tool, args).call(context ?? {});
   }
 }

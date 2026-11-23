@@ -43,6 +43,7 @@ export const StreamMarkdown = forwardRef<HTMLDivElement, StreamMarkdownProps>(
       startedAtByRevealId: new Map<string, number>(),
     } satisfies StreamRevealLifecycle & { content: string; id: number });
     const revealLifecycle = revealLifecycleRef.current;
+
     if (revealLifecycle.content !== content) {
       if (!content.startsWith(revealLifecycle.content)) {
         revealLifecycle.id += 1;
@@ -50,13 +51,16 @@ export const StreamMarkdown = forwardRef<HTMLDivElement, StreamMarkdownProps>(
         revealLifecycle.settledRevealIds.clear();
         revealLifecycle.startedAtByRevealId.clear();
       }
+
       revealLifecycle.content = content;
     }
+
     if (!live && revealLifecycle.activeScope !== null) {
       for (const revealId of revealLifecycle.startedAtByRevealId.keys()) {
         revealLifecycle.settledRevealIds.add(revealId);
       }
     }
+
     const settleReveal = useCallback((revealId: string) => {
       revealLifecycleRef.current.settledRevealIds.add(revealId);
     }, []);
@@ -137,12 +141,15 @@ function withStreamRevealComponent(
         "data-reveal-id"?: string | undefined;
         "data-state"?: string | undefined;
       };
+
       if (internalProps["data-state"] === "revealing") {
         return streamRevealSpan(internalProps, onRevealSettled);
       }
+
       if (consumerSpan !== undefined) {
         return createElement(consumerSpan, safeProps);
       }
+
       const { node: _node, ...elementProps } = safeProps;
       return <span {...elementProps} />;
     },
@@ -186,6 +193,7 @@ function streamRevealSpan(
       key={revealId ?? "stream-reveal"}
       onAnimationEnd={(event) => {
         onAnimationEnd?.(event);
+
         if (revealId !== undefined) onRevealSettled(revealId);
       }}
       style={

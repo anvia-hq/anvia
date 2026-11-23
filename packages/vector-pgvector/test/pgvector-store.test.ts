@@ -5,21 +5,26 @@ describe("PgVectorClient", () => {
   it("creates lazy handles, replaces rows, and performs raw searches", async () => {
     const query = vi.fn(async (input: string | { text: string }) => {
       const sql = typeof input === "string" ? input : input.text;
-      return {
-        rows: sql.startsWith("SELECT id")
-          ? [
-              {
-                id: "point",
-                document_id: "doc",
-                document: { text: "cat" },
-                metadata: null,
-                distance: 0.1,
-              },
-            ]
-          : sql.includes("information_schema")
-            ? [{ data_type: "USER-DEFINED", udt_name: "vector" }]
-            : [],
-      };
+
+      if (sql.startsWith("SELECT id")) {
+        return {
+          rows: [
+            {
+              id: "point",
+              document_id: "doc",
+              document: { text: "cat" },
+              metadata: null,
+              distance: 0.1,
+            },
+          ],
+        };
+      }
+
+      if (sql.includes("information_schema")) {
+        return { rows: [{ data_type: "USER-DEFINED", udt_name: "vector" }] };
+      }
+
+      return { rows: [] };
     });
     const client: PgClientLike = { query };
     const store = new PgVectorClient({ client }).vectorStore<{ text: string }>({
@@ -60,7 +65,9 @@ describe("PgVectorClient", () => {
       ) => {
         const text = typeof input === "string" ? input : input.text;
         const values = typeof input === "string" ? positionalValues : input.values;
+
         if (!text.startsWith("SELECT id")) return { rows: [] };
+
         const limit = Number(values?.at(-1));
         limits.push(limit);
         return { rows: candidates.slice(0, limit) };

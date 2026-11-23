@@ -91,6 +91,7 @@ export function createQuestionTool(
                           path: [index, "value"],
                         });
                       }
+
                       values.add(choice.value);
                     }
                   })
@@ -120,6 +121,7 @@ export function createQuestionTool(
                   path: [index, "id"],
                 });
               }
+
               ids.add(question.id);
             }
           }),

@@ -37,6 +37,7 @@ export class ConnectionTerminals {
     if (this.deps.terminals === undefined) {
       throw new DockerSandboxError("This sandbox has no terminal support.", "unsupported");
     }
+
     return this.deps.terminals;
   }
 
@@ -51,6 +52,7 @@ export class ConnectionTerminals {
       return;
     }
     const maxAttachments = this.deps.options?.maxAttachments ?? defaultMaxAttachments;
+
     if (this.entries.has(ptyId) || this.entries.size >= maxAttachments) {
       fail(
         new DockerSandboxError(
@@ -62,6 +64,7 @@ export class ConnectionTerminals {
       );
       return;
     }
+
     const entry: Entry = { closing: false };
     this.entries.set(ptyId, entry);
     try {
@@ -74,10 +77,12 @@ export class ConnectionTerminals {
         env: context.env,
         readOnly: frame.readOnly === true,
       });
+
       if (entry.closing) {
         attachment.close();
         return;
       }
+
       const channel = new PtyChannel(
         ptyId,
         attachment,
@@ -96,6 +101,7 @@ export class ConnectionTerminals {
       });
     } catch (error) {
       this.entries.delete(ptyId);
+
       if (!entry.closing) fail(error);
     }
   }
@@ -114,7 +120,9 @@ export class ConnectionTerminals {
 
   close(ptyId: string): void {
     const entry = this.entries.get(ptyId);
+
     if (entry === undefined) return;
+
     this.entries.delete(ptyId);
     this.detach(entry);
   }

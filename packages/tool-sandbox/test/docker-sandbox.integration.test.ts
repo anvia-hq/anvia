@@ -143,7 +143,9 @@ describe.skipIf(!runDockerTests)("Docker sandbox integration", () => {
       sandbox: sandbox.runtime,
       tools: ["exec_command"],
     });
+
     if (execTool === undefined) throw new Error("Expected exec_command tool.");
+
     await expect(execTool.call({ command: "uv --version && echo ready" })).resolves.toMatchObject({
       status: "exited",
       exitCode: 0,

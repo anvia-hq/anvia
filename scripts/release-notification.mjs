@@ -15,8 +15,10 @@ export const RELEASE_PRESENTATIONS = {
 
 export function releasePresentation(channel) {
   const presentation = RELEASE_PRESENTATIONS[channel];
+
   if (presentation === undefined) {
     throw new Error("Release channel must be stable or preview.");
   }
+
   return presentation;
 }

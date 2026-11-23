@@ -14,11 +14,13 @@ export function ItemBrowser(props: {
 }) {
   const state =
     props.source !== undefined && props.state?.key === props.source.key ? props.state : undefined;
+
   if (props.source?.source.kind === "dynamic_tools") {
     return (
       <DynamicToolsBrowser source={props.source} state={state} onLoadMore={props.onLoadMore} />
     );
   }
+
   const placeholder = knowledgeItemsPlaceholder(props.source, state);
 
   return (
@@ -68,21 +70,26 @@ function knowledgeItemsPlaceholder(
       text: "Choose a knowledge source to inspect its stored items.",
     };
   }
+
   if (state === undefined || (state.loading && state.items.length === 0)) {
     return { title: "Loading items", text: "Reading items from the selected knowledge source." };
   }
+
   if (state.error !== undefined) {
     return { title: "Knowledge source error", text: state.error };
   }
+
   if (state.inspectable === false) {
     return {
       title: "Source unavailable",
       text: state.message ?? "This source does not expose browseable items.",
     };
   }
+
   if (state.items.length === 0) {
     return { title: "No items", text: "The selected knowledge source is empty." };
   }
+
   return undefined;
 }
 
@@ -163,6 +170,7 @@ function DynamicToolsBrowser(props: {
       setSelectedId("");
       return;
     }
+
     if (!tools.some((item) => item.id === selectedId)) {
       setSelectedId(tools[0]?.id ?? "");
     }
@@ -433,12 +441,14 @@ function dynamicToolDefinition(item: StudioKnowledgeItem): {
 } {
   const document = isRecord(item.document) ? item.document : undefined;
   const definition = isRecord(document?.definition) ? document.definition : undefined;
-  const name =
-    typeof definition?.name === "string"
-      ? definition.name
-      : typeof document?.toolName === "string"
-        ? document.toolName
-        : item.toolName;
+  let name = item.toolName;
+
+  if (typeof definition?.name === "string") {
+    name = definition.name;
+  } else if (typeof document?.toolName === "string") {
+    name = document.toolName;
+  }
+
   const description =
     typeof definition?.description === "string" ? definition.description : item.description;
 
@@ -504,6 +514,7 @@ function dynamicToolSignature(toolName: string, parameters: DynamicToolParameter
   if (parameters.length === 0) {
     return `${toolName}()`;
   }
+
   return `${toolName}({ ${parameters
     .map((parameter) => `${parameter.name}${parameter.required ? "" : "?"}: ${parameter.type}`)
     .join(", ")} })`;
@@ -522,10 +533,12 @@ function schemaTypeLabel(value: unknown): string {
   if (typeof value === "string") {
     return value;
   }
+
   if (Array.isArray(value)) {
     const labels = value.filter((item): item is string => typeof item === "string");
     return labels.length === 0 ? "unknown" : labels.join(" / ");
   }
+
   return "unknown";
 }
 

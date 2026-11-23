@@ -195,15 +195,19 @@ export function validateStandardSchema<Output>(
   value: unknown,
 ): StandardSchemaValidation<Output> {
   const result = schema["~standard"].validate(value);
+
   if (typeof (result as { then?: unknown }).then === "function") {
     throw new TypeError(
       "The structured output schema validated asynchronously. Asynchronous schemas are not supported for structured completion output.",
     );
   }
+
   const settled = result as StandardSchemaV1.Result<Output>;
+
   if (settled.issues === undefined) {
     return { success: true, value: settled.value };
   }
+
   return { success: false, issues: settled.issues };
 }
 

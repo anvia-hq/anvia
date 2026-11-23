@@ -75,8 +75,11 @@ export function uiMessagesToMessages<
             type: "reasoning",
             text: part.text,
           };
+
           if (part.reasoningId !== undefined) reasoning = { ...reasoning, id: part.reasoningId };
+
           if (part.content !== undefined) reasoning = { ...reasoning, details: part.content };
+
           content.push(reasoning);
         } else if (part.type === "tool") {
           assertReplayableToolPart(part);
@@ -86,9 +89,13 @@ export function uiMessagesToMessages<
             toolName: part.toolName,
             input: part.input,
           };
+
           if (part.callId !== undefined) toolCall = { ...toolCall, callId: part.callId };
+
           if (part.signature !== undefined) toolCall = { ...toolCall, signature: part.signature };
+
           content.push(toolCall);
+
           if (part.state === "output-available" || part.state === "error") {
             toolResults.push(toolResultFromPart(part));
           }
@@ -102,13 +109,17 @@ export function uiMessagesToMessages<
         content,
         ...metadataField(message.metadata),
       };
+
       if (message.modelMessageId !== undefined) {
         assistant = { ...assistant, id: message.modelMessageId };
       }
+
       result.push(assistant);
+
       if (toolResults.length > 0) {
         result.push({ role: "tool", content: toolResults });
       }
+
       continue;
     }
 
@@ -116,6 +127,7 @@ export function uiMessagesToMessages<
     const content: ToolResultPart[] = [];
     for (const part of message.parts) {
       if (part.type !== "tool") continue;
+
       assertToolResultPart(part);
       content.push(toolResultFromPart(part));
     }
@@ -176,23 +188,30 @@ export function messagesToUIMessages<Metadata extends JsonObject = JsonObject>(
         parts,
         ...metadataField(message.metadata),
       };
+
       if (generationMetadata !== undefined) {
         const generation: UIMessageGeneration = { usage: generationMetadata.usage };
+
         if (generationMetadata.contextUsage !== undefined) {
           generation.contextUsage = generationMetadata.contextUsage;
         }
+
         uiMessage = {
           ...uiMessage,
           generation,
         };
       }
+
       if (message.id !== undefined) uiMessage = { ...uiMessage, modelMessageId: message.id };
+
       const messageIndex = result.length;
       result.push(uiMessage);
       for (const [partIndex, part] of parts.entries()) {
         if (part.type !== "tool") continue;
+
         const location = { messageIndex, partIndex };
         byToolCallId.set(part.toolCallId, location);
+
         if (part.callId !== undefined) byCallId.set(part.callId, location);
       }
       continue;
@@ -201,20 +220,24 @@ export function messagesToUIMessages<Metadata extends JsonObject = JsonObject>(
     const unmerged: UIToolMessagePart[] = [];
     for (const content of message.content) {
       if (content.type !== "tool-result") continue;
+
       const location =
         (content.callId === undefined ? undefined : byCallId.get(content.callId)) ??
         byToolCallId.get(content.toolCallId);
       const ownerPart = toolPartAt(result, location);
+
       if (ownerPart === undefined || ownerPart.state === "input-streaming") {
         throw new TypeError(
           `Tool result "${content.toolCallId}" requires a matching completed tool call.`,
         );
       }
+
       const part = toolResultToUIMessagePart(content, ownerPart.toolName, ownerPart.input);
 
       if (message.metadata === undefined && location !== undefined) {
         const owner = result[location.messageIndex];
         const existing = owner?.parts[location.partIndex];
+
         if (owner !== undefined && existing?.type === "tool") {
           const parts = [...owner.parts];
           parts[location.partIndex] = { ...existing, ...part, id: existing.id };
@@ -222,8 +245,10 @@ export function messagesToUIMessages<Metadata extends JsonObject = JsonObject>(
           continue;
         }
       }
+
       unmerged.push(part);
     }
+
     if (unmerged.length > 0 || message.metadata !== undefined) {
       result.push({
         id: createId("msg"),
@@ -244,9 +269,12 @@ function contentToUIMessagePart(content: UserContentPart): UIMessagePart {
       type: "text",
       text: content.text,
     };
+
     if (content.signature !== undefined) part.signature = content.signature;
+
     return part;
   }
+
   return {
     id: createId("part"),
     type: "attachment",
@@ -256,16 +284,21 @@ function contentToUIMessagePart(content: UserContentPart): UIMessagePart {
 
 function assistantContentToUIMessagePart(content: AssistantContentPart): UIMessagePart {
   if (content.type === "text") return contentToUIMessagePart(content);
+
   if (content.type === "reasoning") {
     const part: Extract<UIMessagePart, { type: "reasoning" }> = {
       id: createId("part"),
       type: "reasoning",
       text: content.text,
     };
+
     if (content.id !== undefined) part.reasoningId = content.id;
+
     if (content.details !== undefined) part.content = content.details;
+
     return part;
   }
+
   if (content.type === "tool-call") {
     const part: UIToolMessagePart = {
       id: toolPartId(content.toolCallId),
@@ -275,10 +308,14 @@ function assistantContentToUIMessagePart(content: AssistantContentPart): UIMessa
       state: "input-available",
       input: content.input,
     };
+
     if (content.callId !== undefined) part.callId = content.callId;
+
     if (content.signature !== undefined) part.signature = content.signature;
+
     return part;
   }
+
   return {
     id: createId("part"),
     type: "attachment",
@@ -299,7 +336,9 @@ function toolResultFromPart(
     toolName: part.toolName,
     output: toolOutputFromPart(part),
   };
+
   if (part.callId !== undefined) result = { ...result, callId: part.callId };
+
   return result;
 }
 
@@ -309,9 +348,11 @@ function toolOutputFromPart(
   if (part.state === "error") {
     return { type: "error-text", value: part.error.message };
   }
+
   if (part.resultContent !== undefined) {
     return { type: "content", value: part.resultContent };
   }
+
   const output = part.output;
   return typeof output === "string"
     ? { type: "text", value: output }
@@ -322,6 +363,7 @@ function attachmentToUserContent(attachment: UIAttachment): UserContentPart {
   if (attachment.type === "image" || attachment.mediaType?.startsWith("image/") === true) {
     return attachmentToImageContent(attachment);
   }
+
   return attachmentToFileContent(attachment);
 }
 
@@ -332,40 +374,49 @@ function attachmentToAssistantContent(attachment: UIAttachment): AssistantConten
 }
 
 function attachmentToImageContent(attachment: UIAttachment): ImagePart {
-  const image: ImagePart["image"] =
-    attachment.url !== undefined
-      ? { type: "url", url: attachment.url }
-      : attachment.data !== undefined
-        ? { type: "data", data: attachment.data }
-        : (() => {
-            throw new TypeError("Image attachments require a URL or base64 data.");
-          })();
+  let image: ImagePart["image"];
+
+  if (attachment.url !== undefined) {
+    image = { type: "url", url: attachment.url };
+  } else if (attachment.data !== undefined) {
+    image = { type: "data", data: attachment.data };
+  } else {
+    throw new TypeError("Image attachments require a URL or base64 data.");
+  }
+
   let content: ImagePart = {
     type: "image",
     image,
   };
+
   if (attachment.mediaType !== undefined) content = { ...content, mediaType: attachment.mediaType };
+
   if (attachment.detail !== undefined) content = { ...content, detail: attachment.detail };
+
   return content;
 }
 
 function attachmentToFileContent(attachment: UIAttachment): FilePart {
-  const data: FilePart["data"] =
-    attachment.url !== undefined
-      ? { type: "url", url: attachment.url }
-      : attachment.data !== undefined
-        ? { type: "data", data: attachment.data }
-        : attachment.text !== undefined
-          ? { type: "text", text: attachment.text }
-          : (() => {
-              throw new TypeError("File attachments require a URL, base64 data, or text.");
-            })();
+  let data: FilePart["data"];
+
+  if (attachment.url !== undefined) {
+    data = { type: "url", url: attachment.url };
+  } else if (attachment.data !== undefined) {
+    data = { type: "data", data: attachment.data };
+  } else if (attachment.text !== undefined) {
+    data = { type: "text", text: attachment.text };
+  } else {
+    throw new TypeError("File attachments require a URL, base64 data, or text.");
+  }
+
   let content: FilePart = {
     type: "file",
     data,
     mediaType: attachment.mediaType ?? "application/octet-stream",
   };
+
   if (attachment.name !== undefined) content = { ...content, filename: attachment.name };
+
   return content;
 }
 
@@ -374,18 +425,26 @@ function contentToAttachment(content: ImagePart | FilePart): UIAttachment {
     id: createId("attachment"),
     type: content.type === "image" ? "image" : "file",
   };
+
   if (content.type === "image") {
     if (content.detail !== undefined) attachment.detail = content.detail;
+
     if (content.mediaType !== undefined) attachment.mediaType = content.mediaType;
+
     if (content.image.type === "url") attachment.url = content.image.url;
     else attachment.data = content.image.data;
+
     return attachment;
   }
+
   attachment.mediaType = content.mediaType;
+
   if (content.filename !== undefined) attachment.name = content.filename;
+
   if (content.data.type === "url") attachment.url = content.data.url;
   else if (content.data.type === "data") attachment.data = content.data.data;
   else attachment.text = content.data.text;
+
   return attachment;
 }
 
@@ -402,7 +461,9 @@ function toolResultToUIMessagePart(
     toolCallId: content.toolCallId,
     input,
   };
+
   if (content.callId !== undefined) Object.assign(common, { callId: content.callId });
+
   if (output.type === "error-text" || output.type === "error-json") {
     return {
       ...common,
@@ -412,6 +473,7 @@ function toolResultToUIMessagePart(
       },
     };
   }
+
   if (output.type === "execution-denied") {
     return {
       ...common,
@@ -419,19 +481,25 @@ function toolResultToUIMessagePart(
       error: { message: output.reason ?? "Tool execution was denied." },
     };
   }
+
   const part: UIToolMessagePart = {
     ...common,
     state: "output-available",
     output: toolResultOutput(output),
   };
+
   if (output.type === "content") part.resultContent = output.value;
+
   return part;
 }
 
 function toolResultOutput(output: ToolResultOutput): JsonValue {
   if (output.type === "text" || output.type === "error-text") return output.value;
+
   if (output.type === "json" || output.type === "error-json") return output.value;
+
   if (output.type === "execution-denied") return output.reason ?? "Tool execution was denied.";
+
   return output.value.length === 1 && output.value[0]?.type === "text"
     ? output.value[0].text
     : output.value.map((part) =>
@@ -444,6 +512,7 @@ function toolPartAt(
   location: ToolLocation | undefined,
 ): UIToolMessagePart | undefined {
   if (location === undefined) return undefined;
+
   const part = messages[location.messageIndex]?.parts[location.partIndex];
   return part?.type === "tool" ? part : undefined;
 }
@@ -456,6 +525,7 @@ function assertReplayableToolPart(
       `Tool call "${part.toolCallId}" is still streaming and cannot be converted to a model message.`,
     );
   }
+
   if (!isJsonValue(part.input)) {
     throw new TypeError(`Tool call "${part.toolCallId}" input must be a strict JSON value.`);
   }
@@ -465,6 +535,7 @@ function assertToolResultPart(
   part: UIToolMessagePart,
 ): asserts part is Extract<UIToolMessagePart, { state: "output-available" | "error" }> {
   assertReplayableToolPart(part);
+
   if (part.state === "input-available") {
     throw new TypeError(
       `Tool message part "${part.toolCallId}" requires an output or execution error.`,
@@ -507,7 +578,9 @@ let nextId = 0;
 
 export function createClientId(prefix: string): string {
   const random = globalThis.crypto?.randomUUID?.();
+
   if (random !== undefined) return `${prefix}_${random}`;
+
   nextId += 1;
   return `${prefix}_${nextId.toString(36)}`;
 }

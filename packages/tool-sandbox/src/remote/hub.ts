@@ -166,6 +166,7 @@ export class RemoteSandboxHub {
     if (typeof sandboxId !== "string" || sandboxId.length === 0) {
       throw new TypeError("sandboxId must be a non-empty string.");
     }
+
     return new RemoteSandboxDesktop({
       id: sandboxId,
       source: this.linkSource(sandboxId),
@@ -178,6 +179,7 @@ export class RemoteSandboxHub {
     if (typeof sandboxId !== "string" || sandboxId.length === 0) {
       throw new TypeError("sandboxId must be a non-empty string.");
     }
+
     return new RemoteSandboxTunnel({
       id: sandboxId,
       maxBufferBytes: this.options.maxTunnelBufferBytes,
@@ -190,6 +192,7 @@ export class RemoteSandboxHub {
     if (typeof sandboxId !== "string" || sandboxId.length === 0) {
       throw new TypeError("sandboxId must be a non-empty string.");
     }
+
     return new RemoteSandboxTerminal({
       id: sandboxId,
       maxBufferBytes: this.options.maxTerminalBufferBytes,
@@ -205,8 +208,11 @@ export class RemoteSandboxHub {
     if (typeof sandboxId !== "string" || sandboxId.length === 0) {
       throw new TypeError("sandboxId must be a non-empty string.");
     }
+
     if (options.workdir !== undefined) this.configuredWorkdirs.set(sandboxId, options.workdir);
+
     let runtime = this.runtimes.get(sandboxId);
+
     if (runtime === undefined) {
       runtime = new RemoteSandboxRuntime({
         id: sandboxId,
@@ -215,6 +221,7 @@ export class RemoteSandboxHub {
       });
       this.runtimes.set(sandboxId, runtime);
     }
+
     return runtime;
   }
 
@@ -253,9 +260,13 @@ export class RemoteSandboxHub {
   /** Complete a WebSocket upgrade for a request routed here by your own HTTP server. */
   handleUpgrade(request: IncomingMessage, socket: Duplex, head: Buffer): void {
     socket.on("error", () => undefined);
+
     if (this.closed) return rejectUpgrade(socket, 503, "Service Unavailable");
+
     const token = bearerToken(request);
+
     if (token === undefined) return rejectUpgrade(socket, 401, "Unauthorized");
+
     void (async () => {
       let authorization: RemoteSandboxAuthorization | null | undefined;
       try {
@@ -263,6 +274,7 @@ export class RemoteSandboxHub {
       } catch {
         return rejectUpgrade(socket, 500, "Internal Server Error");
       }
+
       if (
         authorization === null ||
         authorization === undefined ||
@@ -271,7 +283,9 @@ export class RemoteSandboxHub {
       ) {
         return rejectUpgrade(socket, 401, "Unauthorized");
       }
+
       if (this.closed || socket.destroyed) return socket.destroy();
+
       const { sandboxId } = authorization;
       this.server.handleUpgrade(request, socket, head, (ws) => this.accept(ws, sandboxId));
     })();
@@ -347,23 +361,29 @@ export class RemoteSandboxHub {
   /** Convenience HTTP listener for deployments with no existing server to attach to. */
   listen(options: RemoteSandboxHubListenOptions = {}): Promise<{ port: number }> {
     if (this.httpServer !== undefined) throw new Error("Hub is already listening.");
+
     const server = http.createServer((_, response) => {
       response.writeHead(426).end("Upgrade Required");
     });
     server.on("upgrade", (request, socket, head) => {
       const requested = new URL(request.url ?? "/", "http://hub").pathname;
+
       if (options.terminalPath !== undefined && requested === options.terminalPath) {
         return this.handleTerminalUpgrade(request, socket, head);
       }
+
       if (options.tunnelPath !== undefined && requested === options.tunnelPath) {
         return this.handleTunnelUpgrade(request, socket, head);
       }
+
       if (options.desktopPath !== undefined && requested === options.desktopPath) {
         return this.handleDesktopUpgrade(request, socket, head);
       }
+
       if (options.path !== undefined && requested !== options.path) {
         return rejectUpgrade(socket, 404, "Not Found");
       }
+
       this.handleUpgrade(request, socket, head);
     });
     this.httpServer = server;
@@ -380,15 +400,18 @@ export class RemoteSandboxHub {
   /** Drop every daemon connection and stop accepting new ones. Daemons will reconnect. */
   async close(): Promise<void> {
     if (this.closed) return;
+
     this.closed = true;
     for (const relay of this.relays) relay.close(1001, "hub closing");
     for (const connection of this.connections.values()) connection.close(1001, "hub closing");
     for (const waiters of this.waiters.values()) for (const wake of waiters) wake();
     const httpServer = this.httpServer;
+
     if (httpServer !== undefined) {
       httpServer.closeAllConnections();
       await new Promise<void>((resolve) => httpServer.close(() => resolve()));
     }
+
     await Promise.all([...this.connections.values()].map((connection) => connection.closed));
     await new Promise<void>((resolve) => this.server.close(() => resolve()));
     await new Promise<void>((resolve) => this.terminalServer.close(() => resolve()));
@@ -404,10 +427,13 @@ export class RemoteSandboxHub {
     ws.once("message", (data) => {
       clearTimeout(timer);
       const hello = parseHello(data);
+
       if (hello === undefined) return ws.close(1002, "expected hello");
+
       if (hello.protocolVersion !== PROTOCOL_VERSION) {
         return ws.close(1002, `unsupported protocol ${hello.protocolVersion}`);
       }
+
       const welcome: HubFrame = {
         type: "welcome",
         protocolVersion: PROTOCOL_VERSION,
@@ -439,6 +465,7 @@ export class RemoteSandboxHub {
         if (this.connections.get(sandboxId) === connection) this.connections.delete(sandboxId);
       });
       const waiters = this.waiters.get(sandboxId);
+
       if (waiters !== undefined) for (const wake of waiters) wake();
     });
   }
@@ -447,8 +474,11 @@ export class RemoteSandboxHub {
     while (true) {
       signal?.throwIfAborted();
       const current = this.connections.get(sandboxId);
+
       if (current?.isOpen === true) return current;
+
       if (this.closed) throw unavailable(sandboxId, "the hub is closed");
+
       await this.waitForConnection(sandboxId, signal);
     }
   }
@@ -460,7 +490,9 @@ export class RemoteSandboxHub {
       const cleanup = () => {
         clearTimeout(timer);
         waiters.delete(wake);
+
         if (waiters.size === 0) this.waiters.delete(sandboxId);
+
         signal?.removeEventListener("abort", abort);
       };
       const wake = () => {
@@ -496,7 +528,9 @@ function isSandboxId(value: unknown): boolean {
 
 function bearerToken(request: IncomingMessage): string | undefined {
   const header = request.headers.authorization;
+
   if (header === undefined) return undefined;
+
   const match = /^Bearer\s+(\S+)$/i.exec(header);
   return match?.[1];
 }

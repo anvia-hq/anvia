@@ -25,6 +25,7 @@ export async function exploreGraph<Schema extends Neo4jGraphSchema>(
   if (!(graph instanceof Neo4jKnowledgeGraphBase)) {
     throw new TypeError("exploreGraph requires a Neo4j knowledge graph registration.");
   }
+
   const resolved = resolveGraphExploreOptions(graph.schema, options);
   const records =
     resolved.mode === "overview"
@@ -83,9 +84,13 @@ RETURN elementId(node) AS id, labels(node) AS labels, properties(node) AS proper
     managedParameters(graph, { nodeIds: options.nodeIds, nodeTypes: options.nodeTypes }),
     options.abortSignal,
   );
+
   if (options.relationships.length === 0) return roots.records;
+
   const remainingNodeLimit = options.maxNodes + 1 - roots.records.length;
+
   if (remainingNodeLimit <= 0) return roots.records;
+
   const pattern = traversalPattern(options.direction, options.maxDepth);
   const neighbors = await graph.query(
     `MATCH (root${managedEntityLabel(graph)}) WHERE elementId(root) IN $nodeIds${managedAndPredicate(graph, "root")}
@@ -114,6 +119,7 @@ async function relationshipsBetween(
   abortSignal?: AbortSignal,
 ): Promise<GraphExploreRelationship[]> {
   if (nodeIds.length === 0 || relationshipTypes.length === 0) return [];
+
   const result = await graph.query(
     `MATCH (from)-[relationship]->(to)
 WHERE elementId(from) IN $nodeIds
@@ -145,7 +151,9 @@ function nodeFromRecord(
   const labels = stringArray(record.get("labels"), "Neo4j explorer node labels");
   const raw = objectValue(record.get("properties"), "Neo4j explorer node properties");
   const type = labels.find((label) => label in schema.nodes);
+
   if (type === undefined) throw new TypeError("Neo4j explorer node has no registered type.");
+
   const properties = applicationProperties(raw, "Neo4j explorer node properties");
   const node: {
     id: string;
@@ -161,8 +169,11 @@ function nodeFromRecord(
     properties,
   };
   const key = raw.__anvia_key;
+
   if (typeof key === "string") node.key = key;
+
   if (includeProvenance) node.provenance = provenanceProperties(raw);
+
   return node;
 }
 
@@ -187,8 +198,11 @@ function relationshipFromRecord(
     properties: applicationProperties(raw, "Neo4j explorer relationship properties"),
   };
   const key = raw.__anvia_key;
+
   if (typeof key === "string") relationship.key = key;
+
   if (includeProvenance) relationship.provenance = provenanceProperties(raw);
+
   return relationship;
 }
 
@@ -201,6 +215,7 @@ function provenanceProperties(value: Record<string, unknown>) {
 
 function optionalStringArray(value: unknown): string[] {
   if (value === undefined) return [];
+
   return stringArray(value, "Neo4j explorer provenance");
 }
 
@@ -211,9 +226,12 @@ function identityProperties(
 ): Neo4jNodeIdentity {
   const identity: Record<string, string | number | boolean> = {};
   const definition = schema.nodes[type];
+
   if (definition === undefined) return identity;
+
   for (const property of definition.identity) {
     const value = properties[property];
+
     if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
       identity[property] = value;
     }
@@ -234,7 +252,9 @@ function uniqueNodes(nodes: readonly GraphExploreNode[]): GraphExploreNode[] {
 
 function traversalPattern(direction: "outgoing" | "incoming" | "both", maxDepth: number): string {
   if (direction === "outgoing") return `(root)-[*1..${maxDepth}]->(node)`;
+
   if (direction === "incoming") return `(root)<-[*1..${maxDepth}]-(node)`;
+
   return `(root)-[*1..${maxDepth}]-(node)`;
 }
 
@@ -267,6 +287,7 @@ function managedScope(graph: Neo4jKnowledgeGraphBase): Neo4jManagedScope | undef
 
 function stringValue(value: unknown, label: string): string {
   if (typeof value !== "string") throw new TypeError(`${label} must be a string.`);
+
   return value;
 }
 
@@ -274,6 +295,7 @@ function stringArray(value: unknown, label: string): string[] {
   if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) {
     throw new TypeError(`${label} must be a string array.`);
   }
+
   return value;
 }
 
@@ -281,5 +303,6 @@ function objectValue(value: unknown, label: string): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new TypeError(`${label} must be an object.`);
   }
+
   return value as Record<string, unknown>;
 }

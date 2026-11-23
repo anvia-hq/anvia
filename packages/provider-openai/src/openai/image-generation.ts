@@ -57,6 +57,7 @@ export function imageResponseFromOpenAI(response: unknown): ImageGenerationResul
     if (!isPlainObject(item) || typeof item.b64_json !== "string") {
       return [];
     }
+
     return [{ data: new Uint8Array(Buffer.from(item.b64_json, "base64")), mediaType }];
   });
 
@@ -66,6 +67,7 @@ export function imageResponseFromOpenAI(response: unknown): ImageGenerationResul
         "OpenAI image generation response contained image URLs, which are not supported.",
       );
     }
+
     throw new Error("OpenAI image generation response contained no base64 images.");
   }
 
@@ -79,8 +81,10 @@ function mediaTypeFromFormat(format: string): string {
   if (format === "jpeg" || format === "jpg") {
     return "image/jpeg";
   }
+
   if (format === "webp") {
     return "image/webp";
   }
+
   return "image/png";
 }

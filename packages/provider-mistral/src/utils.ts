@@ -21,6 +21,7 @@ export function stringFrom(value: unknown): string | undefined {
 export function parseToolArguments(toolCallId: string, text: string, usage?: Usage): JsonValue {
   // Some OpenAI-compatible backends send "" for zero-argument tool calls.
   if (text.trim() === "") return {};
+
   let value: unknown;
   try {
     value = JSON.parse(text);
@@ -31,6 +32,7 @@ export function parseToolArguments(toolCallId: string, text: string, usage?: Usa
       usage,
     });
   }
+
   if (!isJsonValue(value)) {
     throw new CompletionProviderOutputError({
       kind: "invalid-tool-arguments",
@@ -38,6 +40,7 @@ export function parseToolArguments(toolCallId: string, text: string, usage?: Usa
       usage,
     });
   }
+
   return value;
 }
 

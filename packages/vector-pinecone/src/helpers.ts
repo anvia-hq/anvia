@@ -20,9 +20,11 @@ export function parseDocument<T>(document: unknown): T {
   if (document === null || document === undefined) {
     return "" as T;
   }
+
   if (typeof document !== "string") {
     return document as T;
   }
+
   try {
     return JSON.parse(document) as T;
   } catch {
@@ -82,6 +84,7 @@ export function parseQueryResults<T, Metadata extends VectorMetadata>(
   for (const match of matches) {
     const rawScore = match.score ?? 0;
     const score = metric === "euclidean" ? -rawScore : rawScore;
+
     if (minScore !== undefined && score < minScore) {
       continue;
     }
@@ -93,11 +96,13 @@ export function parseQueryResults<T, Metadata extends VectorMetadata>(
       document: parseDocument(match.metadata?.[documentMetadataKey]),
     };
     const metadata = metadataFromPayload<Metadata>(match.metadata);
+
     if (metadata !== undefined) {
       result.metadata = metadata;
     }
 
     const current = byId.get(id);
+
     if (current === undefined || result.score > current.score) {
       byId.set(id, result);
     }

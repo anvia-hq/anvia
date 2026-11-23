@@ -84,6 +84,7 @@ export async function resolveAndValidateMcpHostname(
   validateMcpHostname(normalizedHostname);
 
   const family = isIP(normalizedHostname);
+
   if (family !== 0) {
     return [{ address: normalizedHostname, family }];
   }
@@ -131,10 +132,12 @@ export function createSafeMcpLookup(
         }
 
         const address = matchingAddresses[0];
+
         if (!address) {
           callback(new Error(`Unable to resolve MCP URL hostname (${hostname})`), []);
           return;
         }
+
         callback(null, address.address, address.family);
       },
       (cause: unknown) => {
@@ -167,6 +170,7 @@ export function createBoundedMcpFetch(fetchRequest: FetchLike, maxBufferSize: nu
   if (!Number.isSafeInteger(maxBufferSize) || maxBufferSize <= 0) {
     throw new TypeError("MCP maxBufferSize must be a positive integer");
   }
+
   return async (input, init) => {
     const response = await fetchRequest(input, init);
     return limitMcpResponseMessageSize(response, maxBufferSize);
@@ -178,10 +182,12 @@ async function limitMcpResponseMessageSize(
   maxBufferSize: number,
 ): Promise<Awaited<ReturnType<FetchLike>>> {
   const body = response.body;
+
   if (body === null) return response;
 
   const contentType = response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase();
   const contentLength = Number(response.headers.get("content-length"));
+
   if (
     contentType !== "text/event-stream" &&
     !Number.isNaN(contentLength) &&
@@ -230,6 +236,7 @@ function createEventStreamLimitTransform(
 
   const finishLine = (wasEmpty: boolean): void => {
     if (wasEmpty) eventBytes = 0;
+
     lineHasContent = false;
   };
 
@@ -244,6 +251,7 @@ function createEventStreamLimitTransform(
             pendingCr = false;
             continue;
           }
+
           finishLine(pendingCrEndedEmptyLine);
           pendingCr = false;
         }
@@ -284,6 +292,7 @@ function validateMcpHostname(hostname: string): void {
   }
 
   const family = isIP(normalizedHostname);
+
   if (family === 0) {
     return;
   }
@@ -318,9 +327,11 @@ function normalizeRequestedFamily(family: number | string | undefined): 0 | 4 | 
   if (family === 4 || family === "IPv4") {
     return 4;
   }
+
   if (family === 6 || family === "IPv6") {
     return 6;
   }
+
   return 0;
 }
 

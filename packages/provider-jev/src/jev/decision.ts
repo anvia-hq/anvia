@@ -52,6 +52,7 @@ export class JevDecisionModel implements DecisionModel<unknown> {
     const questions: [string, Question][] = [];
     for (const [index, [name, question]] of Object.entries(request.questions).entries()) {
       const key = `q${index}`;
+
       if (question.type === "multi-label") {
         const keys = Object.entries(question.options).map(([label, description], labelIndex) => {
           const labelKey = `${key}_${labelIndex}`;
@@ -105,32 +106,41 @@ export class JevDecisionModel implements DecisionModel<unknown> {
         questionName,
       });
     };
+
     if (!isDataObject(rawResponse) || !isDataObject(rawResponse.answers)) {
       return fail("Jev returned an invalid answer envelope.");
     }
+
     const rawAnswers = rawResponse.answers;
     const expectedKeys = questions.map(([key]) => key);
+
     if (
       Object.keys(rawAnswers).length !== expectedKeys.length ||
       expectedKeys.some((key) => !Object.hasOwn(rawAnswers, key))
     ) {
       return fail("Jev answers do not match the requested questions.");
     }
+
     const answers = Object.fromEntries(
       compiled.map(({ name, question, keys }) => {
         const getAnswer = (key: string | undefined): Record<string, JsonValue> => {
           const answer = key === undefined ? undefined : rawAnswers[key];
+
           if (!isDataObject(answer)) return fail("Jev returned an invalid answer.", name);
+
           return answer;
         };
+
         if (question.type === "multi-label") {
           const labels = Object.keys(question.options);
           const probabilities = Object.fromEntries(
             labels.map((label, index) => {
               const answer = getAnswer(keys[index]);
+
               if (answer.type !== "noul" || !isProbability(answer.noul)) {
                 return fail("Jev returned an invalid label probability.", name);
               }
+
               return [label, answer.noul];
             }),
           );
@@ -145,13 +155,17 @@ export class JevDecisionModel implements DecisionModel<unknown> {
             },
           ];
         }
+
         const answer = getAnswer(keys[0]);
+
         if (question.type === "check") {
           if (answer.type !== "noul" || !isProbability(answer.noul)) {
             return fail("Jev returned an invalid boolean probability.", name);
           }
+
           return [name, { type: "check", probability: answer.noul }];
         }
+
         if (
           answer.type !== question.type ||
           !isProbability(answer.confidence) ||
@@ -159,6 +173,7 @@ export class JevDecisionModel implements DecisionModel<unknown> {
         ) {
           return fail("Jev returned an invalid choice or score answer.", name);
         }
+
         if (question.type === "choice") {
           if (
             typeof answer.choice !== "string" ||
@@ -166,6 +181,7 @@ export class JevDecisionModel implements DecisionModel<unknown> {
           ) {
             return fail("Jev selected an unknown option.", name);
           }
+
           validateDistribution(answer.probabilities, Object.keys(question.options), () =>
             fail("Jev returned invalid choice probabilities.", name),
           );
@@ -179,17 +195,21 @@ export class JevDecisionModel implements DecisionModel<unknown> {
             },
           ];
         }
+
         const levelKeys = question.rubric.map((_, index) => String(index));
         const expectedLegend = Object.fromEntries(
           question.rubric.map((level, index) => [String(index), toEntry(level)]),
         ) as Record<string, JsonValue>;
+
         if (!isDataObject(answer.legend) || !jsonEqual(answer.legend, expectedLegend)) {
           return fail("Jev returned a legend that does not match the requested rubric.", name);
         }
+
         const scoreProbabilities = answer.probabilities;
         validateDistribution(scoreProbabilities, levelKeys, () =>
           fail("Jev returned invalid score probabilities.", name),
         );
+
         if (
           typeof answer.score !== "number" ||
           !Number.isFinite(answer.score) ||
@@ -198,6 +218,7 @@ export class JevDecisionModel implements DecisionModel<unknown> {
         ) {
           return fail("Jev returned a score outside the requested rubric.", name);
         }
+
         return [
           name,
           {
@@ -212,6 +233,7 @@ export class JevDecisionModel implements DecisionModel<unknown> {
     ) as DecisionAnswers<Questions>;
 
     const usage = rawResponse.usage;
+
     if (
       !isDataObject(usage) ||
       !isTokenCount(usage.input_tokens) ||
@@ -219,6 +241,7 @@ export class JevDecisionModel implements DecisionModel<unknown> {
     ) {
       return fail("Jev returned invalid token usage.");
     }
+
     return {
       answers,
       usage: {
@@ -266,9 +289,11 @@ function toEntry(value: JsonValue): EntryType {
 
 function sdkJson(value: JsonValue): SdkJsonValue {
   if (Array.isArray(value)) return value.map(sdkJson);
+
   if (value !== null && typeof value === "object") {
     return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, sdkJson(entry)]));
   }
+
   return value as string | number | boolean | null;
 }
 
@@ -279,6 +304,7 @@ function isDataObject(value: unknown): value is Record<string, JsonValue> {
 /** Compare validated JSON without depending on object property order. */
 function jsonEqual(left: JsonValue, right: JsonValue): boolean {
   if (left === right) return true;
+
   if (Array.isArray(left) || Array.isArray(right)) {
     return (
       Array.isArray(left) &&
@@ -287,8 +313,10 @@ function jsonEqual(left: JsonValue, right: JsonValue): boolean {
       left.every((value, index) => jsonEqual(value, right[index]!))
     );
   }
+
   if (left === null || right === null || typeof left !== "object" || typeof right !== "object")
     return false;
+
   // Array.isArray does not narrow readonly JSON arrays out of the object union.
   const leftObject = left as Record<string, JsonValue>;
   const rightObject = right as Record<string, JsonValue>;
@@ -315,6 +343,7 @@ function validateDistribution(
   fail: () => never,
 ): void {
   const values = Object.values(value);
+
   if (
     values.length !== keys.length ||
     keys.some((key) => !Object.hasOwn(value, key)) ||

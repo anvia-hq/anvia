@@ -59,9 +59,11 @@ export function KnowledgePage(props: {
       setSelectedKey("");
       return;
     }
+
     if (visibleSources.some((source) => source.key === selectedKey)) {
       return;
     }
+
     const next =
       visibleSources.find(
         (source) => source.source.inspectable === true && (source.source.itemCount ?? 0) > 0,
@@ -82,12 +84,15 @@ export function KnowledgePage(props: {
             current?.key === sourceKey ? current.inspectable : source.source.inspectable === true,
           items: options.append && current?.key === sourceKey ? current.items : [],
         };
+
         if (options.append && current?.key === sourceKey && current.nextCursor !== undefined) {
           next.nextCursor = current.nextCursor;
         }
+
         if (current?.key === sourceKey && current.totalCount !== undefined) {
           next.totalCount = current.totalCount;
         }
+
         return next;
       });
 
@@ -97,27 +102,36 @@ export function KnowledgePage(props: {
           sourceId: sourceId(source.source),
           limit: String(itemLimit),
         });
+
         if (options.cursor !== undefined) {
           params.set("cursor", options.cursor);
         }
+
         const response = await fetch(`/knowledge/items?${params.toString()}`);
+
         if (!response.ok) {
           throw new Error(`Knowledge items failed with HTTP ${response.status}`);
         }
+
         const page = (await response.json()) as StudioKnowledgeItemsPage;
         setItemState((current) => {
           if (current?.key !== sourceKey) {
             return current;
           }
+
           const next: ItemState = {
             key: sourceKey,
             loading: false,
             inspectable: page.inspectable,
             items: options.append ? [...current.items, ...page.items] : page.items,
           };
+
           if (page.nextCursor !== undefined) next.nextCursor = page.nextCursor;
+
           if (page.totalCount !== undefined) next.totalCount = page.totalCount;
+
           if (page.message !== undefined) next.message = page.message;
+
           return next;
         });
       } catch (error) {
@@ -125,6 +139,7 @@ export function KnowledgePage(props: {
           if (current?.key !== sourceKey) {
             return current;
           }
+
           return {
             key: sourceKey,
             loading: false,
@@ -143,8 +158,45 @@ export function KnowledgePage(props: {
       setItemState(undefined);
       return;
     }
+
     void loadItems(selectedSource, { append: false });
   }, [loadItems, props.enabled, selectedSource]);
+
+  let content: ReactNode;
+
+  if (emptyState !== undefined) {
+    content = (
+      <StudioEmptyState className="h-full" title={emptyState.title} text={emptyState.text} />
+    );
+  } else if (props.activeTab === "retrieval-log") {
+    content = <RetrievalLogPanel evidence={evidence} onOpenTrace={props.onOpenTrace} />;
+  } else {
+    content = (
+      <SourceWorkspace
+        sources={visibleSources}
+        selectedKey={selectedSource?.key ?? ""}
+        activeTab={props.activeTab}
+        onSelect={setSelectedKey}
+      >
+        <ItemBrowser
+          source={selectedSource}
+          state={itemState}
+          onLoadMore={() => {
+            if (selectedSource === undefined) {
+              return;
+            }
+
+            void loadItems(
+              selectedSource,
+              itemState?.nextCursor === undefined
+                ? { append: true }
+                : { append: true, cursor: itemState.nextCursor },
+            );
+          }}
+        />
+      </SourceWorkspace>
+    );
+  }
 
   return (
     <StudioPageShell
@@ -168,34 +220,7 @@ export function KnowledgePage(props: {
         }
       />
       <StudioPageContent className="grid grid-rows-[minmax(0,1fr)] overflow-hidden">
-        {emptyState !== undefined ? (
-          <StudioEmptyState className="h-full" title={emptyState.title} text={emptyState.text} />
-        ) : props.activeTab === "retrieval-log" ? (
-          <RetrievalLogPanel evidence={evidence} onOpenTrace={props.onOpenTrace} />
-        ) : (
-          <SourceWorkspace
-            sources={visibleSources}
-            selectedKey={selectedSource?.key ?? ""}
-            activeTab={props.activeTab}
-            onSelect={setSelectedKey}
-          >
-            <ItemBrowser
-              source={selectedSource}
-              state={itemState}
-              onLoadMore={() => {
-                if (selectedSource === undefined) {
-                  return;
-                }
-                void loadItems(
-                  selectedSource,
-                  itemState?.nextCursor === undefined
-                    ? { append: true }
-                    : { append: true, cursor: itemState.nextCursor },
-                );
-              }}
-            />
-          </SourceWorkspace>
-        )}
+        {content}
       </StudioPageContent>
     </StudioPageShell>
   );
@@ -254,19 +279,24 @@ function knowledgeEmptyState(props: {
   sourceCount: number;
 }): { title: string; text: string } | undefined {
   const label = tabLabel(props.activeTab);
+
   if (!props.enabled) {
     return {
       title: `${label} unavailable`,
       text: "This Studio runtime does not expose knowledge inspection.",
     };
   }
+
   const itemCount = props.activeTab === "retrieval-log" ? props.evidenceCount : props.sourceCount;
+
   if (props.loading && itemCount === 0) {
     return { title: `Loading ${label.toLowerCase()}`, text: "Reading knowledge metadata." };
   }
+
   if (itemCount > 0) {
     return undefined;
   }
+
   switch (props.activeTab) {
     case "retrieval-log":
       return {

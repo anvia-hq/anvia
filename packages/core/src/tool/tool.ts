@@ -123,6 +123,7 @@ export function normalizeToolResultOutput(output: unknown): NormalizedToolOutput
   if (typeof output === "string") {
     return { type: "text", value: output };
   }
+
   if (isRichToolOutput(output)) {
     try {
       const message = parseMessage({
@@ -136,18 +137,25 @@ export function normalizeToolResultOutput(output: unknown): NormalizedToolOutput
           },
         ],
       });
+
       if (message.role !== "tool") throw new TypeError("Unexpected message role");
+
       const result = message.content[0];
+
       if (result?.type !== "tool-result") throw new TypeError("Unexpected tool result part");
+
       if (result?.output.type !== "content") throw new TypeError("Unexpected tool output");
+
       return result.output;
     } catch {
       throw new ToolResultSerializationError(output);
     }
   }
+
   if (isJsonValue(output)) {
     return { type: "json", value: output };
   }
+
   throw new ToolResultSerializationError(output);
 }
 
@@ -160,6 +168,7 @@ export function toolResultContentToText(content: readonly ToolResultContentPart[
 
 function isRichToolOutput(value: unknown): value is RichToolOutput {
   if (typeof value !== "object" || value === null) return false;
+
   return Object.getOwnPropertyDescriptor(value, richToolOutput)?.value === true;
 }
 
@@ -169,9 +178,12 @@ function isRichToolOutput(value: unknown): value is RichToolOutput {
  */
 export function parseToolArgs(args: string): JsonValue {
   if (args.trim() === "") return {};
+
   const value: unknown = JSON.parse(args);
+
   if (!isJsonValue(value)) {
     throw new TypeError("Tool arguments must be a JSON value.");
   }
+
   return value;
 }

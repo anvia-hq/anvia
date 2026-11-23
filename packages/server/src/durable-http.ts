@@ -11,8 +11,10 @@ export function listQuery(url: URL): Record<string, unknown> {
   const query: Record<string, unknown> = {};
   for (const [key, value] of url.searchParams) {
     if (Object.hasOwn(query, key)) throw new TypeError("Duplicate query parameter.");
+
     if (key === "after" || key === "limit") {
       if (!/^\d+$/.test(value)) throw new TypeError("Invalid pagination.");
+
       query[key] = Number(value);
     } else query[key] = value;
   }
@@ -25,9 +27,13 @@ export function durableEventsResponse<T extends { sequence: number }>(
 ): Response {
   const url = new URL(request.url);
   const rawCursor = url.searchParams.get("after") ?? request.headers.get("last-event-id") ?? "0";
+
   if (!/^\d+$/.test(rawCursor)) throw new TypeError("Invalid event cursor.");
+
   const after = Number(rawCursor);
+
   if (!Number.isSafeInteger(after) || after > cursor) throw new TypeError("Invalid event cursor.");
+
   const detached = new AbortController();
   const signal = AbortSignal.any([request.signal, detached.signal]);
   return createEventStreamResponse({
@@ -70,7 +76,9 @@ export async function readJson(request: Request, maxBytes: number): Promise<unkn
     request.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() !== "application/json"
   )
     throw new HttpInputError(415, "Expected application/json");
+
   if (request.body === null) throw new HttpInputError(400, "Expected a JSON body");
+
   const reader = request.body.getReader();
   const decoder = new TextDecoder();
   let bytes = 0;
@@ -78,8 +86,11 @@ export async function readJson(request: Request, maxBytes: number): Promise<unkn
   try {
     while (true) {
       const next = await reader.read();
+
       if (next.done) break;
+
       bytes += next.value.byteLength;
+
       if (bytes > maxBytes) {
         await reader.cancel();
         throw new HttpInputError(413, "Durable request body is too large", {
@@ -88,6 +99,7 @@ export async function readJson(request: Request, maxBytes: number): Promise<unkn
           limit: maxBytes,
         });
       }
+
       text += decoder.decode(next.value, { stream: true });
     }
     text += decoder.decode();
@@ -104,6 +116,7 @@ export function parseMemoryResolution(value: unknown): {
   const body =
     typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
   const { operationKey, resolution } = body;
+
   if (
     Object.keys(body).length !== 2 ||
     typeof operationKey !== "string" ||
@@ -111,5 +124,6 @@ export function parseMemoryResolution(value: unknown): {
     (resolution !== "applied" && resolution !== "discarded")
   )
     throw new TypeError("Invalid durable memory write resolution.");
+
   return { operationKey, resolution };
 }

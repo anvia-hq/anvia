@@ -110,7 +110,9 @@ describe("TraceBrowser rendering", () => {
   it("breaks the input tokens down for a selected trace", () => {
     const selected = trace();
     const generation = selected.observations.find((item) => item.kind === "generation");
+
     if (generation === undefined) throw new Error("generation observation missing");
+
     generation.metadata = {
       ...generation.metadata,
       context: {
@@ -161,9 +163,11 @@ function render(overrides: Partial<Parameters<typeof TraceBrowser>[0]> = {}): st
 
 function emptyStateClasses(html: string): string[] {
   const match = html.match(/data-slot="studio-empty-state" class="([^"]+)"/);
+
   if (match?.[1] === undefined) {
     throw new Error("Studio empty state class list not found");
   }
+
   return match[1].split(" ");
 }
 

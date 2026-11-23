@@ -88,6 +88,7 @@ try {
           `  → ${toolName}`,
           toolName === "desktop_screenshot" ? "" : JSON.stringify(input),
         );
+
         if (takeover && (toolCalls += 1) === 2) await personTakesControl();
       },
       onToolFinish(event) {
@@ -99,7 +100,9 @@ try {
 
   console.log(`\nTask: ${task}\n`);
   const response = await agent.generate({ prompt: task });
+
   if (response.type !== "response") throw new Error("Unexpected tool approval request.");
+
   console.log(`\nAnswer: ${response.output}`);
   await saveFrame("final");
   console.log(`Screenshots are in ./${outDir} (final.png is where the agent ended up).`);

@@ -20,6 +20,7 @@ export function compileDecisionQuestions(questions: DecisionQuestions): {
   const wireQuestions: WireQuestion[] = [];
   for (const [index, [name, question]] of Object.entries(questions).entries()) {
     const key = `q${index}`;
+
     if (question.type === "multi-label") {
       const keys = Object.entries(question.options).map(([label, criteria], labelIndex) => {
         const labelKey = `${key}_${labelIndex}`;
@@ -41,11 +42,13 @@ export function compileDecisionQuestions(questions: DecisionQuestions): {
       compiled.push({ name, question, keys: [key] });
     }
   }
+
   if (wireQuestions.length > MAX_WIRE_QUESTIONS) {
     throw new RangeError(
       `OpenAI decision requests support at most ${MAX_WIRE_QUESTIONS} questions after expanding multi-label options; received ${wireQuestions.length}.`,
     );
   }
+
   return { compiled, wireQuestions };
 }
 
@@ -66,9 +69,11 @@ function nativeQuestion(
 
         return choice;
       });
+
       if (choices.length < 2) {
         throw new RangeError("OpenAI choice questions require at least two options.");
       }
+
       return { type: "choice", name, instructions: question.instructions, choices };
     }
     case "score":

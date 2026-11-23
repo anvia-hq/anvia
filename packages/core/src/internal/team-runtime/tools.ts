@@ -41,7 +41,9 @@ export function teamTools<Output>(
       handler: () => team.visibleMembers(member),
     }),
   ];
+
   if (catalog.length === 0) return tools;
+
   tools.push(
     createTool({
       name: "cancel_agent",

@@ -50,6 +50,7 @@ function textPatternGuardrail<Boundary extends TextPatternBoundary>(
       },
     }) as TextPatternGuardrailFor<Boundary>;
   }
+
   return defineOutputGuardrail({
     id: options.id,
     check(ctx, actions) {
@@ -67,15 +68,18 @@ function textPatternAction<TRewrite>(
   rewrite: (value: string) => TRewrite,
 ): GuardrailAllow | GuardrailBlock | TRewrite {
   const matched = options.patterns.some((pattern) => textPatternMatches(text, pattern));
+
   if (!matched) {
     return allow();
   }
+
   if (action === "block") {
     return block({
       reason: options.reason,
       message: options.message,
     });
   }
+
   let current = text;
   for (const pattern of options.patterns) {
     current = replaceTextPattern(current, pattern, options.replacement ?? "[redacted]");
@@ -87,6 +91,7 @@ function textPatternMatches(text: string, pattern: string | RegExp): boolean {
   if (typeof pattern === "string") {
     return text.includes(pattern);
   }
+
   pattern.lastIndex = 0;
   const matched = pattern.test(text);
   pattern.lastIndex = 0;
@@ -97,6 +102,7 @@ function replaceTextPattern(text: string, pattern: string | RegExp, replacement:
   if (typeof pattern === "string") {
     return text.split(pattern).join(replacement);
   }
+
   pattern.lastIndex = 0;
   const flags = pattern.flags.replace("y", "");
   const globalFlags = flags.includes("g") ? flags : `${flags}g`;

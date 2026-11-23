@@ -60,6 +60,7 @@ export class AnthropicClient implements ModelListingClient {
       this.sdk = options.client;
       return;
     }
+
     this.sdk = new Anthropic({
       apiKey: requireApiKey(options.apiKey),
       baseURL: options.baseUrl,
@@ -110,6 +111,7 @@ export class AnthropicClient implements ModelListingClient {
 
 function rejectManagedOptionsWithInjectedClient(options: object, keys: readonly string[]): void {
   const conflict = keys.find((key) => key in options);
+
   if (conflict !== undefined) {
     throw new TypeError(`AnthropicClient cannot combine client with ${conflict}.`);
   }
@@ -129,6 +131,7 @@ function requireModelId<ModelId extends string>(modelId: ModelId): ModelId {
   if (modelId.trim().length === 0) {
     throw new TypeError("modelId must be a non-empty string");
   }
+
   return modelId;
 }
 
@@ -157,40 +160,50 @@ function toListedModel(model: unknown): ModelList["data"][number] | undefined {
     return undefined;
   }
 
-  const createdAt =
-    typeof model.created_at === "string"
-      ? secondsFromDateString(model.created_at)
-      : typeof model.created_at === "number"
-        ? model.created_at
-        : undefined;
+  let createdAt: number | undefined;
+
+  if (typeof model.created_at === "string") {
+    createdAt = secondsFromDateString(model.created_at);
+  } else if (typeof model.created_at === "number") {
+    createdAt = model.created_at;
+  }
 
   const listedModel: ModelList["data"][number] = {
     id: model.id,
   };
+
   if (typeof model.display_name === "string") {
     listedModel.name = model.display_name;
   }
+
   if (typeof model.name === "string") {
     listedModel.name = model.name;
   }
+
   if (typeof model.description === "string") {
     listedModel.description = model.description;
   }
+
   if (typeof model.type === "string") {
     listedModel.type = model.type;
   }
+
   if (createdAt !== undefined) {
     listedModel.createdAt = createdAt;
   }
+
   if (typeof model.owned_by === "string") {
     listedModel.ownedBy = model.owned_by;
   }
+
   if (typeof model.max_input_tokens === "number") {
     listedModel.contextLength = model.max_input_tokens;
   }
+
   if (typeof model.context_length === "number") {
     listedModel.contextLength = model.context_length;
   }
+
   return listedModel;
 }
 

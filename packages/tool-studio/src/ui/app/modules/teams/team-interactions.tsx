@@ -13,6 +13,14 @@ export function TeamInteractionCard(props: {
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const { request, status } = props.item;
   const disabled = props.busy || status !== "pending";
+  let statusLabel: string = status;
+
+  if (props.busy) {
+    statusLabel = "Submitting…";
+  } else if (status === "pending") {
+    statusLabel = "Needs your input";
+  }
+
   return (
     <section
       className="space-y-3 rounded-xl border border-hair bg-card p-4"
@@ -22,9 +30,7 @@ export function TeamInteractionCard(props: {
         <strong>
           {props.name} · {request.toolName}
         </strong>
-        <span className="text-muted-foreground">
-          {props.busy ? "Submitting…" : status === "pending" ? "Needs your input" : status}
-        </span>
+        <span className="text-muted-foreground">{statusLabel}</span>
       </div>
       <p className="break-all text-xs text-muted-foreground">Instance {props.item.instanceId}</p>
       {request.type === "tool-approval" ? (

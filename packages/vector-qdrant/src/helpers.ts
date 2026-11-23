@@ -42,9 +42,11 @@ export function parseDocument<T>(document: unknown): T {
   if (document === null || document === undefined) {
     return "" as T;
   }
+
   if (typeof document !== "string") {
     return document as T;
   }
+
   try {
     return JSON.parse(document) as T;
   } catch {
@@ -68,11 +70,14 @@ export function qdrantPoints<T, Metadata extends VectorMetadata>(
   if (document.embeddings.length === 0) {
     throw new Error(`Document ${document.id} has no embeddings`);
   }
+
   assertNoReservedMetadata(document.metadata);
 
   const hybrid = options.hybrid === true;
+
   if (hybrid) {
     const sparseEmbeddings = document.sparseEmbeddings;
+
     if (sparseEmbeddings === undefined || sparseEmbeddings.length !== document.embeddings.length) {
       throw new Error(
         `Hybrid Qdrant upsert requires sparseEmbeddings aligned with embeddings for document ${document.id}`,
@@ -90,7 +95,9 @@ export function qdrantPoints<T, Metadata extends VectorMetadata>(
       [documentIdPayloadKey]: document.id,
       [documentPayloadKey]: serializeDocument(document.document),
     };
+
     if (options.namespace !== undefined) payload[namespacePayloadKey] = options.namespace;
+
     Object.assign(payload, document.metadata);
 
     if (!hybrid) {
@@ -102,11 +109,13 @@ export function qdrantPoints<T, Metadata extends VectorMetadata>(
     }
 
     const sparse = document.sparseEmbeddings?.[index];
+
     if (sparse === undefined) {
       throw new Error(
         `Hybrid Qdrant upsert requires sparseEmbeddings aligned with embeddings for document ${document.id}`,
       );
     }
+
     return {
       id: pointId(scopedLogicalId(logicalId, options.namespace)),
       vector: {
@@ -131,6 +140,7 @@ export function parseQueryResults<T, Metadata extends VectorMetadata>(
 
   for (const point of points) {
     const score = metric === "Euclid" ? -point.score : point.score;
+
     if (minScore !== undefined && score < minScore) {
       continue;
     }
@@ -142,10 +152,13 @@ export function parseQueryResults<T, Metadata extends VectorMetadata>(
       document: parseDocument(point.payload?.[documentPayloadKey]),
     };
     const metadata = metadataFromPayload<Metadata>(point.payload);
+
     if (metadata !== undefined) {
       result.metadata = metadata;
     }
+
     const current = byId.get(id);
+
     if (current === undefined || result.score > current.score) {
       byId.set(id, result);
     }
@@ -176,15 +189,18 @@ export async function qdrantDocumentPage<T, Metadata extends VectorMetadata>(
 
   const limit = Math.max(0, Math.trunc(options.limit));
   const cursor = parseInspectCursor(options.cursor);
+
   if (limit === 0) {
     return { items: [] };
   }
 
   const seenDocumentIds = new Set(cursor.documentIds);
   const seenOffsets = new Set<string | number>();
+
   if (cursor.offset !== undefined) {
     seenOffsets.add(cursor.offset);
   }
+
   const items: Array<VectorInspectItem<T, Metadata>> = [];
   let offset = cursor.offset;
   let skip = cursor.skip;
@@ -202,13 +218,17 @@ export async function qdrantDocumentPage<T, Metadata extends VectorMetadata>(
 
     for (let index = skip; index < page.points.length; index += 1) {
       const point = page.points[index];
+
       if (point === undefined) {
         continue;
       }
+
       const item = inspectItemFromPoint<T, Metadata>(point);
+
       if (seenDocumentIds.has(item.id)) {
         continue;
       }
+
       if (items.length === limit) {
         return {
           items,
@@ -219,6 +239,7 @@ export async function qdrantDocumentPage<T, Metadata extends VectorMetadata>(
           }),
         };
       }
+
       seenDocumentIds.add(item.id);
       items.push(item);
     }
@@ -230,6 +251,7 @@ export async function qdrantDocumentPage<T, Metadata extends VectorMetadata>(
     ) {
       break;
     }
+
     seenOffsets.add(page.nextOffset);
     offset = page.nextOffset;
     skip = 0;
@@ -242,12 +264,15 @@ export function qdrantMutationRequest(
   options: QdrantMutationOptions = {},
 ): Record<string, unknown> {
   const request: Record<string, unknown> = { wait: options.wait ?? true };
+
   if (options.ordering !== undefined) {
     request.ordering = options.ordering;
   }
+
   if (options.timeout !== undefined) {
     request.timeout = options.timeout;
   }
+
   return request;
 }
 
@@ -261,7 +286,9 @@ export function qdrantDocumentFilter(
       match: { any: documentIds },
     },
   ];
+
   if (namespace !== undefined) must.push(namespaceCondition(namespace));
+
   return {
     must,
   };
@@ -269,6 +296,7 @@ export function qdrantDocumentFilter(
 
 export function qdrantScopedFilter(namespace: string | undefined, filter: unknown): unknown {
   if (namespace === undefined) return filter;
+
   const condition = namespaceCondition(namespace);
   return filter === undefined ? { must: [condition] } : { must: [condition, filter] };
 }
@@ -295,16 +323,20 @@ export function validateQdrantCollection(
   const config = recordValue(info, "config");
   const params = recordValue(config, "params");
   const vectors = recordValue(params, "vectors");
+
   if (vectors === undefined) {
     // Keep lightweight custom clients compatible when they do not return collection configuration.
     return;
   }
 
-  const denseVector = options.hybrid
-    ? recordValue(vectors, options.denseVectorName)
-    : typeof vectors.size === "number"
-      ? vectors
-      : undefined;
+  let denseVector: Record<string, unknown> | undefined;
+
+  if (options.hybrid) {
+    denseVector = recordValue(vectors, options.denseVectorName);
+  } else if (typeof vectors.size === "number") {
+    denseVector = vectors;
+  }
+
   if (denseVector === undefined) {
     throw new Error(
       options.hybrid
@@ -314,12 +346,15 @@ export function validateQdrantCollection(
   }
 
   const actualSize = denseVector.size;
+
   if (typeof actualSize === "number" && actualSize !== options.vectorSize) {
     throw new Error(
       `Qdrant collection vector size ${actualSize} does not match requested size ${options.vectorSize}`,
     );
   }
+
   const actualDistance = denseVector.distance;
+
   if (typeof actualDistance === "string" && actualDistance !== options.distance) {
     throw new Error(
       `Qdrant collection distance ${actualDistance} does not match requested distance ${options.distance}`,
@@ -327,9 +362,11 @@ export function validateQdrantCollection(
   }
 
   const sparseVectors = recordValue(params, "sparse_vectors");
+
   if (options.hybrid && recordValue(sparseVectors, options.sparseVectorName) === undefined) {
     throw new Error(`Qdrant collection is missing sparse vector ${options.sparseVectorName}`);
   }
+
   if (!options.hybrid && sparseVectors !== undefined && Object.keys(sparseVectors).length > 0) {
     throw new Error("Qdrant collection is hybrid but a dense-only collection was requested");
   }
@@ -339,6 +376,7 @@ export function qdrantCollectionExists(response: unknown): boolean | undefined {
   if (typeof response === "boolean") {
     return response;
   }
+
   const result = unwrapResult(response);
   return typeof result?.exists === "boolean" ? result.exists : undefined;
 }
@@ -347,6 +385,7 @@ export function isQdrantNotFoundError(error: unknown): boolean {
   if (typeof error !== "object" || error === null) {
     return false;
   }
+
   const candidate = error as {
     status?: unknown;
     statusCode?: unknown;
@@ -379,11 +418,13 @@ function parseInspectCursor(cursor: string | undefined): QdrantInspectCursor {
   if (cursor === undefined) {
     return { skip: 0, documentIds: [] };
   }
+
   try {
     const value = JSON.parse(decodeURIComponent(cursor)) as Record<string, unknown>;
     const offset = value.offset;
     const skip = value.skip;
     const documentIds = value.documentIds;
+
     if (
       (offset !== undefined && typeof offset !== "string" && typeof offset !== "number") ||
       !Number.isSafeInteger(skip) ||
@@ -393,6 +434,7 @@ function parseInspectCursor(cursor: string | undefined): QdrantInspectCursor {
     ) {
       throw new TypeError("invalid cursor state");
     }
+
     return {
       offset: offset as string | number | undefined,
       skip: skip as number,
@@ -427,23 +469,30 @@ function rawScrollPage(response: unknown): {
       if (typeof point !== "object" || point === null || !("id" in point)) {
         return [];
       }
+
       const id = point.id;
+
       if (typeof id !== "string" && typeof id !== "number") {
         return [];
       }
+
       const parsed: { id: string | number; payload?: Record<string, unknown> | null } = { id };
+
       if ("payload" in point && (point.payload === null || typeof point.payload === "object")) {
         parsed.payload = point.payload as Record<string, unknown> | null;
       }
+
       return [parsed];
     }),
   };
+
   if (
     typeof result?.next_page_offset === "string" ||
     typeof result?.next_page_offset === "number"
   ) {
     page.nextOffset = result.next_page_offset;
   }
+
   return page;
 }
 
@@ -456,9 +505,11 @@ function inspectItemFromPoint<T, Metadata extends VectorMetadata>(point: {
     document: parseDocument<T>(point.payload?.[documentPayloadKey]),
   };
   const metadata = metadataFromPayload<Metadata>(point.payload);
+
   if (metadata !== undefined) {
     item.metadata = metadata;
   }
+
   return item;
 }
 
@@ -466,6 +517,7 @@ function unwrapResult(value: unknown): Record<string, unknown> | undefined {
   if (typeof value !== "object" || value === null) {
     return undefined;
   }
+
   const record = value as Record<string, unknown>;
   const result = record.result;
   return typeof result === "object" && result !== null
@@ -504,20 +556,23 @@ function rawPoints(response: unknown): Array<{
         }
       | Array<{ id: string | number; score?: number; payload?: Record<string, unknown> | null }>;
   };
-  const responseArray = Array.isArray(response)
-    ? (response as Array<{
-        id: string | number;
-        score?: number;
-        payload?: Record<string, unknown> | null;
-      }>)
-    : undefined;
-  const points =
-    responseArray ??
-    (Array.isArray(raw.result)
-      ? raw.result
-      : Array.isArray(raw.result?.points)
-        ? raw.result.points
-        : raw.points);
+  type RawPoint = {
+    id: string | number;
+    score?: number;
+    payload?: Record<string, unknown> | null;
+  };
+  let points: RawPoint[] | undefined;
+
+  if (Array.isArray(response)) {
+    points = response as RawPoint[];
+  } else if (Array.isArray(raw.result)) {
+    points = raw.result;
+  } else if (Array.isArray(raw.result?.points)) {
+    points = raw.result.points;
+  } else {
+    points = raw.points;
+  }
+
   return (points ?? []).map((point) => {
     const result: {
       id: string | number;
@@ -527,9 +582,11 @@ function rawPoints(response: unknown): Array<{
       id: point.id,
       score: point.score ?? 0,
     };
+
     if (point.payload !== undefined) {
       result.payload = point.payload;
     }
+
     return result;
   });
 }

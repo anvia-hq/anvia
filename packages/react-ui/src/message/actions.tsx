@@ -9,6 +9,7 @@ const MessageActions = forwardRef<HTMLDivElement, PrimitiveProps<"div">>(
     const chat = useChatContext();
     const { message } = useMessage();
     const index = chat.messages.findIndex((item) => item.id === message.id);
+
     if (
       message.role !== "assistant" ||
       index < 0 ||
@@ -17,15 +18,18 @@ const MessageActions = forwardRef<HTMLDivElement, PrimitiveProps<"div">>(
     ) {
       return null;
     }
+
     const following = chat.messages.slice(index + 1);
     const nextUserIndex = following.findIndex((item) => item.role === "user");
     const exchangeRemainder = nextUserIndex < 0 ? following : following.slice(0, nextUserIndex);
+
     if (
       exchangeRemainder.some((item) => item.role === "assistant") ||
       (nextUserIndex < 0 && (chat.status === "submitted" || chat.status === "streaming"))
     ) {
       return null;
     }
+
     return renderPrimitive(
       "div",
       {
@@ -64,14 +68,18 @@ const MessageCopy = forwardRef<HTMLButtonElement, PrimitiveProps<"button">>(func
   const handleClick = useCallback(
     async (event: MouseEvent<HTMLButtonElement>) => {
       onClick?.(event);
+
       if (event.defaultPrevented || disabled) {
         return;
       }
+
       const writeText = navigator.clipboard?.writeText;
+
       if (writeText === undefined) {
         setCopyState("error");
         return;
       }
+
       try {
         await writeText.call(navigator.clipboard, text);
         setCopyState("copied");
@@ -113,9 +121,11 @@ const MessageRegenerate = forwardRef<HTMLButtonElement, PrimitiveProps<"button">
     const handleClick = useCallback(
       (event: MouseEvent<HTMLButtonElement>) => {
         onClick?.(event);
+
         if (event.defaultPrevented || disabled) {
           return;
         }
+
         void chat.regenerate();
       },
       [chat, disabled, onClick],

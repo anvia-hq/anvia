@@ -29,7 +29,9 @@ describe("createDockerSandboxTools", () => {
       tools: ["exec_command"],
       exec: { defaultTimeoutMs: 1_234 },
     });
+
     if (tool === undefined) throw new Error("Expected exec_command tool.");
+
     const controller = new AbortController();
 
     await expect(
@@ -62,7 +64,9 @@ describe("createDockerSandboxTools", () => {
       sandbox,
       tools: ["exec_command"],
     });
+
     if (tool === undefined) throw new Error("Expected exec_command tool.");
+
     const command = "uv run --with pandas python - <<'PY'\nprint('ready')\nPY";
 
     await expect(tool.call({ command, timeoutMs: 30_000 })).resolves.toMatchObject({
@@ -80,6 +84,7 @@ describe("createDockerSandboxTools", () => {
     async (command) => {
       const sandbox = createRuntime();
       const [tool] = createDockerSandboxTools({ sandbox, tools: ["exec_command"] });
+
       if (tool === undefined) throw new Error("Expected exec_command tool.");
 
       // Exercise the private resolver through its caller without exporting it just for tests.
@@ -100,6 +105,7 @@ describe("createDockerSandboxTools", () => {
       tools: ["exec_command"],
       exec: { commands: { mode: "allow", values: ["uv"] } },
     });
+
     if (blocked === undefined) throw new Error("Expected exec_command tool.");
 
     await expect(blocked.call({ command: "uv run report.py" })).rejects.toMatchObject({
@@ -114,6 +120,7 @@ describe("createDockerSandboxTools", () => {
         commands: { mode: "allow", values: ["/bin/bash"], allowShellInterpreters: true },
       },
     });
+
     if (allowed === undefined) throw new Error("Expected exec_command tool.");
 
     await expect(allowed.call({ command: "uv run report.py" })).resolves.toBeDefined();
@@ -132,6 +139,7 @@ describe("createDockerSandboxTools", () => {
         tools: [toolName],
         exec: { commands: { mode: "block", values: ["rm"] } },
       });
+
       if (tool === undefined) throw new Error("Expected exec_command tool.");
 
       await expect(tool.call({ command: "rm -rf output" })).rejects.toMatchObject({
@@ -266,6 +274,7 @@ describe("createDockerSandboxTools", () => {
     "does not interpret a failed probe as missing Bash and retries detection: %s",
     async (failure) => {
       const sandbox = createRuntime();
+
       if (failure === "rejected")
         vi.mocked(sandbox.exec).mockRejectedValueOnce(new Error("unavailable"));
       else if (failure === "timed_out")
@@ -274,6 +283,7 @@ describe("createDockerSandboxTools", () => {
           status: "timed_out",
         });
       else vi.mocked(sandbox.exec).mockResolvedValueOnce(shellProbeResult(failure));
+
       const [tool] = createDockerSandboxTools({ sandbox, tools: ["exec_command"] });
       await expect(tool!.call({ command: "echo hello" })).rejects.toThrow();
       expect(sandbox.exec).toHaveBeenCalledTimes(1);
@@ -324,6 +334,7 @@ describe("createDockerSandboxTools", () => {
         command: "an executable with spaces",
         args: [],
       });
+
       if (toolName === "start_process") expect(sandbox.exec).not.toHaveBeenCalled();
     },
   );
@@ -337,6 +348,7 @@ describe("createDockerSandboxTools", () => {
         maxTimeoutMs: 1_000,
       },
     });
+
     if (tool === undefined) throw new Error("Expected exec_command tool.");
 
     await expect(tool.call({ command: "python" })).rejects.toMatchObject({
@@ -355,6 +367,7 @@ describe("createDockerSandboxTools", () => {
         commands: { mode: "allow", values: ["sh", "node"] },
       },
     });
+
     if (tool === undefined) throw new Error("Expected exec_command tool.");
 
     // sh is in the allow list, but args with -c can execute arbitrary commands
@@ -373,6 +386,7 @@ describe("createDockerSandboxTools", () => {
         commands: { mode: "allow", values: ["sh", "node"], allowShellInterpreters: true },
       },
     });
+
     if (tool === undefined) throw new Error("Expected exec_command tool.");
 
     // With allowShellInterpreters: true, sh with args should work
@@ -394,6 +408,7 @@ describe("createDockerSandboxTools", () => {
         commands: { mode: "block", values: ["rm", "curl"] },
       },
     });
+
     if (tool === undefined) throw new Error("Expected exec_command tool.");
 
     // In block mode, shell interpreters are allowed if not in the block list
@@ -412,15 +427,19 @@ describe("createDockerSandboxTools", () => {
       for (const allowShellInterpreters of [undefined, false, true]) {
         const sandbox = createRuntime();
         const commands: Writable<DockerSandboxCommandPolicy> = { mode: "allow", values: ["sh"] };
+
         if (allowShellInterpreters !== undefined) {
           commands.allowShellInterpreters = allowShellInterpreters;
         }
+
         const [tool] = createDockerSandboxTools({
           sandbox,
           tools: [toolName],
           exec: { commands },
         });
+
         if (tool === undefined) throw new Error(`Expected ${toolName} tool.`);
+
         const input = { command: "sh", args: ["-c", "echo hello"] };
         const runtimeMethod = toolName === "exec_command" ? sandbox.exec : sandbox.startProcess;
 
@@ -461,6 +480,7 @@ describe("createDockerSandboxTools", () => {
         commands: { mode: "allow", values: ["/bin/sh", "/usr/bin/bash", "node"] },
       },
     });
+
     if (tool === undefined) throw new Error("Expected exec_command tool.");
 
     // Path-qualified shells should also be blocked by the basename check
@@ -485,6 +505,7 @@ describe("createDockerSandboxTools", () => {
         commands: { mode: "allow", values: ["/bin/sh"], allowShellInterpreters: true },
       },
     });
+
     if (tool === undefined) throw new Error("Expected exec_command tool.");
 
     await expect(

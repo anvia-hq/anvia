@@ -21,7 +21,9 @@ export function createRecordedGuardrails(
   registration: DurableAgentRegistration,
 ): readonly GuardrailPolicy[] | undefined {
   if (registration.guardrails === undefined) return undefined;
+
   const policies = registration.agent.guardrails;
+
   if (policies.length === 0) return undefined;
 
   // Output checks run once per final response; a retry of the same turn gets a new key.
@@ -47,21 +49,28 @@ export function createRecordedGuardrails(
     let existing = await store.transaction(async (tx) => tx.getOperation(run.id, key));
     for (let attempt = 1; existing?.status === "completed"; attempt++) {
       const previous = existing.result as unknown as Outcome;
+
       if (previous.ok || previous.retries >= retries) break;
+
       key = `${base}:attempt${attempt}`;
       existing = await store.transaction(async (tx) => tx.getOperation(run.id, key));
     }
+
     if (existing?.status === "completed") {
       const outcome = existing.result as unknown as Outcome;
+
       if (outcome.ok) return outcome.result;
+
       throw new Error(outcome.error);
     }
+
     if (existing !== undefined) {
       throw new DurableRecoveryError(
         `Guardrail "${guardrailId}" was interrupted before its outcome was recorded; the outcome is unknown and the check is not run again.`,
         key,
       );
     }
+
     const identity = json({ boundary, slot, policyId: policy.id, guardrailId });
     await store.transaction(async (tx) => {
       await tx.putOperation(run.id, {
@@ -89,7 +98,9 @@ export function createRecordedGuardrails(
         result: json(outcome),
       });
     });
+
     if (outcome.ok) return outcome.result;
+
     throw new Error(outcome.error);
   }
 

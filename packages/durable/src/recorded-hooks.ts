@@ -12,7 +12,9 @@ type Outcome = { ok: true; action: unknown } | { ok: false; error: string; retri
 /** Names the recorded control hooks the registration's hook defines. */
 export function recordedHookNames(registration: DurableAgentRegistration): RecordedHookName[] {
   const hook = registration.hooks?.hook;
+
   if (hook === undefined) return [];
+
   return RECORDED_HOOKS.filter((name) => typeof hook[name] === "function");
 }
 
@@ -36,7 +38,9 @@ export function createRecordedHooks(
   registration: DurableAgentRegistration,
 ): AgentHook | undefined {
   const hook = registration.hooks?.hook;
+
   if (hook === undefined) return undefined;
+
   const sequence: Record<string, number> = {};
 
   async function record(
@@ -52,20 +56,27 @@ export function createRecordedHooks(
     let existing = await store.transaction(async (tx) => tx.getOperation(run.id, key));
     for (let attempt = 1; existing?.status === "completed"; attempt++) {
       const previous = existing.result as unknown as Outcome;
+
       if (previous.ok || previous.retries >= retries) break;
+
       key = `${base}:attempt${attempt}`;
       existing = await store.transaction(async (tx) => tx.getOperation(run.id, key));
     }
+
     if (existing?.status === "completed") {
       const outcome = existing.result as unknown as Outcome;
+
       if (outcome.ok) return outcome.action ?? undefined;
+
       throw new Error(outcome.error);
     }
+
     if (existing !== undefined)
       throw new DurableRecoveryError(
         `Hook "${name}" was interrupted before its decision was recorded; the decision is unknown and the hook is not run again.`,
         key,
       );
+
     const identity = json({ hook: name, position, toolCallId: toolCallId ?? null });
     await store.transaction(async (tx) => {
       await tx.putOperation(run.id, {
@@ -92,25 +103,31 @@ export function createRecordedHooks(
         result: json(outcome),
       });
     });
+
     if (outcome.ok) return outcome.action ?? undefined;
+
     throw new Error(outcome.error);
   }
 
   const recorded: AgentHook = {};
+
   if (typeof hook.onRunStart === "function")
     recorded.onRunStart = (args) =>
       record("onRunStart", undefined, () => hook.onRunStart!(args)) as ReturnType<
         NonNullable<AgentHook["onRunStart"]>
       >;
+
   if (typeof hook.onCompletionCall === "function")
     recorded.onCompletionCall = (args) =>
       record("onCompletionCall", undefined, () => hook.onCompletionCall!(args)) as ReturnType<
         NonNullable<AgentHook["onCompletionCall"]>
       >;
+
   if (typeof hook.onToolCall === "function")
     recorded.onToolCall = (args) =>
       record("onToolCall", args.toolCallId, () => hook.onToolCall!(args)) as ReturnType<
         NonNullable<AgentHook["onToolCall"]>
       >;
+
   return recorded;
 }

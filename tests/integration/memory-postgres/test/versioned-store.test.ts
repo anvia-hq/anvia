@@ -102,7 +102,9 @@ describe.skipIf(!baseUrl)("versioned memory against PostgreSQL", () => {
     // Ending the pool first and dropping without FORCE keeps the server from killing a connection
     // that is still closing, which surfaces as an uncaught "terminating connection" error.
     await pool.end();
+
     if (created) await admin.query(`DROP DATABASE "${database}"`);
+
     await admin.end();
   });
 

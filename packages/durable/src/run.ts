@@ -44,9 +44,12 @@ export class DurableRunView<Output = unknown> {
 
   async *stream(options: DurableStreamOptions = {}): AsyncIterable<DurableEvent> {
     let cursor = options.after ?? 0;
+
     if (!Number.isSafeInteger(cursor) || cursor < 0) throw new TypeError("Invalid event cursor.");
+
     if (cursor > (await this.snapshot({ operations: false })).cursor)
       throw new TypeError("Event cursor is ahead of the store.");
+
     while (true) {
       options.abortSignal?.throwIfAborted();
       // Read the status first: a terminal status is committed with its last event, so events read
@@ -58,9 +61,12 @@ export class DurableRunView<Output = unknown> {
         cursor = event.sequence;
         yield event;
       }
+
       if (events.length > 0) continue;
+
       if (run.status === "completed" || run.status === "failed" || run.status === "cancelled")
         return;
+
       await delay(options.abortSignal);
     }
   }
@@ -72,13 +78,16 @@ export class DurableRunView<Output = unknown> {
       options.onBlocked !== "throw"
     )
       throw new TypeError('onBlocked must be "wait" or "throw".');
+
     while (true) {
       options.abortSignal?.throwIfAborted();
       // Settle from the observed state: another caller may retry before the next snapshot.
       const run = await this.status();
+
       if (run.status === "failed" || run.status === "cancelled") {
         throw new DurableRunError(run.id, run.status, run.error ?? run.status);
       }
+
       if (run.status === "needs_attention" && options.onBlocked === "throw") {
         throw new DurableBlockedError(
           run.id,
@@ -86,12 +95,16 @@ export class DurableRunView<Output = unknown> {
           run.error ?? "Run needs attention.",
         );
       }
+
       if (run.status === "completed") {
         const { outcome } = await this.reader.run(this.id);
+
         if (outcome === undefined) throw new Error("Completed durable run has no outcome.");
+
         // The registration's agent produced this outcome, so its output matches `Output`.
         return outcome as AgentOutcome<Output>;
       }
+
       // Cancelling a wait only detaches this subscriber.
       await delay(options.abortSignal);
     }

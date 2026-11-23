@@ -32,6 +32,7 @@ const server = Bun.serve({
     if (contentType?.startsWith("application/json")) {
       recorded.body = await request.json();
     }
+
     requests.push(recorded);
     const body = (recorded.body ?? {}) as ChatCompletionsFixtureBody;
 
@@ -226,6 +227,7 @@ function fragmentedStream(payload: string, pieceSize = 13): Response {
           controller.close();
           return;
         }
+
         const end = Math.min(offset + pieceSize, bytes.length);
         controller.enqueue(bytes.slice(offset, end));
         offset = end;

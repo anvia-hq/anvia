@@ -22,13 +22,16 @@ export function StatusPage(props: { enabled: boolean }) {
       setSummary(undefined);
       return;
     }
+
     setLoading(true);
     setError("");
     try {
       const response = await fetch("/status");
+
       if (!response.ok) {
         throw new Error(`Status failed with HTTP ${response.status}`);
       }
+
       setSummary((await response.json()) as StudioStatusSummary);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : String(loadError));
@@ -41,6 +44,31 @@ export function StatusPage(props: { enabled: boolean }) {
   useEffect(() => {
     void loadStatus();
   }, [loadStatus]);
+
+  function renderContent() {
+    if (!props.enabled) {
+      return (
+        <StudioEmptyState
+          title="Status unavailable"
+          text="This Studio runtime did not expose status."
+        />
+      );
+    }
+
+    if (loading && summary === undefined) {
+      return <StudioEmptyState title="Loading status" text="Reading runtime status." />;
+    }
+
+    if (error.length > 0) {
+      return <StudioEmptyState title="Status error" text={error} />;
+    }
+
+    if (summary === undefined) {
+      return null;
+    }
+
+    return <StatusDashboard summary={summary} />;
+  }
 
   return (
     <StudioPageShell className="grid-rows-[auto_minmax(0,1fr)]" aria-label="Status">
@@ -65,20 +93,7 @@ export function StatusPage(props: { enabled: boolean }) {
         }
       />
 
-      <StudioPageContent className="overflow-auto">
-        {!props.enabled ? (
-          <StudioEmptyState
-            title="Status unavailable"
-            text="This Studio runtime did not expose status."
-          />
-        ) : loading && summary === undefined ? (
-          <StudioEmptyState title="Loading status" text="Reading runtime status." />
-        ) : error.length > 0 ? (
-          <StudioEmptyState title="Status error" text={error} />
-        ) : summary === undefined ? null : (
-          <StatusDashboard summary={summary} />
-        )}
-      </StudioPageContent>
+      <StudioPageContent className="overflow-auto">{renderContent()}</StudioPageContent>
     </StudioPageShell>
   );
 }

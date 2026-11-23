@@ -74,7 +74,9 @@ export function teamReducer(state: TeamState, action: TeamAction): TeamState {
         ...state,
         status: action.error ? "failed" : "cancelled",
       };
+
       if (action.error) next.error = action.error;
+
       next.interactions = closeInteractions(state);
       next.members = Object.fromEntries(
         Object.entries(state.members).map(([id, member]) => [
@@ -99,9 +101,12 @@ export function teamReducer(state: TeamState, action: TeamAction): TeamState {
       break;
   }
   const event = action.event;
+
   if (event.type === "team_run_started") return { ...state, runId: event.runId };
+
   if (event.type === "error")
     return teamReducer(state, { type: "stop", error: errorMessage(event.error) });
+
   if (event.type === "response" || event.type === "blocked")
     return {
       ...state,
@@ -113,16 +118,20 @@ export function teamReducer(state: TeamState, action: TeamAction): TeamState {
       },
       interactions: closeInteractions(state),
     };
+
   if ("member" in event) {
     const next: TeamState = {
       ...state,
       members: { ...state.members, [event.instanceId]: event.member },
     };
+
     if (event.type === "agent_cancelled" || event.type === "agent_failed") {
       next.interactions = closeInteractions(state, event.instanceId);
     }
+
     return next;
   }
+
   if (event.type === "interaction")
     return {
       ...state,
@@ -135,6 +144,7 @@ export function teamReducer(state: TeamState, action: TeamAction): TeamState {
         },
       },
     };
+
   if (event.type === "message_queued" || event.type === "message_delivered") {
     const previous = state.messages.find((item) => item.message.id === event.message.id);
     const item = {
@@ -148,7 +158,9 @@ export function teamReducer(state: TeamState, action: TeamAction): TeamState {
         : [...state.messages, item].slice(-500),
     };
   }
+
   if (event.type !== "agent_event") return state;
+
   const key = `${event.instanceId}:${event.runId ?? "initial"}`;
   const turn = state.turns.find((item) => item.key === key) ?? {
     key,
@@ -183,6 +195,7 @@ export function teamReducer(state: TeamState, action: TeamAction): TeamState {
         tools: inner.messages
           .flatMap((message) => {
             if (typeof message.content === "string") return [];
+
             return message.content
               .filter((part) => part.type === "tool-call" || part.type === "tool-result")
               .map((part) => JSON.stringify(part, null, 2));

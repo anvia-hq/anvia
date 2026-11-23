@@ -177,7 +177,9 @@ describe("trace payload information structure", () => {
     const match = [...container.querySelectorAll("button")].find(
       (candidate) => candidate.textContent === name,
     );
+
     if (match === undefined) throw new Error(`${name} button not found`);
+
     return match;
   }
 });

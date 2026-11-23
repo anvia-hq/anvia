@@ -65,8 +65,10 @@ it.each(["message", "turn", "run"] as MemorySavePolicy[])(
       const requests: CompletionRequest[] = [];
       const completion = async (request: CompletionRequest) => {
         requests.push(request);
+
         if (JSON.stringify(request.chatHistory).length > 2000)
           throw new Error("context length exceeded");
+
         return requests.length <= 3
           ? response([call(String(requests.length))])
           : response([{ type: "text", text: "done" }]);
@@ -160,7 +162,9 @@ it.each(["message", "turn", "run"] as MemorySavePolicy[])(
       });
       const options = { prompt: "Find the answer", session: { sessionId: "test" } };
       const events: AgentStreamEvent[] = [];
+
       if (streaming) for await (const event of agent.stream(options)) events.push(event);
+
       const outcome = streaming ? events.at(-1)! : await agent.generate(options);
       expect(outcome).toMatchObject({
         type: "response",
@@ -192,6 +196,7 @@ it.each(["message", "turn", "run"] as MemorySavePolicy[])(
       ).toBe(true);
       expect(messages.filter((message) => message.role === "tool")).toHaveLength(3);
       expect(messages.some(isMemoryCompactionMessage)).toBe(false);
+
       if (streaming)
         expect(events.filter((event) => event.type === "memory_compaction")).toHaveLength(3);
     }
@@ -245,12 +250,18 @@ it("carries an already prepared projection through approval without re-summarizi
     async completion(request) {
       if (JSON.stringify(request.chatHistory).length > 2000)
         throw new Error("context length exceeded");
+
       calls += 1;
-      return calls === 1
-        ? response([call("a")])
-        : calls === 2
-          ? response([{ ...call("b"), toolName: "confirm" }])
-          : response([{ type: "text", text: "done" }]);
+
+      if (calls === 1) {
+        return response([call("a")]);
+      }
+
+      if (calls === 2) {
+        return response([{ ...call("b"), toolName: "confirm" }]);
+      }
+
+      return response([{ type: "text", text: "done" }]);
     },
   };
   const agent = new Agent({
@@ -286,7 +297,9 @@ it("carries an already prepared projection through approval without re-summarizi
     prompt: "Find the answer",
     session: { sessionId: "test" },
   });
+
   if (waiting.type !== "interaction") throw new Error("Expected approval");
+
   expect(compactor).toHaveBeenCalledTimes(1);
   const outcome = await agent.generate({
     continuation: JSON.parse(JSON.stringify(waiting.continuation)),

@@ -40,7 +40,9 @@ export class RfbClientFilter {
     const forward: Uint8Array[] = [];
     while (this.buffer.byteLength > 0) {
       const consumed = this.step(forward);
+
       if (consumed === 0) break;
+
       this.buffer = this.buffer.subarray(consumed);
     }
     return concat(...forward);
@@ -52,9 +54,12 @@ export class RfbClientFilter {
     switch (this.stage) {
       case "version": {
         if (buffer.byteLength < versionLength) return 0;
+
         const version = new TextDecoder("latin1").decode(buffer.subarray(0, versionLength));
         const match = /^RFB 003\.(\d{3})\n$/.exec(version);
+
         if (match === null) throw new RfbProtocolError("Not an RFB handshake.");
+
         // From 3.7 the client picks a security type; in 3.3 the server dictates it.
         this.hasSecurityByte = Number(match[1]) >= 7;
         this.stage = this.hasSecurityByte ? "security" : "init";
@@ -65,6 +70,7 @@ export class RfbClientFilter {
         if (buffer[0] !== noSecurity) {
           throw new RfbProtocolError("Only RFB without authentication is supported.");
         }
+
         this.stage = "init";
         forward.push(buffer.subarray(0, 1));
         return 1;
@@ -89,8 +95,11 @@ export class RfbClientFilter {
       case 2: {
         // SetEncodings
         if (buffer.byteLength < 4) return 0;
+
         const count = (buffer[2] ?? 0) * 256 + (buffer[3] ?? 0);
+
         if (count > maxEncodings) throw new RfbProtocolError("Too many encodings.");
+
         length = 4 + 4 * count;
         break;
       }
@@ -111,8 +120,11 @@ export class RfbClientFilter {
         // as the server lists the extension. Either way it is clipboard data headed for the
         // desktop, so it is input.
         if (buffer.byteLength < 8) return 0;
+
         const text = Math.abs(readInt32(buffer, 4));
+
         if (text > maxVariableBytes) throw new RfbProtocolError("Clipboard text is too large.");
+
         length = 8 + text;
         kind = "input";
         break;
@@ -123,6 +135,7 @@ export class RfbClientFilter {
       case 248: {
         // ClientFence
         if (buffer.byteLength < 9) return 0;
+
         length = 9 + (buffer[8] ?? 0);
         break;
       }
@@ -132,6 +145,7 @@ export class RfbClientFilter {
       case 251: {
         // SetDesktopSize: the size is set through the API, never by a viewer.
         if (buffer.byteLength < 8) return 0;
+
         length = 8 + 16 * (buffer[6] ?? 0);
         kind = "drop";
         break;
@@ -139,7 +153,9 @@ export class RfbClientFilter {
       case 255: {
         // QEMU extended messages: only the extended key event is known, and it is input.
         if (buffer.byteLength < 2) return 0;
+
         if (buffer[1] !== 0) throw new RfbProtocolError("Unsupported QEMU message.");
+
         length = 12;
         kind = "input";
         break;
@@ -147,10 +163,13 @@ export class RfbClientFilter {
       default:
         throw new RfbProtocolError(`Unsupported RFB message type ${type}.`);
     }
+
     if (buffer.byteLength < length) return 0;
+
     if (kind === "pass" || (kind === "input" && this.allowInput())) {
       forward.push(buffer.subarray(0, length));
     }
+
     return length;
   }
 }
@@ -161,6 +180,7 @@ function readInt32(bytes: Uint8Array, offset: number): number {
 
 function concat(...parts: Uint8Array[]): Uint8Array {
   if (parts.length === 1 && parts[0] !== undefined) return parts[0];
+
   const out = new Uint8Array(parts.reduce((total, part) => total + part.byteLength, 0));
   let offset = 0;
   for (const part of parts) {

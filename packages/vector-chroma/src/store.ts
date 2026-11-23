@@ -34,6 +34,7 @@ export class ChromaVectorStore<
   async ensure(): Promise<void> {
     const client = await this.owner.nativeClient();
     const collectionOptions = this.collectionOptions();
+
     if (client.getOrCreateCollection !== undefined) {
       await client.getOrCreateCollection(collectionOptions);
     } else {
@@ -46,6 +47,7 @@ export class ChromaVectorStore<
       await this.owner.nativeClient()
     ).getCollection(this.collectionOptions());
     const actualMetric = collection.configuration?.hnsw?.space;
+
     if (typeof actualMetric === "string" && actualMetric !== metricName(this.options.metric)) {
       throw new Error(
         `Chroma collection ${this.options.collectionName} uses ${actualMetric}; expected ${metricName(this.options.metric)}`,
@@ -55,13 +57,17 @@ export class ChromaVectorStore<
 
   async upsert(options: VectorStoreUpsertOptions<T, Metadata>): Promise<void> {
     validateDocuments(options.documents, this.options.dimensions);
+
     if (options.documents.length === 0) return;
+
     for (const document of options.documents) assertNoReservedMetadata(document.metadata);
     const collection = await this.collection();
     const documentIds = options.documents.map((document) => document.id);
     await collection.delete({ where: { [documentIdMetadataKey]: { $in: documentIds } } });
     const records = options.documents.flatMap((document) => chromaRecords(document));
+
     if (records.length === 0) return;
+
     const request: Record<string, unknown> = {
       ...options.providerOptions,
       ids: records.map((record) => record.id),
@@ -87,14 +93,18 @@ export class ChromaVectorStore<
       throwIfAborted(request.abortSignal);
       const unfiltered = parseQueryResults<T, Metadata>(response, undefined, this.options.metric);
       const results = selectResults(unfiltered, request);
+
       if (
         results.length >= request.topK ||
         chromaResultCount(response) < candidateLimit ||
         hasResultBelowMinimum(unfiltered, request.minScore)
       )
         return results;
+
       const nextLimit = nextCandidateLimit(candidateLimit);
+
       if (nextLimit === candidateLimit) return results;
+
       candidateLimit = nextLimit;
     }
   }
@@ -138,7 +148,9 @@ function nextCandidateLimit(current: number): number {
 
 function metricName(metric: ChromaVectorStoreOptions["metric"]): string {
   if (metric === "euclidean") return "l2";
+
   if (metric === "dotProduct") return "ip";
+
   return "cosine";
 }
 
@@ -155,12 +167,16 @@ function validateDocuments<T, Metadata extends VectorMetadata>(
   const ids = new Set<string>();
   for (const document of documents) {
     if (ids.has(document.id)) throw new TypeError(`Duplicate vector document id: ${document.id}`);
+
     ids.add(document.id);
+
     if (document.embeddings.length === 0)
       throw new TypeError(`Vector document ${document.id} must contain at least one embedding.`);
+
     for (const embedding of document.embeddings) {
       if (embedding.vector.length !== dimensions)
         throw new Error(`Vector dimension mismatch for document ${document.id}`);
+
       if (!embedding.vector.every(Number.isFinite))
         throw new Error(`Vector for document ${document.id} must contain only finite numbers`);
     }
@@ -169,15 +185,19 @@ function validateDocuments<T, Metadata extends VectorMetadata>(
 
 function validateSearchRequest(request: VectorSearchRequest, dimensions: number): void {
   throwIfAborted(request.abortSignal);
+
   if (!Number.isSafeInteger(request.topK) || request.topK < 1)
     throw new RangeError("Vector search topK must be a positive safe integer.");
+
   if (request.minScore !== undefined && !Number.isFinite(request.minScore))
     throw new RangeError("Vector search minScore must be a finite number.");
+
   if (request.vector.length !== dimensions) {
     throw new Error(
       `Vector dimension mismatch: expected ${dimensions} dimensions but received ${request.vector.length} for query`,
     );
   }
+
   if (!request.vector.every(Number.isFinite))
     throw new Error("Vector search query must contain only finite numbers");
 }

@@ -144,15 +144,18 @@ export function createDesktopTools(options: CreateDesktopToolsOptions): readonly
   /** Translate a point in the screenshot to display pixels, refusing one that is outside it. */
   const point = (current: View, [x = 0, y = 0]: readonly number[]) => toDisplay(current, x, y);
   const settleMs = options.settleMs ?? defaultSettleMs;
+
   if (!Number.isFinite(settleMs) || settleMs < 0) {
     throw new RangeError("settleMs must be zero or more.");
   }
+
   /** Perform an input, then give the application a moment to react to it. */
   const act = async (action: DesktopAction, context: ToolCallContext) => {
     await sandbox.act(action, {
       operationId: context.operationId,
       abortSignal: context.abortSignal,
     });
+
     if (settleMs > 0) await delay(settleMs, context.abortSignal);
   };
 
@@ -343,6 +346,7 @@ function toDisplay(view: View, x: number, y: number): { x: number; y: number } {
         "if the screen size changed.",
     );
   }
+
   // A screenshot pixel covers several display pixels when scaled down. Aim at its centre, so the
   // click lands where the model pointed and the display's far corner is reachable.
   return {
@@ -359,6 +363,7 @@ function toImage(imageSize: number, displaySize: number, value: number): number 
 function delay(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted === true) return reject(signal.reason);
+
     const timer = setTimeout(done, ms);
     function done() {
       signal?.removeEventListener("abort", abort);

@@ -124,6 +124,7 @@ export class GeminiCompletionModel<
     }
     streamState.assertComplete();
     const finalEvent = streamState.finalEvent();
+
     if (finalEvent !== undefined) {
       yield {
         ...finalEvent,
@@ -138,17 +139,21 @@ export function toGeminiGenerateContentParams(
   request: CompletionRequest,
 ): GeminiGenerateParams {
   const messages = requestMessages(request);
+
   if (
     request.providerOptions !== undefined &&
     (!isPlainObject(request.providerOptions) || !isJsonValue(request.providerOptions))
   ) {
     throw new TypeError("Gemini providerOptions must be a JSON object.");
   }
+
   const providerOptions = request.providerOptions ?? {};
   const { config: providerConfigValue, ...providerTopLevel } = providerOptions;
+
   if (providerConfigValue !== undefined && !isPlainObject(providerConfigValue)) {
     throw new TypeError("Gemini providerOptions.config must be a JSON object.");
   }
+
   const providerConfig = providerConfigValue === undefined ? {} : { ...providerConfigValue };
   delete providerConfig.tools;
   const configValues: GeminiConfig = {
@@ -156,10 +161,12 @@ export function toGeminiGenerateContentParams(
     ...geminiConfig(request, messages),
   };
   const reasoningEffort = request.controls?.reasoningEffort;
+
   if (reasoningEffort !== undefined) {
     const thinkingConfig = isPlainObject(providerConfig.thinkingConfig)
       ? { ...providerConfig.thinkingConfig }
       : {};
+
     if (modelId.startsWith("gemini-2.5")) {
       delete thinkingConfig.thinkingLevel;
       configValues.thinkingConfig = {
@@ -171,6 +178,7 @@ export function toGeminiGenerateContentParams(
       configValues.thinkingConfig = { ...thinkingConfig, thinkingLevel: reasoningEffort };
     }
   }
+
   const config = disableGeminiNativeRetries(configValues);
   const params: GeminiGenerateParams = {
     ...providerTopLevel,
@@ -184,8 +192,11 @@ export function toGeminiGenerateContentParams(
 
 function gemini25ThinkingBudget(reasoningEffort: string): number {
   if (reasoningEffort === "low") return 1_024;
+
   if (reasoningEffort === "medium") return 8_192;
+
   if (reasoningEffort === "high") return 24_576;
+
   throw new TypeError(`Unsupported Gemini 2.5 reasoning effort: ${reasoningEffort}`);
 }
 
@@ -194,6 +205,7 @@ function applyAbortSignal(
   options: ModelCallOptions | undefined,
 ): void {
   if (options?.abortSignal === undefined) return;
+
   const config = isPlainObject(params.config) ? params.config : {};
   params.config = { ...config, abortSignal: options.abortSignal };
 }
@@ -229,6 +241,7 @@ function toolChoiceSummary(toolChoice: ToolChoice | undefined): JsonValue | unde
   if (toolChoice === undefined || typeof toolChoice === "string") {
     return toolChoice;
   }
+
   return { type: toolChoice.type, name: toolChoice.name };
 }
 
@@ -238,6 +251,7 @@ function compactJsonObject(values: Record<string, unknown>): JsonObject {
       if (!isJsonValue(value)) {
         return [];
       }
+
       return [[key, value]];
     }),
   ) as JsonObject;
@@ -250,25 +264,32 @@ function requestMessages(request: CompletionRequest): MessageType[] {
 function geminiConfig(request: CompletionRequest, messages: MessageType[]): GeminiConfig {
   const config: GeminiConfig = {};
   const systemInstruction = systemInstructionFrom(request, messages);
+
   if (systemInstruction !== undefined) {
     config.systemInstruction = systemInstruction;
   }
+
   if (request.temperature !== undefined) {
     config.temperature = request.temperature;
   }
+
   if (request.maxTokens !== undefined) {
     config.maxOutputTokens = request.maxTokens;
   }
+
   if (request.tools.length > 0) {
     config.tools = [{ functionDeclarations: request.tools.map(toolDefinitionToGemini) }];
   }
+
   if (request.toolChoice !== undefined) {
     config.toolConfig = toolChoiceToGemini(request.toolChoice);
   }
+
   if (request.outputSchema !== undefined) {
     config.responseMimeType = "application/json";
     config.responseJsonSchema = request.outputSchema;
   }
+
   return config;
 }
 
@@ -279,9 +300,11 @@ function systemInstructionFrom(
   const systemMessages = messages.flatMap((message) =>
     message.role === "system" ? [message.content] : [],
   );
+
   if (request.instructions !== undefined) {
     systemMessages.unshift(request.instructions);
   }
+
   return systemMessages.length === 0 ? undefined : systemMessages.join("\n\n");
 }
 
@@ -299,14 +322,17 @@ export function messagesToGeminiContents(messages: MessageType[]): GeminiContent
       for (const item of typeof message.content === "string" ? [] : message.content) {
         if (item.type === "tool-call") {
           toolNamesById.set(item.toolCallId, item.toolName);
+
           if (item.callId !== undefined) {
             toolNamesById.set(item.callId, item.toolName);
           }
         }
       }
+
       if (content.parts.length > 0) {
         contents.push(content);
       }
+
       continue;
     }
 
@@ -314,6 +340,7 @@ export function messagesToGeminiContents(messages: MessageType[]): GeminiContent
       message.role === "tool"
         ? toolMessageToGeminiContent(message, toolNamesById)
         : userMessageToGeminiContent(message);
+
     if (content.parts.length > 0) {
       contents.push(content);
     }
@@ -346,6 +373,7 @@ function toolMessageToGeminiContent(
           "Anvia interaction responses must be resolved by Agent before provider calls.",
         );
       }
+
       return toolContentToGeminiPart(content, toolNamesById);
     }),
   };
@@ -366,31 +394,41 @@ function assistantMessageToGeminiContent(
         : message.content.flatMap((content): GeminiPart[] => {
             if (content.type === "text") {
               const part: GeminiPart = { text: content.text };
+
               if (content.signature !== undefined) {
                 part.thoughtSignature = content.signature;
               }
+
               return [part];
             }
+
             if (content.type === "tool-call") {
               const functionCall: Record<string, unknown> = {
                 name: content.toolName,
                 args: content.input,
               };
+
               if (content.callId !== undefined) {
                 functionCall.id = content.callId;
               }
+
               const part: GeminiPart = { functionCall };
+
               if (content.signature !== undefined) {
                 part.thoughtSignature = content.signature;
               }
+
               return [part];
             }
+
             if (content.type === "reasoning" && content.details !== undefined) {
               return content.details.flatMap((reasoning): GeminiPart[] => {
                 if (reasoning.type !== "text" && reasoning.type !== "summary") {
                   return [];
                 }
+
                 const part: GeminiPart = { text: reasoning.text, thought: true };
+
                 if (
                   replaySignatures &&
                   reasoning.type === "text" &&
@@ -398,14 +436,17 @@ function assistantMessageToGeminiContent(
                 ) {
                   part.thoughtSignature = reasoning.signature;
                 }
+
                 return [part];
               });
             }
+
             if (content.type === "image" || content.type === "file") {
               throw new Error(
                 "Gemini does not support image or file content in assistant history yet",
               );
             }
+
             return [];
           }),
   };
@@ -415,9 +456,11 @@ function userContentToGeminiPart(content: UserContentPart): GeminiPart {
   if (content.type === "text") {
     return { text: content.text };
   }
+
   if (content.type === "image") {
     return imageContentToGeminiPart(content);
   }
+
   return documentContentToGeminiPart(content);
 }
 
@@ -443,12 +486,19 @@ function imageContentToGeminiPart(
 
 function mimeTypeFromImageUrl(url: string): string {
   const pathname = safeUrlPathname(url).toLowerCase();
+
   if (pathname.endsWith(".jpg") || pathname.endsWith(".jpeg")) return "image/jpeg";
+
   if (pathname.endsWith(".webp")) return "image/webp";
+
   if (pathname.endsWith(".gif")) return "image/gif";
+
   if (pathname.endsWith(".bmp")) return "image/bmp";
+
   if (pathname.endsWith(".heic")) return "image/heic";
+
   if (pathname.endsWith(".heif")) return "image/heif";
+
   return "image/png";
 }
 
@@ -493,26 +543,33 @@ function toolContentToGeminiPart(
     name: content.toolName || toolNamesById.get(id) || content.toolCallId,
     response: toolResultResponse(content),
   };
+
   if (content.callId !== undefined) {
     functionResponse.id = content.callId;
   }
+
   return { functionResponse };
 }
 
 function toolResultResponse(content: ToolResultPart): Record<string, unknown> {
   const output = content.output;
+
   if (output.type === "json") {
     return { result: output.value };
   }
+
   if (output.type === "text") {
     return { content: output.value };
   }
+
   if (output.type === "error-json" || output.type === "error-text") {
     return { error: output.value };
   }
+
   if (output.type === "execution-denied") {
     return { error: output.reason ?? "Tool execution was denied." };
   }
+
   return {
     content: output.value
       .map((item) => (item.type === "text" ? item.text : `[file:${item.mediaType}]`))
@@ -532,12 +589,15 @@ function toolChoiceToGemini(toolChoice: ToolChoice): GeminiPart {
   if (toolChoice === "auto") {
     return { functionCallingConfig: { mode: "AUTO" } };
   }
+
   if (toolChoice === "required") {
     return { functionCallingConfig: { mode: "ANY" } };
   }
+
   if (toolChoice === "none") {
     return { functionCallingConfig: { mode: "NONE" } };
   }
+
   return {
     functionCallingConfig: {
       mode: "ANY",
@@ -556,7 +616,9 @@ export function fromGeminiGenerateContentResponse(response: unknown): Completion
     hasGeminiFunctionCallMarker(raw, parts),
     usage,
   );
+
   if (finishError !== undefined) throw finishError;
+
   const choice = assistantContentFromGeminiResponse(raw, usage);
 
   const result: CompletionResponse = {
@@ -566,9 +628,11 @@ export function fromGeminiGenerateContentResponse(response: unknown): Completion
   };
   applyGeminiFinishReason(result, raw);
   const id = stringFrom(raw.responseId) ?? stringFrom(raw.id);
+
   if (id !== undefined) {
     result.messageId = id;
   }
+
   assertSafeGeminiCompletionResponse(result);
   return result;
 }
@@ -579,7 +643,9 @@ function applyGeminiFinishReason(
   hasStreamedToolCalls = false,
 ): void {
   const value = providerFinishReasonFromGeminiResponse(raw);
+
   if (value === undefined) return;
+
   applyGeminiFinishReasonValue(response, value, hasStreamedToolCalls);
 }
 
@@ -597,6 +663,7 @@ function applyGeminiFinishReasonValue(
 
 function geminiFinishReason(value: string, hasToolCalls: boolean): CompletionFinishReason {
   if (value === "MAX_TOKENS") return "length";
+
   if (
     value === "SAFETY" ||
     value === "RECITATION" ||
@@ -608,15 +675,19 @@ function geminiFinishReason(value: string, hasToolCalls: boolean): CompletionFin
   ) {
     return "content-filter";
   }
+
   if (value === "STOP") {
     return hasToolCalls ? "tool-calls" : "stop";
   }
+
   return "other";
 }
 
 export function fromGeminiGenerateContentStreamChunk(chunk: unknown): CompletionModelStreamEvent[] {
   const mapping = mapGeminiGenerateContentStreamChunk(chunk);
+
   if (mapping.terminalError !== undefined) throw mapping.terminalError;
+
   return mapping.events;
 }
 
@@ -642,9 +713,11 @@ function mapGeminiGenerateContentStreamChunk(chunk: unknown): GeminiStreamChunkM
   const calls =
     terminalError === undefined ? functionCallsFromGeminiResponse(chunk, parts, usage) : [];
   const directText = textFromGeminiResponse(chunk, parts);
+
   if (terminalError === undefined && directText.length > 0 && parts.length === 0) {
     events.push({ type: "text_delta", delta: directText });
   }
+
   for (const { part } of terminalError === undefined ? parts : []) {
     if (typeof part.text === "string" && part.text.length > 0) {
       if (part.thought === true) {
@@ -663,9 +736,11 @@ function mapGeminiGenerateContentStreamChunk(chunk: unknown): GeminiStreamChunkM
       }),
     );
     const argumentsDelta = JSON.stringify(call.args);
+
     if (argumentsDelta === undefined) {
       throw invalidGeminiToolCallArguments(call.toolCallId, usage);
     }
+
     events.push(
       toolCallDelta(call.toolCallId, {
         callId: call.callId,
@@ -675,20 +750,25 @@ function mapGeminiGenerateContentStreamChunk(chunk: unknown): GeminiStreamChunkM
     );
   }
   const id = stringFrom(chunk.responseId) ?? stringFrom(chunk.id);
+
   if (id !== undefined) {
     events.push({ type: "message_id", id });
   }
+
   if (isPlainObject(chunk.usageMetadata)) {
     if (terminalError === undefined) {
       events.push({ type: "final", response: fromGeminiGenerateContentResponse(chunk) });
     } else {
       const response: CompletionResponse = { choice: [], usage, rawResponse: chunk };
+
       if (providerFinishReason !== undefined) {
         applyGeminiFinishReasonValue(response, providerFinishReason, true);
       }
+
       events.push({ type: "final", response });
     }
   }
+
   return providerFinishReason === undefined
     ? {
         events,
@@ -731,6 +811,7 @@ class GeminiCompletionStreamState {
           })
         : invalidGeminiToolCall(toolCallId, this.currentUsage());
     }
+
     if (
       this.providerFinishReason !== undefined &&
       (mapping.hasToolCallMarker || hasGeminiSemanticProgress(mapping.events))
@@ -741,8 +822,10 @@ class GeminiCompletionStreamState {
         usage: this.currentUsage(),
       });
     }
+
     for (const toolCall of mapping.toolCalls) {
       const existing = this.toolCalls.get(toolCall.toolCallId);
+
       if (existing !== undefined) {
         if (
           existing.callId === undefined ||
@@ -751,8 +834,10 @@ class GeminiCompletionStreamState {
         ) {
           throw invalidGeminiToolCall(toolCall.toolCallId, this.currentUsage());
         }
+
         continue;
       }
+
       this.toolCalls.set(toolCall.toolCallId, toolCall);
     }
     this.sawToolCallMarker ||= mapping.hasToolCallMarker;
@@ -775,6 +860,7 @@ class GeminiCompletionStreamState {
           usage: this.currentUsage(),
         });
       }
+
       this.providerFinishReason = mapping.providerFinishReason;
       this.terminalChunk = chunk;
     }
@@ -784,11 +870,14 @@ class GeminiCompletionStreamState {
     if (this.terminalError !== undefined) {
       throw geminiProviderOutputErrorWithUsage(this.terminalError, this.currentUsage());
     }
+
     if (!this.sawToolCallMarker && this.toolCalls.size === 0) return;
+
     if (this.providerFinishReason !== undefined) {
       assertSafeGeminiToolFinishReason(this.providerFinishReason, this.currentUsage());
       return;
     }
+
     const toolCallId = this.toolCalls.keys().next().value as string | undefined;
     throw new CompletionProviderOutputError(
       toolCallId === undefined
@@ -799,10 +888,12 @@ class GeminiCompletionStreamState {
 
   finalEvent(): Extract<CompletionModelStreamEvent, { type: "final" }> | undefined {
     let response = this.finalResponse;
+
     if (response === undefined) {
       if (this.terminalChunk === undefined) {
         return undefined;
       }
+
       const raw = isPlainObject(this.terminalChunk) ? this.terminalChunk : {};
       response = {
         choice: [],
@@ -810,13 +901,16 @@ class GeminiCompletionStreamState {
         rawResponse: this.terminalChunk,
       };
       const messageId = stringFrom(raw.responseId) ?? stringFrom(raw.id);
+
       if (messageId !== undefined) response.messageId = messageId;
     }
 
     response = mergeGeminiStreamToolCalls(response, [...this.toolCalls.values()]);
+
     if (this.providerFinishReason !== undefined) {
       applyGeminiFinishReasonValue(response, this.providerFinishReason, this.toolCalls.size > 0);
     }
+
     assertSafeGeminiCompletionResponse(response);
     return { type: "final", response };
   }
@@ -825,6 +919,7 @@ class GeminiCompletionStreamState {
     if (this.finalResponse !== undefined) {
       return this.finalResponse.usage;
     }
+
     const raw = isPlainObject(this.terminalChunk) ? this.terminalChunk : {};
     return usageFromGemini(raw.usageMetadata);
   }
@@ -855,6 +950,7 @@ function sameGeminiToolCall(
 
 function sameJsonValue(left: JsonValue, right: JsonValue): boolean {
   if (Object.is(left, right)) return true;
+
   if (isJsonArray(left) || isJsonArray(right)) {
     return (
       isJsonArray(left) &&
@@ -866,9 +962,11 @@ function sameJsonValue(left: JsonValue, right: JsonValue): boolean {
       })
     );
   }
+
   if (left === null || right === null || typeof left !== "object" || typeof right !== "object") {
     return false;
   }
+
   const leftKeys = Object.keys(left);
   const rightKeys = Object.keys(right);
   return (
@@ -890,10 +988,13 @@ function assistantContentFromGeminiResponse(
 ): AssistantContentPart[] {
   const parts = candidateParts(response, usage);
   const calls = functionCallsFromGeminiResponse(response, parts, usage);
+
   if (parts.length === 0) {
     const choice: AssistantContentPart[] = [];
     const text = textFromGeminiResponse(response, parts);
+
     if (text.length > 0) choice.push({ type: "text", text });
+
     choice.push(...calls.map(toolCallFromGeminiFunctionCall));
     return choice;
   }
@@ -914,11 +1015,15 @@ function assistantContentFromGeminiResponse(
           type: "text",
           text: part.text,
         };
+
         if (signature !== undefined) text = { ...text, signature };
+
         choice.push(text);
       }
     }
+
     const call = callsByPartIndex.get(index);
+
     if (call !== undefined) {
       choice.push(toolCallFromGeminiFunctionCall(call));
     }
@@ -937,9 +1042,11 @@ function textFromGeminiResponse(
       )
       .join("");
   }
+
   if (hasGeminiCandidatePayload(response)) {
     return "";
   }
+
   const directText = ownDataProperty(response, "text");
   return typeof directText === "string" ? directText : "";
 }
@@ -954,29 +1061,36 @@ function functionCallsFromGeminiResponse(
       if (part.functionCall === undefined) {
         return [];
       }
+
       if (!isPlainObject(part.functionCall)) {
         throw invalidGeminiToolCall(deterministicGeminiToolCallId(index), usage);
       }
+
       return [functionCallFromGeminiPart(part.functionCall, part, index, usage)];
     });
     assertDistinctGeminiFunctionCalls(calls, usage);
     return calls;
   }
+
   if (hasGeminiCandidatePayload(response)) {
     return [];
   }
 
   const camelCaseCalls = ownDataProperty(response, "functionCalls");
   const snakeCaseCalls = ownDataProperty(response, "function_calls");
-  const directCalls = Array.isArray(camelCaseCalls)
-    ? camelCaseCalls
-    : Array.isArray(snakeCaseCalls)
-      ? snakeCaseCalls
-      : [];
+  let directCalls: unknown[] = [];
+
+  if (Array.isArray(camelCaseCalls)) {
+    directCalls = camelCaseCalls;
+  } else if (Array.isArray(snakeCaseCalls)) {
+    directCalls = snakeCaseCalls;
+  }
+
   const calls = directCalls.map((call, index) => {
     if (!isPlainObject(call)) {
       throw invalidGeminiToolCall(deterministicGeminiToolCallId(index), usage);
     }
+
     return functionCallFromGeminiPart(call, call, index, usage);
   });
   assertDistinctGeminiFunctionCalls(calls, usage);
@@ -993,9 +1107,11 @@ function functionCallFromGeminiPart(
   const rawCallId = call.id;
   const callId = isNonblankString(rawCallId) ? rawCallId : undefined;
   const toolCallId = callId ?? fallbackId;
+
   if (rawCallId !== undefined && callId === undefined) {
     throw invalidGeminiToolCall(toolCallId, usage);
   }
+
   if (
     call.partialArgs !== undefined ||
     call.partial_args !== undefined ||
@@ -1008,11 +1124,15 @@ function functionCallFromGeminiPart(
       usage,
     });
   }
+
   const name = call.name;
+
   if (!isNonblankString(name)) {
     throw invalidGeminiToolCall(toolCallId, usage);
   }
+
   const args = call.args;
+
   if (!isPlainObject(args) || !isJsonValue(args)) {
     throw invalidGeminiToolCallArguments(toolCallId, usage);
   }
@@ -1024,29 +1144,37 @@ function functionCallFromGeminiPart(
     partIndex,
   };
   const signature = thoughtSignatureFrom(part) ?? thoughtSignatureFrom(call);
+
   if (callId !== undefined) {
     return signature === undefined
       ? { ...normalized, callId }
       : { ...normalized, callId, signature };
   }
+
   return signature === undefined ? normalized : { ...normalized, signature };
 }
 
 function candidateParts(response: Record<string, unknown>, usage?: Usage): IndexedGeminiPart[] {
   const candidate = primaryGeminiCandidate(response);
+
   if (candidate === undefined || candidate.content === undefined) {
     return [];
   }
+
   if (!isPlainObject(candidate.content)) {
     throw new CompletionProviderOutputError({ kind: "invalid-tool-call", usage });
   }
+
   if (candidate.content.parts === undefined) return [];
+
   if (!Array.isArray(candidate.content.parts)) {
     throw new CompletionProviderOutputError({ kind: "invalid-tool-call", usage });
   }
+
   if (candidate.content.parts.some((part) => !isPlainObject(part))) {
     throw new CompletionProviderOutputError({ kind: "invalid-tool-call", usage });
   }
+
   return candidate.content.parts.map((part, index) => ({
     index,
     part: part as Record<string, unknown>,
@@ -1057,10 +1185,13 @@ function primaryGeminiCandidate(
   response: Record<string, unknown>,
 ): Record<string, unknown> | undefined {
   if (response.candidates === undefined) return undefined;
+
   if (!Array.isArray(response.candidates)) {
     throw new CompletionProviderOutputError({ kind: "invalid-tool-call" });
   }
+
   const candidates = response.candidates;
+
   if (
     candidates.some(
       (candidate) =>
@@ -1071,24 +1202,32 @@ function primaryGeminiCandidate(
   ) {
     throw new CompletionProviderOutputError({ kind: "invalid-tool-call" });
   }
+
   const primaryCandidates = candidates.filter(
     (candidate): candidate is Record<string, unknown> =>
       isPlainObject(candidate) && candidate.index === 0,
   );
+
   if (primaryCandidates.length === 1) {
     return primaryCandidates[0];
   }
+
   if (primaryCandidates.length > 1) {
     throw new CompletionProviderOutputError({ kind: "invalid-tool-call" });
   }
+
   if (candidates.length === 0) return undefined;
+
   if (candidates.length !== 1) {
     throw new CompletionProviderOutputError({ kind: "invalid-tool-call" });
   }
+
   const candidate = candidates[0] as Record<string, unknown>;
+
   if (candidate.index !== undefined && candidate.index !== 0) {
     throw new CompletionProviderOutputError({ kind: "invalid-tool-call" });
   }
+
   return candidate;
 }
 
@@ -1096,17 +1235,25 @@ function providerFinishReasonFromGeminiResponse(
   response: Record<string, unknown>,
 ): string | undefined {
   const candidateFinishReason = stringFrom(primaryGeminiCandidate(response)?.finishReason);
+
   if (candidateFinishReason !== undefined) return candidateFinishReason;
+
   const promptFeedback = response.promptFeedback ?? response.prompt_feedback;
+
   if (promptFeedback === undefined) return undefined;
+
   if (!isPlainObject(promptFeedback)) {
     throw new CompletionProviderOutputError({ kind: "invalid-response" });
   }
+
   const blockReason = promptFeedback.blockReason ?? promptFeedback.block_reason;
+
   if (blockReason === undefined) return undefined;
+
   if (typeof blockReason !== "string" || blockReason.length === 0) {
     throw new CompletionProviderOutputError({ kind: "invalid-response" });
   }
+
   return blockReason;
 }
 
@@ -1121,7 +1268,9 @@ function hasGeminiFunctionCallMarker(
   if (parts.some(({ part }) => ownDataProperty(part, "functionCall") !== undefined)) {
     return true;
   }
+
   if (hasGeminiCandidatePayload(response)) return false;
+
   const camelCaseCalls = ownDataProperty(response, "functionCalls");
   const snakeCaseCalls = ownDataProperty(response, "function_calls");
   return (
@@ -1143,8 +1292,11 @@ function toolCallFromGeminiFunctionCall(
     toolName: call.name,
     input: call.args,
   };
+
   if (call.callId !== undefined) toolCall = { ...toolCall, callId: call.callId };
+
   if (call.signature !== undefined) toolCall = { ...toolCall, signature: call.signature };
+
   return toolCall;
 }
 
@@ -1153,6 +1305,7 @@ function mergeGeminiStreamToolCalls(
   toolCalls: readonly Extract<AssistantContentPart, { type: "tool-call" }>[],
 ): CompletionResponse {
   if (toolCalls.length === 0) return response;
+
   const finalIds = new Set(
     response.choice.flatMap((part) => (part.type === "tool-call" ? [part.toolCallId] : [])),
   );
@@ -1164,6 +1317,7 @@ function mergeGeminiStreamToolCalls(
 
 function assertSafeGeminiToolFinishReason(value: string, usage: Usage): void {
   const error = geminiToolFinishError(value, true, usage);
+
   if (error !== undefined) throw error;
 }
 
@@ -1175,15 +1329,21 @@ function geminiToolFinishError(
   if (value === "MALFORMED_FUNCTION_CALL") {
     return new CompletionProviderOutputError({ kind: "malformed-tool-arguments", usage });
   }
+
   if (value === "UNEXPECTED_TOOL_CALL" || value === "TOO_MANY_TOOL_CALLS") {
     return new CompletionProviderOutputError({ kind: "invalid-tool-call", usage });
   }
+
   if (!hasToolCalls) return undefined;
+
   if (value === undefined) {
     return new CompletionProviderOutputError({ kind: "incomplete-tool-call", usage });
   }
+
   const finishReason = geminiFinishReason(value, true);
+
   if (finishReason === "tool-calls") return undefined;
+
   if (finishReason === "length") {
     return new CompletionProviderOutputError({
       kind: "truncated-tool-call",
@@ -1191,6 +1351,7 @@ function geminiToolFinishError(
       usage,
     });
   }
+
   if (finishReason === "content-filter") {
     return new CompletionProviderOutputError({
       kind: "filtered-tool-call",
@@ -1198,6 +1359,7 @@ function geminiToolFinishError(
       usage,
     });
   }
+
   return new CompletionProviderOutputError({ kind: "invalid-tool-call", finishReason, usage });
 }
 
@@ -1206,6 +1368,7 @@ function assertSafeGeminiCompletionResponse(response: CompletionResponse): void 
     (part): part is Extract<AssistantContentPart, { type: "tool-call" }> =>
       part.type === "tool-call",
   );
+
   if (toolCalls.length > 0) {
     if (response.finishReason === undefined) {
       throw new CompletionProviderOutputError({
@@ -1213,6 +1376,7 @@ function assertSafeGeminiCompletionResponse(response: CompletionResponse): void 
         usage: response.usage,
       });
     }
+
     assertNormalizedGeminiToolFinishReason(response.finishReason, response.usage);
   } else if (toolCalls.length === 0 && response.finishReason === "tool-calls") {
     throw new CompletionProviderOutputError({
@@ -1228,11 +1392,14 @@ function assertSafeGeminiCompletionResponse(response: CompletionResponse): void 
     if (toolCallIds.has(toolCall.toolCallId)) {
       throw invalidGeminiToolCall(toolCall.toolCallId, response.usage);
     }
+
     toolCallIds.add(toolCall.toolCallId);
+
     if (toolCall.callId !== undefined) {
       if (callIds.has(toolCall.callId)) {
         throw invalidGeminiToolCall(toolCall.toolCallId, response.usage);
       }
+
       callIds.add(toolCall.callId);
     }
   }
@@ -1248,11 +1415,14 @@ function assertDistinctGeminiFunctionCalls(
     if (toolCallIds.has(call.toolCallId)) {
       throw invalidGeminiToolCall(call.toolCallId, usage);
     }
+
     toolCallIds.add(call.toolCallId);
+
     if (call.callId !== undefined) {
       if (callIds.has(call.callId)) {
         throw invalidGeminiToolCall(call.toolCallId, usage);
       }
+
       callIds.add(call.callId);
     }
   }
@@ -1263,6 +1433,7 @@ function assertNormalizedGeminiToolFinishReason(
   usage: Usage,
 ): void {
   if (finishReason === "stop" || finishReason === "tool-calls") return;
+
   if (finishReason === "length") {
     throw new CompletionProviderOutputError({
       kind: "truncated-tool-call",
@@ -1270,6 +1441,7 @@ function assertNormalizedGeminiToolFinishReason(
       usage,
     });
   }
+
   if (finishReason === "content-filter") {
     throw new CompletionProviderOutputError({
       kind: "filtered-tool-call",
@@ -1277,6 +1449,7 @@ function assertNormalizedGeminiToolFinishReason(
       usage,
     });
   }
+
   throw new CompletionProviderOutputError({ kind: "invalid-tool-call", finishReason, usage });
 }
 
@@ -1292,6 +1465,7 @@ function geminiProviderOutputErrorWithUsage(
       usage,
     });
   }
+
   if (error.kind === "filtered-tool-call") {
     return new CompletionProviderOutputError({
       kind: error.kind,
@@ -1300,9 +1474,11 @@ function geminiProviderOutputErrorWithUsage(
       usage,
     });
   }
+
   if (error.finishReason === "length" || error.finishReason === "content-filter") {
     throw error;
   }
+
   return new CompletionProviderOutputError({
     kind: error.kind,
     finishReason: error.finishReason,
@@ -1393,10 +1569,16 @@ function toolCallDelta(
   },
 ): CompletionModelStreamEvent {
   const event: CompletionModelStreamEvent = { type: "tool_call_delta", id };
+
   if (values.callId !== undefined) event.callId = values.callId;
+
   if (values.name !== undefined) event.name = values.name;
+
   if (values.argumentsDelta !== undefined) event.argumentsDelta = values.argumentsDelta;
+
   if (values.argumentsMode !== undefined) event.argumentsMode = values.argumentsMode;
+
   if (values.signature !== undefined) event.signature = values.signature;
+
   return event;
 }

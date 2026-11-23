@@ -39,6 +39,11 @@ const sqliteOnly = [
   "test/recorded-memory-sqlite.test.ts",
 ];
 
+const groupOrders: Record<string, number> = {
+  postgres: 1,
+  drizzle: 2,
+};
+
 export default defineConfig({
   test: {
     environment: "node",
@@ -50,11 +55,6 @@ export default defineConfig({
     ],
   },
 });
-
-const groupOrders: Record<string, number> = {
-  postgres: 1,
-  drizzle: 2,
-};
 
 function project(name: string, shim: string, only?: string[]) {
   return {
